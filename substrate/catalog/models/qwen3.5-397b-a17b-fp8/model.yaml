@@ -7,3 +7,4 @@ source:
 licence:
   id: Apache-2.0
   evidence: https://huggingface.co/Qwen/Qwen3.5-397B-A17B-FP8/raw/ea5b4f81096f3901c91dea97f81324302495781d/README.md
+drafters: [speculator]

@@ -78,6 +78,8 @@ type pipelineStage struct {
 	kernels, prefillOnlyKernels int
 	// totalLayers is how many decoder layers the stage holds.
 	totalLayers int
+	// lo and hi are the positions in the expanded stack of the layers the stage holds, [lo, hi).
+	lo, hi int
 	// sendBytesPerToken is what one TP rank sends the next stage a token: its 1/tp slice of
 	// the intermediate tensors and the auxiliary states carried past the boundary (zero on
 	// the last). recvBytesPerToken is what the stage receives a token, whole: what its TP
@@ -258,6 +260,7 @@ func (k *Kernel) liftPipeline(g *model.Graph) error {
 		st := &k.stages[s]
 		st.first, st.last = s == 0, s == pp-1
 		st.totalLayers = span[1] - span[0]
+		st.lo, st.hi = span[0], span[1]
 		for i, l := range k.plan.Layers {
 			n := counts[l.ID]
 			if n == 0 {
@@ -409,7 +412,7 @@ func (k *Kernel) stagedStepTime(b kernel.Batch,
 	for i := range k.stages {
 		st := &k.stages[i]
 		var per [numResources]float64
-		o := k.priceLayers(st.layers, st.fits, st.kv, &s, &per)
+		o := k.priceStage(st, b, &s, &per)
 		if st.first && k.plan.Embedding.Count > 0 {
 			o += k.priceLayers([]price.PlannedLayer{k.plan.Embedding}, nil, []layerKV{{}}, &s, &per)
 		}
@@ -460,7 +463,7 @@ func (k *Kernel) stagedStepTime(b kernel.Batch,
 	}
 	_, bottleneck := summarize(&total, per)
 	return kernel.StepEstimate{Overlap: overlap, NoOverlap: noOverlap, Bottleneck: bottleneck,
-		PerResource: per, Stages: stages}
+		PerResource: per, Stages: stages, Trust: trustOf(k.trust, s.inputs())}
 }
 
 // stageHost is one stage's launch-and-replay cost, which every stage's worker pays for its
@@ -676,4 +679,16 @@ func (k *Kernel) PipelineStageMemory() []StageMemory {
 		}
 	}
 	return out
+}
+
+// priceStage prices a stage's layers for a step: on the step's shape, or where the step states a
+// tail (Batch.TailFrom), the stage's layers before it on that shape and the rest on the tail's.
+func (k *Kernel) priceStage(st *pipelineStage, b kernel.Batch, s *stepShape,
+	per *[numResources]float64) float64 {
+	tb, ok := k.tailBatchOf(b)
+	if !ok {
+		return k.priceLayers(st.layers, st.fits, st.kv, s, per)
+	}
+	ts := k.shapeOf(tb)
+	return k.priceSplit(st.lo, st.hi, b.TailFrom, s, &ts, per)
 }

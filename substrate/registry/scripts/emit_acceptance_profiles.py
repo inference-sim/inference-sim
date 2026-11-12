@@ -34,6 +34,11 @@ TARGET = REPO / "acceptance" / "inferencex-golden-al.yaml"
 SET_NAME = "inferencex-golden-al"
 
 INFERENCEX_SHA = "9fa76586ed1ef66caadc6b95a9b1448acde94c6b"
+# The rule that moves a measured curve to a model InferenceX marks provisional. It is the one
+# InferenceX's own file states: the target shares the source model's base and layer topology,
+# so the source's acceptance length is carried unchanged for the draft lengths both run.
+TRANSFER_RULE = ("the source model's acceptance length is carried unchanged, because the file "
+                 "states the target shares its base and layer topology")
 INFERENCEX_URL = "https://github.com/SemiAnalysisAI/InferenceX"
 GOLDEN_PATH = "inferencex-e2e/infx/golden_al_distribution"
 GOLDEN = Path(os.environ.get("INFERENCEX_GOLDEN")
@@ -41,6 +46,18 @@ GOLDEN = Path(os.environ.get("INFERENCEX_GOLDEN")
 CATALOG = Path(os.environ.get("BLIS_CATALOG") or REPO.parent / "catalog")
 
 THINKING = {"thinking_on": "on", "thinking_off": "off"}
+
+# Curves measured with a separate drafter checkpoint rather than the model's own in-graph
+# speculator, with the evidence. A profile can name its drafter only when the drafter is a
+# catalog model, so these name none and the caveat says why. A curve
+# not listed here was measured with the model's own speculator: its MTP layers, or DSpark for
+# a model whose catalog graph states DSpark as its speculator.
+SEPARATE_DRAFTER = {
+    "minimaxm3_eagle3": (
+        "the curve is for the base EAGLE3 drafter. InferenceX's MiniMax-M3 runs serve EAGLE3 "
+        "through a separate draft_model, which the catalog graph does not describe "
+        "(the catalog lists no such drafter), and its minimaxm3_eagle3_gqa curve is for a second one."),
+}
 
 _KIMI = ("the two Kimi-K3 DSpark curves differ only in the draft sampler (greedy, and "
          "probabilistic with block rejection), which a profile's key cannot state, and "
@@ -129,6 +146,9 @@ COLLECTORS = {
     "dsv4_fp4_b300_vllm.sh": (
         "fp8", "serves the staged checkpoint with no quantization flag, and "
                "--kv-cache-dtype fp8 (line 123)"),
+    "dsv4dspark_fp4_b300_vllm.sh": (
+        "fp8", "serves the staged checkpoint with no quantization flag, and "
+               "--kv-cache-dtype fp8 (line 169)"),
     "glm52_fp4_b300_vllm.sh": (
         "fp8", "serves the staged checkpoint with no quantization flag, and "
                "--kv-cache-dtype fp8 (line 131)"),
@@ -246,10 +266,27 @@ def catalog_models(root: Path) -> dict[str, str]:
     models = {}
     for p in sorted((root / "models").glob("*/model.yaml")):
         d = yaml.safe_load(p.read_text())
+        # A separate drafter is not what a collector's model key names, and one may share its
+        # target's repository (MiniMax-M3.1-Flash ships its DSpark drafter under dspark/).
+        if d.get("targets"):
+            continue
         models[d["name"]] = d["source"]["repo"]
     if not models:
         raise SystemExit(f"no catalog models under {root / 'models'}")
     return models
+
+
+def catalog_architectures(root: Path) -> dict[str, str]:
+    """Each catalog model's architecture, as its graph records it (global.architecture)."""
+    out = {}
+    for p in sorted((root / "models").glob("*/graph.yaml")):
+        g = yaml.safe_load(p.read_text())
+        arch = (g.get("global") or {}).get("architecture")
+        if not arch:
+            raise SystemExit(f"{p.parent.name}: its graph records no global.architecture, which "
+                             "a lookup that borrows across targets reads (design D8)")
+        out[g["name"]] = arch
+    return out
 
 
 def catalog_name(key: str, models: dict[str, str]) -> tuple[str, str | None]:
@@ -418,7 +455,7 @@ def key_string(model, method, k, thinking, category) -> str:
     return f"{model}/{method}/k{k}/thinking-{thinking}/{category}"
 
 
-def profiles(carried: list[Carried], category: str) -> list[dict]:
+def profiles(carried: list[Carried], category: str, architectures: dict[str, str]) -> list[dict]:
     by_stem = {c.stem: c for c in carried}
     out = []
     for c in carried:
@@ -428,7 +465,8 @@ def profiles(carried: list[Carried], category: str) -> list[dict]:
         for thinking in sorted(c.values):
             for k in sorted(c.values[thinking]):
                 al = c.values[thinking][k]
-                p = {"model": c.model, "speculative_method": c.method, "num_spec_tokens": k,
+                p = {"model": c.model, "architecture": architectures[c.model],
+                     "speculative_method": c.method, "num_spec_tokens": k,
                      "thinking": thinking, "category": category, "acceptance_length": al}
                 prov = dict(c.provenance)
                 if settings := {**prov.get("settings", {}),
@@ -438,8 +476,9 @@ def profiles(carried: list[Carried], category: str) -> list[dict]:
                     if src.values.get(thinking, {}).get(k) != al:
                         raise SystemExit(f"{c.stem} {thinking}/{k} = {al} is not the value "
                                          f"of {src.stem}, which it states it copies")
-                    p["method"] = "copied"
-                    p["copied_from"] = key_string(src.model, src.method, k, thinking, category)
+                    p["method"] = "transferred"
+                    p["transferred_from"] = key_string(src.model, src.method, k, thinking, category)
+                    p["transfer_rule"] = TRANSFER_RULE
                 else:
                     p["method"] = "measured"
                 alias = (f"InferenceX names the model {c.alias[0]}: {c.alias[1]}."
@@ -498,6 +537,12 @@ def caveats(carried: list[Carried], skipped, category: str) -> list[str]:
     if unimaged:
         out.append(f"The source files for {', '.join(unimaged)} name no engine image, so "
                    f"their engine_image reads \"{IMAGE_UNRECORDED}\".")
+    for c in carried:
+        if c.stem in SEPARATE_DRAFTER:
+            out.append(f"{c.model} {c.method}: {SEPARATE_DRAFTER[c.stem]} The catalog lists no "
+                       "such drafter yet, so a profile cannot name one (its drafter must be a "
+                       "catalog model) and these profiles name none. Until it does, a run that "
+                       "uses the model's own speculator would borrow them as another drafter's.")
     for stem, key, reason in skipped:
         out.append(f"Not carried: {stem}.yaml ({key}), because {reason}.")
     return out
@@ -512,7 +557,7 @@ def generate(golden: Path = GOLDEN, catalog: Path = CATALOG) -> str:
     carried, skipped, category = collect(golden, catalog)
     doc = {"kind": "AcceptanceProfileSet", "name": SET_NAME,
            "caveats": caveats(carried, skipped, category),
-           "profiles": profiles(carried, category)}
+           "profiles": profiles(carried, category, catalog_architectures(catalog))}
     header = (
         "# Speculative acceptance lengths, from SemiAnalysis InferenceX's golden curves.\n"
         "#\n"

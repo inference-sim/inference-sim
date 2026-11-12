@@ -54,6 +54,22 @@ const valid = `{
           "oracle/traces/t2-basic.json"
         ]
       },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 1,
+            "closed": "above"
+          },
+          {
+            "value": 256,
+            "closed": "below"
+          }
+        ],
+        "covered_classes": [
+          1
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -64,6 +80,13 @@ const valid = `{
       "status": "proven_inert",
       "evidence": {
         "proof": "TestMaxNumSeqsEnvIsInert"
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
+        ]
       },
       "estimation": {
         "rule": "leave_unset"
@@ -241,6 +264,7 @@ func ExampleParse() {
   "fields": [
     {"name": "max_num_seqs", "source": "config", "status": "modelled",
      "evidence": {"traces": ["oracle/traces/t2-basic.json"]},
+     "value_classes": {"type": "numeric", "thresholds": [{"value": 1, "closed": "above"}], "covered_classes": [1]},
      "estimation": {"rule": "leave_unset"}}
   ]
 }`))

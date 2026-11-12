@@ -15,6 +15,12 @@ on:
 permissions:
   contents: read
 
+# A newer run for the same pull request replaces the one in progress (a push, or an edit of the
+# description). Scheduled and manual runs are never cancelled.
+concurrency:
+  group: blis-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # The check run "pr / blis checks" is one of this repository's required checks, with
   # `required` and `scan` (X17). Branch protection holds the list, in this repository.

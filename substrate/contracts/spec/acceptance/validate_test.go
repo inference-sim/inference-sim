@@ -37,9 +37,10 @@ func validProfileSet() *ProfileSet {
 				Method: vocab.MethodMeasured, Provenance: measuredProvenance()},
 			{Model: "glm-5.3", SpeculativeMethod: "mtp", NumSpecTokens: 3,
 				Thinking: ThinkingOn, Category: "coding", AcceptanceLength: 2.99,
-				Method: vocab.MethodCopied, CopiedFrom: "glm-5.2-fp8/mtp/k3/thinking-on/coding",
-				Rationale:  "provisional; shares GLM-5.2's topology",
-				Provenance: &Provenance{Source: "glm5.3_mtp.yaml", Hardware: "b300"}},
+				Method: vocab.MethodTransferred, TransferredFrom: "glm-5.2-fp8/mtp/k3/thinking-on/coding",
+				TransferRule: "the value measured on GLM-5.2 is carried unchanged, because GLM-5.3 shares its base and layer topology",
+				Rationale:    "provisional; shares GLM-5.2's topology",
+				Provenance:   &Provenance{Source: "glm5.3_mtp.yaml", Hardware: "b300"}},
 		},
 	}
 }
@@ -112,10 +113,16 @@ func TestProfileSetRejects(t *testing.T) {
 		{"calibrated", "profiles[0].method", func(s *ProfileSet) {
 			s.Profiles[0].Method = vocab.MethodCalibrated
 		}},
-		{"copied without copied_from", "profiles[2].copied_from", func(s *ProfileSet) {
-			s.Profiles[2].CopiedFrom = ""
+		{"transferred without transferred_from", "profiles[2].transferred_from", func(s *ProfileSet) {
+			s.Profiles[2].TransferredFrom = ""
 		}},
-		{"copied without rationale", "profiles[2].rationale", func(s *ProfileSet) {
+		{"transferred without a rule", "profiles[2].transfer_rule", func(s *ProfileSet) {
+			s.Profiles[2].TransferRule = ""
+		}},
+		{"transferred_from on a measured profile", "profiles[0].transferred_from", func(s *ProfileSet) {
+			s.Profiles[0].TransferredFrom = "x"
+		}},
+		{"transferred without rationale", "profiles[2].rationale", func(s *ProfileSet) {
 			s.Profiles[2].Rationale = ""
 		}},
 		{"measured without provenance", "profiles[0].provenance", func(s *ProfileSet) {

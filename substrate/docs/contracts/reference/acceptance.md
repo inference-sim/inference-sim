@@ -63,14 +63,18 @@ InferenceX's golden SPEED-Bench curves:
 
 ### Profiles
 
-A profile is keyed by model, speculative method, K, thinking mode and workload category.
-Two profiles with one key are an error.
+A profile is keyed by model, drafter, speculative method, K, thinking mode and workload
+category. Two profiles with one key are an error. The drafter is the model's own in-graph
+speculator when it is left out, or the catalog name of a separate drafter checkpoint; the
+same target with two drafters has two profiles.
 
 <!-- fields: acceptance.Profile -->
 
 | Key | Type | Required | Meaning |
 |---|---|---|---|
 | `model` | string | yes | The catalog model name, not the source's spelling of it. |
+| `drafter` | string | no | The catalog name of the separate drafter checkpoint the value was measured with. Left out for the model's own speculator, such as its MTP layers. No `+`, `/` or space, and not the target's own name. |
+| `architecture` | string | no | The target's architecture as its graph records it (`global.architecture`). A lookup that borrows from another target reads it; a profile that states none is never borrowed across targets. It must equal the graph's. |
 | `speculative_method` | string | yes | The engine's method name, as a deployment's `engine.speculative.method` states it. |
 | `num_spec_tokens` | integer | yes | K. At least 1. |
 | `thinking` | string | yes | `on` or `off`. One of the [thinking modes](vocabularies.md#thinking-modes). |
@@ -80,7 +84,8 @@ Two profiles with one key are an error.
 | `method` | string | yes | How the value was obtained. One of the [methods](vocabularies.md#methods) except `not_charged`. |
 | `provenance` | mapping | unless `method` is `assumed` | Where it was measured, below. |
 | `rationale` | string | unless `method` is `measured` | The reasoning behind a value that was not measured. |
-| `copied_from` | string | with method `copied` | The profile it was copied from, as `model/method/k<K>/thinking-<mode>/category`. |
+| `transferred_from` | string | with method `transferred` | The profile it was measured as, as `model/method/k<K>/thinking-<mode>/category`. |
+| `transfer_rule` | string | with method `transferred` | The stated rule that moved the value to this profile's model. |
 
 ### `provenance`
 
@@ -93,6 +98,7 @@ Two profiles with one key are an error.
 | `benchmark` | string | no | The prompt set, such as `SPEED-Bench Qualitative`. |
 | `prompts` | integer | no | How many prompts it covered. Not negative. |
 | `hardware` | string | with method `measured` | The catalog chip it was measured on. A resolution on other hardware records this. |
+| `date` | string | no | The day the source was published or measured, `YYYY-MM-DD`. A lookup that borrows breaks a tie by the newest source; a profile with no date is older than any dated one. |
 | `engine_image` | string | with method `measured` | The engine image or release that ran. |
 | `tp` | integer | no | The tensor-parallel width it ran at. Not negative. |
 | `sampling` | mapping | with method `measured` | The decoding configuration, below. |
@@ -148,7 +154,8 @@ acceptance:
 |---|---|---|---|
 | `profiles` | string | no | An acceptance-profile set under `acceptance/` in the registry, consulted in place of the default. Not with `value`. |
 | `value` | mapping | no | An inline value, above. |
-| `fallback_category` | string | no | The category to use when the workload's has no curve. The substitution is recorded. Not with `value`. |
+| `fallback_category` | string | no | The category to use when the workload's has no curve. The substitution is recorded. A fallback given on the command line outranks this one. Not with `value`. |
+| `exact_only` | boolean | no | Limits the profile lookup to a measured profile with the run's exact key; it never borrows. Not with `value`. |
 
 A pin must set at least one key.
 
@@ -161,25 +168,60 @@ layer that states acceptance wins; layers are not merged.
 
 | Layer | Supplies acceptance by |
 |---|---|
-| `registry` | the profile matching (model, method, K, the workload's thinking mode and category) in the registry sets, the default |
+| `registry` | the profile matching (model, drafter, method, K, the workload's thinking mode and category) in the registry sets, the default; the closest one when none matches exactly (below) |
 | `workload` | the workload's own `acceptance` value |
 | `scenario` | the pin's `value`, or the matching profile in the set its `profiles` names |
 | `cli` | the command line's value, such as `--speculative-acceptance-rate` at the deployment's K |
 
 --8<-- "docs/contracts/generated/enum/acceptance.Layer.md"
 
-Nothing falls back silently. A lookup is refused when
+### Borrowing
+
+A value stated on the command line, in the scenario or by the workload is used as stated. A
+profile lookup that finds no measured profile with the run's exact key borrows the closest
+one, in this order (design D8), and records that it did:
+
+1. **The same target and drafter at another K.** Between two measured values of K it
+   interpolates linearly. Above the largest it takes the largest's value. Below the smallest
+   it takes that profile's stated per-position rates for the first K positions; a profile
+   that states none gives 1 + K(AL − 1)/K₀, where K₀ is its K. That figure cannot exceed what
+   the profile's own rates would give, so it does not overstate drafting's gain. The lookup
+   never extrapolates.
+2. **Another drafter of the same target**, preferring the same method and then the lowest
+   value at the run's K, found by the first step's rules, so that drafting's gain is not
+   overstated. The drafter must differ from the run's: the same drafter under another
+   method is not another drafter, no step takes it, and the lookup refuses it.
+3. **The same method on another target** whose graph records the same architecture. The
+   profile must state its architecture, and the run's must be known.
+
+Every step keeps the category and the thinking mode, apart from a fallback category the user
+requested. The fallback category stands in only when the workload's own category supplies
+nothing: the lookup tries the exact key and all three steps in the workload's category first,
+and only then repeats them in the fallback category. Any remaining tie breaks in this order: the profile measured on the run's
+hardware, then the newest source (`provenance.date`), then the set name, then the key, so the
+choice is deterministic whatever order the sets are listed in. Two profiles that share a key
+but record different sampling or settings are not interchangeable, and an exact key found in
+two sets is ambiguous; the lookup refuses both. A scenario's `exact_only`, or the request's,
+limits the lookup to exact matches.
+
+The resolution records `step` (`exact`, `same_drafter_other_k`, `other_drafter` or
+`other_target`), the key fields that `differed`, how K was brought to the run's (`k_rule`),
+and every profile read. The Result carries the same record on its `speculative_acceptance`
+property.
+
+Nothing else falls back silently. A lookup is refused when
 
 - the workload states no thinking mode, or no category and no fallback was requested;
-- no profile matches and no `fallback_category` was requested, or the fallback has no
-  profile either;
-- two registry sets both match;
+- no profile matches on any step, and no `fallback_category` was requested, or the fallback
+  has no profile either;
+- two registry sets both match an exact key, or share a key measured under different
+  sampling or settings;
 - the scenario names a set that was not supplied. The registry is not consulted in its
   place.
 
 A value stated for a K other than the deployment's is refused at every layer. The
-resolution records the profile set and entry, the cited source, the category a fallback
-replaced, the hardware a profile was measured on when it differs from the run's, and
+resolution also records the profile set and entry, the cited source, the category a
+fallback replaced, the hardware a profile was measured on when it differs from the run's, and
 whether the rates were derived.
 
 ## Checks
@@ -191,6 +233,8 @@ A profile set is invalid if
 - two profiles share a key;
 - a profile has no `model` or `speculative_method`, `thinking` is not `on` or `off`, or
   `category` is malformed;
+- a `drafter` is the target's own name or contains `+`, `/` or a space, or an `architecture`
+  contains a space or `/`;
 - `num_spec_tokens` is less than 1, or `acceptance_length` is not finite or lies outside
   [1, K + 1];
 - `per_position_rates` has other than K entries, an entry outside [0, 1], rises, or sums
@@ -203,8 +247,8 @@ A profile set is invalid if
 An inline value is invalid if `num_spec_tokens` is less than 1, it states no acceptance,
 it states both `acceptance_length` and `acceptance_rate`, either lies outside its range,
 or its rates are invalid or disagree with it. A pin is invalid if it sets nothing, sets
-both `profiles` and `value`, sets `fallback_category` with `value`, or its value is
-invalid.
+both `profiles` and `value`, sets `fallback_category` or `exact_only` with `value`, or its
+value is invalid.
 
 With a deployment in the bundle, every inline value (the scenario's pin, its trace's, its replay's, merged with its catalog entry when the bundle carries one, a catalog replay's, and
 the workload shape's) must name the K of each pool that speculates. When no pool

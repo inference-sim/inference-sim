@@ -796,15 +796,16 @@ func TestPathPatterns(t *testing.T) {
 	}
 }
 
-// X24: a review thread is resolved, and states an outcome.
-func TestCheckThreads(t *testing.T) {
+// X24: the report names a thread that is open and a resolved thread with no outcome, and
+// nothing else. It is informational: ThreadNotes returns notes, not violations.
+func TestThreadNotes(t *testing.T) {
 	good := []Thread{
 		{URL: "t1", Resolved: true, Comments: []string{"nit", "Outcome: fixed in abc"}},
 		{URL: "t2", Resolved: true, Comments: []string{"Outcome: filed inference-sim/blis-substrate#9"}},
 		{URL: "t3", Resolved: true, Comments: []string{"Outcome: rejected: the datasheet states it"}},
 	}
-	none(t, CheckThreads(good))
-	none(t, CheckThreads(nil))
+	none(t, ThreadNotes(good))
+	none(t, ThreadNotes(nil))
 	for _, c := range []struct {
 		name string
 		th   Thread
@@ -817,8 +818,92 @@ func TestCheckThreads(t *testing.T) {
 		{"outcome not at the start of a line", Thread{URL: "t1", Resolved: true, Comments: []string{"I think Outcome: fixed"}}, "resolved with no"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			has(t, CheckThreads(append([]Thread{good[0]}, c.th)), c.want)
+			has(t, ThreadNotes(append([]Thread{good[0]}, c.th)), c.want)
 		})
+	}
+}
+
+// fakeGH puts a gh in PATH that answers every call with out and exits 0, or with exit 1 and
+// no output when out is empty.
+func fakeGH(t *testing.T, out string) {
+	t.Helper()
+	dir := t.TempDir()
+	script := "#!/bin/sh\ncat <<'EOF'\n" + out + "\nEOF\n"
+	if out == "" {
+		script = "#!/bin/sh\necho boom >&2\nexit 1\n"
+	}
+	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+const openThreadJSON = `{"data":{"repository":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false,"endCursor":""},"nodes":[
+ {"isResolved":false,"path":"a.go","comments":{"nodes":[{"body":"please check this","url":"https://github.com/o/r/pull/1#discussion_r1"}]}},
+ {"isResolved":true,"path":"b.go","comments":{"nodes":[{"body":"nit","url":"https://github.com/o/r/pull/1#discussion_r2"}]}}]}}}}}`
+
+// No check waits on a person (the maintainer's order of 2026-11-11). `prcheck threads` on a
+// pull request with an open thread and a resolved thread that states no outcome exits 0, names
+// both as notices, and writes them to the job summary. Before this change it returned the
+// findings error, so `pr / blis checks` was red until a person or an agent answered.
+func TestThreadsStepNeverFailsOnAnOpenThread(t *testing.T) {
+	fakeGH(t, openThreadJSON)
+	summary := filepath.Join(t.TempDir(), "summary.md")
+	t.Setenv("GITHUB_STEP_SUMMARY", summary)
+	var out strings.Builder
+	if err := run([]string{"threads", "-repo", "o/r", "-pr", "1"}, &out); err != nil {
+		t.Fatalf("an open thread failed the step: %v\n%s", err, out.String())
+	}
+	for _, want := range []string{"::notice", "discussion_r1", "is open", "discussion_r2", "resolved with no", "2 to answer"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("the output lacks %q:\n%s", want, out.String())
+		}
+	}
+	raw, err := os.ReadFile(summary)
+	if err != nil {
+		t.Fatalf("no job summary: %v", err)
+	}
+	if !strings.Contains(string(raw), "discussion_r1") || !strings.Contains(string(raw), "never fails") {
+		t.Errorf("the job summary does not list the thread:\n%s", raw)
+	}
+}
+
+// The step does not fail when the API does not answer either: it warns. A usage error (no
+// -repo or -pr) is a mistake in the workflow and still fails.
+func TestThreadsStepWarnsWhenTheThreadsCannotBeRead(t *testing.T) {
+	fakeGH(t, "")
+	var out strings.Builder
+	if err := run([]string{"threads", "-repo", "o/r", "-pr", "1"}, &out); err != nil {
+		t.Fatalf("an unreadable thread list failed the step: %v", err)
+	}
+	if !strings.Contains(out.String(), "::warning") {
+		t.Errorf("no warning:\n%s", out.String())
+	}
+	if err := run([]string{"threads"}, &out); err == nil {
+		t.Error("a threads step with no -repo and -pr passed")
+	}
+}
+
+// The workflow step that runs it cannot hide a failure behind continue-on-error, and it is the
+// only X24 step: it neither blocks nor waits (the job must not need a thread to be resolved).
+func TestTheThreadsStepIsInformational(t *testing.T) {
+	raw, err := os.ReadFile("../../.github/workflows/shared-pr-checks.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := strings.Index(string(raw), "- name: Review threads (X24")
+	if i < 0 {
+		t.Fatal("no Review threads step")
+	}
+	step := string(raw)[i:]
+	if j := strings.Index(step[1:], "\n      - name:"); j >= 0 {
+		step = step[:j+1]
+	}
+	if !strings.Contains(step, "informational") {
+		t.Errorf("the step does not say it is informational:\n%s", step)
+	}
+	if strings.Contains(step, "continue-on-error") {
+		t.Errorf("the step hides a failure with continue-on-error:\n%s", step)
 	}
 }
 
@@ -838,7 +923,7 @@ func TestThreadsOfKeepsTheFirstCommentURL(t *testing.T) {
 	if len(got) != 1 || got[0].URL != "u1" || !got[0].Resolved || len(got[0].Comments) != 2 {
 		t.Fatalf("threadsOf = %+v", got)
 	}
-	none(t, CheckThreads(got))
+	none(t, ThreadNotes(got))
 }
 
 // The pull-request check runs the three checks that moved out of the merge job, and nothing
@@ -996,5 +1081,107 @@ func TestContractsAPIToolIsNotADependency(t *testing.T) {
 	}
 	if !regexp.MustCompile(`apidiffRef = "golang.org/x/exp/cmd/apidiff@v0\.0\.0-\d{14}-[0-9a-f]{12}"`).Match(src) {
 		t.Error("apidiff is not pinned to a version and commit")
+	}
+}
+
+// The one automatic rerun: only a first-attempt failure whose every failed job was ended by a
+// runner shutdown. Each known-bad case is a failure that must not be retried.
+func TestDecideRerun(t *testing.T) {
+	kill := FailedJob{Name: "test (workload & cmd)", Annotations: []string{"Process completed with exit code 143.", "The runner has received a shutdown signal. This can happen when the runner service is stopped, or a manually started runner is canceled."}}
+	test := FailedJob{Name: "lint", Annotations: []string{"Process completed with exit code 1."}}
+	for _, c := range []struct {
+		name       string
+		conclusion string
+		attempt    int
+		failed     []FailedJob
+		want       bool
+		why        string
+	}{
+		{"shutdown on attempt 1", "failure", 1, []FailedJob{kill}, true, "rerunning"},
+		{"two shutdowns", "failure", 1, []FailedJob{kill, kill}, true, "rerunning"},
+		{"shutdown on attempt 2", "failure", 2, []FailedJob{kill}, false, "attempt 2"},
+		{"a test failure", "failure", 1, []FailedJob{test}, false, "never rerun"},
+		{"shutdown and a test failure", "failure", 1, []FailedJob{kill, test}, false, `"lint"`},
+		{"no annotations", "failure", 1, []FailedJob{{Name: "x"}}, false, "never rerun"},
+		{"cancelled run", "cancelled", 1, []FailedJob{kill}, false, "not failure"},
+		{"success", "success", 1, nil, false, "not failure"},
+		{"failure with no failed job", "failure", 1, nil, false, "no job"},
+		{"the text only in prose of a non-failure", "failure", 1, []FailedJob{{Name: "y", Annotations: []string{"shutdown signal"}}}, false, "never rerun"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got, why := DecideRerun(c.conclusion, c.attempt, c.failed)
+			if got != c.want || !strings.Contains(why, c.why) {
+				t.Errorf("DecideRerun = %v, %q; want %v containing %q", got, why, c.want, c.why)
+			}
+		})
+	}
+}
+
+// rerunGH is a gh that answers the run, its jobs and their annotations from files, and logs
+// every call, so the test can see whether a rerun and a comment were requested.
+func rerunGH(t *testing.T, attempt int, annotation string) (log string) {
+	t.Helper()
+	dir := t.TempDir()
+	log = filepath.Join(dir, "calls.log")
+	script := `#!/bin/sh
+echo "$@" >> ` + log + `
+case "$*" in
+*"-X POST"*) echo '{}' ;;
+*annotations*) cat <<'EOF'
+[{"annotation_level":"failure","message":"` + annotation + `"}]
+EOF
+;;
+*"/jobs?"*) echo '{"jobs":[{"id":7,"name":"test","conclusion":"failure"},{"id":8,"name":"build","conclusion":"success"}]}' ;;
+*) echo '{"conclusion":"failure","run_attempt":` + fmt.Sprint(attempt) + `,"html_url":"https://x/run/1","name":"CI","pull_requests":[{"number":42}]}' ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return log
+}
+
+func TestRerunCommandRerunsOnceAndSaysSo(t *testing.T) {
+	log := rerunGH(t, 1, "The runner has received a shutdown signal.")
+	summary := filepath.Join(t.TempDir(), "s.md")
+	t.Setenv("GITHUB_STEP_SUMMARY", summary)
+	var out strings.Builder
+	if err := run([]string{"rerun", "-repo", "o/r", "-run", "1"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	calls, _ := os.ReadFile(log)
+	if !strings.Contains(string(calls), "runs/1/rerun-failed-jobs") || !strings.Contains(string(calls), "issues/42/comments") {
+		t.Errorf("no rerun or no comment requested:\n%s", calls)
+	}
+	if s, _ := os.ReadFile(summary); !strings.Contains(string(s), "rerun once") {
+		t.Errorf("the summary does not say it reran:\n%s", s)
+	}
+}
+
+func TestRerunCommandDoesNotRerunARealFailureOrASecondAttempt(t *testing.T) {
+	for name, c := range map[string]struct {
+		attempt    int
+		annotation string
+	}{
+		"a test failure": {1, "Process completed with exit code 1."},
+		"second attempt": {2, "The runner has received a shutdown signal."},
+	} {
+		t.Run(name, func(t *testing.T) {
+			log := rerunGH(t, c.attempt, c.annotation)
+			summary := filepath.Join(t.TempDir(), "s.md")
+			t.Setenv("GITHUB_STEP_SUMMARY", summary)
+			var out strings.Builder
+			if err := run([]string{"rerun", "-repo", "o/r", "-run", "1"}, &out); err != nil {
+				t.Fatal(err)
+			}
+			calls, _ := os.ReadFile(log)
+			if strings.Contains(string(calls), "POST") {
+				t.Errorf("a rerun or comment was requested:\n%s", calls)
+			}
+			if s, _ := os.ReadFile(summary); !strings.Contains(string(s), "not rerun") {
+				t.Errorf("the refusal is silent:\n%s", s)
+			}
+		})
 	}
 }

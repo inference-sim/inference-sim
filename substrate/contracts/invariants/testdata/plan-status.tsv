@@ -47,7 +47,7 @@ SUB-16	ci	now
 SUB-17	new	M3
 SUB-18	ci	now
 SUB-19	partial	M1
-SUB-20	new	M2
+SUB-20	partial	M2
 VLM-1	ci	now
 VLM-2	partial	M4
 VLM-3	new	M2
@@ -129,7 +129,7 @@ D4	partial	M1
 D5	new	M2
 D6	new	M4
 D7	partial	M1
-D8	new	M2
+D8	partial	M2
 COV-1	partial	M1
 COV-2	new	M2
 COV-3	new	M1

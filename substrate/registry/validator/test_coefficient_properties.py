@@ -114,6 +114,80 @@ def test_no_bandwidth_rate_exceeds_its_parts_datasheet_peak():
     assert checked >= 10, f"only {checked} rate/chip pairs checked; the filter is wrong"
 
 
+# The families whose bytes_per_us value is a rate through device memory. Link, host and
+# interconnect rates (collective_*, moe_a2a_*, host_*) are bounded by their own links, not by
+# HBM, and are not in this list.
+HBM_RATE_FAMILY = re.compile(r"(attention_|mhc_)\w*rate")
+# The work rates committed with rate_basis: work. A work rate may exceed the memory peak, so
+# marking an entry "work" would otherwise be a way around SUB-5. The count may only go down:
+# lower it when an entry is refitted as a memory rate, never raise it to admit a new one.
+# (Four entries: the sparse-MLA and block-index prefill rates on h100 and on h200.)
+MAX_WORK_RATES = 4
+
+
+def memory_rate_problems(entries, facts_of):
+    """SUB-5: no memory rate above the chip's datasheet memory bandwidth.
+
+    Returns (problems, examined). A rate is a memory rate unless it says rate_basis: work.
+    A work rate must say why in its rationale. A memory rate with no chip to compare against
+    is a problem too, so the check cannot pass by examining nothing.
+    """
+    problems, examined = [], 0
+    for setname, name, body in entries:
+        if body.get("units") != "bytes_per_us" or not HBM_RATE_FAMILY.match(name):
+            continue
+        basis = body.get("rate_basis", "memory")
+        if basis == "work":
+            if not str(body.get("rationale", "")).strip():
+                problems.append(f"{setname}: {name} is a work rate with no rationale")
+            continue
+        for chip in (body.get("scope") or {}).get("hardware", []):
+            facts = facts_of(chip)
+            if not facts or "BwPeakTBs" not in facts:
+                problems.append(f"{setname}: {name} names chip {chip}, which has no datasheet "
+                                f"memory bandwidth to compare against")
+                continue
+            examined += 1
+            peak = facts["BwPeakTBs"] * 1e6
+            if body["value"] > peak:
+                problems.append(
+                    f"{setname}: {name} on {chip} is {body['value']:,.0f} B/us, "
+                    f"{body['value'] / peak:.2f}x the part's {peak:,.0f} B/us datasheet memory "
+                    f"bandwidth. A kernel cannot read faster than its memory: fix the byte "
+                    f"count in the fit, or, if the rate counts work rather than memory "
+                    f"traffic, give it rate_basis: work and say why in its rationale.")
+    return problems, examined
+
+
+def test_no_memory_rate_exceeds_its_parts_datasheet_peak():
+    """SUB-5, every family that reads device memory, not only attention decode."""
+    problems, examined = memory_rate_problems(ENTRIES, chip_facts)
+    assert not problems, "\n".join(problems)
+    assert examined >= 36, f"only {examined} memory rate/chip pairs examined; the filter is wrong"
+
+
+def test_work_rates_are_few_and_only_go_down():
+    work = [(s, n, b["scope"]["hardware"]) for s, n, b in ENTRIES
+            if b.get("rate_basis") == "work"]
+    assert len(work) <= MAX_WORK_RATES, (
+        f"{len(work)} work rates, above the {MAX_WORK_RATES} committed: {work}. A work rate "
+        f"is allowed to exceed the memory peak, so each one is a reviewed exception.")
+
+
+def test_the_memory_rate_check_fails_on_its_known_bad_inputs():
+    """X18: the check must fail on an input it exists to refuse, and pass on its neighbour."""
+    facts = {"h200": {"BwPeakTBs": 4.8}}.get
+    rate = lambda v, **kw: [("s.yaml", "attention_decode_rate",
+                             {"units": "bytes_per_us", "value": v, "scope": {"hardware": ["h200"]}, **kw})]
+    peak = 4.8e6
+    assert memory_rate_problems(rate(peak), facts)[0] == []                     # at peak: allowed
+    assert memory_rate_problems(rate(peak * 1.001), facts)[0]                   # just above: refused
+    assert memory_rate_problems(rate(2 * peak, rate_basis="work", rationale="counts work"), facts)[0] == []
+    assert memory_rate_problems(rate(2 * peak, rate_basis="work"), facts)[0]    # work, no reason
+    assert memory_rate_problems(rate(1.0), {}.get)[0]                           # unknown chip
+    assert memory_rate_problems(rate(1e9), facts)[0]                            # 1000x slip, high
+
+
 def test_every_bandwidth_rate_is_a_plausible_fraction_of_peak():
     """And not implausibly far below it either.
 
@@ -214,11 +288,13 @@ def test_a_model_scoped_entry_never_shadows_a_part_wide_one():
     )
 
 
-def test_every_name_resolves_to_one_entry_per_part_and_model():
-    """blis-latency-kernel keeps the LAST admitted entry of a name, so two entries that
-    admit the same (part, model) make the price depend on file order and leave one copy
-    unmaintained -- the a100-80 descriptor duplicates were this, with equal values only by
-    luck. Holds for every set, with no sweep."""
+def test_every_name_resolves_to_one_entry_per_part_model_and_method():
+    """Design VAL-4: a lookup has at most one entry per method rank and uses the most trusted.
+    Two entries of ONE method that admit the same (part, model) leave the price to file order
+    and one copy unmaintained -- the a100-80 descriptor duplicates were this, with equal
+    values only by luck. Two entries of different methods are the design's own arrangement
+    (the dense Marlin MXFP8 ramp: a `transferred` pair beside the `assumed` bound it
+    displaces). Holds for every set, with no sweep."""
     seen: dict = {}
     clashes = []
     for setname, name, body in ENTRIES:
@@ -226,17 +302,18 @@ def test_every_name_resolves_to_one_entry_per_part_and_model():
         models = scope.get("model") or [None]
         for hw in scope.get("hardware", []):
             for m in (models if isinstance(models, list) else [models]):
-                key = (setname, name, hw, m)
+                key = (setname, name, hw, m, body["method"])
                 if key in seen:
                     clashes.append(key)
                 seen[key] = True
-    assert not clashes, f"names admitted twice for one part and model: {clashes}"
+    assert not clashes, f"names admitted twice for one part, model and method: {clashes}"
 
 
-def _single(name: str, chip: str, model: str | None = None) -> float:
+def _single(name: str, chip: str, model: str | None = None, method: str | None = None) -> float:
     hits = [b["value"] for _, n, b in ENTRIES
             if n == name and (b.get("scope") or {}).get("hardware") == [chip]
-            and (b.get("scope") or {}).get("model") == ([model] if model else None)]
+            and (b.get("scope") or {}).get("model") == ([model] if model else None)
+            and (method is None or b["method"] == method)]
     assert len(hits) == 1, f"expected one {name} on {chip} (model {model}), got {hits}"
     return hits[0]
 
@@ -274,11 +351,67 @@ def test_the_derived_deepseek_v41_entries_equal_what_they_are_derived_from(hw):
     bw = chip_facts(hw)["BwPeakTBs"] * 1e6
     assert _single("attention_decode_rate_block_index_scores", hw, m) == round(
         bw * _single("hbm_derate", hw))
-    assert _single("gemm_eps_max_w8a16_mxfp8", hw) == _single("gemm_eps_max_bf16", hw)
-    assert _single("gemm_m_half_w8a16_mxfp8", hw) == _single("gemm_m_half_bf16", hw)
+    assert _single("gemm_eps_max_w8a16_mxfp8", hw, method="assumed") == _single("gemm_eps_max_bf16", hw)
+    assert _single("gemm_m_half_w8a16_mxfp8", hw, method="assumed") == _single("gemm_m_half_bf16", hw)
     # The descriptor's nominal 64 GB/s x 128/130 x useful/fetched bytes. Deliberately not
     # host_link_bandwidth, which is the measured copy-engine payload rate (fit_host_link.py).
     assert _single("host_gather_rate_uva", hw) == round(64000.0 * 128 / 130 * (256 + 8) / (256 + 32))
+
+
+def _candidate_entries() -> list[tuple[str, dict]]:
+    path = REPO / "candidates" / "dense-marlin-mxfp8-transferred.yaml"
+    return [next(iter(e.items())) for e in yaml.safe_load(path.read_text())["coefficients"]]
+
+
+def test_the_dense_marlin_mxfp8_ramp_on_h200_is_the_parts_own_grouped_pair_and_says_it_is_transferred():
+    """The dense Marlin W8A16 MXFP8 GEMM has no sweep. Its `transferred` ramp (design 9.2, D5) is
+    the SAME part's measured grouped pair, never the other part's, never a number tuned to an
+    end-to-end residual; it names its source scope and rule, claims no kernel hash, and sits
+    beside the `assumed` BF16-envelope bound it displaces (VAL-4), which stays. Only h200 is
+    selected: h100 has no held-out unit (see the candidate test below)."""
+    hw = "h200"
+    for dense, grouped in (("gemm_eps_max_w8a16_mxfp8", "gemm_eps_max_w4a16_mxfp4_grouped"),
+                           ("gemm_m_half_w8a16_mxfp8", "gemm_m_half_w4a16_mxfp4_grouped")):
+        bodies = {b["method"]: b for _, n, b in ENTRIES
+                  if n == dense and (b.get("scope") or {}).get("hardware") == [hw]}
+        assert set(bodies) == {"assumed", "transferred"}, (dense, hw, sorted(bodies))
+        t = bodies["transferred"]
+        assert t["value"] == _single(grouped, hw, method="measured"), (dense, hw)
+        assert t["fitted"] is False and set(t["scope"]) == {"hardware"}
+        assert t["transferred_from"] == f"hardware={hw}" and t["transfer_rule"]
+        assert "kernel_impls" not in t and "measured_on" not in t and "ci95" not in t
+        assert t["value"] < bodies["assumed"]["value"] or dense.startswith("gemm_m_half")
+        assert "TRANSFERRED, NOT MEASURED" in t["rationale"]
+
+
+def test_h100_has_only_the_assumed_dense_marlin_mxfp8_bound_in_the_registry():
+    """h100 has no withheld series, so no verdict: its transferred pair is not selected, and the
+    registry the lookup reads holds only the assumed bound for it."""
+    for dense in ("gemm_eps_max_w8a16_mxfp8", "gemm_m_half_w8a16_mxfp8"):
+        methods = sorted(b["method"] for _, n, b in ENTRIES
+                         if n == dense and (b.get("scope") or {}).get("hardware") == ["h100"])
+        assert methods == ["assumed"], (dense, methods)
+
+
+def test_the_h100_candidate_pair_is_the_parts_own_grouped_pair_and_is_marked_not_selected():
+    """The candidate record keeps the h100 pair reproducible: the same rule, the same part's
+    own measured grouped values, and a statement that it is not selected."""
+    cands = _candidate_entries()
+    assert sorted(n for n, _ in cands) == ["gemm_eps_max_w8a16_mxfp8", "gemm_m_half_w8a16_mxfp8"]
+    for name, body in cands:
+        grouped = name.replace("_w8a16_mxfp8", "_w4a16_mxfp4_grouped")
+        assert body["method"] == "transferred" and body["scope"] == {"hardware": ["h100"]}
+        assert body["value"] == _single(grouped, "h100", method="measured"), name
+        assert "CANDIDATE, NOT SELECTED" in body["rationale"]
+
+
+def test_the_dense_marlin_transfer_writer_reproduces_the_active_and_the_candidate_file():
+    """`emit_marlin_dense_transfer.py --check` exits 0: the active h200 pair and the h100
+    candidate record both equal what the writer derives from the committed grouped entries."""
+    import subprocess, sys
+    r = subprocess.run([sys.executable, str(REPO / "scripts" / "emit_marlin_dense_transfer.py"),
+                        "--check"], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
 
 
 def test_the_v41_host_entries_re_derive_from_their_vendored_measurements():
@@ -494,7 +627,7 @@ def test_hardware_independent_sets_cover_every_catalog_part():
     # A MODEL-SCOPED term may be split across entries -- DeepSeek-V4.1's eager launch cost is
     # derived on h200 and copied to the other parts -- as long as together they cover every
     # part AND the split carries one value: every entry of the (set, name, model) has the
-    # same value, and any entry beyond the first is `copied` with copied_from naming a
+    # same value, and any entry beyond the first is `transferred` with transferred_from naming a
     # sibling's scope. A split may not smuggle in a per-part value.
     split: dict = {}
     for setname, name, body in ENTRIES:
@@ -536,17 +669,17 @@ def test_hardware_independent_sets_cover_every_catalog_part():
         assert len(values) == 1, (
             f"{setname}: {name} for {list(models)} is split across entries with values "
             f"{sorted(values)}; a host term has no per-part value, so a split must carry one.")
-        originals = [b for b in bodies if b.get("method") != "copied"]
+        originals = [b for b in bodies if b.get("method") != "transferred"]
         assert len(originals) == 1, (
             f"{setname}: {name} for {list(models)}: a split needs exactly one original entry "
-            f"and every other `copied`, found {len(originals)} originals.")
+            f"and every other `transferred`, found {len(originals)} originals.")
         orig = originals[0]["scope"].get("hardware", [])
         for b in bodies:
             if b is originals[0]:
                 continue
-            cf = b.get("copied_from", "")
+            cf = b.get("transferred_from", "")
             assert cf.startswith(f"hardware={','.join(orig)}"), (
-                f"{setname}: {name} for {list(models)}: copied_from {cf!r} does not name the "
+                f"{setname}: {name} for {list(models)}: transferred_from {cf!r} does not name the "
                 f"original entry's scope (hardware={','.join(orig)}).")
 
 
@@ -805,11 +938,85 @@ def test_emit_memory_keeps_the_capture_writers_entries():
     assert mod.keep_foreign(stripped) == text
 
 
-def test_the_h100_host_link_is_the_catalog_cpu_tier_fit_not_a_second_number():
-    """host_link_bandwidth caps a CPU tier's transfer rate (kernel TierTime), and blis-catalog's
-    cpu_dram is fitted to the same CollectiveX swap_blocks rows. The cap is that fit's larger
-    direction, so it never binds below a fitted tier rate and the two cannot drift apart."""
-    path = REPO.parent / "catalog" / "devices" / "storage.yaml"
-    tier = yaml.safe_load(path.read_text())["cpu_dram"]
+def test_the_h100_host_link_is_the_cpu_tier_fit_not_a_second_number():
+    """host_link_bandwidth caps a CPU tier's transfer rate (kernel TierTime), and the registry's
+    offload_tier_cpu_dram rates are fitted to the same CollectiveX swap_blocks rows. The cap is
+    that fit's larger direction, so it never binds below a tier rate and the two cannot drift
+    apart. (The tier rates left the catalog's storage.yaml for the registry, SUB-18.)"""
     assert _single("host_link_bandwidth", "h100") == max(
-        tier["read_bandwidth_mb_s"], tier["write_bandwidth_mb_s"])
+        _single("offload_tier_cpu_dram_read_rate", "h100"),
+        _single("offload_tier_cpu_dram_write_rate", "h100"))
+
+
+# --------------------------------------------------------------------------------------
+# VAL-7: single-model coefficients only go down
+# --------------------------------------------------------------------------------------
+
+# A coefficient scoped to one model marks a cost the cost model's general forms do not yet
+# explain. All 46 committed ones are for deepseek-v4.1-flash. Lower this number when a
+# general form absorbs some of them; never raise it to admit a new one -- add the missing
+# general form instead (design VAL-7).
+MAX_SINGLE_MODEL_ENTRIES = 46
+
+
+def single_model_entries(entries):
+    return [(s, n, tuple(b["scope"]["model"])) for s, n, b in entries
+            if len((b.get("scope") or {}).get("model") or []) == 1]
+
+
+def test_single_model_coefficients_only_go_down():
+    found = single_model_entries(ENTRIES)
+    assert len(found) <= MAX_SINGLE_MODEL_ENTRIES, (
+        f"{len(found)} coefficients are scoped to a single model, above the "
+        f"{MAX_SINGLE_MODEL_ENTRIES} committed. A single-model coefficient marks a cost the "
+        f"general forms do not explain; add the general form instead of another one.")
+    assert found, "no single-model entries found; the filter is wrong"
+
+
+def test_the_single_model_ratchet_counts_a_new_entry():
+    """X18: the ratchet must count an entry added beyond the committed set."""
+    extra = ENTRIES + [("s.yaml", "gemm_eps_max_bf16",
+                        {"scope": {"hardware": ["h200"], "model": ["some-other-model"]}})]
+    assert len(single_model_entries(extra)) == len(single_model_entries(ENTRIES)) + 1
+    assert len(single_model_entries(ENTRIES)) == MAX_SINGLE_MODEL_ENTRIES, (
+        "the committed count differs from the ratchet: lower MAX_SINGLE_MODEL_ENTRIES to match")
+
+
+# --------------------------------------------------------------------------------------
+# D5, VAL-8, VAL-9, VAL-10: evidence records on measured and calibrated entries
+# --------------------------------------------------------------------------------------
+
+# A measured or calibrated entry is fitted to data, so it records what the data were
+# (design D5, VAL-8, VAL-9, VAL-10): the kernel implementations it is valid for
+# (kernel_impls), what the number includes (measures), the range of inputs the fit covered
+# (fit_range) and its 95% interval (ci95). The fields exist and are checked wherever
+# they appear, but the fitting scripts do not yet write them: the hashes come from the
+# engine repositories' kernel_impls.json, and the ranges and intervals from the fits. Until
+# they do, each count below is the number of fitted entries that state none, and it may
+# only fall. Lower the constant when a fitter starts writing the field; never raise it.
+FITTED = [(s, n, b) for s, n, b in ENTRIES if b.get("method") in ("measured", "calibrated")]
+MAX_FITTED_WITHOUT = {"kernel_impls": 901, "measures": 901, "fit_range": 901, "ci95": 901}
+
+
+@pytest.mark.parametrize("field", sorted(MAX_FITTED_WITHOUT))
+def test_fitted_entries_without_an_evidence_record_only_go_down(field):
+    missing = [(s, n) for s, n, b in FITTED if not b.get(field)]
+    assert len(missing) <= MAX_FITTED_WITHOUT[field], (
+        f"{len(missing)} measured or calibrated entries state no {field}, above the "
+        f"{MAX_FITTED_WITHOUT[field]} committed. A new fitted entry records {field}.")
+    assert len(FITTED) == 901, f"{len(FITTED)} fitted entries; update the ratchets with it"
+
+
+def fitted_without(field, entries):
+    return [(s, n) for s, n, b in entries
+            if b.get("method") in ("measured", "calibrated") and not b.get(field)]
+
+
+def test_the_evidence_ratchet_counts_a_new_fitted_entry_with_no_record():
+    """X18: a fitted entry added without the record raises the count above the ratchet."""
+    new = ("s.yaml", "gemm_eps_max_bf16", {"method": "measured", "scope": {"hardware": ["h200"]}})
+    for field, committed in MAX_FITTED_WITHOUT.items():
+        assert len(fitted_without(field, ENTRIES + [new])) == len(fitted_without(field, ENTRIES)) + 1
+        assert len(fitted_without(field, ENTRIES)) == committed, (
+            f"the committed count of fitted entries without {field} differs from the ratchet: "
+            f"lower MAX_FITTED_WITHOUT[{field!r}] to match")

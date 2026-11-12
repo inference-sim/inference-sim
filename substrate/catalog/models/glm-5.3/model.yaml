@@ -7,3 +7,4 @@ source:
 licence:
   id: LicenseRef-glm-5.3
   evidence: https://huggingface.co/zai-org/GLM-5.3/raw/aca966e4e02791568aa6a4ced368624b3d897f42/README.md
+drafters: [speculator]

@@ -267,6 +267,8 @@ type Report struct {
 	LeftOut map[string][]int64 `yaml:"left_out"`
 	// ByFramework counts units per framework, so the vLLM share is visible.
 	ByFramework map[string]int `yaml:"units_by_framework"`
+	// Supplements counts the records each supplement added to the pinned revision's.
+	Supplements []SupplementReport `yaml:"supplements,omitempty"`
 }
 
 // Ingest turns rows into units and the ingest report. revision names the pinned source

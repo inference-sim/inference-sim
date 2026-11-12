@@ -37,14 +37,25 @@ Each chip and fabric file states its provenance in one field, `Provenance`. The 
 `derived`
 :   The figures are computed from vendor figures by other arithmetic. They are still declared and still unmeasured.
 
-The label applies to a whole file. The schema has no label for a figure that is neither of these, such as a capacity or SM count that a device reports, so a file holding one keeps the label that fits the rest of its figures and says which fields are exceptions in its comments. Every chip and fabric file is labeled `vendor_spec` today. Read a file's comments, not only its label, before relying on a figure. The [Chips](../reference/hardware.md#sources) and [Fabrics](../reference/networks.md#sources) references reproduce every comment.
+The label applies to a whole file: a field the file's `FieldProvenance` does not name has the source the label gives it, and the label has to be a source for a field. `vendor_spec` is: its figures are the datasheet's. `derived` is not, because it says how a figure was obtained and not where it was read, so a file labeled `derived` states a source for every fact it records. A field's source is one of three words, which `FieldProvenance` states by the field's name:
+
+`datasheet`
+:   The vendor's datasheet states the figure.
+
+`published`
+:   The vendor or another public source publishes the figure outside a datasheet: a blog, a device-properties dump, a conference disclosure.
+
+`measured:<device>`
+:   The figure was read off one named device, such as the total a driver reports. The device is named in the file's comments too, and a test fails if they disagree.
+
+A fitted or assumed value is none of these. It is a coefficient and belongs in the registry, and the schema refuses it here with that reason. The set of exceptions each chip records is pinned exactly by a test (`committedExceptions` in `contracts/spec/hardware`), so deleting or changing one fails it. Every chip and fabric file is labeled `vendor_spec` today. The [Chips](../reference/hardware.md#sources) and [Fabrics](../reference/networks.md#sources) references reproduce every comment.
 
 ## Where the catalog falls short of its rule
 
 The rule is the aim, and some current entries do not yet meet it. As of this release:
 
-- Every chip's peak rates and HBM bandwidth are vendor datasheet figures, but some memory capacities and SM counts are not. The capacities of `b300` and `gb300` are what `nvidia-smi` reports, and `b200` and `h200` record their datasheets' GB figure as GiB. The SM count of `b300` comes from a device-properties listing NVIDIA publishes. The SM count of `gb200-nvl72` rests on NVIDIA's die-level disclosure for B200. The SM count of `gb300` comes from a third party's record of what the device reports. No datasheet states any of these, and each chip's comments say which source applies.
-- The storage tiers are representative device classes chosen by the simulator's authors. They cite no source.
+- Every chip's peak rates and HBM bandwidth are vendor datasheet figures, but some memory capacities and SM counts are not, and each chip records which in `FieldProvenance`. The capacities of `b200`, `b300`, `gb200-nvl72`, `gb300`, `h100` and `h200` are what a named device's driver reports. The SM counts of `b300`, `gb200-nvl72` and `gb300` are what the device reports, taken from a published record of one named device. The SM counts of `a100-80`, `a100-sxm` and `b200` are published by NVIDIA outside a datasheet. The `MemoryGiB` of `a100-80`, `a100-sxm` and `l40s` is the datasheet's nominal capacity (80, 80 and 48) read as GiB; the CUDA driver reports less on the devices NVIDIA's published dumps cover (79.1 GiB for an A100-SXM4-80GB, 44.4 GiB for an L40S).
+- A storage tier states no number. Its rates and latency were fitted or chosen by the simulator's authors, so they are coefficients, and they are in the registry.
 - The workload shapes are presets chosen by the simulator's authors. They cite no trace or dataset. The replay workloads cite their corpus by repository, revision and digest.
 
 Each of these files says so in its own comments. A pull request that replaces one of these with a cited declared figure, or moves a chosen number to the registry, is welcome.

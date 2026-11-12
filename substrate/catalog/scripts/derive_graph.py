@@ -200,6 +200,9 @@ ATTENTION_WEIGHT_ROLES = (
     "kda_q_proj", "kda_k_proj", "kda_v_proj", "kda_b_proj",
     "kda_f_a_proj", "kda_f_b_proj", "kda_g_a_proj", "kda_g_b_proj", "kda_g_proj",
     "kda_o_proj",
+    # Kimi-K3.1's DSA layer builds the output gate as a projection of its own, and packs
+    # the A-projection with the indexer's wk and weights_proj into one GEMM.
+    "mla_g_proj", "qkv_a_wk_weights_proj",
 )
 
 
@@ -313,7 +316,9 @@ def fp8_unquantized_roles(cfg: dict[str, Any], raw: dict[str, Any], model: str,
         return {}
     if "fp8" not in str(quant.get("quant_method", "")).lower():
         return {}
-    excluded = quant.get("modules_to_not_convert")
+    # MiniMax-style checkpoints name the skipped modules in ignored_layers, which vLLM reads
+    # the same way (modelopt.py:1215-1235@v0.32.0); a list in both is read from the first.
+    excluded = quant.get("modules_to_not_convert") or quant.get("ignored_layers")
     if not excluded:
         return {}
     names = set(excluded)
@@ -370,7 +375,11 @@ def quantized_classes(cfg: dict[str, Any], model: str) -> dict[str, str]:
 
 # Architectures whose handler places each node's width under a ModelOpt quant_algo
 # checkpoint, reading the exclusion list per module (see weight_dtype()).
-MODELOPT_PER_NODE_ARCHS = frozenset({"MuseSparkForConditionalGeneration"})
+MODELOPT_PER_NODE_ARCHS = frozenset({
+    "MuseSparkForConditionalGeneration",
+    "KimiK25ForConditionalGeneration",
+    "MiniMaxM2ForCausalLM",
+})
 
 
 def modelopt_exclusions(quant: dict[str, Any]) -> list[str]:
@@ -405,6 +414,265 @@ def modelopt_excluded(prefix: str, patterns: list[str]) -> bool:
                for p in patterns)
 
 
+# The module names vLLM v0.32.0 builds for the architectures whose ModelOpt checkpoints this
+# deriver places node by node, and the graph role each one prices. A ModelOpt exclusion
+# pattern is matched against these names (is_layer_excluded), not against the names the
+# checkpoint stores its tensors under: MiniMax-M2 stores its MoE under "block_sparse_moe"
+# and vLLM builds it as "mlp" (minimax_m2.py:285-288), so a pattern naming
+# "block_sparse_moe.gate" reaches no module vLLM has.
+#
+#   layer     the decoder layer's prefix, "{i}" the layer index;
+#   head      the lm_head's prefix;
+#   roles     graph role -> module path under the layer;
+#   shared    module paths the experts node's shared experts add (their widths must agree
+#             with the routed experts', or one node cannot price both);
+#   prefix    the loader's orig_to_new_prefix renames, which ModelOpt applies to the
+#             exclusion list (apply_vllm_mapper) as the loader applies it to tensor names;
+#   stacked   the loader's orig_to_new_stacked renames (the same).
+MODELOPT_MODULES: dict[str, dict[str, Any]] = {
+    # The text decoder of a vision-language model is a DeepseekV2ForCausalLM under the
+    # prefix "language_model" (kimi_k25.py:376-381@v0.32.0); the legacy NVFP4 spelling
+    # "language_model.layers." is renamed to "language_model.model.layers." (:311-318). The
+    # latent attention is one module (deepseek_v2.py:1052-1110), a dense layer's MLP is
+    # "mlp" and a sparse layer's experts "mlp.experts" with the shared experts at
+    # "mlp.shared_experts" (DeepseekV2MoE, :291-390). The router is a GateLinear built
+    # without a quant config (:321-326), so it is not a node.
+    "KimiK25ForConditionalGeneration": {
+        "layer": "language_model.model.layers.{i}.",
+        "head": "language_model.lm_head",
+        "roles": {
+            "qkv_a_proj": "self_attn.fused_qkv_a_proj",
+            "q_a_proj": "self_attn.fused_qkv_a_proj",
+            "kv_a_proj": "self_attn.kv_a_proj_with_mqa",
+            "q_b_proj": "self_attn.q_b_proj",
+            "q_proj": "self_attn.q_proj",
+            "kv_b_proj": "self_attn.kv_b_proj",
+            "o_proj": "self_attn.o_proj",
+            "mlp_gate_up": "mlp.gate_up_proj",
+            "mlp_down": "mlp.down_proj",
+            "experts": "mlp.experts",
+        },
+        "shared": ("mlp.shared_experts.gate_up_proj", "mlp.shared_experts.down_proj"),
+        "prefix": {"language_model.layers.": "language_model.model.layers."},
+        "stacked": {},
+    },
+    # MiniMaxM2ForCausalLM: attention is self_attn.qkv_proj and o_proj, the MoE is built
+    # as "mlp" (minimax_m2.py:249-288) whatever the checkpoint calls it, its experts a
+    # FusedMoE at ".experts" and its router a GateLinear with no quant config (:110-117).
+    "MiniMaxM2ForCausalLM": {
+        "layer": "model.layers.{i}.",
+        "head": "lm_head",
+        "roles": {
+            "qkv_proj": "self_attn.qkv_proj",
+            "o_proj": "self_attn.o_proj",
+            "experts": "mlp.experts",
+        },
+        "shared": (),
+        "prefix": {},
+        "stacked": {".q_proj": ".qkv_proj", ".k_proj": ".qkv_proj",
+                    ".v_proj": ".qkv_proj"},
+    },
+}
+
+
+def expand_stack(stack: dict[str, Any]) -> list[str]:
+    """The layer-kind id of every layer, in order."""
+    return (list(stack.get("prologue", [])) + list(stack.get("pattern", []))
+            * int(stack.get("repeat", 0)) + list(stack.get("epilogue", [])))
+
+
+def modelopt_config_exclusions(quant: dict[str, Any], model: str) -> tuple[str, list[str]]:
+    """The quant_algo and exclusion list vLLM v0.32.0 reads from a ModelOpt block that
+    config.json carries, and a refusal for a block it would read differently.
+
+    from_config takes the form with a "quantization" mapping (hf_quant_config.json's) from
+    its exclude_modules, and the config.json form from `ignore` alone
+    (ModelOptQuantConfigBase.from_config, modelopt.py:320-406@v0.32.0). A config.json block
+    that names `exclude_modules` and no `ignore` therefore quantizes every module there,
+    where a vLLM that also reads `exclude_modules` (vllm-project/vllm 0f6b2619) leaves the
+    named ones alone: the same file prices two ways, so it is refused."""
+    if "quantization" in quant:
+        inner = quant["quantization"]
+        if not isinstance(inner, dict):
+            raise DeriveError(f"{model}: quantization_config.quantization is not a mapping")
+        algo, listed = inner.get("quant_algo"), inner.get("exclude_modules", [])
+    else:
+        algo, listed = quant.get("quant_algo"), quant.get("ignore", [])
+        if "exclude_modules" in quant and "ignore" not in quant:
+            raise DeriveError(
+                f"{model}: the ModelOpt block names exclude_modules and no `ignore`; "
+                f"vLLM v0.32.0 reads `ignore` alone from config.json and so quantizes every "
+                f"module, where a later vLLM reads exclude_modules too -- one file, two "
+                f"layouts, so it is not priced")
+    if not algo:
+        raise DeriveError(f"{model}: the ModelOpt block states no quant_algo, which vLLM "
+                          f"refuses")
+    if not isinstance(listed, list) or not all(isinstance(p, str) for p in listed):
+        raise DeriveError(f"{model}: ModelOpt exclusion list {listed!r} is not a list of "
+                          f"names")
+    return str(algo).upper(), listed
+
+
+def modelopt_placed_width(raw: dict[str, Any], model: str, arch: str) -> tuple[str, Any]:
+    """The width a ModelOpt checkpoint's quantized modules store, and a predicate
+    `quantized(prefix)` that answers for a module vLLM names `prefix`.
+
+    The predicate is vLLM's: a module the exclusion list names (is_layer_excluded) stays
+    unquantized, every other linear and every FusedMoE is quantized
+    (ModelOptQuantConfigBase.get_quant_method, modelopt.py:224-262@v0.32.0). Only a
+    uniform NVFP4 layout is read. MIXED_PRECISION chooses the algorithm per layer from a
+    `quantized_layers` map and is not placed here."""
+    quant = raw.get("quantization_config") or {}
+    if str(quant.get("quant_method", "")).lower() != "modelopt":
+        raise DeriveError(f"{model}: quant_method {quant.get('quant_method')!r}; this "
+                          f"handler reads ModelOpt's layout")
+    algo, listed = modelopt_config_exclusions(quant, model)
+    if algo == "MIXED_PRECISION":
+        raise DeriveError(
+            f"{model}: quant_algo MIXED_PRECISION picks the algorithm per layer from a "
+            f"quantized_layers map, which this handler does not place; only a uniform "
+            f"NVFP4 layout is priced")
+    width = QUANT_ALGOS.get(algo)
+    if width is None:
+        raise DeriveError(f"{model}: ModelOpt quant_algo {algo!r} is not one this deriver "
+                          f"maps")
+    if width != "nvfp4":
+        raise DeriveError(f"{model}: ModelOpt quant_algo {algo!r} is {width}; only the "
+                          f"NVFP4 layout is placed node by node")
+    # NVFP4 shares an FP8 scale over 16 elements; another group would store other bytes.
+    groups = [(g or {}).get("weights") or {}
+              for g in (quant.get("config_groups") or {}).values()]
+    if any(w.get("group_size") not in (None, 16) for w in groups):
+        raise DeriveError(f"{model}: an NVFP4 weight group of "
+                          f"{sorted({w.get('group_size') for w in groups})}, not 16")
+    spec = MODELOPT_MODULES[arch]
+    patterns = []
+    for p in listed:
+        # The loader's renames reach the list in the order it applies them to a name:
+        # stacked, then prefix (WeightsMapper._map_name_with_shard).
+        for old, new in spec["stacked"].items():
+            if old in p:
+                p = p.replace(old, new, 1)
+        for old, new in spec["prefix"].items():
+            if p.startswith(old):
+                p = p.replace(old, new, 1)
+        patterns.append(p)
+    excluded = modelopt_exclusions({"ignore": patterns})
+    return width, lambda prefix: not modelopt_excluded(prefix, excluded)
+
+
+def modelopt_place_widths(kinds: list[dict[str, Any]], stack: dict[str, Any],
+                          raw: dict[str, Any], model: str) -> list[dict[str, Any]]:
+    """Give each weight node of a ModelOpt checkpoint the width vLLM stores it at.
+
+    The global width stays the base dtype and a quantized node carries the quantized one,
+    as the node-by-node placement of Muse Spark does. Every layer a kind covers is asked,
+    and a role the list quantizes on some of those layers and not on others is refused:
+    one node cannot price both (a wildcard that excludes a role on some layers only needs
+    a layer kind per outcome, which no committed checkpoint states)."""
+    arch = architecture_of(raw, model)
+    spec = MODELOPT_MODULES[arch]
+    width, quantized = modelopt_placed_width(raw, model, arch)
+    if quantized(spec["head"]):
+        raise DeriveError(f"{model}: the ModelOpt list leaves {spec['head']} quantized; "
+                          f"the head is priced at the base width")
+    layers_of: dict[str, list[int]] = {}
+    for i, kid in enumerate(expand_stack(stack)):
+        layers_of.setdefault(kid, []).append(i)
+    out = []
+    for kind in kinds:
+        idx = layers_of.get(kind["id"], [])
+        nodes = []
+        for node in kind["nodes"]:
+            role = node.get("role")
+            if node["op"] not in ("GEMM", "GroupedGEMM") or not idx:
+                nodes.append(node)
+                continue
+            if role not in spec["roles"]:
+                raise DeriveError(f"{model}: {arch} has no recorded vLLM module for the "
+                                  f"{role!r} node, so the ModelOpt list cannot place it")
+            paths = [spec["roles"][role]]
+            if role == "experts" and node.get("shared_experts"):
+                paths += list(spec["shared"])
+            answers = {}
+            for path in paths:
+                answers[path] = {i: quantized(spec["layer"].format(i=i) + path) for i in idx}
+            flat = {a for per in answers.values() for a in per.values()}
+            if len(flat) != 1:
+                where = {p: sorted(i for i, a in per.items() if a)
+                         for p, per in answers.items()}
+                raise DeriveError(
+                    f"{model}: layer kind {kind['id']!r} runs {role!r} quantized on some "
+                    f"of its layers and not others (quantized layers by module: {where}); "
+                    f"one node cannot price both")
+            if flat == {True}:
+                node = dict(node, weight_dtype=width)
+            nodes.append(node)
+        out.append(dict(kind, nodes=nodes))
+    return out
+
+
+# Kimi-K3 and K3.1 ship compressed-tensors `mxfp4-pack-quantized` and name every Linear as a
+# target, but vLLM rewrites such a block to quant_method "mxfp4" before the model is built
+# (KimiK3ForConditionalGenerationConfig, model_executor/models/config.py:414-446@v0.32.0), and
+# the MXFP4 config quantizes a FusedMoE's routed experts only: every linear layer gets
+# UnquantizedLinearMethod (Mxfp4Config.get_quant_method, quantization/mxfp4.py:91-113). So the
+# attention and KDA projections, the dense MLP, the shared experts, the latent projections and
+# the head are all BF16 in memory, which the checkpoints' safetensors headers also show: only
+# the routed experts' w1/w2/w3 are stored as packed U8.
+KIMI_K3_ARCHS = frozenset({"KimiK3ForConditionalGeneration",
+                           "KimiK31ForConditionalGeneration"})
+
+
+def kimi_k3_expert_width(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> str:
+    """The width of a Kimi-K3 family checkpoint's routed experts: MXFP4 where the block is
+    the one vLLM rewrites to its MXFP4 config, a refusal where it is not (any other block
+    stays a compressed-tensors config, which quantizes the linears its ignore list does not
+    name, and this handler places no such width)."""
+    quant = cfg.get("quantization_config") or raw.get("quantization_config") or {}
+    if (str(quant.get("quant_method", "")).lower() != "compressed-tensors"
+            or quant.get("format") != "mxfp4-pack-quantized"):
+        raise DeriveError(
+            f"{model}: the quantization block is not compressed-tensors "
+            f"mxfp4-pack-quantized, the one vLLM rewrites to its experts-only MXFP4 config; "
+            f"another block quantizes by its own ignore list, which this handler does not place")
+    return "mxfp4"
+
+
+def kimi_k3_place_widths(kinds: list[dict[str, Any]], cfg: dict[str, Any],
+                         raw: dict[str, Any], model: str) -> list[dict[str, Any]]:
+    """Give the routed experts their width and the shared experts the base one.
+
+    The shared experts are a KimiMLP built with the quant config (model.py:627-641) and so
+    unquantized, where the routed experts' FusedMoE is MXFP4; one node cannot price both, so
+    the shared half becomes a node of its own at the base width, running at the full hidden
+    size on the pre-projection states."""
+    width = kimi_k3_expert_width(cfg, raw, model)
+    base = base_dtype(cfg, raw, model)
+    out = []
+    for kind in kinds:
+        nodes = []
+        for node in kind["nodes"]:
+            if node.get("op") == "GroupedGEMM" and node.get("role") == "experts":
+                routed = dict(node, weight_dtype=width)
+                if node.get("shared_experts"):
+                    count = int(node["shared_experts"])
+                    routed.pop("shared_experts")
+                    routed.pop("shared_intermediate_size", None)
+                    nodes.append(routed)
+                    nodes.append({
+                        "op": "GroupedGEMM", "shared": True, "role": "shared_experts",
+                        "n": int(node.get("shared_intermediate_size") or node["n"]),
+                        "k": node["k"], "experts": count, "top_k": count,
+                        "weight_dtype": base,
+                    })
+                    continue
+                node = routed
+            nodes.append(node)
+        out.append(dict(kind, nodes=nodes, edges=chain(nodes)))
+    return out
+
+
 def weight_dtype(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> str:
     """Return the graph's dtype name for the model's parameters.
 
@@ -413,6 +681,20 @@ def weight_dtype(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> str:
     per parameter would overstate both occupancy and decode-time traffic."""
     quant = raw.get("quantization_config") or cfg.get("quantization_config") or {}
     if isinstance(quant, dict) and quant:
+        # Kimi-K3's family quantizes its routed experts and nothing else, whatever the
+        # block's Linear target says (see kimi_k3_expert_width); the experts carry the
+        # narrow width and the global one is the base.
+        if architecture_of(raw, model) in KIMI_K3_ARCHS:
+            kimi_k3_expert_width(cfg, raw, model)
+            return base_dtype(cfg, raw, model)
+        # MiniMax-M3's MIXED_PRECISION checkpoint: MXFP8 on every linear and NVFP4 on the
+        # routed experts. Its linears are the global width and the experts carry the narrow
+        # one (minimax_m3_mixed_precision), so this is answered before the generic map below,
+        # which would read the same map as Nemotron's and make the global width the base.
+        if architecture_of(raw, model) in MINIMAX_M3_ARCHS:
+            mixed = minimax_m3_mixed_precision(cfg, raw, model)
+            if mixed:
+                return mixed["linear"]
         # A checkpoint that enumerates its quantized tensors states a layout rather than
         # a width. The base dtype stays global and the per-tensor widths ride on the
         # nodes they apply to, so the tensors the map IGNORES keep the base.
@@ -424,10 +706,11 @@ def weight_dtype(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> str:
         # ModelOpt states its format as quant_algo beside quant_method "modelopt" and
         # quantizes every module its exclusion list does not name (modelopt_exclusions).
         # Which modules those are is a question about the architecture's module tree, so
-        # one global width is right only where a handler answers it node by node. Muse
-        # Spark's does: its global width is the base, and it carries NVFP4 on the expert
-        # nodes the list leaves quantized. Any other architecture is refused, as it was
-        # before that handler existed, rather than priced at the base throughout.
+        # one global width is right only where a handler answers it node by node
+        # (MODELOPT_PER_NODE_ARCHS). Muse Spark's, Kimi-K2.5's and MiniMax-M2's do: the
+        # global width is the base, and each node carries NVFP4 where the list leaves its
+        # module quantized. Any other architecture is refused rather than priced at the
+        # base throughout.
         if fmt == "modelopt" and quant.get("quant_algo"):
             algo = QUANT_ALGOS.get(str(quant["quant_algo"]).upper())
             if algo is None:
@@ -569,6 +852,34 @@ def int_group_scale(cfg: dict[str, Any], raw: dict[str, Any],
         raise DeriveError(f"{model}: integer weight groups state group sizes "
                           f"{sorted(sizes)}; one resident scale layout cannot hold them")
     return {"elements": sizes.pop(), "bytes": DTYPE_WIDTHS[base_dtype(cfg, raw, model)]}
+
+
+def mxfp8_scale(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> dict[str, int] | None:
+    """The resident scale of an MXFP8 checkpoint, or None.
+
+    MiniMax's `quant_method: mxfp8` checkpoints are read as ModelOpt MXFP8 (ModelOptMxFp8Config,
+    vllm/model_executor/layers/quantization/modelopt.py:1215-1222@v0.32.0): E4M3 weights with a
+    per-32-block E8M0 scale ("MXFP8: e4m3 weights with per-32-block e8m0 scales", :150;
+    MXFP8_BLOCK_SIZE 32 and MXFP8_SCALE_DTYPE uint8, utils/mxfp8_utils.py:10-11). DType.Bytes
+    is payload alone and fp8 defines no scale layout of its own, so without this the graph
+    leaves out one byte in 32 of every fp8 weight, 3.1% (the checkpoint's `weight_scale_inv`
+    tensors are U8 [rows, columns / 32]). A block other than 1 x 32 is refused, as is a scale
+    layout the config does not state."""
+    quant = raw.get("quantization_config") or cfg.get("quantization_config") or {}
+    if (architecture_of(raw, model) in MINIMAX_M3_ARCHS
+            and minimax_m3_mixed_precision(cfg, raw, model)):
+        # Every linear of the mixed-precision checkpoint is MXFP8 (ModelOptMxFp8Config, the
+        # method ModelOptMixedPrecisionConfig builds for the algorithm; its linear method
+        # allocates a scale of input_size / MXFP8_BLOCK_SIZE per row, modelopt.py:2279-2326);
+        # the pinned headers store them F8_E4M3 with a U8 scale of columns / 32.
+        return {"elements": 32, "bytes": 1}
+    if str(quant.get("quant_method", "")).lower() != "mxfp8":
+        return None
+    block = quant.get("weight_block_size")
+    if block != [1, 32]:
+        raise DeriveError(f"{model}: an mxfp8 checkpoint states weight_block_size {block!r}; "
+                          f"MXFP8 is a 1 x 32 block with one E8M0 scale byte")
+    return {"elements": 32, "bytes": 1}
 
 
 def base_dtype(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> str:
@@ -865,7 +1176,8 @@ def moe(cfg: dict[str, Any], model: str, hidden: int) -> dict[str, Any]:
     return node
 
 
-def moe_block(cfg: dict[str, Any], model: str, hidden: int) -> list[dict[str, Any]]:
+def moe_block(cfg: dict[str, Any], model: str, hidden: int, *, routed_width: str | None = None,
+              shared_width: str | None = None) -> list[dict[str, Any]]:
     """The routed expert layer: its latent projections, where it has them, and the
     grouped GEMM.
 
@@ -880,6 +1192,10 @@ def moe_block(cfg: dict[str, Any], model: str, hidden: int) -> list[dict[str, An
     `self.shared_experts(identity)` after the up-projection -- so neither is affected by
     the latent width, which is why shared_intermediate_size stays as moe() states it."""
     node = moe(cfg, model, hidden)
+    # A handler that reads the checkpoint's own layout states the routed width, and the shared
+    # expert's where it differs (MiniMax-M3.1: NVFP4 routed experts beside MXFP8 shared ones).
+    if routed_width:
+        node["weight_dtype"] = routed_width
     nodes = [node]
 
     # A shared expert stored at a DIFFERENT width from the routed ones cannot ride on
@@ -888,7 +1204,7 @@ def moe_block(cfg: dict[str, Any], model: str, hidden: int) -> list[dict[str, An
     # experts NVFP4, shared experts FP8 -- so the shared half becomes its own node and
     # the routed node stops claiming it.
     classes = quantized_classes(cfg, model)
-    shared_width = classes.get("shared_experts")
+    shared_width = shared_width or classes.get("shared_experts")
     if shared_width and shared_width != node.get("weight_dtype") and node.get(
             "shared_experts"):
         inner = int(node.get("shared_intermediate_size") or node["n"])
@@ -954,6 +1270,9 @@ DRAFT_KIND_ID = "mtp_moe"
 # effect of this entry. Until they are, each understates its head by vocab x hidden bytes.
 HEAD_UNQUANTIZED = {
     "Glm5NextForConditionalGeneration": {"lm_head": "lm_head"},
+    # MiniMax-M3-MXFP8 lists lm_head in ignored_layers, and its header holds it BF16
+    # ([200064, 6144]) beside the F8_E4M3 decoder tensors.
+    "MiniMaxM3SparseForConditionalGeneration": {"lm_head": "lm_head"},
 }
 
 
@@ -1120,11 +1439,18 @@ MLA_LAYOUTS = {
                              "fused_index_norm": True},
     "DeepseekV4ForCausalLM": {"fused_a": True, "fused_norm": True},
     "KimiK3ForConditionalGeneration": {"fused_a": True, "fused_norm": True},
+    # K3.1's DSA layers fold the indexer's key norm into its cache insert (see
+    # kimi_k31_dsa_attention), so its width joins the fused latent norm's.
+    "KimiK31ForConditionalGeneration": {"fused_a": True, "fused_norm": True,
+                                        "fused_index_norm": True},
     # kimi-k3's text_config names KimiLinearForCausalLM while the outer config names
     # KimiK3ForConditionalGeneration; both resolve to vllm.models.kimi_k3, so both map
     # here rather than relying on which view the lookup happens to read.
     "KimiLinearForCausalLM": {"fused_a": True, "fused_norm": True},
     "Glm5NextForConditionalGeneration": {"fused_a": True, "fused_norm": True},
+    # The K3 DSpark draft layer is Kimi-K3's own MultiHeadLatentAttention
+    # (dspark_mla.py:73-92), so it fuses the two latent norms the same way.
+    "K3DSparkModel": {"fused_a": True, "fused_norm": True},
     # kimi-k2.5 takes the DeepseekV2MLAAttention shape: its text_config declares
     # DeepseekV3ForCausalLM, the registry sends that to deepseek_v2 (registry.py:90),
     # and KimiK25ForConditionalGeneration initializes its text decoder through
@@ -1837,7 +2163,24 @@ def handler_minimax_m2(cfg, raw, model):
                 f"a uniform stack; a mixed one needs its kinds named and priced rather "
                 f"than collapsed to one"
             )
-    return handler_moe(cfg, raw, model)
+    result = handler_moe(cfg, raw, model)
+    return modelopt_placed(result, raw, model)
+
+
+def modelopt_placed(result, raw, model):
+    """A handler result with the widths a ModelOpt checkpoint stores, or the result as it
+    is for a checkpoint that is not ModelOpt."""
+    quant = raw.get("quantization_config") or {}
+    if str(quant.get("quant_method", "")).lower() != "modelopt":
+        return result
+    kinds = modelopt_place_widths(result[0], result[1], raw, model)
+    return (kinds, *result[1:])
+
+
+def handler_kimi_k25(cfg, raw, model):
+    """Kimi-K2.5: the DeepSeek family's latent attention and routed experts under a vision
+    tower, priced by handler_moe, with a ModelOpt checkpoint's widths placed node by node."""
+    return modelopt_placed(handler_moe(cfg, raw, model), raw, model)
 
 
 # DeepSeek-V4's KV record, the same on SM90 and SM100: 448 FP8 NoPE dims, 64 BF16 RoPE
@@ -1852,6 +2195,69 @@ DSV4_PAGE_ALIGNMENT = 576
 # 260-262), and the engine sizes its block from the backends' common size
 # (platforms/interface.py:616-697), so a page holds 64 entries at ratio 4 and 2 at 128.
 DSV4_SPARSE_BLOCK_TOKENS = 256
+
+
+def v4_expert_width(raw: dict[str, Any], cfg: dict[str, Any], by_expert_dtype: str,
+                    model: str) -> tuple[str, str]:
+    """The routed experts' stored width in a DeepSeek-V4 checkpoint.
+
+    vLLM's DeepseekV4FP8Config.get_quant_method (models/deepseek_v4/quant_config.py:
+    181-199@v0.32.0) picks the expert method from expert_dtype and, for expert_dtype "fp4",
+    from quantization_config.moe_quant_algo: "NVFP4" gives ModelOptNvFp4FusedMoE (NVFP4,
+    16-element groups), anything else Mxfp4MoEMethod. The linear and attention layers are
+    FP8 block either way. So a ModelOpt NVFP4 export of the expert tensors states
+    expert_dtype "fp4" beside moe_quant_algo "NVFP4", and reading expert_dtype alone prices
+    its experts at MXFP4. An algorithm vLLM would read as MXFP4 but the config names
+    otherwise is refused, as is NVFP4 on an expert_dtype vLLM does not dispatch it for.
+
+    Returns the width of the main layers' experts and of the MTP draft's. The NVFP4 export
+    leaves the MTP experts as the original checkpoint stores them: its `ignore` list names
+    `mtp.*`, its `quantized_layers` map holds no `mtp` entry, and the header of
+    nvidia/DeepSeek-V4-Pro-NVFP4 at 1449d1e6 stores `mtp.0.ffn.experts.0.w1.weight` as I8
+    [3072, 3584] with an F8_E8M0 `scale` [3072, 224] (MXFP4, one scale per 32), where
+    `layers.5.ffn.experts.0.w1.weight` is U8 with an F8_E4M3 `weight_scale` (NVFP4)."""
+    quant = raw_quant(cfg, model) or raw_quant(raw, model)
+    algo = str(quant.get("moe_quant_algo") or "").upper()
+    if not algo:
+        return by_expert_dtype, by_expert_dtype
+    if algo != "NVFP4":
+        raise DeriveError(f"{model}: moe_quant_algo {algo!r}; vLLM reads only NVFP4 here and "
+                          f"would price anything else as MXFP4 experts, which this deriver "
+                          f"does not assume")
+    if str(cfg.get("expert_dtype")) != "fp4":
+        raise DeriveError(f"{model}: moe_quant_algo NVFP4 with expert_dtype "
+                          f"{cfg.get('expert_dtype')!r}; vLLM dispatches NVFP4 experts only "
+                          f"for expert_dtype fp4")
+    layers = quant.get("quantized_layers")
+    if isinstance(layers, dict):
+        algos = {str((v or {}).get("quant_algo", "")).upper() for v in layers.values()}
+        if algos != {"NVFP4"}:
+            raise DeriveError(f"{model}: quantized_layers names {sorted(algos)}, but the experts "
+                              f"are priced at one width")
+        mtp_quantized = any(str(k).startswith("mtp") for k in layers)
+    else:
+        mtp_quantized = not modelopt_excluded("mtp.0.ffn.experts", modelopt_exclusions(quant))
+    return "nvfp4", ("nvfp4" if mtp_quantized else by_expert_dtype)
+
+
+# The DSpark draft of a DeepSeek-V4 checkpoint (DSparkDeepseekV4ForCausalLM,
+# models/deepseek_v4/nvidia/dspark.py@v0.32.0) builds `getattr(config, "n_mtp_layers", None)
+# or 3` decoder layers (:110), and the config names no n_mtp_layers; the checkpoint's
+# mtp.0 to mtp.2 are those three. Of the keys the config states, the draft reads
+# dspark_target_layer_ids (:109), dspark_markov_rank (:173-178) and, through the shared
+# speculator, dspark_block_size (config/speculative.py:1481-1490) and dspark_noise_token_id
+# (v1/worker/gpu/spec_decode/utils.py:92-114).
+V4_DSPARK_LAYERS = 3
+V4_DSPARK_KEYS = ("dspark_block_size", "dspark_markov_rank", "dspark_noise_token_id",
+                  "dspark_target_layer_ids")
+# Keys the draft or its speculator reads when present, each changing what the draft is:
+# the layer count (:110), a reduced draft vocabulary (:170-172), the confidence head
+# (:180), the sampling anchor (dspark/speculator.py:49), a reduced-vocabulary top-k
+# (:78), and the mask-token sources that take precedence over dspark_noise_token_id
+# (utils.py:99-109). A config that states one is a draft this handler has not read.
+V4_DSPARK_OVERRIDES = ("n_mtp_layers", "draft_vocab_size", "enable_confidence_head",
+                       "sample_from_anchor", "dflash_config", "mask_token_id",
+                       "pard_token", "ptd_token_id")
 
 
 def handler_deepseek_v4(cfg, raw, model):
@@ -1972,12 +2378,36 @@ def handler_deepseek_v4(cfg, raw, model):
         # (nvidia/mtp.py:267, 281; config/speculative.py:1487-1495).
         raise DeriveError(f"{model}: num_nextn_predict_layers is {spec_layers}; V4's "
                           f"MTP builds one draft layer")
-    if len(ratios) not in (layers, layers + spec_layers):
+    # A config that states any dspark_* key is a DSpark checkpoint: its mtp.* tensors are
+    # DSpark stages (main_proj, markov_head, confidence_head) and carry no e_proj or h_proj,
+    # so the MTP draft cannot load from them and the speculator is DSpark. Every key the
+    # draft reads is stated, and any key it would read that is not, is refused.
+    dspark_stated = sorted(k for k in cfg if k.startswith("dspark_"))
+    dspark = bool(dspark_stated)
+    if dspark:
+        missing = [k for k in V4_DSPARK_KEYS if k not in cfg]
+        unread = sorted(set(dspark_stated) - set(V4_DSPARK_KEYS))
+        overriding = [k for k in V4_DSPARK_OVERRIDES if k in cfg]
+        if missing:
+            raise DeriveError(f"{model}: a DSpark draft needs {missing}, which the config "
+                              f"does not state")
+        if unread:
+            raise DeriveError(f"{model}: the config states {unread}, which the DSpark draft "
+                              f"reads and this handler does not")
+        if overriding:
+            raise DeriveError(f"{model}: the config states {overriding}, each of which "
+                              f"changes the DSpark draft this handler prices")
+    draft_stages = V4_DSPARK_LAYERS if dspark else spec_layers
+    if len(ratios) != layers + draft_stages and (dspark or len(ratios) != layers):
         raise DeriveError(
             f"{model}: compress_ratios has {len(ratios)} entries for {layers} layers and "
-            f"{spec_layers} draft layers")
-    # The draft layer's entry is never read: any layer id at or past num_hidden_layers
-    # takes ratio 1 (attention.py:232-235).
+            f"{draft_stages} draft layers")
+    # The draft layers' entries are never read: any layer id at or past num_hidden_layers
+    # takes ratio 1 (attention.py:232-235). A DSpark checkpoint states them as 0, and an
+    # entry that says otherwise is a statement the engine ignores.
+    if dspark and any(ratios[layers:]):
+        raise DeriveError(f"{model}: compress_ratios gives the draft layers {ratios[layers:]}; "
+                          f"the engine reads none of them and the published form is 0")
     ratios = ratios[:layers]
     unknown = sorted(set(ratios) - {4, 128})
     if unknown:
@@ -2003,6 +2433,23 @@ def handler_deepseek_v4(cfg, raw, model):
     index_heads = positive("index_n_heads")
     index_dim = positive("index_head_dim")
     hc_mult = positive("hc_mult")
+    draft_block = markov = 0
+    targets: list[int] = []
+    if dspark:
+        draft_block = positive("dspark_block_size")
+        markov = positive("dspark_markov_rank")
+        noise = whole(cfg["dspark_noise_token_id"], "dspark_noise_token_id")
+        if not 0 <= noise < positive("vocab_size", concept=True):
+            raise DeriveError(f"{model}: dspark_noise_token_id {noise} is outside the "
+                              f"vocabulary")
+        # main_proj takes one hidden-wide state per target layer, so the ids are checked
+        # as layers of this stack, not just counted (dspark.py:109, 119-126).
+        targets = [whole(i, "an entry of dspark_target_layer_ids")
+                   for i in require_key(cfg, "dspark_target_layer_ids", model)]
+        if (not targets or len(set(targets)) != len(targets)
+                or any(not 0 <= i < layers for i in targets)):
+            raise DeriveError(f"{model}: dspark_target_layer_ids {targets} must be distinct "
+                              f"layers of the target's {layers}")
     if (q_heads * total_dim) % o_groups:
         raise DeriveError(
             f"{model}: o_groups {o_groups} does not divide {q_heads * total_dim}")
@@ -2163,8 +2610,10 @@ def handler_deepseek_v4(cfg, raw, model):
     def state_rows(state_window, block):
         # The rows a decoding request holds of a sliding-window state: cdiv(window - 1
         # + tokens in flight, block) + 1 pages (v1/kv_cache_interface.py:840-866), with
-        # 1 + num_spec_tokens tokens in flight.
-        in_flight = 1 + spec_layers
+        # 1 + num_spec_tokens tokens in flight, which for DSpark is its block
+        # (config/speculative.py:1481-1490 defaults num_speculative_tokens to
+        # dspark_block_size).
+        in_flight = 1 + (draft_block if dspark else spec_layers)
         return (-(-(state_window - 1 + in_flight) // block) + 1) * block
 
     def compressor(ratio):
@@ -2249,12 +2698,12 @@ def handler_deepseek_v4(cfg, raw, model):
         ]
         return nodes
 
-    def main_attention(ratio, extra_caches):
+    def main_attention(ratio, extra_caches, read_window=None):
         node = attention(
             cfg, model,
             kind="sparse_mla",
             latent_width=total_dim,
-            window=window,
+            window=read_window or window,
             compress_ratio=ratio if ratio > 1 else None,
             index_topk=topk if ratio == 4 else None,
         )
@@ -2278,9 +2727,10 @@ def handler_deepseek_v4(cfg, raw, model):
     if expert_width is None:
         raise DeriveError(f"{model}: expert_dtype {cfg.get('expert_dtype')!r} is not one "
                           f"this deriver maps")
+    expert_width, draft_expert_width = v4_expert_width(raw, cfg, expert_width, model)
     vocab = positive("vocab_size", concept=True)
 
-    def ffn(hashed):
+    def ffn(hashed, draft=False):
         nodes = [
             *mhc_boundary("ffn"),
             # The gate GEMM runs on every layer, hash layers included: the hash table
@@ -2302,7 +2752,7 @@ def handler_deepseek_v4(cfg, raw, model):
             *token_sharded({"op": "GroupedGEMM", "shared": False, "role": "experts",
                             "n": positive("moe_ffn_size", concept=True), "k": hidden,
                             "experts": experts, "top_k": top_k,
-                            "weight_dtype": expert_width},
+                            "weight_dtype": draft_expert_width if draft else expert_width},
                            # The shared expert is a dense FP8 MLP, DeepseekV4MLP: a
                            # merged gate/up column-parallel linear and a row-parallel
                            # down, TP-split normally and whole on every rank over the
@@ -2325,7 +2775,7 @@ def handler_deepseek_v4(cfg, raw, model):
         ]
         return nodes
 
-    def attention_block(ratio):
+    def attention_block(ratio, read_window=None):
         nodes = projections_in()
         extra = []
         if ratio > 1:
@@ -2334,7 +2784,7 @@ def handler_deepseek_v4(cfg, raw, model):
             extra.append(state)
         if ratio == 4:
             nodes += indexer()
-        nodes.append(main_attention(ratio, extra))
+        nodes.append(main_attention(ratio, extra, read_window))
         if ratio > 1:
             # Prefill dequantizes the request's whole compressed stream into a BF16
             # workspace, head_dim values per entry, once per chunk (nvidia/flashmla.py:
@@ -2405,7 +2855,113 @@ def handler_deepseek_v4(cfg, raw, model):
         "head": head,
     }
 
-    if spec_layers:
+    if dspark:
+        # The DSpark draft (DSparkDeepseekV4ForCausalLM, nvidia/dspark.py@v0.32.0): three
+        # decoder layers at ids num_hidden_layers + i (:110, 134-143), the target's own layer
+        # class at ratio 1, so a sliding window and no compressor or indexer
+        # (attention.py:232-235), with the target's experts (384 routed, top 6) and mHC, and
+        # no hash routing. It drafts dspark_block_size positions in ONE pass, and each query
+        # reads its window plus the whole block, non-causally (v1/attention/backends/mla/
+        # sparse_swa.py:552-566, 1250-1262).
+        #
+        # Before that pass the drafter projects the hidden states of dspark_target_layer_ids
+        # through main_proj and main_norm (:119-127, 189-194), and one merged context_wkv_proj
+        # projects the result to every draft layer's K (:146-155, 215-217); each layer then
+        # norms it and inserts it into its window cache (:223-232, 285-349): the context
+        # stack, over the target's scheduled tokens. The checkpoint stores wkv once, inside
+        # each layer's fused_wqa_wkv; the loader yields it a second time into context_wkv_proj
+        # (_duplicate_context_wkv_weights, :76-92), so those 3 x 512 x 7168 FP8 values are
+        # resident twice, and the context node is not an alias.
+        #
+        # Unlike V4.1's drafter, which inserts without a query, _insert_context_kv allocates
+        # a zeroed query of the rank's heads for every layer and passes it through the same
+        # fused norm + RoPE + insert kernel as the main path (:302-349), so the context pass
+        # also writes and re-reads head_dim x heads per rank per token per layer.
+        #
+        # After the pass: the mHC post, the gather under sequence parallelism, the learned
+        # hc_head and the final norm (:257-279, 422-424), then the target's lm_head over every
+        # block position (aliased; has_own_lm_head is False, :352-377). Then the Markov head
+        # once per draft position over one row per request: an embedding of the previous
+        # token and a (vocab, markov_rank) BF16 projection (qwen3_dspark.py:48-93), on its
+        # full path because dspark_draft_topk is not stated. The confidence head
+        # (proj [1, hidden + markov_rank]) is built but consulted only under adaptive
+        # verification, which is off by default; it is resident and not priced.
+        aux_layers = draft_aux_hidden_state_layers({**cfg, "model_type": "deepseek_v4"}, model,
+                                                   layers, states=len(targets))
+        draft_kinds = []
+        for d in range(V4_DSPARK_LAYERS):
+            if d == 0:
+                # The embedding is repeated to hc_mult copies by a materializing expand
+                # (:257), then the first draft layer's standalone pre takes the full
+                # hc_attn_fn on that 3-D stream (nvidia/model.py:1202-1222), unlike target
+                # layer 0, which projects with the matrix summed over its copies.
+                nodes = token_sharded(
+                    traffic("mhc_attn_broadcast_pre", hidden * act + bundle + mhc_pre_bytes,
+                            tp="replicated"),
+                    with_tp(fp32_gemm("hc_attn_fn", mix_hc, hc_mult * hidden), "replicated"))
+            else:
+                nodes = mhc_boundary("attn")
+            nodes += attention_block(1, read_window=window + draft_block)
+            nodes += ffn(False, draft=True)
+            draft_kinds.append({"id": f"dspark_{d}", "nodes": nodes, "edges": chain(nodes)})
+        kinds += draft_kinds
+        context = [
+            with_tp(gemm("dspark_main_proj", hidden, hidden * len(targets)), "replicated"),
+            with_tp(norm("dspark_main_norm"), "replicated"),
+            with_tp(gemm("dspark_context_wkv", V4_DSPARK_LAYERS * total_dim, hidden),
+                    "replicated"),
+        ]
+        for d in range(V4_DSPARK_LAYERS):
+            context += [
+                traffic(f"dspark_context_kv_norm_{d}", 2 * total_dim * act, tp="replicated"),
+                # The zeroed query: written by torch.zeros, then read and written by the
+                # kernel as the main path's q_rope_kv_insert is (3 passes over the rank's
+                # heads).
+                traffic(f"dspark_context_dummy_q_{d}", 3 * q_heads * total_dim * act,
+                        tp="sharded"),
+                # It writes draft layer d's window cache, which a node of this kind
+                # cannot name, so the record is stated in its traffic.
+                traffic(f"dspark_context_kv_rope_insert_{d}", total_dim * act + record,
+                        tp="replicated"),
+            ]
+        kinds.append({"id": "dspark_context", "nodes": context, "edges": chain(context)})
+        extras["speculator"] = {
+            # config/speculative.py:1432-1453@v0.32.0 resolves method "dspark" to the
+            # DSparkDraftModel architecture for a deepseek_v4 target whose checkpoint ships
+            # the stages under mtp.*. Its default draft length is dspark_block_size, not
+            # num_nextn_predict_layers (:1481-1490).
+            "method": "dspark",
+            "num_spec_tokens": draft_block,
+            "drafting": "parallel_block",
+            # The drafter's own VocabParallelEmbedding, whose weights are the target's
+            # (:113-118), all-reduces its block's tokens across TP.
+            "embedding": [{**embed, "role": "dspark_embed_tokens",
+                           "aliases": "embedding.embed_tokens"},
+                          collective("AllReduce", "dspark_embed_out", EMIT_TENSOR_PARALLEL)],
+            "stack": {"pattern": [k["id"] for k in draft_kinds], "repeat": 1},
+            "context_stack": {"pattern": ["dspark_context"], "repeat": 1},
+            "head": [
+                *token_sharded(traffic("dspark_mhc_final_post", mhc_post_bytes,
+                                       tp="replicated")),
+                {**collective("AllGather", "dspark_head_in", EMIT_SEQUENCE_PARALLEL),
+                 "bytes_per_token": bundle},
+                *mhc_head("dspark_"),
+                norm("dspark_final_norm"),
+                {**with_tp(gemm("dspark_lm_head", vocab, hidden), "column"),
+                 "aliases": "head.lm_head"},
+            ],
+            "sequential_head": [
+                {"op": "Gather", "role": "markov_w1", "rows": vocab,
+                 "row_bytes": markov * act, "rows_per_token": 1,
+                 "out_bytes_per_token": markov * act},
+                with_tp(base_gemm("markov_w2", vocab, markov), "replicated"),
+            ],
+            # The target captures idx + 1 in the ids, each the mean of the hc_mult streams
+            # after the layer's mHC post (nvidia/model.py:1482-1490), one hidden-width
+            # activation, the schema's default width.
+            "aux_hidden_state_layers": aux_layers,
+        }
+    elif spec_layers:
         # DeepSeekV4MTP (nvidia/mtp.py:305-, built from the layer and predictor at
         # :83-302): the target's embedding and lm_head
         # (shared, v1/worker/gpu/spec_decode/eagle/utils.py:15-18, 38-118), separate FP8
@@ -2427,7 +2983,7 @@ def handler_deepseek_v4(cfg, raw, model):
                 traffic("mhc_attn_pre", mhc_pre_bytes, tp="replicated"),
                 with_tp(fp32_gemm("hc_attn_fn", mix_hc, hc_mult * hidden), "replicated")),
             *attention_block(1),
-            *ffn(False),
+            *ffn(False, draft=True),
             *token_sharded(traffic("mtp_mhc_post", mhc_post_bytes, tp="replicated")),
             # gathered back before the head under sequence parallelism (nvidia/mtp.py:
             # 206-209)
@@ -3272,7 +3828,7 @@ def handler_deepseek_v41(cfg, raw, model):
     # every block position (aliased, dspark.py:279-282, 341-347). Then the Markov head
     # once per draft position, in order, over one row per request: an embedding of the
     # previous token and a (vocab, markov_rank) BF16 projection (speculator.py:156-199;
-    # model_executor/models/qwen3_dspark.py:48-93), on its full path because
+    # model_executor/models/qwen3_dspark.py:48-94), on its full path because
     # dspark_draft_topk is unset and defaults to None (config/speculative.py:1503-1515).
     # The bias add and sampling over each vocab-wide row are not priced. The confidence
     # head is built but consulted only under adaptive verification
@@ -3427,15 +3983,170 @@ def handler_deepseek_v41(cfg, raw, model):
     return kinds, compress(sequence), extras
 
 
+# What a MiniMax-M3.1 checkpoint leaves out of its MXFP8 quantization: the embedding, the head,
+# the vision tower and projectors, and each routed layer's router. vLLM turns the config's
+# `ignored_layers` into the ModelOpt exclusion list (ModelOptMxFp8Config.from_config,
+# model_executor/layers/quantization/modelopt.py:1286-1318@v0.34.0rc0), and a module whose prefix
+# matches is built unquantized; the router is an fp32 GateLinear in any case
+# (models/minimax_m3/nvidia/model.py:529-538). A list that names anything else puts a module of
+# the stack at a width this handler does not place, so it is refused, not priced as MXFP8.
+MINIMAX_M3_UNQUANTIZED = frozenset({"lm_head", "model.embed_tokens", "vision_tower",
+                                    "multi_modal_projector", "patch_merge_mlp"})
+
+
+# The MiniMax-M3 architectures, which share one handler.
+MINIMAX_M3_ARCHS = frozenset({"MiniMaxM3SparseForConditionalGeneration",
+                              "MiniMaxM3SparseForCausalLM"})
+
+
+def minimax_m3_mixed_precision(cfg: dict[str, Any], raw: dict[str, Any],
+                               model: str) -> dict[str, str] | None:
+    """The widths of a MiniMax-M3 ModelOpt MIXED_PRECISION checkpoint, read from its
+    `quantized_layers` map, or None for a checkpoint that is not one.
+
+    ModelOptMixedPrecisionConfig takes each module's algorithm from `quantized_layers`
+    (_resolve_quant_algo, quantization/modelopt.py:1717-1811@v0.32.0): a linear whose prefix is
+    listed gets that algorithm's method, one that is not listed gets UnquantizedLinearMethod
+    (:1851-1854), and a RoutedExperts module is found by the first listed key under its prefix
+    (:1754-1767). A fused projection takes the algorithm of its shards (qkv_proj of q, k and v;
+    gate_up_proj of gate and up; :1734-1752, :1769-1795). So a width is placed only when the
+    map states the same algorithm for every module of a class on every layer that has it, and
+    the map holds exactly the modules the config's layers build; anything else is refused:
+
+      * `linear`  q/k/v/o on every layer, the index_q and index_k projections on every
+                  block-sparse layer (fused into qkv_proj with q, k and v, which therefore
+                  decide their algorithm: the map must agree on all five), the dense MLP's
+                  gate/up/down where a layer is dense, the shared expert's where it is routed;
+                  all MXFP8 (group size 32, a 1 x 32 block; E8M0 scale);
+      * `routed`  every expert's w1, w2 and w3 on every routed layer; all NVFP4, group size 16.
+
+    The router, the embedding, the head and the towers are not listed and so are built
+    unquantized. Reading the exclusion list adds nothing for this algorithm, but the two files
+    vLLM may read state it differently (config.json is read for `ignore`, hf_quant_config.json
+    for `exclude_modules`; :320-406), so a listed module that either list would exclude is
+    refused: the same checkpoint would then price two ways.
+
+    Returns {"linear": "fp8", "routed": "nvfp4"}: the global width and the experts' width."""
+    quant = raw_quant(cfg, model) or raw_quant(raw, model)
+    if str(quant.get("quant_method", "")).lower() != "modelopt":
+        return None
+    if str(quant.get("quant_algo") or "").upper() != "MIXED_PRECISION":
+        return None
+    layers_map = quant.get("quantized_layers")
+    if not isinstance(layers_map, dict) or not layers_map:
+        raise DeriveError(f"{model}: quant_algo MIXED_PRECISION with no quantized_layers map; "
+                          f"vLLM refuses it (modelopt.py:1654-1658@v0.32.0)")
+    if quant.get("kv_cache_quant_algo") or quant.get("kv_cache_scheme"):
+        raise DeriveError(f"{model}: a quantized KV cache is read by the engine and not by "
+                          f"this handler")
+    layers = int(require(cfg, "num_layers", model))
+    sparse = (cfg.get("sparse_attention_config") or {}).get("sparse_attention_freq")
+    moe_freq = cfg.get("moe_layer_freq")
+    if not sparse or not moe_freq or len(sparse) != layers or len(moe_freq) != layers:
+        raise DeriveError(f"{model}: the layer vectors that say which modules a layer builds "
+                          f"are missing or not {layers} long")
+    experts = int(require(cfg, "num_experts", model))
+    shared = int(pick(cfg, "num_shared_experts") or 0)
+    expected: dict[str, str] = {}
+    for i in range(layers):
+        pre = f"language_model.model.layers.{i}."
+        for r in ("q_proj", "k_proj", "v_proj", "o_proj"):
+            expected[pre + "self_attn." + r] = "linear"
+        if sparse[i] == 1:
+            for r in ("index_q_proj", "index_k_proj"):
+                expected[pre + "self_attn." + r] = "linear"
+        if moe_freq[i] == 0:
+            for r in ("gate_proj", "up_proj", "down_proj"):
+                expected[pre + "mlp." + r] = "linear"
+            continue
+        if shared:
+            for r in ("gate_proj", "up_proj", "down_proj"):
+                expected[pre + "block_sparse_moe.shared_experts." + r] = "linear"
+        for e in range(experts):
+            for w in ("w1", "w2", "w3"):
+                expected[f"{pre}block_sparse_moe.experts.{e}.{w}"] = "routed"
+    missing, extra = sorted(set(expected) - set(layers_map)), sorted(set(layers_map) - set(expected))
+    if missing or extra:
+        raise DeriveError(
+            f"{model}: quantized_layers is not the modules this handler places: "
+            f"{len(missing)} missing (e.g. {missing[:2]}), {len(extra)} unplaced "
+            f"(e.g. {extra[:2]}); a layout that differs across layers or roles needs a node "
+            f"per outcome, which no checkpoint states")
+    want = {"linear": ("MXFP8", None), "routed": ("NVFP4", 16)}
+    for name, kind in sorted(expected.items()):
+        spec = layers_map[name]
+        algo = str(spec.get("quant_algo", "")).upper() if isinstance(spec, dict) else ""
+        group = spec.get("group_size") if isinstance(spec, dict) else None
+        extra_keys = set(spec) - {"quant_algo", "group_size"} if isinstance(spec, dict) else {"?"}
+        if (algo, group) != want[kind] or extra_keys:
+            raise DeriveError(
+                f"{model}: {name} is stored as {spec!r}; this handler places {want[kind][0]}"
+                f"{' group ' + str(want[kind][1]) if want[kind][1] else ''} for a {kind} module "
+                f"and nothing else, so a mixed role is refused rather than priced at one width")
+    excluded = (modelopt_exclusions({"ignore": quant.get("ignore") or []})
+                + modelopt_exclusions({"ignore": quant.get("exclude_modules") or []}))
+    hit = [n for n in expected if modelopt_excluded(n, excluded)]
+    if hit:
+        raise DeriveError(f"{model}: the exclusion list names {len(hit)} listed modules (e.g. "
+                          f"{hit[:2]}); the two files vLLM reads would place them differently")
+    return {"linear": "fp8", "routed": "nvfp4"}
+
+
+def minimax_m3_routed_width(raw: dict[str, Any], cfg: dict[str, Any], moe_freq: list[int],
+                            model: str) -> str | None:
+    """The routed experts' stored width in a MiniMax-M3 checkpoint, when it is not the MXFP8 of
+    the rest: NVFP4 for `moe_quant_algo` NVFP4, else None.
+
+    ModelOptMxFp8Config builds a RoutedExperts module as CompressedTensorsW4A4Nvfp4MoEMethod
+    when moe_quant_algo is NVFP4 and the module is not excluded (:1352-1382), and raises unless
+    the format is nvfp4-pack-quantized and group_size 16 (:1294-1306). Every other linear is
+    MXFP8. A kv_cache_quant_algo is a statement the engine reads (:1301) and this handler
+    does not."""
+    mixed = minimax_m3_mixed_precision(cfg, raw, model)
+    if mixed:
+        return mixed["routed"]
+    quant = raw_quant(cfg, model) or raw_quant(raw, model)
+    algo = str(quant.get("moe_quant_algo") or "").upper()
+    if not algo:
+        return None
+    if str(quant.get("quant_method", "")).lower() != "mxfp8":
+        raise DeriveError(f"{model}: moe_quant_algo {algo} beside quant_method "
+                          f"{quant.get('quant_method')!r}; vLLM reads it for mxfp8 only")
+    if (algo != "NVFP4" or quant.get("moe_quant_format") != "nvfp4-pack-quantized"
+            or quant.get("group_size") != 16):
+        raise DeriveError(f"{model}: moe_quant_algo {quant.get('moe_quant_algo')!r}, "
+                          f"moe_quant_format {quant.get('moe_quant_format')!r}, group_size "
+                          f"{quant.get('group_size')!r}; vLLM accepts NVFP4, nvfp4-pack-quantized "
+                          f"and 16 only")
+    if quant.get("kv_cache_quant_algo"):
+        raise DeriveError(f"{model}: kv_cache_quant_algo {quant['kv_cache_quant_algo']!r} is read "
+                          f"by the engine and not by this handler")
+    ignored = quant.get("ignored_layers")
+    want = MINIMAX_M3_UNQUANTIZED | {
+        f"language_model.model.layers.{i}.block_sparse_moe.gate"
+        for i, f in enumerate(moe_freq) if f}
+    if not isinstance(ignored, list) or set(ignored) != want or len(ignored) != len(want):
+        extra = sorted(set(ignored or ()) - want)
+        absent = sorted(want - set(ignored or ()))
+        raise DeriveError(f"{model}: ignored_layers is not the embedding, head, towers and "
+                          f"routers this handler places (unplaced {extra[:3]}, missing "
+                          f"{absent[:3]}); a module outside them is at a width it does not state")
+    return "nvfp4"
+
+
 def handler_minimax_m3(cfg, raw, model):
     """MiniMax-M3: block-sparse attention with a learned indexer, over a MoE stack whose
     first three layers are dense.
 
-    Two layer kinds, ordered by the config's own per-layer vectors. `moe_layer_freq`
-    and `sparse_attention_config.sparse_attention_freq` are checked to be the same
-    vector rather than assumed to be: they are two statements of one fact on the
-    published weights, and a variant that decoupled them would need its kinds named
-    rather than collapsed.
+    Layer kinds, ordered by the config's two per-layer vectors, which the engine reads
+    separately: `sparse_attention_config.sparse_attention_freq` gives each layer's attention
+    (layer_types) and `moe_layer_freq` its MLP (mlp_layer_types; transformers'
+    MiniMaxM3VLTextConfig.__post_init__, read by models/minimax_m3/nvidia/model.py:196-203@
+    v0.34.0rc0). MiniMax-M3 states the same vector twice: a dense prologue of full attention
+    and a dense MLP, then sparse attention under routed experts. MiniMax-M3.1-Flash decouples
+    them: its first three layers run the block-sparse attention under a dense MLP, which is a
+    third kind. A full-attention layer under routed experts is a fourth that no checkpoint
+    states, and is refused rather than priced.
 
     The attention kind is `swa`. What the schema's SWA means is a per-token read
     bounded by something other than context length, and M3's bound is
@@ -3488,30 +4199,49 @@ def handler_minimax_m3(cfg, raw, model):
             raise DeriveError(
                 f"{model}: {name} has {len(vec)} entries for {layers} layers"
             )
-    if list(attn_freq) != list(moe_freq):
+        unknown = set(vec) - {0, 1}
+        if unknown:
+            raise DeriveError(
+                f"{model}: {name} names {sorted(unknown)}, which this "
+                f"handler cannot price; add the kind rather than defaulting it"
+            )
+    attn_freq, moe_freq = list(attn_freq), list(moe_freq)
+    # The index value and output projections exist only where the engine builds them, and it
+    # builds none on a sparse layer (MiniMaxM3SparseAttention, nvidia/model.py:846-860); the
+    # vector that disables them is read nowhere else, so it must say the same as the one
+    # that makes a layer sparse.
+    disabled = sparse.get("sparse_disable_index_value")
+    if disabled is not None and list(disabled) != attn_freq:
         raise DeriveError(
-            f"{model}: sparse_attention_freq and moe_layer_freq differ. This handler "
-            f"prices one dense prologue and one sparse-plus-routed body; a stack that "
-            f"mixed them independently needs its kinds named rather than paired"
+            f"{model}: sparse_disable_index_value differs from sparse_attention_freq; the "
+            f"engine builds no index value projection on a sparse layer, and this handler "
+            f"prices none"
         )
-    unknown = set(attn_freq) - {0, 1}
-    if unknown:
+    if any(a == 0 and m == 1 for a, m in zip(attn_freq, moe_freq)):
         raise DeriveError(
-            f"{model}: sparse_attention_freq names {sorted(unknown)}, which this "
-            f"handler cannot price; add the kind rather than defaulting it"
+            f"{model}: a layer with full attention under routed experts; no published "
+            f"MiniMax-M3 checkpoint has one, and this handler names no kind for it"
         )
 
-    # A stated dense-prologue length and the vector state the same fact. Read by
+    # A stated dense-prologue length and the MLP vector state the same fact. Read by
     # literal name: only this family declares it, so it has no cross-dialect concept.
     first_dense = cfg.get("first_k_dense_replace")
     if first_dense is not None:
         expected = [0] * int(first_dense) + [1] * (layers - int(first_dense))
-        if expected != list(attn_freq):
+        if expected != moe_freq:
             raise DeriveError(
                 f"{model}: first_k_dense_replace {first_dense} disagrees with the "
                 f"per-layer vector; the two state one fact and this handler will not "
                 f"choose between them"
             )
+    routed_width = minimax_m3_routed_width(raw, cfg, moe_freq, model)
+    # The shared expert and every linear are MXFP8, which the graph's global width states.
+    global_width = weight_dtype(cfg, raw, model)
+    if routed_width and int(cfg.get("shared_intermediate_size", cfg["intermediate_size"])) != int(
+            cfg["intermediate_size"]):
+        # The shared expert is built at intermediate_size (nvidia/model.py:545-551).
+        raise DeriveError(f"{model}: shared_intermediate_size differs from intermediate_size; "
+                          f"vLLM sizes the shared expert by the second")
 
     topk_blocks = int(require_key(sparse, "sparse_topk_blocks", model))
     block = int(require_key(sparse, "sparse_block_size", model))
@@ -3525,12 +4255,13 @@ def handler_minimax_m3(cfg, raw, model):
 
     dense_attn = attention_block(cfg, model, hidden, raw=raw)
     dense_ffn = int(require_key(cfg, "dense_intermediate_size", model))
-    dense_nodes = dense_attn + [
+    dense_mlp = [
         norm("post_attn_norm"),
         gemm("mlp_gate_up", 2 * dense_ffn, hidden),
         gemm("mlp_down", hidden, dense_ffn),
         collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE),
     ]
+    dense_nodes = dense_attn + dense_mlp
 
     sparse_attn = attention_block(cfg, model, hidden, raw=raw, kind="swa", window=bound)
     # The indexer scores the whole context to choose blocks, so its read is bounded by
@@ -3563,23 +4294,290 @@ def handler_minimax_m3(cfg, raw, model):
                     "bytes_per_entry": index_dim * DTYPE_WIDTHS["bf16"]}],
     }
     at = next(i for i, n in enumerate(sparse_attn) if n.get("op") == "Attention")
-    sparse_nodes = sparse_attn[:at] + [
+    sparse_front = sparse_attn[:at] + [
         gemm("index_qk_proj", index_heads * index_dim + index_dim, hidden),
         indexer,
     ] + sparse_attn[at:]
-    sparse_nodes += [
+    # The router is an fp32 GateLinear, replicated, whatever the checkpoint's width
+    # (nvidia/model.py:529-538@v0.34.0rc0), and every MiniMax-M3 header stores it F32
+    # [128, 6144] (MiniMax-M3 and -MXFP8 too: 44,826,624 weights over 57 layers).
+    routed = [{**gemm("router", int(require(cfg, "num_experts", model)), hidden),
+               "weight_dtype": "fp32", "tp": "replicated"}]
+    sparse_nodes = sparse_front + [
         norm("post_attn_norm"),
-        *moe_block(cfg, model, hidden),
+        *routed,
+        *moe_block(cfg, model, hidden, routed_width=routed_width,
+                   shared_width=global_width if routed_width else None),
         collective("All2All", "moe_dispatch_combine", EMIT_EXPERT_PARALLEL),
         collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE),
     ]
+    sparse_dense_nodes = sparse_front + dense_mlp
 
-    kinds = [
-        {"id": "dense", "nodes": dense_nodes, "edges": chain(dense_nodes)},
-        {"id": "sparse_attn_moe", "nodes": sparse_nodes, "edges": chain(sparse_nodes)},
+    built = {
+        (0, 0): ("dense", dense_nodes),
+        (1, 1): ("sparse_attn_moe", sparse_nodes),
+        (1, 0): ("sparse_attn_dense", sparse_dense_nodes),
+    }
+    sequence = [built[(a, m)][0] for a, m in zip(attn_freq, moe_freq)]
+    kinds = [{"id": kid, "nodes": nodes, "edges": chain(nodes)}
+             for kid, nodes in built.values() if kid in sequence]
+    kinds.sort(key=lambda k: sequence.index(k["id"]))
+    # The token embedding is a VocabParallelEmbedding (models/minimax_m3/nvidia/model.py:817-822@
+    # v0.32.0): each rank looks up its vocabulary shard and the partial rows are all-reduced
+    # (vocab_parallel_embedding.py:522-563). It is stored at the checkpoint's base width in every
+    # variant, MXFP8 and mixed-precision ones included: the exclusion list names
+    # `model.embed_tokens`, so no quantization method reaches it. The graph states it so that a
+    # drafter that reads the target's table (an EAGLE3 head aliases `embedding.embed_tokens`)
+    # names a node of this graph, and so that the lookup and its reduction are priced as the
+    # engine runs them.
+    vocab = int(require(cfg, "vocab_size", model))
+    row = hidden * DTYPE_WIDTHS[base_dtype(cfg, raw, model)]
+    extras = {"embedding": [
+        {"op": "Gather", "role": "embed_tokens", "rows": vocab, "row_bytes": row,
+         "rows_per_token": 1, "out_bytes_per_token": row, "shard": "rows"},
+        collective("AllReduce", "embed_out", EMIT_TENSOR_PARALLEL)]}
+    if routed_width:
+        # The ignored_layers list names lm_head, so it is stored at the base width and not
+        # at the MXFP8 of the rest (checkpoint BF16 [200064, 6144]).
+        extras["head"] = [norm("final_norm"),
+                          {**gemm("lm_head", vocab, hidden),
+                           "weight_dtype": base_dtype(cfg, raw, model)}]
+    return kinds, compress(sequence), extras
+
+
+# The keys a MiniMax-M3.1 DSpark draft config states that the engine reads, and the ones it states
+# that it does not (models/minimax_m3/common/dspark.py, model_executor/models/qwen3_dspark.py and
+# qwen3_dflash.py, config/speculative.py:1219-1233 at v0.34.0rc0). The engine promotes text_config
+# to the draft's config, copies quantization_config onto it, and sets dflash_config.causal to
+# False when the file does not state it, so every layer attends non-causally.
+MINIMAX_DSPARK_KEYS = frozenset({
+    "dspark_block_size", "dspark_markov_rank", "dspark_markov_head_type",
+    "dspark_aux_gemm_precision", "dspark_noise_token_id", "dspark_use_dense_ffn",
+    "dspark_ffn_hidden_size", "dspark_target_layer_ids", "dspark_config",
+    "dspark_hybrid_context_fusion"})
+# Keys that, present, change the draft: a reduced draft vocabulary and its id map, the
+# reduced-vocabulary top-k, a draft that carries its own embedding or head, a causal or
+# sink-biased or value-scaled attention, an interleaved RoPE, a rewritten window, and the
+# sources of the mask token that outrank dspark_noise_token_id.
+MINIMAX_DSPARK_OVERRIDES = frozenset({
+    "draft_vocab_size", "dspark_draft_topk", "has_own_lm_head", "is_causal", "is_neox_style",
+    "add_swa_attention_sink_bias", "attention_bias", "use_aux_hidden_state", "eagle_config",
+    "eagle_aux_hidden_state_layer_ids", "mask_token_id", "target_hidden_size", "logit_scale",
+    "sample_from_anchor", "use_swa"})
+
+
+def handler_minimax_dspark(cfg, raw, model):
+    """MiniMax-M3.1-Flash's DSpark drafter (DSparkMiniMaxDraftModel, models/minimax_m3/common/
+    dspark.py@v0.34.0rc0), shipped in the target's repository under dspark/ and named by a
+    deployment as its speculative draft model.
+
+    The graph is the drafter, and states itself as the speculator a kernel prices beside the
+    target: five dense MiniMax-M3 layers (Gemma norms, per-head QK norm, partial RoPE, a
+    SwiGLU-OAI MLP of dspark_ffn_hidden_size), each sliding-window attention over
+    sliding_window tokens, that draft dspark_block_size tokens in ONE pass. Its attention is
+    non-causal because the engine sets dflash_config.causal to False when the file does not
+    state it (config/speculative.py:1226-1227), so each query reads its window plus the block.
+
+    Before the pass, the context stack runs over the target's scheduled tokens: the fc
+    projection of one captured state per target layer (a BF16 replicated linear, named in
+    the exclusion list), the hidden norm, and one MXFP8 projection of every layer's K and V
+    (_make_mxfp8_context_kv_proj, qwen3_dflash.py:456-478), whose rows the loader reads from the
+    layers' own k_proj and v_proj a second time, so they are resident twice; then each layer's
+    K norm, RoPE and cache insert. After the pass: the final norm and the target's lm_head,
+    which the checkpoint does not ship (has_own_lm_head is not set); then the Markov head once
+    per draft position (DSparkMarkovHead, qwen3_dspark.py:48-93), both of whose weights are
+    BF16 and replicated.
+
+    NOT PRICED, each small: the drafter's token lookup, which reads the target's table; the
+    confidence head (proj [1, hidden + markov_rank] with a bias), consulted under adaptive
+    verification alone; the Gemma norms' weight vectors. THE HEAD IS THE TARGET'S: the
+    graph states one lm_head, as every graph must, and so counts its 200064 x 6144 BF16 matrix
+    as resident in the drafter, where the engine shares the target's. The schema has no way
+    to alias a node of another graph."""
+    def whole(v, key):
+        if isinstance(v, bool) or not isinstance(v, int):
+            raise DeriveError(f"{model}: {key} is {v!r}, not a whole number")
+        return v
+
+    def positive(key):
+        v = whole(require_key(cfg, key, model), key)
+        if v < 1:
+            raise DeriveError(f"{model}: {key} is {v}; this architecture needs at least 1")
+        return v
+
+    hidden = whole(require(cfg, "hidden_size", model), "hidden_size")
+    layers = whole(require(cfg, "num_layers", model), "num_hidden_layers")
+    nq = whole(require(cfg, "num_q_heads", model), "num_attention_heads")
+    nkv = whole(require(cfg, "num_kv_heads", model), "num_key_value_heads")
+    dh = head_dim(cfg, model)
+    vocab = whole(require(cfg, "vocab_size", model), "vocab_size")
+    window = positive("sliding_window")
+    block = positive("dspark_block_size")
+    markov = positive("dspark_markov_rank")
+    ffn = positive("dspark_ffn_hidden_size")
+
+    stated = sorted(k for k in cfg if k.startswith("dspark_"))
+    unread = sorted(set(stated) - MINIMAX_DSPARK_KEYS)
+    if unread:
+        raise DeriveError(f"{model}: the config states {unread}, which the DSpark draft reads "
+                          f"and this handler does not")
+    overriding = sorted(k for k in MINIMAX_DSPARK_OVERRIDES if cfg.get(k) is not None)
+    if overriding:
+        raise DeriveError(f"{model}: the config states {overriding}, each of which changes the "
+                          f"DSpark draft this handler prices")
+    if cfg.get("dspark_use_dense_ffn") is not True:
+        raise DeriveError(f"{model}: dspark_use_dense_ffn is not true; the engine builds a dense "
+                          f"draft MLP only (dspark.py:286-287)")
+    # Stated in a nested block as well as flat: the two must agree, since the engine reads one.
+    nested = cfg.get("dspark_config") or {}
+    for flat, inner in (("dspark_markov_rank", "markov_rank"),
+                        ("dspark_markov_head_type", "markov_head_type"),
+                        ("dspark_noise_token_id", "mask_token_id"),
+                        ("dspark_hybrid_context_fusion", "hybrid_context_fusion"),
+                        ("dspark_aux_gemm_precision", "aux_gemm_precision"),
+                        ("dspark_use_dense_ffn", "use_dense_ffn"),
+                        ("dspark_ffn_hidden_size", "ffn_hidden_size")):
+        if inner in nested and nested[inner] != cfg.get(flat):
+            raise DeriveError(f"{model}: dspark_config.{inner} {nested[inner]!r} and {flat} "
+                              f"{cfg.get(flat)!r} differ")
+    if cfg.get("dspark_markov_head_type") != "vanilla":
+        raise DeriveError(f"{model}: dspark_markov_head_type {cfg.get('dspark_markov_head_type')!r}; "
+                          f"the engine builds one Markov head, whose weights are w1 and w2")
+    if cfg.get("dspark_hybrid_context_fusion") not in (False, None):
+        raise DeriveError(f"{model}: dspark_hybrid_context_fusion is on; the engine reads no such "
+                          f"key and this handler prices the plain fc projection")
+    if cfg.get("dspark_aux_gemm_precision") not in ("bf16", None):
+        raise DeriveError(f"{model}: dspark_aux_gemm_precision {cfg.get('dspark_aux_gemm_precision')!r}; "
+                          f"the fc projection is a BF16 linear in the checkpoint")
+
+    dflash = cfg.get("dflash_config")
+    if not isinstance(dflash, dict):
+        raise DeriveError(f"{model}: no dflash_config; the engine reads the capture layers, the "
+                          f"mask token and the window from it")
+    if dflash.get("causal") is not None or dflash.get("use_swa") or dflash.get("attention_sink_bias") \
+            or dflash.get("attention_value_scale") is not None or "swa_window_size" in dflash:
+        raise DeriveError(f"{model}: dflash_config states {sorted(dflash)}; this handler reads "
+                          f"target_layer_ids, mask_token_id, block_size, layer_types, sliding_window "
+                          f"and num_target_layers, and prices the non-causal window the engine "
+                          f"defaults to")
+    targets = dflash.get("target_layer_ids")
+    if cfg.get("dspark_target_layer_ids") != targets:
+        raise DeriveError(f"{model}: dspark_target_layer_ids and dflash_config.target_layer_ids "
+                          f"differ; the engine reads the second")
+    if dflash.get("mask_token_id") != cfg.get("dspark_noise_token_id") or \
+            not 0 <= whole(cfg["dspark_noise_token_id"], "dspark_noise_token_id") < vocab:
+        raise DeriveError(f"{model}: the mask token is not dspark_noise_token_id within the "
+                          f"vocabulary")
+    if dflash.get("block_size", block) != block or dflash.get("sliding_window", window) != window:
+        raise DeriveError(f"{model}: dflash_config block_size or sliding_window differs from the "
+                          f"top-level one")
+    if dflash.get("num_hidden_layers", layers) != layers:
+        raise DeriveError(f"{model}: dflash_config.num_hidden_layers differs from the config's")
+    target_layers = whole(dflash.get("num_target_layers"), "dflash_config.num_target_layers")
+    # The capture points the engine resolves: dflash_config.target_layer_ids plus one
+    # (eagle3_utils.py:100-137), the state entering each next layer. The fc takes one hidden-wide
+    # state per id (qwen3_dflash.py:111-119).
+    aux_layers = draft_aux_hidden_state_layers(cfg, model, target_layers, states=len(targets))
+    layer_types = cfg.get("layer_types")
+    if layer_types is not None and (set(layer_types) != {"sliding_attention"}
+                                    or len(layer_types) != layers):
+        raise DeriveError(f"{model}: layer_types {sorted(set(layer_types))}; every draft layer "
+                          f"is sliding-window attention here")
+    if layer_types is None or dflash.get("layer_types", layer_types) != layer_types:
+        raise DeriveError(f"{model}: layer_types missing or differing from dflash_config's; a "
+                          f"layer without a type is full attention in the engine")
+    base = base_dtype(cfg, raw, model)
+    act = DTYPE_WIDTHS[base]
+    fp32 = DTYPE_WIDTHS["fp32"]
+    if raw_quant(cfg, model) or raw_quant(raw, model):
+        quant = raw_quant(cfg, model) or raw_quant(raw, model)
+        if str(quant.get("quant_method", "")).lower() != "mxfp8":
+            raise DeriveError(f"{model}: quant_method {quant.get('quant_method')!r}; this handler "
+                              f"places MXFP8 linears and the excluded fc, Markov head and "
+                              f"confidence head")
+        want = {"language_model.model.dspark.fc", "language_model.model.dspark.markov_head."
+                "markov_w1", "language_model.model.dspark.markov_head.markov_w2",
+                "language_model.model.dspark.confidence_head.proj"}
+        ignored = set(quant.get("ignored_layers") or ())
+        # The target's own exclusions are copied into the draft's list (the router gates of the
+        # target's routed layers, the embedding and head, the towers); none names a draft module.
+        named = {x for x in ignored if ".dspark." in x}
+        if named != want:
+            raise DeriveError(f"{model}: ignored_layers names the draft modules {sorted(named)}; "
+                              f"this handler places exactly {sorted(want)} unquantized")
+        gates = {x for x in ignored if ".dspark." not in x}
+        if any(not (x in MINIMAX_M3_UNQUANTIZED or x.endswith(".block_sparse_moe.gate"))
+               for x in gates):
+            raise DeriveError(f"{model}: ignored_layers names a module this handler does not "
+                              f"place")
+
+    def traffic(role, nbytes, tp=None):
+        node = dict(norm(role), bytes_per_token=int(nbytes))
+        if tp:
+            node["tp"] = tp
+        return node
+
+    def with_tp(node, tp):
+        node["tp"] = tp
+        return node
+
+    def bf16_gemm(role, n, k):
+        node = gemm(role, n, k)
+        node["weight_dtype"] = base
+        return node
+
+    attention = {"op": "Attention", "holds_engine_kv": True, "kind": "swa", "n_q": nq,
+                 "n_kv": nkv, "d_h": dh, "window": window + block}
+    layer = [
+        norm("input_norm"),
+        gemm("qkv_proj", (nq + 2 * nkv) * dh, hidden),
+        # The fused per-head QK norm, partial RoPE and cache insert over q, k and v.
+        traffic("qk_norm_rope_insert", 2 * (nq + 2 * nkv) * dh * act),
+        attention,
+        gemm("o_proj", hidden, nq * dh),
+        collective("AllReduce", "attn_out", EMIT_TENSOR_PARALLEL),
+        norm("post_attn_norm"),
+        gemm("mlp_gate_up", 2 * ffn, hidden),
+        gemm("mlp_down", hidden, ffn),
+        collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL),
     ]
-    sequence = ["sparse_attn_moe" if f else "dense" for f in attn_freq]
-    return kinds, compress(sequence)
+    context = [
+        with_tp(bf16_gemm("dspark_fc", hidden, hidden * len(targets)), "replicated"),
+        traffic("dspark_hidden_norm", 2 * hidden * act, tp="replicated"),
+        gemm("dspark_context_kv", layers * 2 * nkv * dh, hidden),
+    ]
+    for d in range(layers):
+        # The K norm, RoPE and the cache insert over the projected K and V.
+        context.append(traffic(f"dspark_context_kv_insert_{d}", 2 * 2 * nkv * dh * act))
+    kinds = [{"id": "dspark_layer", "nodes": layer, "edges": chain(layer)},
+             {"id": "dspark_context", "nodes": context, "edges": chain(context)}]
+    head = [traffic("final_norm", 2 * hidden * act, tp="replicated"),
+            with_tp(bf16_gemm("lm_head", vocab, hidden), "column")]
+    extras = {
+        "global": {"architecture": raw["architectures"][0]},
+        "head": head,
+        "speculator": {
+            "method": "dspark",
+            "num_spec_tokens": block,
+            "drafting": "parallel_block",
+            # The checkpoint ships no lm_head, and the engine loads a head into the draft
+            # only when the weights hold one (has_own_lm_head): the draft reads the target's.
+            "shares_target_head": True,
+            "stack": {"pattern": ["dspark_layer"], "repeat": layers},
+            "context_stack": {"pattern": ["dspark_context"], "repeat": 1},
+            "head": [traffic("dspark_final_norm", 2 * hidden * act, tp="replicated"),
+                     {**with_tp(gemm("dspark_lm_head", vocab, hidden), "column"),
+                      "aliases": "head.lm_head"}],
+            "sequential_head": [
+                {"op": "Gather", "role": "markov_w1", "rows": vocab,
+                 "row_bytes": markov * act, "rows_per_token": 1,
+                 "out_bytes_per_token": markov * act},
+                with_tp(bf16_gemm("markov_w2", vocab, markov), "replicated"),
+            ],
+            "aux_hidden_state_layers": aux_layers,
+        },
+    }
+    return kinds, {"pattern": ["dspark_layer"], "repeat": layers}, extras
 
 
 def handler_qwen3_5_moe(cfg, raw, model):
@@ -3748,6 +4746,120 @@ def handler_nemotron_h(cfg, raw, model):
     return [catalogue[n] for n in used], compress(list(vector))
 
 
+def kimi_k3_dsa_layers(cfg: dict[str, Any], raw: dict[str, Any], model: str,
+                       full_set: set[int], offset: int) -> set[int]:
+    """The layers (1-based, as vLLM's is_dsa_layer reads them) that run DSA, or the empty set.
+
+    Only Kimi-K3.1 has the path: KimiK3DSAAttention replaces a layer's latent attention where
+    `layer_idx + 1` is in dsa_config.dsa_layers (kimi_k3/nvidia/model.py:754-755 and
+    KimiLinearConfig.is_dsa_layer at vllm-project/vllm v0.34.0rc0). A v0.32.0 architecture that
+    carries a dsa_config would have it ignored, so it is refused. The indexer is built on every
+    DSA layer (index_topk_freq other than 1 raises in vLLM, dsa.py:602-608), its key norm is the
+    fused LayerNorm and insert only with no indexer RoPE, and DSA is a variant of the latent
+    layer, so a layer that is not latent cannot be one."""
+    dsa = cfg.get("dsa_config")
+    if not dsa:
+        return set()
+    arch = architecture_of(raw, model)
+    if arch != "KimiK31ForConditionalGeneration":
+        raise DeriveError(f"{model}: {arch} declares a dsa_config, which no vLLM path of that "
+                          f"architecture reads")
+    for key, want in (("index_topk_freq", 1), ("index_rope_dim", 0)):
+        if int(dsa.get(key, want)) != want:
+            raise DeriveError(f"{model}: dsa_config.{key} is {dsa.get(key)!r}; vLLM serves "
+                              f"{want} only (the fused indexer priced here)")
+    if dsa.get("index_k_norm_type") != "layernorm":
+        raise DeriveError(f"{model}: dsa_config.index_k_norm_type is "
+                          f"{dsa.get('index_k_norm_type')!r}; the priced indexer folds a "
+                          f"LayerNorm into its key insert")
+    layers = set(int(i) for i in dsa.get("dsa_layers") or ())
+    if not layers or not {i - 1 + offset for i in layers} <= full_set or 0 in layers:
+        raise DeriveError(f"{model}: dsa_layers {sorted(layers)} are not latent-attention "
+                          f"layers of full_attn_layers {sorted(full_set)}")
+    return layers
+
+
+def kimi_k31_dsa_attention(cfg: dict[str, Any], raw: dict[str, Any], model: str,
+                           hidden: int) -> list[dict[str, Any]]:
+    """The attention nodes of a Kimi-K3.1 DSA layer (KimiK3DSAAttention, dsa.py).
+
+    The latent projections are the dense layer's, with two differences. The output gate is a
+    column-parallel g_proj of its own (dsa.py:549-555) where the dense layer folds its rows
+    into the fused A-projection (KimiK3MergedQKVGateLinear); and a DSA layer's indexer scores
+    every cached token and selects index_topk of them, so the attention reads a bounded set.
+    The indexer is the deepseek_v32 one the GLM DSA graphs already price: wq_index from the
+    latent query rank, a merged unquantized wk and weights_proj from the hidden state
+    (dsa.py:150-166), and a LayerNorm key norm folded into the key insert (_fused_k_insert,
+    dsa.py:295-318), so it is no launch of its own and its width joins the latent norms'.
+
+    Which projections run replicated. vLLM builds `fused_qkv_a_proj` as a
+    MergedColumnParallelLinear with disable_tp=True (dsa.py:469-475), `wq_index` as a
+    ReplicatedLinear (:150-156) and `wkv_index` (wk and weights_proj) as a
+    MergedColumnParallelLinear with disable_tp=True (:159-166): every rank holds and runs all
+    three whole. The cost model does not infer that (it shards a GEMM whose k equals the hidden
+    size by its output width, and any other by its reduction), so each states `tp: replicated`.
+    The output gate `g_proj`, `q_b_proj`, `kv_b_proj` and `o_proj` are column- and row-parallel
+    and keep the inference.
+
+    The fused forward. pack_projections (dsa.py:688-734) concatenates `[q_a | kv_a | wk |
+    weights_proj]` into one weight and `[q_b | wq_index]` into another, and `_fused_attention`
+    runs each as one GEMM (:760-765, :814); the gate is a third, its own launch (:736-758). The A
+    group is all replicated, so the graph states it as ONE replicated node of the summed
+    width, the launch the engine makes. The Q group mixes a column-parallel part (q_b, a tp-th
+    of its rows on a rank) with a replicated one (wq_index, all rows), which no single node can
+    say, so it stays two nodes: the graph prices one launch more than the engine for it on each
+    DSA layer (same weights, same bytes). The gate's overlap with the front end on a second
+    stream for a small batch (_GATE_MULTI_STREAM_TOKEN_THRESHOLD, :744-757) is not priced
+    either; the graph serialises it.
+
+    The fused forward runs only where every packed linear is unquantized, nothing is
+    offloaded, the weights are not pre-processed, and the cache is fp8_ds_mla; the other
+    configurations run the wrapper forward with these projections as separate launches. The
+    handler states the first and refuses a checkpoint that quantises any of the four linears;
+    a deployment that offloads weights is the consumer's to refuse, and fp8_ds_mla is what the
+    Kimi-K3 config verifier sets (dsa.py:627-631)."""
+    dsa = cfg["dsa_config"]
+    flat = dict(cfg, index_topk=int(dsa["index_topk"]),
+                index_n_heads=int(dsa["index_num_heads"]),
+                index_head_dim=int(dsa["index_head_dim"]))
+    nodes = attention_block(flat, model, hidden, raw=raw)
+    gate_rows = (int(require(flat, "num_q_heads", model)) * int(pick(flat, "v_head_dim"))
+                 if flat.get("mla_use_output_gate") else 0)
+    at = next(i for i, n in enumerate(nodes) if n.get("role") == "qkv_a_proj")
+    if gate_rows:
+        a = dict(nodes[at], n=nodes[at]["n"] - gate_rows)
+        gate = gemm("mla_g_proj", gate_rows, hidden)
+        if "weight_dtype" in a:
+            gate["weight_dtype"] = a["weight_dtype"]
+        nodes[at:at + 1] = [a, gate]
+    nodes = lightning_indexer(flat, model, hidden, nodes, raw)
+
+    def one(role: str) -> int:
+        found = [i for i, n in enumerate(nodes) if n.get("role") == role]
+        if len(found) != 1:
+            raise DeriveError(f"{model}: the DSA layer has {len(found)} {role} nodes, not one")
+        return found[0]
+
+    base = base_dtype(cfg, raw, model)
+    packed = {r: nodes[one(r)] for r in ("qkv_a_proj", "index_wk_weights_proj", "q_b_proj",
+                                         "index_wq_b")}
+    served = weight_dtype(cfg, raw, model)   # what a node that states no width inherits
+    quantised = sorted(r for r, n in packed.items() if n.get("weight_dtype", served) != base)
+    if quantised or base not in ("bf16", "fp16"):
+        raise DeriveError(
+            f"{model}: {quantised or sorted(packed)} are not served unquantized at {base}; vLLM "
+            f"packs the DSA projections into one GEMM each only when every one is "
+            f"(KimiK3DSAAttention.pack_projections, dsa.py:688-734) and otherwise runs them as "
+            f"separate launches, which this handler does not price")
+    wk = nodes.pop(one("index_wk_weights_proj"))
+    wq = nodes.pop(one("index_wq_b"))
+    a = nodes[one("qkv_a_proj")]
+    a.update(role="qkv_a_wk_weights_proj", n=a["n"] + wk["n"], tp="replicated")
+    wq["tp"] = "replicated"
+    nodes.insert(one("q_b_proj") + 1, wq)
+    return nodes
+
+
 def handler_kimi_k3(cfg, raw, model):
     """Kimi-K3: linear attention on most layers, latent attention on a declared list,
     and a dense MLP on the leading layers.
@@ -3838,34 +4950,37 @@ def handler_kimi_k3(cfg, raw, model):
         kda_mixer = [dict(n, weight_dtype=base)
                      if n.get("role") in ATTENTION_WEIGHT_ROLES else n
                      for n in kda_mixer]
-    kda = with_moe(kda_mixer)
-    mla = with_moe(attention_block(cfg, model, hidden, raw=raw))
-    kinds = [
-        {"id": "kda_moe", "nodes": kda, "edges": chain(kda)},
-        {"id": "mla_moe", "nodes": mla, "edges": chain(mla)},
-    ]
-    first_dense = int(cfg.get("first_k_dense_replace") or 0)
-    if first_dense:
-        kda_dense = with_dense(kda_mixer)
-        mla_dense = with_dense(attention_block(cfg, model, hidden, raw=raw))
-        kinds += [
-            {"id": "kda_dense", "nodes": kda_dense, "edges": chain(kda_dense)},
-            {"id": "mla_dense", "nodes": mla_dense, "edges": chain(mla_dense)},
-        ]
     full_set = set(int(i) for i in full)
     # The published list is 1-based against a 1-indexed layer numbering; a 0-based
     # reading would shift every attention layer by one. Detected rather than assumed:
     # a 0-based list would contain 0.
     offset = 1 if 0 not in full_set else 0
+    dsa_set = kimi_k3_dsa_layers(cfg, raw, model, full_set, offset)
+    latent = lambda: attention_block(cfg, model, hidden, raw=raw, indexed=False)
+    mixers = {"kda": lambda: kda_mixer, "mla": latent}
+    if dsa_set:
+        mixers["dsa"] = lambda: kimi_k31_dsa_attention(cfg, raw, model, hidden)
+    kinds = []
+    first_dense = int(cfg.get("first_k_dense_replace") or 0)
+    for mixer, nodes in mixers.items():
+        moe = with_moe(nodes())
+        kinds.append({"id": f"{mixer}_moe", "nodes": moe, "edges": chain(moe)})
+    for mixer, nodes in mixers.items() if first_dense else ():
+        dense = with_dense(nodes())
+        kinds.append({"id": f"{mixer}_dense", "nodes": dense, "edges": chain(dense)})
     # The mixer and the MLP vary independently: which layers are attention comes from
-    # the declared list, and which are dense from first_k_dense_replace.
+    # the declared list (and which of those are sparse from dsa_layers), and which are
+    # dense from first_k_dense_replace.
     sequence = []
     for i in range(layers):
-        mixer = "mla" if (i + offset) in full_set else "kda"
+        if (i + offset) not in full_set:
+            mixer = "kda"
+        else:
+            mixer = "dsa" if (i + 1) in dsa_set else "mla"
         sequence.append(f"{mixer}_dense" if i < first_dense else f"{mixer}_moe")
     # A kind no layer uses would be a node a reader has to account for and no step runs.
     kinds = [k for k in kinds if k["id"] in set(sequence)]
-    return kinds, compress(sequence)
+    return kimi_k3_place_widths(kinds, cfg, raw, model), compress(sequence)
 
 
 def handler_glm5_next(cfg, raw, model):
@@ -4461,7 +5576,7 @@ def handler_muse_spark_dspark(cfg, raw, model):
     pre-norm and K/V projection and cache insert, _project_muse_context_kv and
     precompute_and_store_context_kv, dspark.py:205-250); after it, the final norm and the
     drafter's own lm_head (has_own_lm_head, dspark.py:281, 305-309); then the Markov head once
-    per draft position (DSparkMarkovHead, qwen3_dspark.py:48-93), both of whose weights
+    per draft position (DSparkMarkovHead, qwen3_dspark.py:48-94), both of whose weights
     are replicated.
 
     NOT PRICED, each small: the drafter's token embedding, which it does not load and so
@@ -4596,8 +5711,315 @@ def handler_muse_spark_dspark(cfg, raw, model):
     return kinds, {"pattern": ["dspark_layer"], "repeat": layers}, extras
 
 
+# Draft tokens per block for a K3 DSpark drafter whose configuration states none. The engine
+# takes num_speculative_tokens from the deployment and, where it gives none, from the draft
+# config's block_size or dspark_block_size (config/speculative.py:1481-1488@v0.32.0), and
+# Inferact/Kimi-K3-DSpark's config.json names neither. Its model card, at the pinned revision,
+# says the draft is "drafting 7 tokens in a single parallel pass" and reports acceptance "with
+# 7 speculative tokens"; that is recorded here per drafter, with the card as its source, rather
+# than defaulted. A deployment that sets another count prices that many positions.
+K3_DSPARK_BLOCKS = {
+    "kimi-k3-dspark": 7,
+}
+
+
+def handler_k3_dspark(cfg, raw, model):
+    """The dense MLA DSpark drafter of the Kimi-K3 family (K3DSparkModel,
+    vllm/models/kimi_k3/nvidia/dspark_mla.py@v0.32.0; unchanged in structure at v0.34.0rc0),
+    a checkpoint of its own that a deployment names as its speculative draft_model.
+
+    The graph is the drafter, stated as the speculator a kernel prices beside the target.
+    num_hidden_layers dense layers, each Kimi-K3's own latent attention (MultiHeadLatentAttention
+    with no output gate, no NoPE and no QK norm, the three things K3DSparkConfig refuses) and
+    a KimiMLP, draft a block of num_spec_tokens positions per request in ONE parallel pass
+    (anchor-as-first: N query tokens, not 1 + N). Before it, the context stack runs over every
+    token the target schedules: context_proj of the target's hidden states at target_layer_ids
+    (a ReplicatedLinear over one state per captured layer, :150-157), its norm, and the
+    cross-layer context_kv_proj, one GEMM of [kv_lora_rank + qk_rope_head_dim] rows per draft
+    layer (disable_tp, :175-187) followed by the K norm, RoPE and the cache insert
+    (_precompute_fused_context_kv, :263-372). After it come the final norm, the target's lm_head
+    and, once per draft position, the Markov head (DSparkMarkovHead, qwen3_dspark.py:48-94).
+
+    The captured states are the config's target_layer_ids plus one, in the engine's convention
+    (get_eagle3_aux_layers_from_config, eagle3_utils.py:100-137, the dense-DSpark branch).
+
+    NOT PRICED, each small or outside the graph:
+      * the token embedding and the lm_head, which the drafter does not load and shares with
+        the target (has_own_lm_head False, load_dspark_model aliases them; the mapper drops
+        embed_tokens and lm_head from the checkpoint, :435-447). The graph states an lm_head
+        because a drafter graph is validated as a model, and its speculator says
+        shares_target_head, so withDrafter keeps the head as an alias of the target's and the
+        table is resident once; the token embedding is not priced;
+      * the confidence head (`proj`, input hidden_size + markov_rank), loaded and consulted by
+        adaptive verification alone;
+      * the context K/V projection's weights are the layers' kv_a_proj_with_mqa rows loaded a
+        second time (_duplicate_context_kv_weights, :39-58): resident twice, which one node
+        cannot alias at a different shape."""
+    def whole(v, key):
+        if isinstance(v, bool) or int(v) != v:
+            raise DeriveError(f"{model}: {key} is {v!r}, not a whole number")
+        return int(v)
+
+    hidden = whole(require(cfg, "hidden_size", model), "hidden_size")
+    layers = whole(require(cfg, "num_layers", model), "num_hidden_layers")
+    vocab = whole(require(cfg, "vocab_size", model), "vocab_size")
+    markov = whole(require_key(cfg, "markov_rank", model), "markov_rank")
+    targets = require_key(cfg, "target_layer_ids", model)
+    target_hidden = whole(require_key(cfg, "target_hidden_size", model), "target_hidden_size")
+    target_layers = whole(require_key(cfg, "target_num_hidden_layers", model),
+                          "target_num_hidden_layers")
+    kv_lora = whole(require(cfg, "kv_lora_rank", model), "kv_lora_rank")
+    rope = whole(require(cfg, "qk_rope_head_dim", model), "qk_rope_head_dim")
+    # K3DSparkConfig raises for each of these (configs/k3_dspark.py:33-72@v0.32.0).
+    for key in ("mla_use_nope", "mla_use_output_gate", "mla_use_qk_norm", "dspark_bonus_anchor"):
+        if cfg.get(key):
+            raise DeriveError(f"{model}: {key} is set; vLLM's MLA DSpark does not support it")
+    if not cfg.get("q_lora_rank"):
+        raise DeriveError(f"{model}: no q_lora_rank; vLLM's MLA DSpark does not support it")
+    if int(cfg.get("draft_vocab_size") or vocab) != vocab:
+        raise DeriveError(f"{model}: draft_vocab_size differs from vocab_size, which vLLM's "
+                          f"MLA DSpark refuses when it shares the target's lm_head")
+    if whole(cfg.get("num_target_layers", -1), "num_target_layers") != len(targets):
+        raise DeriveError(f"{model}: num_target_layers {cfg.get('num_target_layers')} for "
+                          f"{len(targets)} target_layer_ids; vLLM refuses the mismatch")
+    # Not read by the draft model, so a config that turns one on describes another drafter.
+    if int(cfg.get("n_routed_experts") or 0):
+        raise DeriveError(f"{model}: routed experts in a drafter this handler prices as dense")
+    if cfg.get("hidden_act", "silu") != "silu":
+        raise DeriveError(f"{model}: hidden_act {cfg.get('hidden_act')!r}; the draft's KimiMLP "
+                          f"is built without the SiTU betas")
+    if cfg.get("sliding_window") or cfg.get("use_sliding_window") or set(
+            cfg.get("layer_types") or ["full_attention"]) != {"full_attention"}:
+        raise DeriveError(f"{model}: a sliding-window draft layer, which this handler does not "
+                          f"price")
+    if cfg.get("sample_from_anchor", True) is not True:
+        raise DeriveError(f"{model}: sample_from_anchor is off, so the block takes 1 + N query "
+                          f"tokens, which this handler does not price")
+    if cfg.get("markov_head_type", "vanilla") != "vanilla":
+        raise DeriveError(f"{model}: markov_head_type {cfg.get('markov_head_type')!r}; only the "
+                          f"vanilla DSparkMarkovHead is built")
+    block = cfg.get("block_size", cfg.get("dspark_block_size", K3_DSPARK_BLOCKS.get(model)))
+    if block is None:
+        raise DeriveError(f"{model}: the configuration states no block_size, and K3_DSPARK_BLOCKS "
+                          f"records none for this drafter")
+    block = whole(block, "block_size")
+    if not targets or any(not 0 <= int(t) < target_layers for t in targets):
+        raise DeriveError(f"{model}: target_layer_ids {targets} outside the target's "
+                          f"{target_layers} layers")
+    aux_layers = draft_aux_hidden_state_layers(cfg, model, target_layers, states=len(targets))
+    base = base_dtype(cfg, raw, model)
+    act = DTYPE_WIDTHS[base]
+
+    def traffic(role, nbytes, tp=None):
+        node = dict(norm(role), bytes_per_token=int(nbytes))
+        if tp:
+            node["tp"] = tp
+        return node
+
+    def with_tp(node, tp):
+        node["tp"] = tp
+        return node
+
+    layer = attention_block(cfg, model, hidden, raw=raw)
+    layer += [norm("post_attn_norm"), *dense_mlp(cfg, model, hidden),
+              collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL)]
+    # One KV-only GEMM over the five layers' latents, then, per token and layer, the K norm
+    # (read and write kv_lora_rank), RoPE on the rope dims (read and write), and the insert of
+    # the normed latent and rope (read) into the cache (its own bytes are the cache's).
+    latent_bytes = layers * (2 * kv_lora + 2 * rope + (kv_lora + rope)) * act
+    context = [
+        with_tp(gemm("dspark_fc", hidden, target_hidden * len(targets)), "replicated"),
+        traffic("dspark_hidden_norm", 2 * hidden * act, tp="replicated"),
+        with_tp(gemm("dspark_context_kv", layers * (kv_lora + rope), hidden), "replicated"),
+        traffic("dspark_context_kv_insert", latent_bytes, tp="replicated"),
+    ]
+    kinds = [{"id": "dspark_layer", "nodes": layer, "edges": chain(layer)},
+             {"id": "dspark_context", "nodes": context, "edges": chain(context)}]
+    head = [norm("final_norm"), with_tp(gemm("lm_head", vocab, hidden), "column")]
+    extras = {
+        "global": {"architecture": raw["architectures"][0]},
+        "head": head,
+        "speculator": {
+            "method": "dspark",
+            "num_spec_tokens": block,
+            "drafting": "parallel_block",
+            # The checkpoint ships no lm_head, and the engine loads a head into the draft
+            # only when the weights hold one (has_own_lm_head): the draft reads the target's.
+            "shares_target_head": True,
+            "stack": {"pattern": ["dspark_layer"], "repeat": layers},
+            "context_stack": {"pattern": ["dspark_context"], "repeat": 1},
+            "head": [norm("dspark_final_norm"),
+                     {**with_tp(gemm("dspark_lm_head", vocab, hidden), "column"),
+                      "aliases": "head.lm_head"}],
+            "sequential_head": [
+                {"op": "Gather", "role": "markov_w1", "rows": vocab,
+                 "row_bytes": markov * act, "rows_per_token": 1,
+                 "out_bytes_per_token": markov * act},
+                with_tp(gemm("markov_w2", vocab, markov), "replicated"),
+            ],
+            "aux_hidden_state_layers": aux_layers,
+        },
+    }
+    return kinds, {"pattern": ["dspark_layer"], "repeat": layers}, extras
+
+
+# The target an EAGLE3 drafter checkpoint is served with, for a drafter whose configuration
+# names no capture layers. The engine then asks the TARGET model for its default
+# (get_eagle3_aux_layers_from_config returns None, and the target's
+# SupportsEagle3.get_eagle3_default_aux_hidden_state_layers answers: layers
+# (2, n // 2, n - 3) of its n decoder layers, vllm/model_executor/models/interfaces.py:
+# 1712-1733@v0.32.0; MiniMaxM3SparseForCausalLM does not override it, minimax_m3/nvidia/
+# model.py:1042@v0.32.0, which records captures as idx + 1, :909-911). The default depends on
+# the target's depth, which a drafter's configuration does not state, so it is recorded per
+# drafter here rather than defaulted, with the catalog targets whose depth it is. A test holds
+# the depth to each target's committed configuration.
+EAGLE3_TARGETS = {
+    "minimax-m3-eagle3": {"targets": ["minimax-m3", "minimax-m3-mxfp8", "minimax-m3-nvfp4"],
+                          "layers": 60},
+    "minimax-m3-eagle3-gqa": {"targets": ["minimax-m3", "minimax-m3-mxfp8", "minimax-m3-nvfp4"],
+                              "layers": 60},
+}
+
+
+def eagle3_default_aux_layers(layers: int) -> list[int]:
+    """The capture layers vLLM's SupportsEagle3 default gives a target of `layers` layers."""
+    return sorted({2, layers // 2, layers - 3})
+
+
+def handler_llama_eagle3(cfg, raw, model):
+    """An EAGLE3 drafter on the Llama architecture (LlamaForCausalLMEagle3,
+    vllm/model_executor/models/llama_eagle3.py@v0.32.0), a checkpoint of its own that a
+    deployment names as its speculative draft_model.
+
+    The drafter has its own token embedding and its own lm_head (both are loaded when the
+    checkpoint holds them, load_weights :411-470, and Inferact/MiniMax-M3-EAGLE3 holds both,
+    from its safetensors header). It reads one hidden state per captured target layer
+    (num_aux_hidden_states, else the length of eagle_config.eagle_aux_hidden_state_layer_ids,
+    else 3, :210-216); each is normalised by its own RMSNorm when fc_norm is set (:230-243,
+    combine_hidden_states :395-413) and the concatenation is projected to hidden_size by a
+    replicated fc. Its one decoder layer takes the token embedding and that projected state
+    side by side: the embedding through input_layernorm, the state through hidden_norm, and
+    qkv_proj reads their concatenation, 2 x hidden_size wide (:79-92, :111-120). Attention is
+    full, the MLP gated; the final norm and the lm_head follow (:251-253, :322-349).
+
+    NOT PRICED: the first draft pass runs the layer over a row count the engine decides (every
+    token the target scheduled, or one per request); the schema states that work as the
+    context stack only for the fc projection. The engine states the count in the pool's plan
+    (plan.DraftPolicy.FirstPassRows and PassRequests) and the kernel refuses a deployment that
+    speculates through this drafter without it (draft_passes_unstated; blis-schemas#60). The
+    vocabulary mapping a drafter with
+    draft_vocab_size != vocab_size carries (draft_id_to_target_id) is refused rather than
+    priced as free."""
+    def whole(v, key):
+        if isinstance(v, bool) or int(v) != v:
+            raise DeriveError(f"{model}: {key} is {v!r}, not a whole number")
+        return int(v)
+
+    hidden = whole(require(cfg, "hidden_size", model), "hidden_size")
+    layers = whole(require(cfg, "num_layers", model), "num_hidden_layers")
+    nq = whole(require(cfg, "num_q_heads", model), "num_attention_heads")
+    nkv = whole(require(cfg, "num_kv_heads", model), "num_key_value_heads")
+    dh = head_dim(cfg, model)
+    ffn = whole(require(cfg, "ffn_size", model), "intermediate_size")
+    vocab = whole(require(cfg, "vocab_size", model), "vocab_size")
+    if layers != 1:
+        raise DeriveError(f"{model}: {layers} draft layers; this handler prices the one-layer "
+                          f"EAGLE3 drafter (layers after the first read only the hidden state)")
+    if whole(cfg.get("draft_vocab_size", vocab), "draft_vocab_size") != vocab:
+        raise DeriveError(f"{model}: draft_vocab_size differs from vocab_size, so the drafter "
+                          f"carries a draft-to-target id map this handler does not price")
+    if cfg.get("sliding_window") or cfg.get("use_sliding_window"):
+        raise DeriveError(f"{model}: a sliding-window EAGLE3 layer; this handler prices full attention")
+    if cfg.get("attention_bias"):
+        raise DeriveError(f"{model}: attention_bias is on, so the qkv projection carries a bias "
+                          f"this handler does not price")
+    if cfg.get("norm_before_fc") or (cfg.get("eagle_config") or {}).get("norm_before_fc"):
+        raise DeriveError(f"{model}: norm_before_fc adds an RMSNorm over the concatenated states "
+                          f"that this handler does not price")
+    eagle = cfg.get("eagle_config") or {}
+    if eagle.get("use_aux_hidden_state") is False:
+        raise DeriveError(f"{model}: use_aux_hidden_state is off, so the drafter has no fc")
+    ids = eagle.get("eagle_aux_hidden_state_layer_ids")
+    states = cfg.get("num_aux_hidden_states") or (len(ids) if ids else 3)
+    target_hidden = whole(cfg.get("target_hidden_size", hidden), "target_hidden_size")
+    if cfg.get("eagle_aux_hidden_state_layer_ids") or eagle.get("eagle_aux_hidden_state_layer_ids") \
+            or cfg.get("dflash_config") or eagle.get("layer_ids"):
+        aux = draft_aux_hidden_state_layers({**cfg, **eagle}, model, 10**9, states=states)
+    else:
+        target = EAGLE3_TARGETS.get(model)
+        if target is None:
+            raise DeriveError(f"{model}: the drafter names no target layers to read and no "
+                              f"target is recorded for it in EAGLE3_TARGETS, so the engine's "
+                              f"default for the target cannot be resolved")
+        aux = eagle3_default_aux_layers(target["layers"])
+        if len(aux) != states:
+            raise DeriveError(f"{model}: the target's default captures {len(aux)} states {aux} "
+                              f"and the drafter's input projection takes {states}")
+    base = base_dtype(cfg, raw, model)
+    act = DTYPE_WIDTHS[base]
+    fc_in = target_hidden * states
+
+    def traffic(role, nbytes, tp=None):
+        node = dict(norm(role), bytes_per_token=int(nbytes))
+        if tp:
+            node["tp"] = tp
+        return node
+
+    def with_tp(node, tp):
+        node["tp"] = tp
+        return node
+
+    attn = {"op": "Attention", "holds_engine_kv": True, "kind": "gqa", "n_q": nq, "n_kv": nkv, "d_h": dh}
+    layer = [
+        traffic("input_norm", 2 * hidden * act, tp="replicated"),
+        traffic("hidden_norm", 2 * hidden * act, tp="replicated"),
+        gemm("qkv_proj", (nq + 2 * nkv) * dh, 2 * hidden),
+        attn,
+        gemm("o_proj", hidden, nq * dh),
+        collective("AllReduce", "attn_out", EMIT_TENSOR_PARALLEL),
+        traffic("post_attn_norm", 2 * hidden * act, tp="replicated"),
+        gemm("mlp_gate_up", 2 * ffn, hidden),
+        gemm("mlp_down", hidden, ffn),
+        collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL),
+    ]
+    context = []
+    if cfg.get("fc_norm"):
+        # One RMSNorm per captured state, over target_hidden_size each.
+        context.append(traffic("eagle3_fc_norm", 2 * fc_in * act, tp="replicated"))
+    context.append(with_tp(gemm("eagle3_fc", hidden, fc_in), "replicated"))
+    kinds = [{"id": "eagle3_layer", "nodes": layer, "edges": chain(layer)},
+             {"id": "eagle3_context", "nodes": context, "edges": chain(context)}]
+    embed = [{"op": "Gather", "role": "embed_tokens", "rows": vocab, "row_bytes": hidden * act,
+              "rows_per_token": 1, "out_bytes_per_token": hidden * act, "shard": "rows"},
+             collective("AllReduce", "embed_out", EMIT_TENSOR_PARALLEL)]
+    head = [traffic("final_norm", 2 * hidden * act, tp="replicated"),
+            with_tp(gemm("lm_head", vocab, hidden), "column")]
+    spec_embed = [dict(embed[0], role="eagle3_embed_tokens", aliases="embedding.embed_tokens"),
+                  collective("AllReduce", "eagle3_embed_out", EMIT_TENSOR_PARALLEL)]
+    extras = {
+        "global": {"architecture": raw["architectures"][0]},
+        "embedding": embed,
+        "head": head,
+        "speculator": {
+            "method": "eagle3",
+            # One token per pass: the drafter runs autoregressively, once per drafted token,
+            # and the deployment's num_speculative_tokens says how many passes.
+            "num_spec_tokens": 1,
+            "embedding": spec_embed,
+            "stack": {"pattern": ["eagle3_layer"], "repeat": layers},
+            "context_stack": {"pattern": ["eagle3_context"], "repeat": 1},
+            "head": [traffic("eagle3_final_norm", 2 * hidden * act, tp="replicated"),
+                     {**with_tp(gemm("eagle3_lm_head", vocab, hidden), "column"),
+                      "aliases": "head.lm_head"}],
+            "aux_hidden_state_layers": aux,
+        },
+    }
+    return kinds, {"pattern": ["eagle3_layer"], "repeat": layers}, extras
+
+
 HANDLERS = {
     "LlamaForCausalLM": handler_dense,
+    "LlamaForCausalLMEagle3": handler_llama_eagle3,
     "MistralForCausalLM": handler_dense,
     "Qwen2ForCausalLM": handler_dense,
     "Qwen3ForCausalLM": handler_dense,
@@ -4635,11 +6057,16 @@ HANDLERS = {
     "NemotronHForCausalLM": handler_nemotron_h,
     "Qwen3_5MoeForConditionalGeneration": handler_qwen3_5_moe,
     "KimiK3ForConditionalGeneration": handler_kimi_k3,
+    # The same text decoder plus a DSA indexer on the latent layers (dsa_config); its
+    # architecture is routed to vllm.models.kimi_k3 in vLLM v0.34.0rc0 (registry.py:489-492).
+    "KimiK31ForConditionalGeneration": handler_kimi_k3,
     "Glm5NextForConditionalGeneration": handler_glm5_next,
     # Muse Spark's language model is the text decoder of a multimodal checkpoint; the
     # vision and audio towers are not priced (modality text_decoder_of_multimodal).
     "MuseSparkForConditionalGeneration": handler_muse_spark,
     "MuseSparkDSparkModel": handler_muse_spark_dspark,
+    "K3DSparkModel": handler_k3_dspark,
+    "DSparkMiniMaxDraftModel": handler_minimax_dspark,
     # Kimi-K2.5 is a vision-language model whose TEXT decoder vLLM instantiates as
     # DeepseekV2ForCausalLM over config.text_config
     # (model_executor/models/kimi_k25.py:371-376, architectures=["DeepseekV2ForCausalLM"]),
@@ -4648,7 +6075,7 @@ HANDLERS = {
     # a dense prologue from first_k_dense_replace. The vision tower is not priced, which the
     # graph records as modality text_decoder_of_multimodal; the corpus's workloads are all
     # text (1024:1024, 1024:8192, 8192:1024), so the tower never runs in these measurements.
-    "KimiK25ForConditionalGeneration": handler_moe,
+    "KimiK25ForConditionalGeneration": handler_kimi_k25,
 }
 
 
@@ -4658,6 +6085,15 @@ HANDLERS = {
 EXTRAS_KEYS = frozenset({"global", "embedding", "head", "speculator",
                          "base_capability_families", "arch_overrides"})
 # The global shapes a handler may add; the rest derive() computes itself.
+def architecture_of(raw: dict, model: str) -> str:
+    """The configuration's architectures[0], which every checkpoint states."""
+    archs = raw.get("architectures")
+    if not isinstance(archs, list) or not archs or not isinstance(archs[0], str) or not archs[0]:
+        raise DeriveError(f"{model}: config.json states no architectures[0], which the graph records "
+                          f"as global.architecture")
+    return archs[0]
+
+
 EXTRA_GLOBAL_KEYS = frozenset({"architecture", "weight_scale", "context_window",
                                "default_context_window",
                                "pipeline_boundary_bytes_per_token"})
@@ -4710,6 +6146,11 @@ def derive(config_path: Path, model: str) -> dict[str, Any]:
             "vocab_size": int(require(cfg, "vocab_size", model)),
             "tie_word_embeddings": bool(cfg.get("tie_word_embeddings", False)),
             "weight_dtype": weight_dtype(cfg, raw, model),
+            # The configuration's architectures[0], for every graph (design D8, SUB-15). A
+            # lookup that borrows across models reads it to find another target of the same
+            # architecture, and several engine rules are keyed by it. A handler that states it
+            # states the same value.
+            "architecture": architecture_of(raw, model),
         },
         "layer_kinds": kinds,
         "stack": stack,
@@ -4733,6 +6174,15 @@ def derive(config_path: Path, model: str) -> dict[str, Any]:
             raise DeriveError(f"{model}: the handler and the quantization config state "
                               f"different weight scales")
         graph["global"]["weight_scale"] = scale
+    mx = mxfp8_scale(cfg, raw, model)
+    if mx:
+        if graph["global"]["weight_dtype"] != "fp8":
+            raise DeriveError(f"{model}: an mxfp8 checkpoint with global width "
+                              f"{graph['global']['weight_dtype']}, not fp8")
+        if graph["global"].get("weight_scale") not in (None, mx):
+            raise DeriveError(f"{model}: the handler and the quantization config state "
+                              f"different weight scales")
+        graph["global"]["weight_scale"] = mx
     if "embedding" in extras:
         graph["embedding"] = extras["embedding"]
 
@@ -4797,12 +6247,14 @@ def derive(config_path: Path, model: str) -> dict[str, Any]:
     # field globally would invent a draft stack for every such config.
     if arch in MTP_MODULE_ARCHS:
         modules = cfg.get("num_mtp_modules")
-        if modules is None:
+        if modules is None and spec:
             raise DeriveError(
                 f"{model}: {arch} takes its draft length from num_mtp_modules and the "
                 f"config declares none"
             )
-        spec = modules
+        # A config that names no draft layers in either spelling has none: MiniMax-M3.1-Flash
+        # ships no MTP module, and its DSpark drafter is a checkpoint of its own.
+        spec = modules or 0
     if spec and int(spec) > 0:
         # A draft module is its own stack: for an MoE target the draft pass is a second
         # MoE, which a scalar draft length would hide. Its layer composition comes from
@@ -4907,6 +6359,21 @@ def speculative_method(arch: str, model: str) -> str:
     return method
 
 
+def vllm_speculative_method(graph_method: str) -> str:
+    """The method name a deployment states for a graph's speculator method.
+
+    The graph names a model's own MTP speculator by family (deepseek_mtp, minimax_m3_mtp,
+    nemotron_h_mtp ...), which is how vLLM's model type for the draft is spelled. A deployment
+    states `method: mtp`: vLLM replaces every model-specific MTP name with mtp
+    (SpeculativeConfig, `if self.method in get_args(MTPModelTypes) and self.method != "mtp":
+    ... self.method = "mtp"`, vllm/config/speculative.py:1141-1145@v0.32.0) and, for a
+    MiniMax-M3 checkpoint, rewrites the model to minimax_m3_mtp with n_predict =
+    num_mtp_modules (:1030-1046). So a deployment's `mtp` is the graph's `*_mtp` speculator, and
+    a lookup that compares the two strings finds no speculator. Any other method (eagle3,
+    dflash, dspark ...) is its own name. blis-latency-kernel's specMethod applies the same rule."""
+    return "mtp" if graph_method.endswith("_mtp") else graph_method
+
+
 def pinned_config_sha256(model_yaml: Path) -> str | None:
     """Return model.yaml's config.sha256, or None when the config.json is committed."""
     if not model_yaml.is_file():
@@ -4941,6 +6408,9 @@ def main() -> int:
     ap.add_argument("--check", action="store_true",
                     help="re-derive and report differences without writing")
     ap.add_argument("--model", default=None, help="derive one model only")
+    ap.add_argument("--allow-unfetched", action="store_true",
+                    help="with --fetched, count a pinned entry whose file was not fetched (a gated "
+                         "repository) as not re-derivable offline instead of failing it")
     ap.add_argument("--fetched", default=None,
                     help="directory holding <model>/config.json for models whose model.yaml "
                          "pins config.sha256 instead of committing the file (X12); the nightly "
@@ -4954,6 +6424,10 @@ def main() -> int:
         return 2
 
     written, unchanged, stale, failed = [], [], [], []
+    # Entries that pin config.json by hash and were not fetched: the recorded hash is checked,
+    # the graph is not re-derived, so a hand edit of it is invisible here. Counted apart from
+    # the current ones, never as them.
+    unverified: list[str] = []
     for entry in sorted(p for p in models_dir.iterdir() if p.is_dir()):
         if args.model and entry.name != args.model:
             continue
@@ -4974,11 +6448,14 @@ def main() -> int:
                               f"model.yaml's config.sha256 {pinned}")
                 continue
             if args.fetched is None:
-                unchanged.append(entry.name)
+                unverified.append(entry.name)
                 continue
             cfg = Path(args.fetched) / entry.name / "config.json"
             if not cfg.is_file():
-                failed.append(f"{entry.name}: no fetched config.json at {cfg}")
+                if args.allow_unfetched:
+                    unverified.append(entry.name)
+                else:
+                    failed.append(f"{entry.name}: no fetched config.json at {cfg}")
                 continue
             got = hashlib.sha256(cfg.read_bytes()).hexdigest()
             if got != pinned:
@@ -5008,6 +6485,11 @@ def main() -> int:
             failed.append(f"{entry.name}: {type(exc).__name__}: {exc}")
             continue
 
+        # A config that sits elsewhere in its repository (a drafter's dspark/config.json) says so.
+        card_path = ((yaml.safe_load((entry / "model.yaml").read_text()) or {}).get("source") or {}).get("path") \
+            if (entry / "model.yaml").is_file() else None
+        if card_path:
+            graph["derived_from"]["path"] = card_path
         text = dump(graph)
         out = entry / "graph.yaml"
         if args.check:
@@ -5030,11 +6512,16 @@ def main() -> int:
         print(f"{name}: {why}", file=sys.stderr)
 
     if args.check:
-        print(f"checked {len(unchanged) + len(stale)} model(s): "
-              f"{len(unchanged)} current, {len(stale)} stale, {len(failed)} failed")
+        print(f"checked {len(unchanged) + len(stale) + len(unverified)} model(s): "
+              f"{len(unchanged)} current, {len(stale)} stale, {len(failed)} failed, "
+              f"{len(unverified)} not re-derivable offline (config.json pinned by hash; "
+              f"pass --fetched to re-derive)")
+        if unverified:
+            print("not re-derived: " + ", ".join(unverified), file=sys.stderr)
     else:
         print(f"derived {len(written) + len(unchanged)} graph(s): "
-              f"{len(written)} written, {len(unchanged)} unchanged, {len(failed)} failed")
+              f"{len(written)} written, {len(unchanged)} unchanged, {len(failed)} failed"
+              + (f", {len(unverified)} pinned by hash and not fetched" if unverified else ""))
     return 1 if (failed or stale) else 0
 
 

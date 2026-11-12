@@ -58,6 +58,15 @@ func TestAPlanThatNoPoolCanHaveIsRefused(t *testing.T) {
 		{"collective over one rank", func(p *PoolPlan) { l := collective(); l.Collective.Group = 1; p.Layers = append(p.Layers, l) }, "group of 1"},
 		{"stage beyond the pipeline", func(p *PoolPlan) { p.Layers[0].Stage = 1 }, "stage 1 of 1"},
 		{"no kernel library", func(p *PoolPlan) { p.Layers[0].KernelImpl.Library = "" }, "names no kernel library"},
+		{"a scorer entry on a GEMM", func(p *PoolPlan) { p.Layers[0].Scorer = true }, "only an attention primitive has a block-index scorer"},
+		{"a scorer entry on a collective", func(p *PoolPlan) { l := collective(); l.Scorer = true; p.Layers = append(p.Layers, l) }, "only an attention primitive has a block-index scorer"},
+		{"a dtype that is not a catalog dtype", func(p *PoolPlan) {
+			p.Layers = append(p.Layers, attn(PrimAttentionPrefill, "bf116", units.QuantFormat{}))
+		}, "not a catalog dtype"},
+		{"a dtype that contradicts the stated format", func(p *PoolPlan) {
+			p.Layers = append(p.Layers, attn(PrimAttentionPrefill, "bf16", units.QuantFormat{PayloadBits: 8}))
+		}, "describe different caches"},
+		{"a dtype on a GEMM", func(p *PoolPlan) { p.Layers[0].Shape.Dtype = "bf16" }, "only an attention primitive states the element type"},
 		{"draft layers without speculation", func(p *PoolPlan) { p.DraftLayers = p.Layers }, "configures no speculation"},
 		{"a page of nothing", func(p *PoolPlan) { p.KV[0].TokensPerPage = 0 }, "both are positive"},
 		{"a tier with no device", func(p *PoolPlan) { p.Tiers = []KVTier{{Bytes: units.Rank(units.Bytes(1))}} }, "no device"},
@@ -65,6 +74,8 @@ func TestAPlanThatNoPoolCanHaveIsRefused(t *testing.T) {
 		{"buckets without graphs", func(p *PoolPlan) { p.Graphs.Buckets = []int{1, 2} }, "captures no graphs"},
 		{"a tree with no steps", func(p *PoolPlan) { p.Drafts = DraftPolicy{TreeTopK: 4} }, "a tree has both"},
 		{"a chain and a tree", func(p *PoolPlan) { p.Drafts = DraftPolicy{Chain: 3, TreeTopK: 2, TreeSteps: 2} }, "is both a chain"},
+		{"an unknown first-pass word", func(p *PoolPlan) { p.Drafts = DraftPolicy{Chain: 3, FirstPassRows: "everything"} }, "Drafts.FirstPassRows"},
+		{"an unknown pass-requests word", func(p *PoolPlan) { p.Drafts = DraftPolicy{Chain: 3, PassRequests: "none"} }, "Drafts.PassRequests"},
 		{"a malformed format", func(p *PoolPlan) { p.Weights[0].Format = units.QuantFormat{} }, "Weights[0]"},
 		{"a GPU weight shared", func(p *PoolPlan) { p.Weights[0].Shared = true }, "only a host figure is shared"},
 		{"a buffer with no basis", func(p *PoolPlan) { p.Buffers[0].Basis = "" }, "per rank, per node or for the group"},
@@ -111,6 +122,15 @@ func TestAStepThatNoEngineCanFormIsRefused(t *testing.T) {
 		{"verified drafts outside a verify step", func(s *StepShape) { s.Drafts.Verified = 2 }, "only a verify step verifies"},
 		{"a prebuilt step that launches", func(s *StepShape) { s.Mode = StepPrebuilt }, "launches nothing"},
 		{"a negative decode threshold", func(s *StepShape) { s.DecodeQueryLen = -1 }, "DecodeQueryLen is -1"},
+		{"more tail rows than scheduled tokens", func(s *StepShape) { s.TailFrom = 3; s.Ranks[0].Requests[0].TailRows = 11 }, "11 tail rows of 10 scheduled"},
+		{"tail rows with no layer to start at", func(s *StepShape) { s.Ranks[0].Requests[0].TailRows = 4 }, "states no TailFrom"},
+		{"a tail launched below its rows", func(s *StepShape) {
+			s.TailFrom = 3
+			s.Ranks[0].Requests[0].TailRows = 4
+			s.Padded[0].TailTokens = 4
+		}, "padding never removes rows"},
+		{"a tail launch with no tail", func(s *StepShape) { s.Padded[0].TailTokens = 16 }, "needs a TailFrom"},
+		{"a negative tail layer", func(s *StepShape) { s.TailFrom = -1 }, "TailFrom is -1"},
 		{"a drafter pass for one rank of two", func(s *StepShape) {
 			s.Ranks = append(s.Ranks, s.Ranks[0])
 			s.Padded = append(s.Padded, s.Padded[0])
@@ -129,6 +149,15 @@ func TestAStepThatNoEngineCanFormIsRefused(t *testing.T) {
 				t.Errorf("error %v does not contain %q", err, c.want)
 			}
 		})
+	}
+	// A step that runs a layer suffix on a subset of its rows is one the contract allows, and the
+	// zero value of each tail field is no tail.
+	tail := good()
+	tail.TailFrom = 3
+	tail.Ranks[0].Requests[0].TailRows = 4
+	tail.Padded[0].TailTokens = 5 + 1
+	if err := tail.Validate(1, 1); err != nil {
+		t.Errorf("a step with a tail was refused: %v", err)
 	}
 	// A lockstep group of two ranks needs both, since padding depends on every rank's tokens.
 	if err := good().Validate(2, 1); err == nil {
@@ -309,5 +338,139 @@ func TestAPlanSurvivesJSON(t *testing.T) {
 	}
 	if !reflect.DeepEqual(p, back) {
 		t.Errorf("round trip changed the plan:\n%+v\n%+v", p, back)
+	}
+}
+
+// The implementations a pool runs are what the coefficient lookup matches against (VAL-8):
+// each once, from the target's layers and the drafter's, in a fixed order.
+func TestImplementationsAreTheDistinctOnesThePoolRuns(t *testing.T) {
+	a := KernelImpl{Library: "nccl", Variant: "ncclAllReduce", CodeHash: "aaaaaaaaaaaa", Toolkit: "cuda13.0"}
+	b := KernelImpl{Library: "flashinfer", Variant: "decode", CodeHash: "bbbbbbbbbbbb"}
+	c := KernelImpl{Library: "nccl", Variant: "ncclAllGather", CodeHash: "aaaaaaaaaaaa"}
+	p := PoolPlan{
+		Layers:      []LoweredLayer{{KernelImpl: a}, {KernelImpl: b}, {KernelImpl: a}},
+		DraftLayers: []LoweredLayer{{KernelImpl: c}, {KernelImpl: b}},
+	}
+	got := p.Implementations()
+	want := []KernelImpl{b, c, a}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	}
+	if len((PoolPlan{}).Implementations()) != 0 {
+		t.Errorf("a plan with no layers runs no implementation")
+	}
+}
+
+// The coefficient lookup binds to the implementations of the primitive it prices, so a pool that
+// runs two kernels reports each under its own primitive.
+func TestImplementationsByPrimitiveKeepsEachKernelWithItsPrimitive(t *testing.T) {
+	a := KernelImpl{Library: "flashinfer", Variant: "decode", CodeHash: "aaaaaaaaaaaa"}
+	b := KernelImpl{Library: "cublas", Variant: "gemm", CodeHash: "bbbbbbbbbbbb"}
+	c := KernelImpl{Library: "cublas", Variant: "gemm", CodeHash: "cccccccccccc"}
+	p := PoolPlan{
+		Layers: []LoweredLayer{{Primitive: PrimAttentionDecode, KernelImpl: a}, {Primitive: PrimGEMM, KernelImpl: b},
+			{Primitive: PrimAttentionDecode, KernelImpl: a}},
+		DraftLayers: []LoweredLayer{{Primitive: PrimGEMM, KernelImpl: c}, {Primitive: PrimGEMM, KernelImpl: b}},
+	}
+	got := p.ImplementationsByPrimitive()
+	if len(got) != 2 || len(got[PrimAttentionDecode]) != 1 || got[PrimAttentionDecode][0] != a {
+		t.Fatalf("attention: %v", got)
+	}
+	if g := got[PrimGEMM]; len(g) != 2 || g[0] != b || g[1] != c {
+		t.Fatalf("gemm: %v, want the two builds sorted", g)
+	}
+	if len((PoolPlan{}).ImplementationsByPrimitive()) != 0 {
+		t.Errorf("a plan with no layers runs nothing")
+	}
+}
+
+// The operations a pool lowers keep the layer, the primitive and which graph they belong to, so
+// a coefficient can be bound to the kernel that consumes it, not to every kernel of its primitive.
+func TestOperationsKeepWhichLayerAndGraphRunsWhichKernel(t *testing.T) {
+	a := KernelImpl{Library: "lib", Variant: "a", CodeHash: "aaaaaaaaaaaa"}
+	b := KernelImpl{Library: "lib", Variant: "b", CodeHash: "bbbbbbbbbbbb"}
+	c := KernelImpl{Library: "lib", Variant: "c", CodeHash: "cccccccccccc"}
+	p := PoolPlan{
+		Layers: []LoweredLayer{
+			{Layer: 0, Primitive: PrimAttentionDecode, KernelImpl: a},
+			{Layer: 1, Primitive: PrimAttentionDecode, KernelImpl: b},
+			{Layer: 1, Primitive: PrimGEMM, KernelImpl: a},
+		},
+		DraftLayers: []LoweredLayer{{Layer: 0, Primitive: PrimAttentionDecode, KernelImpl: c}},
+	}
+	want := []Operation{
+		{Layer: 0, Primitive: PrimAttentionDecode, Impl: a},
+		{Layer: 1, Primitive: PrimAttentionDecode, Impl: b},
+		{Layer: 1, Primitive: PrimGEMM, Impl: a},
+		{Draft: true, Layer: 0, Primitive: PrimAttentionDecode, Impl: c},
+	}
+	if got := p.Operations(); !reflect.DeepEqual(got, want) {
+		t.Errorf("operations %+v, want %+v", got, want)
+	}
+	// The pooled form is the projection of the operations.
+	by := p.ImplementationsByPrimitive()
+	if !reflect.DeepEqual(by[PrimAttentionDecode], []KernelImpl{a, b, c}) || !reflect.DeepEqual(by[PrimGEMM], []KernelImpl{a}) {
+		t.Errorf("by primitive %+v", by)
+	}
+	if !reflect.DeepEqual(ImplementationsOf(want), by) {
+		t.Errorf("ImplementationsOf differs from ImplementationsByPrimitive")
+	}
+}
+
+// A scorer entry is a node of an attention layer: decode and prefill take it, and the plan stays
+// valid.
+func TestAScorerEntryOnAnAttentionPrimitiveValidates(t *testing.T) {
+	for _, prim := range []Primitive{PrimAttentionDecode, PrimAttentionPrefill} {
+		p := goodPlan()
+		p.Layers = append(p.Layers, LoweredLayer{Layer: 1, Primitive: prim, Scorer: true,
+			KernelImpl: KernelImpl{Library: "lib", CodeHash: "abc"}})
+		if err := p.Validate(); err != nil {
+			t.Errorf("a scorer entry on %s: %v", prim, err)
+		}
+	}
+}
+
+func attn(prim Primitive, d Dtype, f units.QuantFormat) LoweredLayer {
+	return LoweredLayer{Layer: 1, Primitive: prim, KernelImpl: KernelImpl{Library: "lib", CodeHash: "abc"},
+		Shape: PrimitiveShape{Dtype: d, Format: f}}
+}
+
+// The cache element type is a catalog dtype that agrees with the stated format, on an attention
+// primitive; the zero value is not stated and validates beside any format.
+func TestACacheDtypeThatAgreesWithItsFormatValidates(t *testing.T) {
+	for name, l := range map[string]LoweredLayer{
+		"bf16 at 16 bits":    attn(PrimAttentionPrefill, "bf16", units.QuantFormat{PayloadBits: 16}),
+		"fp16 at 16 bits":    attn(PrimAttentionDecode, "fp16", units.QuantFormat{PayloadBits: 16}),
+		"fp8 at 8 bits":      attn(PrimAttentionPrefill, "fp8", units.QuantFormat{PayloadBits: 8}),
+		"bf16, no format":    attn(PrimAttentionPrefill, "bf16", units.QuantFormat{}),
+		"not stated, 8 bits": attn(PrimAttentionPrefill, "", units.QuantFormat{PayloadBits: 8}),
+	} {
+		p := goodPlan()
+		p.Layers = append(p.Layers, l)
+		if err := p.Validate(); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
+func TestAnAdmissionQueueIsRefusedWhenACountIsNegative(t *testing.T) {
+	p := goodPlan()
+	p.Host.Admission = AdmissionQueue{Servers: 2, WorkersPerServer: 1}
+	if err := p.Validate(); err != nil {
+		t.Fatalf("a queue of two servers of one worker was refused: %v", err)
+	}
+	for _, q := range []AdmissionQueue{{Servers: -1, WorkersPerServer: 1}, {Servers: 1, WorkersPerServer: -1}} {
+		p.Host.Admission = q
+		if p.Validate() == nil {
+			t.Errorf("%+v was accepted", q)
+		}
+	}
+	if (AdmissionQueue{}).Enabled() || (AdmissionQueue{}).Queues() != 1 {
+		t.Error("the zero queue is not one uncontended queue")
 	}
 }

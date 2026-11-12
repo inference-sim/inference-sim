@@ -1,6 +1,9 @@
 package ledger_test
 
 import (
+	"encoding/json"
+	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -48,5 +51,89 @@ func TestNoCommittedRoles(t *testing.T) {
 	}
 	if err := ledger.CheckNoRoles("..", files, nil); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// D3: the AISimulate end-to-end artifact the extractor reads is pinned in
+// the ledger (source aisimulate, artifact e2e-accuracy-web), and the pin file the extractor
+// checks its input against says the same thing. The ledger entry decides; a pin file that
+// differs would let the extractor accept an artifact the ledger does not name.
+func TestExtractorPinEqualsTheLedgerEntry(t *testing.T) {
+	src, err := ledger.LoadSources("../catalog/ledger")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := src.Lookup("aisimulate")
+	if s == nil || len(s.Artifacts) != 1 || s.Artifacts[0].ID != "e2e-accuracy-web" {
+		t.Fatalf("source aisimulate does not pin the artifact e2e-accuracy-web: %+v", s)
+	}
+	rev := s.Artifacts[0].Revision
+	raw, err := os.ReadFile("../kernel/scripts/aisimulate_e2e.pin.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pin struct {
+		Source        string `json:"source"`
+		ArtifactID    string `json:"artifact_id"`
+		RunID         string `json:"run_id"`
+		RunAttempt    int    `json:"run_attempt"`
+		Commit        string `json:"commit"`
+		Artifact      string `json:"artifact"`
+		ZipSHA256     string `json:"zip_sha256"`
+		SummarySHA256 string `json:"summary_sha256"`
+	}
+	if err := json.Unmarshal(raw, &pin); err != nil {
+		t.Fatal(err)
+	}
+	sums := map[string]string{}
+	for _, a := range rev.Assets {
+		sums[a.Name] = a.SHA256
+	}
+	for name, pair := range map[string][2]any{
+		"source":         {pin.Source, s.ID},
+		"artifact id":    {pin.ArtifactID, s.Artifacts[0].ID},
+		"run id":         {pin.RunID, rev.Ref},
+		"run attempt":    {pin.RunAttempt, rev.RunAttempt},
+		"commit":         {pin.Commit, rev.Commit},
+		"artifact":       {pin.Artifact, rev.Artifact},
+		"zip sha256":     {pin.ZipSHA256, sums[rev.Artifact+".zip"]},
+		"summary sha256": {pin.SummarySHA256, sums["summary.json"]},
+	} {
+		if pair[0] != pair[1] {
+			t.Errorf("%s: the extractor's pin file has %v, sources.yaml has %v", name, pair[0], pair[1])
+		}
+	}
+}
+
+// Every record a supplement pins is in the committed unit list, so the list the dashboard and
+// the jobs read holds a unit for it with the canonical role key. A pin added to sources.yaml
+// without regenerating the list fails here, with no network.
+func TestEverySupplementRecordHasAUnit(t *testing.T) {
+	l, err := ledger.Load("../catalog/ledger", map[string]ledger.RoleKeyFunc{inferencex.SourceID: inferencex.RoleKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := l.Sources.Lookup(inferencex.SourceID)
+	if src == nil || len(src.Supplements) == 0 {
+		t.Fatal("the InferenceX source pins no supplement (X22)")
+	}
+	has := map[string]bool{}
+	for _, u := range l.Units[inferencex.SourceID] {
+		for _, m := range u.Measurements {
+			has[m.Record] = true
+			for _, d := range m.Duplicates {
+				has[d] = true
+			}
+			for _, d := range m.Merged {
+				has[d.Record] = true
+			}
+		}
+	}
+	for _, s := range src.Supplements {
+		for _, r := range s.Records {
+			if !has[fmt.Sprint(r.ID)] {
+				t.Errorf("supplement %s pins record %d, but the unit list holds no unit for it; regenerate it with ledger ingest-inferencex", s.ID, r.ID)
+			}
+		}
 	}
 }

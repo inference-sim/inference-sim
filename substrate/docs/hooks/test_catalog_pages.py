@@ -29,6 +29,7 @@ def test_loads_every_entry_on_disk(cat):
     assert sorted(cat.chips) == sorted(p.stem for p in (ROOT / "hardware").glob("*.yaml"))
     assert sorted(cat.fabrics) == sorted(p.stem for p in (ROOT / "networks").glob("*.yaml"))
     assert sorted(cat.workloads) == sorted(p.stem for p in (ROOT / "workloads").glob("*.yaml"))
+    assert sorted(cat.routers) == sorted(p.stem for p in (ROOT / "routers").glob("*.yaml"))
 
 
 def test_reads_the_deriver_version_from_the_deriver(cat):
@@ -84,12 +85,15 @@ def test_layer_expansion_matches_every_graph(cat):
         assert set(m.layers) <= {k["id"] for k in m.graph["layer_kinds"]}, m.name
 
 
-def test_storage_figures_are_numbers(cat):
-    # PyYAML reads 7.0e3 as a string; the generator must not.
+def test_storage_tiers_state_no_number(cat):
+    # SUB-18: a tier is a name and a description. Its rates and latency are registry
+    # coefficients, so the page shows the coefficient names and no figure of its own.
     for name, tier in cat.tiers.items():
-        for key in ("read_bandwidth_mb_s", "write_bandwidth_mb_s", "base_latency_us"):
-            assert isinstance(tier[key], float), (name, key)
-    assert cat.tiers["nvme_gen4"]["read_bandwidth_mb_s"] == 7000.0
+        assert set(tier) <= {"_comment"}, (name, tier)
+        assert tier.get("_comment"), name
+    table = pages.storage_table(cat)
+    assert "offload_tier_nvme_gen4_read_rate" in table
+    assert "MB/s" not in table
 
 
 @pytest.mark.parametrize("value,expected", [
@@ -172,3 +176,50 @@ def test_agentx_mvp_notes_carry_its_provenance(cat):
     assert "agentx-mvp: provenance notes" in notes
     assert "Apache-2.0" in notes and "build_weka_hf_dataset.py" in notes
 
+
+
+def test_router_table_has_one_row_per_entry_and_cites_both_routers(cat):
+    rows = pages.routers_table(cat).splitlines()[2:]
+    assert len(rows) == len(cat.routers) > 0
+    for name, e in cat.routers.items():
+        row = next(r for r in rows if r.startswith(f"| `{name}`"))
+        assert f"`{e['policy']}`" in row
+        sides = {c["side"] for c in e["evidence"]}
+        assert sides == {"router", "llm-d"}, f"{name} must cite both routers"
+
+
+def test_router_entries_link_every_citation_at_its_commit(cat):
+    text = pages.routers_entries(cat)
+    for e in cat.routers.values():
+        for c in e["evidence"]:
+            assert f"/blob/{c['commit']}/{c['path']}#L" in text
+
+
+def test_a_mapped_router_entry_prints_its_differences_and_its_bound(cat):
+    text = pages.routers_entries(cat)
+    mapped = [(n, e) for n, e in cat.routers.items() if e["policy"] != "none"]
+    assert mapped, "the catalog maps at least one router mode"
+    for name, e in mapped:
+        section = text.split(f"### `{name}`")[1].split("### `")[0]
+        for d in e["difference"]:
+            assert d["aspect"] in section
+        for r in e["bound"]["ratios"]:
+            assert f"{r['max_ratio']:.2f}" in section and r["metric"] in section
+        assert e["bound"]["evidence"]["sha256"] in section
+        assert all(" ".join(str(x).split()) in section for x in e["bound"]["not_measured"])
+        row = next(r for r in pages.routers_table(cat).splitlines() if r.startswith(f"| `{name}`"))
+        assert row.rstrip(" |").endswith(pages.bound_summary(e))
+    for name, e in cat.routers.items():
+        if e["policy"] == "none":
+            assert "bound" not in e and "difference" not in e
+
+
+def test_citation_link_anchors_a_line_and_a_range():
+    base = {"repository": "o/r", "commit": "a" * 40, "path": "p.go"}
+    assert pages.citation_link({**base, "lines": "7"}).endswith(f"/p.go#L7)")
+    assert pages.citation_link({**base, "lines": "7-9"}).endswith(f"/p.go#L7-L9)")
+
+
+def test_router_key_separates_an_affinity_setting():
+    assert pages.router_key({"router": "x", "mode": "kv"}) == "x/kv"
+    assert pages.router_key({"router": "x", "mode": "kv", "session_affinity_ttl_s": 300}) == "x/kv/affinity-ttl-300"

@@ -49,6 +49,10 @@ type Field struct {
 	Status Status `json:"status" yaml:"status"`
 	// Evidence supports Status. Exactly one of its keys is set, the one Status requires.
 	Evidence Evidence `json:"evidence" yaml:"evidence"`
+	// ValueClasses are the classes of values the evidence covers (design VLM-3). Required for
+	// a modelled or proven-inert field and not allowed for any other: a field with no evidence
+	// covers no class.
+	ValueClasses *ValueClasses `json:"value_classes,omitempty" yaml:"value_classes,omitempty"`
 	// Estimation is the rule a scoring harness applies when a run did not record the field,
 	// or set it to a value the port does not model (design §11.2).
 	Estimation Estimation `json:"estimation" yaml:"estimation"`
@@ -119,4 +123,13 @@ type Estimation struct {
 	Setting map[string]any `json:"setting,omitempty" yaml:"setting,omitempty"`
 	// Reason says why Setting stands in for the field. Only with RuleSubstitute.
 	Reason string `json:"reason,omitempty" yaml:"reason,omitempty"`
+	// Preserves is a sentence naming what the upstream resolves identically when the field is
+	// left unset or stated as Setting. Only with RuleLeaveUnset or RuleSubstitute, and required
+	// with ValidWhen.
+	Preserves string `json:"preserves,omitempty" yaml:"preserves,omitempty"`
+	// ValidWhen says when the stand-in is exact: the stand-in is exact for a recorded value
+	// when at least one clause holds. A value no clause covers is not stood in for. Absent,
+	// the rule applies to every value. Only with RuleLeaveUnset or RuleSubstitute. Exact
+	// evaluates it.
+	ValidWhen []Clause `json:"valid_when,omitempty" yaml:"valid_when,omitempty"`
 }

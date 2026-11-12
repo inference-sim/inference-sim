@@ -23,6 +23,7 @@ import (
 	"sync"
 
 	substrate "github.com/inference-sim/blis-substrate"
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/validate/dataset"
 )
 
@@ -80,6 +81,11 @@ type Data struct {
 	mu       sync.Mutex
 	loaded   map[string]bool // registry files a reader loaded, by path relative to registry/
 	selected map[string]Selected
+	// running are the kernel implementations the recorded cost models ran, by the lowered
+	// primitive each executes, each once.
+	running map[string]map[coefficient.KernelImpl]bool
+	// observers are asked at report time whether a coefficient was read outside its fit range.
+	observers []ExtrapolationObserver
 }
 
 // Embedded opens the embedded catalog and registry with no overlay.
@@ -255,7 +261,7 @@ func catalogOverlayRules() rules {
 	}
 	return rules{patterns: ps, refused: map[string]string{
 		"ledger":       "an overlay may not contain ledger files",
-		"measurements": "an overlay adds models, hardware, devices, networks or workloads; the measurement-source registry is not overlaid",
+		"measurements": "an overlay adds models, hardware, devices, networks, routers or workloads; the measurement-source registry is not overlaid",
 	}, ignored: catalogRules().ignored}
 }
 

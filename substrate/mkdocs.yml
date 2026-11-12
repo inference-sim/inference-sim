@@ -145,6 +145,7 @@ nav:
     - Validate the catalog and the registry: contracts/guides/checkouts.md
     - Write a scenario and a deployment: contracts/guides/authoring.md
     - Validate documents from Go: contracts/guides/go.md
+    - Measure how far the router policy moves a figure: contracts/guides/router-sensitivity.md
   - Reference:
     - contracts/reference/index.md
     - Scenario: contracts/reference/scenario.md
@@ -164,6 +165,7 @@ nav:
     - Point record: contracts/reference/point-record.md
     - JSON Schemas: contracts/reference/schemas.md
     - Field list: contracts/reference/fields.md
+    - Router table: contracts/reference/router-table.md
     - Kernel interface: contracts/reference/kernel.md
     - Engine interface: contracts/reference/engine.md
     - Router contract: contracts/reference/embed.md
@@ -195,6 +197,7 @@ nav:
     - The catalog in BLIS: catalog/concepts/repositories.md
     - Declared, learned, chosen: catalog/concepts/declared-facts.md
     - Model graphs: catalog/concepts/model-graphs.md
+    - Mixed-precision checkpoints: catalog/concepts/mixed-precision.md
     - Glossary: catalog/concepts/glossary.md
   - Reference:
     - catalog/reference/index.md
@@ -203,6 +206,7 @@ nav:
     - Chips: catalog/reference/hardware.md
     - Fabrics: catalog/reference/networks.md
     - Workloads: catalog/reference/workloads.md
+    - Router table: catalog/reference/routers.md
     - Storage tiers: catalog/reference/storage.md
 - Registry:
   - Home: registry/index.md
@@ -221,11 +225,13 @@ nav:
       - cost-model-collectives: registry/reference/sets/cost-model-collectives.md
       - cost-model-collectives-inferencex: registry/reference/sets/cost-model-collectives-inferencex.md
       - cost-model-fabric: registry/reference/sets/cost-model-fabric.md
+      - cost-model-offload-tiers: registry/reference/sets/cost-model-offload-tiers.md
       - cost-model-attention: registry/reference/sets/cost-model-attention.md
       - cost-model-recurrent: registry/reference/sets/cost-model-recurrent.md
       - cost-model-host-overheads: registry/reference/sets/cost-model-host-overheads.md
       - cost-model-memory: registry/reference/sets/cost-model-memory.md
     - Acceptance profiles: registry/reference/acceptance.md
+    - Typical error of each method: registry/reference/method-error.md
     - File format: registry/reference/format.md
     - Validation: registry/reference/validation.md
   - Methodology:
@@ -242,6 +248,9 @@ nav:
     - Pricing a step: kernel/concepts/step.md
     - Memory: kernel/concepts/memory.md
     - Parallelism: kernel/concepts/parallelism.md
+    - Switch groups: kernel/concepts/switch-groups.md
+    - The admission queue: kernel/concepts/admission-split.md
+    - The Hopper dense MXFP8 ramp: kernel/concepts/hopper-dense-mxfp8-ramp.md
     - Refuse, assume, override: kernel/concepts/resolution.md
   - Guides:
     - kernel/guides/index.md

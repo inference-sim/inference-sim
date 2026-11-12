@@ -120,7 +120,7 @@ least one layer.
 | Key | Type | Required | Meaning |
 |---|---|---|---|
 | `method` | string | yes | The engine's name for the speculative method. The rules pack checks it. |
-| `num_spec_tokens` | integer | yes | Draft tokens per request per step, at least 1. Not the draft layer count. |
+| `num_spec_tokens` | integer | yes | The draft length the checkpoint defaults to, at least 1: what vLLM gives `num_speculative_tokens` when a deployment states none (`n_predict` for an MTP draft, `block_size` for DSpark), and 1 for a method with no default (EAGLE, EAGLE3, DFlash). Not a limit and not the draft layer count. One entry states a count its configuration does not: Kimi-K3's DSpark drafter states 7, from the model card, where vLLM refuses a deployment that states none. A deployment's own count replaces it; see [stated draft lengths](#stated-draft-lengths). |
 | `drafting` | string | no | How `stack` runs. Omitted means once per drafted token; `parallel_block` means once per step over `num_spec_tokens` positions per request. See [drafting modes](vocabularies.md#drafting-modes). |
 | `embedding` | list of nodes | no | The draft's own token lookup and its reduction, before each pass of `stack`, over the same rows. A lookup into the target's table aliases `embedding.<role>`. Outside every layer, like the top-level `embedding`. |
 | `stack` | mapping | yes | The draft module's own stack over the graph's layer kinds. Needs a `pattern` and a `repeat` of at least 1. |
@@ -129,6 +129,7 @@ least one layer.
 | `sequential_head` | list of nodes | no | Nodes run once per draft position, in order, over one row per request. Only with `parallel_block`. |
 | `aux_hidden_state_layers` | list of integers | no | The target layers whose hidden states the drafter reads, in the engine's capture convention: `L` is the state entering decoder layer `L`, `0` the embedding output and the layer count the last layer's output. EAGLE3, DFlash and dense DSpark configurations state these one lower as `target_layer_ids`. Under pipeline parallelism each stage boundary carries every state captured upstream of it to the last stage. Not negative, strictly increasing. |
 | `aux_hidden_state_bytes_per_token` | integer | no | One captured state's bytes a token. Omitted, one hidden-width activation, the sum of `hidden_states` and `residual`. A target with a wider residual stream states it, as Muse Spark does for its fp32 stream. Only with `aux_hidden_state_layers`. Not negative. |
+| `shares_target_head` | boolean | no | The drafter ships no `lm_head` of its own (its checkpoint holds no such tensor) and reads its target's, as the engine does when the weights hold none. A drafter graph is validated as a model, so it states an `lm_head`, and `head` names it with `aliases: head.<role>`. Named as a deployment's draft model, that alias is the drafter's own head and its weights are the drafter's resident bytes; with this set it stays an alias of the target graph's head, resident once. Requires a GEMM in `head` that aliases a head node. Set only on a separate drafter's graph; on a target's own speculator it has no meaning. |
 
 The draft module is a stack and not a token count because, for an MoE target, the draft
 pass is itself an MoE pass with its own cost. DeepSeek-V4.1's DSpark shows why the other
@@ -413,6 +414,59 @@ the entry is and where its `config.json` came from.
 | `source` | mapping | yes | Where the vendor configuration was fetched from, below. |
 | `licence` | mapping | no | The licence `config.json` is published under, below (X12). The loader decodes it and does not require it; `validate-catalog` requires it in the project's own catalog. |
 | `config` | mapping | no | The SHA-256 of a `config.json` that is not committed, below (X12). |
+| `drafters` | list of strings | no | What can draft tokens for this model (D8): `speculator` for the speculator its own graph states, and the catalog name of each separate drafter checkpoint. `validate-catalog` requires a graph with a speculator to list `speculator`, and each named drafter to name this model among its `targets`. |
+| `targets` | list of strings | no | On a separate drafter's entry: the catalog names of the models it drafts for. Each of them lists this entry in its `drafters`. One drafter checkpoint serves every model whose hidden states it was trained to read, and an architecture shipped in several quantisations is several catalog entries, so a drafter may have several targets; acceptance is keyed by the target and drafter pair (D8). |
+
+Adding a model includes the drafters it ships with and those that public benchmark deployments run
+with it (design §12.1): a separate drafter checkpoint gets its own entry, derived from its public
+`config.json` at a pinned revision, and is listed here. A drafter whose configuration does not
+name the target layers it reads is priced with the capture layers the engine takes from the
+target's own default, which the deriver records per drafter with the target whose depth it is.
+A model run with a drafter the catalog lacks is refused for that drafter, not priced without it.
+
+An autoregressive drafter, a named one (the EAGLE3 heads) or the graph's own (MTP), proposes K tokens
+by K passes of its layers. How many rows its first pass processes (one per request, or every token
+the target scheduled, prefill included) and for which requests the head and later passes run (the
+requests that complete their prompt, or every request) are the engine's execution decisions, not
+facts of the graph. The engine states them in the pool's plan, as `plan.DraftPolicy.FirstPassRows`
+(`per_request` or `scheduled`) and `PassRequests` (`sampling` or `all`); they are not engine
+settings, and the kernel receives them as `Inputs.DraftFirstPassRows` and `DraftPassRequests`. A
+deployment that speculates through an autoregressive drafter with either empty is refused at
+construction with `draft_passes_unstated` (an unknown word with `draft_passes_unknown`). The kernel
+names no engine or method. A parallel-block drafter (DSpark) needs neither: its context stack
+carries the work over the target's tokens.
+
+A graph names its own MTP speculator by family (`deepseek_mtp`, `minimax_m3_mtp`,
+`nemotron_h_mtp`), and a deployment states `method: mtp`: vLLM replaces every model-specific MTP
+name with `mtp` (`vllm/config/speculative.py`, v0.32.0). `derive_graph.vllm_speculative_method`
+is that rule, so a lookup of a deployment's `mtp` against a graph compares the rule's output, not
+the two strings. Methods of separate drafters (`eagle3`, `dflash`, `dspark`) keep their names.
+
+`catalog/scripts/drafter_coverage.py` reports the drafters that published deployments run and the
+catalog lacks (design §12.2). It reads vLLM's recipe files and InferenceX's recipe files, and for
+each speculative configuration checks that the target has an entry, that a named draft checkpoint
+has an entry whose `targets` include the target's, and that the target lists it. It also checks
+the method: the graph's `speculator.method` (the target's graph for `speculator`, a drafter's own
+graph for a separate drafter or one shipped in the target's repository) must be the method the
+deployment states, after the `mtp` rule above. An in-graph MTP speculator does not serve an
+`eagle3` deployment, and a same-repository DSpark drafter does not serve an `mtp` one. Run it with
+checkouts of the two sources; it exits 1 on a missing, unlinked or wrong-method drafter unless
+`--report-only`.
+A recipe for a quantisation is read as the checkpoint it names, and a target the catalog lacks is
+reported as a missing model, not a missing drafter.
+
+### Stated draft lengths
+
+A deployment states `num_speculative_tokens` (K); the graph's `num_spec_tokens` is not compared with it for equality. What vLLM v0.32.0 (`vllm/config/speculative.py`) does with K, by method:
+
+| Method | K not stated | Stated K | Passes of the draft |
+|---|---|---|---|
+| `mtp` (any `*_mtp` graph method) | `n_predict` (:1490-1492; MiniMax-M3: `num_mtp_modules`, :1043-1046) | refused if K is above `n_predict` and not a multiple of it (:1493-1501); any K from 1 to `n_predict` is valid and uses the first K modules; a larger multiple reuses the modules in turn, with a warning (:1377-1384; module `spec_step_idx % num_mtp_layers`, `minimax_m3/nvidia/mtp.py:136`) | K, one per drafted token |
+| `eagle`, `eagle3`, `draft_model` | refused (:1502-1507, :1819-1824) | any K of at least 1 | K, one per drafted token (`llm_base_proposer.py:689`) |
+| `dflash` | refused | any K of at least 1 | one, over 1 + K positions (:1892-1918) |
+| `dspark` | `block_size`, else `dspark_block_size` (:1479-1488) | any K of at least 1; a Qwen3-Omni draft must equal its block size (:148-184) | one, over K positions |
+
+K of zero or less is refused for every method (:393, :1826-1830). The rule is the engine's, not the catalog's, so a stated K is checked against the method's row and the checkpoint's `n_predict` or block size, and priced at K.
 
 ### `source`
 
@@ -423,6 +477,7 @@ the entry is and where its `config.json` came from.
 | `provider` | string | yes | The hosting service, such as `huggingface`. |
 | `repo` | string | yes | The repository on that service. |
 | `revision` | string | yes | The exact revision the configuration was taken at. |
+| `path` | string | no | Where the configuration sits in the repository: a relative `.json` file with no `..` element. Omitted, `config.json` at the root. A checkpoint that ships a second model in a directory of its own, such as a drafter under `dspark/`, names that file here. |
 | `retrieved` | string | no | The date it was fetched. |
 
 ### `licence`

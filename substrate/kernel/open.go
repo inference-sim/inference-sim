@@ -149,12 +149,37 @@ func OpenPool(scenario string, r Repos, poolIndex int) (*Kernel, error) {
 }
 
 // RecordSelected records into d every coefficient this kernel's lookups returned while it
-// was built, for d's selected-entry report (design §3.3, VAL-6). OpenPool calls it; a caller
-// that builds a kernel with New from documents it took from d calls it itself.
+// was built, for d's selected-entry report (design §3.3, VAL-6), with what the report carries
+// of each (the kernel implementations it is valid for, its fit range, and whether it is
+// unidentified or was read outside its fit range).
+//
+// It also registers the kernel with d as an extrapolation observer, so a report read later
+// says which entries a step priced by then read outside their fit range. Extrapolation is a
+// fact about the steps a run priced, and nothing has been priced when OpenPool records the
+// entries; the simulator does not record again at the end of a run. Records accumulate in d
+// (load.Data.RecordEntry), so a simulator that opens one kernel per engine instance or pool
+// calls RecordSelected once per kernel, and a flag any kernel raised stays raised. A caller
+// that builds a kernel with New from documents it took from d calls RecordSelected itself.
 func (k *Kernel) RecordSelected(d *load.Data) {
-	for _, r := range k.selected {
-		d.RecordCoefficient(r.Set, r.Entry.Name, r.Entry.Scope, string(r.Entry.Method))
+	extrapolated := extrapolatedEntries(k.trust)
+	for i, r := range k.selected {
+		d.RecordEntry(r.Set, r.Entry, r.Primitive, r.Running, r.Match, extrapolated[i])
 	}
+	d.RecordImplementations(k.running)
+	d.Observe(k)
+}
+
+// Extrapolated implements load.ExtrapolationObserver: whether any step this kernel priced
+// read the selected entry outside the range its fit covered.
+func (k *Kernel) Extrapolated(set, name string, scope coefficient.Scope, method string, impls []coefficient.KernelImpl) bool {
+	extrapolated := extrapolatedEntries(k.trust)
+	for i, r := range k.selected {
+		if extrapolated[i] && r.Set == set && r.Entry.Name == name && r.Entry.Scope.Key() == scope.Key() &&
+			string(r.Entry.Method) == method && coefficient.DescribeImpls(r.Entry.KernelImpls) == coefficient.DescribeImpls(impls) {
+			return true
+		}
+	}
+	return false
 }
 
 // OpenInputs resolves one pool of a scenario file into the documents New prices it from,

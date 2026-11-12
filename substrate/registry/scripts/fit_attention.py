@@ -39,8 +39,19 @@ import yaml
 FLOOR_GRID = [x * 0.5 for x in range(2, 81)]
 # The rate grid, as a fraction of the part's datasheet HBM bandwidth. Fitted as a fraction
 # rather than an absolute so the value is comparable across parts and so a reader can see
-# at once how far below peak an attention kernel runs.
-FRACTION_GRID = [x * 0.02 for x in range(5, 101)]
+# at once how far below peak an attention kernel runs. The grid stops at 1.0: a kernel cannot
+# read faster than the datasheet peak (SUB-5), and the sibling fitters stop there too.
+FRACTION_GRID = [x * 0.02 for x in range(5, 51)]
+
+
+def check_fraction(fraction: float) -> float:
+    """Return the fraction, or refuse one outside (0, 1.0]. relane_attention_decode.py writes
+    fraction * peak unchanged, so a value above 1.0 would be committed as a rate above the
+    part's datasheet bandwidth."""
+    if not 0.0 < fraction <= 1.0:
+        raise ValueError(f"bandwidth fraction {fraction} is outside (0, 1.0]: "
+                         "a kernel cannot read faster than the datasheet peak (SUB-5)")
+    return fraction
 
 
 def read(path: Path) -> list[dict]:
@@ -128,6 +139,7 @@ def main(argv: list[str]) -> int:
                 best = (err, floor_us, fraction)
     assert best is not None
     err, floor_us, fraction = best
+    check_fraction(fraction)
 
     # What the current model gets, for comparison: a pure KV read at the generic derate.
     naive = log_error(points, lambda b: max(b / (peak * 0.8), 1e-12))

@@ -21,6 +21,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/contracts/spec/pointrecord"
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/blis-substrate/contracts/spec/routertable"
 	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
 	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
@@ -53,6 +54,7 @@ func TestEveryLoaderRefusesTheMalformedSet(t *testing.T) {
 		{"LoadModelIdentity", cat("models/qwen3-14b/model.yaml"), &model.Identity{}, func(p string) error { return ignore(LoadModelIdentity(p)) }},
 		{"LoadChip", cat("hardware/h100.yaml"), &hardware.Chip{}, func(p string) error { return ignore(LoadChip(p)) }},
 		{"LoadFabric", cat("networks/ib-400g.yaml"), &hardware.Fabric{}, func(p string) error { return ignore(LoadFabric(p)) }},
+		{"LoadRouterEntry", cat("routers/dynamo-round-robin.yaml"), &routertable.Entry{}, func(p string) error { return ignore(LoadRouterEntry(p)) }},
 		{"LoadStorageDevices", cat("devices/storage.yaml"), &map[string]*hardware.StorageDevice{}, func(p string) error { return ignore(LoadStorageDevices(p)) }},
 		{"LoadCoefficientSet", ex("coefficient-set.yaml"), &coefficient.Set{}, func(p string) error { return ignore(LoadCoefficientSet(p)) }},
 		{"LoadAcceptanceProfileSet", ex("acceptance-profile-set.yaml"), &acceptance.ProfileSet{}, func(p string) error { return ignore(LoadAcceptanceProfileSet(p)) }},
@@ -160,6 +162,7 @@ func TestEveryLoaderReadsEveryFieldItsExampleStates(t *testing.T) {
 		{"LoadModelIdentity", cat("models/qwen3-14b/model.yaml"), func(p string) (any, error) { return LoadModelIdentity(p) }},
 		{"LoadChip", cat("hardware/gb200-nvl72.yaml"), func(p string) (any, error) { return LoadChip(p) }},
 		{"LoadFabric", cat("networks/ib-400g.yaml"), func(p string) (any, error) { return LoadFabric(p) }},
+		{"LoadRouterEntry", cat("routers/dynamo-round-robin.yaml"), func(p string) (any, error) { return LoadRouterEntry(p) }},
 		{"LoadStorageDevices", cat("devices/storage.yaml"), func(p string) (any, error) { return LoadStorageDevices(p) }},
 		{"LoadCoefficientSet", ex("coefficient-set.yaml"), func(p string) (any, error) { return LoadCoefficientSet(p) }},
 		{"LoadAcceptanceProfileSet", ex("acceptance-profile-set.yaml"), func(p string) (any, error) { return LoadAcceptanceProfileSet(p) }},

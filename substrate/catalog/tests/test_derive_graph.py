@@ -10,6 +10,7 @@ hand, which silently decouples it from the config it claims to come from.
 from __future__ import annotations
 
 import collections
+import hashlib
 import json
 import re
 import subprocess
@@ -61,24 +62,128 @@ def test_rederivation_is_stable():
     assert r.returncode == 0, f"re-derivation differs:\n{r.stderr}"
 
 
+@pytest.fixture(scope="module")
+def tree_copy(tmp_path_factory):
+    """One copy of the catalog the hand-edit tests mutate and restore."""
+    import shutil
+    tree = tmp_path_factory.mktemp("edit") / "catalog"
+    shutil.copytree(ROOT, tree, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+    return tree
+
+
+def _edit_hidden_size(graph_yaml: Path) -> str:
+    original = graph_yaml.read_text()
+    g = yaml.safe_load(original)
+    g["global"]["hidden_size"] = int(g["global"]["hidden_size"]) + 8
+    graph_yaml.write_text(yaml.safe_dump(g, sort_keys=False))
+    return original
+
+
+# The model the hand-edit test mutates: named, so which entry the catalog sorts first does not
+# decide the test, and small, so the copy is one model and not the catalog.
+HAND_EDIT_MODEL = "qwen2.5-7b-instruct"
+
+
+def one_model_catalog(tmp_path: Path, name: str) -> Path:
+    """A catalog of one model: its committed config.json and graph, and the licence index the
+    deriver reads. Built here, so the test depends on nothing else in the catalog."""
+    import shutil
+    src = MODELS / name
+    assert (src / "config.json").is_file() and (src / "graph.yaml").is_file(), \
+        f"{name} is not a catalog entry with a committed config.json"
+    tree = tmp_path / "catalog"
+    (tree / "models").mkdir(parents=True)
+    shutil.copytree(src, tree / "models" / name)
+    if (ROOT / "licences").is_dir():
+        shutil.copytree(ROOT / "licences", tree / "licences")
+    return tree
+
+
 def test_hand_edit_is_detected(tmp_path):
     """The negative case for the check above: a modified graph must be reported.
 
-    A check that cannot fail proves nothing, so this mutates a copy of the tree and
-    asserts the deriver notices."""
-    import shutil
-
-    tree = tmp_path / "catalog"
-    shutil.copytree(ROOT, tree, ignore=shutil.ignore_patterns(".git", "__pycache__"))
-    target = next(p for p in (tree / "models").iterdir() if (p / "graph.yaml").is_file())
-    g = yaml.safe_load((target / "graph.yaml").read_text())
-    g["global"]["hidden_size"] = int(g["global"]["hidden_size"]) + 8
-    (target / "graph.yaml").write_text(yaml.safe_dump(g, sort_keys=False))
+    A check that cannot fail proves nothing, so this mutates a one-model catalog and asserts the
+    deriver notices, after asserting that it passes the unedited copy (so the failure is the edit's)."""
+    tree = one_model_catalog(tmp_path, HAND_EDIT_MODEL)
+    clean = subprocess.run([sys.executable, str(DERIVER), str(tree), "--check"],
+                           capture_output=True, text=True)
+    assert clean.returncode == 0, f"the unedited one-model catalog does not pass:\n{clean.stderr}"
+    _edit_hidden_size(tree / "models" / HAND_EDIT_MODEL / "graph.yaml")
 
     r = subprocess.run([sys.executable, str(DERIVER), str(tree), "--check"],
                        capture_output=True, text=True)
     assert r.returncode != 0, "a hand-edited graph was not detected"
-    assert target.name in r.stderr
+    assert HAND_EDIT_MODEL in r.stderr
+
+
+def test_a_hand_edit_of_any_committed_config_entry_is_detected(tree_copy):
+    """Every entry whose config.json is committed, edited at once: the run names each of them.
+    (One run, not one per entry: the check re-derives every entry and reports all that differ.)"""
+    names = [d.name for d in model_dirs()]
+    saved = {}
+    for name in names:
+        saved[name] = _edit_hidden_size(tree_copy / "models" / name / "graph.yaml")
+    try:
+        r = subprocess.run([sys.executable, str(DERIVER), str(tree_copy), "--check"],
+                           capture_output=True, text=True)
+    finally:
+        for name, text in saved.items():
+            (tree_copy / "models" / name / "graph.yaml").write_text(text)
+    assert r.returncode != 0
+    missed = [n for n in names if f"{n}: graph.yaml differs" not in r.stderr]
+    assert not missed, f"hand edits not detected: {missed}"
+    assert f"{len(names)} stale" in r.stdout, r.stdout
+
+
+def _pin_first_entry(tree: Path) -> tuple[str, Path]:
+    """Turn a named committed-config entry into a hash-pinned one, as the entries whose
+    licence is off the allow-list are, and return its name and the config to fetch."""
+    name = HAND_EDIT_MODEL
+    d = tree / "models" / name
+    import hashlib
+    sha = hashlib.sha256((d / "config.json").read_bytes()).hexdigest()
+    fetched = tree.parent / "fetched" / name
+    fetched.mkdir(parents=True)
+    (fetched / "config.json").write_bytes((d / "config.json").read_bytes())
+    (d / "config.json").unlink()
+    card = yaml.safe_load((d / "model.yaml").read_text())
+    card["config"] = {"sha256": sha}
+    (d / "model.yaml").write_text(yaml.safe_dump(card, sort_keys=False))
+    return name, tree.parent / "fetched"
+
+
+def test_a_hash_pinned_entry_is_reported_as_not_rederivable_offline(tmp_path):
+    """Offline, --check can verify only the recorded hash of a pinned entry, so a hand edit of
+    its graph is invisible; the run says so, and counts the entry apart from the current ones.
+    With --fetched the same edit is detected."""
+    import shutil
+    tree = tmp_path / "catalog"
+    shutil.copytree(ROOT, tree, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+    name, fetched = _pin_first_entry(tree)
+    _edit_hidden_size(tree / "models" / name / "graph.yaml")
+
+    # Offline, restricted to the pinned entry: nothing fails, nothing is called current.
+    r = subprocess.run([sys.executable, str(DERIVER), str(tree), "--check", "--model", name],
+                       capture_output=True, text=True)
+    assert r.returncode == 0
+    assert "0 current" in r.stdout and "1 not re-derivable offline" in r.stdout, r.stdout
+    assert f"not re-derived: {name}" in r.stderr
+
+    # With the fetched file the edit is found.
+    r = subprocess.run([sys.executable, str(DERIVER), str(tree), "--check", "--model", name,
+                        "--fetched", str(fetched)], capture_output=True, text=True)
+    assert r.returncode != 0 and name in r.stderr, (r.stdout, r.stderr)
+    assert "1 stale" in r.stdout and "not re-derivable" in r.stdout
+
+
+def test_the_committed_pinned_entries_are_counted_apart_from_the_current_ones():
+    r = subprocess.run([sys.executable, str(DERIVER), str(ROOT), "--check"],
+                       capture_output=True, text=True)
+    pinned = [d.name for d in sorted(MODELS.iterdir())
+              if d.is_dir() and not (d / "config.json").is_file()]
+    assert pinned, "the catalog holds hash-pinned entries"
+    assert f"{len(pinned)} not re-derivable offline" in r.stdout, r.stdout
+    assert r.stderr.strip().endswith(", ".join(pinned)), r.stderr
 
 
 def test_a_failure_names_its_model_once(tmp_path):
@@ -1164,10 +1269,11 @@ def test_the_draft_module_indexes_even_where_the_base_rule_skips():
 def test_kimi_attention_weights_keep_the_width_quantization_skips():
     """A compressed-tensors ignore list naming self_attn keeps those weights at base.
 
-    kimi-k2.5 is globally int4 and kimi-k3 mxfp4, and both name `re:.*self_attn.*` in
-    their compressed-tensors ignore list, so every attention projection stays
-    unquantized at runtime. Pricing them at the global width charges 4 bits for tensors
-    the runtime never quantizes.
+    kimi-k2.5 is globally int4 and names `re:.*self_attn.*` in its compressed-tensors
+    ignore list, so every attention projection stays unquantized at runtime. Pricing them
+    at the global width charges 4 bits for tensors the runtime never quantizes. (The
+    Kimi-K3 family is not here: its global width is the base, see
+    test_kimi_k3_quantizes_its_routed_experts_and_nothing_else.)
 
     This covers the KDA mixer too, not just the latent path: vLLM builds Kimi-K3's KDA
     as `self.self_attn` with prefix "{...}.self_attn" (kimi_k3/nvidia/model.py:888-891),
@@ -1175,7 +1281,7 @@ def test_kimi_attention_weights_keep_the_width_quantization_skips():
     must keep the quantized global width -- that is the half of the distinction a blanket
     override would destroy."""
     checked = 0
-    for name in ("kimi-k2.5", "kimi-k3"):
+    for name in ("kimi-k2.5",):
         d = ROOT / "models" / name
         if not d.is_dir():
             continue
@@ -1282,6 +1388,9 @@ def test_mla_prices_its_low_rank_stages_not_one_fused_projection(d: Path):
             "GlmMoeDsaForCausalLM", "DeepseekV4ForCausalLM",
             "KimiK3ForConditionalGeneration", "KimiLinearForCausalLM",
             "Glm5NextForConditionalGeneration",
+            # The Kimi-K3 DSpark draft layer is kimi_k3's own MultiHeadLatentAttention
+            # (dspark_mla.py:73-92@v0.32.0).
+            "K3DSparkModel",
         }
         arches = (list(config_of(d).get("architectures") or ())
                   + list(t.get("architectures") or ()))
@@ -1943,8 +2052,9 @@ def test_kimi_k3_routed_experts_run_at_the_latent_width():
     hidden = int(t["hidden_size"])
     assert latent != hidden, "this test is about a config whose latent width differs"
 
+    # The shared experts run on the pre-projection states, so only the routed node is latent.
     experts = [n for k in g["layer_kinds"] for n in k["nodes"]
-               if n["op"] == "GroupedGEMM"]
+               if n["op"] == "GroupedGEMM" and not n.get("shared")]
     assert experts, "no routed expert nodes"
     for n in experts:
         assert n.get("latent_size") == latent, (
@@ -4439,7 +4549,7 @@ def test_deepseek_v41_draft_layers_charge_the_mtp_weights_at_their_resident_widt
     attention and experts, the context stack main_proj, and the sequential head the
     Markov projection. The context projections and the draft lm_head reuse weights
     another node holds (dspark.py:192, 279-282) and so hold none; the Markov head's
-    embed half is a gather (qwen3_dspark.py:48-93), and the confidence head runs only
+    embed half is a gather (qwen3_dspark.py:48-94), and the confidence head runs only
     under adaptive verification."""
     g, t = v41_graph(), text_config(config_of(V41))
     spec, glob = g["speculator"], g["global"]["weight_dtype"]
@@ -5921,6 +6031,7 @@ BOUNDARY_BYTES = {
     # The (hc_mult, hidden) bundle at the activation dtype (deepseek_v4/nvidia/
     # model.py:1406-1424@v0.32.0).
     "deepseek-v4-pro": 4 * 7168 * 2,
+    "deepseek-v4-pro-0813": 4 * 7168 * 2,
     # That bundle plus the (hc_mult,) fp32 pre-mix (deepseek_v41/nvidia/
     # model.py:885-910@v0.32.0).
     "deepseek-v4.1-flash": 4 * 5120 * 2 + 4 * 4,
@@ -6085,3 +6196,2020 @@ def test_every_attention_and_grouped_gemm_states_its_typed_role():
             else:
                 assert "shared" not in n, (path, n)
     assert all(seen.values()), seen
+
+
+# --- EAGLE3 drafter (Inferact/MiniMax-M3-EAGLE3) ----------------------------------------
+
+# The shapes of Inferact/MiniMax-M3-EAGLE3 at 44cafa5ace41 (config.json, and the tensor shapes
+# of its safetensors header: q/k/v_proj 8192 x 12288, fc 6144 x 18432, embed_tokens and
+# lm_head 200064 x 6144). The file is not committed (its licence is not on the allow-list);
+# a test states the keys the handler reads.
+EAGLE3_CFG = {
+    "architectures": ["LlamaForCausalLMEagle3"], "model_type": "llama", "torch_dtype": "bfloat16",
+    "hidden_size": 6144, "intermediate_size": 18432, "num_hidden_layers": 1,
+    "num_attention_heads": 64, "num_key_value_heads": 64, "head_dim": 128,
+    "vocab_size": 200064, "draft_vocab_size": 200064, "fc_norm": True, "norm_output": True,
+    "tie_word_embeddings": False, "attention_bias": False, "sliding_window": None,
+}
+
+
+@pytest.mark.parametrize("name,kv_heads,total", [
+    ("minimax-m3-eagle3", 64, 3_263_735_808),
+    ("minimax-m3-eagle3-gqa", 4, 3_074_992_128),
+])
+def test_eagle3_drafter_weights_equal_the_checkpoints_tensor_total(tmp_path, name, kv_heads, total):
+    """The graph's resident bytes (bf16) equal the parameters the checkpoint's safetensors
+    metadata states (3,263,735,808 for the 64-KV-head drafter, 3,074,992,128 for the GQA one,
+    whose k_proj and v_proj are 512 x 12288): every tensor of the drafter is a node, none is
+    missing and none is counted twice."""
+    g = _derive_raw({**EAGLE3_CFG, "num_key_value_heads": kv_heads}, tmp_path, name)
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    params = 0
+    for n in kinds["eagle3_layer"]["nodes"] + kinds["eagle3_context"]["nodes"] + g["head"]:
+        if n["op"] == "GEMM":
+            params += n["n"] * n["k"]
+    params += g["embedding"][0]["rows"] * g["embedding"][0]["row_bytes"] // 2
+    # RMSNorm vectors: input_layernorm, hidden_norm, post_attention_layernorm, norm, and one
+    # fc_norm per captured state (3).
+    params += 7 * 6144
+    assert params == total
+
+
+def test_eagle3_layer_reads_the_embedding_and_the_state_side_by_side(tmp_path):
+    g = _derive_raw(EAGLE3_CFG, tmp_path, "minimax-m3-eagle3")
+    layer = {k["id"]: k for k in g["layer_kinds"]}["eagle3_layer"]
+    qkv = _node(layer, "qkv_proj")
+    assert (qkv["n"], qkv["k"]) == ((64 + 2 * 64) * 128, 2 * 6144)
+    sp = g["speculator"]
+    assert (sp["method"], sp["aux_hidden_state_layers"]) == ("eagle3", [2, 30, 57])
+    fc = _node({"id": "c", "nodes": [n for k in g["layer_kinds"] if k["id"] == "eagle3_context"
+                                     for n in k["nodes"]]}, "eagle3_fc")
+    assert (fc["n"], fc["k"], fc["tp"]) == (6144, 3 * 6144, "replicated")
+
+
+def test_eagle3_default_capture_layers_follow_the_targets_depth():
+    """The engine asks the target for (2, n // 2, n - 3). Both targets, MiniMax-M3 and
+    MiniMax-M3-MXFP8, have 60 layers in their committed configurations and the hidden width
+    the drafter's fc reads: the depth recorded for the drafter must be theirs, and each target
+    must list the drafter."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    for drafter_name in ("minimax-m3-eagle3", "minimax-m3-eagle3-gqa"):
+        t = derive_graph.EAGLE3_TARGETS[drafter_name]
+        drafter = yaml.safe_load((MODELS / drafter_name / "model.yaml").read_text())
+        assert sorted(t["targets"]) == sorted(drafter["targets"])
+        for name in t["targets"]:
+            cfg = text_config(config_of(MODELS / name))
+            assert t["layers"] == cfg["num_hidden_layers"] == 60
+            assert cfg["hidden_size"] == EAGLE3_CFG["hidden_size"]
+            listed = yaml.safe_load((MODELS / name / "model.yaml").read_text())["drafters"]
+            assert drafter_name in listed
+    assert derive_graph.eagle3_default_aux_layers(60) == [2, 30, 57]
+
+
+@pytest.mark.parametrize("edit,why", [
+    ({"draft_vocab_size": 32000}, "draft_vocab_size differs"),
+    ({"num_hidden_layers": 2}, "draft layers"),
+    ({"attention_bias": True}, "attention_bias"),
+    ({"norm_before_fc": True}, "norm_before_fc"),
+    ({"sliding_window": 4096}, "sliding-window"),
+    ({"eagle_config": {"use_aux_hidden_state": False}}, "use_aux_hidden_state"),
+])
+def test_eagle3_refuses_what_it_does_not_price(tmp_path, edit, why):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match=why):
+        _derive_raw({**EAGLE3_CFG, **edit}, tmp_path, "minimax-m3-eagle3")
+
+
+def test_eagle3_with_no_capture_layers_and_no_recorded_target_is_refused(tmp_path):
+    """The default depends on the target's depth, which the drafter's configuration does not
+    state; a drafter with no recorded target is refused, not given a guessed default."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match="EAGLE3_TARGETS"):
+        _derive_raw(EAGLE3_CFG, tmp_path, "some-other-eagle3")
+
+
+def test_eagle3_fc_norm_is_priced_only_when_the_config_turns_it_on(tmp_path):
+    """One RMSNorm per captured state before fc (combine_hidden_states), read and written."""
+    ctx = lambda g: [n["role"] for k in g["layer_kinds"] if k["id"] == "eagle3_context" for n in k["nodes"]]
+    on = _derive_raw(EAGLE3_CFG, tmp_path, "minimax-m3-eagle3")
+    assert ctx(on) == ["eagle3_fc_norm", "eagle3_fc"]
+    norm = [n for k in on["layer_kinds"] if k["id"] == "eagle3_context" for n in k["nodes"]][0]
+    assert norm["bytes_per_token"] == 2 * 3 * 6144 * 2
+    off = _derive_raw({**EAGLE3_CFG, "fc_norm": False}, tmp_path, "minimax-m3-eagle3")
+    assert ctx(off) == ["eagle3_fc"]
+
+
+# --- ModelOpt NVFP4 experts in a DeepSeek-V4 checkpoint (nvidia/DeepSeek-V4-Pro-NVFP4) -----
+
+DSV4_PRO = MODELS / "deepseek-v4-pro"
+
+
+def _v4_expert_dtypes(g: dict) -> set[str]:
+    out = set()
+    for k in g["layer_kinds"]:
+        for n in k["nodes"]:
+            if n.get("role") == "experts":
+                out.add(n["weight_dtype"])
+    return out
+
+
+def _v4_with(raw: dict, **quant) -> dict:
+    bad = json.loads(json.dumps(raw))
+    bad.setdefault("quantization_config", {}).update(quant)
+    return bad
+
+
+def test_v4_moe_quant_algo_nvfp4_prices_the_experts_at_nvfp4(tmp_path):
+    """vLLM dispatches ModelOptNvFp4FusedMoE for expert_dtype fp4 with moe_quant_algo NVFP4
+    (deepseek_v4/quant_config.py:181-199@v0.32.0). Reading expert_dtype alone priced a ModelOpt
+    NVFP4 export's experts at MXFP4. The linear and attention layers stay FP8 block."""
+    raw = config_of(DSV4_PRO)
+    assert _v4_expert_dtypes(_derive_raw(raw, tmp_path, "deepseek-v4-pro")) == {"mxfp4"}
+    nv = _derive_raw(_v4_with(raw, moe_quant_algo="NVFP4"), tmp_path, "deepseek-v4-pro-nvfp4")
+    assert _v4_expert_dtypes(nv) == {"nvfp4"}
+    assert nv["global"]["weight_dtype"] == "fp8"
+    # Case does not matter to vLLM (it upper-cases the value).
+    assert _v4_expert_dtypes(
+        _derive_raw(_v4_with(raw, moe_quant_algo="nvfp4"), tmp_path, "x")) == {"nvfp4"}
+
+
+@pytest.mark.parametrize("quant,expert_dtype,why", [
+    ({"moe_quant_algo": "MXFP8"}, "fp4", "vLLM reads only NVFP4"),
+    ({"moe_quant_algo": "NVFP4"}, "fp8", "only for expert_dtype fp4"),
+    ({"moe_quant_algo": "NVFP4", "quantized_layers": {
+        "layers.0.ffn.experts": {"quant_algo": "NVFP4"},
+        "layers.1.ffn.experts": {"quant_algo": "FP8"}}}, "fp4", "one width"),
+])
+def test_v4_refuses_a_moe_quant_algo_it_cannot_price(tmp_path, quant, expert_dtype, why):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    raw = _v4_with(config_of(DSV4_PRO), **quant)
+    raw["expert_dtype"] = expert_dtype
+    with pytest.raises(derive_graph.DeriveError, match=why):
+        _derive_raw(raw, tmp_path, "deepseek-v4-pro-nvfp4")
+
+
+# --- A deployment's `mtp` against the graph's family-named MTP speculator -----------------
+
+MINIMAX_M3_ENTRIES = ("minimax-m3", "minimax-m3-mxfp8")
+
+
+@pytest.mark.parametrize("name", MINIMAX_M3_ENTRIES)
+def test_minimax_m3_graphs_declare_the_mtp_speculator_their_config_states(name):
+    """Both MiniMax-M3 entries state a speculator derived from num_mtp_modules, the field vLLM
+    reads as n_predict for this family (config/speculative.py:1043-1046@v0.32.0), at the pinned
+    config. A deployment's `method: mtp` resolves to it through vllm_speculative_method."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    t = text_config(config_of(MODELS / name))
+    sp = graph_of(MODELS / name)["speculator"]
+    assert sp["method"] == "minimax_m3_mtp"
+    assert sp["num_spec_tokens"] == t["num_mtp_modules"] >= 1
+    assert derive_graph.vllm_speculative_method(sp["method"]) == "mtp"
+    assert "speculator" in yaml.safe_load((MODELS / name / "model.yaml").read_text())["drafters"]
+
+
+def test_every_committed_mtp_speculator_resolves_for_a_deployment_that_states_mtp():
+    """The rule, over the whole catalog: a graph speculator named <family>_mtp is what a
+    deployment calls mtp, and the methods of separate drafters keep their own names."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    seen = collections.Counter()
+    for d in sorted(p for p in MODELS.iterdir() if p.is_dir()):
+        sp = graph_of(d).get("speculator")
+        if not sp:
+            continue
+        m = sp["method"]
+        want = "mtp" if m.endswith("_mtp") else m
+        assert derive_graph.vllm_speculative_method(m) == want
+        seen[want] += 1
+    assert seen["mtp"] >= 10 and set(seen) >= {"mtp", "eagle3", "dspark"}, seen
+    assert derive_graph.vllm_speculative_method("eagle3") == "eagle3"
+    assert derive_graph.vllm_speculative_method("mtp") == "mtp"
+
+
+def test_mtp_is_not_declared_for_a_model_whose_config_declares_no_mtp_layers(tmp_path):
+    """Known-bad. MiniMax-M3 takes its draft length from num_mtp_modules; a config without it
+    is refused rather than given a speculator, and a model whose config states no draft layers
+    has no speculator for a deployment's mtp to resolve to."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    raw = json.loads(json.dumps(config_of(MODELS / "minimax-m3")))
+    del raw["text_config"]["num_mtp_modules"]
+    with pytest.raises(derive_graph.DeriveError, match="num_mtp_modules"):
+        _derive_raw(raw, tmp_path, "minimax-m3")
+    llama = graph_of(MODELS / "llama-3.1-8b-instruct")
+    assert "speculator" not in llama
+    ymodel = yaml.safe_load((MODELS / "llama-3.1-8b-instruct" / "model.yaml").read_text())
+    assert "speculator" not in (ymodel.get("drafters") or [])
+
+
+# --- ModelOpt NVFP4 checkpoints placed node by node (nvidia/Kimi-K2.5-NVFP4, nvidia/MiniMax-M2.5-NVFP4) ---
+
+KIMI_K25 = MODELS / "kimi-k2.5"
+KIMI_K25_NVFP4 = MODELS / "kimi-k2.5-nvfp4"
+MINIMAX_M25 = MODELS / "minimax-m2.5"
+MINIMAX_M25_NVFP4 = MODELS / "minimax-m2.5-nvfp4"
+
+# The quantization block both checkpoints carry in config.json (the fields vLLM v0.32.0 reads),
+# with the exclusion lists of the pinned revisions. hf_quant_config.json at the same revisions
+# states the same lists as exclude_modules (64 and 125 entries), which vLLM does not consult when
+# config.json carries a block.
+_NVFP4_GROUPS = {"group_0": {"input_activations": {"dynamic": False, "num_bits": 4, "type": "float",
+                                                    "group_size": 16},
+                             "weights": {"dynamic": False, "num_bits": 4, "type": "float",
+                                         "group_size": 16}, "targets": ["Linear"]}}
+
+
+def _modelopt_block(ignore: list[str]) -> dict:
+    return {"config_groups": _NVFP4_GROUPS, "ignore": ignore, "quant_algo": "NVFP4",
+            "kv_cache_scheme": {"dynamic": False, "num_bits": 8, "type": "float"},
+            "quant_method": "modelopt"}
+
+
+def _kimi_k25_nvfp4_raw(prefix: str = "language_model.model.layers.", **over) -> dict:
+    """moonshotai/Kimi-K2.5's committed configuration with nvidia/Kimi-K2.5-NVFP4's block."""
+    raw = config_of(KIMI_K25)
+    ignore = ["language_model.lm_head"] + [f"{prefix}{i}.self_attn*" for i in range(61)] + [
+        "mm_projector*", "vision_tower*"]
+    raw["quantization_config"] = {**_modelopt_block(ignore), **over}
+    return raw
+
+
+def _minimax_m25_nvfp4_raw(**over) -> dict:
+    raw = config_of(MINIMAX_M25)
+    ignore = ["lm_head"]
+    for i in range(62):
+        ignore += [f"model.layers.{i}.block_sparse_moe.gate", f"model.layers.{i}.self_attn*"]
+    raw["quantization_config"] = {**_modelopt_block(ignore), **over}
+    raw["dtype"] = "bfloat16"
+    return raw
+
+
+def _strip_identity(g: dict) -> dict:
+    g = json.loads(json.dumps(g))
+    g.pop("name")
+    g.pop("derived_from")
+    return g
+
+
+def _nodes_by_role(g: dict) -> dict[str, set]:
+    """Role -> the weight_dtype values it carries across all layer kinds ('-' for none)."""
+    out: dict[str, set] = {}
+    for k in g["layer_kinds"]:
+        for n in k["nodes"]:
+            if n["op"] in ("GEMM", "GroupedGEMM"):
+                out.setdefault(n["role"], set()).add(n.get("weight_dtype", "-"))
+    return out
+
+
+def test_kimi_k25_nvfp4_graph_is_what_its_configuration_derives_to(tmp_path):
+    """The committed graph is the derivation of the pinned configuration's quantization block on
+    the Kimi-K2.5 text decoder. Attention and the head are excluded and stay at the base width;
+    the dense layer's MLP, the shared expert and the routed experts are quantized."""
+    g = graph_of(KIMI_K25_NVFP4)
+    assert g["global"]["weight_dtype"] == "bf16"
+    assert _nodes_by_role(g) == {
+        "qkv_a_proj": {"-"}, "q_b_proj": {"-"}, "kv_b_proj": {"-"}, "o_proj": {"-"},
+        "mlp_gate_up": {"nvfp4"}, "mlp_down": {"nvfp4"}, "experts": {"nvfp4"}}
+    derived = _derive_raw(_kimi_k25_nvfp4_raw(), tmp_path, "kimi-k2.5-nvfp4")
+    assert _strip_identity(derived) == _strip_identity(g)
+
+
+def test_kimi_k25_nvfp4_differs_from_the_int4_entry_in_widths_only():
+    """Same layers, same nodes, same shapes as kimi-k2.5; only the widths differ."""
+    a, b = graph_of(KIMI_K25), graph_of(KIMI_K25_NVFP4)
+
+    def shapes(g):
+        return [[{k: v for k, v in n.items() if k != "weight_dtype"} for n in kind["nodes"]]
+                for kind in g["layer_kinds"]], g["stack"], g["head"]
+    assert shapes(a) == shapes(b)
+    assert a["global"]["weight_dtype"] == "int4" and b["global"]["weight_dtype"] == "bf16"
+
+
+def test_minimax_m25_nvfp4_quantizes_only_the_experts():
+    g = graph_of(MINIMAX_M25_NVFP4)
+    assert g["global"]["weight_dtype"] == "bf16"
+    assert _nodes_by_role(g) == {"qkv_proj": {"-"}, "o_proj": {"-"}, "experts": {"nvfp4"}}
+    base = graph_of(MINIMAX_M25)
+    assert base["global"]["weight_dtype"] == "fp8"
+    assert _nodes_by_role(base)["experts"] == {"-"}
+
+
+# The classes of tensors in the pinned safetensors headers, from the 119 shards of
+# nvidia/Kimi-K2.5-NVFP4 (language_model.* only; the vision tower and projector are not priced)
+# and the 29 of nvidia/MiniMax-M2.5-NVFP4. A NVFP4 weight is a U8 tensor of two elements a byte,
+# its F8_E4M3 weight_scale (one per 16 elements) and F32 weight_scale_2 and input_scale are what
+# the nvfp4 width carries, and k_scale/v_scale are KV-cache scales. MiniMax's attention is stored
+# as F32 and loads into BF16 parameters.
+KIMI_K25_NVFP4_HEADER = {
+    # role: (stored dtype, logical parameters of the text decoder)
+    "qkv_a_proj": ("BF16", 61 * (576 + 1536) * 7168),
+    "q_b_proj": ("BF16", 61 * 12288 * 1536),
+    "kv_b_proj": ("BF16", 61 * 16384 * 512),
+    "o_proj": ("BF16", 61 * 7168 * 8192),
+    # gate_proj, up_proj and down_proj of layer 0 (18432 x 7168 each), then the 60 sparse layers'
+    # 384 routed experts and one shared expert (2048 x 7168 each matrix); a U8 byte holds two
+    # NVFP4 weights, so the stored elements are half these.
+    "mlp": ("U8", 3 * 18432 * 7168),
+    "routed": ("U8", 60 * 384 * 3 * 2048 * 7168),
+    "shared": ("U8", 60 * 3 * 2048 * 7168),
+    "embed_tokens": ("BF16", 163840 * 7168),
+    "lm_head": ("BF16", 163840 * 7168),
+    # Tensors the graph carries no node for.
+    "norms": ("BF16", 61 * 7168 * 2 + 61 * 512 + 61 * 1536 + 7168),
+    "router": ("BF16", 60 * 384 * 7168 + 60 * 384),
+}
+
+
+def _graph_parameters(g: dict) -> dict[str, int]:
+    """Logical parameters per role, summed over every layer the stack runs."""
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    count = collections.Counter(layer_sequence(g["stack"]))
+    out: collections.Counter = collections.Counter()
+    for kid, times in count.items():
+        for n in kinds[kid]["nodes"]:
+            if n["op"] == "GEMM":
+                out[n["role"]] += times * n["n"] * n["k"]
+            elif n["op"] == "GroupedGEMM":
+                out[n["role"]] += times * 3 * n["n"] * n.get("latent_size", n["k"]) * n["experts"]
+                if n.get("shared_experts"):
+                    out["shared"] += times * 3 * int(n.get("shared_intermediate_size", n["n"])) \
+                        * n["k"] * n["shared_experts"]
+    for n in g["head"]:
+        if n["op"] == "GEMM":
+            out[n["role"]] += n["n"] * n["k"]
+    return out
+
+
+def test_kimi_k25_nvfp4_resident_parameters_equal_the_header_totals():
+    """Every weight of the text decoder in the 278,341-tensor header is a node, an inferred
+    embedding table, or a norm or router the graph carries no node for; none is missing and none
+    is counted twice, and the width each node states is the dtype its tensors are stored in."""
+    g = graph_of(KIMI_K25_NVFP4)
+    got = _graph_parameters(g)
+    h = KIMI_K25_NVFP4_HEADER
+    for role in ("qkv_a_proj", "q_b_proj", "kv_b_proj", "o_proj", "lm_head"):
+        assert got[role] == h[role][1], role
+    assert got["mlp_gate_up"] + got["mlp_down"] == h["mlp"][1]
+    assert got["experts"] == h["routed"][1]
+    assert got["shared"] == h["shared"][1]
+    # The kernel infers the embedding table as vocab x hidden at the BF16 floor.
+    emb = g["global"]["vocab_size"] * g["global"]["hidden_size"]
+    assert emb == h["embed_tokens"][1]
+    total_header = sum(v[1] for v in h.values())
+    total_graph = sum(got.values()) + emb + h["norms"][1] + h["router"][1]
+    assert total_graph == total_header
+    # U8 tensors are the nvfp4 nodes; BF16 tensors are the base width.
+    wide = {r for r, (dt, _) in h.items() if dt == "U8"}
+    assert wide == {"mlp", "routed", "shared"}
+    assert _nodes_by_role(g)["experts"] == {"nvfp4"} and _nodes_by_role(g)["mlp_gate_up"] == {"nvfp4"}
+
+
+MINIMAX_M25_NVFP4_HEADER = {
+    "qkv_proj": ("F32", 62 * (6144 + 2 * 1024) * 3072),
+    "o_proj": ("F32", 62 * 3072 * 6144),
+    "experts": ("U8", 62 * 256 * 3 * 1536 * 3072),
+    "embed_tokens": ("BF16", 200064 * 3072),
+    "lm_head": ("BF16", 200064 * 3072),
+    # q_norm 6144 and k_norm 1024 a layer, the two layer norms, the final norm; the router
+    # (gate.weight) and its e_score_correction_bias.
+    "norms": ("BF16", 62 * (6144 + 1024 + 2 * 3072) + 3072),
+    "router": ("BF16", 62 * 256 * 3072 + 62 * 256),
+}
+
+
+def test_minimax_m25_nvfp4_resident_parameters_equal_the_header_totals():
+    """The 191,211-tensor header: attention (F32 on disk, loaded into BF16 parameters), 47,616
+    experts' w1/w2/w3 as U8, the embedding and head, and the norms and router with no node."""
+    g = graph_of(MINIMAX_M25_NVFP4)
+    got = _graph_parameters(g)
+    h = MINIMAX_M25_NVFP4_HEADER
+    for role in ("qkv_proj", "o_proj", "experts", "lm_head"):
+        assert got[role] == h[role][1], role
+    emb = g["global"]["vocab_size"] * g["global"]["hidden_size"]
+    assert emb == h["embed_tokens"][1]
+    assert sum(got.values()) + emb + h["norms"][1] + h["router"][1] == sum(v[1] for v in h.values())
+    assert (h["experts"][0], _nodes_by_role(g)["experts"]) == ("U8", {"nvfp4"})
+    assert _nodes_by_role(g)["qkv_proj"] == {"-"}
+
+
+def test_modelopt_legacy_prefix_spelling_reads_as_the_modern_one(tmp_path):
+    """The loader renames "language_model.layers." to "language_model.model.layers." on tensor
+    names and ModelOpt applies the same rename to the exclusion list, so a list written in the
+    legacy spelling excludes the same modules."""
+    modern = _derive_raw(_kimi_k25_nvfp4_raw(), tmp_path, "kimi-k2.5-nvfp4")
+    legacy_raw = _kimi_k25_nvfp4_raw()
+    legacy_raw["quantization_config"]["ignore"] = [
+        p.replace("language_model.model.layers.", "language_model.layers.")
+        for p in legacy_raw["quantization_config"]["ignore"]]
+    assert _strip_identity(_derive_raw(legacy_raw, tmp_path, "kimi-k2.5-nvfp4")) == \
+        _strip_identity(modern)
+
+
+def test_a_list_that_leaves_attention_quantized_prices_it_at_nvfp4(tmp_path):
+    """vLLM quantizes every linear the list does not name; with self_attn off the list the
+    latent projections and the output projection are NVFP4 on every layer."""
+    raw = _kimi_k25_nvfp4_raw()
+    raw["quantization_config"]["ignore"] = ["language_model.lm_head", "vision_tower*"]
+    g = _derive_raw(raw, tmp_path, "kimi-k2.5-nvfp4")
+    assert _nodes_by_role(g)["q_b_proj"] == {"nvfp4"} and _nodes_by_role(g)["o_proj"] == {"nvfp4"}
+
+
+def test_modelopt_names_vllms_modules_not_the_checkpoints(tmp_path):
+    """MiniMax-M2 stores its MoE as block_sparse_moe and vLLM builds it as mlp, so a pattern
+    naming the checkpoint's spelling excludes nothing and the experts are quantized anyway."""
+    raw = _minimax_m25_nvfp4_raw()
+    raw["quantization_config"]["ignore"] += [f"model.layers.{i}.block_sparse_moe*" for i in range(62)]
+    g = _derive_raw(raw, tmp_path, "minimax-m2.5-nvfp4")
+    assert _nodes_by_role(g)["experts"] == {"nvfp4"}
+    # Naming vLLM's module does exclude it, and the experts then stay at the base width.
+    raw["quantization_config"]["ignore"] += [f"model.layers.{i}.mlp*" for i in range(62)]
+    assert _nodes_by_role(_derive_raw(raw, tmp_path, "minimax-m2.5-nvfp4"))["experts"] == {"-"}
+
+
+@pytest.mark.parametrize("make,edit,why", [
+    # One layer's attention left quantized while the others' is excluded: one node cannot price
+    # both. Wildcard exclusion on some layers only.
+    ("kimi", lambda ig: [p for p in ig if p != "language_model.model.layers.7.self_attn*"],
+     "quantized on some of its layers"),
+    # The head quantized: the head is priced at the base width.
+    ("kimi", lambda ig: [p for p in ig if p != "language_model.lm_head"], "lm_head"),
+    # A routed-expert exclusion on one layer.
+    ("minimax", lambda ig: ig + ["model.layers.3.mlp.experts"], "quantized on some of its layers"),
+])
+def test_modelopt_refuses_a_layout_one_node_cannot_price(tmp_path, make, edit, why):
+    raw = _kimi_k25_nvfp4_raw() if make == "kimi" else _minimax_m25_nvfp4_raw()
+    raw["quantization_config"]["ignore"] = edit(raw["quantization_config"]["ignore"])
+    with pytest.raises(deriver().DeriveError, match=why):
+        _derive_raw(raw, tmp_path, "x-nvfp4")
+
+
+def test_modelopt_refuses_what_vllm_reads_differently(tmp_path):
+    d = deriver()
+    # exclude_modules without `ignore`: v0.32.0 reads none of it from config.json.
+    raw = _kimi_k25_nvfp4_raw()
+    raw["quantization_config"]["exclude_modules"] = raw["quantization_config"].pop("ignore")
+    with pytest.raises(d.DeriveError, match="exclude_modules and no `ignore`"):
+        _derive_raw(raw, tmp_path, "x-nvfp4")
+    # MIXED_PRECISION picks the algorithm per layer.
+    with pytest.raises(d.DeriveError, match="MIXED_PRECISION picks the algorithm per layer"):
+        _derive_raw(_kimi_k25_nvfp4_raw(quant_algo="MIXED_PRECISION"), tmp_path, "x-nvfp4")
+    # An algorithm other than NVFP4 is a different layout.
+    with pytest.raises(d.DeriveError, match="only the NVFP4 layout"):
+        _derive_raw(_kimi_k25_nvfp4_raw(quant_algo="FP8"), tmp_path, "x-nvfp4")
+    # A 32-element group is not NVFP4's 16.
+    bad = _kimi_k25_nvfp4_raw()
+    bad["quantization_config"]["config_groups"] = {"group_0": {"weights": {"group_size": 32}}}
+    with pytest.raises(d.DeriveError, match="not 16"):
+        _derive_raw(bad, tmp_path, "x-nvfp4")
+    # No algorithm at all.
+    nothing = _kimi_k25_nvfp4_raw()
+    del nothing["quantization_config"]["quant_algo"]
+    with pytest.raises(d.DeriveError, match="no quant_algo"):
+        _derive_raw(nothing, tmp_path, "x-nvfp4")
+
+
+# --- Kimi-K3 family: experts-only MXFP4 (moonshotai/Kimi-K3, moonshotai/Kimi-K3.1-Pro) ---------
+
+KIMI_K3 = MODELS / "kimi-k3"
+
+
+def _k3_raw(**quant) -> dict:
+    raw = config_of(KIMI_K3)
+    raw["text_config"]["quantization_config"] = {
+        **raw["text_config"]["quantization_config"], **quant}
+    return raw
+
+
+def test_kimi_k3_quantizes_its_routed_experts_and_nothing_else():
+    """vLLM rewrites the compressed-tensors mxfp4-pack-quantized block to its MXFP4 config
+    (KimiK3ForConditionalGenerationConfig), and that config gives every linear layer
+    UnquantizedLinearMethod and only a FusedMoE its quantized method: the attention and KDA
+    projections, the dense MLP, the shared experts, the latent projections and the head are BF16.
+    The checkpoint's header agrees (only experts.*.w{1,2,3}.weight_packed is U8)."""
+    g = graph_of(KIMI_K3)
+    assert g["global"]["weight_dtype"] == "bf16"
+    widths = _nodes_by_role(g)
+    assert widths["experts"] == {"mxfp4"}
+    assert widths["shared_experts"] == {"bf16"}
+    for role in ("routed_expert_down_proj", "routed_expert_up_proj", "mlp_gate_up", "mlp_down"):
+        assert widths[role] <= {"-", "bf16"}, role
+    assert all(n.get("weight_dtype", "bf16") == "bf16" for n in g["head"])
+    assert not any(n.get("shared_experts") for k in g["layer_kinds"] for n in k["nodes"])
+
+
+def test_kimi_k3_refuses_a_block_vllm_does_not_rewrite(tmp_path):
+    """Any other block stays a compressed-tensors config, which quantizes the linears its ignore
+    list does not name: a width this handler does not place."""
+    for edit in ({"format": "pack-quantized"}, {"quant_method": "modelopt"}):
+        with pytest.raises(deriver().DeriveError, match="mxfp4-pack-quantized"):
+            _derive_raw(_k3_raw(**edit), tmp_path, "kimi-k3")
+
+
+# Logical parameters per graph role, and per class the graph carries no node for, from the
+# safetensors headers of the 96 shards of moonshotai/Kimi-K3 (f831ab66) and Kimi-K3.1-Pro
+# (d9e99b07). A weight_packed tensor is U8 with two weights a byte; every other weight is BF16.
+K3_FAMILY_COMMON = {
+    "kda_q_proj": 69 * 12288 * 7168, "kda_k_proj": 69 * 12288 * 7168,
+    "kda_v_proj": 69 * 12288 * 7168, "kda_f_a_proj": 69 * 128 * 7168,
+    "kda_f_b_proj": 69 * 12288 * 128, "kda_b_proj": 69 * 96 * 7168,
+    "kda_g_proj": 69 * 12288 * 7168, "kda_o_proj": 69 * 7168 * 12288,
+    "mlp": 3 * 33792 * 7168,
+    "routed_expert_down_proj": 92 * 3584 * 7168, "routed_expert_up_proj": 92 * 7168 * 3584,
+    "experts": 92 * 3 * 896 * 3072 * 3584, "shared_experts": 92 * 3 * 6144 * 7168,
+    "lm_head": 163840 * 7168,
+}
+K3_FAMILY_MLA = {
+    # q_a_proj + kv_a_proj_with_mqa + the output gate (g_proj) on the layers that are MLA.
+    "qkv_a_proj": 24 * (1536 + 576 + 12288) * 7168,
+    "q_b_proj": 24 * 18432 * 1536, "kv_b_proj": 24 * 24576 * 512, "o_proj": 24 * 7168 * 12288,
+}
+K3_FAMILY_UNPRICED = {
+    "router": 92 * 896 * 7168 + 92 * 896,
+    # input_layernorm, post_attention_layernorm and the four attention-residual vectors per
+    # layer (self_attention_res_{norm,proj}, mlp_res_{norm,proj}), the output pair and the final
+    # norm; the latent norms; the routed expert norm.
+    "norms": 93 * 7168 * 6 + 3 * 7168 + 24 * (1536 + 512) + 92 * 3584,
+    # A_log, dt_bias, q/k/v short convolutions and o_norm of the 69 KDA layers.
+    "kda_small": 69 * (128 + 12288 + 3 * 12288 * 4 + 128),
+}
+
+
+def _k3_graph_total(g: dict) -> tuple[collections.Counter, int]:
+    got = _graph_parameters(g)
+    return got, g["global"]["vocab_size"] * g["global"]["hidden_size"]
+
+
+def test_kimi_k3_resident_parameters_equal_the_header_total():
+    """2,779,484,478,208 weights in the language model of the 497,220-tensor header (497,052 language_model.* tensors): the nodes, the
+    inferred embedding table, and the tensors no node carries (router, norms, KDA's small
+    state). None is missing and none is counted twice."""
+    got, emb = _k3_graph_total(graph_of(KIMI_K3))
+    want = dict(K3_FAMILY_COMMON, **K3_FAMILY_MLA)
+    for role, n in want.items():
+        have = got[role] if role != "mlp" else got["mlp_gate_up"] + got["mlp_down"]
+        assert have == n, role
+    assert sum(got.values()) + emb + sum(K3_FAMILY_UNPRICED.values()) == 2_779_484_478_208
+
+
+# --- Kimi-K3.1: the same decoder with a DSA indexer on its latent layers (moonshotai/Kimi-K3.1-Pro) ---
+
+KIMI_K31 = MODELS / "kimi-k3.1"
+K31_DSA_LAYERS = list(range(4, 93, 4)) + [93]
+
+
+def _k31_raw(**dsa) -> dict:
+    """Kimi-K3's committed configuration with the pinned K3.1 revision's architecture and
+    dsa_config (the rest of its text_config is K3's, bar two ignore patterns that name modules
+    the graph prices at BF16 either way)."""
+    raw = config_of(KIMI_K3)
+    raw["architectures"] = ["KimiK31ForConditionalGeneration"]
+    raw["model_type"] = "kimi_k31"
+    raw["text_config"]["dsa_config"] = {
+        "dsa_layers": K31_DSA_LAYERS, "index_topk": 2048, "index_head_dim": 128,
+        "index_num_heads": 32, "index_rope_dim": 0, "index_k_norm_type": "layernorm",
+        "index_topk_freq": 1, "index_skip_topk_offset": 1, **dsa}
+    return raw
+
+
+def test_kimi_k31_graph_is_what_its_configuration_derives_to(tmp_path):
+    derived = _derive_raw(_k31_raw(), tmp_path, "kimi-k3.1")
+    assert _strip_identity(derived) == _strip_identity(graph_of(KIMI_K31))
+
+
+def test_kimi_k31_runs_dsa_on_the_declared_latent_layers():
+    """The 24 latent layers (4, 8, ..., 92, 93) are sparse: a selection of index_topk 2048 over
+    a 32-head, 128-wide indexer whose query reads the latent rank and whose key and weights come
+    from one unquantized projection of the hidden state. The 69 KDA layers are unchanged."""
+    g = graph_of(KIMI_K31)
+    seq = layer_sequence(g["stack"])
+    assert [i + 1 for i, k in enumerate(seq) if k.startswith("dsa")] == K31_DSA_LAYERS
+    assert collections.Counter(k.split("_")[0] for k in seq) == {"kda": 69, "dsa": 24}
+    kind = {k["id"]: k for k in g["layer_kinds"]}["dsa_moe"]
+    attn = _node(kind, "block_index_scores")
+    assert (attn["n_q"], attn["n_kv"], attn["d_h"], attn["holds_engine_kv"]) == (32, 1, 128, False)
+    main = [n for n in kind["nodes"] if n["op"] == "Attention" and n["holds_engine_kv"]][0]
+    assert (main["kind"], main["index_topk"], main["d_h"], main["n_q"]) == ("sparse_mla", 2048, 576, 96)
+    wq = _node(kind, "index_wq_b")
+    assert (wq["n"], wq["k"]) == (32 * 128, 1536)
+    # The key and weights projection ride in the A-projection's launch (pack_projections), so
+    # there is no node of their own: [q_a | kv_a | wk | weights_proj] is one GEMM.
+    assert not [n for n in kind["nodes"] if n.get("role") == "index_wk_weights_proj"]
+    a = _node(kind, "qkv_a_wk_weights_proj")
+    assert (a["n"], a["k"], a["weight_dtype"]) == (1536 + 576 + 128 + 32, 7168, "bf16")
+    # The output gate is its own projection here, not rows of the fused A-projection.
+    assert _node(kind, "mla_g_proj")["n"] == 96 * 128
+    assert not [n for n in kind["nodes"] if n.get("role") == "qkv_a_proj"]
+    # The key norm is folded into the cache insert, so only the latent norm's traffic holds it.
+    assert _node(kind, "qkv_a_layernorm")["bytes_per_token"] == 2 * (1536 + 512 + 128) * 2
+    assert not [n for n in kind["nodes"] if n.get("role") == "index_k_norm"]
+    assert "dsa_moe" not in {k["id"] for k in graph_of(KIMI_K3)["layer_kinds"]}
+
+
+def test_kimi_k31_resident_parameters_equal_the_header_total():
+    """2,779,663,004,416 weights in the 497,340-tensor header's language model: the Kimi-K3
+    total, and the indexer (wq_b, wk, weights_proj) with its key norm's 6,144 beside it."""
+    got, emb = _k3_graph_total(graph_of(KIMI_K31))
+    want = dict(K3_FAMILY_COMMON,
+                qkv_a_wk_weights_proj=24 * (1536 + 576 + 128 + 32) * 7168,
+                mla_g_proj=24 * 12288 * 7168,
+                q_b_proj=24 * 18432 * 1536, kv_b_proj=24 * 24576 * 512,
+                o_proj=24 * 7168 * 12288,
+                index_wq_b=24 * 4096 * 1536)
+    for role, n in want.items():
+        have = got[role] if role != "mlp" else got["mlp_gate_up"] + got["mlp_down"]
+        assert have == n, role
+    unpriced = dict(K3_FAMILY_UNPRICED, index_k_norm=24 * 2 * 128)
+    assert sum(got.values()) + emb + sum(unpriced.values()) == 2_779_663_004_416
+    widths = _nodes_by_role(graph_of(KIMI_K31))
+    assert widths["experts"] == {"mxfp4"} and widths["shared_experts"] == {"bf16"}
+
+
+def test_kimi_k31_states_the_projections_vllm_builds_replicated():
+    """fused_qkv_a_proj and wkv_index are MergedColumnParallelLinear with disable_tp=True and
+    wq_index a ReplicatedLinear (vllm/models/kimi_k3/nvidia/dsa.py:150-166, 469-475 at
+    v0.34.0rc0): every rank holds and runs each whole. The cost model does not infer that (it
+    shards a GEMM whose k is the hidden size by output width and any other by reduction), so the
+    graph states it; the column- and row-parallel projections state nothing."""
+    kind = {k["id"]: k for k in graph_of(KIMI_K31)["layer_kinds"]}["dsa_moe"]
+    tp = {n["role"]: n.get("tp") for n in kind["nodes"] if n["op"] == "GEMM"}
+    assert tp["qkv_a_wk_weights_proj"] == "replicated" and tp["index_wq_b"] == "replicated"
+    for role in ("mla_g_proj", "q_b_proj", "kv_b_proj", "o_proj"):
+        assert tp[role] is None, role
+
+
+def test_kimi_k31_packs_the_a_projection_with_the_indexers_key_projections():
+    """pack_projections fuses [q_a | kv_a | wk | weights_proj] into one weight and runs one GEMM;
+    the gate is a launch of its own. The graph has one A node of the summed width, the gate
+    beside it, and the query group (column-parallel q_b with replicated wq_index, which one node
+    cannot state) as two nodes: five GEMMs in front of the attention, not the six the unpacked
+    forward makes."""
+    kind = {k["id"]: k for k in graph_of(KIMI_K31)["layer_kinds"]}["dsa_moe"]
+    front = [n["role"] for n in kind["nodes"] if n["op"] == "GEMM"][:6]
+    assert front == ["qkv_a_wk_weights_proj", "mla_g_proj", "q_b_proj", "index_wq_b",
+                     "kv_b_proj", "o_proj"]
+
+
+@pytest.mark.parametrize("served", ["fp8", "mxfp4"])
+def test_kimi_k31_refuses_projections_the_packed_forward_does_not_cover(tmp_path, monkeypatch, served):
+    """The packed forward needs every packed linear unquantized (pack_projections checks
+    UnquantizedLinearMethod on all four); a checkpoint whose served width reaches any of them
+    runs the wrapper forward with separate launches, which the handler does not price. No
+    committed config reaches this (the K3 handler refuses other quantization blocks and
+    Mxfp4Config leaves every linear unquantized), so the global width is changed under it."""
+    d = deriver()
+    monkeypatch.setattr(d, "weight_dtype", lambda *a, **k: served)
+    with pytest.raises(d.DeriveError, match="not served unquantized"):
+        _derive_raw(_k31_raw(), tmp_path, "kimi-k3.1")
+
+
+@pytest.mark.parametrize("edit,why", [
+    ({"index_topk_freq": 2}, "index_topk_freq"),
+    ({"index_rope_dim": 64}, "index_rope_dim"),
+    ({"index_k_norm_type": "rmsnorm"}, "LayerNorm"),
+    ({"dsa_layers": [1, 4]}, "not latent-attention layers"),
+    ({"dsa_layers": []}, "not latent-attention layers"),
+])
+def test_kimi_k31_refuses_a_dsa_layout_it_does_not_price(tmp_path, edit, why):
+    with pytest.raises(deriver().DeriveError, match=why):
+        _derive_raw(_k31_raw(**edit), tmp_path, "kimi-k3.1")
+
+
+def test_a_dsa_config_on_an_architecture_without_the_path_is_refused(tmp_path):
+    """vLLM v0.32.0's Kimi-K3 has no DSA attention, so a dsa_config there would be ignored and
+    its layers priced as dense latent attention."""
+    raw = _k31_raw()
+    raw["architectures"] = ["KimiK3ForConditionalGeneration"]
+    with pytest.raises(deriver().DeriveError, match="no vLLM path"):
+        _derive_raw(raw, tmp_path, "kimi-k3")
+
+
+# --- Kimi-K3 family DSpark drafters (Inferact/Kimi-K3-DSpark, Inferact/Kimi-K3.1-Pro-DSpark-preview) ---
+
+K3_DSPARK = MODELS / "kimi-k3-dspark"
+K31_DSPARK = MODELS / "kimi-k3.1-dspark"
+
+# Each drafter's safetensors header (one shard each): its total weights, and the tensors the
+# engine does not run as the drafter's own. vLLM drops embed_tokens and lm_head from the
+# checkpoint and shares the target's (K3DSparkForCausalLM.hf_to_vllm_mapper), and keeps the
+# confidence head (7,424 weights and a bias) for adaptive verification alone.
+K3_DSPARK_HEADERS = {
+    # name: (total weights in the header, embed_tokens it holds, attention heads, markov rank)
+    "kimi-k3-dspark": (3_562_312_961, 163840 * 7168, 64, 256),
+    "kimi-k3.1-dspark": (2_686_752_257, 0, 96, 512),
+}
+
+
+def _k3_dspark_graph(name: str) -> dict:
+    return graph_of(MODELS / name)
+
+
+@pytest.mark.parametrize("name", sorted(K3_DSPARK_HEADERS))
+def test_k3_dspark_resident_parameters_equal_the_header_total(name):
+    """Every tensor of the drafter's header is a node, a tensor the engine does not load, or a
+    norm or head no node carries; the graph holds two things the header does not, both named."""
+    total, embed, heads, rank = K3_DSPARK_HEADERS[name]
+    g = _k3_dspark_graph(name)
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    hidden, vocab, ffn = 7168, 163840, 14336
+    params = 0
+    for kind in ("dspark_layer", "dspark_context"):
+        for n in kinds[kind]["nodes"]:
+            if n["op"] == "GEMM":
+                params += n["n"] * n["k"] * (5 if kind == "dspark_layer" else 1)
+    sp = g["speculator"]
+    params += sum(n["n"] * n["k"] for n in sp["head"] if n["op"] == "GEMM")
+    params += sum(n["n"] * n["k"] for n in sp["sequential_head"] if n["op"] == "GEMM")
+    params += sum(n["rows"] * n["row_bytes"] // 2 for n in sp["sequential_head"]
+                  if n["op"] == "Gather")
+    # Held by the graph and not by the header: the lm_head the drafter shares with its target
+    # (its graph must state one for the speculator's head to alias), and the context K/V
+    # projection, whose weights are the layers' kv_a rows loaded a second time.
+    shared_head = vocab * hidden
+    duplicated_kv = 5 * 576 * hidden
+    # Held by the header and not by the graph: the dropped embedding, the confidence head, and
+    # the norm vectors (input, post-attention, q_a and kv_a a layer; context, final).
+    confidence = (hidden + rank) + 1
+    norms = 5 * (2 * hidden + 1536 + 512) + 2 * hidden
+    assert params - shared_head - duplicated_kv + embed + confidence + norms == total
+    attn = [n for n in kinds["dspark_layer"]["nodes"] if n["op"] == "Attention"][0]
+    assert (attn["kind"], attn["n_q"], attn["d_h"]) == ("mla", heads, 576)
+    assert sp["sequential_head"][1]["k"] == rank
+
+
+def test_k3_dspark_states_its_block_its_captures_and_its_target():
+    k3, k31 = _k3_dspark_graph("kimi-k3-dspark"), _k3_dspark_graph("kimi-k3.1-dspark")
+    for g, aux, block in ((k3, [3, 24, 48, 72, 90], 7), (k31, [76, 80, 84, 88, 92], 7)):
+        sp = g["speculator"]
+        assert (sp["method"], sp["drafting"], sp["num_spec_tokens"]) == ("dspark", "parallel_block", block)
+        # target_layer_ids plus one, in the engine's convention, one state per captured layer.
+        assert sp["aux_hidden_state_layers"] == aux
+        fc = [n for n in {k["id"]: k for k in g["layer_kinds"]}["dspark_context"]["nodes"]
+              if n["role"] == "dspark_fc"][0]
+        assert (fc["n"], fc["k"], fc["tp"]) == (7168, 5 * 7168, "replicated")
+        assert sp["head"][1]["aliases"] == "head.lm_head"
+    for drafter, target in (("kimi-k3-dspark", "kimi-k3"), ("kimi-k3.1-dspark", "kimi-k3.1")):
+        identity = yaml.safe_load((MODELS / drafter / "model.yaml").read_text())
+        host = yaml.safe_load((MODELS / target / "model.yaml").read_text())
+        assert identity["targets"] == [target] and drafter in host["drafters"]
+        t = graph_of(MODELS / target)
+        assert len(layer_sequence(t["stack"])) == 93 == (
+            config_of(K3_DSPARK)["target_num_hidden_layers"])
+        assert t["global"]["hidden_size"] == 7168
+
+
+def test_k3_dspark_block_comes_from_the_config_or_the_recorded_card(tmp_path, monkeypatch):
+    d = deriver()
+    raw = config_of(K3_DSPARK)
+    assert "block_size" not in raw
+    assert _derive_raw(raw, tmp_path, "kimi-k3-dspark")["speculator"]["num_spec_tokens"] == 7
+    assert _derive_raw({**raw, "block_size": 5}, tmp_path,
+                       "kimi-k3-dspark")["speculator"]["num_spec_tokens"] == 5
+    with pytest.raises(d.DeriveError, match="K3_DSPARK_BLOCKS"):
+        _derive_raw(raw, tmp_path, "some-other-dspark")
+
+
+@pytest.mark.parametrize("edit,why", [
+    ({"mla_use_nope": True}, "mla_use_nope"),
+    ({"mla_use_output_gate": True}, "mla_use_output_gate"),
+    ({"mla_use_qk_norm": True}, "mla_use_qk_norm"),
+    ({"dspark_bonus_anchor": True}, "dspark_bonus_anchor"),
+    ({"q_lora_rank": None}, "q_lora_rank"),
+    ({"draft_vocab_size": 100}, "draft_vocab_size"),
+    ({"num_target_layers": 4}, "num_target_layers"),
+    ({"n_routed_experts": 8}, "routed experts"),
+    ({"hidden_act": "situ"}, "hidden_act"),
+    ({"sliding_window": 4096}, "sliding-window"),
+    ({"sample_from_anchor": False}, "sample_from_anchor"),
+    ({"markov_head_type": "full"}, "markov_head_type"),
+    ({"target_layer_ids": [2, 23, 47, 71, 93]}, "outside the target"),
+])
+def test_k3_dspark_refuses_what_vllm_refuses_or_the_graph_does_not_price(tmp_path, edit, why):
+    with pytest.raises(deriver().DeriveError, match=why):
+        _derive_raw({**config_of(K3_DSPARK), **edit}, tmp_path, "kimi-k3-dspark")
+
+
+# --- MXFP8 scales (MiniMax-M3-MXFP8) ----------------------------------------------------
+
+MINIMAX_M3_MXFP8 = MODELS / "minimax-m3-mxfp8"
+# The safetensors headers of MiniMaxAI/MiniMax-M3-MXFP8 at c5454eb03678: 45,838 tensors. The
+# language model holds 423,670,579,200 F8_E4M3 weights; the same count of `weight_scale_inv`
+# tensors is U8 [rows, columns / 32], 13,239,705,600 bytes; lm_head and embed_tokens are BF16
+# [200064, 6144]. (The vision tower's BF16 tensors are not a decoder node.)
+MXFP8_FP8_WEIGHTS = 423_670_579_200
+MXFP8_SCALE_BYTES = 13_239_705_600
+
+
+def _fp8_decoder_params(g: dict) -> int:
+    """Parameters the graph stores at the global fp8 width in its decoder stack (a routed or
+    shared expert is three matrices of n x k)."""
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    st = g["stack"]
+    total = 0
+    for kid in list(st.get("prologue", [])) + list(st["pattern"]) * st["repeat"]:
+        for n in kinds[kid]["nodes"]:
+            if n["op"] == "GEMM" and n.get("weight_dtype", "fp8") == "fp8":
+                total += n["n"] * n["k"]
+            elif n["op"] == "GroupedGEMM":
+                total += (n["experts"] + n.get("shared_experts", 0)) * 3 * n["n"] * n["k"]
+    return total
+
+
+def _mxfp8_graphs(tmp_path):
+    """The committed graph and a fresh derivation of the pinned config: both are held to it."""
+    fresh = _derive_raw(config_of(MINIMAX_M3_MXFP8), tmp_path, "minimax-m3-mxfp8")
+    return [graph_of(MINIMAX_M3_MXFP8), fresh]
+
+
+def test_mxfp8_graph_carries_the_checkpoints_one_in_thirty_two_scale_bytes(tmp_path):
+    for g in _mxfp8_graphs(tmp_path):
+        assert g["global"]["weight_dtype"] == "fp8"
+        assert g["global"]["weight_scale"] == {"elements": 32, "bytes": 1}
+        params = _fp8_decoder_params(g)
+        assert params == MXFP8_FP8_WEIGHTS
+        sc = g["global"]["weight_scale"]
+        assert params * sc["bytes"] // sc["elements"] == MXFP8_SCALE_BYTES
+
+
+def test_mxfp8_head_is_bf16_because_the_checkpoint_ignores_it(tmp_path):
+    """lm_head is in ignored_layers and the header holds it BF16, so it is priced at the base
+    width and carries no scale."""
+    for g in _mxfp8_graphs(tmp_path):
+        head = {n["role"]: n for n in g["head"]}
+        assert head["lm_head"]["weight_dtype"] == "bf16"
+
+
+def test_mxfp8_refuses_a_block_it_does_not_price(tmp_path):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    raw = json.loads(json.dumps(config_of(MINIMAX_M3_MXFP8)))
+    raw["quantization_config"]["weight_block_size"] = [128, 128]
+    with pytest.raises(derive_graph.DeriveError, match="1 x 32"):
+        _derive_raw(raw, tmp_path, "minimax-m3-mxfp8")
+
+
+def test_only_the_mxfp8_graph_gains_a_scale_and_the_other_fp8_blocks_stay_unscaled():
+    """The 128 x 128 fp32-scaled fp8 graphs carry 4 bytes in 16,384, 0.02%, and state none; the
+    layout belongs to the checkpoint, so a graph states one only where the config does."""
+    scaled = {d.name for d in sorted(MODELS.iterdir())
+              if d.is_dir() and graph_of(d)["global"].get("weight_scale")
+              and graph_of(d)["global"]["weight_dtype"] == "fp8"}
+    assert scaled == {"minimax-m3-mxfp8", "minimax-m3-nvfp4", "minimax-m3.1-flash", "minimax-m3.1-flash-dspark",
+                      "deepseek-v4.1-flash"}
+
+
+# --- DSpark stages in a DeepSeek-V4 checkpoint (deepseek-ai/DeepSeek-V4-Pro-0813) ---------
+
+V4_0813 = MODELS / "deepseek-v4-pro-0813"
+# The tensors under mtp.* in the safetensors headers of deepseek-ai/DeepSeek-V4-Pro-0813 at
+# 72e1d3230f6c (66 shards; 7,009 tensors, 41,979,375,900 bytes). (suffix, stored dtype, shape,
+# stages holding it, copies per stage); an expert is counted once per routed expert. The same
+# repository's other 142,773 tensors have the names, and every one of 400 sampled the dtype
+# and shape, of DeepSeek-V4-Pro's, whose MTP stage holds e_proj and h_proj where these hold
+# none: the stages here are DSpark's.
+_ALL = (0, 1, 2)
+V4_0813_MTP = [
+    ("attn.attn_sink", "F32", (128,), _ALL, 1),
+    ("attn.kv_norm.weight", "BF16", (512,), _ALL, 1),
+    ("attn.q_norm.weight", "BF16", (1536,), _ALL, 1),
+    ("attn.wkv.scale", "F8_E8M0", (4, 56), _ALL, 1),
+    ("attn.wkv.weight", "F8_E4M3", (512, 7168), _ALL, 1),
+    ("attn.wo_a.scale", "F8_E8M0", (128, 32), _ALL, 1),
+    ("attn.wo_a.weight", "F8_E4M3", (16384, 4096), _ALL, 1),
+    ("attn.wo_b.scale", "F8_E8M0", (56, 128), _ALL, 1),
+    ("attn.wo_b.weight", "F8_E4M3", (7168, 16384), _ALL, 1),
+    ("attn.wq_a.scale", "F8_E8M0", (12, 56), _ALL, 1),
+    ("attn.wq_a.weight", "F8_E4M3", (1536, 7168), _ALL, 1),
+    ("attn.wq_b.scale", "F8_E8M0", (512, 12), _ALL, 1),
+    ("attn.wq_b.weight", "F8_E4M3", (65536, 1536), _ALL, 1),
+    ("attn_norm.weight", "BF16", (7168,), _ALL, 1),
+    ("ffn.experts.N.w1.scale", "F8_E8M0", (3072, 224), _ALL, 384),
+    ("ffn.experts.N.w1.weight", "I8", (3072, 3584), _ALL, 384),
+    ("ffn.experts.N.w2.scale", "F8_E8M0", (7168, 96), _ALL, 384),
+    ("ffn.experts.N.w2.weight", "I8", (7168, 1536), _ALL, 384),
+    ("ffn.experts.N.w3.scale", "F8_E8M0", (3072, 224), _ALL, 384),
+    ("ffn.experts.N.w3.weight", "I8", (3072, 3584), _ALL, 384),
+    ("ffn.gate.bias", "F32", (384,), _ALL, 1),
+    ("ffn.gate.weight", "BF16", (384, 7168), _ALL, 1),
+    ("ffn.shared_experts.w1.scale", "F8_E8M0", (24, 56), _ALL, 1),
+    ("ffn.shared_experts.w1.weight", "F8_E4M3", (3072, 7168), _ALL, 1),
+    ("ffn.shared_experts.w2.scale", "F8_E8M0", (56, 24), _ALL, 1),
+    ("ffn.shared_experts.w2.weight", "F8_E4M3", (7168, 3072), _ALL, 1),
+    ("ffn.shared_experts.w3.scale", "F8_E8M0", (24, 56), _ALL, 1),
+    ("ffn.shared_experts.w3.weight", "F8_E4M3", (3072, 7168), _ALL, 1),
+    ("ffn_norm.weight", "BF16", (7168,), _ALL, 1),
+    ("hc_attn_base", "F32", (24,), _ALL, 1),
+    ("hc_attn_fn", "F32", (24, 28672), _ALL, 1),
+    ("hc_attn_scale", "F32", (3,), _ALL, 1),
+    ("hc_ffn_base", "F32", (24,), _ALL, 1),
+    ("hc_ffn_fn", "F32", (24, 28672), _ALL, 1),
+    ("hc_ffn_scale", "F32", (3,), _ALL, 1),
+    # mtp.0 alone: the context combiner
+    ("main_norm.weight", "BF16", (7168,), (0,), 1),
+    ("main_proj.scale", "F8_E8M0", (56, 168), (0,), 1),
+    ("main_proj.weight", "F8_E4M3", (7168, 21504), (0,), 1),
+    # mtp.2 alone: the heads
+    ("confidence_head.proj.weight", "BF16", (1, 7680), (2,), 1),
+    ("hc_head_base", "F32", (4,), (2,), 1),
+    ("hc_head_fn", "F32", (4, 28672), (2,), 1),
+    ("hc_head_scale", "F32", (1,), (2,), 1),
+    ("markov_head.markov_w1.weight", "BF16", (129280, 512), (2,), 1),
+    ("markov_head.markov_w2.weight", "BF16", (129280, 512), (2,), 1),
+    ("norm.weight", "BF16", (7168,), (2,), 1),
+]
+_STORED = {"F32": 4, "BF16": 2, "F8_E4M3": 1, "F8_E8M0": 1, "I8": 1}
+
+
+def _prod(shape) -> int:
+    out = 1
+    for x in shape:
+        out *= x
+    return out
+
+
+def v4_0813_graph() -> dict:
+    """The graph the deriver produces from the committed config now, so a change to the
+    handler fails these tests and not only the re-derivation check."""
+    assert V4_0813.is_dir(), "models/deepseek-v4-pro-0813 is missing"
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    return yaml.safe_load(derive_graph.dump(
+        derive_graph.derive(V4_0813 / "config.json", "deepseek-v4-pro-0813")))
+
+
+def test_v4_0813_committed_graph_is_the_derivation():
+    assert graph_of(V4_0813) == v4_0813_graph()
+
+
+def test_v4_0813_dspark_tensor_classes_sum_to_the_checkpoints_header_total():
+    """The classes above are the whole of mtp.*: their count and bytes are the headers'."""
+    count = sum(len(stages) * copies for _, _, _, stages, copies in V4_0813_MTP)
+    nbytes = sum(len(stages) * copies * _prod(shape) * _STORED[dt]
+                 for _, dt, shape, stages, copies in V4_0813_MTP)
+    assert (count, nbytes) == (7009, 41_979_375_900)
+
+
+def test_v4_0813_dspark_draft_charges_the_weights_the_checkpoint_stores():
+    """Each draft layer's matrices, the context combiner and the heads, against mtp.0-2: the
+    dense linears and shared expert FP8, the experts MXFP4, the router BF16, the mHC
+    projections FP32. The drafter's lm_head and embedding alias the target's."""
+    g = v4_0813_graph()
+    glob = g["global"]["weight_dtype"]
+    spec = g["speculator"]
+    drafts = expanded_layers(g, spec["stack"])
+    assert len(drafts) == 3
+    for d, nodes in enumerate(drafts):
+        check_weights(nodes, V4_CHECKPOINT["every_layer"]
+                      + V4_CHECKPOINT["routed_expert"] * 384, f"draft {d}", glob)
+    (context,) = expanded_layers(g, spec["context_stack"])
+    # main_proj (mtp.0) and context_wkv_proj, which holds a second copy of the three wkv.
+    check_weights(context, [(7168, 21504, "fp8"), (3 * 512, 7168, "fp8")], "context", glob)
+    wkv = [c for c in V4_0813_MTP if c[0] == "attn.wkv.weight"][0]
+    assert 3 * _prod(wkv[2]) == 3 * 512 * 7168
+    check_weights(spec["head"], V4_CHECKPOINT["hc_head"], "draft head", glob)
+    (w1,) = [n for n in spec["sequential_head"] if n["role"] == "markov_w1"]
+    (w2,) = [n for n in spec["sequential_head"] if n["role"] == "markov_w2"]
+    assert (w1["rows"], w1["row_bytes"]) == (129280, 512 * 2)
+    assert (w2["n"], w2["k"], w2.get("weight_dtype", "bf16")) == (129280, 512, "bf16")
+    assert [n.get("aliases") for n in spec["head"] if n["op"] == "GEMM" and n["n"] == 129280] \
+        == ["head.lm_head"]
+    assert [n.get("aliases") for n in spec["embedding"] if n["op"] == "Gather"] == [
+        "embedding.embed_tokens"]
+
+
+def test_v4_0813_speculator_states_what_the_config_and_the_engine_say():
+    g, t = v4_0813_graph(), text_config(config_of(V4_0813))
+    spec = g["speculator"]
+    assert spec["method"] == "dspark" and spec["drafting"] == "parallel_block"
+    assert spec["num_spec_tokens"] == t["dspark_block_size"] == 5
+    # dspark_target_layer_ids [58, 59, 60] are used one higher by a deepseek_v4 target
+    # (eagle3_utils.py:100-137@v0.32.0): the state after each of those layers.
+    assert spec["aux_hidden_state_layers"] == [59, 60, 61]
+    assert "aux_hidden_state_bytes_per_token" not in spec
+    (main_proj,) = [n for k in g["layer_kinds"] if k["id"] == "dspark_context"
+                    for n in k["nodes"] if n.get("role") == "dspark_main_proj"]
+    assert (main_proj["n"], main_proj["k"]) == (7168, 3 * 7168)
+    (markov,) = [n for n in spec["sequential_head"] if n["role"] == "markov_w1"]
+    assert markov["row_bytes"] == t["dspark_markov_rank"] * 2
+    # No compressor, indexer or compressed cache in a draft layer: any layer id at or past
+    # num_hidden_layers takes ratio 1 (attention.py:232-235). Each reads its window plus the
+    # block (sparse_swa.py:552-566), 128 + 5, from a 128-token window cache.
+    for nodes in expanded_layers(g, spec["stack"]):
+        (attn,) = [n for n in nodes if n["op"] == "Attention" and n.get("holds_engine_kv")]
+        assert attn["window"] == 128 + 5 and "compress_ratio" not in attn
+        assert [c["name"] for c in attn["caches"]] == ["swa"]
+        assert attn["caches"][0]["window"] == 128
+        assert not [n for n in nodes if "compressor" in n.get("role", "")
+                    or n.get("role") == "block_index_scores"]
+        (router,) = [n for n in nodes if n.get("role") == "router"]
+        assert router["n"] == 384
+        assert not [n for n in nodes if n["op"] == "Gather"], "a draft layer hashes no routes"
+    # The first draft layer takes the full hc_attn_fn on the repeated embedding; the next
+    # two fuse the previous layer's post.
+    first, second, _ = expanded_layers(g, spec["stack"])
+    assert [n["role"] for n in first[:2]] == ["mhc_attn_broadcast_pre", "hc_attn_fn"]
+    assert (first[1]["n"], first[1]["k"]) == (24, 4 * 7168)
+    assert second[0]["role"] == "mhc_attn_post_pre"
+
+
+def test_v4_0813_target_differs_from_the_pro_target_only_in_the_state_rows_the_block_sets():
+    """A decoding request holds 1 + block tokens in flight under DSpark, 1 + 1 under MTP, so
+    the compressor state of the ratio-4 layers is five pages and not four; nothing else in
+    the target changes between the two checkpoints."""
+    a, b = v4_0813_graph(), graph_of(DSV4_PRO)
+
+    def target_kinds(g):
+        return {k["id"]: json.loads(json.dumps(k)) for k in g["layer_kinds"]
+                if k["id"].startswith("csa")}
+
+    ka, kb = target_kinds(a), target_kinds(b)
+    assert ka.keys() == kb.keys() and a["stack"] == b["stack"]
+    rows = {}
+    for kid in ka:
+        for na, nb in zip(ka[kid]["nodes"], kb[kid]["nodes"]):
+            for ca, cb in zip(na.get("caches", []), nb.get("caches", [])):
+                if ca.get("kind") == "state":
+                    rows.setdefault(ca["name"], set()).add((cb["entries"], ca["entries"]))
+                    ca["entries"] = cb["entries"]
+    assert ka == kb
+    assert rows == {"compressor_state": {(16, 20), (144, 144)},
+                    "index_compressor_state": {(16, 20)}}
+    assert a["head"] == b["head"] and a["embedding"] == b["embedding"]
+    assert a["global"] == b["global"]
+
+
+def _v4_0813_raw(**edit) -> dict:
+    raw = json.loads(json.dumps(config_of(V4_0813)))
+    for k, v in edit.items():
+        if v is None:
+            raw.pop(k, None)
+        else:
+            raw[k] = v
+    return raw
+
+
+@pytest.mark.parametrize("edit,why", [
+    ({"dspark_draft_topk": 64}, "reads and this handler does not"),
+    ({"dspark_bonus_anchor": True}, "reads and this handler does not"),
+    ({"dspark_markov_rank": None}, "needs"),
+    ({"dspark_noise_token_id": None}, "needs"),
+    ({"dspark_target_layer_ids": None}, "needs"),
+    ({"dspark_block_size": None}, "needs"),
+    ({"n_mtp_layers": 2}, "changes the DSpark draft"),
+    ({"draft_vocab_size": 32000}, "changes the DSpark draft"),
+    ({"enable_confidence_head": False}, "changes the DSpark draft"),
+    ({"sample_from_anchor": False}, "changes the DSpark draft"),
+    ({"dflash_config": {"mask_token_id": 1}}, "changes the DSpark draft"),
+    ({"mask_token_id": 1}, "changes the DSpark draft"),
+    ({"dspark_noise_token_id": 129280}, "outside the vocabulary"),
+    ({"dspark_noise_token_id": -1}, "outside the vocabulary"),
+    ({"dspark_target_layer_ids": [58, 59, 61]}, "distinct layers"),
+    ({"dspark_target_layer_ids": [59, 59, 60]}, "distinct layers"),
+    ({"dspark_target_layer_ids": []}, "distinct layers"),
+    ({"dspark_block_size": 0}, "at least 1"),
+    ({"dspark_markov_rank": 5.5}, "not a whole number"),
+])
+def test_v4_dspark_refuses_a_config_it_has_not_read(tmp_path, edit, why):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match=why):
+        _derive_raw(_v4_0813_raw(**edit), tmp_path, "deepseek-v4-pro-0813")
+
+
+def test_v4_dspark_compress_ratios_must_state_the_three_draft_layers_as_zero(tmp_path):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    ratios = config_of(V4_0813)["compress_ratios"]
+    assert len(ratios) == 64 and ratios[61:] == [0, 0, 0]
+    for bad in (ratios[:62], ratios[:61], ratios + [0], ratios[:61] + [0, 4, 0]):
+        with pytest.raises(derive_graph.DeriveError, match="compress_ratios"):
+            _derive_raw(_v4_0813_raw(compress_ratios=bad), tmp_path, "deepseek-v4-pro-0813")
+
+
+def test_v4_without_dspark_keys_still_refuses_the_three_extra_ratio_entries(tmp_path):
+    """The published V4-Pro form is 61 layers and one MTP entry. Sixty-four entries without
+    the dspark_* keys are not that, and MTP is not guessed to cover them."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    raw = _v4_0813_raw(dspark_block_size=None, dspark_markov_rank=None,
+                       dspark_noise_token_id=None, dspark_target_layer_ids=None)
+    with pytest.raises(derive_graph.DeriveError, match="64 entries for 61 layers and 1 draft"):
+        _derive_raw(raw, tmp_path, "deepseek-v4-pro-0813")
+    g = _derive_raw(config_of(DSV4_PRO), tmp_path, "deepseek-v4-pro")
+    assert g["speculator"]["method"] == "mtp"
+
+
+def test_v4_dspark_context_pass_pays_for_the_zeroed_query_per_draft_layer():
+    """_insert_context_kv allocates torch.zeros((tokens, rank heads, head_dim)) for each of
+    the three layers and runs it through the fused norm + RoPE + insert kernel
+    (nvidia/dspark.py:302-349@v0.32.0); V4.1's drafter does not."""
+    g = v4_0813_graph()
+    ctx = {k["id"]: k for k in g["layer_kinds"]}["dspark_context"]
+    dummy = [n for n in ctx["nodes"] if n["role"].startswith("dspark_context_dummy_q_")]
+    assert [n["bytes_per_token"] for n in dummy] == [3 * 128 * 512 * 2] * 3
+    assert {n["tp"] for n in dummy} == {"sharded"}
+    insert = [n for n in ctx["nodes"] if n["role"].startswith("dspark_context_kv_rope_insert_")]
+    assert [n["bytes_per_token"] for n in insert] == [512 * 2 + 584] * 3
+
+
+# --- MiniMax-M3.1-Flash (MiniMaxAI/MiniMax-M3.1-Flash) --------------------------------------
+
+M31 = MODELS / "minimax-m3.1-flash"
+WIDTH.setdefault("nvfp4", 0.5)
+
+
+def _m31_cfg(**edit) -> dict:
+    """The keys of MiniMax-M3.1-Flash's config.json at ce7f4df87d2e that the deriver reads,
+    which the repository's licence keeps out of the catalog (the file is pinned by hash in
+    model.yaml and the nightly job re-derives the graph from the fetched file). The per-layer
+    vectors and the exclusion list are generated from the three dense layers they describe."""
+    layers = 60
+    moe = [0] * 3 + [1] * 57
+    text = {
+        "architectures": ["MiniMaxM3SparseForCausalLM"],
+        "hidden_size": 6144, "intermediate_size": 3072, "num_hidden_layers": layers,
+        "num_attention_heads": 64, "num_key_value_heads": 4, "head_dim": 128,
+        "vocab_size": 200064, "max_position_embeddings": 1048576, "rms_norm_eps": 1e-06,
+        "use_gemma_norm": True, "attention_output_gate": False, "rope_theta": 10000000,
+        "rotary_dim": 64, "partial_rotary_factor": 0.5, "hidden_act": "swigluoai",
+        "use_qk_norm": True, "tie_word_embeddings": False,
+        "dense_intermediate_size": 12288, "shared_intermediate_size": 3072,
+        "num_local_experts": 128, "num_experts_per_tok": 4, "n_shared_experts": 1,
+        "scoring_func": "sigmoid", "use_routing_bias": True, "qk_norm_type": "per_head",
+        "swiglu_alpha": 1.702, "swiglu_limit": 7.0, "routed_scaling_factor": 2.0,
+        "moe_layer_freq": moe,
+        "sparse_attention_config": {
+            "use_sparse_attention": True, "sparse_index_dim": 128,
+            "sparse_num_index_heads": 4, "sparse_topk_blocks": 16, "sparse_block_size": 128,
+            "sparse_score_type": "max", "sparse_init_block": 0, "sparse_local_block": 1,
+            "sparse_attention_freq": [1] * layers, "sparse_disable_index_value": [1] * layers,
+        },
+    }
+    quant = {
+        "quant_method": "mxfp8", "activation_scheme": "dynamic", "weight_block_size": [1, 32],
+        "group_size": 16, "moe_quant_algo": "NVFP4", "moe_quant_format": "nvfp4-pack-quantized",
+        "ignored_layers": sorted(
+            ["lm_head", "model.embed_tokens", "vision_tower", "multi_modal_projector",
+             "patch_merge_mlp"]
+            + [f"language_model.model.layers.{i}.block_sparse_moe.gate" for i in range(3, 60)]),
+    }
+    raw = {"architectures": ["MiniMaxM3SparseForConditionalGeneration"],
+           "model_type": "minimax_m3_vl", "torch_dtype": "bfloat16",
+           "text_config": text, "quantization_config": quant}
+    for key, value in edit.items():
+        where, _, name = key.rpartition("__")
+        target = {"": raw, "text": text, "sparse": text["sparse_attention_config"],
+                  "quant": quant}[where]
+        if value is None:
+            target.pop(name, None)
+        else:
+            target[name] = value
+    return raw
+
+
+def _m31_graph(tmp_path) -> dict:
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    return _derive_raw(_m31_cfg(), tmp_path, "minimax-m3.1-flash")
+
+
+def test_m31_committed_graph_is_the_derivation_of_the_pinned_keys(tmp_path):
+    """The committed graph equals what the deriver makes of the keys above, apart from the
+    digest of the file it was derived from, which model.yaml pins and the nightly job checks."""
+    committed = graph_of(M31)
+    derived = _m31_graph(tmp_path)
+    pin = yaml.safe_load((M31 / "model.yaml").read_text())["config"]["sha256"]
+    assert committed["derived_from"]["sha256"] == pin
+    committed["derived_from"].pop("sha256")
+    derived["derived_from"].pop("sha256")
+    assert committed == derived
+
+
+# Every tensor of the checkpoint in the 48 safetensors headers at ce7f4df87d2e (89,632 tensors,
+# 250,103,411,200 bytes): (module under language_model., stored dtype, shape, layers holding it,
+# copies, what the graph does with it). Routed experts count once per expert and matrix.
+# "priced" classes are the graph's GEMM and GroupedGEMM weights; "scale" classes are block
+# scales and global scales, which the graph does not state; "small" are norms and the routing
+# bias; "global" are the embedding and the head, which the graph states from vocab_size and
+# hidden_size and in its head.
+_ATTN = (0, 59)
+_DENSE = (0, 2)
+_ROUTED = (3, 59)
+M31_CHECKPOINT = [
+    ("L.self_attn.q_proj.weight", "F8_E4M3", (8192, 6144), _ATTN, 60, "priced"),
+    ("L.self_attn.k_proj.weight", "F8_E4M3", (512, 6144), _ATTN, 60, "priced"),
+    ("L.self_attn.v_proj.weight", "F8_E4M3", (512, 6144), _ATTN, 60, "priced"),
+    ("L.self_attn.index_q_proj.weight", "F8_E4M3", (512, 6144), _ATTN, 60, "priced"),
+    ("L.self_attn.index_k_proj.weight", "F8_E4M3", (128, 6144), _ATTN, 60, "priced"),
+    ("L.self_attn.o_proj.weight", "F8_E4M3", (6144, 8192), _ATTN, 60, "priced"),
+    ("L.self_attn.q_proj.weight_scale_inv", "U8", (8192, 192), _ATTN, 60, "scale"),
+    ("L.self_attn.k_proj.weight_scale_inv", "U8", (512, 192), _ATTN, 60, "scale"),
+    ("L.self_attn.v_proj.weight_scale_inv", "U8", (512, 192), _ATTN, 60, "scale"),
+    ("L.self_attn.index_q_proj.weight_scale_inv", "U8", (512, 192), _ATTN, 60, "scale"),
+    ("L.self_attn.index_k_proj.weight_scale_inv", "U8", (128, 192), _ATTN, 60, "scale"),
+    ("L.self_attn.o_proj.weight_scale_inv", "U8", (6144, 256), _ATTN, 60, "scale"),
+    ("L.mlp.gate_proj.weight", "F8_E4M3", (12288, 6144), _DENSE, 3, "priced"),
+    ("L.mlp.up_proj.weight", "F8_E4M3", (12288, 6144), _DENSE, 3, "priced"),
+    ("L.mlp.down_proj.weight", "F8_E4M3", (6144, 12288), _DENSE, 3, "priced"),
+    ("L.mlp.gate_proj.weight_scale_inv", "U8", (12288, 192), _DENSE, 3, "scale"),
+    ("L.mlp.up_proj.weight_scale_inv", "U8", (12288, 192), _DENSE, 3, "scale"),
+    ("L.mlp.down_proj.weight_scale_inv", "U8", (6144, 384), _DENSE, 3, "scale"),
+    ("L.block_sparse_moe.gate.weight", "F32", (128, 6144), _ROUTED, 57, "priced"),
+    ("L.block_sparse_moe.shared_experts.gate_proj.weight", "F8_E4M3", (3072, 6144), _ROUTED, 57, "priced"),
+    ("L.block_sparse_moe.shared_experts.up_proj.weight", "F8_E4M3", (3072, 6144), _ROUTED, 57, "priced"),
+    ("L.block_sparse_moe.shared_experts.down_proj.weight", "F8_E4M3", (6144, 3072), _ROUTED, 57, "priced"),
+    ("L.block_sparse_moe.shared_experts.gate_proj.weight_scale_inv", "U8", (3072, 192), _ROUTED, 57, "scale"),
+    ("L.block_sparse_moe.shared_experts.up_proj.weight_scale_inv", "U8", (3072, 192), _ROUTED, 57, "scale"),
+    ("L.block_sparse_moe.shared_experts.down_proj.weight_scale_inv", "U8", (6144, 96), _ROUTED, 57, "scale"),
+    # Packed two FP4 values to a byte: [3072, 3072] stores 3072 x 6144.
+    ("L.block_sparse_moe.experts.E.w1.weight_packed", "U8", (3072, 3072), _ROUTED, 7296, "priced"),
+    ("L.block_sparse_moe.experts.E.w3.weight_packed", "U8", (3072, 3072), _ROUTED, 7296, "priced"),
+    ("L.block_sparse_moe.experts.E.w2.weight_packed", "U8", (6144, 1536), _ROUTED, 7296, "priced"),
+    ("L.block_sparse_moe.experts.E.w1.weight_scale", "F8_E4M3", (3072, 384), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w3.weight_scale", "F8_E4M3", (3072, 384), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w2.weight_scale", "F8_E4M3", (6144, 192), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w1.input_global_scale", "F32", (), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w3.input_global_scale", "F32", (), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w2.input_global_scale", "F32", (), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w1.weight_global_scale", "F32", (), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w3.weight_global_scale", "F32", (), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w2.weight_global_scale", "F32", (), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.e_score_correction_bias", "F32", (128,), _ROUTED, 57, "small"),
+    ("L.input_layernorm.weight", "BF16", (6144,), _ATTN, 60, "small"),
+    ("L.post_attention_layernorm.weight", "BF16", (6144,), _ATTN, 60, "small"),
+    ("L.self_attn.q_norm.weight", "BF16", (128,), _ATTN, 60, "small"),
+    ("L.self_attn.k_norm.weight", "BF16", (128,), _ATTN, 60, "small"),
+    ("L.self_attn.index_q_norm.weight", "BF16", (128,), _ATTN, 60, "small"),
+    ("L.self_attn.index_k_norm.weight", "BF16", (128,), _ATTN, 60, "small"),
+    ("model.norm.weight", "BF16", (6144,), None, 1, "small"),
+    ("lm_head.weight", "BF16", (200064, 6144), None, 1, "head"),
+    ("model.embed_tokens.weight", "BF16", (200064, 6144), None, 1, "embedding"),
+]
+# The towers outside the text decoder, summed (515 + 4 + 4 tensors).
+M31_TOWERS = {"vision_tower": (515, 1_265_382_400), "multi_modal_projector": (4, 91_250_688),
+              "patch_merge_mlp": (4, 377_511_936)}
+_M31_STORED = {"F32": 4, "BF16": 2, "F8_E4M3": 1, "U8": 1}
+
+
+def test_m31_tensor_classes_sum_to_the_checkpoints_header_total():
+    count = sum(c[4] for c in M31_CHECKPOINT) + sum(n for n, _ in M31_TOWERS.values())
+    nbytes = sum(c[4] * _prod(c[2]) * _M31_STORED[c[1]] for c in M31_CHECKPOINT)
+    nbytes += sum(b for _, b in M31_TOWERS.values())
+    assert (count, nbytes) == (89_632, 250_103_411_200)
+    # Each class holds one copy per layer it spans (routed experts: 128 a layer a matrix).
+    for name, _, _, span, copies, _ in M31_CHECKPOINT:
+        per_layer = 128 if ".experts.E." in name else 1
+        assert copies == (1 if span is None else (span[1] - span[0] + 1)) * per_layer, name
+
+
+def _m31_expected(layer: int) -> list[tuple[int, int, str]]:
+    """The matrices the graph must price on one layer, from the priced classes above."""
+    out = []
+    for name, dt, shape, span, _, role in M31_CHECKPOINT:
+        if role != "priced" or span is None or not span[0] <= layer <= span[1]:
+            continue
+        rows, cols = shape
+        if name.endswith("weight_packed"):
+            width, cols = "nvfp4", cols * 2
+        else:
+            width = {"F8_E4M3": "fp8", "F32": "fp32", "BF16": "bf16"}[dt]
+        out += [(rows, cols, width)] * (128 if ".experts.E." in name else 1)
+    return out
+
+
+def test_m31_graph_charges_the_weights_the_checkpoint_stores(tmp_path):
+    """Every priced class of mtp-free MiniMax-M3.1-Flash, layer by layer: the MXFP8 linears at
+    FP8, the routed experts at NVFP4 (128 a layer, three matrices each), the shared expert at
+    FP8, the router at FP32; and the head at BF16 as lm_head.weight stores it."""
+    g = _m31_graph(tmp_path)
+    assert g["global"]["weight_dtype"] == "fp8"
+    layers = expanded_layers(g)
+    assert len(layers) == 60
+    for i, nodes in enumerate(layers):
+        want = _m31_expected(i)
+        # check_weights compares elements and bytes; the expert matrices are listed per
+        # expert, the graph states them as one GroupedGEMM.
+        check_weights(nodes, want, i, "fp8")
+    head = [n for n in g["head"] if n["op"] == "GEMM"]
+    assert [(n["n"], n["k"], n["weight_dtype"]) for n in head] == [(200064, 6144, "bf16")]
+    assert "speculator" not in g
+
+
+def test_m31_layers_pair_the_two_vectors_independently(tmp_path):
+    g = _m31_graph(tmp_path)
+    assert g["stack"] == {"prologue": ["sparse_attn_dense"] * 3,
+                          "pattern": ["sparse_attn_moe"], "repeat": 57}
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    assert sorted(kinds) == ["sparse_attn_dense", "sparse_attn_moe"]
+    for kind in kinds.values():
+        (idx,) = [n for n in kind["nodes"] if n.get("role") == "block_index_scores"]
+        (attn,) = [n for n in kind["nodes"] if n["op"] == "Attention" and n.get("holds_engine_kv")]
+        assert idx["caches"] == [{"name": "index", "kind": "index", "owned": True,
+                                  "bytes_per_entry": 256}]
+        assert (attn["kind"], attn["window"]) == ("swa", (16 + 1) * 128)
+    dense = [n["role"] for n in kinds["sparse_attn_dense"]["nodes"] if n["op"] == "GEMM"]
+    assert dense == ["qkv_proj", "index_qk_proj", "o_proj", "mlp_gate_up", "mlp_down"]
+    routed = [(n["role"], n["weight_dtype"]) for n in kinds["sparse_attn_moe"]["nodes"]
+              if n["op"] in ("GEMM", "GroupedGEMM") and "weight_dtype" in n]
+    assert routed == [("router", "fp32"), ("experts", "nvfp4"), ("shared_experts", "fp8")]
+    (shared,) = [n for n in kinds["sparse_attn_moe"]["nodes"] if n.get("role") == "shared_experts"]
+    assert (shared["n"], shared["k"], shared["experts"], shared["shared"]) == (3072, 6144, 1, True)
+
+
+@pytest.mark.parametrize("edit,why", [
+    # full attention under routed experts: a kind no checkpoint states
+    ({"sparse__sparse_attention_freq": [0] + [1] * 59,
+      "sparse__sparse_disable_index_value": [0] + [1] * 59,
+      "text__moe_layer_freq": [1] * 60}, "full attention under routed experts"),
+    ({"sparse__sparse_attention_freq": [2] + [1] * 59}, "names \\[2\\]"),
+    ({"text__moe_layer_freq": [0, 0, 0] + [1] * 56 + [2]}, "names \\[2\\]"),
+    ({"sparse__sparse_attention_freq": [1] * 59}, "59 entries for 60"),
+    ({"sparse__sparse_disable_index_value": [0] + [1] * 59}, "sparse_disable_index_value"),
+    ({"text__first_k_dense_replace": 2}, "first_k_dense_replace"),
+    ({"text__shared_intermediate_size": 1536}, "shared_intermediate_size"),
+    ({"quant__moe_quant_algo": "MXFP4"}, "accepts NVFP4"),
+    ({"quant__moe_quant_format": "int4-pack-quantized"}, "accepts NVFP4"),
+    ({"quant__group_size": 32}, "accepts NVFP4"),
+    ({"quant__kv_cache_quant_algo": "FP8"}, "kv_cache_quant_algo"),
+    ({"quant__quant_method": "fp8"}, "reads it for mxfp8 only"),
+    ({"quant__ignored_layers": [x for x in _m31_cfg()["quantization_config"]["ignored_layers"]
+                                if x != "lm_head"]}, "missing \\['lm_head'\\]"),
+    ({"quant__ignored_layers": _m31_cfg()["quantization_config"]["ignored_layers"]
+      + ["language_model.model.layers.3.self_attn"]}, "unplaced"),
+    ({"quant__ignored_layers": [x for x in _m31_cfg()["quantization_config"]["ignored_layers"]
+                                if not x.endswith("layers.10.block_sparse_moe.gate")]},
+     "missing"),
+])
+def test_m31_refuses_what_it_does_not_place(tmp_path, edit, why):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match=why):
+        _derive_raw(_m31_cfg(**edit), tmp_path, "minimax-m3.1-flash")
+
+
+def test_a_draft_length_under_another_name_is_not_dropped_for_minimax_m3(tmp_path):
+    """MiniMax-M3.1-Flash states no draft layers, so its graph has no speculator. A config
+    that names them in the other spelling but not in num_mtp_modules is still refused: the
+    engine would read nothing, and a silent drop is the failure that rule exists for."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    assert "speculator" not in _derive_raw(_m31_cfg(), tmp_path, "minimax-m3.1-flash")
+    with pytest.raises(derive_graph.DeriveError, match="num_mtp_modules"):
+        _derive_raw(_m31_cfg(text__num_nextn_predict_layers=1), tmp_path, "minimax-m3.1-flash")
+    g = _derive_raw(_m31_cfg(text__num_mtp_modules=2), tmp_path, "minimax-m3.1-flash")
+    assert g["speculator"]["num_spec_tokens"] == 2
+
+
+def test_minimax_m3_siblings_keep_their_kinds_and_state_the_router_and_the_head():
+    """MiniMax-M3 and -MXFP8 keep two kinds, and state what their headers hold: the fp32
+    router [128, 6144] on each of the 57 routed layers (44,826,624 weights; the headers' F32
+    totals are that plus the 7,296-value routing bias) and, for MXFP8, the head at BF16."""
+    for name in ("minimax-m3", "minimax-m3-mxfp8"):
+        g = graph_of(MODELS / name)
+        assert g["stack"]["prologue"] == ["dense"] * 3, name
+        assert sorted(k["id"] for k in g["layer_kinds"]) == ["dense", "sparse_attn_moe"], name
+        routers = [n for k in g["layer_kinds"] for n in k["nodes"] if n.get("role") == "router"]
+        assert [(r["n"], r["k"], r["weight_dtype"], r["tp"]) for r in routers] == [
+            (128, 6144, "fp32", "replicated")], name
+        stack = g["stack"]
+        assert len(stack["pattern"]) * stack["repeat"] == 57
+        assert len(routers) * 57 * 128 * 6144 == 44_826_624
+    head = [n for n in graph_of(MODELS / "minimax-m3-mxfp8")["head"] if n["op"] == "GEMM"][0]
+    assert head["weight_dtype"] == "bf16"
+    assert "weight_dtype" not in [n for n in graph_of(MODELS / "minimax-m3")["head"]
+                                  if n["op"] == "GEMM"][0]
+
+
+# --- MiniMax-M3.1-Flash's DSpark drafter (dspark/ in the same repository) ------------------
+
+M31_DSPARK = MODELS / "minimax-m3.1-flash-dspark"
+
+
+def _m31ds_cfg(**edit) -> dict:
+    """The keys of dspark/config.json at ce7f4df87d2e that the deriver reads (the file is
+    pinned by hash and not committed, as for its target)."""
+    layers = 5
+    ids = [3, 17, 31, 45, 59]
+    text = {
+        "architectures": ["DSparkMiniMaxDraftModel"], "dtype": "bfloat16",
+        "hidden_size": 6144, "intermediate_size": 3072, "num_hidden_layers": layers,
+        "num_attention_heads": 64, "num_key_value_heads": 4, "head_dim": 128,
+        "vocab_size": 200064, "max_position_embeddings": 1048576, "rms_norm_eps": 1e-06,
+        "use_gemma_norm": True, "attention_output_gate": False, "rope_theta": 10000000,
+        "rotary_dim": 64, "partial_rotary_factor": 0.5, "hidden_act": "swigluoai",
+        "use_qk_norm": True, "tie_word_embeddings": False, "dense_intermediate_size": 12288,
+        "shared_intermediate_size": 3072, "num_local_experts": 128, "num_experts_per_tok": 4,
+        "n_shared_experts": 1, "scoring_func": "sigmoid", "use_routing_bias": True,
+        "moe_layer_freq": [0] * layers, "qk_norm_type": "per_head", "swiglu_alpha": 1.702,
+        "swiglu_limit": 7.0, "routed_scaling_factor": 2.0, "sparse_attention_config": None,
+        "dspark_block_size": 7, "dspark_markov_rank": 256, "dspark_markov_head_type": "vanilla",
+        "dspark_aux_gemm_precision": "bf16", "dspark_noise_token_id": 200058,
+        "dspark_use_dense_ffn": True, "dspark_ffn_hidden_size": 12288,
+        "dspark_target_layer_ids": list(ids),
+        "dspark_config": {"markov_rank": 256, "markov_head_type": "vanilla",
+                          "mask_token_id": 200058, "hybrid_context_fusion": False,
+                          "aux_gemm_precision": "bf16", "use_dense_ffn": True,
+                          "ffn_hidden_size": 12288},
+        "dspark_hybrid_context_fusion": False,
+        "dflash_config": {"num_hidden_layers": layers, "num_target_layers": 60,
+                          "context_source": "target_layers", "block_size": 7,
+                          "mask_token_id": 200058, "target_layer_ids": list(ids),
+                          "layer_types": ["sliding_attention"] * layers,
+                          "sliding_window": 4096},
+        "enable_confidence_head": True, "confidence_head_with_markov": True,
+        "num_nextn_predict_layers": 0, "use_mtp": False, "num_mtp_modules": 0,
+        "layer_types": ["sliding_attention"] * layers, "sliding_window": 4096,
+        "v_head_dim": 128, "swa_head_dim": 128, "swa_v_head_dim": 128,
+    }
+    dspark_modules = [f"language_model.model.dspark.{m}" for m in (
+        "confidence_head.proj", "fc", "markov_head.markov_w1", "markov_head.markov_w2")]
+    quant = {
+        "quant_method": "mxfp8", "activation_scheme": "dynamic", "weight_block_size": [1, 32],
+        "group_size": 16, "moe_quant_algo": "NVFP4", "moe_quant_format": "nvfp4-pack-quantized",
+        "ignored_layers": sorted(
+            dspark_modules + ["lm_head", "model.embed_tokens", "vision_tower",
+                              "multi_modal_projector", "patch_merge_mlp"]
+            + [f"language_model.model.layers.{i}.block_sparse_moe.gate" for i in range(3, 60)]),
+    }
+    raw = {"architectures": ["DSparkMiniMaxDraftModel"], "model_type": "minimax_m3_vl",
+           "dtype": "bfloat16", "tie_word_embeddings": False,
+           "text_config": text, "quantization_config": quant}
+    for key, value in edit.items():
+        where, _, name = key.rpartition("__")
+        target = {"": raw, "text": text, "dflash": text["dflash_config"],
+                  "quant": quant}[where]
+        if value is None:
+            target.pop(name, None)
+        else:
+            target[name] = value
+    return raw
+
+
+def _m31ds_graph(tmp_path) -> dict:
+    return _derive_raw(_m31ds_cfg(), tmp_path, "minimax-m3.1-flash-dspark")
+
+
+def test_m31_dspark_committed_graph_is_the_derivation_of_the_pinned_keys(tmp_path):
+    committed = graph_of(M31_DSPARK)
+    derived = _m31ds_graph(tmp_path)
+    pin = yaml.safe_load((M31_DSPARK / "model.yaml").read_text())["config"]["sha256"]
+    assert committed["derived_from"]["sha256"] == pin
+    committed["derived_from"].pop("sha256")
+    derived["derived_from"].pop("sha256")
+    # The drafter's config sits at source.path in the target's repository, and the graph says so.
+    assert committed["derived_from"].pop("path") == "dspark/config.json"
+    derived["derived_from"].pop("path")
+    assert committed == derived
+
+
+def test_m31_dspark_and_its_target_name_each_other_and_agree_on_the_stack():
+    """The drafter names the target, the target lists the drafter (and no in-graph speculator,
+    which it has none of), the drafter's source is its own file in the target's repository, and
+    the shapes the drafter states of its target are the target graph's."""
+    d = yaml.safe_load((M31_DSPARK / "model.yaml").read_text())
+    t = yaml.safe_load((M31 / "model.yaml").read_text())
+    tg, dg = graph_of(M31), graph_of(M31_DSPARK)
+    assert d["targets"] == [t["name"]] and t["drafters"] == [d["name"]]
+    assert "speculator" not in tg
+    assert (d["source"]["repo"], d["source"]["revision"]) == (t["source"]["repo"],
+                                                              t["source"]["revision"])
+    assert d["source"]["path"] == "dspark/config.json" and "path" not in t["source"]
+    assert d["config"]["sha256"] != t["config"]["sha256"]
+    assert len(layer_sequence(tg["stack"])) == 60          # dflash_config.num_target_layers
+    assert dg["global"]["hidden_size"] == tg["global"]["hidden_size"]   # fc takes 5 states
+    assert dg["global"]["vocab_size"] == tg["global"]["vocab_size"]     # the head is the target's
+    (fc,) = [n for k in dg["layer_kinds"] for n in k["nodes"] if n.get("role") == "dspark_fc"]
+    assert fc["k"] == 5 * tg["global"]["hidden_size"]
+
+
+# Every tensor of dspark/ in its safetensors header (97 tensors, 2,301,852,674 bytes):
+# (module under language_model.model.dspark., stored dtype, shape, copies, what the graph does).
+M31_DSPARK_CHECKPOINT = [
+    ("layers.N.decoder_layer.self_attn.q_proj.weight", "F8_E4M3", (8192, 6144), 5, "priced"),
+    ("layers.N.decoder_layer.self_attn.k_proj.weight", "F8_E4M3", (512, 6144), 5, "priced"),
+    ("layers.N.decoder_layer.self_attn.v_proj.weight", "F8_E4M3", (512, 6144), 5, "priced"),
+    ("layers.N.decoder_layer.self_attn.o_proj.weight", "F8_E4M3", (6144, 8192), 5, "priced"),
+    ("layers.N.decoder_layer.mlp.gate_proj.weight", "F8_E4M3", (12288, 6144), 5, "priced"),
+    ("layers.N.decoder_layer.mlp.up_proj.weight", "F8_E4M3", (12288, 6144), 5, "priced"),
+    ("layers.N.decoder_layer.mlp.down_proj.weight", "F8_E4M3", (6144, 12288), 5, "priced"),
+    ("layers.N.decoder_layer.self_attn.q_proj.weight_scale_inv", "U8", (8192, 192), 5, "scale"),
+    ("layers.N.decoder_layer.self_attn.k_proj.weight_scale_inv", "U8", (512, 192), 5, "scale"),
+    ("layers.N.decoder_layer.self_attn.v_proj.weight_scale_inv", "U8", (512, 192), 5, "scale"),
+    ("layers.N.decoder_layer.self_attn.o_proj.weight_scale_inv", "U8", (6144, 256), 5, "scale"),
+    ("layers.N.decoder_layer.mlp.gate_proj.weight_scale_inv", "U8", (12288, 192), 5, "scale"),
+    ("layers.N.decoder_layer.mlp.up_proj.weight_scale_inv", "U8", (12288, 192), 5, "scale"),
+    ("layers.N.decoder_layer.mlp.down_proj.weight_scale_inv", "U8", (6144, 384), 5, "scale"),
+    ("layers.N.decoder_layer.input_layernorm.weight", "BF16", (6144,), 5, "small"),
+    ("layers.N.decoder_layer.post_attention_layernorm.weight", "BF16", (6144,), 5, "small"),
+    ("layers.N.decoder_layer.self_attn.q_norm.weight", "BF16", (128,), 5, "small"),
+    ("layers.N.decoder_layer.self_attn.k_norm.weight", "BF16", (128,), 5, "small"),
+    ("fc.weight", "BF16", (6144, 30720), 1, "priced"),
+    ("hidden_norm.weight", "BF16", (6144,), 1, "small"),
+    ("final_norm.weight", "BF16", (6144,), 1, "small"),
+    ("markov_head.markov_w1.weight", "BF16", (200064, 256), 1, "priced"),
+    ("markov_head.markov_w2.weight", "BF16", (200064, 256), 1, "priced"),
+    ("confidence_head.proj.weight", "BF16", (1, 6400), 1, "small"),
+    ("confidence_head.proj.bias", "BF16", (1,), 1, "small"),
+]
+
+
+def test_m31_dspark_tensor_classes_sum_to_the_headers_total():
+    count = sum(c[3] for c in M31_DSPARK_CHECKPOINT)
+    nbytes = sum(c[3] * _prod(c[2]) * _M31_STORED[c[1]] for c in M31_DSPARK_CHECKPOINT)
+    assert (count, nbytes) == (97, 2_301_852_674)
+
+
+def test_m31_dspark_graph_charges_the_weights_the_checkpoint_stores(tmp_path):
+    """Each draft layer's seven matrices at FP8, the fc at BF16, the Markov weights at BF16;
+    the context K/V projection holds a second copy of every layer's K and V rows; and the
+    head's lm_head is the TARGET's matrix, which the checkpoint does not ship and the graph
+    must still state once (a drafter's graph is validated as a model)."""
+    g = _m31ds_graph(tmp_path)
+    spec = g["speculator"]
+    layers = expanded_layers(g)
+    assert len(layers) == 5
+    layer_mats = [(c[2][0], c[2][1], "fp8") for c in M31_DSPARK_CHECKPOINT
+                  if c[4] == "priced" and c[0].startswith("layers.N.")]
+    assert len(layer_mats) == 7
+    for i, nodes in enumerate(layers):
+        check_weights(nodes, layer_mats, i, "fp8")
+    (context,) = expanded_layers(g, spec["context_stack"])
+    k_v = [c for c in M31_DSPARK_CHECKPOINT if c[0].endswith(("k_proj.weight", "v_proj.weight"))]
+    kv_rows = sum(5 * c[2][0] for c in k_v)            # five layers' K rows and V rows
+    check_weights(context, [(6144, 30720, "bf16"), (kv_rows, 6144, "fp8")], "context", "fp8")
+    assert kv_rows == 5 * 2 * 4 * 128
+    (w1,) = [n for n in spec["sequential_head"] if n["role"] == "markov_w1"]
+    (w2,) = [n for n in spec["sequential_head"] if n["role"] == "markov_w2"]
+    assert (w1["rows"], w1["row_bytes"]) == (200064, 256 * 2)
+    assert (w2["n"], w2["k"], w2["weight_dtype"]) == (200064, 256, "bf16")
+    (head,) = [n for n in g["head"] if n["op"] == "GEMM"]
+    assert (head["n"], head["k"], head["weight_dtype"]) == (200064, 6144, "bf16")
+    assert [n.get("aliases") for n in spec["head"] if n["op"] == "GEMM"] == ["head.lm_head"]
+    assert not [n for n in g.get("embedding", [])], "the token lookup is the target's"
+
+
+def test_m31_dspark_speculator_states_what_the_config_and_the_engine_say(tmp_path):
+    g = _m31ds_graph(tmp_path)
+    spec = g["speculator"]
+    assert spec["method"] == "dspark" and spec["drafting"] == "parallel_block"
+    assert spec["num_spec_tokens"] == 7
+    # dflash_config.target_layer_ids [3, 17, 31, 45, 59], one higher for the engine.
+    assert spec["aux_hidden_state_layers"] == [4, 18, 32, 46, 60]
+    assert "aux_hidden_state_bytes_per_token" not in spec
+    # No file states dflash_config.causal, so the engine sets it False: each query reads its
+    # window plus the block, 4096 + 7.
+    (attn,) = [n for n in expanded_layers(g)[0] if n["op"] == "Attention"]
+    assert (attn["kind"], attn["window"], attn["n_kv"]) == ("swa", 4096 + 7, 4)
+    assert g["stack"] == spec["stack"] == {"pattern": ["dspark_layer"], "repeat": 5}
+    assert not [n for k in g["layer_kinds"] for n in k["nodes"]
+                if n["op"] in ("GroupedGEMM",)], "the draft layers are dense"
+    (insert,) = [n for k in g["layer_kinds"] for n in k["nodes"]
+                 if n.get("role") == "dspark_context_kv_insert_0"]
+    assert insert["bytes_per_token"] == 2 * 2 * 4 * 128 * 2
+
+
+@pytest.mark.parametrize("edit,why", [
+    ({"text__dspark_extra_knob": 1}, "reads and this handler does not"),
+    ({"text__dspark_draft_topk": 64}, "reads and this handler does not"),
+    ({"text__draft_vocab_size": 32000}, "changes the DSpark draft"),
+    ({"text__is_causal": True}, "changes the DSpark draft"),
+    ({"text__has_own_lm_head": True}, "changes the DSpark draft"),
+    ({"text__mask_token_id": 5}, "changes the DSpark draft"),
+    ({"text__use_aux_hidden_state": False}, "changes the DSpark draft"),
+    ({"text__dspark_use_dense_ffn": False}, "dense"),
+    ({"text__dspark_markov_head_type": "lowrank"}, "dspark_markov_head_type"),
+    ({"text__dspark_hybrid_context_fusion": True}, "dspark_hybrid_context_fusion"),
+    ({"text__dspark_aux_gemm_precision": "fp8"}, "dspark_aux_gemm_precision"),
+    ({"text__dspark_markov_rank": 128}, "dspark_config.markov_rank"),
+    ({"text__dspark_target_layer_ids": [3, 17, 31, 45, 58]}, "differ"),
+    ({"text__dspark_noise_token_id": 200064, "dflash__mask_token_id": 200064}, "differ"),
+    ({"text__dspark_noise_token_id": 200064, "dflash__mask_token_id": 200064,
+      "text__dspark_config": {**_m31ds_cfg()["text_config"]["dspark_config"],
+                              "mask_token_id": 200064}}, "mask token"),
+    ({"dflash__mask_token_id": 7}, "mask token"),
+    ({"dflash__causal": True}, "non-causal window"),
+    ({"dflash__use_swa": True}, "non-causal window"),
+    ({"dflash__swa_window_size": 128}, "non-causal window"),
+    ({"dflash__num_target_layers": 59}, "reach past"),
+    ({"dflash__target_layer_ids": [3, 3, 31, 45, 59], "text__dspark_target_layer_ids": [3, 3, 31, 45, 59]},
+     "repeat"),
+    ({"text__layer_types": ["full_attention"] * 5}, "sliding-window attention"),
+    ({"text__layer_types": None}, "layer_types"),
+    ({"text__sliding_window": 2048}, "sliding_window"),
+    ({"quant__quant_method": "fp8"}, "places MXFP8"),
+    ({"quant__ignored_layers": ["lm_head"]}, "places exactly"),
+    ({"quant__ignored_layers": _m31ds_cfg()["quantization_config"]["ignored_layers"]
+      + ["language_model.model.dspark.layers.0.decoder_layer.self_attn"]}, "places exactly"),
+])
+def test_m31_dspark_refuses_a_config_it_has_not_read(tmp_path, edit, why):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match=why):
+        _derive_raw(_m31ds_cfg(**edit), tmp_path, "minimax-m3.1-flash-dspark")
+
+
+def test_m31_dspark_states_the_one_byte_per_32_weights_that_its_mxfp8_scales_hold():
+    fp8 = sum(c[3] * _prod(c[2]) for c in M31_DSPARK_CHECKPOINT
+              if c[1] == "F8_E4M3" and c[4] == "priced")
+    scales = sum(c[3] * _prod(c[2]) for c in M31_DSPARK_CHECKPOINT
+                 if c[1] == "U8" and c[4] == "scale")
+    assert scales * 32 == fp8
+    assert graph_of(M31_DSPARK)["global"]["weight_scale"] == {"elements": 32, "bytes": 1}
+
+
+# --- MiniMax-M3.1-Flash's scales against the headers ------------------------------------
+
+def _stored_params_by_dtype(g: dict) -> dict:
+    """Parameters of the decoder stack's GEMM and GroupedGEMM nodes by stored dtype (a
+    GroupedGEMM is experts x three matrices of n x k)."""
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    st = g["stack"]
+    out = collections.Counter()
+    for kid in (list(st.get("prologue", [])) + list(st["pattern"]) * st["repeat"]
+                + list(st.get("epilogue", []))):
+        for n in kinds[kid]["nodes"]:
+            dt = n.get("weight_dtype", g["global"]["weight_dtype"])
+            if n["op"] == "GEMM":
+                out[dt] += n["n"] * n["k"]
+            elif n["op"] == "GroupedGEMM":
+                out[dt] += n["experts"] * 3 * n["n"] * n["k"]
+    return dict(out)
+
+
+def test_m31_weights_and_their_scales_equal_the_checkpoints_header(tmp_path):
+    """MiniMaxAI/MiniMax-M3.1-Flash at ce7f4df87d2e, 89,632 tensors. The MXFP8 linears and the
+    shared expert are 10,560,208,896 F8_E4M3 weights whose `weight_scale_inv` is U8, 330,006,528
+    bytes: one in 32. The routed experts are 206,561,083,392 packed bytes (413,122,166,784
+    four-bit weights) with 25,820,135,424 bytes of F8_E4M3 `weight_scale`: one in 16, the NVFP4
+    layout, which the dtype defines for itself. The fp32 routers are 44,826,624 weights. The
+    graph states the MXFP8 scale and the committed graph agrees with a fresh derivation."""
+    for g in (graph_of(M31), _m31_graph(tmp_path)):
+        by = _stored_params_by_dtype(g)
+        assert by == {"fp8": 10_560_208_896, "nvfp4": 413_122_166_784, "fp32": 44_826_624}
+        sc = g["global"]["weight_scale"]
+        assert sc == {"elements": 32, "bytes": 1}
+        assert by["fp8"] * sc["bytes"] // sc["elements"] == 330_006_528
+        assert by["nvfp4"] // 16 == 25_820_135_424       # DType.IntrinsicScale: 1 byte per 16
+
+
+def test_m31_dspark_weights_and_their_scales_equal_the_drafters_header(tmp_path):
+    """The drafter's 97 tensors: 1,667,235,840 F8_E4M3 weights and 52,101,120 U8 scale bytes."""
+    for g in (graph_of(M31_DSPARK), _m31ds_graph(tmp_path)):
+        by = _stored_params_by_dtype(g)
+        assert by["fp8"] == 1_667_235_840
+        sc = g["global"]["weight_scale"]
+        assert by["fp8"] * sc["bytes"] // sc["elements"] == 52_101_120
+
+
+
+# --- A drafter that ships no lm_head reads its target's -----------------------------------
+
+def test_drafters_without_an_lm_head_tensor_state_that_they_share_their_targets():
+    """The checkpoints of the Kimi-K3, Kimi-K3.1 and MiniMax-M3.1-Flash DSpark drafters hold no
+    lm_head tensor (the engine takes the target's, has_own_lm_head), so each states
+    shares_target_head; Muse Spark's DSpark and the EAGLE3 heads hold their own and do not.
+    Without the flag, grafting the drafter counts a second 200,064 or 163,840 x hidden head as
+    resident."""
+    shares = {"kimi-k3-dspark", "kimi-k3.1-dspark", "minimax-m3.1-flash-dspark"}
+    own = {"muse-spark-open-dspark", "minimax-m3-eagle3", "minimax-m3-eagle3-gqa"}
+    for name in shares | own:
+        sp = graph_of(MODELS / name)["speculator"]
+        assert bool(sp.get("shares_target_head")) == (name in shares), name
+        if name in shares:
+            assert any(n.get("aliases", "").startswith("head.") for n in sp["head"]), name
+
+
+def _v4_expert_dtypes_by_kind(g: dict) -> dict:
+    return {k["id"]: n["weight_dtype"] for k in g["layer_kinds"] for n in k["nodes"]
+            if n.get("role") == "experts"}
+
+
+def test_v4_nvfp4_export_leaves_the_mtp_experts_at_mxfp4(tmp_path):
+    """nvidia/DeepSeek-V4-Pro-NVFP4 at 1449d1e6: `ignore` names mtp.*, `quantized_layers` holds
+    only layers.N.ffn.experts, and the header stores mtp.0.ffn.experts.0.w1.weight as I8
+    [3072, 3584] with an F8_E8M0 scale [3072, 224] (MXFP4) while layers.5's is U8 with an
+    F8_E4M3 weight_scale (NVFP4). The draft's experts are priced at MXFP4; the 61 layers' at
+    NVFP4. Pricing the draft at NVFP4 overcharged 384 x 3 x 3072 x 7168 weights by 1/32 B."""
+    raw = _v4_with(config_of(DSV4_PRO), moe_quant_algo="NVFP4",
+                   ignore=["*.attn.*", "*.ffn.shared_experts.*", "head", "mtp.*"],
+                   quantized_layers={f"layers.{i}.ffn.experts": {"quant_algo": "NVFP4"}
+                                     for i in range(61)})
+    by_kind = _v4_expert_dtypes_by_kind(_derive_raw(raw, tmp_path, "deepseek-v4-pro-nvfp4"))
+    assert by_kind.pop("mtp") == "mxfp4"
+    assert set(by_kind.values()) == {"nvfp4"}
+    # A map that holds an mtp entry quantizes the draft.
+    qmap = {**raw["quantization_config"]["quantized_layers"],
+            "mtp.0.ffn.experts": {"quant_algo": "NVFP4"}}
+    again = _v4_expert_dtypes_by_kind(_derive_raw(_v4_with(raw, quantized_layers=qmap), tmp_path, "x"))
+    assert again["mtp"] == "nvfp4"
+    # With no map, the exclusion list decides: mtp.* excluded leaves it, otherwise it is quantized.
+    nomap = json.loads(json.dumps(raw))
+    del nomap["quantization_config"]["quantized_layers"]
+    assert _v4_expert_dtypes_by_kind(_derive_raw(nomap, tmp_path, "x"))["mtp"] == "mxfp4"
+    nomap["quantization_config"]["ignore"] = ["head"]
+    assert _v4_expert_dtypes_by_kind(_derive_raw(nomap, tmp_path, "x"))["mtp"] == "nvfp4"
+
+
+def test_the_committed_v4_nvfp4_graph_prices_its_mtp_experts_at_mxfp4():
+    by_kind = _v4_expert_dtypes_by_kind(graph_of(MODELS / "deepseek-v4-pro-nvfp4"))
+    assert by_kind["mtp"] == "mxfp4" and "nvfp4" in by_kind.values()
+
+
+def test_modelopt_stacked_loader_rename_excludes_the_fused_projection(tmp_path):
+    """MiniMax-M2 stores q_proj, k_proj and v_proj and vLLM builds one qkv_proj; the loader's
+    stacked rename maps the checkpoint's spelling onto the fused module, and ModelOpt applies it
+    to the exclusion list. A list that names only the checkpoint's q_proj on every layer
+    therefore excludes the fused projection, which then stays at the base width."""
+    raw = _minimax_m25_nvfp4_raw()
+    ignore = ["lm_head"]
+    for i in range(62):
+        ignore += [f"model.layers.{i}.block_sparse_moe.gate", f"model.layers.{i}.self_attn.q_proj",
+                   f"model.layers.{i}.self_attn.o_proj"]
+    raw["quantization_config"]["ignore"] = ignore
+    by = _nodes_by_role(_derive_raw(raw, tmp_path, "minimax-m2.5-nvfp4"))
+    assert by["qkv_proj"] == {"-"} and by["o_proj"] == {"-"} and by["experts"] == {"nvfp4"}
+    # Without the q_proj entry the fused projection is quantized.
+    raw["quantization_config"]["ignore"] = [p for p in ignore if not p.endswith("q_proj")]
+    assert _nodes_by_role(_derive_raw(raw, tmp_path, "minimax-m2.5-nvfp4"))["qkv_proj"] == {"nvfp4"}
+
+
+# --- MiniMax-M3 token embedding, in every variant --------------------------------------------
+
+MINIMAX_M3_FAMILY = ("minimax-m3", "minimax-m3-mxfp8", "minimax-m3-nvfp4")
+
+
+@pytest.mark.parametrize("name", MINIMAX_M3_FAMILY)
+def test_minimax_m3_graphs_state_the_token_embedding_the_engine_runs(name):
+    """VocabParallelEmbedding (models/minimax_m3/nvidia/model.py:817-822@v0.32.0): a vocabulary
+    shard per rank, the partial rows all-reduced (vocab_parallel_embedding.py:522-563). The
+    table is BF16 [200064, 6144] in every variant's header (model.embed_tokens is in the
+    exclusion list), so a row is 12,288 bytes. An EAGLE3 drafter aliases `embedding.embed_tokens`,
+    so the node must be there for the pair to validate."""
+    g = graph_of(MODELS / name)
+    gather, reduce = g["embedding"]
+    assert gather == {"op": "Gather", "role": "embed_tokens", "rows": 200064, "row_bytes": 12288,
+                      "rows_per_token": 1, "out_bytes_per_token": 12288, "shard": "rows"}
+    assert reduce == {"op": "AllReduce", "role": "embed_out", "emit": "tensor_parallel"}
+    assert gather["rows"] == text_config(config_of(MODELS / name))["vocab_size"]
+
+
+def test_minimax_m3_embedding_follows_the_vocabulary_and_width_of_the_config(tmp_path):
+    """Known-bad: a table the config does not describe is not the one stated. A vocabulary or
+    hidden width changed in the config moves the node, so it is derived and not copied."""
+    raw = json.loads(json.dumps(config_of(MODELS / "minimax-m3")))
+    raw["text_config"]["vocab_size"] = 1000
+    g = _derive_raw(raw, tmp_path, "minimax-m3")
+    assert g["embedding"][0]["rows"] == 1000 and g["embedding"][0]["row_bytes"] == 12288
+
+
+# --- MiniMax-M3 NVFP4 (nvidia/MiniMax-M3-NVFP4): ModelOpt MIXED_PRECISION ---------------------
+
+M3_NVFP4 = MODELS / "minimax-m3-nvfp4"
+_M3N_STORED = {"F32": 4, "BF16": 2, "F8_E4M3": 1, "U8": 1}
+# Every tensor of the language model in the 88 safetensors headers of nvidia/MiniMax-M3-NVFP4 at
+# 901464083161 (89,091 tensors, 248,357,099,520 bytes; the towers add 523 tensors and
+# 1,734,145,024 bytes): (name under language_model., stored dtype, shape, layers holding it,
+# copies, what the graph does with it). An expert is counted once per expert and matrix.
+# "priced" classes are the graph's GEMM and GroupedGEMM weights (an expert's U8 weight packs two
+# FP4 values to a byte); "scale" classes are block scales and global scales; "small" are norms
+# and the routing bias.
+M3N_CHECKPOINT = [
+    ("L.block_sparse_moe.e_score_correction_bias", "F32", (128,), _ROUTED, 57, "small"),
+    ("L.block_sparse_moe.experts.E.w1.input_scale", "F32", (), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w1.weight", "U8", (3072, 3072), _ROUTED, 7296, "priced"),
+    ("L.block_sparse_moe.experts.E.w1.weight_scale", "F8_E4M3", (3072, 384), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w1.weight_scale_2", "F32", (), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w2.input_scale", "F32", (), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w2.weight", "U8", (6144, 1536), _ROUTED, 7296, "priced"),
+    ("L.block_sparse_moe.experts.E.w2.weight_scale", "F8_E4M3", (6144, 192), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w2.weight_scale_2", "F32", (), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w3.input_scale", "F32", (), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w3.weight", "U8", (3072, 3072), _ROUTED, 7296, "priced"),
+    ("L.block_sparse_moe.experts.E.w3.weight_scale", "F8_E4M3", (3072, 384), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w3.weight_scale_2", "F32", (), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.gate.weight", "F32", (128, 6144), _ROUTED, 57, "priced"),
+    ("L.block_sparse_moe.shared_experts.down_proj.weight", "F8_E4M3", (6144, 3072), _ROUTED, 57, "priced"),
+    ("L.block_sparse_moe.shared_experts.down_proj.weight_scale_inv", "U8", (6144, 96), _ROUTED, 57, "scale"),
+    ("L.block_sparse_moe.shared_experts.gate_proj.weight", "F8_E4M3", (3072, 6144), _ROUTED, 57, "priced"),
+    ("L.block_sparse_moe.shared_experts.gate_proj.weight_scale_inv", "U8", (3072, 192), _ROUTED, 57, "scale"),
+    ("L.block_sparse_moe.shared_experts.up_proj.weight", "F8_E4M3", (3072, 6144), _ROUTED, 57, "priced"),
+    ("L.block_sparse_moe.shared_experts.up_proj.weight_scale_inv", "U8", (3072, 192), _ROUTED, 57, "scale"),
+    ("L.input_layernorm.weight", "BF16", (6144,), _ATTN, 60, "small"),
+    ("L.mlp.down_proj.weight", "F8_E4M3", (6144, 12288), _DENSE, 3, "priced"),
+    ("L.mlp.down_proj.weight_scale_inv", "U8", (6144, 384), _DENSE, 3, "scale"),
+    ("L.mlp.gate_proj.weight", "F8_E4M3", (12288, 6144), _DENSE, 3, "priced"),
+    ("L.mlp.gate_proj.weight_scale_inv", "U8", (12288, 192), _DENSE, 3, "scale"),
+    ("L.mlp.up_proj.weight", "F8_E4M3", (12288, 6144), _DENSE, 3, "priced"),
+    ("L.mlp.up_proj.weight_scale_inv", "U8", (12288, 192), _DENSE, 3, "scale"),
+    ("L.post_attention_layernorm.weight", "BF16", (6144,), _ATTN, 60, "small"),
+    ("L.self_attn.index_k_norm.weight", "BF16", (128,), _ROUTED, 57, "small"),
+    ("L.self_attn.index_k_proj.weight", "F8_E4M3", (128, 6144), _ROUTED, 57, "priced"),
+    ("L.self_attn.index_k_proj.weight_scale_inv", "U8", (128, 192), _ROUTED, 57, "scale"),
+    ("L.self_attn.index_q_norm.weight", "BF16", (128,), _ROUTED, 57, "small"),
+    ("L.self_attn.index_q_proj.weight", "F8_E4M3", (512, 6144), _ROUTED, 57, "priced"),
+    ("L.self_attn.index_q_proj.weight_scale_inv", "U8", (512, 192), _ROUTED, 57, "scale"),
+    ("L.self_attn.k_norm.weight", "BF16", (128,), _ATTN, 60, "small"),
+    ("L.self_attn.k_proj.weight", "F8_E4M3", (512, 6144), _ATTN, 60, "priced"),
+    ("L.self_attn.k_proj.weight_scale_inv", "U8", (512, 192), _ATTN, 60, "scale"),
+    ("L.self_attn.o_proj.weight", "F8_E4M3", (6144, 8192), _ATTN, 60, "priced"),
+    ("L.self_attn.o_proj.weight_scale_inv", "U8", (6144, 256), _ATTN, 60, "scale"),
+    ("L.self_attn.q_norm.weight", "BF16", (128,), _ATTN, 60, "small"),
+    ("L.self_attn.q_proj.weight", "F8_E4M3", (8192, 6144), _ATTN, 60, "priced"),
+    ("L.self_attn.q_proj.weight_scale_inv", "U8", (8192, 192), _ATTN, 60, "scale"),
+    ("L.self_attn.v_proj.weight", "F8_E4M3", (512, 6144), _ATTN, 60, "priced"),
+    ("L.self_attn.v_proj.weight_scale_inv", "U8", (512, 192), _ATTN, 60, "scale"),
+    ("lm_head.weight", "BF16", (200064, 6144), None, 1, "head"),
+    ("model.embed_tokens.weight", "BF16", (200064, 6144), None, 1, "embedding"),
+    ("model.norm.weight", "BF16", (6144,), None, 1, "small"),
+]
+_M3N_TOWERS = {"vision_tower": (515, 1_265_382_400), "multi_modal_projector": (4, 91_250_688),
+              "patch_merge_mlp": (4, 377_511_936)}
+
+
+def _m3n_config() -> dict:
+    return json.loads(json.dumps(config_of(M3_NVFP4)))
+
+
+def test_m3_nvfp4_tensor_classes_sum_to_the_checkpoints_header_total():
+    count = sum(c[4] for c in M3N_CHECKPOINT)
+    nbytes = sum(c[4] * _prod(c[2]) * _M3N_STORED[c[1]] for c in M3N_CHECKPOINT)
+    assert (count, nbytes) == (89_091, 248_357_099_520)
+    assert count + sum(n for n, _ in _M3N_TOWERS.values()) == 89_614  # the index's tensor count
+    for name, _, _, span, copies, _ in M3N_CHECKPOINT:
+        per_layer = 128 if ".experts.E." in name else 1
+        assert copies == (1 if span is None else (span[1] - span[0] + 1)) * per_layer, name
+
+
+def test_m3_nvfp4_quantized_layers_agree_with_the_headers():
+    """The map lists 22,422 modules: 21,888 expert matrices (57 layers x 128 x 3) at NVFP4, whose
+    U8 weights and F8_E4M3 block scales are in the headers, and 534 linears at MXFP8, whose
+    F8_E4M3 weights have a U8 scale. Nothing else is listed or quantized."""
+    ql = _m3n_config()["quantization_config"]["quantized_layers"]
+    algos = collections.Counter(v["quant_algo"] for v in ql.values())
+    assert algos == {"NVFP4": 21_888, "MXFP8": 534} and len(ql) == 22_422
+    assert {v["group_size"] for v in ql.values() if v["quant_algo"] == "NVFP4"} == {16}
+    assert all("group_size" not in v for v in ql.values() if v["quant_algo"] == "MXFP8")
+    packed = sum(c[4] for c in M3N_CHECKPOINT if c[1] == "U8" and ".experts.E." in c[0]
+                 and c[0].endswith(".weight"))
+    f8_linears = sum(c[4] for c in M3N_CHECKPOINT if c[1] == "F8_E4M3" and c[0].endswith(".weight"))
+    assert (packed, f8_linears) == (21_888, 534)
+
+
+def _m3n_expected(layer: int) -> list[tuple[int, int, str]]:
+    out = []
+    for name, dt, shape, span, _, role in M3N_CHECKPOINT:
+        if role != "priced" or span is None or not span[0] <= layer <= span[1]:
+            continue
+        rows, cols = shape
+        if dt == "U8":
+            width, cols = "nvfp4", cols * 2
+        else:
+            width = {"F8_E4M3": "fp8", "F32": "fp32", "BF16": "bf16"}[dt]
+        out += [(rows, cols, width)] * (128 if ".experts.E." in name else 1)
+    return out
+
+
+def test_m3_nvfp4_graph_charges_the_weights_the_checkpoint_stores():
+    """Every priced class, layer by layer: the MXFP8 linears at FP8 (attention and the indexer's
+    projections, the dense MLPs, the shared expert), the 128 routed experts at NVFP4, the router
+    at FP32, and the head at BF16 as lm_head.weight stores it. The graph's resident scale
+    matches the headers: one U8 byte per 32 FP8 weights, and per 16 NVFP4 weights one F8_E4M3."""
+    g = graph_of(M3_NVFP4)
+    assert g["global"]["weight_dtype"] == "fp8"
+    assert g["global"]["weight_scale"] == {"elements": 32, "bytes": 1}
+    layers = expanded_layers(g)
+    assert len(layers) == 60
+    for i, nodes in enumerate(layers):
+        check_weights(nodes, _m3n_expected(i), i, "fp8")
+    head = [n for n in g["head"] if n["op"] == "GEMM"]
+    assert [(n["n"], n["k"], n["weight_dtype"]) for n in head] == [(200064, 6144, "bf16")]
+    scale_u8 = sum(c[4] * _prod(c[2]) for c in M3N_CHECKPOINT
+                   if c[1] == "U8" and c[0].endswith("weight_scale_inv"))
+    fp8_params = sum(c[4] * _prod(c[2]) for c in M3N_CHECKPOINT
+                     if c[1] == "F8_E4M3" and c[0].endswith(".weight"))
+    assert fp8_params // 32 == scale_u8
+    scale_f8 = sum(c[4] * _prod(c[2]) for c in M3N_CHECKPOINT
+                   if c[1] == "F8_E4M3" and c[0].endswith("weight_scale"))
+    fp4_params = sum(c[4] * _prod(c[2]) * 2 for c in M3N_CHECKPOINT
+                     if c[1] == "U8" and c[0].endswith(".weight"))
+    assert fp4_params // 16 == scale_f8
+
+
+def test_m3_nvfp4_graph_differs_from_the_mxfp8_one_in_the_expert_widths_only():
+    a, b = graph_of(MODELS / "minimax-m3-mxfp8"), graph_of(M3_NVFP4)
+    assert a["global"] == b["global"] and a["head"] == b["head"] and a["stack"] == b["stack"]
+    assert a["embedding"] == b["embedding"] and a["speculator"] == b["speculator"]
+    ka, kb = {k["id"]: k for k in a["layer_kinds"]}, {k["id"]: k for k in b["layer_kinds"]}
+    assert ka["dense"] == kb["dense"]
+    na, nb = ka["sparse_attn_moe"]["nodes"], kb["sparse_attn_moe"]["nodes"]
+    only_a = [n for n in na if n not in nb]
+    only_b = [n for n in nb if n not in na]
+    assert [n["role"] for n in only_a] == ["experts"] and only_a[0]["shared_experts"] == 1
+    assert [(n["role"], n["weight_dtype"]) for n in only_b] == [("experts", "nvfp4"),
+                                                               ("shared_experts", "fp8")]
+    assert "shared_experts" not in only_b[0]
+
+
+def test_m3_nvfp4_committed_graph_is_the_derivation_of_the_committed_config(tmp_path):
+    """The committed graph equals what the deriver makes of the committed config, apart from the
+    digest, which _derive_raw computes over its own re-serialisation and which the graph records
+    for the file as committed."""
+    committed, fresh = graph_of(M3_NVFP4), _derive_raw(config_of(M3_NVFP4), tmp_path, "minimax-m3-nvfp4")
+    sha = hashlib.sha256((M3_NVFP4 / "config.json").read_bytes()).hexdigest()
+    assert committed["derived_from"]["sha256"] == sha
+    assert sha == "440d22038ffa0bcb93fa01e8d2d555e3840d939167c08eace81b9cce386fb117"
+    committed["derived_from"].pop("sha256")
+    fresh["derived_from"].pop("sha256")
+    assert committed == fresh
+
+
+def test_m3_nvfp4_entry_records_its_source_and_both_drafter_links():
+    card = yaml.safe_load((M3_NVFP4 / "model.yaml").read_text())
+    assert card["source"]["repo"] == "nvidia/MiniMax-M3-NVFP4"
+    assert card["source"]["revision"] == "901464083161bf8612a29ff7ad29914cd4ab4a85"
+    assert card["licence"]["id"] == "LicenseRef-minimax-community"
+    assert card["licence"]["evidence"].startswith(
+        "https://huggingface.co/nvidia/MiniMax-M3-NVFP4/raw/" + card["source"]["revision"])
+    assert card["drafters"] == ["speculator", "minimax-m3-eagle3", "minimax-m3-eagle3-gqa"]
+    for d in ("minimax-m3-eagle3", "minimax-m3-eagle3-gqa"):
+        assert "minimax-m3-nvfp4" in yaml.safe_load((MODELS / d / "model.yaml").read_text())["targets"]
+    index = yaml.safe_load((ROOT / "licences" / "index.yaml").read_text())
+    (lic,) = [e for e in index["models"] if e["model"] == "minimax-m3-nvfp4"]
+    assert lic["texts"][0]["sha256"] == hashlib.sha256(
+        (ROOT / "licences" / "LicenseRef-minimax-community.txt").read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("edit,why", [
+    # one expert matrix of one layer stored at another algorithm: a role mixed across layers
+    (lambda q: q.__setitem__("language_model.model.layers.10.block_sparse_moe.experts.5.w1",
+                             {"quant_algo": "MXFP8"}), "layers.10.block_sparse_moe.experts.5.w1"),
+    # a linear module of the map removed
+    (lambda q: q.pop("language_model.model.layers.7.self_attn.q_proj"), "1 missing"),
+    # a module the config's layers do not build
+    (lambda q: q.__setitem__("language_model.model.layers.2.self_attn.index_q_proj",
+                             {"quant_algo": "MXFP8"}), "1 unplaced"),
+    # NVFP4 at another group size
+    (lambda q: q.__setitem__("language_model.model.layers.4.block_sparse_moe.experts.0.w2",
+                             {"quant_algo": "NVFP4", "group_size": 32}), "experts.0.w2"),
+    # the indexer's projection fuses with q, k and v, so it cannot be at another algorithm
+    (lambda q: q.__setitem__("language_model.model.layers.9.self_attn.index_k_proj",
+                             {"quant_algo": "NVFP4", "group_size": 16}), "index_k_proj"),
+    # an algorithm the handler does not place
+    (lambda q: q.__setitem__("language_model.model.layers.3.mlp.up_proj",
+                             {"quant_algo": "FP8"}), "mlp.up_proj"),
+    (lambda q: q.__setitem__("language_model.model.layers.4.block_sparse_moe.experts.0.w1",
+                             {"quant_algo": "W4A16_NVFP4", "group_size": 16}), "W4A16_NVFP4"),
+])
+def test_m3_nvfp4_refuses_a_layout_that_is_not_regular_per_role(tmp_path, edit, why):
+    raw = _m3n_config()
+    edit(raw["quantization_config"]["quantized_layers"])
+    with pytest.raises(deriver().DeriveError, match=why):
+        _derive_raw(raw, tmp_path, "minimax-m3-nvfp4")
+
+
+@pytest.mark.parametrize("edit,why", [
+    ({"quantized_layers": {}}, "no quantized_layers"),
+    ({"kv_cache_quant_algo": "FP8"}, "quantized KV cache"),
+    ({"ignore": ["self_attn.q_proj"]}, "the exclusion list names"),
+    ({"exclude_modules": ["block_sparse_moe.experts"]}, "the exclusion list names"),
+])
+def test_m3_nvfp4_refuses_a_block_the_engine_would_read_differently(tmp_path, edit, why):
+    raw = _m3n_config()
+    raw["quantization_config"].update(edit)
+    with pytest.raises(deriver().DeriveError, match=why):
+        _derive_raw(raw, tmp_path, "minimax-m3-nvfp4")
+
+
+def test_a_mixed_precision_block_is_still_refused_where_the_handler_does_not_place_it(tmp_path):
+    """Known-bad: MIXED_PRECISION on an architecture whose handler places only a uniform ModelOpt
+    layout is refused, as it was; the new reading is MiniMax-M3's alone."""
+    raw = json.loads(json.dumps(config_of(MODELS / "minimax-m2.5-nvfp4"))) \
+        if (MODELS / "minimax-m2.5-nvfp4" / "config.json").exists() else None
+    if raw is None:
+        raw = _minimax_m25_nvfp4_raw()
+    raw["quantization_config"]["quant_algo"] = "MIXED_PRECISION"
+    raw["quantization_config"]["quantized_layers"] = {"model.layers.0.self_attn.o_proj":
+                                                       {"quant_algo": "FP8"}}
+    with pytest.raises(deriver().DeriveError, match="MIXED_PRECISION"):
+        _derive_raw(raw, tmp_path, "minimax-m2.5-nvfp4")
+
+
+def test_only_the_mixed_precision_and_mxfp8_graphs_state_the_microscaling_scale():
+    scaled = {d.name for d in sorted(MODELS.iterdir())
+              if d.is_dir() and graph_of(d)["global"].get("weight_scale")
+              and graph_of(d)["global"]["weight_dtype"] == "fp8"}
+    assert "minimax-m3-nvfp4" in scaled
+
+
+def test_minimax_m31_flash_states_the_same_embedding(tmp_path):
+    """The handler is shared, so MiniMax-M3.1-Flash (whose config is pinned by hash and not
+    committed) gets the node too, from the keys the test carries; the nightly job re-derives the
+    committed graph from the fetched file."""
+    g = _m31_graph(tmp_path)
+    assert [n["role"] for n in g["embedding"]] == ["embed_tokens", "embed_out"]
+    assert g["embedding"][0]["rows"] == 200064 and g["embedding"][0]["row_bytes"] == 12288
+    assert graph_of(MODELS / "minimax-m3.1-flash")["embedding"] == g["embedding"]

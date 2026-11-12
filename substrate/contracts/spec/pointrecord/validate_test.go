@@ -2,13 +2,21 @@ package pointrecord
 
 import (
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/contracts/metrics"
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/blis-substrate/contracts/spec/routertable"
+	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
 )
 
 var h64 = strings.Repeat("a", 64)
+
+// cluster is the basis of a figure computed over the whole cluster.
+var cluster = result.Basis{Scope: metrics.ScopeCluster}
 
 func valid() *Record {
 	return &Record{
@@ -20,11 +28,11 @@ func valid() *Record {
 		Build:         Build{Release: "0.32.0", Image: "vllm/vllm-openai:v0.32.0", Commit: strings.Repeat("c", 40), Source: "image_label"},
 		Simulator: Simulator{Build: "v0.16.0", Engine: result.Engine{Kind: "vllm", Version: "0.32.0"},
 			Data: result.Data{Build: "v0.16.0", ReleasedData: true}},
-		HarnessDigest: "sha256:" + strings.Repeat("d", 64),
+		HarnessCommit: strings.Repeat("d", 40),
 		Figures: []Figure{
-			{Metric: "tpot_mean_ms", Predicted: 11.0, Measured: 11.2, PredictedSamples: 640, MeasuredSamples: 640,
+			{Metric: "tpot_mean_ms", PredictedBasis: cluster, MeasuredBasis: cluster, Predicted: 11.0, Measured: 11.2, PredictedSamples: 640, MeasuredSamples: 640,
 				Interval: &Interval{Low: 10.8, High: 11.3, Level: 0.95, Replications: 5}},
-			{Metric: "ttft_mean_ms", Predicted: 850, Measured: 880, PredictedSamples: 640, MeasuredSamples: 640},
+			{Metric: "ttft_mean_ms", PredictedBasis: cluster, MeasuredBasis: cluster, Predicted: 850, Measured: 880, PredictedSamples: 640, MeasuredSamples: 640},
 		},
 		Settings: []Setting{
 			{Arg: "max_model_len", Measured: nil, BLIS: nil, Match: MatchEstimated, Rule: "leave_unset"},
@@ -104,7 +112,11 @@ func TestEachFailureModeIsRefused(t *testing.T) {
 		{"short commit", func(r *Record) { r.Build.Commit = "abc123" }, "build.commit", "40-character"},
 		{"commit without source", func(r *Record) { r.Build.Source = "" }, "build.source", "required with a commit"},
 		{"no simulator build", func(r *Record) { r.Simulator.Build = "" }, "simulator.build", "required"},
-		{"bad harness digest", func(r *Record) { r.HarnessDigest = "latest" }, "harness_digest", "sha256:"},
+		{"a branch name as the harness commit", func(r *Record) { r.HarnessCommit = "main" }, "harness_commit", "40 lowercase hex"},
+		{"a short harness commit", func(r *Record) { r.HarnessCommit = "abc1234" }, "harness_commit", "40 lowercase hex"},
+		{"an upper-case harness commit", func(r *Record) { r.HarnessCommit = strings.Repeat("D", 40) }, "harness_commit", "40 lowercase hex"},
+		{"the old image digest", func(r *Record) { r.HarnessCommit = "sha256:" + strings.Repeat("d", 64) }, "harness_commit", "the field was harness_digest"},
+		{"no harness commit", func(r *Record) { r.HarnessCommit = "" }, "harness_commit", "40 lowercase hex"},
 		{"graded without figures", func(r *Record) { r.Figures = nil }, "figures", "at least one"},
 		{"unregistered metric", func(r *Record) { r.Figures[0].Metric = "mean_tpot" }, "figures[0].metric", "DEV-8"},
 		{"figures unsorted", func(r *Record) { r.Figures[0], r.Figures[1] = r.Figures[1], r.Figures[0] }, "figures[1].metric", "sorted"},
@@ -156,15 +168,299 @@ func TestEachFailureModeIsRefused(t *testing.T) {
 	}
 }
 
-// TestEveryDesignReasonIsAccepted pins the closed list of design §11.4.
-func TestEveryDesignReasonIsAccepted(t *testing.T) {
-	for _, c := range []G5Code{"code_not_visible", "router_unsupported", "value_not_recorded", "field_not_modelled",
-		"field_unclassified", "engine_unsupported", "not_in_catalog", "field_not_in_release", "build_unparseable"} {
-		if !c.Valid() {
-			t.Errorf("%s is a reason of design §11.4", c)
+// routerDiffers is a router_differs substitution every rule accepts: the entry's differences and
+// bound are copied onto the point, as the scoring harness copies them.
+func routerDiffers() Substitution {
+	return Substitution{Kind: SubRouterDiffers, Subject: "dynamo", Entry: "dynamo-round-robin", Policy: "round-robin",
+		Evidence: "catalog/routers/dynamo-round-robin.yaml", Revision: strings.Repeat("e", 40),
+		Regime: &routertable.Point{Workload: routertable.WorkloadBalanced, Concurrency: 64, Model: "minimax-m2.5", Hardware: "gb200-nvl72",
+			EngineVersion: "0.32.0", Fabric: "ib-400g", Shape: "1P3D",
+			Prefill: routertable.Parallel{TP: 1, PP: 1, DP: 1}, Decode: routertable.Parallel{TP: 4, PP: 1, DP: 1, ExpertParallel: true}},
+		Difference: []routertable.Statement{
+			{Aspect: "counter", Text: "Dynamo keeps one counter per frontend process; llm-d keeps one per runtime."}},
+		Bound: &routertable.Bound{
+			Evidence: routertable.BoundEvidence{File: "registry/docs/router-sensitivity/runs.csv", SHA256: strings.Repeat("a", 64),
+				Producer: "inference-sim/inference-sim", Commit: strings.Repeat("b", 40), Command: "python3 -I sweep.py"},
+			Ratios: []routertable.Ratio{{Metric: "tpot_p50_ms", Against: []string{"random-picker"},
+				Regime: routertable.Regime{Workload: routertable.WorkloadBalanced, Concurrencies: []int{16, 64, 256, 1024},
+					Model: "minimax-m2.5", Hardware: "gb200-nvl72", EngineVersion: "0.32.0", Fabric: "ib-400g",
+					Prefill: routertable.Parallel{TP: 1, PP: 1, DP: 1}, Decode: routertable.Parallel{TP: 4, PP: 1, DP: 1, ExpertParallel: true},
+					Shapes: []string{"1P3D"}}, MaxRatio: 1.08}},
+			NotMeasured: []string{"No run shared a prefix."}}}
+}
+
+// The three conditions design 11.3 lists beside the earlier ones, and resolved_differs, each
+// name what the point must say.
+func TestTheClosenessKindsAreAcceptedWithTheirKeys(t *testing.T) {
+	for _, s := range []Substitution{
+		{Kind: SubClientDifference, Subject: "send_gap", Detail: "the next request is sent after the response stream closes"},
+		{Kind: SubLaterRecord, Subject: "cluster.gpus_per_node", Record: "runners.yaml at 0123456789abcdef0123456789abcdef01234567", Date: "2026-03-02"},
+		routerDiffers(),
+		{Kind: SubResolvedDiffers, Subject: "max_num_batched_tokens", Detail: "the run resolved 8192, the engine resolves 2048"},
+		{Kind: SubProfileValue, ProfileFamily: ProfileAcceptance, Subject: "acceptance/mtp:dsv41flash+mtp+mtp+k3+chat", Differed: []string{"drafter", "num_spec_tokens"}},
+		{Kind: SubProfileValue, ProfileFamily: ProfileAcceptance, Subject: "acceptance/mtp:dsv41flash+mtp+mtp+k3+chat"},
+		{Kind: SubProfileValue, ProfileFamily: ProfileRouting, Subject: "capture/m/chat/decode/linear/ep8", Differed: []string{"category"}},
+		{Kind: SubUnevaluated, Subject: "kernel_hash"},
+	} {
+		r := valid()
+		r.Substitutions = []Substitution{s}
+		if p := r.Validate(); !p.OK() {
+			t.Errorf("%s: %s", s.Kind, p.Error())
+		}
+		// Each is a G2 condition: a G1 record naming it is refused.
+		r.Grade = G1
+		if p := r.Validate(); p.OK() {
+			t.Errorf("%s: a G1 record naming it was accepted", s.Kind)
+		}
+		if got := r.Floor(); got != G2 {
+			t.Errorf("%s: floor %s, want G2", s.Kind, got)
 		}
 	}
-	if len(g5Codes) != 9 {
-		t.Errorf("design §11.4 lists nine reasons; the code lists %d", len(g5Codes))
+}
+
+// A known-bad record per kind and per key (SUB-2): what the point must name, a key on a kind
+// that does not take it, and a malformed date.
+func TestTheClosenessKindsAreRefusedWithoutWhatTheyName(t *testing.T) {
+	later := Substitution{Kind: SubLaterRecord, Subject: "cluster.gpus_per_node", Record: "runners.yaml at abc", Date: "2026-03-02"}
+	router := routerDiffers()
+	client := Substitution{Kind: SubClientDifference, Subject: "send_gap", Detail: "x"}
+	resolved := Substitution{Kind: SubResolvedDiffers, Subject: "s", Detail: "x"}
+	profile := Substitution{Kind: SubProfileValue, ProfileFamily: ProfileAcceptance, Subject: "acceptance/mtp:k3", Differed: []string{"drafter", "model"}}
+	unevaluated := Substitution{Kind: SubUnevaluated, Subject: "kernel_hash"}
+	with := func(s Substitution, edit func(*Substitution)) func(*Record) {
+		if s.Bound != nil { // a case edits its own copy of the bound, never the shared one
+			b := *s.Bound
+			b.Ratios = append([]routertable.Ratio(nil), b.Ratios...)
+			b.NotMeasured = append([]string(nil), b.NotMeasured...)
+			s.Bound = &b
+		}
+		edit(&s)
+		return func(r *Record) { r.Substitutions = []Substitution{s} }
+	}
+	for _, c := range []struct {
+		name   string
+		break_ func(*Record)
+		path   string
+		msg    string
+	}{
+		{"later_record without a record", with(later, func(s *Substitution) { s.Record = "" }), "substitutions[0].record", "required for later_record"},
+		{"later_record without a date", with(later, func(s *Substitution) { s.Date = "" }), "substitutions[0].date", "required for later_record"},
+		{"later_record with a malformed date", with(later, func(s *Substitution) { s.Date = "2 March 2026" }), "substitutions[0].date", "YYYY-MM-DD"},
+		{"later_record without the field", with(later, func(s *Substitution) { s.Subject = "" }), "substitutions[0].subject", "required"},
+		{"later_record naming a policy", with(later, func(s *Substitution) { s.Policy = "round-robin" }), "substitutions[0].policy", "not a key of later_record"},
+		{"router_differs without a policy", with(router, func(s *Substitution) { s.Policy = "" }), "substitutions[0].policy", "required for router_differs"},
+		{"router_differs without an entry", with(router, func(s *Substitution) { s.Entry = "" }), "substitutions[0].entry", "required for router_differs"},
+		{"router_differs naming an entry of another router", with(router, func(s *Substitution) { s.Entry = "vllm-round-robin" }), "substitutions[0].entry", "begins with its router"},
+		{"router_differs with a policy llm-d does not offer", with(router, func(s *Substitution) { s.Policy = "kv-aware" }), "substitutions[0].policy", "not a policy llm-d's router offers"},
+		{"router_differs with the policy none", with(router, func(s *Substitution) { s.Policy = "none" }), "substitutions[0].policy", "not a policy llm-d's router offers"},
+		{"router_differs without the router's revision", with(router, func(s *Substitution) { s.Revision = "" }), "substitutions[0].revision", "required for router_differs"},
+		{"router_differs at a revision that is not a full commit", with(router, func(s *Substitution) { s.Revision = "1682167" }), "substitutions[0].revision", "40-character"},
+		{"later_record naming a revision", with(later, func(s *Substitution) { s.Revision = strings.Repeat("e", 40) }), "substitutions[0].revision", "not a key of later_record"},
+		{"router_differs without evidence", with(router, func(s *Substitution) { s.Evidence = "" }), "substitutions[0].evidence", "required for router_differs"},
+		{"router_differs without the router", with(router, func(s *Substitution) { s.Subject = "" }), "substitutions[0].subject", "required"},
+		{"router_differs naming a record", with(router, func(s *Substitution) { s.Record = "r" }), "substitutions[0].record", "not a key of router_differs"},
+		{"router_differs naming a date", with(router, func(s *Substitution) { s.Date = "2026-03-02" }), "substitutions[0].date", "not a key of router_differs"},
+		{"router_differs carrying a ratio whose regime does not sample the point's clients", with(router, func(s *Substitution) {
+			s.Bound.Ratios[0].Regime.Concurrencies = []int{16, 256, 1024}
+		}), "substitutions[0].bound.ratios[0].regime", "no bound for this regime"},
+		{"router_differs carrying a ratio of another deployment", with(router, func(s *Substitution) {
+			s.Bound.Ratios[0].Regime.Fabric = "roce-400g"
+		}), "substitutions[0].bound.ratios[0].regime", "no bound for this regime"},
+		{"router_differs carrying a ratio of another workload", with(router, func(s *Substitution) {
+			s.Bound.Ratios[0].Regime.Workload = routertable.WorkloadPrefillBound
+		}), "substitutions[0].bound.ratios[0].regime", "no bound for this regime"},
+		{"router_differs with no regime", with(router, func(s *Substitution) { s.Regime = nil }), "substitutions[0].regime", "required"},
+		{"router_differs whose regime has other clients than the point", with(router, func(s *Substitution) {
+			r := *s.Regime
+			r.Concurrency = 256
+			s.Regime = &r
+		}), "substitutions[0].regime.concurrency", "point's identity"},
+		{"router_differs with a malformed regime", with(router, func(s *Substitution) {
+			r := *s.Regime
+			r.Shape = "2P"
+			s.Regime = &r
+		}), "substitutions[0].regime.shape", "<n>P<m>D"},
+		{"later_record naming a regime", with(later, func(s *Substitution) { r := *router.Regime; s.Regime = &r }), "substitutions[0].regime", "not a key"},
+		{"router_differs without differences", with(router, func(s *Substitution) { s.Difference = nil }), "substitutions[0].difference", "required for router_differs"},
+		{"router_differs with a difference that has no aspect", with(router, func(s *Substitution) { s.Difference = []routertable.Statement{{Text: "x"}} }), "substitutions[0].difference[0].aspect", "required"},
+		{"router_differs with a difference that says nothing", with(router, func(s *Substitution) { s.Difference = []routertable.Statement{{Aspect: "counter"}} }), "substitutions[0].difference[0].text", "required"},
+		{"router_differs without a bound", with(router, func(s *Substitution) { s.Bound = nil }), "substitutions[0].bound", "required for router_differs"},
+		{"router_differs with a bound that covers everything", with(router, func(s *Substitution) { s.Bound.NotMeasured = nil }), "substitutions[0].bound.not_measured", "does not cover"},
+		{"router_differs with a ratio below one", with(router, func(s *Substitution) { s.Bound.Ratios[0].MaxRatio = 0.5 }), "substitutions[0].bound.ratios[0].max_ratio", "at least 1"},
+		{"router_differs with a metric the registry lacks", with(router, func(s *Substitution) { s.Bound.Ratios[0].Metric = "ttft_p999_ms" }), "substitutions[0].bound.ratios[0].metric", "not in the metric registry"},
+		{"router_differs bounded against its own policy", with(router, func(s *Substitution) { s.Bound.Ratios[0].Against = []string{"round-robin"} }), "substitutions[0].bound.ratios[0].against", "own policy"},
+		{"client_difference naming a bound", with(client, func(s *Substitution) { s.Bound = router.Bound }), "substitutions[0].bound", "not a key of client_difference"},
+		{"later_record naming differences", with(later, func(s *Substitution) { s.Difference = router.Difference }), "substitutions[0].difference", "not a key of later_record"},
+		{"client_difference without a detail", with(client, func(s *Substitution) { s.Detail = "" }), "substitutions[0].detail", "required for client_difference"},
+		{"client_difference naming evidence", with(client, func(s *Substitution) { s.Evidence = "e" }), "substitutions[0].evidence", "not a key of client_difference"},
+		{"resolved_differs without a detail", with(resolved, func(s *Substitution) { s.Detail = "" }), "substitutions[0].detail", "required for resolved_differs"},
+		{"profile_value without the profile", with(profile, func(s *Substitution) { s.Subject = "" }), "substitutions[0].subject", "required"},
+		{"profile_value with no family", with(profile, func(s *Substitution) { s.ProfileFamily = "" }), "substitutions[0].profile_family", "required for profile_value"},
+		{"profile_value of an unknown family", with(profile, func(s *Substitution) { s.ProfileFamily = "kv" }), "substitutions[0].profile_family", "acceptance or routing"},
+		{"a routing profile differing in an acceptance field", with(profile, func(s *Substitution) {
+			s.ProfileFamily, s.Differed = ProfileRouting, []string{"drafter"}
+		}), "substitutions[0].differed[0]", "not a key field of the routing profile family"},
+		{"an acceptance profile differing in a routing field", with(profile, func(s *Substitution) { s.Differed = []string{"placement"} }),
+			"substitutions[0].differed[0]", "not a key field of the acceptance profile family"},
+		{"a profile family on a client_difference", with(client, func(s *Substitution) { s.ProfileFamily = ProfileRouting }), "substitutions[0].profile_family", "not a key of client_difference"},
+		{"profile_value naming a field that is not a profile key", with(profile, func(s *Substitution) { s.Differed = []string{"temperature"} }), "substitutions[0].differed[0]", "not a key field of the acceptance"},
+		{"profile_value with the key fields out of order", with(profile, func(s *Substitution) { s.Differed = []string{"model", "drafter"} }), "substitutions[0].differed[1]", "sorted, each once"},
+		{"profile_value naming a key field twice", with(profile, func(s *Substitution) { s.Differed = []string{"drafter", "drafter"} }), "substitutions[0].differed[1]", "sorted, each once"},
+		{"a key field list on a client_difference", with(client, func(s *Substitution) { s.Differed = []string{"model"} }), "substitutions[0].differed", "not a key of client_difference"},
+		{"unevaluated without the condition", with(unevaluated, func(s *Substitution) { s.Subject = "" }), "substitutions[0].subject", "required"},
+		{"unevaluated naming a name that is not a condition", with(unevaluated, func(s *Substitution) { s.Subject = "the kernel" }), "substitutions[0].subject", "not a condition of G1"},
+		{"unevaluated naming itself", with(unevaluated, func(s *Substitution) { s.Subject = "unevaluated" }), "substitutions[0].subject", "not a condition of G1"},
+		{"unevaluated naming an estimate", with(unevaluated, func(s *Substitution) { s.Subject = "estimated" }), "substitutions[0].subject", "not a condition of G1"},
+		{"unevaluated naming a policy", with(unevaluated, func(s *Substitution) { s.Policy = "round-robin" }), "substitutions[0].policy", "not a key of unevaluated"},
+		{"an estimate naming an entry", func(r *Record) { r.Substitutions[0].Entry = "e" }, "substitutions[0].entry", "not a key of estimated"},
+		{"an estimate naming a policy", func(r *Record) { r.Substitutions[0].Policy = "p" }, "substitutions[0].policy", "not a key of estimated"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := valid()
+			c.break_(r)
+			p := r.Validate()
+			for _, it := range p.Errors() {
+				if it.Path == c.path && strings.Contains(it.Message, c.msg) {
+					return
+				}
+			}
+			t.Errorf("expected a problem at %q containing %q, got:\n%s", c.path, c.msg, p.Error())
+		})
+	}
+}
+
+// A figure pairs a prediction and a measurement of one metric at one scope. A pair whose sides
+// state different scopes, members or aggregates is no comparison and is refused (DEV-8, design
+// 8.7); so is a side that states none, or a basis its metric does not admit.
+func TestAFigureIsRefusedUnlessBothSidesAreTheSameBasis(t *testing.T) {
+	worst := result.Basis{Scope: metrics.ScopeCluster, Aggregate: metrics.AggregateMax, Over: metrics.ScopeInstance}
+	decode := result.Basis{Scope: metrics.ScopePool, Member: "decode"}
+	for _, c := range []struct {
+		name string
+		set  func(*Figure)
+		path string
+		msg  string
+	}{
+		{"a cluster prediction against a pool measurement", func(f *Figure) { f.MeasuredBasis = decode }, "figures[0].measured_basis", "scope is"},
+		{"a pool prediction against another pool's measurement", func(f *Figure) {
+			f.PredictedBasis, f.MeasuredBasis = decode, result.Basis{Scope: metrics.ScopePool, Member: "prefill"}
+		}, "figures[0].measured_basis", "member is"},
+		{"a maximum against a direct figure", func(f *Figure) { f.PredictedBasis = worst }, "figures[0].measured_basis", "aggregate is"},
+		{"a maximum against a minimum", func(f *Figure) {
+			f.PredictedBasis, f.MeasuredBasis = worst, result.Basis{Scope: metrics.ScopeCluster, Aggregate: metrics.AggregateMin, Over: metrics.ScopeInstance}
+		}, "figures[0].measured_basis", "aggregate is"},
+		{"a maximum over instances against one over pools", func(f *Figure) {
+			f.PredictedBasis, f.MeasuredBasis = worst, result.Basis{Scope: metrics.ScopeCluster, Aggregate: metrics.AggregateMax, Over: metrics.ScopePool}
+		}, "figures[0].measured_basis", "over is"},
+		{"a prediction with no scope", func(f *Figure) { f.PredictedBasis = result.Basis{} }, "figures[0].predicted_basis", "states no scope"},
+		{"a measurement with no scope", func(f *Figure) { f.MeasuredBasis = result.Basis{} }, "figures[0].measured_basis", "states no scope"},
+		{"a pool figure with no member", func(f *Figure) {
+			f.PredictedBasis, f.MeasuredBasis = result.Basis{Scope: metrics.ScopePool}, result.Basis{Scope: metrics.ScopePool}
+		}, "figures[0].predicted_basis", "names no member"},
+		{"an aggregate the metric does not admit", func(f *Figure) {
+			b := result.Basis{Scope: metrics.ScopeCluster, Aggregate: "mean", Over: metrics.ScopeInstance}
+			f.PredictedBasis, f.MeasuredBasis = b, b
+		}, "figures[0].measured_basis", "is not one of max, min"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := valid()
+			c.set(&r.Figures[0])
+			p := r.Validate()
+			for _, it := range p.Errors() {
+				if it.Path == c.path && strings.Contains(it.Message, c.msg) {
+					return
+				}
+			}
+			t.Errorf("expected a problem at %q containing %q, got:\n%s", c.path, c.msg, p.Error())
+		})
+	}
+}
+
+// The same metric at two scopes is two figures, sorted by basis; the same basis twice is not.
+func TestOneMetricMayAppearAtSeveralScopesButNotTwiceAtOne(t *testing.T) {
+	decode := result.Basis{Scope: metrics.ScopePool, Member: "decode"}
+	at := func(b result.Basis) Figure {
+		return Figure{Metric: "ttft_mean_ms", PredictedBasis: b, MeasuredBasis: b, Predicted: 1, Measured: 1, PredictedSamples: 1, MeasuredSamples: 1}
+	}
+	r := valid()
+	r.Figures = []Figure{r.Figures[0], at(cluster), at(decode)}
+	if p := r.Validate(); !p.OK() {
+		t.Errorf("one metric at the cluster and at a pool, in order, was refused:\n%s", p.Error())
+	}
+	r.Figures = []Figure{r.Figures[0], at(decode), at(cluster)}
+	if p := r.Validate(); p.OK() {
+		t.Error("figures of one metric out of basis order were accepted")
+	}
+	r.Figures = []Figure{r.Figures[0], at(cluster), at(cluster)}
+	if p := r.Validate(); p.OK() {
+		t.Error("a metric at one basis twice was accepted")
+	}
+}
+
+// The key fields a profile substitution can name are the fields of the profile's own key, no
+// fewer: a routing profile that borrowed another category's curve differs in a field the
+// acceptance vocabulary does not have as its own.
+func TestTheProfileKeyFieldsAreTheFieldsOfEachFamilysKey(t *testing.T) {
+	snake := func(t reflect.Type) []string {
+		var out []string
+		for i := 0; i < t.NumField(); i++ {
+			var b []rune
+			for j, r := range t.Field(i).Name {
+				if j > 0 && r >= 'A' && r <= 'Z' {
+					b = append(b, '_')
+				}
+				b = append(b, r)
+			}
+			out = append(out, strings.ToLower(string(b)))
+		}
+		return out
+	}
+	// SpeculativeMethod is speculative_method and Thinking is thinking in the vocabulary.
+	if got, want := acceptance.KeyFields(), snake(reflect.TypeOf(acceptance.Key{})); !reflect.DeepEqual(got, want) {
+		t.Errorf("acceptance.KeyFields %v, Key has %v", got, want)
+	}
+	if got, want := routing.KeyFields(), snake(reflect.TypeOf(routing.Key{})); !reflect.DeepEqual(got, want) {
+		t.Errorf("routing.KeyFields %v, Key has %v", got, want)
+	}
+}
+
+// A routing profile taken under the scenario's fallback category differs from the run's key in
+// the category, and the point names it. Resolved from a real profile set: the lookup finds no
+// curve for the workload's category and takes the fallback's.
+func TestARoutingFallbackProfileNamesTheCategoryItDiffersIn(t *testing.T) {
+	curve := func(phase routing.Phase) routing.Profile {
+		return routing.Profile{Model: "m", Category: "chat", Phase: phase, Placement: routing.PlacementLinear,
+			ExpertParallel: 8, Method: "measured", Provenance: &routing.Provenance{Source: "hf://example@rev", Hardware: "b200", Tier: 2},
+			Points: []routing.Point{{BatchTokens: 16, TokenImbalance: 1.7, ExpertImbalance: 1.1}}}
+	}
+	set := &routing.ProfileSet{Kind: routing.Kind, Name: "capture", Role: routing.RoleSensitivity,
+		Profiles: []routing.Profile{curve(routing.PhaseDecode), curve(routing.PhasePrefill)}}
+	req := routing.Request{Model: "m", ExpertParallel: 8, Workload: routing.Workload{Category: "coding"},
+		Scenario: &routing.Pin{Profiles: "capture", FallbackCategory: "chat"}, ScenarioSet: set}
+	res, err := routing.Resolve(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	differed := res.Differed()
+	if !reflect.DeepEqual(differed, []string{"category"}) {
+		t.Fatalf("the fallback profile differs in %v, want [category]", differed)
+	}
+	r := valid()
+	r.Substitutions = []Substitution{{Kind: SubProfileValue, ProfileFamily: ProfileRouting,
+		Subject: "capture/" + res.Decode.Key().String(), Differed: differed}}
+	if p := r.Validate(); !p.OK() {
+		t.Errorf("a record naming the category difference was refused:\n%s", p.Error())
+	}
+	// With no fallback the curve is the run's own and nothing differs.
+	req.Workload.Category = "chat"
+	req.Scenario.FallbackCategory = ""
+	exact, err := routing.Resolve(req)
+	if err != nil || exact.Differed() != nil {
+		t.Errorf("an exact routing profile differs in %v (%v)", exact.Differed(), err)
+	}
+	// A routing record cannot name an acceptance field for it.
+	r.Substitutions[0].Differed = []string{"drafter"}
+	if p := r.Validate(); p.OK() {
+		t.Error("a routing profile was said to differ in an acceptance field")
 	}
 }

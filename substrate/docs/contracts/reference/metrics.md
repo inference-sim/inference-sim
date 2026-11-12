@@ -17,13 +17,91 @@ inter-token latency follow the benchmark clients BLIS is compared with:
   emits several tokens, so it is not a per-token figure, and it is never compared with
   `itl_*` or `tpot_*`.
 
-`metrics.Compare` returns the difference between two figures only when their definitions
-are identical, field for field; otherwise it returns an error naming the first field that
-differs. Identifiers decide nothing: the same definition under two names compares, and two
-definitions under one name do not.
+## Scope and aggregate
+
+A figure is a metric at a scope (design §8.7): the whole cluster, one pool, or one instance.
+The scope selects which requests, tokens or steps form the population; the formula, statistic,
+window and unit do not change. A definition states the scopes it is defined at (`Scopes`), in
+no particular order, and the aggregates its figures may take (`Aggregates`). Every metric is
+defined at the cluster, a pool and an instance except the router's queue delay, which exists
+only at the cluster and so has no aggregate: an aggregate ranges from a narrower scope to a
+wider one, and a metric defined at one scope has nothing to range over.
+
+A figure that picks one of the figures of a narrower scope names the scope it ranges over and
+the aggregate: the largest p99 time to first token over instances is a figure at the cluster
+scope, aggregate `max`, over `instance`. It is one instance's figure, not the cluster's own
+p99, and the two are never compared.
+
+The aggregates are `max` and `min`. Design §8.7 gives one example, the largest p99 time to
+first token over instances, and the plan speaks of ranking on "the worst" instance. The worst
+instance depends on which way the metric improves: the largest figure for a latency, the
+smallest for a throughput, a hit rate or an attainment. Each definition therefore states its
+direction (`Better`: `lower_is_better` or `higher_is_better`), and `Definition.Worst` returns
+the aggregate that picks the worst instance for it. The design names no mean or sum of
+figures, and an unweighted mean of per-instance percentiles or fractions is neither the
+cluster's figure nor a weighted one, so neither is admitted. Adding one would be a design
+change.
+
+`Definition.Validate` refuses a definition with no scope, a scope or aggregate outside the
+lists, a repeated one, no direction, and aggregates with fewer than two scopes to range
+between. `Figure.Validate` first validates the figure's definition, then refuses a figure with
+no scope, at a scope its metric is not defined at, with an aggregate its metric does not
+admit, or ranging over a scope that is not narrower than its own.
+
+## Throughput per GPU and interactivity
+
+Two quantities have more than one common form, and the registry keeps each form as its own
+metric because a figure of one is not a figure of another. The forms below follow the result
+processor of InferenceX, read at the commits cited in each definition's `Follows`.
+
+Throughput per GPU:
+
+- `output_tok_s_per_gpu`: output tokens over the window, over all the GPUs of the scope.
+- `total_tokens_per_second_per_gpu`: prompt plus output tokens over the window, over all the
+  GPUs of the scope, prefill GPUs included. It is InferenceX's `tput_per_gpu`, the throughput
+  axis of its frontier.
+- `output_tokens_per_second_per_decode_gpu`: output tokens over the window, over the decode
+  GPUs of the deployment only (all its GPUs when it has no separate decode pool). It is
+  InferenceX's `output_tput_per_gpu` for a disaggregated deployment, and is defined at the
+  cluster only, where the decode GPUs are counted.
+
+A worked example: a run with 4 prefill and 4 decode GPUs that completes 3000 prompt tokens and
+1000 output tokens a second reads 125 on the first, 500 on the second and 250 on the third.
+
+Interactivity:
+
+- `interactivity_mean`: the mean over requests of each request's own rate, (output tokens - 1)
+  / (E2E - TTFT), after the first token. It follows aiperf.
+- `interactivity_of_mean_tpot`: 1000 over the mean of `tpot` in milliseconds. It is InferenceX's
+  `mean_intvty`, which divides the mean time per output token into one.
+
+Two requests that take 10 ms and 40 ms per output token give 62.5 tokens per second on the
+first (the mean of 100 and 25) and 40 on the second (1000 over the mean 25 ms). The first is
+never smaller than the second, and the two differ by more as the requests differ more.
+`interactivity_p50` and `interactivity_p90` are 1000 over the percentile of `tpot`, as
+InferenceX publishes its median and p90.
+
+`Compare` refuses any pair across forms and names the field that tells them apart: `formula`
+for total against output tokens and for the two interactivity means, `denominator` for all
+GPUs against decode GPUs.
+
+## Comparing figures
+
+`metrics.Compare` returns the difference between two figures only when `ComparableFigures`
+accepts them: their definitions are identical, field for field, and their scope, member, aggregate
+and the scope they range over are the same. Otherwise it returns an error naming the first field
+that differs (`scope`, `member`, `aggregate` or `over` for the figure; the definition's field for the
+definition). A figure at the pool or instance scope names its member, the pool or instance it
+is of by the name the deployment gives it, and a figure at the cluster scope has none; design
+§8.7 makes the scope "the whole cluster, one pool, or one instance", so instance 3's figure and
+instance 7's are not comparable, and the same instance's in two runs is. For an aggregate, the
+member is that of the figure's own scope: the largest p99 over the instances of the pool
+`decode` is at the pool scope, member `decode`. Identifiers decide nothing: the same definition
+under two names compares, and two definitions under one name do not. A figure with no scope is
+refused.
 
 The simulator reads the registry directly. The dashboard and config search read it through
-`blis metrics`.
+`inference-sim metrics`.
 
 ## Definitions
 

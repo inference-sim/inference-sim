@@ -45,7 +45,9 @@ a check whose job was skipped, which proves nothing. When a job ran more than on
 (a re-run, or another manual run), its newest attempt decides: an earlier failure that a later
 run of the same job replaced does not hold the tag back, and an earlier pass does not hide a later
 failure. A newest attempt that is still running is no result. Every leg of a matrix is still
-needed. A head that already carries a release tag is refused, and so is a
+needed. A check that runs only nightly (the method-error job of VAL-5) is proved by running the
+nightly workflow by hand on the staged commit (`workflow_dispatch`). A head that already carries a
+release tag is refused, and so is a
 `go.mod` that requires a BLIS module at a pseudo-version.
 
 The bot works one layer at a time and a person does the pushing and the waiting. Each run re-plans the whole
@@ -117,3 +119,19 @@ does not.
 A nightly check confirms that every tag made by a person is annotated and listed in its release
 notes (LIF-3), and that every tag still resolves to the commit `.github/tags.lock` records
 (LIF-1).
+
+## What a person does, and when
+
+No pull-request check waits on a person. A check that is red tells an agent what to fix; a review
+thread is answered and resolved by the author agent, and the approving review that branch
+protection requires comes from the review agent's account, which has write access. The steps
+below are the ones an agent cannot or must not take. Each happens at release or setup time, on
+main or in the repository's settings, and none is a condition of a pull request's checks.
+
+| Step | Who | When |
+|---|---|---|
+| Create the `ledger` environment and its `LEDGER_SEED` secret, generate the seed, and record its hash in `ledger.yaml` (D7, `catalog/ledger/README.md`) | A ledger owner | Once per partition version, before the first ledger release. Until then the nightly `release` and `gate-nightly` jobs of `.github/workflows/ledger.yml` fail at their first step. |
+| Create the `config-fetch` environment and its `HF_TOKEN` secret (X12) | A person with admin rights | Once. Until then the nightly config fetch fails. |
+| Push `release/<tag>` and the tag when the bot cannot (LIF-3), and record an X27 waiver in the release notes | A person with write access, the release owner for a waiver | At release |
+| Approve a worse whole-run lane recorded as a defect elsewhere (VAL-6, VAL-11) before a tag | The release owner | At release |
+| Set branch protection, tag rules and merge methods for a repository; sign commits and add the DCO sign-off (X17, LIF-3, X20) | A person with admin rights; the person responsible for a commit | When a repository is set up or a setting changes; signing is encouraged and never checked |

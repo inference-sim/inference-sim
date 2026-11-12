@@ -380,10 +380,12 @@ def fit_indexer(data: Path, sku: str, g: dict) -> dict:
             "small": geo(small, floor, rate)}
 
 
-def lines(name, value, units, method, fitted, scope, sources, rationale):
+def lines(name, value, units, method, fitted, scope, sources, rationale, rate_basis=None):
     out = [f"  - {name}:", f"      value: {value}", f"      units: {units}",
-           f"      method: {method}", f"      fitted: {'true' if fitted else 'false'}",
-           f"      scope: {scope}", "      sources:"]
+           f"      method: {method}", f"      fitted: {'true' if fitted else 'false'}"]
+    if rate_basis:
+        out.append(f"      rate_basis: {rate_basis}")
+    out += [f"      scope: {scope}", "      sources:"]
     out += [f'        - {{kind: {k}, cite: "{c}", role: {r}}}' for k, c, r in sources]
     return out + ["      rationale: >", f"        {rationale}"]
 

@@ -10,6 +10,7 @@ global:
   vocab_size: 152064
   tie_word_embeddings: false
   weight_dtype: bf16
+  architecture: Qwen2ForCausalLM
 layer_kinds:
 - id: dense
   nodes:

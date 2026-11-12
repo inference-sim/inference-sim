@@ -6,6 +6,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/vocab"
 
 	"github.com/inference-sim/blis-substrate/kernel/internal/price"
 )
@@ -275,6 +276,11 @@ func (k *Kernel) priceStep(b, drafted kernel.Batch,
 			Overlap: host, NoOverlap: host,
 			Bottleneck:  kernel.ResourceHost,
 			PerResource: per,
+			// An empty step prices only the host's per-step cost, so only the entries a step
+			// with no tokens reads count; the fit ranges are checked at the empty step.
+			Trust: trustOf(k.trust, map[string]float64{
+				string(vocab.FitTokens): float64(tokens), string(vocab.FitRequests): 0,
+				string(vocab.FitContextTokens): 0}),
 		}
 	}
 	s := k.shapeOf(b)
@@ -294,7 +300,7 @@ func (k *Kernel) priceStep(b, drafted kernel.Batch,
 	// Per-resource totals are still accumulated, because a caller wants to see where the
 	// work went even though the step time is not their max.
 	var perResource [numResources]float64
-	overlapSeconds := k.priceLayers(k.plan.Layers, k.layerFits, k.layerKV, &s, &perResource)
+	overlapSeconds := k.priceTarget(b, &s, &perResource)
 	if k.plan.Embedding.Count > 0 {
 		overlapSeconds += k.priceLayers([]price.PlannedLayer{k.plan.Embedding}, nil,
 			[]layerKV{{}}, &s, &perResource)
@@ -366,6 +372,7 @@ func (k *Kernel) priceStep(b, drafted kernel.Batch,
 	return kernel.StepEstimate{
 		Overlap: overlap, NoOverlap: noOverlap,
 		Bottleneck: bottleneck, PerResource: per,
+		Trust: trustOf(k.trust, s.inputs()),
 	}
 }
 
@@ -667,11 +674,11 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 			// decodes read context is two launches -- which the two floors already charge.
 			if s.decodeRequests > 0 && s.prefillRequests > 0 && !latentAttention(l.AttnKind) &&
 				k.layout.DCP <= 1 &&
-				k.chip.NVFP4Peak <= 0 && rate > 0 && k.attentionPrefillScale > 0 {
-				if floor < k.attentionPrefillFloor {
+				k.chip.NVFP4Peak <= 0 && rate > 0 && k.prefillFor(l.AttnKind).scale > 0 {
+				if pf := k.prefillFor(l.AttnKind).floor; floor < pf {
 					attnSeconds -= floor.Seconds()
 				} else {
-					attnSMSeconds -= k.attentionPrefillFloor.Seconds()
+					attnSMSeconds -= pf.Seconds()
 				}
 			}
 			if pf, ok := k.attentionPrefillByKind[l.AttnKind]; ok && s.prefillRequests > 0 &&
@@ -682,7 +689,7 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 				attnSMSeconds += pf.seconds(float64(s.prefillRequests),
 					float64(s.prefillTokens), read)
 			} else if s.prefillRequests > 0 {
-				sm, fl := k.prefillAttention(layerCausalFLOPs*heads*float64(l.AttnHeadDim), s)
+				sm, fl := k.prefillAttention(layerCausalFLOPs*heads*float64(l.AttnHeadDim), s, l.AttnKind)
 				attnSMSeconds += sm
 				flops += fl
 			}
@@ -724,7 +731,7 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 							max(a.CompressRatio, 1)) / 2
 					}
 					h := k.attentionHeads(a.QHeads, a.Replicated, a.Kind)
-					sm, fl := k.prefillAttention(pairs*h*float64(a.HeadDim), s)
+					sm, fl := k.prefillAttention(pairs*h*float64(a.HeadDim), s, a.Kind)
 					attnSMSeconds += sm
 					flops += fl
 				}

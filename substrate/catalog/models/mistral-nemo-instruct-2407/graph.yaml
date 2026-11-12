@@ -10,6 +10,7 @@ global:
   vocab_size: 131072
   tie_word_embeddings: false
   weight_dtype: bf16
+  architecture: MistralForCausalLM
 layer_kinds:
 - id: dense
   nodes:

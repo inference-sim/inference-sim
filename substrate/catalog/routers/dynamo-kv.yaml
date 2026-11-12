@@ -1,0 +1,65 @@
+# Dynamo's frontend in its kv mode, with no session affinity configured. The entry records that
+# no policy in the table's closed list is close enough, and why. Every citation is a line of a
+# router's own code at the commit named, or of llm-d's router at the commit the module tag
+# v1.0.0-blis.3 of inference-sim/llm-d-router points to.
+kind: RouterMapping
+router: dynamo
+mode: kv
+revisions:
+  - 1682167d3c97f0fc8cd405dee51f17288eeaeb55
+policy: none
+reason: >-
+  Dynamo's kv mode scores each worker by a cost, overlap_score_weight times the blocks of the
+  prompt the worker has not cached plus the decode blocks the router tracks as active on it,
+  with weight 1.0 and temperature 0 by default, so the lowest cost wins and a tie goes to the
+  smaller prefix tree. Both terms are the router's own accounting, fed by the workers' KV events,
+  and the router can hold a request in a queue of its own when the workers are busy
+  (router_queue_threshold). No policy in the closed list does this.
+  least-active-requests reads the router's own in-flight counts but has no prefix term.
+  default adds a prefix term but weighs queue depth and KV-cache utilisation, which llm-d's
+  router reads from its endpoints' metrics, as normalised scores summed with weights 2, 2 and 3,
+  and takes the maximum; Dynamo's cost is in unnormalised block units with the two terms equally
+  weighted per block. The sweep behind the other entries shows the policies that read load
+  differ from each other by up to 1.70 (balanced) and 1.79 (decode-bound) in median time to first
+  token at 64 to 256 clients, default against least-active-requests, so the choice among them
+  is not a rounding. It has no prefix shared between requests, which is
+  the term this mode exists for, so no bound on a stand-in for it can be measured with it. The
+  mode stays unsupported until a composition that carries both terms is hosted and measured on a
+  workload with shared prefixes. A run with session affinity configured is a different key and
+  has no entry.
+evidence:
+  - side: router
+    field: mode
+    repository: ai-dynamo/dynamo
+    commit: 1682167d3c97f0fc8cd405dee51f17288eeaeb55
+    path: components/src/dynamo/common/configuration/groups/router_args.py
+    lines: "77-84"
+    claim: The frontend's router-mode argument accepts kv among its choices, so a recipe can run it.
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: 1682167d3c97f0fc8cd405dee51f17288eeaeb55
+    path: lib/kv-router/src/scheduling/selector.rs
+    lines: "136-143"
+    claim: The cost of a worker is overlap_score_weight times its uncached prefill blocks plus its decode blocks, in block units, unnormalised.
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: 1682167d3c97f0fc8cd405dee51f17288eeaeb55
+    path: lib/kv-router/src/scheduling/selector.rs
+    lines: "271-311"
+    claim: At temperature 0 the lowest cost wins and a tie goes to the worker with the smaller prefix tree; at a positive temperature a worker is sampled by softmax.
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: 1682167d3c97f0fc8cd405dee51f17288eeaeb55
+    path: lib/kv-router/src/scheduling/config.rs
+    lines: "284-312"
+    claim: The defaults are overlap weight 1.0, temperature 0, router-tracked active blocks, router-tracked prefill tokens and a router queue threshold of 4.0.
+  - side: llm-d
+    field: policy
+    repository: inference-sim/llm-d-router
+    commit: b1ab0ff7c0b84090e40b874f8873e78f2ae6897c
+    path: pkg/epp/config/loader/defaults.go
+    lines: "49-90"
+    claim: The default configuration sums three scorers, queue depth (weight 2), KV-cache utilisation (2) and prefix cache (3), in one profile with the max-score picker; no scorer there reads the router's own cost of blocks.

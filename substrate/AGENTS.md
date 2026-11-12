@@ -56,10 +56,20 @@ go run ./tools/prcheck docrefs
 ## Agents may not
 
 Edit a generated file by hand; weaken, skip or delete a check; change a success criterion after
-reading held-out data, or the ledger's cut-points or partition version; approve a merge; cut a
-release; review a change they wrote themselves (design §13.7). An agent may act as the review
-agent: it answers each review question below in a review comment, with the files and lines that
-support the answer.
+reading held-out data, or the ledger's cut-points or partition version; approve a pull request
+they wrote or pushed to; cut a release; review a change they wrote themselves (design §13.7). An
+agent may act as the review agent: it answers each review question below in a review comment,
+with the files and lines that support the answer, and its approving review counts toward branch
+protection. After each fix an author agent replies on the review thread with the outcome and the
+commit and resolves the thread (X24); no check waits for a person to do either.
+
+## Reruns
+
+CI reruns a failed run automatically in one case only: the hosted runner was shut down ("The
+runner has received a shutdown signal"), on the first attempt, for every failed job
+(`.github/workflows/rerun-on-runner-shutdown.yml`). It is announced in the job summary and a
+comment. Any other red is a defect or a gate: read the log, fix it, and do not rerun it hoping
+it passes. A flaky test is reported, not quarantined or retried.
 
 ## Where to look next
 
@@ -145,7 +155,8 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **X23** (new; target ci by M1) A version is written in one place.
   - `new`, pull_request: A lint in every repository, over every file type, for version literals of BLIS modules or Go that are not generated (`prcheck versions`)
 - **X24** (new; target ci by M4) Every review finding ends in one of three outcomes before merge: fixed, filed as a linked issue, or rejected with a reason.
-  - `new`, pull_request: A pull-request check that refuses a review thread with no outcome (`shared-pr-checks.yml: prcheck threads`)
+  - `new`, pull_request: A pull-request step that lists each review thread that is open or resolved with no outcome, as a notice and in the job summary; it never fails, so no check waits on a thread (`shared-pr-checks.yml: prcheck threads`)
+  - `new`, practice: Branch protection requires every review conversation to be resolved before a merge; the author agent resolves each thread with its outcome
   - `new`, nightly: A nightly job that reopens an issue closed any other way
 - **X25** (new; target ci by M1) Tests read only their declared inputs, never sibling checkouts, ignored directories or the user's environment.
   - `new`, pull_request: CI in a clean container with no sibling checkouts
@@ -179,8 +190,8 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: Property tests: the per-data-type peak and the L2-bounded memory bandwidth
 - **SUB-6** (new; target ci by M4) The cost model resolves nothing.
   - `new`, pull_request: A test that the cost model's public functions accept only plans, step shapes, transfers, and catalog and registry handles
-- **SUB-7** (new; target ci by M2) The cost model has a price for every primitive it can be asked about.
-  - `new`, pull_request: Completeness test over every primitive and every catalog chip
+- **SUB-7** (ci; target reached) The cost model has a price for every primitive it can be asked about.
+  - `ci`, pull_request: Completeness test over every primitive and every catalog chip (`kernel: TestEveryValueTheKernelSuppliesItselfIsListed`)
 - **SUB-8** (partial; target ci by M1) A change to the substrate never breaks the data it releases: validators, deriver and writers all pass on the tree being released.
   - `ci`, pull_request: The validators run on every pull request (`ci.yml jobs catalog, registry`)
   - `ci`, pull_request: The graph deriver --check runs on every pull request (`ci.yml job catalog: derive_graph.py --check`)
@@ -214,31 +225,34 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `ci`, pull_request: Validator rules that catalog peaks are dense figures and that their ratios between data types match the datasheet. The bounds on rates are SUB-5's (`contracts/spec/hardware: TestPeaksAreDenseFigures`)
 - **SUB-17** (new; target ci by M3) A transfer or collective names its endpoints by rank, and the cost model prices it over the path between them through the catalog's links: the NVLink domain, the NIC and each switch tier.
   - `new`, pull_request: A property test over random placements, in blis-substrate
-- **SUB-18** (new; target ci by M2) Provenance is recorded per field, not per file.
-  - `new`, pull_request: Validator rules on catalog provenance fields
+- **SUB-18** (ci; target reached) Provenance is recorded per field, not per file.
+  - `ci`, pull_request: Validator rules on catalog provenance fields (`contracts/spec/hardware: TestFieldProvenance; TestInheritedProvenanceObeysTheFieldSourceContract; TestCommittedChipsRecordTheirExceptions; TestLosingAnExceptionFailsTheCheck; TestEveryCommittedFactHasASource`)
+  - `ci`, pull_request: No catalog field holds a fitted or assumed value: the storage tiers state no rate or latency, and a file that states one is refused with the reason (`contracts/spec/hardware: TestStorageTierStatesNoRateOrLatency`)
+  - `ci`, pull_request: Each storage tier's terms are hardware-scoped coefficients, present for every catalog tier on every catalog chip at the figures the catalog held, that the kernel's TierTime reads (`kernel: TestEveryTierHasItsTermsOnEveryChip; TestTierTimeReadsTheRegistryAndPricesAsTheCatalogDid`)
 - **SUB-19** (partial; target ci by M1) Every document that crosses a repository boundary has one definition, in contracts/spec: the scenario, the deployment, the Result, and the per-point record the scoring harness writes.
   - `ci`, pull_request: A generator test in blis-substrate that the published schemas match the Go types (`tools/schemagen: TestPublishedSchemasMatchTheTypes`)
 - **SUB-20** (partial; target ci by M2) No price, size or engine decision depends on a free-text label.
   - `ci`, pull_request: A syntax-tree lint in blis-substrate and each engine repository that refuses a comparison on a documentation-only string field outside tests (`contracts: TestNoPriceDependsOnAFreeTextLabel`)
   - `ci`, pull_request: A perturbation test (SUB-11) that changing such a label changes no price (`kernel: TestChangingALabelChangesNoPriceOrIsListed`)
-- **DEV-8** (new; target ci by M2) Every reported metric names its definition and scope (§8.7), and a comparison is refused unless both sides have the same definition, scope and aggregate.
-  - `new`, pull_request: The metric registry in contracts/, which the simulator reads directly and the dashboard and config search read through inference-sim metrics
+- **DEV-8** (partial; target ci by M2) Every reported metric names its definition and scope (§8.7), and a comparison is refused unless both sides have the same definition, scope and aggregate.
+  - `ci`, pull_request: The metric registry in contracts/ states each metric's scopes and aggregates and refuses a comparison unless metric, scope and aggregate are the same (`contracts/metrics: TestComparableFiguresRefusesEachDifference`)
 - **DEV-12** (new; target ci by M1) Each change is a verification change or a validation change by what it does (§8.9), and is judged as such.
   - `new`, pull_request: In every repository, the change class in the pull-request template, and a check that the outputs that moved match the declared class (`.github/pull_request_template.md (generated)`)
-- **VAL-1** (partial; target ci by M2) Every coefficient records exactly one method from the list in §9.2, or not_charged, with the sources that method needs: measured, calibrated: the data units it was fitted to; transferred: the source coefficient and the transfer rule; literature: an exact citation; vendor_spec: a datasheet citation; roofline: the catalog facts it was computed from; assumed, not_charged: a written reason.
+- **VAL-1** (ci; target reached) Every coefficient records exactly one method from the list in §9.2, or not_charged, with the sources that method needs: measured, calibrated: the data units it was fitted to; transferred: the source coefficient and the transfer rule; literature: an exact citation; vendor_spec: a datasheet citation; roofline: the catalog facts it was computed from; assumed, not_charged: a written reason.
   - `ci`, pull_request: Schema rules in blis-substrate/validate for the method vocabulary in use (`contracts/spec/coefficient: TestRationaleRequiredForEveryMethodButMeasured`)
-  - `new`, pull_request: Schema rules in blis-substrate/validate for the method list of §9.2, with the sources each method needs
-- **VAL-2** (new; target ci by M2) For every primitive family and every catalog chip, some rank has a value.
-  - `new`, pull_request: Completeness test over every primitive and catalog chip (SUB-7)
-- **VAL-3** (new; target ci by M2) Each price records, among the coefficients it used, the least trusted effective rank, and names its method and any flag.
-  - `new`, pull_request: Step-time result field
-  - `new`, pull_request: Checked in kernel tests
-- **VAL-4** (new; target ci by M2) Each lookup resolves to one entry per rank, and the entry with the smallest rank number is used; flags do not change which entry is chosen, only how the price reports it.
+  - `ci`, pull_request: Schema rules in blis-substrate/validate for the method list of §9.2, with the sources each method needs (`contracts/vocab: TestRankFollowsDesignSection92`)
+- **VAL-2** (ci; target reached) For every primitive family and every catalog chip, some rank has a value.
+  - `ci`, pull_request: Completeness test over every primitive and catalog chip (SUB-7) (`kernel: TestEveryValueTheKernelSuppliesItselfIsListed`)
+- **VAL-3** (ci; target reached) Each price records, among the coefficients it used, the least trusted effective rank, and names its method and any flag.
+  - `ci`, pull_request: Step-time result field (`kernel: TestTrustIsTheLeastTrustedEffectiveRank`)
+  - `ci`, pull_request: Checked in kernel tests (`kernel: TestTheKernelMeetsTheTrustAndStageLaws`)
+- **VAL-4** (partial; target ci by M2) Each lookup resolves to one entry per rank, and the entry with the smallest rank number is used; flags do not change which entry is chosen, only how the price reports it.
   - `new`, pull_request: Validator check against the previous release, plus a review question
-  - `new`, pull_request: A validator rule that refuses unordered matches
-  - `new`, pull_request: A cost-model test that resolves every pair of scope kinds in both load orders and agrees with the validator (X15)
-- **VAL-5** (new; target ci by M2) The typical error of each method is measured by leaving one chip out, and published per primitive family, using data units with role validate (§10).
-  - `new`, nightly: Nightly job
+  - `ci`, pull_request: A validator rule that refuses unordered matches (`validate/dataset: TestCheckOrdered`)
+  - `ci`, pull_request: A cost-model test that resolves every pair of scope kinds in both load orders and agrees with the validator (X15) (`kernel/internal/resolve: TestLookupAgreesWithTheValidatorOnPrecedenceInBothLoadOrders`)
+- **VAL-5** (partial; target ci by M2) The typical error of each method is measured by leaving one chip out, and published per primitive family, using data units with role validate (§10).
+  - `ci`, nightly: Nightly job: leave one chip out and compare each method's estimate with the chip's measured value, per primitive family, over the registry's measured coefficients (`nightly.yml job method-error: ledger method-error`)
+  - `new`, nightly: The same comparison over data units with role validate, which the AISimulate and forward-pass sources do not list yet
 - **VAL-6** (partial; target ci by M1) A change to a measured or calibrated value passes the landing gate.
   - `ci`, pull_request: On fixtures per pull request (`registry/validator (pytest)`)
   - `new`, nightly: On full data nightly
@@ -250,9 +264,9 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: A test that lists entries matching neither condition, which are removed in the next substrate release
 - **VAL-9** (new; target ci by M2) A coefficient states what its measurement includes: device time only or host issue time as well, captured or eager execution, and which harness collected it.
   - `new`, pull_request: A validator rule matching each coefficient's measurement boundary with the boundary its reading formula declares
-- **VAL-10** (new; target ci by M2) A measured or calibrated entry records the interval its fit supports (95%, by bootstrap or profile likelihood) and the range of inputs its fit data covered: shapes, token counts, ranks, chip and kernel.
-  - `new`, pull_request: Validator rules on the interval and range fields
-  - `new`, pull_request: A test that extrapolated lookups report it
+- **VAL-10** (partial; target ci by M2) A measured or calibrated entry records the interval its fit supports (95%, by bootstrap or profile likelihood) and the range of inputs its fit data covered: shapes, token counts, ranks, chip and kernel.
+  - `ci`, pull_request: Validator rules on the interval and range fields (`contracts/spec/coefficient: TestEvidenceRecords`)
+  - `ci`, pull_request: A test that extrapolated lookups report it (`contracts/spec/coefficient: TestUnidentifiedExtrapolatedAndEffectiveRank`)
   - `new`, pull_request: The fitting scripts' identifiability check
 - **VAL-11** (new; target ci by M2) An operator-level check judges a pricing form; an end-to-end check judges how forms combine.
   - `new`, pull_request: A review question
@@ -264,11 +278,13 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, nightly: A nightly join over every consumer's record of the units it read, run inside the nightly run of blis-substrate's gate job
 - **D3** (ci; target reached) Every source revision is pinned by commit, hash or run id.
   - `ci`, pull_request: A ledger check that refuses latest, main and unknown as revisions (`ledger: TestUnpinnedRevisionsRefused`)
+  - `ci`, pull_request: A workflow artifact a tool reads is pinned by run id, attempt, evaluated commit and the SHA-256 of its zip and file, and a revision of latest is refused (`ledger: TestWorkflowArtifactPinIsExact`)
+  - `ci`, pull_request: The extractor's pin file equals the ledger's entry for the artifact (`ledger: TestExtractorPinEqualsTheLedgerEntry`)
 - **D4** (partial; target ci by M1) Roles are drawn by the keyed rule, per role key, so every unit sharing a role key has the same role, except a legacy unit, which keeps its legacy side even where units of its role key fall on both sides.
   - `ci`, pull_request: A check against the ledger at the pull request's merge base (`ledger: TestCheckAgainstBase`)
   - `ci`, pull_request: A check that no committed file lists roles, other than the three published lists that the release job writes and the legacy labels in legacy-map.yaml (`ledger: TestNoCommittedRoles`)
   - `new`, pull_request: A check that the committed unit list equals the ingest tool's output for the pinned source
-  - `ci`, pull_request: A check that every unit at the merge base keeps its unit_id and role key, or is covered by an alias table or by a new partition version a person approved (`ledger: TestCheckAgainstBase`)
+  - `ci`, pull_request: A check that every unit at the merge base keeps its unit_id and role key, or is covered by an alias table, and a new partition version is the next number with a new seed record (`ledger: TestCheckAgainstBase`)
   - `new`, pull_request: A check that each alias table equals the one generated from the merge-base and candidate ingest tools on the same source revision
 - **D5** (new; target ci by M2) A coefficient's fit data exercised the kernel implementation the coefficient is keyed by, meaning the same library, variant and kernel hash (CodeHash).
   - `new`, pull_request: A validator rule that a coefficient's fit units were collected on the kernel implementation it is keyed by
@@ -278,10 +294,13 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **D7** (partial; target ci by M1) The role seed is 256 random bits and a CI secret until its partition version is retired.
   - `new`, pull_request: The seed is stored in one CI environment per repository (blis-substrate and accuracy-dashboard) whose branch policy allows only main, available only to the release, select, error and gate jobs
   - `ci`, pull_request: A workflow lint that those jobs check out only main (`ledger: TestLintWorkflows`)
+  - `ci`, pull_request: The three published lists are read back and checked against the ledger that drew them: the seed hash and partition version it records, units that exist, one role per unit (`ledger: TestPublishedListsAreCheckedAgainstTheLedger`)
+  - `ci`, pull_request: A release carries all three published lists with the fit and anchor lists nonempty; the release job, the ledger check and the release tool refuse otherwise (`ledger: TestReleaseRefusesAnEmptyPublishedSet`)
   - `new`, pull_request: Their outputs are checked to contain no per-unit rows and no aggregate over fewer than 10 units
-- **D8** (new; target ci by M2) A quantity BLIS simulates, such as prefix-cache hits or queueing, is never stored.
+- **D8** (partial; target ci by M2) A quantity BLIS simulates, such as prefix-cache hits or queueing, is never stored.
   - `new`, pull_request: A validator rule refusing such families in the registry without a workload key
-  - `new`, pull_request: A test per borrowing step, for a tie, for each bound of K with and without stated per-position rates, for an ambiguous key, for the exact-only option and for the refusal
+  - `ci`, pull_request: A test per borrowing step, for a tie, for each bound of K with and without stated per-position rates, for an ambiguous key, for the exact-only option and for the refusal (`contracts/spec/acceptance: TestBorrowingAcrossK; TestTheProportionalRuleDoesNotOverstate; TestBorrowingAnotherDrafter; TestBorrowingAnotherTarget; TestTheTieBreakOrder; TestAmbiguityIsRefused; TestExactOnlyAndRefusal; TestFallbackCategoryPrecedence; TestFallbackWaitsForTheWorkloadsOwnCategory; TestTheSameDrafterUnderAnotherMethodIsNotBorrowed`)
+  - `ci`, pull_request: The catalog's drafter link holds in both directions: a target lists its drafters, each separate drafter names its target, and a graph with a speculator is listed as having one (`validate/dataset: TestCheckDraftersHoldsInBothDirections`)
 - **COV-1** (partial; target ci by M1) One scorer produces every number, and it lives only in accuracy-dashboard: no other repository compares a simulation with a measured end-to-end benchmark.
   - `new`, pull_request: A lint that refuses code outside accuracy-dashboard that reads end-to-end benchmark units to compute an error
 - **LIF-1** (new; target ci by M1) A tag names one commit forever.
@@ -309,6 +328,7 @@ repository as a whole and confirms it when the repository's settings change (des
 
 - [ ] **X17** The protected branch requires the repository's named checks, including formatting and lint
 - [ ] **X20** The person who takes responsibility for a commit signs it and signs it off, or instructs an agent to push it in that person's name. Encouraged, never checked before the closing step after M4
+- [ ] **X24** Branch protection requires every review conversation to be resolved before a merge; the author agent resolves each thread with its outcome
 - [ ] **LIF-1** Protected tags
 - [ ] **LIF-3** Repository settings that let only the release bot and people with write access create tags
 
@@ -317,22 +337,22 @@ repository as a whole and confirms it when the repository's settings change (des
 Follow these on every change you write or review. They are not checked by a program
 (design §4.2).
 
-- **X24** Answer each review thread with its commit or its issue, and resolve the thread once the reviewer is satisfied.
+- **X24** After each fix, reply on the thread with "Outcome: fixed" and the commit, "Outcome: filed" and the issue, or "Outcome: rejected:" and the reason, and resolve the thread. The author agent does this; no check waits for it and no person has to.
 
 ### Review questions
 
-CI lists each question below in the description of a pull request that changes one of
-its paths. It is guidance for the review agent (design §13.2): the agent answers it yes or
-no in a review comment, with the files and lines that support the answer. No check waits
-on a question.
+Each question below is guidance for the review agent (design §13.2). When a pull request
+changes one of its paths, the agent answers it yes or no in a review comment, with the
+files and lines that support the answer. No CI job lists, records or waits on a question,
+and no person has to answer one.
 
 - **X1** Does this new scenario field describe something the real system would observe, rather than a setting the upstream does not have? Expertise: contracts expertise. Applies when: a key is added to the environment list. Paths: `contracts/spec/scenario/**`.
 - **X2** Does this change hide one engine's policy (a default, threshold, backend choice or padding rule) behind a neutral name? Would the other engine need the same edit? Expertise: expertise in the changed directory. Applies when: any non-test change under catalog/, registry/ or kernel/. Paths: `catalog/**`, `registry/**`, `kernel/**`, except `**/*_test.go`, `**/testdata/**`, `**/tests/**`.
-- **X6** Could this floating-point reduction give a different result on another platform? Expertise: expertise in the changed repository. Applies when: a parallel or floating-point reduction is added, or the cross-platform check fails. Added by a reviewer with the label `review:X6`.
-- **X7** Does this change give a second home to a fact another repository owns? Expertise: expertise in the changed repository. Applies when: a pull request adds a literal list or table, or a constant that cites another repository. Added by a reviewer with the label `review:X7`.
+- **X6** Could this floating-point reduction give a different result on another platform? Expertise: expertise in the changed repository. Applies when: a parallel or floating-point reduction is added, or the cross-platform check fails. The review agent decides whether it applies, and may mark it with the label `review:X6`.
+- **X7** Does this change give a second home to a fact another repository owns? Expertise: expertise in the changed repository. Applies when: a pull request adds a literal list or table, or a constant that cites another repository. The review agent decides whether it applies, and may mark it with the label `review:X7`.
 - **X8** Was this fitting method, gate or threshold chosen after seeing evaluation results? Expertise: expertise in the repository landing the change. Applies when: a pull request changes a fitting method, gate or threshold. Paths: `registry/scripts/**`, `registry/validator/**`.
-- **DEV-12** Does this change alter what is modelled? Expertise: expertise in the changed directory. Applies when: a pull request is declared a verification change but moves a Result outside the byte gate. Added by a reviewer with the label `review:DEV-12`.
-- **VAL-11** Is this change kept or rejected because it offsets an error elsewhere? Expertise: expertise in the changed directory. Applies when: a pricing change lands or is rejected with end-to-end evidence that contradicts its operator-level evidence. Added by a reviewer with the label `review:VAL-11`.
+- **DEV-12** Does this change alter what is modelled? Expertise: expertise in the changed directory. Applies when: a pull request is declared a verification change but moves a Result outside the byte gate. The review agent decides whether it applies, and may mark it with the label `review:DEV-12`.
+- **VAL-11** Is this change kept or rejected because it offsets an error elsewhere? Expertise: expertise in the changed directory. Applies when: a pricing change lands or is rejected with end-to-end evidence that contradicts its operator-level evidence. The review agent decides whether it applies, and may mark it with the label `review:VAL-11`.
 - **D1** Was this value read from, or tuned against, any measurement? Expertise: registry expertise. Applies when: an assumed entry is added or changed. Paths: `registry/coefficients/**`.
-- **D7** Was the new seed generated as the ledger records? Expertise: ledger expertise. Applies when: a seed is created or rotated. Added by a reviewer with the label `review:D7`.
+- **D7** Was the new seed generated as the ledger records? Expertise: ledger expertise. Applies when: a seed is created or rotated. The review agent decides whether it applies, and may mark it with the label `review:D7`.
 <!-- END GENERATED: invariants -->

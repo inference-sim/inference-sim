@@ -37,6 +37,12 @@ func TestBatchValidate(t *testing.T) {
 		{"negative threshold", Batch{DecodeThreshold: -1}, "DecodeThreshold -1"},
 		{"drafter padded", Batch{DraftPaddedTokens: 128, Reqs: []ReqShape{{Scheduled: 8}}}, ""},
 		{"negative drafter width", Batch{DraftPaddedTokens: -1}, "DraftPaddedTokens -1"},
+		{"a tail", Batch{TailFrom: 20, TailPadTokens: 64, Reqs: []ReqShape{{Scheduled: 4096, TailRows: 128}, {Scheduled: 1}}}, ""},
+		{"negative tail layer", Batch{TailFrom: -1}, "TailFrom -1"},
+		{"negative tail pad", Batch{TailFrom: 2, TailPadTokens: -1}, "TailPadTokens -1"},
+		{"tail rows beyond the request", Batch{TailFrom: 2, Reqs: []ReqShape{{Scheduled: 100, TailRows: 101}}}, "TailRows 101 exceeds its Scheduled 100"},
+		{"tail rows with no layer", Batch{Reqs: []ReqShape{{Scheduled: 100, TailRows: 50}}}, "stated with no TailFrom"},
+		{"tail pad with no layer", Batch{TailPadTokens: 8}, "TailPadTokens 8 is stated with no TailFrom"},
 		{"negative request count", Batch{Reqs: []ReqShape{{Scheduled: 1}, {Computed: -3}}}, "Reqs[1].Computed -3"},
 	} {
 		t.Run(c.name, func(t *testing.T) {

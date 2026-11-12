@@ -7,7 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/rules"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
@@ -51,6 +53,9 @@ func (k *Kernel) liftDraft(c *resolve.Coefficients, inferred func(price.PlannedL
 			"the deployment speculates and the model graph states no speculator, so its draft "+
 				"passes cost nothing and its weights are not resident")
 		return nil
+	}
+	if err := k.liftDraftPasses(d, spec); err != nil {
+		return err
 	}
 	k.speculating = true
 	for _, l := range k.plan.Layers {
@@ -120,6 +125,53 @@ func (k *Kernel) liftDraft(c *resolve.Coefficients, inferred func(price.PlannedL
 	return nil
 }
 
+// liftDraftPasses reads the engine's statement of how an autoregressive drafter's passes run
+// (Inputs.DraftFirstPassRows and DraftPassRequests, plan.DraftPolicy's words) into what
+// priceDraft charges, and refuses a deployment for which the engine states none or an unknown
+// one. Both are the engine's execution decisions, not facts of the catalog graph: the same graph
+// can be run with a first pass over one row per request or over every token the target
+// scheduled, and the cost model prices what it is told and does not guess (SUB-6). It knows no
+// engine and no method, and its reasons name neither. A parallel-block drafter states its
+// target-wide work as its context stack and needs neither.
+//
+// With FirstPassScheduled the first pass processes every token the target scheduled this step
+// (vLLM's draft "prefill", _prefill, vllm/v1/worker/gpu/spec_decode/target_dependent_ar/
+// speculator.py:432-478@v0.32.0), and with PassRequestsAll the head and the later passes run for
+// every request, one still in the middle of its prompt included (the same file, :232-295 and
+// :480-530).
+func (k *Kernel) liftDraftPasses(d *price.DraftPlan, spec *enginesettings.Speculative) error {
+	if d.Drafting != model.DraftingAutoregressive {
+		return nil
+	}
+	who := "the model graph's own speculator"
+	if spec.DraftModel != "" {
+		who = "draft_model " + spec.DraftModel
+	}
+	for _, f := range []struct {
+		name, value string
+		valid       bool
+		words       string
+	}{
+		{"DraftFirstPassRows", string(k.statedFirstPassRows), k.statedFirstPassRows.Valid(),
+			string(plan.FirstPassPerRequest) + " or " + string(plan.FirstPassScheduled)},
+		{"DraftPassRequests", string(k.statedPassRequests), k.statedPassRequests.Valid(),
+			string(plan.PassRequestsSampling) + " or " + string(plan.PassRequestsAll)},
+	} {
+		switch {
+		case f.value == "":
+			return fmt.Errorf("draft_passes_unstated: %s drafts autoregressively and the engine "+
+				"states no %s, so its first pass over the step's tokens would be priced by "+
+				"guess; the pool's plan must state it (%s)", who, f.name, f.words)
+		case !f.valid:
+			return fmt.Errorf("draft_passes_unknown: %s is %q for %s; it is %s", f.name, f.value,
+				who, f.words)
+		}
+	}
+	k.draftFirstPass = k.statedFirstPassRows == plan.FirstPassScheduled
+	k.draftAllRequests = k.statedPassRequests == plan.PassRequestsAll
+	return nil
+}
+
 // specMethod is a speculative method's name as vLLM v0.31.0 runs it: every model-specific
 // MTP name (deepseek_mtp, nemotron_h_mtp, ... -- MTPModelTypes) is replaced with mtp
 // (vllm/config/speculative.py:39-67, 1135-1139).
@@ -144,12 +196,14 @@ func (k *Kernel) priceDraft(b kernel.Batch, s *stepShape,
 	d := k.plan.Draft
 	n := k.numSpecTokens()
 
-	// The requests that sample this step draft: every decode, and a prefill whose chunk
-	// completes its prompt. A chunk that leaves prompt to go samples nothing.
+	// The requests the head and the passes after the first run for. Where the engine says they
+	// run for every request (PassRequests all, as vLLM's propose does), a request still in the
+	// middle of its prompt is among them. Where it says only the sampling requests draft, a
+	// chunk that leaves prompt to go samples nothing and is left out.
 	var drafting []kernel.ReqShape
 	for _, r := range b.Reqs {
 		ctx := r.Computed + r.Scheduled
-		if ctx <= 0 || (r.PromptLen > 0 && ctx < r.PromptLen) {
+		if ctx <= 0 || (!k.draftAllRequests && r.PromptLen > 0 && ctx < r.PromptLen) {
 			continue
 		}
 		drafting = append(drafting, kernel.ReqShape{Computed: ctx, PromptLen: ctx})
@@ -161,7 +215,28 @@ func (k *Kernel) priceDraft(b kernel.Batch, s *stepShape,
 		overlap += k.priceLayers(d.Context, nil, k.draftContextKV, s, perResource)
 		kernels += d.ContextKernels
 	}
+	// The first pass of a drafter the engine says processes every scheduled token: its layers
+	// and token lookup over those rows (liftDraftPasses), on the step's own shape. It runs whether or not a request
+	// drafts, since the draft KV of a prompt chunk is written all the same; the later passes
+	// below are one row per request, and the first one's head is among them.
+	if k.draftFirstPass {
+		one := []layerKV{{}}
+		var per [numResources]float64
+		t := k.priceLayers(d.Layers, nil, k.draftLayerKV, s, &per)
+		if d.Embedding.Count > 0 {
+			t += k.priceLayers([]price.PlannedLayer{d.Embedding}, nil, one, s, &per)
+		}
+		overlap += t
+		for r := range per {
+			perResource[r] += per[r]
+		}
+	}
 	if len(drafting) == 0 {
+		if k.draftFirstPass {
+			// No pass is charged below, but the first one was launched: its layers and lookup,
+			// not its head.
+			kernels += d.Kernels - d.Head.Kernels
+		}
 		return overlap, kernels
 	}
 
@@ -180,10 +255,14 @@ func (k *Kernel) priceDraft(b kernel.Batch, s *stepShape,
 	one := []layerKV{{}}
 	var per [numResources]float64
 	t := k.priceLayers(d.Layers, nil, k.draftLayerKV, &ps, &per)
-	for _, part := range []price.PlannedLayer{d.Embedding, d.Head} {
-		if part.Count > 0 {
-			t += k.priceLayers([]price.PlannedLayer{part}, nil, one, &ps, &per)
-		}
+	if d.Embedding.Count > 0 {
+		t += k.priceLayers([]price.PlannedLayer{d.Embedding}, nil, one, &ps, &per)
+	}
+	// What one pass costs before its head: the first pass of a drafter that runs one over the
+	// scheduled tokens has been charged above for these, so one pass fewer is charged here.
+	tBody, perBody := t, per
+	if d.Head.Count > 0 {
+		t += k.priceLayers([]price.PlannedLayer{d.Head}, nil, one, &ps, &per)
 	}
 	// The draft's logits are gathered like the target's, over every draft row
 	// (compute_draft_logits, vllm/models/deepseek_v41/nvidia/dspark.py:341-347 at v0.31.0).
@@ -200,6 +279,14 @@ func (k *Kernel) priceDraft(b kernel.Batch, s *stepShape,
 		perResource[r] += float64(passes) * per[r]
 	}
 	kernels += passes * d.Kernels
+	if k.draftFirstPass {
+		// The first pass's layers and lookup were charged over the scheduled tokens above; its
+		// one-row share is not charged twice.
+		overlap -= tBody
+		for r := range perBody {
+			perResource[r] -= perBody[r]
+		}
+	}
 
 	if d.SequentialHead.Count > 0 {
 		for i := range drafting {

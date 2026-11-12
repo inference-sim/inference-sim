@@ -116,6 +116,7 @@ class Catalog:
     fabric_headers: dict[str, list[str]] = field(default_factory=dict)
     workloads: dict[str, dict[str, Any]] = field(default_factory=dict)
     tiers: dict[str, dict[str, Any]] = field(default_factory=dict)
+    routers: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def source(self, path: str) -> str:
         return f"{REPO_URL}/blob/{self.ref}/catalog/{path}"
@@ -192,13 +193,14 @@ def load(root: Path) -> Catalog:
         cat.fabric_headers[p.stem] = _leading_comments(p)
     for p in sorted((root / "workloads").glob("*.yaml")):
         cat.workloads[p.stem] = _yaml(p)
+    for p in sorted((root / "routers").glob("*.yaml")):
+        cat.routers[p.stem] = _yaml(p)
     storage = root / "devices" / "storage.yaml"
     if storage.is_file():
-        # PyYAML follows YAML 1.1, which reads an exponent without a sign (7.0e3) as a
-        # string; the Go loaders follow YAML 1.2 and read it as a number. Convert here
-        # so the pages show what the consumers read.
-        cat.tiers = {name: {k: float(v) for k, v in tier.items()
-                            if not k.startswith("_comment")}
+        # A tier states a description and no number: its rates and latency are registry
+        # coefficients (SUB-18), so only the comment keys are read.
+        cat.tiers = {name: {k: str(v) for k, v in tier.items()
+                            if k.startswith("_comment")}
                      for name, tier in _yaml(storage).items()}
     else:
         raise RuntimeError(f"{storage}: missing; the storage reference has nothing to show")
@@ -469,6 +471,7 @@ def draft(m: Model) -> str:
 def model_page(cat: Catalog, m: Model) -> str:
     g, src = m.graph, m.identity["source"]
     repo, rev = src["repo"], src["revision"]
+    config_path = src.get("path", "config.json")
     multimodal = g.get("modality") == "text_decoder_of_multimodal"
     lines = [
         # The page is reached from the models table, not the sidebar, so the sidebar's
@@ -482,7 +485,7 @@ def model_page(cat: Catalog, m: Model) -> str:
         "",
         (f"[`{repo}`]({HF_URL}/{repo}/tree/{rev}), architecture `{m.architecture}`: "
          f"{len(m.layers)} layers, weights in {weights(m)}. The graph below is derived "
-         f"from the model's [`config.json`]({HF_URL}/{repo}/blob/{rev}/config.json) at "
+         f"from the model's [`{config_path}`]({HF_URL}/{repo}/blob/{rev}/{config_path}) at "
          f"revision `{rev[:12]}`; [Model graphs](../../concepts/model-graphs.md) explains "
          f"how to read it, and the [glossary](../../concepts/glossary.md) defines its "
          f"terms."),
@@ -629,6 +632,84 @@ def networks_notes(cat: Catalog) -> str:
         for name, f in sorted(cat.fabrics.items()) if comment_notes(f))
 
 
+def router_key(doc: dict[str, Any]) -> str:
+    """The key a router-table entry is looked up by: router, mode and, when set, the
+    session-affinity timeout (contracts/spec/routertable, Entry.Key)."""
+    key = f"{doc['router']}/{doc['mode']}"
+    if doc.get("session_affinity_ttl_s") is not None:
+        key += f"/affinity-ttl-{doc['session_affinity_ttl_s']}"
+    return key
+
+
+def citation_link(c: dict[str, Any]) -> str:
+    """A citation as a link to its lines at the pinned commit."""
+    first, _, last = str(c["lines"]).partition("-")
+    anchor = f"#L{first}" + (f"-L{last}" if last else "")
+    url = f"https://github.com/{c['repository']}/blob/{c['commit']}/{c['path']}{anchor}"
+    return f"[{c['repository']}@{c['commit'][:12]}:{c['path']}:{c['lines']}]({url})"
+
+
+def bound_summary(e: dict[str, Any]) -> str:
+    """The largest ratio a bound states, for the table: a dash for an entry with no bound."""
+    ratios = (e.get("bound") or {}).get("ratios") or []
+    return f"{max(r['max_ratio'] for r in ratios):.2f}" if ratios else "—"
+
+
+def routers_table(cat: Catalog) -> str:
+    rows = []
+    for name, e in sorted(cat.routers.items(), key=lambda kv: router_key(kv[1])):
+        ttl = e.get("session_affinity_ttl_s")
+        n = Counter(c["side"] for c in e["evidence"])
+        rows.append([f"`{name}`", e["router"], e["mode"], "—" if ttl is None else str(ttl),
+                     f"`{e['policy']}`", f"{n['router']} / {n['llm-d']}", bound_summary(e)])
+    return table(["Entry", "Router", "Mode", "Affinity TTL (s)", "llm-d policy",
+                  "Citations (router / llm-d)", "Largest ratio"], "lllrlrr", rows)
+
+
+def regime_text(g: dict[str, Any]) -> str:
+    conc = "concurrency " + ", ".join(str(c) for c in g["concurrencies"])
+    par = lambda p: f"tp{p['tp']} pp{p['pp']} dp{p['dp']}" + (" ep" if p["expert_parallel"] else "")
+    return (f"{g['workload']}, {conc}, {g['model']} on {g['hardware']} over {g['fabric']}, "
+            f"engine {g['engine_version']}, prefill {par(g['prefill'])}, decode {par(g['decode'])}, "
+            f"shapes {', '.join(g['shapes'])}")
+
+
+def bound_block(e: dict[str, Any]) -> list[str]:
+    """An entry's bound as the file states it: each ratio with its regime, the evidence, and what
+    the bound leaves out."""
+    b = e["bound"]
+    out = ["**Bound**\n",
+           table(["Figure", "Against", "Regime", "Largest ratio"], "lllr",
+                 [[f"`{r['metric']}`", ", ".join(f"`{a}`" for a in r["against"]), regime_text(r["regime"]),
+                   f"{r['max_ratio']:.2f}"] for r in b["ratios"]]),
+           "", f"Measured by `{b['evidence']['file']}` (sha256 `{b['evidence']['sha256']}`), produced by "
+           f"{b['evidence']['producer']} at `{b['evidence']['commit']}`; reproduce with `{b['evidence']['command']}`.", "",
+           "Not measured:\n"]
+    out += [f"- {' '.join(str(x).split())}" for x in b["not_measured"]]
+    out.append("")
+    return out
+
+
+def routers_entries(cat: Catalog) -> str:
+    """Each entry's reason, differences, bound and citations, as the file states them."""
+    out = []
+    for name, e in sorted(cat.routers.items(), key=lambda kv: router_key(kv[1])):
+        out.append(f"### `{name}`\n\n{' '.join(str(e['reason']).split())}\n")
+        if e.get("difference"):
+            out.append("**Differences**\n")
+            out += [f"- {d['aspect']}: {' '.join(str(d['text']).split())} "
+                    f"(citations {', '.join(str(i) for i in d['evidence'])})" for d in e["difference"]]
+            out.append("")
+        if e.get("bound"):
+            out += bound_block(e)
+        for side, title in (("router", "The router"), ("llm-d", "llm-d's router")):
+            out.append(f"**{title}**\n")
+            out += [f"- {citation_link(c)}, for the {c['field'].replace('_', ' ')}: {c['claim']}"
+                    for c in e["evidence"] if c["side"] == side]
+            out.append("")
+    return "\n".join(out)
+
+
 def is_replay(doc: dict[str, Any]) -> bool:
     """A file whose top-level key is replay: is a replay workload, not a shape
     (contracts.LoadCatalogWorkload)."""
@@ -703,11 +784,15 @@ def replays_notes(cat: Catalog) -> str:
 
 
 def storage_table(cat: Catalog) -> str:
-    rows = [[f"`{name}`", num(t["read_bandwidth_mb_s"]), num(t["write_bandwidth_mb_s"]),
-             num(t["base_latency_us"])]
-            for name, t in sorted(cat.tiers.items(),
-                                  key=lambda kv: -kv[1]["read_bandwidth_mb_s"])]
-    return table(["Tier", "Read MB/s", "Write MB/s", "Base latency µs"], "lrrr", rows)
+    """Each tier, what it is, and the three registry coefficients that price a transfer to it."""
+    rows = []
+    for name, t in sorted(cat.tiers.items()):
+        what = " ".join(t.get("_comment", "").split())
+        # The description's first sentence is the class; the rest says where its terms are.
+        what = what.split(". ")[0].rstrip(".")
+        rows.append([f"`{name}`", what,
+                     f"`offload_tier_{name}_read_rate`, `_write_rate`, `_base_latency`"])
+    return table(["Tier", "What it is", "Registry coefficients"], "lll", rows)
 
 
 
@@ -732,6 +817,9 @@ def fragments(cat: Catalog) -> dict[str, str]:
         "count.fabrics": str(len(cat.fabrics)),
         "count.workloads": str(len(cat.workloads)),
         "count.tiers": str(len(cat.tiers)),
+        "count.routers": str(len(cat.routers)),
+        "routers.table": routers_table(cat),
+        "routers.entries": routers_entries(cat),
         "count.primitives_used": str(len(primitives)),
         "primitives_used": ", ".join(f"`{p}`" for p in primitives),
         "models.table": models_table(cat),

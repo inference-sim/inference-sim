@@ -24,6 +24,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/contracts/spec/pointrecord"
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/blis-substrate/contracts/spec/routertable"
 	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
 	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
@@ -188,6 +189,22 @@ func ParseFabric(path string, data []byte) (*hardware.Fabric, error) {
 	}
 	f.Name = stem(path)
 	return &f, nil
+}
+
+// LoadRouterEntry reads one router-table entry from the catalog's routers namespace, naming
+// it from the filename as LoadChip does. It does not validate; call Validate.
+func LoadRouterEntry(path string) (*routertable.Entry, error) {
+	return loadFile(path, ParseRouterEntry)
+}
+
+// ParseRouterEntry decodes a router-table entry from data and names it from path's stem.
+func ParseRouterEntry(path string, data []byte) (*routertable.Entry, error) {
+	var e routertable.Entry
+	if err := decodeStrictBytes(path, data, &e); err != nil {
+		return nil, err
+	}
+	e.Name = stem(path)
+	return &e, nil
 }
 
 // LoadCoefficientSet reads a coefficient set from blis-registry.

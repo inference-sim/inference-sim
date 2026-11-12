@@ -203,12 +203,14 @@
   - repo: blis-substrate
     check: Completeness test over every primitive and every catalog chip
     runs: pull_request
-    status: new
+    status: ci
+    test: 'kernel: TestEveryValueTheKernelSuppliesItselfIsListed'
+    known_bad: 'kernel: TestEveryValueTheKernelSuppliesItselfIsListed'
   review: null
-  status: new
+  status: ci
   target:
     status: ci
-    milestone: 2
+    milestone: null
 - id: SUB-8
   section: §5
   statement: >-
@@ -556,12 +558,30 @@
   - repo: blis-substrate
     check: Validator rules on catalog provenance fields
     runs: pull_request
-    status: new
+    status: ci
+    test: 'contracts/spec/hardware: TestFieldProvenance; TestInheritedProvenanceObeysTheFieldSourceContract; TestCommittedChipsRecordTheirExceptions; TestLosingAnExceptionFailsTheCheck; TestEveryCommittedFactHasASource'
+    known_bad: 'contracts/spec/hardware: TestFieldProvenance'
+  - repo: blis-substrate
+    check: >-
+      No catalog field holds a fitted or assumed value: the storage tiers state no rate or latency, and a
+      file that states one is refused with the reason
+    runs: pull_request
+    status: ci
+    test: 'contracts/spec/hardware: TestStorageTierStatesNoRateOrLatency'
+    known_bad: 'contracts/spec/hardware: TestStorageTierStatesNoRateOrLatency'
+  - repo: blis-substrate
+    check: >-
+      Each storage tier's terms are hardware-scoped coefficients, present for every catalog tier on every
+      catalog chip at the figures the catalog held, that the kernel's TierTime reads
+    runs: pull_request
+    status: ci
+    test: 'kernel: TestEveryTierHasItsTermsOnEveryChip; TestTierTimeReadsTheRegistryAndPricesAsTheCatalogDid'
+    known_bad: 'kernel: TestATierWithNoTermsIsRefusedWhereTheDeploymentUsesIt'
   review: null
-  status: new
+  status: ci
   target:
     status: ci
-    milestone: 2
+    milestone: null
 - id: SUB-19
   section: §5
   statement: >-

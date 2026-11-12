@@ -27,6 +27,7 @@ subject of [Where the kernel stops](../design/kernel-boundary.md).
 | `PDTransferDemand(tokens, from, to Placement) TransferDemand` | The same handoff as payload, floor and links, for a caller arbitrating concurrent transfers. |
 | **Host work** | |
 | `AdmissionOverhead(promptTokens int) time.Duration` | CPU work before a request can be scheduled, such as tokenization. Excludes queueing. |
+| `AdmissionDemand(promptTokens int) HostDemand` | `AdmissionOverhead` split into `Service`, the time a request holds one server of the admission queue (`plan.HostPlan.Admission`), and `Delay`, the time it only waits. They sum to `AdmissionOverhead`. |
 | `OutputTokenOverhead() time.Duration` | Host work per emitted token, such as detokenization and streaming. |
 | `CompletionOverhead() time.Duration` | Fixed work when a request finishes. Counts toward end-to-end latency, not time to first token. |
 | **Provenance** | |
@@ -70,6 +71,17 @@ previous layer's output. Within a stage, work on different resources can overlap
     time, while each batch's output takes the whole sum. `kerneltest.CheckStages` checks the
     law.
 
+`Trust`
+:   How much the price rests on measurement (design VAL-3): the least trusted effective rank
+    among the coefficients the price used, with the method and the entry that set it. The rank
+    is a method's place in the order measured (1), calibrated, transferred, literature,
+    vendor_spec, roofline, assumed (7). A price that reads an entry outside the range its fit
+    covered ranks no better than transferred (3) and carries the flag `extrapolated`. An entry
+    whose 95% interval is unbounded or wider than half its value ranks as assumed (7) and
+    carries the flag `unidentified`; it keeps its method and its citations. The zero value
+    means the implementation does not report trust. Ties go to the entry whose name sorts
+    first, so the answer does not depend on the order of lookups.
+
 ## Unusual model shapes
 
 `conformance/shapetest` holds six model graphs that each differ from the catalog's models in one
@@ -104,6 +116,8 @@ A `Batch` is what the simulator supplies for one step.
 | `SMBudget int` | SMs available this step: the chip's count less any held by a concurrent offload fetch. |
 | `PadTokens int` | Tokens this data-parallel rank pads its step with under vLLM's DP lockstep: every rank runs the group's largest token count, and a rank with nothing scheduled runs a dummy batch of pad alone. Pad tokens run the GEMMs, the MoE dispatch and combine and the expert paths, but never the logits, the LM head, the vocabulary all-gather or sampling. They are not requests. 0 means none; never negative. |
 | `DraftPaddedTokens int` | Tokens this rank's drafter launches, after its own graph bucket and the width its data-parallel group agreed; the drafter coordinates its padding apart from the target's. The rows beyond the rank's own draft rows run the GEMMs and the MoE paths and no attention. An engine that states a step as a `plan.StepShape` carries it as `DraftShape.Passes[rank].Padded`. 0 means the drafter launches only its own rows; never negative. |
+| `TailFrom int` | The index, in the model graph's expanded layer stack, of the first layer that runs over fewer rows than the requests scheduled: layers `TailFrom` to the end run each request's `TailRows` rows. The engine states it, for the steps in which its forward pass does that (an engine can run the layers past the last one that produces KV on each request's trailing window only). The embedding, the layers before it, the head, the drafter and the host and launch terms keep the whole batch. An engine that states a step as a `plan.StepShape` carries it as `StepShape.TailFrom`. 0 means no tail: every layer runs every scheduled token. A value at or past the stack's length leaves no layer in the tail; never negative. |
+| `TailPadTokens int` | Rows the tail's batch is launched with beyond its own, when the engine pads it to a size of its own; as `PadTokens` does for the whole batch they run the GEMMs, the collectives and the experts, and no attention. As a step shape it is `PaddedShape.TailTokens` less the tail's rows. Read only with `TailFrom`; never negative. |
 
 Each `ReqShape` carries the counts an engine's own scheduler reads:
 
@@ -113,8 +127,9 @@ Each `ReqShape` carries the counts an engine's own scheduler reads:
 | `Computed` | Tokens already computed, as of batch formation. |
 | `PromptLen` | The prompt length. With `Computed`, it tells the last chunk of a prefill split across steps apart from a decode. |
 | `CachedTokens` | The prefix-cache hit, already subtracted from `Scheduled`. A count, not a rate. |
+| `TailRows` | How many of `Scheduled` the layers from `Batch.TailFrom` run: the request's last `TailRows` tokens, at their own positions (a step shape's `RequestStep.TailRows`). 0 means all of them, as for a decode row. Never more than `Scheduled`, and refused (`Validate`) without a `TailFrom`. |
 
-`Batch.Tokens()` sums `Scheduled`, and `Batch.PaddedTokens()` adds `PadTokens`: the count the layers run. `Batch.Validate()` refuses a negative count. `Batch.UniformDecode(width)` reports whether every
+`Batch.Tokens()` sums `Scheduled`, and `Batch.PaddedTokens()` adds `PadTokens`: the count the layers run. `Batch.Validate()` refuses a negative count, more tail rows than scheduled tokens, and tail rows with no `TailFrom`. `Batch.UniformDecode(width)` reports whether every
 request schedules exactly `width` tokens. Some engine behavior, such as when dual-batch
 overlap engages, uses one threshold for such a batch and another for any other.
 
@@ -170,6 +185,8 @@ func TestPDTransferLaw(t *testing.T) {
 }
 ```
 
+Where the scenario states switch groups, a handoff between groups names two more links, `uplink/egress/group/<g>` and `uplink/ingress/group/<h>`; see [Switch groups](../../kernel/concepts/switch-groups.md).
+
 `PDCases` covers a same-node, a same-rack and a cross-rack handoff at token counts from 0 to
 131,072. `CheckPDTransfer` checks one case and returns an error, for a caller with cases
 of its own; `TestPDTransfer` fails when given no cases, since it would then check nothing.
@@ -191,6 +208,6 @@ adds the method.
 | `MemoryBreakdown` | `Weights`, `ActivationPeak`, `CUDAGraph`, `EPLBRedundant`, `CommBuffers`, in bytes; `Total()` sums them. |
 | `Direction` | `to_tier` (eviction) or `from_tier` (fetch). Priced separately because flash reads and writes differ. |
 | `Placement` | A rank's `Node`, `Rack` and `Pool` (the pool's role). Comparing two placements chooses the link a transfer uses. |
-| `CoefficientOrigin` | One row of the provenance trail: entry `Name`, `Set`, `Method`, `Scope`. |
+| `CoefficientOrigin` | One row of the provenance trail: entry `Name`, `Set`, `Method`, `Scope`, and `KernelMatch`: `exact` when the entry lists a kernel implementation that runs, `unkeyed` when it lists none, empty for a value the kernel supplied itself. |
 
 Source: [`kernel`](https://github.com/inference-sim/blis-substrate/tree/main/contracts/kernel).

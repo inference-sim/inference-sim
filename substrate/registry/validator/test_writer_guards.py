@@ -82,6 +82,19 @@ def test_two_entries_with_one_name_and_scope_refuse():
                   after=lambda b: True)
 
 
+def test_entries_of_different_methods_in_one_scope_are_two_entries_each_kept_in_place():
+    """An `assumed` bound and the `transferred` entry that displaces it share a name and a
+    scope (design VAL-4): a writer that owns one rewrites it and leaves the other byte for byte."""
+    def with_method(m, value):
+        return entry("a", "{hardware: [h200]}", value=value).replace("method: measured", f"method: {m}")
+    text = "\n".join([with_method("assumed", "1.0"), with_method("transferred", "0.25")])
+    blocks = cb.split(text)
+    cb.upsert(blocks, with_method("assumed", "0.9").split("\n"), after=lambda b: False)
+    joined = cb.join(blocks)
+    assert "value: 0.9" in joined and "value: 0.25" in joined and "value: 1.0" not in joined
+    assert joined.count("  - a:") == 2
+
+
 def test_a_new_entry_with_no_anchor_refuses():
     blocks = cb.split(entry("a", "{hardware: [h200]}"))
     with pytest.raises(SystemExit):
@@ -248,3 +261,68 @@ def test_the_v41_eager_constant_reproduces_the_anchor_additively():
     step = ea["n"] * (ea["e"] + ea["launch"]) / 1e3 + ea["dev"]
     assert abs(step / ea["median"] - 1) < 1e-4
     assert 92.75 <= ea["e"] <= 93.7  # the kernel's TestTheEagerDecodeAnchorIsAdditive band
+
+
+# --------------------------------------------------------------------------------------
+# fit_attention: the bandwidth fraction (SUB-5, blis-substrate #16)
+# --------------------------------------------------------------------------------------
+
+def test_the_attention_fit_never_offers_a_fraction_above_the_datasheet_peak():
+    """relane_attention_decode.py writes fraction * peak unchanged, so a grid that reaches
+    2.0 would let a wrong byte count commit a rate above the part's HBM peak."""
+    import fit_attention
+
+    assert max(fit_attention.FRACTION_GRID) == 1.0
+    assert min(fit_attention.FRACTION_GRID) > 0.0
+    for f in fit_attention.FRACTION_GRID:
+        assert fit_attention.check_fraction(f) == f
+
+
+@pytest.mark.parametrize("bad", [0.0, -0.5, 1.02, 2.0, float("inf"), float("nan")])
+def test_the_attention_fit_refuses_a_fraction_outside_zero_to_one(bad):
+    import fit_attention
+
+    with pytest.raises(ValueError, match=r"outside \(0, 1\.0\]"):
+        fit_attention.check_fraction(bad)
+
+
+# --------------------------------------------------------------------------------------
+# fit_deepseek_v41_host.rust_ttft_bound: a one-sided check on the Rust-frontend rate
+# --------------------------------------------------------------------------------------
+
+def _bound_row(ttft, isl, split="validation"):
+    q = ["p1", "p5", "p10", "p25", "p50", "p75", "p90", "p95", "p99"]
+    return {"point_id": "x", "split": split, "gpus": 8, "concurrency": 1,
+            "ttft_ms": dict(zip(q, ttft)), "isl_tokens": dict(zip(q, isl))}
+
+
+def test_the_rust_rate_bound_is_the_tightest_ttft_over_prompt_pair_of_percentiles():
+    """Nine tenths of the requests answer within 500 ms (p90) and a quarter have prompts of at
+    least 1,000,000 tokens (p75 of prompt): at least 15% have both, so the rate is at most 0.5
+    us/token. A looser pair (p95 of TTFT, 600 ms, over the same prompt) must not be chosen."""
+    import fit_deepseek_v41_host as w
+
+    ttft = [100, 150, 200, 250, 300, 400, 500, 600, 9000]
+    isl = [10, 20, 30, 40, 50, 1_000_000, 1_100_000, 1_200_000, 1_300_000]
+    b = w.rust_ttft_bound({"rows": [_bound_row(ttft, isl)]})
+    assert b["a"] == "p90" and b["b"] == "p75"  # 500 ms over 1,000,000 tokens
+    assert abs(b["rate"] - 0.5) < 1e-9
+    assert b["share"] == 15
+
+
+def test_the_rust_rate_bound_refuses_a_row_that_is_not_a_development_point():
+    import fit_deepseek_v41_host as w
+
+    row = _bound_row([1] * 9, [1] * 9, split="test")
+    with pytest.raises(SystemExit):
+        w.rust_ttft_bound({"rows": [row]})
+
+
+def test_the_vendored_rows_bound_the_rust_rate_above_the_registry_value_and_below_the_python_rate():
+    """The registry's Rust rate must sit under the bound the H200 rows give, and the
+    Python-path rate must not: that is what the rationale says the rows show."""
+    import fit_deepseek_v41_host as w
+
+    ad = w.admission(json.loads(w.BENCH_JSON.read_text()))
+    bound = w.rust_ttft_bound(json.loads(w.RUST_BOUND_JSON.read_text()))["rate"]
+    assert ad["value"] / w.FASTOKENS_SPEEDUP < bound < ad["value"]

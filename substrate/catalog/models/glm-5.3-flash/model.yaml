@@ -7,3 +7,4 @@ source:
 licence:
   id: MIT
   evidence: https://huggingface.co/zai-org/GLM-5.3-Flash/raw/eb9eb208eb0d988989d07a6a12d0fdeb5f52574a/README.md
+drafters: [speculator]

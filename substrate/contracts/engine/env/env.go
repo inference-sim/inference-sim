@@ -36,6 +36,10 @@ type Environment interface {
 	// TransferDemand returns what a transfer asks of the fabric: its payload, its floor and the
 	// links it crosses. Sharing a link among transfers that overlap is the simulator's work.
 	TransferDemand(p plan.PoolPlan, t plan.Transfer) (kernel.TransferDemand, error)
+	// HostDemand returns what a request of promptTokens asks of the plan's admission queue
+	// (plan.HostPlan.Admission): the time it holds a server and the time it only waits. Sharing
+	// the servers among requests is the simulator's work.
+	HostDemand(p plan.PoolPlan, promptTokens int) (kernel.HostDemand, error)
 	// Acceptance returns the acceptance profile for a model, its drafter and a workload.
 	Acceptance(modelName, drafter, workload string) (acceptance.Profile, error)
 }

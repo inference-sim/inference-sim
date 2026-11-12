@@ -1909,8 +1909,9 @@
     or rejected with a reason. An issue closes only through a commit or pull request that names it,
     or as not planned, by a reviewer with write access, with a reason.
   guidance: >-
-    Answer each review thread with its commit or its issue, and resolve the thread once the
-    reviewer is satisfied.
+    After each fix, reply on the thread with "Outcome: fixed" and the commit, "Outcome: filed" and
+    the issue, or "Outcome: rejected:" and the reason, and resolve the thread. The author agent
+    does this; no check waits for it and no person has to.
   scope:
   - accuracy-dashboard
   - blis-config-search
@@ -1922,39 +1923,52 @@
   checks:
   - repo: blis-substrate
     check: >-
-      A pull-request check that refuses a review thread with no outcome
+      A pull-request step that lists each review thread that is open or resolved with no outcome, as
+      a notice and in the job summary; it never fails, so no check waits on a thread
     runs: pull_request
     status: new
     test: 'shared-pr-checks.yml: prcheck threads'
-    known_bad: 'tools/prcheck: TestCheckThreads'
+    known_bad: 'tools/prcheck: TestThreadsStepNeverFailsOnAnOpenThread'
+  - repo: blis-substrate
+    check: >-
+      Branch protection requires every review conversation to be resolved before a merge; the author
+      agent resolves each thread with its outcome
+    runs: practice
+    status: new
   - repo: blis-vllm
     check: >-
-      A pull-request check that refuses a review thread with no outcome
+      A pull-request step that lists each review thread that is open or resolved with no outcome, as
+      a notice and in the job summary; it never fails, so no check waits on a thread
     runs: pull_request
     status: new
   - repo: blis-sglang
     check: >-
-      A pull-request check that refuses a review thread with no outcome
+      A pull-request step that lists each review thread that is open or resolved with no outcome, as
+      a notice and in the job summary; it never fails, so no check waits on a thread
     runs: pull_request
     status: new
   - repo: llm-d-router
     check: >-
-      A pull-request check that refuses a review thread with no outcome
+      A pull-request step that lists each review thread that is open or resolved with no outcome, as
+      a notice and in the job summary; it never fails, so no check waits on a thread
     runs: pull_request
     status: new
   - repo: inference-sim
     check: >-
-      A pull-request check that refuses a review thread with no outcome
+      A pull-request step that lists each review thread that is open or resolved with no outcome, as
+      a notice and in the job summary; it never fails, so no check waits on a thread
     runs: pull_request
     status: new
   - repo: blis-config-search
     check: >-
-      A pull-request check that refuses a review thread with no outcome
+      A pull-request step that lists each review thread that is open or resolved with no outcome, as
+      a notice and in the job summary; it never fails, so no check waits on a thread
     runs: pull_request
     status: new
   - repo: accuracy-dashboard
     check: >-
-      A pull-request check that refuses a review thread with no outcome
+      A pull-request step that lists each review thread that is open or resolved with no outcome, as
+      a notice and in the job summary; it never fails, so no check waits on a thread
     runs: pull_request
     status: new
   - repo: blis-substrate
@@ -1966,7 +1980,10 @@
   target:
     status: ci
     milestone: 4
-  note: the release plan schedules the check that refuses a review thread with no outcome after M4 (Hardening beyond M4); until then branch protection requires every conversation to be resolved
+  note: >-
+    the pull-request step lists open threads and never fails, by the maintainer's order that no
+    check waits on a person; branch protection, which blocks the merge until every conversation is
+    resolved, is the merge condition, and the author agent satisfies it
 - id: X25
   section: §4.1
   statement: >-

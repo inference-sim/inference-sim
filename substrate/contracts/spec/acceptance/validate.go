@@ -3,6 +3,8 @@ package acceptance
 import (
 	"fmt"
 	"math"
+	"strings"
+	"time"
 
 	"github.com/inference-sim/blis-substrate/contracts/check"
 	"github.com/inference-sim/blis-substrate/contracts/vocab"
@@ -58,6 +60,19 @@ func (pr Profile) validate(p *validate.Problems, at string) {
 		p.Field(at+".category",
 			"%q is not a workload category: lower-case letters, digits, '_' and '-'", pr.Category)
 	}
+	// A drafter and an architecture are catalog names and an architecture string: no spaces, and
+	// a drafter cannot contain '+', which Key.String uses to join it to the model.
+	if pr.Drafter != "" && (strings.ContainsAny(pr.Drafter, "+ /\t") || pr.Drafter == pr.Model) {
+		p.Field(at+".drafter", "%q must be a catalog model name other than the target's, with no '+', '/' or space; leave it out for the model's own speculator", pr.Drafter)
+	}
+	if pr.Provenance != nil && pr.Provenance.Date != "" {
+		if _, err := time.Parse("2006-01-02", pr.Provenance.Date); err != nil {
+			p.Field(at+".provenance.date", "%q is not a date YYYY-MM-DD", pr.Provenance.Date)
+		}
+	}
+	if pr.Architecture != "" && strings.ContainsAny(pr.Architecture, " /\t") {
+		p.Field(at+".architecture", "%q is an architecture such as DeepseekV4ForCausalLM, with no space or '/'", pr.Architecture)
+	}
 	if pr.NumSpecTokens < 1 {
 		p.Field(at+".num_spec_tokens", "must be at least 1, got %d", pr.NumSpecTokens)
 	} else {
@@ -109,8 +124,15 @@ func (pr Profile) validateEvidence(p *validate.Problems, at string) {
 	if pr.Method != vocab.MethodMeasured && pr.Rationale == "" {
 		p.Field(at+".rationale", "method %q requires a rationale", pr.Method)
 	}
-	if pr.Method == vocab.MethodCopied && pr.CopiedFrom == "" {
-		p.Field(at+".copied_from", "method copied requires copied_from")
+	if pr.Method == vocab.MethodTransferred {
+		if pr.TransferredFrom == "" {
+			p.Field(at+".transferred_from", "method transferred requires transferred_from")
+		}
+		if strings.TrimSpace(pr.TransferRule) == "" {
+			p.Field(at+".transfer_rule", "method transferred requires transfer_rule, the stated rule that moved the value")
+		}
+	} else if pr.TransferredFrom != "" || pr.TransferRule != "" {
+		p.Field(at+".transferred_from", "transferred_from and transfer_rule apply only to method transferred, got method %q", pr.Method)
 	}
 	if pr.Provenance == nil {
 		if pr.Method != vocab.MethodAssumed {
@@ -218,12 +240,15 @@ func (pin *Pin) Validate() *validate.Problems {
 	switch {
 	case pin.Profiles != "" && pin.Value != nil:
 		p.Errorf("pins acceptance by a profile set or by a value, not both")
-	case pin.Profiles == "" && pin.Value == nil && pin.FallbackCategory == "":
-		p.Errorf("pins nothing: name a profile set, state a value, or request a fallback_category; or omit acceptance")
+	case pin.Profiles == "" && pin.Value == nil && pin.FallbackCategory == "" && !pin.ExactOnly:
+		p.Errorf("pins nothing: name a profile set, state a value, request a fallback_category or exact_only; or omit acceptance")
 	}
 	if pin.Value != nil {
 		if pin.FallbackCategory != "" {
 			p.Field("fallback_category", "has no effect with an inline value, which no category selects")
+		}
+		if pin.ExactOnly {
+			p.Field("exact_only", "has no effect with an inline value, which no profile lookup serves")
 		}
 		p.Merge("value", pin.Value.Validate())
 	}

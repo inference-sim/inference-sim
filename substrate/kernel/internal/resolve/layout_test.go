@@ -1,6 +1,8 @@
 package resolve
 
 import (
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	"strings"
 	"testing"
 
@@ -366,5 +368,25 @@ func TestFabricRatio(t *testing.T) {
 		if got := f.Ratio(); got != c.want {
 			t.Errorf("Ratio(%v, %v) = %v, want %v", c.intra, c.inter, got, c.want)
 		}
+	}
+}
+
+// A declined all-reduce request reaches the Result on the all_reduce_backend row, whatever field
+// name the resolver gives it: the conversion in package result is checked against the resolver.
+func TestADeclinedAllReduceRequestReachesOneRowOfTheResult(t *testing.T) {
+	ok, overrides := resolveCustomAllReduce(enginesettings.Settings{}, Layout{TP: 3}, Fabric{}, newStubRules())
+	if ok || len(overrides) != 1 {
+		t.Fatalf("tp 3 should decline the custom all-reduce: %v %v", ok, overrides)
+	}
+	o := overrides[0]
+	var rows []result.Resolution
+	for _, x := range result.ResolutionsOf(kernel.Resolution{AllReduceBackend: "nccl",
+		Overrides: []kernel.Override{{Field: o.Field, Requested: o.Requested, Resolved: o.Resolved, Reason: o.Reason}}}) {
+		if strings.Contains(x.Setting, "reduce") {
+			rows = append(rows, x)
+		}
+	}
+	if len(rows) != 1 || rows[0].Setting != "all_reduce_backend" || rows[0].Host != "custom" || rows[0].Reason == "" {
+		t.Errorf("rows %+v, want one all_reduce_backend row with the host value and the reason", rows)
 	}
 }

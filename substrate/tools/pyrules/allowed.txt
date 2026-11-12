@@ -1,3 +1,3 @@
 # Findings of tools/pyrules/pyrules.py that are not restated rules, one per line, each with
 # its reason after " # ". The list only shrinks: an entry that no longer occurs fails (X15).
-docs/hooks/registry.py: set methods assumed,copied,literature,measured,not_charged,vendor_spec # the docs page's display order of methods, with a glyph per method; an unknown method renders as "?", and validate-registry, not this list, refuses it
+docs/hooks/registry.py: set methods assumed,calibrated,literature,measured,not_charged,roofline,transferred,vendor_spec # the docs page's display order of methods, with a glyph per method; an unknown method renders as "?", and validate-registry, not this list, refuses it

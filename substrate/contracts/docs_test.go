@@ -28,6 +28,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/pointrecord"
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	"github.com/inference-sim/blis-substrate/contracts/spec/router"
+	"github.com/inference-sim/blis-substrate/contracts/spec/routertable"
 	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
 	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
@@ -298,6 +299,9 @@ var documented = map[string]struct {
 	"coefficient.Entry":           {typ: reflect.TypeOf(coefficient.Entry{}), omit: []string{"name"}},
 	"coefficient.Source":          {typ: reflect.TypeOf(coefficient.Source{})},
 	"coefficient.Scope":           {typ: reflect.TypeOf(coefficient.Scope{})},
+	"coefficient.KernelImpl":      {typ: reflect.TypeOf(coefficient.KernelImpl{})},
+	"coefficient.Measures":        {typ: reflect.TypeOf(coefficient.Measures{})},
+	"coefficient.Bound":           {typ: reflect.TypeOf(coefficient.Bound{})},
 	"evaluation.Run":              {typ: reflect.TypeOf(evaluation.Run{})},
 	"evaluation.Point":            {typ: reflect.TypeOf(evaluation.Point{})},
 	"acceptance.ProfileSet":       {typ: reflect.TypeOf(acceptance.ProfileSet{})},
@@ -342,6 +346,21 @@ var documented = map[string]struct {
 	"fields.Field":                {typ: reflect.TypeOf(fields.Field{})},
 	"fields.Evidence":             {typ: reflect.TypeOf(fields.Evidence{})},
 	"fields.Estimation":           {typ: reflect.TypeOf(fields.Estimation{})},
+	"fields.ValueClasses":         {typ: reflect.TypeOf(fields.ValueClasses{})},
+	"fields.Threshold":            {typ: reflect.TypeOf(fields.Threshold{})},
+	"fields.Clause":               {typ: reflect.TypeOf(fields.Clause{})},
+	"fields.NodeComparison":       {typ: reflect.TypeOf(fields.NodeComparison{})},
+	"fields.CapabilityComparison": {typ: reflect.TypeOf(fields.CapabilityComparison{})},
+	"routertable.Entry":           {typ: reflect.TypeOf(routertable.Entry{})},
+	"routertable.Citation":        {typ: reflect.TypeOf(routertable.Citation{})},
+	"routertable.Difference":      {typ: reflect.TypeOf(routertable.Difference{})},
+	"routertable.Statement":       {typ: reflect.TypeOf(routertable.Statement{})},
+	"routertable.Bound":           {typ: reflect.TypeOf(routertable.Bound{})},
+	"routertable.BoundEvidence":   {typ: reflect.TypeOf(routertable.BoundEvidence{})},
+	"routertable.Ratio":           {typ: reflect.TypeOf(routertable.Ratio{})},
+	"routertable.Regime":          {typ: reflect.TypeOf(routertable.Regime{})},
+	"routertable.Point":           {typ: reflect.TypeOf(routertable.Point{})},
+	"routertable.Parallel":        {typ: reflect.TypeOf(routertable.Parallel{})},
 	"pointrecord.Record":          {typ: reflect.TypeOf(pointrecord.Record{})},
 	"pointrecord.Identity":        {typ: reflect.TypeOf(pointrecord.Identity{})},
 	"pointrecord.G5Reason":        {typ: reflect.TypeOf(pointrecord.G5Reason{})},
@@ -382,6 +401,7 @@ var documented = map[string]struct {
 	"result.RevisionChange":       {typ: reflect.TypeOf(result.RevisionChange{})},
 	"result.Window":               {typ: reflect.TypeOf(result.Window{})},
 	"result.Figure":               {typ: reflect.TypeOf(result.Figure{})},
+	"result.Basis":                {typ: reflect.TypeOf(result.Basis{})},
 	"result.Requests":             {typ: reflect.TypeOf(result.Requests{})},
 	"result.RequestRow":           {typ: reflect.TypeOf(result.RequestRow{})},
 	"result.AgenticTag":           {typ: reflect.TypeOf(result.AgenticTag{})},
@@ -390,6 +410,7 @@ var documented = map[string]struct {
 	"result.Breakdowns":           {typ: reflect.TypeOf(result.Breakdowns{})},
 	"result.Reports":              {typ: reflect.TypeOf(result.Reports{})},
 	"result.Override":             {typ: reflect.TypeOf(result.Override{})},
+	"result.Resolution":           {typ: reflect.TypeOf(result.Resolution{})},
 	"result.Artifact":             {typ: reflect.TypeOf(result.Artifact{})},
 	"result.Runtime":              {typ: reflect.TypeOf(result.Runtime{})},
 }

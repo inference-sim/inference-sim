@@ -381,6 +381,12 @@ func (f *FIFO) Fields() fields.FieldList {
 			Evidence: fields.Evidence{
 				Traces: []string{"contracts/conformance/enginetest/enginetest_test.go"},
 			},
+			// The engine admits one batch in flight or two; its evidence runs both.
+			ValueClasses: &fields.ValueClasses{
+				Type:           fields.ValueNumeric,
+				Thresholds:     []fields.Threshold{{Value: 1, Closed: fields.SideAbove}},
+				CoveredClasses: []int{1},
+			},
 			Estimation: fields.Estimation{Rule: fields.RuleNone},
 		}},
 	}

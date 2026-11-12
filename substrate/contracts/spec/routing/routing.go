@@ -121,6 +121,13 @@ type Key struct {
 	ExpertParallel int
 }
 
+// KeyFields are the fields of a Key, as a point record's profile substitution names a field in
+// which a profile differs from the run's (design §11.3): model, category, phase, placement and
+// expert_parallel. A test holds the list equal to the struct.
+func KeyFields() []string {
+	return []string{"model", "category", "phase", "placement", "expert_parallel"}
+}
+
 // String renders a key as model/category/phase/placement/ep<N>.
 func (k Key) String() string {
 	return fmt.Sprintf("%s/%s/%s/%s/ep%d", k.Model, k.Category, k.Phase, k.Placement,

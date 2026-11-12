@@ -10,6 +10,7 @@ global:
   vocab_size: 163840
   tie_word_embeddings: false
   weight_dtype: int4
+  architecture: KimiK25ForConditionalGeneration
   weight_scale:
     elements: 32
     bytes: 2

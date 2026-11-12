@@ -17,6 +17,63 @@ launch cost on h100 reads `hardware: h100, model: deepseek-v4.1-flash; copied fr
 hardware=h200,model=deepseek-v4.1-flash`. The registry's
 documentation describes each set and method.
 
+### Kernel implementations
+
+A coefficient can list the kernel implementations it is valid for (`kernel_impls`: library,
+variant, code hash; see [the coefficient format](../../contracts/reference/coefficients.md#kernel_impls)).
+The kernel is given the pool's lowered operations in `Inputs.Operations`, which is
+`plan.PoolPlan.Operations()` for a caller that holds the pool's plan: each operation's layer (of
+the target graph or the draft model's), whether it executes the layer's block-index scorer (`Scorer`), its primitive,
+the stored format of the weight or cache it reads (`PrimitiveShape.Format`) and its kernel. A
+caller that cannot say which operation runs which kernel gives `Inputs.Implementations` instead,
+the kernels by primitive (`plan.PoolPlan.ImplementationsByPrimitive()`); with operations given it
+is derived from them, and the two must agree. Each coefficient name prices one primitive
+(`coefficient.PrimitiveOf`: `gemm_*` the GEMMs, `attention_decode_*` the decode attention,
+`collective_*_all_reduce_*` the all-reduce, and so on; host overheads, `hbm_derate`, fabric and
+memory sizes price none), and is read by the operations of its class (`coefficient.ClassOf`):
+
+- `attention_decode_*_swa`, `_mla`, `_sparse_mla` and `recurrent_decode_*_mamba2`, `_kda`, `_gdn`
+  by the layers of that kind, in the target or the draft model;
+- `attention_*_block_index_scores` by the block-index scorer of a layer, a node beside the
+  layer's primary attention (`Scorer`), so the scorer and the primary of one
+  layer can run different kernels;
+- `attention_prefill_*_trtllm_gen_kv_bf16` and `_kv_fp8` by the prefill of the non-latent layers
+  whose cache has that format;
+- `gemm_*_<ramp>` by the GEMMs whose weight format selects that ramp on this chip (the kernel's
+  own rule and fallbacks, from the format the plan states; a GEMM that states none reads every
+  ramp).
+
+The unsuffixed attention terms are the fallback the kernel uses for what has no pair of its own,
+so they are read only by the operations no pair prices: the part-wide rate by the layers whose
+kind or role has no rate, the part-wide floor also by those that have a rate and no floor (a kind
+may supply a rate alone and inherit the floor). The part-wide prefill pair likewise by what has no
+prefill family and no exact lane pair. A class counts as carried only when its whole family is: the kernel prices an operation from a
+class's terms only then and reads the part-wide terms otherwise (a prefill form needs its rate,
+floor and per-token terms, and per-request for sparse MLA; the lane its floor and work scale, each
+shown valid for the kernel that runs; a GEMM ramp its asymptote and half-max; a recurrent mixer its
+floor and rate). One rule, `coefficient.ClassUsable`, decides it for the resolver, the prefill forms
+and the lane, so an incomplete family leaves its operations among the readers of the part-wide terms.
+
+An entry that lists implementations is used only for the primitive its name prices, and only when
+every implementation among the operations that read it is one it lists, by library, variant and
+code hash together. So a pool whose full attention runs kernel A and whose sliding-window layers
+run kernel B prices `attention_decode_rate_swa` from a value keyed to B, and does not price it
+from one keyed to A; the part-wide rate still needs an entry that lists both. A different hash of
+the same kernel is not used, a kernel that executes another primitive is not used, and nothing
+falls back to a sibling: the lookup takes the next entry by method rank, at worst the family's
+`roofline` or `assumed` entry, and the price reports that method. If no entry is left the kernel
+is not built, and the error names the entries it refused, the primitive, and the implementation
+that runs it. The kernel resolves one value per coefficient name, so a name read by operations
+lowered to two kernels is priced only by an entry that lists both, or by an unkeyed one.
+
+Each entry's `KernelMatch` says how it met what runs: `exact` when it lists the implementations
+that run its primitive, `unkeyed` when it lists none. `Primitive` and `Running` name the
+primitive and the implementations of the operations that read it, which it was matched against. An unkeyed entry applies to every
+implementation and nothing shows it was measured on the one that runs, so a reader asking whether
+a price rests on the running kernel counts only `exact`. For a primitive with no implementation
+stated, only unkeyed entries are used. The committed registry lists no implementation, so every
+entry is unkeyed and no price depends on `Implementations`.
+
 Entries the kernel supplied itself carry the set `blis-latency-kernel` (the constant
 `KernelAssumptionSet`) and the method `assumed`. Their scope holds the value used and the
 reason. They are of two kinds.
@@ -65,6 +122,7 @@ reason. They are of two kinds.
 | `adaptive_verification_survival` | A deployment enabling DSpark adaptive verification: every request's draft slots are ranked by one survival curve, the run's stated per-position rates or, from its mean acceptance length, vLLM's minimum-variance schedule (`_acceptance_length_to_rates`), where the engine ranks each request by its own online estimate. Natural acceptance spreads more, so the trimmed budget is a lower bound on the trim. |
 | `adaptive_verification_cost_curves` | A deployment enabling DSpark adaptive verification: the draft and verify cost tables the engine profiles from timed dummy steps are built, as the engine builds them, from this kernel's own NoOverlap prices of the same dummy steps, so the budget follows the kernel's prices rather than measured timings. |
 | `speculator` | The deployment speculates and the graph states no speculator, so draft passes are not priced; or the deployment names a different method from the graph's speculator, which is the one priced. |
+| `trtllm_gen_prefill_lane` | The sets carry the trtllm-gen prefill pair and no pair lists the implementation the caller reports for the prefill primitive (the pairs list none, list another, or none was reported), so the part's pooled prefill pair prices it (VAL-8) |
 
 ### Optional coefficients that were missing
 
@@ -98,7 +156,7 @@ under either name is taken over a part-wide one.
 `Evidence()` returns three things: how many entries of `Provenance` rest on evidence (method
 `measured`, `literature` or `vendor_spec`), how many there are in all, and the names of those
 whose method is `assumed`. The last includes the kernel's own entries above and any registry
-coefficient recorded as assumed. Entries with the methods `copied` and `not_charged` are in
+coefficient recorded as assumed. Entries with the methods `transferred`, `roofline` and `not_charged` are in
 the total and in neither of the other two.
 [Refuse, assume, override](../concepts/resolution.md#the-evidence-summary) shows a worked
 example.

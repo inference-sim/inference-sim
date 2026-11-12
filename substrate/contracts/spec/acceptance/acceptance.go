@@ -93,6 +93,17 @@ type Profile struct {
 	Thinking          Thinking `yaml:"thinking"`
 	Category          string   `yaml:"category"`
 
+	// Drafter names the drafter the value was measured with (design D8): "" for the model's
+	// own in-graph speculator, such as its MTP layers, or the catalog name of a separate
+	// drafter checkpoint. It is part of what the value is a measurement of, so a profile that
+	// states none is a measurement with the model's own speculator.
+	Drafter string `yaml:"drafter,omitempty"`
+	// Architecture is the architecture of the target model, as its graph records it
+	// (global.architecture, the configuration's architectures[0]). A lookup that borrows
+	// across targets reads it to find another target of the same architecture; a profile that
+	// states none is never borrowed across targets.
+	Architecture string `yaml:"architecture,omitempty"`
+
 	AcceptanceLength float64 `yaml:"acceptance_length"`
 	// PerPositionRates is optional: no source in scope publishes them, and a consumer
 	// that needs a distribution derives one with MinimumVarianceRates.
@@ -104,29 +115,48 @@ type Profile struct {
 	Provenance *Provenance `yaml:"provenance,omitempty"`
 	// Rationale explains a value that was not measured.
 	Rationale string `yaml:"rationale,omitempty"`
-	// CopiedFrom names the profile a copied value came from, as its Key renders.
-	CopiedFrom string `yaml:"copied_from,omitempty"`
+	// TransferredFrom names the profile a transferred value was measured as, as its Key
+	// renders. TransferRule states how it was moved to this profile's model.
+	TransferredFrom string `yaml:"transferred_from,omitempty"`
+	TransferRule    string `yaml:"transfer_rule,omitempty"`
 }
 
-// Key is a profile's identity.
+// Key is a profile's identity. The drafter is part of it (design D8): the same target with two
+// drafters has two measurements, and neither stands for the other.
 type Key struct {
 	Model             string
+	Drafter           string
 	SpeculativeMethod string
 	NumSpecTokens     int
 	Thinking          Thinking
 	Category          string
 }
 
+// KeyFields are the fields of a Key, as a point record's profile substitution names a field in
+// which a profile differs from the run's (design D8, §11.3): model, drafter, speculative_method,
+// num_spec_tokens, thinking and category. A test holds the list equal to the struct.
+func KeyFields() []string {
+	return []string{"model", "drafter", "speculative_method", "num_spec_tokens", "thinking", "category"}
+}
+
 // String renders a key as model/method/k<K>/thinking-<mode>/category, the form
-// copied_from and error messages use.
+// transferred_from and error messages use.
+//
+// A key with no drafter renders as it always has, so every key written before the field
+// existed still names the same profile. A key with one renders it after the model, as
+// model+drafter, which no catalog name can spell because a name has no '+'.
 func (k Key) String() string {
+	model := k.Model
+	if k.Drafter != "" {
+		model += "+" + k.Drafter
+	}
 	return fmt.Sprintf("%s/%s/k%d/thinking-%s/%s",
-		k.Model, k.SpeculativeMethod, k.NumSpecTokens, k.Thinking, k.Category)
+		model, k.SpeculativeMethod, k.NumSpecTokens, k.Thinking, k.Category)
 }
 
 // Key returns the profile's identity.
 func (p Profile) Key() Key {
-	return Key{Model: p.Model, SpeculativeMethod: p.SpeculativeMethod,
+	return Key{Model: p.Model, Drafter: p.Drafter, SpeculativeMethod: p.SpeculativeMethod,
 		NumSpecTokens: p.NumSpecTokens, Thinking: p.Thinking, Category: p.Category}
 }
 
@@ -153,6 +183,10 @@ type Provenance struct {
 	Prompts int `yaml:"prompts,omitempty"`
 	// Hardware is the catalog chip the value was measured on.
 	Hardware string `yaml:"hardware,omitempty"`
+	// Date is the day the source was published or measured, YYYY-MM-DD. A lookup that borrows
+	// breaks a tie by the newest source (design D8), and a profile with no date is older than
+	// any dated one.
+	Date string `yaml:"date,omitempty"`
 	// EngineImage is the engine image or release that ran.
 	EngineImage string `yaml:"engine_image,omitempty"`
 	// TP is the tensor-parallel width it ran at. Zero means unstated.
@@ -238,4 +272,7 @@ type Pin struct {
 	Profiles         string `yaml:"profiles,omitempty"`
 	Value            *Value `yaml:"value,omitempty"`
 	FallbackCategory string `yaml:"fallback_category,omitempty"`
+	// ExactOnly limits a profile lookup to a measured profile with the run's exact key: it
+	// never borrows (design D8).
+	ExactOnly bool `yaml:"exact_only,omitempty"`
 }

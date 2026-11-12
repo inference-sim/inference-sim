@@ -1,0 +1,5 @@
+cudagraph_mode a100-80,a100-sxm,b200,b300,h100,h200,l40s
+engine_version a100-80,a100-sxm,b200,b300,h100,h200,l40s
+mamba_cache_mode a100-80,a100-sxm,b200,b300,h100,h200,l40s
+max_cudagraph_capture_size a100-80,a100-sxm,b200,b300,h100,h200,l40s
+modality a100-80,a100-sxm,b200,b300,h100,h200,l40s

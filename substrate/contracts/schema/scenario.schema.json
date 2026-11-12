@@ -3,6 +3,9 @@
     "acceptance.Pin": {
       "additionalProperties": false,
       "properties": {
+        "exact_only": {
+          "type": "boolean"
+        },
         "fallback_category": {
           "type": "string"
         },
@@ -98,6 +101,18 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "switch_groups": {
+          "items": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "uplink_oversubscription": {
+          "type": "number"
         }
       },
       "required": [

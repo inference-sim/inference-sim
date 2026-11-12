@@ -19,6 +19,7 @@ package plan
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/inference-sim/blis-substrate/contracts/units"
 )
@@ -56,6 +57,109 @@ type PoolPlan struct {
 	// InFlight is the most steps in flight at once; 0 means 1, the value without asynchronous
 	// or overlap scheduling.
 	InFlight int
+}
+
+// Implementations are the distinct kernel implementations the pool runs: those of Layers and of
+// DraftLayers, each once, sorted by library, variant, code hash and toolkit: the pool-wide list a
+// Result records. The cost model matches a coefficient against the implementations of the
+// primitive it prices, which ImplementationsByPrimitive gives, or against the operations that
+// consume it, which Operations gives.
+func (p PoolPlan) Implementations() []KernelImpl {
+	var all []KernelImpl
+	for _, ls := range [][]LoweredLayer{p.Layers, p.DraftLayers} {
+		for _, l := range ls {
+			all = append(all, l.KernelImpl)
+		}
+	}
+	return distinctSorted(all)
+}
+
+// distinctSorted returns each implementation once, sorted by library, variant, code hash and
+// toolkit.
+func distinctSorted(in []KernelImpl) []KernelImpl {
+	seen := map[KernelImpl]bool{}
+	var out []KernelImpl
+	for _, k := range in {
+		if !seen[k] {
+			seen[k] = true
+			out = append(out, k)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.Library != b.Library {
+			return a.Library < b.Library
+		}
+		if a.Variant != b.Variant {
+			return a.Variant < b.Variant
+		}
+		if a.CodeHash != b.CodeHash {
+			return a.CodeHash < b.CodeHash
+		}
+		return a.Toolkit < b.Toolkit
+	})
+	return out
+}
+
+// ImplementationsByPrimitive are the distinct kernel implementations the pool runs for each
+// lowered primitive, from Layers and DraftLayers, each list sorted as Implementations is. It is
+// what the cost model binds a coefficient to (design VAL-8): a coefficient that prices a
+// primitive is matched against the implementations of that primitive, not against everything
+// the pool runs. A caller building a kernel for this pool passes it as
+// latencykernel.Inputs.Implementations.
+func (p PoolPlan) ImplementationsByPrimitive() map[Primitive][]KernelImpl {
+	return ImplementationsOf(p.Operations())
+}
+
+// ImplementationsOf pools operations by primitive: the distinct implementations of each,
+// sorted as Implementations is.
+func ImplementationsOf(ops []Operation) map[Primitive][]KernelImpl {
+	out := map[Primitive][]KernelImpl{}
+	for _, op := range ops {
+		out[op.Primitive] = append(out[op.Primitive], op.Impl)
+	}
+	for prim, impls := range out {
+		out[prim] = distinctSorted(impls)
+	}
+	return out
+}
+
+// Operation is one lowered operation and the kernel implementation that executes it: which
+// layer of which graph (the target's, or the draft model's), which node of it (Scorer), which
+// primitive, in which stored format, which kernel. It is the identity the cost model keeps when
+// it binds a coefficient to the kernel that consumes it (design VAL-8, 6.2), so a coefficient
+// read only by the sliding-window layers is matched against the kernel those layers run, one
+// read only by the BF16 GEMMs against the kernel that runs those, and one read only by a
+// layer's block-index scorer against the scorer's, and not against every kernel that runs the
+// primitive.
+type Operation struct {
+	// Draft is true for an entry of DraftLayers, whose Layer indexes the draft model's own
+	// stack; false for an entry of Layers, whose Layer indexes the target graph's.
+	Draft bool
+	Layer int
+	// Scorer is the node of the layer (LoweredLayer.Scorer); false is the primary.
+	Scorer    bool
+	Primitive Primitive
+	// Format is the stored format of the weight or the cache the operation reads
+	// (PrimitiveShape.Format); the zero value is not stated.
+	Format units.QuantFormat
+	// Dtype is the element type of the cache the operation reads (PrimitiveShape.Dtype).
+	Dtype Dtype
+	Impl  KernelImpl
+}
+
+// Operations lists every lowered operation of the pool, the target's then the draft model's, in
+// plan order. A caller building a kernel for this pool passes it as
+// latencykernel.Inputs.Operations.
+func (p PoolPlan) Operations() []Operation {
+	var out []Operation
+	for _, l := range p.Layers {
+		out = append(out, Operation{Layer: l.Layer, Scorer: l.Scorer, Primitive: l.Primitive, Format: l.Shape.Format, Dtype: l.Shape.Dtype, Impl: l.KernelImpl})
+	}
+	for _, l := range p.DraftLayers {
+		out = append(out, Operation{Draft: true, Layer: l.Layer, Scorer: l.Scorer, Primitive: l.Primitive, Format: l.Shape.Format, Dtype: l.Shape.Dtype, Impl: l.KernelImpl})
+	}
+	return out
 }
 
 // Layout is the parallel widths of a pool and the placement of its ranks. A width of 0 is
@@ -130,6 +234,12 @@ type LoweredLayer struct {
 	Stage int
 	// Primitive is from the fixed list above.
 	Primitive Primitive
+	// Scorer is true when this entry executes the layer's block-index scorer, a node of its own
+	// beside a sparse layer's primary attention, and false for the layer's primary node. A layer
+	// that runs both has two entries for the primitive. The coefficient registry prices the two
+	// apart (attention_decode_*_block_index_scores), so the cost model binds a coefficient to
+	// the kernel of the node that reads it.
+	Scorer bool
 	// KernelImpl is what executes it; the coefficient registry looks coefficients up by this.
 	KernelImpl KernelImpl
 	// Shape is the primitive's geometry.
@@ -142,21 +252,61 @@ type LoweredLayer struct {
 // key is its CodeHash, not a package version (design §6.4): a version bump that leaves a kernel
 // unchanged needs no substrate change.
 type KernelImpl struct {
-	// Library names the library, such as a named attention library. The fixed list of library
-	// names is added with the exact kernel-implementation lookup (VAL-8); until then a plan
-	// requires only that it is stated.
+	// Library names the library, such as a named attention library. A plan requires only that it
+	// is stated. The coefficient lookup matches Library, Variant and CodeHash together (VAL-8), so
+	// a library name outside the registry's matches no keyed entry.
 	Library string
 	// Variant is the library's own exported kernel name; an engine's backend names map to it in
 	// the engine's lowering.
 	Variant string
 	// CodeHash is the hash of the kernel's source and target GPU architecture, or of a binary
-	// library's file and architecture.
+	// library's file and architecture. Empty means the engine could not identify the build; the
+	// lookup then matches no coefficient that names an implementation.
 	CodeHash string
 	// Toolkit is the compiler or CUDA toolkit version the kernel was built with. A toolkit
 	// change can change a kernel's speed without changing its source; the landing gate shows
 	// whether the old value still holds.
 	Toolkit string
 }
+
+// Dtype is a number format, in the catalog's words: the closed list of the catalog's dtypes, restated
+// here because the plan imports no document type. A test in the kernel holds the two lists equal.
+// The zero value is not stated.
+type Dtype string
+
+const (
+	DtypeBF16  Dtype = "bf16"
+	DtypeFP16  Dtype = "fp16"
+	DtypeFP32  Dtype = "fp32"
+	DtypeFP8   Dtype = "fp8"
+	DtypeINT8  Dtype = "int8"
+	DtypeINT4  Dtype = "int4"
+	DtypeNVFP4 Dtype = "nvfp4"
+	DtypeMXFP4 Dtype = "mxfp4"
+)
+
+// Dtypes lists the words, in the catalog's order.
+func Dtypes() []Dtype {
+	return []Dtype{DtypeBF16, DtypeFP16, DtypeFP8, DtypeNVFP4, DtypeMXFP4, DtypeINT8, DtypeINT4, DtypeFP32}
+}
+
+// Bits is the size of one element's payload, 0 for a word that is not a dtype.
+func (d Dtype) Bits() int {
+	switch d {
+	case DtypeFP32:
+		return 32
+	case DtypeBF16, DtypeFP16:
+		return 16
+	case DtypeFP8, DtypeINT8:
+		return 8
+	case DtypeINT4, DtypeNVFP4, DtypeMXFP4:
+		return 4
+	}
+	return 0
+}
+
+// Valid reports whether d is one of the words.
+func (d Dtype) Valid() bool { return d.Bits() > 0 }
 
 // PrimitiveShape is the geometry of a lowered primitive. Which fields apply depends on the
 // primitive; the others are zero. Every figure is per rank unless its name says otherwise.
@@ -169,8 +319,16 @@ type PrimitiveShape struct {
 	Heads, KVHeads, HeadDim int
 	// Window bounds context-dependent work in tokens; 0 is unbounded.
 	Window int
-	// Format is the stored format of the weight or the cache this primitive reads.
+	// Format is the stored format of the weight or the cache this primitive reads: its size, in
+	// bits and scale blocks. It does not say which number format those bits hold, so BF16 and FP16
+	// are both {PayloadBits 16}, and FP8 and INT8 both 8 bits.
 	Format units.QuantFormat
+	// Dtype is the element type of the cache an attention primitive reads, one of the catalog's
+	// dtypes (model.DType: bf16, fp16, fp8, int8, ...); the zero value is not stated. Only an
+	// attention primitive states it, and a stated Format must be the size of the type (a bf16
+	// cache is 16 bits). The cost model prices a coefficient measured on one element type only for
+	// that type, which Format cannot tell.
+	Dtype Dtype
 }
 
 // Collective is a collective's group, message and whether it leaves its node.
@@ -236,7 +394,48 @@ type DraftPolicy struct {
 	Chain     int
 	TreeTopK  int
 	TreeSteps int
+	// FirstPassRows and PassRequests state how an autoregressive drafter's passes run: which
+	// rows its first pass processes, and for which requests the head and the later passes run.
+	// They are the engine's execution decisions, resolved by the engine and stated here in
+	// neutral words, so the cost model prices what it is told and resolves nothing (SUB-6).
+	// Empty means not stated; a pool that speculates through an autoregressive drafter and
+	// leaves either empty is refused by the cost model, and a parallel-block drafter, whose
+	// target-wide work is its context stack, needs neither.
+	FirstPassRows FirstPassRows
+	PassRequests  PassRequests
 }
+
+// FirstPassRows is which rows an autoregressive drafter's first pass processes. Every pass
+// after the first processes one row per drafting request.
+type FirstPassRows string
+
+// The words FirstPassRows takes. Empty is not stated.
+const (
+	// FirstPassPerRequest: the first pass processes one row per request, like every later pass.
+	FirstPassPerRequest FirstPassRows = "per_request"
+	// FirstPassScheduled: the first pass processes every token the target scheduled this step on
+	// this rank, prefill tokens included, because the drafter writes its own KV for each.
+	FirstPassScheduled FirstPassRows = "scheduled"
+)
+
+// Valid reports whether r is a stated word.
+func (r FirstPassRows) Valid() bool { return r == FirstPassPerRequest || r == FirstPassScheduled }
+
+// PassRequests is for which requests an autoregressive drafter's head and later passes run.
+type PassRequests string
+
+// The words PassRequests takes. Empty is not stated.
+const (
+	// PassRequestsSampling: the head and the later passes run for the requests that complete
+	// their prompt this step.
+	PassRequestsSampling PassRequests = "sampling"
+	// PassRequestsAll: the head and the later passes run for every request of the step, a
+	// request still in the middle of its prompt included.
+	PassRequestsAll PassRequests = "all"
+)
+
+// Valid reports whether r is a stated word.
+func (r PassRequests) Valid() bool { return r == PassRequestsSampling || r == PassRequestsAll }
 
 // Enabled reports whether any speculation is configured.
 func (d DraftPolicy) Enabled() bool { return d.Chain > 0 || d.TreeTopK > 0 || d.TreeSteps > 0 }
@@ -248,6 +447,34 @@ type HostPlan struct {
 	// NativeFrontend is true when request admission and detokenizing run in a compiled
 	// frontend, whose per-token cost differs from an interpreted one's.
 	NativeFrontend bool
+	// Admission is the shape of the queue a request waits in before the engine admits it: the
+	// host work of tokenizing it, which only so many requests do at once. The engine states it
+	// from its own settings; what a request asks of it is the cost model's answer
+	// (kernel.HostDemand). The zero value is no queue.
+	Admission AdmissionQueue
+}
+
+// AdmissionQueue is Servers independent first-in first-out queues, each served by
+// WorkersPerServer servers. A request joins the queues in turn, takes the server of its queue
+// that frees first, and holds it for its HostDemand.Service. WorkersPerServer 0 is no queue: a
+// request waits only its HostDemand.Delay. Servers 0 is one queue.
+type AdmissionQueue struct {
+	Servers          int
+	WorkersPerServer int
+}
+
+// Enabled reports whether requests queue for a server.
+func (q AdmissionQueue) Enabled() bool { return q.WorkersPerServer > 0 }
+
+// Queues is the number of independent queues: Servers, at least one.
+func (q AdmissionQueue) Queues() int { return max(q.Servers, 1) }
+
+// Validate refuses a negative count.
+func (q AdmissionQueue) Validate() error {
+	if q.Servers < 0 || q.WorkersPerServer < 0 {
+		return fmt.Errorf("admission queue has %d servers of %d workers; neither is negative", q.Servers, q.WorkersPerServer)
+	}
+	return nil
 }
 
 // ResidentTensor is one tensor resident on each rank after weight post-processing.
@@ -324,6 +551,15 @@ type StepShape struct {
 	// because only the engine knows which of its requests its attention kernels treat as a
 	// decode, and the cost model resolves nothing (SUB-6). The zero value means 1.
 	DecodeQueryLen units.Tokens
+	// TailFrom is the index, in the model graph's layer stack, of the first layer that runs over
+	// fewer rows than the requests scheduled: the layers from TailFrom to the end run each
+	// request's RequestStep.TailRows last tokens, not its Scheduled ones. The engine states it
+	// when its forward pass runs a layer suffix on a subset of the step's rows (an engine can run
+	// the layers past the last one that produces KV on each request's trailing window only), for
+	// only the steps that do; the cost model resolves nothing (SUB-6). The embedding, the layers
+	// before TailFrom, the head and any drafter keep the scheduled tokens, and the step still
+	// launches every layer. The zero value is no tail: every layer runs every scheduled token.
+	TailFrom int
 }
 
 // DecodeWidth returns DecodeQueryLen with its floor applied: a step has no request that
@@ -374,6 +610,11 @@ type RequestStep struct {
 	Prompt   units.Tokens
 	// Cached is the prefix-cache hit, already subtracted from Scheduled.
 	Cached units.Tokens
+	// TailRows is how many of Scheduled the layers from StepShape.TailFrom run: the request's
+	// last TailRows tokens, at their own positions. Zero means all of Scheduled (a decode row
+	// that the engine does not trim). It never exceeds Scheduled, and a step with no TailFrom
+	// states none.
+	TailRows units.Tokens
 }
 
 // PaddedShape is the shape one rank actually launches.
@@ -382,6 +623,10 @@ type PaddedShape struct {
 	Tokens units.Tokens
 	// Launch says how the step launches; the three cost differently, so the engine states which.
 	Launch Launch
+	// TailTokens is the rows the layers from StepShape.TailFrom launch on this rank, when the
+	// engine pads that batch to a size of its own (a captured graph's): at least the rows the
+	// requests state in TailRows. Zero means the tail launches exactly its rows.
+	TailTokens units.Tokens
 }
 
 // Launch is how a step launches.
@@ -447,7 +692,9 @@ type Transfer struct {
 }
 
 // Endpoint names where a transfer starts or ends, by node and rack. A transfer within one
-// node uses no NIC (SUB-17).
+// node uses no NIC (SUB-17). Both coordinates are relative to the pool the endpoint is in: Node
+// from the pool's first node, Rack from its lowest rack, never the cluster's. The two ends of a
+// move between pools are each in the numbering of their own pool.
 type Endpoint struct {
 	Node int
 	Rack int

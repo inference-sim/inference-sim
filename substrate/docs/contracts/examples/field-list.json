@@ -6,6 +6,36 @@
   },
   "fields": [
     {
+      "name": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#5"
+      },
+      "estimation": {
+        "rule": "leave_unset",
+        "preserves": "the backend vLLM picks for the tensor-parallel group and whether it may fall back to trtllm",
+        "valid_when": [
+          {
+            "value_in": [
+              "auto"
+            ]
+          },
+          {
+            "value_in": [
+              "mnnvl"
+            ],
+            "tp_group_nodes": {
+              "gt": 1
+            },
+            "compute_capability": {
+              "gte": "10.0"
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "VLLM_LOGGING_LEVEL",
       "source": "env",
       "status": "inert_unproven",
@@ -40,6 +70,23 @@
           "oracle/traces/t2-basic.json"
         ]
       },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 1,
+            "closed": "above"
+          },
+          {
+            "value": 256,
+            "closed": "below"
+          }
+        ],
+        "covered_classes": [
+          1,
+          2
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -50,6 +97,19 @@
       "status": "proven_inert",
       "evidence": {
         "proof": "TestSeedChangesNoDecision"
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 0,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          0,
+          1
+        ]
       },
       "estimation": {
         "rule": "none"

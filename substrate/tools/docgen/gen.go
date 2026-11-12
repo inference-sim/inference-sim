@@ -30,6 +30,7 @@ var enumDirs = []string{
 	"contracts/spec/measurement",
 	"contracts/spec/router",
 	"contracts/spec/fields",
+	"contracts/spec/routertable",
 	"contracts/spec/result",
 	"contracts/spec/trace",
 	"contracts/spec/pointrecord",
@@ -150,8 +151,8 @@ func typedStringConsts(dir string) (string, map[string][]string, error) {
 func metricsTable() file {
 	var b bytes.Buffer
 	b.WriteString(header)
-	b.WriteString("| Identifier | Formula | Statistic | Population | Window | Unit | Denominator | Unfinished | Meaning |\n")
-	b.WriteString("|---|---|---|---|---|---|---|---|---|\n")
+	b.WriteString("| Identifier | Formula | Statistic | Population | Window | Unit | Denominator | Unfinished | Scopes | Aggregates | Meaning |\n")
+	b.WriteString("|---|---|---|---|---|---|---|---|---|---|---|\n")
 	for _, d := range metrics.All() {
 		st := string(d.Statistic)
 		if d.PercentileMethod != "" {
@@ -161,12 +162,25 @@ func metricsTable() file {
 		if d.Denominator != "" {
 			denom = string(d.Denominator)
 		}
+		scopes := make([]string, len(d.Scopes))
+		for i, sc := range d.Scopes {
+			scopes[i] = string(sc)
+		}
+		aggs := "-"
+		if len(d.Aggregates) > 0 {
+			l := make([]string, len(d.Aggregates))
+			for i, a := range d.Aggregates {
+				l[i] = string(a)
+			}
+			aggs = strings.Join(l, ", ")
+		}
 		desc := d.Description
 		if d.Follows != "" {
 			desc += " Follows " + d.Follows + "."
 		}
-		fmt.Fprintf(&b, "| `%s` | `%s` | %s | `%s` | `%s` | %s | %s | %s | %s |\n",
-			d.ID, d.Formula, st, d.Population, d.Window, d.Unit, denom, d.Unfinished, desc)
+		fmt.Fprintf(&b, "| `%s` | `%s` | %s | `%s` | `%s` | %s | %s | %s | %s | %s | %s |\n",
+			d.ID, d.Formula, st, d.Population, d.Window, d.Unit, denom, d.Unfinished,
+			strings.Join(scopes, ", "), aggs, desc)
 	}
 	return file{path: outDir + "/metrics.md", content: b.Bytes()}
 }

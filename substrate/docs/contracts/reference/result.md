@@ -29,7 +29,7 @@ finite](../concepts/contracts.md#numbers-are-finite)).
 | Key | Type | Required | Meaning |
 |---|---|---|---|
 | `kind` | string | yes | Always `Result`. |
-| `schema_version` | integer | yes | Always `2`. |
+| `schema_version` | integer | yes | Always `3`. Version 3 requires each figure to state its scope; a version 2 Result is refused. |
 | `name` | string | yes | The run's identity, a lowercase slug. |
 | `engine` | mapping | yes | The engine the run used, below. |
 | `data` | mapping | yes | The catalog and registry the run read, below. |
@@ -47,6 +47,7 @@ finite](../concepts/contracts.md#numbers-are-finite)).
 | `breakdowns` | mapping | no | The metrics split along the axes the run exercised. |
 | `reports` | mapping | no | Each component's own report, carried as reported. |
 | `overrides` | list | no | Every setting simulated differently from `input`, and what chose it. |
+| `resolutions` | list | no | The engine's own resolution of the settings it resolves, beside `overrides`. |
 | `artifacts` | mapping | no | Bulk outputs by reference, keyed by role, a lowercase slug. |
 | `runtime` | mapping | no | The only part that depends on the host or the wall clock. |
 
@@ -99,7 +100,9 @@ whose new entries no lookup selects shows them here as unread.
 
 | Key | Type | Required | Meaning |
 |---|---|---|---|
-| `coefficients` | list | no | Coefficients a lookup returned, once each, sorted by set, name, method and scope. |
+| `closeness_version` | integer | no | `2` when the recorder passed on everything each coefficient's entry states: its `kernel_impls`, `measured_on`, `fit_range` and `ci95`, the implementation it priced (`priced`, `kernel_match`) and the flags found from them. Version 2 added `priced`, `kernel_match`, `measured_on` and `implementations`; layer 10 is unreleased, so there was no version 1 in a release. It does not say the conditions were decided. Under `2`, `extrapolated` is evaluated only for a coefficient that has a `fit_range`, `unidentified` only for one that has a `ci95`, and the kernel hash only for one that is `exact`; where that data is absent the entry did not state it, and an omitted flag is "not evaluated", not false. Absent when the recorder held only identities, when no coefficient was recorded, or in a report written before the data existed; then no coefficient carries the data, and nothing is said. A coefficient carrying the data under an absent version is refused. A reader of the older strict layout fails on the new keys. |
+| `implementations` | mapping | with `closeness_version` | The kernel implementations the run's cost models ran, by the lowered primitive each executes (a word such as `attention.prefill`), each list once and sorted by library, variant and code hash: the pool's lowered implementations (VAL-8). An implementation the engine could not identify has no `code_hash`. Each coefficient's `priced` is the list of its primitive. |
+| `coefficients` | list | no | Coefficients a lookup returned, once each, sorted by set, name, method, scope and kernel implementations. Two entries that differ only in the implementations they are valid for are two rows. |
 | `acceptance_profiles` | list | no | Acceptance profiles a lookup returned, sorted by set and key. |
 | `routing_profiles` | list | no | Routing profiles a lookup returned, sorted by set and key. |
 | `unread_files` | list of strings | no | Registry files, relative and with forward slashes, from which no lookup returned an entry. Sorted; none of them is a selected entry's file. |
@@ -113,6 +116,20 @@ whose new entries no lookup selects shows them here as unread.
 | `method` | string | yes | One of the registry's [methods](vocabularies.md). |
 | `scope` | mapping | yes | The entry's [scope](coefficients.md), as written. |
 | `file` | string | yes | The registry file it was read from. |
+| `kernel_impls` | list | no | The kernel implementations the entry states it is valid for, copied from the entry: `library`, `variant` and `code_hash`, as in the [coefficient entry](coefficients.md). A reader maps each library version a benchmark run recorded to a kernel hash and compares it with these (design §11.3). Absent when the entry states none, and the hash of such an entry cannot be compared: a primitive priced from a `vendor_spec`, `roofline`, `assumed` or `not_charged` entry, which states none, has no hash to compare. This is the entry's validity list, which can name builds the run did not run; the build it priced is `priced`. |
+| `primitive` | string | no | The lowered primitive the coefficient's name prices (`coefficient.PrimitiveOf`); absent for a name that prices no lowered kernel. Required for an `exact` coefficient. |
+| `priced` | list | with `kernel_impls` | The implementations of the operations that read the coefficient, with `library`, `variant` and `code_hash`: what the engine lowered those operations to, matched whole by all three (VAL-8). The operations that read an entry are those of the primitive its name prices, narrowed to its kind where the name states one (`attention_decode_rate_swa` is read only by the sliding-window layers). An exact entry is used only when it lists every implementation among them, so `priced` is a subset of `implementations[primitive]` and of `kernel_impls`. A sibling build the entry is also valid for, an implementation of another primitive, and a kernel that runs only operations the entry is not read by, are not here. A reader compares the hash of each library version a benchmark run recorded with these (design §11.3, G1). Two pools that ran different builds of an entry valid for both list both. |
+| `kernel_match` | string | with `closeness_version` | `exact` when the entry lists an implementation that ran, `unkeyed` when it lists none and so applies to every build without having been shown to match the one that ran. The kernel hash is decided only for an `exact` coefficient; an `unkeyed` one leaves it unevaluated. The kernel's own assumptions (for example `trtllm_gen_prefill_lane`) are not coefficients, are not in this list, and carry an empty match in the cost model's provenance. |
+| `measured_on` | list | no | The implementations a `transferred` value was measured on, copied from the entry. Evidence about where the value came from, never a match. Only for `transferred`. |
+| `fit_range` | list | no | The range of inputs the entry's fit covered (design VAL-10), copied from the entry: a `dim`, `low` and `high` per dimension. Absent when the entry records none, and the extrapolation condition cannot then be evaluated for it. |
+| `extrapolated` | boolean | no | True when a step the run priced read the entry outside `fit_range`. The cost model sets it from the trust verdict of each priced step, and the report reads it when the Result is written, so it covers the steps priced up to then; nothing in the Result says the run had finished. Requires `fit_range`. |
+| `ci95` | list | no | The entry's 95% interval `[low, high]`, copied from the entry. Absent when the entry states none, and the identifiability condition cannot then be evaluated for it. |
+| `unidentified` | boolean | no | True when the entry's data do not determine it: its 95% interval is unbounded or wider than half its value (design VAL-10). Known when the cost model is built. Requires `ci95`. |
+
+Where an entry does not record a kernel implementation, a fit range or an interval, the Result
+says so by leaving the key out, and a grader treats the condition it would decide as not
+evaluated rather than as met (design §11.3). In the committed registry most measured entries
+state none of the three, so most coefficients are not evaluated until the registry records them.
 
 <!-- fields: result.SelectedProfile -->
 
@@ -163,6 +180,10 @@ simulate, such as speculative acceptance or expert routing imbalance (D8).
 | `values` | mapping | unless `default` | The property's figures, by name. Finite. |
 | `source` | string | yes | What supplied the values, highest precedence first: `command_line`, `scenario`, `workload` (stated by or derived from it), `profile` (the substrate's profile for the workload), `default` (none stated). |
 | `profile` | string | with `profile` | The profile, as set and key. |
+| `step` | string | for a profile lookup that can borrow | How the lookup found its value (D8): `exact`, `same_drafter_other_k`, `other_drafter` or `other_target`. |
+| `differed` | list of strings | with a borrowing step | Each key field in which a borrowed profile differs from the run's: `model`, `drafter`, `speculative_method` or `num_spec_tokens`. None for `exact`. |
+| `k_rule` | string | with `same_drafter_other_k` | How the borrowed value was brought to the run's K: `interpolated`, `above_largest`, `below_smallest_rates` or `below_smallest_proportional`. |
+| `profiles` | list of strings | with `step` | Every profile the value was read from, as set and key, the one that sets it first; an interpolation lists both it lies between. |
 
 ## `frame`
 
@@ -288,7 +309,14 @@ revision differs. Both are absent on a fresh run.
 ## `metrics`
 
 Each key is an identifier from the [metric registry](metrics.md). The registry gives its
-formula, statistic, population, window and unit; the Result gives the value.
+formula, statistic, population, window and unit; the Result gives the value and states the
+figure's scope (design §8.7, DEV-8). A Result holds one figure of a metric, so a Result states no
+two scopes of one metric.
+
+A figure with no scope is refused, not read as the whole cluster: a definition is never inferred
+(DEV-8), so a figure that does not say what it is a figure of cannot be compared. A figure is
+compared with another only when the metric, scope, member, aggregate and scope ranged over are
+all the same (`metrics.ComparableFigures`, or `Basis.ComparableTo` for the document form).
 
 <!-- fields: result.Figure -->
 
@@ -296,6 +324,10 @@ formula, statistic, population, window and unit; the Result gives the value.
 |---|---|---|---|
 | `value` | number | yes | Finite and not negative; at most 1 for a fraction. |
 | `samples` | integer | yes | The size of the population the statistic is over. Positive for a latency. |
+| `scope` | string | yes | The scope the figure is at: `cluster`, `pool` or `instance`, one the metric is defined at. |
+| `member` | string | at the pool and instance scopes | The pool or instance the figure is of, by the name the deployment gives it. A figure at the `cluster` scope has none. For an aggregate, the member of `scope`, not of `over`. |
+| `aggregate` | string | with `over` | `max` or `min`, one the metric admits: the figure combines the figures of a narrower scope. Absent for a figure computed from the scope's own population. |
+| `over` | string | with `aggregate` | The narrower scope the aggregate ranges over, one the metric is defined at. |
 
 ## `requests`
 
@@ -425,6 +457,51 @@ number reads it from `metrics`.
 | `input` | string | no | The value `input` states. |
 | `run` | string | no | The value the run simulated. |
 | `source` | string | yes | What chose it, for example a command-line flag. |
+
+## `resolutions`
+
+<!-- fields: result.Resolution -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `setting` | string | yes | The setting. The name an `overrides` entry uses for the same setting. |
+| `pool` | string | no | The pool that resolved it, below. Absent for the whole deployment, or a deployment with one pool. |
+| `host` | string | no | The value the host gave the engine: the host's value when `overrides` names this setting, else the input's. Absent when the host gave none and the engine chose one. |
+| `engine` | string | yes | The value the engine resolved to, and the run simulated. |
+| `reason` | string | when it differs | Why `engine` differs from `host`. Only where they differ. |
+
+Resolutions are listed once each, sorted by `setting` and then `pool`. A pool is named by its
+role (`colocated`, `prefill` or `decode`), and, when several pools share a role, by the role and
+the pool's position among those of that role, counted from zero (`decode-0`, `decode-1`);
+`result.PoolLabels` gives the names. A scenario names no pool, so the position in `pools` is the
+only identity a pool has. A prefill and a decode pool resolve the same setting differently, and
+each states its own.
+
+An override is what the host changed; a resolution is what the engine then did with the value
+it was given. Design §11.2 grades a benchmark point G2 when a resolved value the run logged
+differs from the engine's resolution of the value passed, and this list is where the engine's
+resolution is read, beside the host's value. `result.ResolutionsOf` writes it from the cost
+model's own `kernel.Resolution`, and `result.ResolutionsOfPool` for one pool of several: the
+layout widths and modes, and each request the cost model declined.
+
+The settings the cost model resolves, and what vLLM calls the request each answers:
+
+| `setting` | `engine` value | The vLLM setting it answers |
+|---|---|---|
+| `tensor_parallel_width` | the width, an integer | `tensor_parallel_size` |
+| `data_parallel_width` | the width, an integer | `data_parallel_size` |
+| `expert_parallel_width` | the width, an integer | None: it is derived. With `enable_expert_parallel` on it is tensor, prefill-context and data-parallel width multiplied; with it off it is 1. |
+| `all_reduce_backend` | `custom` or `nccl` | `disable_custom_all_reduce`. The custom reduction runs unless disabled, and is declined where the group spans nodes without multi-node NVLink or has a rank count the kernel does not support. |
+| `async_scheduling` | `true` or `false` | `async_scheduling`, a tri-state request that the engine resolves. |
+| `cascade_attention` | `true` or `false` | The inverse of `disable_cascade_attn`: cascade attention is on when the request does not disable it and every gate allows it. |
+| `sequence_parallel_moe` | `true` or `false` | None: whether the MoE input is sequence-parallel, from the engine's rule or the model's own, so a request to change it is not a single setting. |
+
+A declined request is recorded under the setting it answers: the cost model's `allreduce_backend`
+request lands on `all_reduce_backend`, and its `cache_dtype` request on `kv_cache_dtype`, the
+engine's name. A request for another field is recorded under the name the
+cost model gives it, which is the engine's own setting name (for example `quantization`). The
+host column is empty for `async_scheduling` and `cascade_attention` unless the cost model
+declines a request for them, which the kernel does not do today.
 
 ## `artifacts`
 

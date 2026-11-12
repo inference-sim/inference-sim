@@ -4,4 +4,4 @@
 
 [[catalog.storage.table]]
 
-The kernel prices a transfer of *b* megabytes as the larger of the tier's base latency and *b* divided by its bandwidth, so the base latency decides the cost of small transfers. It varies across these tiers by more than four orders of magnitude, from 1 µs for CPU memory to 30 ms for object storage.
+A tier is a name and a description. The catalog states no rate and no latency for it, because each such figure was fitted to one host's measurements or chosen as a representative value, and neither is a declared fact of a device. The kernel prices a transfer as the larger of the tier's base latency and the bytes divided by its rate, so the base latency decides the cost of small transfers, and it reads the three terms from the coefficient registry, where each is scoped to the hardware it describes and carries its method and evidence. See the [`cost-model-offload-tiers` reference](../../registry/reference/sets/cost-model-offload-tiers.md) for every value and [how the tier coefficients are written](../../registry/reproducing-coefficients.md#offload-tiers).

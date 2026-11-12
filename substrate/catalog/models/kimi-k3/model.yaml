@@ -7,3 +7,4 @@ source:
 licence:
   id: LicenseRef-kimi-k3
   evidence: https://huggingface.co/moonshotai/Kimi-K3/raw/f831ab66814297da540d832a5235f8e904f29d06/README.md
+drafters: [kimi-k3-dspark]

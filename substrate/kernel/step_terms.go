@@ -72,12 +72,13 @@ func (k *Kernel) decodeReadBytes(l *price.PlannedLayer, kv []layerKV, i int,
 // work on the ramp at the measured scale, charged to SM. A part with no measured prefill
 // form returns the work as FLOPs instead, for the layer's unmodified ramp, which the sweeps
 // say understates by over ten times.
-func (k *Kernel) prefillAttention(work float64, s *stepShape) (smSeconds, flops float64) {
-	if k.attentionPrefillScale <= 0 {
+func (k *Kernel) prefillAttention(work float64, s *stepShape, kind model.AttentionKind) (smSeconds, flops float64) {
+	pair := k.prefillFor(kind)
+	if pair.scale <= 0 {
 		return 0, work
 	}
-	scale := price.Efficiency(s.attnTokensF, k.epsMax, k.mHalf) * k.attentionPrefillScale
-	return k.attentionPrefillFloor.Seconds() +
+	scale := price.Efficiency(s.attnTokensF, k.epsMax, k.mHalf) * pair.scale
+	return pair.floor.Seconds() +
 		work/(k.computeFLOPsPerSecond*scale)*s.smDerate, 0
 }
 

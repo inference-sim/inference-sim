@@ -2,11 +2,15 @@ package load
 
 import (
 	"fmt"
+	"reflect"
+	"strings"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/spec/pointrecord"
+	"github.com/inference-sim/blis-substrate/contracts/spec/routertable"
 	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
 	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
 )
@@ -58,6 +62,33 @@ func (d *Data) Workload(name string) (*workload.CatalogWorkload, error) {
 		return w, nil
 	}
 	return nil, d.missing(d.Catalog, "workload", name, "workloads/"+name+".yaml", sortedKeys(d.catalog.Workloads))
+}
+
+// Router returns a router-table entry by its name, the file stem under routers/.
+func (d *Data) Router(name string) (*routertable.Entry, error) {
+	if e := d.catalog.Routers[name]; e != nil {
+		return e, nil
+	}
+	return nil, d.missing(d.Catalog, "router entry", name, "routers/"+name+".yaml", sortedKeys(d.catalog.Routers))
+}
+
+// Routers lists the router table's entries, sorted by name.
+func (d *Data) Routers() []*routertable.Entry {
+	var out []*routertable.Entry
+	for _, name := range sortedKeys(d.catalog.Routers) {
+		out = append(out, d.catalog.Routers[name])
+	}
+	return out
+}
+
+// LookupRouter finds the entry for a router, its mode and its session-affinity setting
+// (nil when the run configured none): the entry that says which policy of llm-d's router
+// stands in for it, or that none does, on the router build the run used (revision, a full
+// commit). The outcome is routertable.OutcomeMapped only when an entry has the key and covers
+// the revision; for any other outcome the point stays router_unsupported (G5). The entry is
+// returned whenever one has the key, covered or not.
+func (d *Data) LookupRouter(router, mode string, affinityTTLS *int, revision string) (*routertable.Entry, routertable.Outcome) {
+	return routertable.Resolve(d.Routers(), router, mode, affinityTTLS, revision)
 }
 
 // Models lists the catalog's models, sorted.
@@ -136,4 +167,46 @@ func (d *Data) markLoaded(rel string) {
 	d.mu.Lock()
 	d.loaded[rel] = true
 	d.mu.Unlock()
+}
+
+// CheckRouterSubstitutions refuses a point record whose router_differs substitution the router
+// table does not support (design §11.3, §11.4): the entry it names must exist, belong to the
+// router the point names, cover the build of the router the point says the run used, and map to
+// the policy the point says BLIS simulated, and carry the entry's differences and bound. A router mapped for one build is not mapped for
+// another, so a record that relies on an entry at a build it does not list is refused.
+func (d *Data) CheckRouterSubstitutions(r *pointrecord.Record) error {
+	var bad []string
+	for i, s := range r.Substitutions {
+		if s.Kind != pointrecord.SubRouterDiffers {
+			continue
+		}
+		at := fmt.Sprintf("substitutions[%d]", i)
+		e, err := d.Router(s.Entry)
+		switch {
+		case err != nil:
+			bad = append(bad, fmt.Sprintf("%s: the router table has no entry %q", at, s.Entry))
+		case e.Router != s.Subject:
+			bad = append(bad, fmt.Sprintf("%s: entry %q is of router %q, not %q", at, s.Entry, e.Router, s.Subject))
+		case !e.Covers(s.Revision):
+			bad = append(bad, fmt.Sprintf("%s: entry %q does not cover revision %s of %s: what the table shows for another build is not inherited, and the point is router_unsupported (G5)", at, s.Entry, s.Revision, s.Subject))
+		case string(e.Policy) != s.Policy:
+			bad = append(bad, fmt.Sprintf("%s: entry %q maps to policy %q, not %q", at, s.Entry, e.Policy, s.Policy))
+		case !reflect.DeepEqual(s.Difference, e.Statements()):
+			bad = append(bad, fmt.Sprintf("%s: the differences are not entry %q's: a point carries the entry's statements as they stand, so a reader sees what the mapping rests on", at, s.Entry))
+		case e.Bound == nil && s.Bound != nil:
+			bad = append(bad, fmt.Sprintf("%s: the bound is not the part of entry %q's bound that covers the point's regime: the entry states none", at, s.Entry))
+		case e.Bound == nil:
+			// An entry without a bound is checked by the validator, which requires one of a mapping.
+		case s.Regime == nil:
+			bad = append(bad, fmt.Sprintf("%s: no regime: a point carries the part of entry %q's bound that covers its own regime, which cannot be checked without it", at, s.Entry))
+		case e.Bound.For(*s.Regime) == nil:
+			bad = append(bad, fmt.Sprintf("%s: entry %q has no bound for this regime: the point is router_unsupported (G5), not router_differs", at, s.Entry))
+		case !reflect.DeepEqual(s.Bound, e.Bound.For(*s.Regime)):
+			bad = append(bad, fmt.Sprintf("%s: the bound is not the part of entry %q's bound that covers the point's regime: a point carries exactly the entry's ratios whose regime contains it, as they stand, and none for another regime", at, s.Entry))
+		}
+	}
+	if len(bad) > 0 {
+		return fmt.Errorf("%s", strings.Join(bad, "; "))
+	}
+	return nil
 }

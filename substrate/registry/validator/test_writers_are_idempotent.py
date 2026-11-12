@@ -57,6 +57,10 @@ pytestmark = pytest.mark.skipif(
 WRITERS = [
     ("relane_attention_decode.py", "full-attention decode floor and rate"),
     ("relane_attention_prefill.py", "prefill floor and work_scale"),
+    # The prefill pair refitted on FlashInfer's trtllm-gen kernel alone, for the chips that run
+    # it; a pool that reports that kernel reads it. `transferred`, so the family-owner map below
+    # does not list it (it lists `fitted: true` entries only).
+    ("emit_attention_trtllm_gen.py", "the trtllm-gen prefill lane"),
     ("relane_attention_swa.py", "sliding-window decode floor and rate"),
     ("relane_gemm_envelope.py", "the GEMM efficiency ramp"),
     ("relane_moe_imbalance.py", "the MoE routing-imbalance median"),

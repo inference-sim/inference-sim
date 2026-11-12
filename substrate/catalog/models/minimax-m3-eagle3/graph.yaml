@@ -1,0 +1,152 @@
+kind: ModelGraph
+name: minimax-m3-eagle3
+derived_from:
+  format: hf_config_json
+  path: config.json
+  sha256: 8d5858703da7a4020683cdea56a78ec41ad30dfa68237acbc9ab4025a97f5d03
+  deriver_version: 1
+global:
+  hidden_size: 6144
+  vocab_size: 200064
+  tie_word_embeddings: false
+  weight_dtype: bf16
+  architecture: LlamaForCausalLMEagle3
+layer_kinds:
+- id: eagle3_layer
+  nodes:
+  - op: Elementwise
+    role: input_norm
+    bytes_per_token: 24576
+    tp: replicated
+  - op: Elementwise
+    role: hidden_norm
+    bytes_per_token: 24576
+    tp: replicated
+  - op: GEMM
+    role: qkv_proj
+    n: 24576
+    k: 12288
+  - op: Attention
+    holds_engine_kv: true
+    kind: gqa
+    n_q: 64
+    n_kv: 64
+    d_h: 128
+  - op: GEMM
+    role: o_proj
+    n: 6144
+    k: 8192
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+    bytes_per_token: 24576
+    tp: replicated
+  - op: GEMM
+    role: mlp_gate_up
+    n: 36864
+    k: 6144
+  - op: GEMM
+    role: mlp_down
+    n: 6144
+    k: 18432
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+- id: eagle3_context
+  nodes:
+  - op: Elementwise
+    role: eagle3_fc_norm
+    bytes_per_token: 73728
+    tp: replicated
+  - op: GEMM
+    role: eagle3_fc
+    n: 6144
+    k: 18432
+    tp: replicated
+  edges:
+  - - 0
+    - 1
+stack:
+  pattern:
+  - eagle3_layer
+  repeat: 1
+embedding:
+- op: Gather
+  role: embed_tokens
+  rows: 200064
+  row_bytes: 12288
+  rows_per_token: 1
+  out_bytes_per_token: 12288
+  shard: rows
+- op: AllReduce
+  role: embed_out
+  emit: tensor_parallel
+head:
+- op: Elementwise
+  role: final_norm
+  bytes_per_token: 24576
+  tp: replicated
+- op: GEMM
+  role: lm_head
+  n: 200064
+  k: 6144
+  tp: column
+speculator:
+  method: eagle3
+  num_spec_tokens: 1
+  embedding:
+  - op: Gather
+    role: eagle3_embed_tokens
+    rows: 200064
+    row_bytes: 12288
+    rows_per_token: 1
+    out_bytes_per_token: 12288
+    shard: rows
+    aliases: embedding.embed_tokens
+  - op: AllReduce
+    role: eagle3_embed_out
+    emit: tensor_parallel
+  stack:
+    pattern:
+    - eagle3_layer
+    repeat: 1
+  context_stack:
+    pattern:
+    - eagle3_context
+    repeat: 1
+  head:
+  - op: Elementwise
+    role: eagle3_final_norm
+    bytes_per_token: 24576
+    tp: replicated
+  - op: GEMM
+    role: eagle3_lm_head
+    n: 200064
+    k: 6144
+    tp: column
+    aliases: head.lm_head
+  aux_hidden_state_layers:
+  - 2
+  - 30
+  - 57

@@ -3,22 +3,28 @@ package pointrecord
 import (
 	"fmt"
 	"regexp"
+	"slices"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/inference-sim/blis-substrate/contracts/check"
 	"github.com/inference-sim/blis-substrate/contracts/metrics"
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/blis-substrate/contracts/spec/routertable"
+	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
 	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
 )
 
 var (
-	hex64  = regexp.MustCompile(`^[0-9a-f]{64}$`)
-	hex40  = regexp.MustCompile(`^[0-9a-f]{40}$`)
-	digest = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+	hex64 = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	hex40 = regexp.MustCompile(`^[0-9a-f]{40}$`)
 )
 
 var g5Codes = map[G5Code]bool{CodeNotVisible: true, RouterUnsupported: true, ValueNotRecorded: true,
-	FieldNotModelled: true, FieldUnclassified: true, EngineUnsupported: true, NotInCatalog: true,
-	FieldNotInRelease: true, BuildUnparseable: true}
+	FieldNotModelled: true, FieldUnclassified: true, EngineUnsupported: true, TopologyUnsupported: true,
+	NotInCatalog: true, FieldNotInRelease: true, ValueConflict: true, BuildUnparseable: true}
 
 // Valid reports whether c is one of the reasons of design §11.4.
 func (c G5Code) Valid() bool { return g5Codes[c] }
@@ -27,7 +33,21 @@ func (c G5Code) Valid() bool { return g5Codes[c] }
 var substitutionGrade = map[SubstitutionKind]Grade{
 	SubCoefficientMethod: G2, SubCoefficientRange: G2, SubExecutionMode: G2, SubKernelHash: G2,
 	SubValueClass: G2, SubEstimated: G2, SubInterimStatus: G2,
+	SubResolvedDiffers: G2, SubClientDifference: G2, SubLaterRecord: G2, SubRouterDiffers: G2,
+	SubProfileValue: G2, SubUnevaluated: G2,
 	SubOtherRelease: G3, SubChangedFunctions: G4, SubNightlyBuild: G4,
+}
+
+// g1Conditions are the kinds that can name an unevaluated condition of G1: each is the kind
+// that records the condition's failure, so a condition the data could not decide is named by
+// the departure it would have been (design 11.3: "a condition of G1 could not be evaluated ...
+// the point names the condition as unevaluated"). A kind that records something the scorer did,
+// such as an estimate, a later record, a profile or a router, is not a condition it could
+// fail to evaluate.
+var g1Conditions = map[SubstitutionKind]bool{
+	SubCoefficientMethod: true, SubCoefficientRange: true, SubExecutionMode: true, SubKernelHash: true,
+	SubValueClass: true, SubInterimStatus: true, SubResolvedDiffers: true, SubClientDifference: true,
+	SubOtherRelease: true,
 }
 
 var matches = map[Match]bool{MatchExact: true, MatchMapped: true, MatchInert: true, MatchEstimated: true,
@@ -70,8 +90,12 @@ func (r *Record) Validate() *validate.Problems {
 	if r.Simulator.Engine.Kind == "" || r.Simulator.Engine.Version == "" {
 		p.Field("simulator.engine", "states the kind and version the simulator runs")
 	}
-	if !digest.MatchString(r.HarnessDigest) {
-		p.Field("harness_digest", "must be sha256:<64 lowercase hex>, got %q", r.HarnessDigest)
+	if !hex40.MatchString(r.HarnessCommit) {
+		if strings.HasPrefix(r.HarnessCommit, "sha256:") {
+			p.Field("harness_commit", "is a digest, %q: the field was harness_digest, a sha256 of an image; the harness is a script named by its commit (design §11.7), so state the accuracy-dashboard commit, 40 lowercase hex characters", r.HarnessCommit)
+		} else {
+			p.Field("harness_commit", "must be the accuracy-dashboard commit that scored the point, 40 lowercase hex characters, got %q", r.HarnessCommit)
+		}
 	}
 	r.validateFigures(p)
 	for i, s := range r.Settings {
@@ -202,6 +226,8 @@ func (r *Record) validateGrade(p *validate.Problems) {
 		if s.Subject == "" {
 			p.Field(at+".subject", "required: what was substituted")
 		}
+		s.validateKeys(p, at)
+		s.validateBoundCoversPoint(p, at, r.Identity)
 		if i > 0 {
 			prev := r.Substitutions[i-1]
 			if s.Kind < prev.Kind || (s.Kind == prev.Kind && s.Subject <= prev.Subject) {
@@ -209,6 +235,141 @@ func (r *Record) validateGrade(p *validate.Problems) {
 			}
 		}
 	}
+}
+
+// validateBoundCoversPoint checks the regime a router_differs carries and that the bound it carries
+// belongs to it. The regime is exact: a ratio whose regime does not contain the point is not
+// carried (the point would have no bound for this regime and stay router_unsupported), and the
+// point's client count is the record's own. The subset itself, that it is exactly the entry's
+// ratios that cover the point, is checked against the entry by Data.CheckRouterSubstitutions.
+func (s Substitution) validateBoundCoversPoint(p *validate.Problems, at string, id Identity) {
+	if s.Kind != SubRouterDiffers {
+		return
+	}
+	if s.Regime == nil {
+		p.Field(at+".regime", "required for router_differs: the point's regime, from which the carried bound is the entry's applicable subset")
+		return
+	}
+	s.Regime.Validate(p, at+".regime")
+	if id.Concurrency >= 1 && s.Regime.Concurrency != id.Concurrency {
+		p.Field(at+".regime.concurrency", "%d, and the point's identity has %d clients", s.Regime.Concurrency, id.Concurrency)
+	}
+	if s.Bound == nil {
+		return
+	}
+	for i, r := range s.Bound.Ratios {
+		if mm := r.Regime.Mismatches(*s.Regime); len(mm) > 0 {
+			p.Field(fmt.Sprintf("%s.bound.ratios[%d].regime", at, i), "does not contain the point (%s): %s", strings.Join(mm, "; "), routertable.NoBoundForRegime)
+		}
+	}
+}
+
+// validateKeys checks the keys a kind names (design 11.3). A later_record names the field, the
+// record and its date; a router_differs the router the run used, the policy BLIS used and the
+// router table's evidence, with the entry's differences and bound; a client_difference and a resolved_differs say what differed. A key
+// belongs to its own kind only, so a record cannot carry a router's evidence on a coefficient.
+func (s Substitution) validateKeys(p *validate.Problems, at string) {
+	need := map[string]*string{}
+	switch s.Kind {
+	case SubLaterRecord:
+		need["record"], need["date"] = &s.Record, &s.Date
+	case SubRouterDiffers:
+		need["entry"], need["policy"], need["evidence"], need["revision"] = &s.Entry, &s.Policy, &s.Evidence, &s.Revision
+	case SubClientDifference, SubResolvedDiffers:
+		need["detail"] = &s.Detail
+	}
+	if s.Kind != SubProfileValue && len(s.Differed) > 0 {
+		p.Field(at+".differed", "is not a key of %s", s.Kind)
+	}
+	if s.Kind != SubProfileValue && s.ProfileFamily != "" {
+		p.Field(at+".profile_family", "is not a key of %s", s.Kind)
+	}
+	why := map[string]string{
+		"record":   "the record the value was taken from, with its revision",
+		"date":     "the date of that record, YYYY-MM-DD",
+		"entry":    "the router table entry used, by name",
+		"policy":   "the llm-d policy BLIS used in place of the run's router",
+		"evidence": "the router table's evidence for the match",
+		"revision": "the build of the router the run used, a full commit the entry covers",
+		"detail":   "what differed",
+	}
+	for _, k := range []string{"record", "date", "entry", "policy", "evidence", "revision", "detail"} {
+		if v, ok := need[k]; ok {
+			if *v == "" {
+				p.Field(at+"."+k, "required for %s: %s", s.Kind, why[k])
+			}
+		}
+	}
+	for k, v := range map[string]string{"record": s.Record, "date": s.Date, "entry": s.Entry, "policy": s.Policy, "evidence": s.Evidence, "revision": s.Revision} {
+		if _, ok := need[k]; !ok && v != "" {
+			p.Field(at+"."+k, "is not a key of %s", s.Kind)
+		}
+	}
+	if s.Kind != SubRouterDiffers {
+		if len(s.Difference) > 0 {
+			p.Field(at+".difference", "is not a key of %s", s.Kind)
+		}
+		if s.Bound != nil {
+			p.Field(at+".bound", "is not a key of %s", s.Kind)
+		}
+		if s.Regime != nil {
+			p.Field(at+".regime", "is not a key of %s", s.Kind)
+		}
+	}
+	if s.Kind == SubRouterDiffers {
+		if len(s.Difference) == 0 {
+			p.Field(at+".difference", "required for router_differs: the entry's statements of how the run's router and the policy differ")
+		}
+		routertable.CheckStatements(p, at+".difference", s.Difference)
+		if s.Bound == nil {
+			p.Field(at+".bound", "required for router_differs: the entry's measured bound on the policy's effect on each figure")
+		} else {
+			p.Merge(at+".bound", s.Bound.Validate(routertable.Policy(s.Policy)))
+		}
+		switch {
+		case s.Policy != "" && (!routertable.Policy(s.Policy).Offered() || routertable.Policy(s.Policy) == routertable.PolicyNone):
+			p.Field(at+".policy", "%q is not a policy llm-d's router offers; a point simulated with a policy names one of %v", s.Policy, routertable.PolicyNames())
+		}
+		if s.Revision != "" && !hex40.MatchString(s.Revision) {
+			p.Field(at+".revision", "must be a full 40-character lowercase commit of the router the run used, got %q", s.Revision)
+		}
+		if s.Entry != "" && s.Subject != "" && !strings.HasPrefix(s.Entry, s.Subject+"-") {
+			p.Field(at+".entry", "%q is not an entry of the router %q: an entry's name begins with its router", s.Entry, s.Subject)
+		}
+	}
+	switch s.Kind {
+	case SubProfileValue:
+		fields := s.ProfileFamily.keyFields()
+		if fields == nil {
+			p.Field(at+".profile_family", "required for profile_value, and acceptance or routing: the key fields a profile differs in are its family's, got %q", s.ProfileFamily)
+		}
+		for i, d := range s.Differed {
+			switch {
+			case fields != nil && !slices.Contains(fields, d):
+				p.Field(fmt.Sprintf("%s.differed[%d]", at, i), "%q is not a key field of the %s profile family (%s)", d, s.ProfileFamily, strings.Join(fields, ", "))
+			case i > 0 && d <= s.Differed[i-1]:
+				p.Field(fmt.Sprintf("%s.differed[%d]", at, i), "key fields are sorted, each once")
+			}
+		}
+	case SubUnevaluated:
+		if s.Subject != "" && !g1Conditions[SubstitutionKind(s.Subject)] {
+			p.Field(at+".subject", "%q is not a condition of G1 a point can leave unevaluated: name it by the kind that would record its failure (%s)", s.Subject, strings.Join(g1ConditionNames(), ", "))
+		}
+	}
+	if s.Kind == SubLaterRecord && s.Date != "" {
+		if _, err := time.Parse("2006-01-02", s.Date); err != nil {
+			p.Field(at+".date", "must be YYYY-MM-DD, got %q", s.Date)
+		}
+	}
+}
+
+func g1ConditionNames() []string {
+	out := make([]string, 0, len(g1Conditions))
+	for k := range g1Conditions {
+		out = append(out, string(k))
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (r *Record) has(k SubstitutionKind) bool {
@@ -243,11 +404,23 @@ func (r *Record) validateFigures(p *validate.Problems) {
 	}
 	for i, f := range r.Figures {
 		at := fmt.Sprintf("figures[%d]", i)
-		if _, ok := metrics.Lookup(f.Metric); !ok {
+		d, ok := metrics.Lookup(f.Metric)
+		if !ok {
 			p.Field(at+".metric", "%q is not in the metric registry: both sides must name one definition (DEV-8)", f.Metric)
 		}
-		if i > 0 && f.Metric <= r.Figures[i-1].Metric {
-			p.Field(at+".metric", "figures are sorted by metric, each once")
+		if i > 0 {
+			if prev := r.Figures[i-1]; f.Metric < prev.Metric || (f.Metric == prev.Metric && basisKey(f.PredictedBasis) <= basisKey(prev.PredictedBasis)) {
+				p.Field(at+".metric", "figures are sorted by metric and then by predicted basis, each once")
+			}
+		}
+		if ok {
+			f.PredictedBasis.Validate(p, at+".predicted_basis", d)
+			f.MeasuredBasis.Validate(p, at+".measured_basis", d)
+			if f.PredictedBasis.Check(d) == nil && f.MeasuredBasis.Check(d) == nil {
+				if err := f.PredictedBasis.ComparableTo(f.MeasuredBasis, d); err != nil {
+					p.Field(at+".measured_basis", "the two sides are not comparable (%s against %s): %v (DEV-8)", f.PredictedBasis, f.MeasuredBasis, err)
+				}
+			}
 		}
 		for name, v := range map[string]float64{"predicted": f.Predicted, "measured": f.Measured} {
 			if p.FiniteField(at+"."+name, v) && v < 0 {
@@ -279,4 +452,20 @@ func scalar(p *validate.Problems, at string, v any) {
 	default:
 		p.Field(at, "is a %T: a value is a string (a float as printed), an integer, a boolean or null", v)
 	}
+}
+
+// basisKey orders figures of one metric: scope, member, aggregate and the scope ranged over.
+func basisKey(b result.Basis) string {
+	return strings.Join([]string{string(b.Scope), b.Member, string(b.Aggregate), string(b.Over)}, "\x00")
+}
+
+// keyFields are the key fields of the family's profile, or nil for a family that is not one.
+func (f ProfileFamily) keyFields() []string {
+	switch f {
+	case ProfileAcceptance:
+		return acceptance.KeyFields()
+	case ProfileRouting:
+		return routing.KeyFields()
+	}
+	return nil
 }

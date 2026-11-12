@@ -10,6 +10,10 @@ global:
   vocab_size: 200064
   tie_word_embeddings: false
   weight_dtype: fp8
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  weight_scale:
+    elements: 32
+    bytes: 1
 layer_kinds:
 - id: dense
   nodes:
@@ -102,6 +106,12 @@ layer_kinds:
     emit: tensor_parallel
   - op: Elementwise
     role: post_attn_norm
+  - op: GEMM
+    role: router
+    n: 128
+    k: 6144
+    weight_dtype: fp32
+    tp: replicated
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -137,6 +147,8 @@ layer_kinds:
     - 9
   - - 9
     - 10
+  - - 10
+    - 11
 stack:
   prologue:
   - dense
@@ -146,6 +158,17 @@ stack:
   - sparse_attn_moe
   repeat: 57
 modality: text_decoder_of_multimodal
+embedding:
+- op: Gather
+  role: embed_tokens
+  rows: 200064
+  row_bytes: 12288
+  rows_per_token: 1
+  out_bytes_per_token: 12288
+  shard: rows
+- op: AllReduce
+  role: embed_out
+  emit: tensor_parallel
 head:
 - op: Elementwise
   role: final_norm
@@ -153,6 +176,7 @@ head:
   role: lm_head
   n: 200064
   k: 6144
+  weight_dtype: bf16
 speculator:
   method: minimax_m3_mtp
   num_spec_tokens: 1

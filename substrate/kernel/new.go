@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/rules"
@@ -63,11 +64,49 @@ type Inputs struct {
 	// the caller, as speculative acceptance is. Nil prices an expert-parallel group as
 	// evenly loaded and records that as an assumption.
 	Routing *routing.Resolution
+	// Implementations are the kernel implementations the pool runs, by the lowered primitive each
+	// executes: the library, variant and code hash the engine lowered it to, which is
+	// plan.PoolPlan.ImplementationsByPrimitive() for a caller that holds the pool's plan (design
+	// VAL-8). A coefficient that lists kernel implementations is used only for the primitive it
+	// prices (coefficient.PrimitiveOf), and only when every implementation supplied for that
+	// primitive is one it lists, by library, variant and code hash together; a different hash of
+	// the same kernel, or a kernel of another primitive, is refused. A primitive with nothing
+	// supplied uses only coefficients that list no implementation, as every coefficient of the
+	// registry did before any listed one.
+	Implementations map[plan.Primitive][]plan.KernelImpl
+	// Operations are the pool's lowered operations, each with the layer it belongs to, its
+	// primitive and the kernel that executes it: plan.PoolPlan.Operations() for a caller that
+	// holds the pool's plan (design VAL-8, 6.2). A coefficient is then matched against the
+	// kernels of the operations that consume it, not against every kernel that runs its
+	// primitive: a value valid for the kernel that runs the sliding-window layers prices them
+	// whatever runs the full-attention ones. A name that states a class (coefficient.ClassOf)
+	// is consumed by the operations of that class; any other by every operation of its
+	// primitive. When Operations is given, Implementations is derived from it and may be left
+	// empty; if both are given they must name the same implementations.
+	Operations []plan.Operation
+	// DraftFirstPassRows and DraftPassRequests state how an autoregressive drafter's passes run,
+	// as plan.PoolPlan.Drafts.FirstPassRows and PassRequests for a caller that holds the pool's
+	// plan: the engine resolves them, in neutral words, and the kernel prices what it is told
+	// (SUB-6). A deployment that speculates through an autoregressive drafter, named or the
+	// model graph's own, with either empty is refused (draft_passes_unstated), and an unknown word
+	// is refused (draft_passes_unknown). A parallel-block drafter needs neither; both are ignored
+	// while the deployment does not speculate.
+	DraftFirstPassRows plan.FirstPassRows
+	DraftPassRequests  plan.PassRequests
 	// Acceptance is the run's resolved speculative acceptance (blis-schemas acceptance.Resolve),
 	// resolved by the caller as Routing is. It is read only when the engine enables adaptive
 	// verification (enginesettings.Speculative.EnableAdaptiveVerification), where it is
 	// required: the verify budget the engine chooses depends on it (adaptive.go).
 	Acceptance *acceptance.Resolution
+	// PoolFirstNode is the cluster node the pool's first rank sits on, when it is not where the
+	// deployment's order puts it: pools take consecutive nodes in declaration order, so nil
+	// means the sum of the node counts of the pools before PoolIndex. The pool's instances are
+	// laid out one after another from there, instance GPUs each. It is read only when the
+	// scenario states switch groups and an instance spans nodes, where it decides whether a
+	// collective stays under one switch. A collective that crosses a switch boundary is not
+	// priced (SUB-17 asks for its path and its per-link demand), so such a pool is refused with
+	// switch_group_collective_crosses.
+	PoolFirstNode *int
 }
 
 // New resolves the inputs into a kernel.
@@ -134,6 +173,20 @@ func construct(in Inputs) (*Kernel, error) {
 	if err := validateDocuments(in); err != nil {
 		return nil, err
 	}
+	running := runningImpls(in.Implementations)
+	if err := coefficient.ValidateRunning(running); err != nil {
+		return nil, fmt.Errorf("the kernel implementations that run: %w", err)
+	}
+	if len(in.Operations) > 0 {
+		pooled := runningImpls(plan.ImplementationsOf(in.Operations))
+		if err := coefficient.ValidateRunning(pooled); err != nil {
+			return nil, fmt.Errorf("the kernel implementations that run: %w", err)
+		}
+		if len(running) > 0 && !sameImplementations(running, pooled) {
+			return nil, fmt.Errorf("Inputs.Implementations and Inputs.Operations name different kernel " +
+				"implementations; give the operations alone, and the implementations are derived from them")
+		}
+	}
 	// A deep copy: the engine block's optional settings are pointers, and a kernel that
 	// shared them with the caller's documents would change its answers when the caller
 	// edited a deployment it had already priced -- the config-search shape Inputs exists
@@ -154,6 +207,10 @@ func construct(in Inputs) (*Kernel, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolving the cluster's packaging: %w", err)
 	}
+	sw, err := in.Scenario.Cluster.Switching()
+	if err != nil {
+		return nil, fmt.Errorf("resolving the cluster's switch groups: %w", err)
+	}
 	// A rack is one NVLink domain where the chip says so: the catalog records a rack tier
 	// only on parts whose NVLink fabric spans chassis, and the resolved rack is the entry's.
 	fab.RackIsOneDomain = pk.GPUsPerRack > 0 && in.Chip.IntraRackBwGBps > 0
@@ -169,6 +226,10 @@ func construct(in Inputs) (*Kernel, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolving the model graph for %s: %w", in.Chip.Name, err)
 	}
+	// The target's own graph, before any drafter joins it: the layout the engine says it serves
+	// is the target's, and the drafter's layers (its own checkpoint, at its own widths) are not
+	// part of it.
+	targetGraph := g
 	// A drafter named by the deployment, a checkpoint of its own, joins the target graph as
 	// its speculator; one named without its graph is refused rather than priced as free.
 	if name := draftModelName(eng); name != "" || in.Draft != nil {
@@ -200,10 +261,15 @@ func construct(in Inputs) (*Kernel, error) {
 		return nil, fmt.Errorf("resolving the layout: %w", err)
 	}
 
+	ops, err := loweredOperations(g, in.Operations, *in.Chip, family)
+	if err != nil {
+		return nil, err
+	}
 	coeffs, err := resolve.Load(in.Coefficients, resolve.Scope{
 		Hardware: in.Chip.Name, Model: in.Model.Name,
 		TP: layout.TP, EP: layout.ExpertWidth, NodesSpanned: layout.NodesSpanned,
-		Fabric: fabricName,
+		Fabric:          fabricName,
+		Implementations: running, Operations: ops,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("resolving coefficients: %w", err)
@@ -219,7 +285,12 @@ func construct(in Inputs) (*Kernel, error) {
 	fab.InterNodeEfficiency = fabricEfficiency
 
 	k := &Kernel{layout: layout, fabric: fab, pool: pool, engine: eng, chip: *in.Chip, rules: in.Rules,
-		family: family, architecture: g.Global.Architecture, graph: g}
+		family: family, architecture: g.Global.Architecture, graph: g,
+		switching:           sw,
+		statedFirstPassRows: in.DraftFirstPassRows, statedPassRequests: in.DraftPassRequests}
+	if err := k.checkCollectivesStayInAGroup(poolFirstNode(in)); err != nil {
+		return nil, err
+	}
 	if in.Fabric != nil && !fabricEfficiencyStated {
 		k.assume("fabric_bandwidth_efficiency", "1",
 			"the scenario's coefficient sets carry no "+fabricEfficiencyName+" scoped to fabric "+
@@ -250,6 +321,11 @@ func construct(in Inputs) (*Kernel, error) {
 			})
 		}
 		quantization = ""
+	}
+	// The layout the engine says it serves is shown against the target's own graph, before a
+	// drafter joins it: the drafter's layers are another checkpoint's.
+	if err := checkServedWeights(targetGraph, eng.ServedWeights); err != nil {
+		return nil, err
 	}
 	served, err := servedDType(in.Model.Global.WeightDType, quantization)
 	if err != nil {
@@ -410,11 +486,8 @@ func construct(in Inputs) (*Kernel, error) {
 	}
 	k.noteShardedProjections()
 	k.adoptRouting(in.Routing, k.totalExperts > 0)
-	k.tiers = map[string]hardware.StorageDevice{}
-	for _, d := range in.Devices {
-		if d != nil {
-			k.tiers[d.Name] = *d
-		}
+	if err := k.liftTiers(coeffs, in); err != nil {
+		return nil, err
 	}
 	// The engine behaviour priced here is vLLM v0.31.0's, whatever release the scenario
 	// declares; the rules pack follows the declared release. Where they differ, a behaviour
@@ -433,6 +506,8 @@ func construct(in Inputs) (*Kernel, error) {
 	}
 	k.buildProvenance(coeffs)
 	k.selected = coeffs.Selected()
+	k.running = coeffs.Implementations()
+	k.trust = buildTrust(k.selected)
 	k.fixed = k.computeFixedBytes(in.Model)
 	if err := k.refuseUnallocatableDeepEP(); err != nil {
 		return nil, err
@@ -893,6 +968,7 @@ func (k *Kernel) lift(c *resolve.Coefficients, g *model.Graph, cacheBytes float6
 		// finite rather than infinite.
 		k.nicBytesPerSecond = k.nvlinkBytesPerSecond
 	}
+	k.adoptSwitching()
 
 	// Collective floors are per operation, dtype and rank count. All three axes
 	// matter and the measurements say so: on H200 an all-reduce floor is 15.98 us
@@ -1043,6 +1119,9 @@ func (k *Kernel) lift(c *resolve.Coefficients, g *model.Graph, cacheBytes float6
 	k.attentionPrefillScale = k.optional(c, "attention_prefill_work_scale",
 		len(usedAttn) > 0, "no measured attention prefill scale, so prefill attention "+
 			"is charged on the unmodified GEMM efficiency ramp with no floor")
+	if err := k.applyAttentionLane(c, usedAttn); err != nil {
+		return err
+	}
 
 	k.hostBytesPerSecond = k.optional(c, "host_link_bandwidth", true,
 		"no host-link rate, so an offload transfer is not capped at it") * 1e6
@@ -2822,6 +2901,26 @@ func (k *Kernel) residentBytes(l price.PlannedLayer) float64 {
 	return b
 }
 
+// runningImpls converts the engine's implementations to the registry's key: library, variant and
+// code hash. The toolkit is recorded by the engine and is not part of the key (design 6.2).
+func runningImpls(in map[plan.Primitive][]plan.KernelImpl) map[string][]coefficient.KernelImpl {
+	out := map[string][]coefficient.KernelImpl{}
+	for prim, impls := range in {
+		seen := map[coefficient.KernelImpl]bool{}
+		for _, k := range impls {
+			c := coefficient.KernelImpl{Library: k.Library, Variant: k.Variant, CodeHash: k.CodeHash}
+			if !seen[c] {
+				seen[c] = true
+				out[string(prim)] = append(out[string(prim)], c)
+			}
+		}
+		if _, ok := out[string(prim)]; !ok {
+			out[string(prim)] = nil
+		}
+	}
+	return out
+}
+
 // buildProvenance records every coefficient used, so a prediction can state its evidence.
 //
 // It records the kernel's own assumptions as well, after the registry's entries: see
@@ -2834,9 +2933,15 @@ func (k *Kernel) buildProvenance(c *resolve.Coefficients) {
 		if !ok {
 			continue
 		}
+		// A tier the deployment does not offload to is admitted but unread; listing its eighteen
+		// entries on every scenario would dilute what the evidence summary counts (liftTiers).
+		if isOffloadTierEntry(name) && !k.tierEntries[name] {
+			continue
+		}
 		k.origins = append(k.origins, kernel.CoefficientOrigin{
 			Name: name, Set: r.Set, Method: string(r.Entry.Method),
-			Scope: scopeString(r.Entry, k.chip.Name),
+			Scope:       scopeString(r.Entry, k.chip.Name),
+			KernelMatch: string(r.Match), Primitive: r.Primitive, Running: coefficient.DescribeImpls(r.Running),
 		})
 	}
 	k.origins = append(k.origins, k.assumptions...)
@@ -3003,8 +3108,8 @@ func scopeString(e coefficient.Entry, chip string) string {
 	default:
 		out = "unscoped"
 	}
-	if e.CopiedFrom != "" {
-		out += "; copied from " + e.CopiedFrom
+	if e.TransferredFrom != "" {
+		out += "; transferred from " + e.TransferredFrom
 	}
 	return out
 }
@@ -3028,4 +3133,90 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// instanceGPUs is the GPUs one instance of the pool occupies: the engine lays ranks out
+// DP x PP x PCP x TP.
+func (k *Kernel) instanceGPUs() int {
+	pl := k.pool.Parallel
+	return max(pl.TP, 1) * max(pl.PP, 1) * max(pl.DP, 1) * max(pl.PCP, 1)
+}
+
+// uplinkRate is the capacity of a switch group's uplink, in bytes per second:
+//
+//	n_g x gpusPerNode x nic / r
+//
+// n_g nodes each offer gpusPerNode rails at the NIC rate, and the uplink carries 1/r of that.
+// It does not depend on the pool that asks: a physical link has one rate, and the ranks of an
+// instance that pull through it at once are the demand's Streams.
+func uplinkRate(nodes, gpusPerNode int, nic, ratio float64) float64 {
+	return float64(nodes) * float64(gpusPerNode) * nic / ratio
+}
+
+// adoptSwitching sizes each switch group's uplink and refuses a pool whose collective would
+// cross a group boundary, which the model does not price.
+func (k *Kernel) adoptSwitching() {
+	if k.switching == nil {
+		return
+	}
+	for g := range k.switching.Groups {
+		k.uplinkBytesPerSecond = append(k.uplinkBytesPerSecond, uplinkRate(
+			k.switching.GroupNodes(g), k.layout.GPUsPerNode, k.nicBytesPerSecond,
+			k.switching.Oversubscription))
+	}
+	k.uplinkStreams = k.instanceGPUs()
+}
+
+// collectiveCrossesGroups reports the first instance of the pool whose ranks sit under more
+// than one switch, as the instance's index and the groups it spans. Instances are laid out
+// one after another from the pool's first node, instanceGPUs ranks each, gpusPerNode ranks to
+// a node. An instance on one node, or inside one group, has none.
+func collectiveCrossesGroups(sw *scenario.Switching, firstNode, poolNodes, gpusPerNode, instanceGPUs int) (instance int, groups [2]int, crosses bool) {
+	if sw == nil || gpusPerNode < 1 || instanceGPUs <= gpusPerNode {
+		return 0, groups, false
+	}
+	instances := poolNodes * gpusPerNode / instanceGPUs
+	for i := 0; i < max(instances, 1); i++ {
+		lo := firstNode + i*instanceGPUs/gpusPerNode
+		hi := firstNode + (i*instanceGPUs+instanceGPUs-1)/gpusPerNode
+		g0, ok0 := sw.GroupOf(lo)
+		for n := lo; n <= hi; n++ {
+			if g, ok := sw.GroupOf(n); ok0 && ok && g != g0 {
+				return i, [2]int{g0, g}, true
+			}
+		}
+	}
+	return 0, groups, false
+}
+
+// poolFirstNode is the node the pool starts on: the stated one, or after the pools before it.
+func poolFirstNode(in Inputs) int {
+	if in.PoolFirstNode != nil {
+		return *in.PoolFirstNode
+	}
+	n := 0
+	for _, p := range in.Deployment.Pools[:in.PoolIndex] {
+		n += p.Nodes
+	}
+	return n
+}
+
+// checkCollectivesStayInAGroup refuses a pool under switch groups whose instance spans nodes
+// unless every instance sits under one switch. The step collectives of such an instance run
+// over the nodes' NICs at the node rate; one that crossed a group's uplink would be priced over
+// that tier and would place a demand on it that transfers must share what remains of, and
+// neither is modelled, so accepting the placement would price the step and the concurrent
+// handoffs wrongly.
+func (k *Kernel) checkCollectivesStayInAGroup(firstNode int) error {
+	if k.switching == nil || k.instanceGPUs() <= k.layout.GPUsPerNode {
+		return nil
+	}
+	if i, g, crosses := collectiveCrossesGroups(k.switching, firstNode, k.pool.Nodes,
+		k.layout.GPUsPerNode, k.instanceGPUs()); crosses {
+		return fmt.Errorf("switch_group_collective_crosses: instance %d of the pool, from node %d, "+
+			"spans switch groups %d and %d; a collective that leaves its switch is priced over the "+
+			"uplink with its demand on it, which this cost model does not yet do. Place the pool's "+
+			"instances each inside one group", i, firstNode, g[0], g[1])
+	}
+	return nil
 }

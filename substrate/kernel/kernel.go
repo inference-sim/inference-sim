@@ -26,12 +26,15 @@ import (
 	"sort"
 	"time"
 
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
+	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 
 	"github.com/inference-sim/blis-substrate/kernel/internal/price"
 	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
@@ -95,6 +98,15 @@ type Kernel struct {
 	draftKVBytesPerToken float64
 	// speculating is a deployment that drafts with a speculator the graph states.
 	speculating bool
+	// statedFirstPassRows and statedPassRequests are what the engine said about an autoregressive
+	// drafter's passes (Inputs.DraftFirstPassRows, DraftPassRequests), as given.
+	statedFirstPassRows plan.FirstPassRows
+	statedPassRequests  plan.PassRequests
+	// draftFirstPass is a drafter whose first pass the engine says runs over every token the
+	// target scheduled, and is charged so; draftAllRequests one whose head and later passes the
+	// engine says run for every request, a request mid-prompt included (liftDraftPasses).
+	draftFirstPass   bool
+	draftAllRequests bool
 	// adaptive is adaptive verification's resolved state, nil when the engine does not enable
 	// it (adaptive.go).
 	adaptive *adaptiveVerify
@@ -144,6 +156,13 @@ type Kernel struct {
 	epsMax, mHalf        float64
 	nvlinkBytesPerSecond float64
 	nicBytesPerSecond    float64
+	// switching is the cluster's switch groups, nil where the scenario states none.
+	// uplinkBytesPerSecond is each group's uplink capacity (uplinkRate), indexed by group.
+	// It is the physical figure, the same in every kernel of the deployment.
+	// uplinkStreams is how many rank flows one pull of this pool's instance puts on it.
+	switching            *scenario.Switching
+	uplinkBytesPerSecond []float64
+	uplinkStreams        int
 	hostBytesPerSecond   float64
 	moeImbalance         float64
 	// asyncScheduling is the engine's resolved async_scheduling (resolveAsyncScheduling).
@@ -191,6 +210,11 @@ type Kernel struct {
 	// scale means this part has no measured prefill entries and the FLOPs fallback runs.
 	attentionPrefillFloor time.Duration
 	attentionPrefillScale float64
+	// laneRuns is whether the non-latent layers' prefill is priced on the trtllm-gen lane, which
+	// holds only when a pair is shown valid for the implementation the caller reported for the
+	// prefill primitive, and lanePair that pair (applyAttentionLane).
+	laneRuns bool
+	lanePair prefillPair
 
 	// Memory occupancy outside the KV budget, every magnitude from the registry (see
 	// liftMemory): the communicator reservation, the engine workspace, the graph capture,
@@ -306,12 +330,27 @@ type Kernel struct {
 	// selected is every registry entry a lookup returned while the kernel was built, for
 	// the selected-entry report (RecordSelected). Pricing reads no coefficient after
 	// construction, so the list is complete when New returns.
-	selected    []resolve.Resolved
+	selected []resolve.Resolved
+	// running are the kernel implementations the lookup was keyed by (the pool's lowered
+	// implementations), for the selected-entry report.
+	running     map[string][]coefficient.KernelImpl
 	assumptions []kernel.CoefficientOrigin
-	resolution  kernel.Resolution
+	// trust is the selected entries as terms of a price's trust (trust.go, VAL-3).
+	trust      []trustTerm
+	resolution kernel.Resolution
 
-	// tiers maps a tier name to its device facts, for TierTime.
-	tiers map[string]hardware.StorageDevice
+	// tiers maps a tier name to its priced terms, for TierTime. They come from the registry's
+	// offload_tier_<tier>_* coefficients, not from the catalog (liftTiers).
+	tiers map[string]offloadTier
+	// tierEntries names the tier coefficients the deployment's offload block reads, which are the
+	// only ones Provenance lists (buildProvenance).
+	tierEntries map[string]bool
+}
+
+// offloadTier is one tier's three terms as the registry states them, in its units.
+type offloadTier struct {
+	readRate, writeRate float64 // bytes per microsecond, which is MB/s
+	baseLatency         float64 // microseconds per transfer
 }
 
 // collKey identifies one measured collective triple: the primitive AND the group it runs
@@ -1734,11 +1773,11 @@ func (k *Kernel) TierTime(tier string, dir kernel.Direction, bytes int64,
 		// hit look costless, which is the opposite of what an unmodelled tier means.
 		return time.Duration(math.MaxInt64)
 	}
-	rate := dev.ReadBandwidthMBs
+	rate := dev.readRate
 	if dir == kernel.DirectionToTier {
-		rate = dev.WriteBandwidthMBs
+		rate = dev.writeRate
 	}
-	rate *= 1e6 // MB/s to bytes per second
+	rate *= 1e6 // bytes per microsecond to bytes per second
 	// A CPU tier crosses the host link as well as host memory, and the slower of the two
 	// binds. Which one that is depends on the pairing rather than on either alone.
 	if k.hostBytesPerSecond > 0 && rate > k.hostBytesPerSecond {
@@ -1750,7 +1789,7 @@ func (k *Kernel) TierTime(tier string, dir kernel.Direction, bytes int64,
 	if queueDepth > 1 {
 		rate /= float64(queueDepth)
 	}
-	return seconds(price.FloorAndRate(float64(bytes), rate, dev.BaseLatencyUs*1e-6))
+	return seconds(price.FloorAndRate(float64(bytes), rate, dev.baseLatency*1e-6))
 }
 
 // PDTransferTime prices moving one request's KV between pools: its demand, run alone.
@@ -1778,6 +1817,19 @@ func (k *Kernel) PDTransferTime(tokens int, from, to kernel.Placement) time.Dura
 //	same rack, one-domain NVLink rack  that rack's NVLink domain, at the NVLink rate
 //	otherwise                          the sender's NIC egress and the receiver's NIC
 //	                                   ingress, each at the NIC rate
+//	different switch groups            the two NIC links, and the sender group's uplink
+//	                                   egress and the receiver group's uplink ingress
+//
+// A scenario that states switch groups gives each group an uplink of n x gpusPerNode x NIC /
+// r bytes per second (uplinkRate): n nodes and r the stated oversubscription. That is the
+// physical capacity, so a prefill pool's kernel and a decode pool's kernel of any widths name
+// one uplink at one rate. The payload is one rank's, and the rankGPUs ranks of an instance pull
+// at once on separate rails through the one uplink, so the uplink names rankGPUs Streams of
+// the pull: a pull alone gets 1/rankGPUs of the uplink for each rank's flow. A pull alone is
+// bound by its NIC unless r is large enough that the uplink binds, so a lone pull prices as it
+// would without groups; two or more pulls leaving or entering one group share its uplink and
+// slow each other, each in proportion to the ranks it pulls with. A pull inside one group
+// names no uplink.
 //
 // Link IDs are derived from the placement alone, so every kernel of one deployment names a
 // physical link the same way: a prefill pool's kernel and a decode pool's kernel describe
@@ -1821,6 +1873,15 @@ func (k *Kernel) PDTransferDemand(tokens int, from, to kernel.Placement) kernel.
 			{Link: kernel.LinkID(fmt.Sprintf("nic/ingress/node/%d", to.Node)),
 				BytesPerSecond: k.nicBytesPerSecond},
 		}
+		gf, okf := k.switching.GroupOf(from.Node)
+		gt, okt := k.switching.GroupOf(to.Node)
+		if okf && okt && gf != gt {
+			d.Links = append(d.Links,
+				kernel.LinkUse{Link: kernel.LinkID(fmt.Sprintf("uplink/egress/group/%d", gf)),
+					BytesPerSecond: k.uplinkBytesPerSecond[gf], Streams: k.uplinkStreams},
+				kernel.LinkUse{Link: kernel.LinkID(fmt.Sprintf("uplink/ingress/group/%d", gt)),
+					BytesPerSecond: k.uplinkBytesPerSecond[gt], Streams: k.uplinkStreams})
+		}
 	}
 	return d
 }
@@ -1853,6 +1914,22 @@ func (k *Kernel) AdmissionOverhead(promptTokens int) time.Duration {
 	}
 	return k.admissionPerRequest +
 		time.Duration(float64(k.admissionPerToken)*float64(promptTokens))
+}
+
+// AdmissionDemand splits AdmissionOverhead: the per-token term is the Service a request
+// holds a server of the admission queue for, and the per-request term is the Delay it waits
+// out holding none. The registry's rationale for host_admission_per_request says that term is
+// not tokenisation or templating (those measured 0.0153 and 0.1083 ms in all) but a latency
+// intercept of unknown origin. Treating it as a delay is an assumption: all of it as Service
+// is the bound the model had before, and none of the intercept as Service the bound here.
+func (k *Kernel) AdmissionDemand(promptTokens int) kernel.HostDemand {
+	if promptTokens <= 0 {
+		return kernel.HostDemand{}
+	}
+	return kernel.HostDemand{
+		Service: time.Duration(float64(k.admissionPerToken) * float64(promptTokens)),
+		Delay:   k.admissionPerRequest,
+	}
 }
 
 // OutputTokenOverhead returns host time per emitted token.
@@ -1947,6 +2024,13 @@ func (k *Kernel) PreSnapshotBytes() int64 { return k.commBytes + k.workspaceByte
 // them, or its default where neither is stated (see Provenance). A step of more tokens runs
 // with no graph whatever the mode. Zero when the resolved mode captures nothing.
 func (k *Kernel) CaptureTokens() int { return k.captureTokens }
+
+// CaptureSizes returns the step sizes, in tokens, a captured CUDA graph covers, ascending: a
+// step runs in the smallest of them that holds it, padded to its size, and in none when it
+// is larger than CaptureTokens. Empty when the resolved mode captures nothing. The engine that
+// states a step's rows reads it to say which graph the step replays; the kernel resolves no
+// capture size of its own beyond what it prices from.
+func (k *Kernel) CaptureSizes() []int { return append([]int(nil), k.captureSizes...) }
 
 // GraphModes returns the CUDA graph mode the engine runs a uniform decode step under and the
 // one it runs every other step under, as vLLM names them -- "FULL", "PIECEWISE" or "NONE" --

@@ -69,6 +69,18 @@
     runs: pull_request
     status: ci
     test: 'ledger: TestUnpinnedRevisionsRefused'
+  - repo: blis-substrate
+    check: >-
+      A workflow artifact a tool reads is pinned by run id, attempt, evaluated commit and the
+      SHA-256 of its zip and file, and a revision of latest is refused
+    runs: pull_request
+    status: ci
+    test: 'ledger: TestWorkflowArtifactPinIsExact'
+  - repo: blis-substrate
+    check: The extractor's pin file equals the ledger's entry for the artifact
+    runs: pull_request
+    status: ci
+    test: 'ledger: TestExtractorPinEqualsTheLedgerEntry'
   review: null
   status: ci
   target:
@@ -109,7 +121,7 @@
   - repo: blis-substrate
     check: >-
       A check that every unit at the merge base keeps its unit_id and role key, or is covered by an
-      alias table or by a new partition version a person approved
+      alias table, and a new partition version is the next number with a new seed record
     runs: pull_request
     status: ci
     test: 'ledger: TestCheckAgainstBase'
@@ -201,6 +213,22 @@
     runs: pull_request
     status: ci
     test: 'ledger: TestLintWorkflows'
+  - repo: blis-substrate
+    check: >-
+      The three published lists are read back and checked against the ledger that drew them: the
+      seed hash and partition version it records, units that exist, one role per unit
+    runs: pull_request
+    status: ci
+    test: 'ledger: TestPublishedListsAreCheckedAgainstTheLedger'
+    known_bad: 'ledger: TestPublishedListsAreCheckedAgainstTheLedger'
+  - repo: blis-substrate
+    check: >-
+      A release carries all three published lists with the fit and anchor lists nonempty; the
+      release job, the ledger check and the release tool refuse otherwise
+    runs: pull_request
+    status: ci
+    test: 'ledger: TestReleaseRefusesAnEmptyPublishedSet'
+    known_bad: 'ledger: TestReleaseRefusesAnEmptyPublishedSet'
   - repo: accuracy-dashboard
     check: A workflow lint that those jobs check out only main
     runs: pull_request
@@ -267,12 +295,23 @@
       A test per borrowing step, for a tie, for each bound of K with and without stated per-position
       rates, for an ambiguous key, for the exact-only option and for the refusal
     runs: pull_request
-    status: new
+    status: ci
+    test: 'contracts/spec/acceptance: TestBorrowingAcrossK; TestTheProportionalRuleDoesNotOverstate; TestBorrowingAnotherDrafter; TestBorrowingAnotherTarget; TestTheTieBreakOrder; TestAmbiguityIsRefused; TestExactOnlyAndRefusal; TestFallbackCategoryPrecedence; TestFallbackWaitsForTheWorkloadsOwnCategory; TestTheSameDrafterUnderAnotherMethodIsNotBorrowed'
+    known_bad: 'contracts/spec/acceptance: TestExactOnlyAndRefusal'
+  - repo: blis-substrate
+    check: >-
+      The catalog's drafter link holds in both directions: a target lists its drafters, each separate
+      drafter names its target, and a graph with a speculator is listed as having one
+    runs: pull_request
+    status: ci
+    test: 'validate/dataset: TestCheckDraftersHoldsInBothDirections'
+    known_bad: 'validate/dataset: TestCheckDraftersHoldsInBothDirections'
   review: null
-  status: new
+  status: partial
   target:
     status: ci
     milestone: 2
   note: >-
-    profiles state no drafter, and the lookup matches the exact key, substituting only a requested
-    fallback category; a run with no match is refused unless a value is stated
+    the lookup borrows in the order of D8 and the Result records the step; the validator rule that
+    refuses a workload-dependent family in the coefficient registry without a workload key is not
+    built, because the design does not say what the key of expert routing balance is

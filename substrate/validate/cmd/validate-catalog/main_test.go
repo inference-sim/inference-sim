@@ -339,20 +339,36 @@ InterNodeBwGBps: 0
 	}
 }
 
-// TestRunMalformedStorageDevice: a storage tier that loads but fails validation (a
-// non-positive bandwidth) must be reported, named by tier, and exit 1 — the devices path
-// is new coverage, so a negative test pins that a per-tier failure bubbles up.
+// TestRunStorageTierWithARateIsRefused: a tier that states a rate or a latency is refused,
+// named by tier and by key, and the message says where the value goes (SUB-18): a fitted or
+// assumed value is a coefficient, so the catalog does not hold it.
+func TestRunStorageTierWithARateIsRefused(t *testing.T) {
+	for _, key := range []string{"read_bandwidth_mb_s", "write_bandwidth_mb_s", "base_latency_us"} {
+		root := catalogWith(t, map[string]string{
+			"devices/storage.yaml": "cpu_dram: {" + key + ": 2.0e4}\n",
+		})
+		code, _, errb := exercise(t, root)
+		if code != 1 {
+			t.Fatalf("%s: exit = %d, want 1\nstderr:\n%s", key, code, errb)
+		}
+		if !strings.Contains(errb, key) || !strings.Contains(errb, "coefficient registry") {
+			t.Errorf("%s: stderr should name the key and say the value belongs in the registry, got: %s", key, errb)
+		}
+	}
+}
+
+// TestRunMalformedStorageDevice: a storage tier whose name cannot be the middle of a
+// coefficient name must be reported, named by tier, and exit 1.
 func TestRunMalformedStorageDevice(t *testing.T) {
 	root := catalogWith(t, map[string]string{
-		"devices/storage.yaml": `cpu_dram: {read_bandwidth_mb_s: -1, write_bandwidth_mb_s: 2.0e4, base_latency_us: 1.0}
-`,
+		"devices/storage.yaml": "Bad-Tier: {_comment: x}\n",
 	})
 	code, _, errb := exercise(t, root)
 	if code != 1 {
 		t.Fatalf("exit = %d, want 1\nstderr:\n%s", code, errb)
 	}
-	if !strings.Contains(errb, "read_bandwidth_mb_s") || !strings.Contains(errb, "cpu_dram") {
-		t.Errorf("stderr should name the tier and the offending field, got: %s", errb)
+	if !strings.Contains(errb, "Bad-Tier") || !strings.Contains(errb, "lower-case") {
+		t.Errorf("stderr should name the tier and the rule, got: %s", errb)
 	}
 }
 
@@ -632,5 +648,61 @@ func TestRunTheCommittedCatalogPasses(t *testing.T) {
 	code, out, errb := exercise(t, filepath.Join("..", "..", "..", "catalog"))
 	if code != 0 {
 		t.Fatalf("the committed catalog fails validate-catalog (exit %d):\n%s\n%s", code, out, errb)
+	}
+}
+
+const routerEntry = `kind: RouterMapping
+router: acme
+mode: round-robin
+revisions: [aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa]
+policy: round-robin
+reason: both rotate over the workers
+difference:
+  - {aspect: counter, text: x, evidence: [0, 2]}
+bound:
+  evidence: {file: registry/docs/x.csv, sha256: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc, producer: acme/sim, commit: dddddddddddddddddddddddddddddddddddddddd, command: run}
+  ratios:
+    - metric: ttft_p50_ms
+      against: [random-picker]
+      regime: {workload: balanced, concurrencies: [16, 64], model: m, hardware: h, engine_version: "0.32.0", fabric: ib-400g, prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}, decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}, shapes: [1P1D]}
+      max_ratio: 1.1
+  not_measured: [x]
+evidence:
+  - {side: router, field: mode, repository: acme/router, commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, path: a.go, lines: "1-2", claim: x}
+  - {side: router, field: policy, repository: acme/router, commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, path: a.go, lines: "3", claim: x}
+  - {side: llm-d, field: policy, repository: inference-sim/llm-d-router, commit: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, path: pkg/epp/framework/plugins/scheduling/picker/maxscore/picker.go, lines: "5", claim: x}
+`
+
+// The router table is checked: an entry with evidence passes, one without evidence or with a
+// policy llm-d's router does not offer is refused, and so is one router mode mapped twice.
+func TestRouterEntriesAreChecked(t *testing.T) {
+	code, out, errb := exercise(t, catalogWith(t, map[string]string{"routers/acme-round-robin.yaml": routerEntry}))
+	if code != 0 || !strings.Contains(out, "acme-round-robin") {
+		t.Fatalf("a valid entry: code %d\n%s\n%s", code, out, errb)
+	}
+	noEvidence := routerEntry[:strings.LastIndex(routerEntry, "\nevidence:\n")+1] + "evidence: []\n"
+	code, _, errb = exercise(t, catalogWith(t, map[string]string{"routers/acme-round-robin.yaml": noEvidence}))
+	if code != 1 || !strings.Contains(errb, "added only with evidence") {
+		t.Errorf("no evidence: code %d, want 1 naming the rule:\n%s", code, errb)
+	}
+	noBound := strings.Replace(routerEntry, "bound:", "unbound:", 1)
+	code, _, errb = exercise(t, catalogWith(t, map[string]string{"routers/acme-round-robin.yaml": noBound}))
+	if code != 1 || !strings.Contains(errb, "unbound") {
+		t.Errorf("a key the entry does not have: code %d\n%s", code, errb)
+	}
+	badPolicy := strings.Replace(routerEntry, "policy: round-robin\nreason", "policy: kv-aware\nreason", 1)
+	code, _, errb = exercise(t, catalogWith(t, map[string]string{"routers/acme-round-robin.yaml": badPolicy}))
+	if code != 1 || !strings.Contains(errb, "not a policy llm-d's router offers") {
+		t.Errorf("a policy llm-d does not offer: code %d\n%s", code, errb)
+	}
+	code, _, errb = exercise(t, catalogWith(t, map[string]string{
+		"routers/acme-round-robin.yaml": routerEntry, "routers/acme-rr-again.yaml": routerEntry}))
+	if code != 1 || !strings.Contains(errb, "acme-rr-again") || !strings.Contains(errb, `make its name "acme-round-robin"`) {
+		t.Errorf("one router mode mapped twice: code %d\n%s", code, errb)
+	}
+	unknownKey := strings.Replace(routerEntry, "mode: round-robin\n", "mode: round-robin\ncolour: red\n", 1)
+	code, _, errb = exercise(t, catalogWith(t, map[string]string{"routers/acme-round-robin.yaml": unknownKey}))
+	if code != 1 || !strings.Contains(errb, "colour") {
+		t.Errorf("an unknown key: code %d\n%s", code, errb)
 	}
 }

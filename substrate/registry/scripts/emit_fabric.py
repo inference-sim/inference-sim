@@ -9,7 +9,7 @@ bandwidth (inference-sim/blis-registry#60, gap 3).
 THE QUANTITY. `fabric_bandwidth_efficiency`, dimensionless, scoped {fabric: [<networks/ name>]}:
 the payload throughput a transfer over that fabric achieves, divided by the catalog's nominal
 InterNodeBwGBps (line rate / 8, per GPU, per direction: roce-200g 25, ib-400g 50,
-ethernet-100gbe 12.5 GB/s). blis-latency-kernel (fabric.go, fabricEfficiencyName) multiplies
+ib-800g 100, ethernet-100gbe 12.5 GB/s). blis-latency-kernel (fabric.go, fabricEfficiencyName) multiplies
 the NIC rate a P/D handoff or pipeline boundary crosses by it, and scales the intra-to-inter
 ratio of a cross-node collective, and refuses a value outside (0, 1]. The catalog itself
 states only the nominal figure and says the correction belongs here (networks/*.yaml
@@ -40,6 +40,10 @@ destination rank) over latency, while DeepEP v2's hybrid dispatch sends a token 
 once per destination node and fans it out over NVLink, so the bytes that cross InfiniBand are
 not in the row.
 
+ib-800g IS ASSUMED EQUAL TO ib-400g. No public multi-node measurement of ConnectX-8 XDR
+payload throughput was found, so the entry carries the ib-400g fraction under its own
+`assumed` label, with the line rate cited from NVIDIA's Blackwell Ultra Datasheet.
+
 roce-200g AND ethernet-100gbe ARE ASSUMED. No public multi-node measurement of an HGX
 RoCE-200G rail or of NCCL over 100 GbE TCP was found. The one public RoCEv2 measurement used
 is a two-node DGX Spark (GB10) pair, cabled directly with no switch, which bounds RoCE from
@@ -48,7 +52,8 @@ above but is not the catalog's fabric, so it is not `measured` or `literature`.
 Every cited page is pinned by the sha256 of what was read: for a GitHub issue, the UTF-8
 `body` of each issue or comment the GitHub API returns; for a web page, the bytes served.
 `--verify DIR` recomputes them from DIR/nccl-tests-309-issue.json,
-DIR/nccl-tests-309-comments.json (the GitHub API's JSON) and DIR/route179-dgx-spark.html.
+DIR/nccl-tests-309-comments.json (the GitHub API's JSON) and DIR/route179-dgx-spark.html;
+if DIR/blackwell-ultra-datasheet.pdf is present, its bytes are checked too.
 """
 
 from __future__ import annotations
@@ -94,12 +99,13 @@ NIC_GBPS = 400.0
 
 ROUTE179 = "https://route179.dev/2026/07/21/dgx-spark-nccl-roce-benchmarking"
 ROUTE179_SHA = "07379fe826ab5049065f087054d6dab0778ca0526101c47b86c47ded04761baf"
+BLACKWELL_ULTRA_SHA = "ccdffc064731cc160016f4c7a77ecfa37983038bcaf60e39190ba4175b39c7c8"
 SPARK_ALLGATHER_BUSBW = 24.20   # GB/s, all_gather in-place busbw at 16 GiB, 2 ranks
 SPARK_WRITE_GBPS = 98.04 * 2    # Gb/s, ib_write_bw, two links concurrently
 SPARK_NOMINAL_GBPS = 200.0
 SPARK_TCP_FALLBACK_GBS = 3.0    # GB/s, "~3 GB/s instead of ~20" when NCCL fell back to TCP
 
-NOMINAL = {"roce-200g": 25.0, "ib-400g": 50.0, "ethernet-100gbe": 12.5}
+NOMINAL = {"roce-200g": 25.0, "ib-400g": 50.0, "ib-800g": 100.0, "ethernet-100gbe": 12.5}
 
 HEADER = """\
 # Inter-node fabric bandwidth: the effective / nominal correction per fabric class.
@@ -113,7 +119,8 @@ HEADER = """\
 # rack (gb200-nvl72) is the chip's, not a fabric's, and is not corrected here.
 #
 # None of these is a measurement this project made: ib-400g is `literature` (published
-# nccl-tests results), roce-200g and ethernet-100gbe are `assumed`, each with its range.
+# nccl-tests results); roce-200g, ib-800g and ethernet-100gbe are `assumed`, each with its
+# range.
 kind: CoefficientSet
 name: cost-model-fabric
 coefficients:
@@ -179,6 +186,33 @@ def roce_200g(ib: float) -> dict:
             "sources": [("discussion", cite, "supporting")]}
 
 
+def ib_800g(ib: float) -> dict:
+    rat = (
+        f"ASSUMED: no public multi-node measurement of 800 Gb/s InfiniBand XDR (ConnectX-8) "
+        f"payload throughput was found, and this project made none. Taken equal to the "
+        f"ib-400g collective-level fraction, {ib}: the same transport (InfiniBand RDMA, NCCL "
+        f"over one NIC per GPU), the same estimator of the 400G entry, and no 800G figure "
+        f"that would move it. Assumed equal to ib-400g; no 800G measurement. The line rate "
+        f"(100 GB/s per GPU, per direction) is the vendor's: NVIDIA's Blackwell Ultra "
+        f"Datasheet states 800 Gbps ConnectX-8 networking per GPU. RANGE 0.70-0.99, wider "
+        f"below than ib-400g's because a faster NIC is harder to fill: at 800 Gb/s a PCIe "
+        f"Gen5 x16 host link (about 63 GB/s each way) cannot carry the NIC's rate, which is "
+        f"why ConnectX-8 exposes PCIe Gen6 (up to 48 lanes) and direct GPU-to-NIC paths, and "
+        f"a deployment without them would sit far below this value. Both bounds are "
+        f"judgement, not figures read from a source. Because the kernel multiplies the "
+        f"nominal rate by this one number, the price of a handoff over ib-800g is exactly "
+        f"half that over ib-400g for the same bytes and the same efficiency; a measured "
+        f"800G efficiency below {ib} would lengthen it. Replace with a measurement when one "
+        f"exists.")
+    cite = ("https://dam-cdn.nvd.orangelogic.com/AssetLink/1k0p832eq8r5ca0u5383ie5o4tp3bst1.pdf "
+            "(NVIDIA Blackwell Ultra Datasheet, document 4169750, Oct 2025; file sha256 "
+            f"{BLACKWELL_ULTRA_SHA}): 'Blackwell Ultra also features 800 Gbps NVIDIA "
+            "ConnectX-8 networking'; GB300 NVL72: 'providing 800 gigabits per second (Gb/s) "
+            "of network connectivity for each GPU'. Line rate only; no throughput figure")
+    return {"fabric": "ib-800g", "value": ib, "method": "assumed", "rationale": rat,
+            "sources": [("publication", cite, "supporting")]}
+
+
 def ethernet_100gbe() -> dict:
     value = 0.5
     rat = (
@@ -219,7 +253,7 @@ def render() -> str:
     fabrics = sorted(p.stem for p in (CATALOG / "networks").glob("*.yaml"))
     ib = ib_400g()
     entries = {"ib-400g": ib, "roce-200g": roce_200g(ib["value"]),
-               "ethernet-100gbe": ethernet_100gbe()}
+               "ib-800g": ib_800g(ib["value"]), "ethernet-100gbe": ethernet_100gbe()}
     if sorted(entries) != fabrics:
         raise SystemExit(f"the vendored catalog's fabrics {fabrics} are not the ones this "
                          f"writer prices {sorted(entries)}; add the new fabric here")
@@ -246,6 +280,9 @@ def verify(d: Path) -> list[str]:
     page = (d / "route179-dgx-spark.html").read_bytes()
     if hashlib.sha256(page).hexdigest() != ROUTE179_SHA:
         bad.append("route179 page")
+    pdf = d / "blackwell-ultra-datasheet.pdf"   # optional: the line-rate source of ib-800g
+    if pdf.exists() and hashlib.sha256(pdf.read_bytes()).hexdigest() != BLACKWELL_ULTRA_SHA:
+        bad.append("Blackwell Ultra datasheet")
     return bad
 
 

@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
@@ -557,9 +558,10 @@ func TestEngine(t testing.TB, newEngine func() (engine.Engine, error), arrivals 
 }
 
 // CheckProtocolErrors checks the errors a simulator relies on to detect its own bugs:
-// completing an unknown batch, completing out of order, and finishing an unknown request
-// (which is not an error). It needs an engine that will schedule two batches at once for
-// the out-of-order case, and skips that case for an engine whose limit is one.
+// adding a request that does not validate, completing an unknown batch, completing out of
+// order, and finishing an unknown request (which is not an error). The out-of-order case
+// needs an engine that will schedule two batches at once, and is skipped for an engine whose
+// limit is one. The invalid-request case holds at every limit: see checkAddRefusesInvalid.
 func CheckProtocolErrors(newEngine func() (engine.Engine, error), a, b engine.Request) error {
 	e, err := newEngine()
 	if err != nil {
@@ -573,6 +575,9 @@ func CheckProtocolErrors(newEngine func() (engine.Engine, error), a, b engine.Re
 	}
 	if err := e.TransferDone(12345, true, 0); !errors.Is(err, engine.ErrUnknownTransfer) {
 		return fmt.Errorf("TransferDone of an unknown transfer returned %v, want ErrUnknownTransfer", err)
+	}
+	if err := checkAddRefusesInvalid(newEngine, a); err != nil {
+		return err
 	}
 	if e.InFlightLimit() < 2 {
 		return nil
@@ -592,6 +597,75 @@ func CheckProtocolErrors(newEngine func() (engine.Engine, error), a, b engine.Re
 	}
 	if _, err := e.Complete(second.ID, engine.Outcome{}, 1); !errors.Is(err, engine.ErrOutOfOrder) {
 		return fmt.Errorf("completing batch %d before %d returned %v, want ErrOutOfOrder", second.ID, first.ID, err)
+	}
+	return nil
+}
+
+// checkAddRefusesInvalid checks the Engine.Add contract for a request that does not validate
+// (an adapter path with no adapter name): Add returns the error of Request.Validate, which it
+// may wrap, and the refusal leaves no trace, so the request is not run as another request.
+// An engine could return some unrelated error after storing the request, and with a limit of
+// one in flight nothing later in CheckProtocolErrors would show it, so this runs on fresh
+// engines for two refused requests: one under a new ID, which a retained copy would put into
+// a batch, and one under good's own ID, which a retained copy would make a duplicate. After
+// each refusal it adds good, which must be accepted, and drives the engine one batch at a
+// time until good finishes or nothing more is scheduled; every request in every batch must be
+// good, and good must run.
+func checkAddRefusesInvalid(newEngine func() (engine.Engine, error), good engine.Request) error {
+	if err := good.Validate(); err != nil {
+		return fmt.Errorf("the request given to CheckProtocolErrors does not validate: %w", err)
+	}
+	for _, id := range []string{"refused-" + good.ID, good.ID} {
+		bad := good
+		bad.ID, bad.Adapter, bad.AdapterPath = id, "", "/adapters/refused"
+		want := bad.Validate()
+		e, err := newEngine()
+		if err != nil {
+			return err
+		}
+		got := e.Add(bad, 0)
+		if got == nil {
+			return fmt.Errorf("Add of request %s with an adapter path and no adapter name returned nil, want the error of Request.Validate (%v)", id, want)
+		}
+		if !errors.Is(got, want) && !strings.Contains(got.Error(), want.Error()) {
+			return fmt.Errorf("Add of request %s with an adapter path and no adapter name returned %q, want the error of Request.Validate (%q)", id, got, want)
+		}
+		if err := e.Add(good, 0); err != nil {
+			return fmt.Errorf("Add of request %s after Add refused request %s: %w; a refused Add must leave no trace", good.ID, id, err)
+		}
+		ran := false
+		for step := 0; step <= len(good.Prompt)+len(good.Output)+1; step++ {
+			b, err := e.Schedule(0)
+			if err != nil {
+				return fmt.Errorf("Schedule after Add refused request %s: %w", id, err)
+			}
+			if b.Empty() {
+				break
+			}
+			for _, s := range b.Reqs {
+				if s.ID != good.ID {
+					return fmt.Errorf("Schedule ran request %s after Add refused it: a refused Add must leave no trace", s.ID)
+				}
+				ran = true
+			}
+			res, err := e.Complete(b.ID, engine.Outcome{}, 1)
+			if err != nil {
+				return fmt.Errorf("Complete(%d) after Add refused request %s: %w", b.ID, id, err)
+			}
+			done := false
+			for _, f := range res.Finished {
+				if f.ID != good.ID {
+					return fmt.Errorf("Complete finished request %s after Add refused it: a refused Add must leave no trace", f.ID)
+				}
+				done = true
+			}
+			if done {
+				break
+			}
+		}
+		if !ran {
+			return fmt.Errorf("request %s never ran after Add refused request %s", good.ID, id)
+		}
 	}
 	return nil
 }

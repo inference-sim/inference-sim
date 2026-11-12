@@ -10,6 +10,7 @@ global:
   vocab_size: 32000
   tie_word_embeddings: false
   weight_dtype: fp16
+  architecture: LlamaForCausalLM
 layer_kinds:
 - id: dense
   nodes:

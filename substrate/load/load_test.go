@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+
+	"github.com/inference-sim/blis-substrate/contracts/spec/routertable"
 )
 
 // repoDir is this repository's root; a test runs in load/.
@@ -308,5 +310,49 @@ func TestTheEmbeddedCatalogRecordsEveryLicence(t *testing.T) {
 		if p := id.ValidateLicence(); !p.OK() {
 			t.Errorf("models/%s/model.yaml: %s", name, p.Error())
 		}
+	}
+}
+
+// The embedded catalog carries the router table, and LookupRouter finds an entry by router,
+// mode and session-affinity setting, and reports a router the table lacks.
+func TestTheEmbeddedCatalogCarriesTheRouterTable(t *testing.T) {
+	d, err := Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const covered = "1682167d3c97f0fc8cd405dee51f17288eeaeb55"
+	e, out := d.LookupRouter("dynamo", "round-robin", nil, covered)
+	if out != routertable.OutcomeMapped || e.Name != "dynamo-round-robin" || e.Policy != "round-robin" || len(e.Difference) == 0 || e.Bound == nil {
+		t.Fatalf("LookupRouter(dynamo, round-robin) = %+v, %v; want the round-robin mapping with its differences and bound", e, out)
+	}
+	if k, out := d.LookupRouter("dynamo", "kv", nil, covered); out != routertable.OutcomeNoPolicy || k.Policy != "none" || k.Bound != nil {
+		t.Errorf("LookupRouter(dynamo, kv) = %+v, %v; want the entry that records no policy is close enough", k, out)
+	}
+	// The same router and mode on a later Dynamo build is not covered by the entry: it stays
+	// router_unsupported rather than inheriting what was shown for the cited build.
+	if _, out := d.LookupRouter("dynamo", "round-robin", nil, "33cfa1271c08f1660fc156ab2bc50647a268b87e"); out != routertable.OutcomeRevisionNotCovered {
+		t.Errorf("a later Dynamo build: %s, want revision_not_covered", out)
+	}
+	if got, err := d.Router("dynamo-round-robin"); err != nil || got != e {
+		t.Errorf("Router = %v, %v", got, err)
+	}
+	ttl := 300
+	for name, c := range map[string]struct {
+		router, mode string
+		ttl          *int
+	}{
+		"another mode":        {"dynamo", "least-loaded", nil},
+		"another router":      {"vllm", "round-robin", nil},
+		"an affinity setting": {"dynamo", "round-robin", &ttl},
+	} {
+		if e, out := d.LookupRouter(c.router, c.mode, c.ttl, covered); out != routertable.OutcomeNoEntry {
+			t.Errorf("%s: %s (%v); the table has no such entry, so the router stays unsupported", name, out, e != nil)
+		}
+	}
+	if _, err := d.Router("nope"); err == nil || !strings.Contains(err.Error(), "routers/nope.yaml") {
+		t.Errorf("a missing entry: %v, want the path it belongs at", err)
+	}
+	if len(d.Routers()) == 0 {
+		t.Error("no entries")
 	}
 }

@@ -7,3 +7,4 @@ source:
 licence:
   id: LicenseRef-muse-model-license
   evidence: https://huggingface.co/unsloth/Muse-Spark-Open-816B-A42B-NVFP4/raw/fc6908f53c6882d4ec48fca5ba144e41d21e1f92/README.md
+drafters: [muse-spark-open-dspark]

@@ -7,3 +7,4 @@ source:
 licence:
   id: LicenseRef-deepseek
   evidence: https://huggingface.co/deepseek-ai/DeepSeek-V3/raw/e815299b0bcbac849fa540c768ef21845365c9eb/LICENSE-MODEL
+drafters: [speculator]

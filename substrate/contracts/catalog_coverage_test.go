@@ -189,10 +189,10 @@ func TestCatalogArchitectureFamiliesAreExpressible(t *testing.T) {
 			func(g *model.Graph) bool {
 				return g.Global.WeightDType == model.DTypeINT4 && hasAttention(g, model.AttentionMLA)
 			}},
-		{"kimi-k3", "linear (KDA) plus latent attention, mxfp4 weights", 93,
+		{"kimi-k3", "linear (KDA) plus latent attention, mxfp4 experts", 93,
 			func(g *model.Graph) bool {
 				return hasRecurrent(g, model.RecurrentKDA) && hasAttention(g, model.AttentionMLA) &&
-					g.Global.WeightDType == model.DTypeMXFP4
+					hasNodeWeightDType(g, model.DTypeMXFP4)
 			}},
 		{"qwen3.5-397b-a17b", "gated-deltanet (GDN) and full attention, MTP, multimodal", 60,
 			func(g *model.Graph) bool {

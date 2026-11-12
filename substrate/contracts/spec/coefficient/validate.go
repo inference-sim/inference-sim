@@ -2,6 +2,7 @@ package coefficient
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/inference-sim/blis-substrate/contracts/check"
@@ -38,7 +39,10 @@ func (s *Set) Validate() *validate.Problems {
 	// leaving a resolver no way to tell that two entries are the same quantity
 	// measured on different hardware.
 	//
-	// Two entries sharing a name, a scope AND a method are still an error: a resolver
+	// The kernel implementations an entry is valid for are part of its identity too (see
+	// Entry.Identity): two builds of one kernel have two values.
+	//
+	// Two entries sharing a name, a scope, a method AND a kernel key are still an error: a resolver
 	// would keep whichever came last, so the file would mean something other than it says.
 	// The same name and scope under different methods is a different coefficient: rank is
 	// a function of method (VAL-4), so a measured and an assumed value of one quantity may
@@ -58,11 +62,11 @@ func (s *Set) Validate() *validate.Problems {
 		if e.Name == "" {
 			p.Field(at+".name", "required")
 		} else {
-			key := e.Name + "\x00" + e.Scope.Key() + "\x00" + string(e.Method)
+			key := e.Identity()
 			if seen[key] {
 				p.Field(at+".name",
-					"duplicate entry name %q at the same scope (%s) and method %q; two entries "+
-						"with one name, one scope and one method cannot both be resolved",
+					"duplicate entry name %q at the same scope (%s), method %q and kernel implementations; "+
+						"two entries with one name, one scope, one method and one kernel key cannot both be resolved",
 					e.Name, e.Scope.Describe(), e.Method)
 			}
 			seen[key] = true
@@ -136,6 +140,20 @@ func (e Entry) validate(p *validate.Problems, at string) {
 			"fitted: true requires method %q or %q, got method %q",
 			vocab.MethodMeasured, vocab.MethodCalibrated, e.Method)
 	}
+	// rate_basis (SUB-5): a closed word, meaningful only for a rate in bytes per microsecond,
+	// and a work rate must say why it is not a memory rate.
+	if e.RateBasis != "" {
+		switch {
+		case !e.RateBasis.Valid():
+			p.Field(at+".rate_basis", "%q is not one of %v", e.RateBasis, vocab.AllRateBases())
+		case e.Units != vocab.UnitBytesPerMicrosecond:
+			p.Field(at+".rate_basis", "applies only to units %q, got units %q",
+				vocab.UnitBytesPerMicrosecond, e.Units)
+		case e.RateBasis == vocab.RateBasisWork && strings.TrimSpace(e.Rationale) == "":
+			p.Field(at+".rationale", "rate_basis work requires a rationale that says why the rate is not a memory rate")
+		}
+	}
+	e.validateEvidenceRecords(p, at)
 	// Companion fields required by method. Gated on a known method so an unknown one is
 	// reported once (as an unknown method) rather than also as a missing companion.
 	if e.Method.Valid() {
@@ -151,8 +169,22 @@ func (e Entry) validate(p *validate.Problems, at string) {
 			len(e.Sources) == 0 {
 			p.Field(at+".sources", "method %q requires at least one source", e.Method)
 		}
-		if e.Method == vocab.MethodCopied && e.CopiedFrom == "" {
-			p.Field(at+".copied_from", "method copied requires copied_from")
+		// VAL-1: each method needs the sources that make it checkable. A transferred value
+		// names the coefficient it came from and the rule that moved it; a roofline value
+		// cites the catalog facts it was computed from.
+		if e.Method == vocab.MethodTransferred {
+			if strings.TrimSpace(e.TransferredFrom) == "" {
+				p.Field(at+".transferred_from", "method transferred requires transferred_from")
+			}
+			if strings.TrimSpace(e.TransferRule) == "" {
+				p.Field(at+".transfer_rule", "method transferred requires transfer_rule, the stated rule that moved the value")
+			}
+		}
+		if e.Method == vocab.MethodRoofline && len(e.Sources) == 0 {
+			p.Field(at+".sources", "method roofline requires at least one source naming the catalog facts it was computed from")
+		}
+		if e.Method != vocab.MethodTransferred && (e.TransferredFrom != "" || e.TransferRule != "") {
+			p.Field(at+".transferred_from", "transferred_from and transfer_rule apply only to method transferred, got method %q", e.Method)
 		}
 		// A calibrated value is only as good as the cases it was fitted to and the ones it
 		// was held out against, so both must be on the entry.
@@ -209,4 +241,142 @@ func (e Entry) citesKind(k vocab.SourceKind) bool {
 		}
 	}
 	return false
+}
+
+// validateEvidenceRecords checks the optional records of design D5, VAL-8, VAL-9 and VAL-10:
+// the kernel implementations an entry is valid for, its measurement boundary, and the range
+// its fit covered. Each is checked whenever it is present; the ratchet over the entries that
+// state none is a registry test, because the fields arrive with the fitting scripts.
+func (e Entry) validateEvidenceRecords(p *validate.Problems, at string) {
+	ValidateKernelImpls(p, at+".kernel_impls", e.KernelImpls)
+	ValidateKernelImpls(p, at+".measured_on", e.MeasuredOn)
+	if len(e.KernelImpls) > 0 && !MayStateKernelImpls(e.Method) {
+		// A vendor_spec, roofline, assumed or not_charged value says nothing about a kernel; a
+		// list on it would key a lookup to something the value does not depend on (design 6.2).
+		p.Field(at+".kernel_impls", "method %q states nothing about a kernel implementation, so it states none; "+
+			"it is what a lookup falls back to when no entry matches the one that runs", e.Method)
+	}
+	if len(e.KernelImpls) > 0 && PrimitiveOf(e.Name) == "" && e.Name != "" {
+		p.Field(at+".kernel_impls", "%q prices no lowered kernel (it binds to no primitive, coefficient.PrimitiveOf), "+
+			"so a kernel key on it could never match", e.Name)
+	}
+	if len(e.MeasuredOn) > 0 && !MayStateMeasuredOn(e.Method) {
+		p.Field(at+".measured_on", "method %q is measured on the implementations kernel_impls lists (D5), "+
+			"so it states no other; only a transferred value is measured on one kernel and used for another", e.Method)
+	}
+	if e.Method == vocab.MethodTransferred && len(e.KernelImpls) > 0 && len(e.MeasuredOn) == 0 {
+		p.Field(at+".measured_on", "a transferred value that names the implementations it is valid for must "+
+			"name the ones it was measured on, or the transfer cannot be checked (D5)")
+	}
+	if e.Measures != nil {
+		m := e.Measures
+		if !m.Time.Valid() {
+			p.Field(at+".measures.time", "%q is not one of %v", m.Time, vocab.AllMeasurementTimes())
+		}
+		if !m.Execution.Valid() {
+			p.Field(at+".measures.execution", "%q is not one of %v", m.Execution, vocab.AllMeasurementExecutions())
+		}
+		if strings.TrimSpace(m.Harness) == "" {
+			p.Field(at+".measures.harness", "required: the harness that collected the data")
+		}
+	}
+	ValidateFitRange(p, at+".fit_range", e.FitRange)
+	if len(e.FitRange) > 0 && !MayStateFitRange(e.Method) {
+		p.Field(at+".fit_range", "method %q was not fitted to data, so it states no fit range", e.Method)
+	}
+	if e.Measures != nil && e.Method != vocab.MethodMeasured && e.Method != vocab.MethodCalibrated {
+		p.Field(at+".measures", "method %q has no measurement boundary", e.Method)
+	}
+}
+
+// MayStateFitRange reports whether an entry of method m may record the range its fit covered.
+// The data a measured, calibrated or transferred value was fitted to is part of what it claims:
+// a transferred value still has the rows it came from, and a lookup outside them is
+// extrapolated. A fit range on any other method would describe data that did not produce the
+// value. Both validators call this; no other place decides it. A 95% interval (ci95) has no
+// method rule: any method may state one.
+func MayStateFitRange(m vocab.Method) bool {
+	return m == vocab.MethodMeasured || m == vocab.MethodCalibrated || m == vocab.MethodTransferred
+}
+
+// ValidateFitRange checks a fit range (design VAL-10): each bound names a known dimension
+// once, with finite ends and low not above high. at names the list in a message.
+func ValidateFitRange(p *validate.Problems, at string, bounds []Bound) {
+	seenDim := map[string]bool{}
+	for i, b := range bounds {
+		bat := fmt.Sprintf("%s[%d]", at, i)
+		if !vocab.FitDim(b.Dim).Valid() {
+			p.Field(bat+".dim", "%q is not one of %v", b.Dim, vocab.AllFitDims())
+		}
+		if seenDim[b.Dim] {
+			p.Field(bat+".dim", "duplicate dimension %q", b.Dim)
+		}
+		seenDim[b.Dim] = true
+		lowFinite := p.FiniteField(bat+".low", b.Low)
+		highFinite := p.FiniteField(bat+".high", b.High)
+		if lowFinite && highFinite && b.Low > b.High {
+			p.Field(bat, "low %v exceeds high %v", b.Low, b.High)
+		}
+	}
+}
+
+// Unidentified reports whether the entry's data do not determine it (design VAL-10): its
+// 95% interval is unbounded, or wider than half its value. An unidentified entry keeps its
+// method and its citations, and ranks with assumed for VAL-3. An entry with no interval is
+// not unidentified; it has not said.
+func (e Entry) Unidentified() bool {
+	if e.CI95 == nil {
+		return false
+	}
+	lo, hi := e.CI95.Low, e.CI95.High
+	if math.IsInf(lo, 0) || math.IsInf(hi, 0) || math.IsNaN(lo) || math.IsNaN(hi) {
+		return true
+	}
+	return hi-lo > 0.5*math.Abs(e.Value)
+}
+
+// Extrapolated reports whether a lookup at point lies outside the range the entry's fit
+// covered (design VAL-10), on any dimension it recorded. in maps a dimension name to its
+// value at the lookup; a recorded dimension the lookup does not supply is not judged.
+// An entry that recorded no range is never extrapolated: it has not said.
+func (e Entry) Extrapolated(in map[string]float64) bool {
+	for _, b := range e.FitRange {
+		if v, ok := in[b.Dim]; ok && (v < b.Low || v > b.High) {
+			return true
+		}
+	}
+	return false
+}
+
+// EffectiveRank is the rank VAL-3 reports for a price that used this entry: the method's
+// rank, or transferred's when the lookup is extrapolated, or assumed's when the entry is
+// unidentified, whichever is the least trusted of those that apply. not_charged has none.
+func (e Entry) EffectiveRank(extrapolated bool) (rank int, ranked bool) {
+	rank, ranked = e.Method.Rank()
+	if !ranked {
+		return 0, false
+	}
+	if extrapolated {
+		if t, _ := vocab.MethodTransferred.Rank(); t > rank {
+			rank = t
+		}
+	}
+	if e.Unidentified() {
+		if a, _ := vocab.MethodAssumed.Rank(); a > rank {
+			rank = a
+		}
+	}
+	return rank, true
+}
+
+func hexHash(h string) bool {
+	if len(h) < 12 {
+		return false
+	}
+	for _, c := range h {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }

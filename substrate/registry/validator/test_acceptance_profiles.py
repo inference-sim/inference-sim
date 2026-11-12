@@ -76,11 +76,11 @@ def test_every_model_is_a_catalog_model_and_every_curve_left_out_is_named():
 def test_a_copied_profile_carries_the_value_it_names():
     by_key = {emit.key_string(p["model"], p["speculative_method"], p["num_spec_tokens"],
                               p["thinking"], p["category"]): p for p in SET["profiles"]}
-    copied = [p for p in SET["profiles"] if p["method"] == "copied"]
+    copied = [p for p in SET["profiles"] if p["method"] == "transferred"]
     assert copied
     for p in copied:
-        assert by_key[p["copied_from"]]["method"] == "measured"
-        assert by_key[p["copied_from"]]["acceptance_length"] == p["acceptance_length"]
+        assert by_key[p["transferred_from"]]["method"] == "measured"
+        assert by_key[p["transferred_from"]]["acceptance_length"] == p["acceptance_length"]
 
 
 def test_a_model_key_resolves_by_repository_basename_or_is_refused():
@@ -169,3 +169,18 @@ def test_an_unreviewed_collector_fails_rather_than_its_precision_going_unstated(
     golden = _mutated(tmp_path, "glm5.2_mtp", "glm52_fp4_b300_vllm.sh", "glm53_fp4_b300_vllm.sh")
     with pytest.raises(SystemExit, match="not in COLLECTORS"):
         emit.collect(golden, CATALOG)
+
+
+def test_a_drafter_in_its_targets_repository_is_not_a_model_key(tmp_path):
+    """MiniMax-M3.1-Flash ships its DSpark drafter under dspark/ in the same repository, so
+    two catalog entries share `source.repo`. A collector's model key names the served model,
+    never the drafter, so the key resolves to the target and not to an ambiguity."""
+    for name, extra in (("m31", ""), ("m31-dspark", "targets: [m31]\n")):
+        d = tmp_path / "models" / name
+        d.mkdir(parents=True)
+        (d / "model.yaml").write_text(
+            f"name: {name}\nsource:\n  provider: huggingface\n  repo: Org/Model-3.1\n"
+            f"  revision: r\n{extra}")
+    models = emit.catalog_models(tmp_path)
+    assert models == {"m31": "Org/Model-3.1"}
+    assert emit.catalog_name("model-3.1", models) == ("m31", None)

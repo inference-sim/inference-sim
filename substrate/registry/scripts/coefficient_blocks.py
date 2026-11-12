@@ -2,9 +2,12 @@
 
 The sets are hand-ordered YAML with comments, so a writer that owns a few entries must
 replace exactly those and pass every other byte through. An entry is identified by its
-NAME and its SCOPE, because one name legitimately appears once per part (and, for a
-model-scoped entry, once per model). Scopes are compared parsed, so a reordered or
-re-spaced scope is still the same entry rather than a reason to insert a duplicate.
+NAME, its SCOPE and its METHOD, because one name legitimately appears once per part (and, for
+a model-scoped entry, once per model), and once per method rank within a scope (design VAL-4:
+at most one entry per rank, the most trusted used). An `assumed` upper bound and the
+`transferred` entry that is used in its place share a name and a scope and are two entries.
+Scopes are compared parsed, so a reordered or re-spaced scope is still the same entry rather
+than a reason to insert a duplicate.
 """
 
 from __future__ import annotations
@@ -15,6 +18,7 @@ import yaml
 
 ENTRY = re.compile(r"^  - ([a-z_0-9]+):$")
 SCOPE = re.compile(r"^      scope: (\{.*\})$")
+METHOD = re.compile(r"^      method: ([a-z_]+)$")
 
 
 def split(text: str) -> list[list[str]]:
@@ -61,6 +65,15 @@ def scope_of(block: list[str]) -> str | None:
     return None
 
 
+def method_of(block: list[str]) -> str | None:
+    """The entry's method exactly as written, e.g. 'assumed'."""
+    for line in block:
+        m = METHOD.match(line)
+        if m:
+            return m.group(1)
+    return None
+
+
 def scope_key(scope: str) -> tuple:
     """A scope's identity, independent of key order and spacing."""
     parsed = yaml.safe_load(scope) or {}
@@ -68,15 +81,17 @@ def scope_key(scope: str) -> tuple:
                         for k, v in parsed.items()))
 
 
-def find(blocks: list[list[str]], name: str, scope: str) -> int | None:
-    """The one block with this name and scope, or None. Two is an error: the kernel keeps
-    the last in file order, so a writer maintaining the first would leave the live one stale."""
+def find(blocks: list[list[str]], name: str, scope: str, method: str | None = None) -> int | None:
+    """The one block with this name, scope and method, or None. Two is an error: a writer
+    maintaining the first would leave the other stale. With `method` None any method matches,
+    which is the old identity; `upsert` always passes the entry's own."""
     key = scope_key(scope)
     hits = [j for j, b in enumerate(blocks)
             if name_of(b) == name and scope_of(b) is not None
-            and scope_key(scope_of(b)) == key]
+            and scope_key(scope_of(b)) == key
+            and (method is None or method_of(b) == method)]
     if len(hits) > 1:
-        raise SystemExit(f"{name} {scope}: {len(hits)} entries share this name and scope")
+        raise SystemExit(f"{name} {scope}: {len(hits)} entries share this name, scope and method")
     return hits[0] if hits else None
 
 
@@ -86,7 +101,7 @@ def upsert(blocks: list[list[str]], entry: list[str], after) -> None:
     name, scope = name_of(entry), scope_of(entry)
     if name is None or scope is None:
         raise SystemExit(f"not a scoped entry: {entry[0]!r}")
-    j = find(blocks, name, scope)
+    j = find(blocks, name, scope, method_of(entry))
     if j is not None:
         blocks[j] = entry
         return

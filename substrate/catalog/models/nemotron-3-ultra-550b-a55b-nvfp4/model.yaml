@@ -7,3 +7,4 @@ source:
 licence:
   id: LicenseRef-openmdw-1.1
   evidence: https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4/raw/02462641f13d3af838b904f48195b9bb8a1e4ebc/README.md
+drafters: [speculator]

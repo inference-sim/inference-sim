@@ -89,6 +89,13 @@ type Kernel interface {
 	// therefore cannot live in a pure function.
 	AdmissionOverhead(promptTokens int) time.Duration
 
+	// AdmissionDemand splits AdmissionOverhead into what a request asks of the host's
+	// admission queue (plan.AdmissionQueue) and what it only waits out: Service is the time
+	// it holds one server of the queue, Delay the time it waits without holding one. Service
+	// plus Delay is AdmissionOverhead. A caller that queues requests holds the server for
+	// Service and then waits Delay; one with no queue waits both.
+	AdmissionDemand(promptTokens int) HostDemand
+
 	// OutputTokenOverhead is per-emitted-token host work: incremental
 	// detokenization and streaming. It runs in the output path rather than the
 	// forward pass, which is why it does not enter StepTime.
@@ -220,6 +227,26 @@ type StepEstimate struct {
 	// The law, part of this contract: the stages' Overlap figures sum to Overlap and their
 	// NoOverlap figures sum to NoOverlap, exactly. Package kerneltest checks it.
 	Stages []StageEstimate
+
+	// Trust says how much the price rests on measurement (design VAL-3): the least trusted
+	// effective rank among the coefficients the price used. The zero value means the
+	// implementation does not report it, so the field is compatible with every implementer.
+	Trust Trust
+}
+
+// Trust is the least trusted effective rank among the coefficients a price used.
+//
+// Rank is a method's place in design §9.2, 1 (measured) to 7 (assumed). A lookup outside the
+// range its entry's fit covered counts as transferred (3), and an entry whose interval is
+// unbounded or wider than half its value counts as assumed (7), whichever is least trusted;
+// Flag then says "extrapolated" or "unidentified". Method is the method of the entry that sets
+// the rank, and Entry is its name. A price that used no ranked coefficient reports the zero
+// value.
+type Trust struct {
+	Rank   int
+	Method string
+	Flag   string
+	Entry  string
 }
 
 // StageEstimate is one pipeline stage's share of a step, bracketed as the step is.
@@ -264,6 +291,23 @@ type Batch struct {
 	// rank's own draft rows are real. Zero means the drafter launches only its own rows; a figure
 	// below them is read the same way. It must not be negative (Validate).
 	DraftPaddedTokens int
+
+	// TailFrom is the index, in the model graph's expanded layer stack, of the first layer that
+	// runs over fewer rows than the requests scheduled: the layers from TailFrom to the end of
+	// the stack run each request's ReqShape.TailRows rows, not its Scheduled tokens. The engine
+	// states it, because only the engine knows whether it runs a layer on a subset of a step's
+	// rows (an engine can run the layers past the last one that produces KV on each request's
+	// trailing window only) and the cost model resolves nothing. The layers before TailFrom, the
+	// embedding, the head and the drafter keep the whole batch, and the step still launches
+	// every layer. Zero means no tail: every layer runs every scheduled token. A value at or
+	// past the stack's length leaves no layer in the tail. It must not be negative (Validate).
+	TailFrom int
+
+	// TailPadTokens are the rows the tail's batch is padded with when the engine launches it at
+	// a size of its own (a captured graph's size): the tail runs its rows plus this many, and
+	// like PadTokens the pad runs the GEMMs, the collectives and the experts, never attention.
+	// Zero means none. It must not be negative, and is read only with TailFrom.
+	TailPadTokens int
 }
 
 // ReqShape is one request's contribution. The three token counts are what an
@@ -284,6 +328,11 @@ type ReqShape struct {
 	// count rather than a rate: the simulator has computed it, and a cost model that
 	// took a rate would have to guess.
 	CachedTokens int
+	// TailRows is how many of this request's Scheduled tokens the layers from Batch.TailFrom run:
+	// its last TailRows tokens, at their own positions. Zero means all of Scheduled (a request
+	// the engine does not trim, such as a decode row). It must not exceed Scheduled, and is
+	// read only with Batch.TailFrom (Validate refuses it without one).
+	TailRows int
 }
 
 // Tokens returns the batch's total scheduled token count, the quantity collective
@@ -336,6 +385,19 @@ type CoefficientOrigin struct {
 	Set    string // the set it came from
 	Method string // the evidence vocabulary's term
 	Scope  string // the scope as recorded
+	// KernelMatch says how the entry met the kernel implementations that run (design VAL-8):
+	// "exact" when it lists one of them by library, variant and code hash, "unkeyed" when it
+	// lists none and so applies to every implementation without having been shown to match
+	// the one that runs. Empty for a value the kernel supplied itself. A reader deciding that a
+	// price rests on the running kernel counts only "exact".
+	KernelMatch string
+	// Primitive is the lowered primitive the entry prices, and Running the kernel implementations
+	// the plan supplied for it, which the entry was matched against (VAL-8), as
+	// "library/variant/code_hash" joined by ", " in sorted order. Both are empty for a value the
+	// kernel supplied itself, and Running is empty when nothing was supplied. (A string, not a
+	// list, so that CoefficientOrigin stays comparable.)
+	Primitive string
+	Running   string
 }
 
 // Resolution reports what the constructor decided where a deployment expressed a
@@ -415,12 +477,14 @@ type Override struct {
 func (b Batch) PaddedTokens() int { return b.Tokens() + b.PadTokens }
 
 // Validate reports a batch no step can have: a negative pad, budget, threshold or
-// per-request count.
+// per-request count, or a tail statement that rows cannot satisfy (more rows than scheduled, or
+// rows with no layer to apply to).
 func (b Batch) Validate() error {
-	var bad []string
+	var bad, over []string
 	for field, v := range map[string]int{
 		"PadTokens": b.PadTokens, "SMBudget": b.SMBudget, "DecodeThreshold": b.DecodeThreshold,
-		"DraftPaddedTokens": b.DraftPaddedTokens,
+		"DraftPaddedTokens": b.DraftPaddedTokens, "TailFrom": b.TailFrom,
+		"TailPadTokens": b.TailPadTokens,
 	} {
 		if v < 0 {
 			bad = append(bad, fmt.Sprintf("%s %d", field, v))
@@ -429,16 +493,42 @@ func (b Batch) Validate() error {
 	for i, r := range b.Reqs {
 		for field, v := range map[string]int{
 			"Scheduled": r.Scheduled, "Computed": r.Computed, "PromptLen": r.PromptLen,
-			"CachedTokens": r.CachedTokens,
+			"CachedTokens": r.CachedTokens, "TailRows": r.TailRows,
 		} {
 			if v < 0 {
 				bad = append(bad, fmt.Sprintf("Reqs[%d].%s %d", i, field, v))
 			}
 		}
+		if r.TailRows > r.Scheduled {
+			over = append(over, fmt.Sprintf("Reqs[%d].TailRows %d exceeds its Scheduled %d", i, r.TailRows, r.Scheduled))
+		}
+		if r.TailRows > 0 && b.TailFrom == 0 {
+			over = append(over, fmt.Sprintf("Reqs[%d].TailRows %d is stated with no TailFrom", i, r.TailRows))
+		}
 	}
-	if len(bad) == 0 {
-		return nil
+	if b.TailPadTokens > 0 && b.TailFrom == 0 {
+		over = append(over, fmt.Sprintf("TailPadTokens %d is stated with no TailFrom", b.TailPadTokens))
 	}
-	sort.Strings(bad)
-	return fmt.Errorf("batch: must not be negative: %s", strings.Join(bad, ", "))
+	if len(bad) > 0 {
+		sort.Strings(bad)
+		return fmt.Errorf("batch: must not be negative: %s", strings.Join(bad, ", "))
+	}
+	if len(over) > 0 {
+		sort.Strings(over)
+		return fmt.Errorf("batch: tail rows: %s", strings.Join(over, "; "))
+	}
+	return nil
 }
+
+// HostDemand is what one request asks of the host's admission queue. Both are zero for a
+// request of no tokens.
+type HostDemand struct {
+	// Service is the time the request holds one server of the queue: work that scales with
+	// the prompt, which the servers do one request at a time each.
+	Service time.Duration
+	// Delay is time the request waits that holds no server: a latency, not work a server does.
+	Delay time.Duration
+}
+
+// Total is the request's whole admission time, Service plus Delay.
+func (d HostDemand) Total() time.Duration { return d.Service + d.Delay }

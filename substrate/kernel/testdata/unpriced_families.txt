@@ -1,0 +1,171 @@
+# Coefficient families that no priced scenario's price moves when the family is scaled by 0.8
+# (design SUB-11). One line each: the family, then why.
+#   never read             no scenario reached a lookup of it
+#   read but changes no price   a lookup returned it and no probed price changed
+# The list may only shrink. TestEveryCoefficientFamilyChangesSomePriceOrIsListed fails on a family
+# not listed here and on a listed family that is now priced. Delete a line when its family is priced;
+# never add one to admit a new unpriced family.
+#
+# WHAT THE LIST DOES AND DOES NOT PROVE. A family here is either a gap in the cost model (the
+# registry carries a value the cost model never prices) or a gap in the probe (a layout, backend
+# or model it does not try). The probe covers every catalog model on every catalog chip at tensor
+# parallel 2, 4 and 8, expert parallel over data parallel, decode- and prefill-context parallel,
+# the block sizes and cache dtypes the engine accepts, and the all-to-all backends. It does not
+# distinguish the two kinds of gap. The families known to be model-cost gaps:
+#   collective_*_int8_*: 108 entries. The cost model prices an int8-served model's collectives
+#     with the fp16 entries (kernel/new.go, "an int8-served model's all-reduce is a bf16
+#     all-reduce"), so nothing reads the int8 sweeps.
+# The rest are not yet classified. Each needs an owning issue before this list can satisfy
+# SUB-11's "or is listed as not yet priced with an issue"; none is filed yet.
+activation_scratch_floor_bytes # read but changes no price
+attention_decode_launch_floor_sparse_mla # never read
+attention_decode_per_token_sparse_mla # never read
+attention_decode_serial_rate_sparse_mla # never read
+attention_decode_split_floor_sparse_mla # never read
+attention_decode_throughput_rate_sparse_mla # never read
+collective_floor_all_gather_int8_<R>rank_a100_80 # never read
+collective_floor_all_gather_int8_<R>rank_a100_sxm # never read
+collective_floor_all_gather_int8_<R>rank_b200 # never read
+collective_floor_all_gather_int8_<R>rank_b300 # never read
+collective_floor_all_gather_int8_<R>rank_gb200_nvl72 # never read
+collective_floor_all_gather_int8_<R>rank_gb300 # never read
+collective_floor_all_gather_int8_<R>rank_h100 # never read
+collective_floor_all_gather_int8_<R>rank_h200 # never read
+collective_floor_all_gather_int8_<R>rank_l40s # never read
+collective_floor_all_reduce_int8_<R>rank_a100_80 # never read
+collective_floor_all_reduce_int8_<R>rank_a100_sxm # never read
+collective_floor_all_reduce_int8_<R>rank_b200 # never read
+collective_floor_all_reduce_int8_<R>rank_b300 # never read
+collective_floor_all_reduce_int8_<R>rank_gb200_nvl72 # never read
+collective_floor_all_reduce_int8_<R>rank_gb300 # never read
+collective_floor_all_reduce_int8_<R>rank_h100 # never read
+collective_floor_all_reduce_int8_<R>rank_h200 # never read
+collective_floor_all_reduce_int8_<R>rank_l40s # never read
+collective_floor_alltoall_int8_<R>rank_a100_80 # never read
+collective_floor_alltoall_int8_<R>rank_a100_sxm # never read
+collective_floor_alltoall_int8_<R>rank_b200 # never read
+collective_floor_alltoall_int8_<R>rank_b300 # never read
+collective_floor_alltoall_int8_<R>rank_gb200_nvl72 # never read
+collective_floor_alltoall_int8_<R>rank_gb300 # never read
+collective_floor_alltoall_int8_<R>rank_h100 # never read
+collective_floor_alltoall_int8_<R>rank_h200 # never read
+collective_floor_alltoall_int8_<R>rank_l40s # never read
+collective_floor_reduce_scatter_int8_<R>rank_a100_80 # never read
+collective_floor_reduce_scatter_int8_<R>rank_a100_sxm # never read
+collective_floor_reduce_scatter_int8_<R>rank_b200 # never read
+collective_floor_reduce_scatter_int8_<R>rank_b300 # never read
+collective_floor_reduce_scatter_int8_<R>rank_gb200_nvl72 # never read
+collective_floor_reduce_scatter_int8_<R>rank_gb300 # never read
+collective_floor_reduce_scatter_int8_<R>rank_h100 # never read
+collective_floor_reduce_scatter_int8_<R>rank_h200 # never read
+collective_floor_reduce_scatter_int8_<R>rank_l40s # never read
+collective_peak_rate_all_gather_fp16_<R>rank_a100_80 # read but changes no price
+collective_peak_rate_all_gather_fp16_<R>rank_a100_sxm # read but changes no price
+collective_peak_rate_all_gather_fp16_<R>rank_h100 # read but changes no price
+collective_peak_rate_all_gather_int8_<R>rank_a100_80 # never read
+collective_peak_rate_all_gather_int8_<R>rank_a100_sxm # never read
+collective_peak_rate_all_gather_int8_<R>rank_b200 # never read
+collective_peak_rate_all_gather_int8_<R>rank_b300 # never read
+collective_peak_rate_all_gather_int8_<R>rank_gb200_nvl72 # never read
+collective_peak_rate_all_gather_int8_<R>rank_gb300 # never read
+collective_peak_rate_all_gather_int8_<R>rank_h100 # never read
+collective_peak_rate_all_gather_int8_<R>rank_h200 # never read
+collective_peak_rate_all_gather_int8_<R>rank_l40s # never read
+collective_peak_rate_all_reduce_int8_<R>rank_a100_80 # never read
+collective_peak_rate_all_reduce_int8_<R>rank_a100_sxm # never read
+collective_peak_rate_all_reduce_int8_<R>rank_b200 # never read
+collective_peak_rate_all_reduce_int8_<R>rank_b300 # never read
+collective_peak_rate_all_reduce_int8_<R>rank_gb200_nvl72 # never read
+collective_peak_rate_all_reduce_int8_<R>rank_gb300 # never read
+collective_peak_rate_all_reduce_int8_<R>rank_h100 # never read
+collective_peak_rate_all_reduce_int8_<R>rank_h200 # never read
+collective_peak_rate_all_reduce_int8_<R>rank_l40s # never read
+collective_peak_rate_alltoall_fp16_<R>rank_h100 # read but changes no price
+collective_peak_rate_alltoall_fp16_<R>rank_l40s # read but changes no price
+collective_peak_rate_alltoall_int8_<R>rank_a100_80 # never read
+collective_peak_rate_alltoall_int8_<R>rank_a100_sxm # never read
+collective_peak_rate_alltoall_int8_<R>rank_b200 # never read
+collective_peak_rate_alltoall_int8_<R>rank_b300 # never read
+collective_peak_rate_alltoall_int8_<R>rank_gb200_nvl72 # never read
+collective_peak_rate_alltoall_int8_<R>rank_gb300 # never read
+collective_peak_rate_alltoall_int8_<R>rank_h100 # never read
+collective_peak_rate_alltoall_int8_<R>rank_h200 # never read
+collective_peak_rate_alltoall_int8_<R>rank_l40s # never read
+collective_peak_rate_reduce_scatter_fp16_<R>rank_a100_80 # read but changes no price
+collective_peak_rate_reduce_scatter_fp16_<R>rank_a100_sxm # read but changes no price
+collective_peak_rate_reduce_scatter_fp16_<R>rank_b200 # read but changes no price
+collective_peak_rate_reduce_scatter_fp16_<R>rank_b300 # read but changes no price
+collective_peak_rate_reduce_scatter_fp16_<R>rank_gb200_nvl72 # read but changes no price
+collective_peak_rate_reduce_scatter_fp16_<R>rank_gb300 # read but changes no price
+collective_peak_rate_reduce_scatter_fp16_<R>rank_h100 # read but changes no price
+collective_peak_rate_reduce_scatter_fp16_<R>rank_h200 # read but changes no price
+collective_peak_rate_reduce_scatter_int8_<R>rank_a100_80 # never read
+collective_peak_rate_reduce_scatter_int8_<R>rank_a100_sxm # never read
+collective_peak_rate_reduce_scatter_int8_<R>rank_b200 # never read
+collective_peak_rate_reduce_scatter_int8_<R>rank_b300 # never read
+collective_peak_rate_reduce_scatter_int8_<R>rank_gb200_nvl72 # never read
+collective_peak_rate_reduce_scatter_int8_<R>rank_gb300 # never read
+collective_peak_rate_reduce_scatter_int8_<R>rank_h100 # never read
+collective_peak_rate_reduce_scatter_int8_<R>rank_h200 # never read
+collective_peak_rate_reduce_scatter_int8_<R>rank_l40s # never read
+collective_transition_rate_all_gather_int8_<R>rank_a100_80 # never read
+collective_transition_rate_all_gather_int8_<R>rank_a100_sxm # never read
+collective_transition_rate_all_gather_int8_<R>rank_b200 # never read
+collective_transition_rate_all_gather_int8_<R>rank_b300 # never read
+collective_transition_rate_all_gather_int8_<R>rank_gb200_nvl72 # never read
+collective_transition_rate_all_gather_int8_<R>rank_gb300 # never read
+collective_transition_rate_all_gather_int8_<R>rank_h100 # never read
+collective_transition_rate_all_gather_int8_<R>rank_h200 # never read
+collective_transition_rate_all_gather_int8_<R>rank_l40s # never read
+collective_transition_rate_all_reduce_int8_<R>rank_a100_80 # never read
+collective_transition_rate_all_reduce_int8_<R>rank_a100_sxm # never read
+collective_transition_rate_all_reduce_int8_<R>rank_b200 # never read
+collective_transition_rate_all_reduce_int8_<R>rank_b300 # never read
+collective_transition_rate_all_reduce_int8_<R>rank_gb200_nvl72 # never read
+collective_transition_rate_all_reduce_int8_<R>rank_gb300 # never read
+collective_transition_rate_all_reduce_int8_<R>rank_h100 # never read
+collective_transition_rate_all_reduce_int8_<R>rank_h200 # never read
+collective_transition_rate_all_reduce_int8_<R>rank_l40s # never read
+collective_transition_rate_alltoall_int8_<R>rank_a100_80 # never read
+collective_transition_rate_alltoall_int8_<R>rank_a100_sxm # never read
+collective_transition_rate_alltoall_int8_<R>rank_b200 # never read
+collective_transition_rate_alltoall_int8_<R>rank_b300 # never read
+collective_transition_rate_alltoall_int8_<R>rank_gb200_nvl72 # never read
+collective_transition_rate_alltoall_int8_<R>rank_gb300 # never read
+collective_transition_rate_alltoall_int8_<R>rank_h100 # never read
+collective_transition_rate_alltoall_int8_<R>rank_h200 # never read
+collective_transition_rate_alltoall_int8_<R>rank_l40s # never read
+collective_transition_rate_reduce_scatter_int8_<R>rank_a100_80 # never read
+collective_transition_rate_reduce_scatter_int8_<R>rank_a100_sxm # never read
+collective_transition_rate_reduce_scatter_int8_<R>rank_b200 # never read
+collective_transition_rate_reduce_scatter_int8_<R>rank_b300 # never read
+collective_transition_rate_reduce_scatter_int8_<R>rank_gb200_nvl72 # never read
+collective_transition_rate_reduce_scatter_int8_<R>rank_gb300 # never read
+collective_transition_rate_reduce_scatter_int8_<R>rank_h100 # never read
+collective_transition_rate_reduce_scatter_int8_<R>rank_h200 # never read
+collective_transition_rate_reduce_scatter_int8_<R>rank_l40s # never read
+cudagraph_capture_bytes_full # never read
+cudagraph_capture_bytes_full_decode_only # never read
+cudagraph_capture_bytes_per_decode_token_full_and_piecewise # read but changes no price
+cudagraph_capture_bytes_piecewise # never read
+engine_workspace_bytes # read but changes no price
+gemm_eps_max_fp8_block # never read
+gemm_m_half_fp8_block # never read
+host_admission_per_token_rust_frontend # never read
+moe_a2a_floor_deepep_high_throughput_<R>rank_gb300 # never read
+moe_a2a_floor_deepep_low_latency_<R>rank_b200 # never read
+moe_a2a_floor_deepep_low_latency_<R>rank_b300 # never read
+moe_a2a_floor_deepep_low_latency_<R>rank_gb200_nvl72 # never read
+moe_a2a_floor_deepep_low_latency_<R>rank_h100 # never read
+moe_a2a_floor_deepep_low_latency_<R>rank_h200 # never read
+moe_a2a_floor_deepep_v2_eager_<R>rank_h100 # never read
+moe_a2a_floor_deepep_v2_graph_<R>rank_h100 # never read
+moe_a2a_rate_deepep_high_throughput_<R>rank_gb300 # never read
+moe_a2a_rate_deepep_low_latency_<R>rank_b200 # never read
+moe_a2a_rate_deepep_low_latency_<R>rank_b300 # never read
+moe_a2a_rate_deepep_low_latency_<R>rank_gb200_nvl72 # never read
+moe_a2a_rate_deepep_low_latency_<R>rank_h100 # never read
+moe_a2a_rate_deepep_low_latency_<R>rank_h200 # never read
+moe_a2a_rate_deepep_v2_eager_<R>rank_h100 # never read
+moe_a2a_rate_deepep_v2_graph_<R>rank_h100 # never read
+nccl_communicator_bytes_<R>rank # read but changes no price

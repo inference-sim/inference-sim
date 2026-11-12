@@ -12,8 +12,13 @@
 //	prcheck description -body <file> -repo <owner/name> -head <rev> -base <rev>
 //	    X14: listed hashes are branch heads; the pull request merges cleanly.
 //	prcheck threads -repo <o/n> -pr <n>
-//	    X24: every review thread of the pull request is resolved and states an outcome
-//	    (fixed, filed <issue>, or rejected: <reason>).
+//	    X24, informational: lists the review threads that are open or resolved with no outcome
+//	    (fixed, filed <issue>, or rejected: <reason>) as notices and in the job summary. It
+//	    never fails: no check waits on a person.
+//	prcheck rerun -repo <o/n> -run <id>
+//	    Reliability: reruns the failed jobs of a failed CI run once, and only when every failed
+//	    job was ended by "The runner has received a shutdown signal" and this is attempt 1.
+//	    Says what it did or why not in the job summary and, for a pull request, a comment.
 //	prcheck issues -repo <owner/name> [-closes <body file>] [-resolve]
 //	    X28: the issues cited as reasons for a refusal or gap. With -closes, fail if the
 //	    body closes a cited issue; with -resolve, fail on any cited issue that is closed.
@@ -112,6 +117,7 @@ func run(args []string, w io.Writer) error {
 	gatesFile := fs.String("gates", ".github/gates.yaml", "the gate list")
 	lockFile := fs.String("lock", ".github/tags.lock", "the recorded tags")
 	prNum := fs.Int("pr", 0, "pull request number")
+	runID := fs.Int64("run", 0, "rerun: the workflow run id")
 	outFile := fs.String("out", "", "status: where to write the status page")
 	prevTag := fs.String("prev", "", "contracts-apidiff: the tag to compare with; default the newest release tag reachable from HEAD")
 	acceptBreak := fs.String("accept-break", "", "contracts-apidiff: the issue (owner/repo#n) of the contract-change review set that accepts an incompatible change")
@@ -193,10 +199,18 @@ func run(args []string, w io.Writer) error {
 		}
 		ts, err := collectThreads(*repo, *prNum)
 		if err != nil {
-			return err
+			// An informational step does not turn a pull request red because the API did not
+			// answer; it says so.
+			_, _ = fmt.Fprintf(w, "::warning title=Review threads (X24)::the threads could not be read: %v\n", err)
+			return nil
 		}
-		_, _ = fmt.Fprintf(w, "threads: %d checked\n", len(ts))
-		return report(w, "thread-outcome", CheckThreads(ts))
+		reportThreads(w, os.Getenv("GITHUB_STEP_SUMMARY"), len(ts), ThreadNotes(ts))
+		return nil
+	case "rerun":
+		if *repo == "" || *runID == 0 {
+			return fmt.Errorf("rerun needs -repo and -run")
+		}
+		return rerunRun(w, os.Getenv("GITHUB_STEP_SUMMARY"), *repo, *runID)
 	case "issues":
 		if *repo == "" {
 			return fmt.Errorf("issues needs -repo")

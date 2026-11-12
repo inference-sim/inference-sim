@@ -16,6 +16,7 @@ type fake struct {
 	varBy  func(int) int64
 	step   kernel.StepEstimate
 	admit  time.Duration
+	render time.Duration
 }
 
 func (f fake) FixedBytes() kernel.MemoryBreakdown { return f.fixed }
@@ -25,8 +26,11 @@ func (f fake) StepTime(kernel.Batch) kernel.StepEstimate {
 	return f.step
 }
 func (f fake) AdmissionOverhead(int) time.Duration { return f.admit }
-func (f fake) OutputTokenOverhead() time.Duration  { return 0 }
-func (f fake) CompletionOverhead() time.Duration   { return 0 }
+func (f fake) AdmissionDemand(int) kernel.HostDemand {
+	return kernel.HostDemand{Service: f.render, Delay: f.admit - f.render}
+}
+func (f fake) OutputTokenOverhead() time.Duration { return 0 }
+func (f fake) CompletionOverhead() time.Duration  { return 0 }
 
 func good() fake {
 	return fake{
@@ -132,6 +136,7 @@ func TestCheckSizesAndPricesAcceptAGoodKernelAndFailEachWay(t *testing.T) {
 		"overlap above no-overlap": mut(func(k *fake) { k.step.Overlap = 3 * time.Millisecond }),
 		"negative resource":        mut(func(k *fake) { k.step.PerResource = map[kernel.Resource]time.Duration{kernel.ResourceSM: -1} }),
 		"negative host cost":       mut(func(k *fake) { k.admit = -1 }),
+		"service above admission":  mut(func(k *fake) { k.render = 2 * k.admit }),
 	}
 	for name, k := range priceBad {
 		if CheckPrices(k) == nil {

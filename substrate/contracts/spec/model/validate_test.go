@@ -538,3 +538,31 @@ func TestTypedRolesAreRequiredAndPlaced(t *testing.T) {
 		t.Errorf("false and true are both stated values: %s", p.Error())
 	}
 }
+
+// A drafter that shares its target's head says so, and must have a head alias to share.
+func TestSpeculatorSharesTargetHead(t *testing.T) {
+	with := func(shares bool, head ...Node) *Graph {
+		g := validGraph()
+		g.Head = []Node{{Op: OpGEMM, Role: "lm_head", N: 100352, K: 3072}}
+		g.Speculator = &Speculator{Method: "dspark", NumSpec: 7, Drafting: DraftingParallelBlock,
+			Stack: Stack{Pattern: []string{"attn_moe"}, Repeat: 1}, Head: head, SharesTargetHead: shares}
+		return g
+	}
+	alias := Node{Op: OpGEMM, Role: "draft_lm_head", N: 100352, K: 3072, Aliases: "head.lm_head"}
+	if p := with(true, alias).Validate(); !p.OK() {
+		t.Fatalf("a drafter sharing its target's head was rejected:\n%s", p.Error())
+	}
+	if p := with(false, alias).Validate(); !p.OK() {
+		t.Fatalf("a drafter with its own head was rejected:\n%s", p.Error())
+	}
+	own := Node{Op: OpGEMM, Role: "draft_lm_head", N: 100352, K: 3072}
+	for name, g := range map[string]*Graph{
+		"no head":                     with(true),
+		"a head that aliases nothing": with(true, own),
+	} {
+		p := g.Validate()
+		if p.OK() || !strings.Contains(p.Error(), "speculator.shares_target_head") {
+			t.Errorf("%s: want a speculator.shares_target_head problem, got %v", name, p)
+		}
+	}
+}

@@ -14,6 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from extract_inferencex_direct import spec_method_of  # noqa: E402
 from extract_inferencex_engine_settings import args_body, parse_args_line  # noqa: E402
 
 # A real MiniMax-M3 MTP args line, shortened to the fields that matter. The nesting is
@@ -89,6 +90,15 @@ def main() -> int:
        and plain.get("block_size") == 128)
     ck("a log with no args line yields nothing",
        parse_args_line("INFO: starting up") == {})
+
+    # The corpus names a deployment by the method its log states, not by the database's label.
+    # A row labelled mtp whose log passed eagle3 is an EAGLE3 deployment.
+    ck("a row's method is the one its log states, not the database label",
+       spec_method_of({"spec_method": "mtp", "passed": {"speculative_method": "eagle3"}}) == "eagle3")
+    ck("a row whose log states no method keeps the database label",
+       spec_method_of({"spec_method": "mtp", "passed": {}}) == "mtp")
+    ck("a row with neither is not speculative",
+       spec_method_of({"spec_method": "none", "passed": {}}) == "none")
 
     print()
     if FAILURES:

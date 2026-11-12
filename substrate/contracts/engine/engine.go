@@ -51,7 +51,11 @@ type Duration = int64
 // protocol: an engine has no other way to ask for future attention, and needs none.
 type Engine interface {
 	// Add hands the engine a request that has arrived at now. The engine decides when it
-	// runs; Add schedules nothing.
+	// runs; Add schedules nothing. Add returns the error of Request.Validate for a request
+	// that does not validate, which it may wrap, and does not run it as another request: an
+	// adapter path with no adapter would otherwise run as the base model. A refused Add
+	// leaves no trace: the engine keeps nothing of the request. enginetest.CheckProtocolErrors
+	// checks both, at every in-flight limit.
 	Add(r Request, now Time) error
 
 	// Schedule decides one batch at now: which requests run, how many tokens each, which
@@ -222,8 +226,9 @@ type Request struct {
 	// TransferLoad among a Batch's TransfersStarted), and runs the request once the simulator
 	// reports that transfer done. An engine that does not disaggregate refuses it.
 	RemotePrefill bool
-	// Peer is where the engine holding the prompt's KV sits, in that engine's own pool: the
-	// node and rack the pull reads from. A host sets it with RemotePrefill, as a P/D proxy hands
+	// Peer is where the engine holding the prompt's KV sits, in that engine's own pool's
+	// numbering (plan.Endpoint: node and rack both relative to that pool): the node and rack the
+	// pull reads from. A host sets it with RemotePrefill, as a P/D proxy hands
 	// a decode engine the address of the prefill it must read from (vLLM's kv_transfer_params);
 	// the decode engine cannot learn it any other way, and the pull's links depend on it. Nil
 	// for every other request.

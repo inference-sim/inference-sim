@@ -56,8 +56,20 @@ func TestRejects(t *testing.T) {
 		{"not_charged with a value", func(s *Set) {
 			s.Coefficients[0].Method = vocab.MethodNotCharged
 		}},
-		{"copied without a source scope", func(s *Set) {
-			s.Coefficients[0].Method = vocab.MethodCopied
+		{"transferred without a source scope or rule", func(s *Set) {
+			s.Coefficients[0].Method = vocab.MethodTransferred
+		}},
+		{"transferred without a rule", func(s *Set) {
+			s.Coefficients[0].Method = vocab.MethodTransferred
+			s.Coefficients[0].TransferredFrom = "hardware=h100"
+		}},
+		{"transferred_from on a measured entry", func(s *Set) {
+			s.Coefficients[0].TransferredFrom = "hardware=h100"
+		}},
+		{"roofline without the facts it was computed from", func(s *Set) {
+			e := &s.Coefficients[0]
+			e.Method, e.Fitted, e.Sources = vocab.MethodRoofline, false, nil
+			e.Rationale = "larger of flops over peak and bytes over bandwidth"
 		}},
 		{"unknown source kind", func(s *Set) {
 			s.Coefficients[0].Sources[0].Kind = "rumour"
@@ -98,8 +110,8 @@ func TestRejects(t *testing.T) {
 // it is now an error for all non-measured methods, as the Python validator required.
 func TestRationaleRequiredForEveryMethodButMeasured(t *testing.T) {
 	for _, m := range []vocab.Method{
-		vocab.MethodLiterature, vocab.MethodVendorSpec, vocab.MethodCopied,
-		vocab.MethodAssumed, vocab.MethodNotCharged,
+		vocab.MethodLiterature, vocab.MethodVendorSpec, vocab.MethodTransferred,
+		vocab.MethodRoofline, vocab.MethodAssumed, vocab.MethodNotCharged,
 	} {
 		s := validSet()
 		e := &s.Coefficients[2] // the assumed entry
@@ -108,8 +120,10 @@ func TestRationaleRequiredForEveryMethodButMeasured(t *testing.T) {
 		switch m {
 		case vocab.MethodLiterature, vocab.MethodVendorSpec:
 			e.Sources = []Source{{Kind: vocab.SourceDatasheet, Cite: "x", Role: vocab.RolePrimary}}
-		case vocab.MethodCopied:
-			e.CopiedFrom = "hardware=h100"
+		case vocab.MethodTransferred:
+			e.TransferredFrom, e.TransferRule = "hardware=h100", "scaled by the ratio of link bandwidths"
+		case vocab.MethodRoofline:
+			e.Sources = []Source{{Kind: vocab.SourceDatasheet, Cite: "catalog hardware/h200.yaml", Role: vocab.RolePrimary}}
 		case vocab.MethodNotCharged:
 			e.Value = 0
 		}
@@ -375,4 +389,238 @@ func TestCalibratedRequiresMeasuredCasesAndHoldout(t *testing.T) {
 	if vocab.Method("derived").Valid() {
 		t.Error("derived is a catalog provenance, not a coefficient method")
 	}
+}
+
+// rate_basis (SUB-5): a closed word, only on a bytes_per_us entry, and a work rate must say
+// why it is not a memory rate. Each case fails for exactly one reason.
+func TestRateBasis(t *testing.T) {
+	rate := func(mutate func(*Entry)) *Set {
+		s := validSet()
+		e := Entry{Name: "attention_decode_rate", Value: 1e6, Units: vocab.UnitBytesPerMicrosecond,
+			Method: vocab.MethodMeasured, Fitted: true, Scope: Scope{Hardware: []string{"h200"}}}
+		mutate(&e)
+		s.Coefficients = append(s.Coefficients, e)
+		return s
+	}
+	ok := []struct {
+		name   string
+		mutate func(*Entry)
+	}{
+		{"absent means memory", func(e *Entry) {}},
+		{"memory", func(e *Entry) { e.RateBasis = vocab.RateBasisMemory }},
+		{"work with a rationale", func(e *Entry) {
+			e.RateBasis, e.Rationale = vocab.RateBasisWork, "a work rate over cached bytes"
+		}},
+	}
+	for _, c := range ok {
+		if p := rate(c.mutate).Validate(); !p.OK() {
+			t.Errorf("%s was rejected:\n%s", c.name, p.Error())
+		}
+	}
+	bad := []struct {
+		name, want string
+		mutate     func(*Entry)
+	}{
+		{"unknown word", "is not one of", func(e *Entry) { e.RateBasis = "cache" }},
+		{"on a non-rate unit", "applies only to units", func(e *Entry) {
+			e.Units, e.RateBasis = vocab.UnitDimensionless, vocab.RateBasisMemory
+		}},
+		{"work with no rationale", "requires a rationale", func(e *Entry) { e.RateBasis = vocab.RateBasisWork }},
+		{"work with a blank rationale", "requires a rationale", func(e *Entry) {
+			e.RateBasis, e.Rationale = vocab.RateBasisWork, "  "
+		}},
+	}
+	for _, c := range bad {
+		p := rate(c.mutate).Validate()
+		if p.OK() || !strings.Contains(p.Error(), c.want) {
+			t.Errorf("%s: want a problem containing %q, got ok=%v:\n%s", c.name, c.want, p.OK(), p.Error())
+		}
+	}
+}
+
+// D5, VAL-8, VAL-9, VAL-10: the optional evidence records are checked whenever present, and
+// each way of being wrong has a failing input.
+func TestEvidenceRecords(t *testing.T) {
+	measured := func(mutate func(*Entry)) *Set {
+		s := validSet()
+		mutate(&s.Coefficients[0]) // a measured, fitted entry
+		return s
+	}
+	impl := KernelImpl{Library: "flashinfer", Variant: "BatchDecodeWithPagedKVCache", CodeHash: "0123456789abcdef"}
+	other := KernelImpl{Library: "flashinfer", Variant: "BatchDecodeWithPagedKVCache", CodeHash: "fedcba9876543210"}
+	ok := []struct {
+		name   string
+		mutate func(*Entry)
+	}{
+		{"a kernel implementation", func(e *Entry) { e.KernelImpls = []KernelImpl{impl} }},
+		// A transferred value names the implementation it is valid for and the one it was
+		// measured on, which differ: the target of a transfer is not removed from the entry.
+		{"a transferred value for a known target", func(e *Entry) {
+			transferredTo(e, []KernelImpl{impl}, []KernelImpl{other})
+		}},
+		{"a transferred value measured on its own kernel (another chip)", func(e *Entry) {
+			transferredTo(e, []KernelImpl{impl}, []KernelImpl{impl})
+		}},
+		{"a transferred value with no kernel key at all", func(e *Entry) { transferredTo(e, nil, nil) }},
+		{"a measurement boundary", func(e *Entry) {
+			e.Measures = &Measures{Time: vocab.TimeDevice, Execution: vocab.ExecutionCaptured, Harness: "aisimulate@2f0f4cd"}
+		}},
+		{"a fit range", func(e *Entry) { e.FitRange = []Bound{{Dim: "tokens", Low: 1, High: 8192}} }},
+		{"a fit range on a transferred entry", func(e *Entry) {
+			e.Method, e.Fitted = vocab.MethodTransferred, false
+			e.TransferredFrom, e.TransferRule, e.Rationale = "hardware=h200", "same die", "reason"
+			e.FitRange = []Bound{{Dim: "tokens", Low: 1, High: 8192}}
+		}},
+	}
+	for _, c := range ok {
+		if p := measured(c.mutate).Validate(); !p.OK() {
+			t.Errorf("%s was rejected:\n%s", c.name, p.Error())
+		}
+	}
+	bad := []struct {
+		name, want string
+		mutate     func(*Entry)
+	}{
+		{"kernel impl without a library", "library", func(e *Entry) {
+			e.KernelImpls = []KernelImpl{{Variant: "v", CodeHash: "0123456789abcdef"}}
+		}},
+		{"kernel impl without a variant", "variant", func(e *Entry) {
+			e.KernelImpls = []KernelImpl{{Library: "l", CodeHash: "0123456789abcdef"}}
+		}},
+		{"kernel impl with a short hash", "code_hash", func(e *Entry) {
+			e.KernelImpls = []KernelImpl{{Library: "l", Variant: "v", CodeHash: "abc"}}
+		}},
+		{"kernel impl with an upper-case hash", "code_hash", func(e *Entry) {
+			e.KernelImpls = []KernelImpl{{Library: "l", Variant: "v", CodeHash: "0123456789ABCDEF"}}
+		}},
+		{"duplicate kernel impl", "duplicate kernel implementation", func(e *Entry) { e.KernelImpls = []KernelImpl{impl, impl} }},
+		{"kernel impl on an assumed entry", "states nothing about a kernel implementation", func(e *Entry) {
+			e.Method, e.Fitted, e.Rationale = vocab.MethodAssumed, false, "reason"
+			e.KernelImpls = []KernelImpl{impl}
+		}},
+		{"kernel impl on a roofline entry", "states nothing about a kernel implementation", func(e *Entry) {
+			e.Method, e.Fitted, e.Rationale = vocab.MethodRoofline, false, "reason"
+			e.Sources = []Source{{Kind: vocab.SourceModel, Role: vocab.RolePrimary, Cite: "catalog facts"}}
+			e.KernelImpls = []KernelImpl{impl}
+		}},
+		{"kernel impl on a name that prices no lowered kernel", "binds to no primitive", func(e *Entry) {
+			e.Name = "hbm_derate"
+			e.KernelImpls = []KernelImpl{impl}
+		}},
+		{"measured_on on a measured entry", "states no other", func(e *Entry) {
+			e.KernelImpls = []KernelImpl{impl}
+			e.MeasuredOn = []KernelImpl{impl}
+		}},
+		{"transferred target with no source", "must name the ones it was measured on", func(e *Entry) {
+			transferredTo(e, []KernelImpl{impl}, nil)
+		}},
+		{"duplicate measured_on", "duplicate kernel implementation", func(e *Entry) {
+			transferredTo(e, []KernelImpl{impl}, []KernelImpl{other, other})
+		}},
+		{"unknown measurement time", "measures.time", func(e *Entry) {
+			e.Measures = &Measures{Time: "wall", Execution: vocab.ExecutionEager, Harness: "h"}
+		}},
+		{"unknown measurement execution", "measures.execution", func(e *Entry) {
+			e.Measures = &Measures{Time: vocab.TimeDevice, Execution: "replayed", Harness: "h"}
+		}},
+		{"measures without a harness", "measures.harness", func(e *Entry) {
+			e.Measures = &Measures{Time: vocab.TimeDevice, Execution: vocab.ExecutionEager}
+		}},
+		{"measures on an assumed entry", "no measurement boundary", func(e *Entry) {
+			e.Method, e.Fitted, e.Rationale = vocab.MethodAssumed, false, "reason"
+			e.Measures = &Measures{Time: vocab.TimeDevice, Execution: vocab.ExecutionEager, Harness: "h"}
+		}},
+		{"fit range with low above high", "exceeds high", func(e *Entry) { e.FitRange = []Bound{{Dim: "tokens", Low: 9, High: 1}} }},
+		{"fit range with a repeated dimension", "duplicate dimension", func(e *Entry) {
+			e.FitRange = []Bound{{Dim: "tokens", Low: 1, High: 2}, {Dim: "tokens", Low: 1, High: 3}}
+		}},
+		{"fit range with no dimension", "is not one of", func(e *Entry) { e.FitRange = []Bound{{Low: 1, High: 2}} }},
+		{"fit range with a dimension the cost model does not take", "is not one of", func(e *Entry) {
+			e.FitRange = []Bound{{Dim: "ranks", Low: 1, High: 2}}
+		}},
+		{"fit range on an assumed entry", "no fit range", func(e *Entry) {
+			e.Method, e.Fitted, e.Rationale = vocab.MethodAssumed, false, "reason"
+			e.FitRange = []Bound{{Dim: "tokens", Low: 1, High: 2}}
+		}},
+	}
+	for _, c := range bad {
+		p := measured(c.mutate).Validate()
+		if p.OK() || !strings.Contains(p.Error(), c.want) {
+			t.Errorf("%s: want a problem containing %q, got ok=%v:\n%s", c.name, c.want, p.OK(), p.Error())
+		}
+	}
+}
+
+// VAL-10 and VAL-3: an interval that is unbounded or wider than half the value marks the
+// entry unidentified, which ranks with assumed; a lookup outside the fitted range is
+// extrapolated, which ranks with transferred. The least trusted effect applies.
+func TestUnidentifiedExtrapolatedAndEffectiveRank(t *testing.T) {
+	inf := math.Inf(1)
+	cases := []struct {
+		name         string
+		e            Entry
+		unidentified bool
+	}{
+		{"no interval is not unidentified", Entry{Value: 10}, false},
+		{"narrow interval", Entry{Value: 10, CI95: &Interval{Low: 9, High: 11}}, false},
+		{"interval exactly half the value", Entry{Value: 10, CI95: &Interval{Low: 7.5, High: 12.5}}, false},
+		{"interval wider than half the value", Entry{Value: 10, CI95: &Interval{Low: 7, High: 13}}, true},
+		{"unbounded above", Entry{Value: 10, CI95: &Interval{Low: 9, High: inf}}, true},
+		{"unbounded below", Entry{Value: 10, CI95: &Interval{Low: math.Inf(-1), High: 11}}, true},
+	}
+	for _, c := range cases {
+		if got := c.e.Unidentified(); got != c.unidentified {
+			t.Errorf("%s: Unidentified = %v, want %v", c.name, got, c.unidentified)
+		}
+	}
+	e := Entry{Method: vocab.MethodMeasured, FitRange: []Bound{{Dim: "tokens", Low: 1, High: 100}, {Dim: "requests", Low: 2, High: 8}}}
+	for _, c := range []struct {
+		name string
+		in   map[string]float64
+		want bool
+	}{
+		{"inside", map[string]float64{"tokens": 50, "requests": 4}, false},
+		{"on the bound", map[string]float64{"tokens": 100, "requests": 8}, false},
+		{"above on one dimension", map[string]float64{"tokens": 101, "requests": 4}, true},
+		{"below on the other", map[string]float64{"tokens": 50, "requests": 1}, true},
+		{"a recorded dimension not supplied is not judged", map[string]float64{"tokens": 50}, false},
+	} {
+		if got := e.Extrapolated(c.in); got != c.want {
+			t.Errorf("%s: Extrapolated = %v, want %v", c.name, got, c.want)
+		}
+	}
+	if (Entry{Method: vocab.MethodMeasured}).Extrapolated(map[string]float64{"tokens": 1e9}) {
+		t.Error("an entry that recorded no range has not said, so it is never extrapolated")
+	}
+	rank := func(e Entry, extrapolated bool) int { r, _ := e.EffectiveRank(extrapolated); return r }
+	wide := &Interval{Low: 0, High: 100}
+	for _, c := range []struct {
+		name string
+		e    Entry
+		x    bool
+		want int
+	}{
+		{"measured, identified, in range", Entry{Method: vocab.MethodMeasured, Value: 10}, false, 1},
+		{"measured and extrapolated ranks with transferred", Entry{Method: vocab.MethodMeasured, Value: 10}, true, 3},
+		{"measured and unidentified ranks with assumed", Entry{Method: vocab.MethodMeasured, Value: 10, CI95: wide}, false, 7},
+		{"calibrated and extrapolated", Entry{Method: vocab.MethodCalibrated, Value: 10}, true, 3},
+		{"literature is already below transferred, so extrapolation does not move it", Entry{Method: vocab.MethodLiterature, Value: 10}, true, 4},
+		{"assumed stays assumed", Entry{Method: vocab.MethodAssumed, Value: 10, CI95: wide}, true, 7},
+	} {
+		if got := rank(c.e, c.x); got != c.want {
+			t.Errorf("%s: EffectiveRank = %d, want %d", c.name, got, c.want)
+		}
+	}
+	if _, ranked := (Entry{Method: vocab.MethodNotCharged}).EffectiveRank(true); ranked {
+		t.Error("not_charged has no rank")
+	}
+}
+
+// transferredTo turns a measured entry into a transferred one that states the given target and
+// source implementations.
+func transferredTo(e *Entry, target, source []KernelImpl) {
+	e.Method, e.Fitted = vocab.MethodTransferred, false
+	e.Rationale = "reason"
+	e.TransferredFrom, e.TransferRule = "hardware=h200", "scaled by the ratio of the chips' measured link bandwidths"
+	e.KernelImpls, e.MeasuredOn = target, source
 }

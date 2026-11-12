@@ -15,8 +15,8 @@ func TestVocabulariesAreClosed(t *testing.T) {
 			"tokens", "us_per_hop", "us_per_layer", "us_per_load",
 			"us_per_request", "us_per_step", "us_per_token", "us_per_transfer"}},
 		{"methods", AllMethods(), []string{
-			"assumed", "calibrated", "copied", "literature", "measured",
-			"not_charged", "vendor_spec"}},
+			"assumed", "calibrated", "literature", "measured",
+			"not_charged", "roofline", "transferred", "vendor_spec"}},
 		{"scope keys", AllScopeKeys(), []string{
 			"ep", "fabric", "hardware", "model", "nodes_spanned", "tp"}},
 		{"provenances", AllProvenances(), []string{"derived", "vendor_spec"}},
@@ -25,6 +25,10 @@ func TestVocabulariesAreClosed(t *testing.T) {
 			"vendor_doc"}},
 		{"source roles", AllSourceRoles(), []string{
 			"primary", "supporting", "upper_bound"}},
+		{"rate bases", AllRateBases(), []string{"memory", "work"}},
+		{"fit dimensions", AllFitDims(), []string{"context_tokens", "requests", "tokens"}},
+		{"measurement times", AllMeasurementTimes(), []string{"device", "device_and_host"}},
+		{"measurement executions", AllMeasurementExecutions(), []string{"captured", "eager"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -67,7 +71,7 @@ func TestEvidenced(t *testing.T) {
 			t.Errorf("%s should be evidenced", m)
 		}
 	}
-	for _, m := range []Method{MethodAssumed, MethodCopied, MethodNotCharged} {
+	for _, m := range []Method{MethodAssumed, MethodTransferred, MethodRoofline, MethodNotCharged} {
 		if m.Evidenced() {
 			t.Errorf("%s should not be evidenced", m)
 		}
@@ -116,5 +120,43 @@ func TestLicenceAllowList(t *testing.T) {
 		if LicenceRedistributable(bad) {
 			t.Errorf("%q is on the allow-list", bad)
 		}
+	}
+}
+
+// TestRankFollowsDesignSection92 pins the order of design §9.2: the smallest number is the
+// most trusted, every method but not_charged has one, and no two share a number.
+func TestRankFollowsDesignSection92(t *testing.T) {
+	order := []Method{MethodMeasured, MethodCalibrated, MethodTransferred, MethodLiterature,
+		MethodVendorSpec, MethodRoofline, MethodAssumed}
+	for i, m := range order {
+		if r, ok := m.Rank(); !ok || r != i+1 {
+			t.Errorf("%s: Rank() = %d, %v; want %d, true", m, r, ok, i+1)
+		}
+	}
+	if r, ok := MethodNotCharged.Rank(); ok || r != 0 {
+		t.Errorf("not_charged is outside the ranking, got %d, %v", r, ok)
+	}
+	if _, ok := Method("copied").Rank(); ok {
+		t.Error("copied was retired in favour of transferred and must not rank")
+	}
+	for _, m := range AllMethods() {
+		if _, ranked := Method(m).Rank(); !ranked && Method(m) != MethodNotCharged {
+			t.Errorf("method %q is neither ranked nor not_charged", m)
+		}
+	}
+}
+
+// A file's Provenance is what an omitted field inherits, so it must itself be a field source
+// (SUB-18): vendor_spec is the datasheet's figures, derived is not a source at all.
+func TestProvenanceAsAFieldSource(t *testing.T) {
+	got, err := ProvenanceVendorSpec.FieldSource()
+	if err != nil || got.Kind != FieldDatasheet || got.Device != "" {
+		t.Errorf("vendor_spec -> %+v, %v; want datasheet", got, err)
+	}
+	if _, err := ProvenanceDerived.FieldSource(); err == nil {
+		t.Error("derived was accepted as a source of a catalog fact")
+	}
+	if _, err := Provenance("rumour").FieldSource(); err == nil {
+		t.Error("an unrecognized provenance was accepted as a source")
 	}
 }

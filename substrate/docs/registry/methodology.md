@@ -349,7 +349,7 @@ themselves (1,143 entries in six sets):
 | `measured` | 844 | a named fitter in `scripts/`, re-run by the validator |
 | `vendor_spec` | 57 | NVIDIA's own descriptor or simulator source, transcribed by a writer with `--check` |
 | `assumed` | 239 | a derivation script where one exists; otherwise nothing — each states its reasoning and what would replace it |
-| `copied` | 1 | nothing to reproduce: another scope's value carried, `copied_from` naming it -- an assumed transfer, not a derivation (DeepSeek-V4.1's `host_launch_eager_per_kernel` off h200, §10.6) |
+| `transferred` | 1 | nothing to reproduce: another scope's value carried by a stated rule, `transferred_from` naming it -- an assumed transfer, not a derivation (DeepSeek-V4.1's `host_launch_eager_per_kernel` off h200, §10.6) |
 | `not_charged` | 2 | nothing to reproduce: a declared zero (`cudagraph_capture_bytes_none`; DeepSeek-V4.1's `host_admission_per_request`, §10.6, an inferred zero the schema requires to carry this method) |
 
 The 239 `assumed` entries are of four different kinds, and the difference matters
@@ -628,7 +628,7 @@ The reference pages carry the current counts.
 | recurrent | `recurrent_decode_*_kda` | 6 | vllm 0.1.dev19262 |
 | recurrent | `recurrent_decode_*_mamba2` | 2 | **trtllm 1.3.0rc20** |
 | host-overheads | all part-wide | 7 | none — `method: assumed` |
-| host-overheads | deepseek-v4.1-flash | 4 | eager launch `assumed` on h200 (end-to-end anchor) and `copied` to the other eight parts (an assumed transfer), admission per token `assumed` (a front-end timing on an Apple M1 Max, transferred), per request `not_charged` 0.0 (an inference from what was timed, bounded end to end; the contracts require `not_charged` for a zero), §10.6 |
+| host-overheads | deepseek-v4.1-flash | 4 | eager launch `assumed` on h200 (end-to-end anchor) and `transferred` to the other eight parts (an assumed transfer), admission per token `assumed` (a front-end timing on an Apple M1 Max, transferred), per request `not_charged` 0.0 (an inference from what was timed, bounded end to end; the contracts require `not_charged` for a zero), §10.6 |
 
 Regenerate this table rather than editing it: every count above is derivable from
 `coefficients/` with a group-by on the family stem, and a retyped count is the defect
@@ -996,6 +996,7 @@ tags build was diffed, and what the 0.25.0 timing does and does not contain is s
 | `attention_decode_rate_block_index_scores` | h200, deepseek-v4.1-flash | assumed | 3,840,000 B/µs, NVIDIA's empirical HBM rate (BwPeak × `hbm_derate`), not a bound | see below |
 | `gemm_{eps_max,m_half}_w4a16_mxfp4_grouped` | h200, gb300 | measured | 0.245 / 26 (h200), 0.114 / 55 (gb300), of the BF16 peak | vLLM's `MarlinExperts` MXFP4 rows, fitted under the kernel's routed-term composition. On gb300 it applies only where the MoE backend is Marlin W4A16 (the Kimi-K3 preview build FPM measured), not to stock v0.31.0 |
 | `gemm_{eps_max,m_half}_w8a16_mxfp8` | h200 | assumed | the BF16 envelope: an upper bound on the asymptote; the knee is not a bound | no dense Marlin sweep exists on any part |
+| `gemm_{eps_max,m_half}_w8a16_mxfp8` | h200 | transferred | the part's own measured Marlin grouped pair (0.245 / 26), which the lookup prefers to the `assumed` bound above (rank 3 against 7). h100's pair (0.282 / 15) is a candidate, not in this registry: it has no held-out unit, so the bound prices h100 | no dense Marlin sweep exists on any part; unkeyed, see reproducing-coefficients |
 | `host_gather_rate_uva` | h200 | assumed | 57,764 B/µs: the PCIe 5.0 raw rate × 128/130 line code × 264/288 | no host-gather measurement exists |
 
 **On H100 the same six entries ship, each fitted from H100's own rows.** H100 SXM is the
@@ -1010,7 +1011,7 @@ h100 entry.
 | `attention_decode_floor_block_index_scores` | 4.9 µs | 4.3 | 1.086x, n = 414; 246 floor-dominated points 1.067x; per checkpoint 4.95 / 4.90 |
 | `attention_decode_rate_block_index_scores` | 2,680,000 B/µs, BwPeak × `hbm_derate` (3.35 × 0.8) | 3,840,000 | `assumed`; the sweep's slope is 6.44 TB/s-equivalent, 1.92× H100's peak |
 | `gemm_{eps_max,m_half}_w4a16_mxfp4_grouped` | 0.282 / 15 | 0.245 / 26 | 1.140x, signed 1.039, n = 27; int4 holdout 1.161x, signed 1.068 |
-| `gemm_{eps_max,m_half}_w8a16_mxfp8` | 1.0 / 170, H100's BF16 envelope | 0.992 / 110 | `assumed` |
+| `gemm_{eps_max,m_half}_w8a16_mxfp8` | 1.0 / 170, H100's BF16 envelope | 0.992 / 110 | `assumed` (h200 also carries a `transferred` pair above it; h100's is a non-selected candidate) |
 | `host_gather_rate_uva` | 57,764 B/µs, H100's own `host_link_bandwidth` × 128/130 × 264/288 | 57,764 | `assumed` |
 
 **Neither fitted pair scales with bandwidth, and the rows say so directly.** On the 207
@@ -1252,7 +1253,7 @@ basis records the composition and `--check` refuses any other. The committed bas
 07ed424 (972 launches, 3.18 ms with the mHC entries). The constant is valid only with the
 basis and the composition it was divided by. It is derived on H200 nodes only:
 the h200 entry is `assumed` (backed out of the anchor), and the other eight parts, h100
-included, carry it as a separate `copied` entry (`copied_from: hardware=h200,...`). That copy
+included, carry it as a separate `transferred` entry (`transferred_from: hardware=h200,...`). That transfer
 is an ASSUMPTION about host CPU and driver launch cost, not a derivation; an H100
 enforce-eager ITL anchor (same model, TP8, no speculation, c1-c64) would replace it. The host
 set's coverage rule is checked per name and model across entries, so the split is allowed.
@@ -1475,8 +1476,8 @@ with any spelling of key, that the emitter does not know how to transcribe fails
 so a setting cannot be silently dropped. Only named prose lines are exempt. A header that
 states `method:` must state the curve's method; one that does not is checked against its
 "Measured on (..., vLLM <method>)" line. An acceptance length is `measured`; the
-one file InferenceX marks provisional is `copied`, with `copied_from` naming the measured
-profile it repeats, and the emitter checks that the two values agree.
+one file InferenceX marks provisional is `transferred`, with `transferred_from` naming the measured
+profile it repeats and `transfer_rule` stating why that carries over, and the emitter checks that the two values agree.
 
 ### 12.2 Model names: resolved, or refused
 

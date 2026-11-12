@@ -160,6 +160,7 @@ func TestAnEnvironmentThatBreaksALawFails(t *testing.T) {
 		"sizing a refused plan":          sizesAnything{reference()},
 		"a tier the plan does not list":  ignoresThePlan{reference()},
 		"a charge for a pull of nothing": chargesForNothing{reference()},
+		"a charge for no tokens":         admitsNothingForFree{reference()},
 	} {
 		rec := &recorder{TB: t}
 		Check(rec, e, []Case{goodCase(), tierCase()})
@@ -313,5 +314,24 @@ func TestAPullOfNothingDemandsZeroBytes(t *testing.T) {
 	before := len(r.moves)
 	if _, err := env.DemandFor(r, f.Plan(), tier); err == nil || len(r.moves) != before {
 		t.Errorf("a tier load of nothing was priced: %v", err)
+	}
+}
+
+// admitsNothingForFree charges a delay even to a request of no tokens.
+type admitsNothingForFree struct{ *Reference }
+
+func (a admitsNothingForFree) HostDemand(p plan.PoolPlan, n int) (kernel.HostDemand, error) {
+	return kernel.HostDemand{Delay: time.Millisecond}, nil
+}
+
+func TestTheReferenceSplitsAdmissionIntoServiceAndDelay(t *testing.T) {
+	r := reference()
+	r.AdmissionPerToken, r.AdmissionDelay = 350*time.Nanosecond, 40*time.Millisecond
+	d, err := r.HostDemand(goodCase().Plan, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Service != 350*time.Microsecond || d.Delay != 40*time.Millisecond {
+		t.Fatalf("got %+v", d)
 	}
 }

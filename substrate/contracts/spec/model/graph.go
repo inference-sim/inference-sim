@@ -280,11 +280,21 @@ type Speculator struct {
 	// because the set of methods is engine-version data, not a schema invariant;
 	// a rules pack validates it against a declared engine version.
 	Method string `yaml:"method"`
-	// NumSpec is the tokens drafted per request per step. It is not the draft layer
+	// NumSpec is the draft length the checkpoint defaults to: the value vLLM gives
+	// num_speculative_tokens when a deployment states none (n_predict for an MTP draft,
+	// num_mtp_modules for MiniMax-M3; block_size or dspark_block_size for DSpark;
+	// vllm/config/speculative.py:1479-1492@v0.32.0). It is not a limit and not the draft layer
 	// count: DeepSeek-V4.1's DSpark drafts dspark_block_size = 5 tokens through
-	// num_nextn_predict_layers = 3 layers (both from the checkpoint's configuration;
-	// the engine's config/speculative.py defaults num_speculative_tokens to the draft
-	// config's block_size, or dspark_block_size where it has none).
+	// num_nextn_predict_layers = 3 layers. A method with no default (eagle, eagle3, dflash,
+	// draft_model: the engine refuses a deployment that states none, speculative.py:1502-1507)
+	// states 1, the least a deployment can state. One entry states a count its configuration
+	// does not: Kimi-K3's DSpark drafter states 7, the model card's, where vLLM refuses a
+	// deployment that states none. A deployment's own count replaces it, and
+	// the method decides whether the count is valid (an MTP draft needs a multiple of n_predict
+	// above n_predict, :1493-1501); the model reference lists the rules. Under autoregressive
+	// drafting the stack runs once per drafted token, so the count is how many passes; under
+	// parallel_block it is the positions of the one pass, which also sizes a draft-only
+	// window cache.
 	NumSpec int `yaml:"num_spec_tokens"`
 	// Drafting is how Stack runs. See Drafting.
 	Drafting Drafting `yaml:"drafting,omitempty"`
@@ -344,6 +354,19 @@ type Speculator struct {
 	// its fp32 stream, 4 x hidden_size bytes (vllm/models/muse_spark/nvidia/
 	// model.py:1705-1722 at vllm-project/vllm 0f6b2619). Only with AuxHiddenStateLayers.
 	AuxHiddenStateBytesPerToken int `yaml:"aux_hidden_state_bytes_per_token,omitempty"`
+	// SharesTargetHead says the drafter ships no LM head and reads its target's: the
+	// engine loads a head into the draft only when the checkpoint holds one
+	// (has_own_lm_head, set by the weight loader when an lm_head tensor is found; DSpark
+	// and EAGLE drafters without one take the target's). A drafter graph is validated as a
+	// model, so it states an lm_head of its own, and its Head names it with aliases
+	// head.<role>. When the drafter is named as a deployment's draft model that alias
+	// means the drafter's own head and its weights are the drafter's resident bytes; with
+	// SharesTargetHead it means the head of the target graph the drafter is grafted onto,
+	// which is already resident once. Requires a GEMM in Head that aliases a head node. Only a
+	// separate drafter's graph (one whose model.yaml names targets) sets it; a graph cannot see
+	// its identity, so the catalog check does not refuse it on a target's own in-graph
+	// speculator, where it has no meaning.
+	SharesTargetHead bool `yaml:"shares_target_head,omitempty"`
 }
 
 // ShardedAtDecode is when a replicated GEMM's output columns split over the tensor-parallel

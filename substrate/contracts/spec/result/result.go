@@ -23,6 +23,7 @@
 package result
 
 import (
+	"github.com/inference-sim/blis-substrate/contracts/metrics"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
@@ -36,8 +37,10 @@ const Kind = "Result"
 
 // SchemaVersion is the Result schema this package reads and writes. Version 2 added the
 // engine, data, selected entries, options, workload properties, frame, fates and request
-// rows, and replaced metric_defs by registry identifiers.
-const SchemaVersion = 2
+// rows, and replaced metric_defs by registry identifiers. Version 3 requires each figure to
+// state its scope, and its member and aggregate where it has them (DEV-8, design §8.7): a
+// version 2 figure states none, and a definition is never inferred, so it is not read.
+const SchemaVersion = 3
 
 // Result is one simulator run's predicted output.
 type Result struct {
@@ -86,8 +89,14 @@ type Result struct {
 	Reports Reports `yaml:"reports,omitempty"`
 
 	// Overrides lists every setting the run simulated differently from Input, and what
-	// chose the value.
+	// chose the value. These are the host's choices.
 	Overrides []Override `yaml:"overrides,omitempty"`
+	// Resolutions are the engine's own resolution of the settings it resolves: for each, the
+	// value it was asked for and the value it resolved to. They sit beside Overrides: an
+	// override is what the host changed, a resolution is what the engine then did with the
+	// value (design §11.2, which grades a point G2 where a resolved value that a benchmark
+	// run logged differs from the engine's resolution of the value passed).
+	Resolutions []Resolution `yaml:"resolutions,omitempty"`
 	// Artifacts are bulk outputs, by reference.
 	Artifacts map[string]Artifact `yaml:"artifacts,omitempty"`
 
@@ -151,12 +160,32 @@ type Overlay struct {
 	Hash string `yaml:"hash"`
 }
 
+// ClosenessVersion is the version of the closeness data a SelectedEntries can carry.
+const ClosenessVersion = 2
+
 // SelectedEntries is the selected-entry report (VAL-6). Every reader behind the engine's
 // Environment contributes to it, the acceptance and routing profile readers included.
 type SelectedEntries struct {
+	// ClosenessVersion says the recorder passed on everything each coefficient's entry states:
+	// its kernel implementations, fit range and interval, and the flags found from them. It is
+	// 2 for the layout of this package, and absent in a report written before the data existed
+	// or by a recorder that held only identities. It does not say the conditions were decided.
+	// Version 2 added the implementation each coefficient priced (priced, kernel_match) and the
+	// implementations the run ran (implementations). Under version 2, extrapolated is evaluated only for a coefficient that has a fit_range,
+	// unidentified only for one that has a ci95, and the kernel hash only for one that has
+	// kernel_impls; where the data is absent the entry did not state it, and the flag's false is
+	// "not evaluated". Without the version, nothing is said.
+	ClosenessVersion int `yaml:"closeness_version,omitempty"`
 	// Coefficients are the coefficient entries a lookup returned, each once, sorted by
 	// set, name, method and scope.
 	Coefficients []SelectedCoefficient `yaml:"coefficients,omitempty"`
+	// Implementations are the kernel implementations the run's cost models ran, by the lowered
+	// primitive each executes (a plan.Primitive word such as "attention.prefill"), each once and
+	// sorted by library, variant and code hash: the lowered implementations of every pool
+	// (design VAL-8). Each coefficient's priced implementations are those of its primitive.
+	// Present with closeness_version. An implementation the engine could not identify has no
+	// code hash.
+	Implementations map[string][]coefficient.KernelImpl `yaml:"implementations,omitempty"`
 	// AcceptanceProfiles are the acceptance profiles a lookup returned.
 	AcceptanceProfiles []SelectedProfile `yaml:"acceptance_profiles,omitempty"`
 	// RoutingProfiles are the routing profiles a lookup returned.
@@ -168,7 +197,10 @@ type SelectedEntries struct {
 }
 
 // SelectedCoefficient identifies one registry coefficient as design §3.3 does: by its set,
-// its name, its scope and its method.
+// its name, its scope and its method, and records what a reader needs to judge how far the
+// run's price rests on it (design §11.3, the G1 conditions): the kernel implementations the
+// entry is valid for, the range its fit covered, and whether the run left that range or the
+// entry is not identified by its data.
 type SelectedCoefficient struct {
 	Set    string            `yaml:"set"`
 	Name   string            `yaml:"name"`
@@ -177,6 +209,52 @@ type SelectedCoefficient struct {
 	// File is the registry file the entry was read from, relative to the registry
 	// directory.
 	File string `yaml:"file"`
+	// KernelImpls are the kernel implementations the entry states it is valid for: the
+	// library, its variant and the hash of the kernel's source (design D5, VAL-8), copied
+	// from the entry. It is the entry's validity list, which can name builds the run did not
+	// run; the build it priced is Priced. Empty when the entry states none, which is allowed
+	// for an entry that is not tied to one implementation (KernelMatch is then unkeyed).
+	KernelImpls []coefficient.KernelImpl `yaml:"kernel_impls,omitempty"`
+	// Primitive is the lowered primitive the entry's name prices (coefficient.PrimitiveOf), or
+	// empty for a name that prices no lowered kernel. Present with closeness_version.
+	Primitive string `yaml:"primitive,omitempty"`
+	// Priced are the implementations of the operations that read the entry, with their code
+	// hashes: the kernels the engine lowered those operations to, matched whole by library,
+	// variant and code hash (design VAL-8, 6.2). The operations that read an entry are those of
+	// the primitive its name prices, narrowed to its kind where the name states one: the
+	// per-kind terms of attention and the recurrent update are read only by the layers of that
+	// kind. An exact entry is used only when every implementation among them is one it lists.
+	// A subset of selected_entries.implementations[primitive] and of kernel_impls. A sibling
+	// build the entry is also valid for, an implementation of another primitive, and a kernel
+	// that runs only operations the entry is not read by, are not here. A reader maps each
+	// library version a benchmark run recorded to a kernel hash and compares it with these, not
+	// with KernelImpls (design §11.3, G1).
+	Priced []coefficient.KernelImpl `yaml:"priced,omitempty"`
+	// KernelMatch says how the entry met the implementations that ran: exact when it lists one
+	// of them, unkeyed when it lists none and so applies to every build without having been
+	// shown to match the one that ran. A kernel hash is decided only for an exact entry; an
+	// unkeyed one leaves it unevaluated. Present with closeness_version.
+	KernelMatch coefficient.KernelMatch `yaml:"kernel_match,omitempty"`
+	// MeasuredOn are the implementations a transferred value was measured on, copied from the
+	// entry. It is evidence about where the value came from, never a match.
+	MeasuredOn []coefficient.KernelImpl `yaml:"measured_on,omitempty"`
+	// FitRange is the range of inputs the entry's fit covered (design VAL-10), copied from
+	// the entry. Empty when the entry records none, and then the extrapolation condition cannot
+	// be evaluated for it.
+	FitRange []coefficient.Bound `yaml:"fit_range,omitempty"`
+	// CI95 is the entry's 95% interval, copied from the entry. Absent when the entry states
+	// none, and then the identifiability condition cannot be evaluated for it.
+	CI95 *coefficient.Interval `yaml:"ci95,omitempty"`
+	// Extrapolated is true when at least one step the run priced read the entry at an input
+	// outside FitRange. The cost model reports it from the trust verdict of each priced step
+	// (kernel.Estimate.Trust), so a Result written before any step ran says false. It
+	// requires a fit range.
+	Extrapolated bool `yaml:"extrapolated,omitempty"`
+	// Unidentified is true when the entry's data do not determine it: its 95% interval is
+	// unbounded or wider than half its value (design VAL-10). It is a property of the entry,
+	// known when the cost model is built. It requires CI95: without an interval the entry has
+	// not said, and false means only that nothing was found.
+	Unidentified bool `yaml:"unidentified,omitempty"`
 }
 
 // SelectedProfile identifies one acceptance or routing profile by its set and its key, as
@@ -242,6 +320,21 @@ type WorkloadProperty struct {
 	// Profile names the registry profile, as set and key, when Source is
 	// PropertyProfile.
 	Profile string `yaml:"profile,omitempty"`
+	// Step is how a profile lookup found its value (D8): "exact" for the run's exact key, or
+	// the borrowing step that supplied it: "same_drafter_other_k", "other_drafter" or
+	// "other_target". Present exactly when Source is PropertyProfile and the property is a
+	// profile lookup that can borrow (speculative acceptance).
+	Step string `yaml:"step,omitempty"`
+	// Differed names each key field in which a borrowed profile differs from the run's:
+	// model, drafter, speculative_method or num_spec_tokens. Empty for an exact match.
+	Differed []string `yaml:"differed,omitempty"`
+	// KRule says how a borrowed value was brought to the run's K when Step is
+	// "same_drafter_other_k": "interpolated", "above_largest", "below_smallest_rates" or
+	// "below_smallest_proportional".
+	KRule string `yaml:"k_rule,omitempty"`
+	// Profiles lists every profile the value was read from, as set and key, the one that sets
+	// it first. An interpolation lists the two it lies between. Present with Step.
+	Profiles []string `yaml:"profiles,omitempty"`
 }
 
 // PropertySource is what supplied a workload property, highest precedence first (D8).
@@ -470,12 +563,22 @@ type Window struct {
 	Requests int `yaml:"requests"`
 }
 
-// Figure is one predicted value and the number of samples behind it.
+// Figure is one predicted value, the number of samples behind it, and the scope it is at. Its
+// metric is the key it is held under in Result.Metrics, so a Result holds one figure of a
+// metric: the one its frame measures, at the scope and aggregate it states.
 type Figure struct {
 	Value float64 `yaml:"value"`
 	// Samples is the size of the population the statistic was taken over: requests,
 	// token gaps or steps, as the metric's definition says. For a rate, the count summed.
 	Samples int `yaml:"samples"`
+	// Scope, Member, Aggregate and Over are the figure's Basis (design §8.7): the scope it is
+	// at, the pool or instance it is of, and, for a figure that combines the figures of a
+	// narrower scope, the aggregate and the scope it ranges over. Scope is required; the
+	// others are stated where the figure has them. Basis returns them together.
+	Scope     metrics.Scope     `yaml:"scope"`
+	Member    string            `yaml:"member,omitempty"`
+	Aggregate metrics.Aggregate `yaml:"aggregate,omitempty"`
+	Over      metrics.Scope     `yaml:"over,omitempty"`
 }
 
 // Requests counts each request's fate (DEV-9). Generated is the generator's own count of
@@ -684,6 +787,27 @@ type Override struct {
 	Run   string `yaml:"run"`
 	// Source is what chose Run, for example a command-line flag.
 	Source string `yaml:"source"`
+}
+
+// Resolution is the engine's resolution of one setting, beside the value the host gave it.
+type Resolution struct {
+	// Setting is the setting's name. It is the same name an Override uses for the same
+	// setting, when the host overrode it.
+	Setting string `yaml:"setting"`
+	// Pool says which pool of the deployment resolved the setting, as PoolLabels names it:
+	// the pool's role, or the role and its position among the pools of that role when
+	// several share one. Absent when the resolution is of the whole deployment, or the
+	// deployment has one pool. A disaggregated run's prefill and decode pools resolve
+	// differently, so each states its own.
+	Pool string `yaml:"pool,omitempty"`
+	// Host is the value the host gave the engine: the host's value when Overrides names this
+	// setting, else Input's. Empty when the host gave none and the engine chose.
+	Host string `yaml:"host,omitempty"`
+	// Engine is the value the engine resolved to, and the run simulated.
+	Engine string `yaml:"engine"`
+	// Reason says why Engine differs from Host. Required exactly when both are set and
+	// differ.
+	Reason string `yaml:"reason,omitempty"`
 }
 
 // Artifact is a bulk output, by path relative to the Result document.

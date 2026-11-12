@@ -25,7 +25,7 @@ for latency the engine already hides.
 ## Host work is the kernel's too
 
 Tokenization, detokenization and request teardown are CPU work, not GPU work. They are on
-the interface anyway (`AdmissionOverhead`, `OutputTokenOverhead`, `CompletionOverhead`),
+the interface anyway (`AdmissionOverhead`, `AdmissionDemand`, `OutputTokenOverhead`, `CompletionOverhead`),
 because the cost model already carries a host term for launching GPU kernels. Splitting host
 costs between two owners would leave a caller fetching some coefficients from the kernel
 and others from somewhere else.

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -50,7 +51,24 @@ type Identity struct {
 	// allow-list: such a model commits only this hash and the source revision, and the
 	// deriver fetches the file in a nightly job that holds the access token (X12).
 	Config *ConfigPin `yaml:"config,omitempty"`
+	// Drafters lists what can draft tokens for this target (design D8): the word
+	// "speculator" for the in-graph speculator its graph.yaml states (its MTP layers, say), and
+	// the catalog name of each separate drafter checkpoint. The catalog check requires every
+	// graph with a speculator to list it, and every named drafter to name this model as its
+	// Target.
+	Drafters []string `yaml:"drafters,omitempty"`
+	// Targets is set on a separate drafter's entry: the catalog names of the models it drafts
+	// for. Each of them lists this entry in its Drafters. A drafter checkpoint drafts for every
+	// model whose hidden states it was trained to read, and one architecture ships in several
+	// quantisations that are separate catalog entries, so a drafter may have several targets;
+	// acceptance is keyed by the (target, drafter) pair (design D8), so each pair is its own
+	// key.
+	Targets []string `yaml:"targets,omitempty"`
 }
+
+// InGraphSpeculator is the word a target's Drafters list uses for the speculator its own
+// graph states.
+const InGraphSpeculator = "speculator"
 
 // Licence records a model's licence and where it was read.
 type Licence struct {
@@ -82,6 +100,12 @@ type Source struct {
 	// upstream move under a fixed graph, which is the drift the digest in the graph's
 	// derived_from exists to catch; this pins the other end of that comparison.
 	Revision string `yaml:"revision"`
+	// Path is where the vendor config sits in the repository. Omitted, it is config.json at the
+	// root. A checkpoint that ships a second model in a directory of its own, such as a
+	// speculative drafter under dspark/, names that directory's config here, so the nightly
+	// fetch reads the file the entry's digest pins. Relative, with no ".." element, and a
+	// .json file.
+	Path string `yaml:"path,omitempty"`
 	// Retrieved is the date the config was fetched, as provenance. Optional: it is not
 	// part of the identity the catalog's gate enforces, so it is recorded where present
 	// and never required.
@@ -113,6 +137,35 @@ func (id *Identity) validateStructure(p *validate.Problems) {
 	p.Merge("source", id.Source.Validate())
 	if id.Config != nil && !validate.IsSHA256(id.Config.SHA256) {
 		p.Field("config.sha256", "%q is not a lowercase hex SHA-256", id.Config.SHA256)
+	}
+	seen := map[string]bool{}
+	for i, d := range id.Drafters {
+		at := fmt.Sprintf("drafters[%d]", i)
+		switch {
+		case d == "":
+			p.Field(at, "is empty: name %q or a catalog model", InGraphSpeculator)
+		case d == id.Name:
+			p.Field(at, "%q is this model; a model does not draft for itself", d)
+		case seen[d]:
+			p.Field(at, "%q is listed twice", d)
+		}
+		seen[d] = true
+	}
+	seenTarget := map[string]bool{}
+	for i, t := range id.Targets {
+		at := fmt.Sprintf("targets[%d]", i)
+		switch {
+		case t == "":
+			p.Field(at, "is empty: name the catalog model this drafter drafts for")
+		case t == id.Name:
+			p.Field(at, "%q is this model; a drafter's target is another model", t)
+		case seenTarget[t]:
+			p.Field(at, "%q is listed twice", t)
+		}
+		seenTarget[t] = true
+	}
+	if len(id.Targets) > 0 && len(id.Drafters) > 0 {
+		p.Field("drafters", "a separate drafter names its targets and lists no drafters of its own")
 	}
 }
 
@@ -190,5 +243,41 @@ func (s *Source) Validate() *validate.Problems {
 	if s.Revision == "" {
 		p.Field("revision", "required")
 	}
+	if s.Path != "" {
+		if err := checkConfigPath(s.Path); err != "" {
+			p.Field("path", "%q %s", s.Path, err)
+		}
+	}
 	return p
+}
+
+// ConfigPath is where the config sits in the repository: Path, or config.json at the root.
+func (s *Source) ConfigPath() string {
+	if s.Path == "" {
+		return "config.json"
+	}
+	return s.Path
+}
+
+// checkConfigPath returns why a path cannot name a file in the repository, or "".
+func checkConfigPath(p string) string {
+	if strings.HasPrefix(p, "/") || strings.Contains(p, "\\") {
+		return "must be relative to the repository root, with / separators"
+	}
+	for _, el := range strings.Split(p, "/") {
+		if el == "" || el == "." || el == ".." {
+			return "must not contain an empty, . or .. element"
+		}
+	}
+	// The nightly job puts the path into a URL: letters, digits and . _ - / only.
+	for _, r := range p {
+		letter := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z'
+		if !letter && (r < '0' || r > '9') && !strings.ContainsRune("._-/", r) {
+			return "may contain only letters, digits and . _ - /"
+		}
+	}
+	if !strings.HasSuffix(p, ".json") {
+		return "must name a .json file"
+	}
+	return ""
 }

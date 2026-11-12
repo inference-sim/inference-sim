@@ -61,33 +61,41 @@ func TestSelectedListsOnlyWhatLookupsReturned(t *testing.T) {
 	}
 }
 
-// Two admitted entries of one name and scope that differ in method can only be ordered by
-// method rank (M2). Until then the lookup is refused, naming both methods, rather than
-// left to set order.
-func TestTwoMethodsAtOneScopeAreRefusedNotOrderedBySetOrder(t *testing.T) {
+// VAL-4: two admitted entries of one name and scope that differ in method are ordered by
+// method rank (design §9.2), whatever order the sets are listed in; the displaced entry is
+// named in the resolved record. Two of one method at one scope are not ordered by anything
+// and the lookup is refused, so set order never decides.
+func TestMethodRankOrdersEntriesAndSetOrderNeverDoes(t *testing.T) {
 	scope := coefficient.Scope{Fabric: []string{"ethernet-100gbe"}}
 	mk := func(name string, m vocab.Method, v float64) *coefficient.Set {
 		return &coefficient.Set{Kind: "CoefficientSet", Name: name, Coefficients: []coefficient.Entry{
 			{Name: "fabric_bandwidth_efficiency", Value: v, Method: m, Scope: scope}}}
 	}
+	dep := Scope{Hardware: "h100", Fabric: "ethernet-100gbe"}
 	for _, order := range [][]*coefficient.Set{
 		{mk("base", vocab.MethodAssumed, 0.8), mk("over", vocab.MethodLiterature, 0.9)},
 		{mk("over", vocab.MethodLiterature, 0.9), mk("base", vocab.MethodAssumed, 0.8)},
 	} {
-		_, err := Load(order, Scope{Hardware: "h100", Fabric: "ethernet-100gbe"})
-		if err == nil || !strings.Contains(err.Error(), `"assumed"`) || !strings.Contains(err.Error(), `"literature"`) {
-			t.Errorf("order %s,%s: err = %v, want a refusal naming both methods",
-				order[0].Name, order[1].Name, err)
+		c, err := Load(order, dep)
+		if err != nil {
+			t.Fatalf("order %s,%s: %v", order[0].Name, order[1].Name, err)
+		}
+		r, _ := c.Entry("fabric_bandwidth_efficiency")
+		if r.Entry.Value != 0.9 || r.Entry.Method != vocab.MethodLiterature || r.Set != "over" {
+			t.Errorf("order %s,%s: chose %v from %s, want the literature entry 0.9", order[0].Name,
+				order[1].Name, r.Entry.Value, r.Set)
+		}
+		if len(r.Displaced) != 1 || r.Displaced[0].Entry.Method != vocab.MethodAssumed {
+			t.Errorf("order %s,%s: displaced %v, want the assumed entry named", order[0].Name,
+				order[1].Name, r.Displaced)
 		}
 	}
-	// The same method at the same scope in two sets is still decided by set order (the
-	// later wins), as before.
-	c, err := Load([]*coefficient.Set{mk("a", vocab.MethodAssumed, 0.8), mk("b", vocab.MethodAssumed, 0.9)},
-		Scope{Hardware: "h100", Fabric: "ethernet-100gbe"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if v, _ := c.Value("fabric_bandwidth_efficiency"); v != 0.9 {
-		t.Errorf("later same-method entry did not win: %v", v)
+	for _, order := range [][]*coefficient.Set{
+		{mk("a", vocab.MethodAssumed, 0.8), mk("b", vocab.MethodAssumed, 0.9)},
+		{mk("b", vocab.MethodAssumed, 0.9), mk("a", vocab.MethodAssumed, 0.8)},
+	} {
+		if _, err := Load(order, dep); err == nil || !strings.Contains(err.Error(), "VAL-4") {
+			t.Errorf("order %s,%s: err = %v, want a VAL-4 refusal", order[0].Name, order[1].Name, err)
+		}
 	}
 }

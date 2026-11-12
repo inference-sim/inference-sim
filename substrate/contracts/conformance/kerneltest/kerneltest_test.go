@@ -233,3 +233,35 @@ func TestCheckStagesFailsEachWay(t *testing.T) {
 		}
 	}
 }
+
+// Each way a reported trust can break the contract is caught; the zero value and a
+// conforming trust pass.
+func TestCheckTrustFailsEachWay(t *testing.T) {
+	est := func(tr kernel.Trust) kernel.StepEstimate { return kernel.StepEstimate{Trust: tr} }
+	for name, tr := range map[string]kernel.Trust{
+		"zero value, not reported":         {},
+		"measured, inside":                 {Rank: 1, Method: "measured", Entry: "a"},
+		"extrapolated measured":            {Rank: 3, Method: "measured", Flag: "extrapolated", Entry: "a"},
+		"extrapolated literature (4 >= 3)": {Rank: 4, Method: "literature", Flag: "extrapolated", Entry: "a"},
+		"unidentified measured":            {Rank: 7, Method: "measured", Flag: "unidentified", Entry: "a"},
+	} {
+		if err := CheckTrust(est(tr)); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	for name, tr := range map[string]kernel.Trust{
+		"rank 0 with a method":             {Method: "measured", Entry: "a"},
+		"rank 8":                           {Rank: 8, Method: "assumed", Entry: "a"},
+		"a method with no rank":            {Rank: 1, Method: "not_charged", Entry: "a"},
+		"an unknown method":                {Rank: 1, Method: "guessed", Entry: "a"},
+		"no entry named":                   {Rank: 1, Method: "measured"},
+		"a rank that is not the method's":  {Rank: 4, Method: "measured", Entry: "a"},
+		"extrapolated but better than 3":   {Rank: 1, Method: "measured", Flag: "extrapolated", Entry: "a"},
+		"unidentified but not assumed's":   {Rank: 4, Method: "measured", Flag: "unidentified", Entry: "a"},
+		"a flag the design does not allow": {Rank: 3, Method: "measured", Flag: "stale", Entry: "a"},
+	} {
+		if CheckTrust(est(tr)) == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}

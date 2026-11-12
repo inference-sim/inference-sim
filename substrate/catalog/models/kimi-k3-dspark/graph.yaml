@@ -1,0 +1,163 @@
+kind: ModelGraph
+name: kimi-k3-dspark
+derived_from:
+  format: hf_config_json
+  path: config.json
+  sha256: 5a3c2f4f91c965ed93b14de5f12a4e9c17fd98d8c99916ed2deb26ce8702f970
+  deriver_version: 1
+global:
+  hidden_size: 7168
+  vocab_size: 163840
+  tie_word_embeddings: false
+  weight_dtype: bf16
+  architecture: K3DSparkModel
+layer_kinds:
+- id: dspark_layer
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_a_proj
+    n: 2112
+    k: 7168
+  - op: Elementwise
+    role: qkv_a_layernorm
+    bytes_per_token: 8192
+  - op: GEMM
+    role: q_b_proj
+    n: 12288
+    k: 1536
+  - op: GEMM
+    role: kv_b_proj
+    n: 16384
+    k: 512
+  - op: Attention
+    holds_engine_kv: true
+    kind: mla
+    n_q: 64
+    n_kv: 1
+    d_h: 576
+    kv_lora_rank: 512
+    qk_rope_head_dim: 64
+  - op: GEMM
+    role: o_proj
+    n: 7168
+    k: 8192
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GEMM
+    role: mlp_gate_up
+    n: 28672
+    k: 7168
+  - op: GEMM
+    role: mlp_down
+    n: 7168
+    k: 14336
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+- id: dspark_context
+  nodes:
+  - op: GEMM
+    role: dspark_fc
+    n: 7168
+    k: 35840
+    tp: replicated
+  - op: Elementwise
+    role: dspark_hidden_norm
+    bytes_per_token: 28672
+    tp: replicated
+  - op: GEMM
+    role: dspark_context_kv
+    n: 2880
+    k: 7168
+    tp: replicated
+  - op: Elementwise
+    role: dspark_context_kv_insert
+    bytes_per_token: 17280
+    tp: replicated
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+stack:
+  pattern:
+  - dspark_layer
+  repeat: 5
+head:
+- op: Elementwise
+  role: final_norm
+- op: GEMM
+  role: lm_head
+  n: 163840
+  k: 7168
+  tp: column
+speculator:
+  method: dspark
+  num_spec_tokens: 7
+  drafting: parallel_block
+  shares_target_head: true
+  stack:
+    pattern:
+    - dspark_layer
+    repeat: 5
+  context_stack:
+    pattern:
+    - dspark_context
+    repeat: 1
+  head:
+  - op: Elementwise
+    role: dspark_final_norm
+  - op: GEMM
+    role: dspark_lm_head
+    n: 163840
+    k: 7168
+    tp: column
+    aliases: head.lm_head
+  sequential_head:
+  - op: Gather
+    role: markov_w1
+    rows: 163840
+    row_bytes: 512
+    rows_per_token: 1
+    out_bytes_per_token: 512
+  - op: GEMM
+    role: markov_w2
+    n: 163840
+    k: 256
+    tp: replicated
+  aux_hidden_state_layers:
+  - 3
+  - 24
+  - 48
+  - 72
+  - 90

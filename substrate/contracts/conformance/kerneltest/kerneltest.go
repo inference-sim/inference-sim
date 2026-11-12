@@ -15,6 +15,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/vocab"
 )
 
 // PDCase is one prefill-to-decode handoff to check.
@@ -160,6 +161,64 @@ func CheckStages(e kernel.StepEstimate) error {
 			overlap, noOverlap, e.Overlap, e.NoOverlap)
 	}
 	return nil
+}
+
+// CheckTrust checks a step estimate's Trust against the StepEstimate contract (design VAL-3).
+// The zero value is allowed: an implementation that does not report trust. A reported trust
+// has a rank from 1 to 7, names the method that sets it and the entry, and, when it says why
+// the rank is not its method's own, says one of the two reasons the design allows. An
+// extrapolated rank is never better than transferred's, and an unidentified one is assumed's.
+func CheckTrust(e kernel.StepEstimate) error {
+	t := e.Trust
+	if t == (kernel.Trust{}) {
+		return nil
+	}
+	if t.Rank < 1 || t.Rank > 7 {
+		return fmt.Errorf("trust rank %d is outside 1..7", t.Rank)
+	}
+	m := vocab.Method(t.Method)
+	own, ranked := m.Rank()
+	if !ranked {
+		return fmt.Errorf("trust names method %q, which has no rank", t.Method)
+	}
+	if t.Entry == "" {
+		return fmt.Errorf("trust of rank %d names no entry", t.Rank)
+	}
+	switch t.Flag {
+	case "":
+		if t.Rank != own {
+			return fmt.Errorf("trust rank %d is not method %s's own %d and gives no reason", t.Rank, t.Method, own)
+		}
+	case "extrapolated":
+		if tr, _ := vocab.MethodTransferred.Rank(); t.Rank < tr {
+			return fmt.Errorf("an extrapolated price has rank %d, better than transferred's %d", t.Rank, tr)
+		}
+	case "unidentified":
+		if as, _ := vocab.MethodAssumed.Rank(); t.Rank != as {
+			return fmt.Errorf("an unidentified entry has rank %d, not assumed's %d", t.Rank, as)
+		}
+	default:
+		return fmt.Errorf("trust flag %q is neither extrapolated nor unidentified", t.Flag)
+	}
+	return nil
+}
+
+// TestTrust runs CheckTrust over every batch's estimate, and requires that pricing the same
+// batch twice reports the same trust. An empty list fails.
+func TestTrust(t testing.TB, k kernel.Kernel, batches []kernel.Batch) {
+	t.Helper()
+	if len(batches) == 0 {
+		t.Fatal("kerneltest.TestTrust: no batches, so nothing was checked")
+	}
+	for i, b := range batches {
+		first, second := k.StepTime(b), k.StepTime(b)
+		if err := CheckTrust(first); err != nil {
+			t.Errorf("batch %d: %v", i, err)
+		}
+		if first.Trust != second.Trust {
+			t.Errorf("batch %d: the same batch reported trust %+v and then %+v", i, first.Trust, second.Trust)
+		}
+	}
 }
 
 // TestStages runs CheckStages over every batch's estimate. An empty list fails.

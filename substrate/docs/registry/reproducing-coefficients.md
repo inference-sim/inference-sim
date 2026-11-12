@@ -284,12 +284,14 @@ https://inferencex.semianalysis.com/api/v1/collectivex/runs/<run_id>?version=1
 and save each body as `cx_run_<run_id>.body`. The query must be the bare integer
 `version=1`: without it, or with `v1`, the API answers `{"error":"Unknown version"}`.
 `scripts/fetch_cited_inferencex.py <dir>` does this for the bodies the committed entries
-cite that the API still serves, and fails unless each matches its pinned sha256; the
-`rederive` workflow runs it. The bodies are third-party data and are not committed.
+cite that the API still serves, and fails unless the points of each match the pinned
+digest; the `rederive` workflow runs it. The bodies are third-party data and are not committed.
 
 The API keeps a bounded window of recent runs, so a cited run can stop being fetchable.
-Each writer checks that the bodies its committed entries cite are present and hash to the
-cited sha256. If they are not, it exits 3 rather than re-fit and re-cite the entries on
+The DeepEP writer checks that the bodies its committed entries cite are present and that
+their points hash to the cited digest (`scripts/collectivex_points.py`: the series, point
+and p50 the fit reads, not the body's bytes, which the API changed on 2026-11-07 without
+changing a point). If they are not, it exits 3 rather than re-fit and re-cite the entries on
 other runs, and `validator/test_deepep_ll_graph.py` skips with "the cited CollectiveX
 bodies are not present". The entries `fit_deepep_ll_graph.py` and `fit_host_link.py` wrote
 cite runs the API no longer serves (33356406487, 36334392363, 36367074689, 36402856875, and
@@ -299,9 +301,60 @@ committed, and cannot be re-derived from public data. Their two tests are on
 and fails when the entries expire, until the bodies are restored or the entries are
 re-cited through a reviewed refit.
 
-The OperatorX response `fit_marlin_nvfp4_grouped_ramp.py` cites (sha256 `ea8fb4078168`) is
-no longer what its URL serves, so `validator/test_operatorx.py` is quarantined the same
-way.
+The OperatorX response `fit_marlin_nvfp4_grouped_ramp.py` cites is cited by the digest of
+the rows that fit reads (`scripts/operatorx_points.py`), not by its bytes: the URL served a
+different response by 2026-11-05, with the same rows and so the same values (h100 0.237 and
+24, h200 0.230 and 61). `fetch_cited_inferencex.py` fetches it with the run bodies, and
+`validator/test_operatorx.py` runs in the gate and is no longer quarantined.
+
+### Offload tiers
+
+A storage tier (`catalog/devices/storage.yaml`) is a name and a description. What a transfer to or from it costs is three coefficients per tier, `offload_tier_<tier>_read_rate`, `_write_rate` (bytes per microsecond, which is MB/s) and `_base_latency` (microseconds per transfer), in `cost-model-offload-tiers.yaml`. The set is separate from `cost-model-primitives` because that set is single-sourced to NVIDIA AISimulate (a test refuses any non-measured entry there that cites another measurement), and these figures are not AISimulate's. A scenario whose deployment offloads to a tier lists the set; the kernel refuses to build when it does not. The kernel's `TierTime` prices a transfer as `max(base_latency, bytes / rate)` for the direction, with the rate held to the chip's `host_link_bandwidth` and divided by the queue depth. They are in the registry because none is a declared fact of a device (design SUB-18, SUB-3): the catalog held them as the tiers' own figures, and every one was either a fit to a single host or a value the simulator's authors chose.
+
+**What each is.** Before this change the catalog stated, for six tiers, a read rate, a write rate and a base latency. The registry now holds the same figures to the digit, for every catalog chip, so no offload price moved (`kernel/tiers_test.go` holds the old figures as a table and prices every tier on every chip against them).
+
+| Tier | Method | Why |
+|---|---|---|
+| `nvme_gen4`, `nvme_gen3`, `sata_ssd`, `s3` | `assumed`, every chip | Representative classes seeded in inference-sim's defaults with no source cited; a class is not a product. |
+| `nvme_gen4_raid0_8x` | `assumed`, DGX H100 node; the same figures `assumed` on the other chips | The drive model is not public. Read is NVIDIA's `> 50 GB/s` design target and 8 x the measured PM1733 rate; write is 8 x the PM1733 datasheet; latency is a sum of cited per-file costs. |
+| `cpu_dram` rates | `transferred`, from the H100 host (`hardware=h100`), on every chip | Fitted to InferenceX CollectiveX `swap_blocks` rows on one H100 host at vLLM v0.27.1; the engine priced issues the same copies from `swap_blocks_batch`, so the engine is not the one measured (design D5, VAL-8) and the large-payload rate carries over by a stated rule. On other chips it is the same figure, now labeled; `TierTime` holds a slower host link to its own `host_link_bandwidth`. |
+| `cpu_dram` base latency | `assumed`, every chip | The small-copy floor of `swap_blocks` does not carry over to a batched call; it is held as a judgement that the floors are alike. |
+
+**Regenerate.** `emit_offload_tiers.py` writes every entry and holds every figure; it needs no data:
+
+```bash
+cd registry
+python scripts/emit_offload_tiers.py          # write
+python scripts/emit_offload_tiers.py --check  # exit 1 if the committed file would change
+python -m pytest validator/test_offload_tiers.py -q
+```
+
+It reads the catalog's chip list, so a chip added there fails `--check` until the writer has run for it. The expected output of `--check` is `cost-model-offload-tiers.yaml already matches` and exit 0. It costs about a second. To add a tier, add its name to `catalog/devices/storage.yaml` and its three figures, method and rationale to `emit_offload_tiers.py`.
+
+**The one fitted source.** The `cpu_dram` rates are the medians `fit_host_link.py` derives for `host_link_bandwidth` (contiguous, payload >= 64 MiB, all block sizes, 26 points per direction: host to device 27,058, device to host 46,089); that script refuses when its median for either direction is not the committed tier rate, so the cap and the tier are one fit. Its data are the InferenceX CollectiveX run bodies cited by sha256 `26cad6ccbdaa` (runs 35158674963 and 36334394602, public InferenceX Data API), which the API no longer serves; the fit cannot be re-derived from public data today, and its gate sits on the quarantine list with the rest of that family (see above). The `cpu_dram` floor (19.3 µs, the mean of the two directions' 19.7 and 18.9) rests on the same rows and is held as an assumption. A held-out check (random layout, payload >= 1 MiB: median absolute error of p50 latency 0.51 host to device and 0.14 device to host, against 0.55 and 0.98 for the 2.0e4 MB/s and 1 µs placeholder it replaced) is on the two rate entries as `validated`.
+
+**What it does not show.** None of the six tiers is timed on the engine and version the kernel prices, on any chip but one H100 host, and that host's rates are not measurements of `swap_blocks_batch`. The `assumed` figures are not bounds: a deep queue on a drive, or a store under load, can sit well below them. The queue-depth rule divides the rate and does not model saturation. The NVMe aggregate is optimistic at low concurrency, because one O_DIRECT stream does not reach the aggregate on md RAID 0. No `cpu_dram` figure exists for a host other than the one H100 DGX host; a Grace host's link is held to its own `host_link_bandwidth`, which says what the link can do and not what the copy engines do over it.
+
+### Dense Marlin MXFP8 ramp on Hopper (`transferred`)
+
+On SM90, vLLM v0.31.0 runs every dense MXFP8 linear with `MarlinMxfp8LinearKernel` (W8A16). No sweep times it on any part. The registry carries its ramp as the `assumed` bound on h100 and h200, and as a `transferred` pair on h200 only:
+
+- `gemm_eps_max_w8a16_mxfp8` and `gemm_m_half_w8a16_mxfp8`, `assumed`: the part's cuBLAS BF16 envelope (1.0 / 170 on h100, 0.992 / 110 on h200). The registry calls it an optimistic upper bound for a compute-bound GEMM. Owned by `fit_deepseek_v41_h200.py`; it stays.
+- The same two names on h200, `transferred`: the same part's measured Marlin grouped pair (`gemm_*_w4a16_mxfp4_grouped`: 0.245 / 26), moved to the dense kernel by one rule (same library, same Marlin kernel family and MMA core, same die; the pair is kept whole and never taken from the other part). Owned by `emit_marlin_dense_transfer.py`.
+- The h100 pair (0.282 / 15, by the same rule from h100's own grouped pair) is a **candidate and is not selected**. It is written to `registry/candidates/dense-marlin-mxfp8-transferred.yaml`, which is outside the registry's data directories (`acceptance`, `coefficients`, `routing`), so the embedded registry, the lookup and the validators do not read it. h100 has no withheld series, so the landing criteria (the page added at the top of this stack) give it no verdict, and the `assumed` bound keeps pricing it in released output. To select it, a held-out verdict for h100 must exist; then the writer's `ACTIVE_PARTS` takes h100 and the entries move into `cost-model-primitives.yaml`.
+
+The lookup uses the entry of the smallest method rank (design 9.2, VAL-4), so on h200 the `transferred` pair prices the GEMM and the `assumed` bound is the entry it displaces. Remove the `transferred` pair and the price returns to the bound. The h200 pair is still subject to the held-out verdict the landing criteria describe; it is not select-gated here.
+
+```
+cd registry
+python scripts/emit_marlin_dense_transfer.py          # write
+python scripts/emit_marlin_dense_transfer.py --check  # exit 1 if the committed file would change
+python -m pytest validator/test_coefficient_properties.py -q -k "dense_marlin or h100"
+```
+
+It reads only the committed grouped entries: no sweep, no catalog, no end-to-end result. Expected output of `--check`: `cost-model-primitives.yaml and dense-marlin-mxfp8-transferred.yaml already match the transfer`, exit 0; it costs well under a second. Writers that share the file identify an entry by name, scope and method (`coefficient_blocks.py`), so the `assumed` and `transferred` pairs are maintained independently. That test run covers the h200 pair, the h100 candidate record and this `--check`.
+
+**What it does not show.** Dense Marlin was never timed. The entries are unkeyed: the engine reports no kernel implementation for a GEMM, so they state no `kernel_impls` and a price records their kernel match as `unkeyed`, never `exact`. They carry `transferred`, which for the closeness grade (design 11.3) is a G2 condition, the same grade the `assumed` bound already gave; they do not make a point G1. The grouped fit sums its compute and memory halves over 27 token counts of one MoE shape, and whether the dense kernel shares that composition, or holds at other GEMM shapes, is not shown. The effect on the development points is in-sample (the pair was chosen from the registry before the points were re-scored, but the points are the only end-to-end check available). A MarlinMxfp8LinearKernel sweep on one H100 and one H200, fitted like `fit_marlin_grouped_ramp.py` and written as `measured` with `kernel_impls`, replaces it.
 
 ### Data freshness, checked 2026-10-30
 
@@ -369,9 +422,11 @@ appears with no owner — so a value that cannot be regenerated cannot be added.
 | `attention_decode_{launch_floor,split_floor,serial_rate,per_token,throughput_rate}_sparse_mla` | `fit_deepseek_v41_decode.py` — deepseek-v4.1-flash on h200 and h100 | the same FlashMLA kernel table's decode rows, at most 10 blocks (methodology §10.7) |
 | `attention_decode_*_block_index_scores` | `fit_deepseek_v41_h200.py` | the floor from AISimulate's indexer-kernel table; the rate `assumed` at NVIDIA's empirical HBM rate, BwPeak × `hbm_derate` (methodology §10.5) |
 | `gemm_*_w8a16_mxfp8`, `host_gather_rate_uva` | `fit_deepseek_v41_h200.py` (`assumed`) | upper bounds derived from committed siblings; no sweep measures them |
+| `gemm_*_w8a16_mxfp8` (h200 `transferred`; h100 candidate record) | `emit_marlin_dense_transfer.py --check` (no data needed) | the same part's measured `gemm_*_w4a16_mxfp4_grouped` pair, moved by one stated rule; see [Dense Marlin MXFP8 ramp on Hopper](#dense-marlin-mxfp8-ramp-on-hopper-transferred) |
 | `attention_prefill_*` | `relane_attention_prefill.py` | AISimulate `attention` context rows |
+| `attention_prefill_{floor,work_scale}_trtllm_gen_kv_{bf16,fp8}` (b200, b300, gb200-nvl72, gb300; `transferred`) | `emit_attention_trtllm_gen.py --check` | the `vllm_flashinfer_trtllmprefill` rows of AISimulate `attention/vllm/0.25.0` context sweeps; `--pooled` refits the committed pooled pair from every row to show the filter is the only change |
 | `attention_prefill_*_sparse_mla`, `attention_prefill_*_block_index_scores`, `mhc_*` | `fit_deepseek_v41_prefill.py` — scoped to deepseek-v4.1-flash on h200 and h100 | AISimulate `sparse_attention` FlashMLA prefill rows and the paged-logits kernel at prefill shapes (a proxy, `assumed`); `mhc/vllm/0.25.0` (methodology §10.6) |
-| deepseek-v4.1-flash `host_launch_eager_per_kernel`, `host_admission_*` | `fit_deepseek_v41_host.py` | vendored `validator/testdata/anchors/` (the derived inputs of an internal enforce-eager report, via `--extract-anchor`, re-verified when `V41_EAGER_ANCHOR_REPORT` names a local copy; the kernel basis; the front-end timing) |
+| deepseek-v4.1-flash `host_launch_eager_per_kernel`, `host_admission_*` | `fit_deepseek_v41_host.py` | vendored `validator/testdata/anchors/` (the derived inputs of an internal enforce-eager report, via `--extract-anchor`, re-verified when `V41_EAGER_ANCHOR_REPORT` names a local copy; the kernel basis; the front-end timing; the H200 Rust-frontend rows' TTFT and prompt percentiles, an upper bound on the Rust rate, never a derivation) |
 | `recurrent_decode_*_kda` | `relane_recurrent_kda.py` | AISimulate `kda`, vLLM lane |
 | `recurrent_decode_*_{gdn,mamba2}` | `relane_recurrent_family.py --family X` | AISimulate `linear_attention` |
 | `collective_*` (measured widths) | `emit_collectives.py`, `fit_collectives_vllm.py` | AISimulate `comm` |
@@ -379,11 +434,12 @@ appears with no owner — so a value that cannot be regenerated cannot be added.
 | `collective_*` (new part) | `insert_collectives_part.py` | same, per operator per lane |
 | `collective_*` (wide groups) | `insert_collectives_wide.py` | same, widths 8 and 16 |
 | descriptors (`vendor_spec`) and A100's `moe_routing_imbalance_median` | `emit_primitives.py --check` (entry-level) | NVIDIA `systems/<sku>.yaml`; AISimulate `moe/sglang/0.5.10` for A100 |
-| `host_link_bandwidth` (measured, six parts) | `fit_host_link.py --check` (`$COLLECTIVEX_DATA`) | InferenceX CollectiveX swap_blocks, contiguous, payload >= 64 MiB; h100 is the catalog `cpu_dram` fit's larger direction |
+| `host_link_bandwidth` (measured, six parts) | `fit_host_link.py --check` (`$COLLECTIVEX_DATA`) | InferenceX CollectiveX swap_blocks, contiguous, payload >= 64 MiB; h100 is the larger direction of the `offload_tier_cpu_dram` rates, and the script refuses when it derives a different median for either |
+| `cost-model-offload-tiers`: `offload_tier_<tier>_{read_rate,write_rate,base_latency}` (`assumed`, and `transferred` for the cpu_dram rates; 24 entries) | `emit_offload_tiers.py --check` (no data needed) | the figures the catalog's storage tiers held, now with their method and evidence; see [Offload tiers](#offload-tiers) |
 | `moe_a2a_*_deepep_low_latency_graph_8rank_{h100,h200}` | `fit_deepep_ll_graph.py --check` (`$COLLECTIVEX_DATA`) | InferenceX CollectiveX deepep-v2 low-latency, EP8 one node |
 | `moe_a2a_*_deepep_{low_latency_graph,v2_graph}_{8,16}rank_gb200_nvl72`, `..._16rank_h200` | `fit_deepep_collectivex.py --check` (`$COLLECTIVEX_DATA`) | InferenceX CollectiveX deepep-v2 low-latency and normal; GB200 EP8/EP16 inside one NVL72, H200 EP16 over two nodes (scoped `fabric: [ib-400g]`) |
 | `gemm_*_nvfp4_grouped` (PARKED, none committed) | `fit_nvfp4_grouped_ramp.py` (`$AISIMULATE_NVFP4_DATA` at aisimulate `8ae6b658`) | AISimulate `moe/vllm/0.30.0` TrtLlmNvFp4ExpertsMonolithic; its held-out error is no better than the dense `nvfp4` ramp's on any part, so the kernel's fallback stands (see the script's docstring) |
-| `fabric_bandwidth_efficiency` (`cost-model-fabric`) | `emit_fabric.py --check` (`--verify DIR` re-hashes the cited pages) | NVIDIA/nccl-tests#309 for ib-400g (`literature`); roce-200g and ethernet-100gbe `assumed` with stated ranges |
+| `fabric_bandwidth_efficiency` (`cost-model-fabric`) | `emit_fabric.py --check` (`--verify DIR` re-hashes the cited pages) | NVIDIA/nccl-tests#309 for ib-400g (`literature`); roce-200g, ib-800g (equal to ib-400g, line rate from NVIDIA's Blackwell Ultra Datasheet) and ethernet-100gbe `assumed` with stated ranges |
 | host overheads (`assumed`) | none — see that file's header | not measured by either dataset |
 | `activation_buffer_count_*`, `activation_scratch_floor_bytes` | `emit_memory.py` | AISimulate `sdk/backends` source (`vendor_spec`) |
 | `cudagraph_capture_bytes_*` | `emit_memory.py` | `registry/docs/vllm-cudagraph-capture-samples.csv`, from `mine_vllm_cudagraph_memory.py` (`assumed`) |

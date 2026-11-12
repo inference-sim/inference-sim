@@ -35,6 +35,7 @@ jobs:
   changes:
     name: changed directories
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       contracts: ${{ steps.filter.outputs.contracts }}
       kernel: ${{ steps.filter.outputs.kernel }}
@@ -74,6 +75,7 @@ jobs:
   go:
     name: format, vet and build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/go-toolchain
@@ -99,6 +101,7 @@ jobs:
   lint:
     name: golangci-lint
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -128,6 +131,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.contracts == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -161,7 +165,19 @@ jobs:
           AIPERF_SOURCE_REQUIRED: "1"
         run: |
           set -euo pipefail
-          go test -race -count=1 -json ./contracts/... ./validate/... ./tools/... ./load/... > "$RUNNER_TEMP/go-test.json" || { go run ./tools/prcheck skips -results "$RUNNER_TEMP/go-test.json" -min 1000; exit 1; }
+          go test -race -count=1 -json ./contracts/... ./validate/... ./tools/... ./load/... > "$RUNNER_TEMP/go-test.json" || {
+            # Say why: the failing tests, then the output of each failing package.
+            echo "::group::failing tests"
+            jq -r 'select(.Action=="fail" and .Test) | "FAIL \(.Package) \(.Test)"' "$RUNNER_TEMP/go-test.json"
+            echo "::endgroup::"
+            for p in $(jq -r 'select(.Action=="fail" and (.Test|not)) | .Package' "$RUNNER_TEMP/go-test.json" | sort -u); do
+              echo "::group::output of $p"
+              jq -r --arg p "$p" 'select(.Package==$p and .Action=="output") | .Output' "$RUNNER_TEMP/go-test.json" | tail -n 300
+              echo "::endgroup::"
+            done
+            go run ./tools/prcheck skips -results "$RUNNER_TEMP/go-test.json" -min 1000
+            exit 1
+          }
           # A skipped test is a failure unless quarantined (X16, X25); fewer than 1000
           # results means packages were not run (X22).
           go run ./tools/prcheck skips -results "$RUNNER_TEMP/go-test.json" -min 1000
@@ -193,6 +209,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.kernel == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/go-toolchain
@@ -207,6 +224,7 @@ jobs:
         run: |
           python3 kernel/scripts/test_extract_inferencex_engine_settings.py
           python3 kernel/scripts/test_gen_aisimulate_scenarios.py
+          python3 -I kernel/scripts/test_extract_aisimulate_e2e.py
 
   # The mutation check (X13) for the cost model's guarded properties: kernel/mutation_test.go
   # breaks each in turn, in the source, with go test -overlay, and requires the test that guards
@@ -218,6 +236,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.kernel == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/go-toolchain
@@ -231,6 +250,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.catalog == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/go-toolchain
@@ -242,6 +262,16 @@ jobs:
       - name: Every graph re-derives from its vendor configuration
         working-directory: catalog
         run: python3 scripts/derive_graph.py --check
+      # The entries whose licence keeps config.json out of the tree commit its hash. The
+      # repositories that are public are fetched here with no token, hash-checked, and their
+      # graphs re-derived, so a hand edit of one fails the pull request; a gated repository is
+      # left for the nightly token job (nightly-fetch-configs.yml).
+      - name: Hash-pinned graphs re-derive from their public configs
+        working-directory: catalog
+        run: |
+          set -euo pipefail
+          python3 scripts/fetch_pinned_configs.py "$RUNNER_TEMP/fetched"
+          python3 scripts/derive_graph.py --check --fetched "$RUNNER_TEMP/fetched" --allow-unfetched
       - name: The deriver's tests
         working-directory: catalog
         run: python3 -m pytest tests -q
@@ -256,6 +286,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.ledger == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -287,6 +318,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.registry == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/go-toolchain
@@ -295,6 +327,9 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install --require-hashes -r registry/scripts/requirements.txt
+      # pyarrow, from the fit lock file: the lane writer's refusal test builds its own sweep and
+      # needs no data, only the library, so it runs here instead of skipping on every runner.
+      - run: pip install --require-hashes -r registry/scripts/requirements-fit.txt
       # Without the AISimulate, CollectiveX and OperatorX data, the tests that re-derive a
       # value from it skip here, and rederive.yml, a gate on the same paths and nightly,
       # runs them with the data present (SUB-4, SUB-8). Every other skip fails this job
@@ -320,6 +355,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -351,6 +387,7 @@ jobs:
     if: always()
     needs: [changes, go, lint, contracts, kernel, mutants, catalog, ledger, registry, docs]
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       contents: read
       checks: read

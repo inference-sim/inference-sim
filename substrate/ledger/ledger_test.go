@@ -8,8 +8,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // The canonical encoding equals Python's json.dumps(sort_keys=True, separators=(",", ":"),
@@ -299,7 +302,6 @@ func TestUnpinnedRevisionsRefused(t *testing.T) {
 		"branch licence": func(s *Sources) { s.Sources[0].Licence.Evidence[0].URL = "https://github.com/o/r/blob/main/LICENSE" },
 		"no spdx":        func(s *Sources) { s.Sources[0].Licence.SPDX = "" },
 		"no evidence":    func(s *Sources) { s.Sources[0].Licence.Evidence = nil },
-		"half sign-off":  func(s *Sources) { s.Sources[0].Licence.SignOff.By = "someone" },
 		"release no sum": func(s *Sources) {
 			s.Sources[0].Revision = Revision{Kind: "release_assets", URL: "https://x/y", Ref: "tag", Commit: strings.Repeat("a", 40)}
 		},
@@ -321,26 +323,78 @@ func goodSources() *Sources {
 	}}}
 }
 
-// X12, D6: a source is redistributable only with an allow-listed licence, no restriction and
-// a ledger owner's sign-off.
+// X12, D6: a source is redistributable when its SPDX identifier is on the allow-list and it
+// states no restriction. No sign-off is involved; NOASSERTION, which says no licence states
+// terms for the data, is not on the list.
 func TestRedistributable(t *testing.T) {
 	l := goodSources().Sources[0].Licence
-	if l.Redistributable() {
-		t.Error("redistributable without a sign-off")
-	}
-	l.SignOff = SignOff{By: "owner", On: "2026-11-04"}
 	if !l.Redistributable() {
-		t.Error("an allow-listed, signed-off licence is not redistributable")
+		t.Error("an allow-listed licence with no restriction is not redistributable")
 	}
 	r := l
 	r.Restrictions = []LicenceQuote{l.Evidence[0]}
 	if r.Redistributable() {
 		t.Error("redistributable despite a stated restriction")
 	}
-	g := l
-	g.SPDX = "GPL-3.0"
-	if g.Redistributable() {
-		t.Error("GPL-3.0 is not on the allow-list")
+	for _, spdx := range []string{"GPL-3.0", "NOASSERTION"} {
+		g := l
+		g.SPDX = spdx
+		if g.Redistributable() {
+			t.Errorf("%s is not on the allow-list", spdx)
+		}
+	}
+}
+
+// check-base reads the merge base's ledger with this code, and a base from before the sign-off
+// was dropped still has sign_off on its licences. The key is accepted and means nothing; any
+// other unknown key on a licence is still refused.
+func TestLegacySignOffIsAcceptedAndIgnored(t *testing.T) {
+	write := func(extra string) string {
+		dir := t.TempDir()
+		doc := `kind: LedgerSources
+sources:
+  - id: s
+    title: t
+    status: no units yet
+    revision: {kind: git_commit, url: "https://github.com/o/r/tree/2f0f4cd8606d580567b253d02f3d699fe36db865", ref: 2f0f4cd8606d580567b253d02f3d699fe36db865}
+    licence:
+      spdx: GPL-3.0
+      evidence:
+        - {url: "https://github.com/o/r/blob/2f0f4cd8606d580567b253d02f3d699fe36db865/LICENSE", sha256: "` + strings.Repeat("a", 64) + `", lines: "1", quote: GPL}
+` + extra
+		if err := os.WriteFile(filepath.Join(dir, FileSources), []byte(doc), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+	s, err := LoadSources(write("      sign_off: {by: someone, on: 2026-01-02}\n"))
+	if err != nil {
+		t.Fatalf("a legacy sign_off is refused: %v", err)
+	}
+	if s.Sources[0].Licence.Redistributable() {
+		t.Error("a sign_off made a non-allow-listed licence redistributable")
+	}
+	if _, err := LoadSources(write("      signed_by: someone\n")); err == nil {
+		t.Error("an unknown licence key is accepted")
+	}
+}
+
+// The committed entries: the InferenceX results are not redistributable, because neither the
+// licence of the code that runs the benchmarks nor that of the repository that publishes the
+// dump states terms for the results. AISimulate's end-to-end artifact holds InferenceX values, and the forward-pass dataset states a restriction.
+func TestCommittedSourcesRedistributability(t *testing.T) {
+	src, err := LoadSources("../catalog/ledger")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]bool{"inferencex": false, "aisimulate": false, "aisimulate-fpm": false} {
+		s := src.Lookup(id)
+		if s == nil {
+			t.Fatalf("no source %s", id)
+		}
+		if got := s.Licence.Redistributable(); got != want {
+			t.Errorf("%s: redistributable %v, want %v", id, got, want)
+		}
 	}
 }
 
@@ -581,6 +635,69 @@ func TestCheckAgainstBase(t *testing.T) {
 	}
 }
 
+// D4, D7: a new partition version is a seed rotation the pull request states, and nobody
+// approves it there (no check waits on a person). It is the next number, with a new seed
+// record, and may carry the cut-points of the new version. Before this change every bump was
+// refused, and the refusal said a ledger owner overrides it through a review question that no
+// longer exists, so a rotation could not merge without an administrator's bypass.
+func TestANewPartitionVersionIsASeedRotationTheCheckAccepts(t *testing.T) {
+	u := func(id, rk string) Unit { return Unit{UnitID: id, RoleKey: rk} }
+	units := map[string][]Unit{"s": {u(hexID(1), hexID(100)), u(hexID(2), hexID(100))}}
+	seed := func(c *Config, tag string, version int) *Config {
+		sum := sha256.Sum256([]byte(tag))
+		c.PartitionVersion = version
+		c.Seed = SeedRecord{SHA256: hex.EncodeToString(sum[:]), GeneratedBy: "owner", GeneratedOn: "2026-11-04", RotationOwner: "owner"}
+		return c
+	}
+	base := &Ledger{Config: seed(testConfig(), "seed one", 1), Units: units}
+	ledgerOf := func(c *Config) *Ledger { return &Ledger{Config: c, Units: units} }
+
+	rotated := seed(testConfig(), "seed two", 2)
+	rotated.Rules["s"].CutPoints[0].To = 24 // the new version states its own cut-points
+	rotated.Rules["s"].CutPoints[1].From = 25
+	if err := CheckAgainstBase(base, ledgerOf(rotated)); err != nil {
+		t.Errorf("the next partition version with a new seed and its cut-points was refused: %v", err)
+	}
+	// The first seed ever recorded needs no version change: nothing was drawn before it.
+	if err := CheckAgainstBase(&Ledger{Config: testConfig(), Units: units}, ledgerOf(seed(testConfig(), "first", 1))); err != nil {
+		t.Errorf("recording the first seed was refused: %v", err)
+	}
+
+	for name, c := range map[string]*Config{
+		"version two ahead":              seed(testConfig(), "seed two", 3),
+		"version back":                   seed(testConfig(), "seed zero", 0),
+		"new version with the same seed": seed(testConfig(), "seed one", 2),
+		"new version, same sha256, only the generator changed": func() *Config {
+			c := seed(testConfig(), "seed one", 2)
+			c.Seed.GeneratedBy = "someone else"
+			return c
+		}(),
+		"new version, same sha256, only the date changed": func() *Config {
+			c := seed(testConfig(), "seed one", 2)
+			c.Seed.GeneratedOn = "2026-12-01"
+			return c
+		}(),
+		"new version, same sha256, only the rotation owner changed": func() *Config {
+			c := seed(testConfig(), "seed one", 2)
+			c.Seed.RotationOwner = "another owner"
+			return c
+		}(),
+		"new version with no seed record": func() *Config { c := testConfig(); c.PartitionVersion = 2; return c }(),
+		"new seed with no new version":    seed(testConfig(), "seed two", 1),
+	} {
+		if err := CheckAgainstBase(base, ledgerOf(c)); err == nil {
+			t.Errorf("%s was accepted", name)
+		}
+	}
+	// Cut-points still change only with the new version.
+	moved := seed(testConfig(), "seed one", 1)
+	moved.Rules["s"].CutPoints[0].To = 24
+	moved.Rules["s"].CutPoints[1].From = 25
+	if err := CheckAgainstBase(base, ledgerOf(moved)); err == nil {
+		t.Error("changed cut-points with no new partition version were accepted")
+	}
+}
+
 // The legacy map: a unit whose records carry both labels takes FIT, and a role key holding
 // both FIT and HELD units gives FIT to its new units.
 func TestBuildLegacy(t *testing.T) {
@@ -759,5 +876,139 @@ func TestCheckCitesOnlyFit(t *testing.T) {
 	}
 	if err := CheckCitesOnlyFit(nil, &Published{Role: RoleAnchor}); err == nil {
 		t.Error("the anchor list was accepted as the fit list")
+	}
+}
+
+// The published lists are read back and checked against the ledger that drew them (D7, COV-2):
+// a list from another seed or partition, a role the release does not publish, a unit no source
+// has, a unit on two lists, an unsorted list, and a directory holding only some of the three are
+// each refused. Each case is a known-bad directory.
+func TestPublishedListsAreCheckedAgainstTheLedger(t *testing.T) {
+	a := assignerFor(t, nil)
+	cfg := testConfig()
+	rawSeed, _ := hex.DecodeString(strings.Repeat("5a", 32))
+	sum := sha256.Sum256(rawSeed)
+	cfg.Seed = SeedRecord{SHA256: hex.EncodeToString(sum[:]), GeneratedBy: "test", GeneratedOn: "2026-11-04", RotationOwner: "test"}
+	var units []Unit
+	for i := 0; i < 200; i++ {
+		units = append(units, testUnit(i, i))
+	}
+	byUnit := map[string][]Unit{"s": units}
+	lists, err := a.Release(cfg, byUnit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write := func(t *testing.T, mut func(map[Role]*Published)) string {
+		t.Helper()
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, DirPublished), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		cp := map[Role]*Published{}
+		for r, p := range lists {
+			q := *p
+			q.Units = append([]string(nil), p.Units...)
+			cp[r] = &q
+		}
+		mut(cp)
+		for r, p := range cp {
+			b, err := yaml.Marshal(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, DirPublished, string(r)+".yaml"), b, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return dir
+	}
+	if len(lists[RoleAnchor].Units) < 2 || len(lists[RoleFit].Units) < 2 {
+		t.Fatal("the test ledger gives a list fewer than two units")
+	}
+
+	dir := write(t, func(map[Role]*Published) {})
+	got, err := LoadPublished(dir, cfg, byUnit)
+	if err != nil || len(got) != 3 {
+		t.Fatalf("the lists the release wrote were refused: %v", err)
+	}
+	if got, err := LoadPublished(t.TempDir(), cfg, byUnit); err != nil || len(got) != 0 {
+		t.Errorf("a ledger with no published lists yet: %v %v", got, err)
+	}
+
+	for name, c := range map[string]struct {
+		mut  func(map[Role]*Published)
+		want string
+	}{
+		"another seed":           {func(m map[Role]*Published) { m[RoleAnchor].SeedSHA256 = strings.Repeat("0", 64) }, "is not the seed ledger.yaml records"},
+		"another partition":      {func(m map[Role]*Published) { m[RoleFit].PartitionVersion = 2 }, "ledger.yaml is at 1"},
+		"a role not published":   {func(m map[Role]*Published) { m[RoleReport].Role = RoleHeld }, `role "held" is not published`},
+		"a role in another file": {func(m map[Role]*Published) { m[RoleReport].Role = RoleFit }, `role "fit" in the file for "report"`},
+		"a unit no source has": {func(m map[Role]*Published) {
+			m[RoleAnchor].Units = append(m[RoleAnchor].Units, strings.Repeat("f", 64))
+		}, "is in no source's unit list"},
+		"a unit on two lists": {func(m map[Role]*Published) {
+			m[RoleReport].Units = append([]string{m[RoleFit].Units[0]}, m[RoleReport].Units...)
+			sort.Strings(m[RoleReport].Units)
+		}, "a unit has one role"},
+		"an unsorted list": {func(m map[Role]*Published) {
+			u := m[RoleFit].Units
+			u[0], u[1] = u[1], u[0]
+		}, "is out of order"},
+		"a repeated unit": {func(m map[Role]*Published) {
+			u := m[RoleFit].Units
+			m[RoleFit].Units = append(u[:2:2], u[1:]...)
+		}, "is listed twice"},
+		"a name that is no unit id": {func(m map[Role]*Published) { m[RoleFit].Units[0] = "A" }, "is not a unit_id"},
+		"only two of the three":     {func(m map[Role]*Published) { delete(m, RoleReport) }, "holds 2 of the three"},
+	} {
+		_, err := LoadPublished(write(t, c.mut), cfg, byUnit)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v, want an error containing %q", name, err, c.want)
+		}
+	}
+
+	// A list with the seed not yet recorded is refused: the lists are drawn from it.
+	noSeed := testConfig()
+	if _, err := LoadPublished(dir, noSeed, byUnit); err == nil || !strings.Contains(err.Error(), "records no seed") {
+		t.Errorf("lists published with no recorded seed: %v", err)
+	}
+}
+
+// D3: a supplement's records are pinned by id and content hash. A pin that is unordered,
+// repeated, unhashed or on a source with no unit list is refused, and so is a record pinned by
+// two supplements.
+func TestSupplementPinsRefused(t *testing.T) {
+	good := func() *Sources {
+		s := goodSources()
+		s.Sources[0].Status = ""
+		s.Sources[0].Units = "units/s.jsonl.gz"
+		s.Sources[0].Supplements = []Supplement{{ID: "a", Kind: SupplementKindAPI, URL: "https://x.test/api",
+			Run:     "https://github.com/o/r/actions/runs/7/attempts/1",
+			Records: []PinnedRecord{{ID: 1, SHA256: strings.Repeat("a", 64)}, {ID: 2, SHA256: strings.Repeat("b", 64)}}}}
+		return s
+	}
+	if err := good().Validate(); err != nil {
+		t.Fatalf("the good supplement was refused: %v", err)
+	}
+	bad := map[string]func(s *Source){
+		"unordered":    func(s *Source) { s.Supplements[0].Records[1].ID = 1 },
+		"no hash":      func(s *Source) { s.Supplements[0].Records[0].SHA256 = "" },
+		"no records":   func(s *Source) { s.Supplements[0].Records = nil },
+		"http":         func(s *Source) { s.Supplements[0].URL = "http://x.test/api" },
+		"no attempt":   func(s *Source) { s.Supplements[0].Run = "https://github.com/o/r/actions/runs/7" },
+		"kind":         func(s *Source) { s.Supplements[0].Kind = "scrape" },
+		"no unit list": func(s *Source) { s.Units = ""; s.Status = "none" },
+		"pinned twice": func(s *Source) {
+			dup := s.Supplements[0]
+			dup.ID = "b"
+			s.Supplements = append(s.Supplements, dup)
+		},
+	}
+	for name, mutate := range bad {
+		s := good()
+		mutate(&s.Sources[0])
+		if err := s.Validate(); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
 	}
 }

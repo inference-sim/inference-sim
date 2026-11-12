@@ -3,9 +3,9 @@ kind: IngestReport
 source: inferencex
 revision: db-dump/2026-09-28
 input: 226e3bf69ec0c4088e6d57155f4205fc3f9849f4cb7927e365f23a1472cf8b6c
-records: 85309
-units: 82331
-role_keys: 4615
+records: 85325
+units: 82347
+role_keys: 4617
 duplicates: 2941
 merged: 10
 joined_units: 17
@@ -23,5 +23,8 @@ units_by_framework:
   sglang: 14010
   tilert: 11
   trt: 18034
-  vllm: 40925
+  vllm: 40941
   vllm-disagg: 167
+supplements:
+  - id: h200-dsv41flash-vllm-v0-33-0
+    records: 16

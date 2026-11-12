@@ -1,0 +1,179 @@
+kind: ModelGraph
+name: minimax-m3.1-flash-dspark
+derived_from:
+  format: hf_config_json
+  path: dspark/config.json
+  sha256: d3f2ef9a308be0c5689e98b348d8cff73b90487db22ba79e9269f9b1f25cfa3a
+  deriver_version: 1
+global:
+  hidden_size: 6144
+  vocab_size: 200064
+  tie_word_embeddings: false
+  weight_dtype: fp8
+  architecture: DSparkMiniMaxDraftModel
+  weight_scale:
+    elements: 32
+    bytes: 1
+layer_kinds:
+- id: dspark_layer
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_proj
+    n: 9216
+    k: 6144
+  - op: Elementwise
+    role: qk_norm_rope_insert
+    bytes_per_token: 36864
+  - op: Attention
+    holds_engine_kv: true
+    kind: swa
+    n_q: 64
+    n_kv: 4
+    d_h: 128
+    window: 4103
+  - op: GEMM
+    role: o_proj
+    n: 6144
+    k: 8192
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GEMM
+    role: mlp_gate_up
+    n: 24576
+    k: 6144
+  - op: GEMM
+    role: mlp_down
+    n: 6144
+    k: 12288
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+- id: dspark_context
+  nodes:
+  - op: GEMM
+    role: dspark_fc
+    n: 6144
+    k: 30720
+    weight_dtype: bf16
+    tp: replicated
+  - op: Elementwise
+    role: dspark_hidden_norm
+    bytes_per_token: 24576
+    tp: replicated
+  - op: GEMM
+    role: dspark_context_kv
+    n: 5120
+    k: 6144
+  - op: Elementwise
+    role: dspark_context_kv_insert_0
+    bytes_per_token: 4096
+  - op: Elementwise
+    role: dspark_context_kv_insert_1
+    bytes_per_token: 4096
+  - op: Elementwise
+    role: dspark_context_kv_insert_2
+    bytes_per_token: 4096
+  - op: Elementwise
+    role: dspark_context_kv_insert_3
+    bytes_per_token: 4096
+  - op: Elementwise
+    role: dspark_context_kv_insert_4
+    bytes_per_token: 4096
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+stack:
+  pattern:
+  - dspark_layer
+  repeat: 5
+modality: text_decoder_of_multimodal
+head:
+- op: Elementwise
+  role: final_norm
+  bytes_per_token: 24576
+  tp: replicated
+- op: GEMM
+  role: lm_head
+  n: 200064
+  k: 6144
+  weight_dtype: bf16
+  tp: column
+speculator:
+  method: dspark
+  num_spec_tokens: 7
+  drafting: parallel_block
+  shares_target_head: true
+  stack:
+    pattern:
+    - dspark_layer
+    repeat: 5
+  context_stack:
+    pattern:
+    - dspark_context
+    repeat: 1
+  head:
+  - op: Elementwise
+    role: dspark_final_norm
+    bytes_per_token: 24576
+    tp: replicated
+  - op: GEMM
+    role: dspark_lm_head
+    n: 200064
+    k: 6144
+    tp: column
+    aliases: head.lm_head
+  sequential_head:
+  - op: Gather
+    role: markov_w1
+    rows: 200064
+    row_bytes: 512
+    rows_per_token: 1
+    out_bytes_per_token: 512
+  - op: GEMM
+    role: markov_w2
+    n: 200064
+    k: 256
+    weight_dtype: bf16
+    tp: replicated
+  aux_hidden_state_layers:
+  - 4
+  - 18
+  - 32
+  - 46
+  - 60

@@ -124,6 +124,39 @@ type Entry struct {
 	Fitted bool  `yaml:"fitted"`
 	Scope  Scope `yaml:"scope"`
 
+	// RateBasis says what a rate in bytes per microsecond measures (SUB-5). Empty means
+	// memory: a rate at which a kernel moves bytes through device memory, which cannot
+	// exceed the chip's datasheet memory bandwidth. "work" marks a rate over counted work
+	// that may exceed it, and requires a rationale. It is allowed only on a bytes_per_us
+	// entry.
+	RateBasis vocab.RateBasis `yaml:"rate_basis,omitempty"`
+
+	// KernelImpls lists the kernel implementations the value is valid for: the library, its
+	// variant and the hash of the kernel's source (design D5, VAL-8). It is the lookup key. A
+	// lookup matches the entry only when one of them is what runs, by library, variant and code
+	// hash together; a different hash of the same kernel does not match. An entry that lists
+	// none is unkeyed and applies to every implementation, but nothing shows it was measured on
+	// the one that runs. A measured or calibrated entry lists the implementation its fit data
+	// exercised; a transferred entry lists the implementation it is moved to and records the
+	// one it came from in MeasuredOn. Optional while the registry is being filled in; the
+	// ratchet in registry/validator counts the measured and calibrated entries that state none.
+	KernelImpls []KernelImpl `yaml:"kernel_impls,omitempty"`
+
+	// MeasuredOn lists the kernel implementations a transferred value was measured on. It is
+	// evidence and is never matched by a lookup: the target of a transfer is KernelImpls.
+	// Required on a transferred entry that states KernelImpls; not allowed on any other method,
+	// whose fit data exercised the implementation KernelImpls names (D5).
+	MeasuredOn []KernelImpl `yaml:"measured_on,omitempty"`
+
+	// Measures says what the number includes (design VAL-9). The formula that reads the
+	// coefficient declares the same, and the two must agree.
+	Measures *Measures `yaml:"measures,omitempty"`
+
+	// FitRange records the range of inputs the fit's data covered, one bound per dimension
+	// (design VAL-10): shapes, token counts, ranks. A price that reads the entry outside the
+	// range is extrapolated and ranks with transferred.
+	FitRange []Bound `yaml:"fit_range,omitempty"`
+
 	// CI95 is a confidence interval, where the fit produced one.
 	CI95 *Interval `yaml:"ci95,omitempty"`
 	// Sources cite the evidence. A Method that claims evidence should carry at
@@ -132,8 +165,11 @@ type Entry struct {
 	// Rationale explains a judgement. It is where the reasoning behind an assumed
 	// value belongs, and it is what lets a reader weigh an estimate.
 	Rationale string `yaml:"rationale,omitempty"`
-	// CopiedFrom names the scope a copied value came from.
-	CopiedFrom string `yaml:"copied_from,omitempty"`
+	// TransferredFrom names the scope a transferred value was measured in, as the scope
+	// renders (hardware=h200,model=...). TransferRule states how the value was moved to this
+	// scope. Both are required for method transferred (design §9.2, VAL-1).
+	TransferredFrom string `yaml:"transferred_from,omitempty"`
+	TransferRule    string `yaml:"transfer_rule,omitempty"`
 	// Supersedes names an entry this one replaces.
 	Supersedes string `yaml:"supersedes,omitempty"`
 	// Validated and Unsupported record asymmetric evidence: a term may be checked
@@ -144,6 +180,72 @@ type Entry struct {
 	// committed entry for no gain.
 	Validated   MetricList `yaml:"validated,omitempty"`
 	Unsupported MetricList `yaml:"unsupported,omitempty"`
+}
+
+// KernelImpl names one kernel implementation (design §6.2): the library, the library's own
+// exported kernel name, and the hash of the kernel's source and target GPU architecture, or
+// of a binary library.
+type KernelImpl struct {
+	Library  string `yaml:"library"`
+	Variant  string `yaml:"variant"`
+	CodeHash string `yaml:"code_hash"`
+}
+
+// UnmarshalYAML rejects unknown keys, as every nested object of an entry does.
+func (k *KernelImpl) UnmarshalYAML(node *yaml.Node) error {
+	if err := validate.RejectUnknownKeys(node, KernelImpl{}, nil); err != nil {
+		return err
+	}
+	type shape KernelImpl
+	var raw shape
+	if err := validate.DecodeNode(node, &raw); err != nil {
+		return err
+	}
+	*k = KernelImpl(raw)
+	return nil
+}
+
+// Measures is a coefficient's measurement boundary (design VAL-9).
+type Measures struct {
+	Time      vocab.MeasurementTime      `yaml:"time"`
+	Execution vocab.MeasurementExecution `yaml:"execution"`
+	// Harness names the harness that collected the data, such as the benchmark and its pin.
+	Harness string `yaml:"harness"`
+}
+
+// UnmarshalYAML rejects unknown keys.
+func (m *Measures) UnmarshalYAML(node *yaml.Node) error {
+	if err := validate.RejectUnknownKeys(node, Measures{}, nil); err != nil {
+		return err
+	}
+	type shape Measures
+	var raw shape
+	if err := validate.DecodeNode(node, &raw); err != nil {
+		return err
+	}
+	*m = Measures(raw)
+	return nil
+}
+
+// Bound is the range one input dimension took in a fit's data, closed at both ends.
+type Bound struct {
+	Dim  string  `yaml:"dim"`
+	Low  float64 `yaml:"low"`
+	High float64 `yaml:"high"`
+}
+
+// UnmarshalYAML rejects unknown keys.
+func (b *Bound) UnmarshalYAML(node *yaml.Node) error {
+	if err := validate.RejectUnknownKeys(node, Bound{}, nil); err != nil {
+		return err
+	}
+	type shape Bound
+	var raw shape
+	if err := validate.DecodeNode(node, &raw); err != nil {
+		return err
+	}
+	*b = Bound(raw)
+	return nil
 }
 
 // Interval is a closed numeric range. The wire form is a two-element sequence —

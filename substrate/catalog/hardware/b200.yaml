@@ -1,5 +1,8 @@
 _comment: "B200 SXM. Peak FLOPs and HBM bandwidth are NVIDIA's per-GPU figures for HGX B200 in the NVIDIA Blackwell Datasheet (document 4204213, Oct 2025; https://dam-cdn.nvd.orangelogic.com/AssetLink/01dyp27s6aj4e0483cs5goo15354m438.pdf), table 'Individual Blackwell GPU Specifications': FP4 18 PFLOPS, FP8/FP6 9 PFLOPS, FP16/BF16 4.5 PFLOPS, all stated sparse with the footnote 'Dense is one-half of the sparse spec shown', giving dense FP4 9000, FP8 4500 and BF16 2250 TFLOPS; and '180 GB HBM3E | 7.7 TB/s'. The NVIDIA Blackwell Architecture Technical Brief v2.1 (https://dam-cdn.nvd.orangelogic.com/AssetLink/gl2l4l4812s5fw0p614s6i8bv6mi3vx5.pdf, Table 3) states the same per-GPU rates as dense/sparse pairs (FP4 9/18, FP8 4.5/9, BF16 2.2/4.5 petaFLOPS). AISimulate's system descriptor (https://github.com/ai-dynamo/aisimulate/blob/2f0f4cd8606d580567b253d02f3d699fe36db865/python/aisimulate/src/aisimulate_core/systems/b200_sxm.yaml) carries the same figures. FP4 has native Tensor-Core support on this part, where on Hopper it is a bandwidth saving only. CAVEAT (memory unit): the datasheet states 180 GB; this entry records it as 180 GiB, the reading AISimulate's descriptor uses (mem_capacity 193273528320 bytes, exactly 180 GiB). The device itself reports 191465652224 bytes (178.3 GiB; NVIDIA's published cudaGetDeviceProperties dump, cited under _comment_sm), which the GiB reading matches within 1% and the decimal reading (167.6 GiB) does not."
 Provenance: vendor_spec
+FieldProvenance:
+  MemoryGiB: "measured:NVIDIA B200"
+  SMCount: "published"
 TFlopsPeak: 2250.0
 TFlopsFP8: 4500.0
 TFlopsNVFP4: 9000.0

@@ -1,0 +1,47 @@
+# Values the cost model supplies itself because the registry carries no entry for them
+# (design SUB-7, VAL-2). One line each: the coefficient, then the chips it happens on.
+# The list may only shrink. TestEveryValueTheKernelSuppliesItselfIsListed fails on a gap not
+# listed here and on a listed gap that no longer exists. Delete a line when its entry lands
+# in the registry; never add one to admit a new fallback.
+#
+# Why each is not yet an entry:
+#   attention_decode_rate_mla (a100-80, a100-sxm, l40s): the MLA rate is 0.61 to 0.80 of HBM
+#     peak on the six chips that have it, and nothing in the catalog predicts which. L40S's
+#     MLA fit was not committed because its form does not describe the curve (relane_attention_mla.py).
+#   attention_*_sparse_mla, attention_*_block_index_scores: model-scoped DeepSeek-V4.1 work
+#     rates that must not be rescaled by HBM bandwidth (their rationales); they need a
+#     measurement on each chip.
+#   compute_rate_fp32: half the dense BF16 peak, the kernel's rule. The catalog states no TF32
+#     peak, so an entry needs a datasheet citation per chip.
+#   gemm_eps_max_*_grouped: the kernel prices four-bit grouped weights on the BF16 ramp. The
+#     chips that have a measured ramp show 0.11 to 0.28 against 0.95 to 1.0 for BF16, so the
+#     fallback overstates efficiency; an entry needs a measurement, not a transfer of that rule.
+#   recurrent_decode_*: tokens per microsecond of a sequential scan, fitted per kernel and chip
+#     (0.235 to 13.5); not derivable from catalog peaks.
+#   recurrent_prefill_rate_*: the kernel charges chunked-scan FLOPs at the GEMM ramp; an entry
+#     needs a fit.
+#   sharded_projection_gather: priced as an NCCL all-gather; an entry needs a measurement.
+#   trtllm_gen_prefill_lane (b200, b300): the lane's entries are transferred from vLLM 0.25.0 and
+#     state no kernel_impls, so they are not shown valid for the build the engine runs and the
+#     pooled pair prices the prefill (VAL-8). The line goes when an engine release publishes the
+#     kernel hash (kernel_impls.json) and the lane entries state it.
+attention_decode_rate_block_index_scores a100-80,a100-sxm,b200,b300,h100,h200,l40s
+attention_decode_rate_mla a100-80,a100-sxm,l40s
+attention_decode_rate_sparse_mla a100-80,a100-sxm,b200,b300,h100,h200,l40s
+attention_prefill_rate_block_index_scores a100-80,a100-sxm,b200,b300,h100,h200,l40s
+attention_prefill_rate_sparse_mla a100-80,a100-sxm,b200,b300,h100,h200,l40s
+compute_rate_fp32 a100-80,a100-sxm,b200,b300,h100,h200,l40s
+gemm_eps_max_nvfp4_grouped b200,b300
+gemm_eps_max_w4a16_mxfp4_grouped a100-80,a100-sxm,l40s
+gemm_eps_max_w4a16_nvfp4_grouped a100-80,a100-sxm,l40s
+recurrent_decode_floor_gdn a100-80,a100-sxm,l40s
+recurrent_decode_floor_kda a100-80,a100-sxm,l40s
+recurrent_decode_floor_mamba2 a100-80,a100-sxm,l40s
+recurrent_decode_rate_gdn a100-80,a100-sxm,l40s
+recurrent_decode_rate_kda a100-80,a100-sxm,l40s
+recurrent_decode_rate_mamba2 a100-80,a100-sxm,l40s
+recurrent_prefill_rate_gdn a100-80,a100-sxm,b200,b300,h100,h200,l40s
+recurrent_prefill_rate_kda a100-80,a100-sxm,b200,b300,h100,h200,l40s
+recurrent_prefill_rate_mamba2 a100-80,a100-sxm,b200,b300,h100,h200,l40s
+sharded_projection_gather b200,b300
+trtllm_gen_prefill_lane b200,b300

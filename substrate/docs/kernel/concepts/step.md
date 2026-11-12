@@ -96,7 +96,28 @@ uses for them, the grouped four-bit experts on their own measured efficiency. A 
 measured prefill rate, or, where the registry has none, as the chunked scan vLLM runs for them.
 
 **Speculative decoding.** When the deployment speculates and the graph states its drafter,
-each step also pays the drafter's passes, and the drafter's weights are resident.
+each step also pays the drafter's passes, and the drafter's weights are resident. A deployment
+that names a separate drafter (`speculative_config.model`) is priced with that drafter's graph in
+place of the target graph's own speculator, as vLLM runs only the named checkpoint: the target's
+in-graph MTP layers are neither priced nor resident, and the layer kinds only they used leave
+the graph. A drafter graph that states no speculator, one whose hidden size is not the
+target's, and a deployment method that is not the drafter's are refused.
+
+An autoregressive drafter proposes its tokens by passes of its layers, and which rows the first
+pass processes is the engine's execution decision, so the engine states it in the pool's plan
+(`plan.DraftPolicy.FirstPassRows` and `PassRequests`, handed to the kernel as
+`Inputs.DraftFirstPassRows` and `DraftPassRequests`) and the cost model prices the statement; it
+reads no engine setting for it and knows no speculative method. With `scheduled` the first pass runs the layers and the draft's
+token lookup over every token the target scheduled that step, prefill tokens included, because
+the drafter writes its own KV for each of them; vLLM v0.32.0 does so for EAGLE, EAGLE3 and MTP
+alike (`_prefill` and `_multi_step_decode`, `vllm/v1/worker/gpu/spec_decode/
+target_dependent_ar/speculator.py`). The kernel charges that pass on the step's own shape and
+one single-row pass fewer, so a step where every request schedules one token is priced as
+before. With `PassRequests all` the head and the later passes run for every request of the step,
+a request still in the middle of its prompt included; with `sampling`, only for the requests that
+complete their prompt. A deployment that speculates through an autoregressive drafter and states
+either word as empty is refused as `draft_passes_unstated`, and an unknown word as
+`draft_passes_unknown`. A parallel-block drafter needs neither.
 
 **Experts.** In a mixture-of-experts layer each token is routed to a few experts. The kernel
 estimates how many distinct experts a batch touches, reads their weights, and prices their
@@ -151,6 +172,45 @@ The *bottleneck* is the resource with the largest total: the one to relieve firs
 changes with the batch size within one deployment, as the figure shows.
 
 --8<-- "docs/kernel/generated/step-anatomy.html"
+
+## Layers that run on some of the rows
+
+Some engines run the layers after the last one that produces KV on a subset of the step's rows.
+vLLM v0.32.0 does so for DeepSeek-V4.1, in steps that launch eagerly (and in large piecewise
+steps): layers 0 to 20 write the KV of every row, and layers 20 to 39 run on each request's last
+128 scheduled tokens only (`vllm/models/deepseek_v41/nvidia/model_state.py:438-540`,
+`decoder_replay_layers.py`, at v0.32.0). The step still launches every layer, but the rows through
+the later layers' matrix multiplies, experts and collectives are not the scheduled tokens.
+
+Whether a step does this, and which rows it keeps, are the engine's execution decisions, so the
+kernel takes them from the batch (`Batch.TailFrom`, `ReqShape.TailRows`, `Batch.TailPadTokens`;
+in a step shape `StepShape.TailFrom`, `RequestStep.TailRows`, `PaddedShape.TailTokens`) and
+applies no rule of its own. With none stated, every layer runs every scheduled token, as it did
+before.
+
+The kernel prices the layers before `TailFrom` on the step's own shape, and the layers from
+`TailFrom` on a second shape built from the first. Request \(i\), which scheduled \(s_i\)
+tokens after \(c_i\) computed ones and keeps \(r_i\) of them, becomes a request scheduling \(r_i\)
+tokens after \(c_i + s_i - r_i\) computed ones: the same positions, so a windowed layer reads the
+same keys and a layer that scores the whole context scores the same context. Any pad the engine
+launched the tail with (`TailPadTokens`) is the second shape's pad. The embedding, the head, the
+drafter and the host, launch and scheduler terms stay on the first shape, because the step
+launches the same kernels and the head reads only each request's last row. A layer kind appears
+once in the plan with all its layers, so the kernel counts how many of a kind lie on each side of
+`TailFrom`. Under pipeline parallelism each stage splits the layers it holds.
+
+What this does not price:
+
+- The layer at `TailFrom` is priced wholly on the kept rows. In vLLM the last KV layer first
+  writes its KV for every row (its input projections, cache insert and compressor), then runs on
+  the kept rows with the later layers. An engine that wants that half charged states `TailFrom`
+  one layer later and pays that layer's attention and feed-forward on every row instead; its
+  lowering says which, and by how much.
+- The tail's launch. A tail the engine runs in a graph of its own costs less host time to launch
+  than an eager one; the kernel launches the same kernels either way and does not price the
+  difference.
+- The drafter. A drafter that reads the trailing layers' hidden states keeps its pass over the
+  scheduled tokens.
 
 ## Which estimate to use
 

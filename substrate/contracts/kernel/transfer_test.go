@@ -126,3 +126,28 @@ func TestAloneTimeProperties(t *testing.T) {
 		}
 	}
 }
+
+// A transfer that pulls over several rails at once gets its share of a link, and no more.
+func TestStreamsDivideALinkAmongTheTransfersOwnFlows(t *testing.T) {
+	uplink := LinkUse{Link: "uplink", BytesPerSecond: 400e9, Streams: 8}
+	nic := LinkUse{Link: "nic", BytesPerSecond: 50e9}
+	d := TransferDemand{Bytes: 50e9, Links: []LinkUse{nic, uplink}}
+	if got := d.AloneTime(); got != time.Second {
+		t.Errorf("8 flows over a 400 GB/s uplink and 50 GB/s rails: %v, want 1s (the rail binds)", got)
+	}
+	uplink.Streams = 16
+	d.Links[1] = uplink
+	if got := d.AloneTime(); got != 2*time.Second {
+		t.Errorf("16 flows over the same uplink: %v, want 2s (25 GB/s each)", got)
+	}
+	uplink.Streams = 0
+	d.Links[1] = uplink
+	if got := d.AloneTime(); got != time.Second {
+		t.Errorf("no stated streams is one: %v, want 1s", got)
+	}
+	uplink.Streams = -1
+	d.Links[1] = uplink
+	if err := d.Check(); err == nil || !strings.Contains(err.Error(), "streams") {
+		t.Errorf("a negative stream count: %v", err)
+	}
+}

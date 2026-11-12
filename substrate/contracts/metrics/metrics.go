@@ -13,16 +13,44 @@
 // output tokens of every request with at least two output tokens (inference-sim #1894), as
 // `vllm bench serve` pools them. aiperf's inter-token latency is a per-request mean, a
 // different population, so it is not cited for that family. Output tokens per second follows
-// aiperf. interactivity_p50 and interactivity_p90 are defined by BLIS, as 1000 over the
-// time-per-output-token percentile in milliseconds; neither benchmark client reports them.
+// aiperf. interactivity_p50 and interactivity_p90 are 1000 over the time-per-output-token
+// percentile in milliseconds, and interactivity_of_mean_tpot is 1000 over its mean; neither
+// vllm bench serve nor aiperf reports them, and InferenceX stores them (median_intvty,
+// p90_intvty, mean_intvty). The mean over requests of 1/TPOT, interactivity_mean, is a
+// different and larger number (it is aiperf's per-user rate), so the two means are two
+// metrics and Compare refuses them.
 //
-// Two figures are comparable only when their definitions are identical. Compare refuses
-// any other pair, and a definition is never inferred from a field's name.
+// Throughput per GPU has three forms that differ by what is counted or what it is divided
+// by, and each is its own metric: output tokens over all GPUs (output_tok_s_per_gpu), prompt
+// plus output tokens over all GPUs (total_tokens_per_second_per_gpu, InferenceX's
+// tput_per_gpu), and output tokens over the decode GPUs only
+// (output_tokens_per_second_per_decode_gpu, InferenceX's output_tput_per_gpu for a
+// disaggregated deployment).
+//
+// A figure is a metric at a scope: the whole cluster, one pool, or one instance (design
+// §8.7). The scope selects which requests, tokens or steps form the population; the formula,
+// statistic, window and unit do not change. A figure that aggregates over several scopes, such
+// as the largest p99 time to first token over instances, names the scope it ranges over and the
+// aggregate. A definition states the scopes it is defined at and the aggregates it admits.
+//
+// Design §8.7 names one aggregate, "the largest p99 time to first token over instances", and
+// the plan calls the figure config search ranks on "the worst" instance. Which instance is
+// worst depends on the direction of the metric: the largest figure for a latency, the smallest
+// for a throughput. The enumeration is therefore the two orderings, max and min, and a
+// definition states its direction so that Worst names the one that means "worst" for it. The
+// design names no mean or sum of figures, and the mean of per-scope percentiles or fractions is
+// neither the cluster's figure nor a weighted one, so neither is admitted; adding one is a
+// design change.
+//
+// Two figures are comparable only when their definitions are identical and their scope,
+// the scope they range over and their aggregate are the same. Compare refuses any other pair,
+// and a definition is never inferred from a field's name.
 package metrics
 
 import (
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // Formula is the per-sample quantity a metric is computed from.
@@ -57,8 +85,9 @@ const (
 	// FormulaUserTPS is a request's (output tokens - 1) / (E2E latency - TTFT): its
 	// output tokens per second after the first.
 	FormulaUserTPS Formula = "user_tps"
-	// FormulaInteractivity is 1000 / a TPOT percentile in milliseconds, tokens per second
-	// per user.
+	// FormulaInteractivity is 1000 / a TPOT statistic in milliseconds, tokens per second
+	// per user: of a percentile, or of the mean (the reciprocal of the mean, which is not
+	// the mean of the reciprocals, FormulaUserTPS).
 	FormulaInteractivity Formula = "interactivity"
 	// FormulaCacheHitRate is prompt tokens served from the prefix cache over prompt tokens
 	// looked up, summed over admissions.
@@ -152,8 +181,13 @@ const (
 	// DenominatorWindow: the length of the measured window.
 	DenominatorWindow Denominator = "window"
 	// DenominatorWindowAndGPUs: the length of the measured window and the number of GPUs
-	// the deployment's pools occupy.
+	// the scope occupies: the deployment's pools at the cluster, its own at a pool or an
+	// instance.
 	DenominatorWindowAndGPUs Denominator = "window_and_gpus"
+	// DenominatorWindowAndDecodeGPUs: the length of the measured window and the number of
+	// GPUs of the decode pools of the deployment, or all its GPUs when it has no separate
+	// decode pool. The prefill GPUs of a disaggregated deployment are not counted.
+	DenominatorWindowAndDecodeGPUs Denominator = "window_and_decode_gpus"
 )
 
 // Unfinished says how a latency statistic treats requests in flight or queued at the
@@ -177,6 +211,64 @@ type PercentileMethod string
 // q/100*(n-1), numpy's default and both benchmark clients' method.
 const PercentileNumpyLinear PercentileMethod = "numpy_linear"
 
+// Scope is the part of a deployment a figure describes. The scope names a kind: which pool
+// or which instance is the key under which a Result carries the figure.
+type Scope string
+
+const (
+	// ScopeCluster is every request, token or step of the run, across all pools.
+	ScopeCluster Scope = "cluster"
+	// ScopePool is those of one pool of a disaggregated or multi-pool deployment.
+	ScopePool Scope = "pool"
+	// ScopeInstance is those of one engine instance.
+	ScopeInstance Scope = "instance"
+)
+
+// scopeRank orders the scopes by how much they contain: an instance is part of a pool and a
+// pool part of the cluster. Zero is not a scope.
+func scopeRank(s Scope) int {
+	switch s {
+	case ScopeInstance:
+		return 1
+	case ScopePool:
+		return 2
+	case ScopeCluster:
+		return 3
+	}
+	return 0
+}
+
+// Valid reports whether s is one of the scopes.
+func (s Scope) Valid() bool { return scopeRank(s) != 0 }
+
+// Aggregate picks one figure out of the figures of several narrower scopes, such as the
+// largest p99 time to first token over instances. The figure it picks is one instance's (or
+// pool's), not the figure of the pooled population: the largest instance p99 is not the
+// cluster's p99.
+type Aggregate string
+
+const (
+	// AggregateMax is the largest figure over the scopes ranged over. It is the worst for a
+	// metric where lower is better, such as a latency (design §8.7's example).
+	AggregateMax Aggregate = "max"
+	// AggregateMin is the smallest figure. It is the worst for a metric where higher is
+	// better, such as a throughput or an attainment.
+	AggregateMin Aggregate = "min"
+)
+
+// Valid reports whether a is one of the aggregates.
+func (a Aggregate) Valid() bool { return a == AggregateMax || a == AggregateMin }
+
+// Direction says which way a metric improves.
+type Direction string
+
+const (
+	// DirectionLowerIsBetter: a latency, a delay, a count of preemptions.
+	DirectionLowerIsBetter Direction = "lower_is_better"
+	// DirectionHigherIsBetter: a throughput, a hit rate, an attainment.
+	DirectionHigherIsBetter Direction = "higher_is_better"
+)
+
 // Definition is one metric.
 type Definition struct {
 	// ID is the identifier a Result names the metric by, a lowercase slug.
@@ -193,6 +285,16 @@ type Definition struct {
 	// Denominator is set exactly when the unit is a rate per second: what the rate divides
 	// by.
 	Denominator Denominator `yaml:"denominator,omitempty" json:"denominator,omitempty"`
+	// Scopes are the scopes the metric is defined at, in no particular order. A metric the
+	// router alone observes has the cluster only.
+	Scopes []Scope `yaml:"scopes" json:"scopes"`
+	// Aggregates are the aggregates a figure of this metric may take over narrower scopes. A
+	// metric defined at two or more scopes admits both; one defined at a single scope has
+	// nothing to range over and admits none.
+	Aggregates []Aggregate `yaml:"aggregates,omitempty" json:"aggregates,omitempty"`
+	// Better says which way the metric improves, so that Worst can name the aggregate that
+	// picks the worst instance.
+	Better Direction `yaml:"better" json:"better"`
 	// Description is one sentence for a reader. It decides nothing: comparisons use the
 	// fields above.
 	Description string `yaml:"description" json:"description"`
@@ -201,8 +303,23 @@ type Definition struct {
 	Follows string `yaml:"follows,omitempty" json:"follows,omitempty"`
 }
 
+// Worst returns the aggregate that picks the worst figure of d over several scopes: the
+// largest for a metric where lower is better, the smallest otherwise. It is empty for a
+// definition with no direction.
+func (d Definition) Worst() Aggregate {
+	switch d.Better {
+	case DirectionLowerIsBetter:
+		return AggregateMax
+	case DirectionHigherIsBetter:
+		return AggregateMin
+	}
+	return ""
+}
+
 // sameMeaning reports whether two definitions mean the same thing. ID, Description and
-// Follows are names and prose; the rest is the definition.
+// Follows are names and prose; Scopes, Aggregates and Better say where the metric may be
+// reported and which way it improves, not what it is (a figure's own scope and aggregate are compared by ComparableFigures); the rest
+// is the definition.
 func (d Definition) sameMeaning(o Definition) bool {
 	return d.Formula == o.Formula && d.Statistic == o.Statistic && d.Population == o.Population &&
 		d.Window == o.Window && d.Unit == o.Unit && d.PercentileMethod == o.PercentileMethod &&
@@ -212,6 +329,29 @@ func (d Definition) sameMeaning(o Definition) bool {
 const (
 	vllmServe = "vllm v0.32.0 vllm/benchmarks/serve.py:624-634"
 	aiperfTPS = "aiperf 0.12.0 src/aiperf/metrics/types/output_token_throughput_metrics.py:40-78"
+
+	// InferenceX is read at two commits: 08d7a9cd (2026-06-11), where the fixed-sequence
+	// client and its result processor are under utils/, and 96d6fb58 (2026-11-11), where they
+	// are under inferencex-e2e/infx/. Both commits are cited in full.
+	ixOld = "InferenceX 08d7a9cda233099b1d19aa1ba6ea32446d4d18a0"
+	ixNew = "InferenceX 96d6fb58721b9eac4bfd6aec5b6c84e780835d9b"
+
+	// ixTotalPerGPU: the client computes total_token_throughput = (input + output tokens) /
+	// duration, and the result processor divides it by every GPU of the deployment (prefill
+	// and decode in a multi-node run) to give tput_per_gpu.
+	ixTotalPerGPU = ixNew + " inferencex-e2e/infx/bench_serving/benchmark_serving.py:483-484 and " +
+		"inferencex-e2e/infx/results/fixed_sequence.py:139,158,192; " +
+		ixOld + " utils/bench_serving/benchmark_serving.py:466-467 and utils/process_result.py:78,100,120"
+	// ixOutputPerDecodeGPU: output_tput_per_gpu divides output_throughput by the decode GPUs
+	// of a multi-node run, or by the total when there are none.
+	ixOutputPerDecodeGPU = ixNew + " inferencex-e2e/infx/results/fixed_sequence.py:145,159,193; " +
+		ixOld + " utils/process_result.py:84,101,121"
+	// ixIntvty: every *_tpot_ms statistic the client writes becomes a *_intvty of 1000 over
+	// it, so mean_intvty is 1000 / mean_tpot_ms, not the mean of per-request reciprocals; the
+	// agentic processor takes 1 / the statistic likewise.
+	ixIntvty = ixNew + " inferencex-e2e/infx/results/fixed_sequence.py:204-206 and " +
+		"inferencex-e2e/infx/results/agentic/request_metrics.py:71-86; " +
+		ixOld + " utils/process_result.py:129-132"
 )
 
 // registry is every definition, built once by build.
@@ -224,32 +364,44 @@ type latencyFamily struct {
 	population Population
 	desc       string
 	follows    string
+	// clusterOnly is set for a quantity only the router observes.
+	clusterOnly bool
 }
 
 var latencyFamilies = []latencyFamily{
 	{"ttft", FormulaTTFT, PopulationRequests,
-		"Time to first token", vllmServe},
+		"Time to first token", vllmServe, false},
 	{"tpot", FormulaTPOT, PopulationRequestsTwoTokens,
-		"Time per output token, excluding the first, computed per request", vllmServe},
+		"Time per output token, excluding the first, computed per request", vllmServe, false},
 	{"itl", FormulaITL, PopulationTokens,
-		"Inter-token latency, pooled over every gap between output tokens", vllmServe},
+		"Inter-token latency, pooled over every gap between output tokens", vllmServe, false},
 	{"e2e", FormulaE2E, PopulationRequests,
-		"Request latency, arrival to last output token", vllmServe},
+		"Request latency, arrival to last output token", vllmServe, false},
 	{"step_interval", FormulaStepInterval, PopulationSteps,
-		"Engine step interval between token-emitting steps of a request; not per token under speculative decoding", ""},
+		"Engine step interval between token-emitting steps of a request; not per token under speculative decoding", "", false},
 	{"scheduling_delay", FormulaSchedulingDelay, PopulationRequests,
-		"Time from arrival at an engine to the request's first scheduled step", ""},
+		"Time from arrival at an engine to the request's first scheduled step", "", false},
 	{"gateway_queue_delay", FormulaGatewayQueueDelay, PopulationGatewayQueued,
-		"Time a request waited in the router's flow-control queue", ""},
+		"Time a request waited in the router's flow-control queue", "", true},
 }
 
 var latencyStats = []Statistic{StatMean, StatP50, StatP90, StatP95, StatP99}
 
 func build() map[string]Definition {
 	out := map[string]Definition{}
+	// add states the scopes and aggregates of a definition from its shape, so that no
+	// definition is added without them, and refuses one that does not validate.
 	add := func(d Definition) {
 		if _, dup := out[d.ID]; dup {
 			panic("metrics: duplicate identifier " + d.ID)
+		}
+		if d.Scopes == nil {
+			d.Scopes = []Scope{ScopeCluster, ScopePool, ScopeInstance}
+		}
+		d.Aggregates = aggregatesFor(d)
+		d.Better = direction(d)
+		if err := d.Validate(); err != nil {
+			panic(err.Error())
 		}
 		out[d.ID] = d
 	}
@@ -258,6 +410,9 @@ func build() map[string]Definition {
 			d := Definition{ID: f.prefix + "_" + string(st) + "_ms", Formula: f.formula, Statistic: st,
 				Population: f.population, Window: WindowMeasured, Unit: UnitMs, Unfinished: UnfinishedExcluded,
 				Description: f.desc + ", " + string(st) + ", over the measured window.", Follows: f.follows}
+			if f.clusterOnly {
+				d.Scopes = []Scope{ScopeCluster}
+			}
 			if st.Percentile() {
 				d.PercentileMethod = PercentileNumpyLinear
 			}
@@ -270,17 +425,25 @@ func build() map[string]Definition {
 		if u == UnitTokensPerS || u == UnitRequestsPerS {
 			d.Denominator = DenominatorWindow
 		}
+		switch id {
+		case "output_tok_s_per_gpu", "total_tokens_per_second_per_gpu":
+			d.Denominator = DenominatorWindowAndGPUs
+		case "output_tokens_per_second_per_decode_gpu":
+			d.Denominator = DenominatorWindowAndDecodeGPUs
+			d.Scopes = []Scope{ScopeCluster}
+		}
 		add(d)
 	}
 	rate("output_tok_s", FormulaOutputThroughput, PopulationRequests, UnitTokensPerS,
 		"Output tokens of the window's completed requests over the window's length.", aiperfTPS)
 	rate("output_tok_s_per_gpu", FormulaOutputThroughput, PopulationRequests, UnitTokensPerS,
-		"output_tok_s over the GPUs the deployment's pools occupy.", "")
-	g := out["output_tok_s_per_gpu"]
-	g.Denominator = DenominatorWindowAndGPUs
-	out[g.ID] = g
+		"output_tok_s over the GPUs of the scope it describes: the deployment's pools at the cluster, a pool's or an instance's own at those scopes.", "")
 	rate("total_tok_s", FormulaTotalThroughput, PopulationRequests, UnitTokensPerS,
 		"Prompt and output tokens of the window's completed requests over the window's length.", vllmServe)
+	rate("total_tokens_per_second_per_gpu", FormulaTotalThroughput, PopulationRequests, UnitTokensPerS,
+		"Prompt and output tokens of the window's completed requests over the window's length and over all the GPUs of the scope it describes, prefill GPUs included: InferenceX's tput_per_gpu.", ixTotalPerGPU)
+	rate("output_tokens_per_second_per_decode_gpu", FormulaOutputThroughput, PopulationRequests, UnitTokensPerS,
+		"Output tokens of the window's completed requests over the window's length and over the decode GPUs of the deployment only, or all its GPUs when it has no decode pool: InferenceX's output_tput_per_gpu. Defined at the cluster, where the decode GPUs are counted.", ixOutputPerDecodeGPU)
 	rate("request_throughput", FormulaRequestThroughput, PopulationRequests, UnitRequestsPerS,
 		"Completed requests over the window's length.", vllmServe)
 	rate("goodput_rps", FormulaGoodput, PopulationTargeted, UnitRequestsPerS,
@@ -297,12 +460,77 @@ func build() map[string]Definition {
 		add(Definition{ID: "interactivity_" + string(st), Formula: FormulaInteractivity, Statistic: st,
 			Population: PopulationRequestsTwoTokens, Window: WindowMeasured, Unit: UnitTokensPerSUser,
 			PercentileMethod: PercentileNumpyLinear, Unfinished: UnfinishedExcluded,
-			Description: "1000 over the " + string(st) + " of tpot in milliseconds."})
+			Description: "1000 over the " + string(st) + " of tpot in milliseconds.", Follows: ixIntvty})
 	}
+	add(Definition{ID: "interactivity_of_mean_tpot", Formula: FormulaInteractivity, Statistic: StatMean,
+		Population: PopulationRequestsTwoTokens, Window: WindowMeasured, Unit: UnitTokensPerSUser,
+		Unfinished: UnfinishedExcluded, Follows: ixIntvty,
+		Description: "1000 over the mean of tpot in milliseconds, the reciprocal of the mean and not the mean of the reciprocals (interactivity_mean): InferenceX's mean_intvty."})
 	add(Definition{ID: "preemptions", Formula: FormulaPreemptions, Statistic: StatTotal,
 		Population: PopulationSteps, Window: WindowRun, Unit: UnitCount, Unfinished: UnfinishedNotApplicable,
 		Description: "Preemptions the engines performed over the whole run."})
 	return out
+}
+
+// aggregatesFor returns the aggregates a definition admits: both orderings when it is defined
+// at two or more scopes, none otherwise.
+func aggregatesFor(d Definition) []Aggregate {
+	if len(d.Scopes) < 2 {
+		return nil
+	}
+	return []Aggregate{AggregateMax, AggregateMin}
+}
+
+// direction states which way a metric improves, from its unit and formula: a rate, a hit rate
+// or an attainment improves upward; a latency, a delay and a count of preemptions improve
+// downward.
+func direction(d Definition) Direction {
+	switch d.Unit {
+	case UnitTokensPerS, UnitRequestsPerS, UnitTokensPerSUser, UnitFraction:
+		return DirectionHigherIsBetter
+	}
+	return DirectionLowerIsBetter
+}
+
+// Validate reports a definition that cannot be used for a figure: no scope, a scope or an
+// aggregate outside the enumerations, a repeated one, no direction, and aggregates without two
+// scopes to range between. Findings are joined in one error.
+func (d Definition) Validate() error {
+	var bad []string
+	add := func(format string, a ...any) { bad = append(bad, fmt.Sprintf(format, a...)) }
+	if len(d.Scopes) == 0 {
+		add("states no scope; a metric is defined at the cluster, a pool or an instance")
+	}
+	seenScope := map[Scope]bool{}
+	for _, s := range d.Scopes {
+		switch {
+		case !s.Valid():
+			add("scope %q is not one of cluster, pool, instance", s)
+		case seenScope[s]:
+			add("scope %q is stated twice", s)
+		}
+		seenScope[s] = true
+	}
+	seenAgg := map[Aggregate]bool{}
+	for _, a := range d.Aggregates {
+		switch {
+		case !a.Valid():
+			add("aggregate %q is not one of max, min", a)
+		case seenAgg[a]:
+			add("aggregate %q is stated twice", a)
+		}
+		seenAgg[a] = true
+	}
+	if len(d.Aggregates) > 0 && len(seenScope) < 2 {
+		add("admits aggregates but is defined at %d scope(s); an aggregate ranges from a narrower scope to a wider one, so it needs two", len(seenScope))
+	}
+	if d.Better != DirectionLowerIsBetter && d.Better != DirectionHigherIsBetter {
+		add("direction %q is not lower_is_better or higher_is_better", d.Better)
+	}
+	if len(bad) == 0 {
+		return nil
+	}
+	return fmt.Errorf("metrics %q: %s", d.ID, strings.Join(bad, "; "))
 }
 
 // Lookup returns the definition with identifier id.
@@ -331,28 +559,147 @@ func IDs() []string {
 	return out
 }
 
-// Figure is one reported value with the definition it was computed under.
+// Figure is one reported value with the definition it was computed under and the scope it
+// describes.
 type Figure struct {
 	Definition Definition
 	Value      float64
+	// Scope is the scope the figure is at. A figure always has one.
+	Scope Scope
+	// Member names which pool or which instance the figure is of, by the name the deployment
+	// gives it. Design 8.7 makes a figure's scope "the whole cluster, one pool, or one
+	// instance": the scope selects the requests, tokens or steps that form the population, and
+	// the population of instance 3 is not that of instance 7. So a figure at the pool or
+	// instance scope names its member, and a figure at the cluster scope has none. For a
+	// figure that aggregates, Member is the member of Scope, not of the scope ranged over
+	// (the largest p99 over the instances of pool "decode" is Scope pool, Member "decode").
+	Member string
+	// Aggregate and Over are set together when the figure combines the figures of a narrower
+	// scope: the aggregate, and the scope it ranges over ("max over instances" at the cluster
+	// scope is Scope cluster, Aggregate max, Over instance). Both are empty for a figure
+	// computed directly from the scope's own population.
+	Aggregate Aggregate
+	Over      Scope
 }
 
-// Compare returns b's value minus a's when the two figures share a definition, and an
-// error naming the first field that differs otherwise (DEV-8). Two figures whose
-// definitions differ in any field are not comparable, whatever their identifiers say.
+// Validate reports a figure that does not follow its definition (DEV-8), or whose definition
+// does not validate: no scope, a scope the
+// metric is not defined at, an aggregate the metric does not admit, an aggregate with no scope
+// to range over or one that is not narrower than the figure's own, or a scope to range over
+// the metric is not defined at.
+func (f Figure) Validate() error {
+	d := f.Definition
+	if err := d.Validate(); err != nil {
+		return fmt.Errorf("figure of a malformed definition: %w", err)
+	}
+	var bad []string
+	add := func(format string, a ...any) { bad = append(bad, fmt.Sprintf(format, a...)) }
+	switch {
+	case f.Scope == "":
+		add("states no scope")
+	case !f.Scope.Valid():
+		add("scope %q is not one of cluster, pool, instance", f.Scope)
+	case !hasScope(d.Scopes, f.Scope):
+		add("scope %q is not one the metric is defined at (%v)", f.Scope, d.Scopes)
+	}
+	switch {
+	case f.Scope == ScopeCluster && f.Member != "":
+		add("is at the cluster scope and names member %q; only a pool or an instance has one", f.Member)
+	case (f.Scope == ScopePool || f.Scope == ScopeInstance) && f.Member == "":
+		add("is at the %s scope and names no member; it is the figure of one %s", f.Scope, f.Scope)
+	}
+	switch {
+	case f.Aggregate == "" && f.Over == "":
+	case f.Aggregate == "":
+		add("ranges over %q but names no aggregate", f.Over)
+	case f.Over == "":
+		add("aggregate %q ranges over no scope", f.Aggregate)
+	case !f.Aggregate.Valid():
+		add("aggregate %q is not one of max, min", f.Aggregate)
+	case !f.Over.Valid():
+		add("ranges over %q, which is not one of cluster, pool, instance", f.Over)
+	default:
+		if !hasAggregate(d.Aggregates, f.Aggregate) {
+			add("aggregate %q is not one the metric admits (%v)", f.Aggregate, d.Aggregates)
+		}
+		if !hasScope(d.Scopes, f.Over) {
+			add("cannot range over %q: the metric is not defined there (%v)", f.Over, d.Scopes)
+		}
+		if f.Scope.Valid() && scopeRank(f.Over) >= scopeRank(f.Scope) {
+			add("a figure at %q cannot range over %q, which is not narrower", f.Scope, f.Over)
+		}
+	}
+	if len(bad) == 0 {
+		return nil
+	}
+	return fmt.Errorf("figure of %q: %s", d.ID, strings.Join(bad, "; "))
+}
+
+func hasScope(l []Scope, s Scope) bool {
+	for _, x := range l {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAggregate(l []Aggregate, a Aggregate) bool {
+	for _, x := range l {
+		if x == a {
+			return true
+		}
+	}
+	return false
+}
+
+// Compare returns b's value minus a's when the two figures are comparable, and an error
+// naming the first field that differs otherwise (DEV-8). Two figures whose definitions differ
+// in any field, or whose scope, aggregate or scope ranged over differ, are not comparable,
+// whatever their identifiers say.
 //
-// Enforced now: formula, statistic, population, window, unit, percentile method, the
-// handling of unfinished requests and, for a rate, its denominator (so a per-GPU rate and
-// an absolute one are told apart). Not enforced: scope and aggregate, which DEV-8 also
-// names. A Definition carries neither yet; they arrive in M2 with the registry's scope
-// (design §8.7), so two figures of one definition taken at different scopes are not told
-// apart until then. The number of GPUs itself is not part of a definition: it is a fact
-// of the deployment, and the denominator only says that the rate is divided by it.
+// The number of GPUs itself is not part of a definition: it is a fact of the deployment, and
+// the denominator only says that the rate is divided by it. Which pool or instance a figure
+// is of is part of its scope (design 8.7: "one pool, or one instance"), so instance 3's p99 and
+// instance 7's are not comparable, and the same instance's in two runs is.
 func Compare(a, b Figure) (float64, error) {
-	if err := Comparable(a.Definition, b.Definition); err != nil {
+	if err := ComparableFigures(a, b); err != nil {
 		return 0, err
 	}
 	return b.Value - a.Value, nil
+}
+
+// ComparableFigures returns nil when a and b are the same metric at the same scope with the
+// same aggregate over the same scope, which includes the same member. It first refuses a
+// figure that does not validate, so a figure with no scope is never comparable, even with
+// another that has none. Otherwise the
+// error names the field where they differ: a definition's field as Comparable names it, or
+// scope, member, aggregate or over.
+func ComparableFigures(a, b Figure) error {
+	if err := a.Validate(); err != nil {
+		return fmt.Errorf("first figure: %w", err)
+	}
+	if err := b.Validate(); err != nil {
+		return fmt.Errorf("second figure: %w", err)
+	}
+	if err := Comparable(a.Definition, b.Definition); err != nil {
+		return err
+	}
+	for _, f := range []struct {
+		name   string
+		av, bv string
+	}{
+		{"scope", string(a.Scope), string(b.Scope)},
+		{"member", a.Member, b.Member},
+		{"aggregate", string(a.Aggregate), string(b.Aggregate)},
+		{"over", string(a.Over), string(b.Over)},
+	} {
+		if f.av != f.bv {
+			return fmt.Errorf("metrics %q and %q are not comparable: %s is %q in one and %q in the other",
+				a.Definition.ID, b.Definition.ID, f.name, f.av, f.bv)
+		}
+	}
+	return nil
 }
 
 // Comparable returns nil when a and b define the same metric, and otherwise an error

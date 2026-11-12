@@ -65,10 +65,10 @@ func modelDir(rel string) (string, bool) {
 	return "models/" + name + "/", ok
 }
 
-// coefficientID is one coefficient's identity: its name, its scope and its method, within
-// its set (design §3.3).
+// coefficientID is one coefficient's identity within its set: its name, its scope, its method
+// and the kernel implementations it is valid for (design §3.3, coefficient.Entry.Identity).
 func coefficientID(e coefficient.Entry) string {
-	return e.Name + "\x00" + e.Scope.Key() + "\x00" + string(e.Method)
+	return e.Identity()
 }
 
 // applyRegistryOverlay merges an overlay's sets into r. A coefficient with the identity of

@@ -6,7 +6,7 @@
 // A record identifies the point and its ledger unit, grades it G1 to G5 (design §11.3),
 // names every substitution the grade rests on, gives the reason a G5 point was not scored
 // from the closed list of design §11.4, records the simulator build, the data and the
-// harness digest that produced it (X8), and pairs each predicted figure with its measured
+// harness commit that produced it (X8, design §11.7), and pairs each predicted figure with its measured
 // counterpart under one metric identifier (DEV-8).
 //
 // The fields are the accuracy-dashboard's per-point output as of f87f98d
@@ -16,13 +16,16 @@ package pointrecord
 
 import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/blis-substrate/contracts/spec/routertable"
 )
 
 // Kind is the value of Record.Kind.
 const Kind = "PointRecord"
 
-// SchemaVersion is the record schema this package reads and writes.
-const SchemaVersion = 1
+// SchemaVersion is the record schema this package reads and writes. Version 2 requires each
+// figure to state the scope of its predicted and measured sides (DEV-8, design §8.7); a version
+// 1 figure states none, and a definition is never inferred, so it is not read.
+const SchemaVersion = 2
 
 // Record is one scored or declined point.
 type Record struct {
@@ -50,11 +53,13 @@ type Record struct {
 	Build Build `yaml:"build"`
 	// Simulator is the simulator build that scored it.
 	Simulator Simulator `yaml:"simulator"`
-	// HarnessDigest is the digest of the scoring harness image, sha256:<64 hex>.
-	HarnessDigest string `yaml:"harness_digest"`
+	// HarnessCommit is the accuracy-dashboard commit that scored the point, 40 lowercase hex
+	// characters. The harness is a script released from tags and named by its release and commit,
+	// not a container image (design §11.7), so a reader fetches the exact scorer by this commit.
+	HarnessCommit string `yaml:"harness_commit"`
 
-	// Figures pair each predicted figure with the measured one, sorted by metric. Empty
-	// for a G5 point.
+	// Figures pair each predicted figure with the measured one, sorted by metric and then by
+	// basis (scope, member, aggregate, over), each once. Empty for a G5 point.
 	Figures []Figure `yaml:"figures,omitempty"`
 
 	// Settings compare each classified engine setting the run recorded with what BLIS was
@@ -125,20 +130,88 @@ const (
 	FieldNotModelled  G5Code = "field_not_modelled"
 	FieldUnclassified G5Code = "field_unclassified"
 	EngineUnsupported G5Code = "engine_unsupported"
-	NotInCatalog      G5Code = "not_in_catalog"
-	FieldNotInRelease G5Code = "field_not_in_release"
-	BuildUnparseable  G5Code = "build_unparseable"
+	// TopologyUnsupported: the run was measured on a deployment the scoring harness cannot
+	// write as a scenario, such as several engines (a prefill and decode split, or a run
+	// across nodes).
+	TopologyUnsupported G5Code = "topology_unsupported"
+	NotInCatalog        G5Code = "not_in_catalog"
+	FieldNotInRelease   G5Code = "field_not_in_release"
+	// ValueConflict: two sources that record the same stage of one field, such as the
+	// launch configuration and the logged passed arguments, give different values
+	// (design §11.2).
+	ValueConflict    G5Code = "value_conflict"
+	BuildUnparseable G5Code = "build_unparseable"
 )
 
 // Substitution is one departure from an exact comparison.
 type Substitution struct {
 	Kind SubstitutionKind `yaml:"kind"`
-	// Subject names what was substituted: a field, a coefficient, a library or a build.
+	// Subject names what was substituted: a field, a coefficient, a library or a build. For
+	// profile_value it is the profile, as set and key, as the Result names it; for
+	// unevaluated it is the G1 condition that could not be evaluated, named by the kind that
+	// records its failure (kernel_hash, value_class and so on).
 	Subject string `yaml:"subject"`
 	// Detail says what stood in, for example the estimation rule's setting, the
-	// coefficient's method, or the changed functions.
+	// coefficient's method, or the changed functions. Required for client_difference and
+	// resolved_differs, which have no other key to say what differed.
 	Detail string `yaml:"detail,omitempty"`
+	// Record names the record a later_record value was taken from, with the revision that
+	// identifies it, for example a file and its commit. Only with later_record, where it is
+	// required.
+	Record string `yaml:"record,omitempty"`
+	// Date is the date of that record, YYYY-MM-DD. Only with later_record, where it is
+	// required: the point states how long after the run the fact was recorded.
+	Date string `yaml:"date,omitempty"`
+	// Policy is the llm-d router policy BLIS simulated in place of the run's router. Only
+	// with router_differs, where it is required; Subject is then the router the run used.
+	Policy string `yaml:"policy,omitempty"`
+	// Entry names the router table entry the point used, by its name, the file stem under
+	// catalog/routers. The entry's key is the router, its mode and its session-affinity
+	// setting; its name begins with the router, which is Subject. Only with router_differs,
+	// where it is required.
+	Entry string `yaml:"entry,omitempty"`
+	// Evidence cites the router table's evidence for matching the router to Policy, as the
+	// table entry gives it. Only with router_differs, where it is required.
+	Evidence string `yaml:"evidence,omitempty"`
+	// Revision is the build of the router the run used, a full 40-character commit. Only with
+	// router_differs, where it is required: the table's mapping is shown for the builds the entry
+	// lists, so the point says which build it relied on, and Data.CheckRouterSubstitutions
+	// refuses one the entry does not cover.
+	Revision string `yaml:"revision,omitempty"`
+	// Difference is the router table entry's statements of how the run's router and Policy
+	// differ, copied from the entry as it stood when the point was scored, so a later edit to
+	// the entry does not rewrite the point. Only with router_differs, where it is required.
+	Difference []routertable.Statement `yaml:"difference,omitempty"`
+	// Bound is the entry's measured bound on how far the choice of policy moves each figure,
+	// copied the same way. Only with router_differs, where it is required. A reader decides from
+	// it whether the substitution is small enough for a figure: the grade is G2 either way.
+	Bound *routertable.Bound `yaml:"bound,omitempty"`
+	// Regime is the point's own regime: its workload, client count, model, hardware, engine
+	// release, fabric, instance layouts and pool shape. Only with router_differs, where it is
+	// required. The Bound is the part of the entry's bound whose regimes contain it
+	// (routertable.Bound.For) and nothing else, so a reader, and Data.CheckRouterSubstitutions,
+	// can recompute the subset from the entry and verify it.
+	Regime *routertable.Point `yaml:"regime,omitempty"`
+	// ProfileFamily says which kind of substrate profile a profile_value is: acceptance or
+	// routing. The key fields a profile can differ in are the family's own. Only with
+	// profile_value, where it is required.
+	ProfileFamily ProfileFamily `yaml:"profile_family,omitempty"`
+	// Differed names each key field in which the substrate profile differs from the run's,
+	// from the family's key (acceptance.KeyFields, routing.KeyFields), sorted, each once. Only
+	// with profile_value, where Subject is the profile; it may be empty, for a profile whose key
+	// is the run's own.
+	Differed []string `yaml:"differed,omitempty"`
 }
+
+// ProfileFamily is a kind of substrate profile (design D8).
+type ProfileFamily string
+
+const (
+	// ProfileAcceptance: a speculative-acceptance profile, keyed by acceptance.Key.
+	ProfileAcceptance ProfileFamily = "acceptance"
+	// ProfileRouting: an expert-routing imbalance profile, keyed by routing.Key.
+	ProfileRouting ProfileFamily = "routing"
+)
 
 // SubstitutionKind names a condition of design §11.3 that lowers a grade.
 type SubstitutionKind string
@@ -152,6 +225,12 @@ const (
 	SubValueClass        SubstitutionKind = "value_class"        // a modelled field set outside every covered value class
 	SubEstimated         SubstitutionKind = "estimated"          // a missing or unmodelled value replaced by the engine's estimation rule
 	SubInterimStatus     SubstitutionKind = "interim_status"     // a field whose status a release plan allows only for a time
+	SubResolvedDiffers   SubstitutionKind = "resolved_differs"   // a resolved value the run logged differs from the engine's resolution (design 11.2)
+	SubClientDifference  SubstitutionKind = "client_difference"  // the simulated requests differ from the ones the run's client sent (COV-12)
+	SubLaterRecord       SubstitutionKind = "later_record"       // a cluster fact the run's record lacks was taken from the benchmark's later record of the same runner
+	SubRouterDiffers     SubstitutionKind = "router_differs"     // the run's router, which BLIS does not host, was replaced by an llm-d policy from the router table
+	SubProfileValue      SubstitutionKind = "profile_value"      // a workload-dependent value the run did not record was taken from a substrate profile (D8)
+	SubUnevaluated       SubstitutionKind = "unevaluated"        // a condition of G1 could not be evaluated, because the data it needs is not recorded for the point
 	// Grade G3 and G4 conditions.
 	SubOtherRelease     SubstitutionKind = "other_release"     // the run's engine release is another one
 	SubChangedFunctions SubstitutionKind = "changed_functions" // ported upstream functions changed between the releases
@@ -183,12 +262,19 @@ type Simulator struct {
 	Data result.Data `yaml:"data"`
 }
 
-// Figure pairs a predicted and a measured figure of one metric.
+// Figure pairs a predicted and a measured figure of one metric at one scope.
 type Figure struct {
 	// Metric is the metric-registry identifier both sides are computed under.
-	Metric    string  `yaml:"metric"`
-	Predicted float64 `yaml:"predicted"`
-	Measured  float64 `yaml:"measured"`
+	Metric string `yaml:"metric"`
+	// PredictedBasis and MeasuredBasis state the scope, member, aggregate and scope ranged
+	// over of each side (design §8.7, DEV-8). The two sides are compared only when the metric
+	// and the basis are the same, so a record whose bases differ is refused: the figure pairs
+	// the predicted and measured value of one definition at one scope, and a pair that does not
+	// is no comparison. A side that states no scope has none.
+	PredictedBasis result.Basis `yaml:"predicted_basis"`
+	MeasuredBasis  result.Basis `yaml:"measured_basis"`
+	Predicted      float64      `yaml:"predicted"`
+	Measured       float64      `yaml:"measured"`
 	// PredictedSamples and MeasuredSamples are the number of samples behind each.
 	PredictedSamples int `yaml:"predicted_samples"`
 	MeasuredSamples  int `yaml:"measured_samples"`

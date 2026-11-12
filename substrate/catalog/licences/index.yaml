@@ -49,6 +49,12 @@ models:
       - file: MIT.deepseek.txt
         source: https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/raw/b5968e9190ef611bbf34a7229255be88a0e937c1/LICENSE
         sha256: f2c6c602815669d292889e5be8c802f2ed950653b77999b1584e8e6aed25d040
+  - model: deepseek-v4-pro-0813
+    licence: MIT
+    texts:
+      - file: MIT.deepseek.txt
+        source: https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro-0813/raw/72e1d3230f6c080a530b0a1d46f8eb4602340597/LICENSE
+        sha256: f2c6c602815669d292889e5be8c802f2ed950653b77999b1584e8e6aed25d040
   - model: deepseek-v4.1-flash
     licence: MIT
     texts:
@@ -103,6 +109,12 @@ models:
     texts:
       - file: LicenseRef-kimi-k3.txt
         source: https://huggingface.co/moonshotai/Kimi-K3/raw/f831ab66814297da540d832a5235f8e904f29d06/LICENSE
+        sha256: 20c797ce19af0c17de52c6afb144644768a591c521655f5ebf5712c9850f2887
+  - model: kimi-k3-dspark
+    licence: LicenseRef-kimi-k3
+    texts:
+      - file: LicenseRef-kimi-k3.txt
+        source: https://huggingface.co/Inferact/Kimi-K3-DSpark/raw/cf6b8244620e7ea4b0651d214f28e89eac75bed6/LICENSE
         sha256: 20c797ce19af0c17de52c6afb144644768a591c521655f5ebf5712c9850f2887
   - model: llama-2-70b-hf
     licence: LicenseRef-llama2
@@ -178,6 +190,12 @@ models:
     texts:
       - file: LicenseRef-minimax-community.txt
         source: https://huggingface.co/MiniMaxAI/MiniMax-M3-MXFP8/raw/c5454eb03678d8710e54a4e0fc681b9f3b4a3dba/LICENSE
+        sha256: b53f2fdda3049b0e9013207be51efc2d372cda1fcfdd8bb4bb8b22658ca5db9c
+  - model: minimax-m3-nvfp4
+    licence: LicenseRef-minimax-community
+    texts:
+      - file: LicenseRef-minimax-community.txt
+        source: https://huggingface.co/nvidia/MiniMax-M3-NVFP4/raw/901464083161bf8612a29ff7ad29914cd4ab4a85/LICENSE
         sha256: b53f2fdda3049b0e9013207be51efc2d372cda1fcfdd8bb4bb8b22658ca5db9c
   - model: muse-spark-open-816b-a42b
     licence: LicenseRef-muse-model-license

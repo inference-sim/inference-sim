@@ -22,8 +22,9 @@ name: ledger
 #
 # The select job is started by workflow_run when a "ledger candidate" run completes;
 # workflow_run always runs this file from the default branch, so a pull request cannot change
-# these steps. The error and gate jobs are started by a ledger owner on main, and the release
-# job by a ledger owner or the nightly schedule.
+# these steps. The error and gate jobs are started by a dispatch on main, and the release job
+# by a dispatch or the nightly schedule. The dispatch needs write access, not a person: the one
+# step only a ledger owner can take is creating the seed (a release-time step, README).
 # `ledger lint-workflows` (run by ci.yml) refuses any other shape.
 #
 # Operator-level candidates run here. Whole-run candidates run the dashboard's scoring
@@ -66,6 +67,7 @@ jobs:
   release:
     if: github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.job == 'release') || github.event_name == 'schedule')
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     environment: ledger
     permissions:
       contents: read
@@ -90,6 +92,7 @@ jobs:
   select:
     if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.id == github.repository_id
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     environment: ledger
     permissions:
       contents: read
@@ -140,6 +143,7 @@ jobs:
   error:
     if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.job == 'error'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     environment: ledger
     permissions:
       contents: read
@@ -200,6 +204,7 @@ jobs:
   gate:
     if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.job == 'gate'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     environment: ledger
     permissions:
       contents: read
@@ -258,6 +263,7 @@ jobs:
   gate-nightly:
     if: github.ref == 'refs/heads/main' && github.event_name == 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     environment: ledger
     permissions:
       contents: read

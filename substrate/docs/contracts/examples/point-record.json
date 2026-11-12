@@ -1,6 +1,6 @@
 {
   "kind": "PointRecord",
-  "schema_version": 1,
+  "schema_version": 2,
   "point_id": "cefb7a8bc91bf8efe67963ead7154970bb206bde0ac36c091f33643213871084",
   "unit_id": "5a0b2e6f1d3c4b7a8e9f0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f",
   "identity": { "source": "inferencex", "model": "dsv41flash", "hardware": "h200", "precision": "fp8", "framework": "vllm", "benchmark_type": "single_turn", "recipe": "row:445802", "conc": 64, "measured_date": "2026-10-21" },
@@ -21,10 +21,10 @@
       "build": "v0.16.0"
     }
   },
-  "harness_digest": "sha256:7c9e0f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6",
+  "harness_commit": "7c9e0f1a2b3c4d5e6f708192a3b4c5d6e7f80912",
   "figures": [
-    { "metric": "tpot_mean_ms", "predicted": 4.7, "measured": 4.9, "predicted_samples": 640, "measured_samples": 640, "interval": { "low": 4.6, "high": 4.8, "level": 0.95, "replications": 5 } },
-    { "metric": "ttft_mean_ms", "predicted": 1410.0, "measured": 1490.0, "predicted_samples": 640, "measured_samples": 640 }
+    { "metric": "tpot_mean_ms", "predicted_basis": { "scope": "cluster" }, "measured_basis": { "scope": "cluster" }, "predicted": 4.7, "measured": 4.9, "predicted_samples": 640, "measured_samples": 640, "interval": { "low": 4.6, "high": 4.8, "level": 0.95, "replications": 5 } },
+    { "metric": "ttft_mean_ms", "predicted_basis": { "scope": "cluster" }, "measured_basis": { "scope": "cluster" }, "predicted": 1410.0, "measured": 1490.0, "predicted_samples": 640, "measured_samples": 640 }
   ],
   "settings": [
     { "arg": "max_model_len", "measured": null, "blis": null, "match": "estimated", "rule": "leave_unset" },

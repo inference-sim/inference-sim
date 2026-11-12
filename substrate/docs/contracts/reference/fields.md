@@ -46,6 +46,7 @@ and a repository checks its committed file by comparing the two.
 | `source` | string | yes | `config` for a configuration field, `env` for an environment variable. |
 | `status` | string | yes | One of the statuses below. |
 | `evidence` | mapping | yes | The one key the status requires, below. |
+| `value_classes` | mapping | for `modelled` and `proven_inert` | The classes of values the evidence covers, below. Not allowed for the other statuses. |
 | `estimation` | mapping | yes | The estimation rule, below. |
 
 Statuses:
@@ -75,6 +76,76 @@ Statuses:
 
 Exactly the key its status requires is set; any other is an error.
 
+### `value_classes`
+
+<!-- fields: fields.ValueClasses -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `type` | string | yes | One of the value types below. |
+| `values` | list of strings | for a proven-inert enumerated field | Every value an enumerated field accepts. Optional for a modelled one. |
+| `covered` | list of strings | for `boolean` and `enumerated` | The values the evidence sets: `"true"` and `"false"` for a boolean. At least one, none twice. |
+| `thresholds` | list | for `numeric` | The values the upstream compares the field with, in increasing order of cut; two may share a value, below. |
+| `covered_classes` | list of integers | for `numeric` | The numbered classes the evidence sets a value in, increasing. At least one. |
+
+A modelled field records the classes of values its evidence covers (design VLM-3), because
+evidence at one value says nothing about a value the upstream treats differently. A scoring
+harness grades a run G1 only when each modelled field it sets has a value in a covered class,
+and G2 when it sets one outside every covered class (design §11.3). `ValueClasses.Covers`
+answers that for one value.
+
+Value types:
+
+--8<-- "docs/contracts/generated/enum/fields.ValueType.md"
+
+`boolean`
+:   Two classes, `true` and `false`.
+`enumerated`
+:   One class per value.
+`numeric`
+:   An ordered number. `n` thresholds make `n+1` classes, numbered from 0 for the values
+    below the first threshold. A value is in class `k` when it is above `k` thresholds.
+
+A proven-inert field records the classes its probes cover, and they must be all of them: a
+probe in one class shows nothing about another. A proven-inert enumerated field lists every
+value in `values`, so the check can tell that none was left out. A list the engine cannot
+write in full (a free-text field) is not provably inert by this record.
+
+#### `thresholds`
+
+<!-- fields: fields.Threshold -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `value` | number | yes | The number the upstream compares the field with. Finite. |
+| `closed` | string | yes | Which class a value equal to `value` falls in. |
+
+Sides:
+
+--8<-- "docs/contracts/generated/enum/fields.Side.md"
+
+`above`
+:   A value equal to the threshold is in the class above it: the upstream compares with `x >= value`.
+`below`
+:   A value equal to the threshold is in the class below it: the upstream compares with `x > value`.
+
+The thresholds are generated from the upstream's comparisons of the field, so a comparison
+the engine adds is a class the list must record. `closed` says which class takes the value
+equal to the threshold; it is not interval notation for the class itself. Thresholds
+increase by the place each cuts the line. Two comparisons at one value, `x >= 8` in one place and
+`x > 8` in another, send 7.999, 8 and 8.001 to three different sets of decisions, so the list
+states both, `[8 above, 8 below]` in that order (the cut of `x >= 8` is just below 8 and that of
+`x > 8` just above it), and they make three classes: below 8, 8 itself, above 8. Two thresholds at
+one value with the same side cut the line once and make an empty class, and `[8 below, 8 above]`
+is refused as out of order; each is written one way only.
+
+`ValueClasses.Covers` takes any integer or float width, a `json.Number` or a numeric string,
+and refuses NaN and the infinities. A consumer in another language restates the rule, so these
+vectors, which a test here checks, fix it at a threshold. With thresholds `[8 above]`: 7.999 is
+class 0, 8 is class 1, 8.001 is class 1. With `[8 below]`: 7.999 and 8 are class 0, 8.001 is
+class 1. With `[1 above, 256 below]`: 0 is class 0, 1 and 256 are class 1, 257 is class 2. With
+`[8 above, 8 below]`: 7.999 is class 0, 8 is class 1, 8.001 is class 2.
+
 ### `estimation`
 
 <!-- fields: fields.Estimation -->
@@ -84,6 +155,8 @@ Exactly the key its status requires is set; any other is an error.
 | `rule` | string | yes | One of the rules below. |
 | `setting` | mapping | for `substitute` | Configuration field names and the values that stand in for this field. Not empty. |
 | `reason` | string | for `substitute` | Why the setting is a fair stand-in. |
+| `preserves` | string | with `valid_when` | A sentence naming what the upstream resolves identically when the field is left unset or stated as `setting`. |
+| `valid_when` | list | no | Clauses saying when the stand-in is exact, below. Absent, the rule applies to every value. |
 
 Rules:
 
@@ -96,4 +169,65 @@ Rules:
 `none`
 :   No estimate exists; a point that needs one is not scored (G5).
 
-`setting` and `reason` are allowed only with `substitute`.
+`setting` and `reason` are allowed only with `substitute`. `preserves` and `valid_when` are
+allowed only with `leave_unset` or `substitute`.
+
+#### When the stand-in is exact
+
+A stand-in is exact for a recorded value when the upstream resolves the field, left unset or
+stated as `setting`, as it resolves that value (design §11.2). Whether that is so can depend on
+the value and on the run. `valid_when` lists clauses: the stand-in is exact for a recorded value
+when at least one clause holds, and a clause holds when every key in it holds. A value for which
+no clause holds is not stood in for, and the point is G5 with the reason `field_not_modelled`.
+No new status, grade or reason code is involved. A clause sets at least one key.
+
+<!-- fields: fields.Clause -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `value_in` | list of strings | no | The recorded value equals one of them. |
+| `value_list_has_any` | list of strings | no | The recorded value, split on commas, has at least one of them as an item. |
+| `value_list_has_none` | list of strings | no | The recorded value, split on commas, has none of them as an item. |
+| `value_not_prefixed` | list of strings | no | The recorded value starts with none of them. |
+| `tp_group_nodes` | mapping | no | The nodes the pool's tensor-parallel group spans satisfy the comparison, below. |
+| `compute_capability` | mapping | no | The part's compute capability satisfies the comparison, below. |
+
+Strings are compared after trimming and folding to lower case, on both sides. A list is not empty.
+
+A comparison sets at least one operator and holds when every operator it sets holds.
+
+<!-- fields: fields.NodeComparison -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `eq` | integer | no | The count equals it. |
+| `gt` | integer | no | The count is greater than it. |
+| `gte` | integer | no | The count is at least it. |
+| `lt` | integer | no | The count is less than it. |
+| `lte` | integer | no | The count is at most it. |
+
+<!-- fields: fields.CapabilityComparison -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `eq` | string | no | The capability equals it. |
+| `gt` | string | no | The capability is greater than it. |
+| `gte` | string | no | The capability is at least it. |
+| `lt` | string | no | The capability is less than it. |
+| `lte` | string | no | The capability is at most it. |
+
+A capability is `"<major>.<minor>"`, such as `"10.0"`, and orders by major, then minor, so `9.10`
+is below `10.0`. The loader refuses any other spelling.
+
+A consumer asks `fields.Exact(estimation, facts)` and does not restate these rules. The facts
+are `Value`, the recorded value; `TPGroupNodes`, the nodes the pool's tensor-parallel group spans,
+from the pool's tensor-parallel size and its GPUs per node; and `ComputeCapability`, the part's, from
+the catalog. A fact the consumer cannot supply is left unset, and a clause that needs it does not
+hold. `Exact` is false for rule `none`, and true for any value when `valid_when` is absent.
+
+In the example above, `VLLM_FLASHINFER_ALLREDUCE_BACKEND` reads: `auto` is always exact; a stated
+`mnnvl` is exact only on several nodes from compute capability 10.0 up. The upstream resolves two things,
+the backend and whether a failed `mnnvl` workspace may fall back to `trtllm`. Left unset on one node it picks
+`mnnvl` and allows the fallback; a stated `mnnvl` never allows it. The two differ on a node without multicast,
+which no clause can state, so a stated `mnnvl` on one node is outside the rule and the point is G5
+`field_not_modelled`. A rule must preserve everything the upstream resolves, not only the name.

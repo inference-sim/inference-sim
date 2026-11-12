@@ -3,6 +3,9 @@
     "acceptance.Pin": {
       "additionalProperties": false,
       "properties": {
+        "exact_only": {
+          "type": "boolean"
+        },
         "fallback_category": {
           "type": "string"
         },
@@ -39,6 +42,46 @@
       },
       "required": [
         "num_spec_tokens"
+      ],
+      "type": "object"
+    },
+    "coefficient.Bound": {
+      "additionalProperties": false,
+      "properties": {
+        "dim": {
+          "type": "string"
+        },
+        "high": {
+          "type": "number"
+        },
+        "low": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "dim",
+        "high",
+        "low"
+      ],
+      "type": "object"
+    },
+    "coefficient.KernelImpl": {
+      "additionalProperties": false,
+      "properties": {
+        "code_hash": {
+          "type": "string"
+        },
+        "library": {
+          "type": "string"
+        },
+        "variant": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code_hash",
+        "library",
+        "variant"
       ],
       "type": "object"
     },
@@ -401,6 +444,7 @@
                 "gateway_queue_delay_p99_ms",
                 "goodput_rps",
                 "interactivity_mean",
+                "interactivity_of_mean_tpot",
                 "interactivity_p50",
                 "interactivity_p90",
                 "itl_mean_ms",
@@ -410,6 +454,7 @@
                 "itl_p99_ms",
                 "output_tok_s",
                 "output_tok_s_per_gpu",
+                "output_tokens_per_second_per_decode_gpu",
                 "preemptions",
                 "request_throughput",
                 "scheduling_delay_mean_ms",
@@ -424,6 +469,7 @@
                 "step_interval_p95_ms",
                 "step_interval_p99_ms",
                 "total_tok_s",
+                "total_tokens_per_second_per_gpu",
                 "tpot_mean_ms",
                 "tpot_p50_ms",
                 "tpot_p90_ms",
@@ -460,6 +506,7 @@
                 "gateway_queue_delay_p99_ms",
                 "goodput_rps",
                 "interactivity_mean",
+                "interactivity_of_mean_tpot",
                 "interactivity_p50",
                 "interactivity_p90",
                 "itl_mean_ms",
@@ -469,6 +516,7 @@
                 "itl_p99_ms",
                 "output_tok_s",
                 "output_tok_s_per_gpu",
+                "output_tokens_per_second_per_decode_gpu",
                 "preemptions",
                 "request_throughput",
                 "scheduling_delay_mean_ms",
@@ -483,6 +531,7 @@
                 "step_interval_p95_ms",
                 "step_interval_p99_ms",
                 "total_tok_s",
+                "total_tokens_per_second_per_gpu",
                 "tpot_mean_ms",
                 "tpot_p50_ms",
                 "tpot_p90_ms",
@@ -519,6 +568,7 @@
                 "gateway_queue_delay_p99_ms",
                 "goodput_rps",
                 "interactivity_mean",
+                "interactivity_of_mean_tpot",
                 "interactivity_p50",
                 "interactivity_p90",
                 "itl_mean_ms",
@@ -528,6 +578,7 @@
                 "itl_p99_ms",
                 "output_tok_s",
                 "output_tok_s_per_gpu",
+                "output_tokens_per_second_per_decode_gpu",
                 "preemptions",
                 "request_throughput",
                 "scheduling_delay_mean_ms",
@@ -542,6 +593,7 @@
                 "step_interval_p95_ms",
                 "step_interval_p99_ms",
                 "total_tok_s",
+                "total_tokens_per_second_per_gpu",
                 "tpot_mean_ms",
                 "tpot_p50_ms",
                 "tpot_p90_ms",
@@ -676,8 +728,34 @@
     "result.Figure": {
       "additionalProperties": false,
       "properties": {
+        "aggregate": {
+          "enum": [
+            "max",
+            "min"
+          ],
+          "type": "string"
+        },
+        "member": {
+          "type": "string"
+        },
+        "over": {
+          "enum": [
+            "cluster",
+            "pool",
+            "instance"
+          ],
+          "type": "string"
+        },
         "samples": {
           "type": "integer"
+        },
+        "scope": {
+          "enum": [
+            "cluster",
+            "pool",
+            "instance"
+          ],
+          "type": "string"
         },
         "value": {
           "type": "number"
@@ -685,6 +763,7 @@
       },
       "required": [
         "samples",
+        "scope",
         "value"
       ],
       "type": "object"
@@ -727,6 +806,7 @@
               "gateway_queue_delay_p99_ms",
               "goodput_rps",
               "interactivity_mean",
+              "interactivity_of_mean_tpot",
               "interactivity_p50",
               "interactivity_p90",
               "itl_mean_ms",
@@ -736,6 +816,7 @@
               "itl_p99_ms",
               "output_tok_s",
               "output_tok_s_per_gpu",
+              "output_tokens_per_second_per_decode_gpu",
               "preemptions",
               "request_throughput",
               "scheduling_delay_mean_ms",
@@ -750,6 +831,7 @@
               "step_interval_p95_ms",
               "step_interval_p99_ms",
               "total_tok_s",
+              "total_tokens_per_second_per_gpu",
               "tpot_mean_ms",
               "tpot_p50_ms",
               "tpot_p90_ms",
@@ -1188,6 +1270,31 @@
       ],
       "type": "object"
     },
+    "result.Resolution": {
+      "additionalProperties": false,
+      "properties": {
+        "engine": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "pool": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "setting": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "engine",
+        "setting"
+      ],
+      "type": "object"
+    },
     "result.Result": {
       "additionalProperties": false,
       "properties": {
@@ -1237,6 +1344,7 @@
               "gateway_queue_delay_p99_ms",
               "goodput_rps",
               "interactivity_mean",
+              "interactivity_of_mean_tpot",
               "interactivity_p50",
               "interactivity_p90",
               "itl_mean_ms",
@@ -1246,6 +1354,7 @@
               "itl_p99_ms",
               "output_tok_s",
               "output_tok_s_per_gpu",
+              "output_tokens_per_second_per_decode_gpu",
               "preemptions",
               "request_throughput",
               "scheduling_delay_mean_ms",
@@ -1260,6 +1369,7 @@
               "step_interval_p95_ms",
               "step_interval_p99_ms",
               "total_tok_s",
+              "total_tokens_per_second_per_gpu",
               "tpot_mean_ms",
               "tpot_p50_ms",
               "tpot_p90_ms",
@@ -1298,6 +1408,12 @@
         "rerun_of": {
           "$ref": "#/$defs/result.Reference"
         },
+        "resolutions": {
+          "items": {
+            "$ref": "#/$defs/result.Resolution"
+          },
+          "type": "array"
+        },
         "revision_changes": {
           "items": {
             "$ref": "#/$defs/result.RevisionChange"
@@ -1311,7 +1427,7 @@
           "$ref": "#/$defs/result.Runtime"
         },
         "schema_version": {
-          "const": 2
+          "const": 3
         },
         "selected_entries": {
           "$ref": "#/$defs/result.SelectedEntries"
@@ -1398,22 +1514,69 @@
     "result.SelectedCoefficient": {
       "additionalProperties": false,
       "properties": {
+        "ci95": {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "extrapolated": {
+          "type": "boolean"
+        },
         "file": {
           "type": "string"
+        },
+        "fit_range": {
+          "items": {
+            "$ref": "#/$defs/coefficient.Bound"
+          },
+          "type": "array"
+        },
+        "kernel_impls": {
+          "items": {
+            "$ref": "#/$defs/coefficient.KernelImpl"
+          },
+          "type": "array"
+        },
+        "kernel_match": {
+          "enum": [
+            "unkeyed",
+            "exact",
+            "refused"
+          ],
+          "type": "string"
+        },
+        "measured_on": {
+          "items": {
+            "$ref": "#/$defs/coefficient.KernelImpl"
+          },
+          "type": "array"
         },
         "method": {
           "enum": [
             "measured",
+            "calibrated",
+            "transferred",
             "literature",
             "vendor_spec",
-            "copied",
+            "roofline",
             "assumed",
-            "not_charged",
-            "calibrated"
+            "not_charged"
           ],
           "type": "string"
         },
         "name": {
+          "type": "string"
+        },
+        "priced": {
+          "items": {
+            "$ref": "#/$defs/coefficient.KernelImpl"
+          },
+          "type": "array"
+        },
+        "primitive": {
           "type": "string"
         },
         "scope": {
@@ -1421,6 +1584,9 @@
         },
         "set": {
           "type": "string"
+        },
+        "unidentified": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -1441,11 +1607,23 @@
           },
           "type": "array"
         },
+        "closeness_version": {
+          "type": "integer"
+        },
         "coefficients": {
           "items": {
             "$ref": "#/$defs/result.SelectedCoefficient"
           },
           "type": "array"
+        },
+        "implementations": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/coefficient.KernelImpl"
+            },
+            "type": "array"
+          },
+          "type": "object"
         },
         "routing_profiles": {
           "items": {
@@ -1546,11 +1724,26 @@
     "result.WorkloadProperty": {
       "additionalProperties": false,
       "properties": {
+        "differed": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "k_rule": {
+          "type": "string"
+        },
         "name": {
           "type": "string"
         },
         "profile": {
           "type": "string"
+        },
+        "profiles": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "source": {
           "enum": [
@@ -1560,6 +1753,9 @@
             "profile",
             "default"
           ],
+          "type": "string"
+        },
+        "step": {
           "type": "string"
         },
         "values": {
@@ -1631,6 +1827,18 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "switch_groups": {
+          "items": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "uplink_oversubscription": {
+          "type": "number"
         }
       },
       "required": [

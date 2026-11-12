@@ -19,6 +19,9 @@ func (p PoolPlan) Validate() error {
 	if strings.TrimSpace(p.Hardware) == "" {
 		add("Hardware is empty; a plan names its catalog chip")
 	}
+	if err := p.Host.Admission.Validate(); err != nil {
+		add("Host.Admission: %v", err)
+	}
 	l := p.Layout
 	for name, w := range map[string]int{"Tensor": l.Tensor, "Pipeline": l.Pipeline, "Data": l.Data,
 		"Expert": l.Expert, "Context": l.Context, "RanksPerNode": l.RanksPerNode, "Nodes": l.Nodes} {
@@ -55,6 +58,9 @@ func (p PoolPlan) Validate() error {
 			if ll.Layer < 0 {
 				add("%s: layer index %d", at, ll.Layer)
 			}
+			if ll.Scorer && ll.Primitive != PrimAttentionDecode && ll.Primitive != PrimAttentionPrefill {
+				add("%s: Scorer is set on %s; only an attention primitive has a block-index scorer node", at, ll.Primitive)
+			}
 			if ll.Stage < 0 || ll.Stage >= stages {
 				add("%s: stage %d of %d pipeline stages", at, ll.Stage, stages)
 			}
@@ -71,6 +77,16 @@ func (p PoolPlan) Validate() error {
 			}
 			if err := ll.Shape.Format.Validate(); err != nil && ll.Shape.Format != (units.QuantFormat{}) {
 				add("%s: %v", at, err)
+			}
+			if d := ll.Shape.Dtype; d != "" {
+				switch {
+				case !d.Valid():
+					add("%s: Dtype %q is not a catalog dtype", at, d)
+				case ll.Primitive != PrimAttentionDecode && ll.Primitive != PrimAttentionPrefill:
+					add("%s: Dtype %q is set on %s; only an attention primitive states the element type of its cache", at, d, ll.Primitive)
+				case ll.Shape.Format != (units.QuantFormat{}) && ll.Shape.Format.PayloadBits != d.Bits():
+					add("%s: Dtype %q is %d bits and Format stores %d bits of payload; they describe different caches", at, d, d.Bits(), ll.Shape.Format.PayloadBits)
+				}
 			}
 		}
 	}
@@ -114,6 +130,12 @@ func (p PoolPlan) Validate() error {
 	}
 	if p.Drafts.Chain > 0 && p.Drafts.TreeTopK > 0 {
 		add("Drafts is both a chain of %d and a tree; it is one", p.Drafts.Chain)
+	}
+	if r := p.Drafts.FirstPassRows; r != "" && !r.Valid() {
+		add("Drafts.FirstPassRows is %q; it is %q or %q, or empty for not stated", r, FirstPassPerRequest, FirstPassScheduled)
+	}
+	if r := p.Drafts.PassRequests; r != "" && !r.Valid() {
+		add("Drafts.PassRequests is %q; it is %q or %q, or empty for not stated", r, PassRequestsSampling, PassRequestsAll)
 	}
 	for i, w := range p.Weights {
 		if _, err := w.Bytes(); err != nil {
@@ -176,12 +198,23 @@ func (s StepShape) Validate(ranks, stages int) error {
 		add("stage %d of %d pipeline stages", s.Stage, stages)
 	}
 	for r, rk := range s.Ranks {
-		var scheduled units.Tokens
+		var scheduled, tail units.Tokens
 		for i, q := range rk.Requests {
-			if q.Scheduled < 0 || q.Computed < 0 || q.Prompt < 0 || q.Cached < 0 {
+			if q.Scheduled < 0 || q.Computed < 0 || q.Prompt < 0 || q.Cached < 0 || q.TailRows < 0 {
 				add("rank %d request %d has a negative token count: %+v", r, i, q)
 			}
+			if q.TailRows > q.Scheduled {
+				add("rank %d request %d runs %d tail rows of %d scheduled tokens", r, i, q.TailRows, q.Scheduled)
+			}
+			if q.TailRows > 0 && s.TailFrom == 0 {
+				add("rank %d request %d states %d tail rows and the step states no TailFrom", r, i, q.TailRows)
+			}
 			scheduled += q.Scheduled
+			if q.TailRows == 0 {
+				tail += q.Scheduled
+			} else {
+				tail += q.TailRows
+			}
 		}
 		if r < len(s.Padded) {
 			if !s.Padded[r].Launch.Valid() {
@@ -190,10 +223,16 @@ func (s StepShape) Validate(ranks, stages int) error {
 			if s.Padded[r].Tokens < scheduled {
 				add("rank %d launches %d tokens but schedules %d; padding never removes tokens", r, s.Padded[r].Tokens, scheduled)
 			}
+			if t := s.Padded[r].TailTokens; t != 0 && (s.TailFrom == 0 || t < tail) {
+				add("rank %d launches %d tail rows for a tail of %d rows (TailFrom %d); padding never removes rows and needs a TailFrom", r, t, tail, s.TailFrom)
+			}
 		}
 	}
 	if s.DecodeQueryLen < 0 {
 		add("DecodeQueryLen is %d", s.DecodeQueryLen)
+	}
+	if s.TailFrom < 0 {
+		add("TailFrom is %d", s.TailFrom)
 	}
 	if s.Drafts.Drafted < 0 || s.Drafts.Verified < 0 {
 		add("drafts %+v", s.Drafts)

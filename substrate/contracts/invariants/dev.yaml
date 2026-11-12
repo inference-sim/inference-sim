@@ -223,8 +223,16 @@
   checks:
   - repo: blis-substrate
     check: >-
-      The metric registry in contracts/, which the simulator reads directly and the dashboard and
-      config search read through inference-sim metrics
+      The metric registry in contracts/ states each metric's scopes and aggregates and refuses a
+      comparison unless metric, scope and aggregate are the same
+    runs: pull_request
+    status: ci
+    test: 'contracts/metrics: TestComparableFiguresRefusesEachDifference'
+    known_bad: 'contracts/metrics: TestComparableFiguresRefusesEachDifference'
+  - repo: inference-sim
+    check: >-
+      inference-sim metrics prints the registry with each metric's scopes and aggregates, which the
+      dashboard and config search read
     runs: pull_request
     status: new
   - repo: inference-sim
@@ -243,11 +251,11 @@
     runs: pull_request
     status: new
   review: null
-  status: new
+  status: partial
   target:
     status: ci
     milestone: 2
-  note: definitions in M1; scope and aggregate in M2
+  note: definitions in M1; scope and aggregate in M2 (the registry and the comparison are in; the inference-sim command and the three consumers are not)
 - id: DEV-9
   section: §8.10
   statement: >-
