@@ -57,6 +57,8 @@ jobs:
         run: '! grep -n "^replace" go.mod'
       - run: go vet ./...
       - run: go build ./...
+      - name: the changed-test selection
+        run: .github/scripts/test-select-changed-tests.sh
       # The packages that hold a Go file this layer changes, against the layer's own base: a layer is
       # judged by its own diff.
       - name: Tests of the packages this layer changes
@@ -66,13 +68,18 @@ jobs:
           set -euo pipefail
           if [ -z "${BASE:-}" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then BASE=HEAD~1; fi
           mb="$(git merge-base "$BASE" HEAD)"
-          pkgs=""
-          for d in $(git diff --name-only --diff-filter=d "$mb" HEAD -- '*.go' | xargs -r -n1 dirname | sort -u); do
-            if p="$(go list -e -f '{{if or .GoFiles .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' "./$d" 2>/dev/null)" && [ -n "$p" ]; then pkgs="$pkgs ./$d"; fi
-          done
-          if [ -z "$pkgs" ]; then echo "no Go package changed"; exit 0; fi
-          echo "testing:$pkgs"
-          go test -count=1 -timeout 30m $pkgs
+          pkgs=""; inpackage=0
+          while read -r kind d; do
+            case "$kind" in
+            inpackage) inpackage=1 ;;
+            direct) if p="$(go list -e -f '{{if or .GoFiles .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' "./$d" 2>/dev/null)" && [ -n "$p" ]; then pkgs="$pkgs ./$d"; fi ;;
+            esac
+          done < <(git diff --name-only --diff-filter=d "$mb" HEAD -- '*.go' | xargs -r -n1 dirname | sort -u | .github/scripts/select-changed-tests.sh)
+          if [ -z "$pkgs" ] && [ "$inpackage" = 0 ]; then echo "no Go package changed"; exit 0; fi
+          if [ -n "$pkgs" ]; then echo "testing:$pkgs"; go test -count=1 -timeout 30m $pkgs; fi
+          # The kernel tests under kerneltests/_inpackage compile only inside blis-substrate's kernel
+          # package; go test of that directory fails on an internal import, so the script runs them.
+          if [ "$inpackage" = 1 ]; then echo "testing: kerneltests/_inpackage, through its script"; kerneltests/scripts/run-inpackage.sh; fi
 
   light-lint:
     name: light - golangci-lint
