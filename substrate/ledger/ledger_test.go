@@ -302,7 +302,6 @@ func TestUnpinnedRevisionsRefused(t *testing.T) {
 		"branch licence": func(s *Sources) { s.Sources[0].Licence.Evidence[0].URL = "https://github.com/o/r/blob/main/LICENSE" },
 		"no spdx":        func(s *Sources) { s.Sources[0].Licence.SPDX = "" },
 		"no evidence":    func(s *Sources) { s.Sources[0].Licence.Evidence = nil },
-		"half sign-off":  func(s *Sources) { s.Sources[0].Licence.SignOff.By = "someone" },
 		"release no sum": func(s *Sources) {
 			s.Sources[0].Revision = Revision{Kind: "release_assets", URL: "https://x/y", Ref: "tag", Commit: strings.Repeat("a", 40)}
 		},
@@ -324,26 +323,44 @@ func goodSources() *Sources {
 	}}}
 }
 
-// X12, D6: a source is redistributable only with an allow-listed licence, no restriction and
-// a ledger owner's sign-off.
+// X12, D6: a source is redistributable when its SPDX identifier is on the allow-list and it
+// states no restriction. No sign-off is involved; NOASSERTION, which says no licence states
+// terms for the data, is not on the list.
 func TestRedistributable(t *testing.T) {
 	l := goodSources().Sources[0].Licence
-	if l.Redistributable() {
-		t.Error("redistributable without a sign-off")
-	}
-	l.SignOff = SignOff{By: "owner", On: "2026-11-04"}
 	if !l.Redistributable() {
-		t.Error("an allow-listed, signed-off licence is not redistributable")
+		t.Error("an allow-listed licence with no restriction is not redistributable")
 	}
 	r := l
 	r.Restrictions = []LicenceQuote{l.Evidence[0]}
 	if r.Redistributable() {
 		t.Error("redistributable despite a stated restriction")
 	}
-	g := l
-	g.SPDX = "GPL-3.0"
-	if g.Redistributable() {
-		t.Error("GPL-3.0 is not on the allow-list")
+	for _, spdx := range []string{"GPL-3.0", "NOASSERTION"} {
+		g := l
+		g.SPDX = spdx
+		if g.Redistributable() {
+			t.Errorf("%s is not on the allow-list", spdx)
+		}
+	}
+}
+
+// The committed entries: the InferenceX results are not redistributable, because neither the
+// licence of the code that runs the benchmarks nor that of the repository that publishes the
+// dump states terms for the results. The forward-pass dataset states a restriction.
+func TestCommittedSourcesRedistributability(t *testing.T) {
+	src, err := LoadSources("../catalog/ledger")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]bool{"inferencex": false, "aisimulate-fpm": false} {
+		s := src.Lookup(id)
+		if s == nil {
+			t.Fatalf("no source %s", id)
+		}
+		if got := s.Licence.Redistributable(); got != want {
+			t.Errorf("%s: redistributable %v, want %v", id, got, want)
+		}
 	}
 }
 

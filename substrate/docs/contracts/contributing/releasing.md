@@ -132,7 +132,6 @@ main or in the repository's settings, and none is a condition of a pull request'
 |---|---|---|
 | Create the `ledger` environment and its `LEDGER_SEED` secret, generate the seed, and record its hash in `ledger.yaml` (D7, `catalog/ledger/README.md`) | A ledger owner | Once per partition version, before the first ledger release. Until then the nightly `release` and `gate-nightly` jobs of `.github/workflows/ledger.yml` fail at their first step. |
 | Create the `config-fetch` environment and its `HF_TOKEN` secret (X12) | A person with admin rights | Once. Until then the nightly config fetch fails. |
-| Sign off a source's licence in `catalog/ledger/sources.yaml` (`sign_off`, D6, X12) | A ledger owner | When a source is added. A source without a sign-off keeps its artefacts out of the repository; no check fails on it. |
 | Push `release/<tag>` and the tag when the bot cannot (LIF-3), and record an X27 waiver in the release notes | A person with write access, the release owner for a waiver | At release |
 | Approve a worse whole-run lane recorded as a defect elsewhere (VAL-6, VAL-11) before a tag | The release owner | At release |
 | Set branch protection, tag rules and merge methods for a repository; sign commits and add the DCO sign-off (X17, LIF-3, X20) | A person with admin rights; the person responsible for a commit | When a repository is set up or a setting changes; signing is encouraged and never checked |

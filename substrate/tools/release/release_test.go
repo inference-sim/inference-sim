@@ -988,7 +988,6 @@ sources:
       spdx: Apache-2.0
       evidence:
         - {url: "https://github.com/o/r/blob/2f0f4cd8606d580567b253d02f3d699fe36db865/LICENSE", sha256: "`+strings.Repeat("a", 64)+`", lines: "1", quote: Apache}
-      sign_off: {by: "", on: ""}
 `)
 	var ids []string
 	var units []ledger.Unit

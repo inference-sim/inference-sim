@@ -13,7 +13,7 @@ check `ledger scan-roles` refuses any other committed file that pairs a unit wit
 | File | What it holds | Written by |
 |---|---|---|
 | `ledger.yaml` | the partition version, the seed's SHA-256 and who made it, and each source's cut-points | a ledger owner |
-| `sources.yaml` | each source, pinned to an exact revision (D3), with its licence, the quoted evidence and a ledger owner's sign-off (X12, D6) | a ledger owner |
+| `sources.yaml` | each source, pinned to an exact revision (D3), with its licence and the quoted evidence (X12, D6) | a ledger owner or an agent |
 | `units/<source>.jsonl.gz` | the units: unit_id, role key, identifying fields, and each measurement's source record and the hash of its measured values. No measured value is committed. | the ingest tool |
 | `reports/<source>.yaml` | the ingest report: records read, units, role keys, duplicates, merged and joined records, and every record left out, by reason | the ingest tool |
 | `legacy-map.yaml` | the legacy table: each legacy unit's side, the units whose records carry both labels, and the new units whose role key holds legacy units | the ingest tool |
@@ -119,6 +119,27 @@ A unit's role is still drawn only by the seed-holding jobs. Until a ledger owner
 seed, no supplement unit, like no other unit, is on the fit or anchor list, and so the dashboard
 cannot score it (COV-2). After the release job publishes the lists, a supplement unit that draws
 anchor is scored and one that draws fit is fitted from, with no case made for it.
+
+## Writing a source's licence entry
+
+A source is redistributable, and its artefacts may be committed, when `licence.spdx` is on the
+allow-list (`contracts/vocab/licence.go`) and the entry lists no restriction. No sign-off is
+needed, so the entry itself must be right:
+
+- Record the licence that governs the data, not the code that produces it or the repository that
+  hosts it. A repository's LICENSE file covers its code unless it says otherwise; a dataset's
+  README or card, or a separate data licence, is the evidence for the data.
+- Quote each file at a commit or dataset revision, never a branch: the URL, the file's SHA-256,
+  the lines and the quotation.
+- Set `spdx` only to a licence that actually covers the data. When no file states terms for the
+  data, or the terms are unclear, set it to `NOASSERTION`, which is not on the allow-list, and
+  say why in `note`. Quote any statement that narrows what may be done under `restrictions`.
+  The artefacts then stay out of the repository. InferenceX is such a source: neither the
+  Apache-2.0 licence of the code that runs the benchmarks nor the GPL-3.0 licence of the
+  repository that publishes the dump speaks of the results.
+- When in doubt, commit only identifiers and hashes, as the unit lists do.
+- Discuss anything unclear with the person you are working with, and record the conclusion in the
+  entry's `note`.
 
 ## Changing how identities are computed
 

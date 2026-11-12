@@ -222,7 +222,7 @@ type Asset struct {
 	SHA256 string `yaml:"sha256"`
 }
 
-// Licence is a source's licence, with the evidence and a ledger owner's sign-off (X12, D6).
+// Licence is a source's licence, with the evidence that decides whether its data may be committed (X12, D6).
 type Licence struct {
 	// SPDX is the identifier the source's own licence file states.
 	SPDX     string         `yaml:"spdx"`
@@ -231,7 +231,6 @@ type Licence struct {
 	// grants. A source with a restriction is not redistributable whatever its licence.
 	Restrictions []LicenceQuote `yaml:"restrictions,omitempty"`
 	Note         string         `yaml:"note,omitempty"`
-	SignOff      SignOff        `yaml:"sign_off"`
 }
 
 // LicenceQuote is a quotation from a file at a pinned revision.
@@ -243,16 +242,11 @@ type LicenceQuote struct {
 	Quote  string `yaml:"quote"`
 }
 
-// SignOff is filled by a ledger owner who has read the evidence. An agent never fills it.
-type SignOff struct {
-	By string `yaml:"by"`
-	On string `yaml:"on"`
-}
-
 // Redistributable reports whether the source's artefacts may be committed: its licence is on
-// the allow-list, it states no restriction, and a ledger owner has signed it off (D6, X12).
+// the allow-list, and it states no restriction (D6, X12). NOASSERTION, the identifier for a source whose licence
+// states no terms for its data, is not on the allow-list.
 func (l Licence) Redistributable() bool {
-	return vocab.LicenceRedistributable(l.SPDX) && len(l.Restrictions) == 0 && l.SignOff.By != "" && l.SignOff.On != ""
+	return vocab.LicenceRedistributable(l.SPDX) && len(l.Restrictions) == 0
 }
 
 // Unpinned names the revisions D3 refuses, compared without regard to case.
@@ -455,12 +449,6 @@ func (l Licence) check(at string) error {
 		if err := q.check(qat); err != nil {
 			errs = append(errs, err)
 		}
-	}
-	if (l.SignOff.By == "") != (l.SignOff.On == "") {
-		errs = append(errs, fmt.Errorf("%s.sign_off: by and on are filled together", at))
-	}
-	if l.SignOff.On != "" && !isoDate.MatchString(l.SignOff.On) {
-		errs = append(errs, fmt.Errorf("%s.sign_off.on: %q is not YYYY-MM-DD", at, l.SignOff.On))
 	}
 	return errors.Join(errs...)
 }

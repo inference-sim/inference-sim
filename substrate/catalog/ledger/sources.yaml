@@ -1,9 +1,21 @@
 # The ledger's data sources (design §10.1), each pinned to an exact revision (D3), with its
-# licence as the source's own files state it (X12, D6). Each quotation names the file at a
-# commit or dataset revision, its SHA-256 and its lines. sign_off is filled by a ledger owner
-# who has read the evidence; an agent never fills it. A source is redistributable only when
-# its licence is on the allow-list (contracts/vocab/licence.go), it states no restriction, and
-# a ledger owner has signed it off.
+# licence (X12, D6). A source is redistributable, and its artefacts may be committed, only when
+# its licence.spdx is on the allow-list (contracts/vocab/licence.go) and it lists no
+# restriction. Nothing else grants it, so write an entry with care:
+#
+#   - Record the licence that governs the DATA, not the code that produces it or the
+#     repository that hosts it. A repository's LICENSE file covers its code unless it says
+#     otherwise; a dataset's README or card, or a separate data licence, is the evidence for
+#     the data.
+#   - Quote each file at a commit or dataset revision, never a branch: the URL, the file's
+#     SHA-256, the lines and the quotation.
+#   - Set spdx only to a licence that actually covers the data. When no file states terms for
+#     the data, or the terms are unclear, set spdx to NOASSERTION, which is not on the
+#     allow-list, say why in note, and quote any statement that narrows what may be done under
+#     restrictions. The artefacts then stay out of the repository.
+#   - When in doubt, commit only identifiers and hashes, as the unit lists do.
+#   - Discuss anything unclear with the person you are working with, and record the conclusion
+#     in the entry's note.
 kind: LedgerSources
 sources:
   - id: inferencex
@@ -66,8 +78,8 @@ sources:
       # The dump is published by SemiAnalysisAI/InferenceX-app, whose licence file is GPL-3.0.
       # Neither file speaks of the benchmark results themselves, and no other terms for the
       # data were found. The unit list commits identifying fields and hashes, not measured
-      # values. Whether the results are redistributable is the ledger owner's sign-off.
-      spdx: Apache-2.0
+      # values.
+      spdx: NOASSERTION
       evidence:
         - url: https://github.com/SemiAnalysisAI/InferenceX/blob/522f0e9f1f3fad73d4c918e33262af5e2f4b71f3/LICENSE
           sha256: de5f554688f5c9d4339131b598759fa3151d41adf5dec3104dccaa0ebbbe0602
@@ -81,8 +93,9 @@ sources:
           quote: "GNU GENERAL PUBLIC LICENSE / Version 3, 29 June 2007"
       note: >-
         The code that runs the benchmarks is Apache-2.0 and the repository that publishes the
-        dump is GPL-3.0; neither licence file states terms for the benchmark results.
-      sign_off: {by: "", on: ""}
+        dump is GPL-3.0; neither licence file states terms for the benchmark results, so the
+        data's licence is NOASSERTION and its values are never committed. The unit lists hold
+        identifiers and hashes only.
 
   - id: aisimulate
     title: NVIDIA AISimulate operator sweeps (ai-dynamo/aisimulate, aisimulate_core/systems/data)
@@ -130,7 +143,6 @@ sources:
       note: >-
         Lines 3-8 of the same file except one vendored config.json, which is MIT. GitHub reports
         the repository's licence as NOASSERTION because of that preamble.
-      sign_off: {by: "", on: ""}
 
   - id: aisimulate-fpm
     title: NVIDIA forward-pass dataset on Hugging Face (nvidia/aisimulate-fpm-dataset)
@@ -166,4 +178,3 @@ sources:
         The LICENSE file is the AISimulate code licence, word for word (same SHA-256). The README
         says the dataset has no approved redistribution licence, although the dataset is public at
         this revision.
-      sign_off: {by: "", on: ""}
