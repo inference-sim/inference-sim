@@ -61,6 +61,7 @@ Three commands print what the applications would otherwise copy, and hold no lis
 - `blis metrics` prints the metric registry with each metric's scopes and aggregates (`max` and `min`) and which direction is better; `--json` prints
   the registry's own records. A figure is compared with another only when its metric, scope and
   aggregate are all the same.
+- `blis router-configs [--json] [--file <name>]` prints the reference router (EndpointPicker) configuration files, and their index, that the pinned router fork ships; see [Configuration: Router](../reference/configuration.md#router).
 
 `--catalog <dir>` (or `BLIS_CATALOG`) names a directory with the layout of blis-substrate's
 `catalog/` that replaces the embedded catalog whole. `--registry <dir>` (or `BLIS_REGISTRY`)
