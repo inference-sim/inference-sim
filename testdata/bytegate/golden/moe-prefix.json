@@ -14,8 +14,8 @@
     },
     "registry": {
       "source": "path",
-      "hash": "9ae4f222b226388657db223975ba5cc3af19833bcceea877680ffba06599a5d4",
-      "combined_hash": "9ae4f222b226388657db223975ba5cc3af19833bcceea877680ffba06599a5d4"
+      "hash": "8dbcf3b85eed842f2bc798b34d2b95716fc58117750f4164d869b26770353fe0",
+      "combined_hash": "8dbcf3b85eed842f2bc798b34d2b95716fc58117750f4164d869b26770353fe0"
     },
     "released_data": false,
     "build": "unreleased"
@@ -874,9 +874,9 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.13.1-0.20261112134016-6faaccf8f1a2",
-    "router": "v1.0.0-blis.3.0.20261111220635-dbe130dcc286",
-    "engine_module": "v0.32.1-0.20261112145300-28deab082a2f"
+    "substrate": "v0.14.0",
+    "router": "v1.0.0-blis.3.0.20261112233231-2a886db5d1be",
+    "engine_module": "v0.32.1-0.20261112233704-33455e4cb2d5"
   },
   "window": {
     "start_us": 49999,
@@ -2605,20 +2605,20 @@
           },
           {
             "KernelMatch": "unkeyed",
-            "Method": "transferred",
+            "Method": "assumed",
             "Name": "gemm_eps_max_w8a16_mxfp8",
             "Primitive": "gemm",
             "Running": "",
-            "Scope": "hardware: h100; transferred from hardware=h100",
+            "Scope": "hardware: h100",
             "Set": "cost-model-primitives"
           },
           {
             "KernelMatch": "unkeyed",
-            "Method": "transferred",
+            "Method": "assumed",
             "Name": "gemm_m_half_w8a16_mxfp8",
             "Primitive": "gemm",
             "Running": "",
-            "Scope": "hardware: h100; transferred from hardware=h100",
+            "Scope": "hardware: h100",
             "Set": "cost-model-primitives"
           },
           {
@@ -2695,10 +2695,9 @@
           }
         ],
         "method_counts": {
-          "assumed": 39,
+          "assumed": 41,
           "measured": 105,
           "not_charged": 1,
-          "transferred": 2,
           "vendor_spec": 14
         },
         "routing": {
