@@ -44,7 +44,7 @@
   }
  },
  "provenance": {
-  "blis_vllm_commit": "76b014c19b7262f8b2d20769205832a0a07e8ac6",
+  "blis_vllm_commit": "642df9bbb14adfab8453451d3532f98c796a3218",
   "engine": {
    "connector": "NixlConnector",
    "data_parallel_size": 4,
@@ -95,10 +95,10 @@
   "oracle_inputs": {
    "oracle/mocks.json": "dafa77943a3eee4bcba1beb5aaea6416a1eac7b67bcdb176fb86afc892b1bf0a",
    "oracle/requirements.lock": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
-   "oracle/run_connector.py": "7471e7ae443642a6946b54baed49c9cfe836b63c87151a78eb19eae60052038f",
+   "oracle/run_connector.py": "67d01c744378a20b0f3adbd40c25dd89c4b79dd76cd0de110f5617b10e3e4a42",
    "oracle/run_dp.py": "c431d3e1d37ff5fb48ac835400682f50093320b4debb4dad0037b76ab460dee6",
    "oracle/run_enginecore.py": "52f5ca457d4f046679d0ca364c599a8015a4c30c8cf197a5eaf0b8829e4e1a71",
-   "oracle/run_scheduler.py": "2f5a9afbb07c8030c8017363a421b41853da24d9c57101e02402b7398c1213c3",
+   "oracle/run_scheduler.py": "9357adb72ce4e89b9dcbfa6f68ac29f7dffa92e22b384f7dac522208ee74e672",
    "oracle/scenarios-dp-nixl/dp4-nixl-decode-lb.json": "c980bf385bb922c083292fa9f14ceebd1c65c650b9e5cfd09543398988447b4c"
   },
   "platform": "linux-x86_64",
