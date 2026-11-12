@@ -167,7 +167,8 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         import dataclasses  # noqa: E402
 
         vllm_config = dataclasses.replace(vllm_config, scheduler_config=dataclasses.replace(
-            vllm_config.scheduler_config,
+            vllm_config.scheduler_config, max_model_len=cfg["max_model_len"],
+            is_encoder_decoder=vllm_config.model_config.is_encoder_decoder,
             disable_hybrid_kv_cache_manager=bool(cfg["disable_hybrid_kv_cache_manager"])))
     async_sched = bool(cfg.get("async_scheduling", False))
     pp = int(cfg.get("pipeline_parallel_size", 1))
