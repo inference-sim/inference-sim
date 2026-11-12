@@ -256,9 +256,10 @@ Two endpoints serve about twice the rate of one; a pool that used one would give
 reproduced. At 1 to 8 clients (`alternation.csv`, 2P3D) round-robin served 4.66, 9.30, 16.84 and 24.35 requests per second at 1, 2, 4 and 8 clients.
 `TestTheEvidenceDoesNotShowAStarvedPrefillPool` pins the comparison.
 
-Why it does not show: the hosted scheduler puts the candidates in a seeded random order before each pick, so the
-choice among the tied endpoints is random and not a cycle, and a pool of even size is used in full (the router fork's
-`reference-configs/README.md`, "What round-robin does", tests pools of two, three and four). BLIS's Result lists decode endpoints in `TargetDistribution` and not prefill
+Why it does not show: in the router tree the entry cites (`inference-sim/llm-d-router` at
+`03246be994224ef031dfdafb966c54f60d01e933`, and no other release) the hosted scheduler puts the candidates in a seeded
+random order before each pick (`pkg/epp/scheduling/scheduler_profile.go` 363-370), so the choice among the tied
+endpoints is random and not a cycle (`picker/maxscore/picker.go` 108-117), and a pool of even size is used in full. BLIS's Result lists decode endpoints in `TargetDistribution` and not prefill
 endpoints, so a prefill pick cannot be read back; recording both pools is a change to the simulator. So this table
 shows the pool used, and not which endpoint served a request.
 

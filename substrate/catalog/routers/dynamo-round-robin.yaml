@@ -35,8 +35,10 @@ difference:
       but they reach it in a seeded random order in a hosted runtime, so the choice is uniformly
       random, and tests of pools of two, three and four reach every endpoint in near equal counts
       and not in a cycle. The router has no policy that rotates strictly. The random picker is
-      equally close, and the first group of the bound is against it.
-    evidence: [1, 8]
+      equally close, and the first group of the bound is against it. These statements are about
+      inference-sim/llm-d-router at commit 03246be994224ef031dfdafb966c54f60d01e933 and no other
+      release; the policy list states none of them.
+    evidence: [1, 8, 9, 10]
   - aspect: frontends
     text: >-
       A Dynamo deployment can run several frontend processes, each with router objects and
@@ -455,3 +457,17 @@ evidence:
     path: reference-configs/README.md
     lines: "66-93"
     claim: The router has no policy that rotates strictly, one endpoint per request. Round-robin is the max-score picker with no scorer; the candidates reach the picker in a seeded random order in a hosted runtime, so the choice is uniformly random among the tied endpoints, as the random picker's is; tests of pools of two, three and four show near equal counts and no cycle.
+  - side: llm-d
+    field: policy
+    repository: inference-sim/llm-d-router
+    commit: 03246be994224ef031dfdafb966c54f60d01e933
+    path: pkg/epp/scheduling/scheduler_profile.go
+    lines: "363-370"
+    claim: In a hosted runtime the scheduler sorts the scored endpoints by identifier and shuffles them with a seeded source before the picker sees them; otherwise the order is Go map order. The tie order a picker rotates is therefore random.
+  - side: llm-d
+    field: policy
+    repository: inference-sim/llm-d-router
+    commit: 03246be994224ef031dfdafb966c54f60d01e933
+    path: pkg/epp/framework/plugins/scheduling/picker/maxscore/picker.go
+    lines: "108-117"
+    claim: The max-score picker rotates each group of equal-score endpoints by a counter drawn once per pick; with the candidates in the random order above, the choice among tied endpoints is random, not a cycle.
