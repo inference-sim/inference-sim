@@ -159,6 +159,16 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         # built again with the same arguments and no layout.
         vllm_config = dataclasses.replace(vllm_config, cache_config=CacheConfig(
             block_size=block_size, gpu_memory_utilization=0.9, cache_dtype="auto", enable_prefix_caching=True))
+    if "disable_hybrid_kv_cache_manager" in cfg:
+        # The flag is a SchedulerConfig field (vllm/config/scheduler.py:182@5df63a72). The helper's
+        # VllmConfig has already resolved it to False for NIXL (vllm/config/vllm.py:2170-2207), so
+        # the config is built again by vLLM's own constructors with the scenario's value, as
+        # `vllm serve --disable-hybrid-kv-cache-manager` builds it; nothing is written into an object.
+        import dataclasses  # noqa: E402
+
+        vllm_config = dataclasses.replace(vllm_config, scheduler_config=dataclasses.replace(
+            vllm_config.scheduler_config,
+            disable_hybrid_kv_cache_manager=bool(cfg["disable_hybrid_kv_cache_manager"])))
     async_sched = bool(cfg.get("async_scheduling", False))
     pp = int(cfg.get("pipeline_parallel_size", 1))
     v2 = bool(cfg.get("use_v2_model_runner", False)) or (bool(spec) and spec["method"] == "dspark")
@@ -663,6 +673,7 @@ def kv_cache_config(cfg: dict, vllm_config):
     register_all_kvcache_specs(vllm_config)
     extra_retained = max(0, vllm_config.num_prefill_lookahead_tokens - 1)
     specs = []
+    layers = {}
     for i, g in enumerate(groups):
         common = {"block_size": cfg["block_size"], "num_kv_heads": 1, "head_size": 1, "dtype": torch.float32}
         if g["kind"] == "full":
@@ -672,7 +683,22 @@ def kv_cache_config(cfg: dict, vllm_config):
                                       **common)
         else:
             raise ValueError(f"unknown KV cache group kind {g['kind']!r}")
+        layers[f"layer{i}"] = layer
         specs.append(KVCacheGroupSpec([f"layer{i}"], layer))
+    if vllm_config.scheduler_config.disable_hybrid_kv_cache_manager:
+        # With the flag vLLM promotes every sliding window to full attention before it groups
+        # (get_kv_cache_groups, kv_cache_utils.py:2173-2174, unify_hybrid_kv_cache_specs,
+        # :1799-1822@5df63a72), so the layers form one uniform group (:2185-2189); both calls are
+        # vLLM's own, as run_scheduler.py build_scheduler makes them.
+        from vllm.v1.core.kv_cache_utils import (  # noqa: E402
+            _get_kv_cache_groups_uniform_spec,
+            is_kv_cache_spec_uniform,
+            unify_hybrid_kv_cache_specs,
+        )
+
+        unify_hybrid_kv_cache_specs(layers)
+        assert is_kv_cache_spec_uniform(layers)
+        specs = _get_kv_cache_groups_uniform_spec(layers)
     return KVCacheConfig(num_blocks=cfg["num_blocks"], kv_cache_tensors=[], kv_cache_groups=specs)
 
 

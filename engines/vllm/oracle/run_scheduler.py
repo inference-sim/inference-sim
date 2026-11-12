@@ -165,6 +165,15 @@ def layer_groups(cfg: dict, vllm_config) -> list:
 
 # What layer_groups sized for a scenario stating kv_available_bytes, for run_one's trace.
 pool_sizes: list = []
+# What a scenario stating "expect_groups_error" got from layer_groups: {"error", "groups"}.
+groups_outcome: dict = {}
+
+
+def group_record(g) -> dict:
+    """One KV cache group as the scheduler sees it: the spec class, its block size and page size
+    in bytes, and how many layers share it."""
+    return {"spec": type(g.kv_cache_spec).__name__, "block_size": g.kv_cache_spec.block_size,
+            "page_size_bytes": g.kv_cache_spec.page_size_bytes, "layers": len(g.layer_names)}
 
 
 def main() -> None:
@@ -223,6 +232,17 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     block_size = cfg["block_size"]
 
     scheduler = build_scheduler(helpers, create_scheduler, model, cfg)
+    if cfg.get("expect_groups_error"):
+        # Grouping only. groups_error is null when vLLM grouped the layers, so a surprise is
+        # recorded and not hidden; groups then holds what it built.
+        trace = {"provenance": provenance(vllm_root, scenario_path), "scenario": sc["name"],
+                 "steps": [], "finished": {}, "groups_error": groups_outcome["error"]}
+        if groups_outcome["groups"] is not None:
+            trace["groups"] = groups_outcome["groups"]
+        if pool_sizes:
+            trace["kv_pool"] = pool_sizes[-1]
+        pool_sizes.clear()
+        return trace
     spec = cfg.get("speculative")
     # Draft tokens the mock proposes: K placeholder ids (any non-negative value works; only the
     # count reaches a scheduling decision, and acceptance is the scenario's input).
@@ -394,9 +414,14 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict, extra: dic
     # SchedulerConfig fields the scenario states by name (the inertness proofs, oracle/inertness.py,
     # vary a field this way); vLLM's own class validates them.
     sched_extra.update(cfg.get("scheduler_config", {}))
+    if cfg.get("kv_layers") and "disable_hybrid_kv_cache_manager" in cfg:
+        # vLLM's own field, which get_kv_cache_groups reads (kv_cache_utils.py:2173@5df63a72). A
+        # "kv_groups" scenario states it too, but there the promotion is called directly below.
+        sched_extra["disable_hybrid_kv_cache_manager"] = cfg["disable_hybrid_kv_cache_manager"]
     real_vllm_config, real_scheduler_config = helpers.VllmConfig, helpers.SchedulerConfig
 
     built = {}
+    groups_outcome.clear()
 
     def vllm_config(**kw):
         if spec:
@@ -430,6 +455,17 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict, extra: dic
         if cfg.get("kv_layers"):
             # A dashboard model's attention layers, each with its own spec as the model builds it
             # (layer_specs), grouped by vLLM's own get_kv_cache_groups.
+            if cfg.get("expect_groups_error"):
+                # The scenario asks what grouping does, not how the scheduler runs on it: the
+                # outcome (groups, or the exception) goes to groups_outcome, and the Scheduler is
+                # built on the helper's own group so that construction does not decide anything.
+                try:
+                    got = layer_groups(cfg, built["config"])
+                    groups_outcome.update(error=None, groups=[group_record(g) for g in got])
+                except Exception as e:  # noqa: BLE001 - the exception is what is recorded
+                    groups_outcome.update(error={"type": type(e).__name__, "message": str(e)}, groups=None)
+                return real_kv_cache_config(num_blocks=num_blocks, kv_cache_tensors=kv_cache_tensors,
+                                            kv_cache_groups=kv_cache_groups)
             return real_kv_cache_config(num_blocks=num_blocks, kv_cache_tensors=kv_cache_tensors,
                                         kv_cache_groups=layer_groups(cfg, built["config"]))
         if not groups:
