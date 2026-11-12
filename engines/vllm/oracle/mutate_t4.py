@@ -193,6 +193,10 @@ EQUIVALENT = {
     # NIXL restores every group, so a landed load carries the window; only a failed load with
     # tokens left valid would replay, and a NIXL failure is reported for the whole request, which
     # leaves none (nixl/base_worker.py:2880-2889, 2910-2914).
+    # The block trim applies to a load that carries no window; NIXL restores every group, so the trim
+    # is never reached beside NIXL and core/connector/nixl's TestALoadWithoutTheWindowIsTrimmedAndReplayed
+    # holds it with a connector that restores none.
+    "N41": "a NIXL load always carries the window, so the trim is not reached",
     "N44": "a NIXL load that lands carries the window, and a failed one keeps no tokens",
 }
 
