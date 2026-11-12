@@ -96,6 +96,17 @@ the `plan.PoolPlan` the transfer is priced against, and `PoolPlan.CheckTransfer`
 a device the plan does not list or to a node the pool does not have. `env.DemandFor` is the
 simulator's side: it runs both checks and then calls `TransferDemand` with the engine's `Move`.
 
+Admission has the same split. `plan.HostPlan.Admission` is the shape of the queue a request waits
+in before the engine admits it: `Servers` independent first-in first-out queues of
+`WorkersPerServer` servers each, stated by the engine from its own settings. `Environment.HostDemand`
+is what a request of a given prompt length asks of it: `Service`, the time it holds one server, and
+`Delay`, the time it only waits, which sum to the kernel's `AdmissionOverhead`. The simulator
+schedules a request as `done = Admit(arrival, Service) + Delay` on a queue of that shape, and knows
+nothing of the engine's own names for the servers. `Delay` is the part of the overhead that is not
+known to be work a server does (the registry gives the per-request term as a latency intercept of
+unknown origin), so charging it as `Delay` is an assumption with a bound on each side: all of it as
+`Service` is the serial model, none of it the concurrent one.
+
 `enginetest.Drive` runs those checks on every started transfer, and `Options.Boundary` takes
 each one on across the simulator's side (`envtest.Boundary` does it with an Environment). An
 engine whose transfers cannot be demanded fails there, not as a zero price in a run.

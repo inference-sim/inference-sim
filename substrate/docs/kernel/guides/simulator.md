@@ -56,6 +56,7 @@ The kernel's other methods price the work around a step:
 | Method | When |
 |---|---|
 | `AdmissionOverhead(promptTokens)` | When a request arrives, before it can be scheduled |
+| `AdmissionDemand(promptTokens)` | When a request arrives: how long it holds a server of the admission queue and how long it only waits |
 | `OutputTokenOverhead()` | For each token a request emits |
 | `CompletionOverhead()` | When a request finishes |
 | `PDTransferTime(tokens, from, to)` | When a request's KV cache moves from the prefill pool to the decode pool |

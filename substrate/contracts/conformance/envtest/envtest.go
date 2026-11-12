@@ -37,6 +37,11 @@ type Reference struct {
 	BytesPerSecond float64
 	// BytesPerToken is the KV bytes a transferred token carries.
 	BytesPerToken units.Bytes
+	// AdmissionPerToken and AdmissionDelay price a request's admission: it holds a server of
+	// the plan's admission queue for AdmissionPerToken per prompt token and waits AdmissionDelay
+	// besides.
+	AdmissionPerToken time.Duration
+	AdmissionDelay    time.Duration
 }
 
 var _ env.Environment = (*Reference)(nil)
@@ -135,6 +140,17 @@ func (r *Reference) TransferDemand(p plan.PoolPlan, t plan.Transfer) (kernel.Tra
 		Bytes: int64(t.Tokens) * int64(r.BytesPerToken),
 		Links: []kernel.LinkUse{{Link: "ref", BytesPerSecond: r.BytesPerSecond}},
 	}, nil
+}
+
+// HostDemand implements env.Environment.
+func (r *Reference) HostDemand(p plan.PoolPlan, promptTokens int) (kernel.HostDemand, error) {
+	if err := p.Validate(); err != nil {
+		return kernel.HostDemand{}, err
+	}
+	if promptTokens <= 0 {
+		return kernel.HostDemand{}, nil
+	}
+	return kernel.HostDemand{Service: time.Duration(promptTokens) * r.AdmissionPerToken, Delay: r.AdmissionDelay}, nil
 }
 
 // Acceptance implements env.Environment.

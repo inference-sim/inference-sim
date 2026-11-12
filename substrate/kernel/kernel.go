@@ -1916,6 +1916,22 @@ func (k *Kernel) AdmissionOverhead(promptTokens int) time.Duration {
 		time.Duration(float64(k.admissionPerToken)*float64(promptTokens))
 }
 
+// AdmissionDemand splits AdmissionOverhead: the per-token term is the Service a request
+// holds a server of the admission queue for, and the per-request term is the Delay it waits
+// out holding none. The registry's rationale for host_admission_per_request says that term is
+// not tokenisation or templating (those measured 0.0153 and 0.1083 ms in all) but a latency
+// intercept of unknown origin. Treating it as a delay is an assumption: all of it as Service
+// is the bound the model had before, and none of the intercept as Service the bound here.
+func (k *Kernel) AdmissionDemand(promptTokens int) kernel.HostDemand {
+	if promptTokens <= 0 {
+		return kernel.HostDemand{}
+	}
+	return kernel.HostDemand{
+		Service: time.Duration(float64(k.admissionPerToken) * float64(promptTokens)),
+		Delay:   k.admissionPerRequest,
+	}
+}
+
 // OutputTokenOverhead returns host time per emitted token.
 func (k *Kernel) OutputTokenOverhead() time.Duration { return k.outputTokenCost }
 

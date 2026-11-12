@@ -89,6 +89,13 @@ type Kernel interface {
 	// therefore cannot live in a pure function.
 	AdmissionOverhead(promptTokens int) time.Duration
 
+	// AdmissionDemand splits AdmissionOverhead into what a request asks of the host's
+	// admission queue (plan.AdmissionQueue) and what it only waits out: Service is the time
+	// it holds one server of the queue, Delay the time it waits without holding one. Service
+	// plus Delay is AdmissionOverhead. A caller that queues requests holds the server for
+	// Service and then waits Delay; one with no queue waits both.
+	AdmissionDemand(promptTokens int) HostDemand
+
 	// OutputTokenOverhead is per-emitted-token host work: incremental
 	// detokenization and streaming. It runs in the output path rather than the
 	// forward pass, which is why it does not enter StepTime.
@@ -475,3 +482,16 @@ func (b Batch) Validate() error {
 	sort.Strings(bad)
 	return fmt.Errorf("batch: must not be negative: %s", strings.Join(bad, ", "))
 }
+
+// HostDemand is what one request asks of the host's admission queue. Both are zero for a
+// request of no tokens.
+type HostDemand struct {
+	// Service is the time the request holds one server of the queue: work that scales with
+	// the prompt, which the servers do one request at a time each.
+	Service time.Duration
+	// Delay is time the request waits that holds no server: a latency, not work a server does.
+	Delay time.Duration
+}
+
+// Total is the request's whole admission time, Service plus Delay.
+func (d HostDemand) Total() time.Duration { return d.Service + d.Delay }

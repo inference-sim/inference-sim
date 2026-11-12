@@ -3,6 +3,8 @@ package latencykernel
 import (
 	"testing"
 	"time"
+
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
 )
 
 // bruteWindowed counts attention pairs one query at a time, in the kernel's continuum
@@ -124,5 +126,28 @@ func TestAdmissionOverheadIsZeroForNoTokens(t *testing.T) {
 	k := &Kernel{admissionPerToken: 350 * time.Nanosecond, admissionPerRequest: 40 * time.Millisecond}
 	if got := k.AdmissionOverhead(0); got != 0 {
 		t.Fatalf("got %v want 0", got)
+	}
+}
+
+// A request holds a server of the admission queue for the per-token part alone. The
+// per-request term is a delay that holds none, so it must not appear in the Service a queue is
+// charged: charging it there caps a queue of one server at 1/(40 ms) requests a second
+// whatever the prompt length.
+func TestAdmissionDemandSplitsTheOverheadIntoServiceAndDelay(t *testing.T) {
+	k := &Kernel{admissionPerToken: 350 * time.Nanosecond, admissionPerRequest: 40 * time.Millisecond}
+	for _, tokens := range []int{1, 1024, 8192} {
+		d := k.AdmissionDemand(tokens)
+		if want := time.Duration(350 * float64(tokens)); d.Service != want {
+			t.Fatalf("tokens=%d: service %v, want %v", tokens, d.Service, want)
+		}
+		if d.Delay != 40*time.Millisecond {
+			t.Fatalf("tokens=%d: delay %v, want 40ms", tokens, d.Delay)
+		}
+		if d.Total() != k.AdmissionOverhead(tokens) {
+			t.Fatalf("tokens=%d: service plus delay %v is not the admission overhead %v", tokens, d.Total(), k.AdmissionOverhead(tokens))
+		}
+	}
+	if d := k.AdmissionDemand(0); d != (kernel.HostDemand{}) {
+		t.Fatalf("no tokens: got %+v, want none", d)
 	}
 }

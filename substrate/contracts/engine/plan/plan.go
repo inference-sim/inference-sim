@@ -447,6 +447,34 @@ type HostPlan struct {
 	// NativeFrontend is true when request admission and detokenizing run in a compiled
 	// frontend, whose per-token cost differs from an interpreted one's.
 	NativeFrontend bool
+	// Admission is the shape of the queue a request waits in before the engine admits it: the
+	// host work of tokenizing it, which only so many requests do at once. The engine states it
+	// from its own settings; what a request asks of it is the cost model's answer
+	// (kernel.HostDemand). The zero value is no queue.
+	Admission AdmissionQueue
+}
+
+// AdmissionQueue is Servers independent first-in first-out queues, each served by
+// WorkersPerServer servers. A request joins the queues in turn, takes the server of its queue
+// that frees first, and holds it for its HostDemand.Service. WorkersPerServer 0 is no queue: a
+// request waits only its HostDemand.Delay. Servers 0 is one queue.
+type AdmissionQueue struct {
+	Servers          int
+	WorkersPerServer int
+}
+
+// Enabled reports whether requests queue for a server.
+func (q AdmissionQueue) Enabled() bool { return q.WorkersPerServer > 0 }
+
+// Queues is the number of independent queues: Servers, at least one.
+func (q AdmissionQueue) Queues() int { return max(q.Servers, 1) }
+
+// Validate refuses a negative count.
+func (q AdmissionQueue) Validate() error {
+	if q.Servers < 0 || q.WorkersPerServer < 0 {
+		return fmt.Errorf("admission queue has %d servers of %d workers; neither is negative", q.Servers, q.WorkersPerServer)
+	}
+	return nil
 }
 
 // ResidentTensor is one tensor resident on each rank after weight post-processing.

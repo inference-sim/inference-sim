@@ -271,6 +271,9 @@ func CheckPrices(k kernel.Kernel) error {
 			return fmt.Errorf("a host overhead is %v", f)
 		}
 	}
+	if d, a := k.AdmissionDemand(1024), k.AdmissionOverhead(1024); d.Service < 0 || d.Delay < 0 || d.Total() != a {
+		return fmt.Errorf("the admission demand is service %v and delay %v, which are not two non-negative parts of the admission overhead %v", d.Service, d.Delay, a)
+	}
 	return nil
 }
 

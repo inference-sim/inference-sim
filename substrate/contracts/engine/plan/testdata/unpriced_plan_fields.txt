@@ -88,3 +88,6 @@ Transfer.Kind # not yet priced: the cost model reads a plan in the boundary tran
 Transfer.Tier # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 Transfer.To # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 Transfer.Tokens # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+AdmissionQueue.Servers # not priced: the simulator's admission queue reads it as a count of queues; the cost model prices the demand a request makes of one (kernel.HostDemand)
+AdmissionQueue.WorkersPerServer # not priced: the simulator's admission queue reads it as a count of servers; the cost model prices the demand a request makes of one (kernel.HostDemand)
+HostPlan.Admission # not priced: the simulator's admission queue reads the shape; the cost model prices the demand (kernel.HostDemand)

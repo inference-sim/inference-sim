@@ -7,6 +7,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/engine/env"
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"github.com/inference-sim/blis-substrate/contracts/units"
 )
 
@@ -61,6 +62,13 @@ func Check(t testing.TB, e env.Environment, cases []Case) {
 			t.Errorf("%s: Memory: %v", c.Name, err)
 		} else if m2, _ := e.Memory(c.Plan); m1 != m2 {
 			t.Errorf("%s: Memory differs between calls: %+v %+v", c.Name, m1, m2)
+		}
+		if h, err := e.HostDemand(c.Plan, 1024); err != nil {
+			t.Errorf("%s: HostDemand: %v", c.Name, err)
+		} else if h.Service < 0 || h.Delay < 0 {
+			t.Errorf("%s: HostDemand is %+v; neither part is negative", c.Name, h)
+		} else if z, _ := e.HostDemand(c.Plan, 0); z != (kernel.HostDemand{}) {
+			t.Errorf("%s: a request of no tokens demands %+v; it demands nothing", c.Name, z)
 		}
 		if c.Transfer.Tokens > 0 {
 			d, err := e.TransferDemand(c.Plan, c.Transfer)

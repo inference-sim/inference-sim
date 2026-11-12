@@ -19,6 +19,9 @@ func (p PoolPlan) Validate() error {
 	if strings.TrimSpace(p.Hardware) == "" {
 		add("Hardware is empty; a plan names its catalog chip")
 	}
+	if err := p.Host.Admission.Validate(); err != nil {
+		add("Host.Admission: %v", err)
+	}
 	l := p.Layout
 	for name, w := range map[string]int{"Tensor": l.Tensor, "Pipeline": l.Pipeline, "Data": l.Data,
 		"Expert": l.Expert, "Context": l.Context, "RanksPerNode": l.RanksPerNode, "Nodes": l.Nodes} {

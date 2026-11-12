@@ -439,3 +439,20 @@ func TestACacheDtypeThatAgreesWithItsFormatValidates(t *testing.T) {
 		}
 	}
 }
+
+func TestAnAdmissionQueueIsRefusedWhenACountIsNegative(t *testing.T) {
+	p := goodPlan()
+	p.Host.Admission = AdmissionQueue{Servers: 2, WorkersPerServer: 1}
+	if err := p.Validate(); err != nil {
+		t.Fatalf("a queue of two servers of one worker was refused: %v", err)
+	}
+	for _, q := range []AdmissionQueue{{Servers: -1, WorkersPerServer: 1}, {Servers: 1, WorkersPerServer: -1}} {
+		p.Host.Admission = q
+		if p.Validate() == nil {
+			t.Errorf("%+v was accepted", q)
+		}
+	}
+	if (AdmissionQueue{}).Enabled() || (AdmissionQueue{}).Queues() != 1 {
+		t.Error("the zero queue is not one uncontended queue")
+	}
+}
