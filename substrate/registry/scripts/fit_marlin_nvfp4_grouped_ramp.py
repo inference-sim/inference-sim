@@ -86,10 +86,12 @@ EPS_GRID = np.round(np.arange(0.001, 1.0005, 0.001), 3)
 MH_GRID = np.arange(1, 4097)
 
 
-def committed(name: str, chip: str) -> float:
+def committed(name: str, chip: str, method: str | None = None) -> float:
+    """The one part-wide entry of `name`; `method` picks among entries that share a name and scope."""
     doc = yaml.safe_load(SET_PATH.read_text())
     hits = [b["value"] for e in doc["coefficients"] for n, b in e.items()
-            if n == name and b["scope"] == {"hardware": [chip]}]
+            if n == name and b["scope"] == {"hardware": [chip]}
+            and (method is None or b.get("method") == method)]
     if len(hits) != 1:
         raise SystemExit(f"{chip}: expected one part-wide {name}, found {len(hits)}")
     return float(hits[0])
@@ -104,8 +106,11 @@ class Part:
         hw = yaml.safe_load((CATALOG / "hardware" / f"{chip}.yaml").read_text())
         self.peak = float(hw["TFlopsPeak"]) * 1e12
         self.bw = float(hw["BwPeakTBs"]) * 1e12 * committed("hbm_derate", chip)
-        self.sh = (committed("gemm_eps_max_w8a16_mxfp8", chip),
-                   committed("gemm_m_half_w8a16_mxfp8", chip))
+        # The pair was fitted with the shared expert on the assumed upper-bound MXFP8 ramp. The
+        # transferred Marlin ramp of the same name and scope, added later, must not change what
+        # this writer derives: a refit on it is a separate, reviewed change.
+        self.sh = (committed("gemm_eps_max_w8a16_mxfp8", chip, "assumed"),
+                   committed("gemm_m_half_w8a16_mxfp8", chip, "assumed"))
         self.mx = (committed("gemm_eps_max_w4a16_mxfp4_grouped", chip),
                    committed("gemm_m_half_w4a16_mxfp4_grouped", chip))
 
