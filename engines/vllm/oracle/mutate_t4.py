@@ -19,12 +19,12 @@ MUTANTS = [
      "if n := s.remoteTokenCount(len(r.Prompt)) - localComputed; n > 0 {",
      "if n := s.remoteTokenCount(len(r.Prompt)); n > 0 {"),
     ("N2", "the prefiller holds a finished request's blocks", "core/connector/nixl/nixl.go",
-     "\tif delay {\n\t\ts.send[r.ID] = true\n\t}\n\treturn delay", "\treturn false"),
+     "\tif delay {\n\t\ts.send[r.ID] = true\n", "\tif false {\n\t\ts.send[r.ID] = true\n"),
     ("N3", "an aborted prefiller request frees at once", "core/connector/nixl/nixl.go",
      "\tif r.Status != sched.FinishedLength && r.Status != sched.FinishedStopped {\n\t\ts.notProcessed[r.ID] = true\n\t\treturn false\n\t}",
      "\tif r.Status != sched.FinishedLength && r.Status != sched.FinishedStopped {\n\t\ts.notProcessed[r.ID] = true\n\t}"),
     ("N4", "a full-prompt landing recomputes its last token", "core/sched/connector.go",
-     "\tif r.NumComputed == r.NumTokens() {\n\t\tr.NumComputed = r.NumTokens() - 1\n\t}", ""),
+     "\t} else if r.NumComputed == r.NumTokens() {\n\t\tr.NumComputed = r.NumTokens() - 1\n\t}", "\t}"),
     ("N5", "a failed load with nothing valid frees its blocks", "core/sched/connector.go",
      "\t\t} else {\n\t\t\ts.KV.Free(r.ID)\n\t\t}", "\t\t}"),
     ("N6", "a landed load's blocks are cached at promotion", "core/sched/connector.go",
@@ -82,8 +82,7 @@ MUTANTS = [
     ("N26", "a prefiller truncates a remote-decode prompt by the backoff", "core/connector/nixl/nixl.go",
      "\tif p := r.Transfer; p != nil && p.DoRemoteDecode {\n\t\ts.truncateForPrefill(r)\n\t}", "\t_ = r"),
     ("N27", "the backoff is the drafter's prefill lookahead less one", "core/connector/nixl/nixl.go",
-     "func Backoff(spec sched.Spec) int { return max(0, spec.PrefillLookahead-1) }",
-     "func Backoff(spec sched.Spec) int { return 0 }"),
+     "\treturn max(floor, spec.PrefillLookahead-1)", "\treturn floor"),
     ("N28", "the window trim is on the processed-token basis", "core/sched/connector.go",
      "s.KV.RemoveSkipped(r.ID, max(0, r.NumComputed-r.numInFlight))", "s.KV.RemoveSkipped(r.ID, r.NumComputed)"),
     ("N29", "a KV consumer with batches in flight defers block frees", "core/sched/scheduler.go",
@@ -112,6 +111,19 @@ MUTANTS = [
      "\tfor _, g := range blockIDs {\n\t\tdelay = delay || len(g) > 0\n\t}", "\tdelay = len(blockIDs[0]) > 0"),
     ("N39", "a truncated prefiller request samples one token", "core/connector/nixl/nixl.go",
      "\tr.MaxTokens = 1\n\tr.Transfer.PSideTruncated = true", "\tr.Transfer.PSideTruncated = true"),
+    # NIXL beside DeepSeek V4.1's layout (bounded-replay windows, rings, groups of their own block size).
+    ("N40", "a load that restores the replay window replays nothing", "core/sched/scheduler.go",
+     "\tif len(replay) == 0 || !ok {", "\tif len(replay) == 0 || !ok || true {"),
+    ("N41", "a load without the window is cut to a block boundary", "core/sched/scheduler.go",
+     "\t\t\t\t\texternal -= external % s.KV.BlockSize()\n", ""),
+    ("N42", "the prefill backoff is at least one beside a replay window", "core/connector/nixl/nixl.go",
+     "\t\tfloor = 1\n", "\t\tfloor = 0\n"),
+    ("N43", "a pull and a handoff keep a sliding window's last blocks only", "core/connector/nixl/nixl.go",
+     "\t\t\tblocks = blocks[len(blocks)-n:]\n", ""),
+    ("N44", "a landed load replays the window it did not carry", "core/sched/connector.go",
+     "!loadFailed && s.loadRestoresReplayWindow(r)", "true"),
+    ("N45", "a load whose hit is no longer than the window is kept when it carries the window", "core/sched/scheduler.go",
+     "!windowLoaded && 0 < numComputed && numComputed <= replay", "0 < numComputed && numComputed <= replay"),
     # The connector registry (#2021 B10): an entry is earned only by a diff test.
     ("R1", "an entry's model is one a diff test checks", "registry/connectors.yaml",
      "  NixlPullConnector:\n    upstream: KVConnectorBase_V1\n    behaves_like: nixl-pull\n",
@@ -178,6 +190,10 @@ EQUIVALENT = {
     # delay decision reads any group (pull_scheduler.py:248), and group 0 is non-empty whenever
     # another is (allocate_slots gives every group the request's slots).
     "N38": "group 0 holds a block whenever any group does",
+    # NIXL restores every group, so a landed load carries the window; only a failed load with
+    # tokens left valid would replay, and a NIXL failure is reported for the whole request, which
+    # leaves none (nixl/base_worker.py:2880-2889, 2910-2914).
+    "N44": "a NIXL load that lands carries the window, and a failed one keeps no tokens",
 }
 
 

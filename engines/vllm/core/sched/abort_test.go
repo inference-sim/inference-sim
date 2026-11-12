@@ -103,12 +103,18 @@ func (c *hmaConnector) FinishedAllGroups(r *Request, ids [][]int) bool {
 }
 func (c *hmaConnector) AfterAlloc(_ *Request, b AllocatedBlocks, _ int) { c.alloced = b }
 
+// loadingHMA is a SupportsHMA connector that states the groups its load restores: all of them.
+type loadingHMA struct{ hmaConnector }
+
+func (loadingHMA) LoadedGroups(_ *Request, all []int) []int { return all }
+
 // A connector is refused where it is not modelled for it, each refusal naming the issue that
 // brings it, and installed where its Capabilities state it is diff-tested: several KV cache
 // groups only for a SupportsHMA connector (vLLM turns the hybrid manager off for any other,
 // vllm/config/vllm.py:2170-2192@5df63a72), drafters and the batch queue only where stated, and
 // never beside a group kind the connector oracle has not run (a bounded-replay window, a ring,
-// a group of its own block size).
+// a group of its own block size) unless the connector states PackedGroups and the groups its load
+// restores (GroupLoader).
 func TestSetConnectorRefusesWhatItDoesNotModel(t *testing.T) {
 	base := Config{MaxNumSeqs: 4, MaxNumBatchedTokens: 64, BlockSize: 4, NumBlocks: 40, MaxModelLen: 128,
 		EnableChunkedPrefill: true, Policy: FCFS, EnablePrefixCaching: true, ReserveFullSequence: true}
@@ -118,6 +124,15 @@ func TestSetConnectorRefusesWhatItDoesNotModel(t *testing.T) {
 	drafter := func(c *Config) { c.Spec = ResolveSpec(SpecOptions{Method: "dspark", NumTokens: 7}) }
 	async := func(c *Config) { c.Async, c.MaxConcurrentBatches = true, 2 }
 	nixlLike := func() Connector { return &hmaConnector{caps: Capabilities{HybridGroups: true, Drafters: true}} }
+	packedLike := func() Connector {
+		return &loadingHMA{hmaConnector{caps: Capabilities{HybridGroups: true, PackedGroups: true}}}
+	}
+	packedWithoutLoad := func() Connector {
+		return &hmaConnector{caps: Capabilities{HybridGroups: true, PackedGroups: true}}
+	}
+	replayWindow := func(c *Config) {
+		c.KVGroups = []kv.Group{{Kind: kv.FullAttention}, {Kind: kv.SlidingWindowMLA, Window: 8, BoundedReplay: true}}
+	}
 	plain := func() Connector { return &loadingConnector{} }
 	for _, c := range []struct {
 		name string
@@ -133,6 +148,9 @@ func TestSetConnectorRefusesWhatItDoesNotModel(t *testing.T) {
 		{"a bounded-replay window", nixlLike, func(c *Config) {
 			c.KVGroups = []kv.Group{{Kind: kv.FullAttention}, {Kind: kv.SlidingWindowMLA, Window: 8, BoundedReplay: true}}
 		}, "is not modelled"},
+		{"a bounded-replay window, a connector that states PackedGroups and the groups it loads", packedLike, replayWindow, ""},
+		{"a bounded-replay window, PackedGroups without the groups it loads", packedWithoutLoad, replayWindow,
+			"get_loaded_kv_cache_group_ids"},
 		{"a ring", nixlLike, func(c *Config) {
 			c.KVGroups = []kv.Group{{Kind: kv.FullAttention}, {Kind: kv.CircularBuffer}}
 		}, "is not modelled"},
@@ -160,6 +178,9 @@ func TestSetConnectorRefusesWhatItDoesNotModel(t *testing.T) {
 			issue := connectorCapabilityIssue
 			if c.want == "is not modelled" {
 				issue = connectorGroupIssue
+			}
+			if c.want == "get_loaded_kv_cache_group_ids" {
+				issue = ""
 			}
 			if err == nil || !strings.Contains(err.Error(), c.want) || !strings.Contains(err.Error(), issue) {
 				t.Errorf("%s: %v, want a refusal naming %q and %s", c.name, err, c.want, issue)

@@ -347,14 +347,20 @@ func (s *Scheduler) SetConnector(c Connector, conf ConnectorConfig) error {
 	}
 	for g := 0; g < s.KV.NumGroups(); g++ {
 		spec := s.KV.GroupSpec(g)
-		if (spec.Kind != kv.FullAttention && spec.Kind != kv.SlidingWindow) || spec.BlockSize != 0 {
-			// A connector beside a bounded-replay window, a ring or a group of its own block
-			// size reaches code the connector oracle has not run: the replay window a load
-			// restores (_load_restores_replay_window, scheduler.py:3094-3101), NIXL's prefill
-			// backoff floor for it (nixl/base_scheduler.py:379-394) and the per-group transfer
-			// clipping (:262-300). Mamba groups are not modelled at all (blis-vllm#7).
-			return fmt.Errorf("sched: a KV connector beside KV cache group %d (%+v) is not modelled: only full "+
-				"attention and sliding windows at the engine's block size are (%s)", g, spec, connectorGroupIssue)
+		packed := spec.Kind == kv.SlidingWindowMLA || spec.Kind == kv.CircularBuffer || spec.BlockSize != 0
+		if (spec.Kind != kv.FullAttention && spec.Kind != kv.SlidingWindow && !packed) || (packed && !caps.PackedGroups) {
+			// A connector not diff-tested beside a bounded-replay window, a ring or a group of its own
+			// block size reaches code its oracle has not run: the replay window a load restores
+			// (_load_restores_replay_window, scheduler.py:3094-3101) and the per-group transfer
+			// clipping. Mamba groups are not modelled at all (blis-vllm#7).
+			return fmt.Errorf("sched: a KV connector beside KV cache group %d (%+v) is not modelled for this connector: "+
+				"only full attention and sliding windows at the engine's block size are (%s)", g, spec, connectorGroupIssue)
+		}
+		if packed {
+			if _, ok := c.(GroupLoader); !ok {
+				return fmt.Errorf("sched: a KV connector beside KV cache group %d (%+v) must state the groups its load "+
+					"restores (get_loaded_kv_cache_group_ids)", g, spec)
+			}
 		}
 	}
 	switch {
@@ -453,17 +459,52 @@ func (s *Scheduler) reservePrefillLookahead(r *Request, computed, numNew int) in
 	return max(numNew, 0)
 }
 
-// markPrefixReplay is _mark_prefix_replay (scheduler.py:3103-3121) without a KV load: it records
-// where a prefix hit's replay starts and returns the hit tokens to recompute, the hit's last
+// markPrefixReplay is _mark_prefix_replay (scheduler.py:3103-3121): it records where a prefix
+// hit's replay starts and returns the hit tokens to recompute, the hit's last
 // prefix_replay_tokens, whose sliding-window KV the worker rebuilds while their cached KV stays.
-func (s *Scheduler) markPrefixReplay(r *Request, hitTokens int) int {
+// A hit whose KV load carries the window (windowLoaded) replays nothing.
+func (s *Scheduler) markPrefixReplay(r *Request, hitTokens int, windowLoaded bool) int {
 	window := s.KV.PrefixReplayTokens()
 	if window == 0 {
+		return 0
+	}
+	if windowLoaded {
+		r.ReplayStart = 0
 		return 0
 	}
 	n := min(window, hitTokens)
 	r.ReplayStart = hitTokens - n
 	return n
+}
+
+// loadRestoresReplayWindow is _load_restores_replay_window (scheduler.py:3094-3101): whether the
+// connector's load for r restores every bounded-replay group, as a P/D transfer of the request's
+// own blocks does and a prefix-cache store (which holds no window) does not. A connector that
+// does not state the groups it loads (GroupLoader) loads the prefix-cacheable ones, which no
+// bounded-replay group is (get_loaded_kv_cache_group_ids, kv_connector/v1/base.py:490-500).
+func (s *Scheduler) loadRestoresReplayWindow(r *Request) bool {
+	var replay []int
+	all := make([]int, s.KV.NumGroups())
+	for g := range all {
+		all[g] = g
+		if spec := s.KV.GroupSpec(g); spec.Kind == kv.SlidingWindowMLA && spec.BoundedReplay {
+			replay = append(replay, g)
+		}
+	}
+	gl, ok := s.connector.(GroupLoader)
+	if len(replay) == 0 || !ok {
+		return false
+	}
+	loaded := map[int]bool{}
+	for _, g := range gl.LoadedGroups(r, all) {
+		loaded[g] = true
+	}
+	for _, g := range replay {
+		if !loaded[g] {
+			return false
+		}
+	}
+	return true
 }
 
 // Schedule is schedule() (scheduler.py:591-1558) for this configuration.
@@ -666,7 +707,7 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 			// newLocal is num_new_local_computed_tokens; external is the connector's tokens
 			// beyond it, and async whether they load between steps.
 			newLocal, external, async := 0, 0, false
-			lookedUp := false
+			lookedUp, loadedWindow := false, false
 			if r.NumComputed == 0 {
 				lookedUp = true
 				hit, newLocal = s.KV.ComputedBlocks(r.hashes, r.NumTokens())
@@ -681,13 +722,23 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 						continue
 					}
 				}
+				// SWA bounded replay (:993-1010): a hit that carries no window is recomputed from
+				// the block holding its last window's first token, and the sliding windows retire
+				// whole blocks below the window of the hit's next token, so a hit must end on a
+				// block boundary or it would retire the block the replay starts in. A load that
+				// restores the window replays nothing and keeps its exact count.
+				windowLoaded := external > 0 && s.loadRestoresReplayWindow(r)
+				if s.KV.PrefixReplayTokens() > 0 && !windowLoaded {
+					external -= external % s.KV.BlockSize()
+					async = async && external > 0
+				}
 				numComputed = newLocal + external
-				// SWA bounded replay (:1047-1066): a hit no longer than the replayed window would be
-				// recomputed in full and save nothing, so it is dropped. No connector runs beside
-				// a bounded-replay group (SetConnector), so no load restores the window here.
-				if replay := s.KV.PrefixReplayTokens(); 0 < numComputed && numComputed <= replay {
+				// A hit no longer than the replayed window, and no load of it, would be recomputed in
+				// full and save nothing, so it is dropped (:1047-1066).
+				if replay := s.KV.PrefixReplayTokens(); !windowLoaded && 0 < numComputed && numComputed <= replay {
 					hit, newLocal, external, async, numComputed = nil, 0, 0, false, 0
 				}
+				loadedWindow = windowLoaded
 				if async {
 					s.setFetchStage(r, FetchWaitingToStart)
 				} else {
@@ -704,7 +755,7 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 				room := min(tokenBudget, inputBudget-draftSlots)
 				if lookedUp {
 					// A fresh admission recomputes its hit's last window (:1117-1124).
-					replayed = s.markPrefixReplay(r, numComputed)
+					replayed = s.markPrefixReplay(r, numComputed, loadedWindow)
 					numComputed -= replayed
 				}
 				numNew = r.NumTokens() - numComputed
@@ -875,11 +926,15 @@ func (s *Scheduler) allocatedBlocks(id string) AllocatedBlocks {
 		out.IDs[i] = b.ID
 		out.Hashed[i] = b.Hash != nil && !b.Null
 	}
+	out.Unhashed = make([][]int, s.KV.NumGroups())
 	for g := range out.Groups {
 		gb := s.KV.GroupBlocks(g, id)
 		out.Groups[g] = make([]int, len(gb))
 		for i, b := range gb {
 			out.Groups[g][i] = b.ID
+			if b.Hash == nil && !b.Null {
+				out.Unhashed[g] = append(out.Unhashed[g], b.ID)
+			}
 		}
 	}
 	return out

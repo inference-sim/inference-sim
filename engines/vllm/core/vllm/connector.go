@@ -12,6 +12,7 @@ import (
 
 	"github.com/inference-sim/blis-vllm/core/connector/nixl"
 	core "github.com/inference-sim/blis-vllm/core/engine"
+	"github.com/inference-sim/blis-vllm/core/kv"
 	"github.com/inference-sim/blis-vllm/core/sched"
 )
 
@@ -117,7 +118,16 @@ func buildConnector(s *sched.Scheduler, c *connectorConfig, pp int, spec sched.S
 		return nil, fmt.Errorf("vllm: %w", err)
 	}
 	cfg := nixl.Default()
-	cfg.PrefillBackoff = nixl.Backoff(spec)
+	cfg.PrefillBackoff = nixl.Backoff(spec, s.KV.PrefixReplayTokens() > 0)
+	for g := 0; g < s.KV.NumGroups(); g++ {
+		// blocks_per_sw reads the window of a SlidingWindowSpec (SlidingWindowMLASpec is one) and the
+		// group's own block size (base_scheduler.py:143-153@5df63a72).
+		grp := nixl.Group{BlockSize: s.KV.GroupBlockSize(g)}
+		if spec := s.KV.GroupSpec(g); spec.Kind == kv.SlidingWindow || spec.Kind == kv.SlidingWindowMLA {
+			grp.Window = spec.Window
+		}
+		cfg.Groups = append(cfg.Groups, grp)
+	}
 	p := &pd{role: c.Role, nixl: nixl.New(cfg), matched: map[string]int{}, pulls: map[engine.TransferID]string{},
 		holds: map[engine.TransferID]string{}, pulling: map[string]bool{}, remote: map[string]bool{}, decode: map[string]bool{},
 		at: at, peer: map[string]plan.Endpoint{}}
@@ -189,8 +199,13 @@ func (p *pd) started(s *sched.Scheduler) []engine.Transfer {
 		p.pulls[p.next] = id
 		// A pull from a peer: it reads the prefill's node and rack (engine.Request.Peer) and lands on this
 		// engine's, and uses no tier.
+		blocks := 0
+		counts, _ := p.nixl.Pulled(id)
+		for _, n := range counts {
+			blocks += n
+		}
 		out = append(out, engine.Transfer{ID: p.next, Request: id, Kind: engine.TransferLoad, Tokens: p.matched[id],
-			Blocks: len(s.KV.Blocks(id)), Move: plan.Transfer{Tokens: units.Tokens(p.matched[id]), From: p.peer[id], To: p.at,
+			Blocks: blocks, Move: plan.Transfer{Tokens: units.Tokens(p.matched[id]), From: p.peer[id], To: p.at,
 				Kind: plan.TransferPeer}})
 	}
 	p.nixl.BuildMeta()
@@ -256,6 +271,7 @@ func (p *pd) done(id engine.TransferID, ok bool) error {
 	}
 	delete(p.pulls, id)
 	delete(p.pulling, rid)
+	p.nixl.Forget(rid)
 	delete(p.matched, rid)
 	delete(p.remote, rid)
 	p.outcome.FinishedRecving = append(p.outcome.FinishedRecving, rid)
@@ -292,6 +308,7 @@ func (p *pd) aborted(id string) {
 	delete(p.decode, id)
 	if !p.pulling[id] {
 		delete(p.matched, id)
+		p.nixl.Forget(id)
 	}
 }
 
