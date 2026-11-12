@@ -412,6 +412,9 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 	m.resolved = resolveEngine(in, engine)
 	m.engine = m.resolved.engine
 	m.assumed = append(languageModelOnlyAssumptions(in.Model, engine), cudagraphAssumptions(engine)...)
+	if m.resolved.mamba != nil {
+		m.assumed = append(m.assumed, m.resolved.mamba.assumptions...)
+	}
 	m.assumed = append(m.assumed, rackHandoffAssumptions(m.id)...)
 	if s := languageModelOnlySubstitution(in.Model, engine); s != nil {
 		m.substitutions = append(m.substitutions, *s)

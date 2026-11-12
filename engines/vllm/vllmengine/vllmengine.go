@@ -560,6 +560,13 @@ func (p pool) complete(given yaml.Node) yaml.Node {
 	// What the deployment left unstated, as the release resolves it (Model.Engine): the factory
 	// (core/vllm resolve) refuses these when absent, for a caller that builds an engine with no
 	// resolver. A value the block states is never replaced.
+	if p.model.HasRecurrentLayers() {
+		// A hybrid model's block size is vLLM's aligned one even over a stated size: the platform
+		// raises the attention block until its page covers the recurrent state's
+		// (update_block_size_for_backend, vllm/platforms/interface.py:759-800@5df63a72), which
+		// resolved.BlockSize holds as the larger of that and the stated size.
+		deleteKey(&block, "block_size")
+	}
 	setIfAbsent(&block, "block_size", fmt.Sprint(p.resolved.BlockSize))
 	setIfAbsent(&block, "max_num_seqs", fmt.Sprint(p.resolved.MaxNumSeqs))
 	setIfAbsent(&block, "max_num_batched_tokens", fmt.Sprint(p.resolved.MaxNumBatchedTokens))
@@ -649,7 +656,10 @@ func vllmRuns(runs []kernelmodel.KVLayerRun) []vllm.KVLayerRun {
 		out[i] = vllm.KVLayerRun{Count: r.Count, Spec: r.Spec, SlidingWindow: r.SlidingWindow,
 			NumKVHeads: r.NumKVHeads, HeadSize: r.HeadSize, BlockSize: r.BlockSize, TokensPerState: r.TokensPerState,
 			StateBytes: r.StateBytes, ElemBytes: r.ElemBytes, Alignment: r.Alignment,
-			StrideAlignment: r.StrideAlignment, BoundedReplay: r.BoundedReplay}
+			StrideAlignment: r.StrideAlignment, BoundedReplay: r.BoundedReplay,
+			PageSizePadded: r.PageSizePadded, MambaCacheMode: r.MambaCacheMode,
+			NumSpeculativeBlocks: r.NumSpeculativeBlocks, NumPrefillCheckpointBlocks: r.NumPrefillCheckpointBlocks,
+			PrefillCheckpointAlignment: r.PrefillCheckpointAlignment}
 	}
 	return out
 }
@@ -789,6 +799,16 @@ func shapes(b engine.Batch) []kernelmodel.ReqShape {
 // setIfAbsent adds key: value to a mapping node that does not state key.
 func setIfAbsent(m *yaml.Node, key, value string) {
 	setNodeIfAbsent(m, key, &yaml.Node{Kind: yaml.ScalarNode, Value: value})
+}
+
+// deleteKey removes key from a mapping node.
+func deleteKey(m *yaml.Node, key string) {
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if m.Content[i].Value == key {
+			m.Content = append(m.Content[:i], m.Content[i+2:]...)
+			return
+		}
+	}
 }
 
 // setNodeIfAbsent adds key: value to a mapping node that does not state key.

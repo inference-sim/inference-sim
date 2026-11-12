@@ -27,6 +27,11 @@ type resolvedEngine struct {
 	// blockSizeErr is why an unstated block_size is not resolved, naming blis-vllm#68; nil when
 	// it is stated or resolved.
 	blockSizeErr error
+	// mamba is the spec the model's recurrent layers build, and the block size vLLM aligns a
+	// hybrid model to (planMamba); nil for a model with no recurrent layer. mambaErr is why they
+	// are not mapped.
+	mamba    *mambaPlan
+	mambaErr error
 }
 
 // resolveEngine resolves the pool's engine settings as its release does. For vLLM 0.32.0 an
@@ -63,6 +68,10 @@ func resolveEngine(in latencykernel.Inputs, e engineconfig.Engine) resolvedEngin
 		}
 	}
 	if release != vllm.Version {
+		if hasRecurrent(in.Model) {
+			r.mambaErr = fmt.Errorf("recurrent layers: their KV cache spec is mapped for vLLM %s only, and this pool runs %s",
+				vllm.Version, release)
+		}
 		return r
 	}
 	pool := in.Deployment.Pools[in.PoolIndex]
@@ -95,6 +104,30 @@ func resolveEngine(in latencykernel.Inputs, e engineconfig.Engine) resolvedEngin
 	r.sources["max_num_seqs"] = b.MaxNumSeqsSource
 	r.sources["max_num_batched_tokens"] = b.MaxNumBatchedTokensSource
 	r.sources["block_size"] = vllm.SourceStated
+	if hasRecurrent(in.Model) {
+		// A model with recurrent layers is a hybrid (or attention-free) model: the platform aligns
+		// its block size to the Mamba page instead of reading it from the attention backends
+		// (Platform.update_block_size_for_backend, vllm/platforms/interface.py:750-794@5df63a72), and
+		// the recurrent layers' spec is built with that block size.
+		fam, _ := in.Chip.CapabilityMajor()
+		window, _ := e.MaxModelLen.Stated()
+		if window == 0 && !e.MaxModelLen.Auto() {
+			window = in.Model.Global.DefaultWindow()
+		}
+		r.mamba, r.mambaErr = planMamba(in.Model, r.engine, mambaEnv{tp: max(pool.Parallel.TP, 1),
+			dcp: max(pool.Parallel.DCP, 1), pcp: max(pool.Parallel.PCP, 1), capability: fam, maxModelLen: window})
+		switch {
+		case r.mambaErr == nil:
+			r.engine.BlockSize, r.sources["block_size"] = r.mamba.blockSize, r.mamba.source
+			if e.BlockSize == r.mamba.blockSize {
+				r.sources["block_size"] = vllm.SourceStated
+			}
+		case e.BlockSize <= 0:
+			r.blockSizeErr = r.mambaErr
+			delete(r.sources, "block_size")
+		}
+		return r
+	}
 	if e.BlockSize <= 0 {
 		bs, err := resolveBlockSize(in, e, pool)
 		if err != nil {

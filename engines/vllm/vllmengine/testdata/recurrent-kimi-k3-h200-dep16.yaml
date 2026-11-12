@@ -1,0 +1,47 @@
+# Kimi-K3 (69 KDA layers beside 24 MLA layers) on two H200 nodes, tp 8 and dp 2 with expert
+# parallelism, at vLLM's default recurrent settings: prefix caching on, so the recurrent cache runs
+# in align mode and the hybrid block-size alignment replaces the stated block_size. The
+# deployment is a test input for the recurrent-state mapping, not a published arm.
+kind: Scenario
+name: recurrent-kimi-k3-h200-dep16
+engine_version: "0.32.0"
+
+model: kimi-k3
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+
+cluster:
+  hardware: h200
+  fabric: ib-400g
+  nodes: 2
+  gpus_per_node: 8
+---
+kind: Deployment
+name: recurrent-kimi-k3-h200-dep16
+
+pools:
+  - role: colocated
+    # Four 8-GPU replicas, as the header infers: four engines in one pool, each tp=8, dp=1.
+    # Not one engine at dp=4, which in vLLM would share every expert across all 32 GPUs and
+    # gather every rank's tokens to it (vllm/model_executor/layers/fused_moe/
+    # all2all_utils.py:202-214 at v0.31.0). An earlier form stated dp=4.
+    nodes: 2
+    parallel:
+      tp: 8
+      pp: 1
+      dp: 2
+      enable_expert_parallel: true
+    engine:
+      kv_cache_dtype: fp8
+      # KDA layers carry recurrent state. The mode is not stated. "none" sizes state per
+      # sequence rather than per position; it is the config default, but the engine runs
+      # "align" for a hybrid model whenever prefix caching is on
+      # (vllm/model_executor/models/config.py:640-642 at v0.31.0), so this is a choice held
+      # fixed, not the engine's effective default.
+      mamba_cache_mode: none
+      block_size: 16
+      max_num_batched_tokens: 8192
+      max_num_seqs: 256
+      # 256k, which this arm's label states explicitly.
+      max_model_len: 262144
+      gpu_memory_utilization: 0.9
+      compilation_config: {cudagraph_mode: PIECEWISE}

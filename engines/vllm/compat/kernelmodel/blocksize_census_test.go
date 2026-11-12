@@ -141,7 +141,7 @@ func TestBlockSizeResolutionOverTheCensusFixtures(t *testing.T) {
 				}
 				pieces := 0
 				for _, p := range m.V032Pieces() {
-					if !strings.HasPrefix(p, "hybrid KV groups (layer kind gdn_moe: recurrent state is not mapped to a KV cache spec)") {
+					if !strings.HasPrefix(p, "hybrid KV groups (recurrent layers: block_size is not stated, and layer kind attn_moe: an attention head size 256") {
 						t.Errorf("%s: V032Pieces names %q, want only the hybrid-KV-groups piece", f, p)
 					}
 					pieces++

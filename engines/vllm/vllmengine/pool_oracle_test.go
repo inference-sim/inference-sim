@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/blis-vllm/core/vllm"
 )
 
 // oracleRun and oracleCase are the fields of core/lower/testdata/vllm_lower.json's kv_pool cases
@@ -121,6 +122,48 @@ func TestKVPoolAtFP8IsVLLMsForEachArchitecture(t *testing.T) {
 			if e.CacheDType != "fp8" {
 				t.Fatalf("the fixture's resolved cache dtype is %q, want the stated fp8", e.CacheDType)
 			}
+			if strings.HasPrefix(f.model, "kimi-k3") {
+				// Kimi-K3 is a hybrid of 24 MLA layers and 69 KDA layers: its recurrent state is a
+				// MambaSpec padded to the MLA page at the aligned block size (platforms/interface.py:
+				// 1087-1126@5df63a72), and vLLM groups them at one page size
+				// (_get_kv_cache_groups_uniform_page_size, kv_cache_utils.py:1362-1502): one group
+				// of the 24 MLA layers and three of the 69 KDA layers (23 each), so one pool block is
+				// the widest group's 24 pages. The vLLM comparison for this shape is the oracle
+				// scenario mamba-kimi-k3-like (oracle/scenarios, core/sched/testdata/golden).
+				runs, err := m.KVLayers()
+				if err != nil {
+					t.Fatal(err)
+				}
+				mla, kda, pad := 0, 0, 0
+				for _, r := range runs {
+					switch r.Spec {
+					case "mamba":
+						kda += r.Count
+						pad = r.PageSizePadded
+					case "mla":
+						mla += r.Count
+					}
+				}
+				if mla != 24 || kda != 69 || pad != e.BlockSize*576 {
+					t.Fatalf("layers: %d MLA, %d KDA, mamba page padded to %d; want 24, 69 and the MLA page %d at block %d",
+						mla, kda, pad, e.BlockSize*576, e.BlockSize)
+				}
+				page, err := m.KVLayerPageBytes()
+				if err != nil {
+					t.Fatal(err)
+				}
+				per, err := vllm.KVPoolBytesPerBlock(vllmRuns(runs), false, e.BlockSize, page)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if want := int64(24 * pad); per != want {
+					t.Errorf("pool bytes per block %d, vLLM's widest group of 24 pages %d", per, want)
+				}
+				if page != int64(24*pad) {
+					t.Errorf("kernel page bytes of the 24 MLA layers = %d, want %d", page, 24*pad)
+				}
+				return
+			}
 			var oc *oracleCase
 			for i := range cases {
 				if c := &cases[i]; c.Model == f.model && c.TP == f.tp && c.BlockSize == e.BlockSize && strings.HasPrefix(c.Backend, "no kernel") {
@@ -142,13 +185,6 @@ func TestKVPoolAtFP8IsVLLMsForEachArchitecture(t *testing.T) {
 			runs, err := m.KVLayers()
 
 			switch {
-			case strings.HasPrefix(f.model, "kimi-k3"):
-				if err == nil || !strings.Contains(err.Error(), "recurrent state is not mapped") {
-					t.Fatalf("KVLayers = %v (%v): the engine maps no recurrent layer today; if it does now, compare its pool with vLLM's hybrid groups and flip this", runs, err)
-				}
-				if page != want {
-					t.Errorf("kernel page bytes of Kimi-K3's MLA layers = %d, vLLM's 24 MLA specs %d", page, want)
-				}
 			case err != nil:
 				t.Fatal(err)
 			case len(runs) == 0:
