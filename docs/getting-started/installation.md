@@ -94,7 +94,7 @@ it is stale.
 | Component | Version | Commit |
 |---|---|---|
 | `github.com/inference-sim/blis-substrate` | `v0.13.1-0.20261112134016-6faaccf8f1a2` | `6faaccf8f1a2` |
-| `github.com/inference-sim/blis-vllm` | `v0.32.1-0.20261112140954-b25bb3041c7a` | `b25bb3041c7a` |
+| `github.com/inference-sim/blis-vllm` | `v0.32.1-0.20261112141342-ea3e5fc3af8f` | `ea3e5fc3af8f` |
 | `github.com/inference-sim/llm-d-router` | `v1.0.0-blis.3.0.20261111220635-dbe130dcc286` | `dbe130dcc286` |
 | vllm (engine) | `0.32.0` | `5df63a7203cd` |
 | llm-d (router) | `1.0.0` | `b9393d1a9f1d` |
