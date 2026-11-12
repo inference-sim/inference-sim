@@ -44,7 +44,15 @@ type LinkArbiter struct {
 type Link struct {
 	ID             string
 	BytesPerSecond float64
+	// Streams is how many equal flows of the transfer cross the link at once, each moving the
+	// transfer's payload (kernel.LinkUse.Streams); zero is one. The link's rate is divided among
+	// every stream that crosses it, so a transfer alone on a link gets BytesPerSecond / Streams
+	// for its payload, and a transfer with n streams takes n shares when others use the link.
+	Streams int
 }
+
+// streams is the link's stream count, at least one.
+func (l Link) streams() float64 { return float64(max(1, l.Streams)) }
 
 // Flow is one transfer's demand: payload bytes, a floor in nanoseconds that no bandwidth
 // removes, and the links the payload crosses in series.
@@ -59,7 +67,7 @@ type Flow struct {
 func FlowOf(d kernel.TransferDemand) Flow {
 	f := Flow{Bytes: d.Bytes, FloorNs: d.Floor.Nanoseconds()}
 	for _, l := range d.Links {
-		f.Links = append(f.Links, Link{ID: string(l.Link), BytesPerSecond: l.BytesPerSecond})
+		f.Links = append(f.Links, Link{ID: string(l.Link), BytesPerSecond: l.BytesPerSecond, Streams: l.Streams})
 	}
 	return f
 }
@@ -70,6 +78,7 @@ type FlowID int64
 type flowState struct {
 	id        FlowID
 	links     []string
+	streams   []float64 // the flow's streams on each of links, in the same order
 	start     int64
 	floorTick int64
 
@@ -93,7 +102,7 @@ func AloneTicks(f Flow) int64 {
 	if len(f.Links) > 0 && f.Bytes > 0 {
 		rate := math.Inf(1)
 		for _, l := range f.Links {
-			rate = math.Min(rate, l.BytesPerSecond)
+			rate = math.Min(rate, l.BytesPerSecond/l.streams())
 		}
 		ns = max(ns, drainNs(float64(f.Bytes), rate))
 	}
@@ -142,6 +151,7 @@ func (a *LinkArbiter) Start(now int64, f Flow) FlowID {
 	for _, l := range f.Links {
 		a.caps[l.ID] = l.BytesPerSecond
 		fs.links = append(fs.links, l.ID)
+		fs.streams = append(fs.streams, l.streams())
 		a.inFlight[l.ID]++
 		a.peak[l.ID] = max(a.peak[l.ID], a.inFlight[l.ID])
 	}
@@ -166,6 +176,9 @@ func checkFlow(f Flow) error {
 			return fmt.Errorf("links[%d] %q is empty or repeated", i, l.ID)
 		}
 		seen[l.ID] = true
+		if l.Streams < 0 {
+			return fmt.Errorf("links[%d] %q: streams %d is negative", i, l.ID, l.Streams)
+		}
 		if !(l.BytesPerSecond > 0) || math.IsInf(l.BytesPerSecond, 1) {
 			return fmt.Errorf("links[%d] %q: rate %v must be positive and finite", i, l.ID, l.BytesPerSecond)
 		}
@@ -255,11 +268,11 @@ func (a *LinkArbiter) rerate() {
 func maxMinRates(flows []*flowState, caps map[string]float64) []float64 {
 	rates := make([]float64, len(flows))
 	left := map[string]float64{}
-	count := map[string]int{}
+	count := map[string]float64{} // streams of the unfrozen transfers on each link
 	for _, f := range flows {
-		for _, l := range f.links {
+		for i, l := range f.links {
 			left[l] = caps[l]
-			count[l]++
+			count[l] += f.streams[i]
 		}
 	}
 	links := make([]string, 0, len(left))
@@ -272,12 +285,12 @@ func maxMinRates(flows []*flowState, caps map[string]float64) []float64 {
 		best := math.Inf(1)
 		for _, l := range links {
 			if count[l] > 0 {
-				best = math.Min(best, left[l]/float64(count[l]))
+				best = math.Min(best, left[l]/count[l])
 			}
 		}
 		saturated := map[string]bool{}
 		for _, l := range links {
-			if count[l] > 0 && left[l]/float64(count[l]) == best {
+			if count[l] > 0 && left[l]/count[l] == best {
 				saturated[l] = true
 			}
 		}
@@ -294,9 +307,9 @@ func maxMinRates(flows []*flowState, caps map[string]float64) []float64 {
 			}
 			frozen[i], rates[i] = true, best
 			remaining--
-			for _, l := range f.links {
-				left[l] = max(0, left[l]-best)
-				count[l]--
+			for j, l := range f.links {
+				left[l] = max(0, left[l]-best*f.streams[j])
+				count[l] -= f.streams[j]
 			}
 		}
 	}
