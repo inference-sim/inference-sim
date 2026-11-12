@@ -76,6 +76,10 @@ type Engine struct {
 	// pl is where the engine sits: its chip, layout and node. New states one node of the configuration's
 	// GPU, tensor and data widths; SetPlacement replaces it. Its Plan is what a P/D pull is priced against.
 	pl placement.Placement
+	// admission is the shape of the queue a request waits in before the engine admits it: the
+	// API server's render stage, as the engine's own settings state it (renderer_num_workers
+	// threads on each of api_server_count servers). The simulator queues requests on it.
+	admission plan.AdmissionQueue
 }
 
 type adapterLoad struct {
@@ -115,7 +119,8 @@ func New(id string, cfg cengine.SimConfig) (*Engine, error) {
 	}
 	e := &Engine{core: core, rec: &recorder{}, horizon: cfg.Horizon, reqs: map[string]*cengine.Request{},
 		out: map[string]int{}, running: map[string]bool{}, wake: -1,
-		pl: placement.Placement{Hardware: cfg.GPU, Tensor: max(cfg.TP, 1), Data: max(cfg.DP, 1), Nodes: 1}}
+		pl:        placement.Placement{Hardware: cfg.GPU, Tensor: max(cfg.TP, 1), Data: max(cfg.DP, 1), Nodes: 1},
+		admission: admissionQueueOf(cfg.Frontend)}
 	core.Host = host{e}
 	core.Rec = e.rec
 	return e, nil
@@ -137,7 +142,20 @@ func (e *Engine) SetPlacement(p placement.Placement) error {
 // compatibility engine offloads to no tier it reports as a transfer, so the plan lists none; the lowered
 // layers, KV groups and graphs are the cost model's resolution, which is not built here
 // (blis-latency-kernel#84).
-func (e *Engine) Plan() plan.PoolPlan { return e.pl.Plan(nil) }
+func (e *Engine) Plan() plan.PoolPlan {
+	p := e.pl.Plan(nil)
+	p.Host.Admission = e.admission
+	return p
+}
+
+// admissionQueueOf is the queue vLLM's API server puts a request through before the engine admits
+// it: the tokenizer and the chat template run on the renderer's thread pool, renderer_num_workers
+// threads per API-server process (vllm/renderers/base.py:139-158 and hf.py:965 at v0.32.0), and
+// each of api_server_count processes has its own pool (vllm/entrypoints/cli/serve.py:107-137).
+// No threads is no queue; an unstated server count is one queue.
+func admissionQueueOf(f cengine.FrontendConfig) plan.AdmissionQueue {
+	return plan.AdmissionQueue{Servers: f.APIServerCount, WorkersPerServer: f.RendererNumWorkers}
+}
 
 var (
 	_ engine.Planned      = (*Engine)(nil)

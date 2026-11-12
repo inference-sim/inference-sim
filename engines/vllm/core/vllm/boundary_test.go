@@ -44,8 +44,9 @@ func TestThePlanStatesThePlacementAndTheCPUTier(t *testing.T) {
 	if got := mustEngine(t, consumer).Plan().Tiers; len(got) != 0 {
 		t.Errorf("a P/D pool lists tiers %+v; it has no KV tier below GPU memory", got)
 	}
-	if got := mustEngine(t, "").Plan(); !reflect.DeepEqual(got, plan.PoolPlan{}) {
-		t.Errorf("a pool that states no placement and starts no transfer has plan %+v, want the empty plan", got)
+	// Beside its admission queue, which every engine states, such a pool's plan is empty.
+	if got := mustEngine(t, "").Plan(); !reflect.DeepEqual(got, plan.PoolPlan{Host: plan.HostPlan{Admission: plan.AdmissionQueue{Servers: 1, WorkersPerServer: 1}}}) {
+		t.Errorf("a pool that states no placement and starts no transfer has plan %+v, want only its admission queue", got)
 	}
 }
 

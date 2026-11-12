@@ -931,3 +931,11 @@ func fillOffloadChild(kt, tier *yaml.Node) {
 		}
 	}
 }
+
+// Frontend and Frontender are the API-server settings a host gives an engine this package built
+// (renderer_num_workers, api_server_count), which the engine resolves into the admission queue its
+// plan states. See core/vllm.
+type (
+	Frontend   = vllm.Frontend
+	Frontender = vllm.Frontender
+)

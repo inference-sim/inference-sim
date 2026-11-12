@@ -130,6 +130,7 @@ func newDPGroup(st settings, pricer Pricer) (*DPGroup, error) {
 		if err != nil {
 			return nil, err
 		}
+		e.dp = n
 		rank := i
 		e.queued = func(id string) bool { return g.inFlight(rank, id) }
 		if e.pd != nil {

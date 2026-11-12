@@ -137,6 +137,10 @@ type Engine struct {
 	// workers sit on (Plan); both are zero for a pool that states no placement.
 	plan plan.PoolPlan
 	at   plan.Endpoint
+	// frontend and dp are the API-server settings and the ranks behind them that Plan states as the
+	// admission queue (frontend.go).
+	frontend Frontend
+	dp       int
 	// verified are, for each in-flight batch the pricer trims (VerifyingPricer), by core
 	// batch ID, how many drafts each of its requests had verified; apply caps their acceptance
 	// at it and drops the entry.
@@ -187,6 +191,7 @@ func newEngine(st settings, pricer Pricer) (*Engine, error) {
 		return nil, fmt.Errorf("vllm: %w", err)
 	}
 	e := &Engine{
+		frontend: DefaultFrontend(), dp: 1,
 		s: s, pricer: pricer, reqs: map[string]*reqState{}, aborted: map[string]bool{},
 		metrics:  metrics.New(histogramBounds(st.sched.MaxModelLen)),
 		maxLoRAs: st.sched.MaxLoRAs, specTokens: st.sched.Spec.NumTokens, async: st.sched.Async,
@@ -222,6 +227,7 @@ func newEngine(st settings, pricer Pricer) (*Engine, error) {
 func (e *Engine) Plan() plan.PoolPlan {
 	p := e.plan
 	p.Tiers = append([]plan.KVTier(nil), p.Tiers...)
+	p.Host.Admission = e.frontend.queue(e.dp)
 	return p
 }
 
