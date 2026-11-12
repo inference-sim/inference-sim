@@ -504,10 +504,10 @@ func TestSpeculationAddsAttentionLayers(t *testing.T) {
 	}
 }
 
-// attention_config.indexer_kv_dtype is read for MiniMax-M3's indexer cache only, and only its own
-// default (bf16, which "auto" and an unstated value are) is sized; every other stated value is
-// refused naming blis-vllm#84, and so is any value stated for a model with no indexer cache.
-func TestIndexerKVDTypeIsReadForMiniMaxM3OnlyAtItsDefault(t *testing.T) {
+// attention_config.indexer_kv_dtype is read for MiniMax-M3's indexer cache only (fp8 is sized and
+// priced by TestMiniMaxM3FP8IndexerKeysAreHalfTheBytes); a value stated for a model with no indexer
+// cache is refused naming blis-vllm#84.
+func TestIndexerKVDTypeIsReadForMiniMaxM3Only(t *testing.T) {
 	open := func(fixture, dtype string) error {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "kerneltests", "testdata", "aisimulate", fixture))
 		if err != nil {
@@ -536,7 +536,7 @@ func TestIndexerKVDTypeIsReadForMiniMaxM3OnlyAtItsDefault(t *testing.T) {
 		}
 	}
 	for _, c := range []struct{ fixture, dtype string }{
-		{m3, "fp8"}, {"llama-3.1-70b-instruct-h200-fp8-vllm-tp2.yaml", "bf16"}, {"gpt-oss-120b-h100-fp4-vllm-tp2.yaml", "fp8"},
+		{"llama-3.1-70b-instruct-h200-fp8-vllm-tp2.yaml", "bf16"}, {"gpt-oss-120b-h100-fp4-vllm-tp2.yaml", "fp8"},
 	} {
 		if err := open(c.fixture, c.dtype); err == nil || !strings.Contains(err.Error(), "blis-vllm/issues/84") {
 			t.Errorf("%s with indexer_kv_dtype %s: %v, want a refusal citing #84", c.fixture, c.dtype, err)

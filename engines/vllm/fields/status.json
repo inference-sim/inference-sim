@@ -380,6 +380,7 @@
    "evidence": {
     "traces": [
      "compat/kernelmodel/engine_settings_test.go",
+     "compat/kernelmodel/indexer_record_test.go",
      "rules/v0_32/indexer_kv_dtype_test.go",
      "rules/v0_32/testdata/vllm_indexer_kv_dtype.json"
     ]

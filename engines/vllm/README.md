@@ -148,7 +148,8 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   `attention_config.indexer_kv_dtype` is `modelled`: the engine reads it and prices the indexer's key cache.
   On DeepSeek V4 and V4.1 `auto` and `fp8` give the 132-byte record, as vLLM resolves them, and `bf16`, `nvfp4`
   and `mxfp4` are refused with vLLM's reason or the kernel's (`mxfp4`'s 68-byte record is not what the graph
-  prices); on MiniMax-M3 `auto` and `bf16` size the indexer cache and any other value is refused; a model with
+  prices); on MiniMax-M3 `auto` and `bf16` size the indexer cache at two bytes a key value and `fp8` or `fp8_e4m3` at one (vLLM stores the keys as
+  float8_e4m3fn with no scale), the latency kernel pricing the same record, and any other value is refused; a model with
   no indexer cache refuses every value but `auto` (blis-vllm#84). The covered class is `auto` and `fp8`.
   `speculative_config.synthetic_acceptance_length` is `modelled` (blis-vllm#88): with `rejection_sample_method: synthetic` it is the run's supplied
   acceptance length, in [1, num_spec_tokens + 1], taken at the rank of the scenario's pin; `synthetic` without it is refused.
