@@ -5,7 +5,10 @@
 
 package kv
 
-import "fmt"
+import (
+	"bytes"
+	"fmt"
+)
 
 // Block is one KV block: vLLM's KVCacheBlock (kv_cache_utils.py:178-235). A block's ID
 // is an allocator detail; what a block holds is its hash and reference count.
@@ -16,6 +19,14 @@ type Block struct {
 	// block hash with its KV cache group ID appended as 4 big-endian bytes, as vLLM keys
 	// its cache (make_block_hash_with_group_id, kv_cache_utils.py:74-84).
 	Hash []byte
+	// HashTokens is the prefix length Hash covers: a full block's end, or inside the block for a
+	// partial entry (block_hash_num_tokens, kv_cache_utils.py:192-224@5df63a72). Valid while
+	// Hash is set.
+	HashTokens int
+	// extra holds the further hash keys that also reach this block, which a partial entry adds
+	// to a block that already has a primary hash (cached_block_hashes_by_block,
+	// block_pool.py:176-178@5df63a72).
+	extra [][]byte
 	// Null marks the pool's reserved null block, which never holds KV.
 	Null bool
 
@@ -202,6 +213,11 @@ type StoredRun struct {
 	Tokens []int64
 	// LoRA is the request's adapter name, "" for the base model.
 	LoRA string
+	// NumPromptTokens is request.num_prompt_tokens, which a Mamba align group reads to place its
+	// prompt checkpoint (single_type_kv_cache_manager.py:2033-2040@5df63a72); no event reports it.
+	NumPromptTokens int
+	// SharedPrefixBoundary is request.shared_prefix_boundary, read by a Mamba align group.
+	SharedPrefixBoundary int
 }
 
 // CacheFull records blocks[numCached:numFull] as cached under their hashes in KV cache
@@ -230,7 +246,7 @@ func (p *Pool) CacheFullMaskedIn(g uint32, blocks []*Block, hashes []BlockHash, 
 		if b.Hash != nil {
 			p.evict(b)
 		}
-		p.insert(WithGroup(hashes[i], g), b)
+		p.insert(WithGroup(hashes[i], g), b, (i+1)*blockSize)
 		stored = append(stored, hashes[i])
 	}
 	if p.events != nil {
@@ -250,41 +266,109 @@ func WithGroup(h BlockHash, group uint32) []byte {
 	return append(append(make([]byte, 0, len(h)+4), h...), byte(group>>24), byte(group>>16), byte(group>>8), byte(group))
 }
 
-func (p *Pool) insert(h []byte, b *Block) {
-	for _, x := range p.cached[string(h)] {
-		if x == b {
-			return
-		}
+// insert is _insert_block_hash (block_pool.py:575-609@5df63a72): the first hash a block
+// takes is its primary one, with the prefix length it covers; a later one is an extra key to
+// the same block.
+func (p *Pool) insert(h []byte, b *Block, tokens int) {
+	if bytes.Equal(b.Hash, h) || p.holds(h, b) {
+		return
 	}
-	b.Hash = h
+	if b.Hash == nil {
+		b.Hash, b.HashTokens = h, tokens
+	} else {
+		b.extra = append(b.extra, h)
+	}
 	p.cached[string(h)] = append(p.cached[string(h)], b)
 }
 
-// evict removes b's hash from the cache map (_maybe_evict_cached_block, block_pool.py:729-750),
-// queuing a BlockRemoved event with events on (_emit_block_removed_events, :611-624).
-func (p *Pool) evict(b *Block) {
-	if b.Hash == nil {
-		return
-	}
-	if p.events != nil {
-		n := len(b.Hash) - 4
-		*p.events = append(*p.events, Event{Removed: true, Hashes: []BlockHash{append(BlockHash(nil), b.Hash[:n]...)},
-			Group: uint32(b.Hash[n])<<24 | uint32(b.Hash[n+1])<<16 | uint32(b.Hash[n+2])<<8 | uint32(b.Hash[n+3])})
-	}
-	k := string(b.Hash)
-	bs := p.cached[k]
-	for i, x := range bs {
+func (p *Pool) holds(h []byte, b *Block) bool {
+	for _, x := range p.cached[string(h)] {
 		if x == b {
-			bs = append(bs[:i], bs[i+1:]...)
-			break
+			return true
 		}
 	}
-	if len(bs) == 0 {
-		delete(p.cached, k)
-	} else {
-		p.cached[k] = bs
+	return false
+}
+
+// evict removes every hash that reaches b from the cache map and resets b's hash
+// (_maybe_evict_cached_block, block_pool.py:729-750; _remove_cached_block_hashes, :549-573),
+// queuing one BlockRemoved event per hash with events on (_emit_block_removed_events,
+// :611-624). It reports whether b held a hash.
+func (p *Pool) evict(b *Block) bool {
+	if b.Hash == nil {
+		return false
 	}
-	b.Hash = nil
+	for _, h := range append([][]byte{b.Hash}, b.extra...) {
+		k := string(h)
+		bs := p.cached[k]
+		found := false
+		for i, x := range bs {
+			if x == b {
+				bs = append(bs[:i], bs[i+1:]...)
+				found = true
+				break
+			}
+		}
+		if len(bs) == 0 {
+			delete(p.cached, k)
+		} else {
+			p.cached[k] = bs
+		}
+		if found && p.events != nil {
+			n := len(h) - 4
+			*p.events = append(*p.events, Event{Removed: true, Hashes: []BlockHash{append(BlockHash(nil), h[:n]...)},
+				Group: uint32(h[n])<<24 | uint32(h[n+1])<<16 | uint32(h[n+2])<<8 | uint32(h[n+3])})
+		}
+	}
+	b.Hash, b.HashTokens, b.extra = nil, 0, nil
+	return true
+}
+
+// MaybeEvictCached is _maybe_evict_cached_block (block_pool.py:729-750@5df63a72): it drops
+// every cache entry that reaches b and reports whether there was one.
+func (p *Pool) MaybeEvictCached(b *Block) bool { return p.evict(b) }
+
+// IsBlockWritable is is_block_writable (block_pool.py:770-772@5df63a72): a sole owner may
+// write a block that is not null and holds no cached hash.
+func (p *Pool) IsBlockWritable(b *Block) bool { return !b.Null && b.RefCnt == 1 && b.Hash == nil }
+
+// CachePartialBlock is cache_partial_block (block_pool.py:449-547@5df63a72) in KV cache group
+// g: it makes block b reachable under the hash of the prefix that ends numTokens tokens in,
+// without a new block. hashes are the request's block hashes at hashBlockSize, numTokens a
+// positive multiple of it. With replace, b's earlier entries are removed first (its contents
+// were replaced). It returns the hash key (hash plus group), or nil for a null block. With
+// events on, a BlockStored event reports the prefix's last hash block unless b already
+// held the entry.
+func (p *Pool) CachePartialBlock(g uint32, b *Block, hashes []BlockHash, numTokens, hashBlockSize int,
+	run StoredRun, replace bool) []byte {
+	if b.Null {
+		return nil
+	}
+	if numTokens%hashBlockSize != 0 || numTokens <= 0 || numTokens/hashBlockSize > len(hashes) {
+		panic(fmt.Sprintf("kv: partial entry at %d tokens needs a positive multiple of the hash block size %d within %d hashes",
+			numTokens, hashBlockSize, len(hashes)))
+	}
+	n := numTokens / hashBlockSize
+	key := WithGroup(hashes[n-1], g)
+	already := bytes.Equal(b.Hash, key) || p.holds(key, b)
+	if replace {
+		p.evict(b)
+		already = false
+	} else if !already && b.Hash != nil && b.HashTokens < n*hashBlockSize {
+		p.evict(b)
+	}
+	p.insert(key, b, n*hashBlockSize)
+	if p.events != nil && !already {
+		var parent BlockHash
+		if n > 1 {
+			parent = hashes[n-2]
+		}
+		start := (n - 1) * hashBlockSize
+		*p.events = append(*p.events, Event{Hashes: []BlockHash{hashes[n-1]}, Parent: parent,
+			Tokens:    append([]int64(nil), run.Tokens[start:numTokens]...),
+			BlockSize: numTokens - start, LoRA: run.LoRA, Group: g})
+	}
+	return key
 }
 
 // freeQueue is FreeKVCacheBlockQueue (kv_cache_utils.py:246-420): a doubly linked list of

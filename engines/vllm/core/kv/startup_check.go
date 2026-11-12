@@ -5,13 +5,15 @@
 // (:1003-1040), _max_memory_usage_bytes_from_groups (:2337-2366) and
 // _estimate_max_model_len_from_groups (:2369-2412); with each spec's max_memory_usage_bytes
 // (vllm/v1/kv_cache_interface.py: FullAttentionSpec :602-607, SlidingWindowSpec :859-896,
-// CircularBufferSpec :923-926, UniformTypeKVCacheSpecs :1315-1319).
+// CircularBufferSpec :923-926, MambaSpec :1077-1092, UniformTypeKVCacheSpecs :1315-1319).
 
 package kv
 
 import (
 	"fmt"
 	"math"
+	"strconv"
+	"strings"
 )
 
 // RequestLimits are the scheduler settings one request's KV memory is bounded by at start-up.
@@ -35,13 +37,16 @@ type RequestLimits struct {
 //   - full attention (and MLA, and an indexer): every token, cdiv(max_model_len, block_size);
 //   - a sliding window: its admission cap, cdiv(min(window - 1 + extra_retained +
 //     max_in_flight_tokens, max_model_len), block_size) + 1 (max_admission_blocks_per_request);
-//   - a circular buffer: its one ring block.
+//   - a circular buffer: its one ring block;
+//   - a Mamba group: its states, 1 + num_speculative_blocks pages in none mode, 2 +
+//     num_speculative_blocks + num_prefill_checkpoint_blocks in align mode
+//     (MambaSpec.max_memory_usage_bytes over page_size_bytes, kv_cache_interface.py:1077-1083).
 //
 // A group of several layers is UniformTypeKVCacheSpecs, the most pages any of its layers takes
 // (max_memory_usage_pages); the layers of one group share its block size and kind, so that is
 // the group's own count.
 func MaxRequestBlocks(layers []Layer, o GroupOptions, blockSize int, limits RequestLimits) (int64, error) {
-	groups, err := GroupLayers(layers, o)
+	groups, err := GroupLayers(layers, o.at(blockSize))
 	if err != nil {
 		return 0, err
 	}
@@ -65,12 +70,35 @@ func groupRequestPages(g Group, blockSize int, limits RequestLimits) int {
 	switch g.Kind {
 	case CircularBuffer:
 		return 1
+	case Mamba:
+		if mambaMode(g.MambaCacheMode) == "align" {
+			return 2 + g.MambaSpeculativeBlocks + g.MambaCheckpointBlocks
+		}
+		return 1 + g.MambaSpeculativeBlocks
 	case SlidingWindow, SlidingWindowMLA:
 		tokens := min(g.Window-1+limits.ExtraRetained+limits.MaxInFlightTokens, limits.MaxModelLen)
 		return cdiv(tokens, blockSize) + 1
 	default:
 		return cdiv(limits.MaxModelLen, blockSize)
 	}
+}
+
+// MaxNumBlocksPerReq is MambaSpec.max_num_blocks_per_req (kv_cache_interface.py:1085-1092@5df63a72)
+// for a Mamba group of block size blockSize: the width of its block-table row. In align mode the
+// row is position-indexed over the whole sequence, cdiv(maxLen, block size) + num_speculative_blocks,
+// though only 2 + num_speculative_blocks states are resident; in none mode it is the pages the
+// request holds, 1 + num_speculative_blocks.
+func MaxNumBlocksPerReq(g Group, blockSize, maxLen int) (int, error) {
+	if g.Kind != Mamba {
+		return 0, fmt.Errorf("kv: max_num_blocks_per_req is a Mamba group's; this group is kind %d", g.Kind)
+	}
+	if mambaMode(g.MambaCacheMode) == "align" {
+		if blockSize <= 0 {
+			return 0, fmt.Errorf("kv: a Mamba group of block size %d", blockSize)
+		}
+		return cdiv(maxLen, blockSize) + g.MambaSpeculativeBlocks, nil
+	}
+	return 1 + g.MambaSpeculativeBlocks, nil
 }
 
 // EstimateMaxModelLen is _estimate_max_model_len_from_groups (kv_cache_utils.py:2369-2412@5df63a72):
@@ -138,7 +166,7 @@ func CheckEnoughKVCacheMemory(layers []Layer, o GroupOptions, blockSize int, lim
 	if bytesPerBlock > 0 {
 		// format_gib (vllm/utils/mem_utils.py:30-31@5df63a72): GiB rounded to two places; the
 		// available memory is the pool's less the null block.
-		gib := func(b int64) float64 { return math.Round(float64(b)/(1<<30)*100) / 100 }
+		gib := func(b int64) string { return pyFloat(math.Round(float64(b)/(1<<30)*100) / 100) }
 		return fmt.Errorf("kv: To serve at least one request with the model's max seq len (%d), (%v GiB KV cache is "+
 			"needed, which is larger than the available KV cache memory (%v GiB). %sTry increasing "+
 			"`gpu_memory_utilization` or decreasing `max_model_len` when initializing the engine "+
@@ -149,4 +177,14 @@ func CheckEnoughKVCacheMemory(layers []Layer, o GroupOptions, blockSize int, lim
 		"needed, which is more than the %d blocks the pool holds beside the null block. %sTry increasing "+
 		"`gpu_memory_utilization` or decreasing `max_model_len` when initializing the engine "+
 		"(vllm/v1/core/kv_cache_utils.py:2636-2646@5df63a72)", limits.MaxModelLen, need, usable, estimatedMsg)
+}
+
+// pyFloat is a float as Python's repr prints it for these figures: shortest digits, and ".0" on a
+// whole number (format_gib returns round(x, 2), vllm/utils/mem_utils.py:30-31@5df63a72).
+func pyFloat(f float64) string {
+	s := strconv.FormatFloat(f, 'f', -1, 64)
+	if !strings.Contains(s, ".") {
+		s += ".0"
+	}
+	return s
 }

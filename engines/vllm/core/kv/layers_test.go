@@ -90,3 +90,32 @@ func TestGroupsOfLayersDisableHybrid(t *testing.T) {
 		t.Errorf("groups %v (%v), want one full-attention group", got, err)
 	}
 }
+
+// A MambaSpec's page is its states' bytes, or page_size_padded when the hybrid block-size
+// alignment pads it (vllm/v1/kv_cache_interface.py:1067-1075@5df63a72), whatever the block size:
+// the pool bytes of a model of nothing but Mamba layers are that page for each layer.
+func TestMambaLayerPageIsStateBytesPaddedNotPerToken(t *testing.T) {
+	spec, err := ParseLayerSpec("mamba")
+	if err != nil || spec != LayerMamba {
+		t.Fatalf("ParseLayerSpec(mamba) = %v, %v", spec, err)
+	}
+	for _, c := range []struct {
+		name string
+		l    Layer
+		page int64
+	}{
+		{"unpadded", Layer{Spec: LayerMamba, StateBytes: 1000, BlockSize: 64}, 1000},
+		{"padded", Layer{Spec: LayerMamba, StateBytes: 1000, PageSizePadded: 4096, BlockSize: 64}, 4096},
+		{"block size does not scale it", Layer{Spec: LayerMamba, StateBytes: 1000, BlockSize: 8192}, 1000},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := PoolBytesPerBlock([]Layer{c.l, c.l}, GroupOptions{}, 64)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != 2*c.page {
+				t.Errorf("two layers take %d bytes a block, want %d", got, 2*c.page)
+			}
+		})
+	}
+}

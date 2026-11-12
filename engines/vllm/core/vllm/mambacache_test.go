@@ -123,6 +123,9 @@ func TestMambaSSMCacheDTypeIsComparedWithTheResolvedDefault(t *testing.T) {
 			if c.refuse != (err != nil) {
 				t.Fatalf("checkMambaCache = %v, want refused %t", err, c.refuse)
 			}
+			if err != nil && !strings.Contains(err.Error(), "no recurrent layer") {
+				t.Errorf("the refusal does not say that no recurrent layer reads the field: %v", err)
+			}
 			if err != nil && !strings.Contains(err.Error(), "issues/83") {
 				t.Errorf("the refusal does not cite #83: %v", err)
 			}
@@ -155,6 +158,26 @@ func TestSWABoundedReplayFalseBuildsWhereTheLayersStateNone(t *testing.T) {
 		_, err = resolve(cfg)
 		if c.refuse != (err != nil) {
 			t.Errorf("%q: resolve = %v, want refused %t", strings.ReplaceAll(c.extra, "\n", " "), err, c.refuse)
+		}
+	}
+}
+
+// A model with recurrent layers sizes its state at the dtype that runs, which the engine block's
+// kv_layers state bytes carry, so a stated mamba_ssm_cache_dtype away from the checkpoint's default
+// builds; the same value on a model without recurrent layers would be dropped and is refused.
+func TestAModelWithRecurrentLayersBuildsAtAnySSMCacheDType(t *testing.T) {
+	for _, c := range []struct {
+		mamba  bool
+		refuse bool
+	}{{true, false}, {false, true}} {
+		cfg, err := decodeConfig(block(t, ""))
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg.MambaModel = c.mamba
+		cfg.MambaSSMCacheDType, cfg.MambaSSMCacheDTypeDefault = "float16", "float32"
+		if err := checkMambaCache(cfg, true); c.refuse != (err != nil) {
+			t.Errorf("mamba model %t: checkMambaCache = %v, want refused %t", c.mamba, err, c.refuse)
 		}
 	}
 }

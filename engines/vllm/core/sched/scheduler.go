@@ -30,6 +30,11 @@ const (
 
 // Config is the scheduler's slice of vLLM's configuration.
 type Config struct {
+	// RetentionInterval is prefix_cache_retention_interval for a model with Mamba groups: nil is
+	// dense retention (CacheConfig's dataclass default), 0 vLLM's engine default.
+	RetentionInterval *int
+	// PrefixMatchUnit is cache_config.prefix_match_unit, the hash block size when set (0 unset).
+	PrefixMatchUnit     int
 	MaxNumSeqs          int // max_num_seqs
 	MaxNumActiveSeqs    int // max_num_active_seqs; 0 = MaxNumSeqs
 	MaxNumBatchedTokens int // max_num_batched_tokens
@@ -121,7 +126,11 @@ type Request struct {
 	hashes      []kv.BlockHash
 	root        kv.BlockHash // the chain's NONE_HASH under Keys.Seed, set with the first hash
 	numInFlight int
-	seq         int // FIFO tie-break within a priority queue
+	// sharedPrefixBoundary is request.shared_prefix_boundary (vllm/v1/request.py:206@5df63a72):
+	// where a Mamba group's cached prefix stops short of another group's, set by the prefix
+	// lookup of a fresh admission and read by the aligned split.
+	sharedPrefixBoundary int
+	seq                  int // FIFO tie-break within a priority queue
 	// Placeholders is num_output_placeholders: tokens scheduled to be sampled whose output
 	// has not returned yet (async scheduling only).
 	Placeholders int
@@ -209,8 +218,10 @@ type Finished struct {
 
 // Scheduler is vLLM's Scheduler.
 type Scheduler struct {
-	cfg      Config
-	KV       *kv.Manager
+	cfg Config
+	KV  *kv.Manager
+	// mamba is the aligned split's state (scheduler.py:375-410@5df63a72).
+	mamba    *MambaSplit
 	requests map[string]*Request
 	running  []*Request
 	waiting  queue
@@ -277,7 +288,7 @@ func New(cfg Config) (*Scheduler, error) {
 	s := &Scheduler{
 		cfg: cfg,
 		KV: kv.NewManagerWith(cfg.NumBlocks, cfg.BlockSize, cfg.MaxModelLen, cfg.EnablePrefixCaching, wm,
-			kv.Options{EagleBlockDrop: cfg.Spec.EagleBlockDrop, PrefillLookahead: cfg.Spec.PrefillLookahead,
+			kv.Options{RetentionInterval: cfg.RetentionInterval, PrefixMatchUnit: cfg.PrefixMatchUnit, EagleBlockDrop: cfg.Spec.EagleBlockDrop, PrefillLookahead: cfg.Spec.PrefillLookahead,
 				Groups: cfg.KVGroups, MaxInFlightTokens: max(cfg.MaxConcurrentBatches, 1) * cfg.MaxNumBatchedTokens}),
 		requests: map[string]*Request{},
 		waiting:  queue{priority: cfg.Policy == Priority},
@@ -285,6 +296,10 @@ func New(cfg Config) (*Scheduler, error) {
 		deferred: map[string]bool{},
 		recvDone: map[string]bool{}, recvFailed: map[string]bool{}, inflight: map[*Request]bool{},
 	}
+	s.mamba = NewMambaSplit(MambaSplitConfig{Groups: cfg.KVGroups, BlockSize: cfg.BlockSize,
+		HashBlockSize: s.KV.HashBlockSize(), MaxNumScheduledTokens: s.maxScheduled(),
+		LongPrefillTokenThreshold: cfg.LongPrefillTokenThreshold, EagleBlockDrop: cfg.Spec.EagleBlockDrop,
+		PartialHashHits: s.KV.EnablePartialHashHits()})
 	if cfg.KVEvents {
 		s.KV.Pool.EnableEvents()
 	}
@@ -516,6 +531,9 @@ func (s *Scheduler) Schedule() Output { return s.ScheduleThrottled(false) }
 // 1113-1116).
 func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 	s.currentStep++
+	// kv_cache_manager.new_step_starts (scheduler.py:632@5df63a72): a Mamba state cached in this
+	// step is not yet filled, so no other request hits it until the next one.
+	s.KV.NewStepStarts()
 	// finished_req_ids are handed to the runner with this output (scheduler.py:1649-1652).
 	s.finishedPending = 0
 	deferPrefills := false
@@ -577,6 +595,10 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 		// The input position must stay within max_model_len (:713-720): one slot is the
 		// token this step samples.
 		numNew = min(numNew, s.cfg.MaxModelLen-r.NumComputed-1)
+		if s.mamba.Needed() {
+			// Apply Mamba alignment before encoder caps (:723-725).
+			numNew = s.mamba.Split(r.mambaSplitRequest(), numNew, 0, 0)
+		}
 		numNew = s.reservePrefillLookahead(r, r.NumComputed, numNew)
 		if numNew <= 0 {
 			// Skipped, not a stop: a later request may still fit (:755-773).
@@ -589,7 +611,7 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 		}
 		for {
 			if s.KV.Allocate(r.ID, kv.Alloc{Computed: r.NumComputed, New: numNew, Lookahead: s.cfg.Spec.Lookahead,
-				Hashes: r.hashes, NumTokens: r.NumTokens(), InFlight: r.numInFlight, HasScheduled: true, Run: s.run(r)}) {
+				Hashes: r.hashes, NumTokens: r.NumTokens(), InFlight: r.numInFlight, HasScheduled: true, Run: s.run(r), PrefillEnd: r.prefillEnd()}) {
 				ok = true
 				break
 			}
@@ -710,7 +732,7 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 			lookedUp, loadedWindow := false, false
 			if r.NumComputed == 0 {
 				lookedUp = true
-				hit, newLocal = s.KV.ComputedBlocks(r.hashes, r.NumTokens())
+				hit, newLocal, r.sharedPrefixBoundary = s.KV.ComputedBlocksWithBoundary(r.hashes, r.NumTokens())
 				if s.connector != nil {
 					// The connector sees the block-aligned local hit (:968-980). A hit here is
 					// always whole blocks, so the partial-tail cases (:1000-1027) never arise.
@@ -775,6 +797,17 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 					break
 				}
 				numNew = min(numNew, room)
+				if s.mamba.Needed() {
+					// Apply Mamba alignment before encoder caps (:1172-1190). The split aligns
+					// prefill chunks: a padded request whose rows it clipped drops the padding
+					// rather than keep a shorter one.
+					if numNew = s.mamba.Split(r.mambaSplitRequest(), numNew, newLocal, external); numNew == 0 {
+						break
+					}
+					if pad && numNew != 1+k {
+						numNew, pad = 1, false
+					}
+				}
 				numNew = s.reservePrefillLookahead(r, numComputed, numNew)
 				if numNew <= 0 {
 					break
@@ -791,7 +824,7 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 			if !s.KV.Allocate(r.ID, kv.Alloc{Computed: r.NumComputed, New: max(numNew-replayed, 0), Lookahead: lookahead, NewComputed: hit,
 				NumNewComputed: newLocal, External: external, Reserved: reserved, DelayCache: async,
 				Hashes: r.hashes, NumTokens: r.NumTokens(), InFlight: r.numInFlight, Waiting: true,
-				HasScheduled: len(s.running) > 0, FullSequenceMustFit: s.cfg.ReserveFullSequence, Run: s.run(r)}) {
+				HasScheduled: len(s.running) > 0, FullSequenceMustFit: s.cfg.ReserveFullSequence, Run: s.run(r), PrefillEnd: r.prefillEnd()}) {
 				break
 			}
 			if s.connector != nil {
@@ -945,9 +978,19 @@ func cdiv(a, b int) int { return (a + b - 1) / b }
 // run is what a KV event reports about r's blocks; nothing is built with events off.
 func (s *Scheduler) run(r *Request) kv.StoredRun {
 	if !s.cfg.KVEvents {
-		return kv.StoredRun{}
+		return kv.StoredRun{NumPromptTokens: len(r.Prompt), SharedPrefixBoundary: r.sharedPrefixBoundary}
 	}
-	return kv.StoredRun{Tokens: r.allTokens(), LoRA: r.LoRAName}
+	return kv.StoredRun{Tokens: r.allTokens(), LoRA: r.LoRAName, NumPromptTokens: len(r.Prompt),
+		SharedPrefixBoundary: r.sharedPrefixBoundary}
+}
+
+// prefillEnd is max(num_prompt_tokens, num_tokens - 1) (kv_cache_manager.py:520@5df63a72).
+func (r *Request) prefillEnd() int { return max(len(r.Prompt), r.NumTokens()-1) }
+
+// mambaSplitRequest is the request's part of the aligned split's input.
+func (r *Request) mambaSplitRequest() MambaSplitRequest {
+	return MambaSplitRequest{NumComputed: r.NumComputed, NumPrompt: len(r.Prompt), NumTokens: r.NumTokens(),
+		SharedPrefixBoundary: r.sharedPrefixBoundary}
 }
 
 // preempt is _preempt_request (:1571-1614) for recompute preemption. Under async

@@ -39,11 +39,11 @@ func TestKVLayersAreTheSchedulersGroups(t *testing.T) {
 			t.Errorf("%q: groups %v, want %v", c.extra, s.sched.KVGroups, c.want)
 		}
 	}
-	cfg, err := decodeConfig(block(t, "kv_layers:\n- {count: 2, spec: mamba, num_kv_heads: 1, head_size: 1}\n"))
+	cfg, err := decodeConfig(block(t, "kv_layers:\n- {count: 2, spec: ssm, num_kv_heads: 1, head_size: 1}\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := resolve(cfg); err == nil || !strings.Contains(err.Error(), `unknown KV layer spec "mamba"`) {
+	if _, err := resolve(cfg); err == nil || !strings.Contains(err.Error(), `unknown KV layer spec "ssm"`) {
 		t.Errorf("an unknown spec: %v, want it refused by name", err)
 	}
 }

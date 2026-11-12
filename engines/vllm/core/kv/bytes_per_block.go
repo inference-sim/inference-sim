@@ -98,6 +98,7 @@ func gcdOf(a, b int64) int64 {
 // divides the block size, and otherwise a fraction of the page that divides it, so it changes no
 // page of these specs.
 func PoolBytesPerBlock(layers []Layer, o GroupOptions, blockSize int) (int64, error) {
+	o = o.at(blockSize)
 	_, members, err := groupLayers(layers, o)
 	if err != nil {
 		return 0, err
@@ -112,7 +113,7 @@ func PoolBytesPerBlock(layers []Layer, o GroupOptions, blockSize int) (int64, er
 			groups[i] = append(groups[i], PageLayer{PageBytes: int64(pageBytes(l)), Alignment: int64(max(l.StrideAlignment, 1))})
 		}
 	}
-	return BytesPerBlock(groups, deepseek(layers) && !o.DisableHybrid)
+	return BytesPerBlock(groups, o.blockOuter(layers))
 }
 
 // StagePoolBytesPerBlock is a pipeline stage's pool bytes per block: the model's KV cache
@@ -132,6 +133,7 @@ func StagePoolBytesPerBlock(layers []Layer, on []bool, o GroupOptions, blockSize
 	if len(on) != len(layers) {
 		return 0, fmt.Errorf("kv: %d stage flags for %d layers", len(on), len(layers))
 	}
+	o = o.at(blockSize)
 	_, members, err := groupLayers(layers, o)
 	if err != nil {
 		return 0, err
@@ -156,7 +158,7 @@ func StagePoolBytesPerBlock(layers []Layer, on []bool, o GroupOptions, blockSize
 	if len(groups) == 0 {
 		return 0, nil
 	}
-	return BytesPerBlock(groups, deepseek(layers) && !o.DisableHybrid)
+	return BytesPerBlock(groups, o.blockOuter(layers))
 }
 
 // StageGroupCopyBytes is, for each of the model's KV cache groups in GroupLayers' order, the bytes
@@ -171,12 +173,13 @@ func StageGroupCopyBytes(layers []Layer, on []bool, o GroupOptions, blockSize in
 	if len(on) != len(layers) {
 		return nil, fmt.Errorf("kv: %d stage flags for %d layers", len(on), len(layers))
 	}
+	o = o.at(blockSize)
 	_, members, err := groupLayers(layers, o)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]int64, len(members))
-	if deepseek(layers) && !o.DisableHybrid {
+	if o.blockOuter(layers) {
 		per, err := StagePoolBytesPerBlock(layers, on, o, blockSize)
 		if err != nil {
 			return nil, err
@@ -195,10 +198,20 @@ func StageGroupCopyBytes(layers []Layer, on []bool, o GroupOptions, blockSize in
 			if l.BlockSize == 0 {
 				l.BlockSize = blockSize
 			}
-			out[i] += int64(pageBytes(l))
+			out[i] += copyPageBytes(l)
 		}
 	}
 	return out, nil
+}
+
+// copyPageBytes is the bytes the offload worker copies for one layer's page: the unpadded page
+// (canonical_mapping.py:396-399@5df63a72), which for a Mamba layer is its states' bytes, not
+// the page_size_padded the hybrid alignment sets.
+func copyPageBytes(l Layer) int64 {
+	if l.Spec == LayerMamba {
+		return int64(l.StateBytes)
+	}
+	return int64(pageBytes(l))
 }
 
 // GroupPage is one KV cache group as a plan states it: the bytes one block of the group holds
@@ -217,11 +230,12 @@ type GroupPage struct {
 // GroupPages is the pages of the groups GroupLayers forms over the layers, in group order: what
 // a PoolPlan's KV groups state. The widest group's bytes are the pool's stride (PoolBytesPerBlock).
 func GroupPages(layers []Layer, o GroupOptions, blockSize int) ([]GroupPage, error) {
+	o = o.at(blockSize)
 	groups, members, err := groupLayers(layers, o)
 	if err != nil {
 		return nil, err
 	}
-	outer := deepseek(layers) && !o.DisableHybrid
+	outer := o.blockOuter(layers)
 	out := make([]GroupPage, len(groups))
 	for i, m := range members {
 		var sum int64

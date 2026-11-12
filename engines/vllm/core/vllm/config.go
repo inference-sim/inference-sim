@@ -508,32 +508,34 @@ func effectiveMambaCacheMode(stated string, prefixCaching, hook bool) string {
 	return "none"
 }
 
-// checkMambaCache refuses mamba_cache_mode and mamba_ssm_cache_dtype only when the value that
-// runs differs from the default that runs: each is compared with what an unstated value resolves
-// to for this model and this enable_prefix_caching, not with the field's initializer (X1).
+// checkMambaCache refuses mamba_cache_mode and mamba_ssm_cache_dtype only where no layer of the
+// model reads them, or the value that runs is one this engine does not build: each is compared
+// with what an unstated value resolves to for this model and this enable_prefix_caching, not
+// with the field's initializer (X1).
 //
-// mamba_cache_mode: for a Mamba model, the hook resolves every stated value to the same mode, so
-// none is away from the default and none is refused. For another model the stated value stands,
-// and "align" is away from the default "none". This factory builds full-attention KV groups only
-// (sched.Config.KVGroups), so a Mamba model's groups are refused earlier in vllmengine
-// (Model.V032Pieces, blis-vllm#7) and "align" on a model without them is refused here for the same
-// reason: it splits prefill chunks on block boundaries only for Mamba layers
-// (vllm/v1/core/sched/scheduler.py:375-379@5df63a72), which this engine does not model.
+// mamba_cache_mode: for a model with recurrent layers the hook resolves every stated value to the
+// mode that prefix caching picks, "align" with it on and "none" with it off, and the KV cache
+// groups carry that mode (kv.Group.MambaCacheMode), so nothing is refused. For another model the
+// stated value stands, no layer reads it, and "align" is away from the default "none": it splits
+// prefill chunks on block boundaries only for Mamba layers
+// (vllm/v1/core/sched/scheduler.py:375-379@5df63a72), which this model lacks.
 //
 // mamba_ssm_cache_dtype: the initializer is "auto" (cache.py:185). NemotronH and Qwen3.5 replace a
 // stated "auto" with the checkpoint's value (config.py:724-732, 864-866) and keep any other stated
-// value, so a stated value equal to the resolved default is the default.
+// value. A model with recurrent layers sizes its state at the dtype that runs (the engine block's
+// kv_layers state bytes), so any stated value is built; a model without them reads none, and a
+// stated value away from the default would be dropped.
 func checkMambaCache(c Config, prefixCaching bool) error {
 	e := c.Engine
 	stated := effectiveMambaCacheMode(e.MambaCacheMode, prefixCaching, c.MambaModel)
 	if def := effectiveMambaCacheMode("", prefixCaching, c.MambaModel); stated != def {
 		return fmt.Errorf("vllm: mamba_cache_mode %q runs as %q, away from the default %q for this model with enable_prefix_caching %t; "+
-			"it is not modelled: this factory builds full-attention KV groups only (%s, %s)",
-			e.MambaCacheMode, stated, def, prefixCaching, issueBase+"7", issueBase+"17")
+			"this model has no recurrent layer to read it, so a stated value would be dropped (%s)",
+			e.MambaCacheMode, stated, def, prefixCaching, issueBase+"7")
 	}
-	if v := e.MambaSSMCacheDType; v != "" && v != "auto" && v != c.MambaSSMCacheDTypeDefault {
-		return fmt.Errorf("vllm: mamba_ssm_cache_dtype %q is not modelled: it differs from the default %q for this model (%s)",
-			v, defaultOr(c.MambaSSMCacheDTypeDefault, "auto"), issueBase+"83")
+	if v := e.MambaSSMCacheDType; v != "" && v != "auto" && v != c.MambaSSMCacheDTypeDefault && !c.MambaModel {
+		return fmt.Errorf("vllm: mamba_ssm_cache_dtype %q differs from the default %q, and this model has no recurrent layer "+
+			"to read it, so a stated value would be dropped (%s)", v, defaultOr(c.MambaSSMCacheDTypeDefault, "auto"), issueBase+"83")
 	}
 	return nil
 }
