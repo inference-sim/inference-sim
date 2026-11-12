@@ -4,10 +4,11 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"pgregory.net/rapid"
 )
 
-// renderJob is one request offered to a Renderer.
+// renderJob is one request offered to a AdmissionStage.
 type renderJob struct{ arrival, service int64 }
 
 func drawRenderJobs(rt *rapid.T) []renderJob {
@@ -23,17 +24,17 @@ func drawRenderJobs(rt *rapid.T) []renderJob {
 	return jobs
 }
 
-// TestRenderer_EachServerIsAFIFOQueueOfItsThreads is INV-R1's queue law. For every admission
+// TestAdmissionStage_EachServerIsAFIFOQueueOfItsThreads is INV-R1's queue law. For every admission
 // sequence in arrival order: a render starts no earlier than its arrival and lasts exactly its
 // service; a server never runs more renders at once than it has threads; a request waits only
 // while every thread of its server is busy (work-conserving); renders on a server start in
 // arrival order (FIFO); and requests go to the servers round-robin.
-func TestRenderer_EachServerIsAFIFOQueueOfItsThreads(t *testing.T) {
+func TestAdmissionStage_EachServerIsAFIFOQueueOfItsThreads(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		servers := rapid.IntRange(1, 3).Draw(rt, "servers")
 		workers := rapid.IntRange(1, 3).Draw(rt, "workers")
 		jobs := drawRenderJobs(rt)
-		r, err := NewRenderer(servers, workers)
+		r, err := newStage(servers, workers)
 		if err != nil {
 			rt.Fatal(err)
 		}
@@ -80,20 +81,20 @@ func TestRenderer_EachServerIsAFIFOQueueOfItsThreads(t *testing.T) {
 				}
 			}
 		}
-		if r.Rendered() != int64(len(jobs)) {
-			rt.Fatalf("Rendered = %d, want every admission (%d)", r.Rendered(), len(jobs))
+		if r.Admitted() != int64(len(jobs)) {
+			rt.Fatalf("Rendered = %d, want every admission (%d)", r.Admitted(), len(jobs))
 		}
 	})
 }
 
-// TestRenderer_FreeOrUncontendedRenderIsTheBareOverhead is the metamorphic edge of INV-R1: a
+// TestAdmissionStage_FreeOrUncontendedRenderIsTheBareOverhead is the metamorphic edge of INV-R1: a
 // render that costs nothing, or a stage with a thread for every request, finishes each request
 // at arrival + service -- exactly the uncontended per-request delay of an inert front end.
-func TestRenderer_FreeOrUncontendedRenderIsTheBareOverhead(t *testing.T) {
+func TestAdmissionStage_FreeOrUncontendedRenderIsTheBareOverhead(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		jobs := drawRenderJobs(rt)
-		free, _ := NewRenderer(rapid.IntRange(1, 3).Draw(rt, "servers"), rapid.IntRange(1, 3).Draw(rt, "workers"))
-		wide, _ := NewRenderer(1, len(jobs))
+		free, _ := newStage(rapid.IntRange(1, 3).Draw(rt, "servers"), rapid.IntRange(1, 3).Draw(rt, "workers"))
+		wide, _ := newStage(1, len(jobs))
 		for i, j := range jobs {
 			if got := free.Admit(j.arrival, 0); got != j.arrival {
 				rt.Fatalf("free render of request %d finishes at %d, want its arrival %d", i, got, j.arrival)
@@ -108,16 +109,15 @@ func TestRenderer_FreeOrUncontendedRenderIsTheBareOverhead(t *testing.T) {
 	})
 }
 
-func TestNewRenderer_RefusesAnEmptyStage(t *testing.T) {
-	for _, c := range [][2]int{{0, 1}, {1, 0}, {-1, 1}} {
-		if _, err := NewRenderer(c[0], c[1]); err == nil {
-			t.Errorf("NewRenderer(%d, %d) accepted", c[0], c[1])
+// newStage is a stage of the given servers and workers each.
+func newStage(servers, workers int) (*AdmissionStage, error) {
+	return NewAdmissionStage(plan.AdmissionQueue{Servers: servers, WorkersPerServer: workers})
+}
+
+func TestNewAdmissionStage_RefusesAnEmptyStage(t *testing.T) {
+	for _, c := range [][2]int{{0, 0}, {1, 0}, {-1, 1}, {1, -1}} {
+		if _, err := newStage(c[0], c[1]); err == nil {
+			t.Errorf("newStage(%d, %d) accepted", c[0], c[1])
 		}
-	}
-	if err := (FrontendConfig{RendererNumWorkers: -1}).Validate(); err == nil {
-		t.Error("a negative renderer_num_workers was accepted")
-	}
-	if err := (FrontendConfig{APIServerCount: -1}).Validate(); err == nil {
-		t.Error("a negative api_server_count was accepted")
 	}
 }

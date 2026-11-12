@@ -2,6 +2,8 @@ package llmd
 
 import (
 	"fmt"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"time"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
 	"github.com/inference-sim/blis-substrate/contracts/engine/env"
@@ -55,20 +57,15 @@ func deploymentOf(cfg cengine.SimConfig, numInstances int) cluster.DeploymentCon
 // editEngine applies f to a deployment's engine configuration, keeping the front end the test set
 // on the deployment (DeploymentConfig.Frontend, a host setting).
 func editEngine(d *cluster.DeploymentConfig, f func(c *cengine.SimConfig)) {
-	frontend := d.Frontend
 	c := engineConfigIn(d.InstanceConfig)
 	f(&c)
 	d.InstanceConfig = instanceConfigOf(c)
-	if frontend != (sim.FrontendConfig{}) {
-		d.Frontend = frontend
-	}
 }
 
 func instanceConfigOf(c cengine.SimConfig) sim.InstanceConfig {
 	return sim.InstanceConfig{Horizon: c.Horizon, Seed: c.Seed, GPU: c.GPU, TP: c.TP, MaxNumSeqs: c.MaxNumSeqs,
 		Model: c.Model, BlockSizeTokens: c.BlockSizeTokens,
-		Frontend: sim.FrontendConfig{APIServerCount: c.Frontend.APIServerCount, RendererNumWorkers: c.Frontend.RendererNumWorkers},
-		Engine:   c}
+		Engine: c}
 }
 
 func engineConfigIn(c sim.InstanceConfig) cengine.SimConfig {
@@ -99,24 +96,24 @@ func compatEngineFactory(lockstepRanks int) func(int, sim.InstanceConfig) (*sim.
 // compatEngineFactoryWith is compatEngineFactory with the price each driver's Environment gives a
 // handoff.
 func compatEngineFactoryWith(lockstepRanks int, ticks func(tokens int64) int64) func(int, sim.InstanceConfig) (*sim.EngineDriver, error) {
-	driver := func(eng engine.Engine, cfg cengine.SimConfig, f sim.FrontendConfig) (*sim.EngineDriver, error) {
+	driver := func(eng engine.Engine, cfg cengine.SimConfig) (*sim.EngineDriver, error) {
 		var pull env.Environment = testutil.FixedPull(cfg.BlockSizeTokens, func(tokens int64, _, _ plan.Endpoint) int64 { return ticks(tokens) })
 		dcfg := sim.EngineDriverConfig{Horizon: cfg.Horizon, ResumeGapFromLastToken: true,
 			ScrapeEngineMetrics: true, ApplyAtStepStart: true, Environment: pull}
 		if m := cfg.LatencyModel; m != nil {
 			dcfg.PostDecodeFixedOverhead = m.PostDecodeFixedOverhead()
 			dcfg.OutputTokenProcessingTime = m.OutputTokenProcessingTime()
-			dcfg.QueueingTime = func(req *sim.Request) int64 {
-				return m.QueueingTime(&cengine.Request{InputTokens: make([]cengine.TokenID, req.InputLen())})
-			}
+			dcfg.Environment = testutil.WithHost(dcfg.Environment, func(n int) kernel.HostDemand {
+				return kernel.HostDemand{Service: time.Duration(m.QueueingTime(&cengine.Request{
+					InputTokens: make([]cengine.TokenID, n)})) * time.Microsecond}
+			})
 		}
-		return sim.NewEngineDriverWithFrontend(eng, dcfg, f)
+		return sim.NewEngineDriver(eng, dcfg), nil
 	}
 	var group *contract.DPGroup
 	var leader *sim.EngineDriver
 	return func(index int, ic sim.InstanceConfig) (*sim.EngineDriver, error) {
 		cfg := engineConfigIn(ic)
-		cfg.Frontend.APIServerCount, cfg.Frontend.RendererNumWorkers = ic.Frontend.APIServerCount, ic.Frontend.RendererNumWorkers
 		if lockstepRanks <= 1 {
 			eng, err := contract.New(fmt.Sprintf("instance_%d", index), cfg)
 			if err != nil {
@@ -130,7 +127,7 @@ func compatEngineFactoryWith(lockstepRanks int, ticks func(tokens int64) int64) 
 					return nil, err
 				}
 			}
-			return driver(eng, cfg, ic.Frontend)
+			return driver(eng, cfg)
 		}
 		k := index % lockstepRanks
 		if k == 0 {
@@ -147,7 +144,7 @@ func compatEngineFactoryWith(lockstepRanks int, ticks func(tokens int64) int64) 
 		if group == nil {
 			return nil, fmt.Errorf("data-parallel rank %d of instance %d was built before its rank 0", k, index)
 		}
-		d, err := driver(group.View(k), cfg, ic.Frontend)
+		d, err := driver(group.View(k), cfg)
 		if err != nil {
 			return nil, err
 		}

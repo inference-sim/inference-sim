@@ -68,7 +68,6 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 	// that Data, so the Result's hashes and its one selected-entry report cover the lookups of
 	// every pool's engine (blis-vllm#90, design §3.3, VAL-6).
 	data := mustRunData()
-	frontend := groupFrontendConfigFromCLI(dataParallelism)
 	build := func(index int, ic sim.InstanceConfig) (*sim.EngineDriver, error) {
 		m := latency
 		if kernelPDOpened != nil {
@@ -94,6 +93,12 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 		if err := placeInstance(eng, kernelPDOpened, index); err != nil {
 			return nil, fmt.Errorf("scenario %q: instance_%d: %w", kernelScenario, index, err)
 		}
+		// --renderer-num-workers and --api-server-count are vLLM's API-server settings, which
+		// blis-schemas does not carry yet; the engine resolves them into the admission queue its
+		// plan states, and the driver queues requests on that shape.
+		if err := setEngineFrontend(eng, version); err != nil {
+			return nil, fmt.Errorf("scenario %q: %w", kernelScenario, err)
+		}
 		reportAssumptions(eng)
 		if iv := serverSeriesIntervalUs(); iv > 0 {
 			// --server-series-interval-s: the engine bins its own vllm:* series on the simulation
@@ -109,7 +114,7 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 		cfg := sim.EngineDriverConfig{Horizon: horizon, Acceptance: acceptance, StreamInterval: streamInterval,
 			Environment: kernelPDOpened.environmentOf(ic, kernelOpened)}
 		hostOverheads(&cfg, m)
-		return sim.NewEngineDriverWithFrontend(eng, cfg, frontend)
+		return sim.NewEngineDriver(eng, cfg), nil
 	}
 	// Build the first instance's engine now: a deployment the engine refuses (one needing a
 	// piece it does not build yet) is a CLI refusal, named, before the cluster is assembled.

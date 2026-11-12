@@ -2,6 +2,8 @@ package cluster
 
 import (
 	"fmt"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"time"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
 	"github.com/inference-sim/blis-substrate/contracts/engine/env"
@@ -61,14 +63,8 @@ func withRoles(d DeploymentConfig, prefill, decode *simConfig) DeploymentConfig 
 func engineConfigOf(d DeploymentConfig) simConfig { return engineConfigIn(d.InstanceConfig) }
 
 // setEngine replaces a deployment's engine configuration, keeping its host settings in step. A
-// front end the test set on the deployment itself (DeploymentConfig.Frontend, which the cluster
-// reads) is kept, as a host setting the engine configuration does not carry.
 func setEngine(d *DeploymentConfig, cfg simConfig) {
-	frontend := d.Frontend
 	d.InstanceConfig = instanceConfigOf(cfg)
-	if frontend != (sim.FrontendConfig{}) {
-		d.Frontend = frontend
-	}
 }
 
 // editEngine applies f to a deployment's engine configuration.
@@ -83,8 +79,7 @@ func editEngine(d *DeploymentConfig, f func(c *simConfig)) {
 func instanceConfigOf(c simConfig) sim.InstanceConfig {
 	return sim.InstanceConfig{Horizon: c.Horizon, Seed: c.Seed, GPU: c.GPU, TP: c.TP, MaxNumSeqs: c.MaxNumSeqs,
 		Model: c.Model, BlockSizeTokens: c.BlockSizeTokens,
-		Frontend: sim.FrontendConfig{APIServerCount: c.Frontend.APIServerCount, RendererNumWorkers: c.Frontend.RendererNumWorkers},
-		Engine:   c}
+		Engine: c}
 }
 
 // engineConfigIn is the engine configuration an instance configuration holds, with the host's
@@ -136,20 +131,19 @@ func compatEngineFactoryWith(lockstepRanks int, pull func(blockTokens int64) env
 		if m := cfg.LatencyModel; m != nil {
 			dcfg.PostDecodeFixedOverhead = m.PostDecodeFixedOverhead()
 			dcfg.OutputTokenProcessingTime = m.OutputTokenProcessingTime()
-			dcfg.QueueingTime = func(req *sim.Request) int64 {
-				return m.QueueingTime(&cengine.Request{InputTokens: make([]cengine.TokenID, req.InputLen())})
-			}
+			// The fake latency model's admission time is all work on a server of the admission
+			// queue the engine states.
+			dcfg.Environment = testutil.WithHost(dcfg.Environment, func(n int) kernel.HostDemand {
+				return kernel.HostDemand{Service: time.Duration(m.QueueingTime(&cengine.Request{
+					InputTokens: make([]cengine.TokenID, n)})) * time.Microsecond}
+			})
 		}
-		return sim.NewEngineDriverWithFrontend(eng, dcfg,
-			sim.FrontendConfig{APIServerCount: cfg.Frontend.APIServerCount, RendererNumWorkers: cfg.Frontend.RendererNumWorkers})
+		return sim.NewEngineDriver(eng, dcfg), nil
 	}
 	var group *contract.DPGroup
 	var leader *sim.EngineDriver
 	return func(index int, ic sim.InstanceConfig) (*sim.EngineDriver, error) {
 		cfg := engineConfigIn(ic)
-		// The host's front end is the instance configuration's (DeploymentConfig.Frontend), which
-		// the cluster also reads for a replica's shared render stage.
-		cfg.Frontend.APIServerCount, cfg.Frontend.RendererNumWorkers = ic.Frontend.APIServerCount, ic.Frontend.RendererNumWorkers
 		if lockstepRanks <= 1 {
 			eng, err := contract.New(fmt.Sprintf("instance_%d", index), cfg)
 			if err != nil {

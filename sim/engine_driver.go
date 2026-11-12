@@ -17,6 +17,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
 	"github.com/inference-sim/blis-substrate/contracts/engine/env"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 )
 
@@ -142,8 +143,11 @@ type EngineDriver struct {
 	unserved map[string]bool
 	// pendingWake is the wake the engine last reported (0 = none).
 	pendingWake *driverWakeEvent
-	// renderer is the host's API-server render stage (INV-R1), nil when the front end is inert.
-	renderer *Renderer
+	// stage is the queue requests wait in before the engine admits them (INV-R1), nil when the
+	// engine states none; admissionPlan is the plan its shape came from, which prices a request's
+	// demand on it.
+	stage         *AdmissionStage
+	admissionPlan plan.PoolPlan
 	// stepPending is set while a step is queued for after the current instant's arrivals.
 	stepPending bool
 
@@ -209,38 +213,32 @@ type stagedBatch struct {
 	end         int64
 }
 
-// NewEngineDriver wraps an engine for the host's event loop, with an inert front end: a
-// request's QueueingTime is an uncontended delay.
+// NewEngineDriver wraps an engine for the host's event loop. When the engine is Planned and its
+// plan states an admission queue (plan.HostPlan.Admission), requests queue on it (INV-R1).
 func NewEngineDriver(eng engine.Engine, cfg EngineDriverConfig) *EngineDriver {
-	return &EngineDriver{eng: eng, cfg: cfg, Horizon: cfg.Horizon, Metrics: NewMetrics(),
+	d := &EngineDriver{eng: eng, cfg: cfg, Horizon: cfg.Horizon, Metrics: NewMetrics(),
 		reqs: map[string]*driverReq{}}
-}
-
-// NewEngineDriverWithFrontend wraps an engine behind the host's API-server front end, the
-// compatibility path's render stage (FrontendConfig, Renderer; INV-R1): each request's
-// QueueingTime runs on one of the endpoint's render threads, in arrival order, and the request
-// reaches the engine when its render finishes. The front end is the host's, not the engine's.
-func NewEngineDriverWithFrontend(eng engine.Engine, cfg EngineDriverConfig, f FrontendConfig) (*EngineDriver, error) {
-	if err := f.Validate(); err != nil {
-		return nil, fmt.Errorf("NewEngineDriverWithFrontend: %w", err)
-	}
-	d := NewEngineDriver(eng, cfg)
-	if f.Enabled() {
-		r, err := NewRenderer(max(f.APIServerCount, 1), f.RendererNumWorkers)
-		if err != nil {
-			return nil, err
+	// The engine states the admission queue in its plan; an engine that states none, or one with
+	// no servers, has requests wait only their delay.
+	if p, ok := eng.(engine.Planned); ok {
+		d.admissionPlan = p.Plan()
+		if q := d.admissionPlan.Host.Admission; q.Enabled() {
+			stage, err := NewAdmissionStage(q)
+			if err != nil {
+				panic(fmt.Sprintf("engine driver: the engine's admission queue: %v", err))
+			}
+			d.stage = stage
 		}
-		d.renderer = r
 	}
-	return d, nil
+	return d
 }
 
 // Engine returns the engine the driver holds.
 func (d *EngineDriver) Engine() engine.Engine { return d.eng }
 
-// Renderer is the host's API-server render stage requests reach the engine through (INV-R1), nil
-// when the front end is inert.
-func (d *EngineDriver) Renderer() *Renderer { return d.renderer }
+// AdmissionStage is the queue requests wait in before the engine admits them (INV-R1), nil when
+// the engine states none.
+func (d *EngineDriver) AdmissionStage() *AdmissionStage { return d.stage }
 
 // DriverEvent is an event of an engine-driven instance.
 type DriverEvent interface {
@@ -433,15 +431,33 @@ type driverArrivalEvent struct {
 func (e *driverArrivalEvent) Timestamp() int64 { return e.at }
 func (e *driverArrivalEvent) Priority() int    { return PriorityArrival }
 func (e *driverArrivalEvent) run(d *EngineDriver) {
-	var render int64
-	if d.cfg.QueueingTime != nil {
-		render = d.cfg.QueueingTime(e.req)
-	}
-	at := e.at + render
-	if d.renderer != nil {
-		at = d.renderer.Admit(e.at, render)
+	service, delay := d.hostDemand(e.req)
+	at := e.at + service + delay
+	if d.stage != nil {
+		// Only the demand on a server queues; the delay is waited out after the server is free.
+		at = d.stage.Admit(e.at, service) + delay
 	}
 	d.schedule(&driverQueuedEvent{at: at, req: e.req})
+}
+
+// hostDemand is what a request asks of the admission queue, in ticks: the time it holds a server
+// and the time it only waits. The cost model answers (env.Environment.HostDemand, for the plan
+// the engine states); a driver with no Environment has the host's QueueingTime, all of it a
+// delay. Service plus delay is the whole admission time, truncated once, as it always was.
+func (d *EngineDriver) hostDemand(r *Request) (service, delay int64) {
+	if d.cfg.Environment == nil {
+		if d.cfg.QueueingTime != nil {
+			delay = d.cfg.QueueingTime(r)
+		}
+		return 0, delay
+	}
+	h, err := d.cfg.Environment.HostDemand(d.admissionPlan, int(r.InputLen()))
+	if err != nil {
+		panic(fmt.Sprintf("engine driver: the admission demand of %q: %v", r.ID, err))
+	}
+	total := h.Total().Microseconds()
+	service = min(h.Service.Microseconds(), total)
+	return service, total - service
 }
 
 // driverQueuedEvent hands a request to the engine.

@@ -20,8 +20,6 @@ type InstanceConfig struct {
 	Model      string
 	// BlockSizeTokens is the KV block in tokens a P/D handoff moves and is priced in.
 	BlockSizeTokens int64
-	// Frontend is the API-server render stage (INV-R1).
-	Frontend FrontendConfig
 	// Engine is the engine's own configuration, opaque to the host.
 	Engine any
 }

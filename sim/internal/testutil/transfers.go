@@ -25,6 +25,8 @@ type PullEnv struct {
 	Pull func(tokens int64, from, to plan.Endpoint) kernel.TransferDemand
 	// Tier is the demand of an offload copy; nil refuses one.
 	Tier func(t plan.Transfer) kernel.TransferDemand
+	// Host is the admission demand of a request of that many prompt tokens; nil is no demand.
+	Host func(promptTokens int) kernel.HostDemand
 }
 
 var _ env.Environment = PullEnv{}
@@ -75,12 +77,31 @@ func (e PullEnv) Price(plan.PoolPlan, plan.StepShape) (kernel.StepEstimate, erro
 	return kernel.StepEstimate{}, e.refuse("a step price")
 }
 
-// HostDemand implements env.Environment.
-func (e PullEnv) HostDemand(plan.PoolPlan, int) (kernel.HostDemand, error) {
-	return kernel.HostDemand{}, e.refuse("an admission demand")
+// HostDemand implements env.Environment: Host's answer, or no demand.
+func (e PullEnv) HostDemand(_ plan.PoolPlan, promptTokens int) (kernel.HostDemand, error) {
+	if e.Host == nil {
+		return kernel.HostDemand{}, nil
+	}
+	return e.Host(promptTokens), nil
 }
 
 // Acceptance implements env.Environment.
 func (e PullEnv) Acceptance(string, string, string) (acceptance.Profile, error) {
 	return acceptance.Profile{}, e.refuse("an acceptance profile")
+}
+
+// WithHost is e with its admission demand answered by host: a request holds a server of the
+// admission queue for the demand's Service and waits its Delay.
+func WithHost(e env.Environment, host func(promptTokens int) kernel.HostDemand) env.Environment {
+	return hostEnv{Environment: e, host: host}
+}
+
+type hostEnv struct {
+	env.Environment
+	host func(promptTokens int) kernel.HostDemand
+}
+
+// HostDemand implements env.Environment.
+func (h hostEnv) HostDemand(_ plan.PoolPlan, promptTokens int) (kernel.HostDemand, error) {
+	return h.host(promptTokens), nil
 }
