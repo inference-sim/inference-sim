@@ -3,6 +3,7 @@
 package contract
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -153,5 +154,56 @@ func TestARankViewIsPlannedAndPlaced(t *testing.T) {
 	bad.Node = 2
 	if err := g.View(0).SetPlacement(bad); err == nil {
 		t.Error("a node the pool lacks was accepted")
+	}
+}
+
+// The compatibility engine is placeable through the contract's one call: placed at a node and rack of its
+// pool, a pull ends there, a node the pool lacks is refused with the contract's rejection, and a rank view
+// moves its own rank only.
+func TestTheCompatibilityEngineIsPlacedByTheHost(t *testing.T) {
+	e := placedEngine(t)
+	if err := e.SetPlacement(placement.Placement{Hardware: "h100", Fabric: "ib", Nodes: 4, RanksPerNode: 8}); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Place(e, plan.Endpoint{Node: 3, Rack: 2}, 4); err != nil {
+		t.Fatal(err)
+	}
+	r := req("a", 80, 4)
+	r.RemotePrefill, r.Peer = true, &plan.Endpoint{Node: 0, Rack: 0}
+	if err := e.Add(r, 0); err != nil {
+		t.Fatal(err)
+	}
+	var started []engine.Transfer
+	for now := engine.Time(0); len(started) == 0 && now < 100000; now += 1000 {
+		b, err := e.Schedule(now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		started = b.TransfersStarted
+	}
+	if len(started) != 1 || started[0].Move.To != (plan.Endpoint{Node: 3, Rack: 2}) {
+		t.Fatalf("started %+v, want one pull ending at node 3 rack 2", started)
+	}
+	if err := engine.Place(e, plan.Endpoint{Node: 4}, 4); !errors.Is(err, engine.ErrPlacementRejected) {
+		t.Errorf("a node the pool lacks: %v, want ErrPlacementRejected", err)
+	}
+
+	g, err := NewDPGroup([]string{"r0", "r1"}, cengine.SimConfig{
+		Horizon: 1 << 40, KVCacheConfig: cengine.NewKVCacheConfig(64, 16, 0, 0, 0, 0), BatchConfig: cengine.NewBatchConfig(16, 2048, 0),
+		LatencyModel: fixedLatency{}, ModelHardwareConfig: cengine.ModelHardwareConfig{GPU: "h100", TP: 1, DP: 2}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := g.SetPlacement(placement.Placement{Hardware: "h100", Fabric: "ib", Data: 2, Nodes: 2, RanksPerNode: 1, NodeRacks: []int{0, 3}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Place(g.View(1), plan.Endpoint{Node: 0, Rack: 5}, 2); err != nil {
+		t.Fatal(err)
+	}
+	if a, b := g.ranks[0].pl.Endpoint(), g.ranks[1].pl.Endpoint(); a != (plan.Endpoint{Node: 0, Rack: 0}) || b != (plan.Endpoint{Node: 0, Rack: 5}) {
+		t.Errorf("ranks at %+v and %+v, want rank 1 moved to node 0 rack 5 and rank 0 where it was", a, b)
+	}
+	if err := engine.Place(g, plan.Endpoint{Node: 1}, 2); !errors.Is(err, engine.ErrPlacementRejected) {
+		t.Errorf("a group whose ranks fill the nodes placed at node 1: %v, want ErrPlacementRejected", err)
 	}
 }

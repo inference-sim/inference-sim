@@ -1,5 +1,5 @@
-github.com/inference-sim/blis-substrate v0.13.1-0.20261111220855-565db4d00f46 h1:jLy5zKemEtxLhSVQPbZ8qwxWfw8eNB0sKOjLPGJ89Tc=
-github.com/inference-sim/blis-substrate v0.13.1-0.20261111220855-565db4d00f46/go.mod h1:vZYEOia6TQOW+HZYbvJXCMDXus85dBj6vAyPr9rJF3A=
+github.com/inference-sim/blis-substrate v0.13.1-0.20261111234856-40c8af6cdc11 h1:vhkYZXAXdGAzRp3XgwMezq/i7jBORkAFDSYx6VdCISI=
+github.com/inference-sim/blis-substrate v0.13.1-0.20261111234856-40c8af6cdc11/go.mod h1:vZYEOia6TQOW+HZYbvJXCMDXus85dBj6vAyPr9rJF3A=
 github.com/sirupsen/logrus v1.9.4 h1:TsZE7l11zFCLZnZ+teH4Umoq5BhEIfIzfRDZ1Uzql2w=
 github.com/sirupsen/logrus v1.9.4/go.mod h1:ftWc9WdOfJ0a92nsE2jF5u5ZwH8Bv2zdeOC42RjbV2g=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=

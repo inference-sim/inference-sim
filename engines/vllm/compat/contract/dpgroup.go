@@ -454,6 +454,11 @@ var (
 	_ placement.Placeable = (*RankView)(nil)
 )
 
+// PlaceAt implements engine.Placeable for this rank, as SetPlacement states it: the other ranks are not moved.
+func (v *RankView) PlaceAt(at plan.Endpoint) error { return v.g.ranks[v.k].PlaceAt(at) }
+
+var _ engine.Placeable = (*RankView)(nil)
+
 func (v *RankView) Add(r engine.Request, now engine.Time) error { return v.g.AddToRank(v.k, r, now) }
 
 // Schedule admits the rank's waiting handoffs when it is idle, and on rank 0's view runs the
@@ -571,3 +576,16 @@ func (g *DPGroup) SetPlacement(p placement.Placement) error {
 }
 
 var _ placement.Placeable = (*DPGroup)(nil)
+
+// PlaceAt implements engine.Placeable for the group: the pool's placement with its first node and rack given,
+// each rank then sitting where the pool's layout puts it (SetPlacement). A group whose ranks fill the pool's
+// nodes starts at the first node, so any other node is refused.
+func (g *DPGroup) PlaceAt(at plan.Endpoint) error {
+	base := g.ranks[0].pl
+	if base.RanksPerNode > 0 && at.Node != 0 {
+		return fmt.Errorf("contract: the group's ranks fill the pool's nodes from the first, so it cannot start at node %d", at.Node)
+	}
+	return g.SetPlacement(base.At(at.Node, at.Rack))
+}
+
+var _ engine.Placeable = (*DPGroup)(nil)

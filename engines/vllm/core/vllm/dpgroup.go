@@ -486,6 +486,26 @@ func (g *DPGroup) SetPlacement(p placement.Placement) error {
 
 var _ placement.Placeable = (*DPGroup)(nil)
 
+// PlaceAt implements engine.Placeable for the group: it is the pool's placement with its first node and rack
+// given, and each rank then sits where the pool's layout puts it (SetPlacement). A group whose ranks
+// fill the pool's nodes starts at the first node, so any other node is refused.
+func (g *DPGroup) PlaceAt(at plan.Endpoint) error {
+	first := g.ranks[0].e
+	if first.plan.Hardware == "" {
+		if at != (plan.Endpoint{}) {
+			return fmt.Errorf("vllm: the group states no placement, so it has no node %d rack %d to be placed at", at.Node, at.Rack)
+		}
+		return nil
+	}
+	base := first.placementOf()
+	if base.RanksPerNode > 0 && at.Node != 0 {
+		return fmt.Errorf("vllm: the group's ranks fill the pool's nodes from the first, so it cannot start at node %d", at.Node)
+	}
+	return g.SetPlacement(base.At(at.Node, at.Rack))
+}
+
+var _ engine.Placeable = (*DPGroup)(nil)
+
 // RecordSelected registers the group's pricer with d, as Engine.RecordSelected does. The ranks
 // share one pricer (newDPGroup), so the group registers it once, not once per rank.
 func (g *DPGroup) RecordSelected(d *load.Data) {

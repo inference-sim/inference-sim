@@ -144,6 +144,12 @@ var (
 	_ placement.Placeable = (*Engine)(nil)
 )
 
+// PlaceAt implements engine.Placeable, the host's one way to say where an instance runs: the engine's pool
+// placement with its node and rack given. A node the pool lacks is refused and leaves the engine as it was.
+func (e *Engine) PlaceAt(at plan.Endpoint) error { return e.SetPlacement(e.pl.At(at.Node, at.Rack)) }
+
+var _ engine.Placeable = (*Engine)(nil)
+
 // Add enqueues a request, as the host's QueuedEvent does (EnqueueRequest). A request the engine
 // drops at enqueue (its length guards) is refused.
 func (e *Engine) Add(r engine.Request, now engine.Time) error {

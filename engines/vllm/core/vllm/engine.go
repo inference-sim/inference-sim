@@ -257,6 +257,32 @@ func (e *Engine) SetPlacement(p placement.Placement) error {
 
 var _ placement.Placeable = (*Engine)(nil)
 
+// PlaceAt implements engine.Placeable, the host's one way to say where an instance runs: the engine takes the
+// node and rack and states its transfers' own end there. The pool's chip, network and layout are the engine's
+// own (its plan), so the endpoint is all the host gives; a node the pool lacks, or a placement after a
+// transfer has started, is refused and leaves the engine as it was. A pool that states no placement and starts
+// no transfer has no place to give: it takes the first node and refuses any other, for it would have to
+// invent the chip and the layout the endpoint is in.
+func (e *Engine) PlaceAt(at plan.Endpoint) error {
+	if e.plan.Hardware == "" {
+		if at != (plan.Endpoint{}) {
+			return fmt.Errorf("vllm: the pool states no placement, so it has no node %d rack %d to be placed at", at.Node, at.Rack)
+		}
+		return nil
+	}
+	return e.SetPlacement(e.placementOf().At(at.Node, at.Rack))
+}
+
+// placementOf is the engine's pool placement as its plan states it: the chip, the network and the layout. The
+// endpoint of the engine itself is not part of it (Placement.At states that).
+func (e *Engine) placementOf() placement.Placement {
+	l := e.plan.Layout
+	return placement.Placement{Hardware: e.plan.Hardware, Fabric: e.plan.Fabric, Tensor: l.Tensor, Pipeline: l.Pipeline,
+		Data: l.Data, Expert: l.Expert, Context: l.Context, RanksPerNode: l.RanksPerNode, Nodes: l.Nodes}
+}
+
+var _ engine.Placeable = (*Engine)(nil)
+
 // histogramBounds are the bucket bounds vLLM v0.32.0 registers for the request-token,
 // iteration-token, n and preemption histograms (vllm/v1/metrics/buckets.py:107-128,172-240@5df63a72).
 func histogramBounds(maxModelLen int) []metrics.Bucketed {
