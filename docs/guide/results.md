@@ -296,6 +296,13 @@ place of the one the deployment states: each entry names the engine `setting` (f
 `priced`, and a `reason`. A point with a substitution is not priced in the mode it states, so a
 grade reads this list and not the stderr text.
 
+`engine_assumptions`, present only when the pool's engines disclosed one, lists what the engine
+says it assumed in pricing the pool, as the `engine assumption:` lines on stderr do: for example a
+prefill data-parallel group that spans nodes states every handoff from its first node, or the
+vLLM release whose behaviour the cost model encodes. The strings are the engine's own text, each
+once, sorted; the engines of one pool, and the pods of a group, state the same ones. Unlike
+`substitutions` they are prose, not a field to grade on.
+
 ### Scheduling Delay
 
 Scheduling delay isolates the WaitQ wait time from compute time. High scheduling delay + low preemptions = **queue saturation** (add instances). Low scheduling delay + high TTFT = **compute saturation** (reduce batch size or use chunked prefill).

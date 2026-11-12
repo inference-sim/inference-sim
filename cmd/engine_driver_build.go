@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 
 	"github.com/sirupsen/logrus"
 
@@ -32,6 +33,7 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 	// own, which blis-vllm's OpenPools refuses already. A data-parallel deployment is one
 	// instance whose engine is the whole DP group, its ranks, waves and balancer the engine's.
 	poolOf := kernelPDOpened.poolOfInstance()
+	engineAssumed = map[int]map[string]bool{}
 	// The DP group is vLLM's internal balancer, one endpoint routing to its ranks. Under the
 	// external balancer each rank is its own endpoint and the router picks the rank
 	// (vllm/entrypoints/cli/serve.py:107-116@5df63a72), which the group does not model: refuse
@@ -95,6 +97,7 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 			return nil, fmt.Errorf("scenario %q: instance_%d: %w", kernelScenario, index, err)
 		}
 		reportAssumptions(eng)
+		recordAssumptions(poolOf(ic), eng)
 		if iv := serverSeriesIntervalUs(); iv > 0 {
 			// --server-series-interval-s: the engine bins its own vllm:* series on the simulation
 			// clock (the driver's ServerSeriesSpan and ServerSeriesBlock queries read it). An
@@ -146,3 +149,33 @@ func reportAssumptions(eng engine.Engine) {
 }
 
 var assumptionsReported bool
+
+// engineAssumed is the assumptions the run's engines disclosed, by the pool index of the engine
+// that stated them (engine.Spec.Pool), without repeats: the engines of one pool state the same
+// ones, and a pod of a data-parallel group may add its own. engineDriverFactory starts it afresh.
+var engineAssumed map[int]map[string]bool
+
+// recordAssumptions adds eng's disclosed assumptions to its pool's set.
+func recordAssumptions(pool int, eng engine.Engine) {
+	a, ok := eng.(interface{ Assumptions() []string })
+	if !ok || engineAssumed == nil {
+		return
+	}
+	for _, s := range a.Assumptions() {
+		if engineAssumed[pool] == nil {
+			engineAssumed[pool] = map[string]bool{}
+		}
+		engineAssumed[pool][s] = true
+	}
+}
+
+// assumptionsOfPool is the sorted assumptions the engines of the pool at index disclosed; nil when
+// there are none.
+func assumptionsOfPool(index int) []string {
+	var out []string
+	for s := range engineAssumed[index] {
+		out = append(out, s)
+	}
+	slices.Sort(out)
+	return out
+}

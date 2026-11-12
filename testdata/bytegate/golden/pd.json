@@ -1755,6 +1755,16 @@
             "Set": "blis-latency-kernel"
           }
         ],
+        "engine_assumptions": [
+          "attention_decode_rate_block_index_scores = absent: not in the scenario's coefficient sets: no measured decode form for the block_index_scores kernel, so it is priced with its attention kind's pair",
+          "attention_decode_rate_sparse_mla = absent: not in the scenario's coefficient sets: no per-kind decode rate for sparse_mla attention, so it is priced with the part-wide attention pair and any per-kind floor is not used",
+          "attention_prefill_rate_block_index_scores = absent: not in the scenario's coefficient sets: no measured prefill form for the block_index_scores kernel, so its prefill is priced with the part-wide prefill pair on its scoring FLOPs",
+          "attention_prefill_rate_sparse_mla = absent: not in the scenario's coefficient sets: no measured prefill form for sparse_mla attention, so its prefill is priced with the part-wide prefill pair on the attention FLOPs",
+          "compilation_config.cudagraph_mode = PIECEWISE: priced under the kernel's vLLM 0.31.0 policy (blis-vllm#78); vLLM 0.32.0 resolves the mode against the attention backend's cudagraph support and may run a lower mode or refuse this one, which the kernel does not see; the default mode and the capture sizes agree with 0.32.0",
+          "engine_version = 0.31.0: the scenario declares vLLM 0.32.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
+          "fabric_bandwidth_efficiency = 1: the scenario's coefficient sets carry no fabric_bandwidth_efficiency scoped to fabric ib-400g, so every byte that crosses it is priced at the catalog's nominal line rate",
+          "max_cudagraph_capture_size = 512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph"
+        ],
         "evidence_source": "kernel",
         "evidenced": 115,
         "fallback_or_assumed": [
@@ -2222,6 +2232,16 @@
             "Scope": "0.31.0: the scenario declares vLLM 0.32.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
             "Set": "blis-latency-kernel"
           }
+        ],
+        "engine_assumptions": [
+          "attention_decode_rate_block_index_scores = absent: not in the scenario's coefficient sets: no measured decode form for the block_index_scores kernel, so it is priced with its attention kind's pair",
+          "attention_decode_rate_sparse_mla = absent: not in the scenario's coefficient sets: no per-kind decode rate for sparse_mla attention, so it is priced with the part-wide attention pair and any per-kind floor is not used",
+          "attention_prefill_rate_block_index_scores = absent: not in the scenario's coefficient sets: no measured prefill form for the block_index_scores kernel, so its prefill is priced with the part-wide prefill pair on its scoring FLOPs",
+          "attention_prefill_rate_sparse_mla = absent: not in the scenario's coefficient sets: no measured prefill form for sparse_mla attention, so its prefill is priced with the part-wide prefill pair on the attention FLOPs",
+          "compilation_config.cudagraph_mode = PIECEWISE: priced under the kernel's vLLM 0.31.0 policy (blis-vllm#78); vLLM 0.32.0 resolves the mode against the attention backend's cudagraph support and may run a lower mode or refuse this one, which the kernel does not see; the default mode and the capture sizes agree with 0.32.0",
+          "engine_version = 0.31.0: the scenario declares vLLM 0.32.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
+          "fabric_bandwidth_efficiency = 1: the scenario's coefficient sets carry no fabric_bandwidth_efficiency scoped to fabric ib-400g, so every byte that crosses it is priced at the catalog's nominal line rate",
+          "max_cudagraph_capture_size = 512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph"
         ],
         "evidence_source": "kernel",
         "evidenced": 115,
