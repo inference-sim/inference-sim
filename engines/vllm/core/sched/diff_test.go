@@ -62,7 +62,20 @@ type scenario struct {
 		// and nothing else: the trace records the exception it raised (trace.GroupsError), and no
 		// scheduler runs.
 		ExpectGroupsError bool `json:"expect_groups_error"`
-		Speculative       *struct {
+		// CacheConfig is the CacheConfig fields a hybrid Mamba scenario names beyond the block
+		// size and prefix caching (oracle/run_scheduler.py build_scheduler): vLLM's defaults when
+		// absent. The Mamba mode and block size are the kv_layers mamba runs' own.
+		CacheConfig struct {
+			// PrefixCacheRetentionInterval is prefix_cache_retention_interval (vllm/config/cache.py:
+			// 160-165@5df63a72): absent is vLLM's default 0 (semantic checkpoints only), a
+			// positive value a periodic checkpoint, the JSON null dense retention (the raw text
+			// keeps "absent" and "null" apart).
+			PrefixCacheRetentionInterval json.RawMessage `json:"prefix_cache_retention_interval"`
+			PrefixMatchUnit              int             `json:"prefix_match_unit"`
+			// EnableMambaSharedPrefixCheckpoint is enable_mamba_shared_prefix_checkpoint.
+			EnableMambaSharedPrefixCheckpoint bool `json:"enable_mamba_shared_prefix_checkpoint"`
+		} `json:"cache_config"`
+		Speculative *struct {
 			Method           string `json:"method"`
 			NumTokens        int    `json:"num_speculative_tokens"`
 			Draft            string `json:"draft"`
@@ -103,6 +116,13 @@ type step struct {
 	// KVEvents are the step's KV cache events, by content, when the scenario turns them on:
 	// ["stored", hashes, parent, tokens, block_size, lora_name] or ["removed", hashes].
 	KVEvents []any `json:"kv_events,omitempty"`
+	// The fields below are recorded only for a hybrid Mamba model (oracle/README.md, "Trace"):
+	// per running request after the step, num_computed_tokens and num_tokens; and, for each
+	// request whose first prefill the step scheduled, the tokens that schedule took from the
+	// prefix cache (PrefillStats.num_cached_tokens).
+	NumComputed map[string]int `json:"num_computed,omitempty"`
+	NumTokens   map[string]int `json:"num_tokens,omitempty"`
+	PrefixHit   map[string]int `json:"prefix_hit,omitempty"`
 }
 
 type trace struct {
@@ -118,7 +138,26 @@ type trace struct {
 		Type    string `json:"type"`
 		Message string `json:"message"`
 	} `json:"groups_error"`
-	Steps    []step `json:"steps"`
+	Steps []step `json:"steps"`
+	// KVConfig is what the Scheduler resolved for a hybrid Mamba model (mamba_config in
+	// oracle/run_scheduler.py): block sizes, the aligned-split switches and each group's spec.
+	KVConfig *struct {
+		SchedulerBlockSize             int  `json:"scheduler_block_size"`
+		HashBlockSize                  int  `json:"hash_block_size"`
+		NeedMambaBlockAlignedSplit     bool `json:"need_mamba_block_aligned_split"`
+		MambaPartialCacheHit           bool `json:"mamba_partial_cache_hit"`
+		MambaHasPrefillCheckpointBlock bool `json:"mamba_has_prefill_checkpoint_blocks"`
+		NumBlocks                      int  `json:"num_blocks"`
+		Groups                         []struct {
+			Type                       string `json:"type"`
+			BlockSize                  int    `json:"block_size"`
+			PageSizeBytes              int    `json:"page_size_bytes"`
+			MambaCacheMode             string `json:"mamba_cache_mode"`
+			NumSpeculativeBlocks       int    `json:"num_speculative_blocks"`
+			NumPrefillCheckpointBlocks int    `json:"num_prefill_checkpoint_blocks"`
+			PrefillCheckpointAlignment *int   `json:"prefill_checkpoint_alignment"`
+		} `json:"groups"`
+	} `json:"kv_config"`
 	Finished map[string]struct {
 		Reason       string `json:"reason"`
 		OutputTokens int    `json:"output_tokens"`
@@ -152,8 +191,10 @@ func run(t *testing.T, sc scenario) trace {
 		spec = ResolveSpec(SpecOptions{Method: c.Speculative.Method, NumTokens: c.Speculative.NumTokens,
 			ParallelDrafting: c.Speculative.ParallelDrafting, NextnPredictLayers: draftNextnLayers(t, c.Speculative.Draft)})
 	}
-	s, err := New(Config{
-		MaxNumSeqs: c.MaxNumSeqs, MaxNumBatchedTokens: c.MaxNumBatchedTokens, BlockSize: c.BlockSize,
+	s, err := newOrRefusePartialHashHits(t, c.CacheConfig.PrefixMatchUnit, Config{
+		PrefixMatchUnit:   c.CacheConfig.PrefixMatchUnit,
+		RetentionInterval: retentionInterval(t, c.KVLayers, c.CacheConfig.PrefixCacheRetentionInterval),
+		MaxNumSeqs:        c.MaxNumSeqs, MaxNumBatchedTokens: c.MaxNumBatchedTokens, BlockSize: c.BlockSize,
 		NumBlocks: c.NumBlocks, MaxModelLen: c.MaxModelLen, LongPrefillTokenThreshold: c.LongPrefillTokenThreshold,
 		EnableChunkedPrefill: c.EnableChunkedPrefill == nil || *c.EnableChunkedPrefill, Policy: Policy(c.SchedulingPolicy), EnablePrefixCaching: c.EnablePrefixCaching,
 		ReserveFullSequence: true, Watermark: c.Watermark, MaxNumActiveSeqs: c.MaxNumActiveSeqs,
@@ -302,6 +343,13 @@ func run(t *testing.T, sc scenario) trace {
 		if c.KVEvents {
 			st.KVEvents = eventsJSON(s.TakeKVEvents())
 		}
+		if hasMambaRun(c.KVLayers) {
+			st.NumComputed, st.NumTokens = map[string]int{}, map[string]int{}
+			for _, id := range st.Running {
+				r := s.Request(id)
+				st.NumComputed[id], st.NumTokens[id] = r.NumComputed, r.NumTokens()
+			}
+		}
 		for _, id := range st.Running {
 			if s.KV.NumGroups() == 1 {
 				st.Blocks[id] = blockRows(s.KV.Blocks(id), false)
@@ -421,6 +469,8 @@ func earliestDivergence(want, got trace) string {
 			{"blocks", nonNilBlocks(w.Blocks), nonNilBlocks(g.Blocks)},
 			{"spec_scheduled", nonNil(w.SpecScheduled), nonNil(g.SpecScheduled)},
 			{"kv_events", nonNilAny(w.KVEvents), nonNilAny(g.KVEvents)},
+			{"num_computed", nonNil(w.NumComputed), nonNil(g.NumComputed)},
+			{"num_tokens", nonNil(w.NumTokens), nonNil(g.NumTokens)},
 		} {
 			if !reflect.DeepEqual(f.w, f.g) {
 				return fmt.Sprintf("step %d, field %s: oracle %v, Go %v", i, f.name, f.w, f.g)
@@ -481,6 +531,24 @@ type kvLayerRun struct {
 	ElemBytes      int    `json:"elem_bytes"`
 	Alignment      int    `json:"alignment"`
 	BoundedReplay  bool   `json:"bounded_replay"`
+	// A "mamba" run is MambaSpec (layer_specs): StateBytes is its state's bytes, BlockSize its
+	// mamba_block_size, and the fields below the rest of the spec.
+	PageSizePadded             int    `json:"page_size_padded"`
+	MambaCacheMode             string `json:"mamba_cache_mode"`
+	NumSpeculativeBlocks       int    `json:"num_speculative_blocks"`
+	NumPrefillCheckpointBlocks int    `json:"num_prefill_checkpoint_blocks"`
+	PrefillCheckpointAlignment int    `json:"prefill_checkpoint_alignment"`
+}
+
+// hasMambaRun is whether a scenario's layers hold a Mamba run: the oracle then records the
+// Mamba fields of a step.
+func hasMambaRun(runs []kvLayerRun) bool {
+	for _, r := range runs {
+		if r.Spec == "mamba" {
+			return true
+		}
+	}
+	return false
 }
 
 // trailingDrafter is _uses_trailing_mtp_layers (vllm/v1/core/kv_cache_utils.py:1997-2013@5df63a72)
@@ -818,8 +886,54 @@ func scenarioLayers(t *testing.T, runs []kvLayerRun) []kv.Layer {
 		for i := 0; i < r.Count; i++ {
 			layers = append(layers, kv.Layer{Spec: spec, Window: r.SlidingWindow, KVHeads: heads, HeadSize: r.HeadSize,
 				BlockSize: r.BlockSize, TokensPerState: r.TokensPerState, StateBytes: r.StateBytes,
-				ElemBytes: elem, Alignment: r.Alignment, BoundedReplay: r.BoundedReplay})
+				ElemBytes: elem, Alignment: r.Alignment, BoundedReplay: r.BoundedReplay,
+				PageSizePadded: r.PageSizePadded, MambaCacheMode: r.MambaCacheMode,
+				NumSpeculativeBlocks: r.NumSpeculativeBlocks, NumPrefillCheckpointBlocks: r.NumPrefillCheckpointBlocks,
+				PrefillCheckpointAlignment: r.PrefillCheckpointAlignment})
 		}
 	}
 	return layers
+}
+
+// retentionInterval is the scenario's prefix_cache_retention_interval for a model with Mamba
+// layers: absent is vLLM's default 0, null is dense retention (nil), a number its value. A model
+// without Mamba layers keeps dense retention, which the oracle's KV cache config carries there.
+func retentionInterval(t *testing.T, layers []kvLayerRun, raw json.RawMessage) *int {
+	t.Helper()
+	mamba := false
+	for _, l := range layers {
+		mamba = mamba || l.Spec == "mamba"
+	}
+	if !mamba {
+		return nil
+	}
+	if len(raw) == 0 {
+		zero := 0
+		return &zero
+	}
+	var v *int
+	if err := json.Unmarshal(raw, &v); err != nil {
+		t.Fatalf("prefix_cache_retention_interval %s: %v", raw, err)
+	}
+	return v
+}
+
+// newOrRefusePartialHashHits is New, except for a scenario whose prefix_match_unit puts the hash
+// block below the Mamba block: vLLM enables fine-grained partial hash hits there
+// (kv_cache_coordinator.py:684-706@5df63a72), which blis-vllm refuses by name, so the scenario
+// is skipped with the refusal asserted.
+func newOrRefusePartialHashHits(t *testing.T, unit int, cfg Config) (*Scheduler, error) {
+	t.Helper()
+	if unit == 0 {
+		return New(cfg)
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			if !strings.Contains(fmt.Sprint(r), "enable_partial_hash_hits") {
+				panic(r)
+			}
+			t.Skipf("partial hash hits are refused by name: %v", r)
+		}
+	}()
+	return New(cfg)
 }

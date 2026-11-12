@@ -25,6 +25,7 @@ import os
 import platform
 import subprocess
 import sys
+import traceback
 
 
 def layer_specs(cfg: dict) -> dict:
@@ -42,11 +43,18 @@ def layer_specs(cfg: dict) -> dict:
     (vllm/v1/attention/backends/mla/sparse_swa.py:116-140, vllm/models/deepseek_v4/compressor.py:
     179-193) and "circular_buffer" CircularBufferSpec (vllm/models/deepseek_v41/compressor.py:
     159-167). Their uint8 caches are uint8 here; a float32 cache states "elem_bytes": 4. The
-    attention specs' caches are float32 unless a run states "elem_bytes" (2 is bfloat16)."""
+    attention specs' caches are float32 unless a run states "elem_bytes" (2 is bfloat16).
+
+    "mamba" is MambaSpec (vllm/v1/kv_cache_interface.py:1035-1127@5df63a72), the recurrent state of
+    a Mamba-2, GDN or KDA layer: one uint8 tensor of the run's "state_bytes" (so the state's
+    content size is state_bytes), the run's "block_size" (mamba_block_size, in tokens), and its
+    "page_size_padded", "mamba_cache_mode" ("none" unless stated), "num_speculative_blocks",
+    "num_prefill_checkpoint_blocks" and "prefill_checkpoint_alignment" as the spec states them."""
     import torch  # noqa: E402
     from vllm.v1.kv_cache_interface import (  # noqa: E402
         CircularBufferSpec,
         FullAttentionSpec,
+        MambaSpec,
         MLAAttentionSpec,
         SlidingWindowMLASpec,
         SlidingWindowSpec,
@@ -81,10 +89,26 @@ def layer_specs(cfg: dict) -> dict:
             elif kind == "circular_buffer":
                 deepseek.pop("alignment", None)
                 spec = CircularBufferSpec(head_size_v=0, **deepseek)
+            elif kind == "mamba":
+                spec = MambaSpec(
+                    block_size=run["block_size"],
+                    shapes=((run["state_bytes"],),),
+                    dtypes=(torch.uint8,),
+                    page_size_padded=run.get("page_size_padded") or None,
+                    mamba_cache_mode=run.get("mamba_cache_mode", "none"),
+                    num_speculative_blocks=run.get("num_speculative_blocks", 0),
+                    num_prefill_checkpoint_blocks=run.get("num_prefill_checkpoint_blocks", 0),
+                    prefill_checkpoint_alignment=run.get("prefill_checkpoint_alignment") or None,
+                )
             else:
                 raise ValueError(f"unknown KV layer spec {kind!r}")
             out[f"run{r}.layer{i}"] = spec
     return out
+
+
+def has_mamba(cfg: dict) -> bool:
+    """Whether the scenario's kv_layers hold a Mamba run."""
+    return any(run["spec"] == "mamba" for run in cfg.get("kv_layers", []))
 
 
 def layer_groups(cfg: dict, vllm_config) -> list:
@@ -121,7 +145,10 @@ def layer_groups(cfg: dict, vllm_config) -> list:
     # backend states block-outermost layouts (DeepseekV4IndexerBackend.supported_kv_cache_layouts,
     # vllm/v1/attention/backends/mla/indexer.py:347-351), which its workers report.
     supported = [m.name for m in _DEFAULT_LAYOUT_PREFERENCE]
-    if any(run["spec"] in ("mla", "sliding_window_mla", "circular_buffer") for run in cfg["kv_layers"]):
+    # A hybrid Mamba model keeps the default preference: its attention backends state no
+    # block-outermost layout, so the page sizes unify by padding the Mamba page.
+    if not has_mamba(cfg) and any(run["spec"] in ("mla", "sliding_window_mla", "circular_buffer")
+                                  for run in cfg["kv_layers"]):
         from vllm.v1.attention.backends.mla.indexer import DeepseekV4IndexerBackend  # noqa: E402
         from vllm.v1.attention.backends.utils import get_supported_kv_cache_layouts  # noqa: E402
 
@@ -189,11 +216,21 @@ def main() -> None:
                      "a golden-reviewed: <trace>: <reason> trailer for each trace the commit changes")
         names = sorted(f for f in os.listdir(scenario_path)
                        if f.endswith(".json") and not f.endswith(".trace.json"))
+        failed = []
         for name in names:
             path = os.path.join(scenario_path, name)
-            trace = run_one(vllm_root, path)
+            try:
+                trace = run_one(vllm_root, path)
+            except Exception:  # every scenario's failure is reported, not only the first
+                traceback.print_exc()
+                print(f"scenario {name} failed", file=sys.stderr)
+                pool_sizes.clear()
+                failed.append(name)
+                continue
             with open(os.path.join(out_dir, name[:-5] + ".trace.json"), "w") as f:
                 json.dump(trace, f, indent=1, sort_keys=True)
+        if failed:
+            sys.exit(f"{len(failed)} of {len(names)} scenarios failed: {', '.join(failed)}")
         return
     print(json.dumps(run_one(vllm_root, scenario_path), indent=1, sort_keys=True))
 
@@ -305,6 +342,15 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         if not scheduler.has_unfinished_requests() and not pending:
             break
         out = scheduler.schedule()
+        # The prefix hit of each request whose first prefill this step scheduled: schedule() sets
+        # the request's PrefillStats (scheduler.py:1071-1080@5df63a72) and update_from_output
+        # takes them away, so they are read here.
+        first_hits = {}
+        if scheduler.has_mamba_layers:
+            for rid in sorted(out.num_scheduled_tokens):
+                stats = scheduler.requests[rid].prefill_stats
+                if stats is not None and stats.num_prompt_tokens > 0:
+                    first_hits[rid] = stats.num_cached_tokens
         record = {
             "step": step,
             "scheduled": dict(sorted(out.num_scheduled_tokens.items())),
@@ -374,6 +420,8 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
                     }
         record["finished"] = sorted(done)
         record.update(kv_state(scheduler))
+        if scheduler.has_mamba_layers:
+            record.update(mamba_state(scheduler, first_hits))
         if kv_events is not None:
             record["kv_events"] = kv_events.drain()
         steps.append(record)
@@ -384,6 +432,8 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         "steps": steps,
         "finished": dict(sorted(finished.items())),
     }
+    if scheduler.has_mamba_layers:
+        out["kv_config"] = mamba_config(scheduler)
     if pool_sizes:
         out["kv_pool"] = pool_sizes[-1]
         pool_sizes.clear()
@@ -419,9 +469,27 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict, extra: dic
         # "kv_groups" scenario states it too, but there the promotion is called directly below.
         sched_extra["disable_hybrid_kv_cache_manager"] = cfg["disable_hybrid_kv_cache_manager"]
     real_vllm_config, real_scheduler_config = helpers.VllmConfig, helpers.SchedulerConfig
+    real_cache_config = helpers.CacheConfig
 
     built = {}
     groups_outcome.clear()
+
+    def cache_config(**kw):
+        # A hybrid Mamba model's cache settings: the Mamba runs' mode and block size, and the
+        # CacheConfig fields the scenario names in "cache_config" (prefix_cache_retention_interval,
+        # prefix_match_unit, enable_mamba_shared_prefix_checkpoint). They go to vLLM's own
+        # CacheConfig, so VllmConfig's validators (validate_mamba_block_size, validate_block_size)
+        # run on them as at launch. Nothing is set on a built object.
+        if has_mamba(cfg):
+            runs = [r for r in cfg["kv_layers"] if r["spec"] == "mamba"]
+            modes = {r.get("mamba_cache_mode", "none") for r in runs}
+            sizes = {r["block_size"] for r in runs}
+            if len(modes) != 1 or len(sizes) != 1:
+                sys.exit("a scenario's mamba runs state one mamba_cache_mode and one block_size")
+            kw["mamba_cache_mode"] = modes.pop()
+            kw["mamba_block_size"] = sizes.pop()
+            kw.update(cfg.get("cache_config", {}))
+        return real_cache_config(**kw)
 
     def vllm_config(**kw):
         if spec:
@@ -466,8 +534,16 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict, extra: dic
                     groups_outcome.update(error={"type": type(e).__name__, "message": str(e)}, groups=None)
                 return real_kv_cache_config(num_blocks=num_blocks, kv_cache_tensors=kv_cache_tensors,
                                             kv_cache_groups=kv_cache_groups)
+            retention = {}
+            if has_mamba(cfg):
+                # The engine's KVCacheConfig carries the retention policy the CacheConfig states
+                # (get_kv_cache_config_from_groups, vllm/v1/core/kv_cache_utils.py:1611-1613 and
+                # 1684-1686@5df63a72): vLLM's default 0 keeps only semantic checkpoints of Mamba
+                # states, where the dataclass's own default (None) keeps every one.
+                retention = {"prefix_cache_retention_interval":
+                             built["config"].cache_config.prefix_cache_retention_interval}
             return real_kv_cache_config(num_blocks=num_blocks, kv_cache_tensors=kv_cache_tensors,
-                                        kv_cache_groups=layer_groups(cfg, built["config"]))
+                                        kv_cache_groups=layer_groups(cfg, built["config"]), **retention)
         if not groups:
             return real_kv_cache_config(num_blocks=num_blocks, kv_cache_tensors=kv_cache_tensors,
                                         kv_cache_groups=kv_cache_groups)
@@ -527,9 +603,10 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict, extra: dic
     v2 = (bool(spec) and spec["method"] == "dspark") or bool((extra or {}).get("use_v2_model_runner"))
     restore_env = v2_runner_env(v2)
     helpers.VllmConfig, helpers.SchedulerConfig = vllm_config, scheduler_config
+    helpers.CacheConfig = cache_config
     helpers.KVCacheConfig = kv_cache_config
     real_scheduler_cls = (extra or {}).get("scheduler_cls")
-    if cfg.get("kv_layers") and any(r["spec"] in ("mla", "sliding_window_mla", "circular_buffer")
+    if cfg.get("kv_layers") and any(r["spec"] in ("mla", "sliding_window_mla", "circular_buffer", "mamba")
                                     for r in cfg["kv_layers"]):
         # Groups of several block sizes: the engine core hands the Scheduler the block sizes
         # vLLM's own resolve_kv_cache_block_sizes resolves from the groups, the scheduler block
@@ -563,6 +640,7 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict, extra: dic
         )
     finally:
         helpers.VllmConfig, helpers.SchedulerConfig = real_vllm_config, real_scheduler_config
+        helpers.CacheConfig = real_cache_config
         helpers.KVCacheConfig = real_kv_cache_config
         restore_env()
 
@@ -662,6 +740,50 @@ def kv_state(scheduler) -> dict:
         "num_waiting": num_waiting,
         "kv_usage": scheduler.get_kv_cache_usage(),
         "blocks": per_request,
+    }
+
+
+def mamba_state(scheduler, first_hits: dict) -> dict:
+    """What a hybrid Mamba model's step adds, recorded only when the scheduler has Mamba layers
+    (so no other scenario's trace gains a field). "num_computed" and "num_tokens" are per running
+    request, after the step: num_computed_tokens (the Mamba state's position; with the step's
+    "scheduled" it gives each aligned chunk and each resumed request's replay) and num_tokens,
+    prompt plus outputs so far (prefill_end is max(prompt length, num_tokens - 1),
+    scheduler.py:_mamba_block_aligned_split). "prefix_hit" is, for each request whose first prefill
+    this step scheduled, the tokens that schedule took from the prefix cache (PrefillStats.
+    num_cached_tokens). The Mamba group's blocks are already in "blocks": one list per KV cache
+    group, a null slot as ["null", 0], every other block as [hash, ref_cnt]."""
+    running = sorted(scheduler.running, key=lambda r: r.request_id)
+    return {
+        "num_computed": {r.request_id: r.num_computed_tokens for r in running},
+        "num_tokens": {r.request_id: r.num_tokens for r in running},
+        "prefix_hit": first_hits,
+    }
+
+
+def mamba_config(scheduler) -> dict:
+    """The configuration the Scheduler resolved for a hybrid Mamba model, which the Go side must
+    resolve to the same values: the scheduler and hash block sizes, whether it splits chunks at
+    Mamba boundaries, and each KV cache group's spec (its type, block size, Mamba mode and
+    counts). Group order is the order of the "blocks" lists."""
+    groups = []
+    for g in scheduler.kv_cache_manager.kv_cache_config.kv_cache_groups:
+        s = g.kv_cache_spec
+        row = {"type": type(s).__name__, "block_size": s.block_size, "page_size_bytes": s.page_size_bytes}
+        if type(s).__name__ == "MambaSpec":
+            row.update({"mamba_cache_mode": s.mamba_cache_mode,
+                        "num_speculative_blocks": s.num_speculative_blocks,
+                        "num_prefill_checkpoint_blocks": s.num_prefill_checkpoint_blocks,
+                        "prefill_checkpoint_alignment": s.prefill_checkpoint_alignment})
+        groups.append(row)
+    return {
+        "scheduler_block_size": scheduler.block_size,
+        "hash_block_size": scheduler.hash_block_size,
+        "need_mamba_block_aligned_split": scheduler.need_mamba_block_aligned_split,
+        "mamba_partial_cache_hit": scheduler.mamba_partial_cache_hit,
+        "mamba_has_prefill_checkpoint_blocks": scheduler.mamba_has_prefill_checkpoint_blocks,
+        "num_blocks": scheduler.kv_cache_manager.block_pool.num_gpu_blocks,
+        "groups": groups,
     }
 
 

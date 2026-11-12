@@ -609,6 +609,12 @@ jobs:
         run: |
           set -o pipefail
           go test -v -count=1 -run 'TestDifferentialAgainstVLLM|TestFuzzCorpusAgainstVLLM' ./core/sched/ | tee oracle/out/diff-results.txt
+      - name: blis-vllm against vLLM (hybrid Mamba fuzz)
+        env:
+          BLIS_VLLM_FUZZ_DIR: ${{ github.workspace }}/oracle/out/fuzz-mamba
+        run: |
+          set -o pipefail
+          go test -v -count=1 -run 'TestFuzzCorpusAgainstVLLM' ./core/sched/ | tee oracle/out/diff-mamba-results.txt
       # Tier 5: every exact vllm:* family, after every step, against vLLM's own Prometheus
       # logger on the same scenarios and fuzz seeds.
       - name: blis-vllm's metrics against vLLM's (scenarios + fuzz)

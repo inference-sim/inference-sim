@@ -1,0 +1,94 @@
+{
+ "name": "mamba-pool-fits",
+ "description": "Align mode, 8192 bytes of KV memory: the pool vLLM sizes over a full-attention and a Mamba group, and a start-up check that passes (one 128-token request needs 16 attention pages and 3 Mamba pages of 256 bytes).",
+ "config": {
+  "max_num_seqs": 2,
+  "max_num_batched_tokens": 32,
+  "block_size": 8,
+  "num_blocks": 200,
+  "max_model_len": 128,
+  "long_prefill_token_threshold": 0,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "kv_layers": [
+   {
+    "count": 1,
+    "spec": "full",
+    "num_kv_heads": 1,
+    "head_size": 4
+   },
+   {
+    "count": 1,
+    "spec": "mamba",
+    "state_bytes": 192,
+    "page_size_padded": 256,
+    "block_size": 8,
+    "mamba_cache_mode": "align",
+    "num_speculative_blocks": 0,
+    "num_prefill_checkpoint_blocks": 0
+   }
+  ],
+  "kv_available_bytes": 8192,
+  "kv_startup_check": true
+ },
+ "requests": [
+  {
+   "id": "A",
+   "arrival_step": 0,
+   "prompt": [
+    17849,
+    15483,
+    16124,
+    9976,
+    8379,
+    41079,
+    2112,
+    8105,
+    16911,
+    26797,
+    35892,
+    6262,
+    28351,
+    8448,
+    48092,
+    22364,
+    43161,
+    34042,
+    7633,
+    46
+   ],
+   "output": [
+    26578,
+    7326,
+    40341,
+    49798
+   ]
+  },
+  {
+   "id": "B",
+   "arrival_step": 2,
+   "prompt": [
+    35878,
+    17687,
+    12656,
+    15205,
+    13994,
+    40245,
+    30758,
+    30174,
+    48457,
+    17030,
+    31283,
+    16,
+    28821,
+    2437
+   ],
+   "output": [
+    40679,
+    44542,
+    3240
+   ]
+  }
+ ],
+ "max_steps": 60
+}

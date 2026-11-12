@@ -22,6 +22,7 @@ runs:
       run: |
         {
           echo "FUZZ_T2_SEEDS=1000-2000_5000-2000"
+          echo "FUZZ_MAMBA_SEEDS=100000-1000"
           echo "FUZZ_T3_SEEDS=1000-1000"
           echo "FUZZ_DP_SEEDS=1000-500_2000-500"
           echo "FUZZ_OFFLOAD_SEEDS=1-1000_20000-1000_40000-600_60000-1000"
@@ -42,6 +43,7 @@ runs:
         # whose sha256 every trace records), the vLLM commit and the helper model's revision.
         base="${ImageOS:-unknown}-${{ runner.arch }}-py${{ inputs.python-version }}-env-${{ hashFiles('oracle-env.lock') }}-vllm-${FUZZ_VLLM_COMMIT}-model-${FUZZ_MODEL_REVISION}"
         echo "t2=oracle-fuzz-t2-${base}-${FUZZ_T2_SEEDS}-${{ hashFiles('.github/actions/oracle-fuzz/action.yml', 'oracle/gen_fuzz.py', 'oracle/run_scheduler.py', 'oracle/run_metrics.py', 'oracle/mocks.json', 'oracle/requirements.lock', 'oracle/drafts/**') }}" >> "$GITHUB_OUTPUT"
+        echo "mamba=oracle-fuzz-mamba-${base}-${FUZZ_MAMBA_SEEDS}-${{ hashFiles('.github/actions/oracle-fuzz/action.yml', 'oracle/gen_fuzz_mamba.py', 'oracle/run_scheduler.py', 'oracle/mocks.json', 'oracle/requirements.lock') }}" >> "$GITHUB_OUTPUT"
         echo "t3=oracle-fuzz-t3-${base}-${FUZZ_T3_SEEDS}-dp-${FUZZ_DP_SEEDS}-${{ hashFiles('.github/actions/oracle-fuzz/action.yml', 'oracle/gen_fuzz.py', 'oracle/gen_fuzz_t3.py', 'oracle/gen_fuzz_dp.py', 'oracle/run_scheduler.py', 'oracle/run_enginecore.py', 'oracle/run_dp.py', 'oracle/mocks.json', 'oracle/requirements.lock', 'oracle/drafts/**') }}" >> "$GITHUB_OUTPUT"
         echo "connector=oracle-fuzz-connector-${base}-${FUZZ_CONNECTOR_SEEDS}-${{ hashFiles('.github/actions/oracle-fuzz/action.yml', 'oracle/gen_connector_fuzz.py', 'oracle/run_scheduler.py', 'oracle/run_enginecore.py', 'oracle/run_connector.py', 'oracle/mocks.json', 'oracle/requirements.lock', 'oracle/drafts/**') }}" >> "$GITHUB_OUTPUT"
         echo "multi=oracle-fuzz-multi-${base}-${FUZZ_MULTI_SEEDS}-${{ hashFiles('.github/actions/oracle-fuzz/action.yml', 'oracle/gen_multiconnector_fuzz.py', 'oracle/run_scheduler.py', 'oracle/run_enginecore.py', 'oracle/run_connector.py', 'oracle/run_offloading.py', 'oracle/run_multiconnector.py', 'oracle/mocks.json', 'oracle/requirements.lock', 'oracle/drafts/**') }}" >> "$GITHUB_OUTPUT"
@@ -73,6 +75,32 @@ runs:
       with:
         path: oracle/out/fuzz
         key: ${{ steps.keys.outputs.t2 }}
+
+    # Tier 2, hybrid Mamba: 1000 random hybrid attention + Mamba scenarios through vLLM's Scheduler
+    # (the MambaManager in align and none modes, checkpoints, speculative blocks, retention).
+    - id: mamba
+      name: restore the hybrid Mamba fuzz corpus and vLLM's traces
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: oracle/out/fuzz-mamba
+        key: ${{ steps.keys.outputs.mamba }}
+    - name: generate the hybrid Mamba fuzz corpus and vLLM's traces for it (cache miss)
+      if: steps.mamba.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
+        ORACLE_MODEL: ${{ github.workspace }}/oracle-model
+        HF_HUB_OFFLINE: "1"
+      run: |
+        export ORACLE_MODEL_REVISION="$FUZZ_MODEL_REVISION"
+        for r in ${FUZZ_MAMBA_SEEDS//_/ }; do python -I oracle/gen_fuzz_mamba.py oracle/out/fuzz-mamba "${r%-*}" "${r#*-}"; done
+        python -I oracle/run_scheduler.py vllm-source oracle/out/fuzz-mamba
+    - name: save the hybrid Mamba fuzz corpus and vLLM's traces (cache miss)
+      if: steps.mamba.outputs.cache-hit != 'true'
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: oracle/out/fuzz-mamba
+        key: ${{ steps.keys.outputs.mamba }}
 
     # Tier 3: 1000 scenarios through vLLM's EngineCore, and 1000 through its DP engine-core loop.
     - id: t3

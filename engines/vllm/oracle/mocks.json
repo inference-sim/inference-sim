@@ -1,5 +1,5 @@
 {
-  "version": "gpu-mock/4+420a44386aa4",
+  "version": "gpu-mock/5+af60be80e293",
   "description": "Everything the oracle replaces. Only the GPU, the clock, transports and external services may be replaced; check_mocks.py fails if an entry names decision code.",
   "mocks": [
     {
@@ -90,6 +90,14 @@
       "how": "hybrid scenarios only (kv_groups): the helper's KVCacheConfig is called with one layer per group built from vLLM's own FullAttentionSpec and SlidingWindowSpec (1 head, 1 dim, float32, as the helper's single group), each sliding-window layer tagged with extra_retained_tokens = num_prefill_lookahead_tokens - 1 read from the built VllmConfig, as get_kv_cache_configs tags it at launch (vllm/v1/core/kv_cache_utils.py:2582-2589); and with disable_hybrid_kv_cache_manager the layers pass through vLLM's own unify_hybrid_kv_cache_specs first; vLLM's KVCacheManager picks the coordinator and per-group managers",
       "sites": [
         "run_scheduler.py:helpers.KVCacheConfig"
+      ]
+    },
+    {
+      "symbol": "tests.v1.core.utils.CacheConfig",
+      "kind": "environment",
+      "how": "hybrid Mamba scenarios only (kv_layers with a mamba run): the helper's CacheConfig is called with vLLM's own mamba_cache_mode and mamba_block_size from the scenario's mamba runs, and the CacheConfig fields the scenario names in cache_config (prefix_cache_retention_interval, prefix_match_unit, enable_mamba_shared_prefix_checkpoint), so the Scheduler reads them as a launch sets them and VllmConfig's validators (validate_mamba_block_size, validate_block_size) run on them; the helper's other arguments are passed through and nothing is set on a built object",
+      "sites": [
+        "run_scheduler.py:helpers.CacheConfig"
       ]
     },
     {

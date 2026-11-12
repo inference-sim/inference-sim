@@ -44,7 +44,7 @@ so, when it is unset.
 
 | Tier | Runner | Scenarios | Fuzz generator | Go test (corpus variable) |
 |---|---|---|---|---|
-| T2 scheduler and KV | `run_scheduler.py` | `scenarios/` | `gen_fuzz.py <dir> <first> <count>` | `./core/sched` (`BLIS_VLLM_FUZZ_DIR`) |
+| T2 scheduler and KV | `run_scheduler.py` | `scenarios/` | `gen_fuzz.py <dir> <first> <count>`; hybrid Mamba: `gen_fuzz_mamba.py <dir> <first> <count>` (files `fuzz-mamba-<seed>`) | `./core/sched` (`BLIS_VLLM_FUZZ_DIR`) |
 | T3 EngineCore | `run_enginecore.py` | `scenarios-t3/` | `gen_fuzz_t3.py` | `./core/engine` (`BLIS_VLLM_T3_FUZZ_DIR`) |
 | T3 data parallel | `run_dp.py` | `scenarios-dp/` | `gen_fuzz_dp.py` | `./core/engine` (`BLIS_VLLM_DP_FUZZ_DIR`) |
 | T3 data parallel, async (a batch queue per rank) | `run_dp.py` | `scenarios-dp-async/` | | `./core/engine`, `./core/vllm` |
@@ -241,3 +241,62 @@ Not modelled: a rank with no connector (every rank here has one), `engine_id` an
 port (`VLLM_NIXL_SIDE_CHANNEL_PORT + data_parallel_index`), which name the peer and decide no
 scheduling step, and the in-flight accounting of aborts, which the harness applies when it queues the
 abort (the client drops a finished request when the engine reports it, `core_client.py:1703-1710`).
+
+## Hybrid Mamba scenarios
+
+A `kv_layers` run `{"spec": "mamba", ...}` is vLLM's `MambaSpec` (`vllm/v1/kv_cache_interface.py:1035-1127@5df63a72`),
+the recurrent state of a Mamba-2, GDN or KDA layer: one uint8 tensor of `state_bytes`, so the state's content size is
+`state_bytes`. The run's fields:
+
+| Field | MambaSpec field | Notes |
+|---|---|---|
+| `count` | | layers; N Mamba layers beside one attention layer become N Mamba groups (`get_kv_cache_groups`) |
+| `state_bytes` | `shapes=((state_bytes,),)`, uint8 | the state's bytes per tensor-parallel rank |
+| `page_size_padded` | `page_size_padded` | the attention page the platform pads the Mamba page to; omitted or 0 is none |
+| `block_size` | `block_size` | `mamba_block_size`, in tokens: the attention block size in align mode, `max_model_len` in none mode |
+| `mamba_cache_mode` | `mamba_cache_mode` | `"align"` (prefix caching on) or `"none"` (default) |
+| `num_speculative_blocks` | same | the speculative tokens of the scenario's `speculative` block |
+| `num_prefill_checkpoint_blocks`, `prefill_checkpoint_alignment` | same | Mamba-2: 1 and 1; KDA with flashkda: 1 and 16 |
+
+The runner builds vLLM's `Scheduler` the way the engine core does for several groups: the Mamba runs' mode and block
+size go to vLLM's own `CacheConfig` (`mamba_cache_mode`, `mamba_block_size`), so `has_mamba_layers`,
+`need_mamba_block_aligned_split` and `MambaManager` run; the scheduler and hash block sizes come from
+`resolve_kv_cache_block_sizes`; and the `KVCacheConfig` carries `prefix_cache_retention_interval` from the
+`CacheConfig`, as `get_kv_cache_config_from_groups` sets it (vLLM's default 0 keeps only the prompt's last Mamba
+state; the dataclass's own default `None` would keep every one). A scenario's optional `config.cache_config` names
+more `CacheConfig` fields: `prefix_cache_retention_interval` (`null` is dense), `prefix_match_unit` and
+`enable_mamba_shared_prefix_checkpoint`. In align mode the Mamba block size must equal `config.block_size`; in none
+mode `enable_prefix_caching` is false and the Mamba block size is `max_model_len`. `config.max_model_len` is a
+multiple of `config.block_size`.
+
+### Trace fields a hybrid Mamba scenario adds
+
+Recorded only when the scheduler has Mamba layers, so no other scenario's trace gains a field.
+
+Per step (beside `scheduled`, `preempted`, `finished`, `free_blocks`, `blocks`, ...):
+
+| Field | Value |
+|---|---|
+| `blocks` | as for any hybrid model: per running request, one list per KV cache group in group order; a null slot is `["null", 0]`, every other block `[hash or null, ref_cnt]`, never a block id. A Mamba group in align mode holds null blocks for the states it has retired, so the positions of the null blocks are part of the contract |
+| `num_computed` | request id to `num_computed_tokens` after the step, for every running request |
+| `num_tokens` | request id to `num_tokens` (prompt plus outputs so far); the scheduler's `prefill_end` is `max(prompt length, num_tokens - 1)`, so a resumed request replays its outputs |
+| `prefix_hit` | for each request whose first prefill this step scheduled, the tokens that schedule took from the prefix cache (`PrefillStats.num_cached_tokens`, `vllm/v1/metrics/stats.py:308-346@5df63a72`); a resumed request is not listed again |
+
+The aligned split's chunk sizes are the existing `scheduled` map.
+
+Top level `kv_config`: `scheduler_block_size`, `hash_block_size`, `need_mamba_block_aligned_split`,
+`mamba_partial_cache_hit`, `mamba_has_prefill_checkpoint_blocks`, `num_blocks`, and `groups` in group order, each
+`{type, block_size, page_size_bytes}` and, for a `MambaSpec`, `mamba_cache_mode`, `num_speculative_blocks`,
+`num_prefill_checkpoint_blocks`, `prefill_checkpoint_alignment`. The pool and start-up records (`kv_pool`) are the
+existing ones.
+
+### Scenarios
+
+`gen_mamba_scenarios.py oracle/scenarios` writes the `mamba-*` scenarios (except `mamba-fuzz-<seed>`, seeds of
+`gen_fuzz_mamba.py` kept as permanent scenarios); each file's `description` says what it isolates. The batch runner
+reports every scenario that fails before exiting non-zero, not only the first.
+
+`core/sched/diff_test.go` parses the Mamba run fields, `config.cache_config` and the new trace fields, and compares
+`num_computed` and `num_tokens`; `prefix_hit` waits for the scheduler to record the prefix hit of a first schedule. The mock list
+is `gpu-mock/5`: `tests.v1.core.utils.CacheConfig` is called with the Mamba settings, which the list now states.
+
