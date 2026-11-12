@@ -41,6 +41,11 @@ type EngineDriverConfig struct {
 	// QueueingTime is the host work before a request reaches the engine (tokenization and
 	// prompt preprocessing), in µs; nil means none.
 	QueueingTime func(req *Request) int64
+	// RenderTime is the part of QueueingTime during which the request holds one render thread
+	// of its API server (INV-R1), in µs; the rest of QueueingTime is a delay that holds none.
+	// A request queues for a thread for this long only. nil means all of QueueingTime is thread
+	// work. It is at most QueueingTime; a larger value is taken as QueueingTime.
+	RenderTime func(req *Request) int64
 	// Acceptance is the run's mean draft acceptance rate α in [0, 1], an input the simulator
 	// owns (#2021 B3: spec-decode acceptance is an input). A request that verifies drafts in a
 	// batch is told how many of them the target accepted (engine.Outcome.Accepted), by the
@@ -433,13 +438,18 @@ type driverArrivalEvent struct {
 func (e *driverArrivalEvent) Timestamp() int64 { return e.at }
 func (e *driverArrivalEvent) Priority() int    { return PriorityArrival }
 func (e *driverArrivalEvent) run(d *EngineDriver) {
-	var render int64
+	var total int64
 	if d.cfg.QueueingTime != nil {
-		render = d.cfg.QueueingTime(e.req)
+		total = d.cfg.QueueingTime(e.req)
 	}
-	at := e.at + render
+	at := e.at + total
 	if d.renderer != nil {
-		at = d.renderer.Admit(e.at, render)
+		// Only the thread's work queues; the rest of the overhead is waited out afterwards.
+		held := total
+		if d.cfg.RenderTime != nil {
+			held = min(d.cfg.RenderTime(e.req), total)
+		}
+		at = d.renderer.Admit(e.at, held) + (total - held)
 	}
 	d.schedule(&driverQueuedEvent{at: at, req: e.req})
 }

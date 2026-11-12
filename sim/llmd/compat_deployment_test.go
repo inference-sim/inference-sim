@@ -109,6 +109,9 @@ func compatEngineFactoryWith(lockstepRanks int, ticks func(tokens int64) int64) 
 			dcfg.QueueingTime = func(req *sim.Request) int64 {
 				return m.QueueingTime(&cengine.Request{InputTokens: make([]cengine.TokenID, req.InputLen())})
 			}
+			dcfg.RenderTime = func(req *sim.Request) int64 {
+				return m.RenderTime(&cengine.Request{InputTokens: make([]cengine.TokenID, req.InputLen())})
+			}
 		}
 		return sim.NewEngineDriverWithFrontend(eng, dcfg, f)
 	}

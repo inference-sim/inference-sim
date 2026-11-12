@@ -17,6 +17,7 @@ type countingModel struct {
 
 func (m countingModel) StepTime([]*cengine.Request) int64   { *m.calls++; return m.step }
 func (m countingModel) QueueingTime(*cengine.Request) int64 { return 1 }
+func (m countingModel) RenderTime(*cengine.Request) int64   { return 1 }
 func (m countingModel) OutputTokenProcessingTime() int64    { return 0 }
 func (m countingModel) PostDecodeFixedOverhead() int64      { return 0 }
 
@@ -98,6 +99,7 @@ func (m observingModel) StepTime(batch []*cengine.Request) int64 {
 	return m.step
 }
 func (m observingModel) QueueingTime(*cengine.Request) int64 { return 1 }
+func (m observingModel) RenderTime(*cengine.Request) int64   { return 1 }
 func (m observingModel) OutputTokenProcessingTime() int64    { return 0 }
 func (m observingModel) PostDecodeFixedOverhead() int64      { return 0 }
 

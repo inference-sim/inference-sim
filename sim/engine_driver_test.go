@@ -2,6 +2,7 @@ package sim
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -781,5 +782,122 @@ func TestEngineMetricsAt_NumbersEachPublicationAtOneInstant(t *testing.T) {
 	}
 	if b.Seq <= a.Seq {
 		t.Errorf("the corrected state has sequence %d, the earlier one %d: want a later number", b.Seq, a.Seq)
+	}
+}
+
+// admissionDriver is a driver whose admission overhead is queueing µs, of which render µs hold a
+// render thread (a negative render leaves RenderTime unset).
+func admissionDriver(t *testing.T, queueing, render int64, f FrontendConfig) *EngineDriver {
+	t.Helper()
+	eng, err := enginetest.NewFIFO(enginetest.FIFOConfig{MaxRunning: 256, TokenBudget: 1 << 20, StepBaseUs: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := EngineDriverConfig{Horizon: 1 << 40, QueueingTime: func(*Request) int64 { return queueing }}
+	if render >= 0 {
+		cfg.RenderTime = func(*Request) int64 { return render }
+	}
+	d, err := NewEngineDriverWithFrontend(eng, cfg, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+// closedLoopRate runs `clients` closed-loop clients for `seconds` of simulated time and returns
+// the completed requests per second. A client sends its next request when its last completes.
+func closedLoopRate(d *EngineDriver, clients int, seconds int64) float64 {
+	horizon := seconds * 1_000_000
+	n := 0
+	d.OnRequestDone = func(r *Request, at int64) []*Request {
+		if at >= horizon {
+			return nil
+		}
+		n++
+		return []*Request{{ID: fmt.Sprintf("c%d-%d", r.ArrivalTime, n), InputTokens: tokens(8),
+			OutputTokens: tokens(1), ArrivalTime: at}}
+	}
+	for i := 0; i < clients; i++ {
+		d.InjectArrival(&Request{ID: fmt.Sprintf("s%d", i), InputTokens: tokens(8),
+			OutputTokens: tokens(1), ArrivalTime: 0})
+	}
+	d.Run()
+	return float64(n) / float64(seconds)
+}
+
+// The admission overhead has a part that holds a render thread (RenderTime) and a part that is
+// only a delay. With one render thread, a closed loop of clients over a fast engine completes
+// requests at the rate the thread's own work allows, not at 1 / QueueingTime.
+func TestEngineDriver_FixedAdmissionDelayDoesNotCapTheClosedLoop(t *testing.T) {
+	const queueing, render = 40_400, 360 // 40 ms per request plus 0.36 ms of tokenizing
+	capOld := 1e6 / float64(queueing)    // 24.8 requests a second: what the whole overhead on the thread allows
+	capNew := 1e6 / float64(render)      // 2778: what the thread's own work allows
+	rate := closedLoopRate(admissionDriver(t, queueing, render, FrontendConfig{RendererNumWorkers: 1}), 1024, 4)
+	if rate < 10*capOld {
+		t.Errorf("closed loop of 1024 clients completes %.0f requests a second, still near the %.1f a second "+
+			"the fixed delay would cap it at", rate, capOld)
+	}
+	if rate > capNew*1.02 {
+		t.Errorf("closed loop completes %.0f requests a second, above the render thread's own %.0f", rate, capNew)
+	}
+}
+
+// Without a RenderTime the whole overhead holds the thread, as before the split.
+func TestEngineDriver_NoRenderTimeKeepsTheWholeOverheadOnTheThread(t *testing.T) {
+	rate := closedLoopRate(admissionDriver(t, 40_400, -1, FrontendConfig{RendererNumWorkers: 1}), 256, 4)
+	if want := 1e6 / 40_400.0; rate > want*1.05 {
+		t.Errorf("rate %.1f a second, want at most about %.1f", rate, want)
+	}
+}
+
+func TestEngineDriver_ASingleRequestWaitsTheWholeAdmissionOverhead(t *testing.T) {
+	var first []int64
+	for _, f := range []FrontendConfig{{}, {RendererNumWorkers: 1}, {RendererNumWorkers: 1, APIServerCount: 3}} {
+		for _, render := range []int64{-1, 360} {
+			d := admissionDriver(t, 40_400, render, f)
+			r := &Request{ID: "a", InputTokens: tokens(8), OutputTokens: tokens(1), ArrivalTime: 0}
+			d.InjectArrival(r)
+			d.Run()
+			first = append(first, r.FirstTokenTime)
+		}
+	}
+	for i, v := range first {
+		if v != first[0] || v < 40_400 {
+			t.Errorf("case %d: first token at %d, want %d in every case and not before 40400", i, v, first[0])
+		}
+	}
+}
+
+// The thread's own work still queues: two requests arriving together with a 10 ms tokenizer
+// reach the engine 10 ms apart, whatever the fixed delay.
+func TestEngineDriver_RenderTimeStillSerialisesOnTheThread(t *testing.T) {
+	d := admissionDriver(t, 50_000, 10_000, FrontendConfig{RendererNumWorkers: 1})
+	a := &Request{ID: "a", InputTokens: tokens(8), OutputTokens: tokens(1), ArrivalTime: 0}
+	b := &Request{ID: "b", InputTokens: tokens(8), OutputTokens: tokens(1), ArrivalTime: 0}
+	d.InjectArrival(a)
+	d.InjectArrival(b)
+	d.Run()
+	if gap := b.FirstTokenTime - a.FirstTokenTime; gap != 10_000 {
+		t.Errorf("second request's first token came %d us after the first, want 10000", gap)
+	}
+}
+
+// The cap that remains is the thread's own work, and it scales with the front end's width as
+// vLLM's does: each render thread (renderer_num_workers) and each API server (api_server_count,
+// its own pool) adds a thread. With a 10 ms tokenizer a thread starts 100 requests a second.
+func TestEngineDriver_TheRenderCapScalesWithThreadsAndServers(t *testing.T) {
+	const queueing, render = 50_000, 10_000
+	base := closedLoopRate(admissionDriver(t, queueing, render, FrontendConfig{RendererNumWorkers: 1}), 256, 4)
+	if base < 95 || base > 102 {
+		t.Fatalf("one thread: %.1f requests a second, want about 100", base)
+	}
+	for _, f := range []FrontendConfig{
+		{RendererNumWorkers: 2},
+		{RendererNumWorkers: 1, APIServerCount: 2},
+	} {
+		got := closedLoopRate(admissionDriver(t, queueing, render, f), 256, 4)
+		if ratio := got / base; ratio < 1.95 || ratio > 2.05 {
+			t.Errorf("%+v: %.1f requests a second is %.2fx one thread's, want 2x", f, got, ratio)
+		}
 	}
 }

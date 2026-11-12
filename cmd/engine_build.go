@@ -732,7 +732,8 @@ func engineConfigIn(c sim.InstanceConfig) engineConfig {
 
 // hostOverheads sets a driver's host work from the latency model that prices the instance's
 // engine: the post-decode and per-token output overheads, and each request's queueing time,
-// which the kernel prices from the prompt's length alone (its admission overhead).
+// which the kernel prices from the prompt's length alone (its admission overhead), and the part
+// of it that holds a render thread.
 func hostOverheads(dcfg *sim.EngineDriverConfig, m latencyModel) {
 	if m == nil {
 		return
@@ -741,6 +742,10 @@ func hostOverheads(dcfg *sim.EngineDriverConfig, m latencyModel) {
 	dcfg.OutputTokenProcessingTime = m.OutputTokenProcessingTime()
 	dcfg.QueueingTime = func(req *sim.Request) int64 {
 		return m.QueueingTime(&cengine.Request{InputTokens: make([]cengine.TokenID, req.InputLen())})
+	}
+	// The render thread is held for the tokenizer's part of that time alone.
+	dcfg.RenderTime = func(req *sim.Request) int64 {
+		return m.RenderTime(&cengine.Request{InputTokens: make([]cengine.TokenID, req.InputLen())})
 	}
 }
 

@@ -42,8 +42,9 @@ func (c FrontendConfig) Validate() error {
 
 // Renderer is one endpoint's render stage (INV-R1): apiServers API servers, each a FIFO
 // queue served by its own workers render threads. A request's render takes the latency
-// model's QueueingTime, which the kernel prices (AdmissionOverhead); the Renderer only
-// decides when that work can start.
+// model's RenderTime, the thread-bound part of the kernel's admission overhead
+// (AdmissionRenderTime); the Renderer only decides when that work can start. The rest of the
+// overhead, such as the fixed per-request term, is a delay that holds no thread.
 //
 // Requests reach the API servers round-robin in arrival order. vLLM's servers share one
 // listening socket and the OS hands each connection to one of them; round-robin is BLIS's

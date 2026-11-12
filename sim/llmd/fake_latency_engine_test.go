@@ -34,6 +34,9 @@ func (m fakeLatency) QueueingTime(r *cengine.Request) int64 {
 	return m.c.QueueingTicksFor(r.InputLen())
 }
 
+// RenderTime is all of QueueingTime: the fake's admission cost holds a render thread throughout.
+func (m fakeLatency) RenderTime(r *cengine.Request) int64 { return m.QueueingTime(r) }
+
 // OutputTokenProcessingTime returns the constant per-token post-processing time.
 func (m fakeLatency) OutputTokenProcessingTime() int64 { return m.c.OutputTokenProcessingTicks }
 
