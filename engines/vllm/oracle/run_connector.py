@@ -149,12 +149,16 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         # backends would never choose one. DeepSeek V4's indexer backend supports only block-outermost
         # layouts, which is what makes get_kv_cache_groups pack its mixed page sizes (kv_cache_utils.py:
         # 1875-1877). The engine core resolves the layout before it builds a connector (the helper's own
-        # comment), so the config is rebuilt by dataclasses.replace with no layout, and layer_groups
+        # comment), so the config is rebuilt with a CacheConfig that has no layout, and layer_groups
         # resolves it from the layers' backends with vLLM's own function.
         import dataclasses  # noqa: E402
 
-        vllm_config = dataclasses.replace(
-            vllm_config, cache_config=dataclasses.replace(vllm_config.cache_config, kv_cache_layout=None))
+        from vllm.config import CacheConfig  # noqa: E402
+
+        # kv_cache_layout is not an init argument, so the helper's CacheConfig (utils.py:152-157) is
+        # built again with the same arguments and no layout.
+        vllm_config = dataclasses.replace(vllm_config, cache_config=CacheConfig(
+            block_size=block_size, gpu_memory_utilization=0.9, cache_dtype="auto", enable_prefix_caching=True))
     async_sched = bool(cfg.get("async_scheduling", False))
     pp = int(cfg.get("pipeline_parallel_size", 1))
     v2 = bool(cfg.get("use_v2_model_runner", False)) or (bool(spec) and spec["method"] == "dspark")
