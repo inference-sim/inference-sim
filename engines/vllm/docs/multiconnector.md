@@ -45,6 +45,28 @@ parallel layout; stating a vLLM key in both places is refused.
 on vLLM's real `MultiConnector`, unchanged, and requires the same children in the same order and
 the NIXL child's own role.
 
+### Stating it from a scenario
+
+A scenario states `pd_transfer.connector: MultiConnector` and a deployment-level `offload` block; the
+schema carries neither the children nor their order. The factory (`vllmengine`) completes each pool's
+engine block from them: the wrapper takes the pool's `kv_role` (`kv_producer` for a prefill pool,
+`kv_consumer` for a decode pool), and its children are a `NixlConnector` in that role, then the
+`OffloadingConnector` as `kv_both` over the deployment's tier (`cpu_bytes_to_use`, `eviction_policy`,
+`spec_name`, `block_size`). That is the composition the startup warning names as assumed: NIXL listed
+first, the first connector that reports tokens loading them. `kv_offload` keeps `bytes_per_block`,
+`workers` and `copies`, which the kernel states from the model.
+
+A host that must state a different order hands the engine its pool's block with its own `kv_transfer`
+(`engine.Spec.Config`; the scenario's `engine:` block does not take one). The factory keeps what that
+block states and adds the deployment's tier to the offloading child wherever the child leaves a key
+out, so the tier is still stated once, in `offload`.
+`TestAMultiConnectorScenarioBuildsBothPoolsAndRunsItsPair` and
+`TestAHostStatesTheMultiConnectorOrderInItsEngineBlock` run both forms.
+
+A scenario that also drafts (the DeepSeek V4.1 Flash 1P1D with DSpark and a 1 TiB CPU tier) builds up
+to this point and is then refused by name, because the engine does not model an offload tier beside a
+drafter's KV cache group (`TestTheShippedMultiConnectorScenarioIsRefusedForItsDrafterByName`).
+
 ## What the wrapper does
 
 Every hook reaches every child, in the listed order. The wrapper makes one decision of its own.
