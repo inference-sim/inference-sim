@@ -767,11 +767,17 @@ func refuseUnreadSettings(e engineconfig.Engine) error {
 // readEnv are the engine environment variables this engine reads (resolveV2Runner).
 var readEnv = []string{"PYTHONHASHSEED", "VLLM_USE_V2_MODEL_RUNNER", "UCX_CUDA_IPC_ENABLE_MNNVL"}
 
-// unreadEnv are env's keys this engine does not read, sorted.
+// inertEnv are the environment variables the engine accepts without reading: fields.json proves each
+// inert (oracle/inertness/<name>.json), so stating one changes nothing the engine decides. Python
+// reads PYTHONUNBUFFERED to write its standard streams unbuffered; vLLM's serving process names it
+// nowhere.
+var inertEnv = []string{"PYTHONUNBUFFERED"}
+
+// unreadEnv are env's keys this engine neither reads nor knows to be inert, sorted.
 func unreadEnv(env map[string]string) []string {
 	var out []string
 	for k := range env {
-		if !slices.Contains(readEnv, k) {
+		if !slices.Contains(readEnv, k) && !slices.Contains(inertEnv, k) {
 			out = append(out, k)
 		}
 	}

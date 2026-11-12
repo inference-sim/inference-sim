@@ -24,6 +24,7 @@
   "MC_WORKERS_PER_CTX",
   "NVSHMEM_QP_DEPTH",
   "PYTHONNOUSERSITE",
+  "PYTHONUNBUFFERED",
   "UCX_TLS"
  ],
  "dynamic_reads": {
@@ -5762,6 +5763,15 @@
    },
    "evidence": {
     "proof": "oracle/inertness/PYTHONNOUSERSITE.json"
+   },
+   "status": "proven_inert"
+  },
+  "env:PYTHONUNBUFFERED": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "proof": "oracle/inertness/PYTHONUNBUFFERED.json"
    },
    "status": "proven_inert"
   },

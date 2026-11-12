@@ -953,6 +953,23 @@
       }
     },
     {
+      "name": "PYTHONUNBUFFERED",
+      "source": "env",
+      "status": "proven_inert",
+      "evidence": {
+        "proof": "oracle/inertness/PYTHONUNBUFFERED.json"
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "PYTORCH_ALLOC_CONF",
       "source": "env",
       "status": "not_modelled",

@@ -28,6 +28,10 @@
   "kind": "numeric",
   "why": "no file of the serving process names the variable, so nothing compares it: one class holds every value"
  },
+ "PYTHONUNBUFFERED": {
+  "kind": "numeric",
+  "why": "no file of the serving process names the variable, so nothing compares it: one class holds every value"
+ },
  "attention_config.indexer_kv_dtype": {
   "stated": [
    {

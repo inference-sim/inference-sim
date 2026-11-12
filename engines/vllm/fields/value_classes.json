@@ -209,6 +209,40 @@
     "name": "PYTHONNOUSERSITE"
    }
   },
+  "PYTHONUNBUFFERED": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0
+    ]
+   },
+   "basis": {
+    "kind": "numeric",
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": null,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [],
+      "uncut": true,
+      "covered_by": [
+       "oracle/inertness/PYTHONUNBUFFERED.json"
+      ]
+     }
+    ],
+    "relations": [],
+    "sites": [],
+    "stated": [
+     {
+      "value": 1,
+      "trace": "oracle/inertness/PYTHONUNBUFFERED.json"
+     }
+    ],
+    "name": "PYTHONUNBUFFERED"
+   }
+  },
   "VLLM_USE_V2_MODEL_RUNNER": {
    "value_classes": {
     "type": "boolean",
