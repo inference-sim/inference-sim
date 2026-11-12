@@ -443,35 +443,25 @@ func TestADecodeRankWaitingForItsPullDoesNotStopTheOtherRank(t *testing.T) {
 	}
 }
 
-// A prefill group whose ranks span nodes runs, and says what it approximates: a handoff states the prefill
-// instance's node (Request.Peer is the host's), not the node of the rank that holds the KV, so every pull is priced
-// from the group's first node. A group on one node, and a decode group across nodes (each rank states its own
-// node), approximate nothing. Offload at dp stays refused.
-func TestAPrefillGroupAcrossNodesDisclosesWhatItApproximates(t *testing.T) {
+// A prefill group whose ranks span nodes is refused: a handoff names no endpoint, so every pull would be priced from
+// the group's first node. A group on one node builds, and so does a decode group across nodes, whose ranks each state
+// their own node as the end of their pulls.
+func TestAPrefillGroupAcrossNodesIsRefusedAndADecodeGroupIsNot(t *testing.T) {
 	for _, c := range []struct {
 		name, extra string
-		want        bool
+		refused     bool
 	}{
 		{"kv_producer across nodes", producer + dpPool(2, 1, 2), true},
 		{"kv_both across nodes", "kv_transfer: {connector: NixlConnector, kv_role: kv_both}\n" + dpPool(2, 1, 2), true},
 		{"kv_producer on one node", producer + dpPool(8, 8, 2), false},
 		{"kv_consumer across nodes", consumer + dpPool(2, 1, 2), false},
 	} {
-		e, err := build(t, c.extra)()
-		if err != nil {
-			t.Fatalf("%s: %v", c.name, err)
+		_, err := build(t, c.extra)()
+		if c.refused != (err != nil) {
+			t.Errorf("%s: err = %v, want refused %t", c.name, err, c.refused)
 		}
-		var got string
-		for _, a := range e.(interface{ Assumptions() []string }).Assumptions() {
-			if strings.Contains(a, "spans") {
-				got = a
-			}
-		}
-		if (got != "") != c.want {
-			t.Errorf("%s: assumptions name the span = %t, want %t (%q)", c.name, got != "", c.want, got)
-		}
-		if c.want && !strings.Contains(got, "first node") {
-			t.Errorf("%s: %q does not say what is approximated", c.name, got)
+		if c.refused && err != nil && !strings.Contains(err.Error(), "substrate#48") {
+			t.Errorf("%s: %q does not name the contract limit", c.name, err)
 		}
 	}
 }

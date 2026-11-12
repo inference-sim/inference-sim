@@ -66,8 +66,6 @@ type DPGroup struct {
 	// balancer's counts were last published in, -1 before the first.
 	statsIntervalUs int64
 	epoch           int64
-	// spanAssumption is the disclosed approximation of a prefill group whose ranks span nodes ("" when none).
-	spanAssumption string
 	// busyUntil is when an iteration that ran only dummy batches ends: no batch of it is in
 	// flight through the contract, so the group asks to be stepped then (NextWake).
 	busyUntil engine.Time
@@ -134,16 +132,6 @@ func newDPGroup(st settings, pricer Pricer) (*DPGroup, error) {
 		}
 		rank := i
 		e.queued = func(id string) bool { return g.inFlight(rank, id) }
-		if e.pd != nil && e.pd.role.producer() && st.placement != nil && i == 0 {
-			if span := st.placement.GroupNodes(n, rankWidth(*st.placement)); span > 1 {
-				// A decode rank pulls from the prefill rank that computed the request, which sits on its
-				// own node; the host names the prefill instance's node (Request.Peer) and a handoff
-				// carries no endpoint (engine.Handoff), so the pull is priced from the group's first node.
-				g.spanAssumption = fmt.Sprintf("a prefill group of %d data-parallel ranks spans %d nodes: each handoff is "+
-					"stated from the group's first node, as the host names the prefill instance's node and not the node of the "+
-					"rank that holds the KV, so a pull from a rank on another node is priced on the first node's links", n, span)
-			}
-		}
 		if e.pd != nil {
 			// Each rank is its own engine core with its own connector (vLLM gives each its own
 			// engine_id and side-channel port, nixl/base_scheduler.py:76-80@5df63a72), so each states
@@ -534,15 +522,8 @@ func (g *DPGroup) Snapshot() engine.State {
 	return st
 }
 
-// Assumptions are the pricer's disclosed assumptions, as Engine reports them, and the group's own: a prefill
-// group whose ranks span nodes states every handoff from its first node.
-func (g *DPGroup) Assumptions() []string {
-	out := g.ranks[0].e.Assumptions()
-	if g.spanAssumption != "" {
-		out = append(append([]string(nil), out...), g.spanAssumption)
-	}
-	return out
-}
+// Assumptions are the pricer's disclosed assumptions, as Engine reports them.
+func (g *DPGroup) Assumptions() []string { return g.ranks[0].e.Assumptions() }
 
 // Plan implements engine.Planned: the pool's plan, which every rank states its transfers against. The
 // ranks differ in the node they sit on, which a transfer states, not in the plan.
