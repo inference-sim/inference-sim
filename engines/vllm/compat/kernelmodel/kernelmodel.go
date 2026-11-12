@@ -547,15 +547,19 @@ func (m *Model) placementAt(n, width int) kernel.Placement {
 	if m.id.gpusPerNode > 0 {
 		node += n * width / m.id.gpusPerNode
 	}
-	// The rack decides which link a handoff between two nodes crosses (kernel.PDTransferDemand):
-	// one rack means the NVLink domain, two means the NICs. Without the NVLink path every node
-	// is its own rack, so the handoff is priced over the NIC. Only handoffs read this rack; the
-	// pool's collectives use EnginePlacementOf, whose racks are the hardware's.
-	rack := node
+	return kernel.Placement{Node: node, Rack: m.handoffRack(node), Pool: m.id.role}
+}
+
+// handoffRack is the rack a handoff reads for a pool's node. It decides which link a handoff between two nodes
+// crosses (kernel.PDTransferDemand): one rack means the NVLink domain, two means the NICs. Without the NVLink path
+// every node is its own rack, so the handoff is priced over the NIC. Only handoffs read this rack; the pool's
+// collectives use EnginePlacementOf, whose racks are the hardware's. PlacementOf and GroupPlacementOf both place
+// through it, so a host that runs a rank per instance and one that runs a group agree.
+func (m *Model) handoffRack(node int) int {
 	if m.id.rackHandoff && m.id.gpusPerRack > 0 && m.id.gpusPerNode > 0 {
-		rack = node * m.id.gpusPerNode / m.id.gpusPerRack
+		return node * m.id.gpusPerNode / m.id.gpusPerRack
 	}
-	return kernel.Placement{Node: node, Rack: rack, Pool: m.id.role}
+	return node
 }
 
 // GroupGPUs is the GPUs of one data-parallel group, dp x pp x tp x pcp: the pod a vLLM server runs on,
@@ -626,11 +630,7 @@ func (m *Model) GroupCapacity() int {
 // fit in a node fill it before the next, and a wider group starts at a whole node.
 func (m *Model) GroupPlacementOf(g int) kernel.Placement {
 	node := m.id.firstNode + groupNodeOf(g, m.GroupGPUs(), m.id.gpusPerNode)
-	rack := node
-	if m.id.gpusPerRack > 0 && m.id.gpusPerNode > 0 {
-		rack = node * m.id.gpusPerNode / m.id.gpusPerRack
-	}
-	return kernel.Placement{Node: node, Rack: rack, Pool: m.id.role}
+	return kernel.Placement{Node: node, Rack: m.handoffRack(node), Pool: m.id.role}
 }
 
 // EndpointGroupPlacement is EndpointPlacement for a host that runs a group as one instance: the first node and

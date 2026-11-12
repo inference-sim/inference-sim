@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 )
 
 // A host that runs a data-parallel group as one instance (core/vllm's DPGroup) counts groups, not ranks: a pool
@@ -86,5 +88,47 @@ func TestGroupsOfAnAwkwardSizeAreRefusedOrPackedWithoutOverlap(t *testing.T) {
 		if got := groupNodeOf(i, 16, 8); got != node {
 			t.Errorf("group %d of 16 is on node %d, want %d", i, got, node)
 		}
+	}
+}
+
+// A host that runs a data-parallel group as one instance (DPGroup) prices a pull between two groups with
+// GroupPlacementOf, and a host that runs one instance per rank prices it with PlacementOf. Both must read the rack
+// the same way: NIXL crosses nodes of one NVLink rack only when UCX_CUDA_IPC_ENABLE_MNNVL=y is stated, so a pull
+// between nodes of one GB200 rack is priced on the NIC without the flag and on NVLink with it, whichever accessor
+// placed the endpoints. Reported symptom: a dp 1 GB200 pull priced on NVLink whether or not the flag was stated.
+func TestAGroupPullIsPricedOnTheNICUnlessMNNVLIsStated(t *testing.T) {
+	const fixture = "minimax-m2.5-gb200-1p1d-dp2.yaml"
+	open := func(scenarios string, name string) (pre, dec *Model) {
+		t.Helper()
+		r := repos()
+		r.Scenarios = scenarios
+		var err error
+		if pre, err = OpenRole(name, r, deployment.RolePrefill); err != nil {
+			t.Fatal(err)
+		}
+		if dec, err = OpenRole(name, r, deployment.RoleDecode); err != nil {
+			t.Fatal(err)
+		}
+		return pre, dec
+	}
+	preNIC, decNIC := open("../../testdata/scenarios", fixture)
+	preNVL, decNVL := open(withMNNVL(t), "variant.yaml")
+
+	const tokens = 8192
+	for _, c := range []struct {
+		name    string
+		pre, to *Model
+	}{{"NIC", preNIC, decNIC}, {"NVLink", preNVL, decNVL}} {
+		byRank := c.to.PDTransferTicks(tokens, c.pre.PlacementOf(0), c.to.PlacementOf(0))
+		byGroup := c.to.PDTransferTicks(tokens, c.pre.GroupPlacementOf(0), c.to.GroupPlacementOf(0))
+		if byRank != byGroup {
+			t.Errorf("%s launch: a pull between the first prefill and decode units costs %d ticks placed by rank and %d placed by group",
+				c.name, byRank, byGroup)
+		}
+	}
+	slow := decNIC.PDTransferTicks(tokens, preNIC.GroupPlacementOf(0), decNIC.GroupPlacementOf(0))
+	fast := decNVL.PDTransferTicks(tokens, preNVL.GroupPlacementOf(0), decNVL.GroupPlacementOf(0))
+	if slow <= 3*fast {
+		t.Errorf("a group pull costs %d ticks without the MNNVL flag and %d with it; want the NIC at least 3 times dearer", slow, fast)
 	}
 }
