@@ -563,14 +563,86 @@ func (m *Model) placementAt(n, width int) kernel.Placement {
 // whole group as one engine (core/vllm's DPGroup). It equals the GPUs of one rank at dp 1.
 func (m *Model) GroupGPUs() int { return m.id.rankGPUs * max(1, m.k.Resolved().DataParallel()) }
 
-// GroupCapacity is how many groups the pool's nodes hold: its GPUs divided by GroupGPUs. A host
-// that runs a group as one instance may run at most this many in the pool (RankCapacity counts
-// ranks, for a host that runs one instance for each).
-func (m *Model) GroupCapacity() int { return m.id.poolNodes * m.id.gpusPerNode / m.GroupGPUs() }
+// groupLayout is how the pool's nodes hold groups of GroupGPUs: perNode groups on each node when a group fits
+// in one, else nodesPer whole nodes for each group. A group is never split across a node boundary it does not
+// fill: a group of 6 GPUs on 8-GPU nodes takes 6 of a node's 8 and leaves 2 idle, rather than starting
+// at GPU 6 of the node and running into the next, which would overlap the next group's GPUs. A group wider than a
+// node must be a whole number of nodes (nodesPer), and one that is not is refused.
+func (m *Model) groupLayout() (perNode, nodesPer int, err error) {
+	return groupLayoutOf(m.GroupGPUs(), m.id.gpusPerNode)
+}
 
-// GroupPlacementOf places the pool's g-th group, the groups packed onto the pool's nodes in order,
-// as PlacementOf places a rank.
-func (m *Model) GroupPlacementOf(g int) kernel.Placement { return m.placementAt(g, m.GroupGPUs()) }
+// groupLayoutOf is groupLayout for groups of g GPUs on nodes of n.
+func groupLayoutOf(g, n int) (perNode, nodesPer int, err error) {
+	switch {
+	case n <= 0:
+		return 1, 1, nil
+	case g <= n:
+		return n / g, 1, nil
+	case g%n != 0:
+		return 0, 0, fmt.Errorf("a data-parallel group of %d GPUs does not fill whole %d-GPU nodes: it would share a node "+
+			"with a neighbouring group; state a dp, tp or pp whose product is a divisor or a multiple of the node's GPUs", g, n)
+	}
+	return 0, g / n, nil
+}
+
+// groupCapacityOf is how many groups of g GPUs nodes pool nodes of n GPUs hold; 0 for a refused layout.
+func groupCapacityOf(nodes, g, n int) int {
+	perNode, nodesPer, err := groupLayoutOf(g, n)
+	switch {
+	case err != nil:
+		return 0
+	case n <= 0:
+		return nodes
+	case nodesPer > 1:
+		return nodes / nodesPer
+	}
+	return nodes * perNode
+}
+
+// groupNodeOf is the node (counted from the pool's first) holding the first GPU of the pool's i-th group.
+func groupNodeOf(i, g, n int) int {
+	perNode, nodesPer, _ := groupLayoutOf(g, n)
+	switch {
+	case n <= 0:
+		return 0
+	case nodesPer > 1:
+		return i * nodesPer
+	}
+	return i / max(perNode, 1)
+}
+
+// GroupLayoutError is the refusal for a group size the pool's nodes cannot hold without overlap, nil when they can.
+func (m *Model) GroupLayoutError() error { _, _, err := m.groupLayout(); return err }
+
+// GroupCapacity is how many groups the pool's nodes hold (groupLayout): 0 for a layout that is refused. A host that
+// runs a group as one instance may run at most this many in the pool (RankCapacity counts ranks, for a host that
+// runs one instance for each).
+func (m *Model) GroupCapacity() int {
+	return groupCapacityOf(m.id.poolNodes, m.GroupGPUs(), m.id.gpusPerNode)
+}
+
+// GroupPlacementOf places the pool's g-th group on the node holding its first GPU (groupLayout): the groups that
+// fit in a node fill it before the next, and a wider group starts at a whole node.
+func (m *Model) GroupPlacementOf(g int) kernel.Placement {
+	node := m.id.firstNode + groupNodeOf(g, m.GroupGPUs(), m.id.gpusPerNode)
+	rack := node
+	if m.id.gpusPerRack > 0 && m.id.gpusPerNode > 0 {
+		rack = node * m.id.gpusPerNode / m.id.gpusPerRack
+	}
+	return kernel.Placement{Node: node, Rack: rack, Pool: m.id.role}
+}
+
+// EndpointGroupPlacement is EndpointPlacement for a host that runs a group as one instance: the first node and
+// rack of the pool's g-th group, how many nodes the group spans, and whether the rack was declared.
+func (m *Model) EndpointGroupPlacement(g int) (kernel.Placement, int, bool) {
+	p := m.GroupPlacementOf(g)
+	if m.id.gpusPerNode <= 0 {
+		return p, 0, m.id.gpusPerRack > 0
+	}
+	_, nodesPer, _ := m.groupLayout()
+	return p, max(nodesPer, 1), m.id.gpusPerRack > 0
+}
 
 // EnginePlacement is where the pool sits, in the engine's terms (core/placement): the chip and fabric the
 // scenario names, the parallel widths the kernel resolved, the pool's nodes and the rack of each, and

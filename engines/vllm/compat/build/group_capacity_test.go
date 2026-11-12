@@ -38,3 +38,37 @@ func TestRequireGroupCapacityCountsGroupsNotRanks(t *testing.T) {
 		t.Errorf("by rank the pool holds sixteen, so three instances fit: %v", err)
 	}
 }
+
+// The endpoint topology for a host that runs a group as one instance: each instance is a group, placed at the
+// group's first node, with the nodes it spans (a group of 8 GPUs on 4-GPU nodes spans two, so it has no single
+// hostname); a third instance in a pool of two groups is refused. The rank-based topology would give sixteen
+// single-node endpoints.
+func TestEndpointGroupPlacementsAreWholeGroups(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "vllmengine", "testdata", "muse-gb200-nvl-dep8-dspark.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	repos := vendoredRepos(t)
+	repos.Scenarios = t.TempDir()
+	if err := os.WriteFile(filepath.Join(repos.Scenarios, "v.yaml"), []byte(strings.ReplaceAll(string(raw), "nodes: 2", "nodes: 4")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := kernelmodel.Open("v.yaml", repos)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := EndpointGroupPlacements(m, nil, 2, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got["instance_0"].NodeCount != 2 || got["instance_1"].NodeCount != 2 || got["instance_0"].Hostname != "" {
+		t.Errorf("placements %+v, want two groups of two nodes each and no single hostname", got)
+	}
+	if _, err := EndpointGroupPlacements(m, nil, 3, 0, 0); err == nil || !strings.Contains(err.Error(), "2-group capacity") {
+		t.Errorf("three instances in a pool of two groups: %v, want a capacity refusal", err)
+	}
+	rank, err := EndpointPlacements(m, nil, 3, 0, 0)
+	if err != nil || len(rank) != 3 {
+		t.Errorf("the rank-based topology accepts three: %v", err)
+	}
+}

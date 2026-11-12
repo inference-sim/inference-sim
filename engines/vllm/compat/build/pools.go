@@ -81,6 +81,47 @@ func EndpointPlacements(model *kernelmodel.Model, pools *Pools, total, prefill, 
 	return out, nil
 }
 
+// EndpointGroupPlacements is EndpointPlacements for a host that runs a data-parallel group as one instance
+// (core/vllm's DPGroup): instance n is the pool's group number n, placed at the group's first node, with the
+// number of nodes the group spans. A pool whose group size its nodes cannot hold without overlap
+// (Model.GroupLayoutError), or more instances than the pool holds groups (Model.GroupCapacity), is refused.
+// model is the colocated run's kernel; pools, when non-nil, the P/D pools.
+func EndpointGroupPlacements(model *kernelmodel.Model, pools *Pools, total, prefill, decode int) (map[string]Placement, error) {
+	if model == nil {
+		return nil, nil
+	}
+	out := make(map[string]Placement, total)
+	for n := 0; n < total; n++ {
+		m, g := model, n
+		if pools != nil {
+			switch {
+			case n < prefill:
+				m = pools.Prefill
+			case n < prefill+decode:
+				m, g = pools.Decode, n-prefill
+			default:
+				return nil, fmt.Errorf("instance_%d has no kernel pool placement", n)
+			}
+		}
+		if err := m.GroupLayoutError(); err != nil {
+			return nil, fmt.Errorf("instance_%d: the %s pool: %w", n, m.Role(), err)
+		}
+		if g >= m.GroupCapacity() {
+			return nil, fmt.Errorf("instance_%d group %d exceeds the %s pool's %d-group capacity", n, g, m.Role(), m.GroupCapacity())
+		}
+		placement, nodeCount, rackDeclared := m.EndpointGroupPlacement(g)
+		t := Placement{NodeCount: nodeCount}
+		if nodeCount == 1 {
+			t.Hostname = fmt.Sprintf("blis-node-%d", placement.Node)
+		}
+		if rackDeclared && nodeCount == 1 {
+			t.Rack = fmt.Sprintf("blis-rack-%d", placement.Rack)
+		}
+		out[fmt.Sprintf("instance_%d", n)] = t
+	}
+	return out, nil
+}
+
 // OpenPools opens the prefill and decode pools of the run's scenario. It returns nil when no
 // kernel is open (colocated, false) or the run is not disaggregated, and refuses a
 // disaggregated run whose scenario does not state both pools -- a P/D topology on the CLI over
@@ -443,6 +484,9 @@ func requireCapacity(scenario string, colocated *kernelmodel.Model, p *Pools, to
 		return nil
 	}
 	check := func(role string, n int, m *kernelmodel.Model) error {
+		if err := m.GroupLayoutError(); err != nil && unit != "rank(s)" {
+			return fmt.Errorf("scenario %q's %s pool: %w", scenario, m.Role(), err)
+		}
 		if c := capacity(m); n > c {
 			return fmt.Errorf("%d %s instance(s) requested, but scenario %q's %s pool "+
 				"holds %d %s at its layout; raise the pool's nodes in the scenario or run fewer",

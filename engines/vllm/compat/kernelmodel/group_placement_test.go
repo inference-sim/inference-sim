@@ -48,3 +48,43 @@ func TestAPoolHoldsGroupsOfDataParallelRanks(t *testing.T) {
 		t.Errorf("rank 1 is on node %d, want 0", got)
 	}
 }
+
+// A group is never started part-way into a node it does not fill. Groups of 6 GPUs on 8-GPU nodes take one node
+// each (6 of its 8 GPUs) and are placed on nodes 0, 1, 2 with no overlap; the formula "group x GPUs / GPUs per
+// node" would put group 1 on node 0 again (GPU 6) and run it into node 1, over group 2's GPUs. A group wider than a
+// node must be whole nodes: 12 GPUs on 8-GPU nodes is refused, and the pool holds none. (The layout functions are
+// tested directly because the registry measures collectives at 2, 4, 8 and 16 ranks only, so a 6-GPU group cannot be
+// opened as a scenario.)
+func TestGroupsOfAnAwkwardSizeAreRefusedOrPackedWithoutOverlap(t *testing.T) {
+	if _, _, err := groupLayoutOf(6, 8); err != nil {
+		t.Fatalf("6-GPU groups on 8-GPU nodes: %v", err)
+	}
+	if got := groupCapacityOf(3, 6, 8); got != 3 {
+		t.Errorf("three 8-GPU nodes hold %d groups of 6, want 3 (one a node)", got)
+	}
+	for i, node := range []int{0, 1, 2} {
+		if got := groupNodeOf(i, 6, 8); got != node {
+			t.Errorf("group %d of 6 is on node %d, want %d", i, got, node)
+		}
+	}
+	// Groups that divide the node pack several to a node.
+	if got, node := groupCapacityOf(2, 4, 8), groupNodeOf(3, 4, 8); got != 4 || node != 1 {
+		t.Errorf("4-GPU groups on two 8-GPU nodes: capacity %d, group 3 on node %d; want 4 and 1", got, node)
+	}
+	_, _, err := groupLayoutOf(12, 8)
+	if err == nil || !strings.Contains(err.Error(), "does not fill whole") {
+		t.Errorf("12-GPU groups on 8-GPU nodes: %v, want a refusal", err)
+	}
+	if got := groupCapacityOf(4, 12, 8); got != 0 {
+		t.Errorf("a refused layout holds %d groups, want 0", got)
+	}
+	// Whole nodes: 16 GPUs on 8-GPU nodes take two each.
+	if got := groupCapacityOf(5, 16, 8); got != 2 {
+		t.Errorf("five 8-GPU nodes hold %d groups of 16, want 2", got)
+	}
+	for i, node := range []int{0, 2} {
+		if got := groupNodeOf(i, 16, 8); got != node {
+			t.Errorf("group %d of 16 is on node %d, want %d", i, got, node)
+		}
+	}
+}
