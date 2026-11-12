@@ -705,12 +705,14 @@
   },
   "config:compilation_config.decoder_replay_cudagraph_capture_sizes": {
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#80"
+    "traces": [
+     "compat/kernelmodel/decoder_replay_test.go"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:compilation_config.decoder_replay_trim_threshold": {
    "estimation": {

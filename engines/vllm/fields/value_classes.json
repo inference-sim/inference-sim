@@ -1716,6 +1716,46 @@
     "name": "compilation_config.cudagraph_mode"
    }
   },
+  "compilation_config.decoder_replay_cudagraph_capture_sizes": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0
+    ]
+   },
+   "basis": {
+    "kind": "numeric",
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": null,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [],
+      "uncut": true,
+      "covered_by": [
+       "compat/kernelmodel/decoder_replay_test.go"
+      ]
+     }
+    ],
+    "relations": [],
+    "sites": [],
+    "stated": [
+     {
+      "value": 64,
+      "trace": "compat/kernelmodel/decoder_replay_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 4096,
+      "trace": "compat/kernelmodel/decoder_replay_test.go",
+      "reviewed": true
+     }
+    ],
+    "name": "compilation_config.decoder_replay_cudagraph_capture_sizes"
+   }
+  },
   "compilation_config.max_cudagraph_capture_size": {
    "value_classes": {
     "type": "numeric",

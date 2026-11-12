@@ -276,5 +276,17 @@
     "why": "the OutputProcessor sends every token when the interval is 1 and groups them above it; the value reaches it through OutputProcessor(stream_interval=...), a call the scan does not follow"
    }
   ]
+ },
+ "compilation_config.decoder_replay_cudagraph_capture_sizes": {
+  "stated": [
+   {
+    "trace": "compat/kernelmodel/decoder_replay_test.go",
+    "values": [
+     64,
+     4096
+    ],
+    "why": "TestTheStatedReplayGraphSizesPadTheTrimmedBatch states the lists [64] and [4096] (a list is one value of the field, and the evidence's classes are the single class that holds every value) and prices the replay batch padded to the smallest stated size that holds it, run eager when none does; TestAPiecewiseStepTrimsByTheSizeOfTheGraphItIsPaddedTo prices the default sizes. The replay graph's launch saving against eager is not priced"
+   }
+  ]
  }
 }

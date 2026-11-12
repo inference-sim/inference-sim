@@ -687,9 +687,6 @@ var unreadSettings = []unreadSetting{
 		}},
 	// CompilationConfig.custom_ops: [] (vllm/config/compilation.py:480@5df63a72).
 	{"custom_ops", "compilation_config.custom_ops", issueBase + "80", func(e engineconfig.Engine) bool { return len(e.CustomOps) > 0 }},
-	// CompilationConfig.decoder_replay_cudagraph_capture_sizes: [] (vllm/config/compilation.py:565@5df63a72).
-	{"decoder_replay_cudagraph_capture_sizes", "compilation_config.decoder_replay_cudagraph_capture_sizes", issueBase + "80",
-		func(e engineconfig.Engine) bool { return len(e.DecoderReplayCUDAGraphCaptureSizes) > 0 }},
 	// SpeculativeConfig.kv_cache_dtype: None, the draft keeps the target's layout
 	// (vllm/config/speculative.py:428@5df63a72). A stated "auto" is a value, not None: it overrides
 	// the draft's cache_config.cache_dtype (:382), so it differs from the default.

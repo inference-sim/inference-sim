@@ -155,6 +155,9 @@ type Model struct {
 	// resolved is the pool's engine settings as its release resolves them (resolveEngine): for
 	// vLLM 0.32.0 the batch settings a deployment leaves unstated, with each one's source.
 	resolved resolvedEngine
+	// replay is the pool's decoder-side bounded replay as it resolved, nil where the model runs
+	// none (decoder_replay.go); the batches StepTimeOfShapes prices state its rows.
+	replay *decoderReplay
 
 	// No Scenario, Deployment or pool index is retained. Engine settings and widths are
 	// read from the kernel, which resolved this pool: holding the documents to index back
@@ -432,6 +435,9 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 	if in.Rules != nil {
 		m.cacheDType = in.Rules.ResolveCacheDType(architectureOf(in.Model), m.id.capabilityMajor,
 			max(pool.Parallel.TP, 1), engine.CacheDType)
+	}
+	if err := m.resolveDecoderReplay(in, pool); err != nil {
+		return nil, err
 	}
 	return m, nil
 }
@@ -841,7 +847,7 @@ type ReqShape = kernel.ReqShape
 // least one. The shapes are the caller's: under speculation a decode's Scheduled is already
 // its verify width.
 func (m *Model) StepTimeOfShapes(reqs []ReqShape) int64 {
-	b := kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget}
+	b := m.replay.tail(kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget})
 	return max(1, ticks(m.k.StepTime(b).NoOverlap))
 }
 
@@ -872,7 +878,7 @@ func (m *Model) VerifiedDraftsOfShapes(reqs []ReqShape) []int {
 // ticks, at least one, the last carrying the rounding so the stages sum exactly to
 // StepTimeOfShapes. A single-stage pool returns that one figure.
 func (m *Model) StageTimesOfShapes(reqs []ReqShape) []int64 {
-	b := kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget}
+	b := m.replay.tail(kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget})
 	e := m.k.StepTime(b)
 	total := max(1, ticks(e.NoOverlap))
 	if len(e.Stages) == 0 {
