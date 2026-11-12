@@ -123,4 +123,13 @@ type Estimation struct {
 	Setting map[string]any `json:"setting,omitempty" yaml:"setting,omitempty"`
 	// Reason says why Setting stands in for the field. Only with RuleSubstitute.
 	Reason string `json:"reason,omitempty" yaml:"reason,omitempty"`
+	// Preserves is a sentence naming what the upstream resolves identically when the field is
+	// left unset or stated as Setting. Only with RuleLeaveUnset or RuleSubstitute, and required
+	// with ValidWhen.
+	Preserves string `json:"preserves,omitempty" yaml:"preserves,omitempty"`
+	// ValidWhen says when the stand-in is exact: the stand-in is exact for a recorded value
+	// when at least one clause holds. A value no clause covers is not stood in for. Absent,
+	// the rule applies to every value. Only with RuleLeaveUnset or RuleSubstitute. A
+	// consumer decides whether a clause holds from the facts it knows about the recorded value.
+	ValidWhen []Clause `json:"valid_when,omitempty" yaml:"valid_when,omitempty"`
 }

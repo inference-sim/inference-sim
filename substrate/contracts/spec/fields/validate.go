@@ -3,6 +3,7 @@ package fields
 import (
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/inference-sim/blis-substrate/contracts/check"
 )
@@ -153,5 +154,85 @@ func (e Estimation) validate(p *validate.Problems) {
 	default:
 		p.Field("rule", "must be one of %q, %q, %q, got %q", RuleLeaveUnset, RuleSubstitute,
 			RuleNone, e.Rule)
+	}
+	e.validateExactness(p)
+}
+
+// validateExactness checks preserves and valid_when: only a rule with a stand-in states when
+// it is exact, and a clause that sets nothing would hold for every value.
+func (e Estimation) validateExactness(p *validate.Problems) {
+	if e.Rule == RuleNone {
+		if e.Preserves != "" {
+			p.Field("preserves", "only with rule %q or %q, got rule %q", RuleLeaveUnset, RuleSubstitute, e.Rule)
+		}
+		if e.ValidWhen != nil {
+			p.Field("valid_when", "only with rule %q or %q, got rule %q", RuleLeaveUnset, RuleSubstitute, e.Rule)
+		}
+		return
+	}
+	if e.ValidWhen == nil {
+		return
+	}
+	if e.Preserves == "" {
+		p.Field("preserves", "required with valid_when: the sentence naming what the upstream resolves identically")
+	}
+	if len(e.ValidWhen) == 0 {
+		p.Field("valid_when", "must list at least one clause; omit it to apply the rule to every value")
+	}
+	for i, c := range e.ValidWhen {
+		cp := &validate.Problems{}
+		c.validate(cp)
+		p.Merge(fmt.Sprintf("valid_when[%d]", i), cp)
+	}
+}
+
+func (c Clause) validate(p *validate.Problems) {
+	lists := []struct {
+		key  string
+		vals []string
+	}{{"value_in", c.ValueIn}, {"value_list_has_any", c.ValueListHasAny},
+		{"value_list_has_none", c.ValueListHasNone}, {"value_not_prefixed", c.ValueNotPrefixed}}
+	set := 0
+	for _, l := range lists {
+		if l.vals == nil {
+			continue
+		}
+		set++
+		if len(l.vals) == 0 {
+			p.Field(l.key, "must list at least one string")
+		}
+		for i, v := range l.vals {
+			if strings.TrimSpace(v) == "" {
+				p.Field(fmt.Sprintf("%s[%d]", l.key, i), "must not be empty")
+			}
+		}
+	}
+	if c.TPGroupNodes != nil {
+		set++
+		n := c.TPGroupNodes
+		if n.Eq == nil && n.Gt == nil && n.Gte == nil && n.Lt == nil && n.Lte == nil {
+			p.Field("tp_group_nodes", "must set at least one of eq, gt, gte, lt, lte")
+		}
+	}
+	if c.ComputeCapability != nil {
+		set++
+		k := c.ComputeCapability
+		if k.Eq == nil && k.Gt == nil && k.Gte == nil && k.Lt == nil && k.Lte == nil {
+			p.Field("compute_capability", "must set at least one of eq, gt, gte, lt, lte")
+		}
+		for _, o := range []struct {
+			op string
+			v  *string
+		}{{"eq", k.Eq}, {"gt", k.Gt}, {"gte", k.Gte}, {"lt", k.Lt}, {"lte", k.Lte}} {
+			if o.v == nil {
+				continue
+			}
+			if _, ok := parseCapability(*o.v); !ok {
+				p.Field("compute_capability."+o.op, "must be \"<major>.<minor>\", such as \"10.0\", got %q", *o.v)
+			}
+		}
+	}
+	if set == 0 {
+		p.Errorf("a clause must set at least one key, or it would hold for every value")
 	}
 }

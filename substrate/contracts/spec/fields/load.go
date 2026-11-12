@@ -19,9 +19,12 @@ var (
 	engineKeys     = keySet("kind", "version")
 	fieldKeys      = keySet("name", "source", "status", "evidence", "value_classes", "estimation")
 	evidenceKeys   = keySet("traces", "proof", "issue", "note")
-	estimationKeys = keySet("rule", "setting", "reason")
+	estimationKeys = keySet("rule", "setting", "reason", "preserves", "valid_when")
 	classesKeys    = keySet("type", "values", "covered", "thresholds", "covered_classes")
 	thresholdKeys  = keySet("value", "closed")
+	clauseKeys     = keySet("value_in", "value_list_has_any", "value_list_has_none",
+		"value_not_prefixed", "tp_group_nodes", "compute_capability")
+	comparisonKeys = keySet("eq", "gt", "gte", "lt", "lte")
 )
 
 func keySet(keys ...string) map[string]bool {
@@ -113,6 +116,9 @@ const (
 	levelClasses
 	levelThresholds
 	levelThreshold
+	levelValidWhen
+	levelClause
+	levelComparison
 	levelFree // inside a setting, or a list of trace paths: any keys, still checked for duplicates
 )
 
@@ -141,7 +147,8 @@ func (w *walker) value(path string, lv level) error {
 func (w *walker) object(path string, lv level) error {
 	allowed := map[level]map[string]bool{levelList: listKeys, levelEngine: engineKeys,
 		levelField: fieldKeys, levelEvidence: evidenceKeys, levelEstimation: estimationKeys,
-		levelClasses: classesKeys, levelThreshold: thresholdKeys}[lv]
+		levelClasses: classesKeys, levelThreshold: thresholdKeys, levelClause: clauseKeys,
+		levelComparison: comparisonKeys}[lv]
 	seen := map[string]bool{}
 	for w.dec.More() {
 		tok, err := w.dec.Token()
@@ -170,6 +177,10 @@ func (w *walker) object(path string, lv level) error {
 			child = levelClasses
 		case lv == levelClasses && key == "thresholds":
 			child = levelThresholds
+		case lv == levelEstimation && key == "valid_when":
+			child = levelValidWhen
+		case lv == levelClause && (key == "tp_group_nodes" || key == "compute_capability"):
+			child = levelComparison
 		}
 		at := join(path, key)
 		if lv == levelField && key == "name" {
@@ -203,6 +214,8 @@ func (w *walker) array(path string, lv level) error {
 			child = levelField
 		case levelThresholds:
 			child = levelThreshold
+		case levelValidWhen:
+			child = levelClause
 		}
 		if err := w.value(fmt.Sprintf("%s[%d]", path, i), child); err != nil {
 			return err

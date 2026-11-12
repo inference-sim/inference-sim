@@ -155,6 +155,8 @@ class 1. With `[1 above, 256 below]`: 0 is class 0, 1 and 256 are class 1, 257 i
 | `rule` | string | yes | One of the rules below. |
 | `setting` | mapping | for `substitute` | Configuration field names and the values that stand in for this field. Not empty. |
 | `reason` | string | for `substitute` | Why the setting is a fair stand-in. |
+| `preserves` | string | with `valid_when` | A sentence naming what the upstream resolves identically when the field is left unset or stated as `setting`. |
+| `valid_when` | list | no | Clauses saying when the stand-in is exact, below. Absent, the rule applies to every value. |
 
 Rules:
 
@@ -167,4 +169,55 @@ Rules:
 `none`
 :   No estimate exists; a point that needs one is not scored (G5).
 
-`setting` and `reason` are allowed only with `substitute`.
+`setting` and `reason` are allowed only with `substitute`. `preserves` and `valid_when` are
+allowed only with `leave_unset` or `substitute`.
+
+#### When the stand-in is exact
+
+A stand-in is exact for a recorded value when the upstream resolves the field, left unset or
+stated as `setting`, as it resolves that value (design §11.2). Whether that is so can depend on
+the value and on the run. `valid_when` lists clauses: the stand-in is exact for a recorded value
+when at least one clause holds, and a clause holds when every key in it holds. A value for which
+no clause holds is not stood in for, and the point is G5 with the reason `field_not_modelled`.
+No new status, grade or reason code is involved. A clause sets at least one key.
+
+<!-- fields: fields.Clause -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `value_in` | list of strings | no | The recorded value equals one of them. |
+| `value_list_has_any` | list of strings | no | The recorded value, split on commas, has at least one of them as an item. |
+| `value_list_has_none` | list of strings | no | The recorded value, split on commas, has none of them as an item. |
+| `value_not_prefixed` | list of strings | no | The recorded value starts with none of them. |
+| `tp_group_nodes` | mapping | no | The nodes the pool's tensor-parallel group spans satisfy the comparison, below. |
+| `compute_capability` | mapping | no | The part's compute capability satisfies the comparison, below. |
+
+Strings are compared after trimming and folding to lower case, on both sides. A list is not empty.
+
+A comparison sets at least one operator and holds when every operator it sets holds.
+
+<!-- fields: fields.NodeComparison -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `eq` | integer | no | The count equals it. |
+| `gt` | integer | no | The count is greater than it. |
+| `gte` | integer | no | The count is at least it. |
+| `lt` | integer | no | The count is less than it. |
+| `lte` | integer | no | The count is at most it. |
+
+<!-- fields: fields.CapabilityComparison -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `eq` | string | no | The capability equals it. |
+| `gt` | string | no | The capability is greater than it. |
+| `gte` | string | no | The capability is at least it. |
+| `lt` | string | no | The capability is less than it. |
+| `lte` | string | no | The capability is at most it. |
+
+A capability is `"<major>.<minor>"`, such as `"10.0"`, and orders by major, then minor, so `9.10`
+is below `10.0`. The loader refuses any other spelling.
+
+A consumer reads the clauses and decides, from the facts it knows about the recorded value and the
+run, whether one holds. A fact it cannot supply makes a clause that needs it not hold.
