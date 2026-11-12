@@ -407,7 +407,7 @@ func TestRunCmd_KernelBackend_Disaggregated(t *testing.T) {
 			args: append([]string{"run", "--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1"}, pd...)},
 		{name: "more prefill instances than the pool holds",
 			args:    append([]string{"run", "--num-instances", "5", "--prefill-instances", "4", "--decode-instances", "1"}, pd...),
-			wantErr: "prefill pool holds 3 rank(s)"},
+			wantErr: "prefill pool holds 3 data-parallel group(s)"},
 		{name: "a per-role flag restating the scenario",
 			args:    append([]string{"run", "--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1", "--prefill-tp", "4"}, pd...),
 			wantErr: "unknown flag: --prefill-tp"},
@@ -418,7 +418,7 @@ func TestRunCmd_KernelBackend_Disaggregated(t *testing.T) {
 		{name: "more colocated instances than the pool holds",
 			args: []string{"run", "--scenario", "llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml", "--num-instances", "3",
 				"--num-requests", "4", "--rate", "2"},
-			wantErr: "colocated pool holds 2 rank(s)"},
+			wantErr: "colocated pool holds 2 data-parallel group(s)"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			stdout, stderr, err := runKernelCLI(t, tt.args...)
@@ -841,7 +841,7 @@ func TestRunCmd_KernelBackend_DisaggregatedRefusals(t *testing.T) {
 		// to no KV cache spec, so it refuses the model.
 		{"a model with recurrent state", "recurrent state is not mapped to a KV cache spec",
 			pd(writeScenarioVariant(t, "model: glm-5\n", "model: qwen3.5-397b-a17b\n"), topology...)},
-		{"more decode instances than the pool holds", "decode pool holds 1 rank(s)",
+		{"more decode instances than the pool holds", "decode pool holds 1 data-parallel group(s)",
 			pd(plain, "--num-instances", "5", "--prefill-instances", "3", "--decode-instances", "2")},
 		{"pools paging in different block sizes", "a P/D handoff moves whole blocks",
 			pd(writeScenarioVariant(t, "      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      gpu_memory_utilization: 0.9\n      compilation_config: {cudagraph_mode: PIECEWISE}\n\npd_transfer",

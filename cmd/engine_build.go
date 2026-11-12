@@ -184,9 +184,9 @@ func runTopology() build.Topology {
 func fatalf(format string, args ...any) { logrus.Fatalf(format, args...) }
 
 // scenarioEndpointTopology uses the same role-specific kernel placements that price KV
-// handoffs (build.EndpointPlacements), as the cluster's endpoint topology.
+// handoffs (build.EndpointGroupPlacements), as the cluster's endpoint topology.
 func scenarioEndpointTopology(model *kernelmodel.Model, pools *kernelPools, total, prefill, decode int) (map[cluster.InstanceID]cluster.EndpointTopology, error) {
-	placed, err := build.EndpointPlacements(model, pools.pools(), total, prefill, decode)
+	placed, err := build.EndpointGroupPlacements(model, pools.pools(), total, prefill, decode)
 	if err != nil || placed == nil {
 		return nil, err
 	}
@@ -266,7 +266,7 @@ func (p *kernelPools) instanceEndpoint() func(cluster.InstanceID) plan.Endpoint 
 		if n >= firstDecode {
 			m = p.decode
 		}
-		at := m.PlacementOf(build.RankInPool(string(id), firstDecode))
+		at := m.GroupPlacementOf(build.RankInPool(string(id), firstDecode))
 		return plan.Endpoint{Node: at.Node - firstNodeOf(m), Rack: at.Rack}
 	}
 }
@@ -474,9 +474,9 @@ func rankInPool(id cluster.InstanceID, firstDecode int) int {
 }
 
 // requireKernelCapacity refuses a run whose instances do not fit the scenario's pools
-// (build.RequireCapacity). Called once the instance counts are final.
+// (build.RequireGroupCapacity). Called once the instance counts are final.
 func requireKernelCapacity(p *kernelPools) {
-	if err := build.RequireCapacity(kernelScenario, kernelOpened, p.pools(), runTopology()); err != nil {
+	if err := build.RequireGroupCapacity(kernelScenario, kernelOpened, p.pools(), runTopology()); err != nil {
 		logrus.Fatalf("%v", err)
 	}
 }
