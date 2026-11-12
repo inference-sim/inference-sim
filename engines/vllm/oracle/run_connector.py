@@ -31,6 +31,12 @@ a transfer it has finished. The GPU is the tier-2 mock (sampled tokens, the last
 Every replacement is listed in oracle/mocks.json; no scheduler, KV-cache or connector
 decision is patched.
 
+A scenario may also state a model's attention layers ("kv_layers", as tier 2 states them: DeepSeek
+V4.1's sliding-window MLA windows with bounded replay, compressed MLA caches and rings, each with
+its own block size), which vLLM's own get_kv_cache_groups groups; the Scheduler is then built with
+the hash block size vLLM's resolve_kv_cache_block_sizes resolves, and its block hashes are
+computed at it (vllm/v1/engine/core.py:170-182, 233-240@5df63a72).
+
 A scenario may also state a hybrid model's KV cache groups ("kv_groups", as tier 2 states them:
 full attention and sliding windows, built from vLLM's own spec classes and handed to the
 helper's create_scheduler as its kv_cache_config) and a drafter ("speculative", tier 2's: vLLM's
@@ -120,7 +126,8 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
 
     spec = cfg.get("speculative")
     groups = cfg.get("kv_groups")
-    if groups and len(groups) > 1 and any(r.get("invalid_blocks") for r in sc["requests"]):
+    hybrid = bool(groups and len(groups) > 1) or bool(cfg.get("kv_layers"))
+    if hybrid and any(r.get("invalid_blocks") for r in sc["requests"]):
         sys.exit(f"{scenario_path}: invalid_blocks beside several KV cache groups: NIXL's worker reports no "
                  "block-level failure under HMA (nixl/base_worker.py:2910-2914) and the scheduler refuses one "
                  "(scheduler.py:3365-3374)")
@@ -139,7 +146,7 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     async_sched = bool(cfg.get("async_scheduling", False))
     pp = int(cfg.get("pipeline_parallel_size", 1))
     v2 = bool(cfg.get("use_v2_model_runner", False)) or (bool(spec) and spec["method"] == "dspark")
-    if pp > 1 and (conn["kv_role"] != "kv_producer" or (groups and len(groups) > 1)):
+    if pp > 1 and (conn["kv_role"] != "kv_producer" or hybrid):
         sys.exit(f"{scenario_path}: vLLM's NIXL pull worker refuses pipeline_parallel_size > 1 for a decoder "
                  "and for a hybrid KV cache layout (nixl/base_worker.py:757-779@5df63a72)")
     if pp > 1 and async_sched and not v2:
@@ -192,21 +199,33 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
 
     batch_queue_size = set_async(vllm_config, async_sched, v2) if (async_sched or pp > 1) else 1
     try:
-        scheduler = helpers.create_scheduler(vllm_config, num_blocks=cfg["num_blocks"],
-                                             kv_cache_config=kv_cache_config(cfg, vllm_config))
+        kv_config = kv_cache_config(cfg, vllm_config)
+        hash_block_size = None
+        if cfg.get("kv_layers"):
+            # The engine core hands the Scheduler the scheduler block size (the groups' LCM) and the
+            # hash block size (their GCD) vLLM resolves; the helper passes the cache config's block
+            # size, which the scenario states equal to the former.
+            from vllm.v1.core.kv_cache_utils import resolve_kv_cache_block_sizes  # noqa: E402
+
+            sched_block_size, hash_block_size = resolve_kv_cache_block_sizes(kv_config, vllm_config)
+            if sched_block_size != block_size:
+                sys.exit(f"{scenario_path}: block_size {block_size} is not the scheduler block size "
+                         f"{sched_block_size} vLLM resolves for the layers")
+        scheduler = helpers.create_scheduler(vllm_config, num_blocks=cfg["num_blocks"], kv_cache_config=kv_config,
+                                             hash_block_size=hash_block_size)
     finally:
         restore_env()
     init_none_hash(sha256)
     if batch_queue_size > 1:
         return run_queued(scheduler, vllm_config, batch_queue_size, sc, scenario_path, vllm_root,
-                          hasher_for=lambda: get_request_block_hasher(block_size, sha256),
+                          hasher_for=lambda: get_request_block_hasher(scheduler.hash_block_size, sha256),
                           helpers=helpers, add_kv_params=add_kv_params, connector_state_of=connector_state_of)
     assert scheduler.max_model_len == cfg["max_model_len"], "the Scheduler does not read the scenario's max_model_len"
     num_spec = scheduler.num_spec_tokens
     accepted_plan = {r["id"]: list(r.get("accepted", [])) for r in sc["requests"]}
     verify_steps = {r["id"]: 0 for r in sc["requests"]}
 
-    hasher = get_request_block_hasher(block_size, sha256)
+    hasher = get_request_block_hasher(scheduler.hash_block_size, sha256)
     pending = sorted(sc["requests"], key=lambda r: (r["arrival_step"], r["id"]))
     by_id = {r["id"]: r for r in sc["requests"]}
     sampled_so_far = {r["id"]: 0 for r in sc["requests"]}
@@ -238,6 +257,7 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         if not scheduler.has_requests() and not pending:
             break
         out = scheduler.schedule()
+        pull_blocks = pulled_blocks(out) if cfg.get("kv_layers") else {}
         for rid, r in by_id.items():
             req = scheduler.requests.get(rid)
             if r.get("remote_prefill") and rid not in load_started and req is not None and \
@@ -279,6 +299,8 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
                 sampled.append([])
         if spec_scheduled:
             record["spec_scheduled"] = dict(sorted(spec_scheduled.items()))
+        if pull_blocks:
+            record["pull_blocks"] = pull_blocks
         # The transport mock: what the worker side reports this step.
         kv_out, record["transport"] = transport_report(scheduler, by_id, step, load_started, finished_at, reported)
         aborts = sorted(rid for rid, r in by_id.items() if r.get("abort_step") == step)
@@ -300,6 +322,7 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
             ids = [rid for rid in out.num_scheduled_tokens if rid in scheduler.requests]
             scheduler.update_draft_token_ids(DraftTokenIds(ids, [[0] * num_spec for _ in ids]))
         done = []
+        sent_blocks = {}
         for eco in engine_outputs.values():
             for o in eco.outputs:
                 if o.finish_reason is not None:
@@ -307,7 +330,12 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
                     finished_at.setdefault(o.request_id, step)
                     finished[o.request_id] = {"reason": str(o.finish_reason),
                                               "output_tokens": sampled_so_far[o.request_id], "step": step}
+                    remote = (o.kv_transfer_params or {}).get("remote_block_ids") or ()
+                    if cfg.get("kv_layers") and any(len(g) > 0 for g in remote):
+                        sent_blocks[o.request_id] = [len(g) for g in remote]
         record["finished"] = sorted(done)
+        if sent_blocks:
+            record["sent_blocks"] = dict(sorted(sent_blocks.items()))
         record.update(kv_state(scheduler))
         record.update(connector_state())
         steps.append(record)
@@ -316,6 +344,16 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     prov = provenance(vllm_root, scenario_path)
     prov["tier"] = 4
     return {"provenance": prov, "steps": steps, "finished": dict(sorted(finished.items()))}
+
+
+def pulled_blocks(out) -> dict:
+    """The blocks a decoder's worker is asked to read for each pull planned in a schedule, per KV
+    cache group: the length of each group's local_block_ids in the step's NixlConnectorMetadata
+    (reqs_to_recv), the unhashed blocks update_state_after_alloc clipped to what the prefiller keeps
+    (get_exchange_clipped_blocks, nixl/base_scheduler.py:262-300; pull_scheduler.py:149-156@5df63a72).
+    Recorded for scenarios that state "kv_layers"."""
+    meta = out.kv_connector_metadata
+    return {rid: [len(g) for g in m.local_block_ids] for rid, m in sorted(getattr(meta, "reqs_to_recv", {}).items())}
 
 
 def add_kv_params(req, r: dict, block_size: int) -> None:
@@ -576,11 +614,18 @@ def run_queued(scheduler, vllm_config, batch_queue_size, sc, scenario_path, vllm
 
 def kv_cache_config(cfg: dict, vllm_config):
     """The scenario's KV cache groups for the helper's create_scheduler (its kv_cache_config
-    argument), or None for the helper's one full-attention group. Each group is one 1-head,
+    argument), or None for the helper's one full-attention group. A "kv_layers" scenario's groups are
+    vLLM's own grouping of its layers (run_scheduler.py layer_groups). Otherwise each group is one 1-head,
     1-dim float32 layer of vLLM's own FullAttentionSpec or SlidingWindowSpec, as tier 2 builds
     them (run_scheduler.py build_scheduler), each sliding window tagged with
     extra_retained_tokens = num_prefill_lookahead_tokens - 1 from the built VllmConfig, as a
     launch tags it (get_kv_cache_configs, vllm/v1/core/kv_cache_utils.py:2582-2589@5df63a72)."""
+    if cfg.get("kv_layers"):
+        from run_scheduler import layer_groups  # noqa: E402
+        from vllm.v1.kv_cache_interface import KVCacheConfig  # noqa: E402
+
+        return KVCacheConfig(num_blocks=cfg["num_blocks"], kv_cache_tensors=[],
+                             kv_cache_groups=layer_groups(cfg, vllm_config))
     groups = cfg.get("kv_groups")
     if not groups:
         return None
