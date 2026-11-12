@@ -85,8 +85,11 @@ func TestShippedPDScenariosStateTheFabricSet(t *testing.T) {
 				"--rate", "5", "--num-requests", "6", "--seed", "3",
 				"--speculative-thinking", "on", "--speculative-category", "coding"}, pdFlags(f)...)
 			stdout, stderr, err := runKernelCLI(t, args...)
-			if err != nil && (strings.Contains(stderr, "not modelled") || strings.Contains(stderr, "blis-substrate#48")) {
-				// The engine does not build this deployment at this pin (a KV connector beside the DeepSeek-V4.1 cache groups, or a prefill data-parallel group that spans nodes); the file's set list, checked above, is all there is.
+			if err != nil && (strings.Contains(stderr, "not modelled") || strings.Contains(stderr, "blis-substrate#48") ||
+				strings.Contains(stderr, "is not diff-tested")) {
+				// The engine does not build this deployment at this pin: a prefill data-parallel group that spans
+				// nodes, or an offload connector beside a KV cache group that holds a drafter's layers (the DeepSeek
+				// V4.1 + DSpark + CPU tier fixture). The file's set list, checked above, is all there is.
 				t.Skipf("%s is not built by the pinned engine: %s", f, lastLines(stderr, 1))
 			}
 			if err != nil {
