@@ -3,6 +3,10 @@ package cmd
 import (
 	"runtime/debug"
 
+	"github.com/inference-sim/blis-vllm/compat/build"
+	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/sirupsen/logrus"
+
 	sim "github.com/inference-sim/inference-sim/sim"
 )
 
@@ -11,11 +15,20 @@ import (
 // kernel was opened.
 func kernelProvenance(colocated *engineModel, pd *kernelPools) map[string]sim.KernelPoolProvenance {
 	out := map[string]sim.KernelPoolProvenance{}
+	withAssumed := func(m *engineModel, index int) sim.KernelPoolProvenance {
+		p := provenanceOf(m.Provenance())
+		p.EngineAssumptions = assumptionsOfPool(index)
+		return p
+	}
 	if pd != nil {
-		out[string(pd.prefill.Role())] = provenanceOf(pd.prefill.Provenance())
-		out[string(pd.decode.Role())] = provenanceOf(pd.decode.Provenance())
+		indices, err := build.PoolIndices(kernelScenario, kernelmodel.Repos{Scenarios: kernelScenarioDir, Data: mustRunData()})
+		if err != nil {
+			logrus.Fatalf("%v", err)
+		}
+		out[string(pd.prefill.Role())] = withAssumed(pd.prefill, indices[pd.prefill.Role()])
+		out[string(pd.decode.Role())] = withAssumed(pd.decode, indices[pd.decode.Role()])
 	} else if colocated != nil {
-		out[string(colocated.Role())] = provenanceOf(colocated.Provenance())
+		out[string(colocated.Role())] = withAssumed(colocated, 0)
 	}
 	return out
 }

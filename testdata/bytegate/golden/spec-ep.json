@@ -1579,6 +1579,15 @@
             "Set": "blis-latency-kernel"
           }
         ],
+        "engine_assumptions": [
+          "compute_rate_fp32 = bf16: FP32 weights run at the TF32 tensor-core rate, taken as half the dense BF16 peak as NVIDIA's datasheets state it for every catalog part; the catalog states no TF32 peak, and the ramp is BF16's",
+          "cudagraph_mode = FULL_AND_PIECEWISE: vLLM v0.31.0's default (vllm/config/compilation.py:614); the engine downgrades it where an attention backend does not support full graphs, which the kernel cannot see",
+          "engine_version = 0.31.0: the scenario declares vLLM 0.32.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
+          "language_model_only = unset: muse-spark-open-816b-a42b-nvfp4 is a multimodal checkpoint, so vLLM keeps its vision tower and projector resident and profiles the encoder, which the catalog graph does not price (it holds the text decoder only); the weights, KV blocks and step time are those of language_model_only: true. State language_model_only: true for the deployment the cost model prices",
+          "max_cudagraph_capture_size = 512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph",
+          "modality = text_decoder_of_multimodal: the graph prices the text decoder of a multimodal model: its vision or audio tower, and the encoder work a multimodal request adds, are not priced",
+          "routing_imbalance = 1 (evenly loaded): no default-role routing profile for muse-spark-open-816b-a42b-nvfp4//decode/linear/ep8: every expert-parallel rank is priced at the mean rank's routed tokens and experts"
+        ],
         "evidence_source": "kernel",
         "evidenced": 115,
         "fallback_or_assumed": [

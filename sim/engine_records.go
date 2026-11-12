@@ -154,6 +154,9 @@ type KernelPoolProvenance struct {
 	// deployment states, machine-readable: a point with one is not priced in the mode it states,
 	// and a grade reads this list and not the assumptions' text. Absent when there is none.
 	Substitutions []Substitution `json:"substitutions,omitempty"`
+	// EngineAssumptions are the assumptions the pool's engines disclosed while the run built them
+	// (the engine's Assumptions()), each once, sorted. Absent when the engines disclosed none.
+	EngineAssumptions []string `json:"engine_assumptions,omitempty"`
 	// Routing is the pool's resolved expert-parallel routing imbalance: which layer
 	// supplied it, from which set and source, and why the default applied when it did.
 	Routing *RoutingRecord `json:"routing,omitempty"`
