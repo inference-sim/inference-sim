@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 // museSyntheticScenario is the Muse adaptive scenario with its acceptance pin and speculative block
@@ -107,5 +108,39 @@ func TestSyntheticAcceptanceLengthResolvesToVLLMsSchedule(t *testing.T) {
 	got, err = resolveAcceptance(in, e, repos().Data, AcceptanceOverrides{CLI: cliLength(7, &cli)})
 	if err != nil || got.AcceptanceLength != 5 {
 		t.Errorf("with a command-line length: %+v (%v), want 5", got, err)
+	}
+}
+
+// A block's synthetic length replaces a scenario pin that selects a measured profile, whichever way the pin
+// selects one, and the pin it builds is one the substrate accepts: the substrate refuses a value stated
+// beside a profile set, a fallback category or exact_only, so copying the pin and adding the value (as this
+// merge once did) turned each valid profile-selecting scenario into an invalid one.
+func TestSyntheticAcceptanceLengthReplacesAProfileSelection(t *testing.T) {
+	length := 3.5
+	e := engineconfig.Engine{Speculative: &engineconfig.Speculative{Method: "eagle3", NumSpecTokens: 3, SyntheticAcceptanceLength: &length}}
+	for name, pin := range map[string]*acceptance.Pin{
+		"a profile set":     {Profiles: "measured-eagle3"},
+		"a fallback":        {FallbackCategory: "chat"},
+		"exact only":        {ExactOnly: true},
+		"a set and a limit": {Profiles: "measured-eagle3", FallbackCategory: "chat", ExactOnly: true},
+	} {
+		if errs := pin.Validate().Errors(); len(errs) != 0 {
+			t.Fatalf("%s: the scenario's own pin is not valid: %v", name, errs)
+		}
+		got, err := AcceptanceWithEngine(pin, e)
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+			continue
+		}
+		if got == nil || got.Value == nil || got.Value.AcceptanceLength == nil || *got.Value.AcceptanceLength != 3.5 || got.Value.NumSpecTokens != 3 {
+			t.Errorf("%s: pin %+v, want the block's length 3.5 at 3 drafts", name, got)
+			continue
+		}
+		if got.Profiles != "" || got.FallbackCategory != "" || got.ExactOnly {
+			t.Errorf("%s: pin %+v keeps the profile selection beside the value", name, got)
+		}
+		if errs := got.Validate().Errors(); len(errs) != 0 {
+			t.Errorf("%s: the pin built is invalid: %v", name, errs)
+		}
 	}
 }

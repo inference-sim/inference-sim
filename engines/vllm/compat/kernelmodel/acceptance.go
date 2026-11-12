@@ -44,8 +44,10 @@ const SyntheticAcceptanceSource = "engine.speculative.synthetic_acceptance_lengt
 // below the command line. vLLM turns the length into per-position rates by the minimum-variance
 // schedule (SpeculativeConfig._acceptance_length_to_rates), which the resolver derives for a
 // length alone (acceptance.MinimumVarianceRates). A pin that already states a value must state
-// this one: two different acceptance values for one run are refused, not resolved by order.
-// A block that states none returns the pin as given.
+// this one: two different acceptance values for one run are refused, not resolved by order. A pin
+// that selects a profile (a profile set, a fallback category, exact_only) is replaced by the length:
+// the run forces its acceptance, so no measured profile applies. A block that states none returns
+// the pin as given.
 func AcceptanceWithEngine(pin *acceptance.Pin, e engineconfig.Engine) (*acceptance.Pin, error) {
 	sp := e.Speculative
 	if sp == nil || sp.SyntheticAcceptanceLength == nil {
@@ -63,9 +65,12 @@ func AcceptanceWithEngine(pin *acceptance.Pin, e engineconfig.Engine) (*acceptan
 		}
 		return pin, nil
 	}
-	merged := *pin
-	merged.Value = &acceptance.Value{NumSpecTokens: sp.NumSpecTokens, AcceptanceLength: &l, Source: SyntheticAcceptanceSource}
-	return &merged, nil
+	// The block's length is a stated value, and vLLM with a synthetic length forces that acceptance rather
+	// than drawing on any measured profile, so the scenario's profile selection (a profile set, a
+	// fallback category, exact_only) has nothing to select and is dropped: the substrate refuses a pin that
+	// states a value together with any of them. The value is all the merged pin states.
+	return &acceptance.Pin{Value: &acceptance.Value{NumSpecTokens: sp.NumSpecTokens, AcceptanceLength: &l,
+		Source: SyntheticAcceptanceSource}}, nil
 }
 
 // describeValue is a pinned value for a refusal.
