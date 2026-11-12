@@ -4497,9 +4497,13 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#106"
+    "traces": [
+     "compat/kernelmodel/synthetic_acceptance_test.go",
+     "rules/engineconfig/synthetic_acceptance_test.go",
+     "rules/engineconfig/testdata/synthetic_acceptance.json"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:speculative_config.revision": {
    "estimation": {
@@ -8828,9 +8832,13 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#85"
+    "traces": [
+     "compat/kernelmodel/h200_fields_test.go",
+     "kerneltests/prefill_forms_test.go",
+     "vllmengine/testdata/deepseek-v41-flash-h200-tp8-dspark5-synthetic-rust.yaml"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "env:VLLM_USE_SIMPLE_KV_OFFLOAD": {
    "estimation": {

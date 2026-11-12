@@ -152,6 +152,9 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   no indexer cache refuses every value but `auto` (blis-vllm#84). The covered class is `auto` and `fp8`.
   `speculative_config.synthetic_acceptance_length` is `modelled` (blis-vllm#88): with `rejection_sample_method: synthetic` it is the run's supplied
   acceptance length, in [1, num_spec_tokens + 1], taken at the rank of the scenario's pin; `synthetic` without it is refused.
+  `speculative_config.rejection_sample_method` and `env.VLLM_USE_RUST_FRONTEND` are `modelled`, and `env.PYTHONUNBUFFERED` is
+  `proven_inert`, for the DeepSeek-V4.1-Flash H200 rows of InferenceX (blis-vllm#106, #85): what each does in vLLM, what the
+  engine does and what stays an assumption (the Rust front end's admission rate) are in `docs/h200-v033-fields.md`.
 - **Value classes** (VLM-3) are in `fields/value_classes.json`, generated from the same
   pinned source by `fields/gen_classes.py` for every `modelled` and `proven_inert` field: for a
   boolean or enumerated field the values (a value some comparison singles out is a class, the
@@ -216,7 +219,7 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   grouping its client saw, and the field is not G1-eligible until that stage reads it.
 - **Narrower issues.** Part of what some `not_modelled` fields need is now its own issue; the fields keep
   the citations they had (the fields.json entry and its status are unchanged here):
-  `api_server_count` (blis-vllm#105), the synthetic `rejection_sample_method` (#106),
+  `api_server_count` (blis-vllm#105),
   `default_chat_template_kwargs` and thinking mode (#107), `enable_eplb` (#108), and decode context
   parallelism and `prefix_match_unit` (#109). `api_server_count` has the estimation rule `none` and is
   not delivered: stating it changes nothing the engine simulates only for the single-client data-parallel

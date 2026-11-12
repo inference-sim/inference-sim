@@ -71,6 +71,50 @@
    }
   ]
  },
+ "VLLM_USE_RUST_FRONTEND": {
+  "stated": [
+   {
+    "trace": "vllmengine/testdata/deepseek-v41-flash-h200-tp8-dspark5-synthetic-rust.yaml",
+    "values": [
+     true
+    ],
+    "why": "the scenario states env VLLM_USE_RUST_FRONTEND \"1\" on DeepSeek-V4.1-Flash on h200, and TestTheRustFrontendIsPricedAtItsAdmissionRate prices its admission at the Rust rate. The rate is the registry's, method assumed (a vendor speedup applied to the Python rate), so the class is covered by a pricing test and no measurement"
+   },
+   {
+    "trace": "compat/kernelmodel/h200_fields_test.go",
+    "values": [
+     false
+    ],
+    "why": "TestTheRustFrontendIsPricedAtItsAdmissionRate states \"0\" and finds the Python server's price, which is also the price of leaving it unstated"
+   }
+  ]
+ },
+ "speculative_config.rejection_sample_method": {
+  "stated": [
+   {
+    "trace": "rules/engineconfig/synthetic_acceptance_test.go",
+    "values": [
+     "synthetic"
+    ],
+    "why": "TestSyntheticAcceptanceLengthIsVLLMsOwnResolution states synthetic with every length of the oracle's grid and finds vLLM's per-position rates equal acceptance.MinimumVarianceRates; the Triton sampler that consumes the rates is not compared (it needs a GPU)"
+   },
+   {
+    "trace": "compat/kernelmodel/h200_fields_test.go",
+    "values": [
+     "synthetic",
+     "block"
+    ],
+    "why": "TestSyntheticRejectionSamplingTakesTheSuppliedAcceptance prices a step with synthetic and length 3.51 as with block and the length pinned by the scenario, on DeepSeek-V4.1-Flash on h200"
+   },
+   {
+    "trace": "vllmengine/notmodelled_test.go",
+    "values": [
+     "standard"
+    ],
+    "why": "TestOnlySyntheticRejectionSamplingIsRefused builds a speculative block that states standard, and one that states block, beside the supplied acceptance the run gives; the engine takes the acceptance from the run and decides nothing else from the method"
+   }
+  ]
+ },
  "speculative_config.synthetic_acceptance_length": {
   "stated": [
    {

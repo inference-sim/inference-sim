@@ -4686,9 +4686,20 @@
     {
       "name": "VLLM_USE_RUST_FRONTEND",
       "source": "env",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#85"
+        "traces": [
+          "compat/kernelmodel/h200_fields_test.go",
+          "kerneltests/prefill_forms_test.go",
+          "vllmengine/testdata/deepseek-v41-flash-h200-tp8-dspark5-synthetic-rust.yaml"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -10762,9 +10773,26 @@
     {
       "name": "speculative_config.rejection_sample_method",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#106"
+        "traces": [
+          "compat/kernelmodel/synthetic_acceptance_test.go",
+          "rules/engineconfig/synthetic_acceptance_test.go",
+          "rules/engineconfig/testdata/synthetic_acceptance.json"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "standard",
+          "synthetic",
+          "block"
+        ],
+        "covered": [
+          "block",
+          "standard",
+          "synthetic"
+        ]
       },
       "estimation": {
         "rule": "none"

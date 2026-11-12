@@ -700,7 +700,7 @@ var unreadSettings = []unreadSetting{
 	// synthetic_acceptance_length, the run's supplied acceptance profile, which vLLM resolves to the
 	// rates the acceptance resolver derives; stated alone it is refused, as vLLM refuses it (:575).
 	// "block", which recorded runs state, decides which drafts are accepted, and acceptance is an
-	// input (#106).
+	// input.
 	{"speculative.rejection_sample_method", "speculative_config.rejection_sample_method", issueBase + "106",
 		func(e engineconfig.Engine) bool {
 			return e.Speculative != nil && e.Speculative.RejectionSampleMethod == "synthetic" &&

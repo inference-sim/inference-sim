@@ -243,6 +243,116 @@
     "name": "PYTHONUNBUFFERED"
    }
   },
+  "VLLM_USE_RUST_FRONTEND": {
+   "value_classes": {
+    "type": "boolean",
+    "covered": [
+     "false",
+     "true"
+    ]
+   },
+   "basis": {
+    "kind": "boolean",
+    "classes": [
+     {
+      "values": [
+       false
+      ],
+      "compared_at": [
+       "vllm/config/model.py:1075",
+       "vllm/config/model.py:1091",
+       "vllm/entrypoints/cli/serve.py:272",
+       "vllm/entrypoints/cli/serve.py:66",
+       "vllm/entrypoints/launchers/cli_args.py:481",
+       "vllm/entrypoints/launchers/dp_supervisor.py:263"
+      ],
+      "covered_by": [
+       "compat/kernelmodel/h200_fields_test.go"
+      ]
+     },
+     {
+      "values": [
+       true
+      ],
+      "compared_at": [
+       "vllm/config/model.py:1075",
+       "vllm/config/model.py:1091",
+       "vllm/entrypoints/cli/serve.py:272",
+       "vllm/entrypoints/cli/serve.py:66",
+       "vllm/entrypoints/launchers/cli_args.py:481",
+       "vllm/entrypoints/launchers/dp_supervisor.py:263"
+      ],
+      "covered_by": [
+       "vllmengine/testdata/deepseek-v41-flash-h200-tp8-dspark5-synthetic-rust.yaml"
+      ]
+     }
+    ],
+    "relations": [],
+    "sites": [
+     {
+      "at": "vllm/config/model.py:1075",
+      "expr": "envs.VLLM_USE_RUST_FRONTEND",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/config/model.py:1091",
+      "expr": "envs.VLLM_USE_RUST_FRONTEND",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/cli/serve.py:66",
+      "expr": "envs.VLLM_USE_RUST_FRONTEND",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/cli/serve.py:272",
+      "expr": "envs.VLLM_USE_RUST_FRONTEND",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/launchers/cli_args.py:481",
+      "expr": "not envs.VLLM_USE_RUST_FRONTEND",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/launchers/dp_supervisor.py:263",
+      "expr": "envs.VLLM_USE_RUST_FRONTEND",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": true,
+      "trace": "vllmengine/testdata/deepseek-v41-flash-h200-tp8-dspark5-synthetic-rust.yaml",
+      "reviewed": true
+     },
+     {
+      "value": false,
+      "trace": "compat/kernelmodel/h200_fields_test.go",
+      "reviewed": true
+     }
+    ],
+    "name": "VLLM_USE_RUST_FRONTEND"
+   }
+  },
   "VLLM_USE_V2_MODEL_RUNNER": {
    "value_classes": {
     "type": "boolean",
@@ -9998,6 +10108,151 @@
      }
     ],
     "name": "speculative_config.num_speculative_tokens"
+   }
+  },
+  "speculative_config.rejection_sample_method": {
+   "value_classes": {
+    "type": "enumerated",
+    "values": [
+     "standard",
+     "synthetic",
+     "block"
+    ],
+    "covered": [
+     "block",
+     "standard",
+     "synthetic"
+    ]
+   },
+   "basis": {
+    "kind": "enumerated",
+    "classes": [
+     {
+      "values": [
+       "block"
+      ],
+      "compared_at": [
+       "vllm/v1/worker/gpu/spec_decode/rejection_sampler.py:174"
+      ],
+      "covered_by": [
+       "compat/kernelmodel/h200_fields_test.go"
+      ]
+     },
+     {
+      "values": [
+       "standard"
+      ],
+      "compared_at": [
+       "vllm/config/vllm.py:1298",
+       "vllm/v1/spec_decode/llm_base_proposer.py:259",
+       "vllm/v1/worker/gpu_model_runner.py:6007"
+      ],
+      "covered_by": [
+       "vllmengine/notmodelled_test.go"
+      ]
+     },
+     {
+      "values": [
+       "synthetic"
+      ],
+      "compared_at": [
+       "vllm/config/speculative.py:1832",
+       "vllm/v1/sample/rejection_sampler.py:86",
+       "vllm/v1/worker/gpu/spec_decode/rejection_sampler.py:165"
+      ],
+      "covered_by": [
+       "compat/kernelmodel/h200_fields_test.go",
+       "rules/engineconfig/synthetic_acceptance_test.go"
+      ]
+     }
+    ],
+    "enumeration": [
+     "standard",
+     "synthetic",
+     "block"
+    ],
+    "relations": [],
+    "sites": [
+     {
+      "at": "vllm/config/speculative.py:1832",
+      "expr": "self.rejection_sample_method == \"synthetic\"",
+      "op": "Eq",
+      "values": [
+       "synthetic"
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:1298",
+      "expr": "speculative_config.rejection_sample_method != \"standard\"",
+      "op": "NotEq",
+      "values": [
+       "standard"
+      ]
+     },
+     {
+      "at": "vllm/v1/sample/rejection_sampler.py:86",
+      "expr": "spec_config.rejection_sample_method == \"synthetic\"",
+      "op": "Eq",
+      "values": [
+       "synthetic"
+      ]
+     },
+     {
+      "at": "vllm/v1/spec_decode/llm_base_proposer.py:259",
+      "expr": "self.speculative_config.rejection_sample_method == \"standard\"",
+      "op": "Eq",
+      "values": [
+       "standard"
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/gpu/spec_decode/rejection_sampler.py:165",
+      "expr": "rejection_sample_method == \"synthetic\"",
+      "op": "Eq",
+      "values": [
+       "synthetic"
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/gpu/spec_decode/rejection_sampler.py:174",
+      "expr": "rejection_sample_method == \"block\"",
+      "op": "Eq",
+      "values": [
+       "block"
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/gpu_model_runner.py:6007",
+      "expr": "self.speculative_config.rejection_sample_method == \"standard\"",
+      "op": "Eq",
+      "values": [
+       "standard"
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": "synthetic",
+      "trace": "rules/engineconfig/synthetic_acceptance_test.go",
+      "reviewed": true
+     },
+     {
+      "value": "synthetic",
+      "trace": "compat/kernelmodel/h200_fields_test.go",
+      "reviewed": true
+     },
+     {
+      "value": "block",
+      "trace": "compat/kernelmodel/h200_fields_test.go",
+      "reviewed": true
+     },
+     {
+      "value": "standard",
+      "trace": "vllmengine/notmodelled_test.go",
+      "reviewed": true
+     }
+    ],
+    "name": "speculative_config.rejection_sample_method"
    }
   },
   "speculative_config.synthetic_acceptance_length": {
