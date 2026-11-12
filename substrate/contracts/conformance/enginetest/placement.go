@@ -93,48 +93,66 @@ func (p PlacedPuller) PlaceAt(at plan.Endpoint) error {
 
 // CheckPlacement is the conformance check of the placement capability for an engine of a
 // disaggregated pool of poolNodes (more than one) nodes that starts peer pulls. build makes a fresh
-// engine; pull is a RemotePrefill arrival that names its peer. The check places one instance at
-// the first node and one at the last, runs the pull on each, and requires: the host's call to
-// succeed (an engine that is not engine.Placeable, or that rejects a place of the pool, is
-// refused, and the refusal is returned unchanged so a caller can match it with errors.Is on
-// engine.ErrPlacementUnsupported or engine.ErrPlacementRejected); every pull to end at the
-// endpoint its instance was placed at; and the two instances to report different ends.
-func CheckPlacement(build func() (engine.Engine, error), pull Arrival, poolNodes int) error {
+// engine; pulls are RemotePrefill arrivals that name their peers. The check places one instance at
+// the first node and one at the last (both coordinates in the pool's own numbering), runs the
+// pulls on each, and requires: the host's call to succeed (an engine that is not engine.Placeable,
+// or that rejects a place of the pool, is refused; the refusal is returned unchanged so a caller
+// can match it with errors.Is on engine.ErrPlacementUnsupported or engine.ErrPlacementRejected, and
+// the engine is not run); EVERY peer pull of EVERY request to end at the endpoint its instance
+// was placed at and to read from the peer its request named; every pull arrival to start a peer
+// pull; and the two instances to report different ends.
+func CheckPlacement(build func() (engine.Engine, error), pulls []Arrival, poolNodes int) error {
 	if poolNodes < 2 {
 		return fmt.Errorf("enginetest: CheckPlacement needs a pool of more than one node, got %d", poolNodes)
+	}
+	if len(pulls) == 0 {
+		return fmt.Errorf("enginetest: CheckPlacement needs at least one pull arrival")
+	}
+	peers := map[string]plan.Endpoint{}
+	for _, a := range pulls {
+		if !a.Req.RemotePrefill || a.Req.Peer == nil {
+			return fmt.Errorf("enginetest: request %s is not a pull that names its peer", a.Req.ID)
+		}
+		peers[a.Req.ID] = *a.Req.Peer
 	}
 	var ends []plan.Endpoint
 	for _, node := range []int{0, poolNodes - 1} {
 		want := plan.Endpoint{Node: node, Rack: node}
-		var placeErr error
-		var got *plan.Endpoint
-		_, err := Drive(func() (engine.Engine, error) {
-			e, err := build()
-			if err != nil {
-				return nil, err
+		e, err := build()
+		if err != nil {
+			return err
+		}
+		// A refused placement ends the check: the engine is not run, and the refusal is the result.
+		if err := engine.Place(e, want, poolNodes); err != nil {
+			return err
+		}
+		pulled := map[string]int{}
+		var bad error
+		_, err = Drive(func() (engine.Engine, error) { return e, nil }, pulls, Options{Boundary: func(_ plan.PoolPlan, x engine.Transfer) error {
+			if x.Move.Kind != plan.TransferPeer {
+				return nil
 			}
-			placeErr = engine.Place(e, want, poolNodes)
-			return e, nil
-		}, []Arrival{pull}, Options{Boundary: func(_ plan.PoolPlan, x engine.Transfer) error {
-			if x.Move.Kind == plan.TransferPeer {
-				to := x.Move.To
-				got = &to
+			pulled[x.Request]++
+			switch {
+			case x.Move.To != want:
+				bad = fmt.Errorf("enginetest: the engine was placed at %+v and the pull of request %s ends at %+v", want, x.Request, x.Move.To)
+			case x.Move.From != peers[x.Request]:
+				bad = fmt.Errorf("enginetest: the pull of request %s reads from %+v, the peer its request named is %+v", x.Request, x.Move.From, peers[x.Request])
 			}
-			return nil
+			return bad
 		}})
-		if placeErr != nil {
-			return placeErr
+		if bad != nil {
+			return bad
 		}
 		if err != nil {
 			return err
 		}
-		if got == nil {
-			return fmt.Errorf("enginetest: the engine placed at %+v started no peer pull for the request", want)
+		for id := range peers {
+			if pulled[id] == 0 {
+				return fmt.Errorf("enginetest: the engine placed at %+v started no peer pull for request %s", want, id)
+			}
 		}
-		if *got != want {
-			return fmt.Errorf("enginetest: the engine was placed at %+v and its pull ends at %+v", want, *got)
-		}
-		ends = append(ends, *got)
+		ends = append(ends, want)
 	}
 	if ends[0] == ends[1] {
 		return fmt.Errorf("enginetest: instances placed on different nodes report the same end %+v", ends[0])

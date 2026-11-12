@@ -646,7 +646,9 @@ type Transfer struct {
 }
 
 // Endpoint names where a transfer starts or ends, by node and rack. A transfer within one
-// node uses no NIC (SUB-17).
+// node uses no NIC (SUB-17). Both coordinates are relative to the pool the endpoint is in: Node
+// from the pool's first node, Rack from its lowest rack, never the cluster's. The two ends of a
+// move between pools are each in the numbering of their own pool.
 type Endpoint struct {
 	Node int
 	Rack int

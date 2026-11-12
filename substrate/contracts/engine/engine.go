@@ -226,8 +226,9 @@ type Request struct {
 	// TransferLoad among a Batch's TransfersStarted), and runs the request once the simulator
 	// reports that transfer done. An engine that does not disaggregate refuses it.
 	RemotePrefill bool
-	// Peer is where the engine holding the prompt's KV sits, in that engine's own pool: the
-	// node and rack the pull reads from. A host sets it with RemotePrefill, as a P/D proxy hands
+	// Peer is where the engine holding the prompt's KV sits, in that engine's own pool's
+	// numbering (plan.Endpoint: node and rack both relative to that pool): the node and rack the
+	// pull reads from. A host sets it with RemotePrefill, as a P/D proxy hands
 	// a decode engine the address of the prefill it must read from (vLLM's kv_transfer_params);
 	// the decode engine cannot learn it any other way, and the pull's links depend on it. Nil
 	// for every other request.
