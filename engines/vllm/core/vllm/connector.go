@@ -58,12 +58,11 @@ type connectorConfig struct {
 	// LoadFailurePolicy is kv_load_failure_policy, "fail" unstated
 	// (vllm/config/kv_transfer.py:88@5df63a72).
 	LoadFailurePolicy string `yaml:"kv_load_failure_policy,omitempty"`
-	// Connectors are, for connector MultiConnector, the children's names in the order vLLM
-	// tries them (kv_connector_extra_config["connectors"], multi_connector.py:226-249@5df63a72):
-	// the first that reports matched tokens loads a request's KV. The children are a NIXL
-	// connector, configured by this block, and the OffloadingConnector, configured by the
-	// engine block's kv_offload (multiconnector.go).
-	Connectors []string `yaml:"connectors,omitempty"`
+	// ExtraConfig is kv_connector_extra_config. Only MultiConnector reads one here: its "connectors"
+	// list of child KVTransferConfig objects, in the order vLLM tries them
+	// (multi_connector.py:226-249@5df63a72). multiconnector.go models the pair llm-d's P/D with
+	// offload runs, a NIXL child and the OffloadingConnector.
+	ExtraConfig *multiExtraConfig `yaml:"kv_connector_extra_config,omitempty"`
 }
 
 // nixlNames are the names vLLM's connector factory resolves to the NIXL pull scheduler

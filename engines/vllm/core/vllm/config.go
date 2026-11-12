@@ -427,7 +427,7 @@ func resolve(c Config) (settings, error) {
 		}
 	}
 	s.placement = c.Placement
-	if err := checkConnectorPair(s.connector, s.offload); err != nil {
+	if s.offload, err = checkConnectorPair(s.connector, s.offload); err != nil {
 		return settings{}, err
 	}
 	if s.offload != nil && c.DataParallelSize > 1 {

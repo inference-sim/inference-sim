@@ -18,8 +18,9 @@ import (
 //   - Through the NIXL connector: its backends come from kv_connector_extra_config
 //     (vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:524-526@5df63a72), which can
 //     name MOONCAKE. The engine block's kv_transfer has four keys (connectorConfig: connector,
-//     kv_role, kv_load_failure_policy, connectors, the MultiConnector's child names) and the block is decoded with KnownFields(true), so the
-//     extra-config key cannot be stated.
+//     kv_role, kv_load_failure_policy, and kv_connector_extra_config, which only a MultiConnector reads, for its
+//     "connectors" children) and the block is decoded with KnownFields(true), so no other key of the
+//     extra config can be stated, at the top or in a child (TestMultiConnectorRefusals).
 //
 // If either test fails because the engine now takes such a deployment, the three proofs no longer
 // hold: the variables become reads of a library the engine loads, and the fields are classified again.

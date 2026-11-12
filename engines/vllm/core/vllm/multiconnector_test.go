@@ -1,6 +1,9 @@
 package vllm
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -8,12 +11,26 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/engine"
 )
 
-// multiBlock states vLLM's MultiConnector over a NIXL connector and the OffloadingConnector, listing the
-// children in the order vLLM tries them: the first that reports matched tokens loads a request's
-// KV (vllm/distributed/kv_transfer/kv_connector/v1/multi_connector.py:434-456@5df63a72).
+// multiBlock states vLLM's MultiConnector over the named children, in the order vLLM tries them: the
+// first that reports matched tokens loads a request's KV (vllm/distributed/kv_transfer/kv_connector/v1/
+// multi_connector.py:434-456@5df63a72). Each child is a KVTransferConfig object under
+// kv_connector_extra_config.connectors (:235-240), the offloading child with its CPU tier as
+// cpu_bytes_to_use; kv_offload carries only what vLLM derives from the model.
 func multiBlock(order string) string {
-	return "kv_transfer: {connector: MultiConnector, kv_role: kv_both, connectors: [" + order + "]}\n" + cpuTier
+	var kids []string
+	for _, name := range strings.Split(order, ", ") {
+		k := "{kv_connector: " + name + ", kv_role: kv_both"
+		if name == "OffloadingConnector" {
+			k += ", kv_connector_extra_config: {cpu_bytes_to_use: 819200}"
+		}
+		kids = append(kids, k+"}")
+	}
+	return "kv_transfer: {connector: MultiConnector, kv_role: kv_both, kv_connector_extra_config: {connectors: [" +
+		strings.Join(kids, ", ") + "]}}\n" + derivedTier
 }
+
+// derivedTier is the part of the offloading child vLLM derives from the model, not its config.
+const derivedTier = "kv_offload: {connector: OffloadingConnector, bytes_per_block: 4096}\n"
 
 const (
 	nixlFirst    = "NixlConnector, OffloadingConnector"
@@ -226,11 +243,19 @@ func conformance(t *testing.T, extra string) {
 func TestMultiConnectorRefusals(t *testing.T) {
 	for _, c := range []struct{ name, extra, want string }{
 		{"NIXL beside an offload tier without MultiConnector", producer + cpuTier, "MultiConnector"},
-		{"children on a connector that has none", "kv_transfer: {connector: NixlConnector, kv_role: kv_both, connectors: [NixlConnector]}\n", "connectors"},
-		{"MultiConnector without the offload tier", "kv_transfer: {connector: MultiConnector, kv_role: kv_both, connectors: [NixlConnector, OffloadingConnector]}\n", "without kv_offload"},
+		{"children on a connector that has none", "kv_transfer: {connector: NixlConnector, kv_role: kv_both, kv_connector_extra_config: {connectors: [{kv_connector: NixlConnector, kv_role: kv_both}]}}\n", "connectors"},
+		{"MultiConnector without the derived kv_offload", strings.Split(multiBlock(nixlFirst), "kv_offload")[0], "without kv_offload"},
+		{"the flat name list this block once took", "kv_transfer: {connector: MultiConnector, kv_role: kv_both, connectors: [NixlConnector, OffloadingConnector]}\n" + cpuTier, "connectors"},
+		{"a child without its kv_role", strings.Replace(multiBlock(nixlFirst), "{kv_connector: NixlConnector, kv_role: kv_both}", "{kv_connector: NixlConnector}", 1), "kv_role"},
+		{"an offloading child that is not kv_both", strings.Replace(multiBlock(nixlFirst), "OffloadingConnector, kv_role: kv_both", "OffloadingConnector, kv_role: kv_producer", 1), "kv_both"},
+		{"an engine_id on a child", strings.Replace(multiBlock(nixlFirst), "NixlConnector, kv_role", "NixlConnector, engine_id: x, kv_role", 1), "engine_id"},
+		{"NIXL extra config", strings.Replace(multiBlock(nixlFirst), "{kv_connector: NixlConnector, kv_role: kv_both}", "{kv_connector: NixlConnector, kv_role: kv_both, kv_connector_extra_config: {cpu_bytes_to_use: 1}}", 1), "NIXL child"},
+		{"NIXL backends naming MOONCAKE", strings.Replace(multiBlock(nixlFirst), "{kv_connector: NixlConnector, kv_role: kv_both}", "{kv_connector: NixlConnector, kv_role: kv_both, kv_connector_extra_config: {backends: [MOONCAKE]}}", 1), "backends"},
+		{"cpu bytes missing on the child", strings.Replace(multiBlock(nixlFirst), "cpu_bytes_to_use: 819200", "block_size: 16", 1), "cpu_bytes_to_use"},
+		{"cpu bytes stated twice", strings.Replace(multiBlock(nixlFirst), "bytes_per_block: 4096", "bytes_per_block: 4096, cpu_bytes: 1", 1), "once"},
 		{"a child that is not modelled", multiBlock("NixlConnector, MooncakeConnector"), "MooncakeConnector"},
 		{"the same child twice", multiBlock("NixlConnector, NixlConnector"), "OffloadingConnector"},
-		{"no children listed", "kv_transfer: {connector: MultiConnector, kv_role: kv_both}\n" + cpuTier, "connectors"},
+		{"no children listed", "kv_transfer: {connector: MultiConnector, kv_role: kv_both}\n" + derivedTier, "connectors"},
 		{"three children", multiBlock("NixlConnector, OffloadingConnector, NixlPullConnector"), "connectors"},
 		{"at data parallelism 2", multiBlock(nixlFirst) + "data_parallel_size: 2\n", "data parallelism"},
 	} {
@@ -238,5 +263,68 @@ func TestMultiConnectorRefusals(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: %v, want a refusal naming %q", c.name, err, c.want)
 		}
+	}
+}
+
+// A user hands this engine the MultiConnector config they hand vLLM: kv_transfer_config's
+// kv_connector_extra_config.connectors, a list of child KVTransferConfig objects. Every connector
+// the MultiConnector oracle runs on vLLM's real MultiConnector (oracle/scenarios/multiconnector) is
+// taken verbatim, only its top-level key spelling (connector for kv_connector) changed, and must
+// reach the children and order vLLM builds from it (multi_connector.py:226-249@5df63a72), each
+// child under its own kv_role.
+func TestMultiConnectorTakesVLLMsNestedChildConfigs(t *testing.T) {
+	files, err := filepath.Glob("../../oracle/scenarios/multiconnector/*.json")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no oracle scenarios found: %v", err)
+	}
+	for _, f := range files {
+		raw, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var sc struct {
+			Config struct {
+				Connector map[string]any `json:"connector"`
+			} `json:"config"`
+		}
+		if err := json.Unmarshal(raw, &sc); err != nil {
+			t.Fatal(err)
+		}
+		conn := sc.Config.Connector
+		kt := map[string]any{"connector": conn["name"], "kv_role": conn["kv_role"],
+			"kv_connector_extra_config": conn["extra_config"]}
+		if p, ok := conn["kv_load_failure_policy"]; ok {
+			kt["kv_load_failure_policy"] = p
+		}
+		blk, _ := json.Marshal(kt) // JSON is YAML
+		kids := conn["extra_config"].(map[string]any)["connectors"].([]any)
+		t.Run(filepath.Base(f), func(t *testing.T) {
+			e := mustEngine(t, "kv_transfer: "+string(blk)+"\n"+derivedTier)
+			for i, k := range kids {
+				c := k.(map[string]any)
+				switch c["kv_connector"] {
+				case "NixlConnector":
+					if e.pd.child != i || string(e.pd.role) != c["kv_role"] {
+						t.Errorf("NIXL child: index %d role %q, vLLM's config has index %d role %v", e.pd.child, e.pd.role, i, c["kv_role"])
+					}
+				case "OffloadingConnector":
+					if e.off.child != i {
+						t.Errorf("offloading child at index %d, vLLM's config has %d", e.off.child, i)
+					}
+				}
+			}
+		})
+	}
+}
+
+// The NIXL child's own kv_role decides which leg it serves, as its KVTransferConfig does in vLLM, not
+// the wrapper's: a kv_consumer child under a kv_both wrapper cannot take a disaggregated prefill.
+func TestMultiConnectorNIXLChildKeepsItsOwnRole(t *testing.T) {
+	blk := strings.Replace(multiBlock(nixlFirst), "{kv_connector: NixlConnector, kv_role: kv_both}", "{kv_connector: NixlConnector, kv_role: kv_consumer}", 1)
+	e := mustEngine(t, blk)
+	r := req("a", 80, 6)
+	r.RemoteDecode, r.MaxOutputTokens = true, 1
+	if err := e.Add(r, 0); err == nil || !strings.Contains(err.Error(), "kv_producer") {
+		t.Fatalf("a prefill leg on a kv_consumer NIXL child: %v, want a refusal naming kv_producer", err)
 	}
 }

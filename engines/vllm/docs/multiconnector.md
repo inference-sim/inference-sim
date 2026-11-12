@@ -12,24 +12,38 @@ the bytes, is a transport in the simulator and in the oracle. Source:
 
 ## Configuration
 
-An engine block names the wrapper and lists its children, first to last:
+An engine block takes the MultiConnector config vLLM takes. In vLLM the children are the
+`connectors` list of the wrapper's `kv_connector_extra_config`, and each element is a complete child
+`KVTransferConfig` (`multi_connector.py:226-249`, which builds each with `KVTransferConfig(**ktc)`),
+so each child has its own `kv_connector`, `kv_role` and `kv_connector_extra_config`:
 
 ```yaml
 engine:
   kv_transfer:
-    connector: MultiConnector
+    connector: MultiConnector    # the one key spelt as every kv_transfer block here spells it (vLLM: kv_connector)
     kv_role: kv_both             # the wrapper's role: kv_producer, kv_consumer or kv_both
-    connectors: [NixlConnector, OffloadingConnector]
-  kv_offload:                    # the offloading child's CPU tier, as without the wrapper
+    kv_connector_extra_config:
+      connectors:                # first to last, as vLLM tries them
+        - {kv_connector: NixlConnector, kv_role: kv_both}
+        - kv_connector: OffloadingConnector
+          kv_role: kv_both
+          kv_connector_extra_config: {cpu_bytes_to_use: 17179869184}
+  kv_offload:                    # what vLLM derives from the model, not from its config
     connector: OffloadingConnector
-    cpu_bytes: 17179869184
     bytes_per_block: 1048576
 ```
 
-The order matters: the first child that can serve a load serves it (next section). The NIXL
-child takes `kv_transfer.kv_role`. The offloading child is `kv_both`. vLLM takes each child's
-settings from the child's own entry in `kv_connector_extra_config.connectors`; here the offloading
-child's settings are the `kv_offload` block's, so they are written once.
+The order matters: the first child that can serve a load serves it (next section). Each child
+keeps its own `kv_role`: the NIXL child's role decides which leg it serves, as its own
+`KVTransferConfig` does in vLLM. The wrapper's `kv_role` and `kv_load_failure_policy` are the
+top-level ones, which are what the scheduler reads (`scheduler.py:176-194`). The offloading child
+takes its CPU tier from its own `kv_connector_extra_config` under vLLM's names (`cpu_bytes_to_use`,
+`block_size`, `eviction_policy`, `offload_prompt_only`, `spec_name`). `kv_offload` still carries
+`bytes_per_block`, `page_size`, `workers` and `copies`, which vLLM computes from the model and the
+parallel layout; stating a vLLM key in both places is refused.
+`TestMultiConnectorTakesVLLMsNestedChildConfigs` feeds the engine every connector the oracle runs
+on vLLM's real `MultiConnector`, unchanged, and requires the same children in the same order and
+the NIXL child's own role.
 
 ## What the wrapper does
 
@@ -135,8 +149,17 @@ scenario has no single answer from vLLM and none is generated.
 ## What it refuses
 
 - Any child other than NIXL and the offloading connector: Mooncake, MoRIIO, NIXL push,
-  `SimpleCPUOffloadConnector`, LMCache. Their scheduler sides are not modelled.
-- A child list other than the NIXL and offloading pair, in either order.
+  `SimpleCPUOffloadConnector`, LMCache. Their scheduler sides are not modelled. The refusal names
+  the child's `kv_connector`.
+- A child list other than the NIXL and offloading pair, in either order, and the flat list of names
+  (`connectors: [NixlConnector, OffloadingConnector]`) an earlier draft of this block took, which
+  vLLM does not read.
+- A child without a `kv_role` (vLLM refuses it, `kv_transfer.py:120-124`), an offloading child that
+  is not `kv_both`, and any child key beyond `kv_connector`, `kv_role` and
+  `kv_connector_extra_config`: `engine_id`, `kv_port`, `kv_buffer_device`, `kv_connector_module_path`,
+  `enable_permute_local_kv`, `kv_load_failure_policy`.
+- Any key of the NIXL child's `kv_connector_extra_config` (for example `backends`, which can name
+  Mooncake), and any offloading key other than the five above.
 - Two children that both hold a finished request's blocks. vLLM then makes the worker report the
   request's `finished_sending` once per holder (`_extra_async_saves`, :542-571); that is not
   modelled. With this pair only NIXL holds blocks, so the case does not arise.
