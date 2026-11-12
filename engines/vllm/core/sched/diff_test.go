@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -57,7 +58,11 @@ type scenario struct {
 		// layers and memory (trace.KVPool.Startup).
 		KVStartupCheck              bool `json:"kv_startup_check"`
 		DisableHybridKVCacheManager bool `json:"disable_hybrid_kv_cache_manager"`
-		Speculative                 *struct {
+		// ExpectGroupsError is a scenario whose layers vLLM's get_kv_cache_groups is asked about
+		// and nothing else: the trace records the exception it raised (trace.GroupsError), and no
+		// scheduler runs.
+		ExpectGroupsError bool `json:"expect_groups_error"`
+		Speculative       *struct {
 			Method           string `json:"method"`
 			NumTokens        int    `json:"num_speculative_tokens"`
 			Draft            string `json:"draft"`
@@ -107,6 +112,12 @@ type trace struct {
 		ScenarioSHA256 string `json:"scenario_sha256"`
 		MockVersion    string `json:"mock_version"`
 	} `json:"provenance"`
+	// GroupsError is what get_kv_cache_groups raised on an expect_groups_error scenario's layers,
+	// null when it grouped them.
+	GroupsError *struct {
+		Type    string `json:"type"`
+		Message string `json:"message"`
+	} `json:"groups_error"`
 	Steps    []step `json:"steps"`
 	Finished map[string]struct {
 		Reason       string `json:"reason"`
@@ -540,10 +551,44 @@ func TestDifferentialAgainstVLLM(t *testing.T) {
 			var want trace
 			readJSON(t, golden, &want)
 			checkProvenance(t, path, want)
+			if sc.Config.ExpectGroupsError {
+				checkGroupsRefusal(t, sc, want)
+				return
+			}
 			if d := earliestDivergence(want, run(t, sc)); d != "" {
 				t.Fatalf("earliest divergence from vLLM v0.32.0: %s", d)
 			}
 		})
+	}
+}
+
+// checkGroupsRefusal holds core/kv's grouping to vLLM's on a scenario whose layers vLLM's
+// get_kv_cache_groups refuses: the trace records the exception, and the Go grouping must refuse
+// the same layers with the same cause, naming the exception's type and the keyword it rejected,
+// and must say what to do. A trace that records no exception is a layer set vLLM groups, and the
+// Go grouping must then group it.
+func checkGroupsRefusal(t *testing.T, sc scenario, want trace) {
+	t.Helper()
+	groups, err := kv.GroupLayers(scenarioLayers(t, sc.Config.KVLayers),
+		kv.GroupOptions{DisableHybrid: sc.Config.DisableHybridKVCacheManager})
+	if want.GroupsError == nil {
+		if err != nil {
+			t.Fatalf("vLLM v0.32.0 groups these layers, core/kv refuses them: %v", err)
+		}
+		return
+	}
+	if err == nil {
+		t.Fatalf("vLLM v0.32.0 raises %s (%s) on these layers, core/kv groups them: %v",
+			want.GroupsError.Type, want.GroupsError.Message, groups)
+	}
+	keyword := regexp.MustCompile(`keyword argument '([^']+)'`).FindStringSubmatch(want.GroupsError.Message)
+	if keyword == nil {
+		t.Fatalf("vLLM's exception %q names no rejected keyword", want.GroupsError.Message)
+	}
+	for _, frag := range []string{"vLLM does not start", want.GroupsError.Type, "'" + keyword[1] + "'", "drop disable_hybrid_kv_cache_manager"} {
+		if !strings.Contains(err.Error(), frag) {
+			t.Errorf("core/kv's refusal lacks %q (vLLM raised %s: %s): %v", frag, want.GroupsError.Type, want.GroupsError.Message, err)
+		}
 	}
 }
 
@@ -656,7 +701,7 @@ func TestKVPoolAgainstVLLM(t *testing.T) {
 	for _, path := range scenarios {
 		var sc scenario
 		readJSON(t, path, &sc)
-		if sc.Config.KVAvailableBytes == 0 {
+		if sc.Config.KVAvailableBytes == 0 || sc.Config.ExpectGroupsError {
 			continue
 		}
 		name := strings.TrimSuffix(filepath.Base(path), ".json")

@@ -133,7 +133,6 @@ var refused = map[string]string{
 	"prefix_cache_retention_interval":                           "prefix_cache_retention_interval: 256\n",
 	"max_cpu_loras":                                             "max_loras: 2\nmax_cpu_loras: 4\n",
 	"mamba_cache_mode":                                          "mamba_cache_mode: align\n",
-	"swa_bounded_replay":                                        "swa_bounded_replay: false\n",
 }
 
 // atDefault is the partner of each refused case (SIM-9's refusal pair): the same setting stated at
@@ -157,7 +156,6 @@ var atDefault = map[string]string{
 	"prefix_cache_retention_interval":                           "prefix_cache_retention_interval: 0\n",
 	"max_cpu_loras":                                             "max_loras: 2\nmax_cpu_loras: 2\n",
 	"mamba_cache_mode":                                          "mamba_cache_mode: none\n",
-	"swa_bounded_replay":                                        "swa_bounded_replay: true\n",
 }
 
 // noDefaultValue lists the refused keys that vLLM leaves unstated (None), so no stated value is the

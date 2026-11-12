@@ -123,6 +123,12 @@ The engine interface (`core/vllm`) is checked in two ways. blis-schemas' `engine
 - **Differential:** the same scenario through the oracle and through blis-vllm; every step's
   record is compared field by field, and the report names the **earliest** step and field that
   differ, not only the last.
+- **Refusal:** a T2 scenario with `"expect_groups_error": true` asks vLLM's own `get_kv_cache_groups`
+  about its `kv_layers` and nothing else, and its trace records the exception vLLM raised (type and
+  message) or null if it grouped them. `core/sched`'s `checkGroupsRefusal` holds `core/kv`'s grouping
+  to it: a layer set vLLM refuses must be refused by name, with the exception's type and the keyword
+  it rejected, and one vLLM groups must be grouped. The two `*-hybrid-disabled` DeepSeek scenarios
+  are these: vLLM v0.32.0 does not start DeepSeek V4 or V4.1 with `disable_hybrid_kv_cache_manager`.
 - **Property:** no lost requests, KV block conservation (used + free = total), budgets never
   exceeded, at most `max_num_seqs` running.
 - **Metamorphic, with step duration fixed:** both of the issue's claims are false *for vLLM

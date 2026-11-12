@@ -3,6 +3,7 @@
 package vllm
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -129,11 +130,14 @@ func TestMambaSSMCacheDTypeIsComparedWithTheResolvedDefault(t *testing.T) {
 	}
 }
 
-// swa_bounded_replay: CacheConfig's default is true (cache.py:250@5df63a72), and DeepSeek-V4.1's
-// attention forces it off on the V1 runner (deepseek_v41/attention.py:529-536), so a stated false
-// is the effective value there and builds; on the V2 runner false departs from the default and is
-// refused. A stated true is the default on either.
-func TestSWABoundedReplayIsComparedWithTheResolvedDefault(t *testing.T) {
+// swa_bounded_replay is the layers' to carry: a stated false builds on either runner (it is the
+// effective value on the V1 runner and a layout on the V2 runner, where each kv_layers run states
+// no bounded replay), a stated true is the default, and false beside a run that states a bounded
+// replay contradicts itself and is refused.
+func TestSWABoundedReplayFalseBuildsWhereTheLayersStateNone(t *testing.T) {
+	const layers = "kv_layers:\n" +
+		"- {count: 1, spec: sliding_window_mla, sliding_window: 128, num_kv_heads: 1, head_size: 512, block_size: 32, state_bytes: 584%s}\n" +
+		"- {count: 1, spec: mla, num_kv_heads: 1, head_size: 512, block_size: 128, tokens_per_state: 4, state_bytes: 584}\n"
 	for _, c := range []struct {
 		extra  string
 		refuse bool
@@ -141,7 +145,8 @@ func TestSWABoundedReplayIsComparedWithTheResolvedDefault(t *testing.T) {
 		{"swa_bounded_replay: true\nuse_v2_model_runner: false\n", false},
 		{"swa_bounded_replay: false\nuse_v2_model_runner: false\n", false},
 		{"swa_bounded_replay: true\nuse_v2_model_runner: true\n", false},
-		{"swa_bounded_replay: false\nuse_v2_model_runner: true\n", true},
+		{"swa_bounded_replay: false\nuse_v2_model_runner: true\n", false},
+		{"swa_bounded_replay: false\nuse_v2_model_runner: true\n" + fmt.Sprintf(layers, ", bounded_replay: true"), true},
 	} {
 		cfg, err := decodeConfig(block(t, c.extra))
 		if err != nil {

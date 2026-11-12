@@ -302,7 +302,7 @@ func TestFactoryRefuses(t *testing.T) {
 		{"a negative max_loras", Version, "max_loras: -1\n", "max_loras -1 is negative"},
 		{"a NaN watermark", Version, "watermark: .nan\n", "watermark NaN is outside"},
 		{"mamba_cache_mode on a model with no Mamba hook", Version, "mamba_cache_mode: align\n", "mamba_cache_mode \"align\" runs as \"align\", away from the default \"none\""},
-		{"swa_bounded_replay false on the V2 runner", Version, "swa_bounded_replay: false\nuse_v2_model_runner: true\n", "swa_bounded_replay is not modelled"},
+		{"swa_bounded_replay false beside a bounded-replay layer", Version, "swa_bounded_replay: false\nkv_layers:\n- {count: 1, spec: sliding_window_mla, sliding_window: 128, num_kv_heads: 1, head_size: 512, block_size: 32, state_bytes: 584, bounded_replay: true}\n- {count: 1, spec: mla, num_kv_heads: 1, head_size: 512, block_size: 128, tokens_per_state: 4, state_bytes: 584}\n", "swa_bounded_replay is false but"},
 		{"a pipeline_parallel_size of 0", Version, "pipeline_parallel_size: 0\n", "pipeline_parallel_size must be stated"},
 		// A DP rank's batch queue is diff-tested on one pipeline stage (oracle/run_dp.py).
 		{"DP with pipeline parallelism", Version, "data_parallel_size: 2\npipeline_parallel_size: 2\n", "data parallelism with pipeline parallelism"},

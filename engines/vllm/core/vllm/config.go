@@ -322,16 +322,21 @@ func resolve(c Config) (settings, error) {
 	if err != nil {
 		return s, err
 	}
-	if e.SWABoundedReplay != nil && !*e.SWABoundedReplay && v2 {
-		// CacheConfig.swa_bounded_replay: true (vllm/config/cache.py:250@5df63a72), and DeepSeek-V4.1 forces
-		// it off on the V1 runner, under prefill context parallelism and on ROCm
-		// (vllm/models/deepseek_v41/attention.py:529-547@5df63a72). So on the V1 runner a stated false is
-		// the effective value and builds; on the V2 runner (prefill context parallelism is refused
-		// elsewhere, blis-vllm#67) false departs from the default, and lets the sliding-window KV take
-		// part in prefix caching, which this factory does not model. Only DeepSeek-V4.1 reads the
-		// setting; the engine block does not name the model, so any model is refused here.
-		return s, fmt.Errorf("vllm: swa_bounded_replay is not modelled: false departs from the default on the V2 "+
-			"model runner and lets the sliding-window KV take part in prefix caching (%s)", issueBase+"7")
+	if e.SWABoundedReplay != nil && !*e.SWABoundedReplay {
+		// CacheConfig.swa_bounded_replay: true (vllm/config/cache.py:250@5df63a72). False makes
+		// DeepSeek-V4.1's sliding-window MLA specs prefix-cacheable with no replay window
+		// (SlidingWindowMLASpec.prefix_cacheable and prefix_replay_tokens,
+		// vllm/v1/kv_cache_interface.py:968-974), which is the layout the V1 runner and prefill
+		// context parallelism force (vllm/models/deepseek_v41/attention.py:529-547). It is carried
+		// by the layers: each kv_layers run states its own bounded_replay, which the host sets
+		// from this flag, and the groups, the pool and the lookup follow the runs. A run that
+		// still states a bounded replay contradicts the flag.
+		for _, r := range c.KVLayers {
+			if r.BoundedReplay {
+				return s, fmt.Errorf("vllm: swa_bounded_replay is false but a %s run in kv_layers states "+
+					"bounded_replay: the layers of a deployment without bounded replay state none", r.Spec)
+			}
+		}
 	}
 	if method == "dspark" && !v2 {
 		// DSpark is implemented only by the V2 model runner (vllm/config/vllm.py:2976-2979@5df63a72),

@@ -136,8 +136,17 @@ func groupLayers(layers []Layer, o GroupOptions) ([]Group, [][]int, error) {
 	}
 	if deepseek(layers) {
 		if disableHybrid {
-			return nil, nil, errors.New("kv: disable_hybrid_kv_cache_manager with DeepSeek V4's sliding-window MLA and " +
-				"circular-buffer caches is not modelled")
+			// vLLM v0.32.0 does not start this deployment: unify_hybrid_kv_cache_specs promotes each
+			// SlidingWindowMLASpec to an MLAAttentionSpec beside the compressed MLA caches
+			// (_promote_local_kv_cache_specs, vllm/v1/core/kv_cache_utils.py:1731-1754@5df63a72) with
+			// replace_as, which passes every field of the old spec except extra_retained_tokens to
+			// the new class (vllm/v1/kv_cache_interface.py:119-138), and MLAAttentionSpec has no
+			// bounded_replay field (:686-702, :956). So this is vLLM's refusal, not a gap of ours.
+			return nil, nil, errors.New("vLLM does not start DeepSeek V4 or V4.1 with disable_hybrid_kv_cache_manager: " +
+				"true: promoting the sliding-window MLA caches to MLA attention raises TypeError (unexpected keyword " +
+				"argument 'bounded_replay', unify_hybrid_kv_cache_specs, vllm/v1/core/kv_cache_utils.py:1746-1754 at " +
+				"vLLM v0.32.0), so there is no deployment to price; drop disable_hybrid_kv_cache_manager from the " +
+				"engine block, or run a vLLM release that starts this layout")
 		}
 		if g, members := packedGroups(layers); g != nil {
 			if o.TrailingDrafter {

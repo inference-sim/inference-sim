@@ -4716,9 +4716,12 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#7"
+    "traces": [
+     "core/sched/testdata/golden/dashboard-deepseek-v4.1-flash-layers.json",
+     "core/sched/testdata/golden/dashboard-deepseek-v4.1-flash-replay.json"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:tensor_parallel_size": {
    "estimation": {

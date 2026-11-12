@@ -228,5 +228,23 @@
     "why": "the OutputProcessor sends every token when the interval is 1 and groups them above it; the value reaches it through OutputProcessor(stream_interval=...), a call the scan does not follow"
    }
   ]
+ },
+ "swa_bounded_replay": {
+  "stated": [
+   {
+    "trace": "core/sched/testdata/golden/dashboard-deepseek-v4.1-flash-layers.json",
+    "values": [
+     false
+    ],
+    "why": "the scenario's sliding-window MLA layers state no bounded_replay, the layout engine.swa_bounded_replay: false builds (and the V1 runner forces)"
+   },
+   {
+    "trace": "core/sched/testdata/golden/dashboard-deepseek-v4.1-flash-replay.json",
+    "values": [
+     true
+    ],
+    "why": "the scenario's sliding-window MLA layers state bounded_replay: true, the layout the default builds on the V2 runner"
+   }
+  ]
  }
 }

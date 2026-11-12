@@ -10125,6 +10125,86 @@
     "name": "stream_interval"
    }
   },
+  "swa_bounded_replay": {
+   "value_classes": {
+    "type": "boolean",
+    "covered": [
+     "false",
+     "true"
+    ]
+   },
+   "basis": {
+    "kind": "boolean",
+    "classes": [
+     {
+      "values": [
+       false
+      ],
+      "compared_at": [
+       "vllm/models/deepseek_v41/attention.py:530",
+       "vllm/models/deepseek_v41/attention.py:538",
+       "vllm/models/deepseek_v41/attention.py:548"
+      ],
+      "covered_by": [
+       "core/sched/testdata/golden/dashboard-deepseek-v4.1-flash-layers.json"
+      ]
+     },
+     {
+      "values": [
+       true
+      ],
+      "compared_at": [
+       "vllm/models/deepseek_v41/attention.py:530",
+       "vllm/models/deepseek_v41/attention.py:538",
+       "vllm/models/deepseek_v41/attention.py:548"
+      ],
+      "covered_by": [
+       "core/sched/testdata/golden/dashboard-deepseek-v4.1-flash-replay.json"
+      ]
+     }
+    ],
+    "relations": [],
+    "sites": [
+     {
+      "at": "vllm/models/deepseek_v41/attention.py:530",
+      "expr": "swa_bounded_replay",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v41/attention.py:538",
+      "expr": "swa_bounded_replay",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v41/attention.py:548",
+      "expr": "swa_bounded_replay",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": false,
+      "trace": "core/sched/testdata/golden/dashboard-deepseek-v4.1-flash-layers.json",
+      "reviewed": true
+     },
+     {
+      "value": true,
+      "trace": "core/sched/testdata/golden/dashboard-deepseek-v4.1-flash-replay.json",
+      "reviewed": true
+     }
+    ],
+    "name": "swa_bounded_replay"
+   }
+  },
   "tensor_parallel_size": {
    "value_classes": {
     "type": "numeric",
