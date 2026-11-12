@@ -18,8 +18,10 @@ reason: >-
   (the hosted scheduler shuffles the candidates before each pick, so rotating them by the
   counter is a random choice, as the random picker's is). Tests of the router fork on pools of
   two, three and four endpoints reach every endpoint in near equal counts and not in a cycle
-  (reference-configs/README.md, "What round-robin does"). The nearest llm-d policy therefore
-  picks at random among tied endpoints where Dynamo rotates, and the random picker is equally
+  (pkg/epp/scheduling/scheduler_profile.go 363-370 and picker/maxscore/picker.go 108-117 of
+  inference-sim/llm-d-router at commit 03246be994224ef031dfdafb966c54f60d01e933, and the tests
+  its reference-configs/README.md describes). These statements are about that router tree and no
+  other release; the policy table states none of them. The nearest llm-d policy therefore picks at random among tied endpoints where Dynamo rotates, and the random picker is equally
   close. Whether that is near enough is a measurement of how far the choice of policy moves
   BLIS's figures, which this layer does not carry, so the mode stays unsupported here. Dynamo's
   other structure (a counter per router object, several frontends in every recipe the dashboard
@@ -75,6 +77,20 @@ evidence:
     path: reference-configs/README.md
     lines: "66-93"
     claim: The router has no policy that rotates strictly, one endpoint per request. Round-robin is the max-score picker with no scorer; the candidates reach the picker in a seeded random order in a hosted runtime, so the choice is uniformly random among the tied endpoints, as the random picker's is; tests of pools of two, three and four show near equal counts and no cycle.
+  - side: llm-d
+    field: policy
+    repository: inference-sim/llm-d-router
+    commit: 03246be994224ef031dfdafb966c54f60d01e933
+    path: pkg/epp/scheduling/scheduler_profile.go
+    lines: "363-370"
+    claim: In a hosted runtime the scheduler sorts the scored endpoints by identifier and shuffles them with a seeded source before the picker sees them; otherwise the order is Go map order. The tie order a picker rotates is therefore random.
+  - side: llm-d
+    field: policy
+    repository: inference-sim/llm-d-router
+    commit: 03246be994224ef031dfdafb966c54f60d01e933
+    path: pkg/epp/framework/plugins/scheduling/picker/maxscore/picker.go
+    lines: "108-117"
+    claim: The max-score picker rotates each group of equal-score endpoints by a counter drawn once per pick; with the candidates in the random order above, the choice among tied endpoints is random, not a cycle.
   - side: llm-d
     field: policy
     repository: inference-sim/llm-d-router

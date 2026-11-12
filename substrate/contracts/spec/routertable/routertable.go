@@ -110,26 +110,20 @@ const (
 type Policy string
 
 const (
-	// PolicyRoundRobin: no scorer, so every endpoint scores alike and all are tied, and the
-	// max-score picker chooses among the tied endpoints. It is named round-robin but it is not a
-	// strict rotation, one endpoint per request in turn: the picker rotates the tied endpoints by a
-	// counter drawn at every pick of every profile, and the hosted scheduler puts the candidates in
-	// a seeded random order before each pick, so the choice is random among the tied endpoints, as
-	// the random picker's is. Pools of two, three and four endpoints reached every endpoint in near
-	// equal counts and not in a cycle (llm-d router fork, reference-configs/README.md, "What
-	// round-robin does"). In a prefill/decode deployment the policy takes the profile pair and a
-	// decider (reference-configs/round-robin-pd.yaml).
+	// PolicyRoundRobin: no scorer, so every endpoint scores alike, and the max-score picker
+	// rotates through the endpoints with a counter. The counter is one per runtime and is drawn
+	// at every pick of every profile (picker.RandFor, NextCounter), not once per request: a
+	// configuration whose request runs two profiles that each pick, such as a prefill and a decode
+	// profile, draws two, and a pool of even size then sees only every other endpoint. The policy
+	// is strict round-robin over the endpoints, listed in ID order in BLIS's hosted router, for a
+	// configuration with one pick per request.
 	PolicyRoundRobin Policy = "round-robin"
 	// PolicyLeastActiveRequests: the router's own count of in-flight requests per endpoint
 	// (inflight-load-producer), scored by active-request-scorer so the endpoint with the
-	// fewest scores highest, and the max-score picker; endpoints with equal counts are tied and the tie is
-	// broken as in round-robin, at random.
+	// fewest scores highest, and the max-score picker; ties are rotated, not drawn at random.
 	PolicyLeastActiveRequests Policy = "least-active-requests"
 	// PolicyDefault: the router's built-in configuration when none is given: queue-scorer
-	// (weight 2), kv-cache-utilization-scorer (2) and prefix-cache-scorer (3). It has one profile
-	// and no role filter, so it has no prefill/decode form: in a pool that mixes roles it names no
-	// prefill endpoint. A row that needs prefill/decode routing and maps to default is unsupported
-	// (G5 router_unsupported).
+	// (weight 2), kv-cache-utilization-scorer (2) and prefix-cache-scorer (3).
 	PolicyDefault Policy = "default"
 	// PolicyNone: no llm-d policy is close enough. The router stays unsupported (G5
 	// router_unsupported). The entry's reason says why; the table records the absence so that a
@@ -151,12 +145,12 @@ type PolicyInfo struct {
 // not include PolicyNone, which is the absence of one.
 func Policies() []PolicyInfo {
 	return []PolicyInfo{
-		{PolicyRoundRobin, "max-score-picker; no scorer; ties chosen at random, not rotated; prefill/decode form: prefill and decode profiles with always-disagg-pd-decider",
+		{PolicyRoundRobin, "max-score-picker; no scorer",
 			[]string{"pkg/epp/framework/plugins/scheduling/picker/maxscore/picker.go",
 				"pkg/epp/framework/plugins/scheduling/picker/common.go"}},
-		{PolicyLeastActiveRequests, "inflight-load-producer; active-request-scorer; max-score-picker; ties chosen at random; prefill/decode form: prefill and decode profiles with always-disagg-pd-decider",
+		{PolicyLeastActiveRequests, "inflight-load-producer; active-request-scorer; max-score-picker",
 			[]string{"pkg/epp/framework/plugins/scheduling/scorer/activerequest/active_request.go"}},
-		{PolicyDefault, "queue-scorer (2); kv-cache-utilization-scorer (2); prefix-cache-scorer (3); max-score-picker; no prefill/decode form",
+		{PolicyDefault, "queue-scorer (2); kv-cache-utilization-scorer (2); prefix-cache-scorer (3); max-score-picker",
 			[]string{"pkg/epp/config/loader/defaults.go"}},
 	}
 }

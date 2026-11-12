@@ -3,6 +3,7 @@ package routertable
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -208,6 +209,26 @@ func TestAnEntryIsNotInheritedByAnUncitedRevision(t *testing.T) {
 		e, got := Resolve(entries, c.router, c.mode, c.ttl, c.rev)
 		if got != c.want || got.Scored() != c.scored {
 			t.Errorf("%s: %s (entry %v), want %s", c.name, got, e != nil, c.want)
+		}
+	}
+}
+
+// The policy list is not versioned. Its composition is what consumers read as plugin types with
+// optional weights, and a source is a Go file of the router; a claim about how one release behaves
+// (a tie-break, a profile pair, a decider) does not parse as a composition and so cannot be put there.
+// Such claims belong in the revision-bound catalog entries, which cite the router tree.
+func TestEveryPolicyCompositionParsesAsPluginTypesAndWeights(t *testing.T) {
+	item := regexp.MustCompile(`^(no scorer|[a-z][a-z0-9-]*( \([0-9]+\))?)$`)
+	for _, i := range Policies() {
+		for _, part := range strings.Split(i.Plugins, ";") {
+			if part = strings.TrimSpace(part); !item.MatchString(part) {
+				t.Errorf("%s: composition item %q is not a plugin type with an optional weight", i.Policy, part)
+			}
+		}
+		for _, s := range i.Sources {
+			if !strings.HasSuffix(s, ".go") || strings.HasPrefix(s, "/") || strings.Contains(s, "..") {
+				t.Errorf("%s: source %q is not a Go file of the router from its root", i.Policy, s)
+			}
 		}
 	}
 }
