@@ -52,7 +52,7 @@ def fi_backend(value, nodes, cap):
     f = function_from(path, "_resolve_fi_ar_backend",
                       {"ProcessGroup": object, "envs": envs, "_node_count": lambda g: nodes, "current_platform": plat, "logger": Log()})
     try:
-        return f(object())[0]
+        return f(object())
     except Exception:
         return "error"
 
@@ -94,6 +94,13 @@ class Vectors(unittest.TestCase):
     def test_a_fact_the_caller_did_not_give_makes_a_clause_false(self):
         self.assertFalse(stand_in.exact("VLLM_FLASHINFER_ALLREDUCE_BACKEND", "mnnvl"))
         self.assertTrue(stand_in.exact("VLLM_FLASHINFER_ALLREDUCE_BACKEND", "auto"))
+
+    def test_a_stated_mnnvl_on_one_node_is_not_the_default(self):
+        # auto on one node is (mnnvl, may fall back to trtllm); a stated mnnvl is (mnnvl, no fallback). They differ on a
+        # node without NVSwitch multicast, which the caller cannot state, so the stand-in is not exact there.
+        for cap in ("8.0", "9.0", "10.0", "10.3"):
+            self.assertFalse(stand_in.exact("VLLM_FLASHINFER_ALLREDUCE_BACKEND", "mnnvl", tp_group_nodes=1, compute_capability=cap))
+        self.assertTrue(stand_in.exact("VLLM_FLASHINFER_ALLREDUCE_BACKEND", "mnnvl", tp_group_nodes=2, compute_capability="10.0"))
 
     def test_an_unlisted_field_has_no_exact_stand_in(self):
         self.assertFalse(stand_in.exact("SOME_OTHER_VARIABLE", "1"))

@@ -54,3 +54,31 @@ func TestStandInVectorsAgreeWithTheGoEvaluator(t *testing.T) {
 		}
 	}
 }
+
+// A stated mnnvl on one node resolves to (mnnvl, no trtllm fallback); an unset field resolves to (mnnvl, fallback
+// allowed). They differ on a node without NVSwitch multicast, which the facts cannot state, so the stand-in is not exact.
+func TestAStatedMnnvlOnOneNodeIsNotTheDefault(t *testing.T) {
+	l, err := fields.Load("fields.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var est fields.Estimation
+	found := false
+	for _, f := range l.Fields {
+		if f.Name == "VLLM_FLASHINFER_ALLREDUCE_BACKEND" {
+			est, found = f.Estimation, true
+		}
+	}
+	if !found {
+		t.Fatal("VLLM_FLASHINFER_ALLREDUCE_BACKEND is not in the field list")
+	}
+	one, two := 1, 2
+	for _, cc := range []string{"8.0", "9.0", "10.0", "10.3"} {
+		if fields.Exact(est, fields.Facts{Value: "mnnvl", TPGroupNodes: &one, ComputeCapability: cc}) {
+			t.Errorf("mnnvl on one node, cc %s: judged exact, but the fallback differs from auto's", cc)
+		}
+	}
+	if !fields.Exact(est, fields.Facts{Value: "mnnvl", TPGroupNodes: &two, ComputeCapability: "10.0"}) {
+		t.Error("mnnvl across nodes on cc 10.0 resolves as auto does and must stay exact")
+	}
+}

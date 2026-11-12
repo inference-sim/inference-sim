@@ -131,7 +131,8 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   - environment variables that change what a run does but not what the cost model prices, where an unset
     variable gives the same engine path for the values recorded runs state (the harness that writes the
     stand-in checks that, and names the field and the recorded value on the point): `VLLM_FLASHINFER_ALLREDUCE_BACKEND`
-    (#80; `mnnvl` is what vLLM resolves `auto` to on one node and on compute capability 10.0 and up,
+    (#80; `mnnvl` stated across nodes on compute capability 10.0 and up is what vLLM resolves `auto` to; stated on one node it
+    is not, because `auto` there allows a trtllm fallback and a stated `mnnvl` does not,
     `flashinfer_all_reduce.py:143-178@5df63a72`, and every tensor-parallel all-reduce is priced from the NCCL sweep),
     `UCX_RCACHE_MAX_UNRELEASED` (#62; vLLM sets 1024 itself, `nixl_utils.py:20-36@5df63a72`) and `UCX_TLS` (#62; the engine
     prices a handoff between nodes over the NIC unless `UCX_CUDA_IPC_ENABLE_MNNVL=y` is stated, which is the path a list of

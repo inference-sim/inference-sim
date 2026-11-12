@@ -125,7 +125,7 @@
   "tp_group_nodes": 1,
   "compute_capability": "8.0",
   "owner": "_resolve_fi_ar_backend",
-  "exact": true
+  "exact": false
  },
  {
   "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
@@ -133,7 +133,7 @@
   "tp_group_nodes": 1,
   "compute_capability": "9.0",
   "owner": "_resolve_fi_ar_backend",
-  "exact": true
+  "exact": false
  },
  {
   "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
@@ -141,7 +141,7 @@
   "tp_group_nodes": 1,
   "compute_capability": "9.10",
   "owner": "_resolve_fi_ar_backend",
-  "exact": true
+  "exact": false
  },
  {
   "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
@@ -149,7 +149,7 @@
   "tp_group_nodes": 1,
   "compute_capability": "10.0",
   "owner": "_resolve_fi_ar_backend",
-  "exact": true
+  "exact": false
  },
  {
   "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
@@ -157,7 +157,7 @@
   "tp_group_nodes": 1,
   "compute_capability": "10.3",
   "owner": "_resolve_fi_ar_backend",
-  "exact": true
+  "exact": false
  },
  {
   "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
