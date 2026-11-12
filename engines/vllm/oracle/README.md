@@ -51,6 +51,7 @@ so, when it is unset.
 | T3/T4 data parallel with NIXL on every rank | `run_dp.py` | `scenarios-dp-nixl/` | | `./core/engine` |
 | T4 NIXL connector | `run_connector.py` | `scenarios/connector/` | `gen_connector_fuzz.py` (seeds 10000+ reach `max_model_len`; 20000+ add hybrid groups and drafters; 30000+ the batch queue) | `./core/connector/nixl` (`BLIS_VLLM_CONNECTOR_FUZZ_DIR`) |
 | T4 OffloadingConnector (CPU tier, LRU) | `run_offloading.py` | `scenarios/offloading/` | `gen_offloading_fuzz.py` (seeds 20000+ add sliding-window groups) | `./core/connector/offloading` (`BLIS_VLLM_OFFLOAD_FUZZ_DIR`) |
+| T2 stated `swa_bounded_replay` (vLLM resolves the layout) | `run_swa_layout.py` | `scenarios/swa/` | | `./core/sched` (`TestSWALayoutScenariosAgainstVLLM`), `./compat/kernelmodel` |
 | T5 metrics | `run_metrics.py` | `scenarios/` (tier-2 scenarios) | `gen_fuzz.py` | `./core/metrics` (`BLIS_VLLM_METRICS_FUZZ_DIR`) |
 
 The guards: `check_mocks.py` (every write a runner makes into vLLM is listed in `mocks.json`),

@@ -10146,7 +10146,7 @@
        "vllm/models/deepseek_v41/attention.py:548"
       ],
       "covered_by": [
-       "core/sched/testdata/golden/dashboard-deepseek-v4.1-flash-layers.json"
+       "core/sched/testdata/golden-swa/swa-stated-false-v2.json"
       ]
      },
      {
@@ -10159,7 +10159,8 @@
        "vllm/models/deepseek_v41/attention.py:548"
       ],
       "covered_by": [
-       "core/sched/testdata/golden/dashboard-deepseek-v4.1-flash-replay.json"
+       "core/sched/testdata/golden-swa/swa-stated-true-v1.json",
+       "core/sched/testdata/golden-swa/swa-stated-true-v2.json"
       ]
      }
     ],
@@ -10193,13 +10194,15 @@
     "stated": [
      {
       "value": false,
-      "trace": "core/sched/testdata/golden/dashboard-deepseek-v4.1-flash-layers.json",
-      "reviewed": true
+      "trace": "core/sched/testdata/golden-swa/swa-stated-false-v2.json"
      },
      {
       "value": true,
-      "trace": "core/sched/testdata/golden/dashboard-deepseek-v4.1-flash-replay.json",
-      "reviewed": true
+      "trace": "core/sched/testdata/golden-swa/swa-stated-true-v1.json"
+     },
+     {
+      "value": true,
+      "trace": "core/sched/testdata/golden-swa/swa-stated-true-v2.json"
      }
     ],
     "name": "swa_bounded_replay"

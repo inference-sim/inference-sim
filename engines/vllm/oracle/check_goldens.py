@@ -40,6 +40,7 @@ import sys
 
 GOLDEN_DIRS = (
     "core/sched/testdata/golden/",
+    "core/sched/testdata/golden-swa/",
     "core/engine/testdata/golden/",
     "core/engine/testdata/golden-dp/",
     "core/engine/testdata/golden-dp-async/",

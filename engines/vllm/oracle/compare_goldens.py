@@ -29,7 +29,7 @@ def first_difference(golden: dict, fresh: dict) -> str:
         return "the finished records differ"
     if golden.get("kv_pool") != fresh.get("kv_pool"):
         return "the KV pools vLLM sized differ"
-    for key in ("groups_error", "groups"):
+    for key in ("groups_error", "groups", "swa_layout"):
         if golden.get(key) != fresh.get(key):
             return f"the {key} vLLM gave differ"
     return ""

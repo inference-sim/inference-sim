@@ -4717,8 +4717,9 @@
    },
    "evidence": {
     "traces": [
-     "core/sched/testdata/golden/dashboard-deepseek-v4.1-flash-layers.json",
-     "core/sched/testdata/golden/dashboard-deepseek-v4.1-flash-replay.json"
+     "core/sched/testdata/golden-swa/swa-stated-false-v2.json",
+     "core/sched/testdata/golden-swa/swa-stated-true-v1.json",
+     "core/sched/testdata/golden-swa/swa-stated-true-v2.json"
     ]
    },
    "status": "modelled"

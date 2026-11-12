@@ -508,6 +508,20 @@ jobs:
       # The committed goldens must be what the pinned vLLM release produces here and now.
       - name: every golden trace is vLLM's own output
         run: python3 -I oracle/compare_goldens.py core/sched/testdata/golden oracle/out/scenarios
+      # swa_bounded_replay stated, vLLM's own resolution into the layout, then its Scheduler on that
+      # layout (oracle/run_swa_layout.py).
+      - name: run the swa_bounded_replay layout scenarios
+        env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
+          ORACLE_MODEL: ${{ github.workspace }}/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+        run: |
+          mkdir -p oracle/out/scenarios-swa
+          python -I oracle/run_swa_layout.py vllm-source oracle/scenarios/swa oracle/out/scenarios-swa
+      - name: the swa_bounded_replay goldens are vLLM's own output
+        run: python3 -I oracle/compare_goldens.py core/sched/testdata/golden-swa oracle/out/scenarios-swa
       # Tier 1: every inertness proof (oracle/inertness/*.json) is what the harness computes from vLLM's
       # own code now, and the harness finds a field that is not inert, a read it was not told about and a
       # variable the source names.
