@@ -335,6 +335,26 @@ It reads the catalog's chip list, so a chip added there fails `--check` until th
 
 **What it does not show.** None of the six tiers is timed on the engine and version the kernel prices, on any chip but one H100 host, and that host's rates are not measurements of `swap_blocks_batch`. The `assumed` figures are not bounds: a deep queue on a drive, or a store under load, can sit well below them. The queue-depth rule divides the rate and does not model saturation. The NVMe aggregate is optimistic at low concurrency, because one O_DIRECT stream does not reach the aggregate on md RAID 0. No `cpu_dram` figure exists for a host other than the one H100 DGX host; a Grace host's link is held to its own `host_link_bandwidth`, which says what the link can do and not what the copy engines do over it.
 
+### Dense Marlin MXFP8 ramp on Hopper (`transferred`)
+
+On SM90, vLLM v0.31.0 runs every dense MXFP8 linear with `MarlinMxfp8LinearKernel` (W8A16). No sweep times it on any part. The registry carries its ramp twice per part, h100 and h200, as four entries:
+
+- `gemm_eps_max_w8a16_mxfp8` and `gemm_m_half_w8a16_mxfp8`, `assumed`: the part's cuBLAS BF16 envelope (1.0 / 170 on h100, 0.992 / 110 on h200). The registry calls it an optimistic upper bound for a compute-bound GEMM. Owned by `fit_deepseek_v41_h200.py`; it stays.
+- The same two names, `transferred`: the same part's measured Marlin grouped pair (`gemm_*_w4a16_mxfp4_grouped`: 0.282 / 15 on h100, 0.245 / 26 on h200), moved to the dense kernel by one rule (same library, same Marlin kernel family and MMA core, same die; the pair is kept whole and never taken from the other part). Owned by `emit_marlin_dense_transfer.py`.
+
+The lookup uses the entry of the smallest method rank (design 9.2, VAL-4), so the `transferred` pair prices the GEMM and the `assumed` bound is the entry it displaces. Remove the `transferred` pair and the price returns to the bound.
+
+```
+cd registry
+python scripts/emit_marlin_dense_transfer.py          # write
+python scripts/emit_marlin_dense_transfer.py --check  # exit 1 if the committed file would change
+python -m pytest validator/test_coefficient_properties.py -q -k dense_marlin
+```
+
+It reads only the committed grouped entries: no sweep, no catalog, no end-to-end result. Expected output of `--check`: `cost-model-primitives.yaml already matches the transfer`, exit 0; it costs well under a second. Writers that share the file identify an entry by name, scope and method (`coefficient_blocks.py`), so the `assumed` and `transferred` pairs are maintained independently.
+
+**What it does not show.** Dense Marlin was never timed. The entries are unkeyed: the engine reports no kernel implementation for a GEMM, so they state no `kernel_impls` and a price records their kernel match as `unkeyed`, never `exact`. They carry `transferred`, which for the closeness grade (design 11.3) is a G2 condition, the same grade the `assumed` bound already gave; they do not make a point G1. The grouped fit sums its compute and memory halves over 27 token counts of one MoE shape, and whether the dense kernel shares that composition, or holds at other GEMM shapes, is not shown. The effect on the development points is in-sample (the pair was chosen from the registry before the points were re-scored, but the points are the only end-to-end check available). A MarlinMxfp8LinearKernel sweep on one H100 and one H200, fitted like `fit_marlin_grouped_ramp.py` and written as `measured` with `kernel_impls`, replaces it.
+
 ### Data freshness, checked 2026-10-30
 
 | source | newest public | what the committed sets cite | outcome |
@@ -401,6 +421,7 @@ appears with no owner — so a value that cannot be regenerated cannot be added.
 | `attention_decode_{launch_floor,split_floor,serial_rate,per_token,throughput_rate}_sparse_mla` | `fit_deepseek_v41_decode.py` — deepseek-v4.1-flash on h200 and h100 | the same FlashMLA kernel table's decode rows, at most 10 blocks (methodology §10.7) |
 | `attention_decode_*_block_index_scores` | `fit_deepseek_v41_h200.py` | the floor from AISimulate's indexer-kernel table; the rate `assumed` at NVIDIA's empirical HBM rate, BwPeak × `hbm_derate` (methodology §10.5) |
 | `gemm_*_w8a16_mxfp8`, `host_gather_rate_uva` | `fit_deepseek_v41_h200.py` (`assumed`) | upper bounds derived from committed siblings; no sweep measures them |
+| `gemm_*_w8a16_mxfp8` (h100, h200; `transferred`) | `emit_marlin_dense_transfer.py --check` (no data needed) | the same part's measured `gemm_*_w4a16_mxfp4_grouped` pair, moved by one stated rule; see [Dense Marlin MXFP8 ramp on Hopper](#dense-marlin-mxfp8-ramp-on-hopper-transferred) |
 | `attention_prefill_*` | `relane_attention_prefill.py` | AISimulate `attention` context rows |
 | `attention_prefill_{floor,work_scale}_trtllm_gen_kv_{bf16,fp8}` (b200, b300, gb200-nvl72, gb300; `transferred`) | `emit_attention_trtllm_gen.py --check` | the `vllm_flashinfer_trtllmprefill` rows of AISimulate `attention/vllm/0.25.0` context sweeps; `--pooled` refits the committed pooled pair from every row to show the filter is the only change |
 | `attention_prefill_*_sparse_mla`, `attention_prefill_*_block_index_scores`, `mhc_*` | `fit_deepseek_v41_prefill.py` — scoped to deepseek-v4.1-flash on h200 and h100 | AISimulate `sparse_attention` FlashMLA prefill rows and the paged-logits kernel at prefill shapes (a proxy, `assumed`); `mhc/vllm/0.25.0` (methodology §10.6) |

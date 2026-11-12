@@ -288,11 +288,13 @@ def test_a_model_scoped_entry_never_shadows_a_part_wide_one():
     )
 
 
-def test_every_name_resolves_to_one_entry_per_part_and_model():
-    """blis-latency-kernel keeps the LAST admitted entry of a name, so two entries that
-    admit the same (part, model) make the price depend on file order and leave one copy
-    unmaintained -- the a100-80 descriptor duplicates were this, with equal values only by
-    luck. Holds for every set, with no sweep."""
+def test_every_name_resolves_to_one_entry_per_part_model_and_method():
+    """Design VAL-4: a lookup has at most one entry per method rank and uses the most trusted.
+    Two entries of ONE method that admit the same (part, model) leave the price to file order
+    and one copy unmaintained -- the a100-80 descriptor duplicates were this, with equal
+    values only by luck. Two entries of different methods are the design's own arrangement
+    (the dense Marlin MXFP8 ramp: a `transferred` pair beside the `assumed` bound it
+    displaces). Holds for every set, with no sweep."""
     seen: dict = {}
     clashes = []
     for setname, name, body in ENTRIES:
@@ -300,17 +302,18 @@ def test_every_name_resolves_to_one_entry_per_part_and_model():
         models = scope.get("model") or [None]
         for hw in scope.get("hardware", []):
             for m in (models if isinstance(models, list) else [models]):
-                key = (setname, name, hw, m)
+                key = (setname, name, hw, m, body["method"])
                 if key in seen:
                     clashes.append(key)
                 seen[key] = True
-    assert not clashes, f"names admitted twice for one part and model: {clashes}"
+    assert not clashes, f"names admitted twice for one part, model and method: {clashes}"
 
 
-def _single(name: str, chip: str, model: str | None = None) -> float:
+def _single(name: str, chip: str, model: str | None = None, method: str | None = None) -> float:
     hits = [b["value"] for _, n, b in ENTRIES
             if n == name and (b.get("scope") or {}).get("hardware") == [chip]
-            and (b.get("scope") or {}).get("model") == ([model] if model else None)]
+            and (b.get("scope") or {}).get("model") == ([model] if model else None)
+            and (method is None or b["method"] == method)]
     assert len(hits) == 1, f"expected one {name} on {chip} (model {model}), got {hits}"
     return hits[0]
 
@@ -348,11 +351,31 @@ def test_the_derived_deepseek_v41_entries_equal_what_they_are_derived_from(hw):
     bw = chip_facts(hw)["BwPeakTBs"] * 1e6
     assert _single("attention_decode_rate_block_index_scores", hw, m) == round(
         bw * _single("hbm_derate", hw))
-    assert _single("gemm_eps_max_w8a16_mxfp8", hw) == _single("gemm_eps_max_bf16", hw)
-    assert _single("gemm_m_half_w8a16_mxfp8", hw) == _single("gemm_m_half_bf16", hw)
+    assert _single("gemm_eps_max_w8a16_mxfp8", hw, method="assumed") == _single("gemm_eps_max_bf16", hw)
+    assert _single("gemm_m_half_w8a16_mxfp8", hw, method="assumed") == _single("gemm_m_half_bf16", hw)
     # The descriptor's nominal 64 GB/s x 128/130 x useful/fetched bytes. Deliberately not
     # host_link_bandwidth, which is the measured copy-engine payload rate (fit_host_link.py).
     assert _single("host_gather_rate_uva", hw) == round(64000.0 * 128 / 130 * (256 + 8) / (256 + 32))
+
+
+@pytest.mark.parametrize("hw", ["h200", "h100"])
+def test_the_dense_marlin_mxfp8_ramp_is_the_parts_own_grouped_pair_and_says_it_is_transferred(hw):
+    """The dense Marlin W8A16 MXFP8 GEMM has no sweep. Its `transferred` ramp (design 9.2, D5) is
+    the SAME part's measured grouped pair, never the other part's, never a number tuned to an
+    end-to-end residual; it names its source scope and rule, claims no kernel hash, and sits
+    beside the `assumed` BF16-envelope bound it displaces (VAL-4), which stays."""
+    for dense, grouped in (("gemm_eps_max_w8a16_mxfp8", "gemm_eps_max_w4a16_mxfp4_grouped"),
+                           ("gemm_m_half_w8a16_mxfp8", "gemm_m_half_w4a16_mxfp4_grouped")):
+        bodies = {b["method"]: b for _, n, b in ENTRIES
+                  if n == dense and (b.get("scope") or {}).get("hardware") == [hw]}
+        assert set(bodies) == {"assumed", "transferred"}, (dense, hw, sorted(bodies))
+        t = bodies["transferred"]
+        assert t["value"] == _single(grouped, hw, method="measured"), (dense, hw)
+        assert t["fitted"] is False and set(t["scope"]) == {"hardware"}
+        assert t["transferred_from"] == f"hardware={hw}" and t["transfer_rule"]
+        assert "kernel_impls" not in t and "measured_on" not in t and "ci95" not in t
+        assert t["value"] < bodies["assumed"]["value"] or dense.startswith("gemm_m_half")
+        assert "TRANSFERRED, NOT MEASURED" in t["rationale"]
 
 
 def test_the_v41_host_entries_re_derive_from_their_vendored_measurements():

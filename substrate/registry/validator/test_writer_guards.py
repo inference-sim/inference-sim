@@ -82,6 +82,19 @@ def test_two_entries_with_one_name_and_scope_refuse():
                   after=lambda b: True)
 
 
+def test_entries_of_different_methods_in_one_scope_are_two_entries_each_kept_in_place():
+    """An `assumed` bound and the `transferred` entry that displaces it share a name and a
+    scope (design VAL-4): a writer that owns one rewrites it and leaves the other byte for byte."""
+    def with_method(m, value):
+        return entry("a", "{hardware: [h200]}", value=value).replace("method: measured", f"method: {m}")
+    text = "\n".join([with_method("assumed", "1.0"), with_method("transferred", "0.25")])
+    blocks = cb.split(text)
+    cb.upsert(blocks, with_method("assumed", "0.9").split("\n"), after=lambda b: False)
+    joined = cb.join(blocks)
+    assert "value: 0.9" in joined and "value: 0.25" in joined and "value: 1.0" not in joined
+    assert joined.count("  - a:") == 2
+
+
 def test_a_new_entry_with_no_anchor_refuses():
     blocks = cb.split(entry("a", "{hardware: [h200]}"))
     with pytest.raises(SystemExit):

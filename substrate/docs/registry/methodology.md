@@ -996,6 +996,7 @@ tags build was diffed, and what the 0.25.0 timing does and does not contain is s
 | `attention_decode_rate_block_index_scores` | h200, deepseek-v4.1-flash | assumed | 3,840,000 B/µs, NVIDIA's empirical HBM rate (BwPeak × `hbm_derate`), not a bound | see below |
 | `gemm_{eps_max,m_half}_w4a16_mxfp4_grouped` | h200, gb300 | measured | 0.245 / 26 (h200), 0.114 / 55 (gb300), of the BF16 peak | vLLM's `MarlinExperts` MXFP4 rows, fitted under the kernel's routed-term composition. On gb300 it applies only where the MoE backend is Marlin W4A16 (the Kimi-K3 preview build FPM measured), not to stock v0.31.0 |
 | `gemm_{eps_max,m_half}_w8a16_mxfp8` | h200 | assumed | the BF16 envelope: an upper bound on the asymptote; the knee is not a bound | no dense Marlin sweep exists on any part |
+| `gemm_{eps_max,m_half}_w8a16_mxfp8` | h200, h100 | transferred | the part's own measured Marlin grouped pair (0.245 / 26 on h200, 0.282 / 15 on h100), which the lookup prefers to the `assumed` bound above (rank 3 against 7) | no dense Marlin sweep exists on any part; unkeyed, see reproducing-coefficients |
 | `host_gather_rate_uva` | h200 | assumed | 57,764 B/µs: the PCIe 5.0 raw rate × 128/130 line code × 264/288 | no host-gather measurement exists |
 
 **On H100 the same six entries ship, each fitted from H100's own rows.** H100 SXM is the
