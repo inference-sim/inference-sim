@@ -284,3 +284,45 @@ def test_the_attention_fit_refuses_a_fraction_outside_zero_to_one(bad):
 
     with pytest.raises(ValueError, match=r"outside \(0, 1\.0\]"):
         fit_attention.check_fraction(bad)
+
+
+# --------------------------------------------------------------------------------------
+# fit_deepseek_v41_host.rust_ttft_bound: a one-sided check on the Rust-frontend rate
+# --------------------------------------------------------------------------------------
+
+def _bound_row(ttft, isl, split="validation"):
+    q = ["p1", "p5", "p10", "p25", "p50", "p75", "p90", "p95", "p99"]
+    return {"point_id": "x", "split": split, "gpus": 8, "concurrency": 1,
+            "ttft_ms": dict(zip(q, ttft)), "isl_tokens": dict(zip(q, isl))}
+
+
+def test_the_rust_rate_bound_is_the_tightest_ttft_over_prompt_pair_of_percentiles():
+    """Nine tenths of the requests answer within 500 ms (p90) and a quarter have prompts of at
+    least 1,000,000 tokens (p75 of prompt): at least 15% have both, so the rate is at most 0.5
+    us/token. A looser pair (p95 of TTFT, 600 ms, over the same prompt) must not be chosen."""
+    import fit_deepseek_v41_host as w
+
+    ttft = [100, 150, 200, 250, 300, 400, 500, 600, 9000]
+    isl = [10, 20, 30, 40, 50, 1_000_000, 1_100_000, 1_200_000, 1_300_000]
+    b = w.rust_ttft_bound({"rows": [_bound_row(ttft, isl)]})
+    assert b["a"] == "p90" and b["b"] == "p75"  # 500 ms over 1,000,000 tokens
+    assert abs(b["rate"] - 0.5) < 1e-9
+    assert b["share"] == 15
+
+
+def test_the_rust_rate_bound_refuses_a_row_that_is_not_a_development_point():
+    import fit_deepseek_v41_host as w
+
+    row = _bound_row([1] * 9, [1] * 9, split="test")
+    with pytest.raises(SystemExit):
+        w.rust_ttft_bound({"rows": [row]})
+
+
+def test_the_vendored_rows_bound_the_rust_rate_above_the_registry_value_and_below_the_python_rate():
+    """The registry's Rust rate must sit under the bound the H200 rows give, and the
+    Python-path rate must not: that is what the rationale says the rows show."""
+    import fit_deepseek_v41_host as w
+
+    ad = w.admission(json.loads(w.BENCH_JSON.read_text()))
+    bound = w.rust_ttft_bound(json.loads(w.RUST_BOUND_JSON.read_text()))["rate"]
+    assert ad["value"] / w.FASTOKENS_SPEEDUP < bound < ad["value"]

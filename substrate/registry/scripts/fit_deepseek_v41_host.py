@@ -86,6 +86,7 @@ ANCHOR_SOURCE = ("an internal DeepSeek-V4.1-Flash H200 enforce-eager serving run
 ANCHOR_ENV = "V41_EAGER_ANCHOR_REPORT"
 BENCH_JSON = ANCHORS / "v41_frontend_bench.json"
 KERNEL_BASIS_JSON = ANCHORS / "v41_kernel_eager_basis.json"
+RUST_BOUND_JSON = ANCHORS / "v41_rust_frontend_ttft_bound.json"
 MODEL = "deepseek-v4.1-flash"
 
 # The decode levels over which the report's ITL is flat (host-bound, no queueing): c1-c64.
@@ -355,6 +356,38 @@ def admission(bench: dict) -> dict:
             "procedure": bench["procedure"], "host": bench["host"]}
 
 
+def rust_ttft_bound(anchor: dict) -> dict:
+    """A one-sided CHECK on the Rust-frontend admission rate, never a derivation of it.
+
+    Each row of a run gives percentiles of the client's TTFT and of the prompt length over the
+    same requests. If a fraction a of the requests have TTFT <= T_a and a fraction 1 - b have
+    prompt >= L_b, then with a > b at least a - b of the requests are in both sets: some request
+    with a prompt of at least L_b tokens saw a first token within T_a. Admission is part of
+    that TTFT and is charged on the whole prompt, so the per-token rate is at most T_a / L_b.
+    The bound takes the smallest T_a / L_b over every row and every pair of percentiles with
+    a > b. It is an upper bound only: a rate of zero satisfies it, so it cannot support
+    `measured`. It assumes only that admission is non-negative and linear in the prompt."""
+    q = {"p1": .01, "p5": .05, "p10": .1, "p25": .25, "p50": .5, "p75": .75, "p90": .9,
+         "p95": .95, "p99": .99}
+    best = None
+    for row in anchor["rows"]:
+        if row.get("split") not in ("train", "validation"):
+            sys.exit(f"{RUST_BOUND_JSON.name}: row {row.get('point_id')} is not a development "
+                     f"(train or validation) point")
+        for a, fa in q.items():
+            for b, fb in q.items():
+                if fa > fb:
+                    rate = row["ttft_ms"][a] / row["isl_tokens"][b] * 1e3
+                    if best is None or rate < best["rate"]:
+                        best = {"rate": rate, "gpus": row["gpus"], "c": row["concurrency"],
+                                "a": a, "b": b, "ttft": row["ttft_ms"][a],
+                                "isl": row["isl_tokens"][b],
+                                "share": round((fa - fb) * 100)}
+    if best is None:
+        sys.exit(f"{RUST_BOUND_JSON.name}: no row to bound from")
+    return best
+
+
 def entries(ea: dict, ad: dict) -> list:
     out = []
     src_anchor = [("discussion", f"{ea['source']}, sha256 {ea['sha'][:12]}; derived inputs "
@@ -475,12 +508,19 @@ def entries(ea: dict, ad: dict) -> list:
         f"every request, so under load requests also wait for each other's admission, which "
         f"a per-request cost cannot carry. Reproduce with scripts/fit_deepseek_v41_host.py."))
     rust = round(ad["value"] / FASTOKENS_SPEEDUP, 3)
+    rb = rust_ttft_bound(json.loads(RUST_BOUND_JSON.read_text()))
+    rb_rate = f"{rb['rate']:.2f}"
     out.append(lines(
         "host_admission_per_token_rust_frontend", rust, "us_per_token", "assumed", False,
         scope_all, [("discussion", f"{FASTOKENS}: 'on average achieves a 10x+ faster "
                      f"tokenization compared to the tokenizers library'", "primary"),
                     ("discussion", "vllm-project/vllm PR #47583 benchmark: DeepSeek-V3 "
                      "tokenizer cold encode 35.66 ms at 32K, 160.40 ms at 128K tokens",
+                     "supporting"),
+                    ("discussion", f"validator/testdata/anchors/{RUST_BOUND_JSON.name}: client "
+                     f"TTFT and prompt-length percentiles of the H200 DeepSeek-V4.1-Flash rows "
+                     f"that ran this frontend (InferenceX run 42341901521, development split "
+                     f"validation); an upper bound of {rb_rate} us/token, not a derivation",
                      "supporting")],
         f"ASSUMED: A VENDOR CLAIM APPLIED TO THE PYTHON-PATH VALUE. The per-prompt-token "
         f"admission cost when the pool serves through vLLM's Rust frontend (blis-schemas "
@@ -493,8 +533,24 @@ def entries(ea: dict, ad: dict) -> list:
         f"public Python-path rate (vllm PR #47583, DeepSeek-V3 tokenizer, {PY_PATH_LOW_US} us/"
         f"token) instead, and the README says '10x+' and that the gap widens with prompt "
         f"length, so this value is the slow end. NOT MEASURED on any serving node, not fitted, "
-        f"and NOT derived from any InferenceX TTFT (those request pairs ran this frontend and "
-        f"are held out to test it). It is the same rate for the Rust frontend's rendering, "
+        f"and NOT derived from any InferenceX TTFT. ONE-SIDED CHECK, not used to set it: the "
+        f"client export of the H200 DeepSeek-V4.1-Flash rows (vLLM v0.33.0, which logged "
+        f"'Launching Rust frontend' and 'loading tokenizer with fastokens'; development "
+        f"split validation, in-sample) shows that at {rb['gpus']} GPUs and {rb['c']} client "
+        f"some request with a prompt of at least {rb['isl']:,.0f} tokens ({rb['a']} of TTFT = "
+        f"{rb['ttft']:.0f} ms against {rb['b']} of prompt; at least {rb['share']}% of the "
+        f"requests are in both sets) saw its first token within {rb['ttft']:.0f} ms, so this "
+        f"frontend's whole admission rate is at most {rb_rate} us/token. That rules out the "
+        f"Python-path value ({ad['value']} us/token) for this frontend and leaves this value "
+        f"{rb['rate'] / rust:.1f}x below the bound. It gives NO lower bound: a rate of zero "
+        f"satisfies it, and a regression of the rows' mean TTFT on their mean prompt, with or "
+        f"without the computed-token count, is not identified (slope -0.1 to 3.1 us/token "
+        f"across the specifications tried). A published single-core benchmark of the same "
+        f"tokenizer library (vllm-project/vllm PR #51027, open: fastokens 0.3.1, 11,776-byte "
+        f"Kimi-K2.5 fixture, ordinary encode 44.2 us, 254 MiB/s) implies a tokenization cost "
+        f"well under this value per token, on a different tokenizer and CPU, and excludes "
+        f"rendering and IPC. TO MEASURE IT: time the Rust frontend's admission of real corpus "
+        f"prompts on the serving node's CPU (a named M3 item). It is the same rate for the Rust frontend's rendering, "
         f"which the Python path spends in encode_messages (0.2% there). Use: pricing "
         f"deployments that state engine.frontend: rust; every other deployment takes "
         f"host_admission_per_token. Reproduce with scripts/fit_deepseek_v41_host.py."))
@@ -555,6 +611,9 @@ def main(argv: list[str]) -> int:
     print(f"eager per kernel  e={ea['e']} us (median ITL {ea['median']:.2f} ms, device "
           f"{ea['dev']:.3f} ms, {ea['n']} launches, launch {ea['launch']} us); plateau "
           f"{ea['e_lo']:.1f}-{ea['e_hi']:.1f}; device {DEVICE_AISIM_MS} ms -> {ea['e_aisim']:.1f}")
+    rb = rust_ttft_bound(json.loads(RUST_BOUND_JSON.read_text()))
+    print(f"rust admission    upper bound {rb['rate']:.2f} us/token ({rb['gpus']} GPUs, "
+          f"c{rb['c']}, TTFT {rb['a']} {rb['ttft']:.0f} ms / prompt {rb['b']} {rb['isl']:,.0f})")
     print(f"admission         per_token={ad['value']} us (row {ad['nearest']['tokens']}); "
           f"range {ad['lo']:.2f}-{ad['hi']:.2f}; LS slope {ad['slope']:.2f} intercept "
           f"{ad['icpt'] / 1e3:.1f} ms")
