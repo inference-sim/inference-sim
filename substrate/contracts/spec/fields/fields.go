@@ -129,7 +129,7 @@ type Estimation struct {
 	Preserves string `json:"preserves,omitempty" yaml:"preserves,omitempty"`
 	// ValidWhen says when the stand-in is exact: the stand-in is exact for a recorded value
 	// when at least one clause holds. A value no clause covers is not stood in for. Absent,
-	// the rule applies to every value. Only with RuleLeaveUnset or RuleSubstitute. A
-	// consumer decides whether a clause holds from the facts it knows about the recorded value.
+	// the rule applies to every value. Only with RuleLeaveUnset or RuleSubstitute. Exact
+	// evaluates it.
 	ValidWhen []Clause `json:"valid_when,omitempty" yaml:"valid_when,omitempty"`
 }

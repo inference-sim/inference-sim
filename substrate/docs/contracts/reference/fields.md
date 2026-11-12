@@ -219,5 +219,11 @@ A comparison sets at least one operator and holds when every operator it sets ho
 A capability is `"<major>.<minor>"`, such as `"10.0"`, and orders by major, then minor, so `9.10`
 is below `10.0`. The loader refuses any other spelling.
 
-A consumer reads the clauses and decides, from the facts it knows about the recorded value and the
-run, whether one holds. A fact it cannot supply makes a clause that needs it not hold.
+A consumer asks `fields.Exact(estimation, facts)` and does not restate these rules. The facts
+are `Value`, the recorded value; `TPGroupNodes`, the nodes the pool's tensor-parallel group spans,
+from the pool's tensor-parallel size and its GPUs per node; and `ComputeCapability`, the part's, from
+the catalog. A fact the consumer cannot supply is left unset, and a clause that needs it does not
+hold. `Exact` is false for rule `none`, and true for any value when `valid_when` is absent.
+
+In the example above, `VLLM_FLASHINFER_ALLREDUCE_BACKEND` reads: `auto` is always exact; a stated
+`mnnvl` is exact on one node, and on several nodes only from compute capability 10.0 up.
