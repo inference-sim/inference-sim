@@ -29,35 +29,41 @@ pool in any combination of groups. `Cluster.Switching()` is the one function tha
 
 For a handoff between two nodes in different groups g (sender) and h (receiver), the
 kernel keeps the two NIC links and adds `uplink/egress/group/g` and `uplink/ingress/group/h`. Each group's
-uplink is offered to one rank's flow at
+uplink has the physical capacity
 
-    C_g = n_g x gpusPerNode x nic / (r x rankGPUs)
+    C_g = n_g x gpusPerNode x nic / r
 
-bytes per second, where n_g is the group's node count, nic the effective rate of one rail, r the stated ratio
-and rankGPUs the GPUs of one instance of the pool. The payload is one rank's, and the instance's rankGPUs ranks
-pull at once through the same uplink, so one rank's flow gets 1/rankGPUs of it. With TP8 on 8-GPU nodes,
-C_g = n_g x nic / r.
+bytes per second, where n_g is the group's node count, nic the effective rate of one rail and r the stated ratio.
+It does not depend on the pool, so a prefill pool's kernel and a decode pool's kernel of different widths name one
+uplink at one rate. The payload is one rank's, and the instance's rankGPUs ranks (the GPUs of one instance of the
+pool) pull at once through the same uplink, so the demand states `Streams = rankGPUs` on it: one rank's flow gets
+1/rankGPUs of the uplink when the pull is alone, and a simulator divides the uplink among every stream that
+crosses it. With TP8 on 8-GPU nodes, one flow's share is n_g x nic / r.
 
 Consequences, each pinned by a test in `kernel/switch_groups_test.go`:
 
-- a pull alone costs what it costs without groups, unless r is large enough that C_g falls below the NIC rate;
-- two pulls that leave one group for another share both uplinks; when C_g equals the NIC rate they take twice as long as one;
+- a pull alone costs what it costs without groups, unless r is large enough that one flow's share of C_g falls below the NIC rate;
+- two pulls that leave one group for another share both uplinks, in proportion to the ranks each pulls with; two equal pulls whose share is the NIC rate take twice as long as one;
 - pulls inside a group name no uplink and do not slow each other;
 - pulls between different pairs of groups share no uplink.
 
 ## Worked example
 
 `ib-400g` at the released efficiency of 0.811 gives nic = 40.6 GB/s. Five nodes per group, r = 3.4, TP8: C_g = 59.7 GB/s.
-One pull runs at the NIC rate, 40.6. Two pulls through the same uplink get 29.8 each; three, 19.9.
+One pull runs at the NIC rate, 40.6. Two pulls through the same uplink get 29.8 each; three, 19.9. (Each is one rank's flow
+on an 8-rank instance, and C_g is 8 x 59.7 = 477.6 GB/s.)
 
 ## What is not modelled
 
-- Only KV pulls between pools are charged. A step collective that crosses a group boundary is priced at the node
-  rate; the kernel states this as the assumption `switch_group_collectives` when an instance spans nodes.
+- Only KV pulls between pools are charged. A step collective that crosses a group boundary is not priced, so the
+  kernel refuses a pool whose instance would cross one, with `switch_group_collective_crosses`. Pools take consecutive
+  nodes in declaration order, so a pool starts after the nodes of the pools before it (`Inputs.PoolFirstNode`
+  states another start), and its instances follow one another from there. Place each multi-node instance inside one
+  group. Pricing a collective over the uplink,
+  with its demand on each link, is not done.
 - One link per node and direction, not one per rail.
 - Up and down capacity are equal, routing inside a group is non-blocking, there is no background traffic, and
   one ratio applies to every group.
-- A decode pool whose instances differ in size from the prefill pool's is priced as if its flows matched the prefill's.
 
 ## Reproduce
 

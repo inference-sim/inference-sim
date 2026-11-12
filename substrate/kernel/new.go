@@ -98,6 +98,15 @@ type Inputs struct {
 	// verification (enginesettings.Speculative.EnableAdaptiveVerification), where it is
 	// required: the verify budget the engine chooses depends on it (adaptive.go).
 	Acceptance *acceptance.Resolution
+	// PoolFirstNode is the cluster node the pool's first rank sits on, when it is not where the
+	// deployment's order puts it: pools take consecutive nodes in declaration order, so nil
+	// means the sum of the node counts of the pools before PoolIndex. The pool's instances are
+	// laid out one after another from there, instance GPUs each. It is read only when the
+	// scenario states switch groups and an instance spans nodes, where it decides whether a
+	// collective stays under one switch. A collective that crosses a switch boundary is not
+	// priced (SUB-17 asks for its path and its per-link demand), so such a pool is refused with
+	// switch_group_collective_crosses.
+	PoolFirstNode *int
 }
 
 // New resolves the inputs into a kernel.
@@ -279,6 +288,9 @@ func construct(in Inputs) (*Kernel, error) {
 		family: family, architecture: g.Global.Architecture, graph: g,
 		switching:           sw,
 		statedFirstPassRows: in.DraftFirstPassRows, statedPassRequests: in.DraftPassRequests}
+	if err := k.checkCollectivesStayInAGroup(poolFirstNode(in)); err != nil {
+		return nil, err
+	}
 	if in.Fabric != nil && !fabricEfficiencyStated {
 		k.assume("fabric_bandwidth_efficiency", "1",
 			"the scenario's coefficient sets carry no "+fabricEfficiencyName+" scoped to fabric "+
@@ -3130,21 +3142,19 @@ func (k *Kernel) instanceGPUs() int {
 	return max(pl.TP, 1) * max(pl.PP, 1) * max(pl.DP, 1) * max(pl.PCP, 1)
 }
 
-// uplinkRate is the rate of group g's uplink as one rank's flow sees it, in bytes per second:
+// uplinkRate is the capacity of a switch group's uplink, in bytes per second:
 //
-//	n_g x gpusPerNode x nic / (r x rankGPUs)
+//	n_g x gpusPerNode x nic / r
 //
-// n_g nodes each offer gpusPerNode rails at the NIC rate, the uplink carries 1/r of that,
-// and the rankGPUs ranks of one instance pull at once through it, so one rank's flow is
-// 1/rankGPUs of the uplink. Every pull the pool's kernel prices is one rank's payload, so
-// the rate is the same for every flow on a link, which a simulator's one-rate-per-link rule
-// needs.
-func uplinkRate(nodes, gpusPerNode int, nic, ratio float64, rankGPUs int) float64 {
-	return float64(nodes) * float64(gpusPerNode) * nic / (ratio * float64(rankGPUs))
+// n_g nodes each offer gpusPerNode rails at the NIC rate, and the uplink carries 1/r of that.
+// It does not depend on the pool that asks: a physical link has one rate, and the ranks of an
+// instance that pull through it at once are the demand's Streams.
+func uplinkRate(nodes, gpusPerNode int, nic, ratio float64) float64 {
+	return float64(nodes) * float64(gpusPerNode) * nic / ratio
 }
 
-// adoptSwitching sizes each switch group's uplink, and states the one thing the model
-// leaves unpriced: a step collective that crosses a group boundary pays the node rate.
+// adoptSwitching sizes each switch group's uplink and refuses a pool whose collective would
+// cross a group boundary, which the model does not price.
 func (k *Kernel) adoptSwitching() {
 	if k.switching == nil {
 		return
@@ -3152,12 +3162,61 @@ func (k *Kernel) adoptSwitching() {
 	for g := range k.switching.Groups {
 		k.uplinkBytesPerSecond = append(k.uplinkBytesPerSecond, uplinkRate(
 			k.switching.GroupNodes(g), k.layout.GPUsPerNode, k.nicBytesPerSecond,
-			k.switching.Oversubscription, k.instanceGPUs()))
+			k.switching.Oversubscription))
 	}
-	if k.instanceGPUs() > k.layout.GPUsPerNode {
-		k.assume("switch_group_collectives", "node rate",
-			"the cluster states switch groups and an instance spans nodes, which may sit in "+
-				"different groups; the uplink prices KV pulls between pools, and a step "+
-				"collective that crosses a group boundary is priced at the node rate")
+	k.uplinkStreams = k.instanceGPUs()
+}
+
+// collectiveCrossesGroups reports the first instance of the pool whose ranks sit under more
+// than one switch, as the instance's index and the groups it spans. Instances are laid out
+// one after another from the pool's first node, instanceGPUs ranks each, gpusPerNode ranks to
+// a node. An instance on one node, or inside one group, has none.
+func collectiveCrossesGroups(sw *scenario.Switching, firstNode, poolNodes, gpusPerNode, instanceGPUs int) (instance int, groups [2]int, crosses bool) {
+	if sw == nil || gpusPerNode < 1 || instanceGPUs <= gpusPerNode {
+		return 0, groups, false
 	}
+	instances := poolNodes * gpusPerNode / instanceGPUs
+	for i := 0; i < max(instances, 1); i++ {
+		lo := firstNode + i*instanceGPUs/gpusPerNode
+		hi := firstNode + (i*instanceGPUs+instanceGPUs-1)/gpusPerNode
+		g0, ok0 := sw.GroupOf(lo)
+		for n := lo; n <= hi; n++ {
+			if g, ok := sw.GroupOf(n); ok0 && ok && g != g0 {
+				return i, [2]int{g0, g}, true
+			}
+		}
+	}
+	return 0, groups, false
+}
+
+// poolFirstNode is the node the pool starts on: the stated one, or after the pools before it.
+func poolFirstNode(in Inputs) int {
+	if in.PoolFirstNode != nil {
+		return *in.PoolFirstNode
+	}
+	n := 0
+	for _, p := range in.Deployment.Pools[:in.PoolIndex] {
+		n += p.Nodes
+	}
+	return n
+}
+
+// checkCollectivesStayInAGroup refuses a pool under switch groups whose instance spans nodes
+// unless every instance sits under one switch. The step collectives of such an instance run
+// over the nodes' NICs at the node rate; one that crossed a group's uplink would be priced over
+// that tier and would place a demand on it that transfers must share what remains of, and
+// neither is modelled, so accepting the placement would price the step and the concurrent
+// handoffs wrongly.
+func (k *Kernel) checkCollectivesStayInAGroup(firstNode int) error {
+	if k.switching == nil || k.instanceGPUs() <= k.layout.GPUsPerNode {
+		return nil
+	}
+	if i, g, crosses := collectiveCrossesGroups(k.switching, firstNode, k.pool.Nodes,
+		k.layout.GPUsPerNode, k.instanceGPUs()); crosses {
+		return fmt.Errorf("switch_group_collective_crosses: instance %d of the pool, from node %d, "+
+			"spans switch groups %d and %d; a collective that leaves its switch is priced over the "+
+			"uplink with its demand on it, which this cost model does not yet do. Place the pool's "+
+			"instances each inside one group", i, firstNode, g[0], g[1])
+	}
+	return nil
 }

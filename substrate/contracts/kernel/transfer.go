@@ -17,12 +17,32 @@ import (
 // since both price handoffs over the same fabric.
 type LinkID string
 
-// LinkUse is one link a transfer crosses, and the full rate that link offers: the rate a
-// transfer gets when it is alone on it.
+// LinkUse is one link a transfer crosses, and the full rate that link offers: the physical
+// capacity of the link, which is the same number in every kernel that names it.
 type LinkUse struct {
 	Link           LinkID
 	BytesPerSecond float64
+	// Streams is how many equal flows of the transfer cross this link at once, each carrying
+	// the demand's Bytes. Zero means one. A transfer that moves one rank's payload over each
+	// of an instance's ranks at once, on rails of their own, names a link that every rail
+	// feeds with the number of ranks, and a link only one rail uses with one. The link's
+	// capacity is divided among every stream that crosses it, so a transfer alone on it gets
+	// BytesPerSecond / Streams for each flow. Streams belongs to the transfer, not to the link:
+	// two kernels name one link with one BytesPerSecond and may state different Streams.
+	Streams int
 }
+
+// streams is the number of flows the link carries for the demand, at least one.
+func (l LinkUse) streams() float64 {
+	if l.Streams < 1 {
+		return 1
+	}
+	return float64(l.Streams)
+}
+
+// PerStreamRate is the rate one flow of the transfer gets on the link when the transfer is
+// alone on it: the capacity divided among the transfer's own streams.
+func (l LinkUse) PerStreamRate() float64 { return l.BytesPerSecond / l.streams() }
 
 // TransferDemand is the work one transfer asks of the fabric: its payload, the fixed
 // floor no amount of bandwidth removes, and every link it crosses.
@@ -52,7 +72,7 @@ type TransferDemand struct {
 
 // AloneTime is the time the demand takes with every link to itself:
 //
-//	max(Floor, Bytes / min_i Links[i].BytesPerSecond)
+//	max(Floor, Bytes / min_i Links[i].PerStreamRate())
 //
 // or Floor when Links is empty. The slowest link binds because the payload crosses all
 // of them in series.
@@ -68,7 +88,7 @@ func (d TransferDemand) AloneTime() time.Duration {
 	}
 	rate := math.Inf(1)
 	for _, l := range d.Links {
-		rate = math.Min(rate, l.BytesPerSecond)
+		rate = math.Min(rate, l.PerStreamRate())
 	}
 	if d.Bytes <= 0 {
 		return d.Floor
@@ -87,7 +107,7 @@ func (d TransferDemand) AloneTime() time.Duration {
 }
 
 // Check reports the first way the demand is malformed, or nil: a negative payload or
-// floor, a payload that crosses no link, a link with no ID, a link named twice, or a rate
+// floor, a payload that crosses no link, a link with no ID, a link named twice, a negative stream count, or a rate
 // that is not a positive finite number. A payload on no link leaves an arbiter nothing to
 // share, so a kernel could pass every concurrent transfer at its solo price; a link named
 // twice would be counted twice by an arbiter dividing its bandwidth; and a zero rate
@@ -111,6 +131,9 @@ func (d TransferDemand) Check() error {
 			return fmt.Errorf("links[%d]: %q is named twice", i, l.Link)
 		}
 		seen[l.Link] = true
+		if l.Streams < 0 {
+			return fmt.Errorf("links[%d] %q: streams %d is negative", i, l.Link, l.Streams)
+		}
 		if !(l.BytesPerSecond > 0) || math.IsInf(l.BytesPerSecond, 1) {
 			return fmt.Errorf("links[%d] %q: rate %v must be positive and finite",
 				i, l.Link, l.BytesPerSecond)

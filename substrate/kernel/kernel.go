@@ -157,10 +157,12 @@ type Kernel struct {
 	nvlinkBytesPerSecond float64
 	nicBytesPerSecond    float64
 	// switching is the cluster's switch groups, nil where the scenario states none.
-	// uplinkBytesPerSecond is each group's uplink rate as one rank's flow sees it
-	// (uplinkRate), indexed by group.
+	// uplinkBytesPerSecond is each group's uplink capacity (uplinkRate), indexed by group.
+	// It is the physical figure, the same in every kernel of the deployment.
+	// uplinkStreams is how many rank flows one pull of this pool's instance puts on it.
 	switching            *scenario.Switching
 	uplinkBytesPerSecond []float64
+	uplinkStreams        int
 	hostBytesPerSecond   float64
 	moeImbalance         float64
 	// asyncScheduling is the engine's resolved async_scheduling (resolveAsyncScheduling).
@@ -1819,12 +1821,15 @@ func (k *Kernel) PDTransferTime(tokens int, from, to kernel.Placement) time.Dura
 //	                                   egress and the receiver group's uplink ingress
 //
 // A scenario that states switch groups gives each group an uplink of n x gpusPerNode x NIC /
-// (r x rankGPUs) bytes per second (uplinkRate): n nodes, r the stated oversubscription, and
-// rankGPUs the GPUs of one instance. The payload is one rank's, and an instance's ranks pull
-// at once on separate rails through the one physical uplink, so one rank's flow sees its
-// share. A pull alone is bound by its NIC unless r is large enough that the uplink binds,
-// so a lone pull prices as it would without groups; two or more pulls leaving or entering one
-// group share its uplink and slow each other. A pull inside one group names no uplink.
+// r bytes per second (uplinkRate): n nodes and r the stated oversubscription. That is the
+// physical capacity, so a prefill pool's kernel and a decode pool's kernel of any widths name
+// one uplink at one rate. The payload is one rank's, and the rankGPUs ranks of an instance pull
+// at once on separate rails through the one uplink, so the uplink names rankGPUs Streams of
+// the pull: a pull alone gets 1/rankGPUs of the uplink for each rank's flow. A pull alone is
+// bound by its NIC unless r is large enough that the uplink binds, so a lone pull prices as it
+// would without groups; two or more pulls leaving or entering one group share its uplink and
+// slow each other, each in proportion to the ranks it pulls with. A pull inside one group
+// names no uplink.
 //
 // Link IDs are derived from the placement alone, so every kernel of one deployment names a
 // physical link the same way: a prefill pool's kernel and a decode pool's kernel describe
@@ -1873,9 +1878,9 @@ func (k *Kernel) PDTransferDemand(tokens int, from, to kernel.Placement) kernel.
 		if okf && okt && gf != gt {
 			d.Links = append(d.Links,
 				kernel.LinkUse{Link: kernel.LinkID(fmt.Sprintf("uplink/egress/group/%d", gf)),
-					BytesPerSecond: k.uplinkBytesPerSecond[gf]},
+					BytesPerSecond: k.uplinkBytesPerSecond[gf], Streams: k.uplinkStreams},
 				kernel.LinkUse{Link: kernel.LinkID(fmt.Sprintf("uplink/ingress/group/%d", gt)),
-					BytesPerSecond: k.uplinkBytesPerSecond[gt]})
+					BytesPerSecond: k.uplinkBytesPerSecond[gt], Streams: k.uplinkStreams})
 		}
 	}
 	return d
