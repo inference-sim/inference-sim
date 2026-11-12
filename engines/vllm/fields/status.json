@@ -5,22 +5,26 @@
   "config:attention_config.backend": "AD33 \u00a715, explicit attention backend",
   "config:attention_config.indexer_sparse_logits": "AD33 \u00a715, last row",
   "config:speculative_config.synthetic_acceptance_length": "AD33 \u00a715, drafter acceptance",
-    "config:api_server_count": "vllm/entrypoints/cli/serve.py:113-129@5df63a72 defaults api_server_count to the data-parallel size in internal load balancing, which is every stated value of the 131 InferenceX points; the engine runs its data-parallel group as one client (client_count 1, core/engine/dp.go), so the stated count changes nothing it simulates, and DPLBAsyncMPClient takes client_count as the number of API servers (vllm/v1/engine/core_client.py:1639-1640,1671,1685@5df63a72), which is why the field is not proven inert",
-    "config:data_parallel_external_lb": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml has no entry; a run that does not state it leaves vLLM's default, False (vllm/config/parallel.py:168@5df63a72), which the engine resolves",
-    "config:data_parallel_hybrid_lb": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml has no entry; a run that does not state it leaves vLLM's default, False (vllm/config/parallel.py:175@5df63a72), which the engine resolves",
-    "config:data_parallel_size_local": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:90 maps it to parallel.dp_local; a run that does not state it leaves vLLM's default, 1 (vllm/config/parallel.py:149@5df63a72), which the engine resolves",
-    "config:engram_config.cpu_offload": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:292 maps it to engine.engram_config.cpu_offload; a run that does not state it leaves vLLM's default, True (vllm/config/engram.py:37@5df63a72), which the engine resolves",
-    "config:gpu_memory_utilization": "vllm/config/cache.py:102@5df63a72 sets the default, 0.92; a run that does not record it leaves that default, which the engine resolves (resolveEngine)",
-    "config:kv_offloading_backend": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:130 marks it inert, read with kv_offloading_size; a run that does not state it leaves vLLM's default, \"native\" (vllm/config/cache.py:272@5df63a72), which the engine resolves",
-    "config:speculative_config.model": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:278 marks it inert, role drafter; a run that does not state it leaves vLLM's default, None (no separate drafter checkpoint), which the engine resolves",
-    "env:VLLM_USE_SIMPLE_KV_OFFLOAD": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:348 marks it inert; a run that does not set it leaves vLLM's default, off (vllm/envs.py:2243@5df63a72), which the engine resolves"
-  },
+  "config:api_server_count": "vllm/entrypoints/cli/serve.py:113-129@5df63a72 defaults api_server_count to the data-parallel size in internal load balancing, which is every stated value of the 131 InferenceX points; the engine runs its data-parallel group as one client (client_count 1, core/engine/dp.go), so the stated count changes nothing it simulates, and DPLBAsyncMPClient takes client_count as the number of API servers (vllm/v1/engine/core_client.py:1639-1640,1671,1685@5df63a72), which is why the field is not proven inert",
+  "config:data_parallel_external_lb": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml has no entry; a run that does not state it leaves vLLM's default, False (vllm/config/parallel.py:168@5df63a72), which the engine resolves",
+  "config:data_parallel_hybrid_lb": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml has no entry; a run that does not state it leaves vLLM's default, False (vllm/config/parallel.py:175@5df63a72), which the engine resolves",
+  "config:data_parallel_size_local": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:90 maps it to parallel.dp_local; a run that does not state it leaves vLLM's default, 1 (vllm/config/parallel.py:149@5df63a72), which the engine resolves",
+  "config:engram_config.cpu_offload": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:292 maps it to engine.engram_config.cpu_offload; a run that does not state it leaves vLLM's default, True (vllm/config/engram.py:37@5df63a72), which the engine resolves",
+  "config:gpu_memory_utilization": "vllm/config/cache.py:102@5df63a72 sets the default, 0.92; a run that does not record it leaves that default, which the engine resolves (resolveEngine)",
+  "config:kv_offloading_backend": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:130 marks it inert, read with kv_offloading_size; a run that does not state it leaves vLLM's default, \"native\" (vllm/config/cache.py:272@5df63a72), which the engine resolves",
+  "config:speculative_config.model": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:278 marks it inert, role drafter; a run that does not state it leaves vLLM's default, None (no separate drafter checkpoint), which the engine resolves",
+  "env:VLLM_USE_SIMPLE_KV_OFFLOAD": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:348 marks it inert; a run that does not set it leaves vLLM's default, off (vllm/envs.py:2243@5df63a72), which the engine resolves",
+  "env:VLLM_FLASHINFER_ALLREDUCE_BACKEND": "vllm/distributed/device_communicators/flashinfer_all_reduce.py:143-178@5df63a72 resolves an unset (auto) backend to mnnvl on one node and on compute capability 10.0 and up across nodes, so a recipe that states mnnvl on a Blackwell part selects the kernel the default selects; the latency kernel prices every tensor-parallel all-reduce from the NCCL sweep whichever FlashInfer backend runs (it has no implementation-keyed all-reduce entry), so the stand-in changes no price. The field's valid_when says for which values and groups the stand-in is exact; fields/stand_in_vectors.json holds it to _resolve_fi_ar_backend",
+  "env:UCX_RCACHE_MAX_UNRELEASED": "vllm/distributed/nixl_utils.py:20-36@5df63a72 sets UCX_RCACHE_MAX_UNRELEASED to 1024 itself when the environment does not state it, so a run that states 1024 runs as an unset one does; UCX's variable (src/ucs/memory/rcache.c:114-118 at UCX v1.19.0, the version inside the nixl 1.5.0 wheel is not known) only sets when invalidated registration regions are cleaned up and does not choose a transport or a rate; the field's valid_when says for which values the stand-in is exact; fields/stand_in_vectors.json holds it to _maybe_set_ucx_rcache_limit",
+  "env:UCX_TLS": "NIXL's UCX backend is the default (vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:525-526@5df63a72) and UCX_TLS restricts the transports it may use (UCX FAQ). The engine prices a handoff between nodes over the NIC at the cluster fabric's rate unless UCX_CUDA_IPC_ENABLE_MNNVL=y is stated (compat/kernelmodel, rackHandoff), which is the path a list of RDMA transports without cuda_ipc takes, so unset stands in exactly for such a list; the field's valid_when says for which lists the stand-in is exact"
+ },
  "extra_env": [
   "MC_ENABLE_DEST_DEVICE_AFFINITY",
   "MC_SLICE_SIZE",
   "MC_WORKERS_PER_CTX",
   "NVSHMEM_QP_DEPTH",
-  "PYTHONNOUSERSITE"
+  "PYTHONNOUSERSITE",
+  "UCX_TLS"
  ],
  "dynamic_reads": {
   "vllm/config/utils.py: envs.is_set(env_name)": {
@@ -6065,7 +6069,48 @@
   },
   "env:UCX_RCACHE_MAX_UNRELEASED": {
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset",
+    "preserves": "the value vLLM sets itself when the environment does not state one (nixl_utils.py:20-36@5df63a72)",
+    "valid_when": [
+     {
+      "value_in": [
+       "1024"
+      ]
+     }
+    ]
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#62"
+   },
+   "status": "not_modelled"
+  },
+  "env:UCX_TLS": {
+   "estimation": {
+    "rule": "leave_unset",
+    "preserves": "the NIC path the engine prices for a handoff between nodes when UCX_CUDA_IPC_ENABLE_MNNVL=y is not stated (compat/kernelmodel): a transport list that names an RDMA transport, or all, reaches the NIC; a deny list or a list with no RDMA transport does not. UCX FAQ for the list syntax; no vLLM function resolves it",
+    "valid_when": [
+     {
+      "value_list_has_any": [
+       "rc",
+       "rc_x",
+       "rc_v",
+       "rc_verbs",
+       "rc_mlx5",
+       "dc",
+       "dc_x",
+       "dc_mlx5",
+       "ib",
+       "ud",
+       "ud_x",
+       "ud_verbs",
+       "ud_mlx5",
+       "all"
+      ],
+      "value_not_prefixed": [
+       "^"
+      ]
+     }
+    ]
    },
    "evidence": {
     "issue": "inference-sim/blis-vllm#62"
@@ -6866,7 +6911,34 @@
   },
   "env:VLLM_FLASHINFER_ALLREDUCE_BACKEND": {
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset",
+    "preserves": "the backend vLLM's _resolve_fi_ar_backend picks for the tensor-parallel group (flashinfer_all_reduce.py:143-178@5df63a72). One node: auto picks mnnvl with a trtllm fallback when the multicast workspace cannot be created, and a stated mnnvl picks mnnvl with no fallback, so the two differ only on a node without NVSwitch multicast. Several nodes: auto picks mnnvl without fallback on compute capability 10.0 and up, and turns FlashInfer all-reduce off below it.",
+    "valid_when": [
+     {
+      "value_in": [
+       "auto"
+      ]
+     },
+     {
+      "value_in": [
+       "mnnvl"
+      ],
+      "tp_group_nodes": {
+       "eq": 1
+      }
+     },
+     {
+      "value_in": [
+       "mnnvl"
+      ],
+      "tp_group_nodes": {
+       "gt": 1
+      },
+      "compute_capability": {
+       "gte": "10.0"
+      }
+     }
+    ]
    },
    "evidence": {
     "issue": "inference-sim/blis-vllm#80"

@@ -191,6 +191,13 @@ type identity struct {
 	poolNodes   int
 	gpusPerNode int
 	gpusPerRack int
+	// rackHandoff is whether a KV handoff between two nodes of one NVLink rack runs over NVLink.
+	// NIXL moves KV over multi-node NVLink only when UCX_CUDA_IPC_ENABLE_MNNVL=y and the KV cache is
+	// registered as VMM; otherwise it can only use RDMA or TCP across nodes
+	// (docs/features/nixl_connector_usage.md:401@5df63a72). The engine block states the flag
+	// (UCX_CUDA_IPC_ENABLE_MNNVL) and cannot yet state the VMM registration, so a stated "y" is read
+	// as the run's NVLink path and is disclosed (rackHandoffAssumption); anything else is the NIC.
+	rackHandoff bool
 	// packaging is the cluster's packaging as blis-substrate resolved it, with each value's
 	// source; gpusPerNode and gpusPerRack are its two counts.
 	packaging scenario.Packaging
@@ -235,6 +242,7 @@ func identityOf(in latencykernel.Inputs, engine engineconfig.Engine, pk scenario
 		poolNodes:       pool.Nodes,
 		gpusPerNode:     pk.GPUsPerNode,
 		gpusPerRack:     pk.GPUsPerRack,
+		rackHandoff:     engine.Env[envMNNVL] == "y",
 		packaging:       pk,
 		rankGPUs:        max(1, pl.PP) * max(1, pl.TP) * max(1, pl.PCP),
 		tpRanks:         max(1, pl.TP),
@@ -404,6 +412,7 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 	m.resolved = resolveEngine(in, engine)
 	m.engine = m.resolved.engine
 	m.assumed = append(languageModelOnlyAssumptions(in.Model, engine), cudagraphAssumptions(engine)...)
+	m.assumed = append(m.assumed, rackHandoffAssumptions(m.id)...)
 	if s := languageModelOnlySubstitution(in.Model, engine); s != nil {
 		m.substitutions = append(m.substitutions, *s)
 	}
@@ -535,8 +544,12 @@ func (m *Model) PlacementOf(rank int) kernel.Placement {
 	if m.id.gpusPerNode > 0 {
 		node += rank * m.id.rankGPUs / m.id.gpusPerNode
 	}
+	// The rack decides which link a handoff between two nodes crosses (kernel.PDTransferDemand):
+	// one rack means the NVLink domain, two means the NICs. Without the NVLink path every node
+	// is its own rack, so the handoff is priced over the NIC. Only handoffs read this rack; the
+	// pool's collectives use EnginePlacementOf, whose racks are the hardware's.
 	rack := node
-	if m.id.gpusPerRack > 0 && m.id.gpusPerNode > 0 {
+	if m.id.rackHandoff && m.id.gpusPerRack > 0 && m.id.gpusPerNode > 0 {
 		rack = node * m.id.gpusPerNode / m.id.gpusPerRack
 	}
 	return kernel.Placement{Node: node, Rack: rack, Pool: m.id.role}
@@ -1205,4 +1218,23 @@ func allLatent(g *model.Graph) bool {
 		}
 	}
 	return n > 0
+}
+
+// envMNNVL is the UCX variable that lets NIXL's cuda_ipc transport cross nodes over multi-node NVLink.
+const envMNNVL = "UCX_CUDA_IPC_ENABLE_MNNVL"
+
+// rackHandoffAssumptions discloses how a handoff between two nodes of one NVLink rack is priced.
+// It speaks only for a part whose rack is one NVLink domain (gpus_per_rack above one node).
+func rackHandoffAssumptions(id identity) []string {
+	if id.gpusPerRack <= 0 || id.gpusPerNode <= 0 || id.gpusPerRack <= id.gpusPerNode {
+		return nil
+	}
+	if id.rackHandoff {
+		return []string{"kv_handoff_path: " + envMNNVL + "=y is stated, so a handoff between nodes of one rack is " +
+			"priced over NVLink; that KV is registered as VMM, which NIXL needs for it " +
+			"(docs/features/nixl_connector_usage.md:401@5df63a72), is not checked"}
+	}
+	return []string{"kv_handoff_path: " + envMNNVL + "=y is not stated, so a handoff between nodes is priced over " +
+		"the NIC at the cluster fabric's rate even inside one NVLink rack; NIXL uses multi-node NVLink only with " +
+		"that flag and VMM-registered KV (docs/features/nixl_connector_usage.md:401@5df63a72)"}
 }

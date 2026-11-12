@@ -24,7 +24,7 @@ func pullArrival() enginetest.Arrival {
 // four-node pool, the pull of a request ends where its instance was put, and the two ends differ. Without
 // PlaceAt both would end at the pool's first node (the check refuses such an engine).
 func TestTheEngineIsPlaceableAndItsPullsEndWhereItWasPut(t *testing.T) {
-	if err := enginetest.CheckPlacement(build(t, consumer+pool4), pullArrival(), 4); err != nil {
+	if err := enginetest.CheckPlacement(build(t, consumer+pool4), []enginetest.Arrival{pullArrival()}, 4); err != nil {
 		t.Fatal(err)
 	}
 }

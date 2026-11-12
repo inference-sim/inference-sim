@@ -7,5 +7,5 @@ added: 2026-11-10
 expires: 2026-12-10
 modules: [blis-substrate]
 reason: >-
-  the M2 stack pins blis-substrate by the pushed head of its layer 14 (2b580843afd0), which holds
-  the boundary types, until the substrate stack is tagged and this stack re-pins to the tag
+  the M2 stack pins blis-substrate by the pushed head of its layer 19 (801361da14be), which holds
+  the boundary types and the estimation predicates, until the substrate stack is tagged and this stack re-pins to the tag

@@ -1334,7 +1334,50 @@
         "issue": "inference-sim/blis-vllm#62"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset",
+        "preserves": "the value vLLM sets itself when the environment does not state one (nixl_utils.py:20-36@5df63a72)",
+        "valid_when": [
+          {
+            "value_in": [
+              "1024"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "UCX_TLS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "leave_unset",
+        "preserves": "the NIC path the engine prices for a handoff between nodes when UCX_CUDA_IPC_ENABLE_MNNVL=y is not stated (compat/kernelmodel): a transport list that names an RDMA transport, or all, reaches the NIC; a deny list or a list with no RDMA transport does not. UCX FAQ for the list syntax; no vLLM function resolves it",
+        "valid_when": [
+          {
+            "value_list_has_any": [
+              "rc",
+              "rc_x",
+              "rc_v",
+              "rc_verbs",
+              "rc_mlx5",
+              "dc",
+              "dc_x",
+              "dc_mlx5",
+              "ib",
+              "ud",
+              "ud_x",
+              "ud_verbs",
+              "ud_mlx5",
+              "all"
+            ],
+            "value_not_prefixed": [
+              "^"
+            ]
+          }
+        ]
       }
     },
     {
@@ -2313,7 +2356,34 @@
         "issue": "inference-sim/blis-vllm#80"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset",
+        "preserves": "the backend vLLM's _resolve_fi_ar_backend picks for the tensor-parallel group (flashinfer_all_reduce.py:143-178@5df63a72). One node: auto picks mnnvl with a trtllm fallback when the multicast workspace cannot be created, and a stated mnnvl picks mnnvl with no fallback, so the two differ only on a node without NVSwitch multicast. Several nodes: auto picks mnnvl without fallback on compute capability 10.0 and up, and turns FlashInfer all-reduce off below it.",
+        "valid_when": [
+          {
+            "value_in": [
+              "auto"
+            ]
+          },
+          {
+            "value_in": [
+              "mnnvl"
+            ],
+            "tp_group_nodes": {
+              "eq": 1
+            }
+          },
+          {
+            "value_in": [
+              "mnnvl"
+            ],
+            "tp_group_nodes": {
+              "gt": 1
+            },
+            "compute_capability": {
+              "gte": "10.0"
+            }
+          }
+        ]
       }
     },
     {

@@ -128,6 +128,16 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
     `data_parallel_external_lb` (#86) and `data_parallel_hybrid_lb` (#64), both stated as the pool's
     `parallel.data_parallel_load_balancing`, and `data_parallel_size_local` (#55), stated as
     `parallel.dp_local` and refused when its packing differs from the engine's;
+  - environment variables that change what a run does but not what the cost model prices, where an unset
+    variable gives the same engine path for the values recorded runs state (the harness that writes the
+    stand-in checks that, and names the field and the recorded value on the point): `VLLM_FLASHINFER_ALLREDUCE_BACKEND`
+    (#80; `mnnvl` is what vLLM resolves `auto` to on one node and on compute capability 10.0 and up,
+    `flashinfer_all_reduce.py:143-178@5df63a72`, and every tensor-parallel all-reduce is priced from the NCCL sweep),
+    `UCX_RCACHE_MAX_UNRELEASED` (#62; vLLM sets 1024 itself, `nixl_utils.py:20-36@5df63a72`) and `UCX_TLS` (#62; the engine
+    prices a handoff between nodes over the NIC unless `UCX_CUDA_IPC_ENABLE_MNNVL=y` is stated, which is the path a list of
+    RDMA transports without `cuda_ipc` takes). `UCX_CUDA_IPC_ENABLE_MNNVL` is read by the engine
+    (`compat/kernelmodel`): `y` prices a handoff between nodes of one NVLink rack over NVLink and names the unchecked VMM
+    registration as an assumption; anything else prices it over the NIC and says so;
   - read by the latency kernel, which prices a stated value at vLLM v0.31.0's policy:
     `gpu_memory_utilization` (#73) and `engram_config.cpu_offload` (#78), where `leave_unset` fills
     only a value the run did not record;

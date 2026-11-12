@@ -1,0 +1,548 @@
+[
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 1,
+  "compute_capability": "8.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 1,
+  "compute_capability": "9.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 1,
+  "compute_capability": "9.10",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 1,
+  "compute_capability": "10.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 1,
+  "compute_capability": "10.3",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 2,
+  "compute_capability": "8.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 2,
+  "compute_capability": "9.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 2,
+  "compute_capability": "9.10",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 2,
+  "compute_capability": "10.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 2,
+  "compute_capability": "10.3",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 4,
+  "compute_capability": "8.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 4,
+  "compute_capability": "9.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 4,
+  "compute_capability": "9.10",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 4,
+  "compute_capability": "10.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "auto",
+  "tp_group_nodes": 4,
+  "compute_capability": "10.3",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 1,
+  "compute_capability": "8.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 1,
+  "compute_capability": "9.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 1,
+  "compute_capability": "9.10",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 1,
+  "compute_capability": "10.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 1,
+  "compute_capability": "10.3",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 2,
+  "compute_capability": "8.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 2,
+  "compute_capability": "9.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 2,
+  "compute_capability": "9.10",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 2,
+  "compute_capability": "10.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 2,
+  "compute_capability": "10.3",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 4,
+  "compute_capability": "8.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 4,
+  "compute_capability": "9.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 4,
+  "compute_capability": "9.10",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 4,
+  "compute_capability": "10.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "mnnvl",
+  "tp_group_nodes": 4,
+  "compute_capability": "10.3",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": true
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 1,
+  "compute_capability": "8.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 1,
+  "compute_capability": "9.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 1,
+  "compute_capability": "9.10",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 1,
+  "compute_capability": "10.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 1,
+  "compute_capability": "10.3",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 2,
+  "compute_capability": "8.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 2,
+  "compute_capability": "9.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 2,
+  "compute_capability": "9.10",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 2,
+  "compute_capability": "10.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 2,
+  "compute_capability": "10.3",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 4,
+  "compute_capability": "8.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 4,
+  "compute_capability": "9.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 4,
+  "compute_capability": "9.10",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 4,
+  "compute_capability": "10.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "trtllm",
+  "tp_group_nodes": 4,
+  "compute_capability": "10.3",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 1,
+  "compute_capability": "8.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 1,
+  "compute_capability": "9.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 1,
+  "compute_capability": "9.10",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 1,
+  "compute_capability": "10.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 1,
+  "compute_capability": "10.3",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 2,
+  "compute_capability": "8.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 2,
+  "compute_capability": "9.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 2,
+  "compute_capability": "9.10",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 2,
+  "compute_capability": "10.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 2,
+  "compute_capability": "10.3",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 4,
+  "compute_capability": "8.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 4,
+  "compute_capability": "9.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 4,
+  "compute_capability": "9.10",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 4,
+  "compute_capability": "10.0",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "VLLM_FLASHINFER_ALLREDUCE_BACKEND",
+  "value": "nccl",
+  "tp_group_nodes": 4,
+  "compute_capability": "10.3",
+  "owner": "_resolve_fi_ar_backend",
+  "exact": false
+ },
+ {
+  "field": "UCX_RCACHE_MAX_UNRELEASED",
+  "value": "1024",
+  "owner": "_maybe_set_ucx_rcache_limit",
+  "exact": true
+ },
+ {
+  "field": "UCX_RCACHE_MAX_UNRELEASED",
+  "value": "0",
+  "owner": "_maybe_set_ucx_rcache_limit",
+  "exact": false
+ },
+ {
+  "field": "UCX_RCACHE_MAX_UNRELEASED",
+  "value": "inf",
+  "owner": "_maybe_set_ucx_rcache_limit",
+  "exact": false
+ },
+ {
+  "field": "UCX_RCACHE_MAX_UNRELEASED",
+  "value": "2048",
+  "owner": "_maybe_set_ucx_rcache_limit",
+  "exact": false
+ },
+ {
+  "field": "UCX_TLS",
+  "value": "cuda_copy,rc",
+  "owner": "ucx-faq",
+  "exact": true
+ },
+ {
+  "field": "UCX_TLS",
+  "value": "cuda_copy,cuda_ipc,rc",
+  "owner": "ucx-faq",
+  "exact": true
+ },
+ {
+  "field": "UCX_TLS",
+  "value": "all",
+  "owner": "ucx-faq",
+  "exact": true
+ },
+ {
+  "field": "UCX_TLS",
+  "value": "cuda_copy,cuda_ipc,tcp",
+  "owner": "ucx-faq",
+  "exact": false
+ },
+ {
+  "field": "UCX_TLS",
+  "value": "tcp",
+  "owner": "ucx-faq",
+  "exact": false
+ },
+ {
+  "field": "UCX_TLS",
+  "value": "^rc",
+  "owner": "ucx-faq",
+  "exact": false
+ },
+ {
+  "field": "UCX_TLS",
+  "value": "sm,self",
+  "owner": "ucx-faq",
+  "exact": false
+ }
+]

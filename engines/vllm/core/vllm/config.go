@@ -750,7 +750,7 @@ func refuseUnreadSettings(e engineconfig.Engine) error {
 }
 
 // readEnv are the engine environment variables this engine reads (resolveV2Runner).
-var readEnv = []string{"PYTHONHASHSEED", "VLLM_USE_V2_MODEL_RUNNER"}
+var readEnv = []string{"PYTHONHASHSEED", "VLLM_USE_V2_MODEL_RUNNER", "UCX_CUDA_IPC_ENABLE_MNNVL"}
 
 // unreadEnv are env's keys this engine does not read, sorted.
 func unreadEnv(env map[string]string) []string {

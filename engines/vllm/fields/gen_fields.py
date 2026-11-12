@@ -592,7 +592,10 @@ ORDER = {
     "value_classes": ("type", "values", "covered", "thresholds", "covered_classes"),
     "threshold": ("value", "closed"),
     "evidence": ("traces", "proof", "issue", "note"),
-    "estimation": ("rule", "setting", "reason"),
+    "estimation": ("rule", "setting", "reason", "preserves", "valid_when"),
+    "clause": ("value_in", "value_list_has_any", "value_list_has_none", "value_not_prefixed", "tp_group_nodes",
+               "compute_capability"),
+    "comparison": ("eq", "gt", "gte", "lt", "lte"),
 }
 
 
@@ -615,6 +618,10 @@ def canonical(doc):
         est = ordered(f["estimation"], "estimation")
         if "setting" in est:
             est["setting"] = json.loads(json.dumps(est["setting"], sort_keys=True))
+        if "valid_when" in est:
+            est["valid_when"] = [
+                {k: (ordered(v, "comparison") if isinstance(v, dict) else v) for k, v in ordered(c, "clause").items()}
+                for c in est["valid_when"]]
         g["estimation"] = est
         fields.append(g)
     out["fields"] = fields
