@@ -75,6 +75,11 @@ func (e PullEnv) Price(plan.PoolPlan, plan.StepShape) (kernel.StepEstimate, erro
 	return kernel.StepEstimate{}, e.refuse("a step price")
 }
 
+// HostDemand implements env.Environment.
+func (e PullEnv) HostDemand(plan.PoolPlan, int) (kernel.HostDemand, error) {
+	return kernel.HostDemand{}, e.refuse("an admission demand")
+}
+
 // Acceptance implements env.Environment.
 func (e PullEnv) Acceptance(string, string, string) (acceptance.Profile, error) {
 	return acceptance.Profile{}, e.refuse("an acceptance profile")

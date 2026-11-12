@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -42,7 +44,18 @@ func TestTransferEnvironment_APullIsThePlacedPairsPrice(t *testing.T) {
 		prefillInstances, decodeInstances, numInstances = saved[4].(int), saved[5].(int), saved[6].(int)
 		blockSizeTokens = saved[7].(int64)
 	}()
-	repos := reposOf(pdScenarios, catalog, registry)
+	// NIXL moves KV over multi-node NVLink only with UCX_CUDA_IPC_ENABLE_MNNVL=y; without it every
+	// cross-node handoff takes the NIC and the rack boundary prices nothing. The fixture states it.
+	dir := t.TempDir()
+	body := strings.ReplaceAll(readFile(t, filepath.Join(pdScenarios, pdDPScenario)), "      kv_cache_dtype: fp8\n",
+		"      kv_cache_dtype: fp8\n      env: {UCX_CUDA_IPC_ENABLE_MNNVL: \"y\"}\n")
+	if err := os.WriteFile(filepath.Join(dir, pdDPScenario), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.CopyFS(filepath.Join(dir, "router"), os.DirFS(filepath.Join(pdScenarios, "router"))); err != nil {
+		t.Fatal(err)
+	}
+	repos := reposOf(dir, catalog, registry)
 	m, err := kernelmodel.Open(pdDPScenario, repos)
 	if err != nil {
 		t.Fatal(err)
@@ -54,7 +67,7 @@ func TestTransferEnvironment_APullIsThePlacedPairsPrice(t *testing.T) {
 	if st.DataParallel != 2 {
 		t.Fatalf("fixture lost its point: dp %d", st.DataParallel)
 	}
-	kernelScenario, kernelScenarioDir, registryPath, kernelOpened = pdDPScenario, pdScenarios, registry, m
+	kernelScenario, kernelScenarioDir, registryPath, kernelOpened = pdDPScenario, dir, registry, m
 	blockSizeTokens = int64(st.BlockSize)
 	prefillInstances, decodeInstances, numInstances = 1, 1, 2 // logical, as the CLI states them
 	pools := openKernelPools()

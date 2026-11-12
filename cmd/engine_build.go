@@ -1235,6 +1235,11 @@ func (*transferEnvironment) Acceptance(string, string, string) (acceptance.Profi
 	return acceptance.Profile{}, errHostEnvironment("an acceptance profile")
 }
 
+// HostDemand implements env.Environment; it is not answered here.
+func (*transferEnvironment) HostDemand(plan.PoolPlan, int) (kernel.HostDemand, error) {
+	return kernel.HostDemand{}, errHostEnvironment("a request's demand on the admission queue")
+}
+
 // TransferDemand implements env.Environment: what the move t asks of the fabric.
 func (e *transferEnvironment) TransferDemand(p plan.PoolPlan, t plan.Transfer) (kernel.TransferDemand, error) {
 	if err := p.CheckTransfer(t); err != nil {

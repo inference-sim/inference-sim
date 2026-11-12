@@ -149,6 +149,9 @@ func TestTransferEnvironment_RefusesWhatItCannotPrice(t *testing.T) {
 	if _, err := e.Memory(p); err == nil {
 		t.Error("the Environment sized memory; it answers transfers only")
 	}
+	if d, err := e.HostDemand(p, 1024); err == nil {
+		t.Errorf("the Environment stated an admission demand %+v; it answers transfers only", d)
+	}
 }
 
 // Moves in one pool, stated on two nodes (the muse-spark arm D engine spans both): the copy is

@@ -9,13 +9,13 @@
   "data": {
     "catalog": {
       "source": "path",
-      "hash": "7df522c4b5161fba9f2cb10026f8df37ef0f369046009d0e1377cb3c92bbca2f",
-      "combined_hash": "7df522c4b5161fba9f2cb10026f8df37ef0f369046009d0e1377cb3c92bbca2f"
+      "hash": "db74e4bb49f75d658e5d0850934da60daf513274b937a03b7ab994760bd6d21f",
+      "combined_hash": "db74e4bb49f75d658e5d0850934da60daf513274b937a03b7ab994760bd6d21f"
     },
     "registry": {
       "source": "path",
-      "hash": "9cd7bd3e3e6b53f45436b62905c3c61b3c846c203b7bf43551548d4beed92f51",
-      "combined_hash": "9cd7bd3e3e6b53f45436b62905c3c61b3c846c203b7bf43551548d4beed92f51"
+      "hash": "9ae4f222b226388657db223975ba5cc3af19833bcceea877680ffba06599a5d4",
+      "combined_hash": "9ae4f222b226388657db223975ba5cc3af19833bcceea877680ffba06599a5d4"
     },
     "released_data": false,
     "build": "unreleased"
@@ -873,9 +873,9 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.13.1-0.20261112002826-2b580843afd0",
-    "router": "v1.0.0-blis.3",
-    "engine_module": "v0.32.1-0.20261112005047-353a083806b7"
+    "substrate": "v0.13.1-0.20261112134016-6faaccf8f1a2",
+    "router": "v1.0.0-blis.3.0.20261111220635-dbe130dcc286",
+    "engine_module": "v0.32.1-0.20261112140954-b25bb3041c7a"
   },
   "window": {
     "start_us": 49999,
@@ -2599,20 +2599,20 @@
           },
           {
             "KernelMatch": "unkeyed",
-            "Method": "assumed",
+            "Method": "transferred",
             "Name": "gemm_eps_max_w8a16_mxfp8",
             "Primitive": "gemm",
             "Running": "",
-            "Scope": "hardware: h100",
+            "Scope": "hardware: h100; transferred from hardware=h100",
             "Set": "cost-model-primitives"
           },
           {
             "KernelMatch": "unkeyed",
-            "Method": "assumed",
+            "Method": "transferred",
             "Name": "gemm_m_half_w8a16_mxfp8",
             "Primitive": "gemm",
             "Running": "",
-            "Scope": "hardware: h100",
+            "Scope": "hardware: h100; transferred from hardware=h100",
             "Set": "cost-model-primitives"
           },
           {
@@ -2689,9 +2689,10 @@
           }
         ],
         "method_counts": {
-          "assumed": 41,
+          "assumed": 39,
           "measured": 105,
           "not_charged": 1,
+          "transferred": 2,
           "vendor_spec": 14
         },
         "routing": {
