@@ -12,7 +12,7 @@
   }
  },
  "provenance": {
-  "blis_vllm_commit": "5854414026f7cdd106baf4fea09ff72f0b09188e",
+  "blis_vllm_commit": "938975560e2dadfbcd9c777f8e7b32cc48ca6bbf",
   "lockfile_sha256": "8baca0cbd0f28f5455c4d2c1b39a81ac3c424089e4c875e93614794c77932167",
   "mock_version": "gpu-mock/4+420a44386aa4",
   "mocks": [
@@ -49,9 +49,9 @@
   "oracle_inputs": {
    "oracle/mocks.json": "dafa77943a3eee4bcba1beb5aaea6416a1eac7b67bcdb176fb86afc892b1bf0a",
    "oracle/requirements.lock": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
-   "oracle/run_connector.py": "b7b10ab06a0c362cfa5c1a2234c7c882f282058919cf30c2677f5999968da3af",
+   "oracle/run_connector.py": "8b10bfc6ee5d8e8ba92edf2a45831e22fe0a2f91c8bc6dc8b3998edf3d764a4e",
    "oracle/run_enginecore.py": "52f5ca457d4f046679d0ca364c599a8015a4c30c8cf197a5eaf0b8829e4e1a71",
-   "oracle/run_scheduler.py": "2f5a9afbb07c8030c8017363a421b41853da24d9c57101e02402b7398c1213c3",
+   "oracle/run_scheduler.py": "9357adb72ce4e89b9dcbfa6f68ac29f7dffa92e22b384f7dac522208ee74e672",
    "oracle/scenarios/connector/nixl-d-dsv41-short-prompt.json": "d1f1b46bdf0087a7eb3d603caa8e134de59695136dcd47b44e42737f236204f0"
   },
   "platform": "linux-x86_64",
