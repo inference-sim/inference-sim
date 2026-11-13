@@ -140,6 +140,7 @@ nav:
       - PR Workflow: contributing/pr-workflow.md
       - Changes Across the BLIS Repositories: contributing/cross-repo-changes.md
       - Automated Delivery (L1): contributing/automated-delivery.md
+      - How CI Decides What to Run: contributing/ci.md
       - External PR Review: contributing/external-pr-review.md
       - RFC Template: contributing/rfc.md
       - Hypothesis Experiments: contributing/hypothesis.md
