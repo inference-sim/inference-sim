@@ -1,3 +1,6 @@
 # Every tag of this repository and the commit it names, one "<tag> <commit>" per line (LIF-1).
 # The release bot appends a line when it tags; a release owner does the same under the manual
 # procedure (design §13.6). The nightly tag check fails on any difference.
+v0.12.0 d98137b23553da787f71a4ff08f4122f3f6f30bf
+v0.13.0 fe6eab10b9795933de38122ba55e5299dcb20b5e
+v0.14.0 965b05834c47882bc0f9f1a960c90327a756ef3d
