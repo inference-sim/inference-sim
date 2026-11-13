@@ -7,9 +7,11 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
@@ -76,80 +78,115 @@ func perturbationScenarios(t *testing.T, d *load.Data, only ...string) []perturb
 		offload += fmt.Sprintf("    - {tier: %s, bytes: 1073741824}\n", dev.Name)
 	}
 	sets := "[cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric, cost-model-offload-tiers]"
-	var out []perturbationCase
+	type pair struct{ model, chip string }
+	var pairs []pair
 	for _, m := range d.Models() {
 		if len(only) > 0 && !slices.Contains(only, m) {
 			continue
 		}
 		for _, c := range d.Chips() {
-			ch, _ := d.Chip(c)
-			// Layouts: tensor parallel alone at 2, 4 and 8; and expert parallel over data parallel
-			// ranks, which is where all-to-all, reduce-scatter and the expert all-gathers run.
-			for _, lay := range perturbationLayouts {
-				tp, dp, ep := lay.tp, lay.dp, lay.ep
-				built := false
-				for _, st := range perturbationSettings(lay) {
-					perNode := 8
-					if ch != nil && ch.GPUsPerNode > 0 {
-						perNode = ch.GPUsPerNode
-					}
-					nodes := (tp*dp + perNode - 1) / perNode
-					packaging := fmt.Sprintf("  gpus_per_node: %d\n", perNode)
-					if ch != nil && ch.GPUsPerNode > 0 {
-						packaging = ""
-					}
-					body := fmt.Sprintf("kind: Scenario\nname: p\nmodel: %s\ncoefficients: %s\nengine_version: \"0.32.0\"\ncluster:\n  hardware: %s\n  fabric: ib-400g\n  nodes: %d\n%s---\nkind: Deployment\nname: d\npools:\n  - role: colocated\n    nodes: %d\n    parallel: {tp: %d, pp: 1, dp: %d, enable_expert_parallel: %t%s}\n%s", m, sets, c, nodes, packaging, nodes, tp, dp, ep, ctxPar(lay), offload)
-					dir := t.TempDir()
-					if err := os.WriteFile(filepath.Join(dir, "s.yaml"), []byte(body), 0o644); err != nil {
-						t.Fatal(err)
-					}
-					r := Repos{Scenarios: dir, Data: d, Rules: func(string) rules.EngineRules { return windowedRules{} },
-						DraftModel: noDrafter, Lower: lowerTo(8192, st.block, 0, st.edit)}
-					in, err := OpenInputs("s.yaml", r, 0)
-					if err != nil {
-						continue
-					}
-					if _, err := New(in); err != nil {
-						continue
-					}
-					label := fmt.Sprintf("%s/%s/tp%d/dp%d/ep%t/dcp%d/pcp%d/bs%d", m, c, tp, dp, ep, lay.dcp, lay.pcp, st.block)
-					out = append(out, perturbationCase{label, in})
-					// The same scenario with the trtllm-gen prefill lane priced, where the chip
-					// carries it: the lane's bf16 pair is read at an auto cache and the fp8 pair
-					// only at an fp8 cache, so each is perturbed here. The registry's lane states no
-					// kernel implementation and is not priced (VAL-8), so these cases key it to a
-					// fixture implementation that the pool reports running.
-					laneIn := keyedLane(in, laneBF16)
-					if _, err := New(laneIn); err == nil {
-						out = append(out, perturbationCase{label + "/trtllm", laneIn})
-					} // And at an fp8 cache, which reads the lane's fp8 pair.
-					f8 := *in.Lowered
-					f8.Plan.Cache.Record, f8.Plan.Cache.ElementBytes, f8.Plan.Cache.LatentCellBytes = "fp8", 1, 0
-					f8In := keyedLane(in, laneFP8)
-					f8In.Lowered = &f8
-					if _, err := New(f8In); err == nil {
-						out = append(out, perturbationCase{label + "/trtllm-fp8", f8In})
-					}
-					// The GLM-5.3 family's sparse-MLA decode entries are keyed to the FlashInfer
-					// decode build the engine pin runs; this case reports it running, so they are
-					// read and perturbed (keyedSparseDecode).
-					if sdIn, ok := keyedSparseDecode(in); ok {
-						if _, err := New(sdIn); err == nil {
-							out = append(out, perturbationCase{label + "/sparse-decode", sdIn})
-						}
-					}
-					// And a DSA model at a packed fp8_ds_mla cache (dsa_prefill_fp8_test.go).
-					if pk, ok := packedSparseVariant(in); ok {
-						out = append(out, perturbationCase{label + "/packed", pk})
-					}
-					built = true
-					break
-				}
-				_ = built
-			}
+			pairs = append(pairs, pair{m, c})
 		}
 	}
+	// Each (model, chip) pair is built on its own, so the pairs are built on every CPU; the
+	// results are joined in the order of the pairs, the order the sequential loop produced.
+	built := make([][]perturbationCase, len(pairs))
+	errs := make([]error, len(pairs))
+	var wg sync.WaitGroup
+	next := make(chan int)
+	for w := 0; w < runtime.GOMAXPROCS(0); w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range next {
+				built[i], errs[i] = perturbationScenariosFor(t, d, pairs[i].model, pairs[i].chip, offload, sets)
+			}
+		}()
+	}
+	for i := range pairs {
+		next <- i
+	}
+	close(next)
+	wg.Wait()
+	var out []perturbationCase
+	for i := range pairs {
+		if errs[i] != nil {
+			t.Fatal(errs[i])
+		}
+		out = append(out, built[i]...)
+	}
 	return out
+}
+
+// perturbationScenariosFor builds the scenarios of one model on one chip.
+func perturbationScenariosFor(t *testing.T, d *load.Data, m, c, offload, sets string) ([]perturbationCase, error) {
+	var out []perturbationCase
+	ch, _ := d.Chip(c)
+	// Layouts: tensor parallel alone at 2, 4 and 8; and expert parallel over data parallel
+	// ranks, which is where all-to-all, reduce-scatter and the expert all-gathers run.
+	for _, lay := range perturbationLayouts {
+		tp, dp, ep := lay.tp, lay.dp, lay.ep
+		built := false
+		for _, st := range perturbationSettings(lay) {
+			perNode := 8
+			if ch != nil && ch.GPUsPerNode > 0 {
+				perNode = ch.GPUsPerNode
+			}
+			nodes := (tp*dp + perNode - 1) / perNode
+			packaging := fmt.Sprintf("  gpus_per_node: %d\n", perNode)
+			if ch != nil && ch.GPUsPerNode > 0 {
+				packaging = ""
+			}
+			body := fmt.Sprintf("kind: Scenario\nname: p\nmodel: %s\ncoefficients: %s\nengine_version: \"0.32.0\"\ncluster:\n  hardware: %s\n  fabric: ib-400g\n  nodes: %d\n%s---\nkind: Deployment\nname: d\npools:\n  - role: colocated\n    nodes: %d\n    parallel: {tp: %d, pp: 1, dp: %d, enable_expert_parallel: %t%s}\n%s", m, sets, c, nodes, packaging, nodes, tp, dp, ep, ctxPar(lay), offload)
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "s.yaml"), []byte(body), 0o644); err != nil {
+				return nil, err
+			}
+			r := Repos{Scenarios: dir, Data: d, Rules: func(string) rules.EngineRules { return windowedRules{} },
+				DraftModel: noDrafter, Lower: lowerTo(8192, st.block, 0, st.edit)}
+			in, err := OpenInputs("s.yaml", r, 0)
+			if err != nil {
+				continue
+			}
+			if _, err := New(in); err != nil {
+				continue
+			}
+			label := fmt.Sprintf("%s/%s/tp%d/dp%d/ep%t/dcp%d/pcp%d/bs%d", m, c, tp, dp, ep, lay.dcp, lay.pcp, st.block)
+			out = append(out, perturbationCase{label, in})
+			// The same scenario with the trtllm-gen prefill lane priced, where the chip
+			// carries it: the lane's bf16 pair is read at an auto cache and the fp8 pair
+			// only at an fp8 cache, so each is perturbed here. The registry's lane states no
+			// kernel implementation and is not priced (VAL-8), so these cases key it to a
+			// fixture implementation that the pool reports running.
+			laneIn := keyedLane(in, laneBF16)
+			if _, err := New(laneIn); err == nil {
+				out = append(out, perturbationCase{label + "/trtllm", laneIn})
+			} // And at an fp8 cache, which reads the lane's fp8 pair.
+			f8 := *in.Lowered
+			f8.Plan.Cache.Record, f8.Plan.Cache.ElementBytes, f8.Plan.Cache.LatentCellBytes = "fp8", 1, 0
+			f8In := keyedLane(in, laneFP8)
+			f8In.Lowered = &f8
+			if _, err := New(f8In); err == nil {
+				out = append(out, perturbationCase{label + "/trtllm-fp8", f8In})
+			}
+			// The GLM-5.3 family's sparse-MLA decode entries are keyed to the FlashInfer
+			// decode build the engine pin runs; this case reports it running, so they are
+			// read and perturbed (keyedSparseDecode).
+			if sdIn, ok := keyedSparseDecode(in); ok {
+				if _, err := New(sdIn); err == nil {
+					out = append(out, perturbationCase{label + "/sparse-decode", sdIn})
+				}
+			}
+			// And a DSA model at a packed fp8_ds_mla cache (dsa_prefill_fp8_test.go).
+			if pk, ok := packedSparseVariant(in); ok {
+				out = append(out, perturbationCase{label + "/packed", pk})
+			}
+			built = true
+			break
+		}
+		_ = built
+	}
+	return out, nil
 }
 
 // perturbationLayouts are the parallel layouts the perturbation prices: tensor parallel alone,
