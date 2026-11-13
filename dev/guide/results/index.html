@@ -1328,6 +1328,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#closeness-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Closeness Data
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#catalog-provenance" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2004,6 +2015,8 @@
       
         
       
+        
+      
     
     
     
@@ -2103,6 +2116,34 @@
     
   
     Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/control-loops/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Control Loops
   
 
     
@@ -2352,6 +2393,8 @@
       
         
       
+        
+      
     
     
     
@@ -2555,6 +2598,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../contributing/ci/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How CI Decides What to Run
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../contributing/external-pr-review/" class="md-nav__link">
         
   
@@ -2690,10 +2761,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_11" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_12" >
         
           
-          <label class="md-nav__link" for="__nav_9_11" id="__nav_9_11_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_9_12" id="__nav_9_12_label" tabindex="0">
             
   
   
@@ -2711,8 +2782,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_11_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_9_11">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_12">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2846,10 +2917,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_12" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_13" >
         
           
-          <label class="md-nav__link" for="__nav_9_12" id="__nav_9_12_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_9_13" id="__nav_9_13_label" tabindex="0">
             
   
   
@@ -2867,8 +2938,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_12_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_9_12">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_13">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -3030,10 +3101,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_13" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_14" >
         
           
-          <label class="md-nav__link" for="__nav_9_13" id="__nav_9_13_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_9_14" id="__nav_9_14_label" tabindex="0">
             
   
   
@@ -3051,8 +3122,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_13_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_9_13">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_14_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_14">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -3717,6 +3788,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#closeness-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Closeness Data
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#catalog-provenance" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4098,12 +4180,20 @@ validate is a fatal error naming the problem. Diagnostics go to stderr.</p>
 <td>arrival to last streamed token</td>
 </tr>
 <tr>
+<td><code>itl_{mean,p50,p90,p95,p99}_ms</code></td>
+<td>the client-observed gap between consecutive output tokens, pooled over measured requests completing in the window; tokens of one chunk share its arrival (below)</td>
+</tr>
+<tr>
 <td><code>step_interval_{mean,p50,p90,p95,p99}_ms</code></td>
 <td>the engines' per-decode-step interval, over measured requests completing in the window</td>
 </tr>
 <tr>
 <td><code>interactivity_mean</code></td>
 <td>mean of <code>1000 / tpot_ms</code> over requests</td>
+</tr>
+<tr>
+<td><code>interactivity_of_mean_tpot</code></td>
+<td><code>1000 / tpot_mean_ms</code>, the reciprocal of the mean TPOT (InferenceX's <code>mean_intvty</code>); not <code>interactivity_mean</code>, which is higher whenever TPOT varies across requests</td>
 </tr>
 <tr>
 <td><code>interactivity_p50</code>, <code>interactivity_p90</code></td>
@@ -4118,6 +4208,14 @@ validate is a fatal error naming the problem. Diagnostics go to stderr.</p>
 <td><code>output_tok_s</code> over the GPUs the run's instances occupy</td>
 </tr>
 <tr>
+<td><code>total_tokens_per_second_per_gpu</code></td>
+<td>(prompt plus output tokens per second of the measured window) over the GPUs the run's instances occupy: InferenceX's <code>tput_per_gpu</code>. Stated only when the pinned metric registry defines it</td>
+</tr>
+<tr>
+<td><code>output_tokens_per_second_per_decode_gpu</code></td>
+<td>output tokens per second over the GPUs of the decode pool's instances, for a disaggregated run: InferenceX's <code>output_tput_per_gpu</code>. Stated only when the pinned registry defines it</td>
+</tr>
+<tr>
 <td><code>request_throughput</code></td>
 <td>completed requests over the window</td>
 </tr>
@@ -4127,16 +4225,38 @@ validate is a fatal error naming the problem. Diagnostics go to stderr.</p>
 </tr>
 </tbody>
 </table>
+<p>Schema 3 (blis-substrate layer 11) makes each figure state its <code>scope</code>; every figure of this Result is
+at the <code>cluster</code> scope, with no member, aggregate or range. A Result holds one figure per metric.</p>
 <p>A latency family is stated only when it has a sample: a run that completed nothing states no
 latency rather than a zero. The TPOT family needs a request with two or more output tokens;
 <code>interactivity_p50</code> and <code>interactivity_p90</code> additionally need that percentile of TPOT to be
 positive (they are its reciprocal), and <code>interactivity_mean</code> needs a request with a positive
-TPOT. A run can therefore state <code>interactivity_mean</code> without the percentiles. Percentiles are
+TPOT. A run can therefore state <code>interactivity_mean</code> without the percentiles. <code>interactivity_of_mean_tpot</code> needs a positive mean TPOT. Percentiles are
 numpy-linear.</p>
-<p>No <code>itl_*</code> is reported. The registry's <code>itl</code> pools every gap between consecutive tokens, across
-requests, which BLIS does not compute. Schema 1's <code>itl_*</code> was the per-request time per output
-token, which schema 2 names <code>tpot_*</code>. Under speculative decoding one decode step emits several
-tokens, so <code>step_interval_*</code> is longer than <code>tpot_*</code> by the accepted length.</p>
+<p><code>itl_{mean,p50,p90,p95,p99}_ms</code> is the registry's <code>itl</code>: the gaps between consecutive output
+tokens, pooled over every measured request that completed in the window and had two or more
+output tokens, as the client observes them. A server sends tokens in chunks, and every token of a
+chunk reaches the client at the chunk's time, so the gap before a chunk is charged to its first
+token and the gaps between the chunk's other tokens are zero. A request with N output tokens
+contributes N - 1 gaps, and <code>samples</code> is their number. With one token per chunk (the default
+<code>stream_interval</code>, no speculative decoding) these are the engine's per-step intervals; with
+several tokens per chunk the median falls, the tail grows and the mean stays where the stream's
+length puts it. It is stated for the whole run only: a request's gaps are not split by model,
+tenant or adapter. It is not what a <code>vllm bench serve</code> or InferenceX client stores as ITL, which
+is one entry per received chunk (comparability audit A4); a chunk-gap figure has no registry
+identifier yet (see the pull request for the issue). Schema 1's <code>itl_*</code> was the per-request time
+per output token, which schema 2 names <code>tpot_*</code>. Under speculative decoding one decode step emits
+several tokens, so <code>step_interval_*</code> is longer than <code>tpot_*</code> by the accepted length.</p>
+<p>A pool's <code>engine.stream_interval</code> (vLLM's <code>SchedulerConfig.stream_interval</code>) groups the tokens the
+client is sent: the first output at once, then a group each time that many tokens have
+accumulated, and the rest when the request finishes. It changes when the client sees tokens and
+nothing the engine does, so the engine's steps, TTFT, each request's end-to-end latency, <code>tpot_*</code>
+and <code>step_interval_*</code> are as without it (the last chunk arrives at the finish, and a client
+computing <code>(latency - ttft) / (output tokens - 1)</code> gets the same figure). What changes is <code>itl_*</code>:
+the tokens of a group arrive together, so most gaps become zero and the gaps before a group are
+about <code>stream_interval</code> steps long. The simulator records the chunks on the request
+(<code>Request.ClientFirstTokens</code>, <code>ClientITL</code>, <code>ClientChunk</code>) and <code>Request.ClientTokenGaps</code> derives the
+series.</p>
 <h3 id="from-schema-1-to-schema-2">From schema 1 to schema 2<a class="headerlink" href="#from-schema-1-to-schema-2" title="Permanent link">&para;</a></h3>
 <p>The Result moved from blis-schemas' schema 1 to contracts/spec/result's schema 2. Each schema 1
 member has a schema 2 home, or is listed as dropped with the reason.</p>
@@ -4157,8 +4277,8 @@ member has a schema 2 home, or is listed as dropped with the reason.</p>
 <td><code>metrics.&lt;id&gt;.value</code>, with <code>metrics.&lt;id&gt;.samples</code></td>
 </tr>
 <tr>
-<td><code>metrics.itl_{mean,p50,p90,p99}_ms</code></td>
-<td><code>metrics.tpot_*_ms</code></td>
+<td><code>metrics.itl_{mean,p50,p90,p99}_ms</code> (per request)</td>
+<td><code>metrics.tpot_*_ms</code>; schema 2's <code>itl_*</code> is the pooled token-gap series</td>
 </tr>
 <tr>
 <td><code>engine.cluster.step_interval_*_ms</code></td>
@@ -4424,6 +4544,10 @@ document, or is listed here as dropped with the reason.
 <td><code>metrics.interactivity_mean</code></td>
 </tr>
 <tr>
+<td><code>request_itl_mean_ms</code></td>
+<td><code>metrics.interactivity_of_mean_tpot</code> is <code>1000 /</code> it</td>
+</tr>
+<tr>
 <td><code>step_interval_mean_ms</code>, <code>step_interval_p90_ms</code>, <code>step_interval_p99_ms</code></td>
 <td><code>metrics.step_interval_*_ms</code> (with <code>p50</code>, <code>p95</code>)</td>
 </tr>
@@ -4604,6 +4728,11 @@ supplied itself. <code>skipped_rules</code> are the scenario's release rules tha
 BLIS enforces, and <code>skipped_rule_findings</code> what those rules report when the pack is run
 report-only. <code>evidence_source</code> is <code>kernel</code> when the counts are the kernel's <code>Evidence()</code>. A run
 no kernel priced states an empty map.</p>
+<p><code>substitutions</code>, present only when there is one, lists the execution modes the cost model prices in
+place of the one the deployment states: each entry names the engine <code>setting</code> (for example
+<code>language_model_only</code>), what the deployment <code>stated</code> (<code>unset</code> for an absent key), the value
+<code>priced</code>, and a <code>reason</code>. A point with a substitution is not priced in the mode it states, so a
+grade reads this list and not the stderr text.</p>
 <h3 id="scheduling-delay">Scheduling Delay<a class="headerlink" href="#scheduling-delay" title="Permanent link">&para;</a></h3>
 <p>Scheduling delay isolates the WaitQ wait time from compute time. High scheduling delay + low preemptions = <strong>queue saturation</strong> (add instances). Low scheduling delay + high TTFT = <strong>compute saturation</strong> (reduce batch size or use chunked prefill).</p>
 <div class="admonition warning">
@@ -4629,6 +4758,38 @@ point, and the Result says so:</p>
 is recorded once per pool whose engine stated otherwise, as <code>"scheduler (prefill pool)"</code> or
 <code>"preemption_policy (decode pool)"</code>.</p>
 <p>A warning on stderr says the same.</p>
+<h3 id="closeness-data">Closeness Data<a class="headerlink" href="#closeness-data" title="Permanent link">&para;</a></h3>
+<p>The Result carries what a scoring harness needs to grade a point against the run it measured
+(design 11.3, G1), in two places.</p>
+<ul>
+<li>Each entry of <code>selected_entries.coefficients</code> states, where its registry entry does: <code>kernel_impls</code>
+  (the library, the library's own kernel name and the kernel's code hash the value is valid for, a
+  validity list that can name builds the run did not run), <code>fit_range</code> (one bound per input
+  dimension the fit covered) and <code>ci95</code>. From the run it adds <code>primitive</code> (the lowered primitive the
+  entry's name prices), <code>priced</code> (the implementations of the operations that read the entry,
+  matched whole by library, variant and code hash) and <code>kernel_match</code>. <code>priced</code> is a subset of
+  <code>selected_entries.implementations[primitive]</code>, the builds the run's cost models ran, and, for an
+  exact entry, of <code>kernel_impls</code>: a sibling build the entry is also valid for, or a build that runs
+  only operations that do not read the entry, is not in it. <code>kernel_match</code> is <code>exact</code> when the entry
+  lists the implementations that ran, and <code>unkeyed</code> when it lists none and so applies to every build
+  without having been shown to match the one that ran; the kernel-hash condition of G1 is decided for
+  an exact entry only. An entry that lists implementations is used only when every implementation
+  among those that read it is one it lists. Two flags are evaluated from the steps the run priced:
+  <code>extrapolated</code>, true when any priced step read the entry outside its <code>fit_range</code> (evaluated only
+  where a <code>fit_range</code> is stated), and <code>unidentified</code>, true when the entry's interval is unbounded or
+  wider than half its value (evaluated only where a <code>ci95</code> is stated). A flag that is absent was not
+  evaluated. Every engine instance of every pool registers its own kernel with the run's data, so a
+  flag any instance raised stays raised. <code>selected_entries.closeness_version: 2</code> says the recorder
+  passed on everything each entry states and the implementation each coefficient priced; it does not
+  say that every pool registered, nor that a condition was decided. A registry coefficient that states
+  no <code>kernel_impls</code> is <code>unkeyed</code>, so the kernel-hash condition cannot be decided for it; at the
+  registry this release pins few coefficients state them (blis-registry#73).</li>
+<li><code>resolutions</code> lists, for each pool and each setting the cost model resolves, the engine's value
+  beside the host's, with the reason where they differ. A row names its <code>pool</code> by the pool's role
+  (<code>colocated</code>, <code>prefill</code>, <code>decode</code>); the engine allows one pool per role. Rows are sorted by
+  setting, then pool. A row names the setting as the engine block and the field list do (the KV
+  cache dtype is <code>kv_cache_dtype</code>).</li>
+</ul>
 <h3 id="catalog-provenance">Catalog Provenance<a class="headerlink" href="#catalog-provenance" title="Permanent link">&para;</a></h3>
 <p>The Result records <strong>which model catalog produced it</strong> (#1732) under <code>data.catalog</code>: its
 source (<code>embedded</code> or <code>path</code>), content hash and overlays (SIM-6, X8). The data is an input of

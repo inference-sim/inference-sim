@@ -14,7 +14,7 @@
         <link rel="prev" href="../project-structure/">
       
       
-        <link rel="next" href="../models/">
+        <link rel="next" href="../control-loops/">
       
       
         
@@ -1613,6 +1613,8 @@
       
         
       
+        
+      
     
     
     
@@ -2168,6 +2170,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../control-loops/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Control Loops
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../models/" class="md-nav__link">
         
   
@@ -2397,6 +2427,8 @@
       
         
       
+        
+      
     
     
     
@@ -2600,6 +2632,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../contributing/ci/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How CI Decides What to Run
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../contributing/external-pr-review/" class="md-nav__link">
         
   
@@ -2735,10 +2795,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_11" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_12" >
         
           
-          <label class="md-nav__link" for="__nav_9_11" id="__nav_9_11_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_9_12" id="__nav_9_12_label" tabindex="0">
             
   
   
@@ -2756,8 +2816,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_11_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_9_11">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_12">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2891,10 +2951,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_12" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_13" >
         
           
-          <label class="md-nav__link" for="__nav_9_12" id="__nav_9_12_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_9_13" id="__nav_9_13_label" tabindex="0">
             
   
   
@@ -2912,8 +2972,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_12_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_9_12">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_13">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -3075,10 +3135,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_13" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_14" >
         
           
-          <label class="md-nav__link" for="__nav_9_13" id="__nav_9_13_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_9_14" id="__nav_9_14_label" tabindex="0">
             
   
   
@@ -3096,8 +3156,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_13_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_9_13">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_14_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_14">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -4078,7 +4138,7 @@
 <h3 id="parameter-resolution-by-category">Parameter Resolution by Category<a class="headerlink" href="#parameter-resolution-by-category" title="Permanent link">&para;</a></h3>
 <p><strong>Deployment and engine settings</strong> — from the scenario only. See <a href="#scenario-and-deployment">Scenario and Deployment</a> below for the full list. There is no CLI override and no per-model fallback.</p>
 <p><strong>Latency</strong> — priced by <a href="../../guide/latency-models/">blis-latency-kernel</a>, the only latency backend. The scenario names the coefficient sets; they are read from the registry in use: the one embedded in the pinned blis-substrate release, or the directory <code>--registry</code> / <code>BLIS_REGISTRY</code> names (layout of blis-substrate's <a href="https://github.com/inference-sim/blis-substrate/tree/main/registry"><code>registry/</code></a>). There are no coefficient flags.</p>
-<p><strong>KV cache blocks</strong> — computed by the kernel's memory methods from the scenario (model, hardware, parallelism, <code>gpu_memory_utilization</code>, <code>cache_dtype</code>, <code>block_size</code>), per data-parallel rank. There is no flag to set it.</p>
+<p><strong>KV cache blocks</strong> — computed by the kernel's memory methods from the scenario (model, hardware, parallelism, <code>gpu_memory_utilization</code>, <code>kv_cache_dtype</code>, <code>block_size</code>), per data-parallel rank. There is no flag to set it.</p>
 <p><strong>Workload parameters</strong> (<code>--rate</code>, <code>--num-requests</code>, <code>--prompt-tokens</code>, etc.):</p>
 <ol>
 <li><code>--workload-spec</code> YAML file — when set, all token distribution and arrival parameters come from the YAML; CLI distribution flags are ignored</li>
@@ -4203,7 +4263,7 @@
 </table>
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/inference-sim/blis-substrate.git
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>git<span class="w"> </span>-C<span class="w"> </span>blis-substrate<span class="w"> </span>checkout<span class="w"> </span>v0.13.0
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>git<span class="w"> </span>-C<span class="w"> </span>blis-substrate<span class="w"> </span>checkout<span class="w"> </span>v0.14.0
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">BLIS_CATALOG</span><span class="o">=</span><span class="nv">$PWD</span>/blis-substrate/catalog<span class="w">   </span><span class="c1"># optional: replaces the embedded catalog (or pass --catalog)</span>
 </code></pre></div>
 <!-- END GENERATED -->
@@ -4217,7 +4277,7 @@
 <p>A scenario file holds two YAML documents in the blis-schemas format:</p>
 <ul>
 <li><strong>Scenario</strong> — <code>name</code>, <code>engine_version</code>, <code>model</code> (a catalog model), <code>coefficients</code> (the registry coefficient sets that price it), and <code>cluster</code> (<code>hardware</code>, <code>fabric</code>, <code>nodes</code>, <code>gpus_per_node</code>). The engine is named <code>engine: {kind: vllm, version: "0.32.0"}</code>, or by the deprecated <code>engine_version: "0.32.0"</code> (accepted with a warning until M4; blis-schemas v0.10.0's scenario type has only this field, so <code>engine:</code> is read by the simulator until the scenario type carries it). This build runs vLLM 0.32.0; a scenario naming another release is refused with the release it asked for, the one this build runs, and the newest inference-sim release that runs the one asked for (v0.15.0 for vLLM 0.29.0 and 0.31.0). See <a href="../../guide/latency-models/">latency models</a>.</li>
-<li><strong>Deployment</strong> — <code>pools</code>, each with a <code>role</code> (<code>colocated</code>, <code>prefill</code> or <code>decode</code>), <code>nodes</code>, a <code>parallel</code> block (<code>tp</code>, <code>pp</code>, <code>dp</code>, <code>enable_expert_parallel</code>) and an <code>engine</code> block (<code>block_size</code>, <code>max_num_seqs</code>, <code>max_num_batched_tokens</code>, <code>max_model_len</code>, <code>quantization</code>, <code>cache_dtype</code>, <code>cudagraph_mode</code>, <code>gpu_memory_utilization</code>, <code>enable_prefix_caching</code>, <code>speculative: {method, num_spec_tokens}</code>); plus optional <code>offload</code> and <code>pd_transfer</code>.</li>
+<li><strong>Deployment</strong> — <code>pools</code>, each with a <code>role</code> (<code>colocated</code>, <code>prefill</code> or <code>decode</code>), <code>nodes</code>, a <code>parallel</code> block (<code>tp</code>, <code>pp</code>, <code>dp</code>, <code>enable_expert_parallel</code>) and an <code>engine</code> block (<code>block_size</code>, <code>max_num_seqs</code>, <code>max_num_batched_tokens</code>, <code>max_model_len</code>, <code>quantization</code>, <code>kv_cache_dtype</code>, <code>compilation_config.cudagraph_mode</code>, <code>gpu_memory_utilization</code>, <code>enable_prefix_caching</code>, <code>speculative: {method, num_spec_tokens}</code>); plus optional <code>offload</code> and <code>pd_transfer</code>.</li>
 </ul>
 <p>These settings come from the scenario (and the kernel), and no CLI flag sets them:</p>
 <table>
@@ -4266,11 +4326,11 @@
 </tr>
 <tr>
 <td>KV-cache dtype</td>
-<td>Pool <code>engine.cache_dtype</code></td>
+<td>Pool <code>engine.kv_cache_dtype</code></td>
 </tr>
 <tr>
 <td>Speculative decoding</td>
-<td>Pool <code>engine.speculative.method</code> / <code>num_spec_tokens</code> (acceptance is resolved from the registry's profiles, the workload, the scenario's <code>acceptance</code> pin or the CLI; see <a href="../../guide/latency-models/#speculative-acceptance-1939">Latency Models</a>)</td>
+<td>Pool <code>engine.speculative_config.method</code> / <code>num_speculative_tokens</code> (acceptance is resolved from the registry's profiles, the workload, the scenario's <code>acceptance</code> pin or the CLI; see <a href="../../guide/latency-models/#speculative-acceptance-1939">Latency Models</a>)</td>
 </tr>
 <tr>
 <td>Step time, memory, P/D KV transfer, offload tier transfer, host overheads</td>
@@ -4384,7 +4444,7 @@
 <td><code>--renderer-num-workers</code></td>
 <td>int</td>
 <td>1</td>
-<td>Render threads per API server (vLLM <code>renderer_num_workers</code>). Each request's admission overhead queues for one, in arrival order (INV-R1). 0 = uncontended per-request delay.</td>
+<td>Render threads per API server (vLLM <code>renderer_num_workers</code>). The engine states the admission queue they make; a request holds a thread for its per-token admission time and waits the per-request term without one (INV-R1). 0 = no queue, the whole admission time a delay.</td>
 </tr>
 <tr>
 <td><code>--api-server-count</code></td>
@@ -4478,7 +4538,7 @@
 <td><code>--pd-transfer-contention</code></td>
 <td>bool</td>
 <td>false</td>
-<td>Concurrent P/D KV handoffs share the fabric links they cross: each link is divided max-min fairly among the handoffs on it, from the kernel's <code>PDTransferDemand</code>. A handoff alone still takes exactly <code>PDTransferTime</code>. Run and replay alike (INV-13).</td>
+<td>Concurrent P/D KV handoffs share the fabric links they cross: each link is divided max-min fairly among the handoffs on it, from the demand the cost model states for the handoff. A handoff alone takes exactly that demand's <code>AloneTime</code>. Run and replay alike (INV-13).</td>
 </tr>
 </tbody>
 </table>
@@ -4503,7 +4563,7 @@
 </tr>
 <tr>
 <td><code>router.manifests</code></td>
-<td>Kubernetes manifest files. The router reads <code>InferencePool</code>, <code>InferenceObjective</code> and <code>InferenceModelRewrite</code> objects; other kinds are ignored.</td>
+<td>Kubernetes manifest files. The router reads <code>InferencePool</code>, <code>InferenceObjective</code> and <code>InferenceModelRewrite</code> objects; other kinds are ignored. Every <code>modelRewrite</code> target must be the scenario's model or a LoRA adapter the scenario declares; any other is refused at start-up, because BLIS runs one model graph.</td>
 </tr>
 <tr>
 <td><code>pools[].labels</code></td>
@@ -4542,6 +4602,7 @@
 </tr>
 </tbody>
 </table>
+<p><strong>Reference configurations.</strong> <code>blis router-configs</code> prints the reference EndpointPickerConfig files that the router fork this build pins ships, with the index (<code>policies.json</code>) that says which policy each file configures, its knobs and whether it has a P/D form. <code>--json</code> prints <code>{"router_module", "version", "index", "files": {&lt;name&gt;: {"sha256", "content"}}}</code>, the index as published and every file with the SHA-256 of its bytes; <code>--file &lt;name&gt;</code> writes one file's bytes unchanged, so its output can be saved as a <code>router.endpoint_picker_config</code> file; a name the fork does not ship is an error (exit 1). Without either flag it prints one line per policy file with the start of its SHA-256. The command reads only the fork embedded in the build and writes no file.</p>
 <p><strong>Recorded in the trace.</strong> The resolved router inputs are written to the TraceV2 header (<code>--trace-output</code>); the EndpointPickerConfig (and a <code>--config-file</code> EPP flag) is inlined as <code>--config-text</code> so the header carries the configuration itself. <code>blis replay</code> rebuilds the recorded router from the header. A replay whose scenario states no router replays the recorded one; a replay whose scenario states a router (a <code>router:</code> block or pool labels) that differs from the header's, or whose router environment flags differ from it, is refused (INV-13).</p>
 <p><strong>Pod labels.</strong> BLIS sets <code>llm-d.ai/inference-serving=true</code> on every pod and <code>llm-d.ai/role</code> (<code>prefill</code>, <code>decode</code>, <code>prefill-decode</code>, <code>encode</code>) from the scenario's pools, in addition to <code>pools[].labels</code>; blis-schemas refuses a pool label <code>llm-d.ai/role</code> that contradicts the pool's role.</p>
 <p><strong>Objectives.</strong> Request priorities come from the <code>InferenceObjective</code> objects in the manifests, which the router reconciles only for an <code>InferencePool</code> (<code>--pool-name</code>); a request whose objective has none gets priority 0. <code>examples/llm-d/inferencepool.yaml</code> defines a pool and one objective per SLO class (<code>critical</code> 4, <code>standard</code> 3, <code>batch</code> -1, <code>sheddable</code> -2, <code>background</code> -3); <code>examples/llm-d/scenarios/llama-3.1-70b-instruct-h200-tp4-4node-inferencepool.yaml</code> routes with it. Each request carries its SLO class in the <code>x-llm-d-inference-objective</code> header and its tenant in <code>x-llm-d-inference-fairness-id</code>. See <a href="../../guide/admission/">Admission and Flow Control</a>.</p>
@@ -5204,13 +5265,13 @@ reads).</p>
         
         
           
-          <a href="../models/" class="md-footer__link md-footer__link--next" aria-label="Next: Model Compatibility">
+          <a href="../control-loops/" class="md-footer__link md-footer__link--next" aria-label="Next: Control Loops">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Model Compatibility
+                Control Loops
               </div>
             </div>
             <div class="md-footer__button md-icon">

@@ -1605,6 +1605,8 @@
       
         
       
+        
+      
     
     
     
@@ -1704,6 +1706,34 @@
     
   
     Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/control-loops/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Control Loops
   
 
     
@@ -1953,6 +1983,8 @@
       
         
       
+        
+      
     
     
     
@@ -2156,6 +2188,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../contributing/ci/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How CI Decides What to Run
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../contributing/external-pr-review/" class="md-nav__link">
         
   
@@ -2291,10 +2351,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_11" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_12" >
         
           
-          <label class="md-nav__link" for="__nav_9_11" id="__nav_9_11_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_9_12" id="__nav_9_12_label" tabindex="0">
             
   
   
@@ -2312,8 +2372,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_11_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_9_11">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_12">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2447,10 +2507,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_12" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_13" >
         
           
-          <label class="md-nav__link" for="__nav_9_12" id="__nav_9_12_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_9_13" id="__nav_9_13_label" tabindex="0">
             
   
   
@@ -2468,8 +2528,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_12_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_9_12">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_13">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2631,10 +2691,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_13" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_14" >
         
           
-          <label class="md-nav__link" for="__nav_9_13" id="__nav_9_13_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_9_14" id="__nav_9_14_label" tabindex="0">
             
   
   
@@ -2652,8 +2712,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_13_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_9_13">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_14_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_14">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -3347,6 +3407,9 @@ truth is that run's <code>mean_ttft</code> and <code>mean_tpot</code> as SemiAna
 (<code>inferencex_absolutes.json</code>, <code>db-dump/2026-09-28</code>). AISimulate's and AIC's predictions come from
 NVIDIA's artifact. BLIS's are simulated by <code>blis replay</code> on the point's main phase. This document
 says exactly what that replay reproduces, how each claim is checked, and what remains approximate.</p>
+<p>The numbers the accuracy dashboard publishes are produced by the dashboard's replay, not by this
+harness (COV-1 makes the dashboard the only scorer). This page describes the harness in
+<code>tools/harness</code>, and goes with it when #1969 removes it.</p>
 <h2 id="sources">Sources<a class="headerlink" href="#sources" title="Permanent link">&para;</a></h2>
 <p>Citations are <code>file:line@commit</code> in <a href="https://github.com/SemiAnalysisAI/InferenceX">SemiAnalysisAI/InferenceX</a>.
 The measured runs are dated 2026-02-25 to 2026-08-07 (<code>source_run_date</code> in
@@ -3586,8 +3649,10 @@ state, built with existing trace features only. The trace prepends <code>dp</cod
   router counter has moved by <code>dp</code>, so every main request lands on the replica it would land on
   from a fresh counter.</li>
 </ul>
-<p>This is the drained warm-up's state, with <code>dp</code> copies standing in for <code>2*CONC</code>. Three tests check
-that, rather than assume it:</p>
+<p>This is the drained warm-up's state, with <code>dp</code> copies standing in for <code>2*CONC</code> in this repository's
+harness (<code>tools/harness</code>, <code>copies := max(dp, 1)</code>). The accuracy dashboard sends the client's own <code>2*CONC</code>
+copies (the Warm-up row of the comparability page in the accuracy-dashboard repository). The second test below shows that the
+two give the same main phase. Three tests check that, rather than assume it:</p>
 <ul>
 <li><code>TestCheckPrimedRefusesAnUndrainedWarmup</code>: the scorer refuses a run in which a copy had not
   completed before the main phase, main request 0 did not start with it, or a holder round entered

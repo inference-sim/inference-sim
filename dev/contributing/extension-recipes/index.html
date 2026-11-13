@@ -1611,6 +1611,8 @@
       
         
       
+        
+      
     
     
     
@@ -1710,6 +1712,34 @@
     
   
     Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/control-loops/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Control Loops
   
 
     
@@ -1935,6 +1965,8 @@
       
         
           
+        
+      
         
       
         
@@ -2322,6 +2354,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../ci/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How CI Decides What to Run
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../external-pr-review/" class="md-nav__link">
         
   
@@ -2460,10 +2520,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_11" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_12" >
         
           
-          <label class="md-nav__link" for="__nav_9_11" id="__nav_9_11_label" tabindex="">
+          <label class="md-nav__link" for="__nav_9_12" id="__nav_9_12_label" tabindex="">
             
   
   
@@ -2481,8 +2541,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_11_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_9_11">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_12">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2619,10 +2679,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_12" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_13" >
         
           
-          <label class="md-nav__link" for="__nav_9_12" id="__nav_9_12_label" tabindex="">
+          <label class="md-nav__link" for="__nav_9_13" id="__nav_9_13_label" tabindex="">
             
   
   
@@ -2640,8 +2700,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_12_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_9_12">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_13">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2806,10 +2866,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_13" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_14" >
         
           
-          <label class="md-nav__link" for="__nav_9_13" id="__nav_9_13_label" tabindex="">
+          <label class="md-nav__link" for="__nav_9_14" id="__nav_9_14_label" tabindex="">
             
   
   
@@ -2827,8 +2887,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_13_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_9_13">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_14_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_14">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -3571,7 +3631,7 @@
 <h2 id="adding-new-batch-formation-strategies">Adding New Batch Formation Strategies<a class="headerlink" href="#adding-new-batch-formation-strategies" title="Permanent link">&para;</a></h2>
 <p>Batch formation is vLLM's scheduler, translated in blis-vllm (<code>core/sched</code>), so a change there is a blis-vllm change, released and repinned in <code>go.mod</code> (<a href="../cross-repo-changes/">cross-repo changes</a>).</p>
 <h2 id="adding-new-quantization-formats">Adding New Quantization Formats<a class="headerlink" href="#adding-new-quantization-formats" title="Permanent link">&para;</a></h2>
-<p>Quantization is stated per pool in the scenario (<code>engine.quantization</code>, <code>engine.cache_dtype</code>) and priced by <code>blis-latency-kernel</code>. A new format is added there (and to <code>blis-schemas</code> if the field's allowed values change), not in this repository.</p>
+<p>Quantization is stated per pool in the scenario (<code>engine.quantization</code>, <code>engine.kv_cache_dtype</code>) and priced by <code>blis-latency-kernel</code>. A new format is added there (and to <code>blis-schemas</code> if the field's allowed values change), not in this repository.</p>
 <h2 id="adding-a-new-engine">Adding a New Engine<a class="headerlink" href="#adding-a-new-engine" title="Permanent link">&para;</a></h2>
 <p>To add a new autoscaler <code>Engine</code> implementation (e.g., a cost-minimizing MIP solver or an OpenEvolve-evolved policy):</p>
 <ol>

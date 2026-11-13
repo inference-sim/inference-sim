@@ -1771,6 +1771,8 @@
       
         
       
+        
+      
     
     
     
@@ -1870,6 +1872,34 @@
     
   
     Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/control-loops/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Control Loops
   
 
     
@@ -2119,6 +2149,8 @@
       
         
       
+        
+      
     
     
     
@@ -2322,6 +2354,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../contributing/ci/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How CI Decides What to Run
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../contributing/external-pr-review/" class="md-nav__link">
         
   
@@ -2457,10 +2517,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_11" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_12" >
         
           
-          <label class="md-nav__link" for="__nav_9_11" id="__nav_9_11_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_9_12" id="__nav_9_12_label" tabindex="0">
             
   
   
@@ -2478,8 +2538,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_11_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_9_11">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_12">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2613,10 +2673,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_12" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_13" >
         
           
-          <label class="md-nav__link" for="__nav_9_12" id="__nav_9_12_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_9_13" id="__nav_9_13_label" tabindex="0">
             
   
   
@@ -2634,8 +2694,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_12_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_9_12">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_13">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2797,10 +2857,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_13" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_14" >
         
           
-          <label class="md-nav__link" for="__nav_9_13" id="__nav_9_13_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_9_14" id="__nav_9_14_label" tabindex="0">
             
   
   
@@ -2818,8 +2878,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_13_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_9_13">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_14_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_14">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -3542,6 +3602,25 @@ environment variable is needed.</p>
 boundary, and <code>blis schema validate &lt;document&gt; &lt;file&gt;</code> runs the Go validators on a file: exit 0
 when valid, 1 when the document is refused, 2 when the command could not run. Both read only the
 release this build pins.</p>
+<p>Three commands print what the applications would otherwise copy, and hold no list of their own. The binary is <code>blis</code>; the design and the issues write <code>inference-sim fields|ledger|metrics</code> for the same commands.</p>
+<ul>
+<li><code>blis fields --scenario &lt;file&gt; --scenarios &lt;dir&gt;</code> prints the field list of the engine the scenario
+  names, as the engine reports it through <code>engine.Engine.Fields()</code>: one JSON document in canonical
+  form, sorted, with the engine kind and upstream release in its <code>engine</code> member. A scenario is the
+  input because the engine contract gives a list only to an engine that has been built.</li>
+<li><code>blis ledger --list fit|anchor|report</code> prints the published role list of the pinned substrate
+  release after the substrate's own check (<code>ledger.LoadPublished</code>). With <code>--catalog</code> naming a
+  substrate checkout's <code>catalog/</code> the lists are checked against <code>ledger.yaml</code> and the unit lists
+  (seed, partition, every unit in a source, one role per unit); the embedded copy carries
+  neither, so it is checked for what the lists say of themselves. A release that has not
+  published the lists has none to print, and the command fails saying so. <code>blis ledger units --catalog &lt;substrate checkout&gt;/catalog</code> prints the
+  ledger's unit identifiers, one per line with its source; no release embeds the unit lists, so it
+  needs a checkout.</li>
+<li><code>blis metrics</code> prints the metric registry with each metric's scopes and aggregates (<code>max</code> and <code>min</code>) and which direction is better; <code>--json</code> prints
+  the registry's own records. A figure is compared with another only when its metric, scope and
+  aggregate are all the same.</li>
+<li><code>blis router-configs [--json] [--file &lt;name&gt;]</code> prints the reference router (EndpointPicker) configuration files, and their index, that the pinned router fork ships; see <a href="../../reference/configuration/#router">Configuration: Router</a>.</li>
+</ul>
 <p><code>--catalog &lt;dir&gt;</code> (or <code>BLIS_CATALOG</code>) names a directory with the layout of blis-substrate's
 <code>catalog/</code> that replaces the embedded catalog whole. <code>--registry &lt;dir&gt;</code> (or <code>BLIS_REGISTRY</code>)
 does the same for the registry. The flag wins over the environment variable, and the choice is
@@ -3554,7 +3633,7 @@ this build pins (see <a href="#catalog-compatibility">Data compatibility</a> bel
 directories:</p>
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/inference-sim/blis-substrate.git
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>git<span class="w"> </span>-C<span class="w"> </span>blis-substrate<span class="w"> </span>checkout<span class="w"> </span>v0.13.0
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>git<span class="w"> </span>-C<span class="w"> </span>blis-substrate<span class="w"> </span>checkout<span class="w"> </span>v0.14.0
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">BLIS_CATALOG</span><span class="o">=</span><span class="nv">$PWD</span>/blis-substrate/catalog<span class="w">   </span><span class="c1"># optional: replaces the embedded catalog (or pass --catalog)</span>
 </code></pre></div>
 <!-- END GENERATED -->
@@ -3577,17 +3656,17 @@ it is stale.</p>
 <tbody>
 <tr>
 <td><code>github.com/inference-sim/blis-substrate</code></td>
-<td><code>v0.13.0</code></td>
+<td><code>v0.14.0</code></td>
 <td></td>
 </tr>
 <tr>
 <td><code>github.com/inference-sim/blis-vllm</code></td>
-<td><code>v0.32.0-blis.2</code></td>
+<td><code>v0.32.0-blis.3</code></td>
 <td></td>
 </tr>
 <tr>
 <td><code>github.com/inference-sim/llm-d-router</code></td>
-<td><code>v1.0.0-blis.3</code></td>
+<td><code>v1.0.0-blis.4</code></td>
 <td></td>
 </tr>
 <tr>
@@ -3628,8 +3707,9 @@ parallelism and engine settings. <code>--scenarios &lt;dir&gt;</code> is any dir
 <code>examplescenarios/</code> (speculative ones pin their acceptance, so no <code>--speculative-*</code> flag is
 needed): <code>deepseek-v4.1-flash-h100-tp8-dspark5.yaml</code> (the quickstart), an MoE
 <code>gpt-oss-120b-h100-fp4-vllm-tp2.yaml</code>, a <code>deepseek-v4-pro-b300-fp4-vllm-tp4-mtp2.yaml</code>, a P/D
-<code>glm-5-h200-3p1d-ib.yaml</code>. Kimi-K3 has none: its linear-attention (KDA) layers have no KV mapping
-in the engine yet, so a Kimi-K3 scenario is refused at startup. See
+<code>glm-5-h200-3p1d-ib.yaml</code>. Models with recurrent state (Kimi-K3's KDA layers, Nemotron-3-Ultra's
+Mamba-2 layers) run: the engine maps those layers to vLLM's Mamba cache spec and completes the block
+size itself (<code>testdata/recurrent/</code> has two scenarios that do). See
 <a href="https://github.com/inference-sim/inference-sim/tree/main/examplescenarios"><code>examplescenarios/README.md</code></a>
 for details.</p>
 <h2 id="verify-the-build">Verify the Build<a class="headerlink" href="#verify-the-build" title="Permanent link">&para;</a></h2>

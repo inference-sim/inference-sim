@@ -1611,6 +1611,8 @@
       
         
       
+        
+      
     
     
     
@@ -1710,6 +1712,34 @@
     
   
     Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/control-loops/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Control Loops
   
 
     
@@ -1961,6 +1991,8 @@
       
         
       
+        
+      
     
     
     
@@ -2165,6 +2197,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../ci/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How CI Decides What to Run
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../external-pr-review/" class="md-nav__link">
         
   
@@ -2303,10 +2363,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_11" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_12" >
         
           
-          <label class="md-nav__link" for="__nav_9_11" id="__nav_9_11_label" tabindex="">
+          <label class="md-nav__link" for="__nav_9_12" id="__nav_9_12_label" tabindex="">
             
   
   
@@ -2324,8 +2384,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_11_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_9_11">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_12">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2462,10 +2522,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_12" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_13" checked>
         
           
-          <label class="md-nav__link" for="__nav_9_12" id="__nav_9_12_label" tabindex="">
+          <label class="md-nav__link" for="__nav_9_13" id="__nav_9_13_label" tabindex="">
             
   
   
@@ -2483,8 +2543,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_12_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_9_12">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_13_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_9_13">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -3123,10 +3183,10 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_13" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_14" >
         
           
-          <label class="md-nav__link" for="__nav_9_13" id="__nav_9_13_label" tabindex="">
+          <label class="md-nav__link" for="__nav_9_14" id="__nav_9_14_label" tabindex="">
             
   
   
@@ -3144,8 +3204,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_13_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_9_13">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_14_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_14">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -4403,7 +4463,7 @@
 <td>pools / KV transfer</td>
 </tr>
 <tr>
-<td><a href="#inv-r1-admission-overhead-runs-on-the-endpoints-render-threads-in-arrival-order">INV-R1</a> Admission overhead runs on the endpoint's render threads, in arrival order</td>
+<td><a href="#inv-r1-admission-demand-queues-on-the-shape-the-engine-states-in-arrival-order">INV-R1</a> Admission demand queues on the shape the engine states, in arrival order</td>
 <td>Subsystem</td>
 <td>latency model / front end</td>
 </tr>
@@ -4530,7 +4590,7 @@
 <p><strong>Scope:</strong> The boundary applies to <em>servability</em> decisions (admit/reject/route), not to all scheduler operations. <code>FormBatch</code> legitimately reads <code>OutputTokens</code> for decode-phase step planning (whether to allocate a decode token), which mirrors vLLM's scheduler reading sequence state for per-step execution. The distinction: "should this request enter the system?" (servability — no oracle) vs. "what should this request do in the current step?" (execution — oracle allowed).</p>
 <p><strong>Bounded carve-out — the Phase-2 decode-sub-request grant cap (#1657).</strong> <code>FormBatch</code>'s Phase-2 admission loop caps a PD decode sub-request's speculative-decode grant <code>g</code> by its distance to the completion boundary (<code>Request.completionProgressIndex()</code>, oracle-derived from <code>len(OutputTokens)</code>). This sits in the <em>admission</em> loop, not the running-request loop, so it is explicitly carved out rather than covered by the sentence above. It is safe because the cap is <strong>monotone-shrinking and floored at 1</strong>: it can only lower the granted token count, never below 1, so it can never reject a request, never reorder admissions, and never change <em>whether</em> a request is admitted — only how many tokens that one step grants it. The one visible effect is that a capped grant reserves <em>less</em> KV and debits <em>less</em> of the batched-token budget, so admission under KV pressure becomes marginally <strong>more</strong> likely, never less. Any future oracle read in this loop that could gate admission (a <code>break</code>/<code>continue</code>/reject on an <code>OutputTokens</code>-derived value) is a violation.</p>
 <p><strong>Verification:</strong> <code>sim/cluster/cluster_test.go</code> — <code>TestClusterSimulator_MaxModelLen_DroppedUnservable</code>: a request with no output budget (<code>MaxOutputLen=0</code>) is checked on its input length alone, and one with a budget on input + budget.</p>
-<p><strong>The file set is a glob, not a list (#1720, Finding 3).</strong> The scan resolves <code>routing*.go</code> and <code>router_state.go</code> under <code>sim/</code>, and <code>scheduler*.go</code>, <code>slo*.go</code> and <code>engine_metrics.go</code> (the series the router scrapes) under blis-vllm <code>compat/engine</code>, where they moved with the engine (#2021) (BLIS's own admission, saturation and routing policies are gone; the router's decisions are llm-d's), minus an explicit <code>simControlPlaneExemptions</code> map (empty today). A new routing scorer is therefore covered by default, and exempting one is a named, reviewable act; a stale exemption naming a deleted file fails the test. The previous hardcoded list omitted <code>router_state.go</code>, <code>routing_nohit_lru_scorer.go</code> and <code>routing_precise_prefix_scorer.go</code> — all three clean, but two of them scorers, so the next scorer would have escaped too. The cluster files (<code>cluster/cluster.go</code>, <code>cluster/cluster_event.go</code>, <code>cluster/gateway.go</code>) and every non-test file of <code>sim/llmd</code> (a glob: all of it feeds the router) are scanned line by line: they legitimately carry the <code>TotalOutputTokens</code> metric aggregate. <code>cluster/pd_events.go</code> is deliberately not scanned: it builds the decode sub-request the engine executes, which carries <code>OutputTokens</code> as execution input and hands nothing to the router. A new <em>cluster</em> control-plane file must still be registered by hand, which is a known gap.</p>
+<p><strong>How it is checked (DEV-13).</strong> <code>cmd/dev13_output_length_test.go</code> type-checks every package under <code>sim/</code> and <code>cmd/</code> and lists each function that reads the sampled output length, <code>sim.Request.OutputTokens</code>. A read outside the sites the test declares (the engine's stop check, the P/D proxy's prefill leg, the trace writer) fails it, and a declared site that stops reading it must be deleted from the list, so the list only shrinks. Its known-bad input is a scorer-like function that reads <code>len(r.OutputTokens)</code>. A new routing, admission or priority policy is covered by default because the check reads every function, not a list of files.</p>
 <p><strong>Evidence:</strong> Issue #567 — the original implementation's BC-4 fallback (<code>effectiveMaxOutput = len(r.OutputTokens)</code>) violated this boundary. Fixed in the same PR after convergence review caught it.</p>
 <p><strong>Hypothesis family:</strong> Structural model (same as INV-4, INV-7, INV-8).</p>
 <h3 id="inv-a2-placement-failure-visibility">INV-A2: Placement Failure Visibility<a class="headerlink" href="#inv-a2-placement-failure-visibility" title="Permanent link">&para;</a></h3>
@@ -4776,8 +4836,8 @@ TTFT population), <code>TestAggregatedMetrics_CarriesTheMeasuredWindowInputs</co
 <p><strong>Verification:</strong> <code>sim/cluster/autoscaler_invariant_test.go</code> — <code>TestINV19_ZeroDeltaDecisionSkippedNotFatal</code> drives the pipeline with an engine that emits a zero-delta decision and asserts the actuator is never called and the tick completes; <code>TestINV19_ZeroDeltaDoesNotSustainStabilizationTimer</code> asserts a zero delta interleaved into a scale-up stream resets the window rather than advancing it, pinning the timer consequence above.</p>
 <h3 id="cluster-infrastructure-and-placement">Cluster infrastructure and placement<a class="headerlink" href="#cluster-infrastructure-and-placement" title="Permanent link">&para;</a></h3>
 <h4 id="inv-a-gpu-conservation">INV-A: GPU Conservation<a class="headerlink" href="#inv-a-gpu-conservation" title="Permanent link">&para;</a></h4>
-<p><strong>Statement:</strong> For every node in the placement inventory, <code>allocated_gpus + free_gpus == total_gpus</code>.</p>
-<p><strong>Verification:</strong> <code>PlacementManager.VerifyConservation()</code> (<code>sim/cluster/infra_placement.go:185</code>) walks every node in sorted ID order (R2, so the first-violation report is deterministic) and returns a descriptive error naming the node and all three counts. <code>sim/cluster/infra_placement_test.go</code> asserts it after a successful placement, after a <em>failed</em> placement, after a partial placement, after a full placement, and after <code>ReleaseInstance</code>; <code>sim/cluster/infra_node_test.go</code> carries the dedicated companion invariant test (T012).</p>
+<p><strong>Statement:</strong> For every placed instance, the number of GPUs whose <code>AllocatedTo</code> names it equals the GPUs it asked for (its tensor-parallel degree), however the placement spread them over nodes, and no GPU is allocated to an instance that is not placed. (The earlier statement, <code>allocated + free == total</code> per node, holds by construction, since both counts read one slice, and could not fail.)</p>
+<p><strong>Verification:</strong> <code>PlacementManager.VerifyConservation()</code> (<code>sim/cluster/infra_placement.go</code>) counts the GPUs each instance holds, compares them with the count kept from the placement request (<code>placedTP</code>), visits instances in sorted ID order (R2, so the first-violation report is deterministic) and returns a descriptive error naming the instance and both counts. <code>TestVerifyConservation_PerInstanceLaw</code> (<code>sim/cluster/infra_placement_multinode_test.go</code>) breaks the law three ways (a GPU moved to another instance, a GPU lost from a spanning instance, a GPU held by an instance never placed) and requires each to be found. <code>sim/cluster/infra_placement_test.go</code> asserts it after a successful placement, after a <em>failed</em> placement, after a partial placement, after a full placement, and after <code>ReleaseInstance</code>; <code>sim/cluster/infra_node_test.go</code> carries the dedicated companion invariant test (T012).</p>
 <p><strong>Relationship to INV-4:</strong> the same conservation shape one level up the hierarchy. INV-4 conserves <em>blocks</em> inside one instance's KV cache; INV-A conserves <em>GPUs</em> inside a node's inventory. Both have a runtime verifier and both are checked around every allocate/release — there is no principled reason to document one and not the other.</p>
 <p><strong>Cited in code:</strong> 11 times — the verifier and its error string in <code>sim/cluster/infra_placement.go</code>, plus assertions in <code>infra_placement_test.go</code> and <code>infra_node_test.go</code>. Re-derive with <code>git grep -o 'INV-A[^2]' -- 'sim/**' 'cmd/**' | wc -l</code>; a plain <code>INV-A</code> pattern also matches the five <code>INV-A2</code> sites and returns 16.</p>
 <p><strong>Registry note (#1721):</strong> this invariant had a runtime checker and 11 citations while being absent from this registry. It is the finding that motivated the resolution rule at the top of this document.</p>
@@ -4890,7 +4950,7 @@ phase starts (the warm-up's last return); profiling requests are sent only in
 <code>TestAgentXClosedLoopWarmupAndRecycle</code>.</p>
 <h3 id="latency-model">Latency model<a class="headerlink" href="#latency-model" title="Permanent link">&para;</a></h3>
 <h4 id="inv-k1-no-blis-side-draft-cost">INV-K1: No BLIS-side Draft Cost<a class="headerlink" href="#inv-k1-no-blis-side-draft-cost" title="Permanent link">&para;</a></h4>
-<p><strong>Statement:</strong> For a speculating pool (<code>engine.speculative.num_spec_tokens = K &gt; 0</code>), the adapter's step time for a batch equals <code>max(1, NoOverlap)</code> of blis-latency-kernel's <code>StepTime</code> for the verify-width batch: each decode scheduling <code>1 + K</code>, each prefill chunk its own tokens, under a decode threshold of at least <code>1 + K</code>. BLIS adds no draft term: the kernel (v0.2.0+) prices the drafter's passes, context stack and head inside <code>StepTime</code>, and its weights and caches in <code>FixedBytes</code>, so any BLIS-side draft cost would count them twice.</p>
+<p><strong>Statement:</strong> For a speculating pool (<code>engine.speculative_config.num_speculative_tokens = K &gt; 0</code>), the adapter's step time for a batch equals <code>max(1, NoOverlap)</code> of blis-latency-kernel's <code>StepTime</code> for the verify-width batch: each decode scheduling <code>1 + K</code>, each prefill chunk its own tokens, under a decode threshold of at least <code>1 + K</code>. BLIS adds no draft term: the kernel (v0.2.0+) prices the drafter's passes, context stack and head inside <code>StepTime</code>, and its weights and caches in <code>FixedBytes</code>, so any BLIS-side draft cost would count them twice.</p>
 <p><strong>Enforced:</strong> blis-vllm <code>compat/kernelmodel</code> <code>batchOf</code> (the only place a BLIS batch becomes a kernel batch) and <code>Model.StepTime</code>.</p>
 <p><strong>Verification:</strong> <code>TestNoDraftCostIsAddedOnTheBLISSide</code> (property test on the DeepSeek-V4.1-Flash DSpark scenario: BLIS's price equals the kernel's price of an independently built verify-width batch, and that price exceeds the same batch on the same deployment without a drafter); <code>TestTheDecodeThresholdCoversTheVerifyWidth</code>.</p>
 <h4 id="inv-k2-rejected-drafts-do-not-advance-computed">INV-K2: Rejected Drafts Do Not Advance Computed<a class="headerlink" href="#inv-k2-rejected-drafts-do-not-advance-computed" title="Permanent link">&para;</a></h4>
@@ -4901,12 +4961,13 @@ phase starts (the warm-up's last return); profiling requests are sent only in
 <p><strong>Statement:</strong> A speculating run's acceptance is exactly one <code>acceptance.Resolve</code> resolution (blis-schemas#65) from the registry profile, the workload, the scenario pin and the CLI, highest layer winning, with AL in <code>[1, K+1]</code> for the deployment's K and no silent fallback; the results file's <code>acceptance.length</code> and <code>rate</code> are the <code>SpeculativeConfig</code> the simulator advanced requests by (<code>length = 1 + rate·K</code>), and <code>source_layer</code>/<code>entry</code> name where it came from. A run that does not speculate records none. Run and replay under the same flags resolve the same acceptance (INV-13).</p>
 <p><strong>Enforced:</strong> blis-vllm <code>compat/build</code> <code>ResolveAcceptance</code> (called by <code>resolveAcceptance</code> in <code>cmd/engine_build.go</code>), <code>cmd/speculative_acceptance.go</code> <code>acceptanceRecordOf</code>, <code>cmd/root.go</code> <code>resolveSpeculativeConfig</code>.</p>
 <p><strong>Verification:</strong> <code>TestAcceptancePrecedence</code>, <code>TestAcceptanceKSweepPicksTheProfileAtEachK</code>, <code>TestAcceptanceRefusals</code>, <code>TestAcceptanceIsAbsentWithoutSpeculation</code>, <code>TestAcceptanceRunReplayParity</code> (<code>cmd</code>).</p>
-<h4 id="inv-r1-admission-overhead-runs-on-the-endpoints-render-threads-in-arrival-order">INV-R1: Admission Overhead Runs on the Endpoint's Render Threads, in Arrival Order<a class="headerlink" href="#inv-r1-admission-overhead-runs-on-the-endpoints-render-threads-in-arrival-order" title="Permanent link">&para;</a></h4>
-<p><strong>Statement:</strong> With the front end on (<code>FrontendConfig.RendererNumWorkers = W &gt; 0</code>; the CLI default is vLLM's <code>renderer_num_workers = 1</code>), a request's admission overhead (<code>LatencyModel.QueueingTime</code>, the kernel's <code>AdmissionOverhead</code>: chat template + tokenization) runs on one of its endpoint's render threads. Each endpoint has <code>api_server_count</code> API servers (vLLM's per-mode default: dp behind an internal- or hybrid-balancer replica, else 1) of <code>W</code> threads each. Arrivals go to the servers round-robin. Within a server a request starts at <code>max(arrival, earliest thread free)</code> in arrival order and holds that thread for its overhead, so a server never runs more than <code>W</code> renders at once and a request waits only while all <code>W</code> are busy (FIFO M/G/W). The request enters the wait queue when its render ends. Every arrival is rendered exactly once. A render that costs nothing, or a stage with a thread per request, gives <code>arrival + overhead</code>, which is the inert front end's uncontended delay; with zero overhead the run is byte-identical to the inert one. An internal/hybrid replica's ranks share one stage. An external-balancer rank and a P/D pool rank each have their own. A P/D decode sub-request is not rendered again.</p>
-<p>vLLM v0.31.0: <code>BaseRenderer._executor = ThreadPoolExecutor(max_workers=renderer_num_workers)</code> carries the tokenize step (<code>vllm/renderers/base.py:117-133</code>) and the V4 renderer's template step (<code>vllm/renderers/deepseek_v4.py:32-37</code>), one pool per API-server process. The API-server count defaults are in <code>vllm/entrypoints/cli/serve.py:105-127</code>.</p>
-<p><strong>Limitation:</strong> BLIS picks a replica's rank when the request reaches the endpoint, whereas vLLM's balancer picks it after rendering. The cost itself stays in the kernel and registry.</p>
-<p><strong>Enforced:</strong> <code>sim.Renderer.Admit</code> (called from <code>ArrivalEvent.Execute</code>); <code>sim.ShareRenderer</code> from <code>cluster.buildDPReplicas</code>.</p>
-<p><strong>Verification:</strong> <code>TestRenderer_EachServerIsAFIFOQueueOfItsThreads</code> (rapid), <code>TestRenderer_FreeOrUncontendedRenderIsTheBareOverhead</code> (rapid, metamorphic), <code>TestRenderQueue_ABurstWaitsForTheRenderThread</code>, <code>TestRenderQueue_FreeRenderIsByteIdenticalToNoRenderStage</code>, <code>TestRenderQueue_EveryArrivalIsRenderedOnce</code> (<code>sim</code>); <code>TestRenderStage_BelongsToTheEndpoint</code>, <code>TestRenderStage_AReplicaRendersOnItsDPServers</code> (<code>sim/cluster</code>); <code>TestFrontendFlagsDefaultToVLLMs</code> (<code>cmd</code>).</p>
+<h4 id="inv-r1-admission-demand-queues-on-the-shape-the-engine-states-in-arrival-order">INV-R1: Admission Demand Queues on the Shape the Engine States, in Arrival Order<a class="headerlink" href="#inv-r1-admission-demand-queues-on-the-shape-the-engine-states-in-arrival-order" title="Permanent link">&para;</a></h4>
+<p><strong>Statement:</strong> An engine that states an admission queue in its plan (<code>plan.HostPlan.Admission</code>: <code>Servers</code> independent queues of <code>WorkersPerServer</code> servers; zero workers is no queue) has each request wait in it before the engine sees the request. The cost model gives the request's demand on it (<code>env.Environment.HostDemand</code>): <code>Service</code>, the time it holds one server, and <code>Delay</code>, the time it waits holding none; <code>Service + Delay</code> is the kernel's admission overhead. Arrivals join the queues in turn. Within a queue a request starts at <code>max(arrival, earliest server free)</code> in arrival order and holds that server for <code>Service</code>, so a queue never runs more than <code>WorkersPerServer</code> requests at once and a request waits only while all are busy (FIFO M/G/c). The request enters the engine at <code>end of service + Delay</code>. Every arrival is admitted exactly once. A stage with a server per request, or no queue, gives <code>arrival + Service + Delay</code>; one request alone always waits its whole overhead. The ranks of a replica behind one balancer share one stage (<code>sim.ShareAdmissionStage</code>); an external-balancer rank and a P/D pool rank each have their own. A P/D decode sub-request is not admitted again.</p>
+<p>The host knows nothing of what the servers are. The engine resolves its own settings into the shape: for vLLM v0.32.0, <code>renderer_num_workers</code> threads on each of <code>api_server_count</code> servers, on which the tokenizer and the chat template run (the admission-split page of the blis-vllm documentation).</p>
+<p><strong>Assumption:</strong> The kernel's per-request term (40 ms, method <code>assumed</code>, a latency of unknown origin) is charged as <code>Delay</code>, not as <code>Service</code>. Charging it as <code>Service</code> caps a one-server queue at 1 / 40 ms = 25 requests a second; charging none of it as <code>Service</code> leaves the cap at the per-token term's rate. The truth lies between if part of it is work a server does.</p>
+<p><strong>Limitation:</strong> BLIS picks a replica's rank when the request reaches the endpoint, whereas vLLM's balancer picks it after admission. The cost itself stays in the kernel and registry.</p>
+<p><strong>Enforced:</strong> <code>sim.AdmissionStage.Admit</code> (called from the driver's arrival event); <code>sim.ShareAdmissionStage</code> from <code>cluster.buildDPReplicas</code>.</p>
+<p><strong>Verification:</strong> <code>TestAdmissionStage_EachServerIsAFIFOQueueOfItsThreads</code> (rapid), <code>TestAdmissionStage_FreeOrUncontendedRenderIsTheBareOverhead</code> (rapid, metamorphic), <code>TestEngineDriver_QueuesOnTheAdmissionQueueTheEngineStates</code>, <code>TestEngineDriver_ADelayDoesNotCapTheClosedLoop</code>, <code>TestEngineDriver_ServiceStillSerialisesOnTheServer</code>, <code>TestEngineDriver_ASingleRequestWaitsItsWholeAdmissionTime</code>, <code>TestEngineDriver_TheSaturatedRateScalesWithTheQueuesWidth</code> (<code>sim</code>); <code>TestAdmissionStage_BelongsToTheEndpoint</code>, <code>TestAdmissionStage_AReplicaAdmitsOnTheQueueItsEngineStates</code> (<code>sim/cluster</code>); <code>TestFrontendFlagsDefaultToVLLMs</code> (<code>cmd</code>).</p>
 <h4 id="retired-latency-model-invariants">Retired latency-model invariants<a class="headerlink" href="#retired-latency-model-invariants" title="Permanent link">&para;</a></h4>
 <p>BLIS prices every step with <code>blis-latency-kernel</code>; the in-repo roofline and trained-physics backends were removed (kernel-exclusive change). The invariants below constrained those backends and are <strong>retired</strong>. Latency-pricing invariants now belong to <code>blis-latency-kernel</code>.</p>
 <table>
@@ -5015,8 +5076,8 @@ phase starts (the warm-up's last return); profiling requests are sent only in
 <p><strong>Evidence:</strong> <code>BuildPoolMembershipFromIndices</code> is called once in <code>NewClusterSimulator</code> and stored in <code>cs.poolMembership</code>. No code path in <code>Run()</code> modifies this map.</p>
 <h4 id="inv-pd-6-metric-map-parent-granularity">INV-PD-6: Metric Map Parent Granularity<a class="headerlink" href="#inv-pd-6-metric-map-parent-granularity" title="Permanent link">&para;</a></h4>
 <p><strong>Statement:</strong> After <code>Run()</code> completes on a disaggregated cluster, every per-request metric map (<code>RequestE2Es</code>, <code>RequestTTFTs</code>, <code>RequestITLs</code>, <code>RequestSchedulingDelays</code>, <code>RequestCompletionTimes</code>, <code>Requests</code>) contains only parent-level request IDs. No key may have a <code>_prefill</code> or <code>_decode</code> suffix. A <strong>served</strong> parent — one that reached a terminal <code>CompletionTime</code> with a decode instance assigned AND whose decode sub-request has ≥1 un-discarded <code>ITL</code> entry at finalization (a surviving first-token measurement) — contributes exactly one entry per map (keyed by parent ID). Incomplete parents, and <strong>terminal-but-no-token</strong> parents, contribute <strong>no</strong> entry — they produced no surviving output and are accounted for by the drop/timeout counters (<code>DroppedUnservable</code> / <code>TimedOutRequests</code>) only, never by the latency distributions (issue #1511). The no-token terminal shapes are: decode-side drops (nil <code>DecodeSubReq</code>); decode-timeout-while-queued (<code>DecodeSubReq</code> non-nil, empty <code>ITL</code>, never ran a step); and preempted-then-timed-out (<code>DecodeSubReq</code> non-nil but <code>ITL</code> discarded by a preemption — blis-vllm <code>compat/engine/batch_formation.go</code> clears <code>ITL</code> on preempt — with a timeout before re-emitting).</p>
-<p><strong>Verification:</strong> <code>sim/cluster/disaggregation_test.go</code> — <code>TestDisaggregation_MetricProjection_NoSubRequestKeys</code> checks all six maps for suffix-free keys; <code>TestDisaggregation_MetricProjection_DroppedParent_NoSubRequestKeys</code> verifies the suffix clause holds when decode KV allocation fails; <code>TestDisaggregation_DroppedParent_NotInLatencyMaps</code> verifies a no-token terminal parent appears in none of the latency maps while remaining counted in <code>DroppedUnservable</code> (issue #1511). <code>TestDisaggregation_MetricProjection_NoOp</code> verifies the projection is a no-op for non-disaggregated clusters. <code>sim/cluster/pd_e2e_causality_test.go</code> — <code>TestPDParentMetrics_NoTokenExcludedFromLatency</code> (table over the served/no-token taxonomy) and <code>TestPDParentMetrics_TTFTSamplesAcrossDrop</code> (a served and a dropped parent leave one TTFT sample; there is no aggregate <code>TTFTSum</code> to drift from the samples, #1628). <code>sim/cluster/completion_index_test.go</code> — <code>TestCompletionIndex_ATimeoutMidGenerationIsNotACompletion</code> checks, on both the colocated and the PD path, that a metrics-file row has an E2E exactly when it has a <code>completion_index</code>, and that the indices are 1..completed.</p>
-<p><strong>Evidence:</strong> <code>projectPDMetrics()</code> in <code>sim/cluster/cluster.go</code> is called after <code>aggregateMetrics()</code> and the conservation correction. It unconditionally deletes the <code>pfx</code> and <code>dec</code> keys for every parent request, and conditionally inserts a parent-keyed entry only for <strong>served</strong> parents (<code>served := CompletionTime &gt; 0 &amp;&amp; DecodeInstanceID != "" &amp;&amp; DecodeSubReq != nil &amp;&amp; len(DecodeSubReq.ITL) &gt; 0</code>). A terminal-but-no-token parent contributes no TTFT sample. Every TTFT statistic is derived from the <code>RequestTTFTs</code> samples (DEV-9); there is no aggregate <code>TTFTSum</code>, so a preempted-and-re-prefilled decode sub-request, whose own <code>RequestTTFTs[dec]</code> is deleted, leaves no residual (#1628).</p>
+<p><strong>Verification:</strong> <code>sim/cluster/disaggregation_test.go</code> — <code>TestDisaggregation_MetricProjection_NoSubRequestKeys</code> checks all six maps for suffix-free keys; <code>TestDisaggregation_MetricProjection_DroppedParent_NoSubRequestKeys</code> verifies the suffix clause holds when decode KV allocation fails; <code>TestDisaggregation_DroppedParent_NotInLatencyMaps</code> verifies a no-token terminal parent appears in none of the latency maps while remaining counted in <code>DroppedUnservable</code> (issue #1511). <code>TestDisaggregation_MetricProjection_NoOp</code> verifies the projection is a no-op for non-disaggregated clusters. <code>sim/cluster/pd_e2e_causality_test.go</code> — <code>TestPDParentMetrics_NoTokenExcludedFromLatency</code> (table over the served/no-token taxonomy) and <code>TestPDParentMetrics_TTFTSamplesAcrossDrop</code> (a served and a dropped parent leave one TTFT sample; there is no aggregate <code>TTFTSum</code> to drift from the samples). <code>sim/cluster/completion_index_test.go</code> — <code>TestCompletionIndex_ATimeoutMidGenerationIsNotACompletion</code> checks, on both the colocated and the PD path, that a metrics-file row has an E2E exactly when it has a <code>completion_index</code>, and that the indices are 1..completed.</p>
+<p><strong>Evidence:</strong> <code>projectPDMetrics()</code> in <code>sim/cluster/cluster.go</code> is called after <code>aggregateMetrics()</code> and the conservation correction. It unconditionally deletes the <code>pfx</code> and <code>dec</code> keys for every parent request, and conditionally inserts a parent-keyed entry only for <strong>served</strong> parents (<code>served := CompletionTime &gt; 0 &amp;&amp; DecodeInstanceID != "" &amp;&amp; DecodeSubReq != nil &amp;&amp; len(DecodeSubReq.ITL) &gt; 0</code>). A terminal-but-no-token parent contributes no TTFT sample. Every TTFT statistic is derived from the <code>RequestTTFTs</code> samples (DEV-9); there is no aggregate <code>TTFTSum</code>, so a preempted-and-re-prefilled decode sub-request, whose own <code>RequestTTFTs[dec]</code> is deleted, leaves no residual.</p>
 <h4 id="inv-pd-6b-completiontime-includes-postdecodefixedoverhead">INV-PD-6b: CompletionTime Includes PostDecodeFixedOverhead<a class="headerlink" href="#inv-pd-6b-completiontime-includes-postdecodefixedoverhead" title="Permanent link">&para;</a></h4>
 <p><strong>Statement:</strong> For all successfully decoded parent requests (<code>DecodeInstanceID != ""</code>), <code>parent.CompletionTime</code> equals the cluster clock at decode completion plus the decode instance's <code>PostDecodeFixedOverhead()</code>. The overhead is the decode pool kernel's <code>CompletionOverhead()</code> (a host overhead), so <code>CompletionTime</code> exceeds the raw clock by exactly that amount. <code>parent.CompletionTime</code> is a lifecycle field (it drives session follow-up scheduling and phase-causality checks); the decode instance's <code>PostDecodeFixedOverhead</code> is also carried by the decode sub-request's own recorded E2E (<code>recordRequestCompletion</code> adds it, matching the non-PD path).</p>
 <p>Note (issue #1513): the client-visible parent E2E metric is <strong>not</strong> <code>parent.CompletionTime − ArrivalTime</code>. <code>parent.CompletionTime</code> is stamped on the cluster clock at the completion-<em>detection</em> tick and omits the decode step's own advance, so that formula under-counts E2E — below a single decode step (<code>ITL[0]</code>) and below TTFT for short outputs, violating INV-5. <code>projectPDMetrics()</code> instead reconstructs the arrival→last-token span from the decode sub-request's own per-instance metrics, in two clock frames:</p>
@@ -5104,7 +5165,7 @@ phase starts (the warm-up's last return); profiling requests are sent only in
 <p><strong>Verification:</strong> <code>sim/cluster/pool_role_config_test.go</code> — <code>TestINV_P2_1_PoolConfigConsistency</code> verifies observable KV capacity differences between pools pre-simulation via <code>FreeKVBlocks()</code>; <code>TestINV_P2_1_RequestConservation</code> verifies INV-1 holds under heterogeneous pool configuration.</p>
 <p><strong>Evidence:</strong> <code>ResolvePoolConfig</code> performs a struct copy and applies only non-nil/non-zero overrides. <code>resolveConfigForRole</code> is called in the instance construction loop in <code>NewClusterSimulator</code>, before any simulation state is created. The simulator no longer derives KV capacity itself: on the CLI each pool's <code>TotalKVBlocks</code> (and <code>MaxModelLen</code>, <code>MaxNumSeqs</code>, <code>MaxNumBatchedTokens</code>) is the kernel's per-data-parallel-rank answer for that pool's engine, carried in as <code>PoolOverrides</code>, and a node-pool-placed instance keeps the block count it was configured with. The per-GPU KV re-sizing at placement (#1522) was removed with the in-repo KV auto-calculation (kernel-exclusive change).</p>
 <h4 id="inv-p2-2-kv-transfer-contention">INV-P2-2: KV Transfer Contention<a class="headerlink" href="#inv-p2-2-kv-transfer-contention" title="Permanent link">&para;</a></h4>
-<p><strong>Statement:</strong> With <code>--pd-transfer-contention</code> (<code>DeploymentConfig.PDTransferContention</code>), concurrent handoffs share the links they cross. Each handoff's demand -- payload, floor, and links with their full rates -- is the kernel's <code>PDTransferDemand</code> (blis-schemas <code>kernel.TransferDemand</code>); <code>kvtransfer.LinkArbiter</code> divides every link max-min fairly (progressive filling) among the undrained handoffs on it, re-dividing whenever one starts, drains or finishes. The floor is per handoff and never shared: a handoff completes at the later of start + floor and the tick its last byte drains. Laws: (1) a handoff alone completes at exactly <code>PDTransferTime</code> in ticks (the schemas law <code>PDTransferTime == PDTransferDemand.AloneTime()</code>, checked for every rank pair at startup and every handoff at run time); (2) no link carries more than its rate, and every undrained handoff has a saturated bottleneck link on which none is faster (max-min fairness); (3) handoffs on links nobody else uses finish exactly as alone; (4) doubling every link's rate never delays a handoff; (5) on one shared link set (every 1P1D handoff), no handoff is faster than alone and one more handoff never makes another finish earlier; (6) INV-PD-3 and INV-1 hold, at any horizon; (7) deterministic (INV-6), and run → replay byte-identical (INV-13). Max-min fairness is not monotone across different link sets in general (more traffic on one link can speed a flow on another); <code>TestLinkArbiter_MaxMinIsNotMonotoneAcrossLinks</code> pins the counterexample so no law claims it. Off (the default), every handoff is priced as if alone, byte-identical to before.</p>
+<p><strong>Statement:</strong> With <code>--pd-transfer-contention</code> (<code>DeploymentConfig.PDTransferContention</code>), concurrent handoffs share the links they cross. Each handoff's demand -- payload, floor, and links with their full rates -- is the demand the host's Environment states for the move the decode engine reported (<code>env.DemandFor</code>; for a P/D pull the kernel's <code>PDTransferDemand</code>; blis-schemas <code>kernel.TransferDemand</code>); <code>kvtransfer.LinkArbiter</code> divides every link max-min fairly (progressive filling) among the undrained handoffs on it, re-dividing whenever one starts, drains or finishes. The floor is per handoff and never shared: a handoff completes at the later of start + floor and the tick its last byte drains. Laws: (1) a handoff alone completes at exactly its demand's <code>AloneTime</code> in ticks, rounded up (<code>cluster.AloneTicks</code>; the schemas law <code>PDTransferTime == PDTransferDemand.AloneTime()</code> holds the kernel to it, and <code>TestTransferEnvironment_APullIsTheRetiredHandoffDemand</code> checks the host's demand against it); (2) no link carries more than its rate, and every undrained handoff has a saturated bottleneck link on which none is faster (max-min fairness); (3) handoffs on links nobody else uses finish exactly as alone; (4) doubling every link's rate never delays a handoff; (5) on one shared link set (every 1P1D handoff), no handoff is faster than alone and one more handoff never makes another finish earlier; (6) INV-PD-3 and INV-1 hold, at any horizon; (7) deterministic (INV-6), and run → replay byte-identical (INV-13). Max-min fairness is not monotone across different link sets in general (more traffic on one link can speed a flow on another); <code>TestLinkArbiter_MaxMinIsNotMonotoneAcrossLinks</code> pins the counterexample so no law claims it. Off (the default), every handoff is priced as if alone, byte-identical to before.</p>
 <p><strong>Verification:</strong> blis-vllm <code>compat/kvtransfer/links_test.go</code> (laws 1-5, 7; rapid; <code>TestLinkArbiter_UnchangedRateKeepsItsAccounting</code> pins law 3's exactness by construction), <code>sim/cluster/pd_transfer_contention_test.go</code> (one-at-a-time identical, shared decode NIC doubles each, disjoint links identical, never faster than alone + INV-PD-3 + INV-1 at a horizon, refusals, wakes bounded by starts + finish ticks), <code>cmd/kernel_pd_fidelity_test.go</code> (CLI, run → replay).</p>
 <p><strong>Evidence:</strong> <code>scheduleTransferCompletion</code> starts the handoff in the arbiter; <code>PDLinkWakeEvent</code> completes finished handoffs through the same <code>KVTransferCompletedEvent</code> an uncontended one takes. The handoff's queueing delay is its duration minus <code>TransferAloneTicks</code>, reported per run (<code>pd.transfer_queue_delay_*</code>).</p>
 <p><strong>Coverage limit:</strong> the kernel's demand is one rank's pull at one rank's link rate, exact when the pools' TP widths match (blis-latency-kernel <code>pdTransferBytes</code>). NIXL's transfers do not share a LinkID with offload-tier I/O (the kernel prices those over the host link with <code>TierTime</code>), so handoffs and CPU-tier traffic do not contend.</p>
