@@ -86,8 +86,21 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   it for every value: `max_num_seqs` and `max_num_batched_tokens`, by `ResolveBatch` in
   `core/vllm/batchdefaults.go`, and `gpu_memory_utilization`, whose default 0.92 `resolveEngine`
   in `compat/kernelmodel/engine_settings.go` fills in for every release the engine models.
-  `gpu_memory_utilization` stays `not_modelled`: the KV budget it sizes is priced by the cost
-  model, and nothing here compares that budget with vLLM's own memory profiling (VLM-3). `block_size` is `none`: the engine resolves an unstated one only
+  `gpu_memory_utilization` is `modelled`, and its rule stays `leave_unset` for a run that did not record it.
+  vLLM takes `ceil(total memory x utilization)` as the memory it may use (`request_memory`,
+  `vllm/v1/worker/utils.py:716-726@5df63a72`), subtracts what the profile run finds is not KV cache (weights, non-torch
+  memory and the peak activation) and the CUDA graph estimate (`Worker.determine_available_memory`,
+  `vllm/v1/worker/gpu_worker.py:733-745`; `VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS` defaults on), and cuts the rest into
+  whole pages (`get_kv_cache_config_from_groups`, `vllm/v1/core/kv_cache_utils.py:1588`). `KVMemory`
+  (`compat/kernelmodel/capacity.go`) takes the same budget and subtracts the kernel's per-rank fixed occupancy
+  (weights, activation peak, CUDA graph, EPLB replicas and communication buffers), so a stated value moves the
+  pool by exactly the memory it adds. The evidence is `compat/build/memory_utilization_test.go` (0.95 gives more
+  blocks than 0.9, by that rule, and neither is the default's) and `compat/kernelmodel/capacity_test.go`. What the
+  evidence does not show: the fixed occupancy is the kernel's estimate, not vLLM's profile run, and on the one
+  recorded case (DeepSeek-V4.1-Flash, tp 8, utilization 0.80) the pool is 47.56 GiB against vLLM's logged
+  61.18 GiB (blis-vllm#73 tracks closing that). The field's value classes are one class, since no comparison of the
+  field with a literal is found in the source (the budget is arithmetic). `kv_cache_memory_bytes`, which overrides
+  the utilization in vLLM, is refused when stated (blis-vllm#81). `block_size` is `none`: the engine resolves an unstated one only
   for the models, GPUs and KV dtypes in `oracle/blocksize/TABLE.tsv` (`ResolveBlockSize` in
   `core/vllm/blocksize.go`) and refuses the rest, citing blis-vllm#68, and a field has one
   estimation rule, which cannot say that.
@@ -98,16 +111,16 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   not stand in for that. The v0.32.0 engine refuses a not-modelled key of the engine block that nothing reads when it is
   stated away from vLLM's default (`TestEveryNotModelledFieldIsRefusedOrExplained` walks fields.json
   and gives each refusal a partner that states the default and builds), naming the field and citing
-  its issue. The keys the latency kernel reads and prices at vLLM v0.31.0's policy (`blis-vllm#73`
+  its issue. The keys the latency kernel reads and prices at vLLM v0.31.0's policy (`blis-vllm#74`
   to `#80`, `#83`, `#8`) are the walk's allow-list.
 
   Those fields stay `not_modelled` in M2, and the list is the M3 scope: the kernel accepts and prices a stated value of
   each at its vLLM v0.31.0 policy, and updating that policy to v0.32.0's is M3 (blis-vllm#78 holds the date), four
-  fields at a time. `cudagraph_mode` and `cudagraph_capture_sizes` are the exception: they are `modelled`, with the
-  divergence disclosed in the engine's assumptions. A point that states one of the others is priced at the
+  fields at a time. `cudagraph_mode`, `cudagraph_capture_sizes` and `gpu_memory_utilization` are the exceptions: they are `modelled`, with the
+  divergence disclosed in the engine's assumptions (for `gpu_memory_utilization`, the fixed occupancy above). A point that states one of the others is priced at the
   kernel's v0.31.0 policy, and its substitution list should say so. The fields, with the kernel site that
   prices each: `all2all_backend` (`kernel.go:798`), `disable_custom_all_reduce` (`layout.go:208`),
-  `disable_cascade_attn` (`new.go:2868`), `gpu_memory_utilization` (`pipeline.go:573`), `mamba_cache_dtype`
+  `disable_cascade_attn` (`new.go:2868`), `mamba_cache_dtype`
   (`new.go:270`), `moe_backend` (`step_terms.go:393`), `enable_dbo` (`new.go:708`), `enable_eplb` and
   `eplb_config.num_redundant_experts` (`new.go:1353`), the three `engram_config` keys (`draft.go:432`),
   `dcp_comm_backend` (`new.go:550`), `dcp_q_replicate` (`new.go:533`), `cp_kv_cache_interleave_size`
@@ -141,7 +154,7 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
     (`compat/kernelmodel`): `y` prices a handoff between nodes of one NVLink rack over NVLink and names the unchecked VMM
     registration as an assumption; anything else prices it over the NIC and says so;
   - read by the latency kernel, which prices a stated value at vLLM v0.31.0's policy:
-    `gpu_memory_utilization` (#73) and `engram_config.cpu_offload` (#78), where `leave_unset` fills
+    `engram_config.cpu_offload` (#78), where `leave_unset` fills
     only a value the run did not record;
   The two CUDA-graph switches `cudagraph_decoder_replay` (decoder-replay graphs,
   blis-vllm#80) and `cudagraph_specialize_lora` (blis-vllm#78) are `not_modelled` with `none`.

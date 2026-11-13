@@ -38,6 +38,7 @@ package kernelmodel
 
 import (
 	"fmt"
+	"math"
 
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 )
@@ -59,7 +60,7 @@ type KVBudget struct {
 
 	// DeviceBytes is the chip's memory.
 	DeviceBytes int64
-	// BudgetBytes is DeviceBytes times the engine's gpu_memory_utilization.
+	// BudgetBytes is DeviceBytes times the engine's gpu_memory_utilization, rounded up to a byte.
 	BudgetBytes int64
 	// FixedBytes is the kernel's per-rank request-independent occupancy.
 	FixedBytes int64
@@ -210,7 +211,8 @@ func (m *Model) kvMemory(reservedBytes int64) (KVMemory, error) {
 	}
 
 	deviceBytes := int64(m.id.memoryGiB * float64(gibToBytes))
-	budget := int64(float64(deviceBytes) * util)
+	// vLLM requests ceil(total memory x utilization) bytes (request_memory, vllm/v1/worker/utils.py:724-726@5df63a72).
+	budget := int64(math.Ceil(float64(deviceBytes) * util))
 	fixed := m.k.FixedBytes().Total()
 
 	// A per-rank occupancy at or above the device's own memory leaves no KV at all, and no budget

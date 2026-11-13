@@ -168,6 +168,25 @@
    }
   ]
  },
+ "gpu_memory_utilization": {
+  "stated": [
+   {
+    "trace": "compat/build/memory_utilization_test.go",
+    "values": [
+     0.9,
+     0.95
+    ],
+    "why": "the test restates 0.9 and 0.95 on a scenario the way a scoring harness does, and finds the KV pool equal to vLLM's rule (ceil(total memory x utilization) less the non-KV memory, in whole pages), larger at 0.95 than at 0.9, and not the default's"
+   },
+   {
+    "trace": "compat/kernelmodel/capacity_test.go",
+    "values": [
+     0.8
+    ],
+    "why": "the logged-figure test states 0.8 on DeepSeek-V4.1-Flash at tp 8 and reproduces vLLM's per-request token capacity from vLLM's logged 61.18 GiB; the sweep test raises the value between 0.75 and 0.95 and finds the pool never smaller"
+   }
+  ]
+ },
  "kv_cache_dtype": {
   "stated": [
    {

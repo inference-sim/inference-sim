@@ -179,7 +179,6 @@ var pricedByTheKernel = map[string]string{
 	"mamba_cache_dtype":                 "mamba_cache_dtype: float32\n#83",
 	"moe_backend":                       "moe_backend: triton\n#75",
 	"kernel_config.moe_backend":         "moe_backend: triton\n#75",
-	"gpu_memory_utilization":            "gpu_memory_utilization: 0.8\n#73",
 	"enable_dbo":                        "enable_dbo: true\n#74",
 	"enable_eplb":                       "enable_eplb: true\n#108",
 	"eplb_config.num_redundant_experts": "enable_eplb: true\neplb_config: {num_redundant_experts: 8}\n#108",

@@ -7637,9 +7637,18 @@
     {
       "name": "gpu_memory_utilization",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#73"
+        "traces": [
+          "compat/build/memory_utilization_test.go",
+          "compat/kernelmodel/capacity_test.go"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
         "rule": "leave_unset"

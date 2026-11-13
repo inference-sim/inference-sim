@@ -2142,9 +2142,12 @@
     "rule": "leave_unset"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#73"
+    "traces": [
+     "compat/build/memory_utilization_test.go",
+     "compat/kernelmodel/capacity_test.go"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:grpc": {
    "estimation": {

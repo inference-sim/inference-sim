@@ -4356,6 +4356,58 @@
     "name": "enable_prefix_caching"
    }
   },
+  "gpu_memory_utilization": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0
+    ]
+   },
+   "basis": {
+    "kind": "numeric",
+    "numeric_type": "float",
+    "domain": {
+     "lo": 0,
+     "lo_closed": false,
+     "hi": 1,
+     "hi_closed": true
+    },
+    "classes": [
+     {
+      "lo": 0,
+      "hi": 1,
+      "lo_closed": false,
+      "hi_closed": true,
+      "compared_at": [],
+      "uncut": true,
+      "covered_by": [
+       "compat/build/memory_utilization_test.go",
+       "compat/kernelmodel/capacity_test.go"
+      ]
+     }
+    ],
+    "relations": [],
+    "sites": [],
+    "stated": [
+     {
+      "value": 0.9,
+      "trace": "compat/build/memory_utilization_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 0.95,
+      "trace": "compat/build/memory_utilization_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 0.8,
+      "trace": "compat/kernelmodel/capacity_test.go",
+      "reviewed": true
+     }
+    ],
+    "name": "gpu_memory_utilization"
+   }
+  },
   "kv_cache_dtype": {
    "value_classes": {
     "type": "enumerated",

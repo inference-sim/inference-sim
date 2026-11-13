@@ -459,3 +459,30 @@ func TestMuseSparkOnHopperRefusesDataAndPrefillContextParallelism(t *testing.T) 
 		}
 	}
 }
+
+// vLLM asks for ceil(total memory x utilization) bytes (request_memory,
+// vllm/v1/worker/utils.py:724-726 at v0.32.0), so a total whose product has a fractional byte is
+// rounded up, not truncated. 141 GiB at 0.9 is 136.2... GiB-bytes with a fractional byte (141 x 9 x
+// 2^30 is not a multiple of 10), written here in integers so the expectation does not share the
+// float expression the code uses.
+func TestMemoryBudgetRoundsUpAFractionalByteAsVLLMDoes(t *testing.T) {
+	in, err := latencykernel.OpenInputs("gpt-oss-120b-h200-fp4-vllm-tp4.yaml", repos(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	editPoolEngine(t, &in.Deployment.Pools[0], func(e *engineconfig.Engine) { e.GPUMemoryUtilization = 0.9 })
+	m, err := fromInputs(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mem, err := m.KVMemory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mem.DeviceBytes*9%10 == 0 {
+		t.Fatalf("device %d bytes x 0.9 is whole; the case no longer separates ceil from truncation", mem.DeviceBytes)
+	}
+	if want := (mem.DeviceBytes*9 + 9) / 10; mem.BudgetBytes != want {
+		t.Errorf("budget %d bytes, want ceil(%d x 0.9) = %d", mem.BudgetBytes, mem.DeviceBytes, want)
+	}
+}
