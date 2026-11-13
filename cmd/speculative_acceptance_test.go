@@ -79,7 +79,7 @@ func dsparkVariant(t *testing.T, k int, scenarioExtra string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := strings.Replace(string(data), "num_spec_tokens: 5", "num_spec_tokens: "+strconv.Itoa(k), 1)
+	text := strings.Replace(string(data), "num_speculative_tokens: 5", "num_speculative_tokens: "+strconv.Itoa(k), 1)
 	if scenarioExtra != "" {
 		text = strings.Replace(text, "\n---\n", "\n"+scenarioExtra+"\n---\n", 1)
 	}
@@ -286,7 +286,7 @@ func noSpeculationVariant(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := strings.Replace(string(data), "      speculative:\n        method: dspark\n        num_spec_tokens: 5\n", "", 1)
+	text := strings.Replace(string(data), "      speculative_config: {method: dspark, num_speculative_tokens: 5}\n", "", 1)
 	if text == string(data) {
 		t.Fatal("the scenario's speculative block was not found")
 	}

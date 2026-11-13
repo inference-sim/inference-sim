@@ -32,13 +32,11 @@ pools:
       enable_expert_parallel: false
     engine:
       block_size: 64
-      cache_dtype: fp8
+      kv_cache_dtype: fp8
       max_num_seqs: 1024
       max_num_batched_tokens: 8192
       max_model_len: 1048576
       gpu_memory_utilization: 0.8
       engram_config:
         cpu_offload: true
-      speculative:
-        method: dspark
-        num_spec_tokens: 5
+      speculative_config: {method: dspark, num_speculative_tokens: 5}

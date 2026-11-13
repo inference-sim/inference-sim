@@ -304,7 +304,7 @@ func TestCatalogStrictLoad_StrictRules(t *testing.T) {
 			name: "unknown key in storage-device table",
 			mutate: func(t *testing.T, root string) {
 				writeCatalogFile(t, catalogStorageDevicesPath(root),
-					validDeviceTable+"tape: {read_bandwidth_mb_s: 1.0, write_bandwidth_mb_s: 1.0, base_latency_us: 1.0, seek_latency: 9.0}\n")
+					validDeviceTable+"tape: {_comment: \"a class\", seek_latency: 9.0}\n")
 			},
 			wantFile:    catalogStorageDevicesRelPath,
 			wantPhrases: []string{"seek_latency"},

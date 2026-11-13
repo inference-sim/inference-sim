@@ -80,7 +80,7 @@ func newTestDisaggDeploymentConfig(numInstances, prefill, decode int) Deployment
 		d.NumInstances = numInstances
 		d.PrefillInstances = prefill
 		d.DecodeInstances = decode
-		d.PDTransferTime = testPDTransferTime
+		d.InstanceEndpoint = testInstanceEndpoint
 		return d
 	}()
 }
@@ -89,14 +89,14 @@ func newTestDisaggDeploymentConfig(numInstances, prefill, decode int) Deployment
 // formula of its own to fall back to, so a missing one must not surface mid-run (R1).
 func TestNewClusterSimulator_PDWithoutTransferPricer_Panics(t *testing.T) {
 	cfg := newTestDisaggDeploymentConfig(2, 1, 1)
-	cfg.PDTransferTime = nil
+	cfg.InstanceEndpoint = nil
 	defer func() {
 		r := recover()
 		if r == nil {
-			t.Fatal("expected a panic for a PD deployment with no PDTransferTime, got none")
+			t.Fatal("expected a panic for a PD deployment with no InstanceEndpoint, got none")
 		}
-		if msg, ok := r.(string); !ok || !strings.Contains(msg, "PDTransferTime") {
-			t.Errorf("panic must name the missing PDTransferTime; got %v", r)
+		if msg, ok := r.(string); !ok || !strings.Contains(msg, "InstanceEndpoint") {
+			t.Errorf("panic must name the missing InstanceEndpoint; got %v", r)
 		}
 	}()
 	newTestCluster(cfg, NewSliceRequestSource(nil), nil)
@@ -1830,21 +1830,27 @@ func TestDisaggregation_PD_SessionManager_ContextAccumulation(t *testing.T) {
 	}
 
 	// Context accumulation: round-1 input should include accumulated context from round-0.
-	// Round 0: input=50, actual output = PI - len(Input) = (50+20-1) - 50 = 19 tokens
-	// Accumulated context: 50 (round-0 input) + 19 (round-0 actual output) = 69
+	// Round 0: input=50, 20 output tokens emitted (the engine's token record; ProgressIndex
+	// stops at 50+20-1 and is not the count).
+	// Accumulated context: 50 (round-0 input) + 20 (round-0 output) = 70
 	// Round 1 new input: 50 (from constant sampler)
-	// Round 1 total input: 69 (context) + 50 (new) = 119
+	// Round 1 total input: 70 (context) + 50 (new) = 120
 	round1InputLen := len(round1Parent.OriginalRequest.InputTokens)
 	if round1InputLen <= round0InputLen {
 		t.Errorf("round-1 InputTokens length = %d, want > %d (context should have accumulated)",
 			round1InputLen, round0InputLen)
 	}
 
-	// Verify the exact accumulated length: context(69) + new_input(50) = 119
-	wantRound1InputLen := (round0InputLen + (round0OutputLen - 1)) + 50 // context + new_input
+	// Verify the exact accumulated length: context(70) + new_input(50) = 120
+	wantRound1InputLen := (round0InputLen + round0OutputLen) + 50 // context + new_input
 	if round1InputLen != wantRound1InputLen {
 		t.Errorf("round-1 InputTokens length = %d, want %d (context=%d + new_input=50)",
-			round1InputLen, wantRound1InputLen, round0InputLen+(round0OutputLen-1))
+			round1InputLen, wantRound1InputLen, round0InputLen+round0OutputLen)
+	}
+
+	// INV-11: both rounds ran, so the session settled in exactly one terminal state.
+	if st := sm.States(); st.Total != 1 || st.Active != 0 || st.Completed != 1 {
+		t.Errorf("session states = %+v, want the one session completed", st)
 	}
 
 	// All parents should have completed
@@ -2043,5 +2049,49 @@ func TestDisaggregation_FollowUpWaitsForTheReportedCompletion(t *testing.T) {
 		if float64(tick) < done {
 			t.Errorf("%s: next round released at %d, before the reported completion %.0f", id, tick, done)
 		}
+	}
+}
+
+// The per-model and per-tenant token totals sum the tokens each request emitted, and a P/D
+// request's parent entry carries its decode sub-request's count (WithCompletionOf). The engines'
+// window is 60 tokens: a request of 50 input tokens and 40 sampled output tokens is length-capped
+// at 10 tokens (11 counting the one prefill charges). A total taken from the sampled length would
+// be 40 a request, and a parent entry that did not copy the count would be zero.
+func TestDisaggregation_TokenTotalsAreTheTokensEmittedOnTheParentEntry(t *testing.T) {
+	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
+	editEngine(&cfg, func(c *simConfig) {
+		c.ModelHardwareConfig = cengine.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 60)
+	})
+	reqs := make([]*sim.Request, 6)
+	for i := range reqs {
+		reqs[i] = &sim.Request{
+			ID: fmt.Sprintf("tok_%d", i), ArrivalTime: int64(i * 1000), TenantID: "t",
+			InputTokens:  make([]sim.TokenID, 50),
+			OutputTokens: sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(3)), 40),
+			State:        sim.StateQueued,
+		}
+	}
+	cs := newTestCluster(cfg, NewSliceRequestSource(reqs), nil)
+	mustRun(t, cs)
+	m := cs.AggregatedMetrics()
+	done, total := 0, 0
+	for _, p := range cs.ParentRequests() {
+		d := p.DecodeSubReq
+		if d == nil || !d.LengthCapped {
+			continue
+		}
+		done++
+		got := m.Requests[p.ID].NumDecodeTokens
+		total += got
+		if got != d.GeneratedTokens || got == 0 || got >= 40 {
+			t.Errorf("%s: parent entry NumDecodeTokens = %d, the decode engine emitted %d; want the emitted count, below the 40 sampled",
+				p.ID, got, d.GeneratedTokens)
+		}
+	}
+	if done != len(reqs) {
+		t.Fatalf("%d of %d requests were length-capped; the test does not exercise the capped path", done, len(reqs))
+	}
+	if got := ComputePerTenantMetrics(m)["t"].TotalTokensServed; got != total {
+		t.Errorf("per-tenant tokens served = %d, want %d, the sum of the emitted counts", got, total)
 	}
 }

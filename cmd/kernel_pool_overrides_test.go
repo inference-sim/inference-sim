@@ -18,10 +18,10 @@ func TestKernelPools_Overrides_AreEachPoolsOwnEngine(t *testing.T) {
 	dir := writeScenarioVariant(t,
 		"      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n",
 		"      max_num_batched_tokens: 16384\n      max_num_seqs: 128\n",
-		"      cache_dtype: fp8\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer",
+		"      kv_cache_dtype: fp8\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      gpu_memory_utilization: 0.9\n      compilation_config: {cudagraph_mode: PIECEWISE}\n\npd_transfer",
 		// The pools must cache in one format (a handoff moves KV between them), so the
 		// decode pool's KV budget differs through its memory utilisation instead.
-		"      cache_dtype: fp8\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.8\n\npd_transfer")
+		"      kv_cache_dtype: fp8\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      gpu_memory_utilization: 0.8\n      compilation_config: {cudagraph_mode: PIECEWISE}\n\npd_transfer")
 	saved := []any{kernelScenario, kernelScenarioDir, registryPath, kernelOpened,
 		prefillInstances, decodeInstances, loraReservedBytesForKV, numInstances}
 	defer func() {

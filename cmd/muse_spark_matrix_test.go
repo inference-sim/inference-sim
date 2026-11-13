@@ -48,8 +48,15 @@ func TestMuseSparkRunsOnEveryLayoutAndCluster(t *testing.T) {
 		t.Fatalf("found %d Muse scenarios (%v); the matrix is 40", len(files), err)
 	}
 	sort.Strings(files)
+	// vLLM refuses Muse-Spark on Hopper with data parallelism above one (its MoE layers take the
+	// Marlin path, which requires DP1 and PCP1), and the engine refuses the same, naming vLLM's
+	// message (blis-vllm#94, SIM-9). The dspark scenario was refused for its window before; the
+	// start-up refusal now comes first.
+	const hopperDP = "requires data parallelism 1 and prefill-context parallelism 1"
 	refused := map[string]string{
-		"muse-h200-ib-dep8-dspark.yaml": "To serve at least one request with the model's max seq len (262144)",
+		"muse-h200-ib-dep8-dspark.yaml":      hopperDP,
+		"muse-h200-ib-dep8-dspark-128k.yaml": hopperDP,
+		"muse-h200-ib-dep8.yaml":             hopperDP,
 	}
 	run := func(name string) (map[string]float64, string, error) {
 		args := []string{"run", "--scenarios", dir, "--scenario", name, "--catalog", catalog,

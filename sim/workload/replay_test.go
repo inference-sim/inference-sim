@@ -619,9 +619,10 @@ func TestAccumulateReplay_StrictPrefixIdentity(t *testing.T) {
 		t.Fatalf("round0 input len = %d, want 100", round0.InputLen())
 	}
 	// Simulate round 0 completing: mark completed with full output generated so
-	// ProgressIndex - InputLen == actual output (accumulate uses actual output).
+	// GeneratedTokens is the actual output (accumulate uses the tokens emitted).
 	round0.State = sim.StateCompleted
-	round0.ProgressIndex = int64(round0.InputLen()) + 10 // 10 output tokens generated
+	round0.ProgressIndex = int64(round0.InputLen()) + 9 // the engine's convention: the first output token is charged to prefill
+	round0.GeneratedTokens = 10                         // 10 output tokens emitted
 
 	// Capture round 0's input token IDs before follow-up assembly.
 	prefix := append([]sim.TokenID{}, round0.FullInputTokens()...)
@@ -786,14 +787,14 @@ func TestAccumulateReplay_TransitivityAndLengthCap(t *testing.T) {
 	t.Run("full-output transitivity", func(t *testing.T) {
 		round0, sm := mk()
 		round0.State = sim.StateCompleted
-		round0.ProgressIndex = int64(round0.InputLen()) + 10 // full 10 output tokens
+		round0.GeneratedTokens = 10 // full 10 output tokens
 		round1 := next(sm, round0, 1_000_000)
 		if round1.InputLen() != 150 { // 100 + 10 output + 40 delta
 			t.Fatalf("round1 len = %d, want 150", round1.InputLen())
 		}
 		round1In := append([]sim.TokenID{}, round1.FullInputTokens()...)
 		round1.State = sim.StateCompleted
-		round1.ProgressIndex = int64(round1.InputLen()) + 20
+		round1.GeneratedTokens = 20
 		round2 := next(sm, round1, 2_000_000)
 		if round2.InputLen() != 195 { // 150 + 20 output + 25 delta
 			t.Fatalf("round2 len = %d, want 195", round2.InputLen())
@@ -809,7 +810,7 @@ func TestAccumulateReplay_TransitivityAndLengthCap(t *testing.T) {
 	t.Run("length-capped output", func(t *testing.T) {
 		round0, sm := mk()
 		round0.State = sim.StateCompleted
-		round0.ProgressIndex = int64(round0.InputLen()) + 5 // only 5 of the 10 output tokens generated
+		round0.GeneratedTokens = 5 // only 5 of the 10 output tokens emitted
 		round1 := next(sm, round0, 1_000_000)
 		// Appended segment tracks ACTUAL output, not the recorded count: 100 + 5 + 40 = 145.
 		if round1.InputLen() != 145 {
@@ -847,7 +848,7 @@ func TestAccumulateReplay_CompactionResetsBuffer(t *testing.T) {
 
 	next := func(req *sim.Request, tick int64) *sim.Request {
 		req.State = sim.StateCompleted
-		req.ProgressIndex = int64(req.InputLen()) + int64(len(req.OutputTokens)) // full output generated
+		req.GeneratedTokens = len(req.OutputTokens) // full output emitted
 		fu := sm.OnComplete(req, tick)
 		if len(fu) != 1 {
 			t.Fatalf("expected 1 follow-up, got %d", len(fu))
@@ -921,7 +922,7 @@ func TestAccumulateReplay_ZeroReset_EmptyBuffer(t *testing.T) {
 	sm := NewSessionManager(bps)
 	next := func(req *sim.Request, tick int64) *sim.Request {
 		req.State = sim.StateCompleted
-		req.ProgressIndex = int64(req.InputLen()) + int64(len(req.OutputTokens))
+		req.GeneratedTokens = len(req.OutputTokens)
 		fu := sm.OnComplete(req, tick)
 		if len(fu) != 1 {
 			t.Fatalf("expected 1 follow-up, got %d", len(fu))
@@ -964,7 +965,7 @@ func TestAccumulateReplay_ConsecutiveCompactions(t *testing.T) {
 	sm := NewSessionManager(bps)
 	next := func(req *sim.Request, tick int64) *sim.Request {
 		req.State = sim.StateCompleted
-		req.ProgressIndex = int64(req.InputLen()) + int64(len(req.OutputTokens))
+		req.GeneratedTokens = len(req.OutputTokens)
 		fu := sm.OnComplete(req, tick)
 		if len(fu) != 1 {
 			t.Fatalf("expected 1 follow-up, got %d", len(fu))
@@ -1100,7 +1101,7 @@ func TestReplay2064_ClosedLoopFollowUp_NoDeadline_Integration(t *testing.T) {
 	// must get no deadline at all.
 	req0 := r0Requests[0]
 	req0.State = sim.StateCompleted
-	req0.ProgressIndex = req0.InputLen() + int64(len(req0.OutputTokens))
+	req0.GeneratedTokens = len(req0.OutputTokens)
 	follow := sm.OnComplete(req0, 576_000_000) // round 0 finished at 576s
 	if len(follow) != 1 {
 		t.Fatalf("expected 1 follow-up round, got %d", len(follow))

@@ -49,7 +49,7 @@ pools:
       dp: 1
       enable_expert_parallel: false
     engine:
-      cache_dtype: fp8
+      kv_cache_dtype: fp8
       # A hybrid stack's recurrent state. The report does not state the mode. "none" sizes
       # state per sequence rather than per position; it is the config default, but the
       # engine runs "align" for a hybrid model whenever prefix caching is on
@@ -60,8 +60,6 @@ pools:
       max_num_batched_tokens: 8192
       max_num_seqs: 256
       max_model_len: 131072
-      cudagraph_mode: PIECEWISE
       gpu_memory_utilization: 0.9
-      speculative:
-        method: mtp
-        num_spec_tokens: 1
+      speculative_config: {method: mtp, num_speculative_tokens: 1}
+      compilation_config: {cudagraph_mode: PIECEWISE}

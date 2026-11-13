@@ -101,7 +101,7 @@ sim/
 ├── request.go               # + Adapter string field (R4: audit all construction sites)
 ├── simulator.go             # + LoRAConfig sub-config on SimConfig; pre-admission gate hook near FormBatch/step
 ├── latency_model.go         # StepTime contract extended (adapter compute-overhead delta); model construction gains an adapter-cost accessor for id→rank (T030a)
-├── routing.go               # RoutingSnapshot + resident-adapter-set field
+├── instance_status.go       # InstanceStatus (formerly RoutingSnapshot) + resident-adapter-set field
 ├── routing_scorers.go       # + "lora-affinity" scorerFunc + validScorerNames entry (R8)
 ├── lora/                     # NEW subpackage: registry, resident-set (LRU), cost model, load-gate state
 │   └── (registers into sim/ via init() — no reverse import)

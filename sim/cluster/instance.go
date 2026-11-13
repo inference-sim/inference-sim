@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+
 	"github.com/inference-sim/inference-sim/sim"
 )
 
@@ -42,7 +45,7 @@ type InstanceSimulator struct {
 	gpu              string            // GPU type used for this instance (set from pool gpu_type, or config.GPU)
 
 	// Phase 1C: hardware variant fields (set at placement time in cluster.go).
-	// Read by buildRouterState() into RoutingSnapshot for the autoscaler Collector.
+	// Read by buildClusterState() into InstanceStatus for the autoscaler Collector.
 	// GPUType is available via inst.GPU(); TPDegree and CostPerHour are autoscaler-specific.
 	TPDegree    int     // tensor-parallel degree; 0 = unplaced/unknown
 	CostPerHour float64 // $/hr from NodePool.CostPerHour; 0 = unplaced/free tier
@@ -282,7 +285,7 @@ func (i *InstanceSimulator) LatencyStats() InstanceLatencyStats {
 	}
 	sort.Strings(reqIDs)
 	// TTFT is derived from the same per-request samples (DEV-9): each completed request's
-	// entry in RequestTTFTs, which has no separate accumulator to drift from it (#1628).
+	// entry in RequestTTFTs, which has no separate accumulator to drift from it (#2093 states P/D preemption as a machine state).
 	var itlSum, ttftSum float64
 	for _, id := range reqIDs {
 		itlSum += m.RequestITLs[id]
@@ -476,15 +479,17 @@ func (i *InstanceSimulator) EvictRequest(req *sim.Request, now int64) bool {
 }
 
 // AddRemote hands the instance's engine a decode sub-request whose transfer may start, at now
-// (sim.EngineDriver.AddRemote): the engine holds it and starts its pull by its own admission rule.
-func (i *InstanceSimulator) AddRemote(req *sim.Request, now int64) {
-	i.drv.AddRemote(req, now)
+// (sim.EngineDriver.AddRemote): the engine holds it and starts its pull by its own admission
+// rule, from the prefill instance at peer.
+func (i *InstanceSimulator) AddRemote(req *sim.Request, peer plan.Endpoint, now int64) {
+	i.drv.AddRemote(req, peer, now)
 }
 
-// setPullStarted installs the cluster's pricing of a pull the instance's engine starts.
-func (i *InstanceSimulator) setPullStarted(f func(req *sim.Request, pulledTokens, at int64)) {
+// setPullPriced installs the cluster's handling of a pull the instance's engine starts, which the
+// driver has already priced.
+func (i *InstanceSimulator) setPullPriced(f func(req *sim.Request, pulledTokens, blocks int64, demand kernel.TransferDemand, at int64)) {
 	if i.drv != nil {
-		i.drv.OnPullStarted = f
+		i.drv.OnPullPriced = f
 	}
 }
 

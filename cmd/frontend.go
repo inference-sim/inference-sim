@@ -14,8 +14,8 @@ var (
 
 func registerFrontendFlags(cmd *cobra.Command) {
 	cmd.Flags().IntVar(&rendererNumWorkers, "renderer-num-workers", 1, "Render threads per API server (vLLM renderer_num_workers, default 1). "+
-		"Each request's admission overhead (chat template + tokenize, priced by the kernel) runs on one, in arrival order, "+
-		"so requests queue for it; 0 makes the overhead an uncontended per-request delay")
+		"Each request holds one for its per-token admission time (chat template + tokenize, priced by the kernel), in arrival order, "+
+		"so requests queue for it; 0 makes the whole admission time an uncontended delay")
 	cmd.Flags().IntVar(&apiServerCount, "api-server-count", 0, "API servers per endpoint (vLLM --api-server-count). 0 = vLLM's default: "+
 		"the data-parallel size behind an internal- or hybrid-balancer replica, else 1 (one per rank under external balancing)")
 }

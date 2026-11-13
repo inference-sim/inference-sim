@@ -21,7 +21,7 @@ func TestGateway_TopologyStampSelectedPrefiller(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dep := testDeployment(2)
 			dep.PrefillInstances, dep.DecodeInstances = 1, 1
-			dep.PDTransferTime = func(int64, cluster.InstanceID, cluster.InstanceID) int64 { return 50 }
+			setPDPrice(&dep, func(tokens int64) int64 { return 50 })
 			dep.ScenarioEndpointTopology = cluster.StaticEndpointTopology(map[cluster.InstanceID]cluster.EndpointTopology{
 				"instance_0": {Hostname: "prefill-a", Rack: "rack-a", NodeCount: 1},
 				"instance_1": {Hostname: "decode-b", Rack: "rack-b", NodeCount: 1},

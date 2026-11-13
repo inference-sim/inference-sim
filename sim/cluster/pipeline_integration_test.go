@@ -86,9 +86,9 @@ func TestPipelineCollectorAnalyzerIntegration(t *testing.T) {
 		MinReplicas:       1,
 	})
 
-	// Simulate a RouterState with two models
-	state := &sim.RouterState{
-		Snapshots: []sim.RoutingSnapshot{
+	// Simulate a ClusterState with two models
+	state := &sim.ClusterState{
+		Snapshots: []sim.InstanceStatus{
 			{
 				ID: "i1", Model: "modelA", GPUType: "A100", TPDegree: 1,
 				KVUtilization: 0.9, QueueDepth: 10, InFlightRequests: 5,

@@ -91,6 +91,43 @@ type SessionManager struct {
 	budgetEnabled  bool  // true once SetFollowUpBudget has been called
 }
 
+// SessionStates is the number of sessions in each state (INV-11).
+type SessionStates struct {
+	Total              int
+	Active             int // sessions that have not reached a terminal state
+	Completed          int
+	Cancelled          int
+	HorizonInterrupted int
+	BudgetExhausted    int
+}
+
+// Terminal is the number of sessions in a terminal state.
+func (s SessionStates) Terminal() int {
+	return s.Completed + s.Cancelled + s.HorizonInterrupted + s.BudgetExhausted
+}
+
+// States tallies the sessions by state. INV-11: when a run has ended and every session's rounds
+// have been settled, Active is zero and Total equals Terminal().
+func (sm *SessionManager) States() SessionStates {
+	var s SessionStates
+	for _, sess := range sm.sessions {
+		s.Total++
+		switch sess.state {
+		case sessionActive:
+			s.Active++
+		case sessionCompleted:
+			s.Completed++
+		case sessionCancelled:
+			s.Cancelled++
+		case sessionHorizonInterrupted:
+			s.HorizonInterrupted++
+		case sessionBudgetExhausted:
+			s.BudgetExhausted++
+		}
+	}
+	return s
+}
+
 // NewSessionManager creates a SessionManager from pre-generated session blueprints.
 // Panics if any blueprint has MaxRounds < 1.
 func NewSessionManager(blueprints []SessionBlueprint) *SessionManager {
@@ -225,17 +262,12 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 	newInputTokens := tokens(rs, purposeInputTokens, inputLen)
 	outputTokens := tokens(rs, purposeOutputTokens, outputLen)
 
-	// Context accumulation (BC-8): use ACTUAL generated output, not oracle OutputTokens.
-	// For length-capped requests, ProgressIndex - len(InputTokens) gives actual output count.
-	// A negative value is unreachable in normal flow (ProgressIndex always >= InputLen
-	// once prefill completes) but worth logging if it ever happens — it would indicate
-	// upstream accounting drift.
-	rawOutputLen := int(req.ProgressIndex) - int(req.InputLen())
-	if rawOutputLen < 0 {
-		logrus.Errorf("SessionManager.OnComplete: session %s round %d ProgressIndex=%d < InputLen=%d — clamping actualOutputLen to 0; upstream accounting drift",
-			req.SessionID, req.RoundIndex, req.ProgressIndex, req.InputLen())
-	}
-	actualOutputLen := max(rawOutputLen, 0)
+	// Context accumulation (BC-8): the context grows by the tokens the round emitted, which is the
+	// engine's token record (SIM-12), not a count recomputed from ProgressIndex. ProgressIndex
+	// stops one short of the prompt plus the output, because the first output token is charged to
+	// prefill completion, so InputLen subtracted from it was one token short for every round.
+	// A length-capped request emitted fewer tokens than the oracle slice holds.
+	actualOutputLen := max(req.GeneratedTokens, 0)
 
 	var inputTokens []sim.TokenID
 	if bp.ContextGrowth == "accumulate" {
@@ -309,19 +341,19 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 				outTokens := req.OutputTokens
 				switch {
 				case actualOutputLen > len(outTokens):
-					// Over-cap defense: ProgressIndex accounting should never produce
+					// Over-cap defense: The token record should never produce
 					// an actualOutputLen exceeding the oracle output length. If it
 					// does, cancel the session — the upstream computation has
 					// drifted and continuing would propagate the corruption to every
 					// subsequent round. Better to terminate one session loudly than
 					// silently corrupt many.
-					logrus.Errorf("SessionManager.OnComplete: session %s round %d actualOutputLen=%d > len(OutputTokens)=%d — cancelling session to contain corruption (ProgressIndex accounting drift)",
+					logrus.Errorf("SessionManager.OnComplete: session %s round %d actualOutputLen=%d > len(OutputTokens)=%d — cancelling session to contain corruption (token record drift)",
 						req.SessionID, req.RoundIndex, actualOutputLen, len(outTokens))
 					sess.state = sessionCancelled
 					return nil
 				case actualOutputLen < len(outTokens):
 					outTokens = outTokens[:actualOutputLen]
-					logrus.Debugf("SessionManager.OnComplete: session %s round %d length-capped — accumulating %d/%d output tokens",
+					logrus.Debugf("SessionManager.OnComplete: session %s round %d accumulating %d of %d oracle output tokens",
 						req.SessionID, req.RoundIndex, actualOutputLen, len(req.OutputTokens))
 				}
 				sess.buf.Append(outTokens)

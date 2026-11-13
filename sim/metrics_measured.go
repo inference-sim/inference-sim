@@ -32,12 +32,15 @@ type InFlightSample struct {
 	Count int
 }
 
-// StepOwner attributes the next Steps entries of Metrics.AllITLs to one completed request:
-// its phase and completion time, which decide whether its steps are in step_interval_*.
+// StepOwner attributes the next Steps entries of Metrics.AllITLs, and the next ClientGaps entries
+// of Metrics.ClientGaps, to one completed request: its phase and completion time, which decide
+// whether its entries are in step_interval_* and itl_*.
 type StepOwner struct {
 	CompletionUs int64
 	Steps        int
-	Phase        Phase
+	// ClientGaps is how many entries of Metrics.ClientGaps the request holds.
+	ClientGaps int
+	Phase      Phase
 }
 
 // The values of measured_window_source.
@@ -83,6 +86,9 @@ type MeasuredMetrics struct {
 	// Σ OSL / measured window (aiperf output_token_throughput_metrics.py:40-42), and where
 	// the window came from (WindowSourceExplicit or WindowSourceDerived; see MeasuredWindow).
 	OutputThroughputTokS float64 `json:"output_throughput_tok_s"`
+	// InputThroughputTokS is Σ prompt tokens of the same requests / the same window, the input
+	// half of InferenceX's total-token throughput.
+	InputThroughputTokS  float64 `json:"input_throughput_tok_s"`
 	MeasuredWindowS      float64 `json:"measured_window_s"`
 	MeasuredWindowSource string  `json:"measured_window_source"`
 
@@ -122,6 +128,10 @@ type measuredLatencies struct {
 	itlCount, perUserCount int
 	// stepCount is the number of step intervals behind the step-interval series.
 	stepCount int
+	// The client-observed inter-token latency series (Request.ClientTokenGaps): its mean, its
+	// percentiles and the number of gaps behind them.
+	clientITLMean, clientITLP50, clientITLP90, clientITLP95, clientITLP99 float64
+	clientITLCount                                                        int
 	// startUs and endUs bound the window the aggregates were computed over (0, 0 when it
 	// is empty).
 	startUs, endUs int64
@@ -151,6 +161,11 @@ type MeasuredSummary struct {
 	RequestITLCount, PerUserCount int
 	// StepIntervalCount is the number of step intervals behind the step-interval figures.
 	StepIntervalCount int
+	// The client-observed inter-token latency (the registry's itl): one gap between each two
+	// consecutive output tokens of a measured request completing in the window, tokens of one
+	// chunk sharing its arrival, and the number of gaps.
+	ClientITLMeanMs, ClientITLP50Ms, ClientITLP90Ms, ClientITLP95Ms, ClientITLP99Ms float64
+	ClientITLCount                                                                  int
 	// WindowStartUs and WindowEndUs bound the window; both 0 when it is empty.
 	WindowStartUs, WindowEndUs int64
 }
@@ -191,6 +206,8 @@ func summaryOf(out MeasuredMetrics, lat measuredLatencies) MeasuredSummary {
 		CacheHitRate:      lat.cacheHitRate,
 		StepIntervalP50Ms: lat.stepP50, StepIntervalP95Ms: lat.stepP95,
 		RequestITLCount: lat.itlCount, PerUserCount: lat.perUserCount, StepIntervalCount: lat.stepCount,
+		ClientITLMeanMs: lat.clientITLMean, ClientITLP50Ms: lat.clientITLP50, ClientITLP90Ms: lat.clientITLP90,
+		ClientITLP95Ms: lat.clientITLP95, ClientITLP99Ms: lat.clientITLP99, ClientITLCount: lat.clientITLCount,
 		WindowStartUs: lat.startUs, WindowEndUs: lat.endUs,
 	}
 }
@@ -236,7 +253,7 @@ func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 	// perUser is summed in sorted order below, as every other mean is, so the aggregate is a
 	// function of the request set and not of the IDs it is iterated in (INV-13).
 	var ttfts, e2es, itls, gateway, perUser []float64
-	var outputTokens int64
+	var outputTokens, inputTokens int64
 	for _, id := range sortedRequestIDs(m.Requests) {
 		rm := m.Requests[id]
 		if !rm.Phase.Measured() {
@@ -266,6 +283,7 @@ func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 		e2es = append(e2es, latency)
 		gateway = append(gateway, rm.GatewayQueueDelay*1e3) // ms -> ticks, as the helpers expect
 		outputTokens += int64(rm.OutputTokens)
+		inputTokens += int64(rm.NumPrefillTokens)
 		if m.MeasuredWindow == nil {
 			startUs = min(startUs, completionUs-int64(e2e))
 		}
@@ -322,6 +340,13 @@ func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 	out.StepIntervalP90Ms = CalculatePercentile(steps, 90)
 	out.StepIntervalP99Ms = CalculatePercentile(steps, 99)
 	lat.stepCount = len(steps)
+	client := measuredClientGaps(m.ClientGaps, m.StepOwners, inWindow)
+	lat.clientITLMean = CalculateMean(client)
+	lat.clientITLP50 = CalculatePercentile(client, 50)
+	lat.clientITLP90 = CalculatePercentile(client, 90)
+	lat.clientITLP95 = CalculatePercentile(client, 95)
+	lat.clientITLP99 = CalculatePercentile(client, 99)
+	lat.clientITLCount = len(client)
 	lat.stepP50 = CalculatePercentile(steps, 50)
 	lat.stepP95 = CalculatePercentile(steps, 95)
 
@@ -332,6 +357,7 @@ func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 		lat.startUs, lat.endUs = startUs, endUs
 		out.MeasuredWindowS = float64(endUs-startUs) / 1e6
 		out.OutputThroughputTokS = float64(outputTokens) / out.MeasuredWindowS
+		out.InputThroughputTokS = float64(inputTokens) / out.MeasuredWindowS
 		out.InFlightRequestsMean, out.InFlightRequestsMax = inFlightOver(m.InFlightSamples, startUs, endUs)
 	}
 
@@ -362,6 +388,21 @@ func measuredStepIntervals(all []int64, owners []StepOwner, inWindow func(int64)
 			out = append(out, all[at:at+o.Steps]...)
 		}
 		at += o.Steps
+	}
+	slices.Sort(out)
+	return out
+}
+
+// measuredClientGaps is measuredStepIntervals for Metrics.ClientGaps: the gaps of the measured
+// requests whose completion is in the window, sorted.
+func measuredClientGaps(all []int64, owners []StepOwner, inWindow func(int64) bool) []int64 {
+	var out []int64
+	at := 0
+	for _, o := range owners {
+		if o.Phase.Measured() && inWindow(o.CompletionUs) {
+			out = append(out, all[at:at+o.ClientGaps]...)
+		}
+		at += o.ClientGaps
 	}
 	slices.Sort(out)
 	return out

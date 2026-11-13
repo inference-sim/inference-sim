@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/contracts/metrics"
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 )
 
@@ -12,7 +13,7 @@ import (
 // rule follows from them: a horizon leaves requests unfinished, exhaustion runs every request to
 // its end.
 func TestResultFrame_StopRuleFromCapAndHorizon(t *testing.T) {
-	r := &result.Result{Metrics: map[string]result.Figure{"ttft_mean_ms": {}, "e2e_mean_ms": {}},
+	r := &result.Result{Metrics: map[string]result.Figure{"ttft_mean_ms": {Scope: metrics.ScopeCluster}, "e2e_mean_ms": {Scope: metrics.ScopeCluster}},
 		Requests: result.Requests{Generated: 20, Completed: 13, QueuedAtHorizon: 6, InFlightAtHorizon: 1}}
 	rules := windowRules{result.StartFirstArrivalAfterWarmup, result.StopLastCompletion}
 	for _, tc := range []struct {

@@ -31,7 +31,7 @@ func TestGateway_DeclaredZoneAndRegionChangeDecodeChoice(t *testing.T) {
 		t.Run(tc.level+"/"+tc.policy+"/"+string(tc.matchingID), func(t *testing.T) {
 			dep := testDeployment(3)
 			dep.PrefillInstances, dep.DecodeInstances = 1, 2
-			dep.PDTransferTime = func(int64, cluster.InstanceID, cluster.InstanceID) int64 { return 50 }
+			setPDPrice(&dep, func(tokens int64) int64 { return 50 })
 			dep.ScenarioEndpointTopology = cluster.StaticEndpointTopology(map[cluster.InstanceID]cluster.EndpointTopology{
 				"instance_0": {Hostname: "blis-node-0", Rack: "blis-rack-0", NodeCount: 1},
 				"instance_1": {Hostname: "blis-node-1", Rack: "blis-rack-1", NodeCount: 1},

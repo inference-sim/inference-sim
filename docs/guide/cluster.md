@@ -62,8 +62,8 @@ is refused.
 **Prefill/decode disaggregation.** A scenario with `prefill` and `decode` pools runs one kernel per
 pool. Choose the topology with `--prefill-instances` and `--decode-instances` (whose sum must not exceed `--num-instances`);
 each must not exceed its pool's rank capacity, `nodes × gpus_per_node / (pp × tp × pcp)`. The KV
-handoff is priced by the kernel's `PDTransferTime` over the scenario's fabric between the two
-instances' placements.
+handoff is priced by the cost model from the move the decode engine states, over the scenario's
+fabric between the two instances' placements ([how a transfer is priced](latency-models.md#how-a-transfer-is-priced)).
 
 Which requests are disaggregated is the router's decision: give it an EndpointPickerConfig with
 the `disagg-profile-handler`, a P/D decider (`always-disagg-pd-decider` or

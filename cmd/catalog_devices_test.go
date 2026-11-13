@@ -60,10 +60,10 @@ func TestResolveKVOffloadDevices_ReadsCatalogLocatedByFlagAndEnv(t *testing.T) {
 	origFlag := catalogPath
 	t.Cleanup(func() { catalogPath = origFlag })
 
-	flagCatalog := writeCatalogStorageDevices(t,
-		"nvme_gen4: {read_bandwidth_mb_s: 1.0, write_bandwidth_mb_s: 2.0, base_latency_us: 3.0}\n")
-	envCatalog := writeCatalogStorageDevices(t,
-		"nvme_gen4: {read_bandwidth_mb_s: 9.0, write_bandwidth_mb_s: 8.0, base_latency_us: 7.0}\n")
+	// Each catalog defines one class, so which catalog was read shows in the classes resolved.
+	flagCatalog := writeCatalogStorageDevices(t, "nvme_gen4: {_comment: \"the --catalog class\"}\n")
+	envCatalog := writeCatalogStorageDevices(t, "sata_ssd: {_comment: \"the environment's class\"}\n")
+	has := func(devices map[string]build.KVOffloadDevice, class string) bool { _, ok := devices[class]; return ok }
 
 	// Env only.
 	catalogPath = ""
@@ -72,8 +72,8 @@ func TestResolveKVOffloadDevices_ReadsCatalogLocatedByFlagAndEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("env-only: %v", err)
 	}
-	if devices["nvme_gen4"].ReadBandwidth != 9.0 {
-		t.Errorf("env-only: read the wrong catalog: %+v", devices["nvme_gen4"])
+	if !has(devices, "sata_ssd") || has(devices, "nvme_gen4") {
+		t.Errorf("env-only: read the wrong catalog: %v", devices)
 	}
 
 	// Flag wins over env (same precedence law as the model config).
@@ -82,19 +82,20 @@ func TestResolveKVOffloadDevices_ReadsCatalogLocatedByFlagAndEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("flag+env: %v", err)
 	}
-	if devices["nvme_gen4"].ReadBandwidth != 1.0 {
-		t.Errorf("flag+env: --catalog must win, got %+v", devices["nvme_gen4"])
+	if !has(devices, "nvme_gen4") || has(devices, "sata_ssd") {
+		t.Errorf("flag+env: --catalog must win, got %v", devices)
 	}
 
-	// Neither: the device class resolves from the embedded catalog's table (SIM-6).
+	// Neither: the device class resolves from the embedded catalog's table (SIM-6), which defines
+	// both classes.
 	catalogPath = ""
 	t.Setenv(catalogEnvVar, "")
 	devices, err = resolveKVOffloadDevices(validBlock())
 	if err != nil {
 		t.Fatalf("neither: the embedded catalog must resolve the class: %v", err)
 	}
-	if devices["nvme_gen4"].ReadBandwidth == 1.0 || devices["nvme_gen4"].ReadBandwidth == 9.0 {
-		t.Errorf("neither: read a test catalog instead of the embedded one: %+v", devices["nvme_gen4"])
+	if !has(devices, "nvme_gen4") || !has(devices, "sata_ssd") {
+		t.Errorf("neither: read a test catalog instead of the embedded one: %v", devices)
 	}
 }
 

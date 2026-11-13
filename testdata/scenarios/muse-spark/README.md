@@ -14,7 +14,7 @@ measurements serve it with, at engine release 0.32.0.
 ## Layouts
 
 Each layout has a `-dspark` twin that drafts 7 tokens with the DSpark drafter
-(`speculative.draft_model: muse-spark-open-dspark`).
+(`speculative_config.model: muse-spark-open-dspark`).
 
 | Layout | Parallelism |
 |---|---|

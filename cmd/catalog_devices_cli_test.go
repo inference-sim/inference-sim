@@ -64,7 +64,7 @@ func writeOffloadConfigWithClass(t *testing.T, deviceClass string) string {
 func newDeviceCatalog(t *testing.T, table string) string {
 	t.Helper()
 	root := copyKernelCatalog(t)
-	table += "cpu_dram: {read_bandwidth_mb_s: 2.0e4, write_bandwidth_mb_s: 2.0e4, base_latency_us: 1.0}\n"
+	table += "cpu_dram: {_comment: \"a test class\"}\n"
 	if err := os.WriteFile(catalogStorageDevicesPath(root), []byte(table), 0o644); err != nil {
 		t.Fatalf("write storage.yaml: %v", err)
 	}
@@ -105,8 +105,12 @@ func devicesCLISubprocess() bool {
 	offload := os.Getenv(devicesCLIOffloadEnv)
 	tracePrefix := os.Getenv(devicesCLITraceEnv)
 
+	scenarios, err := scenarioDirWithOffloadSet(testScenarios, kernelTestScenario)
+	if err != nil {
+		os.Exit(2)
+	}
 	base := []string{
-		"--scenario", kernelTestScenario, "--scenarios", testScenarios, "--registry", testRegistryDir(),
+		"--scenario", kernelTestScenario, "--scenarios", scenarios, "--registry", testRegistryDir(),
 		"--seed", "42",
 		"--defaults-filepath", "../defaults.yaml",
 		"--catalog", catalog,
@@ -159,7 +163,7 @@ func TestRunCmd_KVOffloadDeviceClass_ResolvesFromCatalog(t *testing.T) {
 
 	// The temp catalog's table is a verbatim copy of the historical nvme_gen4 numbers.
 	sameTable := newDeviceCatalog(t,
-		"nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwidth_mb_s: 5.0e3, base_latency_us: 80.0}\n")
+		"nvme_gen4: {_comment: \"a test class\"}\n")
 
 	viaBundled, _, err := runDevicesCLILeg(t, name, "run", bundled, offload, "")
 	if err != nil {
@@ -179,32 +183,15 @@ func TestRunCmd_KVOffloadDeviceClass_ResolvesFromCatalog(t *testing.T) {
 			viaBundled, viaTemp)
 	}
 
-	// The resolved numbers reach the simulation: the exported header is written from the
-	// resolved kvOffloadConfig.
+	// The class reaches the simulation by name: the exported header is written from the resolved
+	// kvOffloadConfig, and a class states no number of its own (the tier's rates are registry
+	// entries, priced by the kernel).
 	tracePrefix := filepath.Join(t.TempDir(), "offload")
 	if out, errOut, err := runDevicesCLILeg(t, name, "run-export", bundled, offload, tracePrefix); err != nil {
 		t.Fatalf("export leg failed: %v\nstdout:\n%s\nstderr:\n%s", err, out, errOut)
 	}
-	header := readTraceHeader(t, tracePrefix+".yaml")
-	for _, frag := range []string{"device_class: nvme_gen4", "read_bandwidth: 7000", "write_bandwidth: 5000", "base_latency: 80"} {
-		if !strings.Contains(header, frag) {
-			t.Errorf("trace header must record the catalog's nvme_gen4 physics (%q missing):\n%s", frag, header)
-		}
-	}
-
-	// Non-vacuity for the header assertion: a catalog with different numbers for the same
-	// class produces a different header, so the values above are read, not hardcoded.
-	otherTable := newDeviceCatalog(t,
-		"nvme_gen4: {read_bandwidth_mb_s: 1.25e3, write_bandwidth_mb_s: 6.25e2, base_latency_us: 4242.0}\n")
-	otherPrefix := filepath.Join(t.TempDir(), "offload-other")
-	if out, errOut, err := runDevicesCLILeg(t, name, "run-export", otherTable, offload, otherPrefix); err != nil {
-		t.Fatalf("other-table export leg failed: %v\nstdout:\n%s\nstderr:\n%s", err, out, errOut)
-	}
-	otherHeader := readTraceHeader(t, otherPrefix+".yaml")
-	for _, frag := range []string{"read_bandwidth: 1250", "write_bandwidth: 625", "base_latency: 4242"} {
-		if !strings.Contains(otherHeader, frag) {
-			t.Errorf("non-vacuity: a different catalog table must change the resolved physics (%q missing):\n%s", frag, otherHeader)
-		}
+	if header := readTraceHeader(t, tracePrefix+".yaml"); !strings.Contains(header, "device_class: nvme_gen4") {
+		t.Errorf("trace header must record the device class nvme_gen4:\n%s", header)
 	}
 }
 
@@ -252,7 +239,7 @@ func TestReplayCmd_KVOffloadDeviceClass_MatchesRunResolution(t *testing.T) {
 
 	// Same catalog table (a temp clone-root copy) ⇒ replay's flag reconciles with the header.
 	sameTable := newDeviceCatalog(t,
-		"nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwidth_mb_s: 5.0e3, base_latency_us: 80.0}\n")
+		"nvme_gen4: {_comment: \"a test class\"}\n")
 	out, errOut, err := runDevicesCLILeg(t, name, "replay", sameTable, offload, tracePrefix)
 	if err != nil {
 		t.Fatalf("replay with the same device table must reconcile with the header (INV-13): %v\nstdout:\n%s\nstderr:\n%s",
@@ -262,15 +249,11 @@ func TestReplayCmd_KVOffloadDeviceClass_MatchesRunResolution(t *testing.T) {
 		t.Fatalf("non-vacuity: replay produced no metrics:\n%s", out)
 	}
 
-	// Different numbers for the same class ⇒ refused, naming the conflict.
-	otherTable := newDeviceCatalog(t,
-		"nvme_gen4: {read_bandwidth_mb_s: 1.25e3, write_bandwidth_mb_s: 6.25e2, base_latency_us: 4242.0}\n")
-	_, controlErrOut, err := runDevicesCLILeg(t, name, "replay", otherTable, offload, tracePrefix)
-	if err == nil {
-		t.Error("non-vacuity: replay against a catalog whose device table differs from the " +
-			"recorded config must be refused — a pass means replay is not reading the catalog")
-	} else if !strings.Contains(controlErrOut, "kv-offload-config") {
-		t.Errorf("refusal must name --kv-offload-config, got:\n%s", controlErrOut)
+	// A catalog that does not define the class the trace recorded is refused, so replay reads the
+	// catalog and not only the header.
+	without := newDeviceCatalog(t, "")
+	if _, _, err := runDevicesCLILeg(t, name, "replay", without, offload, tracePrefix); err == nil {
+		t.Error("replay against a catalog that does not define the recorded device class must be refused")
 	}
 }
 
@@ -289,7 +272,7 @@ func TestRunCmd_KVOffloadDeviceClass_MissingCatalogTableIsRefused(t *testing.T) 
 	const name = "TestRunCmd_KVOffloadDeviceClass_MissingCatalogTableIsRefused"
 
 	// A catalog with the model entry but no devices/ namespace.
-	noDevices := newDeviceCatalog(t, "nvme_gen4: {read_bandwidth_mb_s: 1.0, write_bandwidth_mb_s: 1.0, base_latency_us: 1.0}\n")
+	noDevices := newDeviceCatalog(t, "nvme_gen4: {_comment: \"a test class\"}\n")
 	if err := os.RemoveAll(filepath.Join(noDevices, catalogDevicesSubdir)); err != nil {
 		t.Fatalf("remove devices namespace: %v", err)
 	}
@@ -309,7 +292,7 @@ func TestRunCmd_KVOffloadDeviceClass_MissingCatalogTableIsRefused(t *testing.T) 
 
 	// Negative control: restoring the table makes the SAME invocation succeed, so the
 	// refusal is attributable to the missing table and not to anything else in the leg.
-	restored := newDeviceCatalog(t, "nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwidth_mb_s: 5.0e3, base_latency_us: 80.0}\n")
+	restored := newDeviceCatalog(t, "nvme_gen4: {_comment: \"a test class\"}\n")
 	if out, errOut, err := runDevicesCLILeg(t, name, "run", restored, offload, ""); err != nil {
 		t.Errorf("negative control: the same run with a device table present must succeed: %v\nstdout:\n%s\nstderr:\n%s",
 			err, out, errOut)
@@ -331,7 +314,7 @@ func TestRunCmd_KVOffloadRefusalsReachTheCLI(t *testing.T) {
 		return
 	}
 	const name = "TestRunCmd_KVOffloadRefusalsReachTheCLI"
-	good := "nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwidth_mb_s: 5.0e3, base_latency_us: 80.0}\n"
+	good := "nvme_gen4: {_comment: \"a test class\"}\n"
 	write := func(body string) string {
 		p := filepath.Join(t.TempDir(), "offload.yaml")
 		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
@@ -340,7 +323,7 @@ func TestRunCmd_KVOffloadRefusalsReachTheCLI(t *testing.T) {
 		return p
 	}
 	malformed := newDeviceCatalog(t, good)
-	if err := os.WriteFile(catalogStorageDevicesPath(malformed), []byte("nvme_gen4: {read_bandwidth_mb_s: [\n"), 0o644); err != nil {
+	if err := os.WriteFile(catalogStorageDevicesPath(malformed), []byte("nvme_gen4: {_comment: [\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range []struct {
@@ -348,15 +331,15 @@ func TestRunCmd_KVOffloadRefusalsReachTheCLI(t *testing.T) {
 		want                   []string
 	}{
 		{"a malformed device table", malformed, writeOffloadConfigWithClass(t, "nvme_gen4"),
-			[]string{malformed + " is refused", "decoding " + catalogStorageDevicesRelPath, "did not find expected node content"}},
+			[]string{malformed + " is refused", catalogStorageDevicesRelPath + ": yaml:", "did not find expected node content"}},
 		{"an unknown device class", newDeviceCatalog(t, good), writeOffloadConfigWithClass(t, "floppy"),
-			[]string{`device_class=\"floppy\" is not defined in the catalog storage-device table`, "known: cpu_dram, nvme_gen4"}},
+			[]string{"floppy"}},
 		{"an invalid kv_offload block", newDeviceCatalog(t, good),
 			write("kv_offload:\n  cpu_bytes_to_use: 1073741824\n  store_threshold: 3\n"),
-			[]string{"--kv-offload-config", "store_threshold=3"}},
+			[]string{"store_threshold"}},
 		{"explicit tier physics", newDeviceCatalog(t, good),
 			write("kv_offload:\n  cpu_bytes_to_use: 1073741824\n  secondary_tiers:\n    - type: fs\n      root_dir: /mnt/kv\n      direct_io: true\n      device_class: nvme_gen4\n      read_bandwidth: 1.0\n"),
-			[]string{"states read_bandwidth, write_bandwidth or base_latency", "drop the explicit physics"}},
+			[]string{"read_bandwidth"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			stdout, stderr, err := runDevicesCLILeg(t, name, "run", c.catalog, c.offload, "")

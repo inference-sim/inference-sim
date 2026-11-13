@@ -16,18 +16,18 @@ func mkReq(id, sessionID string, round, inputLen, outputLen int, arrival int64, 
 	return mkReqAO(id, sessionID, round, inputLen, outputLen, outputLen, arrival, state)
 }
 
-// mkReqAO is mkReq with an explicit actualOutput (sets ProgressIndex = inputLen +
-// actualOutput) distinct from the oracle outputLen (= len(OutputTokens)).
+// mkReqAO is mkReq with an explicit actualOutput (sets GeneratedTokens) distinct from the oracle outputLen (= len(OutputTokens)).
 func mkReqAO(id, sessionID string, round, inputLen, outputLen, actualOutput int, arrival int64, state sim.RequestState) *sim.Request {
 	return &sim.Request{
-		ID:            id,
-		SessionID:     sessionID,
-		RoundIndex:    round,
-		InputTokens:   make([]sim.TokenID, inputLen),
-		OutputTokens:  make([]sim.TokenID, outputLen),
-		ProgressIndex: int64(inputLen + actualOutput),
-		ArrivalTime:   arrival,
-		State:         state,
+		ID:              id,
+		SessionID:       sessionID,
+		RoundIndex:      round,
+		InputTokens:     make([]sim.TokenID, inputLen),
+		OutputTokens:    make([]sim.TokenID, outputLen),
+		ProgressIndex:   int64(inputLen + max(actualOutput-1, 0)),
+		GeneratedTokens: actualOutput,
+		ArrivalTime:     arrival,
+		State:           state,
 	}
 }
 
@@ -283,22 +283,18 @@ func TestReExportClosedLoopRecords_StatusMapping(t *testing.T) {
 	}
 }
 
-// TestAccumulatedOutputLen_ClampsNegative pins accumulatedOutputLen's clamp-at-0
-// (susiejojo non-blocking observation on #1645): a ProgressIndex below InputLen —
-// unreachable under current sim guarantees, but the clamp must hold — yields 0, not a
-// negative that would corrupt the delta law; a normal ProgressIndex yields the difference.
-func TestAccumulatedOutputLen_ClampsNegative(t *testing.T) {
-	neg := &sim.Request{InputTokens: make([]sim.TokenID, 100), ProgressIndex: 40}
-	if got := accumulatedOutputLen(neg); got != 0 {
-		t.Errorf("accumulatedOutputLen with ProgressIndex(40) < InputLen(100) = %d, want 0 (clamped)", got)
+// TestAccumulatedOutputLen_ReadsTheTokensEmitted pins accumulatedOutputLen to the engine's token
+// record (SIM-12): the tokens emitted, never recomputed from ProgressIndex, which stops one short
+// of the prompt plus the output. A negative count is clamped to 0.
+func TestAccumulatedOutputLen_ReadsTheTokensEmitted(t *testing.T) {
+	r := &sim.Request{InputTokens: make([]sim.TokenID, 100), ProgressIndex: 117, GeneratedTokens: 18}
+	if got := accumulatedOutputLen(r); got != 18 {
+		t.Errorf("accumulatedOutputLen = %d, want 18, the tokens emitted (ProgressIndex 117 is InputLen + 18 - 1)", got)
 	}
-	normal := &sim.Request{InputTokens: make([]sim.TokenID, 100), ProgressIndex: 118}
-	if got := accumulatedOutputLen(normal); got != 18 {
-		t.Errorf("accumulatedOutputLen with ProgressIndex(118), InputLen(100) = %d, want 18", got)
+	if got := accumulatedOutputLen(&sim.Request{InputTokens: make([]sim.TokenID, 100), ProgressIndex: 100}); got != 0 {
+		t.Errorf("accumulatedOutputLen with no token emitted = %d, want 0", got)
 	}
-	// Exactly at the boundary (no output generated yet) → 0.
-	boundary := &sim.Request{InputTokens: make([]sim.TokenID, 100), ProgressIndex: 100}
-	if got := accumulatedOutputLen(boundary); got != 0 {
-		t.Errorf("accumulatedOutputLen at ProgressIndex==InputLen = %d, want 0", got)
+	if got := accumulatedOutputLen(&sim.Request{GeneratedTokens: -3}); got != 0 {
+		t.Errorf("accumulatedOutputLen with a negative count = %d, want 0 (clamped)", got)
 	}
 }

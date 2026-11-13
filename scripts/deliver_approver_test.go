@@ -703,10 +703,10 @@ func TestApplyUnifiedDiff(t *testing.T) {
 			want: "a\nB",
 		},
 		{
-			name: "the patch adds the trailing newline the original lacked",
-			orig: "a\nb",
+			name:  "the patch adds the trailing newline the original lacked",
+			orig:  "a\nb",
 			patch: workflowDiff("@@ -1,2 +1,2 @@\n a\n-b\n" + noNewlineMarker + "\n+B\n"),
-			want: "a\nB\n",
+			want:  "a\nB\n",
 		},
 		{
 			name:  "the patch removes the trailing newline the original had",

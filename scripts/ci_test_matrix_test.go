@@ -36,17 +36,20 @@ func ciTestPatterns(t *testing.T, path string) []string {
 	if err := yaml.Unmarshal(raw, &wf); err != nil {
 		t.Fatalf("parse %s: %v", path, err)
 	}
-	job, ok := wf.Jobs["test"]
-	if !ok {
+	// The test matrix is split over several jobs (the sharded ones run one package as parallel
+	// shards), so every job's matrix counts. A package is covered when some entry names it.
+	var out []string
+	for _, job := range wf.Jobs {
+		for _, e := range job.Strategy.Matrix.Include {
+			out = append(out, strings.Fields(e.Packages)...)
+		}
+	}
+	if _, ok := wf.Jobs["test"]; !ok {
 		t.Fatalf("job \"test\" missing from %s: the test matrix was restructured, so re-derive "+
 			"this check rather than deleting it", path)
 	}
-	var out []string
-	for _, e := range job.Strategy.Matrix.Include {
-		out = append(out, strings.Fields(e.Packages)...)
-	}
 	if len(out) == 0 {
-		t.Fatalf("%s: the test job's matrix lists no packages", path)
+		t.Fatalf("%s: no job's matrix lists any packages", path)
 	}
 	return out
 }

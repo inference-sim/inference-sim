@@ -3,14 +3,21 @@ package cmd
 import (
 	"fmt"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/env"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/blis-substrate/contracts/units"
 	"github.com/inference-sim/blis-substrate/load"
 
 	blisvllm "github.com/inference-sim/blis-vllm"
@@ -22,6 +29,12 @@ import (
 	// Linking these registers the compatibility engine's constructors: compat/kv the KV store
 	// sim.NewEngine builds (sim.NewKVStoreFromConfig), compat/lora the adapter registry
 	// (sim.NewAdapterRegistryFunc). The build site is the one place that links them.
+	"math"
+	"time"
+
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
+	specmodel "github.com/inference-sim/blis-substrate/contracts/spec/model"
 	_ "github.com/inference-sim/blis-vllm/compat/kv"
 	_ "github.com/inference-sim/blis-vllm/compat/lora"
 	"github.com/inference-sim/inference-sim/internal/stack"
@@ -171,9 +184,9 @@ func runTopology() build.Topology {
 func fatalf(format string, args ...any) { logrus.Fatalf(format, args...) }
 
 // scenarioEndpointTopology uses the same role-specific kernel placements that price KV
-// handoffs (build.EndpointPlacements), as the cluster's endpoint topology.
+// handoffs (build.EndpointGroupPlacements), as the cluster's endpoint topology.
 func scenarioEndpointTopology(model *kernelmodel.Model, pools *kernelPools, total, prefill, decode int) (map[cluster.InstanceID]cluster.EndpointTopology, error) {
-	placed, err := build.EndpointPlacements(model, pools.pools(), total, prefill, decode)
+	placed, err := build.EndpointGroupPlacements(model, pools.pools(), total, prefill, decode)
 	if err != nil || placed == nil {
 		return nil, err
 	}
@@ -235,41 +248,127 @@ func (p *kernelPools) holdsPrefillKV() bool {
 	return p.pools().HoldsPrefillKV()
 }
 
-// handoffPricing returns the run's handoff price and, when contention is on, the demand behind
-// it. Both nil for a colocated run, where contention is refused.
-func (p *kernelPools) handoffPricing(contention bool) (
-	func(int64, cluster.InstanceID, cluster.InstanceID) int64,
-	func(int64, cluster.InstanceID, cluster.InstanceID) cluster.Flow,
-) {
-	price, demand, err := p.pools().HandoffPricing(kernelScenario, contention, runTopology(), blockSizeTokens, fatalf)
-	if err != nil {
-		logrus.Fatalf("%v", err)
+// instanceEndpoint is where each instance's workers sit, in the numbering of its own pool: the
+// node and the rack of its rank's placement, each counted from the pool's lowest (poolOrigin). It is what a decode
+// engine is told about the prefill it pulls from (engine.Request.Peer). Instances are numbered
+// prefill first, then decode (build.RankInPool). Nil for a colocated run (nil receiver).
+func (p *kernelPools) instanceEndpoint() func(cluster.InstanceID) plan.Endpoint {
+	if p == nil {
+		return nil
 	}
-	var priceFn func(int64, cluster.InstanceID, cluster.InstanceID) int64
-	var demandFn func(int64, cluster.InstanceID, cluster.InstanceID) cluster.Flow
-	if price != nil {
-		priceFn = func(tokens int64, from, to cluster.InstanceID) int64 { return price(tokens, string(from), string(to)) }
-	}
-	if demand != nil {
-		demandFn = func(tokens int64, from, to cluster.InstanceID) cluster.Flow {
-			// The kernel's demand, as the cluster's link arbiter takes it.
-			d := demand(tokens, string(from), string(to))
-			f := cluster.Flow{Bytes: d.Bytes, FloorNs: d.FloorNs}
-			for _, l := range d.Links {
-				f.Links = append(f.Links, cluster.Link{ID: l.ID, BytesPerSecond: l.BytesPerSecond})
-			}
-			return f
+	firstDecode := runTopology().Prefill
+	return func(id cluster.InstanceID) plan.Endpoint {
+		n, err := strconv.Atoi(strings.TrimPrefix(string(id), "instance_"))
+		if err != nil || n < 0 {
+			panic(fmt.Sprintf("instance endpoint: unexpected instance id %q", id))
 		}
+		m := p.prefill
+		if n >= firstDecode {
+			m = p.decode
+		}
+		at := m.GroupPlacementOf(build.RankInPool(string(id), firstDecode))
+		local, err := poolOrigin(m).Local(plan.Endpoint{Node: at.Node, Rack: at.Rack})
+		if err != nil {
+			panic(fmt.Sprintf("instance endpoint: instance %q: %v", id, err))
+		}
+		return local
 	}
-	return priceFn, demandFn
 }
 
-// transferTime is the handoff price alone, between the placements of two instances in their
-// pools (the price half of handoffPricing).
-func (p *kernelPools) transferTime() func(int64, cluster.InstanceID, cluster.InstanceID) int64 {
-	price, _ := p.handoffPricing(false)
-	return price
+// requirePullPricing refuses, before the run starts, a run whose handoffs the cost model could not
+// price: contention in a colocated run, and any prefill-decode pair whose link the fabric states no
+// bandwidth for. Every pair is asked for one block, as the run's first handoff between them would
+// be, so a pair the fabric cannot price is refused here and not by a stopped run.
+func requirePullPricing(p *kernelPools, contention bool) {
+	if p == nil {
+		if contention {
+			logrus.Fatalf("--pd-transfer-contention needs a disaggregated run: " +
+				"pass --prefill-instances and --decode-instances with a P/D scenario")
+		}
+		return
+	}
+	e, err := newTransferEnvironment(p.decode, p.prefill)
+	if err != nil {
+		logrus.Fatalf("scenario %q: %v", kernelScenario, err)
+	}
+	top := runTopology()
+	endpoint := p.instanceEndpoint()
+	pl := plan.PoolPlan{Hardware: "pool", Layout: plan.Layout{Tensor: 1, RanksPerNode: 1, Nodes: 1 << 20}}
+	for i := 0; i < top.Prefill; i++ {
+		for j := 0; j < top.Decode; j++ {
+			from, to := cluster.InstanceID(fmt.Sprintf("instance_%d", i)), cluster.InstanceID(fmt.Sprintf("instance_%d", top.Prefill+j))
+			if _, err := e.TransferDemand(pl, plan.Transfer{Tokens: units.Tokens(e.blockSize),
+				From: endpoint(from), To: endpoint(to), Kind: plan.TransferPeer}); err != nil {
+				logrus.Fatalf("scenario %q: a KV handoff from prefill rank %d to decode rank %d: %v", kernelScenario, i, j, err)
+			}
+		}
+	}
 }
+
+// setEngineFrontend gives the engine --renderer-num-workers and --api-server-count, vLLM's
+// API-server settings (blis-schemas does not carry them yet). The engine resolves them into the
+// admission queue its plan states. An engine that takes no such settings is refused. It lives
+// here because this file is the one place the binary reaches the engine's package.
+func setEngineFrontend(eng engine.Engine, version string) error {
+	fe, ok := eng.(coreengine.Frontender)
+	if !ok {
+		return fmt.Errorf("engine %s does not take API-server settings", version)
+	}
+	if err := fe.SetFrontend(coreengine.Frontend{RendererNumWorkers: rendererNumWorkers, APIServerCount: apiServerCount}); err != nil {
+		return fmt.Errorf("--renderer-num-workers / --api-server-count: %w", err)
+	}
+	return nil
+}
+
+// placeInstance states where instance index sits, through the engine contract (engine.Place): the
+// engine's factory builds every instance of a pool from the same engine block, so each would state
+// the pool's first node for itself, and a pull's near end would be priced there whichever instance
+// pulls. The node and rack are the instance's endpoint (instanceEndpoint, the one source the
+// cluster also states to a decode engine as its peer). A colocated run is left as built. A
+// disaggregated run whose engine must be placed and cannot be (engine.ErrPlacementUnsupported), or
+// refuses the place (engine.ErrPlacementRejected), is refused by that error and not run on the
+// wrong link.
+func placeInstance(eng engine.Engine, p *kernelPools, index int) error {
+	if p == nil {
+		return nil
+	}
+	m := p.prefill
+	if index >= runTopology().Prefill {
+		m = p.decode
+	}
+	at := p.instanceEndpoint()(cluster.InstanceID(fmt.Sprintf("instance_%d", index)))
+	if err := engine.Place(eng, at, m.EnginePlacement().Nodes); err != nil {
+		return fmt.Errorf("instance_%d: %w", index, err)
+	}
+	return nil
+}
+
+// environmentOf is the Environment of an engine built from the instance configuration c: the
+// kernels of its own pool and, in a disaggregated run, of the pool its pulls read from.
+func (p *kernelPools) environmentOf(c sim.InstanceConfig, colocated *kernelmodel.Model) env.Environment {
+	own, peer := colocated, (*kernelmodel.Model)(nil)
+	if p != nil {
+		switch engineConfigIn(c).LatencyModel {
+		case latencyModel(p.prefill):
+			own, peer = p.prefill, p.prefill
+		case latencyModel(p.decode):
+			own, peer = p.decode, p.prefill
+		}
+	}
+	if own == nil {
+		return nil
+	}
+	e, err := newTransferEnvironment(own, peer)
+	if err != nil {
+		logrus.Fatalf("scenario %q: %v", kernelScenario, err)
+	}
+	return wrapEnvironment(e)
+}
+
+// wrapEnvironment is the identity; a test sets it to watch every question an engine's host is
+// asked, so that it can show a run and a replay turn each move into a demand through the
+// Environment and through nothing else.
+var wrapEnvironment = func(e env.Environment) env.Environment { return e }
 
 // defaultDPLoadBalancing is vLLM's default DP load-balancing mode, the --dp-load-balancing
 // flag's default (sim.DPLoadBalancingInternal, from blis-vllm compat/dplb).
@@ -394,9 +493,9 @@ func rankInPool(id cluster.InstanceID, firstDecode int) int {
 }
 
 // requireKernelCapacity refuses a run whose instances do not fit the scenario's pools
-// (build.RequireCapacity). Called once the instance counts are final.
+// (build.RequireGroupCapacity). Called once the instance counts are final.
 func requireKernelCapacity(p *kernelPools) {
-	if err := build.RequireCapacity(kernelScenario, kernelOpened, p.pools(), runTopology()); err != nil {
+	if err := build.RequireGroupCapacity(kernelScenario, kernelOpened, p.pools(), runTopology()); err != nil {
 		logrus.Fatalf("%v", err)
 	}
 }
@@ -635,7 +734,7 @@ func engineConfigOfRun(ec build.EngineConfig, horizon, seed int64, latency laten
 // which the engine factory opens again (engineConfigIn).
 func instanceConfigOf(c engineConfig) sim.InstanceConfig {
 	return sim.InstanceConfig{Horizon: c.Horizon, Seed: c.Seed, GPU: c.GPU, TP: c.TP, MaxNumSeqs: c.MaxNumSeqs,
-		Model: c.Model, BlockSizeTokens: c.BlockSizeTokens, Frontend: frontendOf(c.Frontend), Engine: c}
+		Model: c.Model, BlockSizeTokens: c.BlockSizeTokens, Engine: c}
 }
 
 // engineConfigIn is the engine configuration an instance configuration holds, with the host's
@@ -651,17 +750,54 @@ func engineConfigIn(c sim.InstanceConfig) engineConfig {
 }
 
 // hostOverheads sets a driver's host work from the latency model that prices the instance's
-// engine: the post-decode and per-token output overheads, and each request's queueing time,
-// which the kernel prices from the prompt's length alone (its admission overhead).
+// engine: the post-decode and per-token output overheads. A request's admission time is not
+// here: the driver asks the Environment what the request demands of the engine's admission queue.
 func hostOverheads(dcfg *sim.EngineDriverConfig, m latencyModel) {
 	if m == nil {
 		return
 	}
 	dcfg.PostDecodeFixedOverhead = m.PostDecodeFixedOverhead()
 	dcfg.OutputTokenProcessingTime = m.OutputTokenProcessingTime()
-	dcfg.QueueingTime = func(req *sim.Request) int64 {
-		return m.QueueingTime(&cengine.Request{InputTokens: make([]cengine.TokenID, req.InputLen())})
+}
+
+// streamIntervalOf is the pool's engine.stream_interval, how many tokens the API server holds
+// before streaming them to the client (vllm/config/scheduler.py:213@5df63a72), which the driver
+// applies to the delivery of tokens. Zero, unstated, is vLLM's default of 1. A negative value never
+// gets here: the scenario's validation refuses it. A model that is not the engine's own reports
+// none.
+func streamIntervalOf(m latencyModel) (int, error) {
+	km, ok := m.(*engineModel)
+	if !ok {
+		return 0, nil
 	}
+	e, err := km.Engine()
+	if err != nil {
+		return 0, fmt.Errorf("reading the pool's engine settings: %w", err)
+	}
+	return e.StreamInterval, nil
+}
+
+// Result closeness data (G1): the engine's resolutions, labelled by pool. This reads the pool
+// models, so it is here at the build site.
+
+// engineResolutions is the Result's resolutions: for each pool, the engine's own value of each
+// setting the cost model resolves beside the host's, labelled with the pool (result.PoolLabels
+// of the run's deployment) and sorted by setting, then pool.
+func engineResolutions(models []*engineModel, dep deployment.Deployment) ([]result.Resolution, error) {
+	if len(models) == 0 {
+		return nil, nil
+	}
+	indices, err := build.PoolIndices(kernelScenario, kernelmodel.Repos{Scenarios: kernelScenarioDir, Data: mustRunData()})
+	if err != nil {
+		return nil, err
+	}
+	labels := result.PoolLabels(dep)
+	var out []result.Resolution
+	for _, m := range models {
+		out = append(out, result.ResolutionsOfPool(m.Kernel().Resolved(), labels[indices[m.Role()]])...)
+	}
+	result.SortResolutions(out)
+	return out, nil
 }
 
 // provenanceOf is a pool's kernel evidence as the host's report records it, field for field.
@@ -675,16 +811,14 @@ func provenanceOf(p cengine.KernelPoolProvenance) sim.KernelPoolProvenance {
 			out.SkippedRuleFindings[i] = sim.RuleFinding(f)
 		}
 	}
+	for _, s := range p.Substitutions {
+		out.Substitutions = append(out.Substitutions, sim.Substitution(s))
+	}
 	if p.Routing != nil {
 		r := sim.RoutingRecord(*p.Routing)
 		out.Routing = &r
 	}
 	return out
-}
-
-// frontendOf is the engine's front-end configuration as the host's render stage takes it.
-func frontendOf(f cengine.FrontendConfig) sim.FrontendConfig {
-	return sim.FrontendConfig{APIServerCount: f.APIServerCount, RendererNumWorkers: f.RendererNumWorkers}
 }
 
 // rolesOf is a disaggregated deployment's per-role instance configurations: each P/D pool's own
@@ -760,6 +894,15 @@ func adapterRegistryOf(cfg loraConfig) workload.AdapterRegistry {
 	return r
 }
 
+// adapterIDsOf lists the LoRA adapter IDs a run declares, in declaration order.
+func adapterIDsOf(cfg loraConfig) []string {
+	ids := make([]string, len(cfg.Adapters))
+	for i, a := range cfg.Adapters {
+		ids[i] = a.ID
+	}
+	return ids
+}
+
 // offloadRecord and offloadTierRecord are a trace header's record of the KV-offload config,
 // in the engine's terms (build.OffloadRecord).
 type (
@@ -817,17 +960,6 @@ func frontendConfigFromCLI() cengine.FrontendConfig {
 	return c
 }
 
-// groupFrontendConfigFromCLI is frontendConfigFromCLI for one endpoint whose engine is a whole
-// data-parallel group of dp ranks (a contract-built release): vLLM's internal balancer defaults
-// its API servers to one per rank (api_server_count = data_parallel_size,
-// vllm/entrypoints/cli/serve.py:123-130@5df63a72), as the compatibility path's DP replica
-// renders (sim.ReplicaAPIServers). A stated --api-server-count is kept.
-func groupFrontendConfigFromCLI(dp int) sim.FrontendConfig {
-	c := frontendOf(frontendConfigFromCLI())
-	c.APIServerCount = sim.ReplicaAPIServers(c.APIServerCount, max(dp, 1))
-	return c
-}
-
 // registerContractEngines registers the engine kind a contract-built release is built by:
 // blis-vllm's translated v0.32.0 engine, with the latency kernel's step pricing and KV sizing
 // (its Register). It is the one place this binary links an engine the contract reaches;
@@ -855,6 +987,29 @@ func contractRoots(scenarioPath string) map[string]string {
 // and the Data each was handed.
 var newContractEngine = func(spec engine.Spec, data *load.Data) (engine.Engine, error) {
 	return coreengine.New(coreengine.Input{Spec: spec, Data: data})
+}
+
+// engineFieldList is the field list of the engine the scenario at scenarioPath names, as that
+// engine reports it through engine.Engine.Fields (design section 7, X19). The engine is built the
+// way a run builds its first pool's, over data, so the list is the one the run's engine would
+// report; this binary holds no list of its own. The contract has no way to ask a kind for its
+// list without building an engine, so a scenario is the input.
+func engineFieldList(scenarioPath string, data *load.Data, seed int64) (fields.FieldList, error) {
+	sel, err := selectEngine(scenarioPath)
+	if err != nil {
+		return fields.FieldList{}, err
+	}
+	registerContractEngines()
+	eng, err := newContractEngine(engine.Spec{
+		Kind:            sel.Ref.Kind,
+		UpstreamVersion: sel.Ref.Version,
+		Roots:           contractRoots(scenarioPath),
+		Seed:            seed,
+	}, data)
+	if err != nil {
+		return fields.FieldList{}, fmt.Errorf("scenario %s: engine %s: %w", scenarioPath, sel.Ref, err)
+	}
+	return eng.Fields(), nil
 }
 
 // Moved from sim/cluster/resolve.go at 739a519b, when the engine's configuration left the host
@@ -1017,4 +1172,236 @@ func resolvePoolConfig(global engineConfig, overrides poolOverrides) engineConfi
 	}
 
 	return resolved
+}
+
+// The host's Environment (design 6.3): what the cost model answers about a transfer an engine
+// started. The engine states each KV move it starts as engine.Transfer.Move, in the cost model's
+// terms (the catalog device of a tier, the node and rack at each end, the direction, the tokens);
+// the driver asks env.DemandFor(Environment, engine.Plan(), t) and gets the move's demand on the
+// fabric: its payload, its floor and the links it crosses with their full rates. This is
+// the cost model's side of that question for a kernel-backed run, and the only place the
+// simulator turns a move into a demand. It prices nothing else: the engines at this pin open
+// their pools' kernels themselves (blis-vllm compat/kernelmodel), so Graph, Chip, Memory, Price
+// and Acceptance are refused here by name, never answered with a number nobody computed.
+//
+// One transferEnvironment is built for each engine, from the kernels of its own pool and, for a
+// disaggregated run, of the pool it pulls from:
+//
+//   - A move between pools (plan.TransferPeer) is a decode engine's pull. The KV is the prefill
+//     pool's, so the prefill pool's kernel states it (Kernel.PDTransferDemand) between the two
+//     placements; the move's endpoints are each in their own pool's numbering, and a placement
+//     is the pool's first node plus the endpoint's node. The KV moves in whole blocks, so the
+//     tokens priced are the blocks' capacity.
+//   - A move to or from a tier (plan.TransferToTier, plan.TransferFromTier) is an offload copy.
+//     The kernel prices it as a time (Kernel.TierTime) and not as a demand, so the tier's link
+//     is recovered from that price: the floor is the price of no bytes, and the rate is what a
+//     payload large enough to be rate-bound gets (tierDemand).
+type transferEnvironment struct {
+	// own is the pool of the engine that asks, peer the pool its pulls read from (nil when
+	// there is no other pool).
+	own, peer *kernelmodel.Model
+	// blockSize is the tokens in one KV block; the pools of a disaggregated run page alike.
+	blockSize int64
+	// rates are the tier links' rates, by tier and direction, recovered once (tierDemand).
+	rates map[tierKey]float64
+}
+
+type tierKey struct {
+	tier string
+	dir  kernel.Direction
+}
+
+var _ env.Environment = (*transferEnvironment)(nil)
+
+// newTransferEnvironment is the Environment of an engine in pool own, pulling from pool peer
+// (nil for a colocated run). It fails when own states no block size.
+func newTransferEnvironment(own, peer *kernelmodel.Model) (*transferEnvironment, error) {
+	e, err := own.Engine()
+	if err != nil {
+		return nil, err
+	}
+	return &transferEnvironment{own: own, peer: peer, blockSize: int64(e.BlockSize),
+		rates: map[tierKey]float64{}}, nil
+}
+
+// poolOrigin is where the pool's own numbering starts in the cluster's: the lowest node and the
+// lowest rack among the places of the pool's groups (GroupPlacementOf, the places instanceEndpoint
+// states). Every plan.Endpoint is counted from it in both coordinates (engine.PoolOrigin), so two
+// pools whose local rack 0 are different racks of the cluster stay different when a pull's two
+// ends are turned back into cluster placements. It is the minimum over the groups and not the
+// first group's place, so that no group of the pool is below it.
+func poolOrigin(m *kernelmodel.Model) engine.PoolOrigin {
+	first := m.GroupPlacementOf(0)
+	o := engine.PoolOrigin{Node: first.Node, Rack: first.Rack}
+	for g := 1; g < m.GroupCapacity(); g++ {
+		at := m.GroupPlacementOf(g)
+		o.Node, o.Rack = min(o.Node, at.Node), min(o.Rack, at.Rack)
+	}
+	return o
+}
+
+// errHostEnvironment says which questions this Environment does not answer, and why.
+func errHostEnvironment(what string) error {
+	return fmt.Errorf("cmd: the host's Environment answers transfers only: %s is asked of the cost model by the "+
+		"engine, which at this pin opens its pool's kernel itself (compat/kernelmodel)", what)
+}
+
+// Graph implements env.Environment; it is not answered here.
+func (*transferEnvironment) Graph(string) (*specmodel.Graph, error) {
+	return nil, errHostEnvironment("the model graph")
+}
+
+// Chip implements env.Environment; it is not answered here.
+func (*transferEnvironment) Chip(string) (*hardware.Chip, error) {
+	return nil, errHostEnvironment("the chip")
+}
+
+// Memory implements env.Environment; it is not answered here.
+func (*transferEnvironment) Memory(plan.PoolPlan) (kernel.MemoryBreakdown, error) {
+	return kernel.MemoryBreakdown{}, errHostEnvironment("memory")
+}
+
+// Price implements env.Environment; it is not answered here.
+func (*transferEnvironment) Price(plan.PoolPlan, plan.StepShape) (kernel.StepEstimate, error) {
+	return kernel.StepEstimate{}, errHostEnvironment("a step's price")
+}
+
+// HostDemand implements env.Environment: what a request of promptTokens asks of the admission
+// queue the engine's plan states, from the pool's kernel (Kernel.AdmissionDemand).
+func (e *transferEnvironment) HostDemand(_ plan.PoolPlan, promptTokens int) (kernel.HostDemand, error) {
+	return e.own.Kernel().AdmissionDemand(promptTokens), nil
+}
+
+// Acceptance implements env.Environment; it is not answered here.
+func (*transferEnvironment) Acceptance(string, string, string) (acceptance.Profile, error) {
+	return acceptance.Profile{}, errHostEnvironment("an acceptance profile")
+}
+
+// TransferDemand implements env.Environment: what the move t asks of the fabric.
+func (e *transferEnvironment) TransferDemand(p plan.PoolPlan, t plan.Transfer) (kernel.TransferDemand, error) {
+	if err := p.CheckTransfer(t); err != nil {
+		return kernel.TransferDemand{}, err
+	}
+	if t.Kind == plan.TransferPeer {
+		return e.pullDemand(p, t)
+	}
+	return e.tierDemand(t)
+}
+
+// blocksOf is the whole KV blocks tokens occupy.
+func (e *transferEnvironment) blocksOf(tokens int64) int64 {
+	return (tokens + e.blockSize - 1) / e.blockSize
+}
+
+// placement is the cluster's placement of an endpoint in the numbering of pool m, node and rack
+// both: the pool's origin added to each coordinate.
+func placement(m *kernelmodel.Model, at plan.Endpoint) kernel.Placement {
+	g := poolOrigin(m).Global(at)
+	return kernel.Placement{Node: g.Node, Rack: g.Rack, Pool: m.PlacementOf(0).Pool}
+}
+
+// ownEndpoint refuses an endpoint of the engine's own pool that the pool's plan does not have;
+// the far end of a pull is in another pool's plan, which this engine does not hold.
+func ownEndpoint(p plan.PoolPlan, at plan.Endpoint) error {
+	if nodes := max(1, p.Layout.Nodes); at.Node >= nodes {
+		return fmt.Errorf("endpoint node %d of a pool with %d node(s)", at.Node, nodes)
+	}
+	return nil
+}
+
+// pullDemand is a decode engine's pull from the prefill pool: the prefill kernel's
+// PDTransferDemand, in whole blocks, between the placements of the move's two ends. A pull of no
+// tokens finds its KV already here and demands nothing.
+func (e *transferEnvironment) pullDemand(p plan.PoolPlan, t plan.Transfer) (kernel.TransferDemand, error) {
+	if t.Tokens == 0 {
+		return kernel.TransferDemand{}, nil
+	}
+	if e.peer == nil {
+		return kernel.TransferDemand{}, fmt.Errorf("a pull between pools, and this engine has no other pool to pull from")
+	}
+	if err := ownEndpoint(p, t.To); err != nil {
+		return kernel.TransferDemand{}, fmt.Errorf("pull destination: %w", err)
+	}
+	from, to := placement(e.peer, t.From), placement(e.own, t.To)
+	tokens := e.blocksOf(int64(t.Tokens)) * e.blockSize
+	d := e.peer.Kernel().PDTransferDemand(int(tokens), from, to)
+	if err := d.Check(); err != nil {
+		return kernel.TransferDemand{}, fmt.Errorf("the kernel's demand for a %d-token pull from %+v to %+v is malformed: %w",
+			tokens, from, to, err)
+	}
+	if at := d.AloneTime(); at < 0 || at >= time.Duration(math.MaxInt64/2) {
+		return kernel.TransferDemand{}, fmt.Errorf("the kernel cannot price a %d-token KV pull from %+v to %+v "+
+			"(it reports %v): the link between them states no bandwidth -- check the scenario's cluster.fabric "+
+			"and the chip's IntraNodeBwGBps", tokens, from, to, at)
+	}
+	return d, nil
+}
+
+// tierDemand is an offload copy to or from the catalog device t.Tier on the node that holds it:
+// the whole blocks' bytes over one link at the rate the kernel prices the device. Alone, the
+// demand costs exactly Kernel.TierTime of the same bytes (the kernel prices a copy at the
+// device's bandwidth, the slower of it and the host link, and no less than its base latency),
+// and the Environment refuses to state one that does not, rather than state a rate it cannot
+// vouch for.
+func (e *transferEnvironment) tierDemand(t plan.Transfer) (kernel.TransferDemand, error) {
+	dir := kernel.DirectionFromTier
+	if t.Kind == plan.TransferToTier {
+		dir = kernel.DirectionToTier
+	}
+	k := e.own.Kernel()
+	node := placement(e.own, t.From)
+	bytes := e.blocksOf(int64(t.Tokens)) * k.SequenceVariableBytes(int(e.blockSize))
+	price := k.TierTime(t.Tier, dir, bytes, 1)
+	if price < 0 || price >= time.Duration(math.MaxInt64/2) {
+		return kernel.TransferDemand{}, fmt.Errorf("the kernel cannot price a copy of %d bytes %s tier %q (it reports %v)",
+			bytes, map[kernel.Direction]string{kernel.DirectionToTier: "to", kernel.DirectionFromTier: "from"}[dir], t.Tier, price)
+	}
+	key := tierKey{t.Tier, dir}
+	rate, ok := e.rates[key]
+	if !ok {
+		rate = tierRate(k, t.Tier, dir)
+		e.rates[key] = rate
+	}
+	d := kernel.TransferDemand{
+		Bytes: bytes,
+		Floor: k.TierTime(t.Tier, dir, 0, 1),
+		Links: []kernel.LinkUse{{
+			Link:           kernel.LinkID(fmt.Sprintf("tier/%s/%s/node/%d", t.Tier, dirName(dir), node.Node)),
+			BytesPerSecond: rate,
+		}},
+	}
+	if d.AloneTime() != price {
+		// The recovered rate is a float that rounds once more than the kernel's, so a copy that
+		// lands on the edge of a nanosecond can differ by one. State the rate this copy was
+		// priced at instead: the bytes over the price, widened by half a nanosecond so the
+		// truncation lands on the price itself.
+		d.Links[0].BytesPerSecond = float64(bytes) / ((float64(price) + 0.5) / float64(time.Second))
+		if d.AloneTime() != price {
+			return kernel.TransferDemand{}, fmt.Errorf("the demand of a copy of %d bytes %s tier %q costs %v alone but "+
+				"the kernel prices it at %v", bytes, dirName(dir), t.Tier, d.AloneTime(), price)
+		}
+	}
+	if err := d.Check(); err != nil {
+		return kernel.TransferDemand{}, err
+	}
+	return d, nil
+}
+
+func dirName(d kernel.Direction) string {
+	if d == kernel.DirectionToTier {
+		return "to"
+	}
+	return "from"
+}
+
+// tierRate is the bytes per second the kernel moves a copy at, recovered from its price of a
+// payload so large that the rate binds, not the floor: bytes over price. The probe is the
+// largest the price can state without saturating a Duration.
+func tierRate(k kernel.Kernel, tier string, dir kernel.Direction) float64 {
+	for probe := int64(1) << 50; probe > 1<<20; probe >>= 5 {
+		if d := k.TierTime(tier, dir, probe, 1); d > 0 && d < time.Duration(math.MaxInt64/4) {
+			return float64(probe) / d.Seconds()
+		}
+	}
+	return 0
 }

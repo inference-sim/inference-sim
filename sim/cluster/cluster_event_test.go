@@ -137,13 +137,13 @@ func TestClusterEventPriorities(t *testing.T) {
 	}
 }
 
-// TestBuildRouterState_PopulatesSnapshots verifies BC-8:
-// buildRouterState must produce a RouterState with one snapshot per instance and the current clock.
-func TestBuildRouterState_PopulatesSnapshots(t *testing.T) {
+// TestBuildClusterState_PopulatesSnapshots verifies BC-8:
+// buildClusterState must produce a ClusterState with one snapshot per instance and the current clock.
+func TestBuildClusterState_PopulatesSnapshots(t *testing.T) {
 	config := newTestDeploymentConfig(3)
 	cs := newTestCluster(config, NewSliceRequestSource(newTestRequests(1)), nil)
 
-	state := buildRouterState(cs, nil)
+	state := buildClusterState(cs, nil)
 
 	if len(state.Snapshots) != 3 {
 		t.Errorf("expected 3 snapshots, got %d", len(state.Snapshots))
@@ -158,11 +158,11 @@ func TestBuildRouterState_PopulatesSnapshots(t *testing.T) {
 	}
 }
 
-// TestBuildRouterState_LoadingSnapshot_PopulatedNotInSnapshots verifies that:
-// (a) a Loading instance does NOT appear in RouterState.Snapshots (IsRoutable guard preserved)
-// (b) a Loading instance DOES appear in RouterState.LoadingSnapshots
+// TestBuildClusterState_LoadingSnapshot_PopulatedNotInSnapshots verifies that:
+// (a) a Loading instance does NOT appear in ClusterState.Snapshots (IsRoutable guard preserved)
+// (b) a Loading instance DOES appear in ClusterState.LoadingSnapshots
 // (c) LoadingSnapshot.TotalKvCapacityTokens is populated from the instance's KV store
-func TestBuildRouterState_LoadingSnapshot_PopulatedNotInSnapshots(t *testing.T) {
+func TestBuildClusterState_LoadingSnapshot_PopulatedNotInSnapshots(t *testing.T) {
 	// newTestDeploymentConfig(1) creates one instance that starts Active (no NodePools).
 	// We manually force it to Loading state to simulate an in-flight scale-up.
 	cs := newTestCluster(newTestDeploymentConfig(1), NewSliceRequestSource(nil), nil)
@@ -170,7 +170,7 @@ func TestBuildRouterState_LoadingSnapshot_PopulatedNotInSnapshots(t *testing.T) 
 		inst.State = sim.InstanceStateLoading
 	}
 
-	state := buildRouterState(cs, nil)
+	state := buildClusterState(cs, nil)
 
 	// Loading instance must NOT be routable (IsRoutable contract unchanged)
 	if len(state.Snapshots) != 0 {
@@ -214,15 +214,15 @@ func TestBuildRouterState_LoadingSnapshot_PopulatedNotInSnapshots(t *testing.T) 
 	}
 }
 
-// TestBuildRouterState_ActiveAndLoadingMixed_SeparateBuckets verifies that when a cluster
+// TestBuildClusterState_ActiveAndLoadingMixed_SeparateBuckets verifies that when a cluster
 // has both Active and Loading instances, they appear in the correct slices.
-func TestBuildRouterState_ActiveAndLoadingMixed_SeparateBuckets(t *testing.T) {
+func TestBuildClusterState_ActiveAndLoadingMixed_SeparateBuckets(t *testing.T) {
 	// Start with 2 instances, force one to Loading and leave the other Active.
 	cs := newTestCluster(newTestDeploymentConfig(2), NewSliceRequestSource(nil), nil)
 	cs.instances[0].State = sim.InstanceStateActive
 	cs.instances[1].State = sim.InstanceStateLoading
 
-	state := buildRouterState(cs, nil)
+	state := buildClusterState(cs, nil)
 
 	if len(state.Snapshots) != 1 {
 		t.Errorf("Snapshots: got %d, want 1 (only Active instance)", len(state.Snapshots))

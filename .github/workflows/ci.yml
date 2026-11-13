@@ -5,44 +5,156 @@ on:
     branches: [main]
   pull_request:
     branches: [main, 'feature/**', llm-d-r]
+    # edited: retargeting the next pull request of a squash stack to main (a change of its base)
+    # is an edit, and must start CI; ready_for_review starts it for a draft made ready.
+    types: [opened, edited, synchronize, reopened, ready_for_review]
   # On-demand, so the L1 delivery loop (#1654) can run the REAL required checks against a
   # delivery branch. A bot-opened PR has its pull_request runs held for human approval, so the
   # loop cannot rely on them; a workflow_dispatch run always starts and produces check runs with
-  # the same names on the same commit, which is what the branch ruleset requires. Inert
-  # otherwise — it only adds a manual "Run workflow" button.
+  # the same names on the same commit, which is what the branch ruleset requires. A dispatch runs
+  # EVERY job (the loop reads a green run as "the whole suite passed"), unless changed_paths is
+  # given, which previews what a pull request touching those paths would run.
   workflow_dispatch:
+    inputs:
+      changed_paths:
+        description: "Optional: repository paths (one per line) to run the path filter for, as if a pull request changed them. Empty runs everything."
+        required: false
+        default: ""
+      save_cache:
+        description: "Also run the cache-warm job, which saves the Go build cache for this ref (a push to main always does)."
+        type: boolean
+        required: false
+        default: false
+
+# A new push to a pull request supersedes the run on the old head: nothing about the old head can
+# be required any more. Pushes to main and dispatches have unique groups and are never cancelled.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # One module-cache directory for every job and for cache-warm. Go keys a compiled package by
+  # the directory its source is read from, so a build cache saved with the modules in one
+  # directory is not hit by a job that keeps them in another. Nothing restores this directory:
+  # every job starts with it empty, so a test that needs a module it does not download itself
+  # fails here rather than passing on a cache a previous job filled (X25).
+  GOMODCACHE: /tmp/gomodcache
+  GOFLAGS: -modcacherw
 
 jobs:
-  build:
+  # Which jobs the change needs (scripts/ci-changes.sh, with the rules and their evidence). The
+  # required status checks below always report: a required job whose group is off skips its
+  # steps and still succeeds, because a skipped job named by a matrix template never reports the
+  # name the ruleset waits for. The jobs that are not required are skipped whole.
+  changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      build: ${{ steps.groups.outputs.build }}
+      lint: ${{ steps.groups.outputs.lint }}
+      core: ${{ steps.groups.outputs.core }}
+      cluster: ${{ steps.groups.outputs.cluster }}
+      kernel: ${{ steps.groups.outputs.kernel }}
+      workload: ${{ steps.groups.outputs.workload }}
+      cmd: ${{ steps.groups.outputs.cmd }}
+      root: ${{ steps.groups.outputs.root }}
+      scripts: ${{ steps.groups.outputs.scripts }}
+      llmd: ${{ steps.groups.outputs.llmd }}
+      bytegate: ${{ steps.groups.outputs.bytegate }}
+      other: ${{ steps.groups.outputs.other }}
+      stack: ${{ steps.groups.outputs.stack }}
+      selected: ${{ steps.groups.outputs.selected }}
+      actionlint: ${{ steps.groups.outputs.actionlint }}
+      claudemd: ${{ steps.groups.outputs.claudemd }}
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # A pull request's checkout is a merge commit; its first parent is the base.
+          fetch-depth: 2
+
+      - name: Groups the change needs
+        id: groups
+        env:
+          EVENT: ${{ github.event_name }}
+          PATHS_INPUT: ${{ inputs.changed_paths }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = pull_request ] && git rev-parse -q --verify 'HEAD^2' >/dev/null; then
+            # --no-renames lists both the old and the new path of a move.
+            git diff --name-only --no-renames 'HEAD^1' HEAD > changed.txt
+            scripts/ci-changes.sh < changed.txt > groups.txt
+          elif [ "$EVENT" = workflow_dispatch ] && [ -n "$PATHS_INPUT" ]; then
+            printf '%s\n' "$PATHS_INPUT" > changed.txt
+            scripts/ci-changes.sh < changed.txt > groups.txt
+          else
+            : > changed.txt
+            scripts/ci-changes.sh --all < /dev/null > groups.txt
+          fi
+          echo "changed paths: $(wc -l < changed.txt | tr -d ' ')"
+          cat groups.txt
+          cat groups.txt >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: changes
+    # Required check: it always reports. Its steps run when a non-test Go file or a module file changed.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: The change filter ran
+        run: test "${{ needs.changes.result }}" = success
+
+      - name: Checkout code
+        if: needs.changes.outputs.build == 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Go
+        if: needs.changes.outputs.build == 'true'
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
+
+      - name: Restore the Go build cache
+        if: needs.changes.outputs.build == 'true'
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/.cache/go-build
+          key: go-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-
+            go-build-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Build
+        if: needs.changes.outputs.build == 'true'
         run: go build -v ./...
 
   test:
+    needs: changes
     # Spelled out as GitHub derives a matrix job's name, because the names are main's required
     # checks: an entry whose packages moved keeps its old name (name_packages), byte for byte.
     name: test (${{ matrix.name }}, ${{ matrix.name_packages || matrix.packages }}, ${{ matrix.timeout }})
+    # Every entry always runs and skips its steps when its group is off: a job skipped whole
+    # under a matrix template would not report the name a ruleset waits for, and a job-level
+    # "if" cannot read the matrix. A skipped entry costs seconds on a runner.
+    if: ${{ !cancelled() }}
     runs-on: ${{ matrix.runner || 'ubuntu-latest' }}
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
+        # flag: the ci-changes.sh group that turns the entry on.
         include:
           - name: "cluster (heavy)"
             packages: "./sim/cluster"
             timeout: "15m"
+            flag: cluster
           - name: "core packages"
             packages: "./sim ./sim/trace"
             timeout: "10m"
+            flag: core
           # The latency kernel's scoring harness and the offline scoring tools. Hermetic: scenarios
           # come from blis-vllm's kernel fixtures, the catalog and registry from the blis-substrate
           # module go.mod pins (internal/substratedata). The measurement-corpus tests are behind -tags scoring and do not run here.
@@ -54,35 +166,34 @@ jobs:
             packages: "./tools/..."
             name_packages: "./sim/kernelmodel/..."
             timeout: "10m"
-          - name: "workload & cmd"
-            packages: "./sim/workload ./cmd"
-            timeout: "10m"
+            flag: kernel
           - name: "root & internals"
             packages: ". ./sim/internal/..."
             timeout: "5m"
+            flag: root
           # The CI shell scripts are driven by a test-only package. The matrix lists
           # packages explicitly rather than ./..., so this entry is what makes them run.
           - name: "scripts"
             packages: "./scripts"
             timeout: "5m"
-          # The embedded llm-d router: determinism across processes, run/replay inputs, flow
-          # control, P/D and the single-instance identity contract.
-          - name: "llm-d router"
-            packages: "./sim/llmd"
-            timeout: "10m"
+            flag: scripts
           # The byte gate (design SIM-4, X13): a fixed set of runs whose standard output must not
           # change in a refactor, compared byte for byte (outside the Result's runtime member)
           # with testdata/bytegate/golden, at GOMAXPROCS 1 and 4. A pull request that moves a
           # golden file is not a refactor and says so, with the diff and its price-change report.
+          # It builds the blis binary, so it runs when anything the binary links, or the gate's
+          # own inputs, change; a change to a _test.go file or to docs does not.
           - name: "byte gate"
             packages: "./internal/bytegate"
             timeout: "10m"
+            flag: bytegate
           # The same gate on arm64: the outputs must be identical across platforms (design X6),
           # and arm64 is where Go fuses a multiply and an add that amd64 does not.
           - name: "byte gate arm64"
             packages: "./internal/bytegate"
             timeout: "10m"
             runner: "ubuntu-24.04-arm"
+            flag: bytegate
           # Every other package with tests: the substrate data roots, the stack record, the
           # saturation detectors, the input validators (sim/check) and the invariant scan (the
           # offline scoring tools moved to tools/, which "kernel backend" runs). A new entry, not a
@@ -91,55 +202,352 @@ jobs:
           - name: "other packages"
             packages: "./internal/substratedata ./internal/kernelfixtures ./internal/stack/... ./sim/saturation ./sim/check ./internal/invariantscan"
             timeout: "5m"
+            flag: other
 
     steps:
+      - name: The change filter ran, and whether this entry's group is on
+        id: gate
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          ON: ${{ needs.changes.outputs[matrix.flag] }}
+        run: |
+          test "$CHANGES" = success || { echo "the change filter: $CHANGES"; exit 1; }
+          echo "run=$ON" >> "$GITHUB_OUTPUT"
+
       - name: Checkout code
+        if: steps.gate.outputs.run == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Go
+        if: steps.gate.outputs.run == 'true'
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
+
+      - name: Restore the Go build cache
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/.cache/go-build
+          key: go-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-
+            go-build-${{ runner.os }}-${{ runner.arch }}-
 
       # The scripts package parses every inline github-script body with Node (#1811). The Node is
       # pinned here, not taken from the runner, which can be too old for optional chaining; a
       # missing Node fails that test (REQUIRE_NODE) instead of skipping it (X16).
       - name: Setup Node
+        if: steps.gate.outputs.run == 'true'
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
 
       # Tests read only their declared inputs (X25): the module cache starts empty, so a test
       # that needs a module it does not download itself fails here rather than passing on a
-      # cache a previous job filled.
+      # cache a previous job filled. Only the build cache is restored (see GOMODCACHE above).
       - name: Test ${{ matrix.name }} from an empty module cache
+        if: steps.gate.outputs.run == 'true'
         env:
-          GOMODCACHE: ${{ runner.temp }}/gomodcache
-          GOFLAGS: -modcacherw
           REQUIRE_NODE: "1"
         run: go test -v -timeout ${{ matrix.timeout }} ${{ matrix.packages }}
 
-  lint:
+  # The packages that dominate the wall clock are split by test name into parallel shards
+  # (scripts/ci-shard.sh): a test belongs to the shard cksum(name) mod N picks, so the shards
+  # partition the package's tests exactly. Each shard writes the list, its share and what it
+  # ran; the job named below, after the shards, fails unless together they ran every test once
+  # (scripts/ci-shard-verify.sh).
+  # The salt in an entry (scripts/ci-shard.sh, CI_SHARD_SALT) only spreads the few slow tests of a
+  # package over its shards; the partition is exact for any salt.
+  test-shards:
+    needs: changes
+    name: test (${{ matrix.name }}, ${{ matrix.packages }}, ${{ matrix.timeout }})
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: "workload shard 1/2", group: workload, packages: "./sim/workload", timeout: "10m", salt: "s5:", flag: workload, shard: 1, shards: 2 }
+          - { name: "workload shard 2/2", group: workload, packages: "./sim/workload", timeout: "10m", salt: "s5:", flag: workload, shard: 2, shards: 2 }
+          - { name: "cmd shard 1/4", group: cmd, packages: "./cmd", timeout: "10m", salt: "s3:", flag: cmd, shard: 1, shards: 4 }
+          - { name: "cmd shard 2/4", group: cmd, packages: "./cmd", timeout: "10m", salt: "s3:", flag: cmd, shard: 2, shards: 4 }
+          - { name: "cmd shard 3/4", group: cmd, packages: "./cmd", timeout: "10m", salt: "s3:", flag: cmd, shard: 3, shards: 4 }
+          - { name: "cmd shard 4/4", group: cmd, packages: "./cmd", timeout: "10m", salt: "s3:", flag: cmd, shard: 4, shards: 4 }
     steps:
+      - name: The change filter ran, and whether this entry's group is on
+        id: gate
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          ON: ${{ needs.changes.outputs[matrix.flag] }}
+        run: |
+          test "$CHANGES" = success || { echo "the change filter: $CHANGES"; exit 1; }
+          echo "run=$ON" >> "$GITHUB_OUTPUT"
+
       - name: Checkout code
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup Go
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Restore the Go build cache
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/.cache/go-build
+          key: go-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-
+            go-build-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Setup Node
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+
+      - name: Test ${{ matrix.name }} from an empty module cache
+        if: steps.gate.outputs.run == 'true'
+        env:
+          CI_SHARD_SALT: ${{ matrix.salt }}
+          # The heavy legs build and run a 120 MB test binary that re-executes itself; two
+          # concurrent compile and test jobs instead of one per CPU keep the runner responsive.
+          GOFLAGS: -modcacherw -p=2
+          REQUIRE_NODE: "1"
+        run: |
+          # A diagnostic for the runner kills of the heavy leg (exit 143, "The runner has received
+          # a shutdown signal", 4 to 6 minutes into compiling and running ./cmd): memory and load
+          # every ten seconds, in this step's own log, which survives the kill (a later step does
+          # not run after one).
+          ( while sleep 10; do echo "sample $(date +%T) $(free -m | sed -n 2p) | $(uptime)"; done ) &
+          scripts/ci-shard.sh ${{ matrix.shard }} ${{ matrix.shards }} "$RUNNER_TEMP/evidence" ${{ matrix.packages }} -timeout ${{ matrix.timeout }}
+
+      - name: Keep the evidence of what this shard ran
+        if: ${{ !cancelled() && steps.gate.outputs.run == 'true' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: evidence-${{ matrix.group }}-${{ matrix.shard }}
+          path: ${{ runner.temp }}/evidence
+          retention-days: 1
+          if-no-files-found: ignore
+
+  test-llmd-shards:
+    needs: changes
+    name: test (${{ matrix.name }}, ${{ matrix.packages }}, ${{ matrix.timeout }})
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The embedded llm-d router: determinism across processes, run/replay inputs, flow
+          # control, P/D and the single-instance identity contract.
+          - { name: "llm-d router shard 1/2", group: llmd, packages: "./sim/llmd", timeout: "10m", salt: "s180:", flag: llmd, shard: 1, shards: 2 }
+          - { name: "llm-d router shard 2/2", group: llmd, packages: "./sim/llmd", timeout: "10m", salt: "s180:", flag: llmd, shard: 2, shards: 2 }
+    steps:
+      - name: The change filter ran, and whether this entry's group is on
+        id: gate
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          ON: ${{ needs.changes.outputs[matrix.flag] }}
+        run: |
+          test "$CHANGES" = success || { echo "the change filter: $CHANGES"; exit 1; }
+          echo "run=$ON" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout code
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup Go
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Restore the Go build cache
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/.cache/go-build
+          key: go-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-
+            go-build-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Setup Node
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+
+      - name: Test ${{ matrix.name }} from an empty module cache
+        if: steps.gate.outputs.run == 'true'
+        env:
+          CI_SHARD_SALT: ${{ matrix.salt }}
+          REQUIRE_NODE: "1"
+        run: scripts/ci-shard.sh ${{ matrix.shard }} ${{ matrix.shards }} "$RUNNER_TEMP/evidence" ${{ matrix.packages }} -timeout ${{ matrix.timeout }}
+
+      - name: Keep the evidence of what this shard ran
+        if: ${{ !cancelled() && steps.gate.outputs.run == 'true' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: evidence-${{ matrix.group }}-${{ matrix.shard }}
+          path: ${{ runner.temp }}/evidence
+          retention-days: 1
+          if-no-files-found: ignore
+
+  # The two required checks whose packages are sharded keep their names here: this job is
+  # "test (workload & cmd, ./sim/workload ./cmd, 10m)" and fails when any of its shards failed,
+  # was cancelled, or ran a test set that is not the whole package, and when the change filter
+  # itself failed. A skipped shard (group off) is a success.
+  test-workload-cmd:
+    needs: [changes, test-shards]
+    name: test (workload & cmd, ./sim/workload ./cmd, 10m)
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Shards passed
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          SHARDS: ${{ needs.test-shards.result }}
+        run: |
+          test "$CHANGES" = success || { echo "the change filter: $CHANGES"; exit 1; }
+          case "$SHARDS" in success|skipped) ;; *) echo "test shards: $SHARDS"; exit 1 ;; esac
+
+      - name: Checkout code
+        if: needs.changes.outputs.workload == 'true' || needs.changes.outputs.cmd == 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Fetch the workload evidence
+        if: needs.changes.outputs.workload == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: evidence-workload-*
+          path: gathered/workload
+
+      - name: Fetch the cmd evidence
+        if: needs.changes.outputs.cmd == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: evidence-cmd-*
+          path: gathered/cmd
+
+      - name: Every workload test ran in exactly one shard
+        if: needs.changes.outputs.workload == 'true'
+        run: scripts/ci-shard-verify.sh 2 gathered/workload
+
+      - name: Every cmd test ran in exactly one shard
+        if: needs.changes.outputs.cmd == 'true'
+        run: scripts/ci-shard-verify.sh 4 gathered/cmd
+
+  # The llm-d router's name is kept for the same reason (it is not a required check today, but
+  # the delivery loop and people read the name).
+  test-llmd:
+    needs: [changes, test-llmd-shards]
+    name: test (llm-d router, ./sim/llmd, 10m)
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Shards passed
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          SHARDS: ${{ needs.test-llmd-shards.result }}
+        run: |
+          test "$CHANGES" = success || { echo "the change filter: $CHANGES"; exit 1; }
+          case "$SHARDS" in success|skipped) ;; *) echo "test shards: $SHARDS"; exit 1 ;; esac
+
+      - name: Checkout code
+        if: needs.changes.outputs.llmd == 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Fetch the evidence
+        if: needs.changes.outputs.llmd == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: evidence-llmd-*
+          path: gathered/llmd
+
+      - name: Every test of the package ran in exactly one shard
+        if: needs.changes.outputs.llmd == 'true'
+        run: scripts/ci-shard-verify.sh 2 gathered/llmd
+
+  lint:
+    needs: changes
+    # Required check: it always reports; the linter runs when a Go file or a module file changed.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: The change filter ran
+        run: test "${{ needs.changes.result }}" = success
+
+      - name: Checkout code
+        if: needs.changes.outputs.lint == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # The module targets the Go release that go.mod names (the llm-d router requires it). golangci-lint refuses a module
       # newer than the Go that built it and the published binaries are built with an older Go,
-      # so the linter is built from source with the module's Go.
+      # so the linter is built from source with the module's Go. The binary is cached per Go
+      # version, so only the first run after a Go bump compiles it.
       - name: Setup Go
+        if: needs.changes.outputs.lint == 'true'
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
+
+      - name: Restore the Go build cache
+        if: needs.changes.outputs.lint == 'true'
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/.cache/go-build
+          key: go-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-
+            go-build-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: The linter binary for this Go
+        id: linter
+        if: needs.changes.outputs.lint == 'true'
+        run: echo "key=golangci-lint-v2.14.0-${{ runner.os }}-${{ runner.arch }}-$(go env GOVERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the linter binary
+        id: linter-cache
+        if: needs.changes.outputs.lint == 'true'
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ~/go/bin/golangci-lint
+          key: ${{ steps.linter.outputs.key }}
+
+      - name: Build the linter
+        if: needs.changes.outputs.lint == 'true' && steps.linter-cache.outputs.cache-hit != 'true'
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
+
+      - name: Keep the linter binary
+        if: needs.changes.outputs.lint == 'true' && steps.linter-cache.outputs.cache-hit != 'true' && github.event_name != 'pull_request'
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ~/go/bin/golangci-lint
+          key: ${{ steps.linter.outputs.key }}
 
       - name: Lint
-        uses: golangci/golangci-lint-action@9fae48acfc02a90574d7c304a1758ef9895495fa # v7.0.1
-        with:
-          version: v2.14.0
-          install-mode: goinstall
+        if: needs.changes.outputs.lint == 'true'
+        run: ~/go/bin/golangci-lint run
 
   # The stack record and the version rules (design SIM-3, LIF-2, X11, X23): stack.json equals
   # what the build selects; go.mod has one replace and only engine excludes; the toolchain is
@@ -147,7 +555,10 @@ jobs:
   # build downloads one); and the documents that state versions are the ones rendered from
   # stack.json. internal/stack's tests hold the first three; versions-doc --check the last.
   stack:
+    needs: changes
+    if: ${{ needs.changes.outputs.stack == 'true' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       GOTOOLCHAIN: local
     steps:
@@ -158,7 +569,17 @@ jobs:
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
+
+      - name: Restore the Go build cache
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/.cache/go-build
+          key: go-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-
+            go-build-${{ runner.os }}-${{ runner.arch }}-
 
       - name: The toolchain is contracts/toolchain
         run: |
@@ -182,10 +603,28 @@ jobs:
 
   # Before a release: every blis-vllm and llm-d router package the binary links, tested at the
   # versions inference-sim selects (design §3.2, LIF-2). Also on pull requests that change go.mod.
-  selected-deps:
+  # The packages are split into parallel shards: blis-vllm's compat/kernelmodel is most of the
+  # time (one test of it takes two minutes), so its tests are split by name; every other package
+  # is split by import path. The job named selected-deps, after the shards, fails unless they
+  # ran every test of kernelmodel and every other package once.
+  selected-deps-shards:
+    needs: changes
+    name: selected-deps (${{ matrix.kind }} ${{ matrix.shard }}/${{ matrix.shards }})
+    if: ${{ needs.changes.outputs.selected == 'true' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     env:
       GOTOOLCHAIN: local
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { kind: kernelmodel, salt: "s224:", shard: 1, shards: 4 }
+          - { kind: kernelmodel, salt: "s224:", shard: 2, shards: 4 }
+          - { kind: kernelmodel, salt: "s224:", shard: 3, shards: 4 }
+          - { kind: kernelmodel, salt: "s224:", shard: 4, shards: 4 }
+          - { kind: rest, shard: 1, shards: 2 }
+          - { kind: rest, shard: 2, shards: 2 }
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -194,10 +633,73 @@ jobs:
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
+
+      - name: Restore the Go build cache
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/.cache/go-build
+          key: go-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-
+            go-build-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Test engine and router packages at the selected versions
-        run: scripts/test-selected-deps.sh -count=1
+        env:
+          SELECTED_DEPS_SHARD: ${{ matrix.kind }}:${{ matrix.shard }}/${{ matrix.shards }}
+          CI_SHARD_SALT: ${{ matrix.salt }}
+          CI_SHARD_OUT: ${{ runner.temp }}/evidence
+        run: scripts/test-selected-deps.sh -count=1 -timeout 20m
+
+      - name: Keep the evidence of what this shard ran
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: evidence-selected-${{ matrix.kind }}-${{ matrix.shard }}
+          path: ${{ runner.temp }}/evidence
+          retention-days: 1
+          if-no-files-found: ignore
+
+  selected-deps:
+    needs: [changes, selected-deps-shards]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Shards passed
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          SHARDS: ${{ needs.selected-deps-shards.result }}
+        run: |
+          test "$CHANGES" = success || { echo "the change filter: $CHANGES"; exit 1; }
+          case "$SHARDS" in success|skipped) ;; *) echo "selected-deps shards: $SHARDS"; exit 1 ;; esac
+
+      - name: Checkout code
+        if: needs.changes.outputs.selected == 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Fetch the kernelmodel evidence
+        if: needs.changes.outputs.selected == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: evidence-selected-kernelmodel-*
+          path: gathered/kernelmodel
+
+      - name: Fetch the other packages' evidence
+        if: needs.changes.outputs.selected == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: evidence-selected-rest-*
+          path: gathered/rest
+
+      - name: Every kernelmodel test ran in exactly one shard
+        if: needs.changes.outputs.selected == 'true'
+        run: scripts/ci-shard-verify.sh 4 gathered/kernelmodel
+
+      - name: Every other package ran in exactly one shard
+        if: needs.changes.outputs.selected == 'true'
+        run: scripts/ci-shard-verify.sh 2 gathered/rest
 
   # A NEW job, not a step added to an existing shard: renaming a required check blocks PRs, so the
   # size guard gets its own name. Path-independent backstop for the CLAUDE.md charter — it catches
@@ -210,7 +712,10 @@ jobs:
   # shellcheck and pyflakes integrations are off because the existing run blocks have not been
   # through them, and a gate that fails on first contact would be switched off, not fixed.
   actionlint:
+    needs: changes
+    if: ${{ needs.changes.outputs.actionlint == 'true' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -219,15 +724,90 @@ jobs:
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
+          cache: false
 
       - name: Lint the workflows
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 -shellcheck= -pyflakes=
 
   claude-md-size:
+    needs: changes
+    if: ${{ needs.changes.outputs.claudemd == 'true' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Enforce the CLAUDE.md size ceiling
         run: scripts/claude-md-size.sh CLAUDE.md 40000
+
+  # Saves the Go build cache the other jobs restore. It runs on a push to main (every merge) and,
+  # on request, on a dispatch (save_cache), so a branch can warm its own cache. Pull requests
+  # never save: they would fill the repository's 10 GB cache quota with one entry per push.
+  cache-warm:
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.save_cache) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-latest, scope: all }
+          - { runner: ubuntu-24.04-arm, scope: bytegate }
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Restore the previous cache
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/.cache/go-build
+          key: go-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-
+            go-build-${{ runner.os }}-${{ runner.arch }}-
+
+      # Compile what the jobs compile: every package, every test binary, and the blis binary the
+      # byte gate builds (-trimpath, -buildvcs=false). -run '^$' starts no test.
+      - name: Compile everything the jobs compile
+        run: |
+          set -euo pipefail
+          go build -buildvcs=false -trimpath -o /dev/null .
+          if [ "${{ matrix.scope }}" = all ]; then
+            go build ./...
+            go test -count=1 -run '^$' ./... > /dev/null
+          else
+            go test -count=1 -run '^$' ./internal/bytegate > /dev/null
+          fi
+
+      - name: Save the cache
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/.cache/go-build
+          key: go-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
+
+  # The one status to require. Every job above reports success, failure or skipped; this one
+  # succeeds when none failed or was cancelled and the change filter itself ran, so a skipped job
+  # (its group off) is a success and a job skipped because the filter broke is not.
+  required:
+    needs: [changes, build, test, test-shards, test-workload-cmd, test-llmd-shards, test-llmd, lint, stack, selected-deps-shards, selected-deps, actionlint, claude-md-size]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Nothing failed or was cancelled
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          printf '%s\n' "$RESULTS" | jq -r 'to_entries[] | "\(.key)\t\(.value.result)"'
+          bad="$(printf '%s\n' "$RESULTS" | jq -r 'to_entries[] | select(.value.result != "success" and .value.result != "skipped") | .key')"
+          if [ -n "$bad" ]; then echo "not successful: $bad"; exit 1; fi
+          printf '%s\n' "$RESULTS" | jq -e '.changes.result == "success"' > /dev/null

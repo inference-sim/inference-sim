@@ -29,7 +29,4 @@ pools:
       gpu_memory_utilization: 0.9
       async_scheduling: true
       moe_backend: marlin
-      speculative:
-        method: dspark
-        num_spec_tokens: 7
-        draft_model: muse-spark-open-dspark
+      speculative_config: {method: dspark, num_speculative_tokens: 7, model: muse-spark-open-dspark}

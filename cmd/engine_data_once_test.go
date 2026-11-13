@@ -187,18 +187,19 @@ func TestContractEngine_RootBesideDataIsRefusedAndDataAloneBuilds(t *testing.T) 
 }
 
 // A scenario whose engine the factory refuses at startup (a combination the engine does not
-// build, such as KV transfer with data parallelism) is a refusal the user can fix, so the CLI
+// build, such as a prefill data-parallel group that spans nodes) is a refusal the user can fix, so the CLI
 // reports it as one message and exits 1, and does not dump a goroutine trace (exit 2).
 func TestCLI_AnEngineRefusedAtStartupIsAFatalMessageNotAPanic(t *testing.T) {
 	scenarios, err := filepath.Abs(pdScenarios)
 	if err != nil {
 		t.Fatal(err)
 	}
-	args := []string{"run", "--scenarios", scenarios, "--scenario", "minimax-m2.5-gb200-1p1d-dp2.yaml",
-		"--num-instances", "2", "--prefill-instances", "1", "--decode-instances", "1", "--num-requests", "4"}
-	if _, statErr := os.Stat(filepath.Join(scenarios, "minimax-m2.5-gb200-1p1d-dp2.yaml")); statErr != nil {
+	const name = "minimax-m2.5-gb200-1p1d-dp2.yaml"
+	if _, statErr := os.Stat(filepath.Join(scenarios, name)); statErr != nil {
 		t.Fatalf("the fixture this test runs is missing from %s: %v", pdScenarios, statErr)
 	}
+	args := []string{"run", "--scenarios", scenarios, "--scenario", name,
+		"--num-instances", "2", "--prefill-instances", "1", "--decode-instances", "1", "--num-requests", "4"}
 	_, stderr, runErr := runKernelCLI(t, args...)
 	if runErr == nil {
 		t.Fatalf("the engine refuses this scenario at startup, and the run succeeded")
@@ -206,7 +207,7 @@ func TestCLI_AnEngineRefusedAtStartupIsAFatalMessageNotAPanic(t *testing.T) {
 	if strings.Contains(stderr, "goroutine ") || strings.Contains(stderr, "panic:") {
 		t.Errorf("a startup refusal dumped a panic:\n%s", lastLines(stderr, 6))
 	}
-	if !strings.Contains(stderr, "level=fatal") || !strings.Contains(stderr, "not built yet") {
+	if !strings.Contains(stderr, "level=fatal") || !strings.Contains(stderr, "spans 2 nodes") {
 		t.Errorf("the refusal is not reported as a fatal message naming why:\n%s", lastLines(stderr, 4))
 	}
 	var ee *exec.ExitError

@@ -2,7 +2,7 @@
 
 **Branch**: `006-model-autoscaler`  
 **All types live in**: `sim/cluster/autoscaler.go` (new file, 1C-1a)  
-**Extended types**: `sim/router_state.go` (RoutingSnapshot), `sim/cluster/infra_config.go` (NodePoolConfig)
+**Extended types**: `sim/instance_status.go` (RoutingSnapshot), `sim/cluster/infra_config.go` (NodePoolConfig)
 
 ---
 
@@ -178,7 +178,7 @@ ScaleActuationEvent
 
 ## Modified Types
 
-### RoutingSnapshot (sim/router_state.go) — additive fields
+### RoutingSnapshot (sim/instance_status.go) — additive fields
 
 ```diff
  type RoutingSnapshot struct {

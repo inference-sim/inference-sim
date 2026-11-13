@@ -354,6 +354,15 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 	round0Only := make([]*sim.Request, 0, len(reqs))
 	closedLoopSessionIDs := make(map[string]bool)
 
+	// The round-0 requests of every session, by client, in generation order: one pass over reqs,
+	// so matching sessions to clients costs O(C + R), not O(C x R) (DEV-5).
+	roundZeroByClient := make(map[string][]*sim.Request)
+	for _, req := range reqs {
+		if req.SessionID != "" && req.RoundIndex == 0 {
+			roundZeroByClient[req.ClientID] = append(roundZeroByClient[req.ClientID], req)
+		}
+	}
+
 	// Build session blueprints for closed-loop multi-turn clients
 	for i := range allClients {
 		client := &allClients[i]
@@ -382,14 +391,11 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 		// (e.g. all stages in a multi-stage workload share the same prefixGroup TenantID).
 		var prefixTokens []sim.TokenID
 		if client.PrefixGroup != "" && client.PrefixLength > 0 {
-			for _, req := range reqs {
-				if req.SessionID != "" && req.RoundIndex == 0 && req.ClientID == client.ID {
-					// The first PrefixLength tokens of InputTokens are the prefix
-					if req.InputLen() >= int64(client.PrefixLength) {
-						prefixTokens = make([]sim.TokenID, client.PrefixLength)
-						copy(prefixTokens, req.InputTokenSlice(0, int64(client.PrefixLength)))
-					}
-					break
+			if first := roundZeroByClient[client.ID]; len(first) > 0 {
+				// The first PrefixLength tokens of InputTokens are the prefix
+				if req := first[0]; req.InputLen() >= int64(client.PrefixLength) {
+					prefixTokens = make([]sim.TokenID, client.PrefixLength)
+					copy(prefixTokens, req.InputTokenSlice(0, int64(client.PrefixLength)))
 				}
 			}
 		}
@@ -400,11 +406,9 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 		// incorrect — in multi-stage workloads, all stages share the same TenantID
 		// (prefixGroup), causing the first client to claim all sessions (#974).
 		sessionIDsForClient := make(map[string]bool)
-		for _, req := range reqs {
-			if req.SessionID != "" && req.RoundIndex == 0 && req.ClientID == client.ID {
-				sessionIDsForClient[req.SessionID] = true
-				closedLoopSessionIDs[req.SessionID] = true
-			}
+		for _, req := range roundZeroByClient[client.ID] {
+			sessionIDsForClient[req.SessionID] = true
+			closedLoopSessionIDs[req.SessionID] = true
 		}
 		// Warn if a closed-loop client produced no sessions. This indicates that
 		// round-0 requests for this client have ClientID unset or mismatched

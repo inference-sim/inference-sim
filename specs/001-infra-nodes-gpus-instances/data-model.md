@@ -146,7 +146,7 @@ Model string // Target model identifier for multi-model clusters; empty = defaul
 
 ---
 
-### 9. Updated `sim.RoutingSnapshot` (modified, `sim/routing.go`)
+### 9. Updated `sim.RoutingSnapshot` (modified, `sim/instance_status.go`)
 
 **Added field**:
 ```go

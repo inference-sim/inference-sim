@@ -57,10 +57,10 @@ func TestAdoptKernelDeployment_SchedulingPolicySetsQueueOrderAndPreemption(t *te
 func TestKernelPools_Overrides_CarryEachPoolsOwnSchedulingPolicy(t *testing.T) {
 	_, catalog, registry := kernelRepos(t)
 	dir := writeScenarioVariant(t,
-		"      gpu_memory_utilization: 0.9\n  - role: decode",
-		"      gpu_memory_utilization: 0.9\n      scheduling_policy: fcfs\n  - role: decode",
-		"      gpu_memory_utilization: 0.9\n\npd_transfer",
-		"      gpu_memory_utilization: 0.9\n      scheduling_policy: priority\n\npd_transfer")
+		"      compilation_config: {cudagraph_mode: PIECEWISE}\n  - role: decode",
+		"      compilation_config: {cudagraph_mode: PIECEWISE}\n      scheduling_policy: fcfs\n  - role: decode",
+		"      compilation_config: {cudagraph_mode: PIECEWISE}\n\npd_transfer",
+		"      compilation_config: {cudagraph_mode: PIECEWISE}\n      scheduling_policy: priority\n\npd_transfer")
 	saved := []any{kernelScenario, kernelScenarioDir, registryPath, kernelOpened, prefillInstances,
 		decodeInstances, numInstances, scheduler, preemptionPolicy, schedulerSource, preemptionSource}
 	defer func() {

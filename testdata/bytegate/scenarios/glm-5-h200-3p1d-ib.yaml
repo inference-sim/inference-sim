@@ -30,13 +30,13 @@ pools:
       enable_expert_parallel: false
     engine:
       quantization: fp8
-      cache_dtype: fp8
+      kv_cache_dtype: fp8
       block_size: 64
       max_num_batched_tokens: 8192
       max_num_seqs: 256
       max_model_len: 32768
-      cudagraph_mode: PIECEWISE
       gpu_memory_utilization: 0.9
+      compilation_config: {cudagraph_mode: PIECEWISE}
   - role: decode
     nodes: 1
     parallel:
@@ -46,13 +46,13 @@ pools:
       enable_expert_parallel: false
     engine:
       quantization: fp8
-      cache_dtype: fp8
+      kv_cache_dtype: fp8
       block_size: 64
       max_num_batched_tokens: 8192
       max_num_seqs: 256
       max_model_len: 32768
-      cudagraph_mode: PIECEWISE
       gpu_memory_utilization: 0.9
+      compilation_config: {cudagraph_mode: PIECEWISE}
 
 pd_transfer:
   connector: NixlConnector

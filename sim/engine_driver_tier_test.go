@@ -2,13 +2,47 @@ package sim
 
 import (
 	"testing"
+	"time"
 
 	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/units"
+
+	"github.com/inference-sim/inference-sim/sim/internal/testutil"
 )
 
+// tierDevice is the catalog device the fakes' tier stands for, and tierPlan the pool plan they
+// state (engine.Planned): one node, one tier.
+const tierDevice = "cpu_dram"
+
+func tierPlan() plan.PoolPlan {
+	return plan.PoolPlan{Hardware: "fake-chip", Layout: plan.Layout{Tensor: 1, RanksPerNode: 1, Nodes: 1},
+		Tiers: []plan.KVTier{{Device: tierDevice}}}
+}
+
+// tierTransfer is a copy of one block of 16 tokens as an engine states it: its own report (the
+// tier's name in the engine's configuration) and the Move the cost model prices.
+func tierTransfer(id engine.TransferID, req string, k engine.TransferKind) engine.Transfer {
+	mk := plan.TransferToTier
+	if k == engine.TransferLoad {
+		mk = plan.TransferFromTier
+	}
+	return engine.Transfer{ID: id, Request: req, Kind: k, Tier: "cpu", Tokens: 16, Blocks: 1,
+		Move: plan.Transfer{Tokens: units.Tokens(16), Kind: mk, Tier: tierDevice}}
+}
+
+// tierEnv prices every tier copy at ticks microseconds alone, whatever its size: a demand of a
+// floor and no payload.
+func tierEnv(ticks int64) testutil.PullEnv {
+	return testutil.PullEnv{BlockTokens: 16, Tier: func(plan.Transfer) kernel.TransferDemand {
+		return kernel.TransferDemand{Floor: time.Duration(ticks) * time.Microsecond}
+	}}
+}
+
 // tiered is a FIFO whose first batch that runs requests starts one CPU-tier store and two loads,
-// each priced at 100 us, and records when each is reported done.
+// each priced at 100 us by the Environment, and records when each is reported done.
 type tiered struct {
 	*enginetest.FIFO
 	started bool
@@ -24,12 +58,13 @@ func (e *tiered) Schedule(now engine.Time) (engine.Batch, error) {
 	e.started = true
 	for _, k := range []engine.TransferKind{engine.TransferStore, engine.TransferLoad, engine.TransferLoad} {
 		e.next++
-		b.TransfersStarted = append(b.TransfersStarted, engine.Transfer{ID: 1000 + e.next, Kind: k, Tier: "cpu", Blocks: 1})
+		b.TransfersStarted = append(b.TransfersStarted, tierTransfer(1000+e.next, "a", k))
 	}
 	return b, nil
 }
 
-func (e *tiered) TransferTime(engine.Transfer) (engine.Duration, bool) { return 100, true }
+// Plan implements engine.Planned.
+func (e *tiered) Plan() plan.PoolPlan { return tierPlan() }
 
 func (e *tiered) TransferDone(id engine.TransferID, ok bool, now engine.Time) error {
 	if id > 1000 {
@@ -51,7 +86,7 @@ func TestEngineDriver_TierTransfersRunOneStreamPerDirectionAfterTheirStep(t *tes
 		t.Fatal(err)
 	}
 	eng := &tiered{FIFO: fifo, done: map[engine.TransferID]int64{}}
-	d := NewEngineDriver(eng, EngineDriverConfig{Horizon: 1 << 40})
+	d := NewEngineDriver(eng, EngineDriverConfig{Horizon: 1 << 40, Environment: tierEnv(100)})
 	d.InjectArrival(&Request{ID: "a", InputTokens: tokens(8), OutputTokens: tokens(1)})
 	d.Run()
 	want := map[engine.TransferID]int64{1001: 150, 1002: 150, 1003: 250}
@@ -82,12 +117,13 @@ func (e *emptyTiered) Schedule(now engine.Time) (engine.Batch, error) {
 	}
 	if e.ran && !e.started {
 		e.started = true
-		b.TransfersStarted = []engine.Transfer{{ID: 1001, Kind: engine.TransferStore, Tier: "cpu", Blocks: 1}}
+		b.TransfersStarted = []engine.Transfer{tierTransfer(1001, "a", engine.TransferStore)}
 	}
 	return b, nil
 }
 
-func (e *emptyTiered) TransferTime(engine.Transfer) (engine.Duration, bool) { return 100, true }
+// Plan implements engine.Planned.
+func (e *emptyTiered) Plan() plan.PoolPlan { return tierPlan() }
 
 func (e *emptyTiered) TransferDone(id engine.TransferID, ok bool, now engine.Time) error {
 	if id > 1000 {
@@ -107,7 +143,7 @@ func TestEngineDriver_TierTransferOfAnEmptyScheduleWaitsForTheBatchInFlight(t *t
 		t.Fatal(err)
 	}
 	eng := &emptyTiered{FIFO: fifo, done: map[engine.TransferID]int64{}}
-	d := NewEngineDriver(eng, EngineDriverConfig{Horizon: 1 << 40})
+	d := NewEngineDriver(eng, EngineDriverConfig{Horizon: 1 << 40, Environment: tierEnv(100)})
 	d.InjectArrival(&Request{ID: "a", InputTokens: tokens(8), OutputTokens: tokens(1)})
 	d.Run()
 	if !eng.started || eng.done[1001] != 150 {

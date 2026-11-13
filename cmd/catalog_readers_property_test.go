@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	schemaworkload "github.com/inference-sim/blis-substrate/contracts/spec/workload"
-	"github.com/inference-sim/blis-vllm/compat/build"
 	"pgregory.net/rapid"
 )
 
@@ -80,46 +79,32 @@ func TestPresetReader_AcceptsWhatTheFlagsAndTheSchemaAcceptAndLosesNothing(t *te
 	})
 }
 
-// A storage tier's figures reach the offload model unchanged: the catalog's _mb_s and _us
-// keys are the same numbers as BLIS's bytes/µs and µs (1 MB/s = 1 byte/µs), so any
-// conversion would be a bug. And a non-positive figure is refused naming its key -- a zero
-// base latency makes a small transfer free, which no device is.
-func TestStorageDeviceReader_PassesFiguresThroughAndRefusesNonPositive(t *testing.T) {
+// A storage tier is a name in the catalog and states no number: its read rate, write rate and
+// base latency are registry entries priced by the kernel. A table that still states one of the
+// three is refused naming the key, whatever its value, and a table of names alone resolves each
+// to a class.
+func TestStorageDeviceReader_ResolvesNamesAndRefusesAStatedRate(t *testing.T) {
 	keys := []string{"read_bandwidth_mb_s", "write_bandwidth_mb_s", "base_latency_us"}
 	rapid.Check(t, func(rt *rapid.T) {
-		figures := make([]float64, len(keys))
-		bad := -1
-		for i, k := range keys {
-			figures[i] = rapid.Float64Range(1e-3, 1e6).Draw(rt, k)
-		}
-		if rapid.Bool().Draw(rt, "corrupt") {
-			bad = rapid.IntRange(0, len(keys)-1).Draw(rt, "which")
-			figures[bad] = rapid.SampledFrom([]float64{0, -1, -1e6}).Draw(rt, "value")
-		}
-		fields := make([]string, len(keys))
-		for i, k := range keys {
-			fields[i] = fmt.Sprintf("%s: %v", k, figures[i])
-		}
-		data, err := dataFromCatalog(writeCatalogStorageDevices(t, "tier: {"+strings.Join(fields, ", ")+"}\n"))
-		var devices map[string]build.KVOffloadDevice
-		if err == nil {
-			devices, err = loadCatalogStorageDevices(data)
-		}
-
-		if bad >= 0 {
-			if err == nil || !strings.Contains(err.Error(), keys[bad]) {
-				rt.Fatalf("%s=%v must be refused naming the key, got err=%v",
-					keys[bad], figures[bad], err)
+		if rapid.Bool().Draw(rt, "states a rate") {
+			key := rapid.SampledFrom(keys).Draw(rt, "key")
+			value := rapid.Float64Range(-1e6, 1e6).Draw(rt, "value")
+			_, err := dataFromCatalog(writeCatalogStorageDevices(t, fmt.Sprintf("tier: {_comment: \"a class\", %s: %v}\n", key, value)))
+			if err == nil || !strings.Contains(err.Error(), key) {
+				rt.Fatalf("%s: %v must be refused naming the key, got err=%v", key, value, err)
 			}
 			return
 		}
+		data, err := dataFromCatalog(writeCatalogStorageDevices(t, "tier: {_comment: \"a class\"}\nother: {_comment: \"another\"}\n"))
 		if err != nil {
-			rt.Fatalf("a positive table was refused: %v", err)
+			rt.Fatalf("a table of names was refused: %v", err)
 		}
-		got := devices["tier"]
-		if got.ReadBandwidth != figures[0] || got.WriteBandwidth != figures[1] ||
-			got.BaseLatency != figures[2] {
-			rt.Fatalf("figures changed in transit: wrote %v, read %+v", figures, got)
+		devices, err := loadCatalogStorageDevices(data)
+		if err != nil {
+			rt.Fatalf("a table of names did not resolve: %v", err)
+		}
+		if _, ok := devices["tier"]; !ok || len(devices) != 2 {
+			rt.Fatalf("resolved %v, want the classes tier and other", devices)
 		}
 	})
 }

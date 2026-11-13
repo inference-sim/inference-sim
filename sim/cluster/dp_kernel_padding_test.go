@@ -41,7 +41,7 @@ func TestDPLockstep_KernelPaddingReachesTheCluster(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scenario := strings.Replace(string(raw), "      max_model_len:", "      cudagraph_mode: PIECEWISE\n      max_model_len:", 1)
+	scenario := strings.Replace(string(raw), "      max_model_len:", "      compilation_config: {cudagraph_mode: PIECEWISE}\n      max_model_len:", 1)
 	if scenario == string(raw) {
 		t.Fatalf("%s has no max_model_len line to put cudagraph_mode before", fixture)
 	}

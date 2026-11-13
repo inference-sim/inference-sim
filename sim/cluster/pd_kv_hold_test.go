@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"math"
 	"reflect"
 	"testing"
@@ -31,7 +32,7 @@ func holdTestRequest(id string, seed int, arrival int64, inputLen, outputLen int
 func holdConfig(hold bool, transfer int64) DeploymentConfig {
 	cfg := newTestDisaggDeploymentConfig(2, 1, 1)
 	cfg.PDPrefillKVHold = hold
-	cfg.PDTransferTime = func(int64, InstanceID, InstanceID) int64 { return transfer }
+	setPDPrice(&cfg, func(int64, plan.Endpoint, plan.Endpoint) int64 { return transfer })
 	return cfg
 }
 

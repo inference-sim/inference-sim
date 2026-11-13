@@ -844,3 +844,99 @@ func deploymentForPlacement(numInstances int, pools []NodePoolConfig, globalBloc
 		return d
 	}()
 }
+
+// INV-A is the per-instance law: the GPUs whose AllocatedTo names an instance number its
+// TPDegree, however the placement spread them. The old check, allocated + free == total on each
+// node, counted one slice twice and could not fail; each case below breaks the law and the old
+// check passes it.
+func TestVerifyConservation_PerInstanceLaw(t *testing.T) {
+	place := func(t *testing.T) *PlacementManager {
+		pm := newTestPM([]NodePoolConfig{newTestPool("h100", "H100", 8, 3)})
+		for _, p := range []struct {
+			id string
+			tp int
+		}{{"inst-a", 4}, {"inst-b", 16}} { // inst-b spans the two nodes inst-a left whole
+			if _, _, _, err := pm.PlaceInstance(InstanceID(p.id), "m", "H100", p.tp); err != nil {
+				t.Fatalf("PlaceInstance %s: %v", p.id, err)
+			}
+		}
+		return pm
+	}
+	holder := func(pm *PlacementManager, id InstanceID) *GPU {
+		for _, n := range pm.nodesByPool["h100"] {
+			for _, g := range n.GPUs {
+				if g.AllocatedTo == id {
+					return g
+				}
+			}
+		}
+		t.Fatalf("no GPU held by %s", id)
+		return nil
+	}
+
+	t.Run("a placement, a spanning one included, satisfies it", func(t *testing.T) {
+		if err := place(t).VerifyConservation(); err != nil {
+			t.Errorf("VerifyConservation: %v", err)
+		}
+	})
+	t.Run("a release restores it", func(t *testing.T) {
+		pm := place(t)
+		if err := pm.ReleaseInstance("inst-b"); err != nil {
+			t.Fatal(err)
+		}
+		if err := pm.VerifyConservation(); err != nil {
+			t.Errorf("after releasing the spanning instance: %v", err)
+		}
+	})
+	t.Run("a GPU handed to another instance breaks it", func(t *testing.T) {
+		pm := place(t)
+		holder(pm, "inst-a").AllocatedTo = "inst-b"
+		err := pm.VerifyConservation()
+		if err == nil || !strings.Contains(err.Error(), "inst-a") {
+			t.Fatalf("a GPU moved from inst-a to inst-b went unnoticed: %v", err)
+		}
+	})
+	t.Run("a GPU lost from a spanning instance breaks it", func(t *testing.T) {
+		pm := place(t)
+		holder(pm, "inst-b").AllocatedTo = ""
+		err := pm.VerifyConservation()
+		if err == nil || !strings.Contains(err.Error(), "inst-b") {
+			t.Fatalf("a GPU freed under inst-b went unnoticed: %v", err)
+		}
+	})
+	t.Run("a GPU allocated to an instance never placed breaks it", func(t *testing.T) {
+		pm := place(t)
+		for _, g := range pm.nodesByPool["h100"][0].GPUs {
+			if g.AllocatedTo == "" {
+				g.AllocatedTo = "ghost"
+				break
+			}
+		}
+		err := pm.VerifyConservation()
+		if err == nil || !strings.Contains(err.Error(), "ghost") {
+			t.Fatalf("a GPU allocated to a ghost went unnoticed: %v", err)
+		}
+	})
+}
+
+// A node that terminates frees the GPUs it holds. The instance then holds fewer than it asked
+// for, and that is not a violation of the law: the law follows the GPUs actually freed.
+func TestVerifyConservation_FollowsGPUsAFreedNodeReturns(t *testing.T) {
+	pm := newTestPM([]NodePoolConfig{newTestPool("h100", "H100", 8, 2)})
+	if _, _, _, err := pm.PlaceInstance("inst-a", "m", "H100", 16); err != nil { // spans both nodes
+		t.Fatal(err)
+	}
+	node := pm.nodesByPool["h100"][0]
+	if err := pm.MarkNodeTerminated(node.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := pm.VerifyConservation(); err != nil {
+		t.Errorf("after a node freed 8 of the instance's 16 GPUs: %v", err)
+	}
+	if err := pm.ReleaseInstance("inst-a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := pm.VerifyConservation(); err != nil {
+		t.Errorf("after the instance's release: %v", err)
+	}
+}

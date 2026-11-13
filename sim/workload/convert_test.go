@@ -239,7 +239,7 @@ inference_perf:
 	}
 }
 
-// #1906: composing keeps what the inputs bound.
+// Composing keeps what the inputs bound.
 func TestComposeSpecs_KeepsNumRequestsHorizonAndSeed(t *testing.T) {
 	mk := func(seed, n, h int64) *WorkloadSpec {
 		return &WorkloadSpec{Version: "2", Seed: seed, NumRequests: n, Horizon: h, AggregateRate: 2,

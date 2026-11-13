@@ -53,6 +53,7 @@ Never use `continue` in an error path without propagating, counting, or document
 4. Test laws, not just values — invariant tests alongside golden tests *(Enforced by R7)*
 5. Refactor survival test: "Would this test still pass if the implementation were completely rewritten but the behavior preserved?"
 6. THEN clauses drive test quality — structural THEN produces structural test
+7. A law asserted about an engine port, such as a monotonicity property, is first run against the upstream engine on the oracle scenarios and adopted only if the upstream satisfies it (FID-6). A law about the cost model names the upstream behaviour it rests on. Two laws once written for the scheduler, that more KV never adds preemptions and that a larger token budget never delays the first token, are false for vLLM v0.32.0 itself; blis-vllm tests the narrower forms the upstream satisfies, and records the change in its testing notes. This repository holds no engine law test, so the rule binds the tests it takes from an engine repository.
 
 **Prohibited assertion patterns** (structural — break on refactor):
 - Type assertions: `policy.(*ConcreteType)`

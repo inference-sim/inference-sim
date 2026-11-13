@@ -40,8 +40,8 @@ inference-sim/
 │   ├── renderer.go            # The API-server front end: rendering and tokenization before a request reaches the engine
 │   ├── progress_hook.go       # ProgressHook: periodic read-only state snapshots during a run
 │   ├── recorder.go            # The *Metrics side of the engine's recorder seam
-│   ├── routing.go             # RoutingSnapshot: a lightweight view of one instance's live state (EffectiveLoad()), read by the model autoscaler; routing itself is the llm-d router's
-│   ├── router_state.go        # RouterState bridge type (Snapshots + Clock) built by the cluster for its own policies
+│   ├── instance_status.go     # InstanceStatus: a lightweight view of one instance's live state (EffectiveLoad()), read by the model autoscaler; routing itself is the llm-d router's
+│   ├── cluster_state.go       # ClusterState bridge type (Snapshots + Clock) built by the cluster for its own policies
 │   ├── bundle.go              # PolicyBundle YAML loading (priority, scheduler, preemption, node_pools, autoscaler, instance_lifecycle), LoadPolicyBundle, Validate
 │   ├── metrics.go             # TTFT, TPOT, E2E collection and SaveResults()
 │   ├── metrics_utils.go       # Percentile/mean calculation, MetricsOutput JSON struct, NewRequestMetrics canonical constructor

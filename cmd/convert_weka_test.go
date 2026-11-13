@@ -83,7 +83,7 @@ func TestConvertWeka_EndToEndAndAccumulateReconstruction(t *testing.T) {
 		t.Fatalf("round0 input len = %d, want 100", round0.InputLen())
 	}
 	round0.State = sim.StateCompleted
-	round0.ProgressIndex = int64(round0.InputLen()) + 10 // 10 output tokens generated
+	round0.GeneratedTokens = 10 // 10 output tokens emitted
 	fu := sm.OnComplete(round0, 8_000_000)
 	if len(fu) != 1 {
 		t.Fatalf("round0 follow-ups = %d, want 1", len(fu))
@@ -94,7 +94,7 @@ func TestConvertWeka_EndToEndAndAccumulateReconstruction(t *testing.T) {
 		t.Fatalf("round1 reconstructed input len = %d, want 150 (recorded in_1)", round1.InputLen())
 	}
 	round1.State = sim.StateCompleted
-	round1.ProgressIndex = int64(round1.InputLen()) + 20 // 20 output tokens
+	round1.GeneratedTokens = 20 // 20 output tokens emitted
 	fu = sm.OnComplete(round1, 30_000_000)
 	if len(fu) != 1 {
 		t.Fatalf("round1 follow-ups = %d, want 1", len(fu))

@@ -76,7 +76,7 @@ func acceptanceRecordOf(r acceptance.Resolution, c speculativeConfig) *sim.Accep
 	if p := r.Profile; p != nil {
 		rec.Entry.Key = p.Key().String()
 		rec.Entry.Method = string(p.Method)
-		rec.Entry.CopiedFrom = p.CopiedFrom
+		rec.Entry.CopiedFrom = p.TransferredFrom
 		if p.Provenance != nil {
 			rec.Entry.Run = p.Provenance.Run
 		}

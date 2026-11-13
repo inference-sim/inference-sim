@@ -6,12 +6,12 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
-// NOTE: After #1382, latency fields in RoutingSnapshot are always zero in production
-// (buildRouterState no longer calls LatencyStats). This test validates the collector's
+// NOTE: After #1382, latency fields in InstanceStatus are always zero in production
+// (buildClusterState no longer calls LatencyStats). This test validates the collector's
 // mechanical pass-through behavior, not end-to-end latency signal flow.
 func TestDefaultCollectorMapsLatencyFields(t *testing.T) {
-	state := &sim.RouterState{
-		Snapshots: []sim.RoutingSnapshot{
+	state := &sim.ClusterState{
+		Snapshots: []sim.InstanceStatus{
 			{
 				ID:           "i1",
 				Model:        "llama",
@@ -59,7 +59,7 @@ func TestDefaultCollectorCollect(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		state         *sim.RouterState
+		state         *sim.ClusterState
 		wantModels    int
 		wantReplicas  map[string]int // model -> expected replica count
 		checkFieldMap bool           // verify field mapping for first replica
@@ -71,13 +71,13 @@ func TestDefaultCollectorCollect(t *testing.T) {
 		},
 		{
 			name:       "empty snapshots — empty result",
-			state:      &sim.RouterState{Snapshots: []sim.RoutingSnapshot{}},
+			state:      &sim.ClusterState{Snapshots: []sim.InstanceStatus{}},
 			wantModels: 0,
 		},
 		{
 			name: "two models with correct grouping",
-			state: &sim.RouterState{
-				Snapshots: []sim.RoutingSnapshot{
+			state: &sim.ClusterState{
+				Snapshots: []sim.InstanceStatus{
 					{ID: "i1", Model: "modelA", GPUType: "A100", TPDegree: 1, KVUtilization: 0.5, QueueDepth: 3, InFlightRequests: 2, CostPerHour: 10.0, TotalKvCapacityTokens: 10000, KvTokensInUse: 5000},
 					{ID: "i2", Model: "modelA", GPUType: "A100", TPDegree: 1, KVUtilization: 0.3, QueueDepth: 1, InFlightRequests: 1, CostPerHour: 10.0, TotalKvCapacityTokens: 10000, KvTokensInUse: 3000},
 					{ID: "i3", Model: "modelB", GPUType: "H100", TPDegree: 2, KVUtilization: 0.7, QueueDepth: 5, InFlightRequests: 4, CostPerHour: 20.0, TotalKvCapacityTokens: 20000, KvTokensInUse: 14000},
@@ -162,13 +162,13 @@ func TestDefaultCollectorCollect(t *testing.T) {
 
 // TestDefaultCollector_PendingReplicaCount_FromLoadingSnapshots verifies that
 // DefaultCollector populates PendingReplicaCount and PendingTotalKvCapacityTokens
-// from RouterState.LoadingSnapshots.
+// from ClusterState.LoadingSnapshots.
 func TestDefaultCollector_PendingReplicaCount_FromLoadingSnapshots(t *testing.T) {
 	collector := &DefaultCollector{}
 
 	tests := []struct {
 		name                        string
-		state                       *sim.RouterState
+		state                       *sim.ClusterState
 		wantModels                  int
 		wantPendingCount            map[string]int
 		wantPendingKvCapacityTokens map[string]int64
@@ -177,12 +177,12 @@ func TestDefaultCollector_PendingReplicaCount_FromLoadingSnapshots(t *testing.T)
 		{
 			name:       "one loading replica alongside active replica",
 			wantModels: 1,
-			state: &sim.RouterState{
-				Snapshots: []sim.RoutingSnapshot{
+			state: &sim.ClusterState{
+				Snapshots: []sim.InstanceStatus{
 					{ID: "active-1", Model: "modelA", GPUType: "A100", TPDegree: 1,
 						TotalKvCapacityTokens: 10000, CostPerHour: 10.0},
 				},
-				LoadingSnapshots: []sim.RoutingSnapshot{
+				LoadingSnapshots: []sim.InstanceStatus{
 					{ID: "loading-1", Model: "modelA", GPUType: "A100", TPDegree: 1,
 						TotalKvCapacityTokens: 10000, CostPerHour: 10.0},
 				},
@@ -193,12 +193,12 @@ func TestDefaultCollector_PendingReplicaCount_FromLoadingSnapshots(t *testing.T)
 		{
 			name:       "two loading replicas accumulate capacity",
 			wantModels: 1,
-			state: &sim.RouterState{
-				Snapshots: []sim.RoutingSnapshot{
+			state: &sim.ClusterState{
+				Snapshots: []sim.InstanceStatus{
 					{ID: "active-1", Model: "modelA", GPUType: "A100", TPDegree: 1,
 						TotalKvCapacityTokens: 10000, CostPerHour: 10.0},
 				},
-				LoadingSnapshots: []sim.RoutingSnapshot{
+				LoadingSnapshots: []sim.InstanceStatus{
 					{ID: "loading-1", Model: "modelA", GPUType: "A100", TPDegree: 1,
 						TotalKvCapacityTokens: 10000, CostPerHour: 10.0},
 					{ID: "loading-2", Model: "modelA", GPUType: "A100", TPDegree: 1,
@@ -211,14 +211,14 @@ func TestDefaultCollector_PendingReplicaCount_FromLoadingSnapshots(t *testing.T)
 		{
 			name:       "loading replicas for different models bucketed separately",
 			wantModels: 2,
-			state: &sim.RouterState{
-				Snapshots: []sim.RoutingSnapshot{
+			state: &sim.ClusterState{
+				Snapshots: []sim.InstanceStatus{
 					{ID: "a1", Model: "modelA", GPUType: "A100", TPDegree: 1,
 						TotalKvCapacityTokens: 10000, CostPerHour: 10.0},
 					{ID: "b1", Model: "modelB", GPUType: "H100", TPDegree: 2,
 						TotalKvCapacityTokens: 20000, CostPerHour: 20.0},
 				},
-				LoadingSnapshots: []sim.RoutingSnapshot{
+				LoadingSnapshots: []sim.InstanceStatus{
 					{ID: "loading-a", Model: "modelA", GPUType: "A100", TPDegree: 1,
 						TotalKvCapacityTokens: 10000, CostPerHour: 10.0},
 					{ID: "loading-b", Model: "modelB", GPUType: "H100", TPDegree: 2,
@@ -231,8 +231,8 @@ func TestDefaultCollector_PendingReplicaCount_FromLoadingSnapshots(t *testing.T)
 		{
 			name:       "nil LoadingSnapshots — pending fields are zero",
 			wantModels: 1,
-			state: &sim.RouterState{
-				Snapshots: []sim.RoutingSnapshot{
+			state: &sim.ClusterState{
+				Snapshots: []sim.InstanceStatus{
 					{ID: "a1", Model: "modelA", GPUType: "A100", TPDegree: 1,
 						TotalKvCapacityTokens: 10000, CostPerHour: 10.0},
 				},
@@ -247,9 +247,9 @@ func TestDefaultCollector_PendingReplicaCount_FromLoadingSnapshots(t *testing.T)
 			// for a model that has never had a routable replica.
 			name:       "loading-only model — no active snapshots",
 			wantModels: 1,
-			state: &sim.RouterState{
+			state: &sim.ClusterState{
 				Snapshots: nil,
-				LoadingSnapshots: []sim.RoutingSnapshot{
+				LoadingSnapshots: []sim.InstanceStatus{
 					{ID: "loading-1", Model: "modelA", GPUType: "A100", TPDegree: 1,
 						TotalKvCapacityTokens: 10000, CostPerHour: 10.0},
 				},

@@ -1,12 +1,14 @@
 package cmd
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"math"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -73,10 +75,23 @@ func loadReplaySpec(path string) (*workload.Replay, error) {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	node := any(doc)
+	if bare, ok := node.(map[string]any); ok {
+		// A bare descriptor may carry the catalog's _comment keys, which are not part of it.
+		node = withoutCommentKeys(bare)
+	}
 	if r, ok := doc["replay"]; ok {
+		if err := onlyKey(path, "", doc, "replay"); err != nil {
+			return nil, err
+		}
 		node = r
 	} else if w, ok := doc["workload"].(map[string]any); ok {
 		if r, ok := w["replay"]; ok {
+			if err := onlyKey(path, "", doc, "workload"); err != nil {
+				return nil, err
+			}
+			if err := onlyKey(path, "workload.", w, "replay"); err != nil {
+				return nil, err
+			}
 			node = r
 		}
 	}
@@ -89,11 +104,46 @@ func loadReplaySpec(path string) (*workload.Replay, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The replay descriptor selects the corpus, the phase windows, the warm-up and the
+	// acceptance provenance, so a misspelled field must fail and not fall back to a default.
 	var r workload.Replay
-	if err := yaml.Unmarshal(raw, &r); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(raw))
+	dec.KnownFields(true)
+	if err := dec.Decode(&r); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return &r, nil
+}
+
+// isCommentKey reports a top-level key the catalog's workload files carry for their reader
+// (_comment, _comment_corpus, ...), which names no field.
+func isCommentKey(k string) bool { return strings.HasPrefix(k, "_comment") }
+
+// withoutCommentKeys returns m without its comment keys.
+func withoutCommentKeys(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		if !isCommentKey(k) {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+// onlyKey refuses a wrapper mapping that holds a key besides the one that leads to the replay
+// descriptor, naming the rejected key and where it is.
+func onlyKey(path, prefix string, m map[string]any, want string) error {
+	var extra []string
+	for k := range m {
+		if k != want && !isCommentKey(k) {
+			extra = append(extra, prefix+k)
+		}
+	}
+	if len(extra) == 0 {
+		return nil
+	}
+	sort.Strings(extra)
+	return fmt.Errorf("%s: unknown field %q beside %q: a replay document holds the descriptor and nothing else", path, extra[0], prefix+want)
 }
 
 // resolveAgentXSpec merges the flags over the descriptor and validates the result as

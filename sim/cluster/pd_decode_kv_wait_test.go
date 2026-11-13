@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"math"
 	"sort"
 	"testing"
@@ -151,7 +152,7 @@ func TestPDDecodeKVWait_HeadOfLineBlocks(t *testing.T) {
 // schedule; a dropped pulled count would price a shorter pull.
 func TestPDDecodeKVWait_StartsEveryHandoffTheEngineAdmits(t *testing.T) {
 	config := holdConfig(false, 1000)
-	config.PDTransferTime = func(tokens int64, _, _ InstanceID) int64 { return 1 + tokens }
+	setPDPrice(&config, func(tokens int64, _, _ plan.Endpoint) int64 { return 1 + tokens })
 	blocks := int64(40)
 	editDecode(&config, func(c *simConfig) { c.TotalKVBlocks = blocks })
 	long := holdTestRequest("long", 1, 0, 160, 400) // 10 blocks, grows to 35 while it decodes
@@ -244,3 +245,19 @@ type pdProbeAt struct {
 func (e *pdProbeAt) Timestamp() int64             { return e.time }
 func (e *pdProbeAt) Priority() int                { return 5 }
 func (e *pdProbeAt) Execute(cs *ClusterSimulator) { e.f(cs) }
+
+// The pull's block count is the engine's (engine.Transfer.Blocks), not the host's arithmetic: the
+// same run as StartsEveryHandoffTheEngineAdmits, with a host-wide block size that is not the
+// engines' (64 tokens against their 16), still records the 6 blocks each engine states for a
+// 96-token prompt. A host that computed ceil(tokens / BlockSizeTokens) would record 2.
+func TestPDDecodeKVWait_PulledBlocksAreTheEnginesNotTheHostWideArithmetic(t *testing.T) {
+	config := holdConfig(false, 1000)
+	setPDPrice(&config, func(tokens int64, _, _ plan.Endpoint) int64 { return 1 + tokens })
+	config.BlockSizeTokens = 64
+	editDecode(&config, func(c *simConfig) { c.TotalKVBlocks = 40 })
+	a := holdTestRequest("a", 2, 100_000, 96, 4)
+	ps := parentsByID(runHold(t, config, a))
+	if got := ps["a"].PulledKVBlocks; got != 6 {
+		t.Errorf("a's pull recorded %d blocks with a host-wide block size of 64, want the engine's 6", got)
+	}
+}

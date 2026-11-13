@@ -156,7 +156,7 @@ func ComposeSpecs(specs []*WorkloadSpec) (*WorkloadSpec, error) {
 		Category: specs[0].Category,
 		Seed:     specs[0].Seed,
 	}
-	// #1906: keep what the inputs bound. num_requests is the sum when every input caps its
+	// Keep what the inputs bound. num_requests is the sum when every input caps its
 	// run and is refused when only some do (the sum would silently uncap the others); the
 	// horizon is the largest; the seed is the one the inputs share.
 	capped := 0

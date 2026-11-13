@@ -2,9 +2,14 @@ package cluster
 
 import (
 	"fmt"
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"math"
 	"math/rand"
+	"strconv"
+	"strings"
+
+	"github.com/inference-sim/blis-substrate/contracts/engine/env"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
@@ -87,7 +92,31 @@ func testFakeZeroQueueing() cengine.LatencyModel {
 // DeploymentConfig.PDTransferTime: a fixed setup cost plus a per-token term, so a larger
 // handoff takes longer and every handoff takes at least one tick. The simulator only decides
 // when a transfer happens; how long it takes is the pricer's, so tests supply one.
-func testPDTransferTime(tokens int64, _, _ InstanceID) int64 { return 50 + tokens/50 }
+func testPDTransferTime(tokens int64, _, _ plan.Endpoint) int64 { return 50 + tokens/50 }
+
+// testInstanceEndpoint places instance_N on node N of its pool, so every pair of instances is on
+// two nodes and a pull's far end names the prefill instance it came from.
+func testInstanceEndpoint(id InstanceID) plan.Endpoint {
+	n, err := strconv.Atoi(strings.TrimPrefix(string(id), "instance_"))
+	if err != nil {
+		panic(fmt.Sprintf("testInstanceEndpoint: %q", id))
+	}
+	return plan.Endpoint{Node: n}
+}
+
+// setPDPrice makes every handoff of d take ticks(tokens, from, to) alone, for the blocks' token
+// capacity, from the endpoint of the prefill instance to the decode engine's own, and gives d the
+// endpoints a PD deployment needs. The decode engine states the move and the driver's Environment
+// prices it; a test supplies the price.
+func setPDPrice(d *DeploymentConfig, ticks func(tokens int64, from, to plan.Endpoint) int64) {
+	setPullEnv(d, func(block int64) testutil.PullEnv { return testutil.FixedPull(block, ticks) })
+}
+
+// setPullEnv is setPDPrice for a test that states the whole demand (payload, floor, links).
+func setPullEnv(d *DeploymentConfig, mk func(blockTokens int64) testutil.PullEnv) {
+	d.InstanceEndpoint = testInstanceEndpoint
+	d.NewEngine = compatEngineFactoryWith(d.DPLockstepRanks, func(b int64) env.Environment { return mk(b) })
+}
 
 // newTestRequests creates test requests matching the old newTestWorkload(n) behavior:
 // rate=10/1e6, seed=42, horizon=MaxInt64, no prefix, prompt mean=100 std=20 [10,200],

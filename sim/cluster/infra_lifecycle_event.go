@@ -103,17 +103,15 @@ func (e *InstanceLoadedEvent) Priority() int    { return priorityInstanceLifecyc
 
 // Execute transitions the instance Loading → WarmingUp (or Active if no warm-up configured).
 func (e *InstanceLoadedEvent) Execute(cs *ClusterSimulator) {
-	for _, inst := range cs.instances {
-		if inst.ID() == e.instanceID {
-			warmUpCount := cs.config.InstanceLifecycle.WarmUpRequestCount
-			if warmUpCount <= 0 {
-				// Skip WarmingUp phase entirely — go directly to Active
-				inst.TransitionTo(sim.InstanceStateActive)
-			} else {
-				inst.TransitionTo(sim.InstanceStateWarmingUp)
-			}
-			return
+	if inst := cs.instanceByID(e.instanceID); inst != nil {
+		warmUpCount := cs.config.InstanceLifecycle.WarmUpRequestCount
+		if warmUpCount <= 0 {
+			// Skip WarmingUp phase entirely — go directly to Active
+			inst.TransitionTo(sim.InstanceStateActive)
+		} else {
+			inst.TransitionTo(sim.InstanceStateWarmingUp)
 		}
+		return
 	}
 	// R1: log when target instance not found (should not happen unless instance was removed)
 	logrus.Warnf("[cluster] InstanceLoadedEvent: instance %s not found — event dropped", e.instanceID)

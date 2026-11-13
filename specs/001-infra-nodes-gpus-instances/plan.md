@@ -9,7 +9,7 @@
 
 ## Summary
 
-Phase 1A introduces three first-class infrastructure entities — `NodePool`, `Node`, and `GPU` — that make cluster hardware topology explicit and addressable. The simulator gains: (1) a `PlacementManager` that bin-packs instances onto nodes by GPU type and TP degree; (2) node and instance lifecycle state machines with configurable provisioning/loading delays modeled as DES timer events; (3) three drain policies (IMMEDIATE, WAIT, REDIRECT); and (4) multi-model cluster routing with per-model metrics in the JSON output. All 14 functional requirements are implemented in `sim/cluster/` with backward-compatible changes to `sim/request.go` and `sim/routing.go`. The GPU conservation invariant (`allocated + free == total`) is enforced transactionally and verified by companion invariant tests alongside every placement-related golden test.
+Phase 1A introduces three first-class infrastructure entities — `NodePool`, `Node`, and `GPU` — that make cluster hardware topology explicit and addressable. The simulator gains: (1) a `PlacementManager` that bin-packs instances onto nodes by GPU type and TP degree; (2) node and instance lifecycle state machines with configurable provisioning/loading delays modeled as DES timer events; (3) three drain policies (IMMEDIATE, WAIT, REDIRECT); and (4) multi-model cluster routing with per-model metrics in the JSON output. All 14 functional requirements are implemented in `sim/cluster/` with backward-compatible changes to `sim/request.go` and `sim/instance_status.go`. The GPU conservation invariant (`allocated + free == total`) is enforced transactionally and verified by companion invariant tests alongside every placement-related golden test.
 
 ---
 
@@ -37,7 +37,7 @@ Phase 1A introduces three first-class infrastructure entities — `NodePool`, `N
 - `Request.Model`, `RoutingSnapshot.Model` → `sim/` (routing interface types live in `sim/`) ✅
 - Dependency direction: `cmd/ → sim/cluster/ → sim/` — no new cycles introduced ✅
 - `sim/` remains a library; no `os.Exit` or `logrus.Fatalf` added ✅
-- Bridge types added to `sim/routing.go` not `sim/cluster/` ✅
+- Bridge types added to `sim/instance_status.go` not `sim/cluster/` ✅
 
 ### Principle II — Determinism ✅
 
@@ -148,7 +148,7 @@ sim/cluster/
 
 ```text
 sim/request.go                  # +Model string field
-sim/routing.go                  # +Model string to RoutingSnapshot
+sim/instance_status.go                  # +Model string to RoutingSnapshot
 sim/cluster/instance.go         # +InstanceState, warmUpRemaining, Model, nodeID, allocatedGPUIDs
 sim/cluster/cluster.go          # +PlacementManager integration, lifecycle event handling
 sim/cluster/cluster_event.go    # +model-filtered buildRouterState()

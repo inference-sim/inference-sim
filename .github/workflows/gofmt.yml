@@ -1,19 +1,20 @@
 name: gofmt
 
-# Every Go file a pull request adds or changes must be gofmt-clean. Only changed files are
-# checked: files the PR does not touch are left as they are.
+# Every Go file in the tree must be gofmt-clean, so a file a pull request does not touch cannot
+# carry formatting debt into the next one. Making the job a required check is a ruleset setting
+# that a person with write access applies; until then it can fail without blocking a merge. It runs
+# on pull requests to main, feature/** and llm-d-r, so a pull request stacked on another branch is
+# checked once it targets main.
 on:
   pull_request:
     branches: [main, 'feature/**', llm-d-r]
 
 jobs:
-  changed-files:
+  gofmt-all:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -21,20 +22,19 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: gofmt changed Go files
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      - name: gofmt every tracked Go file
         run: |
-          base=$(git merge-base "$BASE_SHA" HEAD)
-          mapfile -t files < <(git diff --name-only --diff-filter=ACMR "$base" HEAD -- '*.go')
+          files=()
+          while IFS= read -r f; do files+=("$f"); done < <(git ls-files '*.go')
           if [ ${#files[@]} -eq 0 ]; then
-            echo "no Go file changed"
-            exit 0
+            echo "::error::no tracked Go file found"
+            exit 1
           fi
           bad=$(gofmt -l "${files[@]}")
           if [ -n "$bad" ]; then
-            echo "::error::these changed Go files are not gofmt-clean (run gofmt -w):"
+            echo "::error::these Go files are not gofmt-clean (run gofmt -w):"
             echo "$bad"
             gofmt -d $bad
             exit 1
           fi
+          echo "${#files[@]} Go files are gofmt-clean"
