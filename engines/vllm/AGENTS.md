@@ -38,10 +38,15 @@ In short:
   decision; every patch is listed in `oracle/mocks.json`, and CI fails on a patch of decision
   code. Never change a golden trace's decisions without a `golden-reviewed: <trace>: <reason>` trailer, and a "Golden changes" section in the pull request body (`docs/testing.md`).
 - Tests: `go test ./...`; lint: `golangci-lint run ./...` (v2.14.0); the oracle tiers: the
-  `oracle-tier2` CI job, step by step, from a Python with `oracle/requirements.lock` installed
+  `oracle-scenarios`, `oracle-inertness` and `oracle-fuzz` jobs of `ci.yml` (the required check `oracle-tier2` is their
+  aggregate), step by step, from a Python with `oracle/requirements.lock` installed
   (`pip install --require-hashes --no-deps -r oracle/requirements-hashed.txt`, Linux x86_64;
   `oracle/README.md` gives each runner's command and the environment variables the Go fuzz
   tests read).
+- **Which CI jobs a change runs.** `docs/ci.md`: a job runs when a changed file is one it reads, the slow
+  suites are shared out over runners, and `.github/scripts/test-changed-jobs.sh` checks the selection.
+  A new test that opens a file outside its package, or a new step of `ci.yml` that names a path,
+  is covered by `audit_triggers.py` in that script; it tells you which list to extend.
 - **Process checks.** `.github/workflows/blis.yml` calls blis-substrate's shared checks by
   commit; `.github/workflows/private-names.yml` is the name scan. The section below and
   `.github/pull_request_template.md` are generated from the invariant registry

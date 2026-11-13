@@ -1,5 +1,26 @@
 name: ci
 
+# What runs, and why it is quick.
+#
+# Precise. The `changes` job reads the files a pull request changes and says which jobs need to run
+# (.github/scripts/changed_jobs.py; docs/ci.md has the table). A job runs when a changed file is one it reads
+# and is skipped when none is, so a change to a document runs the cheap jobs, a change to a rules pack runs
+# that pack's check and the tests that link it, and so on. A push to main and a manual run (workflow_dispatch)
+# run every job. The checks that branch protection requires keep their names (go, lint, oracle-tier2,
+# packs-against-vllm, metrics-manifest, goldens-reviewed) and always report: when nothing selected one, the
+# job runs no step and passes, since GitHub reports a matrix job that is skipped under a name that was never
+# expanded, and a required name that never reports blocks the merge. A job that was selected, and failed or was
+# cancelled, fails its aggregate.
+#
+# Parallel. The slow suites are shared out over runners that run side by side, by a rule that depends only on the
+# list of tests and their measured weights (.github/scripts/shard.py, .github/shards/): the shards of a group
+# partition its tests, and each shard checks that it ran every test it was given. The oracle job is several
+# jobs: the scenario checks, and one job for each fuzz corpus. `go` and `oracle-tier2` aggregate their parts.
+#
+# Cached. Go's module and build caches are restored by .github/actions/go-setup (saved on pushes to main and
+# manual runs); the pinned Python packages by setup-python's pip cache keyed on oracle/requirements-hashed.txt;
+# the fuzz corpora by .github/actions/oracle-fuzz.
+
 on:
   push:
     branches: [main]
@@ -21,35 +42,97 @@ on:
           that is a strict ancestor of the dispatched one (oracle/check_goldens.py --stack-base).
         required: false
         default: ""
+      changed:
+        description: >-
+          Run as if only these files changed (space separated paths), to see which jobs they select.
+          Empty: every job runs.
+        required: false
+        default: ""
 
 permissions:
   contents: read
 
-# A newer push to a pull request makes the run of the head before it moot, and each run is 17 jobs and about an
-# hour of runner time, so a pull request's run is cancelled by the next one. The group is the pull request, so the
-# stack's other pull requests and the runs on main are not touched; a run on main or by hand is never cancelled.
-# Branch protection does not read the cancelled run: the superseding push starts a fresh run of the same checks
-# for the new head, and the `go` job fails, not passes, if a job it needs was cancelled.
+# A newer push to a pull request makes the run of the head before it moot, so a pull request's run is
+# cancelled by the next one. The group is the pull request, so the stack's other pull requests and the runs
+# on main are not touched; a run on main or by hand is never cancelled. Branch protection does not read the
+# cancelled run: the superseding push starts a fresh run of the same checks for the new head, and the `go`
+# job fails, not passes, if a job it needs was cancelled.
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # setup-go v5 caches the module download cache (GOMODCACHE) and the build cache (GOCACHE),
-  # keyed on go.sum and the Go version (cache: true is its default); every Go job below restores
-  # the same cache, so a run that changes no dependency does not download modules again. go vet
-  # runs once, in go-build; the test jobs do not repeat it (go test runs its own small vet subset).
+  # Which jobs the change needs. On a pull request, from the files it changes against the base it merges
+  # into; on a push or a manual run, all of them.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+      bench: ${{ steps.filter.outputs.bench }}
+      lint: ${{ steps.filter.outputs.lint }}
+      rest: ${{ steps.filter.outputs.rest }}
+      kerneltests: ${{ steps.filter.outputs.kerneltests }}
+      inpackage: ${{ steps.filter.outputs.inpackage }}
+      race: ${{ steps.filter.outputs.race }}
+      race_guard: ${{ steps.filter.outputs.race_guard }}
+      race_matrix: ${{ steps.filter.outputs.race_matrix }}
+      metrics: ${{ steps.filter.outputs.metrics }}
+      goldens: ${{ steps.filter.outputs.goldens }}
+      oracle: ${{ steps.filter.outputs.oracle }}
+      packs_v0_29: ${{ steps.filter.outputs.packs_v0_29 }}
+      packs_v0_31: ${{ steps.filter.outputs.packs_v0_31 }}
+      packs_v0_32: ${{ steps.filter.outputs.packs_v0_32 }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/go-setup
+      - id: filter
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          CHANGED: ${{ inputs.changed }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = workflow_dispatch ] && [ -n "$CHANGED" ]; then
+            echo "run by hand as if these files changed: $CHANGED"
+            set -f; printf '%s\n' $CHANGED | python3 -I .github/scripts/changed_jobs.py | tee -a "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$EVENT" != pull_request ]; then
+            echo "$EVENT: every job runs"
+            python3 -I .github/scripts/changed_jobs.py --all < /dev/null | tee -a "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The checkout is the merge of the pull request into its base: its first parent is the base, so the
+          # difference from the first parent is exactly what the pull request changes. Without a merge commit,
+          # the difference from the merge base.
+          if git rev-parse --verify -q HEAD^2 > /dev/null; then from=HEAD^1; else from="$(git merge-base "$BASE" HEAD)"; fi
+          git diff --name-only --no-renames "$from" HEAD | tee "$RUNNER_TEMP/changed.txt"
+          echo "$(wc -l < "$RUNNER_TEMP/changed.txt") files changed against $from"
+          python3 -I .github/scripts/changed_jobs.py < "$RUNNER_TEMP/changed.txt" | tee -a "$GITHUB_OUTPUT"
+
+  # The selection's own tests: the sample changes select the jobs they should, every file a Go test or a step
+  # opens is tied to its job (audit_triggers.py), the shard tool partitions, the race legs match the guard.
+  # Cheap, and run on every change, because a new file read that the lists do not know would otherwise skip
+  # a job that needs to run.
+  ci-self-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: ./.github/actions/go-setup
+      - run: .github/scripts/test-changed-jobs.sh
 
   # The one check branch protection requires is named `go`; it passes only if every job below
-  # it passed (or was skipped), and fails if one failed or was cancelled. Splitting the former
-  # single job into parallel jobs keeps every check and every test; this job is the same name
-  # the protection rule already requires.
+  # it passed (or was skipped by the selection), and fails if one failed or was cancelled.
   go:
     name: go
     if: always()
-    needs: [go-build, go-test-kerneltests, go-test-rest, go-bench, go-race-guard, go-race]
+    needs: [changes, ci-self-test, go-build, go-test-kerneltests, go-test-inpackage, go-test-rest, go-bench, go-race-guard, go-race]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
     steps:
       - env:
           RESULTS: ${{ toJSON(needs) }}
@@ -57,16 +140,19 @@ jobs:
           set -euo pipefail
           bad=$(printf '%s' "$RESULTS" | python3 -c 'import json,sys; n=json.load(sys.stdin); print(" ".join(k for k,v in n.items() if v["result"] not in ("success","skipped")))')
           if [ -n "$bad" ]; then echo "failed or cancelled: $bad"; exit 1; fi
-          echo "every go job passed"
+          echo "every go job that was selected passed"
 
   go-build:
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+      - id: go
+        uses: ./.github/actions/go-setup
         with:
-          go-version-file: go.mod
+          build-cache: build
       - name: gofmt
         run: |
           unformatted="$(gofmt -l .)"
@@ -77,39 +163,122 @@ jobs:
         run: go vet ./...
       - name: go build
         run: go build ./...
+      - if: github.event_name != 'pull_request'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/go-build
+          key: ${{ steps.go.outputs.build-key }}
+      - if: github.event_name != 'pull_request' && steps.go.outputs.mod-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ steps.go.outputs.mod-key }}
 
   # kerneltests is pure computation: nothing it calls holds a goroutine or shared mutable state
   # (the race guard in go-race checks that no package outside the race list does), so -race on it
   # cost about ten minutes and could find nothing. The race detector runs in go-race instead.
   # The timeout is raised so a slow hosted runner fails on a test, not on go test's default 10m
-  # per-package limit.
+  # per-package limit. Selected when kerneltests, or a package its tests link, or the data they read, changed.
   go-test-kerneltests:
+    needs: changes
+    if: needs.changes.outputs.kerneltests == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+      - id: go
+        uses: ./.github/actions/go-setup
         with:
-          go-version-file: go.mod
+          build-cache: kerneltests
       - name: kerneltests
-        run: go test -timeout 30m ./kerneltests/...
-      # The kernel tests that read the kernel's unexported state run inside the kernel package
-      # of the blis-substrate this module pins (kerneltests/_inpackage).
-      - name: kernel tests in the kernel package
-        run: kerneltests/scripts/run-inpackage.sh
+        run: .github/scripts/run-go-shard.sh -- kerneltests 1 0 ./kerneltests/...
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: tests-kerneltests
+          path: ${{ runner.temp }}/shard-kerneltests-0/names.tsv
+          if-no-files-found: ignore
+      - if: github.event_name != 'pull_request'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/go-build
+          key: ${{ steps.go.outputs.build-key }}
 
-  # Every package except kerneltests, without -race. The packages with concurrency are run again
-  # with -race in go-race.
-  go-test-rest:
+  # The kernel tests that read the kernel's unexported state run inside the kernel package of the
+  # blis-substrate this module pins (kerneltests/_inpackage, kerneltests/scripts/run-inpackage.sh). The script
+  # copies that source and builds it, so this is its own job, beside go-test-kerneltests.
+  go-test-inpackage:
+    needs: changes
+    if: needs.changes.outputs.inpackage == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+      - id: go
+        uses: ./.github/actions/go-setup
         with:
-          go-version-file: go.mod
+          build-cache: inpackage
+      - name: kernel tests in the kernel package
+        run: |
+          set -euo pipefail
+          status=0
+          kerneltests/scripts/run-inpackage.sh -json > "$RUNNER_TEMP/inpackage.json" || status=$?
+          python3 -I .github/scripts/shard.py names -results "$RUNNER_TEMP/inpackage.json" > "$RUNNER_TEMP/inpackage-names.tsv"
+          if [ "$status" -ne 0 ]; then
+            jq -r 'select(.Action=="fail" and .Test) | "FAIL \(.Package) \(.Test)"' "$RUNNER_TEMP/inpackage.json"
+            jq -r 'select(.Action=="output") | .Output' "$RUNNER_TEMP/inpackage.json" | tail -n 300
+            exit 1
+          fi
+          echo "$(wc -l < "$RUNNER_TEMP/inpackage-names.tsv") test results"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: tests-inpackage
+          path: ${{ runner.temp }}/inpackage-names.tsv
+          if-no-files-found: ignore
+      - if: github.event_name != 'pull_request'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/go-build
+          key: ${{ steps.go.outputs.build-key }}
+
+  # Every package except kerneltests, without -race, shared out over three shards. A shard lists every test of
+  # the group, takes its share by the weights in .github/shards/weights.txt (the packages named in
+  # .github/shards/split.txt by test, the others by package), runs it, and fails unless every test of its
+  # share has a result (.github/scripts/run-go-shard.sh). The packages with concurrency are run again with
+  # -race in go-race.
+  go-test-rest:
+    name: go-test-rest (shard ${{ matrix.shard }})
+    needs: changes
+    if: needs.changes.outputs.rest == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # The number of shards is the length of this list (the script is told by SHARDS).
+        shard: [0, 1, 2]
+    env:
+      SHARDS: 3
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - id: go
+        uses: ./.github/actions/go-setup
+        with:
+          build-cache: rest
       - name: go test
-        run: go test -timeout 30m $(go list ./... | grep -v '/kerneltests')
+        run: .github/scripts/run-go-shard.sh -exclude '/kerneltests' -- rest "$SHARDS" ${{ matrix.shard }} ./...
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: tests-rest-${{ matrix.shard }}
+          path: ${{ runner.temp }}/shard-rest-${{ matrix.shard }}/names.tsv
+          if-no-files-found: ignore
+      - if: github.event_name != 'pull_request' && matrix.shard == 0
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/go-build
+          key: ${{ steps.go.outputs.build-key }}
 
   # The speed benchmarks of the v0.32.0 engine: a decode step at 512 and at 32,768 tokens of
   # context (core/sched), and the engine interface over long decodes (core/vllm). Wall time on a
@@ -117,12 +286,13 @@ jobs:
   # the check that fails a build is TestDecodeStepAllocationDoesNotGrowWithContext, which runs
   # in go-test-rest and bounds the bytes a step allocates, which do not vary between runs.
   go-bench:
+    needs: changes
+    if: needs.changes.outputs.bench == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
-        with:
-          go-version-file: go.mod
+      - uses: ./.github/actions/go-setup
       - name: benchmarks
         run: go test -run '^$' -bench . -benchmem -benchtime 20x ./core/sched ./core/vllm | tee bench.txt
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -147,13 +317,37 @@ jobs:
   # The guard is its own small job. The race run is a matrix with one leg for each package or
   # small group, so the job's wall-clock is the slowest leg, not the sum. The matrix legs are not
   # required checks: `go` aggregates them.
+
+  # The race detector stays on every package that holds a goroutine, channel, atomic, mutex or
+  # Once. Today those are internal/substratedata (a sync.Once), core/vllm (the registration Once)
+  # and compat/prefix (two atomic counters); the guard below re-derives them from the non-test
+  # sources on every run. The legs also run the packages that drive them: compat/kv and compat/engine
+  # (through compat/prefix), vllmengine, core/sched, core/engine, core/connector, compat/dplb and
+  # compat/kvtransfer (through core/vllm).
+  #
+  # compat/kernelmodel's non-test sources hold no primitive and start no goroutine, but its census test
+  # (TestBlockSizeResolutionOverTheCensusFixtures) runs parallel subtests that share counters under a
+  # sync.Mutex, and the package drives core/vllm through its registration Once. So legs race exactly the
+  # tests that use t.Parallel, sync or a goroutine (derived with grep over its _test.go files: that one test).
+  # The rest of compat/kernelmodel, about 90 seconds of serial pricing tests, is raced nowhere: under -race it took
+  # 1,659 seconds, and it holds no goroutine of its own. The census test took 13 minutes alone under -race,
+  # so it runs in four slices side by side: BLIS_CENSUS_SLICE=k/n gives slice k the fixtures at the positions
+  # k, k+n, k+2n, ... of the sorted list (every fixture is in exactly one slice), and the exact counts of the
+  # whole census are asserted by the unsliced run in go-test-rest.
+  #
+  # The guard is its own small job. The race run is a matrix with one leg for each package, group of
+  # packages, shard of a package or slice of the census, listed in .github/shards/race-legs.json; the job's
+  # wall-clock is the slowest leg, not the sum. Only the legs the change selects run (changes, race_matrix). The
+  # matrix legs are not required checks: `go` aggregates them.
   go-race-guard:
+    needs: changes
+    if: needs.changes.outputs.race_guard == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      # The same list the legs below run, space separated. Keep the two in step: the guard fails
-      # when a package with a primitive is in neither this list nor EXCLUDED, and each leg's
-      # `pkgs` is checked against this list by the first guard step.
+      # The same list the legs run, space separated. Keep the two in step: the guard fails
+      # when a package with a primitive is in neither this list nor EXCLUDED, and the legs' packages
+      # (.github/shards/race-legs.json) are checked against this list by the second guard step.
       RACE_PKGS: >-
         ./internal/substratedata ./core/vllm ./compat/prefix
         ./compat/engine ./core/sched ./core/engine ./vllmengine ./compat/dplb ./compat/kv
@@ -163,9 +357,7 @@ jobs:
       EXCLUDED: ""
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
-        with:
-          go-version-file: go.mod
+      - uses: ./.github/actions/go-setup
       - name: every package with concurrency primitives is under -race
         run: |
           set -euo pipefail
@@ -179,95 +371,99 @@ jobs:
           echo "packages with concurrency primitives:"; cat "$tmp/concurrent"
           missing="$(comm -23 "$tmp/concurrent" <(sort -u "$tmp/raced" "$tmp/excluded"))"
           if [ -n "$missing" ]; then echo "not under -race and not excluded:"; echo "$missing"; exit 1; fi
-      # The matrix legs below carry their own package lists. A package in RACE_PKGS and in no leg
-      # would pass the guard and never be raced, so the legs are read back out of this file (as
-      # YAML, whatever its indentation) and compared with RACE_PKGS. A file with no legs fails
-      # with a message, not with an empty comparison.
+      # The legs carry their own package lists (.github/shards/race-legs.json). A package in RACE_PKGS and in
+      # no leg would pass the guard and never be raced, so the legs are read back out of that file and compared
+      # with RACE_PKGS; the shard legs of a package must be shards 0..n-1 once each, and the census slices k/n
+      # for k in 0..n-1 once each. A file with no legs fails with a message, not with an empty comparison.
       - name: the race legs run exactly the guarded packages
-        run: |
-          set -euo pipefail
-          tmp="$(mktemp -d)"
-          # shellcheck disable=SC2086
-          go list $RACE_PKGS | sort -u > "$tmp/guarded"
-          python3 - "$tmp/legs" <<'PY'
-          import json, re, subprocess, sys
-          text = open(".github/workflows/ci.yml").read()
-          # The go-race job's matrix.include entries: each has a name and a pkgs line.
-          start = text.index("\n  go-race:\n")
-          block = text[start:text.index("\n  lint:\n", start)]
-          legs = re.findall(r"^\s+pkgs:\s*(.+?)\s*$", block, re.M)
-          if not legs:
-              sys.exit("the guard found no go-race matrix legs (no 'pkgs:' lines under the go-race job): "
-                       "the workflow was restructured, and this step must be updated with it")
-          pkgs = sorted({p for leg in legs for p in leg.split()})
-          out = subprocess.run(["go", "list", *pkgs], capture_output=True, text=True, check=True).stdout.split()
-          open(sys.argv[1], "w").write("\n".join(sorted(set(out))) + "\n")
-          print("go-race legs: %d, packages: %d" % (len(legs), len(set(out))))
-          PY
-          if ! diff "$tmp/guarded" "$tmp/legs"; then echo "RACE_PKGS and the go-race legs differ"; exit 1; fi
+        run: python3 -I .github/scripts/check_race_legs.py
 
   go-race:
     name: go-race (${{ matrix.name }})
+    needs: changes
+    if: needs.changes.outputs.race == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - name: vllmengine-a
-            pkgs: ./vllmengine
-            run: '^(TestMuse|TestDashboardDeploymentsBuild|TestDashboardDataParallel|TestKVPool|TestAnAllWindow)'
-          - name: vllmengine-b
-            pkgs: ./vllmengine
-            skip: '^(TestMuse|TestDashboardDeploymentsBuild|TestDashboardDataParallel|TestKVPool|TestAnAllWindow)'
-          - name: core
-            pkgs: ./internal/substratedata ./core/vllm ./core/sched ./core/engine ./core/connector/...
-          - name: compat
-            pkgs: ./compat/prefix ./compat/engine ./compat/dplb ./compat/kv ./compat/kvtransfer
-          # The one compat/kernelmodel test that runs parallel subtests under a mutex. Its package is
-          # not in RACE_PKGS (no primitive in its sources), so this leg names its package as
-          # race_pkgs, which the guard does not read.
-          - name: kernelmodel-census
-            race_pkgs: ./compat/kernelmodel
-            run: '^TestBlockSizeResolutionOverTheCensusFixtures$'
+      matrix: ${{ fromJSON(needs.changes.outputs.race_matrix) }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+      - id: go
+        uses: ./.github/actions/go-setup
         with:
-          go-version-file: go.mod
+          build-cache: ${{ matrix.cache }}
       - name: go test -race
         env:
           PKGS: ${{ matrix.pkgs || matrix.race_pkgs }}
           ONLY: ${{ matrix.run }}
-          SKIP: ${{ matrix.skip }}
+          SHARDS: ${{ matrix.shards }}
+          SHARD: ${{ matrix.shard }}
+          SLICE: ${{ matrix.slice }}
+          NAME: ${{ matrix.name }}
         run: |
           set -euo pipefail
-          args=()
-          if [ -n "$ONLY" ]; then args+=(-run "$ONLY"); fi
-          if [ -n "$SKIP" ]; then args+=(-skip "$SKIP"); fi
-          # shellcheck disable=SC2086
-          go test -race -timeout 30m "${args[@]}" $PKGS
+          if [ -n "$SHARDS" ]; then
+            # A package whose tests are shared out by name; the shard proves it ran its share.
+            # shellcheck disable=SC2086
+            .github/scripts/run-go-shard.sh -race -- "race-$NAME" "$SHARDS" "$SHARD" $PKGS
+          else
+            args=()
+            if [ -n "$ONLY" ]; then args+=(-run "$ONLY"); fi
+            if [ -n "$SLICE" ]; then export BLIS_CENSUS_SLICE="$SLICE"; fi
+            # shellcheck disable=SC2086
+            .github/scripts/go-test-json.sh "race-$NAME" -race -timeout 30m "${args[@]}" $PKGS
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: tests-race-${{ matrix.name }}
+          path: |
+            ${{ runner.temp }}/gotest-race-${{ matrix.name }}/names.tsv
+            ${{ runner.temp }}/shard-race-${{ matrix.name }}-${{ matrix.shard }}/names.tsv
+          if-no-files-found: ignore
+      - if: github.event_name != 'pull_request' && matrix.save
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/go-build
+          key: ${{ steps.go.outputs.build-key }}
 
+  # Always runs and reports under its name; the lint steps run when Go code, the module files or the lint
+  # configuration changed.
   lint:
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+      - if: needs.changes.outputs.lint != 'true'
+        run: echo "not selected - no Go file, module file or lint configuration changed"
+      - if: needs.changes.outputs.lint == 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - id: go
+        if: needs.changes.outputs.lint == 'true'
+        uses: ./.github/actions/go-setup
         with:
-          go-version-file: go.mod
+          build-cache: lint
       # golangci-lint refuses a module newer than the Go that built it, so it is built from
       # source with the Go go.mod names (as inference-sim's CI does).
       - name: golangci-lint
+        if: needs.changes.outputs.lint == 'true'
         uses: golangci/golangci-lint-action@9fae48acfc02a90574d7c304a1758ef9895495fa # v7.0.1
         with:
           version: v2.14.0
           install-mode: goinstall
+      - if: needs.changes.outputs.lint == 'true' && github.event_name != 'pull_request'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/go-build
+          key: ${{ steps.go.outputs.build-key }}
 
   # Each rules pack transcribes one vLLM release by hand; these tests re-derive its constants
   # from that release's own source and fail on any difference in either direction. Each pack is
-  # checked against the tag it describes.
+  # checked against the tag it describes. A pack's check runs when its package or what its tests link
+  # changed; the three names always report.
   packs-against-vllm:
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -286,11 +482,17 @@ jobs:
             tag: v0.32.0
             commit: 5df63a7203cdb9328d824a27b682e77c7b9928be
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+      - if: needs.changes.outputs[format('packs_{0}', matrix.pack)] != 'true'
+        run: echo "not selected - nothing this pack's tests read changed"
+      - if: needs.changes.outputs[format('packs_{0}', matrix.pack)] == 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - id: go
+        if: needs.changes.outputs[format('packs_{0}', matrix.pack)] == 'true'
+        uses: ./.github/actions/go-setup
         with:
-          go-version-file: go.mod
+          build-cache: packs
       - name: check out vLLM at the pack's release
+        if: needs.changes.outputs[format('packs_{0}', matrix.pack)] == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: vllm-project/vllm
@@ -298,8 +500,10 @@ jobs:
           path: vllm-source
           fetch-depth: 1
       - name: the checked-out vLLM is the pinned commit of the pack's release
+        if: needs.changes.outputs[format('packs_{0}', matrix.pack)] == 'true'
         run: test "$(git -C vllm-source rev-parse HEAD)" = "${{ matrix.commit }}"
       - name: verify pack constants
+        if: needs.changes.outputs[format('packs_{0}', matrix.pack)] == 'true'
         working-directory: rules
         env:
           VLLM_SOURCE: ${{ github.workspace }}/vllm-source
@@ -310,31 +514,46 @@ jobs:
           go test -v -run MatchSource ./${{ matrix.pack }}/ | tee ../tier1-out/match-source-${{ matrix.pack }}.txt
       # Provenance for the tier-1 results: the commit checked, the vLLM tag and its commit, Go.
       - name: record tier-1 provenance
+        if: needs.changes.outputs[format('packs_{0}', matrix.pack)] == 'true'
         run: |
           printf '{"tier": 1, "pack": "%s", "vllm_tag": "%s", "vllm_commit": "%s", "blis_vllm_commit": "%s", "go_version": "%s"}\n' \
             "${{ matrix.pack }}" "${{ matrix.tag }}" "$(git -C vllm-source rev-parse HEAD)" "$GITHUB_SHA" "$(go env GOVERSION)" \
             > tier1-out/provenance-${{ matrix.pack }}.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: always()
+        if: always() && needs.changes.outputs[format('packs_{0}', matrix.pack)] == 'true'
         with:
           name: tier1-${{ matrix.pack }}
           path: tier1-out/
+      - if: needs.changes.outputs[format('packs_{0}', matrix.pack)] == 'true' && github.event_name != 'pull_request' && matrix.pack == 'v0_32'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/go-build
+          key: ${{ steps.go.outputs.build-key }}
 
   # Tier 5: every vllm:* family vLLM v0.32.0 defines, read from its source and classified
   # exact / derived / unavailable (docs/metrics-manifest.json). A family the release adds or
-  # drops, or a manifest that is not current, fails here.
+  # drops, or a manifest that is not current, fails here. Runs when fields/, fields.json, the manifest, its
+  # generator or the connector registry changed; always reports.
   metrics-manifest:
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+      - if: needs.changes.outputs.metrics != 'true'
+        run: echo "not selected - none of fields/, fields.json, the manifest, its generator or the registry changed"
+      - if: needs.changes.outputs.metrics == 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - id: go
+        if: needs.changes.outputs.metrics == 'true'
+        uses: ./.github/actions/go-setup
         with:
-          go-version-file: go.mod
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+          build-cache: metrics
+      - if: needs.changes.outputs.metrics == 'true'
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
       - name: check out vLLM v0.32.0 at its pinned commit
+        if: needs.changes.outputs.metrics == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: vllm-project/vllm
@@ -342,49 +561,69 @@ jobs:
           path: vllm-source
           fetch-depth: 1
       - name: the checked-out vLLM is the pinned commit
+        if: needs.changes.outputs.metrics == 'true'
         run: test "$(git -C vllm-source rev-parse HEAD)" = 5df63a7203cdb9328d824a27b682e77c7b9928be
       - name: fields.json is current for the pinned release
+        if: needs.changes.outputs.metrics == 'true'
         run: python3 -I fields/gen_fields.py vllm-source fields/status.json --value-classes fields/value_classes.json --check fields.json
       - name: the field-list generator's tests
+        if: needs.changes.outputs.metrics == 'true'
         run: python3 -I fields/test_gen_fields.py
       - name: stand-ins held to the upstream's own resolution
+        if: needs.changes.outputs.metrics == 'true'
         run: VLLM_SOURCE=vllm-source python3 -I fields/test_stand_in.py
       - name: fields/value_classes.json is current for the pinned release
+        if: needs.changes.outputs.metrics == 'true'
         run: python3 -I fields/gen_classes.py vllm-source fields.json --check fields/value_classes.json
       - name: the value-class generator's tests, and every class cites a comparison the pinned source holds
+        if: needs.changes.outputs.metrics == 'true'
         env:
           VLLM_SOURCE: ${{ github.workspace }}/vllm-source
         run: python3 -I fields/test_classes.py
       - name: the manifest is current for the pinned release
+        if: needs.changes.outputs.metrics == 'true'
         run: |
           set -o pipefail
           mkdir -p manifest-out
           go run ./cmd/metricsmanifest -vllm vllm-source -check 2>&1 | tee manifest-out/manifest-check.txt
       # The connector registry's entries are connectors the release registers.
       - name: every registry entry is a connector vLLM v0.32.0 registers
+        if: needs.changes.outputs.metrics == 'true'
         env:
           VLLM_SOURCE: ${{ github.workspace }}/vllm-source
         run: go test -v -run TestEveryEntryNamesAConnectorVLLMRegisters ./registry/
       # Provenance for the manifest result: the vLLM commit checked, the blis-vllm commit, Go.
       - name: record the manifest's provenance
+        if: needs.changes.outputs.metrics == 'true'
         run: |
           printf '{"tier": 5, "check": "metrics-manifest", "vllm_tag": "v0.32.0", "vllm_commit": "%s", "blis_vllm_commit": "%s", "go_version": "%s"}\n' \
             "$(git -C vllm-source rev-parse HEAD)" "$GITHUB_SHA" "$(go env GOVERSION)" > manifest-out/provenance.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: always()
+        if: always() && needs.changes.outputs.metrics == 'true'
         with:
           name: metrics-manifest
           path: manifest-out/
+      - if: needs.changes.outputs.metrics == 'true' && github.event_name != 'pull_request'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/go-build
+          key: ${{ steps.go.outputs.build-key }}
 
-  # A golden trace is vLLM's own output; a commit that changes one must name its reviewer.
+  # A golden trace is vLLM's own output; a commit that changes one must name its reviewer. Runs when a golden
+  # directory or the oracle changed (the history it reads can name a golden only then); always reports.
   goldens-reviewed:
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - if: needs.changes.outputs.goldens != 'true'
+        run: echo "not selected - no golden trace and nothing under oracle/ changed"
+      - if: needs.changes.outputs.goldens == 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
       - name: every commit changing a golden trace has a golden-reviewed trailer
+        if: needs.changes.outputs.goldens == 'true'
         env:
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before || inputs.base }}
           HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -396,56 +635,54 @@ jobs:
           python3 -I oracle/check_goldens.py "$BASE" "$HEAD"
       # Each guard must fail on the violation it exists to catch (oracle/test_checks.py).
       - name: the oracle's guards catch what they guard
+        if: needs.changes.outputs.goldens == 'true'
         run: python3 -I oracle/test_checks.py
       - name: the engine-block migration rewrites what it says and refuses what it cannot
+        if: needs.changes.outputs.goldens == 'true'
         run: python3 -I tools/migrateengineblock/test_migrate.py
       - name: the block-size oracle's config.json fetch is verified
+        if: needs.changes.outputs.goldens == 'true'
         run: python3 -I oracle/blocksize/test_modelconfig.py
 
-  # Tier 2: vLLM v0.32.0's real Scheduler driven through every scenario, on CPU. The fuzz corpora
-  # and vLLM's traces for them come from the cache (.github/actions/oracle-fuzz); every committed
-  # golden is re-derived from vLLM here on every run. The mutation sweeps are mutation.yml's.
+  # The required check `oracle-tier2` is the aggregate of the oracle jobs below. It reports under the name
+  # branch protection reads and passes only if every part that was selected passed.
   oracle-tier2:
+    name: oracle-tier2
+    if: always()
+    needs: [changes, oracle-scenarios, oracle-inertness, oracle-fuzz]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          bad=$(printf '%s' "$RESULTS" | python3 -c 'import json,sys; n=json.load(sys.stdin); print(" ".join(k for k,v in n.items() if v["result"] not in ("success","skipped")))')
+          if [ -n "$bad" ]; then echo "failed or cancelled: $bad"; exit 1; fi
+          echo "every oracle job that was selected passed"
+
+  # Tier 2: vLLM v0.32.0's real Scheduler driven through every scenario, on CPU, and the other scenario-driven
+  # oracles. Every committed golden is re-derived from vLLM here on every run. The seeded fuzz corpora are the
+  # jobs below this one; the mutation sweeps are mutation.yml's.
+  oracle-scenarios:
+    needs: changes
+    if: needs.changes.outputs.oracle == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - id: python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - id: env
+        uses: ./.github/actions/oracle-env
+      - id: go
+        uses: ./.github/actions/go-setup
         with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: oracle/requirements-hashed.txt
-      - name: check out vLLM v0.32.0 (for its test helpers) at its pinned commit
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          repository: vllm-project/vllm
-          ref: 5df63a7203cdb9328d824a27b682e77c7b9928be
-          path: vllm-source
-          fetch-depth: 1
-      - name: the checked-out vLLM is the pinned commit
-        run: test "$(git -C vllm-source rev-parse HEAD)" = 5df63a7203cdb9328d824a27b682e77c7b9928be
-      # The whole environment is pinned (oracle/requirements.lock, every package == or a sha256
-      # URL) and installed without resolving, from oracle/requirements-hashed.txt with every
-      # archive's sha256 (oracle/lock.sh, X21), so neither a transitive release nor a replaced
-      # archive can change a run; the step fails if what got installed is not exactly the lock.
-      - name: install the oracle environment
-        run: |
-          python -I oracle/check_lock.py --hashed oracle/requirements.lock oracle/requirements-hashed.txt
-          python -m pip install --require-hashes -r oracle/requirements-pip.txt
-          pip install --require-hashes --no-deps --extra-index-url https://download.pytorch.org/whl/cpu -r oracle/requirements-hashed.txt
-          pip check
-          pip freeze > oracle-env.lock
-          python -I oracle/check_lock.py oracle/requirements.lock oracle-env.lock
+          build-cache: oracle
       - name: the mocks replace no decision code
         run: python -I oracle/check_mocks.py oracle/mocks.json
       # An unstated block_size is vLLM's own choice, from the attention backends it selects for the
       # model, GPU and KV dtype (core/vllm/blocksize.go). The oracle runs vLLM's selection on this
       # CPU, with every replacement listed in its table, and the committed table must equal what
       # it prints. The models' config.json files are the pinned blis-substrate's catalog.
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
-        with:
-          go-version-file: go.mod
       - name: the block-size table is vLLM's own selection
         run: |
           catalog="$(go list -m -f '{{.Dir}}' github.com/inference-sim/blis-substrate)/catalog/models"
@@ -476,15 +713,6 @@ jobs:
         run: |
           python -I oracle/indexer/oracle.py vllm-source check rules/v0_32/testdata/vllm_indexer_kv_dtype.json
           python3 -I oracle/lower/check_replacements.py oracle/indexer/oracle.py oracle/indexer/replacements.json
-      # The scheduler helper's default model, as configuration only (no weights), at a pinned
-      # revision, so a change on the Hub cannot change a run.
-      - name: fetch the helper model's configuration at its pinned revision
-        run: |
-          python - <<'PY'
-          from huggingface_hub import snapshot_download
-          snapshot_download("facebook/opt-125m", revision="27dcfa74d334bc871f3234de431e71c6eeba5dd6",
-                            local_dir="oracle-model", allow_patterns=["*.json", "*.txt"])
-          PY
       # Tier 5: the families vLLM's own Prometheus logger registers at runtime agree with the
       # manifest the source scan wrote (type and labels).
       - name: the metrics manifest agrees with vLLM's live registry
@@ -523,17 +751,6 @@ jobs:
           python -I oracle/run_swa_layout.py vllm-source oracle/scenarios/swa oracle/out/scenarios-swa
       - name: the swa_bounded_replay goldens are vLLM's own output
         run: python3 -I oracle/compare_goldens.py core/sched/testdata/golden-swa oracle/out/scenarios-swa
-      # Tier 1: every inertness proof (oracle/inertness/*.json) is what the harness computes from vLLM's
-      # own code now, and the harness finds a field that is not inert, a read it was not told about and a
-      # variable the source names.
-      - name: every inertness proof is what the harness computes
-        env:
-          ORACLE_MODEL: ${{ github.workspace }}/oracle-model
-          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
-          HF_HUB_OFFLINE: "1"
-          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
-          VLLM_SOURCE: ${{ github.workspace }}/vllm-source
-        run: python -I oracle/test_inertness.py
       # Tier 5's goldens too: each metric series re-derived from vLLM's own Prometheus logger
       # on the scenario it was made from.
       - name: every metric golden is vLLM's own series
@@ -583,49 +800,12 @@ jobs:
         run: |
           python -I oracle/gen_seeded_block_hashes.py vllm-source > oracle/out/seeded_block_hashes.json
           diff -u core/kv/testdata/seeded_block_hashes.json oracle/out/seeded_block_hashes.json
-      # The seeded fuzz corpora (tier 2: 4000 scenarios; tier 3: 1000, DP: 1000; the connector:
-      # 3300), each from fixed seeds and run through vLLM, then through blis-vllm below, which must
-      # match at zero mismatches. Cached, keyed on the generators, seeds, runners, mock, lock and
-      # vLLM pin; regenerated when any of them changes.
-      - name: the fuzz corpora and vLLM's traces for them
-        uses: ./.github/actions/oracle-fuzz
-        with:
-          python-version: ${{ steps.python.outputs.python-version }}
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
-        with:
-          go-version-file: go.mod
       # The Go side of the run's provenance: blis-vllm's ProvenanceFor, the commit, Go and the
       # platform. Each trace carries the Python side (vLLM, lockfile, mocks, seed, commit).
       - name: record the Go side's provenance
         run: go run ./cmd/provenance > oracle/out/provenance.json
-      # The property and metamorphic tests (#2021 B8) run over fixed seeds in Go alone; their
-      # verbose results go into the artifact beside the provenance above.
-      - name: property and metamorphic tests
-        run: |
-          set -o pipefail
-          go test -v -count=1 -run 'TestPropertiesHoldOnRandomScenarios|TestMoreKVNeverAddsPreemptionsOneAtATime|TestLargerBudgetNeverDelaysALoneRequestsFirstToken' ./core/sched/ | tee oracle/out/property-results.txt
-      - name: blis-vllm against vLLM (differential + fuzz)
-        env:
-          BLIS_VLLM_FUZZ_DIR: ${{ github.workspace }}/oracle/out/fuzz
-        run: |
-          set -o pipefail
-          go test -v -count=1 -run 'TestDifferentialAgainstVLLM|TestFuzzCorpusAgainstVLLM' ./core/sched/ | tee oracle/out/diff-results.txt
-      - name: blis-vllm against vLLM (hybrid Mamba fuzz)
-        env:
-          BLIS_VLLM_FUZZ_DIR: ${{ github.workspace }}/oracle/out/fuzz-mamba
-        run: |
-          set -o pipefail
-          go test -v -count=1 -run 'TestFuzzCorpusAgainstVLLM' ./core/sched/ | tee oracle/out/diff-mamba-results.txt
-      # Tier 5: every exact vllm:* family, after every step, against vLLM's own Prometheus
-      # logger on the same scenarios and fuzz seeds.
-      - name: blis-vllm's metrics against vLLM's (scenarios + fuzz)
-        env:
-          BLIS_VLLM_METRICS_FUZZ_DIR: ${{ github.workspace }}/oracle/out/fuzz
-        run: |
-          set -o pipefail
-          go test -v -count=1 -run 'TestMetricsAgainstVLLM|TestMetricsFuzzCorpusAgainstVLLM' ./core/metrics/ | tee oracle/out/metrics-results.txt
       # Tier 3: vLLM's own EngineCore.step_with_batch_queue (async scheduling, the batch
-      # queue, PP) on every tier-3 scenario and 1000 fuzz seeds, then blis-vllm's core/engine.
+      # queue, PP) on every tier-3 scenario, and its DP engine-core loop.
       - name: run every tier-3 scenario through vLLM's EngineCore
         env:
           ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
@@ -647,15 +827,8 @@ jobs:
           python3 -I oracle/compare_goldens_t3.py core/engine/testdata/golden-dp oracle/out/scenarios-dp
           python3 -I oracle/compare_goldens_t3.py core/engine/testdata/golden-dp-async oracle/out/scenarios-dp-async
           python3 -I oracle/compare_goldens_t3.py core/engine/testdata/golden-dp-nixl oracle/out/scenarios-dp-nixl
-      - name: blis-vllm's EngineCore against vLLM's (scenarios + fuzz)
-        env:
-          BLIS_VLLM_T3_FUZZ_DIR: ${{ github.workspace }}/oracle/out/fuzz-t3
-          BLIS_VLLM_DP_FUZZ_DIR: ${{ github.workspace }}/oracle/out/fuzz-t3-dp
-        run: |
-          set -o pipefail
-          go test -v -count=1 -run 'TestEngineCoreAgainstVLLM|TestEngineCoreFuzzCorpusAgainstVLLM|TestDPAgainstVLLM|TestDPAsyncAgainstVLLM|TestDPNixlAgainstVLLM|TestDPFuzzCorpusAgainstVLLM' ./core/engine/ | tee oracle/out/engine-results.txt
       # Tier 4: vLLM's real NIXL connector scheduler side (pull mode), with only the worker's
-      # transfer outcomes as the mock input, on every NIXL scenario and 1000 fuzz seeds.
+      # transfer outcomes as the mock input, on every NIXL scenario.
       - name: run every NIXL scenario through vLLM's Scheduler
         env:
           ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
@@ -667,15 +840,9 @@ jobs:
           python -I oracle/run_connector.py vllm-source oracle/scenarios/connector oracle/out/scenarios-connector
       - name: every NIXL golden trace is vLLM's own output
         run: python3 -I oracle/compare_goldens.py core/connector/nixl/testdata/golden oracle/out/scenarios-connector
-      - name: blis-vllm's NIXL connector against vLLM's (scenarios + fuzz)
-        env:
-          BLIS_VLLM_CONNECTOR_FUZZ_DIR: ${{ github.workspace }}/oracle/out/fuzz-connector
-        run: |
-          set -o pipefail
-          go test -v -count=1 -run 'TestNIXLAgainstVLLM|TestNIXLFuzzCorpusAgainstVLLM' ./core/connector/nixl/ | tee oracle/out/connector-results.txt
       # Tier 4: vLLM's real OffloadingConnector scheduler side over its CPU tier (CPUOffloadingManager,
       # LRU), with only the worker mocked (completions as OffloadingWorkerMetadata), on every
-      # offloading scenario and 2000 fuzz seeds (1000 with hybrid KV cache groups).
+      # offloading scenario.
       - name: run every offloading scenario through vLLM's Scheduler
         env:
           ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
@@ -688,12 +855,6 @@ jobs:
           python -I oracle/run_offloading.py vllm-source oracle/scenarios/offloading oracle/out/scenarios-offloading
       - name: every offloading golden trace is vLLM's own output
         run: python3 -I oracle/compare_goldens.py core/connector/offloading/testdata/golden oracle/out/scenarios-offloading
-      - name: blis-vllm's OffloadingConnector against vLLM's (scenarios + fuzz)
-        env:
-          BLIS_VLLM_OFFLOAD_FUZZ_DIR: ${{ github.workspace }}/oracle/out/fuzz-offloading
-        run: |
-          set -o pipefail
-          go test -v -count=1 -run 'TestOffloadingAgainstVLLM|TestOffloadingFuzzCorpusAgainstVLLM' ./core/connector/offloading/ | tee oracle/out/offloading-results.txt
       # Tier 4: vLLM's real MultiConnector over its NIXL and offloading children, both orders, on
       # every multi-connector scenario and 3000 fuzz seeds (1000 with hybrid KV cache groups, 1000 with
       # async scheduling).
@@ -709,12 +870,6 @@ jobs:
           python -I oracle/run_multiconnector.py vllm-source oracle/scenarios/multiconnector oracle/out/scenarios-multi
       - name: every multi-connector golden trace is vLLM's own output
         run: python3 -I oracle/compare_goldens.py core/connector/multi/testdata/golden oracle/out/scenarios-multi
-      - name: blis-vllm's MultiConnector against vLLM's (scenarios + fuzz)
-        env:
-          BLIS_VLLM_MULTI_FUZZ_DIR: ${{ github.workspace }}/oracle/out/fuzz-multi
-        run: |
-          set -o pipefail
-          go test -v -count=1 -run 'TestMultiConnectorAgainstVLLM|TestMultiConnectorFuzzCorpusAgainstVLLM' ./core/connector/multi/ | tee oracle/out/multi-results.txt
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
@@ -722,3 +877,171 @@ jobs:
           path: |
             oracle/out/
             oracle-env.lock
+      - if: github.event_name != 'pull_request'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/go-build
+          key: ${{ steps.go.outputs.build-key }}
+
+  # Tier 1: every inertness proof (oracle/inertness/*.json) is what the harness computes from vLLM's own code
+  # now, and the harness finds a field that is not inert, a read it was not told about and a variable the source
+  # names (oracle/test_inertness.py). The negative controls run vLLM several times each and take minutes, so the
+  # tests of the file are shared out by name (shard.py, listed by unittest so a test added later is in a shard);
+  # each job checks that unittest ran exactly the tests it was given.
+  oracle-inertness:
+    name: oracle-inertness (shard ${{ matrix.shard }})
+    needs: changes
+    if: needs.changes.outputs.oracle == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
+    env:
+      SHARDS: 3
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - id: env
+        uses: ./.github/actions/oracle-env
+      - name: every inertness proof is what the harness computes
+        env:
+          ORACLE_MODEL: ${{ github.workspace }}/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+          VLLM_SOURCE: ${{ github.workspace }}/vllm-source
+          SHARD: ${{ matrix.shard }}
+        run: |
+          set -euo pipefail
+          python3 -I - > "$RUNNER_TEMP/all.txt" <<'PY'
+          import importlib.util, unittest
+          spec = importlib.util.spec_from_file_location("t", "oracle/test_inertness.py")
+          m = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(m)
+          def walk(s):
+              for t in s:
+                  if isinstance(t, unittest.TestSuite):
+                      yield from walk(t)
+                  else:
+                      yield t
+          for t in walk(unittest.defaultTestLoader.loadTestsFromModule(m)):
+              print(t.id().split(".", 1)[1])
+          PY
+          python3 -I .github/scripts/shard.py check -of "$SHARDS" -min-items 10 -weights .github/shards/weights-inertness.txt < "$RUNNER_TEMP/all.txt"
+          python3 -I .github/scripts/shard.py select -of "$SHARDS" -index "$SHARD" -weights .github/shards/weights-inertness.txt < "$RUNNER_TEMP/all.txt" > "$RUNNER_TEMP/mine.txt"
+          n="$(wc -l < "$RUNNER_TEMP/mine.txt" | tr -d ' ')"
+          echo "shard $SHARD of $SHARDS runs $n of $(wc -l < "$RUNNER_TEMP/all.txt") tests"
+          cat "$RUNNER_TEMP/mine.txt"
+          # shellcheck disable=SC2046
+          python -I oracle/test_inertness.py -v --durations 20 $(cat "$RUNNER_TEMP/mine.txt") 2>&1 | tee "$RUNNER_TEMP/inertness.log"
+          grep -q "^Ran $n tests\? in" "$RUNNER_TEMP/inertness.log"
+
+  # The seeded fuzz corpora (tier 2: 4000 scenarios; tier 3: 1000, DP: 1000; the connector: 3300; the
+  # offloading connector: 2600), each from fixed seeds and run through vLLM, then through blis-vllm, which must
+  # match at zero mismatches. A corpus is cached, keyed on the generators, seeds, runners, mock, lock and vLLM
+  # pin, and regenerated when any of them changes; a miss costs minutes, so each corpus has its own job and
+  # they run side by side.
+  oracle-fuzz:
+    name: oracle-fuzz (${{ matrix.corpus }})
+    needs: changes
+    if: needs.changes.outputs.oracle == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        corpus: [t2, mamba, t3, connector, offloading, multi]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - id: env
+        uses: ./.github/actions/oracle-env
+      - id: go
+        uses: ./.github/actions/go-setup
+        with:
+          build-cache: oracle
+      - name: the fuzz corpus and vLLM's traces for it
+        uses: ./.github/actions/oracle-fuzz
+        with:
+          python-version: ${{ steps.env.outputs.python-version }}
+          corpora: ${{ matrix.corpus }}
+      # The property and metamorphic tests (#2021 B8) run over fixed seeds in Go alone; their
+      # verbose results go into the artifact beside the provenance.
+      - name: property and metamorphic tests
+        if: matrix.corpus == 't2'
+        run: |
+          set -o pipefail
+          mkdir -p oracle/out
+          go test -v -count=1 -run 'TestPropertiesHoldOnRandomScenarios|TestMoreKVNeverAddsPreemptionsOneAtATime|TestLargerBudgetNeverDelaysALoneRequestsFirstToken' ./core/sched/ | tee oracle/out/property-results.txt
+      - name: blis-vllm against vLLM (differential + fuzz)
+        if: matrix.corpus == 't2'
+        env:
+          BLIS_VLLM_FUZZ_DIR: ${{ github.workspace }}/oracle/out/fuzz
+        run: |
+          set -o pipefail
+          go test -v -count=1 -run 'TestDifferentialAgainstVLLM|TestFuzzCorpusAgainstVLLM' ./core/sched/ | tee oracle/out/diff-results.txt
+      - name: blis-vllm against vLLM (hybrid Mamba fuzz)
+        if: matrix.corpus == 'mamba'
+        env:
+          BLIS_VLLM_FUZZ_DIR: ${{ github.workspace }}/oracle/out/fuzz-mamba
+        run: |
+          set -o pipefail
+          mkdir -p oracle/out
+          go test -v -count=1 -run 'TestFuzzCorpusAgainstVLLM' ./core/sched/ | tee oracle/out/diff-mamba-results.txt
+      # Tier 5: every exact vllm:* family, after every step, against vLLM's own Prometheus
+      # logger on the same scenarios and fuzz seeds.
+      - name: blis-vllm's metrics against vLLM's (scenarios + fuzz)
+        if: matrix.corpus == 't2'
+        env:
+          BLIS_VLLM_METRICS_FUZZ_DIR: ${{ github.workspace }}/oracle/out/fuzz
+        run: |
+          set -o pipefail
+          go test -v -count=1 -run 'TestMetricsAgainstVLLM|TestMetricsFuzzCorpusAgainstVLLM' ./core/metrics/ | tee oracle/out/metrics-results.txt
+      # Tier 3: blis-vllm's core/engine against the EngineCore traces of the 1000 fuzz seeds, and the DP loop's.
+      - name: blis-vllm's EngineCore against vLLM's (scenarios + fuzz)
+        if: matrix.corpus == 't3'
+        env:
+          BLIS_VLLM_T3_FUZZ_DIR: ${{ github.workspace }}/oracle/out/fuzz-t3
+          BLIS_VLLM_DP_FUZZ_DIR: ${{ github.workspace }}/oracle/out/fuzz-t3-dp
+        run: |
+          set -o pipefail
+          mkdir -p oracle/out
+          go test -v -count=1 -run 'TestEngineCoreAgainstVLLM|TestEngineCoreFuzzCorpusAgainstVLLM|TestDPAgainstVLLM|TestDPAsyncAgainstVLLM|TestDPNixlAgainstVLLM|TestDPFuzzCorpusAgainstVLLM' ./core/engine/ | tee oracle/out/engine-results.txt
+      - name: blis-vllm's NIXL connector against vLLM's (scenarios + fuzz)
+        if: matrix.corpus == 'connector'
+        env:
+          BLIS_VLLM_CONNECTOR_FUZZ_DIR: ${{ github.workspace }}/oracle/out/fuzz-connector
+        run: |
+          set -o pipefail
+          mkdir -p oracle/out
+          go test -v -count=1 -run 'TestNIXLAgainstVLLM|TestNIXLFuzzCorpusAgainstVLLM' ./core/connector/nixl/ | tee oracle/out/connector-results.txt
+      - name: blis-vllm's OffloadingConnector against vLLM's (scenarios + fuzz)
+        if: matrix.corpus == 'offloading'
+        env:
+          BLIS_VLLM_OFFLOAD_FUZZ_DIR: ${{ github.workspace }}/oracle/out/fuzz-offloading
+        run: |
+          set -o pipefail
+          mkdir -p oracle/out
+          go test -v -count=1 -run 'TestOffloadingAgainstVLLM|TestOffloadingFuzzCorpusAgainstVLLM' ./core/connector/offloading/ | tee oracle/out/offloading-results.txt
+      # Tier 4: vLLM's real MultiConnector over its NIXL and offloading children, both orders, on 3000 fuzz seeds
+      # (1000 with hybrid KV cache groups, 1000 with async scheduling).
+      - name: blis-vllm's MultiConnector against vLLM's (scenarios + fuzz)
+        if: matrix.corpus == 'multi'
+        env:
+          BLIS_VLLM_MULTI_FUZZ_DIR: ${{ github.workspace }}/oracle/out/fuzz-multi
+        run: |
+          set -o pipefail
+          mkdir -p oracle/out
+          go test -v -count=1 -run 'TestMultiConnectorAgainstVLLM|TestMultiConnectorFuzzCorpusAgainstVLLM' ./core/connector/multi/ | tee oracle/out/multi-results.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: oracle-fuzz-${{ matrix.corpus }}
+          path: |
+            oracle/out/*-results.txt
+            oracle/out/fuzz-cache.json
+      - if: github.event_name != 'pull_request' && matrix.corpus == 't2'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/go-build
+          key: ${{ steps.go.outputs.build-key }}
