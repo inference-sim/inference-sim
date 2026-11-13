@@ -89,7 +89,7 @@ func (a *V2SaturationAnalyzer) Analyze(metrics ModelSignals) AnalyzerResult {
 		// Skip replicas with uninitialized KV cache. Including them would produce zero supply
 		// with nonzero demand, triggering runaway scale-up. This should not occur for routable
 		// replicas — Loading instances never appear in metrics.Replicas; they are collected into
-		// RouterState.LoadingSnapshots and surfaced as PendingReplicaCount/PendingTotalKvCapacityTokens.
+		// ClusterState.LoadingSnapshots and surfaced as PendingReplicaCount/PendingTotalKvCapacityTokens.
 		if r.TotalKvCapacityTokens <= 0 {
 			logrus.Warnf("[analyzer] model %q: routable replica %q has zero TotalKvCapacityTokens — excluded from supply/demand; check KV cache initialization",
 				metrics.ModelID, r.InstanceID)

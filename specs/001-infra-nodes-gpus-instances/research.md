@@ -58,7 +58,7 @@
 - Separate `RouterState` per model — rejected; over-engineering for first pass; `buildRouterState()` already reconstructs state per request.
 
 **Required code changes**:
-1. Add `Model string` to `sim.RoutingSnapshot` (in `sim/routing.go`).
+1. Add `Model string` to `sim.RoutingSnapshot` (in `sim/instance_status.go`).
 2. Add `Model string` to `sim.Request` (in `sim/request.go`).
 3. `buildRouterState()` filters `cs.instances` to those with `inst.Model == req.Model`.
 4. `InstanceSimulator` gains a `Model string` field set at construction.
@@ -140,7 +140,7 @@
 | Change | File | Reason |
 |--------|------|--------|
 | Add `Model string` to `Request` | `sim/request.go` | Multi-model routing (FR-010) |
-| Add `Model string` to `RoutingSnapshot` | `sim/routing.go` | Model-aware router state |
+| Add `Model string` to `RoutingSnapshot` | `sim/instance_status.go` | Model-aware router state |
 | No other changes to `sim/` | — | Lifecycle is cluster-layer concern |
 
 All `sim/` changes are additive, backward-compatible with existing single-model cluster tests.

@@ -118,7 +118,7 @@ var (
 	loraFootprintBytesPerRank float64 // --lora-footprint-bytes-per-rank
 
 	// Speculative decoding / MTP (#1528). The draft length K and method come from the
-	// scenario's engine.speculative (set when the kernel deployment is adopted); K=0 =>
+	// scenario's engine.speculative_config (set when the kernel deployment is adopted); K=0 =>
 	// feature inert, output byte-identical (INV-6). The acceptance is resolved by
 	// blis-schemas' precedence (#1939): registry profile < workload < scenario < CLI.
 	numSpeculativeTokens  int     // K, from the scenario
@@ -548,7 +548,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().IntVar(&prefillInstances, "prefill-instances", 0, "Number of instances dedicated to prefill (0 = disabled)")
 	cmd.Flags().IntVar(&decodeInstances, "decode-instances", 0, "Number of instances dedicated to decode (0 = disabled)")
 	cmd.Flags().IntVar(&prefillDecodeInstances, "prefill-decode-instances", 0, "Number of shared-role instances serving both prefill and decode (llm-d 'prefill-decode'/'both' parity; 0 = disabled). Must satisfy --prefill-instances + --decode-instances + --prefill-decode-instances <= --num-instances.")
-	cmd.Flags().BoolVar(&pdTransferContention, "pd-transfer-contention", false, "Concurrent P/D KV handoffs share the fabric links they cross (#1922): each link's bandwidth is divided max-min fairly among the handoffs on it, from the kernel's PDTransferDemand, and re-divided as handoffs start and finish. A handoff alone still takes exactly the kernel's PDTransferTime. Default off: every handoff is priced as if alone.")
+	cmd.Flags().BoolVar(&pdTransferContention, "pd-transfer-contention", false, "Concurrent P/D KV handoffs share the fabric links they cross (#1922): each link's bandwidth is divided max-min fairly among the handoffs on it, from the demand the cost model states for it, and re-divided as handoffs start and finish. A handoff alone takes exactly that demand's alone time. Default off: every handoff is priced as if alone.")
 
 	// E/P/D disaggregation (GAP-4, issue #1264). Registered on both run and replay.
 	cmd.Flags().IntVar(&encodeInstances, "encode-instances", 0, "Number of instances dedicated to encoding multimodal input (0 = encode pool disabled, default)")
@@ -1081,7 +1081,7 @@ var runCmd = &cobra.Command{
 		// The instance counts are final: every instance must fit
 		// its pool, and the P/D handoff pricer places instances by these counts.
 		requireKernelCapacity(kernelPD)
-		pdTransferTime, pdTransferDemand := kernelPD.handoffPricing(pdTransferContention)
+		requirePullPricing(kernelPD, pdTransferContention)
 		scenarioTopology, topologyErr := scenarioEndpointTopology(kernelOpened, kernelPD, numInstances, prefillInstances, decodeInstances)
 		if topologyErr != nil {
 			logrus.Fatalf("scenario endpoint placement: %v", topologyErr)
@@ -1098,9 +1098,8 @@ var runCmd = &cobra.Command{
 			DecodeInstances:                decodeInstances,
 			SharedInstances:                prefillDecodeInstances,
 			EncodeInstances:                encodeInstances,
-			PDTransferTime:                 pdTransferTime,
+			InstanceEndpoint:               kernelPD.instanceEndpoint(),
 			PDTransferContention:           pdTransferContention,
-			PDTransferDemand:               pdTransferDemand,
 			PDPrefillKVHold:                kernelPD.holdsPrefillKV(),
 			PDPrefillSamplesFirstToken:     true,
 			Roles:                          rolesOf(runEngine, prefillOverrides, decodeOverrides),
@@ -1169,7 +1168,7 @@ var runCmd = &cobra.Command{
 			cs.SetUnservedHook(unservedHook)
 		}
 		router := resolveRouterInputs()
-		gw := newGateway(router, model)
+		gw := newGateway(router, model, adapterIDsOf(loraCfg)...)
 		cs.SetGateway(gw)
 
 		// Arrival hook: capture trace-emission references at the cluster's

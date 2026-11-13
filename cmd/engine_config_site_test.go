@@ -397,17 +397,17 @@ func f(c fc) error { return c.Validate() }`,
 	clean := map[string]string{
 		"another package's FrontendConfig": `type FrontendConfig struct{ N int }
 func f() FrontendConfig { return FrontendConfig{N: 1} }`,
-		"an empty literal":         `func f() engine.KVOffloadConfig { return engine.KVOffloadConfig{} }`,
-		"another method":           `func f(c engine.FrontendConfig) bool { return c.Enabled() }`,
-		"the host's own front end": `func f() sim.FrontendConfig { return sim.FrontendConfig{RendererNumWorkers: 1} }`,
-		"a kernel model's role":    `func f(m *kernelmodel.Model) string { return string(m.Role()) }`,
+		"an empty literal":             `func f() engine.KVOffloadConfig { return engine.KVOffloadConfig{} }`,
+		"another method":               `func f(c engine.FrontendConfig) bool { return c.Enabled() }`,
+		"the host's own driver config": `func f() sim.EngineDriverConfig { return sim.EngineDriverConfig{Horizon: 1} }`,
+		"a kernel model's role":        `func f(m *kernelmodel.Model) string { return string(m.Role()) }`,
 	}
 	run := func(body string) []string {
 		pkgDir := filepath.Join(dir, fmt.Sprintf("p%d", len(body)))
 		if err := os.MkdirAll(pkgDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		src := "package probe\n\nimport (\n\t\"github.com/inference-sim/blis-substrate/contracts/kernel\"\n\t\"github.com/inference-sim/blis-vllm/compat/engine\"\n\t\"github.com/inference-sim/blis-vllm/compat/kernelmodel\"\n\t\"github.com/inference-sim/inference-sim/sim\"\n\t\"github.com/inference-sim/inference-sim/sim/cluster\"\n)\n\nvar (\n\t_ = kernel.Placement{}\n\t_ = engine.ReplicaAPIServers\n\t_ = kernelmodel.Open\n\t_ = sim.ReplicaAPIServers\n\t_ = cluster.NewSliceRequestSource\n)\n\n" + body + "\n"
+		src := "package probe\n\nimport (\n\t\"github.com/inference-sim/blis-substrate/contracts/kernel\"\n\t\"github.com/inference-sim/blis-vllm/compat/engine\"\n\t\"github.com/inference-sim/blis-vllm/compat/kernelmodel\"\n\t\"github.com/inference-sim/inference-sim/sim\"\n\t\"github.com/inference-sim/inference-sim/sim/cluster\"\n)\n\nvar (\n\t_ = kernel.Placement{}\n\t_ = engine.ReplicaAPIServers\n\t_ = kernelmodel.Open\n\t_ = sim.EngineDriverConfig{}\n\t_ = cluster.NewSliceRequestSource\n)\n\n" + body + "\n"
 		if err := os.WriteFile(filepath.Join(pkgDir, "probe.go"), []byte(src), 0o644); err != nil {
 			t.Fatal(err)
 		}

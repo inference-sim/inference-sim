@@ -2,7 +2,7 @@
 
 **Branch**: `006-model-autoscaler`  
 **Phase**: 0 — Resolved decisions before implementation begins  
-**Source**: Codebase exploration of `sim/cluster/`, `sim/router_state.go`, `sim/rng.go`
+**Source**: Codebase exploration of `sim/cluster/`, `sim/cluster_state.go`, `sim/rng.go`
 
 ---
 
@@ -20,9 +20,9 @@
 
 ## Decision 2: Variant info in RoutingSnapshot
 
-**Decision**: Add `GPUType string`, `TPDegree int`, and `CostPerHour float64` to `RoutingSnapshot` (in `sim/router_state.go`). Populate in `buildRouterState()` from the instance's configuration.
+**Decision**: Add `GPUType string`, `TPDegree int`, and `CostPerHour float64` to `RoutingSnapshot` (in `sim/instance_status.go`). Populate in `buildRouterState()` from the instance's configuration.
 
-**Rationale**: `DefaultCollector.Collect(*RouterState) []ModelSignals` receives only `RouterState`. The current `RoutingSnapshot` has no variant information (`GPUType`, `TPDegree`). To enable `DefaultCollector` to populate `ReplicaMetrics.Variant` and `ReplicaMetrics.CostPerHour` without broadening its interface, the variant fields must be present in `RoutingSnapshot`. This is a clean additive change: `sim/router_state.go` is in the `sim/` package which does not import `sim/cluster/`, so there is no import cycle. `buildRouterState()` in `cluster_event.go` already has access to instance config and can populate these fields.
+**Rationale**: `DefaultCollector.Collect(*RouterState) []ModelSignals` receives only `RouterState`. The current `RoutingSnapshot` has no variant information (`GPUType`, `TPDegree`). To enable `DefaultCollector` to populate `ReplicaMetrics.Variant` and `ReplicaMetrics.CostPerHour` without broadening its interface, the variant fields must be present in `RoutingSnapshot`. This is a clean additive change: `sim/cluster_state.go` is in the `sim/` package which does not import `sim/cluster/`, so there is no import cycle. `buildRouterState()` in `cluster_event.go` already has access to instance config and can populate these fields.
 
 **Alternatives considered**:
 - Change `Collect` signature to `Collect(*RouterState, variantLookup func(id string) VariantSpec)`: breaks the declared interface contract and adds complexity to all Collector implementations.

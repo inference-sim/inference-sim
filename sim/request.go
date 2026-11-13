@@ -81,7 +81,21 @@ type Request struct {
 	DepartureTime    int64   // Tick its final step ends (its RequestLeftEvent time); 0 until it completes
 	NumNewTokens     int     // Number of new tokens to be generated in the current step
 	LengthCapped     bool    // Set when force-completed by runtime MaxModelLen cap (BC-5)
-	ITL              []int64 // List of inter-token latencies
+	ITL              []int64 // List of inter-token latencies, one per engine step that emitted a token
+	// The client's view of the request's output (EngineDriver). The API server sends the client
+	// its tokens in chunks: one per engine step that emitted a token, or, when it groups them
+	// (EngineDriverConfig.StreamInterval above 1), the first output at once, then a group each
+	// time StreamInterval tokens have accumulated, and what is left at the finish. Every token
+	// of a chunk reaches the client at the chunk's time.
+	//
+	// ClientFirstTokens is the tokens of the first chunk (TTFT's); ClientITL the gap before each
+	// later chunk, from the previous one, and ClientChunk the tokens in that chunk, one entry for
+	// each of ClientITL's. A request whose first output belongs to another engine (the decode half
+	// of a disaggregated request) has no first chunk here: ClientFirstTokens is 0 and its first
+	// chunk is the first entry of ClientITL.
+	ClientFirstTokens int
+	ClientITL         []int64
+	ClientChunk       []int
 	// GeneratedTokens is the number of output tokens the engine generated, set when the request
 	// completes; it is what a model server reports as usage.completion_tokens.
 	GeneratedTokens int
@@ -177,24 +191,6 @@ func (req *Request) IsMultimodal() bool {
 	return req.ImageTokenCount > 0 || req.AudioTokenCount > 0 || req.VideoTokenCount > 0
 }
 
-// SequenceTokenSlice is the request's tokens [start, end) over its prompt followed by its
-// output.
-func (req *Request) SequenceTokenSlice(start, end int64) []TokenID {
-	n := req.InputLen()
-	if end <= n {
-		return req.InputTokenSlice(start, end)
-	}
-	if end-n > int64(len(req.OutputTokens)) || start < 0 || end < start {
-		panic(fmt.Sprintf("Request.SequenceTokenSlice: invalid range [%d, %d) for %d input and %d output tokens (request %s)",
-			start, end, n, len(req.OutputTokens), req.ID))
-	}
-	out := make([]TokenID, 0, end-start)
-	if start < n {
-		out = append(out, req.InputTokens[start:n]...)
-	}
-	return append(out, req.OutputTokens[max(start-n, 0):end-n]...)
-}
-
 // InputLen returns the total number of input tokens without forcing materialization.
 // Canonical replacement for `len(req.InputTokens)` and `util.Len64(req.InputTokens)`
 // at call sites that need only the length (#1445).
@@ -246,4 +242,24 @@ func GenerateRandomTokenIDs(rng *rand.Rand, length int) []TokenID {
 		tokens[i] = TokenID(rng.Intn(MaxTokenID))
 	}
 	return tokens
+}
+
+// ClientTokenGaps is the request's inter-token latency series as its client observes it: one
+// entry for every gap between consecutive output tokens. Tokens of one chunk reach the client
+// together, so the gaps inside a chunk are zero and the gap before a chunk is charged to its
+// first token. The series has one entry per output token after the first (the whole of
+// ClientITL's chunks plus the first chunk's extra tokens), so its mean is the request's TPOT
+// when the output was delivered; with one token per chunk it is the engine's per-step series.
+func (r *Request) ClientTokenGaps() []int64 {
+	var out []int64
+	for i := 1; i < r.ClientFirstTokens; i++ {
+		out = append(out, 0)
+	}
+	for i, gap := range r.ClientITL {
+		out = append(out, gap)
+		for j := 1; j < r.ClientChunk[i]; j++ {
+			out = append(out, 0)
+		}
+	}
+	return out
 }

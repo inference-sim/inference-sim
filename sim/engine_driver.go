@@ -16,10 +16,20 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/env"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
 )
 
 // EngineDriverConfig is the host side of an engine-driven instance.
 type EngineDriverConfig struct {
+	// Environment is the cost model the driver asks what each transfer the engine starts
+	// demands of the fabric (design 6.2, 6.3): for every engine.Transfer in a batch's
+	// TransfersStarted the driver calls env.DemandFor(Environment, engine.Plan(), t), so an
+	// offload-tier copy and a P/D pull are priced by one path, from the Move the engine states.
+	// Required by an engine that starts a transfer, which must also implement engine.Planned;
+	// an engine that starts none may leave it nil.
+	Environment env.Environment
 	// Horizon ends the run: no event after it runs.
 	Horizon int64
 	// PostDecodeFixedOverhead is the host's fixed per-request work at completion, in µs (the
@@ -59,6 +69,16 @@ type EngineDriverConfig struct {
 	// steps in a row emit no token and finish no request while the engine holds work. Zero
 	// means DefaultStallSteps.
 	StallSteps int
+	// StreamInterval is the API server's stream_interval (vllm/config/scheduler.py:213@5df63a72):
+	// the client is sent a request's tokens in groups, not at every step. Zero and one deliver
+	// at every step. Above one, the client sees the first output at once, then a group each time
+	// StreamInterval tokens have accumulated since the last, and what is left when the request
+	// finishes (RequestState.make_request_output, vllm/v1/engine/output_processor.py:324-343@5df63a72,
+	// streaming in delta mode). What the client is sent is Request.ClientFirstTokens,
+	// ClientITL and ClientChunk at every value, and the Result's itl_* series is read from them. The
+	// engine's steps, sampling, TTFT, end-to-end latency and per-step ITL entries (Request.ITL)
+	// are as without it.
+	StreamInterval int
 }
 
 // DefaultStallSteps is the progress watchdog's limit when EngineDriverConfig.StallSteps is
@@ -73,6 +93,12 @@ const DefaultStallSteps = 1_000_000
 type EngineDriver struct {
 	eng engine.Engine
 	cfg EngineDriverConfig
+
+	// lastEM is the last metrics state EngineMetricsAt returned and emSeq its publication number
+	// (EngineMetrics.Seq); emSeen is false until the first.
+	lastEM EngineMetrics
+	emSeq  uint64
+	emSeen bool
 
 	Clock   int64
 	Horizon int64
@@ -117,8 +143,11 @@ type EngineDriver struct {
 	unserved map[string]bool
 	// pendingWake is the wake the engine last reported (0 = none).
 	pendingWake *driverWakeEvent
-	// renderer is the host's API-server render stage (INV-R1), nil when the front end is inert.
-	renderer *Renderer
+	// stage is the queue requests wait in before the engine admits them (INV-R1), nil when the
+	// engine states none; admissionPlan is the plan its shape came from, which prices a request's
+	// demand on it.
+	stage         *AdmissionStage
+	admissionPlan plan.PoolPlan
 	// stepPending is set while a step is queued for after the current instant's arrivals.
 	stepPending bool
 
@@ -135,12 +164,14 @@ type EngineDriver struct {
 
 	// P/D handoffs (engine_driver_handoff.go): remote are the decode sub-requests the engine
 	// holds before their pull lands, pulls the pulls in flight, and holds the KV the engine keeps
-	// for a peer's pull, all by request ID. OnPullStarted is the host's pricing of a pull the
-	// engine started, at the instant it started.
-	remote        map[string]*Request
-	pulls         map[string]engine.TransferID
-	holds         map[string]engine.Handoff
-	OnPullStarted func(req *Request, pulledTokens int64, at int64)
+	// for a peer's pull, all by request ID. OnPullPriced receives a pull the engine started,
+	// already priced: its demand on the fabric (the Environment's answer to the engine's Move),
+	// which the host shares among the pulls in flight and completes (LandRemote). The driver
+	// prices; the host only decides when the pull ends.
+	remote       map[string]*Request
+	pulls        map[string]engine.TransferID
+	holds        map[string]engine.Handoff
+	OnPullPriced func(req *Request, pulledTokens, blocks int64, demand kernel.TransferDemand, at int64)
 
 	// stalledSteps counts the steps since one last emitted a token or finished a request, and
 	// stallErr is the watchdog's error once the count passes the limit (SIM-7).
@@ -162,6 +193,8 @@ type driverReq struct {
 	scheduledIdx int
 	lastEnd      int64 // the end of the last step that emitted a token for the request
 	emitted      int
+	sent         int     // tokens delivered to the client (StreamInterval groups them)
+	clientEnd    int64   // the end of the step that delivered the last of them
 	acceptCarry  float64 // the fraction of an accepted draft the request is owed
 	resumed      bool    // preempted after its first token, not yet emitting again
 	lookedUp     bool    // its first admission's prefix-cache lookup is recorded
@@ -180,38 +213,32 @@ type stagedBatch struct {
 	end         int64
 }
 
-// NewEngineDriver wraps an engine for the host's event loop, with an inert front end: a
-// request's QueueingTime is an uncontended delay.
+// NewEngineDriver wraps an engine for the host's event loop. When the engine is Planned and its
+// plan states an admission queue (plan.HostPlan.Admission), requests queue on it (INV-R1).
 func NewEngineDriver(eng engine.Engine, cfg EngineDriverConfig) *EngineDriver {
-	return &EngineDriver{eng: eng, cfg: cfg, Horizon: cfg.Horizon, Metrics: NewMetrics(),
+	d := &EngineDriver{eng: eng, cfg: cfg, Horizon: cfg.Horizon, Metrics: NewMetrics(),
 		reqs: map[string]*driverReq{}}
-}
-
-// NewEngineDriverWithFrontend wraps an engine behind the host's API-server front end, the
-// compatibility path's render stage (FrontendConfig, Renderer; INV-R1): each request's
-// QueueingTime runs on one of the endpoint's render threads, in arrival order, and the request
-// reaches the engine when its render finishes. The front end is the host's, not the engine's.
-func NewEngineDriverWithFrontend(eng engine.Engine, cfg EngineDriverConfig, f FrontendConfig) (*EngineDriver, error) {
-	if err := f.Validate(); err != nil {
-		return nil, fmt.Errorf("NewEngineDriverWithFrontend: %w", err)
-	}
-	d := NewEngineDriver(eng, cfg)
-	if f.Enabled() {
-		r, err := NewRenderer(max(f.APIServerCount, 1), f.RendererNumWorkers)
-		if err != nil {
-			return nil, err
+	// The engine states the admission queue in its plan; an engine that states none, or one with
+	// no servers, has requests wait only their delay.
+	if p, ok := eng.(engine.Planned); ok {
+		d.admissionPlan = p.Plan()
+		if q := d.admissionPlan.Host.Admission; q.Enabled() {
+			stage, err := NewAdmissionStage(q)
+			if err != nil {
+				panic(fmt.Sprintf("engine driver: the engine's admission queue: %v", err))
+			}
+			d.stage = stage
 		}
-		d.renderer = r
 	}
-	return d, nil
+	return d
 }
 
 // Engine returns the engine the driver holds.
 func (d *EngineDriver) Engine() engine.Engine { return d.eng }
 
-// Renderer is the host's API-server render stage requests reach the engine through (INV-R1), nil
-// when the front end is inert.
-func (d *EngineDriver) Renderer() *Renderer { return d.renderer }
+// AdmissionStage is the queue requests wait in before the engine admits them (INV-R1), nil when
+// the engine states none.
+func (d *EngineDriver) AdmissionStage() *AdmissionStage { return d.stage }
 
 // DriverEvent is an event of an engine-driven instance.
 type DriverEvent interface {
@@ -404,15 +431,33 @@ type driverArrivalEvent struct {
 func (e *driverArrivalEvent) Timestamp() int64 { return e.at }
 func (e *driverArrivalEvent) Priority() int    { return PriorityArrival }
 func (e *driverArrivalEvent) run(d *EngineDriver) {
-	var render int64
-	if d.cfg.QueueingTime != nil {
-		render = d.cfg.QueueingTime(e.req)
-	}
-	at := e.at + render
-	if d.renderer != nil {
-		at = d.renderer.Admit(e.at, render)
+	service, delay := d.hostDemand(e.req)
+	at := e.at + service + delay
+	if d.stage != nil {
+		// Only the demand on a server queues; the delay is waited out after the server is free.
+		at = d.stage.Admit(e.at, service) + delay
 	}
 	d.schedule(&driverQueuedEvent{at: at, req: e.req})
+}
+
+// hostDemand is what a request asks of the admission queue, in ticks: the time it holds a server
+// and the time it only waits. The cost model answers (env.Environment.HostDemand, for the plan
+// the engine states); a driver with no Environment has the host's QueueingTime, all of it a
+// delay. Service plus delay is the whole admission time, truncated once, as it always was.
+func (d *EngineDriver) hostDemand(r *Request) (service, delay int64) {
+	if d.cfg.Environment == nil {
+		if d.cfg.QueueingTime != nil {
+			delay = d.cfg.QueueingTime(r)
+		}
+		return 0, delay
+	}
+	h, err := d.cfg.Environment.HostDemand(d.admissionPlan, int(r.InputLen()))
+	if err != nil {
+		panic(fmt.Sprintf("engine driver: the admission demand of %q: %v", r.ID, err))
+	}
+	total := h.Total().Microseconds()
+	service = min(h.Service.Microseconds(), total)
+	return service, total - service
 }
 
 // driverQueuedEvent hands a request to the engine.
@@ -924,6 +969,8 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 			continue
 		}
 		n := res.Emitted[id]
+		grouped := d.cfg.StreamInterval > 1
+		firstStep := false
 		if n > 0 {
 			d.noteProgress()
 		}
@@ -940,6 +987,7 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 			}
 			r.lastEnd = end
 			n-- // the first token's latency is TTFT, not an ITL entry
+			firstStep = true
 		}
 		if n > 0 {
 			// A step emitting n tokens is one ITL entry, as the compatibility engine's
@@ -959,6 +1007,22 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 			r.resumed = false
 			r.req.ITL = append(r.req.ITL, gap)
 			r.lastEnd = end
+			if !grouped && !firstStep {
+				// Without grouping each emitting step is one chunk of the step's tokens.
+				r.req.ClientITL = append(r.req.ClientITL, gap)
+				r.req.ClientChunk = append(r.req.ClientChunk, n)
+			}
+		}
+		if !grouped && firstStep {
+			// The first chunk is the step's tokens, the first output and whatever else it emitted.
+			r.req.ClientFirstTokens = res.Emitted[id]
+		}
+		if grouped {
+			stepGap := int64(0)
+			if n > 0 {
+				stepGap = r.req.ITL[len(r.req.ITL)-1]
+			}
+			d.deliver(r, res.Emitted[id], end, firstStep, stepGap)
 		}
 		r.emitted += res.Emitted[id]
 		if res.Emitted[id] > 0 {
@@ -975,8 +1039,56 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 		if r == nil {
 			continue
 		}
+		d.flushUndelivered(r, f, end)
 		d.finish(r, f, end)
 	}
+}
+
+// deliver is the client's view of a request's tokens under StreamInterval (vLLM's output
+// processor, output_processor.py:324-343@5df63a72): the first output is sent at once, then a
+// group each time StreamInterval tokens have accumulated since the last send, and the finish
+// sends what is left (flushUndelivered). Each send after the first is one entry of the request's
+// ClientITL, the gap since the previous send plus the group's output processing, with its
+// token count in ClientChunk. The engine's own per-step ITL entries are not touched: the engine
+// schedules and samples as without it. stepGap is the step's own ITL entry, the gap of a first
+// send that is not this request's first output (the decode half of a disaggregated request).
+func (d *EngineDriver) deliver(r *driverReq, emittedNow int, end int64, firstStep bool, stepGap int64) {
+	total := r.emitted + emittedNow
+	if firstStep {
+		r.sent, r.clientEnd = total, end
+		r.req.ClientFirstTokens = total
+		return
+	}
+	if emittedNow == 0 {
+		return
+	}
+	if r.sent == 0 {
+		// The first send of a request whose first output is another engine's.
+		r.req.ClientITL = append(r.req.ClientITL, stepGap)
+		r.req.ClientChunk = append(r.req.ClientChunk, total)
+		r.sent, r.clientEnd = total, end
+		return
+	}
+	if total-r.sent < d.cfg.StreamInterval {
+		return
+	}
+	m := total - r.sent
+	r.req.ClientITL = append(r.req.ClientITL, end-r.clientEnd+int64(m)*d.cfg.OutputTokenProcessingTime)
+	r.req.ClientChunk = append(r.req.ClientChunk, m)
+	r.sent, r.clientEnd = total, end
+}
+
+// flushUndelivered sends the client the tokens a finishing request still holds under
+// StreamInterval: those emitted and not yet delivered, including the finishing step's own
+// (output_processor.py:331-336@5df63a72).
+func (d *EngineDriver) flushUndelivered(r *driverReq, f engine.Finished, end int64) {
+	if d.cfg.StreamInterval <= 1 || f.Reason == engine.FinishError || r.sent >= r.emitted || !r.req.TTFTSet {
+		return
+	}
+	m := r.emitted - r.sent
+	r.req.ClientITL = append(r.req.ClientITL, end-r.clientEnd+int64(m)*d.cfg.OutputTokenProcessingTime)
+	r.req.ClientChunk = append(r.req.ClientChunk, m)
+	r.sent, r.clientEnd = r.emitted, end
 }
 
 // noteStep counts a step that ran requests toward the progress watchdog (SIM-7).
@@ -1237,6 +1349,17 @@ func (d *EngineDriver) BusyUntil() int64 { return max(d.gpuFreeAt, d.pipelineDra
 
 // EngineMetricsAt is what a scrape of the model server at t sees, from the engine's state.
 func (d *EngineDriver) EngineMetricsAt(t int64) EngineMetrics {
+	em := d.engineMetricsAt(t)
+	if !d.emSeen || !em.sameState(d.lastEM) {
+		d.emSeq++
+		d.emSeen = true
+		d.lastEM = em
+	}
+	em.Seq = d.emSeq
+	return em
+}
+
+func (d *EngineDriver) engineMetricsAt(t int64) EngineMetrics {
 	if d.cfg.ScrapeEngineMetrics {
 		// The engine's own published view (the compatibility engine's, at its last step end).
 		m := d.eng.Metrics(t)

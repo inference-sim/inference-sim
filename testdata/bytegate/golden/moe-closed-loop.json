@@ -1,6 +1,6 @@
 {
   "kind": "Result",
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "gpt-oss-120b-h100-fp4-vllm-tp2.c16-s11-ofecc7770",
   "engine": {
     "kind": "vllm",
@@ -9,18 +9,19 @@
   "data": {
     "catalog": {
       "source": "path",
-      "hash": "2bffc79ee1c01e0cf63236ea266e13834ce542da2afcffa7b8b71a7aa66cd2e8",
-      "combined_hash": "2bffc79ee1c01e0cf63236ea266e13834ce542da2afcffa7b8b71a7aa66cd2e8"
+      "hash": "db74e4bb49f75d658e5d0850934da60daf513274b937a03b7ab994760bd6d21f",
+      "combined_hash": "db74e4bb49f75d658e5d0850934da60daf513274b937a03b7ab994760bd6d21f"
     },
     "registry": {
       "source": "path",
-      "hash": "825ec093e745522db9946b1501eb0c95b787cc0983b2db3a66efd65b5e2ef21d",
-      "combined_hash": "825ec093e745522db9946b1501eb0c95b787cc0983b2db3a66efd65b5e2ef21d"
+      "hash": "8dbcf3b85eed842f2bc798b34d2b95716fc58117750f4164d869b26770353fe0",
+      "combined_hash": "8dbcf3b85eed842f2bc798b34d2b95716fc58117750f4164d869b26770353fe0"
     },
     "released_data": false,
     "build": "unreleased"
   },
   "selected_entries": {
+    "closeness_version": 2,
     "coefficients": [
       {
         "set": "cost-model-attention",
@@ -31,7 +32,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-attention.yaml"
+        "file": "coefficients/cost-model-attention.yaml",
+        "primitive": "attention.decode",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-attention",
@@ -42,7 +45,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-attention.yaml"
+        "file": "coefficients/cost-model-attention.yaml",
+        "primitive": "attention.decode",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-attention",
@@ -53,7 +58,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-attention.yaml"
+        "file": "coefficients/cost-model-attention.yaml",
+        "primitive": "attention.decode",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-attention",
@@ -64,7 +71,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-attention.yaml"
+        "file": "coefficients/cost-model-attention.yaml",
+        "primitive": "attention.decode",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-attention",
@@ -75,7 +84,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-attention.yaml"
+        "file": "coefficients/cost-model-attention.yaml",
+        "primitive": "attention.decode",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-attention",
@@ -86,7 +97,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-attention.yaml"
+        "file": "coefficients/cost-model-attention.yaml",
+        "primitive": "attention.decode",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-attention",
@@ -97,7 +110,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-attention.yaml"
+        "file": "coefficients/cost-model-attention.yaml",
+        "primitive": "attention.prefill",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-attention",
@@ -108,7 +123,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-attention.yaml"
+        "file": "coefficients/cost-model-attention.yaml",
+        "primitive": "attention.prefill",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-collectives",
@@ -119,7 +136,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-collectives.yaml"
+        "file": "coefficients/cost-model-collectives.yaml",
+        "primitive": "all_gather",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-collectives",
@@ -130,7 +149,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-collectives.yaml"
+        "file": "coefficients/cost-model-collectives.yaml",
+        "primitive": "all_reduce",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-collectives",
@@ -141,7 +162,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-collectives.yaml"
+        "file": "coefficients/cost-model-collectives.yaml",
+        "primitive": "all2all",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-collectives",
@@ -152,7 +175,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-collectives.yaml"
+        "file": "coefficients/cost-model-collectives.yaml",
+        "primitive": "reduce_scatter",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-collectives",
@@ -163,7 +188,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-collectives.yaml"
+        "file": "coefficients/cost-model-collectives.yaml",
+        "primitive": "all_gather",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-collectives",
@@ -174,7 +201,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-collectives.yaml"
+        "file": "coefficients/cost-model-collectives.yaml",
+        "primitive": "all_reduce",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-collectives",
@@ -185,7 +214,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-collectives.yaml"
+        "file": "coefficients/cost-model-collectives.yaml",
+        "primitive": "all2all",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-collectives",
@@ -196,7 +227,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-collectives.yaml"
+        "file": "coefficients/cost-model-collectives.yaml",
+        "primitive": "reduce_scatter",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-collectives",
@@ -207,7 +240,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-collectives.yaml"
+        "file": "coefficients/cost-model-collectives.yaml",
+        "primitive": "all_gather",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-collectives",
@@ -218,7 +253,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-collectives.yaml"
+        "file": "coefficients/cost-model-collectives.yaml",
+        "primitive": "all_reduce",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-collectives",
@@ -229,7 +266,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-collectives.yaml"
+        "file": "coefficients/cost-model-collectives.yaml",
+        "primitive": "all2all",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-collectives",
@@ -240,7 +279,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-collectives.yaml"
+        "file": "coefficients/cost-model-collectives.yaml",
+        "primitive": "reduce_scatter",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-host-overheads",
@@ -259,7 +300,8 @@
             "l40s"
           ]
         },
-        "file": "coefficients/cost-model-host-overheads.yaml"
+        "file": "coefficients/cost-model-host-overheads.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-host-overheads",
@@ -278,7 +320,8 @@
             "l40s"
           ]
         },
-        "file": "coefficients/cost-model-host-overheads.yaml"
+        "file": "coefficients/cost-model-host-overheads.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-host-overheads",
@@ -297,7 +340,8 @@
             "l40s"
           ]
         },
-        "file": "coefficients/cost-model-host-overheads.yaml"
+        "file": "coefficients/cost-model-host-overheads.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-host-overheads",
@@ -316,7 +360,8 @@
             "l40s"
           ]
         },
-        "file": "coefficients/cost-model-host-overheads.yaml"
+        "file": "coefficients/cost-model-host-overheads.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-host-overheads",
@@ -335,7 +380,12 @@
             "l40s"
           ]
         },
-        "file": "coefficients/cost-model-host-overheads.yaml"
+        "file": "coefficients/cost-model-host-overheads.yaml",
+        "kernel_match": "unkeyed",
+        "ci95": [
+          3.1,
+          3.3
+        ]
       },
       {
         "set": "cost-model-host-overheads",
@@ -354,7 +404,8 @@
             "l40s"
           ]
         },
-        "file": "coefficients/cost-model-host-overheads.yaml"
+        "file": "coefficients/cost-model-host-overheads.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-host-overheads",
@@ -373,7 +424,8 @@
             "l40s"
           ]
         },
-        "file": "coefficients/cost-model-host-overheads.yaml"
+        "file": "coefficients/cost-model-host-overheads.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-memory",
@@ -392,7 +444,8 @@
             "l40s"
           ]
         },
-        "file": "coefficients/cost-model-memory.yaml"
+        "file": "coefficients/cost-model-memory.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-memory",
@@ -411,7 +464,8 @@
             "l40s"
           ]
         },
-        "file": "coefficients/cost-model-memory.yaml"
+        "file": "coefficients/cost-model-memory.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-memory",
@@ -430,7 +484,8 @@
             "l40s"
           ]
         },
-        "file": "coefficients/cost-model-memory.yaml"
+        "file": "coefficients/cost-model-memory.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-primitives",
@@ -441,7 +496,8 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-primitives.yaml"
+        "file": "coefficients/cost-model-primitives.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-primitives",
@@ -452,7 +508,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-primitives.yaml"
+        "file": "coefficients/cost-model-primitives.yaml",
+        "primitive": "gemm",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-primitives",
@@ -463,7 +521,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-primitives.yaml"
+        "file": "coefficients/cost-model-primitives.yaml",
+        "primitive": "gemm",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-primitives",
@@ -474,7 +534,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-primitives.yaml"
+        "file": "coefficients/cost-model-primitives.yaml",
+        "primitive": "moe.grouped_gemm",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-primitives",
@@ -485,7 +547,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-primitives.yaml"
+        "file": "coefficients/cost-model-primitives.yaml",
+        "primitive": "gemm",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-primitives",
@@ -496,7 +560,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-primitives.yaml"
+        "file": "coefficients/cost-model-primitives.yaml",
+        "primitive": "gemm",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-primitives",
@@ -507,7 +573,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-primitives.yaml"
+        "file": "coefficients/cost-model-primitives.yaml",
+        "primitive": "moe.grouped_gemm",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-primitives",
@@ -518,7 +586,8 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-primitives.yaml"
+        "file": "coefficients/cost-model-primitives.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-primitives",
@@ -529,7 +598,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-primitives.yaml"
+        "file": "coefficients/cost-model-primitives.yaml",
+        "primitive": "gather",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-primitives",
@@ -540,7 +611,8 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-primitives.yaml"
+        "file": "coefficients/cost-model-primitives.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-primitives",
@@ -551,7 +623,8 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-primitives.yaml"
+        "file": "coefficients/cost-model-primitives.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-primitives",
@@ -562,7 +635,8 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-primitives.yaml"
+        "file": "coefficients/cost-model-primitives.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-recurrent",
@@ -573,7 +647,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-recurrent.yaml"
+        "file": "coefficients/cost-model-recurrent.yaml",
+        "primitive": "recurrent.update",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-recurrent",
@@ -584,7 +660,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-recurrent.yaml"
+        "file": "coefficients/cost-model-recurrent.yaml",
+        "primitive": "recurrent.update",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-recurrent",
@@ -595,7 +673,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-recurrent.yaml"
+        "file": "coefficients/cost-model-recurrent.yaml",
+        "primitive": "recurrent.update",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-recurrent",
@@ -606,7 +686,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-recurrent.yaml"
+        "file": "coefficients/cost-model-recurrent.yaml",
+        "primitive": "recurrent.update",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-recurrent",
@@ -617,7 +699,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-recurrent.yaml"
+        "file": "coefficients/cost-model-recurrent.yaml",
+        "primitive": "recurrent.update",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-recurrent",
@@ -628,13 +712,16 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-recurrent.yaml"
+        "file": "coefficients/cost-model-recurrent.yaml",
+        "primitive": "recurrent.update",
+        "kernel_match": "unkeyed"
       }
     ],
     "unread_files": [
       "acceptance/inferencex-golden-al.yaml",
       "coefficients/cost-model-collectives-inferencex.yaml",
       "coefficients/cost-model-fabric.yaml",
+      "coefficients/cost-model-offload-tiers.yaml",
       "routing/servingstudio-dsv41-flash.yaml"
     ]
   },
@@ -673,13 +760,15 @@
           },
           "engine": {
             "quantization": "nvfp4",
-            "cache_dtype": "fp8",
+            "kv_cache_dtype": "fp8",
             "block_size": 16,
             "max_num_batched_tokens": 8192,
             "max_num_seqs": 256,
             "max_model_len": 32768,
-            "cudagraph_mode": "PIECEWISE",
-            "gpu_memory_utilization": 0.92
+            "gpu_memory_utilization": 0.92,
+            "compilation_config": {
+              "cudagraph_mode": "PIECEWISE"
+            }
           }
         }
       ]
@@ -749,8 +838,14 @@
       "e2e_p95_ms",
       "e2e_p99_ms",
       "interactivity_mean",
+      "interactivity_of_mean_tpot",
       "interactivity_p50",
       "interactivity_p90",
+      "itl_mean_ms",
+      "itl_p50_ms",
+      "itl_p90_ms",
+      "itl_p95_ms",
+      "itl_p99_ms",
       "output_tok_s",
       "output_tok_s_per_gpu",
       "preemptions",
@@ -760,6 +855,7 @@
       "step_interval_p90_ms",
       "step_interval_p95_ms",
       "step_interval_p99_ms",
+      "total_tokens_per_second_per_gpu",
       "tpot_mean_ms",
       "tpot_p50_ms",
       "tpot_p90_ms",
@@ -773,120 +869,181 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.13.0",
-    "router": "v1.0.0-blis.3",
-    "engine_module": "v0.32.0-blis.2"
+    "substrate": "v0.14.0",
+    "router": "v1.0.0-blis.4",
+    "engine_module": "v0.32.0-blis.3"
   },
   "window": {
     "start_us": 0,
-    "end_us": 14023770,
-    "duration_s": 14.02377,
+    "end_us": 14222414,
+    "duration_s": 14.222414,
     "requests": 64
   },
   "metrics": {
     "e2e_mean_ms": {
-      "value": 3078.21428125,
-      "samples": 64
+      "value": 3020.8443125,
+      "samples": 64,
+      "scope": "cluster"
     },
     "e2e_p50_ms": {
-      "value": 2933.8415,
-      "samples": 64
+      "value": 2866.693,
+      "samples": 64,
+      "scope": "cluster"
     },
     "e2e_p90_ms": {
-      "value": 5101.4112000000005,
-      "samples": 64
+      "value": 5202.2794,
+      "samples": 64,
+      "scope": "cluster"
     },
     "e2e_p95_ms": {
-      "value": 6014.681249999998,
-      "samples": 64
+      "value": 5714.301549999998,
+      "samples": 64,
+      "scope": "cluster"
     },
     "e2e_p99_ms": {
-      "value": 6844.555529999999,
-      "samples": 64
+      "value": 7012.535589999999,
+      "samples": 64,
+      "scope": "cluster"
     },
     "interactivity_mean": {
-      "value": 164.5051439819225,
-      "samples": 64
+      "value": 165.88169781612632,
+      "samples": 64,
+      "scope": "cluster"
+    },
+    "interactivity_of_mean_tpot": {
+      "value": 165.05389611330622,
+      "samples": 64,
+      "scope": "cluster"
     },
     "interactivity_p50": {
-      "value": 160.32848033190177,
-      "samples": 64
+      "value": 163.2406409300102,
+      "samples": 64,
+      "scope": "cluster"
     },
     "interactivity_p90": {
-      "value": 153.84328622101938,
-      "samples": 64
+      "value": 154.3674591983712,
+      "samples": 64,
+      "scope": "cluster"
+    },
+    "itl_mean_ms": {
+      "value": 6.043377208822391,
+      "samples": 31012,
+      "scope": "cluster"
+    },
+    "itl_p50_ms": {
+      "value": 5.996,
+      "samples": 31012,
+      "scope": "cluster"
+    },
+    "itl_p90_ms": {
+      "value": 6.621,
+      "samples": 31012,
+      "scope": "cluster"
+    },
+    "itl_p95_ms": {
+      "value": 6.628,
+      "samples": 31012,
+      "scope": "cluster"
+    },
+    "itl_p99_ms": {
+      "value": 6.923,
+      "samples": 31012,
+      "scope": "cluster"
     },
     "output_tok_s": {
-      "value": 2240.3390814310274,
-      "samples": 64
+      "value": 2185.0017866165335,
+      "samples": 64,
+      "scope": "cluster"
     },
     "output_tok_s_per_gpu": {
-      "value": 560.0847703577568,
-      "samples": 64
+      "value": 546.2504466541334,
+      "samples": 64,
+      "scope": "cluster"
     },
     "preemptions": {
       "value": 0,
-      "samples": 31354
+      "samples": 31012,
+      "scope": "cluster"
     },
     "request_throughput": {
-      "value": 4.56368009458227,
-      "samples": 64
+      "value": 4.499939321130716,
+      "samples": 64,
+      "scope": "cluster"
     },
     "step_interval_mean_ms": {
-      "value": 6.056785960324041,
-      "samples": 31354
+      "value": 6.043377208822391,
+      "samples": 31012,
+      "scope": "cluster"
     },
     "step_interval_p50_ms": {
-      "value": 5.995,
-      "samples": 31354
+      "value": 5.996,
+      "samples": 31012,
+      "scope": "cluster"
     },
     "step_interval_p90_ms": {
-      "value": 6.317,
-      "samples": 31354
+      "value": 6.621,
+      "samples": 31012,
+      "scope": "cluster"
     },
     "step_interval_p95_ms": {
-      "value": 6.618,
-      "samples": 31354
+      "value": 6.628,
+      "samples": 31012,
+      "scope": "cluster"
     },
     "step_interval_p99_ms": {
-      "value": 21.3212100000004,
-      "samples": 31354
+      "value": 6.923,
+      "samples": 31012,
+      "scope": "cluster"
+    },
+    "total_tokens_per_second_per_gpu": {
+      "value": 1113.5064694362013,
+      "samples": 64,
+      "scope": "cluster"
     },
     "tpot_mean_ms": {
-      "value": 6.113983659944705,
-      "samples": 64
+      "value": 6.058627051817789,
+      "samples": 64,
+      "scope": "cluster"
     },
     "tpot_p50_ms": {
-      "value": 6.237195025673941,
-      "samples": 64
+      "value": 6.125925469924812,
+      "samples": 64,
+      "scope": "cluster"
     },
     "tpot_p90_ms": {
-      "value": 6.5001211594202895,
-      "samples": 64
+      "value": 6.478049228723404,
+      "samples": 64,
+      "scope": "cluster"
     },
     "tpot_p99_ms": {
-      "value": 6.673414316922421,
-      "samples": 64
+      "value": 6.703797081445782,
+      "samples": 64,
+      "scope": "cluster"
     },
     "ttft_mean_ms": {
-      "value": 110.956984375,
-      "samples": 64
+      "value": 92.45034375,
+      "samples": 64,
+      "scope": "cluster"
     },
     "ttft_p50_ms": {
-      "value": 77.56750000000001,
-      "samples": 64
+      "value": 79.0755,
+      "samples": 64,
+      "scope": "cluster"
     },
     "ttft_p90_ms": {
-      "value": 230.18100000000004,
-      "samples": 64
+      "value": 148.704,
+      "samples": 64,
+      "scope": "cluster"
     },
     "ttft_p95_ms": {
-      "value": 295.7884499999999,
-      "samples": 64
+      "value": 148.704,
+      "samples": 64,
+      "scope": "cluster"
     },
     "ttft_p99_ms": {
-      "value": 372.04961999999995,
-      "samples": 64
+      "value": 148.704,
+      "samples": 64,
+      "scope": "cluster"
     }
   },
   "requests": {
@@ -904,10 +1061,10 @@
       "fate": "completed",
       "arrival_us": 0,
       "ttft_us": 72813,
-      "tpot_us": 6573.708,
-      "e2e_us": 3359667,
+      "tpot_us": 6626.844,
+      "e2e_us": 3386235,
       "scheduling_delay_us": 40274,
-      "completion_index": 12,
+      "completion_index": 13,
       "prompt_tokens": 784,
       "output_tokens": 501,
       "instance": "instance_1",
@@ -917,11 +1074,11 @@
       "id": "request_1",
       "fate": "completed",
       "arrival_us": 0,
-      "ttft_us": 108247,
-      "tpot_us": 6404.664131812421,
-      "e2e_us": 5161527,
-      "scheduling_delay_us": 83070,
-      "completion_index": 20,
+      "ttft_us": 148704,
+      "tpot_us": 6447.351077313055,
+      "e2e_us": 5235664,
+      "scheduling_delay_us": 72768,
+      "completion_index": 21,
       "prompt_tokens": 347,
       "output_tokens": 790,
       "instance": "instance_1",
@@ -931,11 +1088,11 @@
       "id": "request_2",
       "fate": "completed",
       "arrival_us": 0,
-      "ttft_us": 150415,
-      "tpot_us": 6328.542635658915,
-      "e2e_us": 6681471,
-      "scheduling_delay_us": 123502,
-      "completion_index": 27,
+      "ttft_us": 148704,
+      "tpot_us": 6392.53488372093,
+      "e2e_us": 6745800,
+      "scheduling_delay_us": 72768,
+      "completion_index": 28,
       "prompt_tokens": 419,
       "output_tokens": 1033,
       "instance": "instance_1",
@@ -946,8 +1103,8 @@
       "fate": "completed",
       "arrival_us": 0,
       "ttft_us": 59533,
-      "tpot_us": 6267.233082706767,
-      "e2e_us": 893075,
+      "tpot_us": 6141.375939849624,
+      "e2e_us": 876336,
       "scheduling_delay_us": 40078,
       "completion_index": 1,
       "prompt_tokens": 224,
@@ -959,10 +1116,10 @@
       "id": "request_4",
       "fate": "completed",
       "arrival_us": 0,
-      "ttft_us": 107676,
-      "tpot_us": 6171.0636942675155,
-      "e2e_us": 2045390,
-      "scheduling_delay_us": 83512,
+      "ttft_us": 134796,
+      "tpot_us": 5940.8057324840765,
+      "e2e_us": 2000209,
+      "scheduling_delay_us": 59488,
       "completion_index": 5,
       "prompt_tokens": 292,
       "output_tokens": 315,
@@ -973,10 +1130,10 @@
       "id": "request_5",
       "fate": "completed",
       "arrival_us": 0,
-      "ttft_us": 147441,
-      "tpot_us": 6044.017738359202,
-      "e2e_us": 2873293,
-      "scheduling_delay_us": 122919,
+      "ttft_us": 134796,
+      "tpot_us": 5967.124168514412,
+      "e2e_us": 2825969,
+      "scheduling_delay_us": 59488,
       "completion_index": 10,
       "prompt_tokens": 289,
       "output_tokens": 452,
@@ -987,10 +1144,10 @@
       "id": "request_6",
       "fate": "completed",
       "arrival_us": 0,
-      "ttft_us": 195117,
-      "tpot_us": 6540.16347826087,
-      "e2e_us": 3955711,
-      "scheduling_delay_us": 162982,
+      "ttft_us": 148704,
+      "tpot_us": 6517.093913043478,
+      "e2e_us": 3896033,
+      "scheduling_delay_us": 72768,
       "completion_index": 15,
       "prompt_tokens": 530,
       "output_tokens": 576,
@@ -1001,10 +1158,10 @@
       "id": "request_7",
       "fate": "completed",
       "arrival_us": 0,
-      "ttft_us": 233103,
-      "tpot_us": 6523.55,
-      "e2e_us": 2842523,
-      "scheduling_delay_us": 204218,
+      "ttft_us": 148704,
+      "tpot_us": 6291.8,
+      "e2e_us": 2665424,
+      "scheduling_delay_us": 72768,
       "completion_index": 9,
       "prompt_tokens": 483,
       "output_tokens": 401,
@@ -1015,10 +1172,10 @@
       "id": "request_8",
       "fate": "completed",
       "arrival_us": 0,
-      "ttft_us": 270274,
-      "tpot_us": 6445.377094972067,
-      "e2e_us": 2577719,
-      "scheduling_delay_us": 242918,
+      "ttft_us": 148704,
+      "tpot_us": 6232.977653631285,
+      "e2e_us": 2380110,
+      "scheduling_delay_us": 72768,
       "completion_index": 6,
       "prompt_tokens": 379,
       "output_tokens": 359,
@@ -1029,10 +1186,10 @@
       "id": "request_9",
       "fate": "completed",
       "arrival_us": 0,
-      "ttft_us": 297318,
-      "tpot_us": 6365.924444444445,
-      "e2e_us": 1729651,
-      "scheduling_delay_us": 286060,
+      "ttft_us": 148704,
+      "tpot_us": 6211.106666666667,
+      "e2e_us": 1546203,
+      "scheduling_delay_us": 72768,
       "completion_index": 3,
       "prompt_tokens": 2,
       "output_tokens": 226,
@@ -1043,10 +1200,10 @@
       "id": "request_10",
       "fate": "completed",
       "arrival_us": 0,
-      "ttft_us": 197930,
-      "tpot_us": 6104.445061043285,
-      "e2e_us": 5698035,
-      "scheduling_delay_us": 164200,
+      "ttft_us": 134796,
+      "tpot_us": 5916.944506104329,
+      "e2e_us": 5465963,
+      "scheduling_delay_us": 59488,
       "completion_index": 22,
       "prompt_tokens": 617,
       "output_tokens": 902,
@@ -1057,10 +1214,10 @@
       "id": "request_11",
       "fate": "completed",
       "arrival_us": 0,
-      "ttft_us": 360644,
-      "tpot_us": 6303.0114942528735,
-      "e2e_us": 2005730,
-      "scheduling_delay_us": 325333,
+      "ttft_us": 148704,
+      "tpot_us": 6252.555555555556,
+      "e2e_us": 1780621,
+      "scheduling_delay_us": 72768,
       "completion_index": 4,
       "prompt_tokens": 621,
       "output_tokens": 262,
@@ -1071,10 +1228,10 @@
       "id": "request_12",
       "fate": "completed",
       "arrival_us": 0,
-      "ttft_us": 223363,
-      "tpot_us": 6013.8345323741005,
-      "e2e_us": 2731132,
-      "scheduling_delay_us": 202455,
+      "ttft_us": 134796,
+      "tpot_us": 5991.196642685852,
+      "e2e_us": 2633125,
+      "scheduling_delay_us": 59488,
       "completion_index": 8,
       "prompt_tokens": 86,
       "output_tokens": 418,
@@ -1085,10 +1242,10 @@
       "id": "request_13",
       "fate": "completed",
       "arrival_us": 0,
-      "ttft_us": 391470,
-      "tpot_us": 6305.094936708861,
-      "e2e_us": 1387675,
-      "scheduling_delay_us": 366539,
+      "ttft_us": 148704,
+      "tpot_us": 6304.348101265823,
+      "e2e_us": 1144791,
+      "scheduling_delay_us": 72768,
       "completion_index": 2,
       "prompt_tokens": 189,
       "output_tokens": 159,
@@ -1099,11 +1256,11 @@
       "id": "request_14",
       "fate": "completed",
       "arrival_us": 0,
-      "ttft_us": 287121,
-      "tpot_us": 5935.686379928316,
-      "e2e_us": 3599234,
-      "scheduling_delay_us": 243022,
-      "completion_index": 13,
+      "ttft_us": 134796,
+      "tpot_us": 5780.86917562724,
+      "e2e_us": 3360521,
+      "scheduling_delay_us": 59488,
+      "completion_index": 12,
       "prompt_tokens": 1136,
       "output_tokens": 559,
       "instance": "instance_0",
@@ -1113,10 +1270,10 @@
       "id": "request_15",
       "fate": "completed",
       "arrival_us": 0,
-      "ttft_us": 319986,
-      "tpot_us": 5902.84140969163,
-      "e2e_us": 2999876,
-      "scheduling_delay_us": 287076,
+      "ttft_us": 134796,
+      "tpot_us": 5962.940528634361,
+      "e2e_us": 2841971,
+      "scheduling_delay_us": 59488,
       "completion_index": 11,
       "prompt_tokens": 510,
       "output_tokens": 455,
@@ -1126,12 +1283,12 @@
     {
       "id": "session_concurrency_distribution_user_3_round_1_1",
       "fate": "completed",
-      "arrival_us": 893852,
-      "ttft_us": 75839,
-      "tpot_us": 6180.124742268041,
-      "e2e_us": 6070560,
+      "arrival_us": 877113,
+      "ttft_us": 75840,
+      "tpot_us": 6007.053608247423,
+      "e2e_us": 5902682,
       "scheduling_delay_us": 40713,
-      "completion_index": 29,
+      "completion_index": 30,
       "prompt_tokens": 630,
       "output_tokens": 971,
       "instance": "instance_0",
@@ -1141,11 +1298,11 @@
     {
       "id": "session_concurrency_distribution_user_13_round_1_2",
       "fate": "completed",
-      "arrival_us": 1388452,
-      "ttft_us": 77625,
-      "tpot_us": 5924.94,
-      "e2e_us": 2447601,
-      "scheduling_delay_us": 41929,
+      "arrival_us": 1145568,
+      "ttft_us": 79015,
+      "tpot_us": 5790.3125,
+      "e2e_us": 2395140,
+      "scheduling_delay_us": 43321,
       "completion_index": 14,
       "prompt_tokens": 641,
       "output_tokens": 401,
@@ -1156,10 +1313,10 @@
     {
       "id": "session_concurrency_distribution_user_9_round_1_3",
       "fate": "completed",
-      "arrival_us": 1730428,
+      "arrival_us": 1546980,
       "ttft_us": 79120,
-      "tpot_us": 6324.964083175803,
-      "e2e_us": 3425026,
+      "tpot_us": 6506.243856332703,
+      "e2e_us": 3520923,
       "scheduling_delay_us": 45263,
       "completion_index": 19,
       "prompt_tokens": 541,
@@ -1171,10 +1328,10 @@
     {
       "id": "session_concurrency_distribution_user_11_round_1_4",
       "fate": "completed",
-      "arrival_us": 2006507,
+      "arrival_us": 1781398,
       "ttft_us": 76875,
-      "tpot_us": 6482.711111111111,
-      "e2e_us": 660319,
+      "tpot_us": 5976.577777777778,
+      "e2e_us": 614767,
       "scheduling_delay_us": 43643,
       "completion_index": 7,
       "prompt_tokens": 507,
@@ -1186,41 +1343,41 @@
     {
       "id": "session_concurrency_distribution_user_4_round_1_5",
       "fate": "completed",
-      "arrival_us": 2046167,
-      "ttft_us": 76667,
-      "tpot_us": 6334.435606060606,
-      "e2e_us": 3421249,
-      "scheduling_delay_us": 43119,
-      "completion_index": 21,
+      "arrival_us": 2000986,
+      "ttft_us": 71700,
+      "tpot_us": 5824.723484848485,
+      "e2e_us": 3147154,
+      "scheduling_delay_us": 41279,
+      "completion_index": 20,
       "prompt_tokens": 505,
       "output_tokens": 529,
-      "instance": "instance_1",
+      "instance": "instance_0",
       "session_id": "concurrency_distribution_user_4",
       "round_index": 1
     },
     {
       "id": "session_concurrency_distribution_user_8_round_1_6",
       "fate": "completed",
-      "arrival_us": 2578496,
-      "ttft_us": 68399,
-      "tpot_us": 6304.946808510638,
-      "e2e_us": 4217054,
-      "scheduling_delay_us": 43267,
-      "completion_index": 28,
+      "arrival_us": 2380887,
+      "ttft_us": 67657,
+      "tpot_us": 6479.547112462006,
+      "e2e_us": 4331199,
+      "scheduling_delay_us": 42893,
+      "completion_index": 27,
       "prompt_tokens": 217,
       "output_tokens": 659,
-      "instance": "instance_0",
+      "instance": "instance_1",
       "session_id": "concurrency_distribution_user_8",
       "round_index": 1
     },
     {
       "id": "session_concurrency_distribution_user_11_round_2_7",
       "fate": "completed",
-      "arrival_us": 2667603,
-      "ttft_us": 84001,
-      "tpot_us": 6104.283607979185,
-      "e2e_us": 7122240,
-      "scheduling_delay_us": 45735,
+      "arrival_us": 2396942,
+      "ttft_us": 89819,
+      "tpot_us": 6397.994796183868,
+      "e2e_us": 7466707,
+      "scheduling_delay_us": 51557,
       "completion_index": 43,
       "prompt_tokens": 780,
       "output_tokens": 1154,
@@ -1231,12 +1388,12 @@
     {
       "id": "session_concurrency_distribution_user_12_round_1_8",
       "fate": "completed",
-      "arrival_us": 2731909,
-      "ttft_us": 67538,
-      "tpot_us": 6294.305376344086,
-      "e2e_us": 2994390,
-      "scheduling_delay_us": 43458,
-      "completion_index": 23,
+      "arrival_us": 2633902,
+      "ttft_us": 65307,
+      "tpot_us": 6532.922580645161,
+      "e2e_us": 3103116,
+      "scheduling_delay_us": 41587,
+      "completion_index": 24,
       "prompt_tokens": 145,
       "output_tokens": 466,
       "instance": "instance_1",
@@ -1246,26 +1403,26 @@
     {
       "id": "session_concurrency_distribution_user_7_round_1_9",
       "fate": "completed",
-      "arrival_us": 2843300,
-      "ttft_us": 68651,
-      "tpot_us": 6187.787581699346,
-      "e2e_us": 1962114,
-      "scheduling_delay_us": 41380,
+      "arrival_us": 2666201,
+      "ttft_us": 72834,
+      "tpot_us": 6624.392156862745,
+      "e2e_us": 2099898,
+      "scheduling_delay_us": 44859,
       "completion_index": 18,
       "prompt_tokens": 353,
       "output_tokens": 307,
-      "instance": "instance_0",
+      "instance": "instance_1",
       "session_id": "concurrency_distribution_user_7",
       "round_index": 1
     },
     {
       "id": "session_concurrency_distribution_user_5_round_1_10",
       "fate": "completed",
-      "arrival_us": 2874070,
-      "ttft_us": 74431,
-      "tpot_us": 6422.698795180723,
-      "e2e_us": 1140599,
-      "scheduling_delay_us": 45608,
+      "arrival_us": 2826746,
+      "ttft_us": 72994,
+      "tpot_us": 6834.825301204819,
+      "e2e_us": 1207575,
+      "scheduling_delay_us": 43831,
       "completion_index": 16,
       "prompt_tokens": 399,
       "output_tokens": 167,
@@ -1276,42 +1433,27 @@
     {
       "id": "session_concurrency_distribution_user_15_round_1_11",
       "fate": "completed",
-      "arrival_us": 3000653,
-      "ttft_us": 78461,
-      "tpot_us": 6271.34954954955,
-      "e2e_us": 3559060,
-      "scheduling_delay_us": 42180,
+      "arrival_us": 2842748,
+      "ttft_us": 94611,
+      "tpot_us": 6341.23963963964,
+      "e2e_us": 3613999,
+      "scheduling_delay_us": 56947,
       "completion_index": 26,
       "prompt_tokens": 692,
       "output_tokens": 556,
-      "instance": "instance_0",
+      "instance": "instance_1",
       "session_id": "concurrency_distribution_user_15",
       "round_index": 1
     },
     {
-      "id": "session_concurrency_distribution_user_0_round_1_12",
+      "id": "session_concurrency_distribution_user_14_round_1_12",
       "fate": "completed",
-      "arrival_us": 3360444,
-      "ttft_us": 80362,
-      "tpot_us": 6075.123783031989,
-      "e2e_us": 4448376,
-      "scheduling_delay_us": 42117,
-      "completion_index": 34,
-      "prompt_tokens": 760,
-      "output_tokens": 720,
-      "instance": "instance_1",
-      "session_id": "concurrency_distribution_user_0",
-      "round_index": 1
-    },
-    {
-      "id": "session_concurrency_distribution_user_14_round_1_13",
-      "fate": "completed",
-      "arrival_us": 3600011,
-      "ttft_us": 77467,
-      "tpot_us": 6432.230031948882,
-      "e2e_us": 6117331,
-      "scheduling_delay_us": 42773,
-      "completion_index": 42,
+      "arrival_us": 3361298,
+      "ttft_us": 76709,
+      "tpot_us": 6050.497337593184,
+      "e2e_us": 5758126,
+      "scheduling_delay_us": 42768,
+      "completion_index": 39,
       "prompt_tokens": 606,
       "output_tokens": 940,
       "instance": "instance_0",
@@ -1319,14 +1461,29 @@
       "round_index": 1
     },
     {
+      "id": "session_concurrency_distribution_user_0_round_1_13",
+      "fate": "completed",
+      "arrival_us": 3387012,
+      "ttft_us": 88113,
+      "tpot_us": 5991.970792767733,
+      "e2e_us": 4396340,
+      "scheduling_delay_us": 50950,
+      "completion_index": 34,
+      "prompt_tokens": 760,
+      "output_tokens": 720,
+      "instance": "instance_0",
+      "session_id": "concurrency_distribution_user_0",
+      "round_index": 1
+    },
+    {
       "id": "session_concurrency_distribution_user_13_round_2_14",
       "fate": "completed",
-      "arrival_us": 3836830,
-      "ttft_us": 71373,
-      "tpot_us": 6399.6,
-      "e2e_us": 3367167,
-      "scheduling_delay_us": 44586,
-      "completion_index": 31,
+      "arrival_us": 3541485,
+      "ttft_us": 66842,
+      "tpot_us": 6151.211650485437,
+      "e2e_us": 3234716,
+      "scheduling_delay_us": 40425,
+      "completion_index": 29,
       "prompt_tokens": 327,
       "output_tokens": 516,
       "instance": "instance_0",
@@ -1336,11 +1493,11 @@
     {
       "id": "session_concurrency_distribution_user_6_round_1_15",
       "fate": "completed",
-      "arrival_us": 3956488,
-      "ttft_us": 68387,
-      "tpot_us": 6379.141891891892,
-      "e2e_us": 1956613,
-      "scheduling_delay_us": 41606,
+      "arrival_us": 3896810,
+      "ttft_us": 70851,
+      "tpot_us": 6359.246621621622,
+      "e2e_us": 1953188,
+      "scheduling_delay_us": 44428,
       "completion_index": 25,
       "prompt_tokens": 307,
       "output_tokens": 297,
@@ -1351,11 +1508,11 @@
     {
       "id": "session_concurrency_distribution_user_5_round_2_16",
       "fate": "completed",
-      "arrival_us": 4015446,
-      "ttft_us": 84257,
-      "tpot_us": 6313.8,
-      "e2e_us": 589361,
-      "scheduling_delay_us": 45072,
+      "arrival_us": 4035098,
+      "ttft_us": 83808,
+      "tpot_us": 5997.8,
+      "e2e_us": 563632,
+      "scheduling_delay_us": 44970,
       "completion_index": 17,
       "prompt_tokens": 811,
       "output_tokens": 81,
@@ -1366,12 +1523,12 @@
     {
       "id": "session_concurrency_distribution_user_5_round_3_17",
       "fate": "completed",
-      "arrival_us": 4605584,
-      "ttft_us": 79707,
-      "tpot_us": 6124.4125,
-      "e2e_us": 3019425,
-      "scheduling_delay_us": 42801,
-      "completion_index": 32,
+      "arrival_us": 4599507,
+      "ttft_us": 77558,
+      "tpot_us": 6474.554166666667,
+      "e2e_us": 3185344,
+      "scheduling_delay_us": 40301,
+      "completion_index": 35,
       "prompt_tokens": 706,
       "output_tokens": 481,
       "instance": "instance_1",
@@ -1381,12 +1538,12 @@
     {
       "id": "session_concurrency_distribution_user_7_round_2_18",
       "fate": "completed",
-      "arrival_us": 4806191,
-      "ttft_us": 77296,
-      "tpot_us": 6348.416666666667,
-      "e2e_us": 2362726,
-      "scheduling_delay_us": 41648,
-      "completion_index": 30,
+      "arrival_us": 4766876,
+      "ttft_us": 77632,
+      "tpot_us": 6110.475,
+      "e2e_us": 2277403,
+      "scheduling_delay_us": 41979,
+      "completion_index": 31,
       "prompt_tokens": 638,
       "output_tokens": 361,
       "instance": "instance_0",
@@ -1394,29 +1551,14 @@
       "round_index": 2
     },
     {
-      "id": "session_concurrency_distribution_user_1_round_1_19",
+      "id": "session_concurrency_distribution_user_9_round_2_19",
       "fate": "completed",
-      "arrival_us": 5162304,
-      "ttft_us": 120554,
-      "tpot_us": 6031.170854271357,
-      "e2e_us": 2520960,
-      "scheduling_delay_us": 78270,
-      "completion_index": 33,
-      "prompt_tokens": 997,
-      "output_tokens": 399,
-      "instance": "instance_1",
-      "session_id": "concurrency_distribution_user_1",
-      "round_index": 1
-    },
-    {
-      "id": "session_concurrency_distribution_user_9_round_2_20",
-      "fate": "completed",
-      "arrival_us": 5156231,
-      "ttft_us": 78762,
-      "tpot_us": 5987.885294117647,
-      "e2e_us": 4150524,
-      "scheduling_delay_us": 44117,
-      "completion_index": 40,
+      "arrival_us": 5068680,
+      "ttft_us": 77893,
+      "tpot_us": 6364.823529411765,
+      "e2e_us": 4405973,
+      "scheduling_delay_us": 42885,
+      "completion_index": 41,
       "prompt_tokens": 603,
       "output_tokens": 681,
       "instance": "instance_1",
@@ -1424,13 +1566,13 @@
       "round_index": 2
     },
     {
-      "id": "session_concurrency_distribution_user_4_round_2_21",
+      "id": "session_concurrency_distribution_user_4_round_2_20",
       "fate": "completed",
-      "arrival_us": 5468193,
-      "ttft_us": 76402,
-      "tpot_us": 5866.603669724771,
-      "e2e_us": 3273701,
-      "scheduling_delay_us": 42938,
+      "arrival_us": 5148917,
+      "ttft_us": 79031,
+      "tpot_us": 6424.236697247707,
+      "e2e_us": 3580240,
+      "scheduling_delay_us": 45243,
       "completion_index": 37,
       "prompt_tokens": 519,
       "output_tokens": 546,
@@ -1439,28 +1581,58 @@
       "round_index": 2
     },
     {
+      "id": "session_concurrency_distribution_user_1_round_1_21",
+      "fate": "completed",
+      "arrival_us": 5236441,
+      "ttft_us": 87718,
+      "tpot_us": 5904.41959798995,
+      "e2e_us": 2437677,
+      "scheduling_delay_us": 45432,
+      "completion_index": 32,
+      "prompt_tokens": 997,
+      "output_tokens": 399,
+      "instance": "instance_0",
+      "session_id": "concurrency_distribution_user_1",
+      "round_index": 1
+    },
+    {
       "id": "session_concurrency_distribution_user_10_round_1_22",
       "fate": "completed",
-      "arrival_us": 5698812,
-      "ttft_us": 68944,
-      "tpot_us": 6000,
-      "e2e_us": 74944,
-      "scheduling_delay_us": 40279,
-      "completion_index": 24,
+      "arrival_us": 5466740,
+      "ttft_us": 71679,
+      "tpot_us": 5998,
+      "e2e_us": 77677,
+      "scheduling_delay_us": 43017,
+      "completion_index": 23,
       "prompt_tokens": 409,
       "output_tokens": 2,
-      "instance": "instance_1",
+      "instance": "instance_0",
       "session_id": "concurrency_distribution_user_10",
       "round_index": 1
     },
     {
-      "id": "session_concurrency_distribution_user_12_round_2_23",
+      "id": "session_concurrency_distribution_user_10_round_2_23",
       "fate": "completed",
-      "arrival_us": 5727076,
-      "ttft_us": 77065,
-      "tpot_us": 6647.204603580562,
-      "e2e_us": 2676122,
-      "scheduling_delay_us": 42869,
+      "arrival_us": 5545194,
+      "ttft_us": 77401,
+      "tpot_us": 5842.119565217391,
+      "e2e_us": 2227301,
+      "scheduling_delay_us": 44141,
+      "completion_index": 33,
+      "prompt_tokens": 508,
+      "output_tokens": 369,
+      "instance": "instance_0",
+      "session_id": "concurrency_distribution_user_10",
+      "round_index": 2
+    },
+    {
+      "id": "session_concurrency_distribution_user_12_round_2_24",
+      "fate": "completed",
+      "arrival_us": 5737795,
+      "ttft_us": 80064,
+      "tpot_us": 5841.93094629156,
+      "e2e_us": 2364259,
+      "scheduling_delay_us": 45513,
       "completion_index": 36,
       "prompt_tokens": 559,
       "output_tokens": 392,
@@ -1469,74 +1641,44 @@
       "round_index": 2
     },
     {
-      "id": "session_concurrency_distribution_user_10_round_2_24",
-      "fate": "completed",
-      "arrival_us": 5774533,
-      "ttft_us": 75080,
-      "tpot_us": 6612.467391304348,
-      "e2e_us": 2508468,
-      "scheduling_delay_us": 41469,
-      "completion_index": 35,
-      "prompt_tokens": 508,
-      "output_tokens": 369,
-      "instance": "instance_0",
-      "session_id": "concurrency_distribution_user_10",
-      "round_index": 2
-    },
-    {
       "id": "session_concurrency_distribution_user_6_round_2_25",
       "fate": "completed",
-      "arrival_us": 5913878,
-      "ttft_us": 75154,
-      "tpot_us": 6355.058383233533,
-      "e2e_us": 4320333,
-      "scheduling_delay_us": 45388,
+      "arrival_us": 5850775,
+      "ttft_us": 74748,
+      "tpot_us": 6276.497005988024,
+      "e2e_us": 4267448,
+      "scheduling_delay_us": 45331,
       "completion_index": 44,
       "prompt_tokens": 450,
       "output_tokens": 669,
-      "instance": "instance_0",
+      "instance": "instance_1",
       "session_id": "concurrency_distribution_user_6",
       "round_index": 2
     },
     {
       "id": "session_concurrency_distribution_user_15_round_2_26",
       "fate": "completed",
-      "arrival_us": 6560490,
-      "ttft_us": 86258,
-      "tpot_us": 6213.6578947368425,
-      "e2e_us": 4100281,
-      "scheduling_delay_us": 45639,
-      "completion_index": 48,
+      "arrival_us": 6457524,
+      "ttft_us": 81996,
+      "tpot_us": 6240.933436532508,
+      "e2e_us": 4113639,
+      "scheduling_delay_us": 41727,
+      "completion_index": 47,
       "prompt_tokens": 888,
       "output_tokens": 647,
-      "instance": "instance_0",
+      "instance": "instance_1",
       "session_id": "concurrency_distribution_user_15",
       "round_index": 2
     },
     {
-      "id": "session_concurrency_distribution_user_2_round_1_27",
+      "id": "session_concurrency_distribution_user_8_round_2_27",
       "fate": "completed",
-      "arrival_us": 6682248,
-      "ttft_us": 79068,
-      "tpot_us": 6149.219936708861,
-      "e2e_us": 3965375,
-      "scheduling_delay_us": 42685,
-      "completion_index": 47,
-      "prompt_tokens": 697,
-      "output_tokens": 633,
-      "instance": "instance_1",
-      "session_id": "concurrency_distribution_user_2",
-      "round_index": 1
-    },
-    {
-      "id": "session_concurrency_distribution_user_8_round_2_28",
-      "fate": "completed",
-      "arrival_us": 6796327,
-      "ttft_us": 80018,
-      "tpot_us": 5830.160804020101,
-      "e2e_us": 2400422,
-      "scheduling_delay_us": 43750,
-      "completion_index": 39,
+      "arrival_us": 6712863,
+      "ttft_us": 80505,
+      "tpot_us": 6464.449748743718,
+      "e2e_us": 2653356,
+      "scheduling_delay_us": 44609,
+      "completion_index": 40,
       "prompt_tokens": 671,
       "output_tokens": 399,
       "instance": "instance_1",
@@ -1544,29 +1686,59 @@
       "round_index": 2
     },
     {
+      "id": "session_concurrency_distribution_user_2_round_1_28",
+      "fate": "completed",
+      "arrival_us": 6746577,
+      "ttft_us": 83484,
+      "tpot_us": 6268.2531645569625,
+      "e2e_us": 4045020,
+      "scheduling_delay_us": 46746,
+      "completion_index": 50,
+      "prompt_tokens": 697,
+      "output_tokens": 633,
+      "instance": "instance_1",
+      "session_id": "concurrency_distribution_user_2",
+      "round_index": 1
+    },
+    {
       "id": "session_concurrency_distribution_user_3_round_2_29",
       "fate": "completed",
-      "arrival_us": 6965189,
-      "ttft_us": 68528,
-      "tpot_us": 6235.792682926829,
-      "e2e_us": 3647873,
-      "scheduling_delay_us": 45508,
-      "completion_index": 46,
+      "arrival_us": 6780572,
+      "ttft_us": 87508,
+      "tpot_us": 6154.405923344948,
+      "e2e_us": 3620137,
+      "scheduling_delay_us": 49444,
+      "completion_index": 45,
       "prompt_tokens": 115,
       "output_tokens": 575,
-      "instance": "instance_0",
+      "instance": "instance_1",
       "session_id": "concurrency_distribution_user_3",
       "round_index": 2
     },
     {
-      "id": "session_concurrency_distribution_user_7_round_3_30",
+      "id": "session_concurrency_distribution_user_13_round_3_30",
       "fate": "completed",
-      "arrival_us": 7169694,
-      "ttft_us": 77729,
-      "tpot_us": 5719.288223140496,
-      "e2e_us": 5614000,
-      "scheduling_delay_us": 42781,
-      "completion_index": 59,
+      "arrival_us": 6776978,
+      "ttft_us": 91102,
+      "tpot_us": 6086.191051995163,
+      "e2e_us": 5124382,
+      "scheduling_delay_us": 53038,
+      "completion_index": 57,
+      "prompt_tokens": 636,
+      "output_tokens": 828,
+      "instance": "instance_1",
+      "session_id": "concurrency_distribution_user_13",
+      "round_index": 3
+    },
+    {
+      "id": "session_concurrency_distribution_user_7_round_3_31",
+      "fate": "completed",
+      "arrival_us": 7045056,
+      "ttft_us": 76857,
+      "tpot_us": 5502.836776859504,
+      "e2e_us": 5403603,
+      "scheduling_delay_us": 42270,
+      "completion_index": 58,
       "prompt_tokens": 620,
       "output_tokens": 969,
       "instance": "instance_0",
@@ -1574,44 +1746,14 @@
       "round_index": 3
     },
     {
-      "id": "session_concurrency_distribution_user_13_round_3_31",
+      "id": "session_concurrency_distribution_user_1_round_2_32",
       "fate": "completed",
-      "arrival_us": 7204774,
-      "ttft_us": 83830,
-      "tpot_us": 5897.5949214026605,
-      "e2e_us": 4961141,
-      "scheduling_delay_us": 48225,
-      "completion_index": 56,
-      "prompt_tokens": 636,
-      "output_tokens": 828,
-      "instance": "instance_0",
-      "session_id": "concurrency_distribution_user_13",
-      "round_index": 3
-    },
-    {
-      "id": "session_concurrency_distribution_user_5_round_4_32",
-      "fate": "completed",
-      "arrival_us": 7625786,
-      "ttft_us": 78571,
-      "tpot_us": 5957.49269005848,
-      "e2e_us": 4153496,
-      "scheduling_delay_us": 43548,
-      "completion_index": 55,
-      "prompt_tokens": 585,
-      "output_tokens": 685,
-      "instance": "instance_0",
-      "session_id": "concurrency_distribution_user_5",
-      "round_index": 4
-    },
-    {
-      "id": "session_concurrency_distribution_user_1_round_2_33",
-      "fate": "completed",
-      "arrival_us": 7684041,
-      "ttft_us": 82315,
-      "tpot_us": 6105.748314606742,
-      "e2e_us": 2799373,
-      "scheduling_delay_us": 45347,
-      "completion_index": 45,
+      "arrival_us": 7674895,
+      "ttft_us": 76102,
+      "tpot_us": 6326.54606741573,
+      "e2e_us": 2891415,
+      "scheduling_delay_us": 40557,
+      "completion_index": 46,
       "prompt_tokens": 672,
       "output_tokens": 446,
       "instance": "instance_0",
@@ -1619,43 +1761,58 @@
       "round_index": 2
     },
     {
-      "id": "session_concurrency_distribution_user_0_round_2_34",
+      "id": "session_concurrency_distribution_user_0_round_2_33",
       "fate": "completed",
-      "arrival_us": 7809597,
-      "ttft_us": 74595,
-      "tpot_us": 5914.462633451957,
-      "e2e_us": 1736559,
-      "scheduling_delay_us": 40929,
-      "completion_index": 41,
+      "arrival_us": 7784129,
+      "ttft_us": 103563,
+      "tpot_us": 6248.722419928826,
+      "e2e_us": 1859454,
+      "scheduling_delay_us": 59198,
+      "completion_index": 42,
       "prompt_tokens": 570,
       "output_tokens": 282,
-      "instance": "instance_1",
+      "instance": "instance_0",
       "session_id": "concurrency_distribution_user_0",
       "round_index": 2
     },
     {
-      "id": "session_concurrency_distribution_user_10_round_3_35",
+      "id": "session_concurrency_distribution_user_10_round_3_34",
       "fate": "completed",
-      "arrival_us": 8283778,
-      "ttft_us": 73392,
-      "tpot_us": 6337.497854077254,
-      "e2e_us": 3026666,
-      "scheduling_delay_us": 44666,
-      "completion_index": 50,
+      "arrival_us": 7773272,
+      "ttft_us": 70100,
+      "tpot_us": 6317.847639484979,
+      "e2e_us": 3014217,
+      "scheduling_delay_us": 42140,
+      "completion_index": 49,
       "prompt_tokens": 432,
       "output_tokens": 467,
-      "instance": "instance_1",
+      "instance": "instance_0",
       "session_id": "concurrency_distribution_user_10",
       "round_index": 3
     },
     {
+      "id": "session_concurrency_distribution_user_5_round_4_35",
+      "fate": "completed",
+      "arrival_us": 7785628,
+      "ttft_us": 102064,
+      "tpot_us": 5803.972222222223,
+      "e2e_us": 4071981,
+      "scheduling_delay_us": 57699,
+      "completion_index": 56,
+      "prompt_tokens": 585,
+      "output_tokens": 685,
+      "instance": "instance_0",
+      "session_id": "concurrency_distribution_user_5",
+      "round_index": 4
+    },
+    {
       "id": "session_concurrency_distribution_user_12_round_3_36",
       "fate": "completed",
-      "arrival_us": 8403975,
-      "ttft_us": 78822,
-      "tpot_us": 6318.164948453608,
-      "e2e_us": 691684,
-      "scheduling_delay_us": 41105,
+      "arrival_us": 8102831,
+      "ttft_us": 81982,
+      "tpot_us": 5668.103092783505,
+      "e2e_us": 631788,
+      "scheduling_delay_us": 44986,
       "completion_index": 38,
       "prompt_tokens": 731,
       "output_tokens": 98,
@@ -1666,72 +1823,87 @@
     {
       "id": "session_concurrency_distribution_user_4_round_3_37",
       "fate": "completed",
-      "arrival_us": 8742671,
-      "ttft_us": 70460,
-      "tpot_us": 6358.091743119266,
-      "e2e_us": 2842588,
-      "scheduling_delay_us": 43423,
+      "arrival_us": 8729934,
+      "ttft_us": 69592,
+      "tpot_us": 6051.364678899083,
+      "e2e_us": 2707987,
+      "scheduling_delay_us": 42563,
       "completion_index": 53,
       "prompt_tokens": 340,
       "output_tokens": 437,
-      "instance": "instance_1",
+      "instance": "instance_0",
       "session_id": "concurrency_distribution_user_4",
       "round_index": 3
     },
     {
       "id": "session_concurrency_distribution_user_12_round_4_38",
       "fate": "completed",
-      "arrival_us": 9096436,
-      "ttft_us": 70493,
-      "tpot_us": 6507.582608695652,
-      "e2e_us": 2315609,
-      "scheduling_delay_us": 43038,
-      "completion_index": 51,
+      "arrival_us": 8735396,
+      "ttft_us": 85907,
+      "tpot_us": 6284.147826086956,
+      "e2e_us": 2253938,
+      "scheduling_delay_us": 42387,
+      "completion_index": 52,
       "prompt_tokens": 343,
       "output_tokens": 346,
-      "instance": "instance_1",
+      "instance": "instance_0",
       "session_id": "concurrency_distribution_user_12",
       "round_index": 4
     },
     {
-      "id": "session_concurrency_distribution_user_8_round_3_39",
+      "id": "session_concurrency_distribution_user_14_round_2_39",
       "fate": "completed",
-      "arrival_us": 9197526,
-      "ttft_us": 72676,
-      "tpot_us": 5604.668202764977,
-      "e2e_us": 3721315,
-      "scheduling_delay_us": 43151,
+      "arrival_us": 9120201,
+      "ttft_us": 76477,
+      "tpot_us": 6348.372180451128,
+      "e2e_us": 1765144,
+      "scheduling_delay_us": 41223,
+      "completion_index": 51,
+      "prompt_tokens": 617,
+      "output_tokens": 267,
+      "instance": "instance_0",
+      "session_id": "concurrency_distribution_user_14",
+      "round_index": 2
+    },
+    {
+      "id": "session_concurrency_distribution_user_8_round_3_40",
+      "fate": "completed",
+      "arrival_us": 9366996,
+      "ttft_us": 73650,
+      "tpot_us": 4973.322580645161,
+      "e2e_us": 3311283,
+      "scheduling_delay_us": 43782,
       "completion_index": 60,
       "prompt_tokens": 456,
       "output_tokens": 652,
-      "instance": "instance_1",
+      "instance": "instance_0",
       "session_id": "concurrency_distribution_user_8",
       "round_index": 3
     },
     {
-      "id": "session_concurrency_distribution_user_9_round_3_40",
+      "id": "session_concurrency_distribution_user_9_round_3_41",
       "fate": "completed",
-      "arrival_us": 9307532,
-      "ttft_us": 77195,
-      "tpot_us": 6238.597368421053,
-      "e2e_us": 2447862,
-      "scheduling_delay_us": 41677,
+      "arrival_us": 9475430,
+      "ttft_us": 76584,
+      "tpot_us": 5643.471052631579,
+      "e2e_us": 2221103,
+      "scheduling_delay_us": 40375,
       "completion_index": 54,
       "prompt_tokens": 631,
       "output_tokens": 381,
-      "instance": "instance_1",
+      "instance": "instance_0",
       "session_id": "concurrency_distribution_user_9",
       "round_index": 3
     },
     {
-      "id": "session_concurrency_distribution_user_0_round_3_41",
+      "id": "session_concurrency_distribution_user_0_round_3_42",
       "fate": "completed",
-      "arrival_us": 9546933,
-      "ttft_us": 66081,
-      "tpot_us": 5445.178343949045,
-      "e2e_us": 3485653,
-      "scheduling_delay_us": 42763,
-      "completion_index": 61,
+      "arrival_us": 9644360,
+      "ttft_us": 66078,
+      "tpot_us": 5390.950636942675,
+      "e2e_us": 3451595,
+      "scheduling_delay_us": 43113,
+      "completion_index": 62,
       "prompt_tokens": 127,
       "output_tokens": 629,
       "instance": "instance_1",
@@ -1739,28 +1911,13 @@
       "round_index": 3
     },
     {
-      "id": "session_concurrency_distribution_user_14_round_2_42",
-      "fate": "completed",
-      "arrival_us": 9718119,
-      "ttft_us": 77510,
-      "tpot_us": 6401.372180451128,
-      "e2e_us": 1780275,
-      "scheduling_delay_us": 42262,
-      "completion_index": 52,
-      "prompt_tokens": 617,
-      "output_tokens": 267,
-      "instance": "instance_1",
-      "session_id": "concurrency_distribution_user_14",
-      "round_index": 2
-    },
-    {
       "id": "session_concurrency_distribution_user_11_round_3_43",
       "fate": "completed",
-      "arrival_us": 9790620,
-      "ttft_us": 65150,
-      "tpot_us": 5045.470422535212,
-      "e2e_us": 3647434,
-      "scheduling_delay_us": 40634,
+      "arrival_us": 9864426,
+      "ttft_us": 66272,
+      "tpot_us": 5110.107042253521,
+      "e2e_us": 3694448,
+      "scheduling_delay_us": 42459,
       "completion_index": 63,
       "prompt_tokens": 167,
       "output_tokens": 711,
@@ -1771,12 +1928,12 @@
     {
       "id": "session_concurrency_distribution_user_6_round_3_44",
       "fate": "completed",
-      "arrival_us": 10234988,
-      "ttft_us": 68665,
-      "tpot_us": 5375.048672566371,
-      "e2e_us": 2498187,
-      "scheduling_delay_us": 40370,
-      "completion_index": 58,
+      "arrival_us": 10119000,
+      "ttft_us": 70353,
+      "tpot_us": 5538.210176991151,
+      "e2e_us": 2573624,
+      "scheduling_delay_us": 43106,
+      "completion_index": 61,
       "prompt_tokens": 352,
       "output_tokens": 453,
       "instance": "instance_1",
@@ -1784,84 +1941,84 @@
       "round_index": 3
     },
     {
-      "id": "session_concurrency_distribution_user_1_round_3_45",
+      "id": "session_concurrency_distribution_user_3_round_3_45",
       "fate": "completed",
-      "arrival_us": 10484191,
-      "ttft_us": 71307,
-      "tpot_us": 4434.136828644501,
-      "e2e_us": 3538802,
-      "scheduling_delay_us": 43395,
-      "completion_index": 64,
-      "prompt_tokens": 408,
-      "output_tokens": 783,
-      "instance": "instance_0",
-      "session_id": "concurrency_distribution_user_1",
-      "round_index": 3
-    },
-    {
-      "id": "session_concurrency_distribution_user_3_round_3_46",
-      "fate": "completed",
-      "arrival_us": 10613839,
-      "ttft_us": 65442,
-      "tpot_us": 6718.041666666667,
-      "e2e_us": 226675,
-      "scheduling_delay_us": 40712,
-      "completion_index": 49,
+      "arrival_us": 10401486,
+      "ttft_us": 67534,
+      "tpot_us": 5509.708333333333,
+      "e2e_us": 199767,
+      "scheduling_delay_us": 42049,
+      "completion_index": 48,
       "prompt_tokens": 256,
       "output_tokens": 25,
-      "instance": "instance_0",
+      "instance": "instance_1",
       "session_id": "concurrency_distribution_user_3",
       "round_index": 3
     },
     {
-      "id": "session_concurrency_distribution_user_2_round_2_47",
+      "id": "session_concurrency_distribution_user_15_round_3_46",
       "fate": "completed",
-      "arrival_us": 10648400,
-      "ttft_us": 67438,
-      "tpot_us": 4757.847457627118,
-      "e2e_us": 2593855,
-      "scheduling_delay_us": 45644,
-      "completion_index": 62,
-      "prompt_tokens": 99,
-      "output_tokens": 532,
-      "instance": "instance_0",
-      "session_id": "concurrency_distribution_user_2",
-      "round_index": 2
-    },
-    {
-      "id": "session_concurrency_distribution_user_15_round_3_48",
-      "fate": "completed",
-      "arrival_us": 10661548,
-      "ttft_us": 104836,
-      "tpot_us": 5095.017391304348,
-      "e2e_us": 1862617,
-      "scheduling_delay_us": 75373,
-      "completion_index": 57,
+      "arrival_us": 10571940,
+      "ttft_us": 90087,
+      "tpot_us": 5473.973913043478,
+      "e2e_us": 1978608,
+      "scheduling_delay_us": 42990,
+      "completion_index": 59,
       "prompt_tokens": 473,
       "output_tokens": 346,
-      "instance": "instance_0",
+      "instance": "instance_1",
       "session_id": "concurrency_distribution_user_15",
       "round_index": 3
+    },
+    {
+      "id": "session_concurrency_distribution_user_1_round_3_47",
+      "fate": "completed",
+      "arrival_us": 10567087,
+      "ttft_us": 70805,
+      "tpot_us": 4582.794117647059,
+      "e2e_us": 3654550,
+      "scheduling_delay_us": 42909,
+      "completion_index": 64,
+      "prompt_tokens": 408,
+      "output_tokens": 783,
+      "instance": "instance_1",
+      "session_id": "concurrency_distribution_user_1",
+      "round_index": 3
+    },
+    {
+      "id": "session_concurrency_distribution_user_3_round_4_48",
+      "fate": "completed",
+      "arrival_us": 10602030,
+      "ttft_us": 101647,
+      "tpot_us": 5681.962962962963,
+      "e2e_us": 1175538,
+      "scheduling_delay_us": 59952,
+      "completion_index": 55,
+      "prompt_tokens": 966,
+      "output_tokens": 190,
+      "instance": "instance_1",
+      "session_id": "concurrency_distribution_user_3",
+      "round_index": 4
     }
   ],
   "breakdowns": {
     "sessions": {
       "session_duration_count": 16,
-      "session_duration_mean_ms": 12315.965125,
-      "session_duration_p50_ms": 12345.817,
-      "session_duration_p95_ms": 13585.06575,
-      "session_duration_p99_ms": 13936.02915,
+      "session_duration_mean_ms": 12086.48525,
+      "session_duration_p50_ms": 11880.2615,
+      "session_duration_p95_ms": 13725.34175,
+      "session_duration_p99_ms": 14122.99955,
       "sessions": 16,
       "ttft_cold_count": 16,
-      "ttft_cold_mean_ms": 213.90318750000006,
-      "ttft_cold_p50_ms": 210.6465,
-      "ttft_cold_p95_ms": 368.3505,
-      "ttft_cold_p99_ms": 386.84610000000004,
+      "ttft_cold_mean_ms": 133.172125,
+      "ttft_cold_p50_ms": 141.75,
+      "ttft_cold_p95_ms": 148.704,
+      "ttft_cold_p99_ms": 148.704,
       "ttft_warm_count": 48,
-      "ttft_warm_mean_ms": 76.64158333333333,
-      "ttft_warm_p50_ms": 76.771,
-      "ttft_warm_p95_ms": 85.55765,
-      "ttft_warm_p99_ms": 113.16654000000003
+      "ttft_warm_mean_ms": 78.87641666666666,
+      "ttft_warm_p50_ms": 77.138,
+      "ttft_warm_p95_ms": 99.1844,
+      "ttft_warm_p99_ms": 102.85847
     }
   },
   "reports": {
@@ -1874,7 +2031,7 @@
         "gateway_queue_delay_mean_ms": 0,
         "gateway_queue_delay_p90_ms": 0,
         "in_flight_requests_max": 16,
-        "in_flight_requests_mean": 13.947169983535098,
+        "in_flight_requests_mean": 13.495291024435092,
         "kv_allocation_failures": 0,
         "kv_capacity_tokens_per_replica": 4665488,
         "kv_thrashing_rate": 0,
@@ -1883,31 +2040,31 @@
         "measured_failed_requests": 0,
         "preemption_rate": 0,
         "preemptions": 0,
-        "scheduling_delay_p99_ms": 340.5792199999999,
-        "simulated_duration_s": 13.987758,
-        "step_interval_mean_ms": 6.056785960324041,
-        "step_interval_p50_ms": 5.995,
-        "step_interval_p90_ms": 6.317,
-        "step_interval_p95_ms": 6.618,
-        "step_interval_p99_ms": 21.3212100000004,
+        "scheduling_delay_p99_ms": 72.768,
+        "simulated_duration_s": 14.186402,
+        "step_interval_mean_ms": 6.043377208822391,
+        "step_interval_p50_ms": 5.996,
+        "step_interval_p90_ms": 6.621,
+        "step_interval_p95_ms": 6.628,
+        "step_interval_p99_ms": 6.923,
         "step_interval_percentile_method": "numpy_linear",
-        "total_input_tokens": 31404,
-        "total_output_tokens": 31418,
+        "total_input_tokens": 32271,
+        "total_output_tokens": 31076,
         "whole_run": {
-          "e2e_mean_ms": 3078.99128125,
-          "e2e_p90_ms": 5102.1882000000005,
-          "e2e_p95_ms": 6015.458249999998,
-          "e2e_p99_ms": 6845.332529999999,
-          "responses_per_sec": 4.575429457672917,
-          "step_interval_mean_ms": 6.056785960324041,
-          "step_interval_p90_ms": 6.317,
-          "step_interval_p95_ms": 6.618,
-          "step_interval_p99_ms": 21.3212100000004,
-          "tokens_per_sec": 2246.1069172057455,
-          "ttft_mean_ms": 110.956984375,
-          "ttft_p90_ms": 230.18100000000004,
-          "ttft_p95_ms": 295.7884499999999,
-          "ttft_p99_ms": 372.04961999999995
+          "e2e_mean_ms": 3021.6213125,
+          "e2e_p90_ms": 5203.0564,
+          "e2e_p95_ms": 5715.078549999998,
+          "e2e_p99_ms": 7013.312589999999,
+          "responses_per_sec": 4.5113623595327415,
+          "step_interval_mean_ms": 6.043377208822391,
+          "step_interval_p90_ms": 6.621,
+          "step_interval_p95_ms": 6.628,
+          "step_interval_p99_ms": 6.923,
+          "tokens_per_sec": 2190.548385700617,
+          "ttft_mean_ms": 92.45034375,
+          "ttft_p90_ms": 148.704,
+          "ttft_p95_ms": 148.704,
+          "ttft_p99_ms": 148.704
         }
       },
       "colocated": {
@@ -1920,60 +2077,60 @@
         "instance_0": {
           "completed_requests": 31,
           "dropped_unservable": 0,
-          "e2e_mean_ms": 3135.7557741935484,
-          "e2e_p90_ms": 5614.777,
-          "e2e_p95_ms": 5885.0745,
-          "e2e_p99_ms": 6104.0767000000005,
+          "e2e_mean_ms": 2803.0770645161288,
+          "e2e_p90_ms": 5404.38,
+          "e2e_p95_ms": 5612.8215,
+          "e2e_p99_ms": 5860.0922,
           "injected_requests": 31,
           "instance_id": "instance_0",
-          "itl_mean_ms": 6.003778629367056,
-          "itl_p90_ms": 6.318,
-          "itl_p95_ms": 6.624,
-          "itl_p99_ms": 20.151,
+          "itl_mean_ms": 5.917727483816493,
+          "itl_p90_ms": 6.313,
+          "itl_p95_ms": 6.315,
+          "itl_p99_ms": 21.137,
           "length_capped_requests": 0,
           "preemption_count": 0,
-          "responses_per_sec": 2.216223643560319,
-          "scheduling_delay_p99_ms": 273.85979999999995,
+          "responses_per_sec": 2.4507984424622493,
+          "scheduling_delay_p99_ms": 59.488,
           "still_queued": 0,
           "still_running": 0,
           "timed_out_requests": 0,
-          "tokens_per_sec": 1121.5521458120736,
-          "total_input_tokens": 15376,
-          "total_output_tokens": 15688,
-          "ttft_mean_ms": 102.6832258064516,
-          "ttft_p90_ms": 197.93,
-          "ttft_p95_ms": 255.242,
-          "ttft_p99_ms": 310.12649999999996,
-          "vllm_estimated_duration_s": 13.987758
+          "tokens_per_sec": 1126.023297289994,
+          "total_input_tokens": 16849,
+          "total_output_tokens": 14243,
+          "ttft_mean_ms": 89.30835483870968,
+          "ttft_p90_ms": 134.796,
+          "ttft_p95_ms": 134.796,
+          "ttft_p99_ms": 134.796,
+          "vllm_estimated_duration_s": 12.648939
         },
         "instance_1": {
           "completed_requests": 33,
           "dropped_unservable": 0,
-          "e2e_mean_ms": 3025.6670606060607,
-          "e2e_p90_ms": 4389.582600000001,
-          "e2e_p95_ms": 5770.281599999998,
-          "e2e_p99_ms": 6981.97092,
+          "e2e_mean_ms": 3226.9204545454545,
+          "e2e_p90_ms": 4981.4772,
+          "e2e_p95_ms": 5840.495399999998,
+          "e2e_p99_ms": 7236.7937600000005,
           "injected_requests": 33,
           "instance_id": "instance_1",
-          "itl_mean_ms": 6.109658214945531,
-          "itl_p90_ms": 6.314,
-          "itl_p95_ms": 6.316,
-          "itl_p99_ms": 21.827,
+          "itl_mean_ms": 6.149670892857142,
+          "itl_p90_ms": 6.627,
+          "itl_p95_ms": 6.921,
+          "itl_p99_ms": 6.923,
           "length_capped_requests": 0,
           "preemption_count": 0,
-          "responses_per_sec": 2.4615735317888725,
-          "scheduling_delay_p99_ms": 353.35308000000003,
+          "responses_per_sec": 2.32617121663407,
+          "scheduling_delay_p99_ms": 72.768,
           "still_queued": 0,
           "still_running": 0,
           "timed_out_requests": 0,
-          "tokens_per_sec": 1173.3500501526958,
-          "total_input_tokens": 16028,
-          "total_output_tokens": 15730,
-          "ttft_mean_ms": 118.72930303030303,
-          "ttft_p90_ms": 262.8398,
-          "ttft_p95_ms": 322.6483999999999,
-          "ttft_p99_ms": 381.60568,
-          "vllm_estimated_duration_s": 13.406059
+          "tokens_per_sec": 1186.5587905939788,
+          "total_input_tokens": 15422,
+          "total_output_tokens": 16833,
+          "ttft_mean_ms": 95.40190909090909,
+          "ttft_p90_ms": 148.704,
+          "ttft_p95_ms": 148.704,
+          "ttft_p99_ms": 148.704,
+          "vllm_estimated_duration_s": 14.186402
         }
       }
     },
@@ -2005,14 +2162,20 @@
       "colocated": {
         "assumptions": [
           {
+            "KernelMatch": "",
             "Method": "assumed",
             "Name": "max_cudagraph_capture_size",
+            "Primitive": "",
+            "Running": "",
             "Scope": "512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph",
             "Set": "blis-latency-kernel"
           },
           {
+            "KernelMatch": "",
             "Method": "assumed",
             "Name": "engine_version",
+            "Primitive": "",
+            "Running": "",
             "Scope": "0.31.0: the scenario declares vLLM 0.32.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
             "Set": "blis-latency-kernel"
           }
@@ -2021,236 +2184,353 @@
         "evidenced": 119,
         "fallback_or_assumed": [
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "attention_decode_floor_mla",
+            "Primitive": "attention.decode",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-attention"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_floor_all_gather_fp16_16rank_h100",
+            "Primitive": "all_gather",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_floor_all_gather_int8_16rank_h100",
+            "Primitive": "all_gather",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_floor_all_reduce_fp16_16rank_h100",
+            "Primitive": "all_reduce",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_floor_all_reduce_int8_16rank_h100",
+            "Primitive": "all_reduce",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_floor_alltoall_fp16_16rank_h100",
+            "Primitive": "all2all",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_floor_alltoall_int8_16rank_h100",
+            "Primitive": "all2all",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_floor_reduce_scatter_fp16_16rank_h100",
+            "Primitive": "reduce_scatter",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_floor_reduce_scatter_int8_16rank_h100",
+            "Primitive": "reduce_scatter",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_peak_rate_all_gather_fp16_16rank_h100",
+            "Primitive": "all_gather",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_peak_rate_all_gather_int8_16rank_h100",
+            "Primitive": "all_gather",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_peak_rate_all_reduce_fp16_16rank_h100",
+            "Primitive": "all_reduce",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_peak_rate_all_reduce_int8_16rank_h100",
+            "Primitive": "all_reduce",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_peak_rate_alltoall_fp16_16rank_h100",
+            "Primitive": "all2all",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_peak_rate_alltoall_int8_16rank_h100",
+            "Primitive": "all2all",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_peak_rate_reduce_scatter_fp16_16rank_h100",
+            "Primitive": "reduce_scatter",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_peak_rate_reduce_scatter_int8_16rank_h100",
+            "Primitive": "reduce_scatter",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_transition_rate_all_gather_fp16_16rank_h100",
+            "Primitive": "all_gather",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_transition_rate_all_gather_int8_16rank_h100",
+            "Primitive": "all_gather",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_transition_rate_all_reduce_fp16_16rank_h100",
+            "Primitive": "all_reduce",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_transition_rate_all_reduce_int8_16rank_h100",
+            "Primitive": "all_reduce",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_transition_rate_alltoall_fp16_16rank_h100",
+            "Primitive": "all2all",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_transition_rate_alltoall_int8_16rank_h100",
+            "Primitive": "all2all",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_transition_rate_reduce_scatter_fp16_16rank_h100",
+            "Primitive": "reduce_scatter",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_transition_rate_reduce_scatter_int8_16rank_h100",
+            "Primitive": "reduce_scatter",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "cudagraph_capture_bytes_full",
+            "Primitive": "",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-memory"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "cudagraph_capture_bytes_full_and_piecewise",
+            "Primitive": "",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-memory"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "cudagraph_capture_bytes_full_decode_only",
+            "Primitive": "",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-memory"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "cudagraph_capture_bytes_piecewise",
+            "Primitive": "",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-memory"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "gemm_eps_max_w8a16_mxfp8",
+            "Primitive": "gemm",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-primitives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "gemm_m_half_w8a16_mxfp8",
+            "Primitive": "gemm",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-primitives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_admission_per_request",
+            "Primitive": "",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-host-overheads"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_admission_per_token",
+            "Primitive": "",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-host-overheads"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_completion",
+            "Primitive": "",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-host-overheads"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_gather_rate_uva",
+            "Primitive": "gather",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-primitives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_launch_eager_per_layer",
+            "Primitive": "",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-host-overheads"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_launch_per_kernel",
+            "Primitive": "",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-host-overheads"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_output_token",
+            "Primitive": "",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-host-overheads"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_replay_graph_per_step",
+            "Primitive": "",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-host-overheads"
           }
@@ -2289,9 +2569,11 @@
           "engram-excludes-dbo",
           "engram-residency-default",
           "enum-values-known",
+          "eplb-needs-expert-parallelism",
           "eviction-policy-known",
           "expert-divisibility-under-eplb",
           "expert-imbalance-without-eplb",
+          "flashinfer-mega-deep-gemm-model",
           "long-prefill-threshold-within-max-model-len",
           "mamba-cache-mode-matches-model",
           "max-model-len-within-context-window",
@@ -2314,6 +2596,43 @@
       "input": "",
       "run": "2",
       "source": "--num-instances"
+    }
+  ],
+  "resolutions": [
+    {
+      "setting": "all_reduce_backend",
+      "pool": "colocated",
+      "engine": "custom"
+    },
+    {
+      "setting": "async_scheduling",
+      "pool": "colocated",
+      "engine": "true"
+    },
+    {
+      "setting": "cascade_attention",
+      "pool": "colocated",
+      "engine": "false"
+    },
+    {
+      "setting": "data_parallel_width",
+      "pool": "colocated",
+      "engine": "1"
+    },
+    {
+      "setting": "expert_parallel_width",
+      "pool": "colocated",
+      "engine": "1"
+    },
+    {
+      "setting": "sequence_parallel_moe",
+      "pool": "colocated",
+      "engine": "false"
+    },
+    {
+      "setting": "tensor_parallel_width",
+      "pool": "colocated",
+      "engine": "2"
     }
   ]
 }

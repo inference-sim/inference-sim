@@ -31,7 +31,7 @@ func newHeterogeneousDeploymentConfig(prefillKV, decodeKV int64) DeploymentConfi
 	prefill, decode := pdSimConfig(), pdSimConfig()
 	prefill.TotalKVBlocks, decode.TotalKVBlocks = prefillKV, decodeKV
 	d := withRoles(compatDeployment(pdSimConfig(), 4), &prefill, &decode)
-	d.PrefillInstances, d.DecodeInstances, d.PDTransferTime = 2, 2, testPDTransferTime
+	d.PrefillInstances, d.DecodeInstances, d.InstanceEndpoint = 2, 2, testInstanceEndpoint
 	return d
 }
 
@@ -97,7 +97,7 @@ func TestINV_P2_1_RequestConservation(t *testing.T) {
 // instance carrying both role bits.
 func TestNewClusterSimulator_PureSharedCluster(t *testing.T) {
 	d := compatDeployment(pdSimConfig(), 3)
-	d.SharedInstances, d.PDTransferTime = 3, testPDTransferTime
+	d.SharedInstances, d.InstanceEndpoint = 3, testInstanceEndpoint
 	cs := newTestCluster(d, NewSliceRequestSource(nil), nil)
 	if !cs.poolsConfigured() {
 		t.Error("pure-shared cluster should have poolsConfigured() == true")

@@ -10,6 +10,13 @@
 #
 # Usage: scripts/test-selected-deps.sh [go test flags...]
 # Run from anywhere; it works in a temporary directory and changes nothing in the checkout.
+#
+# Sharding (CI runs the packages as parallel jobs): set SELECTED_DEPS_SHARD and CI_SHARD_OUT.
+#   SELECTED_DEPS_SHARD=kernelmodel:I/N  tests of blis-vllm's compat/kernelmodel, test I of N by
+#                                        name (one package is most of the time; scripts/ci-shard.sh)
+#   SELECTED_DEPS_SHARD=rest:I/N         every other package, package I of N by import path
+# CI_SHARD_OUT is the directory the evidence files go to (list.txt, assigned.txt, ran.txt), which
+# scripts/ci-shard-verify.sh reads after all shards finish. Unset, every package runs.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -56,5 +63,46 @@ if [ "$before" != "$after" ]; then
   exit 1
 fi
 echo "testing $(echo "$pkgs" | wc -l | tr -d ' ') packages at the versions inference-sim selects"
-# shellcheck disable=SC2086
-go test "$@" $pkgs
+
+shard="${SELECTED_DEPS_SHARD:-}"
+if [ -z "$shard" ]; then
+  # shellcheck disable=SC2086
+  go test "$@" $pkgs
+  exit
+fi
+
+out="${CI_SHARD_OUT:?SELECTED_DEPS_SHARD needs CI_SHARD_OUT, the evidence directory}"
+mkdir -p "$out"
+case "$out" in /*) ;; *) out="$root/$out" ;; esac
+kind="${shard%%:*}"; frac="${shard#*:}"; index="${frac%/*}"; count="${frac#*/}"
+heavy=github.com/inference-sim/blis-vllm/compat/kernelmodel
+case "$kind" in
+  kernelmodel)
+    echo "$pkgs" | grep -qx "$heavy" || { echo "ERROR: the binary does not link $heavy" >&2; exit 1; }
+    "$root/scripts/ci-shard.sh" "$index" "$count" "$out" "$heavy" "$@"
+    ;;
+  rest)
+    # Package-level partition of everything but the heavy package; same evidence files, with
+    # packages where ci-shard.sh has tests: list, assigned, and the ones go test reported on.
+    echo "$pkgs" | grep -vx "$heavy" | LC_ALL=C sort -u > "$out/list.txt"
+    : > "$out/assigned.txt"
+    while IFS= read -r pkg; do
+      sum="$(printf '%s' "$pkg" | cksum | cut -d' ' -f1)"
+      if [ $(( sum % count + 1 )) -eq "$index" ]; then printf '%s\n' "$pkg" >> "$out/assigned.txt"; fi
+    done < "$out/list.txt"
+    echo "selected-deps: shard $index of $count owns $(wc -l < "$out/assigned.txt" | tr -d ' ') of $(wc -l < "$out/list.txt" | tr -d ' ') packages"
+    status=0
+    # shellcheck disable=SC2046
+    go test "$@" $(cat "$out/assigned.txt") 2>&1 | tee "$out/go-test.log" || status=$?
+    # Each package go test starts ends in one "ok", "FAIL" or "?" line (a package without test files).
+    sed -n -E 's/^(ok|FAIL|\?)[[:space:]]+([^[:space:]]+).*/\2/p' "$out/go-test.log" | LC_ALL=C sort -u > "$out/ran.txt"
+    rm -f "$out/go-test.log"
+    [ "$status" -eq 0 ] || exit "$status"
+    diff <(LC_ALL=C sort -u "$out/assigned.txt") "$out/ran.txt" >&2 \
+      || { echo "ERROR: go test reported on a different set of packages than shard $index of $count owns" >&2; exit 1; }
+    ;;
+  *)
+    echo "ERROR: SELECTED_DEPS_SHARD '$shard' is not kernelmodel:I/N or rest:I/N" >&2
+    exit 2
+    ;;
+esac

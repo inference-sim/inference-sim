@@ -7,7 +7,7 @@ acceptance:
     num_spec_tokens: 7
     acceptance_length: 2.84
     source: "internal deployment measurements: 1.84 accepted tokens per DSpark draft at c16 on H100 PP2xTP8, fixed 7-token verify (AL = 1 + accepted)"
-coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric, cost-model-offload-tiers]
 cluster:
   hardware: h100
   fabric: roce-200g
@@ -29,11 +29,8 @@ pools:
       gpu_memory_utilization: 0.9
       async_scheduling: true
       moe_backend: marlin
-      cache_dtype: fp8
-      speculative:
-        method: dspark
-        num_spec_tokens: 7
-        draft_model: muse-spark-open-dspark
+      kv_cache_dtype: fp8
+      speculative_config: {method: dspark, num_speculative_tokens: 7, model: muse-spark-open-dspark}
 # Arm D's CPU tier: vLLM's OffloadingConnector, LRU, 512 GiB of host DRAM on each of the engine's
 # two nodes. A tier's bytes are the engine's cpu_bytes_to_use, which vLLM divides among the workers'
 # copies (vllm/v1/kv_offload/cpu/spec.py:103-121), so the PP2 x TP8 engine states both nodes': 1 TiB.

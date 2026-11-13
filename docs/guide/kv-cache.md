@@ -14,7 +14,7 @@ The examples use the canonical scenario from [Getting Started](../getting-starte
 
 KV cache is allocated in **blocks** of the scenario pool's `engine.block_size` tokens. Each request consumes `ceil(token_count / block_size)` blocks. Blocks are reference-counted and can be shared across requests via prefix caching.
 
-The GPU-tier block budget is not a flag. blis-latency-kernel computes it with its memory methods from the scenario — model, hardware, parallelism, quantization, `cache_dtype`, `gpu_memory_utilization` and `block_size` — **per data-parallel rank**: a pool with `dp > 1` (MoE only) becomes one replica per rank, each with its own budget. A LoRA run's static adapter HBM reservation is set aside from that budget. To change the budget, change the scenario (for example its `gpu_memory_utilization` or `cache_dtype`).
+The GPU-tier block budget is not a flag. blis-latency-kernel computes it with its memory methods from the scenario — model, hardware, parallelism, quantization, `kv_cache_dtype`, `gpu_memory_utilization` and `block_size` — **per data-parallel rank**: a pool with `dp > 1` (MoE only) becomes one replica per rank, each with its own budget. A LoRA run's static adapter HBM reservation is set aside from that budget. To change the budget, change the scenario (for example its `gpu_memory_utilization` or `cache_dtype`).
 
 !!! tip "Block size affects prefix cache granularity"
     Prefix caching uses block-aligned hashing (`hash.ComputeBlockHashes`). Smaller block sizes increase cache hit granularity but also increase allocation overhead. Choose block size relative to your typical prefix lengths.

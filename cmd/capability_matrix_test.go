@@ -467,14 +467,14 @@ schedulingProfiles:
 func TestCapabilityMatrix_Compositions(t *testing.T) {
 	t.Run("P/D + MTP + pools with unequal engines", func(t *testing.T) {
 		t.Parallel()
-		const draft = "      speculative:\n        method: mtp\n        num_spec_tokens: 3\n"
+		const draft = "      speculative_config: {method: mtp, num_speculative_tokens: 3}\n"
 		// The decode pool runs a smaller engine than the prefill pool: fewer sequences and
 		// less of its memory for KV. Both draft (speculation must agree across a handoff).
 		variant := func(decodeSeqs string) string {
 			return writeScenarioVariant(t,
-				"      gpu_memory_utilization: 0.9\n  - role: decode", "      gpu_memory_utilization: 0.9\n"+draft+"  - role: decode",
-				"      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer",
-				"      max_num_seqs: "+decodeSeqs+"\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.8\n"+draft+"\npd_transfer")
+				"      compilation_config: {cudagraph_mode: PIECEWISE}\n  - role: decode", "      compilation_config: {cudagraph_mode: PIECEWISE}\n"+draft+"  - role: decode",
+				"      max_num_seqs: 256\n      max_model_len: 32768\n      gpu_memory_utilization: 0.9\n      compilation_config: {cudagraph_mode: PIECEWISE}\n\npd_transfer",
+				"      max_num_seqs: "+decodeSeqs+"\n      max_model_len: 32768\n      gpu_memory_utilization: 0.8\n      compilation_config: {cudagraph_mode: PIECEWISE}\n"+draft+"\npd_transfer")
 		}
 		wide, narrow := variant("256"), variant("4")
 		load := burst(24, 12, 1500, 128)
@@ -582,10 +582,10 @@ func TestCapabilityMatrix_Compositions(t *testing.T) {
 		if len(rows) != 4 {
 			t.Errorf("%d request rows for 2 sessions x 2 rounds", len(rows))
 		}
-		// accumulate replay carries each round's prompt and answer into the next round's
-		// prompt. (The exact reconstruction -- round 1's prompt equal to the recorded 1500 and
-		// 1200 -- is one token short per round, #1893: the session manager carries output-1
-		// tokens forward. Asserted here once that is fixed.)
+		// Accumulate replay carries each round's prompt and answer into the next round's prompt,
+		// and reconstructs the recorded prompts exactly: round 1 is the 1500 and 1200 tokens the
+		// trace recorded. The session manager grows the context by the tokens the round emitted
+		// (SIM-12), not by the decode-step count, which is one fewer.
 		prompt := map[string]map[int]int{}
 		for _, r := range rows {
 			if prompt[r.SessionID] == nil {
@@ -593,10 +593,46 @@ func TestCapabilityMatrix_Compositions(t *testing.T) {
 			}
 			prompt[r.SessionID][r.Round] = r.Prompt
 		}
+		recorded := map[int]int{1000: 1500, 800: 1200} // round 0 prompt -> round 1 prompt
 		for sid, rounds := range prompt {
-			if rounds[1] <= rounds[0] {
-				t.Errorf("session %s: round 1's prompt (%d tokens) did not grow past round 0's (%d)", sid, rounds[1], rounds[0])
+			if want, ok := recorded[rounds[0]]; !ok || rounds[1] != want {
+				t.Errorf("session %s: round 0 prompt %d, round 1 prompt %d; want round 1 to be the recorded %d", sid, rounds[0], rounds[1], want)
 			}
+		}
+	})
+
+	t.Run("accumulate sessions: each follow-up round's prompt is the context plus the new input, exactly", func(t *testing.T) {
+		t.Parallel()
+		// Closed-loop sessions of three rounds, each round a 500-token input and a 50-token
+		// output: round 1 is 500 + 50 + 500 = 1050 tokens and round 2 is 1050 + 50 + 500 = 1600.
+		// Counting the decode steps and not the tokens emitted left each round one token short
+		// (1049, 1598). Command: blis run --scenarios testdata/scenarios --scenario
+		// llama-3.1-70b-instruct-h200-tp4-4node.yaml --num-instances 1 --seed 11 --horizon 900000000
+		// --workload-spec <the spec below>.
+		spec := capSpecBody(t, "version: \"2\"\nseed: 7\ncategory: reasoning\naggregate_rate: 2\nnum_requests: 6\nclients:\n"+
+			"  - id: chat\n    tenant_id: t\n    slo_class: standard\n    rate_fraction: 1\n    closed_loop: true\n"+
+			"    arrival: {process: poisson}\n"+
+			"    input_distribution: {type: constant, params: {value: 500}}\n"+
+			"    output_distribution: {type: constant, params: {value: 50}}\n"+
+			"    reasoning:\n      reason_ratio_distribution: {type: constant, params: {value: 0}}\n"+
+			"      multi_turn: {max_rounds: 3, think_time_us: 500000, context_growth: accumulate}\n")
+		o, rows := capRunRows(t, runArgs(colocated(1), "--workload-spec", spec)...)
+		want := map[int]int{0: 500, 1: 1050, 2: 1600}
+		if len(rows) == 0 {
+			t.Fatal("no request rows")
+		}
+		rounds := map[int]int{}
+		for _, r := range rows {
+			rounds[r.Round]++
+			if r.Prompt != want[r.Round] {
+				t.Errorf("session %s round %d: prompt %d tokens, want %d", r.SessionID, r.Round, r.Prompt, want[r.Round])
+			}
+		}
+		if rounds[1] == 0 || rounds[2] == 0 {
+			t.Errorf("rounds seen %v: the run must reach rounds 1 and 2 for the table to be tested", rounds)
+		}
+		if got := o.num("total_output_tokens"); got != float64(len(rows)*50) {
+			t.Errorf("total output tokens = %v, want %d: %d requests of 50", got, len(rows)*50, len(rows))
 		}
 	})
 
@@ -912,9 +948,14 @@ func TestCapabilityMatrix_Workloads(t *testing.T) {
 		t.Parallel()
 		a := capSpec(t, 4, 20, capClient("chat", "critical", 1, 500, 64, ""))
 		b := capSpec(t, 2, 10, capClient("batch", "batch", 1, 3000, 32, ""))
-		merged := capFile(t, "merged.yaml", capRawCLI(t, "compose", "--from", a, "--from", b))
-		// compose drops num_requests (#1906), so the horizon bounds the run.
-		args := with(colocated(1)[:len(colocated(1))-2], "--horizon", "10000000")
+		composed := capRawCLI(t, "compose", "--from", a, "--from", b)
+		// Composing keeps what the inputs bound: num_requests is the sum (20 + 10), so the merged
+		// spec runs on its own, without a horizon to bound it.
+		if !strings.Contains(composed, "num_requests: 30") {
+			t.Fatalf("the composed spec lost the inputs' num_requests:\n%s", composed)
+		}
+		merged := capFile(t, "merged.yaml", composed)
+		args := colocated(1)[:len(colocated(1))-2] // without --horizon: num_requests bounds the run
 		o, rows := capRunRows(t, runArgs(args, "--workload-spec", merged)...)
 		o.conserves(t, int(o.num("injected_requests")))
 		_, n := meanTTFTBy(rows, bySLOClass)

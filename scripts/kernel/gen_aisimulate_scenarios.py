@@ -278,9 +278,9 @@ def emit(dep: dict, workloads: set[str], labels: set[str], catalog: Path = DEFAU
         lines.append(f"      enable_prefix_caching: {pc}")
     if spec and not unpriced_spec:
         lines += [
-            "      speculative:",
+            "      speculative_config:",
             f"        method: {stated['speculative_method']}",
-            f"        num_spec_tokens: {stated['num_speculative_tokens']}",
+            f"        num_speculative_tokens: {stated['num_speculative_tokens']}",
         ]
     return "\n".join(lines) + "\n"
 

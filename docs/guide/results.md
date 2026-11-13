@@ -53,25 +53,53 @@ Each identifier is a contracts/metrics registry entry in the pinned blis-substra
 | `ttft_{mean,p50,p90,p95,p99}_ms` | arrival to first output token |
 | `tpot_{mean,p50,p90,p99}_ms` | per request `(latency - ttft) / (output_tokens - 1)`: time per output token after the first |
 | `e2e_{mean,p50,p90,p95,p99}_ms` | arrival to last streamed token |
+| `itl_{mean,p50,p90,p95,p99}_ms` | the client-observed gap between consecutive output tokens, pooled over measured requests completing in the window; tokens of one chunk share its arrival (below) |
 | `step_interval_{mean,p50,p90,p95,p99}_ms` | the engines' per-decode-step interval, over measured requests completing in the window |
 | `interactivity_mean` | mean of `1000 / tpot_ms` over requests |
+| `interactivity_of_mean_tpot` | `1000 / tpot_mean_ms`, the reciprocal of the mean TPOT (InferenceX's `mean_intvty`); not `interactivity_mean`, which is higher whenever TPOT varies across requests |
 | `interactivity_p50`, `interactivity_p90` | `1000 / tpot_p50_ms`, `1000 / tpot_p90_ms` |
 | `output_tok_s` | output tokens over the window |
 | `output_tok_s_per_gpu` | `output_tok_s` over the GPUs the run's instances occupy |
+| `total_tokens_per_second_per_gpu` | (prompt plus output tokens per second of the measured window) over the GPUs the run's instances occupy: InferenceX's `tput_per_gpu`. Stated only when the pinned metric registry defines it |
+| `output_tokens_per_second_per_decode_gpu` | output tokens per second over the GPUs of the decode pool's instances, for a disaggregated run: InferenceX's `output_tput_per_gpu`. Stated only when the pinned registry defines it |
 | `request_throughput` | completed requests over the window |
 | `goodput_rps`, `slo_attainment` | with SLO targets: requests meeting every target, per second of the simulated run, and as a fraction of completed |
+
+Schema 3 (blis-substrate layer 11) makes each figure state its `scope`; every figure of this Result is
+at the `cluster` scope, with no member, aggregate or range. A Result holds one figure per metric.
 
 A latency family is stated only when it has a sample: a run that completed nothing states no
 latency rather than a zero. The TPOT family needs a request with two or more output tokens;
 `interactivity_p50` and `interactivity_p90` additionally need that percentile of TPOT to be
 positive (they are its reciprocal), and `interactivity_mean` needs a request with a positive
-TPOT. A run can therefore state `interactivity_mean` without the percentiles. Percentiles are
+TPOT. A run can therefore state `interactivity_mean` without the percentiles. `interactivity_of_mean_tpot` needs a positive mean TPOT. Percentiles are
 numpy-linear.
 
-No `itl_*` is reported. The registry's `itl` pools every gap between consecutive tokens, across
-requests, which BLIS does not compute. Schema 1's `itl_*` was the per-request time per output
-token, which schema 2 names `tpot_*`. Under speculative decoding one decode step emits several
-tokens, so `step_interval_*` is longer than `tpot_*` by the accepted length.
+`itl_{mean,p50,p90,p95,p99}_ms` is the registry's `itl`: the gaps between consecutive output
+tokens, pooled over every measured request that completed in the window and had two or more
+output tokens, as the client observes them. A server sends tokens in chunks, and every token of a
+chunk reaches the client at the chunk's time, so the gap before a chunk is charged to its first
+token and the gaps between the chunk's other tokens are zero. A request with N output tokens
+contributes N - 1 gaps, and `samples` is their number. With one token per chunk (the default
+`stream_interval`, no speculative decoding) these are the engine's per-step intervals; with
+several tokens per chunk the median falls, the tail grows and the mean stays where the stream's
+length puts it. It is stated for the whole run only: a request's gaps are not split by model,
+tenant or adapter. It is not what a `vllm bench serve` or InferenceX client stores as ITL, which
+is one entry per received chunk (comparability audit A4); a chunk-gap figure has no registry
+identifier yet (see the pull request for the issue). Schema 1's `itl_*` was the per-request time
+per output token, which schema 2 names `tpot_*`. Under speculative decoding one decode step emits
+several tokens, so `step_interval_*` is longer than `tpot_*` by the accepted length.
+
+A pool's `engine.stream_interval` (vLLM's `SchedulerConfig.stream_interval`) groups the tokens the
+client is sent: the first output at once, then a group each time that many tokens have
+accumulated, and the rest when the request finishes. It changes when the client sees tokens and
+nothing the engine does, so the engine's steps, TTFT, each request's end-to-end latency, `tpot_*`
+and `step_interval_*` are as without it (the last chunk arrives at the finish, and a client
+computing `(latency - ttft) / (output tokens - 1)` gets the same figure). What changes is `itl_*`:
+the tokens of a group arrive together, so most gaps become zero and the gaps before a group are
+about `stream_interval` steps long. The simulator records the chunks on the request
+(`Request.ClientFirstTokens`, `ClientITL`, `ClientChunk`) and `Request.ClientTokenGaps` derives the
+series.
 
 ### From schema 1 to schema 2
 
@@ -82,7 +110,7 @@ member has a schema 2 home, or is listed as dropped with the reason.
 |---|---|
 | `metric_defs` | dropped: every metric is a contracts/metrics registry identifier, defined once there |
 | `metrics.<id>` (a number) | `metrics.<id>.value`, with `metrics.<id>.samples` |
-| `metrics.itl_{mean,p50,p90,p99}_ms` | `metrics.tpot_*_ms` |
+| `metrics.itl_{mean,p50,p90,p99}_ms` (per request) | `metrics.tpot_*_ms`; schema 2's `itl_*` is the pooled token-gap series |
 | `engine.cluster.step_interval_*_ms` | `metrics.step_interval_*_ms`, and still in `reports.engine.cluster` |
 | `goodput.goodput_rps`, `goodput.slo_attainment` | `metrics.goodput_rps`, `metrics.slo_attainment` |
 | `input.run.load` | `frame.generator.load` |
@@ -155,6 +183,7 @@ document, or is listed here as dropped with the reason.
 | `request_itl_mean_ms`, `request_itl_p50_ms`, `request_itl_p90_ms`, `request_itl_p99_ms` | `metrics.tpot_*_ms` |
 | `interactivity_p50`, `interactivity_p90` | `metrics.interactivity_p50`, `metrics.interactivity_p90` |
 | `output_tok_per_user_mean` | `metrics.interactivity_mean` |
+| `request_itl_mean_ms` | `metrics.interactivity_of_mean_tpot` is `1000 /` it |
 | `step_interval_mean_ms`, `step_interval_p90_ms`, `step_interval_p99_ms` | `metrics.step_interval_*_ms` (with `p50`, `p95`) |
 | `output_throughput_tok_s` | `metrics.output_tok_s` |
 | `measured_window_s` | `window.duration_s` |
@@ -261,6 +290,12 @@ BLIS enforces, and `skipped_rule_findings` what those rules report when the pack
 report-only. `evidence_source` is `kernel` when the counts are the kernel's `Evidence()`. A run
 no kernel priced states an empty map.
 
+`substitutions`, present only when there is one, lists the execution modes the cost model prices in
+place of the one the deployment states: each entry names the engine `setting` (for example
+`language_model_only`), what the deployment `stated` (`unset` for an absent key), the value
+`priced`, and a `reason`. A point with a substitution is not priced in the mode it states, so a
+grade reads this list and not the stderr text.
+
 ### Scheduling Delay
 
 Scheduling delay isolates the WaitQ wait time from compute time. High scheduling delay + low preemptions = **queue saturation** (add instances). Low scheduling delay + high TTFT = **compute saturation** (reduce batch size or use chunked prefill).
@@ -292,6 +327,39 @@ is recorded once per pool whose engine stated otherwise, as `"scheduler (prefill
 `"preemption_policy (decode pool)"`.
 
 A warning on stderr says the same.
+
+### Closeness Data
+
+The Result carries what a scoring harness needs to grade a point against the run it measured
+(design 11.3, G1), in two places.
+
+- Each entry of `selected_entries.coefficients` states, where its registry entry does: `kernel_impls`
+  (the library, the library's own kernel name and the kernel's code hash the value is valid for, a
+  validity list that can name builds the run did not run), `fit_range` (one bound per input
+  dimension the fit covered) and `ci95`. From the run it adds `primitive` (the lowered primitive the
+  entry's name prices), `priced` (the implementations of the operations that read the entry,
+  matched whole by library, variant and code hash) and `kernel_match`. `priced` is a subset of
+  `selected_entries.implementations[primitive]`, the builds the run's cost models ran, and, for an
+  exact entry, of `kernel_impls`: a sibling build the entry is also valid for, or a build that runs
+  only operations that do not read the entry, is not in it. `kernel_match` is `exact` when the entry
+  lists the implementations that ran, and `unkeyed` when it lists none and so applies to every build
+  without having been shown to match the one that ran; the kernel-hash condition of G1 is decided for
+  an exact entry only. An entry that lists implementations is used only when every implementation
+  among those that read it is one it lists. Two flags are evaluated from the steps the run priced:
+  `extrapolated`, true when any priced step read the entry outside its `fit_range` (evaluated only
+  where a `fit_range` is stated), and `unidentified`, true when the entry's interval is unbounded or
+  wider than half its value (evaluated only where a `ci95` is stated). A flag that is absent was not
+  evaluated. Every engine instance of every pool registers its own kernel with the run's data, so a
+  flag any instance raised stays raised. `selected_entries.closeness_version: 2` says the recorder
+  passed on everything each entry states and the implementation each coefficient priced; it does not
+  say that every pool registered, nor that a condition was decided. A registry coefficient that states
+  no `kernel_impls` is `unkeyed`, so the kernel-hash condition cannot be decided for it; at the
+  registry this release pins few coefficients state them (blis-registry#73).
+- `resolutions` lists, for each pool and each setting the cost model resolves, the engine's value
+  beside the host's, with the reason where they differ. A row names its `pool` by the pool's role
+  (`colocated`, `prefill`, `decode`); the engine allows one pool per role. Rows are sorted by
+  setting, then pool. A row names the setting as the engine block and the field list do (the KV
+  cache dtype is `kv_cache_dtype`).
 
 ### Catalog Provenance
 

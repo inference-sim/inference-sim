@@ -25,14 +25,14 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: Under BLIS's simulated runtime, every decision is one the default runtime can make from the same recorded state. Each decision is replayed from the recorded state just before it, not from the simulation's own history, so one different tie-break cannot make every later decision incomparable. Ties and random draws are compared as sets of the choices the upstream could make
   - `ci`, pull_request: BLIS imports only the fork's pkg/embed.New from the router (`sim/llmd: TestRouterImportsOnlyTheEmbedConstructor`)
   - `ci`, pull_request: Only audited plugin types are reachable: every type BLIS supports is hosted by the fork's audited list (RTR-4) (`sim/llmd: TestSupportedTypesAreHostedByTheFork`)
-- **X6** (partial; target ci by M3) For fixed scenario bytes, seed, module versions, Go toolchain version and catalog and registry content hashes, the simulator's standard output is identical byte for byte across runs, thread counts and supported platforms.
+- **X6** (partial; target ci by M3) For fixed scenario bytes, seed, module versions, Go toolchain version and catalog and coefficient registry content hashes, the simulator's standard output is identical byte for byte across runs, thread counts and supported platforms.
   - `ci`, pull_request: Identical output across runs and thread counts; a recorded trace replays identically (`sim/llmd: TestDeterminism_AcrossProcesses`)
   - `new`, pull_request: Identical output on linux/amd64, linux/arm64 and darwin/arm64: nightly, and on every pull request that changes kernel/ or an engine's lowering. Two things differ by platform. First, the Go compiler may fuse x*y+z into one fused multiply-add on some architectures and not others, which changes the last bits; so cost-model and engine code writes float64(x*y) + z where fusion must not happen, or calls math.FMA where it must. Second, some functions in Go's math package, such as Exp and Log, use assembly or CPU-dependent code on some platforms, so their last bits can differ between machines; cost-model and engine code calls the pure-Go copies in contracts/check/fmath instead, which use no fused multiply-add. A lint enforces both rules. stack.json records the toolchain version (SIM-3)
   - `new`, pull_request: No unsorted map iteration on an output path, and no unnamed randomness. In the router fork this lint covers files the fork wrote; upstream code is covered by the differential test in X4
 - **X7** (partial; target ci by M4) Contracts live in blis-substrate/contracts.
   - `new`, pull_request: A lower repository refers to accuracy-dashboard only through the harness pin file
   - `new`, pull_request: Every generated file matches its generator's output
-- **X8** (new; target ci by M1) Every number records the exact versions and data it came from, and can be regenerated from them.
+- **X8** (new; target ci by M2) Every number records the exact versions and data it came from, and can be regenerated from them.
   - `new`, pull_request: Every Result records the module versions, the source and content hash of the catalog and the registry, any overlay hashes, and whether the run used released data
   - `new`, pull_request: An accuracy change's success criteria are committed before any commit that reads its held-out data
 - **X9** (new; target ci by M3) For every pinned upstream release, each feature the upstream offers has exactly one status in a generated list.
@@ -55,25 +55,26 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **X16** (new; target ci by M1) A skipped test in a required or gate job is a failure, not a pass, unless it is on the quarantine list of X25.
   - `new`, pull_request: Each repository's CI configuration
 - **X17** (partial; target ci by M1) Every repository's protected branch requires its named checks, including formatting and lint.
-  - `ci`, settings: The protected branch requires the repository's named checks, including formatting and lint (`branch protection on main`)
+  - `ci`, practice: The protected branch requires the repository's named checks, including formatting and lint
 - **X19** (new; target ci by M2) Scripts and generators, in every language, never write an engine default.
   - `new`, pull_request: The engine-name lint (X2), run on *.py and *.sh in every repository that has scripts
   - `new`, pull_request: In every scenario generator, a test that a generated scenario contains only stated or recorded values, and workload-dependent values with their citation. The name lint cannot see a bare number under a neutral key, so the second test is the one that catches it
-- **X20** (new; target ci by M4) Every commit written for BLIS is signed.
-  - `new`, pull_request: A commit-policy check, required on every pull request in every repository, over the commits the pull request adds
+- **X20** (new; target ci by after M4) A commit written with an agent's help says so in one Assisted-by: <tool> line, and carries no Co-authored-by line naming the tool.
+  - `new`, pull_request: A commit-policy check, required on every pull request in every repository, over the commits the pull request adds: one Assisted-by line, no Co-authored-by or Signed-off-by naming a tool
+  - `new`, practice: The person who takes responsibility for a commit signs it and signs it off, or instructs an agent to push it in that person's name. Encouraged, never checked before the closing step after M4
 - **X21** (new; target ci by M1) Everything a build or a release runs is pinned and traceable.
   - `new`, pull_request: A workflow lint that refuses an action not pinned by commit
   - `new`, pull_request: Pip install --require-hashes in every Python CI job
   - `new`, release: The release job, which fails without provenance and a bill of materials
   - `new`, pull_request: A check that LICENSE and any required NOTICE exist
-- **X22** (partial; target ci by M4) Every verdict (a CI result, an agent's review, or a person's answer to a review question) names the git tree hash of the exact tree it judged.
-  - `new`, pull_request: The shared merge check in blis-substrate/.github/workflows, called by every repository, which compares verdict tree hashes
+- **X22** (partial; target ci by M4) Every verdict (a CI result or the review agent's review, including its answers to review questions) names the git tree hash of the exact tree it judged.
+  - `new`, pull_request: The shared pull-request check in blis-substrate/.github/workflows, called by every repository, which records each review-agent answer with the head tree
   - `new`, pull_request: A workflow lint that refuses ignored exit codes
   - `new`, pull_request: Each job's item count
 - **X23** (new; target ci by M1) A version is written in one place.
   - `new`, pull_request: A lint in every repository, over every file type, for version literals of BLIS modules or Go that are not generated
 - **X24** (new; target ci by M4) Every review finding ends in one of three outcomes before merge: fixed, filed as a linked issue, or rejected with a reason.
-  - `new`, pull_request: The shared merge check, which refuses a merge while a review thread has no outcome
+  - `new`, pull_request: A pull-request check that refuses a review thread with no outcome
 - **X25** (new; target ci by M1) Tests read only their declared inputs, never sibling checkouts, ignored directories or the user's environment.
   - `new`, pull_request: CI in a clean container with no sibling checkouts
   - `new`, pull_request: The quarantine list, which fails CI when an entry expires
@@ -82,7 +83,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: A documentation reference check in every repository
 - **X28** (new; target ci by M1) An issue in a BLIS repository that is cited as the reason for a refusal, for a refused or not-modelled item in a field or surface list, or in a code comment that marks a gap or a divergence, stays open.
   - `new`, nightly: A nightly job in every repository that resolves each cited issue and fails on a closed one
-  - `new`, pull_request: A merge check that refuses a change closing an issue still cited elsewhere
+  - `new`, pull_request: A pull-request check that refuses a change closing an issue still cited elsewhere
   - `new`, nightly: The nightly job also reports an issue closed outside a merge
 - **SUB-14** (new; target ci by M2) The memory breakdown closes.
   - `new`, pull_request: A start-up refusal in inference-sim when a node's host-memory figures exceed its host memory
@@ -102,13 +103,13 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: The byte gate job in inference-sim's CI, on every pull request
 - **SIM-5** (new; target ci by M3) Each release reports how much of the llm-d stack's published configurations it can run, per engine (X9).
   - `new`, release: A release job in inference-sim that computes coverage from two inputs, the llm-d guides commit pinned in guides.lock (which stack.json records) and each engine's surface list, and publishes per-item deployment counts through inference-sim coverage. The dashboard adds its blocked-point counts to them (§7.5)
-- **SIM-6** (new; target ci by M1) A run that names no catalog or registry uses the embedded copy.
+- **SIM-6** (new; target ci by M1) A run that names no catalog or coefficient registry uses the embedded copy.
   - `new`, pull_request: Tests for each case
   - `new`, pull_request: The result records the data source
 - **SIM-7** (new; target ci by M2) Every run makes progress.
   - `new`, pull_request: A progress watchdog that fails a run when no request changes state for a set number of engine steps while work is waiting
   - `new`, pull_request: A seeded property test over random pools and prompts, including the exact-fit case and the one-block-over case. The capacity boundary cases are also oracle scenarios in each engine repository
-- **SIM-8** (new; target ci by M1) Requests and sessions follow one written state machine, whose end states are the fates of §8.7 (DEV-9).
+- **SIM-8** (new; target ci by M2) Requests and sessions follow one written state machine, whose end states are the fates of §8.7 (DEV-9).
   - `new`, pull_request: A transition-table test
   - `new`, pull_request: The arrival-count check of DEV-9
 - **SIM-9** (partial; target ci by M2) Each refusal has two tests: the smallest configuration that triggers it, and the closest one that does not.
@@ -133,7 +134,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: In the router fork and inference-sim, unexported constructors for the router's view types, so only the message-delivery code can build them
   - `new`, pull_request: An import-graph test that finds no import of engine-internal packages from router-side packages
   - `new`, pull_request: The coupled replay test (FID-9)
-- **DEV-2** (new; target ci by M1) Each instant is processed in the three phases of §8.2, and messages are ordered by (time, class, sender, sender's send count).
+- **DEV-2** (new; target ci by M2) Each instant is processed in the three phases of §8.2, and messages are ordered by (time, class, sender, sender's send count).
   - `new`, pull_request: In inference-sim, a test that permutes the scheduling order of same-instant events from different components and compares the Result
   - `new`, pull_request: An assertion that no two queued messages share a key
   - `new`, pull_request: A run of the corpus under a second priority-queue implementation
@@ -168,7 +169,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **COV-12** (partial; target ci by M3) The scored simulation receives the requests the measured run sent: the same requests, in the same order, with the same prompt lengths, output lengths and shared prefixes.
   - `ci`, pull_request: The single-turn recomputation of the client's seed-0 lengths and the sent-length check, in inference-sim's tools/harness, until they move into the dashboard's harness (`tools/harness: TestEveryMeasuredOrResolvedPointSentItsTarget`)
 - **LIF-1** (new; target ci by M1) A tag names one commit forever.
-  - `new`, settings: Protected tags
+  - `new`, practice: Protected tags
   - `new`, nightly: A nightly check that every tag resolves to its recorded commit
 - **LIF-2** (partial; target ci by M1) In every build, each BLIS module resolves to the exact version the release records in stack.json, and the router fork resolves to a -blis.N tag through inference-sim's one replace directive (X11).
   - `new`, pull_request: Selected-version lint (go list -m all), which for the router reads the replace target that go list -m -json reports, not the placeholder version on the require line
@@ -176,22 +177,40 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: A CI step that fails if go version differs from it
   - `new`, release: The pre-release test of every engine and router package against the simulator's selected versions (§3.2)
 - **LIF-3** (new; target ci by M1) Only the release bot cuts releases, and only from a commit where every ci invariant passed.
-  - `new`, settings: Repository settings that let only the release bot and release owners create tags
-  - `new`, nightly: A nightly check that every tag made by a person is signed and listed in its release notes
+  - `new`, practice: Repository settings that let only the release bot and people with write access create tags
+  - `new`, nightly: A nightly check that every tag made by a person is annotated and listed in its release notes
 - **LIF-6** (new; target ci by M1) Each inference-sim release runs exactly one upstream release of each engine and of llm-d, and lists them in stack.json.
   - `new`, pull_request: A refusal test per engine kind
   - `new`, pull_request: A check that the message's release names match stack.json history
 - **LIF-7** (new; target ci by M1) A deprecated feature is removed by the first release after its deprecation that may break compatibility: a MAJOR release, or a MINOR release while the repository is at v0.
   - `new`, pull_request: A whole-program dead-code check (Go's deadcode), run in stack CI's workspace from the main packages of every binary BLIS ships, with test files not counted as reaching code. Upstream files in the router fork, and the interfaces in contracts/, are exempt
 
+### Maintainer practices
+
+No program checks these. A maintainer with write access keeps each one for this
+repository as a whole and confirms it when the repository's settings change (design §4.2).
+
+- [ ] **X17** The protected branch requires the repository's named checks, including formatting and lint
+- [ ] **X20** The person who takes responsibility for a commit signs it and signs it off, or instructs an agent to push it in that person's name. Encouraged, never checked before the closing step after M4
+- [ ] **LIF-1** Protected tags
+- [ ] **LIF-3** Repository settings that let only the release bot and people with write access create tags
+
+### Agent guidance
+
+Follow these on every change you write or review. They are not checked by a program
+(design §4.2).
+
+- **X24** Answer each review thread with its commit or its issue, and resolve the thread once the reviewer is satisfied.
+
 ### Review questions
 
-CI adds each question below to a pull request that changes one of its paths, as a
-required checklist item. A reviewer with write access answers it yes or no with a one-line reason; an agent
-may propose an answer but never gives one (design §13.7).
+CI lists each question below in the description of a pull request that changes one of
+its paths. It is guidance for the review agent (design §13.2): the agent answers it yes or
+no in a review comment, with the files and lines that support the answer. No check waits
+on a question.
 
-- **X3** Is engine behaviour, such as scheduling, admission or KV accounting, being added to the simulator instead of an engine repository? Reviewer: inference-sim expertise. When: a change to the simulator's request-lifecycle or capacity code. Paths: `sim/engine_driver*.go`, `sim/instance_state.go`, `sim/request.go`, `sim/event_queue.go`, `sim/engine_records.go`, `sim/dp_modes.go`, `sim/cluster/**`, except `**/*_test.go`.
-- **X6** Could this floating-point reduction give a different result on another platform? Reviewer: expertise in the changed repository. When: a parallel or floating-point reduction is added, or the cross-platform check fails. Added by a reviewer with the label `review:X6`.
-- **X7** Does this change give a second home to a fact another repository owns? Reviewer: expertise in the changed repository. When: a pull request adds a literal list or table, or a constant that cites another repository. Added by a reviewer with the label `review:X7`.
-- **DEV-12** Does this change alter what is modelled? Reviewer: expertise in the changed directory. When: a pull request is declared a verification change but moves a Result outside the byte gate. Added by a reviewer with the label `review:DEV-12`.
+- **X3** Is engine behaviour, such as scheduling, admission or KV accounting, being added to the simulator instead of an engine repository? Expertise: inference-sim expertise. Applies when: a change to the simulator's request-lifecycle or capacity code. Paths: `sim/engine_driver*.go`, `sim/instance_state.go`, `sim/request.go`, `sim/event_queue.go`, `sim/engine_records.go`, `sim/dp_modes.go`, `sim/cluster/**`, except `**/*_test.go`.
+- **X6** Could this floating-point reduction give a different result on another platform? Expertise: expertise in the changed repository. Applies when: a parallel or floating-point reduction is added, or the cross-platform check fails. Added by a reviewer with the label `review:X6`.
+- **X7** Does this change give a second home to a fact another repository owns? Expertise: expertise in the changed repository. Applies when: a pull request adds a literal list or table, or a constant that cites another repository. Added by a reviewer with the label `review:X7`.
+- **DEV-12** Does this change alter what is modelled? Expertise: expertise in the changed directory. Applies when: a pull request is declared a verification change but moves a Result outside the byte gate. Added by a reviewer with the label `review:DEV-12`.
 <!-- END GENERATED: invariants -->

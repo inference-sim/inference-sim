@@ -1,6 +1,6 @@
 {
   "kind": "Result",
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "gpt-oss-120b-h100-fp4-vllm-tp2.r8-s3",
   "engine": {
     "kind": "vllm",
@@ -9,18 +9,19 @@
   "data": {
     "catalog": {
       "source": "path",
-      "hash": "2bffc79ee1c01e0cf63236ea266e13834ce542da2afcffa7b8b71a7aa66cd2e8",
-      "combined_hash": "2bffc79ee1c01e0cf63236ea266e13834ce542da2afcffa7b8b71a7aa66cd2e8"
+      "hash": "db74e4bb49f75d658e5d0850934da60daf513274b937a03b7ab994760bd6d21f",
+      "combined_hash": "db74e4bb49f75d658e5d0850934da60daf513274b937a03b7ab994760bd6d21f"
     },
     "registry": {
       "source": "path",
-      "hash": "825ec093e745522db9946b1501eb0c95b787cc0983b2db3a66efd65b5e2ef21d",
-      "combined_hash": "825ec093e745522db9946b1501eb0c95b787cc0983b2db3a66efd65b5e2ef21d"
+      "hash": "8dbcf3b85eed842f2bc798b34d2b95716fc58117750f4164d869b26770353fe0",
+      "combined_hash": "8dbcf3b85eed842f2bc798b34d2b95716fc58117750f4164d869b26770353fe0"
     },
     "released_data": false,
     "build": "unreleased"
   },
   "selected_entries": {
+    "closeness_version": 2,
     "coefficients": [
       {
         "set": "cost-model-attention",
@@ -31,7 +32,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-attention.yaml"
+        "file": "coefficients/cost-model-attention.yaml",
+        "primitive": "attention.decode",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-attention",
@@ -42,7 +45,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-attention.yaml"
+        "file": "coefficients/cost-model-attention.yaml",
+        "primitive": "attention.decode",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-attention",
@@ -53,7 +58,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-attention.yaml"
+        "file": "coefficients/cost-model-attention.yaml",
+        "primitive": "attention.decode",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-attention",
@@ -64,7 +71,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-attention.yaml"
+        "file": "coefficients/cost-model-attention.yaml",
+        "primitive": "attention.decode",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-attention",
@@ -75,7 +84,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-attention.yaml"
+        "file": "coefficients/cost-model-attention.yaml",
+        "primitive": "attention.decode",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-attention",
@@ -86,7 +97,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-attention.yaml"
+        "file": "coefficients/cost-model-attention.yaml",
+        "primitive": "attention.decode",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-attention",
@@ -97,7 +110,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-attention.yaml"
+        "file": "coefficients/cost-model-attention.yaml",
+        "primitive": "attention.prefill",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-attention",
@@ -108,7 +123,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-attention.yaml"
+        "file": "coefficients/cost-model-attention.yaml",
+        "primitive": "attention.prefill",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-collectives",
@@ -119,7 +136,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-collectives.yaml"
+        "file": "coefficients/cost-model-collectives.yaml",
+        "primitive": "all_gather",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-collectives",
@@ -130,7 +149,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-collectives.yaml"
+        "file": "coefficients/cost-model-collectives.yaml",
+        "primitive": "all_reduce",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-collectives",
@@ -141,7 +162,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-collectives.yaml"
+        "file": "coefficients/cost-model-collectives.yaml",
+        "primitive": "all2all",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-collectives",
@@ -152,7 +175,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-collectives.yaml"
+        "file": "coefficients/cost-model-collectives.yaml",
+        "primitive": "reduce_scatter",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-collectives",
@@ -163,7 +188,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-collectives.yaml"
+        "file": "coefficients/cost-model-collectives.yaml",
+        "primitive": "all_gather",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-collectives",
@@ -174,7 +201,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-collectives.yaml"
+        "file": "coefficients/cost-model-collectives.yaml",
+        "primitive": "all_reduce",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-collectives",
@@ -185,7 +214,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-collectives.yaml"
+        "file": "coefficients/cost-model-collectives.yaml",
+        "primitive": "all2all",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-collectives",
@@ -196,7 +227,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-collectives.yaml"
+        "file": "coefficients/cost-model-collectives.yaml",
+        "primitive": "reduce_scatter",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-collectives",
@@ -207,7 +240,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-collectives.yaml"
+        "file": "coefficients/cost-model-collectives.yaml",
+        "primitive": "all_gather",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-collectives",
@@ -218,7 +253,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-collectives.yaml"
+        "file": "coefficients/cost-model-collectives.yaml",
+        "primitive": "all_reduce",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-collectives",
@@ -229,7 +266,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-collectives.yaml"
+        "file": "coefficients/cost-model-collectives.yaml",
+        "primitive": "all2all",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-collectives",
@@ -240,7 +279,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-collectives.yaml"
+        "file": "coefficients/cost-model-collectives.yaml",
+        "primitive": "reduce_scatter",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-host-overheads",
@@ -259,7 +300,8 @@
             "l40s"
           ]
         },
-        "file": "coefficients/cost-model-host-overheads.yaml"
+        "file": "coefficients/cost-model-host-overheads.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-host-overheads",
@@ -278,7 +320,8 @@
             "l40s"
           ]
         },
-        "file": "coefficients/cost-model-host-overheads.yaml"
+        "file": "coefficients/cost-model-host-overheads.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-host-overheads",
@@ -297,7 +340,8 @@
             "l40s"
           ]
         },
-        "file": "coefficients/cost-model-host-overheads.yaml"
+        "file": "coefficients/cost-model-host-overheads.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-host-overheads",
@@ -316,7 +360,8 @@
             "l40s"
           ]
         },
-        "file": "coefficients/cost-model-host-overheads.yaml"
+        "file": "coefficients/cost-model-host-overheads.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-host-overheads",
@@ -335,7 +380,12 @@
             "l40s"
           ]
         },
-        "file": "coefficients/cost-model-host-overheads.yaml"
+        "file": "coefficients/cost-model-host-overheads.yaml",
+        "kernel_match": "unkeyed",
+        "ci95": [
+          3.1,
+          3.3
+        ]
       },
       {
         "set": "cost-model-host-overheads",
@@ -354,7 +404,8 @@
             "l40s"
           ]
         },
-        "file": "coefficients/cost-model-host-overheads.yaml"
+        "file": "coefficients/cost-model-host-overheads.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-host-overheads",
@@ -373,7 +424,8 @@
             "l40s"
           ]
         },
-        "file": "coefficients/cost-model-host-overheads.yaml"
+        "file": "coefficients/cost-model-host-overheads.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-memory",
@@ -392,7 +444,8 @@
             "l40s"
           ]
         },
-        "file": "coefficients/cost-model-memory.yaml"
+        "file": "coefficients/cost-model-memory.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-memory",
@@ -411,7 +464,8 @@
             "l40s"
           ]
         },
-        "file": "coefficients/cost-model-memory.yaml"
+        "file": "coefficients/cost-model-memory.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-memory",
@@ -430,7 +484,8 @@
             "l40s"
           ]
         },
-        "file": "coefficients/cost-model-memory.yaml"
+        "file": "coefficients/cost-model-memory.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-primitives",
@@ -441,7 +496,8 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-primitives.yaml"
+        "file": "coefficients/cost-model-primitives.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-primitives",
@@ -452,7 +508,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-primitives.yaml"
+        "file": "coefficients/cost-model-primitives.yaml",
+        "primitive": "gemm",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-primitives",
@@ -463,7 +521,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-primitives.yaml"
+        "file": "coefficients/cost-model-primitives.yaml",
+        "primitive": "gemm",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-primitives",
@@ -474,7 +534,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-primitives.yaml"
+        "file": "coefficients/cost-model-primitives.yaml",
+        "primitive": "moe.grouped_gemm",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-primitives",
@@ -485,7 +547,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-primitives.yaml"
+        "file": "coefficients/cost-model-primitives.yaml",
+        "primitive": "gemm",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-primitives",
@@ -496,7 +560,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-primitives.yaml"
+        "file": "coefficients/cost-model-primitives.yaml",
+        "primitive": "gemm",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-primitives",
@@ -507,7 +573,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-primitives.yaml"
+        "file": "coefficients/cost-model-primitives.yaml",
+        "primitive": "moe.grouped_gemm",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-primitives",
@@ -518,7 +586,8 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-primitives.yaml"
+        "file": "coefficients/cost-model-primitives.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-primitives",
@@ -529,7 +598,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-primitives.yaml"
+        "file": "coefficients/cost-model-primitives.yaml",
+        "primitive": "gather",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-primitives",
@@ -540,7 +611,8 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-primitives.yaml"
+        "file": "coefficients/cost-model-primitives.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-primitives",
@@ -551,7 +623,8 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-primitives.yaml"
+        "file": "coefficients/cost-model-primitives.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-primitives",
@@ -562,7 +635,8 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-primitives.yaml"
+        "file": "coefficients/cost-model-primitives.yaml",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-recurrent",
@@ -573,7 +647,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-recurrent.yaml"
+        "file": "coefficients/cost-model-recurrent.yaml",
+        "primitive": "recurrent.update",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-recurrent",
@@ -584,7 +660,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-recurrent.yaml"
+        "file": "coefficients/cost-model-recurrent.yaml",
+        "primitive": "recurrent.update",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-recurrent",
@@ -595,7 +673,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-recurrent.yaml"
+        "file": "coefficients/cost-model-recurrent.yaml",
+        "primitive": "recurrent.update",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-recurrent",
@@ -606,7 +686,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-recurrent.yaml"
+        "file": "coefficients/cost-model-recurrent.yaml",
+        "primitive": "recurrent.update",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-recurrent",
@@ -617,7 +699,9 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-recurrent.yaml"
+        "file": "coefficients/cost-model-recurrent.yaml",
+        "primitive": "recurrent.update",
+        "kernel_match": "unkeyed"
       },
       {
         "set": "cost-model-recurrent",
@@ -628,13 +712,16 @@
             "h100"
           ]
         },
-        "file": "coefficients/cost-model-recurrent.yaml"
+        "file": "coefficients/cost-model-recurrent.yaml",
+        "primitive": "recurrent.update",
+        "kernel_match": "unkeyed"
       }
     ],
     "unread_files": [
       "acceptance/inferencex-golden-al.yaml",
       "coefficients/cost-model-collectives-inferencex.yaml",
       "coefficients/cost-model-fabric.yaml",
+      "coefficients/cost-model-offload-tiers.yaml",
       "routing/servingstudio-dsv41-flash.yaml"
     ]
   },
@@ -673,13 +760,15 @@
           },
           "engine": {
             "quantization": "nvfp4",
-            "cache_dtype": "fp8",
+            "kv_cache_dtype": "fp8",
             "block_size": 16,
             "max_num_batched_tokens": 8192,
             "max_num_seqs": 256,
             "max_model_len": 32768,
-            "cudagraph_mode": "PIECEWISE",
-            "gpu_memory_utilization": 0.92
+            "gpu_memory_utilization": 0.92,
+            "compilation_config": {
+              "cudagraph_mode": "PIECEWISE"
+            }
           }
         }
       ]
@@ -744,8 +833,14 @@
       "e2e_p95_ms",
       "e2e_p99_ms",
       "interactivity_mean",
+      "interactivity_of_mean_tpot",
       "interactivity_p50",
       "interactivity_p90",
+      "itl_mean_ms",
+      "itl_p50_ms",
+      "itl_p90_ms",
+      "itl_p95_ms",
+      "itl_p99_ms",
       "output_tok_s",
       "output_tok_s_per_gpu",
       "preemptions",
@@ -755,6 +850,7 @@
       "step_interval_p90_ms",
       "step_interval_p95_ms",
       "step_interval_p99_ms",
+      "total_tokens_per_second_per_gpu",
       "tpot_mean_ms",
       "tpot_p50_ms",
       "tpot_p90_ms",
@@ -768,9 +864,9 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.13.0",
-    "router": "v1.0.0-blis.3",
-    "engine_module": "v0.32.0-blis.2"
+    "substrate": "v0.14.0",
+    "router": "v1.0.0-blis.4",
+    "engine_module": "v0.32.0-blis.3"
   },
   "window": {
     "start_us": 125000,
@@ -781,107 +877,168 @@
   "metrics": {
     "e2e_mean_ms": {
       "value": 5145.471875,
-      "samples": 40
+      "samples": 40,
+      "scope": "cluster"
     },
     "e2e_p50_ms": {
       "value": 5684.1894999999995,
-      "samples": 40
+      "samples": 40,
+      "scope": "cluster"
     },
     "e2e_p90_ms": {
       "value": 7701.3334,
-      "samples": 40
+      "samples": 40,
+      "scope": "cluster"
     },
     "e2e_p95_ms": {
       "value": 7950.9100499999995,
-      "samples": 40
+      "samples": 40,
+      "scope": "cluster"
     },
     "e2e_p99_ms": {
       "value": 8232.28314,
-      "samples": 40
+      "samples": 40,
+      "scope": "cluster"
     },
     "interactivity_mean": {
       "value": 102.72264575632876,
-      "samples": 40
+      "samples": 40,
+      "scope": "cluster"
+    },
+    "interactivity_of_mean_tpot": {
+      "value": 100.48465560809707,
+      "samples": 40,
+      "scope": "cluster"
     },
     "interactivity_p50": {
       "value": 97.95574298721186,
-      "samples": 40
+      "samples": 40,
+      "scope": "cluster"
     },
     "interactivity_p90": {
       "value": 86.61460380077479,
-      "samples": 40
+      "samples": 40,
+      "scope": "cluster"
+    },
+    "itl_mean_ms": {
+      "value": 9.826448317657325,
+      "samples": 20626,
+      "scope": "cluster"
+    },
+    "itl_p50_ms": {
+      "value": 9.731,
+      "samples": 20626,
+      "scope": "cluster"
+    },
+    "itl_p90_ms": {
+      "value": 12.08,
+      "samples": 20626,
+      "scope": "cluster"
+    },
+    "itl_p95_ms": {
+      "value": 12.084,
+      "samples": 20626,
+      "scope": "cluster"
+    },
+    "itl_p99_ms": {
+      "value": 29.89,
+      "samples": 20626,
+      "scope": "cluster"
     },
     "output_tok_s": {
       "value": 1826.2824185896568,
-      "samples": 40
+      "samples": 40,
+      "scope": "cluster"
     },
     "output_tok_s_per_gpu": {
       "value": 913.1412092948284,
-      "samples": 40
+      "samples": 40,
+      "scope": "cluster"
     },
     "preemptions": {
       "value": 0,
-      "samples": 20626
+      "samples": 20626,
+      "scope": "cluster"
     },
     "request_throughput": {
       "value": 3.5348541925668377,
-      "samples": 40
+      "samples": 40,
+      "scope": "cluster"
     },
     "step_interval_mean_ms": {
       "value": 9.826448317657325,
-      "samples": 20626
+      "samples": 20626,
+      "scope": "cluster"
     },
     "step_interval_p50_ms": {
       "value": 9.731,
-      "samples": 20626
+      "samples": 20626,
+      "scope": "cluster"
     },
     "step_interval_p90_ms": {
       "value": 12.08,
-      "samples": 20626
+      "samples": 20626,
+      "scope": "cluster"
     },
     "step_interval_p95_ms": {
       "value": 12.084,
-      "samples": 20626
+      "samples": 20626,
+      "scope": "cluster"
     },
     "step_interval_p99_ms": {
       "value": 29.89,
-      "samples": 20626
+      "samples": 20626,
+      "scope": "cluster"
+    },
+    "total_tokens_per_second_per_gpu": {
+      "value": 1796.015229565803,
+      "samples": 40,
+      "scope": "cluster"
     },
     "tpot_mean_ms": {
       "value": 9.951768197326835,
-      "samples": 40
+      "samples": 40,
+      "scope": "cluster"
     },
     "tpot_p50_ms": {
       "value": 10.208691900081348,
-      "samples": 40
+      "samples": 40,
+      "scope": "cluster"
     },
     "tpot_p90_ms": {
       "value": 11.545397151502698,
-      "samples": 40
+      "samples": 40,
+      "scope": "cluster"
     },
     "tpot_p99_ms": {
       "value": 12.25590944476723,
-      "samples": 40
+      "samples": 40,
+      "scope": "cluster"
     },
     "ttft_mean_ms": {
       "value": 78.4638,
-      "samples": 40
+      "samples": 40,
+      "scope": "cluster"
     },
     "ttft_p50_ms": {
       "value": 78.344,
-      "samples": 40
+      "samples": 40,
+      "scope": "cluster"
     },
     "ttft_p90_ms": {
       "value": 88.07490000000001,
-      "samples": 40
+      "samples": 40,
+      "scope": "cluster"
     },
     "ttft_p95_ms": {
       "value": 88.5309,
-      "samples": 40
+      "samples": 40,
+      "scope": "cluster"
     },
     "ttft_p99_ms": {
       "value": 89.65411,
-      "samples": 40
+      "samples": 40,
+      "scope": "cluster"
     }
   },
   "requests": {
@@ -1496,14 +1653,20 @@
       "colocated": {
         "assumptions": [
           {
+            "KernelMatch": "",
             "Method": "assumed",
             "Name": "max_cudagraph_capture_size",
+            "Primitive": "",
+            "Running": "",
             "Scope": "512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph",
             "Set": "blis-latency-kernel"
           },
           {
+            "KernelMatch": "",
             "Method": "assumed",
             "Name": "engine_version",
+            "Primitive": "",
+            "Running": "",
             "Scope": "0.31.0: the scenario declares vLLM 0.32.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
             "Set": "blis-latency-kernel"
           }
@@ -1512,236 +1675,353 @@
         "evidenced": 119,
         "fallback_or_assumed": [
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "attention_decode_floor_mla",
+            "Primitive": "attention.decode",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-attention"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_floor_all_gather_fp16_16rank_h100",
+            "Primitive": "all_gather",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_floor_all_gather_int8_16rank_h100",
+            "Primitive": "all_gather",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_floor_all_reduce_fp16_16rank_h100",
+            "Primitive": "all_reduce",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_floor_all_reduce_int8_16rank_h100",
+            "Primitive": "all_reduce",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_floor_alltoall_fp16_16rank_h100",
+            "Primitive": "all2all",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_floor_alltoall_int8_16rank_h100",
+            "Primitive": "all2all",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_floor_reduce_scatter_fp16_16rank_h100",
+            "Primitive": "reduce_scatter",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_floor_reduce_scatter_int8_16rank_h100",
+            "Primitive": "reduce_scatter",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_peak_rate_all_gather_fp16_16rank_h100",
+            "Primitive": "all_gather",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_peak_rate_all_gather_int8_16rank_h100",
+            "Primitive": "all_gather",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_peak_rate_all_reduce_fp16_16rank_h100",
+            "Primitive": "all_reduce",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_peak_rate_all_reduce_int8_16rank_h100",
+            "Primitive": "all_reduce",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_peak_rate_alltoall_fp16_16rank_h100",
+            "Primitive": "all2all",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_peak_rate_alltoall_int8_16rank_h100",
+            "Primitive": "all2all",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_peak_rate_reduce_scatter_fp16_16rank_h100",
+            "Primitive": "reduce_scatter",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_peak_rate_reduce_scatter_int8_16rank_h100",
+            "Primitive": "reduce_scatter",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_transition_rate_all_gather_fp16_16rank_h100",
+            "Primitive": "all_gather",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_transition_rate_all_gather_int8_16rank_h100",
+            "Primitive": "all_gather",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_transition_rate_all_reduce_fp16_16rank_h100",
+            "Primitive": "all_reduce",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_transition_rate_all_reduce_int8_16rank_h100",
+            "Primitive": "all_reduce",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_transition_rate_alltoall_fp16_16rank_h100",
+            "Primitive": "all2all",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_transition_rate_alltoall_int8_16rank_h100",
+            "Primitive": "all2all",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_transition_rate_reduce_scatter_fp16_16rank_h100",
+            "Primitive": "reduce_scatter",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "collective_transition_rate_reduce_scatter_int8_16rank_h100",
+            "Primitive": "reduce_scatter",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-collectives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "cudagraph_capture_bytes_full",
+            "Primitive": "",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-memory"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "cudagraph_capture_bytes_full_and_piecewise",
+            "Primitive": "",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-memory"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "cudagraph_capture_bytes_full_decode_only",
+            "Primitive": "",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-memory"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "cudagraph_capture_bytes_piecewise",
+            "Primitive": "",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-memory"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "gemm_eps_max_w8a16_mxfp8",
+            "Primitive": "gemm",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-primitives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "gemm_m_half_w8a16_mxfp8",
+            "Primitive": "gemm",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-primitives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_admission_per_request",
+            "Primitive": "",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-host-overheads"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_admission_per_token",
+            "Primitive": "",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-host-overheads"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_completion",
+            "Primitive": "",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-host-overheads"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_gather_rate_uva",
+            "Primitive": "gather",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-primitives"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_launch_eager_per_layer",
+            "Primitive": "",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-host-overheads"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_launch_per_kernel",
+            "Primitive": "",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-host-overheads"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_output_token",
+            "Primitive": "",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-host-overheads"
           },
           {
+            "KernelMatch": "unkeyed",
             "Method": "assumed",
             "Name": "host_replay_graph_per_step",
+            "Primitive": "",
+            "Running": "",
             "Scope": "hardware: h100",
             "Set": "cost-model-host-overheads"
           }
@@ -1780,9 +2060,11 @@
           "engram-excludes-dbo",
           "engram-residency-default",
           "enum-values-known",
+          "eplb-needs-expert-parallelism",
           "eviction-policy-known",
           "expert-divisibility-under-eplb",
           "expert-imbalance-without-eplb",
+          "flashinfer-mega-deep-gemm-model",
           "long-prefill-threshold-within-max-model-len",
           "mamba-cache-mode-matches-model",
           "max-model-len-within-context-window",
@@ -1798,5 +2080,42 @@
         "total": 161
       }
     }
-  }
+  },
+  "resolutions": [
+    {
+      "setting": "all_reduce_backend",
+      "pool": "colocated",
+      "engine": "custom"
+    },
+    {
+      "setting": "async_scheduling",
+      "pool": "colocated",
+      "engine": "true"
+    },
+    {
+      "setting": "cascade_attention",
+      "pool": "colocated",
+      "engine": "false"
+    },
+    {
+      "setting": "data_parallel_width",
+      "pool": "colocated",
+      "engine": "1"
+    },
+    {
+      "setting": "expert_parallel_width",
+      "pool": "colocated",
+      "engine": "1"
+    },
+    {
+      "setting": "sequence_parallel_moe",
+      "pool": "colocated",
+      "engine": "false"
+    },
+    {
+      "setting": "tensor_parallel_width",
+      "pool": "colocated",
+      "engine": "2"
+    }
+  ]
 }

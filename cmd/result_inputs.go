@@ -250,6 +250,18 @@ func resultLedger(cs *cluster.ClusterSimulator) result.Requests {
 // tensor x pipeline x prefill-context-parallel width, the GPUs one engine replica spans.
 // An instance whose role names no pool (a test cluster) counts its tensor-parallel degree.
 func runGPUs(cs *cluster.ClusterSimulator, dep *deployment.Deployment) int {
+	all, _ := runGPUsByRole(cs, dep)
+	return all
+}
+
+// runDecodeGPUs is the GPUs of the decode pool's instances, 0 for a run with none.
+func runDecodeGPUs(cs *cluster.ClusterSimulator, dep *deployment.Deployment) int {
+	_, decode := runGPUsByRole(cs, dep)
+	return decode
+}
+
+// runGPUsByRole is runGPUs, and the part of it the decode instances occupy.
+func runGPUsByRole(cs *cluster.ClusterSimulator, dep *deployment.Deployment) (all, decode int) {
 	perRole := map[deployment.Role]int{}
 	if dep != nil {
 		for _, p := range dep.Pools {
@@ -257,7 +269,6 @@ func runGPUs(cs *cluster.ClusterSimulator, dep *deployment.Deployment) int {
 		}
 	}
 	membership := cs.PoolMembership()
-	n := 0
 	for _, inst := range cs.Instances() {
 		role := deployment.RoleColocated
 		if r, ok := membership[string(inst.ID())]; ok {
@@ -268,13 +279,16 @@ func runGPUs(cs *cluster.ClusterSimulator, dep *deployment.Deployment) int {
 				role = deployment.RoleDecode
 			}
 		}
-		if g, ok := perRole[role]; ok {
-			n += g
-		} else {
-			n += max(inst.TPDegree, 1)
+		g, ok := perRole[role]
+		if !ok {
+			g = max(inst.TPDegree, 1)
+		}
+		all += g
+		if role == deployment.RoleDecode {
+			decode += g
 		}
 	}
-	return n
+	return all, decode
 }
 
 // engineSection is what the engine side of the run reported: under "cluster" the aggregate

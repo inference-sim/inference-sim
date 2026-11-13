@@ -31,7 +31,7 @@ To read a checkout instead, pass `--catalog` or set `BLIS_CATALOG`:
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout v0.13.0
+git -C blis-substrate checkout v0.14.0
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
@@ -82,15 +82,15 @@ pools:
     parallel: {tp: 4, pp: 1, dp: 1, enable_expert_parallel: false}
     engine:
       quantization: fp8
-      cache_dtype: fp8
+      kv_cache_dtype: fp8
       block_size: 16
       max_num_batched_tokens: 8192
       max_num_seqs: 256
       max_model_len: 32768   # required
-      cudagraph_mode: PIECEWISE
+      compilation_config: {cudagraph_mode: PIECEWISE}
       gpu_memory_utilization: 0.9
       # enable_prefix_caching: false
-      # speculative: {method: mtp, num_spec_tokens: 3}
+      # speculative_config: {method: mtp, num_speculative_tokens: 3}
 # offload: ...               # optional
 # pd_transfer: {connector: NixlConnector}   # optional, P/D scenarios
 ```
@@ -121,11 +121,17 @@ the [Configuration Reference](../reference/configuration.md).
   KV block budget for each data-parallel rank.
 - **Host overheads.** Per-request queueing (tokenization and preprocessing), per-output-token
   processing, and the fixed per-request completion overhead.
-  The per-request admission overhead runs on the endpoint's API-server render threads,
-  in arrival order (INV-R1): `--renderer-num-workers` threads (vLLM's `renderer_num_workers`,
-  default 1) on each of `--api-server-count` servers (default: vLLM's per-mode count -- dp
-  behind an internal or hybrid DP replica, else 1). Under a burst, requests therefore queue for
-  the tokenizer. blis-schemas does not yet state either setting; the proposed fields are
+  A request's admission time is split by what it holds (INV-R1). The kernel's
+  `AdmissionDemand` gives `Service`, the time the request holds one server of the engine's
+  admission queue (the per-token term), and `Delay`, the time it only waits (the per-request
+  term, 40 ms, `assumed`). The engine states the queue's shape in its plan: for vLLM, the
+  `renderer_num_workers` threads of each of `api_server_count` servers, on which the tokenizer
+  and chat template run. Requests queue for `Service` and then wait `Delay`, so the per-request
+  term does not cap an API server at 25 requests a second; one request alone waits both.
+  Whether the 40 ms is a delay and not server work is an assumption: the registry gives it as a
+  latency of unknown origin. `--renderer-num-workers` and `--api-server-count` are given to the
+  engine, which resolves them; `--renderer-num-workers 0` makes the whole admission time a
+  delay. blis-schemas does not yet state either setting; the proposed fields are
   `engine.renderer_num_workers` and `parallel.api_server_count`.
 - **P/D KV transfer** and **offload tier transfer**, below.
 
@@ -144,9 +150,17 @@ run says so on stderr), and refuses priority scheduling for now. The engine bloc
 A scenario with a `prefill` pool and a `decode` pool, run with `--prefill-instances` and
 `--decode-instances`. BLIS builds one kernel per pool, so each pool is priced at its own
 parallelism and engine settings. The KV handoff from a prefill instance to a decode
-instance is priced by the kernel's `PDTransferTime` over the scenario's fabric, between the
-two instances' placements (NVLink when they share a node). Each instance count must not
+instance is priced by the kernel over the scenario's fabric, between the two instances'
+placements (NVLink when they share a node), from the move the decode engine states
+([how a transfer is priced](#how-a-transfer-is-priced)). Each instance count must not
 exceed its pool's rank capacity: pool nodes × `gpus_per_node` / (pp × tp × pcp).
+
+List `cost-model-fabric` in the scenario's `coefficients` for a disaggregated deployment. It holds the
+fraction of the fabric's nominal rate a transfer reaches (`fabric_bandwidth_efficiency`, 0.811 on
+`ib-400g`). Without it the engine does not refuse the scenario: it prices every handoff at the
+nominal line rate, which makes the handoff about 23% fast on `ib-400g`, and records the choice in
+the Result as an `assumed` `fabric_bandwidth_efficiency` under `reports.kernel.<pool>.assumptions`.
+Every disaggregated scenario this repository ships lists it, and a test requires that.
 
 At `engine_version: "0.32.0"` each pool's engine is blis-vllm's v0.32.0 engine, which runs vLLM's
 NIXL scheduler as the pool's `kv_role`: `kv_producer` for the prefill pool and `kv_consumer` for the
@@ -186,11 +200,12 @@ one; any other connector is refused. Three further rules follow from vLLM:
   the decode side never took the request, and at NIXL's 30 s lease expiry if the decode
   instance went away mid-pull.
 - **Contention (INV-P2-2, `--pd-transfer-contention`, default off).** Concurrent handoffs
-  share the links they cross. The links come from the kernel's `PDTransferDemand`: the
-  sender's NIC egress and the receiver's NIC ingress across nodes, or the NVLink domain on
-  one node. Each link is divided max-min fairly and re-divided as handoffs start and finish.
-  The floor is never shared. A handoff alone still takes exactly `PDTransferTime`. With
-  contention off, every handoff is priced as if alone.
+  share the links they cross. The links come from the demand the host's Environment states
+  for the handoff (the kernel's `PDTransferDemand`): the sender's NIC egress and the
+  receiver's NIC ingress across nodes, or the NVLink domain on one node. Each link is divided
+  max-min fairly and re-divided as handoffs start and finish. The floor is never shared. A
+  handoff alone takes exactly its demand's `AloneTime`. With contention off, every handoff is
+  priced as if alone.
 - **Offload tiers (#1940).** The scenario's `offload` block (or `--kv-offload-config`, see
   [KV offload](#kv-offload)) gives every pool its own tier of that size: llm-d's
   MultiConnector of NIXL and the OffloadingConnector. A pool's tier stores
@@ -205,6 +220,66 @@ price), each link's peak concurrent handoffs, the prefill KV hold's peak, and ea
 CPU-tier hit rate.
 
 
+## How a transfer is priced
+
+Two kinds of KV transfer have a price: the copy of blocks to or from an offload tier, and a decode
+engine's pull of a prompt's KV from a prefill engine. Both are priced one way (design 6.2, 6.3),
+whichever engine runs them.
+
+**Logic.** The engine decides that a transfer starts, and states it as a *move* in the cost model's
+terms (`engine.Transfer.Move`, a `plan.Transfer`): the tokens, the node and rack at each end, the
+direction, and for a tier the catalog device. A decode engine learns where it pulls from only through
+its request, so the cluster hands it the prefill instance's node and rack when it adds the request
+(`engine.Request.Peer`, from `DeploymentConfig.InstanceEndpoint`). The driver then asks the cost
+model what the move demands of the fabric, `env.DemandFor(Environment, engine.Plan(), t)`, and gets a
+payload, a floor and the links the payload crosses with their full rates. Nothing in the driver or
+the cluster knows a tier name, a rank or a formula. The host's Environment (`cmd/engine_build.go`)
+answers from the kernels the run opened:
+
+| Move | Demand |
+|---|---|
+| Pull between pools | The prefill pool's kernel, `PDTransferDemand`, in whole blocks, between the two placements. Each end of the move is in its own pool's numbering; the Environment adds the pool's first node. |
+| Copy to or from a tier | The blocks' bytes over one link at the rate the kernel prices the device (`TierTime`), with the device's base latency as the floor. |
+
+What the host then does with a demand differs, because the engine and the fabric differ. A pull
+runs alone in `demand.AloneTime()` rounded up to a whole tick, or, under `--pd-transfer-contention`,
+enters the link arbiter, which divides each link max-min fairly among the pulls on it. A tier copy
+runs alone, truncated to a whole tick and at least one, queued behind the copy before it in its
+direction (vLLM's offload worker has one stream per direction); it does not enter the arbiter.
+The two rounding rules are those of the pricers this replaced, kept so that no price moves.
+
+**Limits.**
+
+- A pool that spans nodes is priced on the one node the engine states (blis-substrate#48): the
+  boundary has one `From` and one `To`.
+- A hybrid model's KV groups hold different bytes a block; the boundary has one token count, so a
+  copy is priced at the pool's page size (blis-substrate#49). On the shipped scenarios that equals
+  the group-sized price the engine used before.
+- The engine cannot learn which instance it is, so the host states it: when it builds an instance's
+  engine it calls `SetPlacement` with the pool's placement put on the instance's node and rack
+  (`DeploymentConfig.InstanceEndpoint`, the same endpoint the cluster states to a decode engine as its
+  peer). A pull's near end is therefore the instance's own node, not the pool's first.
+- The Environment answers transfers only. It refuses a step price, memory, a graph, a chip and an
+  acceptance profile by name: the engines open their pools' kernels themselves.
+
+**Reproduce.** The Environment equals the retired prices:
+
+```bash
+go test ./cmd/ -run 'TestTransferEnvironment' -count=1     # about 3 s
+go test ./sim/ -run 'TestEngineDriver_' -count=1            # driver: peer, demand, refusals, rounding
+```
+
+and a run's Result is unchanged outside `revisions` and `runtime`. Build `blis` at the parent commit
+and at this one, run the cases below with the same flags, and compare the two Results with those two
+members removed; the pull request's body lists the cases and their outcome. Each case takes under
+five seconds on a laptop. The scenarios are in `testdata/scenarios`, `testdata/bytegate/scenarios`
+and `testdata/kernel/aisimulate` (generated from blis-substrate's catalog; no other data is read).
+
+**What it does not show.** The comparison covers the shipped scenarios that run: a hybrid KV connector
+(the DeepSeek P/D scenarios) and a drafter beside the offload connector are refused by the engine, so
+no run of them prices a transfer. The equivalence on a hybrid model holds for the gpt-oss scenario
+only.
+
 ## Data and expert parallelism (MoE)
 
 With `dp > 1` BLIS runs one engine per data-parallel rank, each sized as one EngineCore
@@ -218,7 +293,7 @@ true at `dp > 1` (`vllm/config/parallel.py:738-743`), so every MoE layer is a co
 the ranks. BLIS therefore steps the group's ranks together:
 
 - Every rank runs every step. A rank with nothing ready runs vLLM's dummy batch, one uniform
-  decode of `1 + num_spec_tokens` tokens (`execute_dummy_batch`, `core.py:2280-2287`;
+  decode of `1 + num_speculative_tokens` tokens (`execute_dummy_batch`, `core.py:2280-2287`;
   `vllm/v1/worker/gpu_worker.py:1376-1382`).
 - Each rank is priced by the kernel at its own batch padded to the group's largest token
   count, when that count is within the CUDA-graph capture ceiling the kernel resolved
@@ -286,7 +361,7 @@ Known deviations and limits:
 
 ## Speculative Decoding / MTP (#1528)
 
-A pool that states `engine.speculative: {method, num_spec_tokens}` drafts `K` tokens per
+A pool that states `engine.speculative_config: {method, num_speculative_tokens}` drafts `K` tokens per
 step. BLIS does not predict acceptance, since it runs no draft model: it resolves it (below).
 
 ### Speculative acceptance (#1939)

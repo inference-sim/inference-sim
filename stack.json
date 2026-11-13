@@ -4,15 +4,15 @@
   "modules": [
     {
       "path": "github.com/inference-sim/blis-substrate",
-      "version": "v0.13.0"
+      "version": "v0.14.0"
     },
     {
       "path": "github.com/inference-sim/blis-vllm",
-      "version": "v0.32.0-blis.2"
+      "version": "v0.32.0-blis.3"
     },
     {
       "path": "github.com/inference-sim/llm-d-router",
-      "version": "v1.0.0-blis.3",
+      "version": "v1.0.0-blis.4",
       "replaces": "github.com/llm-d/llm-d-router"
     }
   ],

@@ -33,8 +33,8 @@ func TestResult_DSparkRequestITLIsTheStepIntervalOverTheAcceptedLength(t *testin
 	if def, ok := metrics.Lookup("tpot_p90_ms"); !ok || def.Formula != metrics.FormulaTPOT {
 		t.Errorf("tpot_p90_ms is defined as %+v, want the registry's per-request tpot", def)
 	}
-	if _, ok := parseResult(t, stdout).Metrics["itl_p90_ms"]; ok {
-		t.Error("the Result reports itl_p90_ms: the registry's itl pools every token gap, which BLIS does not compute")
+	if f, ok := parseResult(t, stdout).Metrics["itl_p90_ms"]; !ok || f.Samples <= 0 {
+		t.Errorf("the Result reports no itl_p90_ms with samples: %+v", f)
 	}
 	if got := parseResult(t, stdout).Requests.Completed; got != 40 {
 		t.Fatalf("%d of 40 requests completed; the comparison would be vacuous", got)

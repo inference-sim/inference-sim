@@ -17,9 +17,12 @@ import (
 // ties are broken by lowest instance index for determinism.
 type ClusterSimulator struct {
 	// abortErr is the error the gateway aborted the run with (GatewayHost.Abort).
-	abortErr          error
-	config            DeploymentConfig
-	instances         []*InstanceSimulator
+	abortErr  error
+	config    DeploymentConfig
+	instances []*InstanceSimulator
+	// byID finds an instance by its ID without a scan (DEV-5). addInstance keeps it with instances;
+	// instanceByID rebuilds it when the slice was replaced under it.
+	byID              map[InstanceID]*InstanceSimulator
 	clock             int64
 	hasRun            bool
 	aggregatedMetrics *sim.Metrics
@@ -257,26 +260,25 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 		}
 	}
 
-	// A KV handoff is priced by the latency backend (DeploymentConfig.PDTransferTime); the
-	// simulator owns only when it happens and has no transfer formula of its own. Refuse a
-	// PD-enabled deployment without a pricer here, so KVTransferStartedEvent never meets one
-	// at runtime (R1). Covers pure-shared clusters too (issue #1276): a shared-role pod can
-	// perform prefill and therefore source a KV transfer.
+	// A KV handoff is priced by the decode driver's Environment from the move its engine states
+	// (engine.Transfer.Move); the simulator owns only when it happens and has no transfer
+	// formula of its own. But the decode engine learns where it pulls from only through its
+	// request (engine.Request.Peer), so refuse a PD-enabled deployment that cannot say where a
+	// prefill instance sits here, so KVTransferStartedEvent never meets that at runtime (R1).
+	// Covers pure-shared clusters too (issue #1276): a shared-role pod can perform prefill and
+	// therefore source a KV transfer.
 	if config.PrefillInstances > 0 || config.SharedInstances > 0 {
-		if config.PDTransferTime == nil {
-			panic("ClusterSimulator: PD disaggregation requires DeploymentConfig.PDTransferTime: " +
-				"the latency backend prices the KV handoff, and the simulator has no formula of its own")
+		if config.InstanceEndpoint == nil {
+			panic("ClusterSimulator: PD disaggregation requires DeploymentConfig.InstanceEndpoint: " +
+				"a decode engine pulls from the prefill instance's node and rack, which only the " +
+				"deployment knows, and the simulator has no placement of its own")
 		}
 	}
-	// With contention on, concurrent handoffs share the links they cross (INV-P2-2, #1922), so
-	// each needs the demand behind its price; the simulator has no link model of its own.
+	// With contention on, concurrent handoffs share the links their demands cross (INV-P2-2,
+	// #1922); the links and their rates are the Environment's, and the simulator has none of its own.
 	if config.PDTransferContention {
 		if config.PrefillInstances == 0 && config.SharedInstances == 0 {
 			panic("ClusterSimulator: PDTransferContention is set but the deployment is not disaggregated")
-		}
-		if config.PDTransferDemand == nil {
-			panic("ClusterSimulator: PDTransferContention requires DeploymentConfig.PDTransferDemand: " +
-				"the latency backend states each handoff's links and rates, and the simulator has none of its own")
 		}
 	}
 
@@ -452,7 +454,7 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 				inst.TransitionTo(sim.InstanceStateLoading)
 				cs.scheduleInstanceLoadedEvent(inst)
 			}
-			cs.instances = append(cs.instances, inst)
+			cs.addInstance(inst)
 			instanceMap[id] = inst
 			cs.inFlightRequests[string(id)] = 0
 		} else {
@@ -472,7 +474,7 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 			} else {
 				inst.TransitionTo(sim.InstanceStateActive)
 			}
-			cs.instances = append(cs.instances, inst)
+			cs.addInstance(inst)
 			instanceMap[id] = inst
 			cs.inFlightRequests[string(id)] = 0
 		}
@@ -600,7 +602,7 @@ func (cs *ClusterSimulator) wireInstance(inst *InstanceSimulator) {
 		return nil // don't inject locally — route through cluster pipeline
 	}
 	inst.SetCallbacks(onFirstToken, onRequestDone)
-	inst.setPullStarted(cs.startPull)
+	inst.setPullPriced(cs.startPull)
 	inst.onTransition = func(inst *InstanceSimulator) {
 		if cs.gateway != nil {
 			cs.gateway.OnInstanceChange(inst)
@@ -1329,7 +1331,7 @@ func (cs *ClusterSimulator) addLiveInstance(
 	inst.TransitionTo(sim.InstanceStateLoading)
 
 	cs.scheduleInstanceLoadedEvent(inst)
-	cs.instances = append(cs.instances, inst)
+	cs.addInstance(inst)
 	cs.inFlightRequests[string(id)] = 0
 	if cs.gateway != nil {
 		cs.gateway.OnInstanceChange(inst)
@@ -1471,10 +1473,12 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 			// (contract at ParentRequests: callers must not mutate via OriginalRequest).
 			origCopy := *parent.OriginalRequest
 			origCopy.State = sim.StateCompleted
-			// Use the decode sub-request's actual ProgressIndex for accurate context
-			// accumulation (session.go:163). For length-capped decode sub-requests
-			// (BC-5 force-completion), MaxOutputLen overstates the actual output;
-			// DecodeSubReq.ProgressIndex reflects the true final position.
+			// The session manager grows the context by the tokens the round emitted, which
+			// parentDone has copied from the decode sub-request onto the original request
+			// (GeneratedTokens), so a length-capped round contributes what it emitted and not
+			// its sampled length. The decode sub-request's final ProgressIndex is still handed to
+			// the callback, as the colocated path hands its own, for a callback that reads it;
+			// the session manager does not.
 			// (blis replay passes onRequestDone=nil, so this code never runs in replay mode.)
 			origCopy.ProgressIndex = parent.DecodeSubReq.ProgressIndex
 			nextReqs := c.sessionCallback(&origCopy, parent.CompletionTime)
@@ -1850,6 +1854,7 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 		merged.KVThrashEvents += m.KVThrashEvents
 		merged.KVThrashOpportunities += m.KVThrashOpportunities
 		merged.StepOwners = append(merged.StepOwners, m.StepOwners...)
+		merged.ClientGaps = append(merged.ClientGaps, m.ClientGaps...)
 		merged.MeasuredContextOverflows += m.MeasuredContextOverflows
 		merged.MeasuredFailures += m.MeasuredFailures
 		merged.StillQueued += m.StillQueued
@@ -2066,7 +2071,7 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		// Read prefill TTFT before deleting sub-request keys (R1: no silent data loss).
 		// Every TTFT sample is the fate-derived RequestTTFTs entry (DEV-9): there is no
 		// separate aggregate to keep in step, so a decode sub-request that was preempted and
-		// prefilled again (re-stamping its FirstTokenTime) leaves no residual here (#1628).
+		// prefilled again (re-stamping its FirstTokenTime) leaves no residual here (P/D preemption as a machine state is #2093).
 		// decodeDelay/hasDecodeDelay were read
 		// above (shared with the E2E block); RequestSchedulingDelays[dec] is not
 		// deleted until the scheduling-delay block below.

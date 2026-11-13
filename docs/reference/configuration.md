@@ -23,7 +23,7 @@ CLI flags only override YAML values when explicitly set. BLIS checks whether eac
 
 **Latency** — priced by [blis-latency-kernel](../guide/latency-models.md), the only latency backend. The scenario names the coefficient sets; they are read from the registry in use: the one embedded in the pinned blis-substrate release, or the directory `--registry` / `BLIS_REGISTRY` names (layout of blis-substrate's [`registry/`](https://github.com/inference-sim/blis-substrate/tree/main/registry)). There are no coefficient flags.
 
-**KV cache blocks** — computed by the kernel's memory methods from the scenario (model, hardware, parallelism, `gpu_memory_utilization`, `cache_dtype`, `block_size`), per data-parallel rank. There is no flag to set it.
+**KV cache blocks** — computed by the kernel's memory methods from the scenario (model, hardware, parallelism, `gpu_memory_utilization`, `kv_cache_dtype`, `block_size`), per data-parallel rank. There is no flag to set it.
 
 **Workload parameters** (`--rate`, `--num-requests`, `--prompt-tokens`, etc.):
 
@@ -85,7 +85,7 @@ All internal timestamps in the DES (arrival time, schedule time, completion time
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout v0.13.0
+git -C blis-substrate checkout v0.14.0
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
@@ -103,7 +103,7 @@ The checkout above is optional; without it the run below reads the embedded cata
 A scenario file holds two YAML documents in the blis-schemas format:
 
 - **Scenario** — `name`, `engine_version`, `model` (a catalog model), `coefficients` (the registry coefficient sets that price it), and `cluster` (`hardware`, `fabric`, `nodes`, `gpus_per_node`). The engine is named `engine: {kind: vllm, version: "0.32.0"}`, or by the deprecated `engine_version: "0.32.0"` (accepted with a warning until M4; blis-schemas v0.10.0's scenario type has only this field, so `engine:` is read by the simulator until the scenario type carries it). This build runs vLLM 0.32.0; a scenario naming another release is refused with the release it asked for, the one this build runs, and the newest inference-sim release that runs the one asked for (v0.15.0 for vLLM 0.29.0 and 0.31.0). See [latency models](../guide/latency-models.md).
-- **Deployment** — `pools`, each with a `role` (`colocated`, `prefill` or `decode`), `nodes`, a `parallel` block (`tp`, `pp`, `dp`, `enable_expert_parallel`) and an `engine` block (`block_size`, `max_num_seqs`, `max_num_batched_tokens`, `max_model_len`, `quantization`, `cache_dtype`, `cudagraph_mode`, `gpu_memory_utilization`, `enable_prefix_caching`, `speculative: {method, num_spec_tokens}`); plus optional `offload` and `pd_transfer`.
+- **Deployment** — `pools`, each with a `role` (`colocated`, `prefill` or `decode`), `nodes`, a `parallel` block (`tp`, `pp`, `dp`, `enable_expert_parallel`) and an `engine` block (`block_size`, `max_num_seqs`, `max_num_batched_tokens`, `max_model_len`, `quantization`, `kv_cache_dtype`, `compilation_config.cudagraph_mode`, `gpu_memory_utilization`, `enable_prefix_caching`, `speculative: {method, num_spec_tokens}`); plus optional `offload` and `pd_transfer`.
 
 These settings come from the scenario (and the kernel), and no CLI flag sets them:
 
@@ -118,8 +118,8 @@ These settings come from the scenario (and the kernel), and no CLI flag sets the
 | Token budget per step | Pool `engine.max_num_batched_tokens` |
 | Max sequence length | Pool `engine.max_model_len` — **required** in the scenario, as a count (`auto` is refused) |
 | Prefix caching | Pool `engine.enable_prefix_caching` |
-| KV-cache dtype | Pool `engine.cache_dtype` |
-| Speculative decoding | Pool `engine.speculative.method` / `num_spec_tokens` (acceptance is resolved from the registry's profiles, the workload, the scenario's `acceptance` pin or the CLI; see [Latency Models](../guide/latency-models.md#speculative-acceptance-1939)) |
+| KV-cache dtype | Pool `engine.kv_cache_dtype` |
+| Speculative decoding | Pool `engine.speculative_config.method` / `num_speculative_tokens` (acceptance is resolved from the registry's profiles, the workload, the scenario's `acceptance` pin or the CLI; see [Latency Models](../guide/latency-models.md#speculative-acceptance-1939)) |
 | Step time, memory, P/D KV transfer, offload tier transfer, host overheads | Priced by blis-latency-kernel with the scenario's registry coefficients |
 
 **Data parallelism (MoE only).** A pool with `dp > 1` becomes one engine per data-parallel rank, each sized as one vLLM EngineCore. The ranks of one instance step in lockstep and the router sees them as one endpoint, balanced across ranks by vLLM's internal DP load balancer; `parallel.data_parallel_load_balancing: external` (blis-schemas#76, per pool; `--dp-load-balancing`, deprecated in v0.16.0 and removed in v0.19.0, is a run-wide override that must agree with every mode a pool states; under P/D every rank is already its own endpoint, so a P/D pool's mode is resolved but changes no routing) instead makes every rank its own endpoint, as vLLM's external-LB modes do ([Latency Models](../guide/latency-models.md#data-and-expert-parallelism-moe), #1909). `dp > 1` on a dense model is refused.
@@ -156,7 +156,7 @@ The GPU-tier block budget and block size come from the scenario and the kernel (
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--renderer-num-workers` | int | 1 | Render threads per API server (vLLM `renderer_num_workers`). Each request's admission overhead queues for one, in arrival order (INV-R1). 0 = uncontended per-request delay. |
+| `--renderer-num-workers` | int | 1 | Render threads per API server (vLLM `renderer_num_workers`). The engine states the admission queue they make; a request holds a thread for its per-token admission time and waits the per-request term without one (INV-R1). 0 = no queue, the whole admission time a delay. |
 | `--api-server-count` | int | 0 | API servers per endpoint (vLLM `--api-server-count`). 0 = vLLM's default: dp behind an internal or hybrid DP replica, else 1. |
 | `--preemption-policy` | string | "fcfs" | **Deprecated in v0.16.0, removed in v0.19.0** ([#2037](https://github.com/inference-sim/inference-sim/issues/2037)): state `engine.scheduling_policy` in the scenario's pool engine block instead. Preemption victim selection: `fcfs` (tail-of-batch, default) or `priority` (least-urgent SLO tier evicted first, matching vLLM `--scheduling-policy priority`). Priority mode uses `priority.slo_priorities` from the policy bundle when set. |
 
@@ -181,7 +181,7 @@ Every run, `--num-instances 1` (the default) included, passes each request throu
 | `--num-instances` | int | 1 | Number of inference instances. 1 = single-instance mode; > 1 = cluster mode behind the llm-d router. Must not exceed the scenario's rank capacity (pool `nodes` × `gpus_per_node` / (pp × tp × pcp)); `testdata/scenarios/llama-3.1-70b-instruct-h200-tp4-4node.yaml` allows up to 8. |
 | `--prefill-instances` | int | 0 | Prefill instances for P/D disaggregation (0 = disabled). Requires a scenario with `prefill` and `decode` pools, and must not exceed the prefill pool's rank capacity (pool `nodes` × `gpus_per_node` / (pp × tp × pcp)). |
 | `--decode-instances` | int | 0 | Decode instances for P/D disaggregation. Same rules, against the decode pool. |
-| `--pd-transfer-contention` | bool | false | Concurrent P/D KV handoffs share the fabric links they cross: each link is divided max-min fairly among the handoffs on it, from the kernel's `PDTransferDemand`. A handoff alone still takes exactly `PDTransferTime`. Run and replay alike (INV-13). |
+| `--pd-transfer-contention` | bool | false | Concurrent P/D KV handoffs share the fabric links they cross: each link is divided max-min fairly among the handoffs on it, from the demand the cost model states for the handoff. A handoff alone takes exactly that demand's `AloneTime`. Run and replay alike (INV-13). |
 
 **P/D disaggregation.** Whether a request is disaggregated is the router's decision: the EndpointPickerConfig needs a `disagg-profile-handler` with a P/D decider (`always-disagg-pd-decider` or `prefix-based-pd-decider`); prefill and decode pods carry `llm-d.ai/role` labels automatically. See [Routing](../guide/routing.md). A scenario with `prefill` and `decode` pools runs one kernel per pool; the KV handoff is priced by the kernel's `PDTransferTime` over the scenario's fabric between the two instances' placements. Refused: P/D topology over a colocated scenario; a disaggregated scenario without `--prefill-instances`/`--decode-instances`; pools that differ in block size, `dp` or draft configuration; a `pd_transfer.connector` other than NIXL's (`NixlConnector`, `NixlPullConnector`, `NixlPushConnector`, `MultiConnector`); shared (`--prefill-decode-instances`) or encode instances. The scenario's `offload` block (or `--kv-offload-config`) gives each pool its own tier; see [Latency models](../guide/latency-models.md#prefilldecode-disaggregation) for the handoff (decode-side load, prefill KV hold, contention).
 
@@ -193,7 +193,7 @@ Every cluster run routes with the llm-d router (the Endpoint Picker, EPP) embedd
 |----------------|-------------|
 | `router.epp_flags` | The llm-d router's (EPP's) command-line flags, verbatim, one entry per flag. Default: a standalone router whose pool is every simulated pod (`--endpoint-selector=llm-d.ai/inference-serving=true --endpoint-target-ports=8000`). |
 | `router.endpoint_picker_config` | EndpointPickerConfig file, as the EPP reads it with `--config-file`. Default: the router's built-in default configuration. Refused together with an EPP flag `--config-file` or `--config-text`. |
-| `router.manifests` | Kubernetes manifest files. The router reads `InferencePool`, `InferenceObjective` and `InferenceModelRewrite` objects; other kinds are ignored. |
+| `router.manifests` | Kubernetes manifest files. The router reads `InferencePool`, `InferenceObjective` and `InferenceModelRewrite` objects; other kinds are ignored. Every `modelRewrite` target must be the scenario's model or a LoRA adapter the scenario declares; any other is refused at start-up, because BLIS runs one model graph. |
 | `pools[].labels` | Labels on the pool's simulated model-server pods, so an `InferencePool` selector or label filter from a real deployment matches. A label every pool states with one value is on every pod; any other is on its pool's pods only. |
 
 Paths are relative to the scenario file; a file that cannot be read is refused at startup. `--epp-flags`, `--epp-config`, `--epp-manifests` and `--pod-labels` were removed (unknown flags), as `--tp` was. The flags below model the environment around the router, not the deployment, and stay on `run` and `replay`:
@@ -203,6 +203,8 @@ Paths are relative to the scenario file; a file that cannot be read is refused a
 | `--gateway-latency` | int64 | 0 | Microseconds from a request's arrival to the router's first look at it (network and proxy hops before the Endpoint Picker). Must be >= 0. |
 | `--epp-scrape-jitter` | int64 | 0 | Upper bound (µs) of the seeded phase offset of each endpoint's metrics collection; 0 = every endpoint is scraped in phase. Must be >= 0. |
 | `--kv-event-delay` | int64 | 0 | Microseconds from an engine publishing its KV-cache events (at the end of a step) to the router's `precise-prefix-cache-producer` ingesting them. Must be >= 0. Recorded in the trace header. |
+
+**Reference configurations.** `blis router-configs` prints the reference EndpointPickerConfig files that the router fork this build pins ships, with the index (`policies.json`) that says which policy each file configures, its knobs and whether it has a P/D form. `--json` prints `{"router_module", "version", "index", "files": {<name>: {"sha256", "content"}}}`, the index as published and every file with the SHA-256 of its bytes; `--file <name>` writes one file's bytes unchanged, so its output can be saved as a `router.endpoint_picker_config` file; a name the fork does not ship is an error (exit 1). Without either flag it prints one line per policy file with the start of its SHA-256. The command reads only the fork embedded in the build and writes no file.
 
 **Recorded in the trace.** The resolved router inputs are written to the TraceV2 header (`--trace-output`); the EndpointPickerConfig (and a `--config-file` EPP flag) is inlined as `--config-text` so the header carries the configuration itself. `blis replay` rebuilds the recorded router from the header. A replay whose scenario states no router replays the recorded one; a replay whose scenario states a router (a `router:` block or pool labels) that differs from the header's, or whose router environment flags differ from it, is refused (INV-13).
 

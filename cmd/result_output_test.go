@@ -185,8 +185,12 @@ func TestResult_TPOTIsPerTokenAndTheStepIntervalIsPerStep(t *testing.T) {
 		if d, ok := metrics.Lookup(name); !ok || d.Formula != metrics.FormulaTPOT {
 			t.Errorf("%s is defined %+v, want the registry's per-request tpot", name, d)
 		}
-		if _, ok := r.Metrics["itl_"+stat+"_ms"]; ok {
-			t.Errorf("itl_%s_ms is reported: the registry's itl pools token gaps, which BLIS does not compute", stat)
+		itl := "itl_" + stat + "_ms"
+		if d, ok := metrics.Lookup(itl); !ok || d.Formula != metrics.FormulaITL {
+			t.Errorf("%s is defined %+v, want the registry's pooled itl", itl, d)
+		}
+		if f, ok := r.Metrics[itl]; !ok || f.Samples <= 0 {
+			t.Errorf("%s is not reported with samples: %+v", itl, f)
 		}
 	}
 	var sum float64

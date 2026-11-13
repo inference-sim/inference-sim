@@ -1,6 +1,8 @@
 package cluster
 
 import (
+	"fmt"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"testing"
 
 	cengine "github.com/inference-sim/blis-vllm/compat/engine"
@@ -26,13 +28,13 @@ func TestPDTransfer_AnInjectedPriceIsTheTransferTime(t *testing.T) {
 	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
 	type call struct {
 		tokens   int64
-		from, to InstanceID
+		from, to plan.Endpoint
 	}
 	var calls []call
-	cfg.PDTransferTime = func(tokens int64, from, to InstanceID) int64 {
+	setPDPrice(&cfg, func(tokens int64, from, to plan.Endpoint) int64 {
 		calls = append(calls, call{tokens, from, to})
 		return 1000 + tokens // a price no formula in this package would produce
-	}
+	})
 	cs := newTestCluster(cfg, NewSliceRequestSource(newTestRequests(12)), nil)
 	if err := cs.Run(); err != nil {
 		t.Fatal(err)
@@ -51,6 +53,8 @@ func TestPDTransfer_AnInjectedPriceIsTheTransferTime(t *testing.T) {
 		}
 		checked++
 	}
+	// The far end of a pull is the prefill instance the cluster named in the decode request
+	// (engine.Request.Peer); the near end is the endpoint the decode engine states for itself.
 	membership := BuildPoolMembershipFromIndices(4, 2, 2, 0, 0)
 	priced := map[call]bool{}
 	for _, c := range calls {
@@ -58,13 +62,15 @@ func TestPDTransfer_AnInjectedPriceIsTheTransferTime(t *testing.T) {
 		if c.tokens%cfg.BlockSizeTokens != 0 {
 			t.Errorf("priced %+v: tokens must be whole blocks", c)
 		}
-		if membership[string(c.from)] != PoolRolePrefill || membership[string(c.to)] != PoolRoleDecode {
+		if membership[fmt.Sprintf("instance_%d", c.from.Node)] != PoolRolePrefill ||
+			membership[fmt.Sprintf("instance_%d", c.to.Node)] != PoolRoleDecode {
 			t.Errorf("priced %+v: a handoff runs from a prefill instance to a decode instance", c)
 		}
 	}
 	for _, p := range cs.ParentRequests() {
-		if p.TransferCompleteTime > 0 && !priced[call{p.NumKVBlocks * cfg.BlockSizeTokens, p.PrefillInstanceID, p.DecodeInstanceID}] {
-			t.Errorf("%s's handoff %s -> %s was not priced between those instances", p.ID, p.PrefillInstanceID, p.DecodeInstanceID)
+		from, to := testInstanceEndpoint(p.PrefillInstanceID), testInstanceEndpoint(p.DecodeInstanceID)
+		if p.TransferCompleteTime > 0 && !priced[call{p.NumKVBlocks * cfg.BlockSizeTokens, from, to}] {
+			t.Errorf("%s's handoff %s -> %s was not priced between %+v and %+v", p.ID, p.PrefillInstanceID, p.DecodeInstanceID, from, to)
 		}
 	}
 	if checked == 0 {
@@ -115,7 +121,7 @@ func TestPoolOverrides_EachRoleRunsItsOwnPoolsEngine(t *testing.T) {
 	editPrefill(&cfg, func(c *simConfig) { c.LatencyModel = prefill })
 	editDecode(&cfg, func(c *simConfig) { c.LatencyModel = decode })
 	editDecode(&cfg, func(c *simConfig) { c.MaxNumSeqs = one })
-	cfg.PDTransferTime = func(int64, InstanceID, InstanceID) int64 { return 10 }
+	setPDPrice(&cfg, func(int64, plan.Endpoint, plan.Endpoint) int64 { return 10 })
 	cs := newTestCluster(cfg, NewSliceRequestSource(newTestRequests(8)), nil)
 	if err := cs.Run(); err != nil {
 		t.Fatal(err)

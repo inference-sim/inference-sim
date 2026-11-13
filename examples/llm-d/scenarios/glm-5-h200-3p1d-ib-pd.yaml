@@ -5,7 +5,7 @@ name: glm-5-h200-3p1d-ib
 engine_version: "0.32.0"
 
 model: glm-5
-coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]
 
 cluster:
   hardware: h200
@@ -26,13 +26,13 @@ pools:
       enable_expert_parallel: false
     engine:
       quantization: fp8
-      cache_dtype: fp8
+      kv_cache_dtype: fp8
       block_size: 64
       max_num_batched_tokens: 8192
       max_num_seqs: 256
       max_model_len: 32768
-      cudagraph_mode: PIECEWISE
       gpu_memory_utilization: 0.9
+      compilation_config: {cudagraph_mode: PIECEWISE}
   - role: decode
     nodes: 1
     parallel:
@@ -42,13 +42,13 @@ pools:
       enable_expert_parallel: false
     engine:
       quantization: fp8
-      cache_dtype: fp8
+      kv_cache_dtype: fp8
       block_size: 64
       max_num_batched_tokens: 8192
       max_num_seqs: 256
       max_model_len: 32768
-      cudagraph_mode: PIECEWISE
       gpu_memory_utilization: 0.9
+      compilation_config: {cudagraph_mode: PIECEWISE}
 
 pd_transfer:
   connector: NixlConnector

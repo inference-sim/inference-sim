@@ -33,7 +33,7 @@ import (
 //
 // This mirrors SessionManager.OnComplete's buffer mechanics but feeds it the RECORDED
 // output (rec.OutputTokens), whereas OnComplete appends the ACTUAL sim output
-// (ProgressIndex − InputLen, which a length cap can truncate). The two are the same
+// (the tokens the round emitted, which a length cap can truncate). The two are the same
 // absent capping; feeding the recorded output is the correct choice here because the
 // encoder's law is written over the recorded output, so this is its exact inverse (no
 // INV-13 claim spans the two modes, and token CONTENT also differs from closed-loop on

@@ -81,20 +81,18 @@ func (cs *ClusterSimulator) buildDPReplicas(config DeploymentConfig, instanceMap
 		}
 	}
 	cs.dpReplicas, cs.replicaOf = replicas, replicaOf
-	// A replica endpoint renders on its own API servers before the balancer picks a rank
-	// (INV-R1): how many is the engine's rule (sim.ReplicaAPIServers, vLLM's default when
-	// unstated), and its ranks share the host's one render stage. An external-balancer or
-	// P/D-pool rank keeps the render stage it was built with: its own endpoint's servers.
+	// A replica endpoint admits requests on one queue before the balancer picks a rank (INV-R1):
+	// its ranks share the stage their engine states. An external-balancer or P/D-pool rank keeps
+	// the stage it was built with: its own endpoint's.
 	for _, rep := range replicas {
 		if cs.endpointReplica(rep.ranks[0]) == nil {
 			continue
 		}
-		apiServers := sim.ReplicaAPIServers(config.Frontend.APIServerCount, dp)
 		drivers := make([]*sim.EngineDriver, len(rep.ranks))
 		for k, inst := range rep.ranks {
 			drivers[k] = inst.drv
 		}
-		if err := sim.ShareRenderStage(drivers, apiServers, config.Frontend.RendererNumWorkers); err != nil {
+		if err := sim.ShareAdmissionStage(drivers); err != nil {
 			return fmt.Errorf("replica %s: %w", rep.id, err)
 		}
 	}

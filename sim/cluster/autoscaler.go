@@ -45,8 +45,8 @@ type ReplicaMetrics struct {
 	InFlightCount int
 	CostPerHour   float64 // $/hr from NodePool; used for CostPerReplica in VariantCapacity
 	// Latency fields are always zero in the current implementation (LatencyStats() was removed
-	// from buildRouterState() in #1382). Retained for future use if incremental latency
-	// tracking is added to buildRouterState.
+	// from buildClusterState() in #1382). Retained for future use if incremental latency
+	// tracking is added to buildClusterState.
 	TTFT                  float64 // μs — zero until first completion; Analyze() must guard against zero before dividing
 	DispatchRate          float64 // req/s — zero until first completion; Analyze() must guard against zero before dividing
 	ITL                   float64 // μs — zero until first completion; Analyze() must guard against zero before dividing
@@ -143,17 +143,17 @@ func (g GPUInventory) Variants() []VariantSpec {
 // Interfaces
 // ---------------------------------------------------------------------------
 
-// Collector observes RouterState and produces one ModelSignals per active model,
+// Collector observes ClusterState and produces one ModelSignals per active model,
 // grouping replicas by ModelID. Must not modify state, suppress valid models from output,
 // or apply business-logic thresholds. Structurally incomplete snapshots (empty Model, empty
 // GPUType, zero-capacity loading snapshots) may be skipped with a diagnostic log per FR-006.
-// Pure function: same RouterState always produces the same output (determinism).
+// Pure function: same ClusterState always produces the same output (determinism).
 type Collector interface {
-	Collect(state *sim.RouterState) []ModelSignals
+	Collect(state *sim.ClusterState) []ModelSignals
 }
 
 // Analyzer assesses capacity for one model. Name() returns a human-readable identifier.
-// Analyze() is called once per model per tick. Must not access RouterState, GPUInventory,
+// Analyze() is called once per model per tick. Must not access ClusterState, GPUInventory,
 // or any external state — only ModelSignals. Must not panic on empty Replicas slice.
 // Must guard against zero-valued fields (TTFT, DispatchRate) — these are zero until
 // first request completion; dividing by them without a guard will panic.
@@ -165,7 +165,7 @@ type Analyzer interface {
 
 // Engine optimizes replica allocation across all models given current GPU inventory.
 // Produces at most one ScaleDecision per ModelID per call. Must not emit both scale-up and
-// scale-down for the same ModelID. Must not access RouterState or ModelSignals directly.
+// scale-down for the same ModelID. Must not access ClusterState or ModelSignals directly.
 // Scale-up targets cheapest variant (CostPerReplica ascending); scale-down targets most
 // expensive variant (CostPerReplica descending). Map keys must be sorted before iteration (R2).
 type Engine interface {
@@ -236,8 +236,8 @@ func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 	}
 
 	// Stage 1: Collect — build ModelSignals for each active model.
-	routerState := buildRouterState(cs, nil)
-	modelSignals := p.collector.Collect(routerState)
+	clusterState := buildClusterState(cs, nil)
+	modelSignals := p.collector.Collect(clusterState)
 
 	// Stage 2: Analyze — run Analyzer once per model.
 	results := make([]AnalyzerResult, 0, len(modelSignals))

@@ -29,13 +29,14 @@ func (rt *desRuntime) RoundTrip(r *http.Request) (*http.Response, error) {
 // the vLLM Prometheus endpoint and the vLLM render endpoint.
 type modelServers struct {
 	g *Gateway
-	// rendered caches each instance's Prometheus text by the publish time it was rendered from.
+	// rendered caches each instance's Prometheus text by the publication it was rendered from: the
+	// time and the sequence number of every rank's published state (DEV-4).
 	rendered map[cluster.InstanceID]renderedMetrics
 }
 
 type renderedMetrics struct {
-	publishedAt int64
-	text        []byte
+	key  string
+	text []byte
 }
 
 func (m *modelServers) serve(r *http.Request) (*http.Response, error) {
@@ -175,6 +176,17 @@ func respond(r *http.Request, code int, contentType string, body []byte) *http.R
 	}
 }
 
+// publicationKey identifies the states an endpoint's engines published, for the rendered-text
+// cache: each rank's publication time and sequence number (DEV-4). The time alone is not enough,
+// because an engine can publish twice at one instant.
+func publicationKey(ems []sim.EngineMetrics) string {
+	var b strings.Builder
+	for _, e := range ems {
+		fmt.Fprintf(&b, "%d@%d;", e.Seq, e.PublishedAt)
+	}
+	return b.String()
+}
+
 // metricsText renders an instance's published engine metrics as vLLM's Prometheus exposition.
 //
 // A data-parallel replica endpoint (#1909) serves every rank's engine, and vLLM labels each
@@ -187,13 +199,12 @@ func (m *modelServers) metricsText(inst *cluster.InstanceSimulator) []byte {
 		ranks = []*cluster.InstanceSimulator{inst}
 	}
 	ems := make([]sim.EngineMetrics, len(ranks))
-	var publishedAt int64
 	for k, r := range ranks {
 		ems[k] = r.EngineMetricsAt(now)
-		publishedAt = max(publishedAt, ems[k].PublishedAt)
 	}
+	key := publicationKey(ems)
 	em := ems[0]
-	if c, ok := m.rendered[inst.ID()]; ok && c.publishedAt == publishedAt {
+	if c, ok := m.rendered[inst.ID()]; ok && c.key == key {
 		return c.text
 	}
 	model := m.g.servedModel(inst)
@@ -221,7 +232,7 @@ func (m *modelServers) metricsText(inst *cluster.InstanceSimulator) []byte {
 			float64(toTime(em.PublishedAt).UnixNano())/1e9)
 	}
 	text := b.Bytes()
-	m.rendered[inst.ID()] = renderedMetrics{publishedAt: publishedAt, text: text}
+	m.rendered[inst.ID()] = renderedMetrics{key: key, text: text}
 	return text
 }
 

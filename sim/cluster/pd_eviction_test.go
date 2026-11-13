@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"math"
 	"math/rand"
@@ -43,7 +44,7 @@ func TestEvict_DisaggregatedAtEachStage(t *testing.T) {
 	} {
 		t.Run(tc.stage, func(t *testing.T) {
 			cfg := newTestDisaggDeploymentConfig(4, 2, 2)
-			cfg.PDTransferTime = func(int64, InstanceID, InstanceID) int64 { return 5_000_000 } // a long transfer
+			setPDPrice(&cfg, func(int64, plan.Endpoint, plan.Endpoint) int64 { return 5_000_000 }) // a long transfer
 			reqs := newTestRequests(4)
 			if tc.stage == "prefill" {
 				editEngine(&cfg, func(c *simConfig) { c.BatchConfig = cengine.NewBatchConfig(1, 2048, 0) })

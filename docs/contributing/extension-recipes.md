@@ -72,7 +72,7 @@ Batch formation is vLLM's scheduler, translated in blis-vllm (`core/sched`), so 
 
 ## Adding New Quantization Formats
 
-Quantization is stated per pool in the scenario (`engine.quantization`, `engine.cache_dtype`) and priced by `blis-latency-kernel`. A new format is added there (and to `blis-schemas` if the field's allowed values change), not in this repository.
+Quantization is stated per pool in the scenario (`engine.quantization`, `engine.kv_cache_dtype`) and priced by `blis-latency-kernel`. A new format is added there (and to `blis-schemas` if the field's allowed values change), not in this repository.
 
 ## Adding a New Engine
 
