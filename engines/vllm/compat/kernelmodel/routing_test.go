@@ -134,7 +134,7 @@ func TestRoutingReadsTheDecodedEPLB(t *testing.T) {
 	if strings.Count(string(src), engine) != 1 {
 		t.Fatalf("%s has %d engine blocks, want 1", epScenario, strings.Count(string(src), engine))
 	}
-	withEPLB := strings.Replace(string(src), engine, engine+"      eplb:\n        enable_eplb: true\n", 1)
+	withEPLB := strings.Replace(string(src), engine, engine+"      enable_eplb: true\n", 1)
 	if err := os.WriteFile(filepath.Join(dir, epScenario), []byte(withEPLB), 0o644); err != nil {
 		t.Fatal(err)
 	}

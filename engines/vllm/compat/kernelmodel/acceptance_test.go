@@ -133,3 +133,54 @@ func emptyRegistry(t *testing.T) *load.Data {
 	}
 	return d
 }
+
+// A lookup that borrows across targets reads the target's architecture (acceptance.Request
+// Architecture): deepseek-v4-pro-nvfp4 has no profile of its own, and borrows the mtp curve of
+// deepseek-v4-pro, which records the same architecture. The request carries it from the model's
+// graph; without it the borrowing step is skipped and the lookup does not resolve.
+func TestAcceptanceBorrowsAcrossTargetsOfTheSameArchitecture(t *testing.T) {
+	in, e := museAdaptiveInputs(t)
+	data, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.Scenario.Acceptance = nil
+	in.Scenario.Model = "deepseek-v4-pro-nvfp4"
+	in.Model = nil
+	sp := *e.Speculative
+	sp.Method, sp.NumSpecTokens, sp.DraftModel = "mtp", 3, ""
+	e.Speculative = &sp
+	terms := acceptance.Workload{Category: "coding", Thinking: acceptance.ThinkingOff}
+	got, err := resolveAcceptance(in, e, data, AcceptanceOverrides{Workload: &terms})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.Step != acceptance.StepOtherTarget || got.Profile == nil || got.Profile.Model != "deepseek-v4-pro" {
+		t.Fatalf("resolved %+v, want the mtp profile of deepseek-v4-pro borrowed by architecture", got)
+	}
+	if a := targetArchitecture(in, data); a != "DeepseekV4ForCausalLM" {
+		t.Errorf("the target's architecture is %q, want DeepseekV4ForCausalLM", a)
+	}
+}
+
+// The drafter the pool names (speculative.draft_model) is part of the lookup key: a profile
+// measured with a separate drafter is not the model's own speculator's.
+func TestAcceptanceRequestNamesThePoolsDrafter(t *testing.T) {
+	in, e := museAdaptiveInputs(t)
+	var seen *acceptance.Request
+	orig := resolveRequest
+	resolveRequest = func(r acceptance.Request) (acceptance.Resolution, error) {
+		seen = &r
+		return orig(r)
+	}
+	defer func() { resolveRequest = orig }()
+	sp := *e.Speculative
+	sp.DraftModel = "some-drafter"
+	e.Speculative = &sp
+	if _, err := resolveAcceptance(in, e, repos().Data, AcceptanceOverrides{}); err != nil {
+		t.Fatal(err)
+	}
+	if seen == nil || seen.Drafter != "some-drafter" || seen.Architecture == "" {
+		t.Errorf("the request %+v, want Drafter some-drafter and the target's Architecture", seen)
+	}
+}

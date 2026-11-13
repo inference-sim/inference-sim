@@ -1375,8 +1375,8 @@
       ],
       "defined": "vllm/v1/spec_decode/metrics.py:231",
       "module": "spec_decode",
-      "class": "derived",
-      "reason": "drafts and draft tokens follow the scheduler; accepted tokens are the acceptance the simulator supplies (#2021 B3), so these are computed given that input",
+      "class": "exact",
+      "reason": "the scheduler decides how many drafts each verify step schedules, and the accepted count is the acceptance the simulator supplies (#2021 B3), so given that input each counter is an exact function of the scheduler's decisions (SpecDecodingStats.observe_draft, vllm/v1/spec_decode/metrics.py:41-49@5df63a72); checked against vLLM's own logger by the speculative tier-5 scenarios",
       "enabled_by": "speculative_config"
     },
     {
@@ -1388,8 +1388,8 @@
       ],
       "defined": "vllm/v1/spec_decode/metrics.py:255",
       "module": "spec_decode",
-      "class": "derived",
-      "reason": "drafts and draft tokens follow the scheduler; accepted tokens are the acceptance the simulator supplies (#2021 B3), so these are computed given that input",
+      "class": "exact",
+      "reason": "the scheduler decides how many drafts each verify step schedules, and the accepted count is the acceptance the simulator supplies (#2021 B3), so given that input each counter is an exact function of the scheduler's decisions (SpecDecodingStats.observe_draft, vllm/v1/spec_decode/metrics.py:41-49@5df63a72); checked against vLLM's own logger by the speculative tier-5 scenarios",
       "enabled_by": "speculative_config"
     },
     {
@@ -1400,8 +1400,8 @@
       ],
       "defined": "vllm/v1/spec_decode/metrics.py:230",
       "module": "spec_decode",
-      "class": "derived",
-      "reason": "drafts and draft tokens follow the scheduler; accepted tokens are the acceptance the simulator supplies (#2021 B3), so these are computed given that input",
+      "class": "exact",
+      "reason": "the scheduler decides how many drafts each verify step schedules, and the accepted count is the acceptance the simulator supplies (#2021 B3), so given that input each counter is an exact function of the scheduler's decisions (SpecDecodingStats.observe_draft, vllm/v1/spec_decode/metrics.py:41-49@5df63a72); checked against vLLM's own logger by the speculative tier-5 scenarios",
       "enabled_by": "speculative_config"
     },
     {
@@ -1412,8 +1412,8 @@
       ],
       "defined": "vllm/v1/spec_decode/metrics.py:229",
       "module": "spec_decode",
-      "class": "derived",
-      "reason": "drafts and draft tokens follow the scheduler; accepted tokens are the acceptance the simulator supplies (#2021 B3), so these are computed given that input",
+      "class": "exact",
+      "reason": "the scheduler decides how many drafts each verify step schedules, and the accepted count is the acceptance the simulator supplies (#2021 B3), so given that input each counter is an exact function of the scheduler's decisions (SpecDecodingStats.observe_draft, vllm/v1/spec_decode/metrics.py:41-49@5df63a72); checked against vLLM's own logger by the speculative tier-5 scenarios",
       "enabled_by": "speculative_config"
     },
     {
@@ -1484,8 +1484,8 @@
   ],
   "counts": {
     "total": 130,
-    "exact": 45,
-    "derived": 52,
+    "exact": 49,
+    "derived": 48,
     "unavailable": 33
   }
 }

@@ -1,0 +1,319 @@
+{
+ "MC_ENABLE_DEST_DEVICE_AFFINITY": {
+  "kind": "numeric",
+  "why": "no file of the serving process names the variable, so nothing compares it: one class holds every value"
+ },
+ "MC_SLICE_SIZE": {
+  "kind": "numeric",
+  "why": "no file of the serving process names the variable, so nothing compares it: one class holds every value"
+ },
+ "MC_WORKERS_PER_CTX": {
+  "kind": "numeric",
+  "why": "no file of the serving process names the variable, so nothing compares it: one class holds every value"
+ },
+ "PYTHONHASHSEED": {
+  "stated": [
+   {
+    "trace": "core/kv/testdata/seeded_block_hashes.json",
+    "values": [
+     "0",
+     "1234",
+     "a-string-seed"
+    ],
+    "why": "the fixture's cases state these PYTHONHASHSEED values (and the empty string and unset, which a value class does not hold)"
+   }
+  ]
+ },
+ "PYTHONNOUSERSITE": {
+  "kind": "numeric",
+  "why": "no file of the serving process names the variable, so nothing compares it: one class holds every value"
+ },
+ "PYTHONUNBUFFERED": {
+  "kind": "numeric",
+  "why": "no file of the serving process names the variable, so nothing compares it: one class holds every value"
+ },
+ "attention_config.indexer_kv_dtype": {
+  "stated": [
+   {
+    "trace": "compat/kernelmodel/engine_settings_test.go",
+    "values": [
+     "auto",
+     "fp8"
+    ],
+    "why": "TestIndexerKVDTypeOnDeepSeekV4IsVLLMsOwnResolution states auto and fp8 on DeepSeek-V4-Pro and V4.1-Flash, on h200 and b200, and finds the KV layers equal to the unstated deployment's 132-byte index record; bf16, nvfp4 and mxfp4 are refused there, so they are outside the class"
+   }
+  ]
+ },
+ "compilation_config.cudagraph_mode": {
+  "stated": [
+   {
+    "trace": "compat/kernelmodel/capture_oracle_test.go",
+    "values": ["NONE", "PIECEWISE", "FULL", "FULL_DECODE_ONLY", "FULL_AND_PIECEWISE"],
+    "why": "the capture oracle (CAPTURE_CASES of oracle/lower/extract.py, 57 cases) states each of the five modes on h200 and b200 and compares the kernel's capture ceiling and sizes with vLLM's own VllmConfig._set_cudagraph_sizes and its dispatcher; the kernel's step price per mode follows the v0.31.0 policy, as the entry's note says"
+   }
+  ]
+ },
+ "compilation_config.cudagraph_capture_sizes": {
+  "stated": [
+   {
+    "trace": "compat/kernelmodel/capture_oracle_test.go",
+    "values": [8, 16, 64, 100000],
+    "why": "the capture oracle states these sizes as elements of the lists it gives (a list is one value of the field, and the evidence's classes are the single class that holds every value): [8, 16] and [64, 8, 8, 16, 100000] sorted by the resolver; the kernel's resolved sizes and ceiling equal vLLM's VllmConfig._set_cudagraph_sizes"
+   }
+  ]
+ },
+ "cudagraph_capture_sizes": {
+  "stated": [
+   {
+    "trace": "compat/kernelmodel/capture_oracle_test.go",
+    "values": [8, 16, 64, 100000],
+    "why": "the capture oracle states these sizes as elements of the lists it gives (a list is one value of the field, and the evidence's classes are the single class that holds every value): [8, 16] and [64, 8, 8, 16, 100000] sorted by the resolver; the kernel's resolved sizes and ceiling equal vLLM's VllmConfig._set_cudagraph_sizes"
+   }
+  ]
+ },
+ "VLLM_USE_RUST_FRONTEND": {
+  "stated": [
+   {
+    "trace": "vllmengine/testdata/deepseek-v41-flash-h200-tp8-dspark5-synthetic-rust.yaml",
+    "values": [
+     true
+    ],
+    "why": "the scenario states env VLLM_USE_RUST_FRONTEND \"1\" on DeepSeek-V4.1-Flash on h200, and TestTheRustFrontendIsPricedAtItsAdmissionRate prices its admission at the Rust rate. The rate is the registry's, method assumed (a vendor speedup applied to the Python rate), so the class is covered by a pricing test and no measurement"
+   },
+   {
+    "trace": "compat/kernelmodel/h200_fields_test.go",
+    "values": [
+     false
+    ],
+    "why": "TestTheRustFrontendIsPricedAtItsAdmissionRate states \"0\" and finds the Python server's price, which is also the price of leaving it unstated"
+   }
+  ]
+ },
+ "speculative_config.rejection_sample_method": {
+  "stated": [
+   {
+    "trace": "rules/engineconfig/synthetic_acceptance_test.go",
+    "values": [
+     "synthetic"
+    ],
+    "why": "TestSyntheticAcceptanceLengthIsVLLMsOwnResolution states synthetic with every length of the oracle's grid and finds vLLM's per-position rates equal acceptance.MinimumVarianceRates; the Triton sampler that consumes the rates is not compared (it needs a GPU)"
+   },
+   {
+    "trace": "compat/kernelmodel/h200_fields_test.go",
+    "values": [
+     "synthetic",
+     "block"
+    ],
+    "why": "TestSyntheticRejectionSamplingTakesTheSuppliedAcceptance prices a step with synthetic and length 3.51 as with block and the length pinned by the scenario, on DeepSeek-V4.1-Flash on h200"
+   },
+   {
+    "trace": "vllmengine/notmodelled_test.go",
+    "values": [
+     "standard"
+    ],
+    "why": "TestOnlySyntheticRejectionSamplingIsRefused builds a speculative block that states standard, and one that states block, beside the supplied acceptance the run gives; the engine takes the acceptance from the run and decides nothing else from the method"
+   }
+  ]
+ },
+ "speculative_config.synthetic_acceptance_length": {
+  "stated": [
+   {
+    "trace": "rules/engineconfig/synthetic_acceptance_test.go",
+    "values": [
+     1,
+     2,
+     2.84,
+     3,
+     4
+    ],
+    "why": "TestSyntheticAcceptanceLengthIsVLLMsOwnResolution states every length of oracle/synthetic_acceptance's grid (1, 1.1, 1.5, 2, 2.5, 2.84, 3, 10/3, K, K+0.5, K+1 for K 1 to 8) with rejection_sample_method synthetic and finds vLLM's rates equal acceptance.MinimumVarianceRates, bit for bit, and each length outside [1, K+1] refused by the block as by vLLM"
+   },
+   {
+    "trace": "compat/kernelmodel/synthetic_acceptance_test.go",
+    "values": [
+     2.84,
+     3.5
+    ],
+    "why": "TestSyntheticAcceptanceLengthIsTheRunsSuppliedAcceptance states 3.5 at 7 drafts in the engine block, with no scenario pin, with the same pin and with the pin 2.84, and finds it the run's pinned acceptance, unchanged beside the same value and refused beside another; TestSyntheticAcceptanceLengthResolvesToVLLMsSchedule finds the resolver derive vLLM's rates from it"
+   }
+  ]
+ },
+ "compilation_config.max_cudagraph_capture_size": {
+  "stated": [
+   {
+    "trace": "compat/kernelmodel/capture_oracle_test.go",
+    "values": [
+     2,
+     16,
+     64,
+     100,
+     128,
+     300,
+     1000,
+     1024,
+     2048
+    ],
+    "why": "the test states these maxima (CAPTURE_CASES of oracle/lower/extract.py: 2, 16 with sizes [8,16], 64, 100 and 128 in the class [8,256), 300, 1000, 1024, 2048) on h200 and b200 and compares the kernel's capture ceiling with vLLM's"
+   }
+  ]
+ },
+ "enable_expert_parallel": {
+  "stated": [
+   {
+    "trace": "compat/kernelmodel/ep_oracle_test.go",
+    "values": [
+     true
+    ],
+    "why": "the test sets enable_expert_parallel true over tp, dp and all2all backend shapes and compares the layout with vLLM's FusedMoEParallelConfig"
+   }
+  ]
+ },
+ "gpu_memory_utilization": {
+  "stated": [
+   {
+    "trace": "compat/build/memory_utilization_test.go",
+    "values": [
+     0.9,
+     0.95
+    ],
+    "why": "the test restates 0.9 and 0.95 on a scenario the way a scoring harness does, and finds the KV pool equal to vLLM's rule (ceil(total memory x utilization) less the non-KV memory, in whole pages), larger at 0.95 than at 0.9, and not the default's"
+   },
+   {
+    "trace": "compat/kernelmodel/capacity_test.go",
+    "values": [
+     0.8
+    ],
+    "why": "the logged-figure test states 0.8 on DeepSeek-V4.1-Flash at tp 8 and reproduces vLLM's per-request token capacity from vLLM's logged 61.18 GiB; the sweep test raises the value between 0.75 and 0.95 and finds the pool never smaller"
+   }
+  ]
+ },
+ "kv_cache_dtype": {
+  "stated": [
+   {
+    "trace": "core/kv/pool_oracle_test.go",
+    "values": [
+     "fp8"
+    ],
+    "why": "the tests set fp8 (the engine block's cache_dtype key, which the field list names kv_cache_dtype until a later rename) for gpt-oss-120b, minimax-m2.5, minimax-m3, kimi-k2.5 and deepseek-v4-pro and compare the pool bytes per block with vLLM's; the DeepSeek-V4 pool is the packed fp8_ds_mla layout of the default FlashMLA backend"
+   }
+  ]
+ },
+ "language_model_only": {
+  "stated": [
+   {
+    "trace": "compat/kernelmodel/language_model_only_test.go",
+    "values": [
+     true
+    ],
+    "why": "the test sets true on the minimax-m3 and kimi-k3 checkpoints, whose catalog graphs price no vision tower, and finds the price, KV budget and layers equal to the unstated deployment's"
+   }
+  ]
+ },
+ "max_cudagraph_capture_size": {
+  "stated": [
+   {
+    "trace": "compat/kernelmodel/capture_oracle_test.go",
+    "values": [
+     2,
+     16,
+     64,
+     100,
+     128,
+     300,
+     1000,
+     1024,
+     2048
+    ],
+    "why": "the test states these maxima (CAPTURE_CASES of oracle/lower/extract.py: 2, 16 with sizes [8,16], 64, 100 and 128 in the class [8,256), 300, 1000, 1024, 2048) on h200 and b200 and compares the kernel's capture ceiling with vLLM's"
+   }
+  ]
+ },
+ "quantization": {
+  "stated": [
+   {
+    "trace": "compat/kernelmodel/quantization_v4_test.go",
+    "values": [
+     "deepseek_v4_fp8"
+    ],
+    "why": "the test states deepseek_v4_fp8 on a DeepSeek-V4 FP8 checkpoint and finds the plan equal to the unstated one"
+   },
+   {
+    "trace": "compat/kernelmodel/quantization_m3_test.go",
+    "values": [
+     "mxfp8",
+     "modelopt_mixed"
+    ],
+    "why": "the test states mxfp8 on the MiniMax-M3 MXFP8 checkpoint and modelopt_mixed on its NVFP4 mixed-precision one, on h100, h200, b200 and b300, and finds each plan equal to the unstated one; it also states every other method vLLM lists and finds the open refused with vLLM's own text or the replacement recorded"
+   }
+  ]
+ },
+ "scheduling_policy": {
+  "sites": [
+   {
+    "at": "vllm/v1/core/sched/request_queue.py:202",
+    "expr": "policy == SchedulingPolicy.PRIORITY",
+    "op": "Eq",
+    "values": [
+     "priority"
+    ],
+    "why": "Scheduler converts the field with SchedulingPolicy(self.scheduler_config.policy) and passes it to create_request_queue as `policy`"
+   },
+   {
+    "at": "vllm/v1/core/sched/request_queue.py:204",
+    "expr": "policy == SchedulingPolicy.FCFS",
+    "op": "Eq",
+    "values": [
+     "fcfs"
+    ],
+    "why": "the same call"
+   }
+  ]
+ },
+ "speculative_config.enable_adaptive_verification": {
+  "stated": [
+   {
+    "trace": "vllmengine/testdata/muse-gb200-nvl-tep8-dspark-adaptive.yaml",
+    "values": [
+     true
+    ],
+    "why": "the scenario's speculative block states enable_adaptive_verification: true"
+   }
+  ]
+ },
+ "speculative_config.model": {
+  "stated": [
+   {
+    "trace": "testdata/scenarios/muse-h100-pp2tp8-dspark.yaml",
+    "values": [
+     "muse-spark-open-dspark"
+    ],
+    "why": "the scenario's speculative block names draft_model: muse-spark-open-dspark"
+   }
+  ]
+ },
+ "stream_interval": {
+  "sites": [
+   {
+    "at": "vllm/v1/engine/output_processor.py:324",
+    "expr": "self.stream_interval > 1",
+    "op": "Gt",
+    "values": [
+     1
+    ],
+    "why": "the OutputProcessor sends every token when the interval is 1 and groups them above it; the value reaches it through OutputProcessor(stream_interval=...), a call the scan does not follow"
+   }
+  ]
+ },
+ "compilation_config.decoder_replay_cudagraph_capture_sizes": {
+  "stated": [
+   {
+    "trace": "compat/kernelmodel/decoder_replay_test.go",
+    "values": [
+     64,
+     4096
+    ],
+    "why": "TestTheStatedReplayGraphSizesPadTheTrimmedBatch states the lists [64] and [4096] (a list is one value of the field, and the evidence's classes are the single class that holds every value) and prices the replay batch padded to the smallest stated size that holds it, run eager when none does; TestAPiecewiseStepTrimsByTheSizeOfTheGraphItIsPaddedTo prices the default sizes. The replay graph's launch saving against eager is not priced"
+   }
+  ]
+ }
+}

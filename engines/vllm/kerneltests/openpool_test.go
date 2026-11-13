@@ -45,7 +45,7 @@ pools:
       dp: 1
     engine:
       quantization: fp8
-      cache_dtype: fp8
+      kv_cache_dtype: fp8
       block_size: 16
       max_num_batched_tokens: 8192
   - role: decode
@@ -56,7 +56,7 @@ pools:
       dp: 2
     engine:
       quantization: fp8
-      cache_dtype: fp8
+      kv_cache_dtype: fp8
       block_size: 16
       max_num_batched_tokens: 2048
 

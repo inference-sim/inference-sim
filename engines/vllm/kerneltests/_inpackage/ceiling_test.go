@@ -72,7 +72,13 @@ func TestADecodeStepDoesNotLaunchPrefillOnlyNodes(t *testing.T) {
 // decode step's host time is launches x (eager + dispatch) plus nothing else.
 func TestAModelScopedEagerCostWinsWhateverItsOrder(t *testing.T) {
 	entry := func(name string, v float64, model string) coefficient.Entry {
-		e := coefficient.Entry{Name: name, Value: v, Units: "us_per_transfer",
+		// The unit the substrate's table of form units requires of this name (the per-layer name
+		// is per layer, the per-kernel name per launch).
+		u, ok := coefficient.RequiredUnit(name)
+		if !ok {
+			t.Fatalf("no form unit covers %s", name)
+		}
+		e := coefficient.Entry{Name: name, Value: v, Units: u.Unit,
 			Method: "assumed", Rationale: "test", Scope: coefficient.Scope{
 				Hardware: []string{"h200"}}}
 		if model != "" {
@@ -183,7 +189,7 @@ func TestTheDrafterRunsUnderItsOwnGraphs(t *testing.T) {
 // vendoredHostEntries replicates blis-registry c45c71c's cost-model-host-overheads.yaml order
 // for the entries DeepSeek-V4.1 scopes (docs/COEFF_CONTRACT.md v2.1): each model-scoped entry
 // follows its part-wide namesake in the file, and the eager constant is derived on h200
-// (assumed) and copied to the other eight parts (copied).
+// (assumed) and transferred to the other eight parts (transferred).
 func vendoredHostEntries() []coefficient.Entry {
 	all := []string{"a100-80", "a100-sxm", "b200", "b300", "gb200-nvl72", "gb300", "h100",
 		"h200", "l40s"}
@@ -199,8 +205,9 @@ func vendoredHostEntries() []coefficient.Entry {
 		default:
 			x.Rationale = "test"
 		}
-		if method == "copied" {
-			x.CopiedFrom = "hardware=h200,model=deepseek-v4.1-flash"
+		if method == "transferred" {
+			x.TransferredFrom = "hardware=h200,model=deepseek-v4.1-flash"
+			x.TransferRule = "test"
 		}
 		return x
 	}
@@ -211,7 +218,7 @@ func vendoredHostEntries() []coefficient.Entry {
 		e("host_admission_per_token", 2.67, "us_per_token", "measured", all, m),
 		e("host_launch_eager_per_layer", 7, "us_per_layer", "assumed", all, nil),
 		e("host_launch_eager_per_kernel", 93.8, "us_per_transfer", "assumed", []string{"h200"}, m),
-		e("host_launch_eager_per_kernel", 93.8, "us_per_transfer", "copied", others, m),
+		e("host_launch_eager_per_kernel", 93.8, "us_per_transfer", "transferred", others, m),
 	}
 }
 
@@ -219,8 +226,8 @@ func vendoredHostEntries() []coefficient.Entry {
 // resolves last-in-file wins with model-scoped placed last; the kernel never lets a part-wide
 // entry displace a model-scoped one. On the vendored order the two must pick the same entry
 // for every name on every part, for this model and another. And Provenance must carry the
-// resolved entry's method and where a copy came from, so a report can show h100's eager
-// constant as copied from h200.
+// resolved entry's method and where a transferred value came from, so a report can show h100's eager
+// constant as transferred from h200.
 func TestTheVendoredHostSetResolvesTheSameUnderBothRules(t *testing.T) {
 	set := &coefficient.Set{Kind: "CoefficientSet", Name: "cost-model-host-overheads",
 		Coefficients: vendoredHostEntries()}
@@ -240,7 +247,7 @@ func TestTheVendoredHostSetResolvesTheSameUnderBothRules(t *testing.T) {
 			for name, want := range last {
 				r, ok := got.Entry(name)
 				if !ok || r.Entry.Value != want.Value || r.Entry.Method != want.Method ||
-					r.Entry.CopiedFrom != want.CopiedFrom {
+					r.Entry.TransferredFrom != want.TransferredFrom {
 					t.Errorf("%s/%s %s: kernel resolved %+v, last-in-file gives %+v", chip,
 						model, name, r.Entry, want)
 				}
@@ -249,7 +256,7 @@ func TestTheVendoredHostSetResolvesTheSameUnderBothRules(t *testing.T) {
 	}
 	for _, c := range []struct{ chip, method, scope string }{
 		{"h200", "assumed", "hardware: h200, model: deepseek-v4.1-flash"},
-		{"h100", "copied", "hardware: h100, model: deepseek-v4.1-flash; copied from " +
+		{"h100", "transferred", "hardware: h100, model: deepseek-v4.1-flash; transferred from " +
 			"hardware=h200,model=deepseek-v4.1-flash"},
 	} {
 		in := fixtureInputs(t, v41)
@@ -300,6 +307,9 @@ func eagerAt(t *testing.T, us float64, mode string, spec bool, capture int) *Ker
 		e.Speculative = nil
 	}
 	setEngine(t, &in.Deployment.Pools[0], e)
+	// The substrate's lookup (VAL-4) lets no set order decide between two entries of one name, method
+	// and scope, so the catalog's own eager constant is removed and the test's stands alone.
+	in = withoutEntries(in, map[string]bool{"host_launch_eager_per_kernel": true})
 	in.Coefficients = append(append([]*coefficient.Set{}, in.Coefficients...),
 		&coefficient.Set{Kind: "CoefficientSet", Name: "test-eager", Coefficients: []coefficient.Entry{{
 			Name: "host_launch_eager_per_kernel", Value: us, Units: "us_per_transfer",

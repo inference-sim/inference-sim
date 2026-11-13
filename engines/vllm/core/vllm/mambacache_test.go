@@ -3,6 +3,7 @@
 package vllm
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -122,6 +123,9 @@ func TestMambaSSMCacheDTypeIsComparedWithTheResolvedDefault(t *testing.T) {
 			if c.refuse != (err != nil) {
 				t.Fatalf("checkMambaCache = %v, want refused %t", err, c.refuse)
 			}
+			if err != nil && !strings.Contains(err.Error(), "no recurrent layer") {
+				t.Errorf("the refusal does not say that no recurrent layer reads the field: %v", err)
+			}
 			if err != nil && !strings.Contains(err.Error(), "issues/83") {
 				t.Errorf("the refusal does not cite #83: %v", err)
 			}
@@ -129,11 +133,14 @@ func TestMambaSSMCacheDTypeIsComparedWithTheResolvedDefault(t *testing.T) {
 	}
 }
 
-// swa_bounded_replay: CacheConfig's default is true (cache.py:250@5df63a72), and DeepSeek-V4.1's
-// attention forces it off on the V1 runner (deepseek_v41/attention.py:529-536), so a stated false
-// is the effective value there and builds; on the V2 runner false departs from the default and is
-// refused. A stated true is the default on either.
-func TestSWABoundedReplayIsComparedWithTheResolvedDefault(t *testing.T) {
+// swa_bounded_replay is the layers' to carry: a stated false builds on either runner (it is the
+// effective value on the V1 runner and a layout on the V2 runner, where each kv_layers run states
+// no bounded replay), a stated true is the default, and false beside a run that states a bounded
+// replay contradicts itself and is refused.
+func TestSWABoundedReplayFalseBuildsWhereTheLayersStateNone(t *testing.T) {
+	const layers = "kv_layers:\n" +
+		"- {count: 1, spec: sliding_window_mla, sliding_window: 128, num_kv_heads: 1, head_size: 512, block_size: 32, state_bytes: 584%s}\n" +
+		"- {count: 1, spec: mla, num_kv_heads: 1, head_size: 512, block_size: 128, tokens_per_state: 4, state_bytes: 584}\n"
 	for _, c := range []struct {
 		extra  string
 		refuse bool
@@ -141,7 +148,8 @@ func TestSWABoundedReplayIsComparedWithTheResolvedDefault(t *testing.T) {
 		{"swa_bounded_replay: true\nuse_v2_model_runner: false\n", false},
 		{"swa_bounded_replay: false\nuse_v2_model_runner: false\n", false},
 		{"swa_bounded_replay: true\nuse_v2_model_runner: true\n", false},
-		{"swa_bounded_replay: false\nuse_v2_model_runner: true\n", true},
+		{"swa_bounded_replay: false\nuse_v2_model_runner: true\n", false},
+		{"swa_bounded_replay: false\nuse_v2_model_runner: true\n" + fmt.Sprintf(layers, ", bounded_replay: true"), true},
 	} {
 		cfg, err := decodeConfig(block(t, c.extra))
 		if err != nil {
@@ -150,6 +158,26 @@ func TestSWABoundedReplayIsComparedWithTheResolvedDefault(t *testing.T) {
 		_, err = resolve(cfg)
 		if c.refuse != (err != nil) {
 			t.Errorf("%q: resolve = %v, want refused %t", strings.ReplaceAll(c.extra, "\n", " "), err, c.refuse)
+		}
+	}
+}
+
+// A model with recurrent layers sizes its state at the dtype that runs, which the engine block's
+// kv_layers state bytes carry, so a stated mamba_ssm_cache_dtype away from the checkpoint's default
+// builds; the same value on a model without recurrent layers would be dropped and is refused.
+func TestAModelWithRecurrentLayersBuildsAtAnySSMCacheDType(t *testing.T) {
+	for _, c := range []struct {
+		mamba  bool
+		refuse bool
+	}{{true, false}, {false, true}} {
+		cfg, err := decodeConfig(block(t, ""))
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg.MambaModel = c.mamba
+		cfg.MambaSSMCacheDType, cfg.MambaSSMCacheDTypeDefault = "float16", "float32"
+		if err := checkMambaCache(cfg, true); c.refuse != (err != nil) {
+			t.Errorf("mamba model %t: checkMambaCache = %v, want refused %t", c.mamba, err, c.refuse)
 		}
 	}
 }

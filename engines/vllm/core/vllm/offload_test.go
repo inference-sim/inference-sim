@@ -36,8 +36,8 @@ func TestOffloadConformance(t *testing.T) {
 		{"async", cpuTier + tightGPU + "async_scheduling: true\n", true},
 		{"pp2 async v2", "kv_offload: {connector: OffloadingConnector, cpu_bytes: 1638400, bytes_per_block: 4096, workers: 2}\n" +
 			tightGPU + "async_scheduling: true\nuse_v2_model_runner: true\npipeline_parallel_size: 2\n", true},
-		{"async eagle3", cpuTier + tightGPU + "async_scheduling: true\nspeculative: {method: eagle3, num_spec_tokens: 3}\n", true},
-		{"sync eagle3", cpuTier + tightGPU + "speculative: {method: eagle3, num_spec_tokens: 3}\n", true},
+		{"async eagle3", cpuTier + tightGPU + "async_scheduling: true\nspeculative_config: {method: eagle3, num_speculative_tokens: 3}\n", true},
+		{"sync eagle3", cpuTier + tightGPU + "speculative_config: {method: eagle3, num_speculative_tokens: 3}\n", true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			// Three prompts, each returning after others of new tokens have passed through the
@@ -62,6 +62,7 @@ func TestOffloadConformance(t *testing.T) {
 			}
 			kinds := map[engine.TransferKind]int{}
 			tr := enginetest.TestEngine(t, build(t, c.extra), arr, enginetest.Options{
+				Boundary: boundary,
 				TransferTime: func(tr engine.Transfer) engine.Duration {
 					kinds[tr.Kind]++
 					return engine.Duration(50 + 10*tr.Blocks)
@@ -206,7 +207,7 @@ func TestOffloadRefusals(t *testing.T) {
 		{"chunk not a multiple", "kv_offload: {connector: OffloadingConnector, cpu_bytes: 819200, bytes_per_block: 4096, block_size: 24}\n"},
 		{"smaller than a chunk", "kv_offload: {connector: OffloadingConnector, cpu_bytes: 100, bytes_per_block: 4096}\n"},
 		{"with nixl", cpuTier + producer},
-		{"an MTP drafter's group", cpuTier + "speculative: {method: mtp, num_spec_tokens: 1}\nmtp_nextn_predict_layers: 1\nkv_layers:\n" +
+		{"an MTP drafter's group", cpuTier + "speculative_config: {method: mtp, num_speculative_tokens: 1}\nmtp_nextn_predict_layers: 1\nkv_layers:\n" +
 			"- {count: 1, spec: full, num_kv_heads: 1, head_size: 64}\n" +
 			"- {count: 1, spec: sliding_window, sliding_window: 32, num_kv_heads: 1, head_size: 64}\n"},
 	} {

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-vllm/core/kv"
 	"github.com/inference-sim/blis-vllm/core/sched"
 )
 
@@ -27,6 +28,13 @@ type scenario struct {
 		LongPrefillTokenThreshold int    `json:"long_prefill_token_threshold"`
 		EnablePrefixCaching       bool   `json:"enable_prefix_caching"`
 		SchedulingPolicy          string `json:"scheduling_policy"`
+		MaxLoRAs                  int    `json:"max_loras"`
+		Speculative               *struct {
+			Method           string `json:"method"`
+			K                int    `json:"num_speculative_tokens"`
+			Draft            string `json:"draft"`
+			ParallelDrafting bool   `json:"parallel_drafting"`
+		} `json:"speculative"`
 	} `json:"config"`
 	Requests []struct {
 		ID          string  `json:"id"`
@@ -35,6 +43,13 @@ type scenario struct {
 		Output      []int64 `json:"output"`
 		MaxTokens   int     `json:"max_tokens"`
 		Priority    int     `json:"priority"`
+		Accepted    []int   `json:"accepted"`
+		// AbortStep is the step before which the request is aborted (0 or absent: never, as
+		// step 0 aborts nothing that has not been added); AbortBy is "client" (AsyncLLM.abort:
+		// the frontend forgets the request) or "engine" (the engine ends it and sends the abort).
+		LoRA      string `json:"lora"`
+		AbortStep *int   `json:"abort_step"`
+		AbortBy   string `json:"abort_by"`
 	} `json:"requests"`
 	MaxSteps int `json:"max_steps"`
 }
@@ -140,17 +155,27 @@ func drive(t *testing.T, sc scenario, after func(step int, m *Model)) *Model {
 	if maxLen == 0 {
 		maxLen = c.MaxNumBatchedTokens
 	}
+	var spec sched.Spec
+	if c.Speculative != nil {
+		spec = sched.ResolveSpec(sched.SpecOptions{Method: c.Speculative.Method, NumTokens: c.Speculative.K,
+			ParallelDrafting: c.Speculative.ParallelDrafting, NextnPredictLayers: draftNextnLayers(t, c.Speculative.Draft)})
+	}
 	s, err := sched.New(sched.Config{
-		MaxNumSeqs: c.MaxNumSeqs, MaxNumBatchedTokens: c.MaxNumBatchedTokens, BlockSize: c.BlockSize,
+		Spec: spec, MaxNumSeqs: c.MaxNumSeqs, MaxNumBatchedTokens: c.MaxNumBatchedTokens, BlockSize: c.BlockSize,
 		NumBlocks: c.NumBlocks, MaxModelLen: maxLen, LongPrefillTokenThreshold: c.LongPrefillTokenThreshold,
 		EnableChunkedPrefill: true, Policy: sched.Policy(c.SchedulingPolicy), EnablePrefixCaching: c.EnablePrefixCaching,
-		ReserveFullSequence: true,
+		ReserveFullSequence: true, MaxLoRAs: c.MaxLoRAs,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	m := New(histogramBounds(t, maxLen))
+	if c.Speculative != nil {
+		m.WithSpeculation(c.Speculative.K)
+	}
 	reqs := sc.Requests
+	accepted := map[string][]int{}
+	verifies := map[string]int{}
 	sort.SliceStable(reqs, func(i, j int) bool {
 		if reqs[i].ArrivalStep != reqs[j].ArrivalStep {
 			return reqs[i].ArrivalStep < reqs[j].ArrivalStep
@@ -173,19 +198,59 @@ func drive(t *testing.T, sc scenario, after func(step int, m *Model)) *Model {
 			if mt == 0 {
 				mt = 1 << 20
 			}
-			if err := s.Add(&sched.Request{ID: r.ID, Priority: r.Priority, ArrivalTime: float64(r.ArrivalStep),
-				Prompt: r.Prompt, MaxTokens: mt, EOS: eosToken}); err != nil {
+			req := &sched.Request{ID: r.ID, Priority: r.Priority, ArrivalTime: float64(r.ArrivalStep),
+				Prompt: r.Prompt, MaxTokens: mt, EOS: eosToken}
+			if r.LoRA != "" {
+				// Adapter ids number from 1 in name order, as the oracle numbers them, and the block
+				// key carries the adapter's name and path (kv_cache_utils.py:578-595@5df63a72).
+				req.LoRA = adapterID(sc, r.LoRA)
+				req.LoRAName = r.LoRA
+				req.Keys.Extra = []kv.ExtraKey{{"lora", r.LoRA, "/adapters/" + r.LoRA}}
+			}
+			if err := s.Add(req); err != nil {
 				t.Fatal(err)
 			}
 			outputs[r.ID] = r.Output
+			accepted[r.ID] = r.Accepted
 			maxTokens[r.ID] = mt
 			next++
 		}
+		// Aborts, before the step runs (oracle/run_metrics.py). A client's abort is forgotten by
+		// the frontend and counted nowhere; one the engine sends is a finish with reason abort.
+		var forgotten []string
+		var abortFins []Finish
+		var abortIDs []string
+		for _, r := range reqs {
+			if r.AbortStep != nil && *r.AbortStep == i && s.Request(r.ID) != nil && !s.Request(r.ID).IsFinished() {
+				abortIDs = append(abortIDs, r.ID)
+			}
+		}
+		sort.Strings(abortIDs)
+		for _, id := range abortIDs {
+			r := s.Request(id)
+			by := "client"
+			for _, q := range reqs {
+				if q.ID == id && q.AbortBy != "" {
+					by = q.AbortBy
+				}
+			}
+			if by == "client" {
+				forgotten = append(forgotten, id)
+			} else {
+				abortFins = append(abortFins, Finish{ID: id, Reason: "abort", PromptTokens: len(r.Prompt),
+					GenerationTokens: generated[id], Preemptions: r.NumPreemptions, MaxTokens: maxTokens[id]})
+			}
+		}
+		s.Abort(abortIDs)
 		if !s.HasUnfinished() && next == len(reqs) {
+			if len(forgotten) > 0 || len(abortFins) > 0 {
+				m.Step(Step{Forgotten: forgotten, Finished: abortFins, EngineAborts: len(abortFins), Emitted: map[string]int{}})
+			}
 			break
 		}
 		out := s.Schedule()
-		step := Step{Scheduled: out.Scheduled, Preempted: out.Preempted, Emitted: map[string]int{}}
+		step := Step{Scheduled: out.Scheduled, Preempted: out.Preempted, Emitted: map[string]int{},
+			Forgotten: forgotten, Finished: abortFins, EngineAborts: len(abortFins)}
 		for _, id := range out.NewIDs {
 			r := s.Request(id)
 			hit, looked := out.PrefixHit[id]
@@ -196,22 +261,56 @@ func drive(t *testing.T, sc scenario, after func(step int, m *Model)) *Model {
 				LocalHit: hit, Preempted: r.NumPreemptions > 0, CacheLookup: c.EnablePrefixCaching})
 		}
 		mock := map[string][]int64{}
+		pendingGot := map[string]int{}
+		before := map[string]int{}
 		for id := range out.Scheduled {
+			before[id] = len(s.Request(id).Output)
 			if s.Request(id).IsPrefillChunk {
 				continue
 			}
-			k, o := sampled[id], outputs[id]
-			if k == len(o)-1 {
-				mock[id] = []int64{eosToken}
-			} else {
-				mock[id] = []int64{o[k]}
+			// The shared GPU mock, as oracle/run_metrics.py runs it: one token, plus the drafts the
+			// scenario accepts at this verify step (at most the real drafts).
+			n := 1
+			if drafts := out.SpecDecode[id]; len(drafts) > 0 {
+				real := 0
+				for _, d := range drafts {
+					if d >= 0 {
+						real++
+					}
+				}
+				plan, v := accepted[id], verifies[id]
+				verifies[id] = v + 1
+				a := 0
+				if v < len(plan) {
+					a = plan[v]
+				}
+				a = min(a, real)
+				n = 1 + a
+			}
+			o := outputs[id]
+			got := 0
+			for j := 0; j < n && sampled[id] < len(o); j++ {
+				k := sampled[id]
+				if k == len(o)-1 {
+					mock[id] = append(mock[id], eosToken)
+				} else {
+					mock[id] = append(mock[id], o[k])
+				}
+				sampled[id] = k + 1
+				got++
+			}
+			if drafts := out.SpecDecode[id]; len(drafts) > 0 {
+				// observe_draft counts the accepted drafts: the tokens sampled beyond the one
+				// the step always samples (scheduler.py:2118-2135@5df63a72).
+				step.Drafts = append(step.Drafts, Draft{Proposed: len(drafts), Accepted: max(got-1, 0)})
 			}
 			if generated[id] == 0 {
 				step.FirstTokens = append(step.FirstTokens, id)
 			}
-			sampled[id] = k + 1
-			generated[id]++
-			step.Emitted[id] = 1
+			// generated[id] and step.Emitted are the tokens the request keeps: a request that
+			// stops mid-way discards the rest (_update_request_with_output), which the
+			// scheduler does when it applies the step, so they are settled after Update below.
+			pendingGot[id] = got
 		}
 		prompts := map[string]int{}
 		preemptions := map[string]int{}
@@ -220,13 +319,34 @@ func drive(t *testing.T, sc scenario, after func(step int, m *Model)) *Model {
 			prompts[id] = len(r.Prompt)
 			preemptions[id] = r.NumPreemptions
 		}
-		for _, f := range s.Update(out, mock) {
+		fins := s.Update(out, mock)
+		finalLen := map[string]int{}
+		for _, f := range fins {
+			finalLen[f.ID] = f.Output
+		}
+		for id, got := range pendingGot {
+			kept := got
+			if n, done := finalLen[id]; done {
+				kept = min(got, n-before[id])
+			}
+			generated[id] += kept
+			step.Emitted[id] = kept
+		}
+		if c.Speculative != nil && len(out.Scheduled) > 0 {
+			drafts := map[string][]int64{}
+			for id := range out.Scheduled {
+				drafts[id] = make([]int64, c.Speculative.K)
+			}
+			s.UpdateDrafts(drafts)
+		}
+		for _, f := range fins {
 			reason := map[sched.Status]string{sched.FinishedStopped: "stop", sched.FinishedLength: "length"}[f.Status]
 			step.Finished = append(step.Finished, Finish{ID: f.ID, Reason: reason, PromptTokens: prompts[f.ID],
 				GenerationTokens: generated[f.ID], Preemptions: preemptions[f.ID], MaxTokens: maxTokens[f.ID]})
 		}
 		nr, nw := s.Counts()
 		step.Running, step.Waiting, step.KVUsage = nr, nw, s.KV.Pool.Usage()
+		step.Deferred = s.Deferred()
 		m.Step(step)
 		if after != nil {
 			after(i, m)
@@ -410,4 +530,35 @@ func readJSON(t *testing.T, path string, v any) {
 	if err := json.Unmarshal(raw, v); err != nil {
 		t.Fatalf("%s: %v", path, fmt.Errorf("%w", err))
 	}
+}
+
+// draftNextnLayers reads an MTP drafter's num_nextn_predict_layers from its configuration-only
+// checkpoint under oracle/drafts, the file vLLM's SpeculativeConfig reads in the oracle (as
+// core/sched's driver reads it): the prefill lookahead of a multi-module MTP drafter turns on it.
+func draftNextnLayers(t *testing.T, draft string) int {
+	t.Helper()
+	if draft == "" {
+		return 0
+	}
+	var c struct {
+		Layers int `json:"num_nextn_predict_layers"`
+	}
+	readJSON(t, filepath.Join("..", "..", "oracle", "drafts", draft, "config.json"), &c)
+	return c.Layers
+}
+
+// adapterID is the lora_int_id the oracle gives an adapter: numbered from 1 in name order.
+func adapterID(sc scenario, name string) int {
+	names := map[string]bool{}
+	for _, r := range sc.Requests {
+		if r.LoRA != "" {
+			names[r.LoRA] = true
+		}
+	}
+	sorted := make([]string, 0, len(names))
+	for n := range names {
+		sorted = append(sorted, n)
+	}
+	sort.Strings(sorted)
+	return sort.SearchStrings(sorted, name) + 1
 }

@@ -3,19 +3,30 @@
  "estimation_sources": {
   "config:attention_backend": "AD33 \u00a715, explicit attention backend",
   "config:attention_config.backend": "AD33 \u00a715, explicit attention backend",
-  "config:attention_config.indexer_kv_dtype": "AD33 \u00a715, indexer cache rows",
   "config:attention_config.indexer_sparse_logits": "AD33 \u00a715, last row",
   "config:speculative_config.synthetic_acceptance_length": "AD33 \u00a715, drafter acceptance",
-    "config:data_parallel_external_lb": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml has no entry; a run that does not state it leaves vLLM's default, False (vllm/config/parallel.py:168@5df63a72), which the engine resolves",
-    "config:data_parallel_hybrid_lb": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml has no entry; a run that does not state it leaves vLLM's default, False (vllm/config/parallel.py:175@5df63a72), which the engine resolves",
-    "config:data_parallel_size_local": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:90 maps it to parallel.dp_local; a run that does not state it leaves vLLM's default, 1 (vllm/config/parallel.py:149@5df63a72), which the engine resolves",
-    "config:engram_config.cpu_offload": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:292 maps it to engine.engram_config.cpu_offload; a run that does not state it leaves vLLM's default, True (vllm/config/engram.py:37@5df63a72), which the engine resolves",
-    "config:gpu_memory_utilization": "vllm/config/cache.py:102@5df63a72 sets the default, 0.92; a run that does not record it leaves that default, which the engine resolves (resolveEngine)",
-    "config:kv_offloading_backend": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:130 marks it inert, read with kv_offloading_size; a run that does not state it leaves vLLM's default, \"native\" (vllm/config/cache.py:272@5df63a72), which the engine resolves",
-    "config:speculative_config.model": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:278 marks it inert, role drafter; a run that does not state it leaves vLLM's default, None (no separate drafter checkpoint), which the engine resolves",
-    "env:VLLM_USE_SIMPLE_KV_OFFLOAD": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:348 marks it inert; a run that does not set it leaves vLLM's default, off (vllm/envs.py:2243@5df63a72), which the engine resolves"
-  },
- "extra_env": [],
+  "config:api_server_count": "vllm/entrypoints/cli/serve.py:113-129@5df63a72 defaults api_server_count to the data-parallel size in internal load balancing, which is every stated value of the 131 InferenceX points; the engine runs its data-parallel group as one client (client_count 1, core/engine/dp.go), so the stated count changes nothing it simulates, and DPLBAsyncMPClient takes client_count as the number of API servers (vllm/v1/engine/core_client.py:1639-1640,1671,1685@5df63a72), which is why the field is not proven inert",
+  "config:data_parallel_external_lb": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml has no entry; a run that does not state it leaves vLLM's default, False (vllm/config/parallel.py:168@5df63a72), which the engine resolves",
+  "config:data_parallel_hybrid_lb": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml has no entry; a run that does not state it leaves vLLM's default, False (vllm/config/parallel.py:175@5df63a72), which the engine resolves",
+  "config:data_parallel_size_local": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:90 maps it to parallel.dp_local; a run that does not state it leaves vLLM's default, 1 (vllm/config/parallel.py:149@5df63a72), which the engine resolves",
+  "config:engram_config.cpu_offload": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:292 maps it to engine.engram_config.cpu_offload; a run that does not state it leaves vLLM's default, True (vllm/config/engram.py:37@5df63a72), which the engine resolves",
+  "config:gpu_memory_utilization": "vllm/config/cache.py:102@5df63a72 sets the default, 0.92; a run that does not record it leaves that default, which the engine resolves (resolveEngine)",
+  "config:kv_offloading_backend": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:130 marks it inert, read with kv_offloading_size; a run that does not state it leaves vLLM's default, \"native\" (vllm/config/cache.py:272@5df63a72), which the engine resolves",
+  "config:speculative_config.model": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:278 marks it inert, role drafter; a run that does not state it leaves vLLM's default, None (no separate drafter checkpoint), which the engine resolves",
+  "env:VLLM_USE_SIMPLE_KV_OFFLOAD": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:348 marks it inert; a run that does not set it leaves vLLM's default, off (vllm/envs.py:2243@5df63a72), which the engine resolves",
+  "env:VLLM_FLASHINFER_ALLREDUCE_BACKEND": "vllm/distributed/device_communicators/flashinfer_all_reduce.py:143-178@5df63a72 resolves an unset (auto) backend to mnnvl, with a trtllm fallback allowed, on one node, and to mnnvl without fallback on compute capability 10.0 and up across nodes, so a recipe that states mnnvl across nodes on such a part runs as the default does, while one that states it on one node does not (no fallback); the latency kernel prices every tensor-parallel all-reduce from the NCCL sweep whichever FlashInfer backend runs (it has no implementation-keyed all-reduce entry), so the stand-in changes no price. The field's valid_when says for which values and groups the stand-in is exact; fields/stand_in_vectors.json holds it to _resolve_fi_ar_backend",
+  "env:UCX_RCACHE_MAX_UNRELEASED": "vllm/distributed/nixl_utils.py:20-36@5df63a72 sets UCX_RCACHE_MAX_UNRELEASED to 1024 itself when the environment does not state it, so a run that states 1024 runs as an unset one does; UCX's variable (src/ucs/memory/rcache.c:114-118 at UCX v1.19.0, the version inside the nixl 1.5.0 wheel is not known) only sets when invalidated registration regions are cleaned up and does not choose a transport or a rate; the field's valid_when says for which values the stand-in is exact; fields/stand_in_vectors.json holds it to _maybe_set_ucx_rcache_limit",
+  "env:UCX_TLS": "NIXL's UCX backend is the default (vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:525-526@5df63a72) and UCX_TLS restricts the transports it may use (UCX FAQ). The engine prices a handoff between nodes over the NIC at the cluster fabric's rate unless UCX_CUDA_IPC_ENABLE_MNNVL=y is stated (compat/kernelmodel, rackHandoff), which is the path a list of RDMA transports without cuda_ipc takes, so unset stands in exactly for such a list; the field's valid_when says for which lists the stand-in is exact"
+ },
+ "extra_env": [
+  "MC_ENABLE_DEST_DEVICE_AFFINITY",
+  "MC_SLICE_SIZE",
+  "MC_WORKERS_PER_CTX",
+  "NVSHMEM_QP_DEPTH",
+  "PYTHONNOUSERSITE",
+  "PYTHONUNBUFFERED",
+  "UCX_TLS"
+ ],
  "dynamic_reads": {
   "vllm/config/utils.py: envs.is_set(env_name)": {
    "reason": "get_from_deprecated_env_if_set, called only by set_from_deprecated_env_if_set (config/utils.py:511), which nothing in vLLM v0.32.0 calls"
@@ -235,10 +246,10 @@
   },
   "config:api_server_count": {
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#85"
+    "issue": "inference-sim/blis-vllm#105"
    },
    "status": "not_modelled"
   },
@@ -364,12 +375,17 @@
   },
   "config:attention_config.indexer_kv_dtype": {
    "estimation": {
-    "rule": "leave_unset"
+    "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#84"
+    "traces": [
+     "compat/kernelmodel/engine_settings_test.go",
+     "compat/kernelmodel/indexer_record_test.go",
+     "rules/v0_32/indexer_kv_dtype_test.go",
+     "rules/v0_32/testdata/vllm_indexer_kv_dtype.json"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:attention_config.indexer_sparse_logits": {
    "estimation": {
@@ -604,9 +620,13 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#78"
+    "traces": [
+     "compat/kernelmodel/capture_oracle_test.go",
+     "core/lower/testdata/vllm_lower.json",
+     "rules/pack/cudagraph_test.go"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:compilation_config.cudagraph_copy_inputs": {
    "estimation": {
@@ -640,9 +660,13 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#78"
+    "traces": [
+     "compat/kernelmodel/capture_oracle_test.go",
+     "core/lower/testdata/vllm_lower.json",
+     "rules/pack/cudagraph_test.go"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:compilation_config.cudagraph_num_of_warmups": {
    "estimation": {
@@ -682,12 +706,14 @@
   },
   "config:compilation_config.decoder_replay_cudagraph_capture_sizes": {
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#80"
+    "traces": [
+     "compat/kernelmodel/decoder_replay_test.go"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:compilation_config.decoder_replay_trim_threshold": {
    "estimation": {
@@ -793,9 +819,13 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#78"
+    "traces": [
+     "compat/kernelmodel/capture_oracle_test.go",
+     "core/lower/testdata/vllm_lower.json",
+     "rules/pack/cudagraph_test.go"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:compilation_config.mode": {
    "estimation": {
@@ -1009,9 +1039,13 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#78"
+    "traces": [
+     "compat/kernelmodel/capture_oracle_test.go",
+     "core/lower/testdata/vllm_lower.json",
+     "rules/pack/cudagraph_test.go"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:cudagraph_metrics": {
    "estimation": {
@@ -1156,7 +1190,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#79"
+    "issue": "inference-sim/blis-vllm#109"
    },
    "status": "not_modelled"
   },
@@ -1183,7 +1217,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#8"
+    "issue": "inference-sim/blis-vllm#109"
    },
    "status": "not_modelled"
   },
@@ -1192,7 +1226,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#54"
+    "issue": "inference-sim/blis-vllm#107"
    },
    "status": "not_modelled"
   },
@@ -1529,9 +1563,15 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#55"
+    "traces": [
+     "core/engine/testdata/golden/t3-chunked-prefill-off-async-v2.json",
+     "core/engine/testdata/golden/t3-chunked-prefill-off-async.json",
+     "core/sched/testdata/golden/chunked-prefill-off-long-prefill.json",
+     "core/sched/testdata/golden/chunked-prefill-off-prefix-cache.json",
+     "core/sched/testdata/golden/chunked-prefill-off.json"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:enable_cumem_allocator": {
    "estimation": {
@@ -1574,7 +1614,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#76"
+    "issue": "inference-sim/blis-vllm#108"
    },
    "status": "not_modelled"
   },
@@ -1583,9 +1623,12 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#78"
+    "traces": [
+     "compat/kernelmodel/ep_oracle_test.go",
+     "core/lower/testdata/vllm_lower.json"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:enable_fault_tolerance": {
    "estimation": {
@@ -1937,7 +1980,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#55"
+    "issue": "inference-sim/blis-vllm#108"
    },
    "status": "not_modelled"
   },
@@ -1946,7 +1989,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#55"
+    "issue": "inference-sim/blis-vllm#108"
    },
    "status": "not_modelled"
   },
@@ -1955,7 +1998,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#55"
+    "issue": "inference-sim/blis-vllm#108"
    },
    "status": "not_modelled"
   },
@@ -1964,7 +2007,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#55"
+    "issue": "inference-sim/blis-vllm#108"
    },
    "status": "not_modelled"
   },
@@ -1973,7 +2016,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#76"
+    "issue": "inference-sim/blis-vllm#108"
    },
    "status": "not_modelled"
   },
@@ -1982,7 +2025,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#55"
+    "issue": "inference-sim/blis-vllm#108"
    },
    "status": "not_modelled"
   },
@@ -1991,7 +2034,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#76"
+    "issue": "inference-sim/blis-vllm#108"
    },
    "status": "not_modelled"
   },
@@ -2000,7 +2043,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#55"
+    "issue": "inference-sim/blis-vllm#108"
    },
    "status": "not_modelled"
   },
@@ -2009,7 +2052,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#76"
+    "issue": "inference-sim/blis-vllm#108"
    },
    "status": "not_modelled"
   },
@@ -2099,9 +2142,12 @@
     "rule": "leave_unset"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#73"
+    "traces": [
+     "compat/build/memory_utilization_test.go",
+     "compat/kernelmodel/capacity_test.go"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:grpc": {
    "estimation": {
@@ -2360,7 +2406,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#77"
+    "issue": "inference-sim/blis-registry#75"
    },
    "status": "not_modelled"
   },
@@ -2378,9 +2424,13 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#78"
+    "traces": [
+     "core/kv/pool_oracle_test.go",
+     "core/lower/testdata/vllm_lower.json",
+     "vllmengine/pool_oracle_test.go"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:kv_cache_dtype_skip_layers": {
    "estimation": {
@@ -2611,9 +2661,11 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#82"
+    "traces": [
+     "compat/kernelmodel/language_model_only_test.go"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:limit_mm_per_prompt": {
    "estimation": {
@@ -2867,9 +2919,13 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#78"
+    "traces": [
+     "compat/kernelmodel/capture_oracle_test.go",
+     "core/lower/testdata/vllm_lower.json",
+     "rules/pack/cudagraph_test.go"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:max_log_len": {
    "estimation": {
@@ -3216,7 +3272,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#77"
+    "issue": "inference-sim/blis-registry#75"
    },
    "status": "not_modelled"
   },
@@ -3528,7 +3584,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#7"
+    "issue": "inference-sim/blis-vllm#109"
    },
    "status": "not_modelled"
   },
@@ -3546,7 +3602,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#7"
+    "issue": "inference-sim/blis-vllm#109"
    },
    "status": "not_modelled"
   },
@@ -3789,9 +3845,13 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#78"
+    "traces": [
+     "compat/kernelmodel/quantization_v4_test.go",
+     "compat/kernelmodel/quantization_m3_test.go",
+     "compat/quantization/resolved.json"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:quantization_config.ignore": {
    "estimation": {
@@ -4444,9 +4504,13 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#29"
+    "traces": [
+     "compat/kernelmodel/synthetic_acceptance_test.go",
+     "rules/engineconfig/synthetic_acceptance_test.go",
+     "rules/engineconfig/testdata/synthetic_acceptance.json"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:speculative_config.revision": {
    "estimation": {
@@ -4498,9 +4562,13 @@
     "rule": "leave_unset"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#88"
+    "traces": [
+     "compat/kernelmodel/synthetic_acceptance_test.go",
+     "rules/engineconfig/synthetic_acceptance_test.go",
+     "rules/engineconfig/testdata/synthetic_acceptance.json"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:speculative_config.synthetic_acceptance_rates": {
    "estimation": {
@@ -4597,9 +4665,9 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/inference-sim#2035"
+    "proof": "oracle/inertness/stream_interval.json"
    },
-   "status": "not_modelled"
+   "status": "proven_inert"
   },
   "config:structured_outputs_config.backend": {
    "estimation": {
@@ -4660,9 +4728,13 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#7"
+    "traces": [
+     "core/sched/testdata/golden-swa/swa-stated-false-v2.json",
+     "core/sched/testdata/golden-swa/swa-stated-true-v1.json",
+     "core/sched/testdata/golden-swa/swa-stated-true-v2.json"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:tensor_parallel_size": {
    "estimation": {
@@ -5379,6 +5451,33 @@
    },
    "status": "not_modelled"
   },
+  "env:MC_ENABLE_DEST_DEVICE_AFFINITY": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "proof": "oracle/inertness/MC_ENABLE_DEST_DEVICE_AFFINITY.json"
+   },
+   "status": "proven_inert"
+  },
+  "env:MC_SLICE_SIZE": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "proof": "oracle/inertness/MC_SLICE_SIZE.json"
+   },
+   "status": "proven_inert"
+  },
+  "env:MC_WORKERS_PER_CTX": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "proof": "oracle/inertness/MC_WORKERS_PER_CTX.json"
+   },
+   "status": "proven_inert"
+  },
   "env:MODELSCOPE_API_TOKEN": {
    "estimation": {
     "rule": "none"
@@ -5595,6 +5694,15 @@
    },
    "status": "not_modelled"
   },
+  "env:NVSHMEM_QP_DEPTH": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#75"
+   },
+   "status": "not_modelled"
+  },
   "env:OMP_NUM_THREADS": {
    "estimation": {
     "rule": "none"
@@ -5651,12 +5759,32 @@
   },
   "env:PYTHONHASHSEED": {
    "estimation": {
+    "rule": "leave_unset"
+   },
+   "evidence": {
+    "traces": [
+     "core/kv/testdata/seeded_block_hashes.json"
+    ]
+   },
+   "status": "modelled"
+  },
+  "env:PYTHONNOUSERSITE": {
+   "estimation": {
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#53"
+    "proof": "oracle/inertness/PYTHONNOUSERSITE.json"
    },
-   "status": "not_modelled"
+   "status": "proven_inert"
+  },
+  "env:PYTHONUNBUFFERED": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "proof": "oracle/inertness/PYTHONUNBUFFERED.json"
+   },
+   "status": "proven_inert"
   },
   "env:PYTORCH_ALLOC_CONF": {
    "estimation": {
@@ -5966,7 +6094,48 @@
   },
   "env:UCX_RCACHE_MAX_UNRELEASED": {
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset",
+    "preserves": "the value vLLM sets itself when the environment does not state one (nixl_utils.py:20-36@5df63a72)",
+    "valid_when": [
+     {
+      "value_in": [
+       "1024"
+      ]
+     }
+    ]
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#62"
+   },
+   "status": "not_modelled"
+  },
+  "env:UCX_TLS": {
+   "estimation": {
+    "rule": "leave_unset",
+    "preserves": "the NIC path the engine prices for a handoff between nodes when UCX_CUDA_IPC_ENABLE_MNNVL=y is not stated (compat/kernelmodel): a transport list that names an RDMA transport, or all, reaches the NIC; a deny list or a list with no RDMA transport does not. UCX FAQ for the list syntax; no vLLM function resolves it",
+    "valid_when": [
+     {
+      "value_list_has_any": [
+       "rc",
+       "rc_x",
+       "rc_v",
+       "rc_verbs",
+       "rc_mlx5",
+       "dc",
+       "dc_x",
+       "dc_mlx5",
+       "ib",
+       "ud",
+       "ud_x",
+       "ud_verbs",
+       "ud_mlx5",
+       "all"
+      ],
+      "value_not_prefixed": [
+       "^"
+      ]
+     }
+    ]
    },
    "evidence": {
     "issue": "inference-sim/blis-vllm#62"
@@ -6767,7 +6936,26 @@
   },
   "env:VLLM_FLASHINFER_ALLREDUCE_BACKEND": {
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset",
+    "preserves": "the backend vLLM's _resolve_fi_ar_backend picks for the tensor-parallel group (flashinfer_all_reduce.py:143-178@5df63a72). One node: auto picks mnnvl with a trtllm fallback when the multicast workspace cannot be created, and a stated mnnvl picks mnnvl with no fallback, so the two differ on a node without NVSwitch multicast, which the stand-in cannot be told: a stated mnnvl on one node is not exact. Several nodes: auto picks mnnvl without fallback on compute capability 10.0 and up, and turns FlashInfer all-reduce off below it.",
+    "valid_when": [
+     {
+      "value_in": [
+       "auto"
+      ]
+     },
+     {
+      "value_in": [
+       "mnnvl"
+      ],
+      "tp_group_nodes": {
+       "gt": 1
+      },
+      "compute_capability": {
+       "gte": "10.0"
+      }
+     }
+    ]
    },
    "evidence": {
     "issue": "inference-sim/blis-vllm#80"
@@ -8651,9 +8839,13 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#85"
+    "traces": [
+     "compat/kernelmodel/h200_fields_test.go",
+     "kerneltests/prefill_forms_test.go",
+     "vllmengine/testdata/deepseek-v41-flash-h200-tp8-dspark5-synthetic-rust.yaml"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "env:VLLM_USE_SIMPLE_KV_OFFLOAD": {
    "estimation": {

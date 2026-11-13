@@ -27,6 +27,9 @@ const (
 	// CircularBuffer is CircularBufferSpec, one ring block per request (CircularBufferManager,
 	// single_type_kv_cache_manager.py:1173-1260).
 	CircularBuffer
+	// Mamba is MambaSpec, managed by the MambaManager (single_type_kv_cache_manager.py:1415-2112;
+	// registered :2671). Its mode and counts are the Group's Mamba* fields.
+	Mamba
 )
 
 // Group is one KV cache group: its attention type and, for a sliding window, the window.
@@ -46,6 +49,14 @@ type Group struct {
 	// drop on, only such groups drop the block; when none is, every group does
 	// (kv_cache_coordinator.py:127-133).
 	Eagle bool
+	// The fields below are a Mamba group's: its MambaSpec's mamba_cache_mode, speculative and
+	// prefill-checkpoint blocks (Layer carries the same names). Two mamba layers are one group
+	// only when all four agree (MambaSpec.is_uniform_with_collection, kv_cache_interface.py:
+	// 1093-1103@5df63a72).
+	MambaCacheMode           string
+	MambaSpeculativeBlocks   int
+	MambaCheckpointBlocks    int
+	MambaCheckpointAlignment int
 }
 
 // ResolveGroups is the grouping of a model's layer specs that the scheduler sees
@@ -106,6 +117,7 @@ type Manager struct {
 	// below the window so the drafter's re-prefill can still read them.
 	reprefillable int
 	groups        []*group
+	retention     *int // prefix_cache_retention_interval, nil for dense
 	// maxInFlight is max_in_flight_tokens, which bounds a sliding window's admission
 	// reservation (vllm/v1/kv_cache_interface.py:859-885@5df63a72).
 	maxInFlight int
@@ -126,6 +138,9 @@ type group struct {
 	// eagle is the manager's use_eagle: the group drops the EAGLE block
 	// (kv_cache_coordinator.py:127-133, 572, 760-765@5df63a72).
 	eagle bool
+	// align is the MambaManager of a group with mamba_cache_mode "align", nil for every other
+	// group (mamba_manager_align.go).
+	align *mambaAlign
 }
 
 // Options are the parts of the KV manager's configuration a drafter or a hybrid model
@@ -141,6 +156,14 @@ type Options struct {
 	// MaxInFlightTokens is max_in_flight_tokens (vllm/config/vllm.py:589-598@5df63a72):
 	// max_concurrent_batches times max_num_batched_tokens.
 	MaxInFlightTokens int
+	// RetentionInterval is CacheConfig.prefix_cache_retention_interval for a model with a Mamba
+	// group: nil is dense retention, 0 vLLM's default, a positive multiple of the scheduler
+	// block size a periodic state (vllm/config/cache.py:160-165@5df63a72). Only a Mamba align
+	// group reads it.
+	RetentionInterval *int
+	// PrefixMatchUnit is cache_config.prefix_match_unit: the hash block size when set
+	// (resolve_kv_cache_block_sizes, vllm/v1/core/kv_cache_utils.py:878-881@5df63a72), 0 unset.
+	PrefixMatchUnit int
 }
 
 // NewManager builds a manager over a fresh pool of numBlocks blocks. watermarkBlocks is the
@@ -155,10 +178,13 @@ func NewManagerWith(numBlocks, blockSize, maxModelLen int, enableCaching bool, w
 	if len(specs) == 0 {
 		specs = []Group{{Kind: FullAttention}}
 	}
+	if err := CheckGroups(specs, enableCaching); err != nil {
+		panic(err)
+	}
 	m := &Manager{
 		Pool: NewPool(numBlocks, enableCaching), blockSize: blockSize, maxModelLen: maxModelLen,
 		caching: enableCaching, watermark: watermarkBlocks, eagle: o.EagleBlockDrop,
-		reprefillable: max(0, o.PrefillLookahead-1), maxInFlight: o.MaxInFlightTokens,
+		retention: o.RetentionInterval, reprefillable: max(0, o.PrefillLookahead-1), maxInFlight: o.MaxInFlightTokens,
 	}
 	for i, g := range specs {
 		bs := g.BlockSize
@@ -172,6 +198,24 @@ func NewManagerWith(numBlocks, blockSize, maxModelLen int, enableCaching bool, w
 		m.groups = append(m.groups, gr)
 	}
 	m.blockSize, m.hashBlockSize = blockSizes(specs, blockSize, enableCaching)
+	if o.PrefixMatchUnit > 0 && enableCaching {
+		m.hashBlockSize = o.PrefixMatchUnit
+	}
+	for _, g := range m.groups {
+		if g.spec.Kind == Mamba && g.spec.MambaCacheMode == "align" {
+			// MambaManager.__init__ (single_type_kv_cache_manager.py:1431-1434@5df63a72); with EAGLE
+			// on the coordinator sets drop_eagle_checkpoint_block (kv_cache_coordinator.py:173-180).
+			a, err := newMambaAlign(m.Pool, g, mambaAlignConfig{HashBlockSize: m.hashBlockSize,
+				SchedulerBlockSize: m.blockSize, NumSpeculativeBlocks: g.spec.MambaSpeculativeBlocks,
+				NumPrefillCheckpointBlocks: g.spec.MambaCheckpointBlocks,
+				PrefillCheckpointAlignment: g.spec.MambaCheckpointAlignment, DropEagleCheckpointBlock: m.eagle,
+				RetentionInterval: o.RetentionInterval, ReplayEagle: m.eagle || anyFlagged(specs)})
+			if err != nil {
+				panic(err)
+			}
+			g.align = a
+		}
+	}
 	// eagle_group_ids: the groups flagged as the drafter's, or every group when none is
 	// (kv_cache_coordinator.py:127-133@5df63a72).
 	flagged := false
@@ -254,6 +298,10 @@ func (m *Manager) HashBlockSize() int { return m.hashBlockSize }
 func (m *Manager) SpecDecodeStepBlocks(tokens int) int {
 	n := 0
 	for _, g := range m.groups {
+		if g.spec.Kind == Mamba {
+			// Mamba managers already account for their speculative state blocks (:347-357).
+			continue
+		}
 		n += cdiv(tokens, g.blockSize)
 	}
 	return n
@@ -311,18 +359,37 @@ func (m *Manager) RemoveSkipped(id string, processed int) { m.removeSkipped(id, 
 // is one sliding window, the window's; with several it is HybridKVCacheCoordinator's fixed
 // point (kv_cache_coordinator.py:796-931).
 func (m *Manager) ComputedBlocks(hashes []BlockHash, numTokens int) ([][]*Block, int) {
+	blocks, n, _ := m.ComputedBlocksWithBoundary(hashes, numTokens)
+	return blocks, n
+}
+
+// ComputedBlocksWithBoundary is ComputedBlocks with get_computed_blocks' third result, the
+// shared_prefix_boundary (kv_cache_manager.py:313-321@5df63a72): where a sparse-retention
+// group (Mamba) stops short of a longer hit another group has, num_new_computed_tokens plus
+// the longest single-group hit beyond it (num_uncached_common_prefix_tokens,
+// kv_cache_coordinator.py:922-930), 0 when there is none.
+func (m *Manager) ComputedBlocksWithBoundary(hashes []BlockHash, numTokens int) ([][]*Block, int, int) {
 	if !m.caching {
-		return make([][]*Block, len(m.groups)), 0
+		return make([][]*Block, len(m.groups)), 0, 0
 	}
 	maxLen := numTokens - 1
+	if g := m.groups[0]; len(m.groups) == 1 && g.align != nil {
+		hit, n := mambaFindLongestHit(m.Pool, hashes, maxLen, []uint32{g.id}, g.blockSize, g.blockSize)
+		return hit, n, 0
+	}
 	if len(m.groups) == 1 {
 		if g := m.groups[0]; g.spec.window() {
-			return m.windowHit(hashes, maxLen, specGroup{spec: g.spec, ids: []int{0}}, g.eagle)
+			hit, n := m.windowHit(hashes, maxLen, specGroup{spec: g.spec, ids: []int{0}}, g.eagle)
+			return hit, n, 0
 		}
 		hit := m.fullHit(hashes, maxLen, []int{0}, m.groups[0].eagle)
-		return hit, len(hit[0]) * m.blockSize
+		return hit, len(hit[0]) * m.blockSize, 0
 	}
-	return m.hybridHit(hashes, maxLen)
+	blocks, n, uncached := m.hybridHit(hashes, maxLen)
+	if uncached > 0 {
+		return blocks, n, n + uncached
+	}
+	return blocks, n, 0
 }
 
 // groupHashes is the request's block hashes at a group's block size: the hash at the last
@@ -391,10 +458,10 @@ func (m *Manager) specGroups() []specGroup {
 // shortens it every group is checked again, until none does. Full attention is looked up
 // once and then only trimmed; an EAGLE group matches one block past the candidate before its
 // drop, and its drop is redone after any group shortens the length (issue #32802).
-func (m *Manager) hybridHit(hashes []BlockHash, maxLen int) ([][]*Block, int) {
+func (m *Manager) hybridHit(hashes []BlockHash, maxLen int) ([][]*Block, int, int) {
 	sgs := m.specGroups()
 	n := len(m.groups)
-	hitLength := maxLen
+	hitLength, longest := maxLen, 0
 	blocks := make([][]*Block, n)
 	have := make([]bool, n)
 	lengths := make([]int, n)
@@ -410,13 +477,20 @@ func (m *Manager) hybridHit(hashes []BlockHash, maxLen int) ([][]*Block, int) {
 			}
 			drop := sg.eagle && !eagleVerified[idx]
 			maxScan := curr
-			if drop {
-				// eagle_proof_margin: one of the group's blocks (kv_cache_utils.py:792-801).
+			if drop && sg.spec.Kind != Mamba {
+				// eagle_proof_margin: one of the group's blocks (kv_cache_utils.py:792-801); a
+				// Mamba finder never drops, so it gets none (kv_cache_coordinator.py:853-857).
 				maxScan = min(curr+m.groups[first].blockSize, len(hashes)*m.hashBlockSize)
 			}
 			var hit [][]*Block
 			var got int
-			if sg.spec.Kind == FullAttention {
+			if m.groups[first].align != nil {
+				gids := make([]uint32, len(sg.ids))
+				for j, gi := range sg.ids {
+					gids[j] = m.groups[gi].id
+				}
+				hit, got = mambaFindLongestHit(m.Pool, hashes, maxScan, gids, m.groups[first].blockSize, m.blockSize)
+			} else if sg.spec.Kind == FullAttention {
 				hit = m.fullHit(hashes, maxScan, sg.ids, drop)
 				got = len(hit[0]) * m.groups[first].blockSize
 			} else {
@@ -428,6 +502,7 @@ func (m *Manager) hybridHit(hashes []BlockHash, maxLen int) ([][]*Block, int) {
 				eagleVerified = map[int]bool{}
 			}
 			curr = got
+			longest = max(longest, curr)
 			for j, gi := range sg.ids {
 				blocks[gi], have[gi], lengths[gi] = hit[j], true, got
 			}
@@ -451,7 +526,7 @@ func (m *Manager) hybridHit(hashes []BlockHash, maxLen int) ([][]*Block, int) {
 			}
 		}
 	}
-	return blocks, hitLength
+	return blocks, hitLength, longest - hitLength
 }
 
 // fullHit is FullAttentionManager.find_longest_cache_hit (single_type_kv_cache_manager.py:
@@ -609,6 +684,10 @@ type Alloc struct {
 	// Reserved is reserved_blocks: free blocks the call must leave for other in-flight
 	// sequences (an asynchronous load's admission, kv_cache_manager.py:577-584).
 	Reserved int
+	// PrefillEnd is the scheduler's prefill_end, max(num_prompt_tokens, num_tokens - 1)
+	// (kv_cache_manager.py:520@5df63a72): a Mamba align group under retention 0 reserves a
+	// prefill checkpoint only on the chunk that reaches it.
+	PrefillEnd int
 	// DelayCache is delay_cache_blocks: the blocks are not cached yet, because an
 	// asynchronous load fills them in a later step (:601-604).
 	DelayCache bool
@@ -643,7 +722,7 @@ func (m *Manager) Allocate(id string, a Alloc) bool {
 	}
 	if a.FullSequenceMustFit {
 		full := min(a.NumTokens, m.maxModelLen)
-		if m.toAllocate(id, full, newComputed, totalComputed, true)+watermark > m.Pool.NumFree() {
+		if m.toAllocateMain(id, full, full, newComputed, totalComputed, true, a.PrefillEnd)+watermark > m.Pool.NumFree() {
 			return false
 		}
 	}
@@ -652,7 +731,7 @@ func (m *Manager) Allocate(id string, a Alloc) bool {
 	// Out-of-window blocks are freed first, even if the allocation then fails, on the
 	// processed-token basis (:545-557).
 	m.removeSkipped(id, max(0, totalComputed-a.InFlight))
-	if m.toAllocate(id, needSlots, newComputed, localComputed+a.External, false)+watermark > m.Pool.NumFree()-a.Reserved {
+	if m.toAllocateMain(id, needSlots, mainModel, newComputed, localComputed+a.External, false, a.PrefillEnd)+watermark > m.Pool.NumFree()-a.Reserved {
 		return false
 	}
 	// Adopt the prefix hit in every group before allocating any new block, then allocate
@@ -666,6 +745,10 @@ func (m *Manager) Allocate(id string, a Alloc) bool {
 				continue
 			}
 			bs := newComputed[i]
+			if g.align != nil {
+				g.align.addLocalComputedBlocks(id, bs, localComputed, a.External)
+				continue
+			}
 			skipped := g.skippedTokens(localComputed+a.External) / g.blockSize
 			if skipped > 0 {
 				bs = bs[min(skipped, len(bs)):]
@@ -684,6 +767,9 @@ func (m *Manager) Allocate(id string, a Alloc) bool {
 			// allocate_external_computed_blocks (single_type_kv_cache_manager.py:328-367).
 			total := localComputed + a.External
 			for _, g := range m.groups {
+				if g.align != nil {
+					panic("kv: external computed tokens are not modelled for a Mamba align group")
+				}
 				if g.spec.Kind == CircularBuffer {
 					// The ring's one block (allocate_external_computed_blocks, :1209-1216).
 					m.claimRing(g, id)
@@ -699,11 +785,15 @@ func (m *Manager) Allocate(id string, a Alloc) bool {
 		}
 	}
 	for _, g := range m.groups {
+		if g.align != nil {
+			g.align.allocateNewBlocks(id, mainModel)
+			continue
+		}
 		if g.spec.Kind == CircularBuffer {
 			m.claimRing(g, id)
 			continue
 		}
-		if need := cdiv(needSlots, g.blockSize) - len(g.reqBlocks[id]); need > 0 {
+		if need := g.slotBlocks(needSlots) - len(g.reqBlocks[id]); need > 0 {
 			g.reqBlocks[id] = append(g.reqBlocks[id], m.Pool.New(need)...)
 		}
 	}
@@ -736,6 +826,12 @@ func (m *Manager) RemainingBlocks(id string, numTokens, numComputed int) int {
 	return m.toAllocate(id, numTokens, make([][]*Block, len(m.groups)), numComputed, true)
 }
 
+// RemainingBlocksFor is RemainingBlocks with the main model's token count and the request's
+// prefill_end, which a Mamba align group reads (scheduler.py:3066-3075@5df63a72).
+func (m *Manager) RemainingBlocksFor(id string, numTokens, main, numComputed, prefillEnd int) int {
+	return m.toAllocateMain(id, numTokens, main, make([][]*Block, len(m.groups)), numComputed, true, prefillEnd)
+}
+
 func (m *Manager) isRunning(id string) bool {
 	for _, g := range m.groups {
 		if _, ok := g.numCached[id]; ok {
@@ -761,10 +857,15 @@ func (m *Manager) cacheable(g *group, numTokens int) int {
 	return aligned
 }
 
-// skippedTokens is get_num_skipped_tokens (single_type_kv_cache_manager.py:712-723 and
-// :1135-1171): the tokens below a sliding window less the extra ones it retains, none for
-// full attention.
+// skippedTokens is get_num_skipped_tokens (single_type_kv_cache_manager.py:712-723, :1135-1171
+// and :1954-1960): the tokens below a sliding window less the extra ones it retains, all but the
+// last computed token for Mamba, none for full attention.
 func (g *group) skippedTokens(computed int) int {
+	if g.spec.Kind == Mamba {
+		// MambaManager.get_num_skipped_tokens (:1954-1960): only the last computed token's
+		// state is needed, so every token before it is skipped.
+		return max(0, computed-1)
+	}
 	if !g.spec.window() {
 		return 0
 	}
@@ -776,6 +877,10 @@ func (g *group) skippedTokens(computed int) int {
 // (_remove_blocks_in_range, :645-670).
 func (m *Manager) removeSkipped(id string, processed int) {
 	for _, g := range m.groups {
+		if g.align != nil {
+			g.align.removeSkippedBlocks(id, processed)
+			continue
+		}
 		n := g.skippedTokens(processed)
 		if n <= 0 {
 			continue
@@ -806,6 +911,13 @@ func (m *Manager) removeSkipped(id string, processed int) {
 // recycling-aware cap, as the full-sequence gate does. A running request may need fewer
 // blocks than it holds, after rejected drafts (:220-223); it then needs none.
 func (m *Manager) toAllocate(id string, numTokens int, newComputed [][]*Block, totalComputed int, admission bool) int {
+	return m.toAllocateMain(id, numTokens, numTokens, newComputed, totalComputed, admission, 0)
+}
+
+// toAllocateMain is toAllocate with num_tokens_main_model, the tokens of the main model without
+// a drafter's lookahead slots, which a Mamba align group counts instead of numTokens.
+func (m *Manager) toAllocateMain(id string, numTokens, main int, newComputed [][]*Block, totalComputed int, admission bool,
+	prefillEnd int) int {
 	total := 0
 	for i, g := range m.groups {
 		have := len(g.reqBlocks[id])
@@ -817,7 +929,16 @@ func (m *Manager) toAllocate(id string, numTokens int, newComputed [][]*Block, t
 			}
 			continue
 		}
-		required := cdiv(numTokens, g.blockSize)
+		if g.align != nil {
+			// prefill_end is 0 under dense retention (kv_cache_coordinator.py:227-228@5df63a72);
+			// external computed tokens are not modelled for Mamba align.
+			if r := m.retention; r == nil || *r != 0 {
+				prefillEnd = 0 // kv_cache_coordinator.py:233-234
+			}
+			total += g.align.numBlocksToAllocate(id, newComputed[i], totalComputed, totalComputed, main, admission, prefillEnd)
+			continue
+		}
+		required := g.slotBlocks(numTokens)
 		if admission && g.spec.window() {
 			// max_admission_blocks_per_request (kv_cache_interface.py:859-885).
 			capTokens := min(g.spec.Window-1+g.extraRetained+m.maxInFlight, m.maxModelLen)
@@ -884,6 +1005,11 @@ func (m *Manager) cache(g *group, id string, hashes []BlockHash, numTokens int, 
 	if !g.spec.cacheable() {
 		return
 	}
+	if g.align != nil {
+		g.align.cacheBlocks(mambaReq{ID: id, Hashes: hashes, NumPromptTokens: run.NumPromptTokens, Run: run,
+			SharedPrefixBoundary: run.SharedPrefixBoundary}, numTokens)
+		return
+	}
 	numCached := g.numCached[id]
 	numFull := numTokens / g.blockSize
 	if numCached >= numFull {
@@ -931,6 +1057,10 @@ func (m *Manager) reachableWindowBlocks(g *group, from, to int) []bool {
 // first (free, single_type_kv_cache_manager.py:581-589; kv_cache_coordinator.py:400-408).
 func (m *Manager) Free(id string) {
 	for _, g := range m.groups {
+		if g.align != nil {
+			g.align.free(id)
+			continue
+		}
 		bs := g.reqBlocks[id]
 		rev := make([]*Block, len(bs))
 		for i, b := range bs {
@@ -948,11 +1078,43 @@ func (m *Manager) Free(id string) {
 func (m *Manager) PopBlocks(id string) []*Block {
 	var out []*Block
 	for _, g := range m.groups {
+		if g.align != nil {
+			out = append(out, g.align.popBlocksForFree(id)...)
+			continue
+		}
 		out = append(out, g.reqBlocks[id]...)
 		delete(g.reqBlocks, id)
 		delete(g.numCached, id)
 	}
 	return out
+}
+
+// NewStepStarts is new_step_starts (kv_cache_manager.py:920-922@5df63a72), which the scheduler
+// calls at the start of each step: a Mamba align group forgets the hashes cached in the last
+// step, so a request hitting one of them is no longer deferred.
+func (m *Manager) NewStepStarts() {
+	for _, g := range m.groups {
+		if g.align != nil {
+			g.align.newStepStarts()
+		}
+	}
+}
+
+// EnablePartialHashHits is the coordinator's enable_partial_hash_hits
+// (kv_cache_coordinator.py:684-706@5df63a72). It is always false here: a manager whose Mamba
+// block exceeds the hash block size, the only case where vLLM enables it, is refused at
+// construction.
+func (m *Manager) EnablePartialHashHits() bool { return false }
+
+// anyFlagged is whether any group is a drafter's, which with EAGLE off still makes
+// eagle_group_ids non-empty.
+func anyFlagged(specs []Group) bool {
+	for _, g := range specs {
+		if g.Eagle {
+			return true
+		}
+	}
+	return false
 }
 
 func cdiv(a, b int) int { return (a + b - 1) / b }

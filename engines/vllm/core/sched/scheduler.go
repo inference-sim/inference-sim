@@ -30,6 +30,11 @@ const (
 
 // Config is the scheduler's slice of vLLM's configuration.
 type Config struct {
+	// RetentionInterval is prefix_cache_retention_interval for a model with Mamba groups: nil is
+	// dense retention (CacheConfig's dataclass default), 0 vLLM's engine default.
+	RetentionInterval *int
+	// PrefixMatchUnit is cache_config.prefix_match_unit, the hash block size when set (0 unset).
+	PrefixMatchUnit     int
 	MaxNumSeqs          int // max_num_seqs
 	MaxNumActiveSeqs    int // max_num_active_seqs; 0 = MaxNumSeqs
 	MaxNumBatchedTokens int // max_num_batched_tokens
@@ -119,8 +124,13 @@ type Request struct {
 	Transfer    *TransferParams
 	fetchStage  FetchStage
 	hashes      []kv.BlockHash
+	root        kv.BlockHash // the chain's NONE_HASH under Keys.Seed, set with the first hash
 	numInFlight int
-	seq         int // FIFO tie-break within a priority queue
+	// sharedPrefixBoundary is request.shared_prefix_boundary (vllm/v1/request.py:206@5df63a72):
+	// where a Mamba group's cached prefix stops short of another group's, set by the prefix
+	// lookup of a fresh admission and read by the aligned split.
+	sharedPrefixBoundary int
+	seq                  int // FIFO tie-break within a priority queue
 	// Placeholders is num_output_placeholders: tokens scheduled to be sampled whose output
 	// has not returned yet (async scheduling only).
 	Placeholders int
@@ -160,7 +170,10 @@ func (r *Request) updateHashes(blockSize int) {
 		if i > 0 {
 			parent = r.hashes[i-1]
 		}
-		r.hashes = append(r.hashes, kv.HashBlock(parent, r.tokenRange(i*blockSize, (i+1)*blockSize), r.Keys.ExtraFor(i)))
+		if r.root == nil {
+			r.root = kv.NoneHashFor(r.Keys.Seed)
+		}
+		r.hashes = append(r.hashes, kv.HashBlockUnder(r.root, parent, r.tokenRange(i*blockSize, (i+1)*blockSize), r.Keys.ExtraFor(i)))
 	}
 }
 
@@ -205,8 +218,10 @@ type Finished struct {
 
 // Scheduler is vLLM's Scheduler.
 type Scheduler struct {
-	cfg      Config
-	KV       *kv.Manager
+	cfg Config
+	KV  *kv.Manager
+	// mamba is the aligned split's state (scheduler.py:375-410@5df63a72).
+	mamba    *MambaSplit
 	requests map[string]*Request
 	running  []*Request
 	waiting  queue
@@ -273,7 +288,7 @@ func New(cfg Config) (*Scheduler, error) {
 	s := &Scheduler{
 		cfg: cfg,
 		KV: kv.NewManagerWith(cfg.NumBlocks, cfg.BlockSize, cfg.MaxModelLen, cfg.EnablePrefixCaching, wm,
-			kv.Options{EagleBlockDrop: cfg.Spec.EagleBlockDrop, PrefillLookahead: cfg.Spec.PrefillLookahead,
+			kv.Options{RetentionInterval: cfg.RetentionInterval, PrefixMatchUnit: cfg.PrefixMatchUnit, EagleBlockDrop: cfg.Spec.EagleBlockDrop, PrefillLookahead: cfg.Spec.PrefillLookahead,
 				Groups: cfg.KVGroups, MaxInFlightTokens: max(cfg.MaxConcurrentBatches, 1) * cfg.MaxNumBatchedTokens}),
 		requests: map[string]*Request{},
 		waiting:  queue{priority: cfg.Policy == Priority},
@@ -281,6 +296,10 @@ func New(cfg Config) (*Scheduler, error) {
 		deferred: map[string]bool{},
 		recvDone: map[string]bool{}, recvFailed: map[string]bool{}, inflight: map[*Request]bool{},
 	}
+	s.mamba = NewMambaSplit(MambaSplitConfig{Groups: cfg.KVGroups, BlockSize: cfg.BlockSize,
+		HashBlockSize: s.KV.HashBlockSize(), MaxNumScheduledTokens: s.maxScheduled(),
+		LongPrefillTokenThreshold: cfg.LongPrefillTokenThreshold, EagleBlockDrop: cfg.Spec.EagleBlockDrop,
+		PartialHashHits: s.KV.EnablePartialHashHits()})
 	if cfg.KVEvents {
 		s.KV.Pool.EnableEvents()
 	}
@@ -343,14 +362,20 @@ func (s *Scheduler) SetConnector(c Connector, conf ConnectorConfig) error {
 	}
 	for g := 0; g < s.KV.NumGroups(); g++ {
 		spec := s.KV.GroupSpec(g)
-		if (spec.Kind != kv.FullAttention && spec.Kind != kv.SlidingWindow) || spec.BlockSize != 0 {
-			// A connector beside a bounded-replay window, a ring or a group of its own block
-			// size reaches code the connector oracle has not run: the replay window a load
-			// restores (_load_restores_replay_window, scheduler.py:3094-3101), NIXL's prefill
-			// backoff floor for it (nixl/base_scheduler.py:379-394) and the per-group transfer
-			// clipping (:262-300). Mamba groups are not modelled at all (blis-vllm#7).
-			return fmt.Errorf("sched: a KV connector beside KV cache group %d (%+v) is not modelled: only full "+
-				"attention and sliding windows at the engine's block size are (%s)", g, spec, connectorGroupIssue)
+		packed := spec.Kind == kv.SlidingWindowMLA || spec.Kind == kv.CircularBuffer || spec.BlockSize != 0
+		if (spec.Kind != kv.FullAttention && spec.Kind != kv.SlidingWindow && !packed) || (packed && !caps.PackedGroups) {
+			// A connector not diff-tested beside a bounded-replay window, a ring or a group of its own
+			// block size reaches code its oracle has not run: the replay window a load restores
+			// (_load_restores_replay_window, scheduler.py:3094-3101) and the per-group transfer
+			// clipping. Mamba groups are not modelled at all (blis-vllm#7).
+			return fmt.Errorf("sched: a KV connector beside KV cache group %d (%+v) is not modelled for this connector: "+
+				"only full attention and sliding windows at the engine's block size are (%s)", g, spec, connectorGroupIssue)
+		}
+		if packed {
+			if _, ok := c.(GroupLoader); !ok {
+				return fmt.Errorf("sched: a KV connector beside KV cache group %d (%+v) must state the groups its load "+
+					"restores (get_loaded_kv_cache_group_ids)", g, spec)
+			}
 		}
 	}
 	switch {
@@ -449,17 +474,52 @@ func (s *Scheduler) reservePrefillLookahead(r *Request, computed, numNew int) in
 	return max(numNew, 0)
 }
 
-// markPrefixReplay is _mark_prefix_replay (scheduler.py:3103-3121) without a KV load: it records
-// where a prefix hit's replay starts and returns the hit tokens to recompute, the hit's last
+// markPrefixReplay is _mark_prefix_replay (scheduler.py:3103-3121): it records where a prefix
+// hit's replay starts and returns the hit tokens to recompute, the hit's last
 // prefix_replay_tokens, whose sliding-window KV the worker rebuilds while their cached KV stays.
-func (s *Scheduler) markPrefixReplay(r *Request, hitTokens int) int {
+// A hit whose KV load carries the window (windowLoaded) replays nothing.
+func (s *Scheduler) markPrefixReplay(r *Request, hitTokens int, windowLoaded bool) int {
 	window := s.KV.PrefixReplayTokens()
 	if window == 0 {
+		return 0
+	}
+	if windowLoaded {
+		r.ReplayStart = 0
 		return 0
 	}
 	n := min(window, hitTokens)
 	r.ReplayStart = hitTokens - n
 	return n
+}
+
+// loadRestoresReplayWindow is _load_restores_replay_window (scheduler.py:3094-3101): whether the
+// connector's load for r restores every bounded-replay group, as a P/D transfer of the request's
+// own blocks does and a prefix-cache store (which holds no window) does not. A connector that
+// does not state the groups it loads (GroupLoader) loads the prefix-cacheable ones, which no
+// bounded-replay group is (get_loaded_kv_cache_group_ids, kv_connector/v1/base.py:490-500).
+func (s *Scheduler) loadRestoresReplayWindow(r *Request) bool {
+	var replay []int
+	all := make([]int, s.KV.NumGroups())
+	for g := range all {
+		all[g] = g
+		if spec := s.KV.GroupSpec(g); spec.Kind == kv.SlidingWindowMLA && spec.BoundedReplay {
+			replay = append(replay, g)
+		}
+	}
+	gl, ok := s.connector.(GroupLoader)
+	if len(replay) == 0 || !ok {
+		return false
+	}
+	loaded := map[int]bool{}
+	for _, g := range gl.LoadedGroups(r, all) {
+		loaded[g] = true
+	}
+	for _, g := range replay {
+		if !loaded[g] {
+			return false
+		}
+	}
+	return true
 }
 
 // Schedule is schedule() (scheduler.py:591-1558) for this configuration.
@@ -471,6 +531,9 @@ func (s *Scheduler) Schedule() Output { return s.ScheduleThrottled(false) }
 // 1113-1116).
 func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 	s.currentStep++
+	// kv_cache_manager.new_step_starts (scheduler.py:632@5df63a72): a Mamba state cached in this
+	// step is not yet filled, so no other request hits it until the next one.
+	s.KV.NewStepStarts()
 	// finished_req_ids are handed to the runner with this output (scheduler.py:1649-1652).
 	s.finishedPending = 0
 	deferPrefills := false
@@ -532,6 +595,10 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 		// The input position must stay within max_model_len (:713-720): one slot is the
 		// token this step samples.
 		numNew = min(numNew, s.cfg.MaxModelLen-r.NumComputed-1)
+		if s.mamba.Needed() {
+			// Apply Mamba alignment before encoder caps (:723-725).
+			numNew = s.mamba.Split(r.mambaSplitRequest(), numNew, 0, 0)
+		}
 		numNew = s.reservePrefillLookahead(r, r.NumComputed, numNew)
 		if numNew <= 0 {
 			// Skipped, not a stop: a later request may still fit (:755-773).
@@ -544,7 +611,7 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 		}
 		for {
 			if s.KV.Allocate(r.ID, kv.Alloc{Computed: r.NumComputed, New: numNew, Lookahead: s.cfg.Spec.Lookahead,
-				Hashes: r.hashes, NumTokens: r.NumTokens(), InFlight: r.numInFlight, HasScheduled: true, Run: s.run(r)}) {
+				Hashes: r.hashes, NumTokens: r.NumTokens(), InFlight: r.numInFlight, HasScheduled: true, Run: s.run(r), PrefillEnd: r.prefillEnd()}) {
 				ok = true
 				break
 			}
@@ -662,10 +729,10 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 			// newLocal is num_new_local_computed_tokens; external is the connector's tokens
 			// beyond it, and async whether they load between steps.
 			newLocal, external, async := 0, 0, false
-			lookedUp := false
+			lookedUp, loadedWindow := false, false
 			if r.NumComputed == 0 {
 				lookedUp = true
-				hit, newLocal = s.KV.ComputedBlocks(r.hashes, r.NumTokens())
+				hit, newLocal, r.sharedPrefixBoundary = s.KV.ComputedBlocksWithBoundary(r.hashes, r.NumTokens())
 				if s.connector != nil {
 					// The connector sees the block-aligned local hit (:968-980). A hit here is
 					// always whole blocks, so the partial-tail cases (:1000-1027) never arise.
@@ -677,13 +744,23 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 						continue
 					}
 				}
+				// SWA bounded replay (:993-1010): a hit that carries no window is recomputed from
+				// the block holding its last window's first token, and the sliding windows retire
+				// whole blocks below the window of the hit's next token, so a hit must end on a
+				// block boundary or it would retire the block the replay starts in. A load that
+				// restores the window replays nothing and keeps its exact count.
+				windowLoaded := external > 0 && s.loadRestoresReplayWindow(r)
+				if s.KV.PrefixReplayTokens() > 0 && !windowLoaded {
+					external -= external % s.KV.BlockSize()
+					async = async && external > 0
+				}
 				numComputed = newLocal + external
-				// SWA bounded replay (:1047-1066): a hit no longer than the replayed window would be
-				// recomputed in full and save nothing, so it is dropped. No connector runs beside
-				// a bounded-replay group (SetConnector), so no load restores the window here.
-				if replay := s.KV.PrefixReplayTokens(); 0 < numComputed && numComputed <= replay {
+				// A hit no longer than the replayed window, and no load of it, would be recomputed in
+				// full and save nothing, so it is dropped (:1047-1066).
+				if replay := s.KV.PrefixReplayTokens(); !windowLoaded && 0 < numComputed && numComputed <= replay {
 					hit, newLocal, external, async, numComputed = nil, 0, 0, false, 0
 				}
+				loadedWindow = windowLoaded
 				if async {
 					s.setFetchStage(r, FetchWaitingToStart)
 				} else {
@@ -700,7 +777,7 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 				room := min(tokenBudget, inputBudget-draftSlots)
 				if lookedUp {
 					// A fresh admission recomputes its hit's last window (:1117-1124).
-					replayed = s.markPrefixReplay(r, numComputed)
+					replayed = s.markPrefixReplay(r, numComputed, loadedWindow)
 					numComputed -= replayed
 				}
 				numNew = r.NumTokens() - numComputed
@@ -720,6 +797,17 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 					break
 				}
 				numNew = min(numNew, room)
+				if s.mamba.Needed() {
+					// Apply Mamba alignment before encoder caps (:1172-1190). The split aligns
+					// prefill chunks: a padded request whose rows it clipped drops the padding
+					// rather than keep a shorter one.
+					if numNew = s.mamba.Split(r.mambaSplitRequest(), numNew, newLocal, external); numNew == 0 {
+						break
+					}
+					if pad && numNew != 1+k {
+						numNew, pad = 1, false
+					}
+				}
 				numNew = s.reservePrefillLookahead(r, numComputed, numNew)
 				if numNew <= 0 {
 					break
@@ -736,7 +824,7 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 			if !s.KV.Allocate(r.ID, kv.Alloc{Computed: r.NumComputed, New: max(numNew-replayed, 0), Lookahead: lookahead, NewComputed: hit,
 				NumNewComputed: newLocal, External: external, Reserved: reserved, DelayCache: async,
 				Hashes: r.hashes, NumTokens: r.NumTokens(), InFlight: r.numInFlight, Waiting: true,
-				HasScheduled: len(s.running) > 0, FullSequenceMustFit: s.cfg.ReserveFullSequence, Run: s.run(r)}) {
+				HasScheduled: len(s.running) > 0, FullSequenceMustFit: s.cfg.ReserveFullSequence, Run: s.run(r), PrefillEnd: r.prefillEnd()}) {
 				break
 			}
 			if s.connector != nil {
@@ -871,11 +959,15 @@ func (s *Scheduler) allocatedBlocks(id string) AllocatedBlocks {
 		out.IDs[i] = b.ID
 		out.Hashed[i] = b.Hash != nil && !b.Null
 	}
+	out.Unhashed = make([][]int, s.KV.NumGroups())
 	for g := range out.Groups {
 		gb := s.KV.GroupBlocks(g, id)
 		out.Groups[g] = make([]int, len(gb))
 		for i, b := range gb {
 			out.Groups[g][i] = b.ID
+			if b.Hash == nil && !b.Null {
+				out.Unhashed[g] = append(out.Unhashed[g], b.ID)
+			}
 		}
 	}
 	return out
@@ -886,9 +978,19 @@ func cdiv(a, b int) int { return (a + b - 1) / b }
 // run is what a KV event reports about r's blocks; nothing is built with events off.
 func (s *Scheduler) run(r *Request) kv.StoredRun {
 	if !s.cfg.KVEvents {
-		return kv.StoredRun{}
+		return kv.StoredRun{NumPromptTokens: len(r.Prompt), SharedPrefixBoundary: r.sharedPrefixBoundary}
 	}
-	return kv.StoredRun{Tokens: r.allTokens(), LoRA: r.LoRAName}
+	return kv.StoredRun{Tokens: r.allTokens(), LoRA: r.LoRAName, NumPromptTokens: len(r.Prompt),
+		SharedPrefixBoundary: r.sharedPrefixBoundary}
+}
+
+// prefillEnd is max(num_prompt_tokens, num_tokens - 1) (kv_cache_manager.py:520@5df63a72).
+func (r *Request) prefillEnd() int { return max(len(r.Prompt), r.NumTokens()-1) }
+
+// mambaSplitRequest is the request's part of the aligned split's input.
+func (r *Request) mambaSplitRequest() MambaSplitRequest {
+	return MambaSplitRequest{NumComputed: r.NumComputed, NumPrompt: len(r.Prompt), NumTokens: r.NumTokens(),
+		SharedPrefixBoundary: r.sharedPrefixBoundary}
 }
 
 // preempt is _preempt_request (:1571-1614) for recompute preemption. Under async

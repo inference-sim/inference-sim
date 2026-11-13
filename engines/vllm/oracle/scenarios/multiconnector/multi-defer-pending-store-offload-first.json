@@ -1,0 +1,134 @@
+{
+ "config": {
+  "block_size": 4,
+  "connector": {
+   "extra_config": {
+    "connectors": [
+     {
+      "kv_connector": "OffloadingConnector",
+      "kv_connector_extra_config": {
+       "cpu_bytes_to_use": 262144,
+       "offload_prompt_only": false
+      },
+      "kv_role": "kv_both"
+     },
+     {
+      "kv_connector": "NixlConnector",
+      "kv_role": "kv_both"
+     }
+    ]
+   },
+   "kv_load_failure_policy": "fail",
+   "kv_role": "kv_both",
+   "name": "MultiConnector"
+  },
+  "enable_prefix_caching": false,
+  "kv_page": {
+   "head_size": 512,
+   "num_kv_heads": 1
+  },
+  "max_model_len": 256,
+  "max_num_batched_tokens": 32,
+  "max_num_seqs": 4,
+  "num_blocks": 20,
+  "scheduling_policy": "fcfs",
+  "transfer": {
+   "load_delay": 1,
+   "store_delay": 5
+  }
+ },
+ "max_steps": 200,
+ "name": "multi-defer-pending-store-offload-first",
+ "requests": [
+  {
+   "arrival_step": 0,
+   "id": "a",
+   "output": [
+    1
+   ],
+   "prompt": [
+    3145,
+    7611,
+    18377,
+    2763,
+    13927,
+    10720,
+    1170,
+    19220,
+    9904,
+    19738,
+    658,
+    19546,
+    6173,
+    25167,
+    22394,
+    19142,
+    21646,
+    7619,
+    15050,
+    10208
+   ]
+  },
+  {
+   "arrival_step": 1,
+   "id": "b",
+   "output": [
+    2,
+    3
+   ],
+   "prompt": [
+    3145,
+    7611,
+    18377,
+    2763,
+    13927,
+    10720,
+    1170,
+    19220,
+    9904,
+    19738,
+    658,
+    19546,
+    6173,
+    25167,
+    22394,
+    19142,
+    21646,
+    7619,
+    15050,
+    10208
+   ]
+  },
+  {
+   "arrival_step": 14,
+   "id": "c",
+   "output": [
+    4
+   ],
+   "prompt": [
+    3145,
+    7611,
+    18377,
+    2763,
+    13927,
+    10720,
+    1170,
+    19220,
+    9904,
+    19738,
+    658,
+    19546,
+    6173,
+    25167,
+    22394,
+    19142,
+    21646,
+    7619,
+    15050,
+    10208
+   ],
+   "recv_delay": 2,
+   "remote_prefill": true
+  }
+ ]
+}

@@ -170,7 +170,7 @@ func TestResolutionAgainstTheRecordedRuns(t *testing.T) {
 		want  tally
 	}{
 		{"engine_line", tally{14, 0, 0}},
-		{"silent", tally{30, 1, 0}},
+		{"silent", tally{31, 0, 0}},
 		{"args", tally{0, 56, 7}},
 	} {
 		if got := *byClass[e.class]; got != e.want {

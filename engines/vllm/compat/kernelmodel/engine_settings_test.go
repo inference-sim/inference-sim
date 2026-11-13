@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -29,6 +30,11 @@ func openEdited(t *testing.T, release string, drop ...string) *Model {
 	}
 	body := strings.Replace(string(raw), `engine_version: "0.29.0"`, `engine_version: "`+release+`"`, 1)
 	for _, d := range drop {
+		if add, ok := strings.CutPrefix(d, "+"); ok {
+			// A line to add to the engine block, beside max_num_seqs.
+			body = strings.Replace(body, "      max_num_seqs: 256\n", "      max_num_seqs: 256\n      "+add+"\n", 1)
+			continue
+		}
 		line := "      " + d + "\n"
 		if !strings.Contains(body, line) {
 			t.Fatalf("fixture has no %q", d)
@@ -86,6 +92,40 @@ func TestEngineResolvesUnstatedBatchSettingsAt032(t *testing.T) {
 	}
 }
 
+// At vLLM 0.32.0 an unstated max_num_batched_tokens is raised to max_model_len when the engine
+// block states enable_chunked_prefill false (vllm/engine/arg_utils.py:3136-3141@5df63a72), and
+// stays the GPU's default when it states true or nothing.
+func TestEngineResolvesTheTokenBudgetFromEnableChunkedPrefill(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		add    string
+		tokens int
+		source string
+	}{
+		{"unstated", "", 8192, ""},
+		{"true", "+enable_chunked_prefill: true", 8192, ""},
+		{"false", "+enable_chunked_prefill: false", 32768, "raised to max_model_len without chunked prefill"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			drop := []string{"max_num_batched_tokens: 8192"}
+			if c.add != "" {
+				drop = append(drop, c.add)
+			}
+			m := openEdited(t, "0.32.0", drop...)
+			e, err := m.Engine()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if e.MaxNumBatchedTokens != c.tokens {
+				t.Errorf("max_num_batched_tokens %d, want %d", e.MaxNumBatchedTokens, c.tokens)
+			}
+			if src := m.EngineSources()["max_num_batched_tokens"]; !strings.Contains(src, c.source) {
+				t.Errorf("source %q, want one naming %q", src, c.source)
+			}
+		})
+	}
+}
+
 // An unstated block_size at 0.32.0 is still refused, naming the open issue (#68); at 0.31.0 the
 // block is returned as stated, and an unstated batch setting is refused, as before.
 func TestEngineRefusesWhatItDoesNotResolve(t *testing.T) {
@@ -108,7 +148,12 @@ func TestEngineRefusesWhatItDoesNotResolve(t *testing.T) {
 // generated deployment states none (X19).
 func openWithoutBlockSize(t *testing.T, fixture string) (*Model, error) {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "..", "kerneltests", "testdata", "aisimulate", fixture))
+	// A fixture name with a directory ("direct/...") is relative to kerneltests/testdata.
+	path := filepath.Join("..", "..", "kerneltests", "testdata", "aisimulate", fixture)
+	if strings.Contains(fixture, "/") {
+		path = filepath.Join("..", "..", "kerneltests", "testdata", filepath.FromSlash(fixture))
+	}
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,6 +186,9 @@ func TestEngineResolvesAnUnstatedBlockSizeAt032(t *testing.T) {
 		{"deepseek-v3-b200-fp8-sglang-tp8.yaml", 32, ""},
 		// MLA on Hopper with fp8 KV depends on whether the wheel carries FlashMLA.
 		{"deepseek-v3-h200-fp8-sglang-tp8.yaml", 0, "flashmla_built"},
+		// MLA on Hopper with an unstated KV dtype is FlashAttention MLA's 16 if the wheel ships FA3, which the
+		// oracle assumes (oracle/blocksize ASSUMED_FACTS); the source says so.
+		{"direct/kimi-k2.5-h200-int4-vllm-tp8-cfg1.yaml", 16, ""},
 	} {
 		t.Run(c.fixture, func(t *testing.T) {
 			m, err := openWithoutBlockSize(t, c.fixture)
@@ -159,6 +207,8 @@ func TestEngineResolvesAnUnstatedBlockSizeAt032(t *testing.T) {
 			}
 			if src := m.EngineSources()["block_size"]; !strings.Contains(src, "vllm/platforms/interface.py:757-781@5df63a72") {
 				t.Errorf("block_size source %q, want the rule with its citation", src)
+			} else if assumed := strings.Contains(src, "assuming fa3_available: "); assumed != strings.HasPrefix(c.fixture, "direct/kimi") {
+				t.Errorf("block_size source %q: names the FA3 assumption: %t", src, assumed)
 			}
 			// The kernel prices the size Engine reports.
 			if k, ok := m.Kernel().(*latencykernel.Kernel); !ok {
@@ -390,7 +440,7 @@ func openGPTOSSWithSpeculation(t *testing.T, speculative string) (*Model, error)
 		t.Fatal(err)
 	}
 	body := regexp.MustCompile(`(?m)^\s*block_size:\s*\d+\s*\n`).ReplaceAllString(string(raw), "")
-	body = strings.Replace(body, "cache_dtype: fp8\n", "cache_dtype: auto\n"+speculative, 1)
+	body = strings.Replace(body, "kv_cache_dtype: fp8\n", "kv_cache_dtype: auto\n"+speculative, 1)
 	r := repos()
 	r.Scenarios = t.TempDir()
 	if err := os.WriteFile(filepath.Join(r.Scenarios, "v.yaml"), []byte(body), 0o644); err != nil {
@@ -406,7 +456,7 @@ func openGPTOSSWithSpeculation(t *testing.T, speculative string) (*Model, error)
 func TestAnUnstatedBlockSizeIsRefusedOnlyForSpeculationThatAddsLayers(t *testing.T) {
 	const ind = "      "
 	spec := func(method string, k int) string {
-		return fmt.Sprintf("%sspeculative:\n%s  method: %s\n%s  num_spec_tokens: %d\n", ind, ind, method, ind, k)
+		return fmt.Sprintf("%sspeculative_config:\n%s  method: %s\n%s  num_speculative_tokens: %d\n", ind, ind, method, ind, k)
 	}
 	for _, c := range []struct {
 		name, speculative string
@@ -454,16 +504,16 @@ func TestSpeculationAddsAttentionLayers(t *testing.T) {
 	}
 }
 
-// attention_config.indexer_kv_dtype is read for MiniMax-M3's indexer cache only, and only its own
-// default (bf16, which "auto" and an unstated value are) is sized; every other stated value is
-// refused naming blis-vllm#84, and so is any value stated for a model with no indexer cache.
-func TestIndexerKVDTypeIsReadForMiniMaxM3OnlyAtItsDefault(t *testing.T) {
+// attention_config.indexer_kv_dtype is read for MiniMax-M3's indexer cache only (fp8 is sized and
+// priced by TestMiniMaxM3FP8IndexerKeysAreHalfTheBytes); a value stated for a model with no indexer
+// cache is refused naming blis-vllm#84.
+func TestIndexerKVDTypeIsReadForMiniMaxM3Only(t *testing.T) {
 	open := func(fixture, dtype string) error {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "kerneltests", "testdata", "aisimulate", fixture))
 		if err != nil {
 			t.Fatal(err)
 		}
-		body := strings.Replace(string(raw), "      block_size:", "      indexer_kv_dtype: "+dtype+"\n      block_size:", 1)
+		body := strings.Replace(string(raw), "      block_size:", "      attention_config: {indexer_kv_dtype: "+dtype+"}\n      block_size:", 1)
 		if !strings.Contains(body, "indexer_kv_dtype") {
 			t.Fatalf("%s has no block_size line to put the key before", fixture)
 		}
@@ -486,11 +536,112 @@ func TestIndexerKVDTypeIsReadForMiniMaxM3OnlyAtItsDefault(t *testing.T) {
 		}
 	}
 	for _, c := range []struct{ fixture, dtype string }{
-		{m3, "fp8"}, {"llama-3.1-70b-instruct-h200-fp8-vllm-tp2.yaml", "bf16"}, {"gpt-oss-120b-h100-fp4-vllm-tp2.yaml", "fp8"},
+		{"llama-3.1-70b-instruct-h200-fp8-vllm-tp2.yaml", "bf16"}, {"gpt-oss-120b-h100-fp4-vllm-tp2.yaml", "fp8"},
 	} {
 		if err := open(c.fixture, c.dtype); err == nil || !strings.Contains(err.Error(), "blis-vllm/issues/84") {
 			t.Errorf("%s with indexer_kv_dtype %s: %v, want a refusal citing #84", c.fixture, c.dtype, err)
 		}
+	}
+}
+
+// DeepSeek V4 and V4.1 build their indexer cache as an MLA spec, so attention_config.indexer_kv_dtype
+// is neither "read only for MiniMax-M3" nor absent for them: vLLM resolves it
+// (dsa_indexer_uses_fp4, vllm/v1/attention/backends/mla/indexer.py:59-84@5df63a72; the table in
+// rules/v0_32/testdata/vllm_indexer_kv_dtype.json is that function's output). auto and fp8 are the
+// 132-byte record the catalog graph states, so they are accepted and leave the KV layers unchanged;
+// bf16 and nvfp4 are refused with vLLM's reason, fp8_e4m3 is not a member of the dtype's type, and
+// mxfp4 is vLLM's refusal below SM10x and, on SM10x, the kernel's: its 68-byte record is not what
+// the graph (one cache dtype per index record) prices.
+func TestIndexerKVDTypeOnDeepSeekV4IsVLLMsOwnResolution(t *testing.T) {
+	open := func(fixture, chip, dtype string) ([]KVLayerRun, error) {
+		raw, err := os.ReadFile(filepath.Join("..", "..", "kerneltests", "testdata", fixture))
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := string(raw)
+		if chip != "" {
+			re := regexp.MustCompile(`(?m)^(\s*hardware:\s*)\S+`)
+			if !re.MatchString(body) {
+				t.Fatalf("%s states no hardware", fixture)
+			}
+			body = re.ReplaceAllString(body, "${1}"+chip)
+		}
+		if dtype != "" {
+			re := regexp.MustCompile(`(?m)^(\s*)kv_cache_dtype:`)
+			if !re.MatchString(body) {
+				t.Fatalf("%s states no kv_cache_dtype line to put the key before", fixture)
+			}
+			body = re.ReplaceAllString(body, "${1}attention_config: {indexer_kv_dtype: "+dtype+"}\n${1}kv_cache_dtype:")
+		}
+		r := repos()
+		r.Scenarios = t.TempDir()
+		if err := os.WriteFile(filepath.Join(r.Scenarios, "v.yaml"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		m, err := Open("v.yaml", r)
+		if err != nil {
+			t.Fatalf("%s: %v", fixture, err)
+		}
+		return m.KVLayers()
+	}
+	const (
+		kernel = "latency kernel keys the index record by one cache dtype"
+		vllm   = "is not supported by the DeepSeek sparse indexer (expected one of ('fp8', 'mxfp4'))."
+		sm10   = "requires Blackwell datacenter GPUs"
+	)
+	for _, f := range []struct {
+		name, fixture, chip string
+		blackwell           bool
+	}{
+		{"deepseek-v4-pro h200", "direct/deepseek-v4-pro-h200-fp8-vllm-tp8-cfg1.yaml", "", false},
+		{"deepseek-v4-pro b200", "aisimulate/deepseek-v4-pro-b200-fp4-vllm-tp8.yaml", "", true},
+		{"deepseek-v4.1-flash h200", "deepseek-v41-flash-h200-tp8.yaml", "", false},
+		{"deepseek-v4.1-flash b200", "deepseek-v41-flash-h200-tp8.yaml", "b200", true},
+	} {
+		t.Run(f.name, func(t *testing.T) {
+			base, err := open(f.fixture, f.chip, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			index := 0
+			for _, r := range base {
+				if r.Spec == "mla" && r.HeadSize == 132 {
+					index++
+				}
+			}
+			if index == 0 {
+				t.Fatalf("no 132-byte index run in %+v", base)
+			}
+			for _, dtype := range []string{"auto", "fp8"} {
+				got, err := open(f.fixture, f.chip, dtype)
+				if err != nil || !reflect.DeepEqual(got, base) {
+					t.Errorf("indexer_kv_dtype %s: %v; KV layers differ from the unstated: %t", dtype, err, !reflect.DeepEqual(got, base))
+				}
+			}
+			for _, c := range []struct {
+				dtype string
+				frags []string
+			}{
+				{"bf16", []string{vllm}},
+				{"nvfp4", []string{vllm}},
+				{"fp8_e4m3", []string{"Input should be 'auto', 'bf16', 'fp8', 'mxfp4' or 'nvfp4'"}},
+				{"mxfp4", map[bool][]string{false: {sm10}, true: {kernel, "68 bytes"}}[f.blackwell]},
+			} {
+				_, err := open(f.fixture, f.chip, c.dtype)
+				if err == nil {
+					t.Errorf("indexer_kv_dtype %s: accepted", c.dtype)
+					continue
+				}
+				for _, frag := range append(c.frags, "blis-vllm/issues/84") {
+					if !strings.Contains(err.Error(), frag) {
+						t.Errorf("indexer_kv_dtype %s: %v, want %q", c.dtype, err, frag)
+					}
+				}
+				if strings.Contains(err.Error(), "has none") {
+					t.Errorf("indexer_kv_dtype %s: %v tells a DeepSeek model it has no indexer", c.dtype, err)
+				}
+			}
+		})
 	}
 }
 

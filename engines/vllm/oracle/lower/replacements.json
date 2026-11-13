@@ -1,0 +1,55 @@
+{
+  "description": "Everything oracle/lower/extract.py replaces (design FID-1). It is a separate list from oracle/mocks.json on purpose: that list's digest is the version every golden trace records, so an entry added there would make every golden be refreshed. The lowering oracle records no trace; its answers are core/lower/testdata/vllm_lower.json, regenerated and compared in CI.",
+  "replacements": [
+    {
+      "symbol": "configuration objects the functions read; vllm.platforms.current_platform",
+      "kind": "environment",
+      "how": "VllmConfig, SchedulerConfig, CompilationConfig, SpeculativeConfig and the model config are small namespaces holding only the fields the extracted functions read, built from each case. current_platform answers is_device_capability_family(100) from the case. The functions' torch and CUDA imports are not executed: they are taken out of their modules by ast, as written."
+    },
+    {
+      "symbol": "vllm.v1.worker.gpu.dp_utils.dist.all_reduce",
+      "kind": "transport",
+      "how": "the data-parallel group's CPU all-reduce inside sync_cudagraph_and_dp_padding returns the tensor every rank would hold, built from each case's per-rank votes with the function's own six assignments. Everything the function decides after the collective runs unmodified, and each rank's vote is made by vLLM's own CudaGraphManager.dispatch."
+    },
+    {
+      "symbol": "get_num_ubatches, check_ubatch_thresholds, build_dynamic_sd_schedule_lookup",
+      "kind": "environment",
+      "how": "these raise: no case microbatches or uses dynamic speculative decoding, which are not modelled, so a case that reached one is an error in the case."
+    },
+    {
+      "symbol": "get_dp_group, should_skip_dp_coordination",
+      "kind": "environment",
+      "how": "get_dp_group returns an object holding the CPU group handle the all-reduce is given, which the replaced all-reduce ignores; should_skip_dp_coordination is False, as it is for a real multi-rank pool, so the function takes the all-reduce path."
+    },
+    {
+      "symbol": "get_tensor_model_parallel_rank, get_engram_dp_group, _cur",
+      "kind": "environment",
+      "how": "engram_head_shard_rank and ParallelEngramEmbedding._get_shard_info are taken from the source as written. They ask which rank this process is and what the node-local Engram data-parallel group is; the harness answers both from the case (tensor-parallel rank, the engram data-parallel size and rank, no group when that size is 1). The rule dp_size = 1 for a shared table is not applied by the harness: the case states the size the class holds, as the class sets it after resolving sharing (vllm/models/deepseek_v41/common/engram.py:975-985), and the Go EngramShard takes that size as its input."
+    },
+    {
+      "symbol": "CudaGraphManager.__init__ (bypassed: Manager.__new__ and attribute assignment)",
+      "kind": "environment",
+      "how": "CudaGraphManager.__init__ builds device buffers and a model runner's state, so the harness creates the manager object without it and sets the attributes _init_candidates and dispatch read: cudagraph_mode, max_num_reqs, decode_query_len, varlen_decode, the LoRA dispatch tables (one case, no adapters), ubatch_runner None (no microbatching), _graphs_captured, an empty candidate table, compilation_config (the sizes the case resolved) and vllm_config (num_speculative_tokens, use_kda_recoverssm, speculative_config None for no dynamic speculation). _init_candidates then runs as written. No decision is taken in the bypassed code."
+    },
+    {
+      "symbol": "EngramConfig (a namespace of its fields); model_validator and pydantic registration",
+      "kind": "environment",
+      "how": "EngramConfig's methods resolve_dp_shared_memory, verify_parallel_config, get_parallel_size and _validate_shared_memory are taken from the class as written, with the model_validator decorator removed (a registration, not a decision) and run over a namespace that holds the config's fields and the parallel config's."
+    },
+    {
+      "symbol": "Self",
+      "kind": "environment",
+      "how": "the typing name _validate_shared_memory's return annotation mentions; annotations are evaluated when the definition runs."
+    },
+    {
+      "symbol": "get_tensor_model_parallel_rank, get_dp_group, get_pcp_group (moe_parallel_cases), ParallelConfig, ExpertPlacementStrategy",
+      "kind": "environment",
+      "how": "FusedMoEParallelConfig.make asks which rank this process is in the tensor-, data- and prefill-context-parallel groups. moe_parallel_cases runs make once for every rank of a layout and answers each lookup from the rank being run, in a namespace of its own. ParallelConfig (a type name make's signature mentions) and ExpertPlacementStrategy (determine_expert_map's) are placeholders for annotations evaluated when the definition runs. FusedMoEParallelConfig, determine_expert_map and ParallelConfig.use_sequence_parallel_moe (with its property decorator removed) are taken from the source as written."
+    },
+    {
+      "symbol": "the attention backends' declared kernel block sizes (kv_pool_cases); CacheConfig, VllmConfig",
+      "kind": "environment",
+      "how": "get_kv_cache_groups, resolve_kv_cache_layout and _get_kv_cache_bytes_per_block run unmodified on vLLM's own KV cache spec classes (built by oracle/run_scheduler.py layer_specs), a real CacheConfig, and a namespace holding the VllmConfig fields they read (scheduler_config.disable_hybrid_kv_cache_manager, speculative_config None, no connector, no HiSparse, parallel_config sizes). customize_attention_spec is vLLM's own; the backend it is given is a stand-in class that declares only the kernel block sizes the real backend declares (FlashAttention and TritonMLA MultipleOf(16) at flash_attn.py:365 and mla/triton_mla.py:110-111; FlashMLA [64] at mla/flashmla.py:58-59; CutlassMLA [128] at mla/cutlass_mla.py:49-50; FlashInferMLA [32, 64] at mla/flashinfer_mla.py:204-205; the sparse MLA kernels off SM100 MultipleOf(64) at mla/flashmla_sparse.py:165), because those backends import CUDA wheels. It customizes nothing else (the real backends' customize_spec is not run)."
+    }
+  ]
+}

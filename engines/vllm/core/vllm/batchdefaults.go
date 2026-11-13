@@ -28,8 +28,8 @@ type BatchInput struct {
 	// default "balanced"). The deployment schema has no field for it, so a deployment always
 	// resolves as balanced.
 	ThroughputMode bool
-	// ChunkedPrefill is enable_chunked_prefill as resolved. This engine runs it on (config.go,
-	// sched.Config.EnableChunkedPrefill), since the deployment schema cannot turn it off.
+	// ChunkedPrefill is enable_chunked_prefill as resolved (ResolveChunkedPrefill): the engine
+	// block's stated value, else true. Off, an unstated token budget is raised to max_model_len.
 	ChunkedPrefill bool
 	// MaxModelLen is the resolved context bound, which caps an unstated token budget.
 	MaxModelLen int

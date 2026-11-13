@@ -61,6 +61,10 @@ type Pack struct {
 	// capability and tensor-parallel width. See ResolveCacheDType.
 	CacheDTypeResolutions map[string]CacheDTypeResolutions
 
+	// DSAIndexer says how the DeepSeek sparse indexer resolves attention_config.indexer_kv_dtype.
+	// Nil in a release whose pack does not carry the rule. See ResolveIndexerKVDType.
+	DSAIndexer *DSAIndexerKVDTypes
+
 	// EngramArchitectures are the architectures --engram-config may be given for, the
 	// keys of the engine's _NGRAM_LAYER_FIELDS; EngramCPUOffloadDefault is
 	// EngramConfig.cpu_offload's default, which decides where an Engram table lives when

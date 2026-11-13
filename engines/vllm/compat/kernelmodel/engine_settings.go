@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 
+	subrules "github.com/inference-sim/blis-substrate/contracts/rules"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
@@ -26,6 +27,11 @@ type resolvedEngine struct {
 	// blockSizeErr is why an unstated block_size is not resolved, naming blis-vllm#68; nil when
 	// it is stated or resolved.
 	blockSizeErr error
+	// mamba is the spec the model's recurrent layers build, and the block size vLLM aligns a
+	// hybrid model to (planMamba); nil for a model with no recurrent layer. mambaErr is why they
+	// are not mapped.
+	mamba    *mambaPlan
+	mambaErr error
 }
 
 // resolveEngine resolves the pool's engine settings as its release does. For vLLM 0.32.0 an
@@ -48,9 +54,10 @@ func resolveEngine(in latencykernel.Inputs, e engineconfig.Engine) resolvedEngin
 	}
 	// An unstated cache dtype is "auto", which an architecture's own hook can change on the
 	// chip that runs it (GlmMoeDsaForCausalLM on SM10x: fp8_e4m3, rules/v0_32). A stated dtype is
-	// never changed here. Only a graph that names no architecture is resolved here: a
-	// DeepSeek-V4 graph names its own, and the kernel resolves that packed layout itself.
-	if in.Rules != nil && in.Model != nil && in.Model.Global.Architecture == "" && (e.CacheDType == "" || e.CacheDType == "auto") {
+	// never changed here. A DeepSeek-V4 or V4.1 graph is left to the kernel, which resolves that
+	// packed layout itself. Every other graph is resolved here, whether it names its architecture
+	// (the catalog's GLM-5 graphs do since the layer-10 pin) or is named by its config digest.
+	if in.Rules != nil && in.Model != nil && !kernelResolvesCacheDType(in.Model.Global.Architecture) && (e.CacheDType == "" || e.CacheDType == "auto") {
 		fam, _ := in.Chip.CapabilityMajor()
 		if arch := architectureOf(in.Model); arch != "" {
 			if kv := in.Rules.ResolveCacheDType(arch, fam, max(in.Deployment.Pools[in.PoolIndex].Parallel.TP, 1), "auto"); kv != "auto" {
@@ -61,6 +68,10 @@ func resolveEngine(in latencykernel.Inputs, e engineconfig.Engine) resolvedEngin
 		}
 	}
 	if release != vllm.Version {
+		if hasRecurrent(in.Model) {
+			r.mambaErr = fmt.Errorf("recurrent layers: their KV cache spec is mapped for vLLM %s only, and this pool runs %s",
+				vllm.Version, release)
+		}
 		return r
 	}
 	pool := in.Deployment.Pools[in.PoolIndex]
@@ -85,14 +96,38 @@ func resolveEngine(in latencykernel.Inputs, e engineconfig.Engine) resolvedEngin
 		// The deployment schema has no performance_mode, so it is vLLM's default, balanced
 		// (vllm/config/vllm.py:433@5df63a72).
 		ThroughputMode: false,
-		// The v0.32.0 engine runs chunked prefill on (core/vllm config.go).
-		ChunkedPrefill: true,
+		// The stated enable_chunked_prefill, else vLLM's default, on (core/vllm ResolveChunkedPrefill).
+		ChunkedPrefill: vllm.ResolveChunkedPrefill(e.EnableChunkedPrefill),
 		MaxModelLen:    maxLen,
 	})
 	r.engine.MaxNumSeqs, r.engine.MaxNumBatchedTokens = b.MaxNumSeqs, b.MaxNumBatchedTokens
 	r.sources["max_num_seqs"] = b.MaxNumSeqsSource
 	r.sources["max_num_batched_tokens"] = b.MaxNumBatchedTokensSource
 	r.sources["block_size"] = vllm.SourceStated
+	if hasRecurrent(in.Model) {
+		// A model with recurrent layers is a hybrid (or attention-free) model: the platform aligns
+		// its block size to the Mamba page instead of reading it from the attention backends
+		// (Platform.update_block_size_for_backend, vllm/platforms/interface.py:750-794@5df63a72), and
+		// the recurrent layers' spec is built with that block size.
+		fam, _ := in.Chip.CapabilityMajor()
+		window, _ := e.MaxModelLen.Stated()
+		if window == 0 && !e.MaxModelLen.Auto() {
+			window = in.Model.Global.DefaultWindow()
+		}
+		r.mamba, r.mambaErr = planMamba(in.Model, r.engine, mambaEnv{tp: max(pool.Parallel.TP, 1),
+			dcp: max(pool.Parallel.DCP, 1), pcp: max(pool.Parallel.PCP, 1), capability: fam, maxModelLen: window})
+		switch {
+		case r.mambaErr == nil:
+			r.engine.BlockSize, r.sources["block_size"] = r.mamba.blockSize, r.mamba.source
+			if e.BlockSize == r.mamba.blockSize {
+				r.sources["block_size"] = vllm.SourceStated
+			}
+		case e.BlockSize <= 0:
+			r.blockSizeErr = r.mambaErr
+			delete(r.sources, "block_size")
+		}
+		return r
+	}
 	if e.BlockSize <= 0 {
 		bs, err := resolveBlockSize(in, e, pool)
 		if err != nil {
@@ -179,10 +214,17 @@ func (m *Model) EngineSources() map[string]string {
 	return out
 }
 
+// kernelResolvesCacheDType says whether the kernel itself resolves an unstated cache dtype for the
+// architecture: DeepSeek-V4 and V4.1 keep a packed cache whose layout the kernel owns.
+func kernelResolvesCacheDType(architecture string) bool {
+	return architecture == subrules.ArchDeepseekV4 || architecture == subrules.ArchDeepseekV41
+}
+
 // glmMoeDsaConfigs are the sha256 of the vendor config.json each catalog model whose
 // architectures[0] is GlmMoeDsaForCausalLM was derived from (graph.yaml derived_from). The catalog
-// graph of these models states no global.architecture, and the rules key behaviour on it, so the
-// hash names the architecture. TestGLMConfigHashesNameTheArchitecture checks each against the
+// graph of these models stated no global.architecture before the layer-10 pin and states it now;
+// a graph derived from one of these configs that still states none (a copy kept by a user) is
+// named by the hash, since the rules key behaviour on the architecture. TestGLMConfigHashesNameTheArchitecture checks each against the
 // pinned catalog's config.json and that no other catalog model is of the class.
 var glmMoeDsaConfigs = map[string]string{
 	"5ea2d79d3a77fe90836c18893de00996d096cd01516b52b88c6fc18993cb4df8": "glm-5",

@@ -8,7 +8,8 @@
 // caches as their modules register them: vllm/models/deepseek_v4/attention.py:286-372 and :856-925,
 // vllm/models/deepseek_v4/compressor.py:139-193, vllm/models/deepseek_v41/attention.py:420-600 and
 // :1138-1240, vllm/models/deepseek_v41/compressor.py:136-167 and
-// vllm/v1/attention/backends/mla/sparse_swa.py:74-140.
+// vllm/v1/attention/backends/mla/sparse_swa.py:74-140; a recurrent layer's MambaSpec is
+// mamba_state.go's.
 
 package kernelmodel
 
@@ -42,6 +43,13 @@ type KVLayerRun struct {
 	Alignment       int
 	StrideAlignment int
 	BoundedReplay   bool
+	// A "mamba" run is MambaSpec (core/vllm KVLayerRun): StateBytes per rank, BlockSize the
+	// mamba_block_size, and the rest of the spec.
+	PageSizePadded             int
+	MambaCacheMode             string
+	NumSpeculativeBlocks       int
+	NumPrefillCheckpointBlocks int
+	PrefillCheckpointAlignment int
 }
 
 // KVLayers is the pool's attention layers by the KV cache spec vLLM v0.32.0 builds for each, in
@@ -53,17 +61,25 @@ type KVLayerRun struct {
 //     kernel reads (MiniMax-M3's sparse layers, minimax_m3/nvidia/model.py:562-571);
 //   - a grouped-query node owning an index cache is the indexer's key-only spec, one head
 //     (indexer.py:145-154);
-//   - any other attention node is full attention.
+//   - any other attention node is full attention;
+//   - a recurrent node (Mamba-2, KDA, GDN) is MambaSpec, a "mamba" run (planMamba), beside the
+//     attention layers' runs in model order.
 //
 // DeepSeek V4 and V4.1 are mapped by deepseekKVLayers, every cache they register in order.
 //
 // It is nil when every layer is full attention, which is one group. What it does not map is an
-// error naming it: recurrent layers, window and state caches, another kind's indexer, shared KV
-// beside these, and a drafter's layers beside them.
+// error naming it: a recurrent layer whose state the graph or the engine block does not state,
+// window and state caches, another kind's indexer, shared KV beside these, and a drafter's layers
+// beside them.
 func (m *Model) KVLayers() ([]KVLayerRun, error) {
 	runner, _ := m.ModelRunner()
-	return kvLayersOf(m.graph, m.k.Deployment(), m.engine,
-		deepseekServing{runner: runner, family: m.id.capabilityMajor, cacheDType: m.cacheDType})
+	return kvLayersOf(m.graph, m.k.Deployment(), m.engine, m.serving(runner))
+}
+
+// serving is what the layers' caches turn on beside the graph and the pool.
+func (m *Model) serving(runner string) deepseekServing {
+	return deepseekServing{runner: runner, family: m.id.capabilityMajor, cacheDType: m.cacheDType,
+		indexer: m.indexerRules, mamba: m.resolved.mamba, mambaErr: m.resolved.mambaErr}
 }
 
 // PipelineStages is the pool's pipeline_parallel_size, at least one.
@@ -101,8 +117,7 @@ func (m *Model) KVLayersOfStage(stage int) ([]KVLayerRun, error) {
 		cp.NumSpecTokens = 0
 		e.Speculative = &cp
 	}
-	return kvLayersOf(&g, pool, e, deepseekServing{runner: runner, family: m.id.capabilityMajor,
-		cacheDType: m.cacheDType})
+	return kvLayersOf(&g, pool, e, m.serving(runner))
 }
 
 // ppIndices is get_pp_indices (vllm/distributed/utils.py:126-169@5df63a72) without
@@ -132,7 +147,9 @@ func kvLayersOf(g *model.Graph, pool deployment.Pool, engine engineconfig.Engine
 	// attention_config.indexer_kv_dtype is read only for MiniMax-M3's indexer cache
 	// (m3IndexerElemBytes). Stated for a model with no such cache nothing reads it, so it would be
 	// dropped (blis-vllm#84); "auto" is every model's own default and is not a deviation.
-	if d := engine.IndexerKVDType; g != nil && d != "" && d != "auto" {
+	// DeepSeek V4 and V4.1 build their indexer's cache as an MLA spec, and deepseekKVLayers resolves the
+	// dtype for it.
+	if d := engine.IndexerKVDType; g != nil && d != "" && d != "auto" && !isDeepseekV4(g) {
 		indexer := false
 		for _, r := range runs {
 			indexer = indexer || r.Spec == "indexer"
@@ -145,11 +162,38 @@ func kvLayersOf(g *model.Graph, pool deployment.Pool, engine engineconfig.Engine
 	return runs, nil
 }
 
+// isDeepseekV4 is whether g is DeepSeek V4 or V4.1.
+func isDeepseekV4(g *model.Graph) bool {
+	a := g.Global.Architecture
+	return a == rules.ArchDeepseekV4 || a == rules.ArchDeepseekV41
+}
+
+// recurrentDrafterRefusal refuses an enabled speculator whose stack holds a recurrent layer, whatever
+// the target is. vLLM registers a drafter's layers in the same KV cache config as the target's, so
+// a recurrent drafter layer adds a Mamba group and changes the cache bytes; that state is not
+// mapped. planMamba refuses it too for a recurrent target, but a full-attention target never reaches
+// planMamba, and the attention-only drafter mapping below would skip the layer without a word.
+func recurrentDrafterRefusal(g *model.Graph, e engineconfig.Engine) error {
+	if g.Speculator == nil || e.Speculative == nil || e.Speculative.NumSpecTokens <= 0 {
+		return nil
+	}
+	var err error
+	stackNodes(g, g.Speculator.Stack, func(id string, d model.Node) {
+		if d.Op == model.OpRecurrentUpdate && err == nil {
+			err = fmt.Errorf("recurrent layers: drafter layer kind %s holds a recurrent layer, whose state is not mapped", id)
+		}
+	})
+	return err
+}
+
 func kvLayersRead(g *model.Graph, pool deployment.Pool, engine engineconfig.Engine, ds deepseekServing) ([]KVLayerRun, error) {
 	if g == nil {
 		return nil, nil
 	}
-	if a := g.Global.Architecture; a == rules.ArchDeepseekV4 || a == rules.ArchDeepseekV41 {
+	if err := recurrentDrafterRefusal(g, engine); err != nil {
+		return nil, err
+	}
+	if isDeepseekV4(g) {
 		return deepseekKVLayers(g, pool, engine, ds)
 	}
 	kinds := map[string]model.LayerKind{}
@@ -159,6 +203,16 @@ func kvLayersRead(g *model.Graph, pool deployment.Pool, engine engineconfig.Engi
 	tp := max(pool.Parallel.TP, 1)
 	var runs []KVLayerRun
 	plain, shared := true, false
+	// Beside recurrent layers a model is a hybrid, whose groups are sized by page bytes, and an
+	// MLA layer's page is one latent a token, not keys and values (MLAAttentionSpec,
+	// vllm/v1/kv_cache_interface.py:686-760@5df63a72). An MLA-only model is one full-attention
+	// group the kernel sizes, so its layers stay "full".
+	hybridMLA := false
+	for _, id := range g.Stack.Expand() {
+		for _, n := range kinds[id].Nodes {
+			hybridMLA = hybridMLA || n.Op == model.OpRecurrentUpdate
+		}
+	}
 	for _, id := range g.Stack.Expand() {
 		indexed := false
 		for _, n := range kinds[id].Nodes {
@@ -168,7 +222,20 @@ func kvLayersRead(g *model.Graph, pool deployment.Pool, engine engineconfig.Engi
 		}
 		for _, n := range kinds[id].Nodes {
 			if n.Op == model.OpRecurrentUpdate {
-				return nil, fmt.Errorf("layer kind %s: recurrent state is not mapped to a KV cache spec", id)
+				if ds.mambaErr != nil {
+					return nil, ds.mambaErr
+				}
+				r, err := ds.mamba.mambaRun(id, n)
+				if err != nil {
+					return nil, err
+				}
+				plain = false
+				if l := len(runs) - 1; l >= 0 && sameRun(runs[l], r) {
+					runs[l].Count++
+				} else {
+					runs = append(runs, r)
+				}
+				continue
 			}
 			if n.Op != model.OpAttention {
 				continue
@@ -190,6 +257,9 @@ func kvLayersRead(g *model.Graph, pool deployment.Pool, engine engineconfig.Engi
 			}
 			if n.AttentionKind == model.AttentionSWA && !indexed {
 				r.Spec, r.SlidingWindow = "sliding_window", n.Window
+			}
+			if hybridMLA && r.Spec == "full" && n.AttentionKind == model.AttentionMLA {
+				r.Spec, r.TokensPerState = "mla", 1
 			}
 			plain = plain && r.Spec == "full"
 			if l := len(runs) - 1; l >= 0 && runs[l].Spec == r.Spec && runs[l].SlidingWindow == r.SlidingWindow &&
@@ -279,6 +349,19 @@ type deepseekServing struct {
 	// for the architecture, family and TP (rules.EngineRules.ResolveCacheDType), which picks a
 	// cache's record (V4.1's compressed cache is NVFP4 under nvfp4_ds_mla).
 	cacheDType string
+	// indexer resolves attention_config.indexer_kv_dtype for the DeepSeek indexer; nil when the
+	// release's rules carry no such rule.
+	indexer indexerKVDTypeRules
+	// mamba is the spec the model's recurrent layers build (planMamba), nil for a model with none,
+	// and mambaErr why they are not mapped.
+	mamba    *mambaPlan
+	mambaErr error
+}
+
+// indexerKVDTypeRules is the rules pack's resolution of the DeepSeek indexer's cache dtype
+// (pack.Pack.ResolveIndexerKVDType); a release without the rule does not implement it.
+type indexerKVDTypeRules interface {
+	ResolveIndexerKVDType(architecture string, family int, requested string) (resolved string, known bool, err error)
 }
 
 // deepseekKVLayers is DeepSeek V4's and V4.1's KV cache layers as vLLM v0.32.0 registers them, one
@@ -300,6 +383,10 @@ func deepseekKVLayers(g *model.Graph, pool deployment.Pool, engine engineconfig.
 		return nil, fmt.Errorf("deepseek KV layers: %w", err)
 	}
 	v41 := g.Global.Architecture == rules.ArchDeepseekV41
+	indexerDType, err := resolveIndexerDType(g.Global.Architecture, ds, engine.IndexerKVDType)
+	if err != nil {
+		return nil, err
+	}
 	e := engine
 	k := 0
 	if sp := e.Speculative; sp != nil {
@@ -334,7 +421,7 @@ func deepseekKVLayers(g *model.Graph, pool deployment.Pool, engine engineconfig.
 		// compressor's state; the attention node owns the window, the compressed cache and the
 		// main compressor's state. A cache another layer owns is that layer's.
 		var index, indexState, swa, compressed, state *model.Cache
-		indexRatio, ratio := 1, 1
+		indexRatio, ratio, indexHeadDim := 1, 1, 0
 		for _, n := range lk.Nodes {
 			if n.Op != model.OpAttention {
 				continue
@@ -347,7 +434,7 @@ func deepseekKVLayers(g *model.Graph, pool deployment.Pool, engine engineconfig.
 				}
 				switch {
 				case scorer && c.Kind == model.CacheIndex:
-					index, indexRatio = c, max(n.CompressRatio, 1)
+					index, indexRatio, indexHeadDim = c, max(n.CompressRatio, 1), n.HeadDim
 				case scorer && c.Kind == model.CacheState:
 					indexState = c
 				case scorer:
@@ -367,6 +454,15 @@ func deepseekKVLayers(g *model.Graph, pool deployment.Pool, engine engineconfig.
 			return fmt.Errorf("deepseek KV layers: layer kind %s owns no sliding-window cache", id)
 		}
 		if index != nil {
+			if indexerDType != "" {
+				if w := pack.IndexerRecordBytes(indexerDType, indexHeadDim); w != index.BytesPerEntry {
+					return fmt.Errorf("deepseek KV layers: layer kind %s: indexer_kv_dtype %q runs as %s, a key record of %d bytes "+
+						"for an index head of %d, and the catalog graph's %s cache states %d; the latency kernel keys the index "+
+						"record by one cache dtype and prices the graph's, so this indexer dtype is not modelled "+
+						"(https://github.com/inference-sim/blis-vllm/issues/84)",
+						id, engine.IndexerKVDType, indexerDType, w, indexHeadDim, index.Name, index.BytesPerEntry)
+				}
+			}
 			// DeepseekV4IndexerCache: a key-only MLAAttentionSpec at the engine's block size, one
 			// state per compress_ratio tokens (deepseek_v4/attention.py:906-925,
 			// deepseek_v41/attention.py:1206-1240).
@@ -413,6 +509,29 @@ func deepseekKVLayers(g *model.Graph, pool deployment.Pool, engine engineconfig.
 		}
 	}
 	return runs, nil
+}
+
+// resolveIndexerDType is the dtype that DeepSeek V4's indexer cache runs in for the requested
+// attention_config.indexer_kv_dtype, on the serving chip (pack.Pack.ResolveIndexerKVDType), or
+// vLLM's refusal of it. It is "" when the release's rules carry no such rule, where only an unstated
+// or "auto" value is accepted, as before.
+func resolveIndexerDType(arch string, ds deepseekServing, requested string) (string, error) {
+	if ds.indexer != nil {
+		resolved, known, err := ds.indexer.ResolveIndexerKVDType(arch, ds.family, requested)
+		if err != nil {
+			return "", fmt.Errorf("deepseek KV layers: indexer_kv_dtype=%q: vLLM refuses it for the DeepSeek sparse indexer: %w "+
+				"(vllm/v1/attention/backends/mla/indexer.py:59-84@5df63a72; https://github.com/inference-sim/blis-vllm/issues/84)",
+				requested, err)
+		}
+		if known {
+			return resolved, nil
+		}
+	}
+	if requested != "" && requested != "auto" {
+		return "", fmt.Errorf("deepseek KV layers: indexer_kv_dtype=%q: this release's rules do not model the DeepSeek indexer's "+
+			"cache dtype, so a stated value would be dropped (https://github.com/inference-sim/blis-vllm/issues/84)", requested)
+	}
+	return "", nil
 }
 
 // sameRun is whether two layers build one spec, so a run counts both.

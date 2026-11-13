@@ -15,6 +15,7 @@ permissions:
 jobs:
   traces:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
@@ -63,6 +64,8 @@ jobs:
           mkdir -p oracle/out/scenarios oracle/out/scenarios-metrics oracle/out/scenarios-t3 \
                    oracle/out/scenarios-dp oracle/out/scenarios-connector
           python -I oracle/run_scheduler.py vllm-source oracle/scenarios oracle/out/scenarios
+          mkdir -p oracle/out/scenarios-swa
+          python -I oracle/run_swa_layout.py vllm-source oracle/scenarios/swa oracle/out/scenarios-swa
           for g in core/metrics/testdata/golden/*.metrics.json; do
             n=$(basename "$g" .metrics.json)
             python -I oracle/run_metrics.py vllm-source "oracle/scenarios/$n.json" > "oracle/out/scenarios-metrics/$n.metrics.json"
@@ -71,9 +74,13 @@ jobs:
           python -I oracle/run_dp.py vllm-source oracle/scenarios-dp oracle/out/scenarios-dp
           mkdir -p oracle/out/scenarios-dp-async
           python -I oracle/run_dp.py vllm-source oracle/scenarios-dp-async oracle/out/scenarios-dp-async
+          mkdir -p oracle/out/scenarios-dp-nixl
+          python -I oracle/run_dp.py vllm-source oracle/scenarios-dp-nixl oracle/out/scenarios-dp-nixl
           python -I oracle/run_connector.py vllm-source oracle/scenarios/connector oracle/out/scenarios-connector
           mkdir -p oracle/out/scenarios-offloading
           python -I oracle/run_offloading.py vllm-source oracle/scenarios/offloading oracle/out/scenarios-offloading
+          mkdir -p oracle/out/scenarios-multi
+          python -I oracle/run_multiconnector.py vllm-source oracle/scenarios/multiconnector oracle/out/scenarios-multi
           # core/kv's block hashes: the generator refuses to write if any hash differs.
           python -I oracle/gen_block_hashes.py vllm-source core/kv/testdata/block_hashes.json > oracle/out/block_hashes.json
       - name: record the Go side's provenance

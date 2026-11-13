@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 	"pgregory.net/rapid"
 
@@ -392,5 +394,95 @@ func TestSequenceStateHoldsWhatVLLMAllocatesOverALifecycle(t *testing.T) {
 	kvc.ReleaseKVBlocks(req)
 	if kvc.UsedBlocks() != 0 {
 		t.Errorf("%d blocks held after release", kvc.UsedBlocks())
+	}
+}
+
+// A deployment too big for its part must be reported as that, not as a defect of the simulator
+// at tp 2 on an 80 GB part one rank's weights alone exceed the device, and the
+// message says the model does not fit and what to widen. The same model at pp 2 x tp 8 (the repository's own scenario) fits and
+// has a KV budget, so the refusal is the deployment's and not the model's.
+func TestADeploymentTooLargeForItsPartIsNotCalledASimulatorBug(t *testing.T) {
+	r := repos()
+	r.Scenarios = "../../testdata/scenarios"
+	m, err := Open("muse-h100-tp2-ep.yaml", r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = m.KVBudget()
+	if err == nil {
+		t.Fatal("a deployment whose weights exceed the device produced a KV budget")
+	}
+	msg := err.Error()
+	for _, want := range []string{"does not fit", "weights alone", "widen tensor or expert parallelism"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("the message should say %q: %s", want, msg)
+		}
+	}
+	for _, bad := range []string{"sharding term", "is wrong"} {
+		if strings.Contains(msg, bad) {
+			t.Errorf("the message blames the simulator (%q) for a deployment that does not fit: %s", bad, msg)
+		}
+	}
+	m, err = Open("muse-h100-pp2tp8.yaml", r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = m.KVBudget(); err != nil {
+		t.Errorf("the pp 2 x tp 8 deployment fits and should have a KV budget: %v", err)
+	}
+}
+
+// checkMuseSparkParallel refuses data and prefill-context parallelism above 1 for Muse-Spark on a
+// Hopper part, as vLLM's route-major Marlin path does, and nothing else: not
+// Blackwell, not another model, and not width 1.
+func TestMuseSparkOnHopperRefusesDataAndPrefillContextParallelism(t *testing.T) {
+	hopper := &hardware.Chip{Name: "h200", ComputeCapability: "9.0"}
+	blackwell := &hardware.Chip{Name: "gb200", ComputeCapability: "10.0"}
+	for _, c := range []struct {
+		name string
+		arch string
+		chip *hardware.Chip
+		pl   deployment.Parallelism
+		bad  bool
+	}{
+		{"muse on hopper at dp 8", museSparkArchitecture, hopper, deployment.Parallelism{TP: 1, DP: 8}, true},
+		{"muse on hopper at pcp 2", museSparkArchitecture, hopper, deployment.Parallelism{TP: 8, DP: 1, PCP: 2}, true},
+		{"muse on hopper at dp 1", museSparkArchitecture, hopper, deployment.Parallelism{TP: 8, DP: 1}, false},
+		{"muse on hopper with dp and pcp unstated", museSparkArchitecture, hopper, deployment.Parallelism{TP: 8}, false},
+		{"muse on blackwell at dp 8", museSparkArchitecture, blackwell, deployment.Parallelism{TP: 1, DP: 8}, false},
+		{"another model on hopper at dp 8", "LlamaForCausalLM", hopper, deployment.Parallelism{TP: 1, DP: 8}, false},
+		{"muse with no chip", museSparkArchitecture, nil, deployment.Parallelism{TP: 1, DP: 8}, false},
+	} {
+		err := checkMuseSparkParallel(c.arch, c.chip, c.pl)
+		if (err != nil) != c.bad {
+			t.Errorf("%s: err %v, want refused %v", c.name, err, c.bad)
+		}
+	}
+}
+
+// vLLM asks for ceil(total memory x utilization) bytes (request_memory,
+// vllm/v1/worker/utils.py:724-726 at v0.32.0), so a total whose product has a fractional byte is
+// rounded up, not truncated. 141 GiB at 0.9 is 136.2... GiB-bytes with a fractional byte (141 x 9 x
+// 2^30 is not a multiple of 10), written here in integers so the expectation does not share the
+// float expression the code uses.
+func TestMemoryBudgetRoundsUpAFractionalByteAsVLLMDoes(t *testing.T) {
+	in, err := latencykernel.OpenInputs("gpt-oss-120b-h200-fp4-vllm-tp4.yaml", repos(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	editPoolEngine(t, &in.Deployment.Pools[0], func(e *engineconfig.Engine) { e.GPUMemoryUtilization = 0.9 })
+	m, err := fromInputs(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mem, err := m.KVMemory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mem.DeviceBytes*9%10 == 0 {
+		t.Fatalf("device %d bytes x 0.9 is whole; the case no longer separates ceil from truncation", mem.DeviceBytes)
+	}
+	if want := (mem.DeviceBytes*9 + 9) / 10; mem.BudgetBytes != want {
+		t.Errorf("budget %d bytes, want ceil(%d x 0.9) = %d", mem.BudgetBytes, mem.DeviceBytes, want)
 	}
 }

@@ -22,19 +22,28 @@
 //
 // A scheduling setting this engine does not model is refused when the engine is built
 // (Factory), never ignored; settings that change only cost are the Pricer's: see config.go.
+//
+// Beyond engine.Engine, *Engine and *DPGroup have two optional methods a host reads by type
+// assertion: Assumptions() []string (the pricer's disclosed assumptions) and
+// RecordSelected(*load.Data) (the pricer registers its coefficients with the run's Data).
 package vllm
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
+	"github.com/inference-sim/blis-substrate/load"
 
 	core "github.com/inference-sim/blis-vllm/core/engine"
 	"github.com/inference-sim/blis-vllm/core/kv"
 	"github.com/inference-sim/blis-vllm/core/metrics"
+	"github.com/inference-sim/blis-vllm/core/placement"
 	"github.com/inference-sim/blis-vllm/core/sched"
 )
 
@@ -84,6 +93,9 @@ type Engine struct {
 	metrics *metrics.Model
 
 	reqs map[string]*reqState
+	// hashSeed is the deployment's PYTHONHASHSEED (nil: unset), the root of every request's
+	// block-hash chain.
+	hashSeed *string
 	// aborted are the requests Finish aborted, or that finished, while a batch in flight scheduled
 	// them: their entries in reqs go once no batch in flight does.
 	aborted map[string]bool
@@ -121,6 +133,14 @@ type Engine struct {
 	pd *pd
 	// off is the engine's KV offload side, nil when it runs none (offload.go).
 	off *offload
+	// plan is the PoolPlan the engine's transfers are priced against, and at the node and rack its
+	// workers sit on (Plan); both are zero for a pool that states no placement.
+	plan plan.PoolPlan
+	at   plan.Endpoint
+	// frontend and dp are the API-server settings and the ranks behind them that Plan states as the
+	// admission queue (frontend.go).
+	frontend Frontend
+	dp       int
 	// verified are, for each in-flight batch the pricer trims (VerifyingPricer), by core
 	// batch ID, how many drafts each of its requests had verified; apply caps their acceptance
 	// at it and drops the entry.
@@ -171,24 +191,102 @@ func newEngine(st settings, pricer Pricer) (*Engine, error) {
 		return nil, fmt.Errorf("vllm: %w", err)
 	}
 	e := &Engine{
+		frontend: DefaultFrontend(), dp: 1,
 		s: s, pricer: pricer, reqs: map[string]*reqState{}, aborted: map[string]bool{},
 		metrics:  metrics.New(histogramBounds(st.sched.MaxModelLen)),
 		maxLoRAs: st.sched.MaxLoRAs, specTokens: st.sched.Spec.NumTokens, async: st.sched.Async,
-		pp: max(st.sched.DecodeStagger, 1),
+		pp: max(st.sched.DecodeStagger, 1), hashSeed: st.hashSeed,
+	}
+	if st.sched.Spec.NumTokens > 0 {
+		// A pool that speculates registers the spec_decode counters (SpecDecodingProm); one that
+		// does not registers none.
+		e.metrics.WithSpeculation(st.sched.Spec.NumTokens)
 	}
 	e.core = &core.Core{Sched: s, QueueSize: st.queueSize, GPU: &e.gpu}
-	if e.pd, err = buildConnector(s, st.connector, st.pp, st.sched.Spec, len(st.sched.KVGroups) > 1); err != nil {
-		return nil, err
+	// A pool that can start a transfer states each one against its placement (engine.Transfer.Move) and
+	// is priced against the plan built from it, so it must say where it sits.
+	if (st.connector != nil || st.offload != nil) && st.placement == nil {
+		return nil, fmt.Errorf("vllm: a pool with kv_transfer or kv_offload starts KV transfers and must state its " +
+			"placement (the chip, network, layout and node): the transfers are priced against it (engine.Planned)")
 	}
-	e.gpu.pd = e.pd
-	if st.offload != nil {
-		if e.off, err = buildOffload(s, st.offload, st.sched.Spec, st.specMethod, st.sched.EnablePrefixCaching); err != nil {
-			return nil, err
-		}
-		e.gpu.off = e.off
+	if st.placement != nil {
+		e.at = st.placement.Endpoint()
+		e.plan = st.placement.Plan(offloadTiers(st.offload))
+	}
+	if err := e.buildConnectors(s, st); err != nil {
+		return nil, err
 	}
 	return e, nil
 }
+
+// Plan implements engine.Planned: the PoolPlan the engine's transfers are priced against, the same on
+// every call. It states the pool's placement and its KV tiers (cpu_dram when kv_offload is configured);
+// the lowered layers, KV groups, graphs and memory breakdown are the cost model's resolution, which is not
+// built here (blis-latency-kernel#84), so a pool that states no placement has the empty plan and starts
+// no transfer.
+func (e *Engine) Plan() plan.PoolPlan {
+	p := e.plan
+	p.Tiers = append([]plan.KVTier(nil), p.Tiers...)
+	p.Host.Admission = e.frontend.queue(e.dp)
+	return p
+}
+
+var _ engine.Planned = (*Engine)(nil)
+
+// SetPlacement states where the engine sits, replacing the placement it was built with: the host that builds
+// one engine for each instance states the instance's node (placement.Placeable). The KV tiers are the engine's
+// own and stay. It is refused once a transfer has started, because the transfers started so far were stated
+// against the old place, and a refused placement leaves the engine as it was.
+func (e *Engine) SetPlacement(p placement.Placement) error {
+	if err := p.Validate(); err != nil {
+		return fmt.Errorf("vllm: placement: %w", err)
+	}
+	if e.startedTransfers() {
+		return fmt.Errorf("vllm: placement: the engine has started transfers against its old place")
+	}
+	e.at = p.Endpoint()
+	e.plan = p.Plan(e.plan.Tiers)
+	if e.pd != nil {
+		e.pd.at = e.at
+	}
+	if e.off != nil {
+		e.off.at = e.at
+	}
+	return nil
+}
+
+// startedTransfers reports whether the engine has stated a transfer against its place.
+func (e *Engine) startedTransfers() bool {
+	return (e.pd != nil && *e.pd.next > 0) || (e.off != nil && *e.off.next > 0)
+}
+
+var _ placement.Placeable = (*Engine)(nil)
+
+// PlaceAt implements engine.Placeable, the host's one way to say where an instance runs: the engine takes the
+// node and rack and states its transfers' own end there. The pool's chip, network and layout are the engine's
+// own (its plan), so the endpoint is all the host gives; a node the pool lacks, or a placement after a
+// transfer has started, is refused and leaves the engine as it was. A pool that states no placement and starts
+// no transfer has no place to give: it takes the first node and refuses any other, for it would have to
+// invent the chip and the layout the endpoint is in.
+func (e *Engine) PlaceAt(at plan.Endpoint) error {
+	if e.plan.Hardware == "" {
+		if at != (plan.Endpoint{}) {
+			return fmt.Errorf("vllm: the pool states no placement, so it has no node %d rack %d to be placed at", at.Node, at.Rack)
+		}
+		return nil
+	}
+	return e.SetPlacement(e.placementOf().At(at.Node, at.Rack))
+}
+
+// placementOf is the engine's pool placement as its plan states it: the chip, the network and the layout. The
+// endpoint of the engine itself is not part of it (Placement.At states that).
+func (e *Engine) placementOf() placement.Placement {
+	l := e.plan.Layout
+	return placement.Placement{Hardware: e.plan.Hardware, Fabric: e.plan.Fabric, Tensor: l.Tensor, Pipeline: l.Pipeline,
+		Data: l.Data, Expert: l.Expert, Context: l.Context, RanksPerNode: l.RanksPerNode, Nodes: l.Nodes}
+}
+
+var _ engine.Placeable = (*Engine)(nil)
 
 // histogramBounds are the bucket bounds vLLM v0.32.0 registers for the request-token,
 // iteration-token, n and preemption histograms (vllm/v1/metrics/buckets.py:107-128,172-240@5df63a72).
@@ -220,8 +318,13 @@ func build125(maxValue int) []float64 {
 	}
 }
 
-// Add implements engine.Engine: add_request, after the input processor's checks.
+// Add implements engine.Engine: add_request, after the input processor's checks. It refuses a
+// request that cannot exist first, with the error of engine.Request.Validate (an adapter path
+// and no adapter name), as the contract's Add requires.
 func (e *Engine) Add(r engine.Request, now engine.Time) error {
+	if err := r.Validate(); err != nil {
+		return err
+	}
 	if _, dup := e.reqs[r.ID]; dup {
 		return fmt.Errorf("vllm: request %s added twice", r.ID)
 	}
@@ -256,6 +359,7 @@ func (e *Engine) Add(r engine.Request, now engine.Time) error {
 	}
 	sr := &sched.Request{ID: r.ID, Priority: r.Priority, ArrivalTime: float64(r.ArrivalTime) / 1e6,
 		Prompt: prompt, MaxTokens: maxTokens, EOS: eosToken}
+	sr.Keys.Seed = e.hashSeed
 	if r.CacheSalt != "" {
 		sr.Keys.CacheSalt = r.CacheSalt
 	}
@@ -270,17 +374,32 @@ func (e *Engine) Add(r engine.Request, now engine.Time) error {
 			// (vllm/v1/engine/input_processor.py:278-286@5df63a72).
 			return fmt.Errorf("vllm: request %s names adapter %q but LoRA is not enabled (max_loras unset)", r.ID, r.Adapter)
 		}
-		// The LoRA block key (vllm/v1/core/kv_cache_utils.py:578-595@5df63a72): its name and
-		// path. An engine.Request names the adapter only, so the name stands for both.
+		// The LoRA block key keys the hash on the adapter's name and path (loraExtraKey).
 		sr.LoRA = e.loraID(r.Adapter)
 		sr.LoRAName = r.Adapter
-		sr.Keys.Extra = []kv.ExtraKey{{"lora", r.Adapter, r.Adapter}}
+		sr.Keys.Extra = loraExtraKey(r.Adapter, r.AdapterPath)
 	}
 	if err := e.s.Add(sr); err != nil {
 		return fmt.Errorf("vllm: %w", err)
 	}
 	e.reqs[r.ID] = &reqState{req: r, maxTokens: maxTokens}
 	return nil
+}
+
+// loraExtraKey is the LoRA component of a block's hash key: ("lora", lora_name, lora_path), what
+// _gen_lora_extra_hash_keys returns (vllm/v1/core/kv_cache_utils.py:578-595@5df63a72, the key added
+// to a block's extras at :646). vLLM keys on the name and the path, not on lora_int_id, so
+// re-pointing a name at another adapter does not hit the blocks computed with the first.
+//
+// A LoRARequest always has a path (vllm/lora/request.py:41-42@5df63a72). An engine.Request from a
+// host that supplies none gets the name in its place: which blocks hit is then unchanged (the key
+// is per adapter either way), but the hash a KV event publishes differs from vLLM's, and
+// docs/feature-matrix.md ("KV events") says so for that case.
+func loraExtraKey(name, path string) []kv.ExtraKey {
+	if path == "" {
+		path = name
+	}
+	return []kv.ExtraKey{{"lora", name, path}}
 }
 
 // loraID is a stable positive lora_int_id per adapter name, in order of first use
@@ -403,7 +522,7 @@ func (e *Engine) drainEmpty(at engine.Time) {
 		e.queuedEmpty = e.queuedEmpty[1:]
 		res := e.core.StepEnd(core.StepResult{})
 		e.emptyFinished = append(e.emptyFinished, res.Finished...)
-		e.finishStep(*res.Processed, nil, res.Finished, at)
+		e.finishStep(*res.Processed, nil, nil, res.Finished, at)
 	}
 }
 
@@ -419,7 +538,7 @@ func (e *Engine) admit(cb core.Batch, now engine.Time) (engine.Batch, error) {
 		// output for it: update_from_output with nothing scheduled changes no request.
 		fins := e.core.Drop(cb)
 		e.emptyFinished = append(e.emptyFinished, fins...)
-		e.finishStep(cb, nil, fins, now)
+		e.finishStep(cb, nil, nil, fins, now)
 		e.idleWake = 0
 		if e.polls() && len(e.pending) == 0 {
 			e.idleWake = now + idlePollUs
@@ -596,6 +715,26 @@ func (e *Engine) Assumptions() []string {
 	return nil
 }
 
+// RecordSelected is an optional method. It registers the pricer's selected coefficients with the
+// run-level Data d, so the run's report lists them and says which a priced step read outside
+// the range its fit covered. The pricer's kernel is opened by the engine's build, and the
+// engine that prices the steps is this one, so the host's own kernel never sees them.
+//
+// The host calls it once per engine instance, right after the instance is built, so every
+// pricing kernel (each instance and each prefill or decode pool) is registered once. Records
+// accumulate across kernels in d, and a flag any kernel raises stays raised; a second call for
+// one instance adds nothing, since d keeps one observer per kernel. A pricer
+// that selects nothing records nothing, and a nil d is ignored. A simulator reads it by
+// type-asserting interface{ RecordSelected(*load.Data) } on the engine.Engine.
+func (e *Engine) RecordSelected(d *load.Data) {
+	if d == nil {
+		return
+	}
+	if r, ok := e.pricer.(interface{ RecordSelected(*load.Data) }); ok {
+		r.RecordSelected(d)
+	}
+}
+
 // Complete implements engine.Engine: the batch's output and update_from_output.
 func (e *Engine) Complete(id engine.BatchID, outcome engine.Outcome, end engine.Time) (engine.Result, error) {
 	res, _, err := e.complete(id, outcome, end)
@@ -691,6 +830,16 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 	for rid := range tokens {
 		before[rid] = len(e.s.Request(rid).Output)
 	}
+	// Each verifying request's drafts for the spec_decode counters: the drafts it was scheduled
+	// (placeholders included, as make_spec_decoding_stats counts len(scheduled_spec_token_ids)),
+	// and those the target accepted, the tokens sampled beyond the one the step always samples
+	// (scheduler.py:2116-2119@5df63a72), counted before a stop discards any.
+	var drafts []metrics.Draft
+	for _, rid := range pb.b.Out.Order {
+		if d := pb.b.Out.SpecDecode[rid]; len(d) > 0 && len(tokens[rid]) > 0 {
+			drafts = append(drafts, metrics.Draft{Proposed: len(d), Accepted: max(len(tokens[rid])-1, 0)})
+		}
+	}
 	fins := take()
 	e.gpu.tokens = nil
 	res := engine.Result{Emitted: map[string]int{}}
@@ -745,7 +894,7 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 	// order, published that much later.
 	res.KVEvents = kvEvents(e.indexable(e.s.TakeKVEvents()))
 	res.Handoffs = e.pd.handoffs(e.s, fins)
-	e.finishStep(pb.b, emitted, fins, end)
+	e.finishStep(pb.b, emitted, drafts, fins, end)
 	// A request that finished here has had its final step consumed: its result and its metrics
 	// step are recorded, so its entry goes (the scheduler freed its own at the finish). Under a
 	// batch queue a later batch in flight may still name it: then it stays, finished, and its ID
@@ -787,8 +936,10 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 // (the engine package's same-instant order), and that step's output carries it.
 func (e *Engine) TransferDone(id engine.TransferID, ok bool, now engine.Time) error {
 	if e.off != nil {
-		// An engine runs one connector (resolve), so the transfer is the offload's.
-		return e.off.done(id, ok)
+		// The offload's and the P/D connector's transfers are one sequence of IDs (newEngine).
+		if err := e.off.done(id, ok); !errors.Is(err, engine.ErrUnknownTransfer) {
+			return err
+		}
 	}
 	return e.pd.done(id, ok)
 }
@@ -863,6 +1014,10 @@ func (e *Engine) InFlightLimit() int { return max(e.core.QueueSize, 1) }
 // contract: a simulator gating a pipelined step on the step pp back looks for it by type
 // assertion.
 func (e *Engine) RunnerSteps() int { return e.core.Schedules() }
+
+// Fields implements engine.Engine: the field list of the release this engine models, fields.json
+// (blisvllm.FieldListJSON). It is parsed once; every call returns that list.
+func (e *Engine) Fields() fields.FieldList { return fieldList }
 
 // Snapshot implements engine.Engine.
 func (e *Engine) Snapshot() engine.State {

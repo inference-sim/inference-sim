@@ -41,6 +41,13 @@ const (
 	// cached, as DeepSeek V4.1's compressor state builds it
 	// (vllm/models/deepseek_v41/compressor.py:136-167@5df63a72).
 	LayerCircularBuffer
+	// LayerMamba is MambaSpec: the fixed-size recurrent state of a Mamba-2, GDN or KDA layer
+	// (vllm/v1/kv_cache_interface.py:1035-1108@5df63a72). One state is StateBytes (the sum of
+	// its conv and temporal tensors, per tensor-parallel rank), padded up to PageSizePadded
+	// when the hybrid block-size alignment pads it to the attention page
+	// (vllm/platforms/interface.py:1118-1126). Its own base spec: a MambaManager, a type
+	// apart from every attention spec.
+	LayerMamba
 )
 
 // Layer is one attention layer's KV cache spec, at the engine's one block size.
@@ -71,6 +78,23 @@ type Layer struct {
 	// physical blocks must be a multiple of (vllm/v1/kv_cache_interface.py:183-193@5df63a72),
 	// which sizes the KV pool (PoolBytesPerBlock); 0 is 1.
 	StrideAlignment int
+	// The fields below are MambaSpec's, read only by LayerMamba. StateBytes is
+	// state_content_bytes and BlockSize is mamba_block_size, in tokens: the engine's block size
+	// in align mode, max_model_len in none mode (MambaModelConfig, vllm/model_executor/models/
+	// config.py:672-706@5df63a72).
+	//
+	// PageSizePadded is page_size_padded: 0 is the state's own bytes.
+	PageSizePadded int
+	// MambaCacheMode is mamba_cache_mode as it runs, "none" or "align" ("all" is refused).
+	MambaCacheMode string
+	// NumSpeculativeBlocks is num_speculative_blocks, the draft tokens of speculative decoding
+	// (vllm/model_executor/layers/mamba/abstract.py:69-85).
+	NumSpeculativeBlocks int
+	// NumPrefillCheckpointBlocks and PrefillCheckpointAlignment are the spec's prefill
+	// checkpoint (Mamba-2: 1 and 1, mamba_mixer2.py:1107; KDA with the flashkda backend: 1 and
+	// 16, kda_checkpoint.py:16). Read only in align mode.
+	NumPrefillCheckpointBlocks int
+	PrefillCheckpointAlignment int
 }
 
 // GroupsOfLayers is get_kv_cache_groups (kv_cache_utils.py:2159-2253@5df63a72) over a model's
@@ -103,6 +127,31 @@ type GroupOptions struct {
 	// model's last layer is then the drafter's (_annotate_eagle_groups, :2051-2109), and only
 	// it drops the EAGLE block.
 	TrailingDrafter bool
+	// BlockSize is the engine's block size, in tokens: the one a layer that states none has.
+	// Layers whose pages are compared or packed in bytes (a Mamba layer beside attention, packed
+	// groups) read it; 0 is unknown, and a comparison that needs it is then skipped or refused.
+	// The sizing functions (PoolBytesPerBlock and the others) fill it from their blockSize.
+	BlockSize int
+	// BlockOutermost is cache_config.get_resolved_kv_cache_layout().is_block_outermost: the
+	// layout on which _get_packed_kv_cache_groups packs layers of unequal page sizes
+	// (kv_cache_utils.py:1875-1878@5df63a72). DeepSeek V4's layers imply it (see
+	// PoolBytesPerBlock); a model with Mamba layers states it here.
+	BlockOutermost bool
+}
+
+// at is o with the engine's block size, when it states none.
+func (o GroupOptions) at(blockSize int) GroupOptions {
+	if o.BlockSize == 0 {
+		o.BlockSize = blockSize
+	}
+	return o
+}
+
+// blockOuter is whether the pool's layout is block-outermost: stated, or implied by DeepSeek V4's
+// layers, whose indexer backend declares it and which are then packed unless the hybrid manager
+// is disabled.
+func (o GroupOptions) blockOuter(layers []Layer) bool {
+	return o.BlockOutermost || deepseek(layers) && !o.DisableHybrid
 }
 
 // GroupLayers is GroupsOfLayers with the drafter's position.
@@ -114,36 +163,51 @@ func GroupLayers(layers []Layer, o GroupOptions) ([]Group, error) {
 // groupLayers is GroupLayers with each group's layers, by index: vLLM's KVCacheGroupSpec
 // layer_names, which get_kv_cache_config_from_groups sizes the pool from.
 func groupLayers(layers []Layer, o GroupOptions) ([]Group, [][]int, error) {
-	disableHybrid := o.DisableHybrid
 	if len(layers) == 0 {
 		return nil, nil, errors.New("kv: a model with no KV cache layers")
+	}
+	for _, l := range layers {
+		if l.Spec == LayerMamba && l.MambaCacheMode != "" && l.MambaCacheMode != "none" && l.MambaCacheMode != "align" {
+			return nil, nil, fmt.Errorf("kv: mamba_cache_mode %q is not modelled: only \"none\" and \"align\" are", l.MambaCacheMode)
+		}
 	}
 	all := make([]int, len(layers))
 	for i := range all {
 		all[i] = i
 	}
-	hasFull := false
-	for _, l := range layers {
-		if l.Spec != LayerSlidingWindow {
-			hasFull = true
+	work := layers
+	if o.DisableHybrid {
+		var err error
+		if work, err = unifyHybrid(layers); err != nil {
+			return nil, nil, err
 		}
 	}
-	if disableHybrid && hasFull && !deepseek(layers) {
-		return []Group{{Kind: FullAttention}}, [][]int{all}, nil
+	if uniformType(work) {
+		return []Group{groupOf(work[0])}, [][]int{all}, nil
 	}
-	if uniformType(layers) {
-		return []Group{groupOf(layers[0])}, [][]int{all}, nil
+	if deepseek(work) && o.DisableHybrid {
+		// vLLM v0.32.0 does not start this deployment: unify_hybrid_kv_cache_specs promotes each
+		// SlidingWindowMLASpec to an MLAAttentionSpec beside the compressed MLA caches
+		// (_promote_local_kv_cache_specs, vllm/v1/core/kv_cache_utils.py:1731-1754@5df63a72) with
+		// replace_as, which passes every field of the old spec except extra_retained_tokens to
+		// the new class (vllm/v1/kv_cache_interface.py:119-138), and MLAAttentionSpec has no
+		// bounded_replay field (:686-702, :956). So this is vLLM's refusal, not a gap of ours.
+		return nil, nil, errors.New("vLLM does not start DeepSeek V4 or V4.1 with disable_hybrid_kv_cache_manager: " +
+			"true: promoting the sliding-window MLA caches to MLA attention raises TypeError (unexpected keyword " +
+			"argument 'bounded_replay', unify_hybrid_kv_cache_specs, vllm/v1/core/kv_cache_utils.py:1746-1754 at " +
+			"vLLM v0.32.0), so there is no deployment to price; drop disable_hybrid_kv_cache_manager from the " +
+			"engine block, or run a vLLM release that starts this layout")
 	}
-	if deepseek(layers) {
-		if disableHybrid {
-			return nil, nil, errors.New("kv: disable_hybrid_kv_cache_manager with DeepSeek V4's sliding-window MLA and " +
-				"circular-buffer caches is not modelled")
+	if o.blockOuter(work) {
+		g, members, err := packedGroups(work, o.BlockSize)
+		if err != nil {
+			return nil, nil, err
 		}
-		if g, members := packedGroups(layers); g != nil {
+		if g != nil {
 			if o.TrailingDrafter {
 				// _groups_partition_layers_exactly holds: every layer is in one group.
 				for i, m := range members {
-					if slices.Contains(m, len(layers)-1) {
+					if slices.Contains(m, len(work)-1) {
 						g[i].Eagle = true
 						break
 					}
@@ -151,25 +215,23 @@ func groupLayers(layers []Layer, o GroupOptions) ([]Group, [][]int, error) {
 			}
 			return g, members, nil
 		}
+	}
+	if deepseek(work) {
 		return nil, nil, errors.New("kv: DeepSeek V4's KV layers of one page size are not modelled")
 	}
-	for _, l := range layers {
-		if page(l) != page(layers[0]) {
-			return nil, nil, fmt.Errorf("kv: KV layers of unequal page sizes (%d and %d elements per token) "+
-				"need vLLM's packed KV cache groups of several block sizes, which are not modelled",
-				page(layers[0]), page(l))
-		}
+	if err := checkEqualPages(work, o.BlockSize); err != nil {
+		return nil, nil, err
 	}
 	var buckets []Group
 	of := map[Group][]int{}
-	for i, l := range layers {
+	for i, l := range work {
 		g := groupOf(l)
 		if len(of[g]) == 0 {
 			buckets = append(buckets, g)
 		}
 		of[g] = append(of[g], i)
 	}
-	fewest, most := len(layers), 0
+	fewest, most := len(work), 0
 	for _, g := range buckets {
 		fewest, most = min(fewest, len(of[g])), max(most, len(of[g]))
 	}
@@ -195,13 +257,111 @@ func groupLayers(layers []Layer, o GroupOptions) ([]Group, [][]int, error) {
 	return out, members, nil
 }
 
+// unifyHybrid is unify_hybrid_kv_cache_specs (kv_cache_utils.py:1799-1822@5df63a72) with
+// _promote_local_kv_cache_specs (:1684-1761): the layers are split into the replicated attention
+// specs and the rest, Mamba's, and each part is promoted by itself. Attention gets its sliding
+// windows promoted to full attention when full attention is present, which keeps every layer's
+// page (the promoted spec has the same page bytes). A part that is neither one spec nor one
+// uniform type afterwards raises "Failed to promote local KV cache specs to one unified type"
+// (:1759-1760): for Mamba, layers of more than one MambaSpec, which no promotion merges. The
+// DeepSeek V4 kinds are left to the caller, which refuses them under disableHybrid.
+func unifyHybrid(layers []Layer) ([]Layer, error) {
+	var mamba []Layer
+	for _, l := range layers {
+		if l.Spec == LayerMamba {
+			mamba = append(mamba, l)
+		}
+	}
+	if len(mamba) > 0 && !uniformType(mamba) {
+		return nil, errors.New("kv: disable_hybrid_kv_cache_manager with Mamba layers of more than one spec: vLLM's " +
+			"unify_hybrid_kv_cache_specs raises \"Failed to promote local KV cache specs to one unified type\" " +
+			"(vllm/v1/core/kv_cache_utils.py:1759-1760@5df63a72)")
+	}
+	attn := make([]Layer, 0, len(layers))
+	for _, l := range layers {
+		if l.Spec != LayerMamba {
+			attn = append(attn, l)
+		}
+	}
+	hasFull := false
+	for _, l := range attn {
+		if l.Spec != LayerSlidingWindow {
+			hasFull = true
+		}
+	}
+	if len(attn) == 0 || !hasFull || deepseek(attn) {
+		return layers, nil
+	}
+	out := slices.Clone(layers)
+	for i, l := range out {
+		if l.Spec == LayerSlidingWindow {
+			out[i].Spec, out[i].Window = LayerFull, 0
+		}
+	}
+	return out, nil
+}
+
+// checkEqualPages refuses what vLLM's uniform-page-size grouping assumes and this port does not
+// unify: the attention layers are of one page in elements per token at the engine's one block
+// size, and a Mamba layer's page, padded to the attention page at start-up
+// (vllm/platforms/interface.py:1118-1126@5df63a72), is that page. Mamba against attention can be
+// compared only where the engine's block size and every attention layer's element size are
+// known; otherwise the padded page is taken as stated. Unequal pages are unify_kv_cache_spec_page_size's
+// (:1292-1354), which pads a smaller Mamba page and scales an attention block: not modelled.
+func checkEqualPages(layers []Layer, blockSize int) error {
+	var first *Layer
+	known := blockSize > 0
+	attnPage := 0
+	for i, l := range layers {
+		if l.Spec == LayerMamba {
+			continue
+		}
+		if first == nil {
+			first = &layers[i]
+		} else if page(l) != page(*first) {
+			return fmt.Errorf("kv: KV layers of unequal page sizes (%d and %d elements per token) "+
+				"need vLLM's packed KV cache groups of several block sizes, which are not modelled",
+				page(*first), page(l))
+		}
+		if l.ElemBytes <= 0 {
+			known = false
+		}
+		if l.BlockSize == 0 {
+			l.BlockSize = blockSize
+		}
+		attnPage = pageBytes(l)
+	}
+	if first == nil || !known {
+		return nil
+	}
+	for _, l := range layers {
+		if l.Spec == LayerMamba && pageBytes(l) != attnPage {
+			return fmt.Errorf("kv: a Mamba layer's page of %d bytes beside attention pages of %d bytes: vLLM unifies "+
+				"them with unify_kv_cache_spec_page_size (vllm/v1/core/kv_cache_utils.py:1292-1354@5df63a72), "+
+				"which is not modelled", pageBytes(l), attnPage)
+		}
+	}
+	return nil
+}
+
 // deepseek is whether the layers have DeepSeek V4's spec kinds, which vLLM groups by page
-// bytes and block size (packedGroups) rather than by elements per token.
+// bytes and block size (packedGroups) rather than by elements per token. A Mamba layer states
+// its own block size and is not one.
 func deepseek(layers []Layer) bool {
 	for _, l := range layers {
 		switch l.Spec {
-		case LayerMLA, LayerSlidingWindowMLA, LayerCircularBuffer:
+		case LayerMLA:
+			// A plain MLAAttentionSpec (one latent a token) is full attention to the grouping,
+			// at whatever block size it states (its page is then compared in bytes);
+			// DeepSeek V4's states more.
+			if l.TokensPerState > 1 || l.StateBytes > 0 || l.Alignment > 0 {
+				return true
+			}
+			continue
+		case LayerSlidingWindowMLA, LayerCircularBuffer:
 			return true
+		case LayerMamba:
+			continue
 		}
 		if l.BlockSize != 0 {
 			return true
@@ -229,7 +389,7 @@ func groupOf(l Layer) Group { return typeOf(l).group() }
 // page is a layer's page in elements per token: keys and values for attention, keys only for
 // an indexer (MLAAttentionSpec's single latent, vllm/v1/kv_cache_interface.py:680-700@5df63a72).
 func page(l Layer) int {
-	if l.Spec == LayerIndexer {
+	if l.Spec == LayerIndexer || l.Spec == LayerMLA {
 		return l.KVHeads * l.HeadSize
 	}
 	return 2 * l.KVHeads * l.HeadSize
@@ -244,6 +404,7 @@ var layerSpecNames = map[string]LayerSpec{
 	"mla":                LayerMLA,
 	"sliding_window_mla": LayerSlidingWindowMLA,
 	"circular_buffer":    LayerCircularBuffer,
+	"mamba":              LayerMamba,
 }
 
 // ParseLayerSpec is the LayerSpec a kv_layers spec name names.

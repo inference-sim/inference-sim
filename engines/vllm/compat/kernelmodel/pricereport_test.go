@@ -34,7 +34,7 @@ func TestWritePriceReport(t *testing.T) {
 	variant := os.Getenv("BLIS_PRICE_VARIANT")
 	drop := map[string]*regexp.Regexp{
 		"":        nil,
-		"nocache": regexp.MustCompile(`(?m)^\s*cache_dtype:.*\n`),
+		"nocache": regexp.MustCompile(`(?m)^\s*kv_cache_dtype:.*\n`),
 		"nobs":    regexp.MustCompile(`(?m)^\s*block_size:.*\n`),
 		// The batch-settings report's third run: both batch settings removed and
 		// all2all_backend deepep_low_latency stated instead of whatever the fixture states.

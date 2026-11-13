@@ -202,6 +202,24 @@ func TestAnUnregisteredConnectorIsNotServed(t *testing.T) {
 	}
 }
 
+// No Mooncake connector is served, for any role: the inertness proofs of the MC_ variables
+// (oracle/inertness/MC_*.json) rest on the engine never loading the Mooncake transfer-engine
+// library, which vLLM reaches only through these connectors
+// (vllm/distributed/kv_transfer/kv_connector/factory.py:225-234@5df63a72).
+func TestNoMooncakeConnectorIsServed(t *testing.T) {
+	r, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"MooncakeConnector", "MooncakeStoreConnector"} {
+		for _, role := range []connector.Role{connector.RolePDTransfer, connector.RoleOffload} {
+			if r.Serves(name, role) {
+				t.Errorf("%s is served for %s: the MC_ proofs no longer hold", name, role)
+			}
+		}
+	}
+}
+
 // Load reads the embedded registry: NIXL is served for P/D transfer and nothing else, the
 // OffloadingConnector for offload and nothing else.
 func TestLoadServesTheRegisteredConnectors(t *testing.T) {
@@ -222,6 +240,27 @@ func TestLoadServesTheRegisteredConnectors(t *testing.T) {
 	}
 	if r.Serves("OffloadingConnector", connector.RolePDTransfer) {
 		t.Error("OffloadingConnector is served for pd_transfer, which no diff test checks")
+	}
+}
+
+// MultiConnector is the composite role and nothing else: it moves no KV of its own, so a
+// deployment cannot name it as the P/D transfer or the offload connector, and the children it
+// composes are not served through it.
+func TestMultiConnectorIsServedAsACompositeOnly(t *testing.T) {
+	r, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r.Serves("MultiConnector", connector.RoleComposite) {
+		t.Error("MultiConnector is not served as a composite")
+	}
+	for _, role := range []connector.Role{connector.RolePDTransfer, connector.RoleOffload} {
+		if r.Serves("MultiConnector", role) {
+			t.Errorf("MultiConnector is served for %s, a role no diff test checks it in", role)
+		}
+	}
+	if r.Serves("NixlConnector", connector.RoleComposite) || r.Serves("OffloadingConnector", connector.RoleComposite) {
+		t.Error("a child connector is served as a composite")
 	}
 }
 

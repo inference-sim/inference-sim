@@ -34,6 +34,13 @@ type KVLayerRun struct {
 	Alignment       int    `yaml:"alignment,omitempty"`
 	StrideAlignment int    `yaml:"stride_alignment,omitempty"`
 	BoundedReplay   bool   `yaml:"bounded_replay,omitempty"`
+	// A "mamba" run is MambaSpec (kv.LayerMamba): StateBytes is its state_content_bytes per
+	// rank, BlockSize its mamba_block_size, and the fields below the rest of the spec.
+	PageSizePadded             int    `yaml:"page_size_padded,omitempty"`
+	MambaCacheMode             string `yaml:"mamba_cache_mode,omitempty"`
+	NumSpeculativeBlocks       int    `yaml:"num_speculative_blocks,omitempty"`
+	NumPrefillCheckpointBlocks int    `yaml:"num_prefill_checkpoint_blocks,omitempty"`
+	PrefillCheckpointAlignment int    `yaml:"prefill_checkpoint_alignment,omitempty"`
 }
 
 // KVGroups is the scheduler's KV cache groups for a model's layers, as vLLM groups them
@@ -41,6 +48,13 @@ type KVLayerRun struct {
 // trailingDrafter is _uses_trailing_mtp_layers (kv_cache_utils.py:1997-2013@5df63a72): the
 // drafter's layers are the last ones, so the group holding the last layer is the drafter's.
 func KVGroups(runs []KVLayerRun, disableHybrid, trailingDrafter bool) ([]kv.Group, error) {
+	return KVGroupsWith(runs, kv.GroupOptions{DisableHybrid: disableHybrid, TrailingDrafter: trailingDrafter})
+}
+
+// KVGroupsWith is KVGroups with every option get_kv_cache_groups reads (kv.GroupOptions), among
+// them the engine's block size and the cache layout, which layers of unequal page sizes (a
+// Mamba layer beside attention that the platform did not pad equal) are grouped by.
+func KVGroupsWith(runs []KVLayerRun, o kv.GroupOptions) ([]kv.Group, error) {
 	if len(runs) == 0 {
 		return nil, nil
 	}
@@ -48,7 +62,7 @@ func KVGroups(runs []KVLayerRun, disableHybrid, trailingDrafter bool) ([]kv.Grou
 	if err != nil {
 		return nil, err
 	}
-	groups, err := kv.GroupLayers(layers, kv.GroupOptions{DisableHybrid: disableHybrid, TrailingDrafter: trailingDrafter})
+	groups, err := kv.GroupLayers(layers, o)
 	if err != nil {
 		return nil, fmt.Errorf("vllm: kv_layers: %w", err)
 	}
@@ -88,7 +102,7 @@ func KVPoolBytesPerBlock(runs []KVLayerRun, disableHybrid bool, blockSize int, k
 	if err != nil {
 		return 0, err
 	}
-	if !slices.ContainsFunc(layers, func(l kv.Layer) bool { return l.StateBytes > 0 }) {
+	if !statesBytes(layers) {
 		if err := deriveElemBytes(layers, blockSize, kernelPerBlock); err != nil {
 			return 0, err
 		}
@@ -115,7 +129,7 @@ func KVStagePoolBytesPerBlock(runs []KVLayerRun, stages [][2]int, disableHybrid 
 	if err != nil {
 		return nil, err
 	}
-	if !slices.ContainsFunc(layers, func(l kv.Layer) bool { return l.StateBytes > 0 }) {
+	if !statesBytes(layers) {
 		if err := deriveElemBytes(layers, blockSize, kernelPerBlock); err != nil {
 			return nil, err
 		}
@@ -147,7 +161,7 @@ func KVStageGroupCopyBytes(runs []KVLayerRun, stages [][2]int, disableHybrid boo
 	if err != nil {
 		return nil, err
 	}
-	if !slices.ContainsFunc(layers, func(l kv.Layer) bool { return l.StateBytes > 0 }) {
+	if !statesBytes(layers) {
 		if err := deriveElemBytes(layers, blockSize, kernelPerBlock); err != nil {
 			return nil, err
 		}
@@ -198,12 +212,22 @@ func KVStagePoolBlocks(runs []KVLayerRun, stages [][2]int, disableHybrid bool, b
 	return pool, binding, nil
 }
 
+// statesBytes is whether a non-Mamba layer states its packed state's bytes (DeepSeek V4's), which
+// are then sized as stated. A Mamba layer always states its state bytes and takes no part in the
+// element sizes the others derive.
+func statesBytes(layers []kv.Layer) bool {
+	return slices.ContainsFunc(layers, func(l kv.Layer) bool { return l.Spec != kv.LayerMamba && l.StateBytes > 0 })
+}
+
 // deriveElemBytes gives every layer that states no element size the bytes kernelPerBlock leaves
 // after the layers that state one, split evenly over their elements (KVPoolBlocks). With no
 // layer stating one, each layer takes kernelPerBlock over every layer's elements, as before.
 func deriveElemBytes(layers []kv.Layer, blockSize int, kernelPerBlock int64) error {
 	var stated, elems int64
 	for _, l := range layers {
+		if l.Spec == kv.LayerMamba {
+			continue
+		}
 		bytes := l.ElemBytes
 		l.BlockSize, l.ElemBytes = blockSize, max(l.ElemBytes, 1)
 		one, err := kv.PoolBytesPerBlock([]kv.Layer{l}, kv.GroupOptions{}, blockSize)
@@ -230,7 +254,7 @@ func deriveElemBytes(layers []kv.Layer, blockSize int, kernelPerBlock int64) err
 			"for each of the layers' %d elements a block", kernelPerBlock, elems)
 	}
 	for i := range layers {
-		if layers[i].ElemBytes == 0 {
+		if layers[i].Spec != kv.LayerMamba && layers[i].ElemBytes == 0 {
 			layers[i].ElemBytes = int(rest / elems)
 		}
 	}
@@ -253,7 +277,10 @@ func KVLayers(runs []KVLayerRun) ([]kv.Layer, error) {
 			layers = append(layers, kv.Layer{Spec: spec, Window: r.SlidingWindow, KVHeads: r.NumKVHeads,
 				HeadSize: r.HeadSize, BlockSize: r.BlockSize, TokensPerState: r.TokensPerState,
 				StateBytes: r.StateBytes, ElemBytes: r.ElemBytes, Alignment: r.Alignment,
-				StrideAlignment: r.StrideAlignment, BoundedReplay: r.BoundedReplay})
+				StrideAlignment: r.StrideAlignment, BoundedReplay: r.BoundedReplay,
+				PageSizePadded: r.PageSizePadded, MambaCacheMode: r.MambaCacheMode,
+				NumSpeculativeBlocks: r.NumSpeculativeBlocks, NumPrefillCheckpointBlocks: r.NumPrefillCheckpointBlocks,
+				PrefillCheckpointAlignment: r.PrefillCheckpointAlignment})
 		}
 	}
 	return layers, nil

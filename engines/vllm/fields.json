@@ -523,6 +523,57 @@
       }
     },
     {
+      "name": "MC_ENABLE_DEST_DEVICE_AFFINITY",
+      "source": "env",
+      "status": "proven_inert",
+      "evidence": {
+        "proof": "oracle/inertness/MC_ENABLE_DEST_DEVICE_AFFINITY.json"
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "MC_SLICE_SIZE",
+      "source": "env",
+      "status": "proven_inert",
+      "evidence": {
+        "proof": "oracle/inertness/MC_SLICE_SIZE.json"
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "MC_WORKERS_PER_CTX",
+      "source": "env",
+      "status": "proven_inert",
+      "evidence": {
+        "proof": "oracle/inertness/MC_WORKERS_PER_CTX.json"
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "MODELSCOPE_API_TOKEN",
       "source": "env",
       "status": "not_modelled",
@@ -787,6 +838,17 @@
       }
     },
     {
+      "name": "NVSHMEM_QP_DEPTH",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#75"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "OMP_NUM_THREADS",
       "source": "env",
       "status": "not_modelled",
@@ -855,9 +917,53 @@
     {
       "name": "PYTHONHASHSEED",
       "source": "env",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#53"
+        "traces": [
+          "core/kv/testdata/seeded_block_hashes.json"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "covered": [
+          "0",
+          "1234",
+          "a-string-seed"
+        ]
+      },
+      "estimation": {
+        "rule": "leave_unset"
+      }
+    },
+    {
+      "name": "PYTHONNOUSERSITE",
+      "source": "env",
+      "status": "proven_inert",
+      "evidence": {
+        "proof": "oracle/inertness/PYTHONNOUSERSITE.json"
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "PYTHONUNBUFFERED",
+      "source": "env",
+      "status": "proven_inert",
+      "evidence": {
+        "proof": "oracle/inertness/PYTHONUNBUFFERED.json"
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -1245,7 +1351,50 @@
         "issue": "inference-sim/blis-vllm#62"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset",
+        "preserves": "the value vLLM sets itself when the environment does not state one (nixl_utils.py:20-36@5df63a72)",
+        "valid_when": [
+          {
+            "value_in": [
+              "1024"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "UCX_TLS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "leave_unset",
+        "preserves": "the NIC path the engine prices for a handoff between nodes when UCX_CUDA_IPC_ENABLE_MNNVL=y is not stated (compat/kernelmodel): a transport list that names an RDMA transport, or all, reaches the NIC; a deny list or a list with no RDMA transport does not. UCX FAQ for the list syntax; no vLLM function resolves it",
+        "valid_when": [
+          {
+            "value_list_has_any": [
+              "rc",
+              "rc_x",
+              "rc_v",
+              "rc_verbs",
+              "rc_mlx5",
+              "dc",
+              "dc_x",
+              "dc_mlx5",
+              "ib",
+              "ud",
+              "ud_x",
+              "ud_verbs",
+              "ud_mlx5",
+              "all"
+            ],
+            "value_not_prefixed": [
+              "^"
+            ]
+          }
+        ]
       }
     },
     {
@@ -2224,7 +2373,26 @@
         "issue": "inference-sim/blis-vllm#80"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset",
+        "preserves": "the backend vLLM's _resolve_fi_ar_backend picks for the tensor-parallel group (flashinfer_all_reduce.py:143-178@5df63a72). One node: auto picks mnnvl with a trtllm fallback when the multicast workspace cannot be created, and a stated mnnvl picks mnnvl with no fallback, so the two differ on a node without NVSwitch multicast, which the stand-in cannot be told: a stated mnnvl on one node is not exact. Several nodes: auto picks mnnvl without fallback on compute capability 10.0 and up, and turns FlashInfer all-reduce off below it.",
+        "valid_when": [
+          {
+            "value_in": [
+              "auto"
+            ]
+          },
+          {
+            "value_in": [
+              "mnnvl"
+            ],
+            "tp_group_nodes": {
+              "gt": 1
+            },
+            "compute_capability": {
+              "gte": "10.0"
+            }
+          }
+        ]
       }
     },
     {
@@ -4518,9 +4686,20 @@
     {
       "name": "VLLM_USE_RUST_FRONTEND",
       "source": "env",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#85"
+        "traces": [
+          "compat/kernelmodel/h200_fields_test.go",
+          "kerneltests/prefill_forms_test.go",
+          "vllmengine/testdata/deepseek-v41-flash-h200-tp8-dspark5-synthetic-rust.yaml"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -4578,6 +4757,12 @@
         "traces": [
           "core/engine/testdata/golden/t3-async-dspark.json",
           "core/engine/testdata/golden/t3-async-v2-pp2.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "true"
         ]
       },
       "estimation": {
@@ -5007,10 +5192,10 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#85"
+        "issue": "inference-sim/blis-vllm#105"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -5021,6 +5206,12 @@
         "traces": [
           "core/engine/testdata/golden-dp-async/dp2-throttle-async.json",
           "core/engine/testdata/golden/t3-async.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "true"
         ]
       },
       "estimation": {
@@ -5162,12 +5353,31 @@
     {
       "name": "attention_config.indexer_kv_dtype",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#84"
+        "traces": [
+          "compat/kernelmodel/engine_settings_test.go",
+          "compat/kernelmodel/indexer_record_test.go",
+          "rules/v0_32/indexer_kv_dtype_test.go",
+          "rules/v0_32/testdata/vllm_indexer_kv_dtype.json"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "auto",
+          "bf16",
+          "fp8",
+          "mxfp4",
+          "nvfp4"
+        ],
+        "covered": [
+          "auto",
+          "fp8"
+        ]
       },
       "estimation": {
-        "rule": "leave_unset"
+        "rule": "none"
       }
     },
     {
@@ -5312,6 +5522,30 @@
           "core/sched/testdata/golden/prefix-cache.json"
         ]
       },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 16,
+            "closed": "above"
+          },
+          {
+            "value": 17,
+            "closed": "above"
+          },
+          {
+            "value": 256,
+            "closed": "above"
+          },
+          {
+            "value": 257,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          0
+        ]
+      },
       "estimation": {
         "rule": "none"
       }
@@ -5451,9 +5685,19 @@
     {
       "name": "compilation_config.cudagraph_capture_sizes",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#78"
+        "traces": [
+          "compat/kernelmodel/capture_oracle_test.go",
+          "core/lower/testdata/vllm_lower.json",
+          "rules/pack/cudagraph_test.go"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -5495,9 +5739,30 @@
     {
       "name": "compilation_config.cudagraph_mode",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#78"
+        "traces": [
+          "compat/kernelmodel/capture_oracle_test.go",
+          "core/lower/testdata/vllm_lower.json",
+          "rules/pack/cudagraph_test.go"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "NONE",
+          "PIECEWISE",
+          "FULL",
+          "FULL_DECODE_ONLY",
+          "FULL_AND_PIECEWISE"
+        ],
+        "covered": [
+          "FULL",
+          "FULL_AND_PIECEWISE",
+          "FULL_DECODE_ONLY",
+          "NONE",
+          "PIECEWISE"
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -5550,12 +5815,20 @@
     {
       "name": "compilation_config.decoder_replay_cudagraph_capture_sizes",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#80"
+        "traces": [
+          "compat/kernelmodel/decoder_replay_test.go"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -5682,9 +5955,35 @@
     {
       "name": "compilation_config.max_cudagraph_capture_size",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#78"
+        "traces": [
+          "compat/kernelmodel/capture_oracle_test.go",
+          "core/lower/testdata/vllm_lower.json",
+          "rules/pack/cudagraph_test.go"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 1,
+            "closed": "above"
+          },
+          {
+            "value": 8,
+            "closed": "above"
+          },
+          {
+            "value": 256,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          1,
+          2,
+          3
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -5946,9 +6245,19 @@
     {
       "name": "cudagraph_capture_sizes",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#78"
+        "traces": [
+          "compat/kernelmodel/capture_oracle_test.go",
+          "core/lower/testdata/vllm_lower.json",
+          "rules/pack/cudagraph_test.go"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -6063,6 +6372,18 @@
           "core/engine/testdata/golden-dp/dp4-lb.json"
         ]
       },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 2,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          1
+        ]
+      },
       "estimation": {
         "rule": "none"
       }
@@ -6127,7 +6448,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#79"
+        "issue": "inference-sim/blis-vllm#109"
       },
       "estimation": {
         "rule": "none"
@@ -6160,7 +6481,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#8"
+        "issue": "inference-sim/blis-vllm#109"
       },
       "estimation": {
         "rule": "none"
@@ -6171,7 +6492,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#54"
+        "issue": "inference-sim/blis-vllm#107"
       },
       "estimation": {
         "rule": "none"
@@ -6283,6 +6604,12 @@
       "evidence": {
         "traces": [
           "core/sched/testdata/golden/hybrid-disabled.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "true"
         ]
       },
       "estimation": {
@@ -6406,6 +6733,12 @@
       "evidence": {
         "traces": [
           "core/engine/testdata/golden-dp/dp2-waves.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
         ]
       },
       "estimation": {
@@ -6580,9 +6913,21 @@
     {
       "name": "enable_chunked_prefill",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#55"
+        "traces": [
+          "core/engine/testdata/golden/t3-chunked-prefill-off-async-v2.json",
+          "core/engine/testdata/golden/t3-chunked-prefill-off-async.json",
+          "core/sched/testdata/golden/chunked-prefill-off-long-prefill.json",
+          "core/sched/testdata/golden/chunked-prefill-off-prefix-cache.json",
+          "core/sched/testdata/golden/chunked-prefill-off.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false"
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -6637,7 +6982,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#76"
+        "issue": "inference-sim/blis-vllm#108"
       },
       "estimation": {
         "rule": "none"
@@ -6646,9 +6991,18 @@
     {
       "name": "enable_expert_parallel",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#78"
+        "traces": [
+          "compat/kernelmodel/ep_oracle_test.go",
+          "core/lower/testdata/vllm_lower.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "true"
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -6884,6 +7238,13 @@
           "core/sched/testdata/golden/prefix-cache.json"
         ]
       },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -7080,7 +7441,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#55"
+        "issue": "inference-sim/blis-vllm#108"
       },
       "estimation": {
         "rule": "none"
@@ -7091,7 +7452,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#55"
+        "issue": "inference-sim/blis-vllm#108"
       },
       "estimation": {
         "rule": "none"
@@ -7102,7 +7463,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#55"
+        "issue": "inference-sim/blis-vllm#108"
       },
       "estimation": {
         "rule": "none"
@@ -7113,7 +7474,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#55"
+        "issue": "inference-sim/blis-vllm#108"
       },
       "estimation": {
         "rule": "none"
@@ -7124,7 +7485,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#76"
+        "issue": "inference-sim/blis-vllm#108"
       },
       "estimation": {
         "rule": "none"
@@ -7135,7 +7496,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#55"
+        "issue": "inference-sim/blis-vllm#108"
       },
       "estimation": {
         "rule": "none"
@@ -7146,7 +7507,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#76"
+        "issue": "inference-sim/blis-vllm#108"
       },
       "estimation": {
         "rule": "none"
@@ -7157,7 +7518,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#55"
+        "issue": "inference-sim/blis-vllm#108"
       },
       "estimation": {
         "rule": "none"
@@ -7168,7 +7529,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#76"
+        "issue": "inference-sim/blis-vllm#108"
       },
       "estimation": {
         "rule": "none"
@@ -7276,9 +7637,18 @@
     {
       "name": "gpu_memory_utilization",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#73"
+        "traces": [
+          "compat/build/memory_utilization_test.go",
+          "compat/kernelmodel/capacity_test.go"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
         "rule": "leave_unset"
@@ -7597,7 +7967,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#77"
+        "issue": "inference-sim/blis-registry#75"
       },
       "estimation": {
         "rule": "none"
@@ -7617,9 +7987,40 @@
     {
       "name": "kv_cache_dtype",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#78"
+        "traces": [
+          "core/kv/pool_oracle_test.go",
+          "core/lower/testdata/vllm_lower.json",
+          "vllmengine/pool_oracle_test.go"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "auto",
+          "float16",
+          "bfloat16",
+          "fp8",
+          "fp8_e4m3",
+          "fp8_e5m2",
+          "fp8_inc",
+          "fp8_ds_mla",
+          "nvfp4_ds_mla",
+          "turboquant_k8v4",
+          "turboquant_4bit_nc",
+          "turboquant_k3v4_nc",
+          "turboquant_3bit_nc",
+          "ultraquant_4bit",
+          "int4_per_token_head",
+          "int8_per_token_head",
+          "fp8_per_token_head",
+          "nvfp4",
+          "nvfp4_4over6"
+        ],
+        "covered": [
+          "fp8"
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -7687,6 +8088,12 @@
       "evidence": {
         "traces": [
           "core/sched/testdata/golden/kv-events.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "true"
         ]
       },
       "estimation": {
@@ -7835,6 +8242,13 @@
           "core/connector/offloading/testdata/golden/offloading-basic.json"
         ]
       },
+      "value_classes": {
+        "type": "enumerated",
+        "covered": [
+          "NixlConnector",
+          "OffloadingConnector"
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -7893,6 +8307,18 @@
           "core/connector/nixl/testdata/golden/nixl-p-abort.json"
         ]
       },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "kv_producer",
+          "kv_both",
+          "kv_consumer"
+        ],
+        "covered": [
+          "kv_consumer",
+          "kv_producer"
+        ]
+      },
       "estimation": {
         "rule": "none"
       }
@@ -7900,9 +8326,17 @@
     {
       "name": "language_model_only",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#82"
+        "traces": [
+          "compat/kernelmodel/language_model_only_test.go"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "true"
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -8049,6 +8483,18 @@
           "core/sched/testdata/golden/long-prefill-chunks.json"
         ]
       },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 1,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          1
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -8060,6 +8506,12 @@
       "evidence": {
         "traces": [
           "core/sched/testdata/golden/knob-long-prefill-adaptive.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "true"
         ]
       },
       "estimation": {
@@ -8212,9 +8664,35 @@
     {
       "name": "max_cudagraph_capture_size",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#78"
+        "traces": [
+          "compat/kernelmodel/capture_oracle_test.go",
+          "core/lower/testdata/vllm_lower.json",
+          "rules/pack/cudagraph_test.go"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 1,
+            "closed": "above"
+          },
+          {
+            "value": 8,
+            "closed": "above"
+          },
+          {
+            "value": 256,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          1,
+          2,
+          3
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -8274,6 +8752,12 @@
           "core/sched/testdata/golden/lora-max-loras-skip.json"
         ]
       },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -8286,6 +8770,26 @@
         "traces": [
           "core/sched/testdata/golden/length-caps.json",
           "core/sched/testdata/golden/model-len-boundary.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 1,
+            "closed": "above"
+          },
+          {
+            "value": 8193,
+            "closed": "above"
+          },
+          {
+            "value": 32769,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          1
         ]
       },
       "estimation": {
@@ -8301,6 +8805,12 @@
           "core/sched/testdata/golden/knob-max-active-seqs.json"
         ]
       },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -8313,6 +8823,18 @@
         "traces": [
           "core/sched/testdata/golden/long-prefill-chunks.json",
           "core/sched/testdata/golden/meta-larger-budget-large.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 129,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          0
         ]
       },
       "estimation": {
@@ -8350,6 +8872,18 @@
           "core/sched/testdata/golden/knob-max-scheduled-tokens.json"
         ]
       },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 8192,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          0
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -8362,6 +8896,12 @@
         "traces": [
           "core/sched/testdata/golden/knob-max-active-seqs.json",
           "core/sched/testdata/golden/preempt-fcfs.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
         ]
       },
       "estimation": {
@@ -8637,7 +9177,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#77"
+        "issue": "inference-sim/blis-registry#75"
       },
       "estimation": {
         "rule": "none"
@@ -8829,6 +9369,18 @@
           "core/engine/testdata/golden/t3-v2-pp2-async-stagger.json"
         ]
       },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 2,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          1
+        ]
+      },
       "estimation": {
         "rule": "none"
       }
@@ -9008,6 +9560,18 @@
           "core/engine/testdata/golden-dp/dp2-throttle.json"
         ]
       },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 2,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          1
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -9017,7 +9581,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#7"
+        "issue": "inference-sim/blis-vllm#109"
       },
       "estimation": {
         "rule": "none"
@@ -9039,7 +9603,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#7"
+        "issue": "inference-sim/blis-vllm#109"
       },
       "estimation": {
         "rule": "none"
@@ -9334,9 +9898,21 @@
     {
       "name": "quantization",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#78"
+        "traces": [
+          "compat/kernelmodel/quantization_v4_test.go",
+          "compat/kernelmodel/quantization_m3_test.go",
+          "compat/quantization/resolved.json"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "covered": [
+          "deepseek_v4_fp8",
+          "modelopt_mixed",
+          "mxfp8"
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -9625,6 +10201,16 @@
         "traces": [
           "core/sched/testdata/golden/preempt-priority.json",
           "core/sched/testdata/golden/priority-tie.json"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "fcfs",
+          "priority"
+        ],
+        "covered": [
+          "priority"
         ]
       },
       "estimation": {
@@ -9971,6 +10557,12 @@
           "vllmengine/testdata/muse-gb200-nvl-tep8-dspark-adaptive.yaml"
         ]
       },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "true"
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -10030,6 +10622,55 @@
           "core/sched/testdata/golden/spec-mtp1.json"
         ]
       },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "ngram",
+          "medusa",
+          "mlp_speculator",
+          "draft_model",
+          "suffix",
+          "custom_class",
+          "eagle",
+          "eagle3",
+          "extract_hidden_states",
+          "deepseek_mtp",
+          "dots3_note_mtp",
+          "mimo_mtp",
+          "mimo_v2_mtp",
+          "glm4_moe_mtp",
+          "glm4_moe_lite_mtp",
+          "glm_ocr_mtp",
+          "ernie_mtp",
+          "nemotron_h_mtp",
+          "exaone_moe_mtp",
+          "exaone4_5_mtp",
+          "qwen3_next_mtp",
+          "qwen4_exp_mtp",
+          "qwen3_5_mtp",
+          "longcat_flash_mtp",
+          "bailing_hybrid_v3_mtp",
+          "minimax_m3_mtp",
+          "bailing_hybrid_mtp",
+          "mtp",
+          "kimi_k3_mtp",
+          "pangu_ultra_moe_mtp",
+          "step3p5_mtp",
+          "hy_v3_mtp",
+          "hy_v4_mtp",
+          "gemma4_mtp",
+          "inkling_mtp",
+          "glm5_next_mtp",
+          "dflash",
+          "ngram_gpu",
+          "dspark"
+        ],
+        "covered": [
+          "dspark",
+          "eagle3",
+          "mtp"
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -10042,6 +10683,12 @@
         "traces": [
           "compat/kernelmodel/muse_kvlayers_test.go",
           "testdata/scenarios/muse-h100-pp2tp8-dspark.yaml"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "covered": [
+          "muse-spark-open-dspark"
         ]
       },
       "estimation": {
@@ -10067,6 +10714,22 @@
         "traces": [
           "core/sched/testdata/golden/spec-eagle3.json",
           "core/sched/testdata/golden/spec-mtp-multi.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 2,
+            "closed": "above"
+          },
+          {
+            "value": 4,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          1
         ]
       },
       "estimation": {
@@ -10131,9 +10794,26 @@
     {
       "name": "speculative_config.rejection_sample_method",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#29"
+        "traces": [
+          "compat/kernelmodel/synthetic_acceptance_test.go",
+          "rules/engineconfig/synthetic_acceptance_test.go",
+          "rules/engineconfig/testdata/synthetic_acceptance.json"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "standard",
+          "synthetic",
+          "block"
+        ],
+        "covered": [
+          "block",
+          "standard",
+          "synthetic"
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -10197,9 +10877,19 @@
     {
       "name": "speculative_config.synthetic_acceptance_length",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#88"
+        "traces": [
+          "compat/kernelmodel/synthetic_acceptance_test.go",
+          "rules/engineconfig/synthetic_acceptance_test.go",
+          "rules/engineconfig/testdata/synthetic_acceptance.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
         "rule": "leave_unset"
@@ -10318,9 +11008,22 @@
     {
       "name": "stream_interval",
       "source": "config",
-      "status": "not_modelled",
+      "status": "proven_inert",
       "evidence": {
-        "issue": "inference-sim/inference-sim#2035"
+        "proof": "oracle/inertness/stream_interval.json"
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 2,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          0,
+          1
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -10395,9 +11098,20 @@
     {
       "name": "swa_bounded_replay",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#7"
+        "traces": [
+          "core/sched/testdata/golden-swa/swa-stated-false-v2.json",
+          "core/sched/testdata/golden-swa/swa-stated-true-v1.json",
+          "core/sched/testdata/golden-swa/swa-stated-true-v2.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -10410,6 +11124,38 @@
       "evidence": {
         "traces": [
           "core/connector/offloading/testdata/golden/offloading-armd-pp2-tp4-dspark7.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 2,
+            "closed": "above"
+          },
+          {
+            "value": 4,
+            "closed": "above"
+          },
+          {
+            "value": 5,
+            "closed": "above"
+          },
+          {
+            "value": 8,
+            "closed": "above"
+          },
+          {
+            "value": 9,
+            "closed": "above"
+          },
+          {
+            "value": 17,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          2
         ]
       },
       "estimation": {
@@ -10654,6 +11400,12 @@
       "evidence": {
         "traces": [
           "core/sched/testdata/golden/knob-watermark.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
         ]
       },
       "estimation": {

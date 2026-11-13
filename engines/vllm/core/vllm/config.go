@@ -19,6 +19,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 
 	"github.com/inference-sim/blis-vllm/core/engine"
+	"github.com/inference-sim/blis-vllm/core/placement"
 	"github.com/inference-sim/blis-vllm/core/sched"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 	"github.com/inference-sim/blis-vllm/rules/v0_32"
@@ -81,6 +82,12 @@ type Config struct {
 	// num_gpu_blocks from memory: the start-up check then states vLLM's numbers in GiB
 	// (kv_cache_utils.py:1031-1040@5df63a72). Unstated, it states them in blocks.
 	KVAvailableBytes int64 `yaml:"kv_available_bytes,omitempty"`
+	// Placement is where the pool sits: its chip, network, layout and the node this engine is on. The
+	// engine states every transfer it starts against it (engine.Transfer.Move) and builds the plan
+	// those transfers are priced against from it (Plan), so a pool that can start a transfer (a P/D
+	// connector or a KV offload) must state it, and a refusal says so. A pool that starts none needs
+	// no placement, and its Plan is empty.
+	Placement *placement.Placement `yaml:"placement,omitempty"`
 	// KVTransfer is the pool's kv_transfer_config for P/D: the connector and the pool's kv_role.
 	// The deployment states the connector (pd_transfer.connector) and the pool's role; a caller
 	// restates them here. Unstated is no connector.
@@ -89,6 +96,12 @@ type Config struct {
 	// states it (offload: connector, tiers, eviction_policy); a caller restates it here with the
 	// bytes a block its memory model sizes. Unstated is no offload.
 	KVOffload *offloadConfig `yaml:"kv_offload,omitempty"`
+
+	// statedZero names the scheduler fields the block stated as 0 (max_num_seqs,
+	// max_num_batched_tokens). The settings struct reads 0 as unstated, and a block that states 0
+	// is refused for vLLM's own rule (ge=1) rather than told to state the value it did state.
+	// decodeConfig fills it; a Config built in Go has none.
+	statedZero []string
 }
 
 // decodeConfig reads an engine block strictly: a key that is not a field is an error, as it
@@ -98,7 +111,13 @@ func decodeConfig(node yaml.Node) (Config, error) {
 	if node.Kind == 0 {
 		return c, fmt.Errorf("vllm: the engine block is empty")
 	}
-	raw, err := yaml.Marshal(&node)
+	// The block is written in vLLM's own setting names (blis-vllm#93); Config decodes the Go-shaped
+	// block, with the factory's own extras beside it.
+	inner, err := engineconfig.FromVLLM(&node)
+	if err != nil {
+		return c, fmt.Errorf("vllm: engine block: %w", err)
+	}
+	raw, err := yaml.Marshal(inner)
 	if err != nil {
 		return c, fmt.Errorf("vllm: engine block: %w", err)
 	}
@@ -107,7 +126,28 @@ func decodeConfig(node yaml.Node) (Config, error) {
 	if err := dec.Decode(&c); err != nil {
 		return c, fmt.Errorf("vllm: engine block: %w", err)
 	}
+	c.statedZero = statedZeroFields(node)
 	return c, nil
+}
+
+// statedZeroFields lists the scheduler fields a block states as 0, which the decoded integer
+// cannot tell from a field left out.
+func statedZeroFields(node yaml.Node) []string {
+	var zero []string
+	if node.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		key, val := node.Content[i].Value, node.Content[i+1]
+		if key != "max_num_seqs" && key != "max_num_batched_tokens" {
+			continue
+		}
+		var n int
+		if val.Tag == "!!int" && val.Decode(&n) == nil && n == 0 {
+			zero = append(zero, key)
+		}
+	}
+	return zero
 }
 
 // settings are a Config resolved into the scheduler's and engine core's inputs.
@@ -122,9 +162,15 @@ type settings struct {
 	// offload is the pool's KV offload, nil for none; specMethod the drafter's method.
 	offload    *offloadConfig
 	specMethod string
+	// placement is where the pool sits, nil when the caller states none (Config.Placement).
+	placement *placement.Placement
 	// dp is the data-parallel group: ranks (1 for one engine), the sync interval, the
 	// coordinator's publish interval and the prefill throttle interval.
 	dp dpSettings
+	// hashSeed is PYTHONHASHSEED when the deployment sets it (nil: unset), which roots every
+	// request's block-hash chain (resolve_none_hash_seed, vllm/v1/core/kv_cache_utils.py:131-146
+	// @5df63a72). It changes the hashes a KV-event stream publishes, never which blocks hit.
+	hashSeed *string
 }
 
 // dpSettings are a data-parallel group's settings.
@@ -195,6 +241,11 @@ func resolve(c Config) (settings, error) {
 			c.NumGPUBlocks, maxLen, need, blockSize)
 	}
 	seqs, budget := e.MaxNumSeqs, e.MaxNumBatchedTokens
+	if len(c.statedZero) > 0 {
+		// A stated 0 is not an unstated value: vLLM's SchedulerConfig refuses it (ge=1).
+		return s, fmt.Errorf("vllm: %s is stated as 0, below the minimum of 1, which vLLM refuses "+
+			"(vllm/config/scheduler.py:48,62@5df63a72, ge=1)", strings.Join(c.statedZero, " and "))
+	}
 	if seqs == 0 || budget == 0 {
 		// SchedulerConfig's own defaults, 128 and 2048, are "mainly for convenience when testing"
 		// (vllm/config/scheduler.py:47-66@5df63a72); vllm serve resolves unstated values from the
@@ -255,7 +306,7 @@ func resolve(c Config) (settings, error) {
 			// draft_model's draft slots depend on parallel_drafting (PARD, K slots, or one;
 			// vllm/config/speculative.py:1907-1926@5df63a72), which is not a deployment field.
 			return s, fmt.Errorf("vllm: speculative method %q is not built by this factory; it builds eagle, "+
-				"eagle3, mtp and dspark, whose scheduler numbers the engine block fully states (docs/feature-matrix.md)", method)
+				"eagle3, mtp, dspark and ngram, whose scheduler numbers the engine block fully states (docs/feature-matrix.md)", method)
 		}
 		if method == "mtp" && c.MTPNextnPredictLayers < 1 {
 			// The prefill lookahead depends on the drafter checkpoint's layer count
@@ -271,16 +322,21 @@ func resolve(c Config) (settings, error) {
 	if err != nil {
 		return s, err
 	}
-	if e.SWABoundedReplay != nil && !*e.SWABoundedReplay && v2 {
-		// CacheConfig.swa_bounded_replay: true (vllm/config/cache.py:250@5df63a72), and DeepSeek-V4.1 forces
-		// it off on the V1 runner, under prefill context parallelism and on ROCm
-		// (vllm/models/deepseek_v41/attention.py:529-547@5df63a72). So on the V1 runner a stated false is
-		// the effective value and builds; on the V2 runner (prefill context parallelism is refused
-		// elsewhere, blis-vllm#67) false departs from the default, and lets the sliding-window KV take
-		// part in prefix caching, which this factory does not model. Only DeepSeek-V4.1 reads the
-		// setting; the engine block does not name the model, so any model is refused here.
-		return s, fmt.Errorf("vllm: swa_bounded_replay is not modelled: false departs from the default on the V2 "+
-			"model runner and lets the sliding-window KV take part in prefix caching (%s)", issueBase+"7")
+	if e.SWABoundedReplay != nil && !*e.SWABoundedReplay {
+		// CacheConfig.swa_bounded_replay: true (vllm/config/cache.py:250@5df63a72). False makes
+		// DeepSeek-V4.1's sliding-window MLA specs prefix-cacheable with no replay window
+		// (SlidingWindowMLASpec.prefix_cacheable and prefix_replay_tokens,
+		// vllm/v1/kv_cache_interface.py:968-974), which is the layout the V1 runner and prefill
+		// context parallelism force (vllm/models/deepseek_v41/attention.py:529-547). It is carried
+		// by the layers: each kv_layers run states its own bounded_replay, which the host sets
+		// from this flag, and the groups, the pool and the lookup follow the runs. A run that
+		// still states a bounded replay contradicts the flag.
+		for _, r := range c.KVLayers {
+			if r.BoundedReplay {
+				return s, fmt.Errorf("vllm: swa_bounded_replay is false but a %s run in kv_layers states "+
+					"bounded_replay: the layers of a deployment without bounded replay state none", r.Spec)
+			}
+		}
 	}
 	if method == "dspark" && !v2 {
 		// DSpark is implemented only by the V2 model runner (vllm/config/vllm.py:2976-2979@5df63a72),
@@ -291,6 +347,14 @@ func resolve(c Config) (settings, error) {
 		return s, err
 	}
 	async := resolveAsync(e.AsyncScheduling, method, pp, v2)
+	if async && e.AsyncScheduling != nil && !asyncSpecMethod(method) {
+		// vLLM refuses a stated async_scheduling with a drafter that is not EAGLE-family, ngram_gpu,
+		// draft_model, DSpark or DFlash (vllm/config/vllm.py:1566-1576@5df63a72); the unstated
+		// default falls back to synchronous instead (resolveAsync).
+		return s, fmt.Errorf("vllm: async_scheduling is only supported with EAGLE, MTP, draft_model, ngram_gpu, "+
+			"DSpark or DFlash speculative decoding, and speculative method %q is not one of them "+
+			"(vllm/config/vllm.py:1566-1576@5df63a72)", method)
+	}
 	if err := engine.CheckConfig(pp, async, v2); err != nil {
 		return s, fmt.Errorf("vllm: %w", err)
 	}
@@ -307,6 +371,7 @@ func resolve(c Config) (settings, error) {
 	if err := checkMambaCache(c, prefixCaching); err != nil {
 		return settings{}, err
 	}
+	chunked := ResolveChunkedPrefill(e.EnableChunkedPrefill)
 	maxLoRAs := 0
 	if e.MaxLoRAs > 0 {
 		maxLoRAs = e.MaxLoRAs
@@ -319,6 +384,10 @@ func resolve(c Config) (settings, error) {
 	if err := checkKVLayersFit(c, blockSize, maxLen, queue*budget, spec.PrefillLookahead, method); err != nil {
 		return settings{}, err
 	}
+	if err := checkChunkedPrefill(c, chunked, chunkedInput{prefixCaching: prefixCaching, maxModelLen: maxLen,
+		budget: budget, groups: groups, method: method, pp: pp}); err != nil {
+		return settings{}, err
+	}
 	s.sched = sched.Config{
 		MaxNumSeqs:                seqs,
 		MaxNumActiveSeqs:          e.MaxNumActiveSeqs,
@@ -326,9 +395,9 @@ func resolve(c Config) (settings, error) {
 		MaxNumScheduledTokens:     e.MaxNumScheduledTokens,
 		LongPrefillTokenThreshold: e.LongPrefillTokenThreshold,
 		LongPrefillAdaptive:       e.LongPrefillTokenThresholdAdaptive != nil && *e.LongPrefillTokenThresholdAdaptive,
-		// enable_chunked_prefill defaults to true (vllm/config/scheduler.py:134@5df63a72) and the
-		// deployment schema has no field to turn it off.
-		EnableChunkedPrefill: true,
+		// enable_chunked_prefill defaults to true (vllm/config/scheduler.py:134@5df63a72); the
+		// stated value stands (ResolveChunkedPrefill, checkChunkedPrefill).
+		EnableChunkedPrefill: chunked,
 		Policy:               policy,
 		MaxModelLen:          maxLen,
 		BlockSize:            blockSize,
@@ -347,22 +416,39 @@ func resolve(c Config) (settings, error) {
 		KVGroups:             groups,
 	}
 	s.queueSize, s.v2Runner = queue, v2
+	if v, ok := e.Env["PYTHONHASHSEED"]; ok {
+		s.hashSeed = &v
+	}
 	s.connector, s.pp = c.KVTransfer, pp
 	s.offload, s.specMethod = c.KVOffload, method
-	if s.offload != nil && s.connector != nil {
-		// Both at once is vLLM's MultiConnector, which is not modelled.
-		return settings{}, fmt.Errorf("vllm: kv_transfer and kv_offload together run vLLM's MultiConnector, which is not "+
-			"modelled (%s)", "https://github.com/inference-sim/blis-vllm/issues/15")
+	if c.Placement != nil {
+		if err := c.Placement.Validate(); err != nil {
+			return settings{}, fmt.Errorf("vllm: placement: %w", err)
+		}
 	}
-	if s.connector != nil && c.DataParallelSize > 1 {
-		// The data-parallel group starts no transfers and holds no handoffs (DPGroup): a P/D pool
-		// at dp > 1 would never pull or release its KV.
-		return settings{}, fmt.Errorf("vllm: kv_transfer with data parallelism (dp %d) is not built yet: the "+
-			"data-parallel group reports no transfers (%s)", c.DataParallelSize, "https://github.com/inference-sim/blis-vllm/issues/47")
+	s.placement = c.Placement
+	if s.offload, err = checkConnectorPair(s.connector, s.offload); err != nil {
+		return settings{}, err
 	}
 	if s.offload != nil && c.DataParallelSize > 1 {
+		// Each rank would run its own offload connector and CPU tier; the group aggregates a P/D
+		// connector's transfers (DPGroup) but not the offload's jobs, which it routes by request.
 		return settings{}, fmt.Errorf("vllm: kv_offload with data parallelism (dp %d) is not built yet: the "+
-			"data-parallel group reports no transfers (%s)", c.DataParallelSize, "https://github.com/inference-sim/blis-vllm/issues/47")
+			"data-parallel group does not carry an offload connector's jobs (%s)", c.DataParallelSize, "https://github.com/inference-sim/blis-vllm/issues/47")
+	}
+	if s.connector != nil && s.connector.Role.producer() && c.DataParallelSize > 1 && c.Placement != nil {
+		// A handoff names no endpoint (engine.Handoff), so the decode side is told only the prefill
+		// instance's first node (engine.Request.Peer). A prefill group whose ranks sit on several nodes
+		// would price every pull from the first node's links, wrong for a request computed on another
+		// rank. This is a limit of the contract (inference-sim/blis-substrate#48), not of vLLM, which
+		// starts such a group; it is refused until Handoff carries the owning rank's endpoint. A decode
+		// group has no such limit: each rank states its own node as the end of its pulls.
+		if n := c.Placement.GroupNodes(c.DataParallelSize, rankWidth(*c.Placement)); n > 1 {
+			return settings{}, fmt.Errorf("vllm: a %s group of %d data-parallel ranks spans %d nodes: the engine contract's handoff "+
+				"names no endpoint, so a pull could not be priced from the node of the rank that holds the KV "+
+				"(inference-sim/blis-substrate#48); vLLM itself starts such a group. Keep a prefill group on one node, "+
+				"or wait for a handoff that carries its rank's endpoint", c.KVTransfer.Role, c.DataParallelSize, n)
+		}
 	}
 	s.dp = dpSettings{ranks: max(c.DataParallelSize, 1), syncInterval: e.DPSyncInterval,
 		prefillInterval: max(e.PrefillScheduleInterval, 1), statsIntervalUs: c.DPStatsIntervalUs}
@@ -422,32 +508,34 @@ func effectiveMambaCacheMode(stated string, prefixCaching, hook bool) string {
 	return "none"
 }
 
-// checkMambaCache refuses mamba_cache_mode and mamba_ssm_cache_dtype only when the value that
-// runs differs from the default that runs: each is compared with what an unstated value resolves
-// to for this model and this enable_prefix_caching, not with the field's initializer (X1).
+// checkMambaCache refuses mamba_cache_mode and mamba_ssm_cache_dtype only where no layer of the
+// model reads them, or the value that runs is one this engine does not build: each is compared
+// with what an unstated value resolves to for this model and this enable_prefix_caching, not
+// with the field's initializer (X1).
 //
-// mamba_cache_mode: for a Mamba model, the hook resolves every stated value to the same mode, so
-// none is away from the default and none is refused. For another model the stated value stands,
-// and "align" is away from the default "none". This factory builds full-attention KV groups only
-// (sched.Config.KVGroups), so a Mamba model's groups are refused earlier in vllmengine
-// (Model.V032Pieces, blis-vllm#7) and "align" on a model without them is refused here for the same
-// reason: it splits prefill chunks on block boundaries only for Mamba layers
-// (vllm/v1/core/sched/scheduler.py:375-379@5df63a72), which this engine does not model.
+// mamba_cache_mode: for a model with recurrent layers the hook resolves every stated value to the
+// mode that prefix caching picks, "align" with it on and "none" with it off, and the KV cache
+// groups carry that mode (kv.Group.MambaCacheMode), so nothing is refused. For another model the
+// stated value stands, no layer reads it, and "align" is away from the default "none": it splits
+// prefill chunks on block boundaries only for Mamba layers
+// (vllm/v1/core/sched/scheduler.py:375-379@5df63a72), which this model lacks.
 //
 // mamba_ssm_cache_dtype: the initializer is "auto" (cache.py:185). NemotronH and Qwen3.5 replace a
 // stated "auto" with the checkpoint's value (config.py:724-732, 864-866) and keep any other stated
-// value, so a stated value equal to the resolved default is the default.
+// value. A model with recurrent layers sizes its state at the dtype that runs (the engine block's
+// kv_layers state bytes), so any stated value is built; a model without them reads none, and a
+// stated value away from the default would be dropped.
 func checkMambaCache(c Config, prefixCaching bool) error {
 	e := c.Engine
 	stated := effectiveMambaCacheMode(e.MambaCacheMode, prefixCaching, c.MambaModel)
 	if def := effectiveMambaCacheMode("", prefixCaching, c.MambaModel); stated != def {
 		return fmt.Errorf("vllm: mamba_cache_mode %q runs as %q, away from the default %q for this model with enable_prefix_caching %t; "+
-			"it is not modelled: this factory builds full-attention KV groups only (%s, %s)",
-			e.MambaCacheMode, stated, def, prefixCaching, issueBase+"7", issueBase+"17")
+			"this model has no recurrent layer to read it, so a stated value would be dropped (%s)",
+			e.MambaCacheMode, stated, def, prefixCaching, issueBase+"7")
 	}
-	if v := e.MambaSSMCacheDType; v != "" && v != "auto" && v != c.MambaSSMCacheDTypeDefault {
-		return fmt.Errorf("vllm: mamba_ssm_cache_dtype %q is not modelled: it differs from the default %q for this model (%s)",
-			v, defaultOr(c.MambaSSMCacheDTypeDefault, "auto"), issueBase+"83")
+	if v := e.MambaSSMCacheDType; v != "" && v != "auto" && v != c.MambaSSMCacheDTypeDefault && !c.MambaModel {
+		return fmt.Errorf("vllm: mamba_ssm_cache_dtype %q differs from the default %q, and this model has no recurrent layer "+
+			"to read it, so a stated value would be dropped (%s)", v, defaultOr(c.MambaSSMCacheDTypeDefault, "auto"), issueBase+"83")
 	}
 	return nil
 }
@@ -463,7 +551,7 @@ func defaultOr(v, def string) string {
 // (docs/feature-matrix.md, "Speculative decoding") whose scheduler numbers depend only on the
 // method and num_speculative_tokens.
 func specMethodModelled(method string) bool {
-	return slices.Contains([]string{"eagle", "eagle3", "mtp", "dspark"}, method)
+	return slices.Contains([]string{"eagle", "eagle3", "mtp", "dspark", "ngram"}, method)
 }
 
 // resolveV2Runner is VllmConfig.use_v2_model_runner (vllm/config/vllm.py:703-739@5df63a72) for
@@ -503,6 +591,16 @@ func resolveV2Runner(c Config) (bool, error) {
 		"vLLM resolves it from whether the image has Triton (vllm/config/vllm.py:720-737@5df63a72)")
 }
 
+// asyncSpecMethod is whether async scheduling runs with a drafter of this method: none, an
+// EAGLE-family method, ngram_gpu, draft_model, DSpark or DFlash (vllm/config/vllm.py:1566-1576).
+func asyncSpecMethod(method string) bool {
+	switch method {
+	case "", "eagle", "eagle3", "mtp", "dflash", "dspark", "draft_model", "ngram_gpu":
+		return true
+	}
+	return false
+}
+
 // resolveAsync is SchedulerConfig.async_scheduling as VllmConfig resolves it
 // (vllm/config/vllm.py:1553-1644@5df63a72): a stated value stands (vLLM refuses an
 // incompatible one, which CheckConfig and resolve's own checks catch), and an unstated one is
@@ -513,9 +611,7 @@ func resolveAsync(stated *bool, method string, pp int, v2 bool) bool {
 	if stated != nil {
 		return *stated
 	}
-	switch method {
-	case "", "eagle", "eagle3", "mtp", "dflash", "dspark", "draft_model", "ngram_gpu":
-	default:
+	if !asyncSpecMethod(method) {
 		return false
 	}
 	if pp > 1 && !v2 {
@@ -537,11 +633,11 @@ func refuseUnmodelled(e engineconfig.Engine, dataParallel bool) error {
 	}
 	switch {
 	case e.PrefixMatchUnit != 0:
-		return fmt.Errorf("vllm: prefix_match_unit is not modelled (https://github.com/inference-sim/blis-vllm/issues/7)")
+		return fmt.Errorf("vllm: prefix_match_unit is not modelled (https://github.com/inference-sim/blis-vllm/issues/109)")
 	case e.PrefixCacheRetentionInterval != nil && *e.PrefixCacheRetentionInterval != 0:
 		// CacheConfig.prefix_cache_retention_interval: 0 (vllm/config/cache.py:159@5df63a72); a stated 0
 		// is the default and keeps only the semantic checkpoints, which this engine builds.
-		return fmt.Errorf("vllm: prefix_cache_retention_interval is not modelled (https://github.com/inference-sim/blis-vllm/issues/7)")
+		return fmt.Errorf("vllm: prefix_cache_retention_interval is not modelled (https://github.com/inference-sim/blis-vllm/issues/109)")
 	case e.PrefillScheduleInterval > 1 && !dataParallel:
 		// _should_throttle_prefills is the DP engine core's (vllm/v1/engine/core.py:2318-2325@5df63a72):
 		// EngineCore's never throttles (:652-655), so on one engine the setting has no effect vLLM
@@ -574,11 +670,10 @@ const issueBase = "https://github.com/inference-sim/blis-vllm/issues/"
 var unreadSettings = []unreadSetting{
 	// CacheConfig.kv_cache_memory_bytes: None (vllm/config/cache.py:257@5df63a72).
 	{"kv_cache_memory_bytes", "kv_cache_memory_bytes", issueBase + "81", func(e engineconfig.Engine) bool { return e.KVCacheMemoryBytes != nil }},
-	// SchedulerConfig.stream_interval: 1 (vllm/config/scheduler.py:213@5df63a72).
-	{"stream_interval", "stream_interval", "https://github.com/inference-sim/inference-sim/issues/2035",
-		func(e engineconfig.Engine) bool { return e.StreamInterval != 0 && e.StreamInterval != 1 }},
 	// AttentionConfig.use_trtllm_attention: None, auto-detect (vllm/config/attention.py:74@5df63a72);
-	// a stated true or false is a choice.
+	// a stated true or false is a choice. Which prefill kernel runs is the engine's to resolve and
+	// to report as the implementation of attention.prefill, which this engine does not do yet; the
+	// kernel reads no such setting and would price a stated value as the default (VAL-8).
 	{"use_trtllm_attention", "attention_config.use_trtllm_attention", issueBase + "80", func(e engineconfig.Engine) bool { return e.UseTRTLLMAttention != nil }},
 	// AttentionConfig.mla_prefill_backend: None, selected automatically (vllm/config/attention.py:81@5df63a72).
 	{"mla_prefill_backend", "attention_config.mla_prefill_backend", issueBase + "80", func(e engineconfig.Engine) bool { return e.MLAPrefillBackend != "" }},
@@ -592,20 +687,21 @@ var unreadSettings = []unreadSetting{
 		}},
 	// CompilationConfig.custom_ops: [] (vllm/config/compilation.py:480@5df63a72).
 	{"custom_ops", "compilation_config.custom_ops", issueBase + "80", func(e engineconfig.Engine) bool { return len(e.CustomOps) > 0 }},
-	// CompilationConfig.decoder_replay_cudagraph_capture_sizes: [] (vllm/config/compilation.py:565@5df63a72).
-	{"decoder_replay_cudagraph_capture_sizes", "compilation_config.decoder_replay_cudagraph_capture_sizes", issueBase + "80",
-		func(e engineconfig.Engine) bool { return len(e.DecoderReplayCUDAGraphCaptureSizes) > 0 }},
 	// SpeculativeConfig.kv_cache_dtype: None, the draft keeps the target's layout
 	// (vllm/config/speculative.py:428@5df63a72). A stated "auto" is a value, not None: it overrides
 	// the draft's cache_config.cache_dtype (:382), so it differs from the default.
 	{"speculative.kv_cache_dtype", "speculative_config.kv_cache_dtype", issueBase + "80",
 		func(e engineconfig.Engine) bool { return e.Speculative != nil && e.Speculative.KVCacheDType != "" }},
 	// SpeculativeConfig.rejection_sample_method: "standard" (vllm/config/speculative.py:529@5df63a72).
-	// Only "synthetic" fixes the acceptance length (:532-548) and is refused; "block", which recorded
-	// runs state, decides which drafts are accepted, and acceptance is an input (#29).
-	{"speculative.rejection_sample_method", "speculative_config.rejection_sample_method", issueBase + "29",
+	// Only "synthetic" fixes the acceptance length (:532-548). It is accepted with
+	// synthetic_acceptance_length, the run's supplied acceptance profile, which vLLM resolves to the
+	// rates the acceptance resolver derives; stated alone it is refused, as vLLM refuses it (:575).
+	// "block", which recorded runs state, decides which drafts are accepted, and acceptance is an
+	// input.
+	{"speculative.rejection_sample_method", "speculative_config.rejection_sample_method", issueBase + "106",
 		func(e engineconfig.Engine) bool {
-			return e.Speculative != nil && e.Speculative.RejectionSampleMethod == "synthetic"
+			return e.Speculative != nil && e.Speculative.RejectionSampleMethod == "synthetic" &&
+				e.Speculative.SyntheticAcceptanceLength == nil
 		}},
 	// mamba_cache_mode and mamba_ssm_cache_dtype are not listed: a model hook rewrites them, so what
 	// differs from the default is decided on the resolved value (checkMambaCache).
@@ -620,12 +716,12 @@ var unreadSettings = []unreadSetting{
 			return e.DBO != nil && e.DBO.PrefillTokenThreshold != nil && *e.DBO.PrefillTokenThreshold != 512
 		}},
 	// EPLBConfig.window_size: 1000 (vllm/config/parallel.py:66@5df63a72).
-	{"eplb.window_size", "eplb_config.window_size", issueBase + "76",
+	{"eplb.window_size", "eplb_config.window_size", issueBase + "108",
 		func(e engineconfig.Engine) bool {
 			return e.EPLB != nil && e.EPLB.WindowSize != 0 && e.EPLB.WindowSize != 1000
 		}},
 	// EPLBConfig.step_interval: 3000 (vllm/config/parallel.py:68@5df63a72).
-	{"eplb.step_interval", "eplb_config.step_interval", issueBase + "76",
+	{"eplb.step_interval", "eplb_config.step_interval", issueBase + "108",
 		func(e engineconfig.Engine) bool {
 			return e.EPLB != nil && e.EPLB.StepInterval != 0 && e.EPLB.StepInterval != 3000
 		}},
@@ -648,6 +744,11 @@ var unreadSettings = []unreadSetting{
 		func(e engineconfig.Engine) bool { return e.KVEvents != nil && e.KVEvents.Topic != "" }},
 }
 
+// RefuseUnreadSettings is refuseUnreadSettings for a host that opens the cost model first: the
+// cost model's kernel also refuses a stated kernel-facing setting it cannot price, but by the
+// registry's issue, and the engine refuses these with its own, so the host asks the engine first.
+func RefuseUnreadSettings(e engineconfig.Engine) error { return refuseUnreadSettings(e) }
+
 // refuseUnreadSettings refuses the first key of unreadSettings stated away from vLLM's default,
 // naming the key, the field as vLLM names it and the issue.
 func refuseUnreadSettings(e engineconfig.Engine) error {
@@ -661,13 +762,19 @@ func refuseUnreadSettings(e engineconfig.Engine) error {
 }
 
 // readEnv are the engine environment variables this engine reads (resolveV2Runner).
-var readEnv = []string{"VLLM_USE_V2_MODEL_RUNNER"}
+var readEnv = []string{"PYTHONHASHSEED", "VLLM_USE_V2_MODEL_RUNNER", "UCX_CUDA_IPC_ENABLE_MNNVL"}
 
-// unreadEnv are env's keys this engine does not read, sorted.
+// inertEnv are the environment variables the engine accepts without reading: fields.json proves each
+// inert (oracle/inertness/<name>.json), so stating one changes nothing the engine decides. Python
+// reads PYTHONUNBUFFERED to write its standard streams unbuffered; vLLM's serving process names it
+// nowhere.
+var inertEnv = []string{"PYTHONUNBUFFERED"}
+
+// unreadEnv are env's keys this engine neither reads nor knows to be inert, sorted.
 func unreadEnv(env map[string]string) []string {
 	var out []string
 	for k := range env {
-		if !slices.Contains(readEnv, k) {
+		if !slices.Contains(readEnv, k) && !slices.Contains(inertEnv, k) {
 			out = append(out, k)
 		}
 	}
@@ -688,18 +795,18 @@ func checkAdaptiveVerification(e engineconfig.Engine, pp int, v2 bool) error {
 	}
 	switch {
 	case !v2:
-		return fmt.Errorf("vllm: speculative.enable_adaptive_verification: adaptive draft verification runs only " +
+		return fmt.Errorf("vllm: speculative_config.enable_adaptive_verification: adaptive draft verification runs only " +
 			"on the V2 model runner, and vLLM refuses it on V1 (vllm/config/vllm.py:2980-2981@5df63a72)")
 	case e.MaxLoRAs > 0:
 		// LoRAConfig exists whenever LoRA is enabled, which max_loras states here
 		// (vllm/engine/arg_utils.py:2650-2669@5df63a72).
-		return fmt.Errorf("vllm: speculative.enable_adaptive_verification: \"Adaptive verification is not currently " +
+		return fmt.Errorf("vllm: speculative_config.enable_adaptive_verification: \"Adaptive verification is not currently " +
 			"compatible with LoRA\" (vllm/config/vllm.py:3005-3010@5df63a72)")
 	case !fullCUDAGraphs(e.CUDAGraphMode):
-		return fmt.Errorf("vllm: speculative.enable_adaptive_verification: \"Adaptive verification requires full CUDA "+
-			"graphs\", and cudagraph_mode %s captures none (vllm/config/vllm.py:3012-3017@5df63a72)", e.CUDAGraphMode)
+		return fmt.Errorf("vllm: speculative_config.enable_adaptive_verification: \"Adaptive verification requires full CUDA "+
+			"graphs\", and compilation_config.cudagraph_mode %s captures none (vllm/config/vllm.py:3012-3017@5df63a72)", e.CUDAGraphMode)
 	case pp > 1:
-		return fmt.Errorf("vllm: speculative.enable_adaptive_verification: \"Adaptive verification is not currently " +
+		return fmt.Errorf("vllm: speculative_config.enable_adaptive_verification: \"Adaptive verification is not currently " +
 			"compatible with pipeline parallelism\" (vllm/config/vllm.py:3019-3028@5df63a72)")
 	}
 	return nil
@@ -709,7 +816,9 @@ func checkAdaptiveVerification(e engineconfig.Engine, pp int, v2 bool) error {
 // and FULL_AND_PIECEWISE capture full graphs (vllm/config/compilation.py:59-91@5df63a72). An
 // unstated mode is vLLM's default, FULL_AND_PIECEWISE (vllm/config/vllm.py:303@5df63a72).
 func fullCUDAGraphs(mode string) bool {
-	switch mode {
+	// CompilationConfig upper-cases a string before it parses the mode
+	// (vllm/config/compilation.py:873-879@5df63a72).
+	switch strings.ToUpper(mode) {
 	case "", "FULL", "FULL_DECODE_ONLY", "FULL_AND_PIECEWISE":
 		return true
 	}
@@ -721,16 +830,27 @@ func fullCUDAGraphs(mode string) bool {
 // The block is one pool's engine, and it is all the engine is given: the model graph, the cluster
 // and the pool's parallel widths other than pipeline_parallel_size are not in it. So a refusal
 // stands only where the block decides it whatever those widths are: the pack runs once for each
-// parallel shape in blockShapes, and only an error every run reports refuses. A clause that
+// parallel shape in blockShapes (tensor and data widths at 1 and at 2, with and without expert
+// parallelism), and only an error every run reports refuses. A clause that
 // turns on a width the block does not state, such as engram-config-valid's "dp_shared_memory
 // requires dp above 1" (vllm/config/engram.py@5df63a72), is left to the caller that validates
 // the whole document set, as is every rule that needs the model graph, which checks nothing
 // without one. Warnings are not refusals. pp is the pool's pipeline_parallel_size.
 func checkRules(e engineconfig.Engine, pp int) error { return checkRulesWith(v0_32.Pack(), e, pp) }
 
-// blockShapes are the tensor and data parallel widths checkRules runs the pack under: each at 1
-// and at 2, so that a clause turning on either width, whichever way, is silent in one of them.
-var blockShapes = []struct{ tp, dp int }{{1, 1}, {1, 2}, {2, 1}, {2, 2}}
+// blockShapes are the parallel shapes checkRules runs the pack under: the tensor and data widths
+// each at 1 and at 2, so that a clause turning on either width, whichever way, is silent in one of
+// them.
+var blockShapes = []struct {
+	tp, dp         int
+	expertParallel bool
+}{
+	{1, 1, false}, {1, 2, false}, {2, 1, false}, {2, 2, false},
+	// Expert parallelism is a fact of the pool's parallel block too, and a rule that turns on it
+	// (eplb-needs-expert-parallelism) must be silent in a shape that has it, so the shapes with
+	// it are run beside the shapes without.
+	{1, 1, true}, {1, 2, true}, {2, 1, true}, {2, 2, true},
+}
 
 // checkRulesWith is checkRules for a given rules pack.
 func checkRulesWith(pack rules.EngineRules, e engineconfig.Engine, pp int) error {
@@ -742,9 +862,10 @@ func checkRulesWith(pack rules.EngineRules, e engineconfig.Engine, pp int) error
 	in := map[string]map[int]bool{} // an error's key: the shapes that reported it
 	for i, shape := range blockShapes {
 		doc := rules.Input{Deployment: &deployment.Deployment{Pools: []deployment.Pool{{
-			Role:     deployment.RoleColocated,
-			Parallel: deployment.Parallelism{TP: shape.tp, PP: max(pp, 1), DP: shape.dp},
-			Engine:   block,
+			Role: deployment.RoleColocated,
+			Parallel: deployment.Parallelism{TP: shape.tp, PP: max(pp, 1), DP: shape.dp,
+				EnableExpertParallel: shape.expertParallel},
+			Engine: block,
 		}}}}
 		for _, p := range pack.Check(doc).Errors() {
 			key := p.Rule + "\x00" + p.Message

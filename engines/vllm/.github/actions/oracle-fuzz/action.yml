@@ -12,6 +12,11 @@ inputs:
   python-version:
     description: The exact Python setup-python installed (its python-version output).
     required: true
+  corpora:
+    description: >-
+      Which corpora to restore or generate, space separated: t2, mamba, t3 (tier 3 and DP), connector,
+      offloading, multi. ci.yml runs one corpus in each of its fuzz jobs, side by side; mutation.yml wants them all.
+    default: "t2 mamba t3 connector offloading multi"
 runs:
   using: composite
   steps:
@@ -22,10 +27,12 @@ runs:
       run: |
         {
           echo "FUZZ_T2_SEEDS=1000-2000_5000-2000"
+          echo "FUZZ_MAMBA_SEEDS=100000-1000"
           echo "FUZZ_T3_SEEDS=1000-1000"
           echo "FUZZ_DP_SEEDS=1000-500_2000-500"
           echo "FUZZ_OFFLOAD_SEEDS=1-1000_20000-1000_40000-600_60000-1000"
           echo "FUZZ_CONNECTOR_SEEDS=1-1000_10000-300_20000-1000_30000-1000"
+          echo "FUZZ_MULTI_SEEDS=1-1000_20000-1000_40000-1000"
           echo "FUZZ_VLLM_COMMIT=5df63a7203cdb9328d824a27b682e77c7b9928be"
           echo "FUZZ_MODEL_REVISION=27dcfa74d334bc871f3234de431e71c6eeba5dd6"
         } >> "$GITHUB_ENV"
@@ -41,19 +48,22 @@ runs:
         # whose sha256 every trace records), the vLLM commit and the helper model's revision.
         base="${ImageOS:-unknown}-${{ runner.arch }}-py${{ inputs.python-version }}-env-${{ hashFiles('oracle-env.lock') }}-vllm-${FUZZ_VLLM_COMMIT}-model-${FUZZ_MODEL_REVISION}"
         echo "t2=oracle-fuzz-t2-${base}-${FUZZ_T2_SEEDS}-${{ hashFiles('.github/actions/oracle-fuzz/action.yml', 'oracle/gen_fuzz.py', 'oracle/run_scheduler.py', 'oracle/run_metrics.py', 'oracle/mocks.json', 'oracle/requirements.lock', 'oracle/drafts/**') }}" >> "$GITHUB_OUTPUT"
+        echo "mamba=oracle-fuzz-mamba-${base}-${FUZZ_MAMBA_SEEDS}-${{ hashFiles('.github/actions/oracle-fuzz/action.yml', 'oracle/gen_fuzz_mamba.py', 'oracle/run_scheduler.py', 'oracle/mocks.json', 'oracle/requirements.lock') }}" >> "$GITHUB_OUTPUT"
         echo "t3=oracle-fuzz-t3-${base}-${FUZZ_T3_SEEDS}-dp-${FUZZ_DP_SEEDS}-${{ hashFiles('.github/actions/oracle-fuzz/action.yml', 'oracle/gen_fuzz.py', 'oracle/gen_fuzz_t3.py', 'oracle/gen_fuzz_dp.py', 'oracle/run_scheduler.py', 'oracle/run_enginecore.py', 'oracle/run_dp.py', 'oracle/mocks.json', 'oracle/requirements.lock', 'oracle/drafts/**') }}" >> "$GITHUB_OUTPUT"
         echo "connector=oracle-fuzz-connector-${base}-${FUZZ_CONNECTOR_SEEDS}-${{ hashFiles('.github/actions/oracle-fuzz/action.yml', 'oracle/gen_connector_fuzz.py', 'oracle/run_scheduler.py', 'oracle/run_enginecore.py', 'oracle/run_connector.py', 'oracle/mocks.json', 'oracle/requirements.lock', 'oracle/drafts/**') }}" >> "$GITHUB_OUTPUT"
+        echo "multi=oracle-fuzz-multi-${base}-${FUZZ_MULTI_SEEDS}-${{ hashFiles('.github/actions/oracle-fuzz/action.yml', 'oracle/gen_multiconnector_fuzz.py', 'oracle/run_scheduler.py', 'oracle/run_enginecore.py', 'oracle/run_connector.py', 'oracle/run_offloading.py', 'oracle/run_multiconnector.py', 'oracle/mocks.json', 'oracle/requirements.lock', 'oracle/drafts/**') }}" >> "$GITHUB_OUTPUT"
         echo "offloading=oracle-fuzz-offloading-${base}-${FUZZ_OFFLOAD_SEEDS}-${{ hashFiles('.github/actions/oracle-fuzz/action.yml', 'oracle/gen_offloading_fuzz.py', 'oracle/run_scheduler.py', 'oracle/run_enginecore.py', 'oracle/run_offloading.py', 'oracle/mocks.json', 'oracle/requirements.lock', 'oracle/drafts/**') }}" >> "$GITHUB_OUTPUT"
 
     # Tier 2: 4000 random scenarios through vLLM's Scheduler and its Prometheus logger.
     - id: t2
+      if: contains(inputs.corpora, 't2')
       name: restore the tier-2 fuzz corpus and vLLM's traces
       uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: oracle/out/fuzz
         key: ${{ steps.keys.outputs.t2 }}
     - name: generate the tier-2 fuzz corpus and vLLM's traces for it (cache miss)
-      if: steps.t2.outputs.cache-hit != 'true'
+      if: contains(inputs.corpora, 't2') && steps.t2.outputs.cache-hit != 'true'
       shell: bash
       env:
         ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
@@ -66,14 +76,42 @@ runs:
         python -I oracle/run_scheduler.py vllm-source oracle/out/fuzz
         python -I oracle/run_metrics.py vllm-source oracle/out/fuzz
     - name: save the t2 fuzz corpus and vLLM's traces (cache miss)
-      if: steps.t2.outputs.cache-hit != 'true'
+      if: contains(inputs.corpora, 't2') && steps.t2.outputs.cache-hit != 'true'
       uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: oracle/out/fuzz
         key: ${{ steps.keys.outputs.t2 }}
 
+    # Tier 2, hybrid Mamba: 1000 random hybrid attention + Mamba scenarios through vLLM's Scheduler
+    # (the MambaManager in align and none modes, checkpoints, speculative blocks, retention).
+    - id: mamba
+      if: contains(inputs.corpora, 'mamba')
+      name: restore the hybrid Mamba fuzz corpus and vLLM's traces
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: oracle/out/fuzz-mamba
+        key: ${{ steps.keys.outputs.mamba }}
+    - name: generate the hybrid Mamba fuzz corpus and vLLM's traces for it (cache miss)
+      if: contains(inputs.corpora, 'mamba') && steps.mamba.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
+        ORACLE_MODEL: ${{ github.workspace }}/oracle-model
+        HF_HUB_OFFLINE: "1"
+      run: |
+        export ORACLE_MODEL_REVISION="$FUZZ_MODEL_REVISION"
+        for r in ${FUZZ_MAMBA_SEEDS//_/ }; do python -I oracle/gen_fuzz_mamba.py oracle/out/fuzz-mamba "${r%-*}" "${r#*-}"; done
+        python -I oracle/run_scheduler.py vllm-source oracle/out/fuzz-mamba
+    - name: save the hybrid Mamba fuzz corpus and vLLM's traces (cache miss)
+      if: contains(inputs.corpora, 'mamba') && steps.mamba.outputs.cache-hit != 'true'
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: oracle/out/fuzz-mamba
+        key: ${{ steps.keys.outputs.mamba }}
+
     # Tier 3: 1000 scenarios through vLLM's EngineCore, and 1000 through its DP engine-core loop.
     - id: t3
+      if: contains(inputs.corpora, 't3')
       name: restore the tier-3 and DP fuzz corpora and vLLM's traces
       uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
@@ -82,7 +120,7 @@ runs:
           oracle/out/fuzz-t3-dp
         key: ${{ steps.keys.outputs.t3 }}
     - name: generate the tier-3 and DP fuzz corpora and vLLM's traces for them (cache miss)
-      if: steps.t3.outputs.cache-hit != 'true'
+      if: contains(inputs.corpora, 't3') && steps.t3.outputs.cache-hit != 'true'
       shell: bash
       env:
         ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
@@ -95,7 +133,7 @@ runs:
         for r in ${FUZZ_DP_SEEDS//_/ }; do python -I oracle/gen_fuzz_dp.py oracle/out/fuzz-t3-dp "${r%-*}" "${r#*-}"; done
         python -I oracle/run_dp.py vllm-source oracle/out/fuzz-t3-dp
     - name: save the t3 fuzz corpus and vLLM's traces (cache miss)
-      if: steps.t3.outputs.cache-hit != 'true'
+      if: contains(inputs.corpora, 't3') && steps.t3.outputs.cache-hit != 'true'
       uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: |
@@ -105,13 +143,14 @@ runs:
 
     # Tier 4: 3300 NIXL connector scenarios through vLLM's Scheduler with the real connector.
     - id: connector
+      if: contains(inputs.corpora, 'connector')
       name: restore the connector fuzz corpus and vLLM's traces
       uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: oracle/out/fuzz-connector
         key: ${{ steps.keys.outputs.connector }}
     - name: generate the connector fuzz corpus and vLLM's traces for it (cache miss)
-      if: steps.connector.outputs.cache-hit != 'true'
+      if: contains(inputs.corpora, 'connector') && steps.connector.outputs.cache-hit != 'true'
       shell: bash
       env:
         ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
@@ -125,7 +164,7 @@ runs:
         for r in ${FUZZ_CONNECTOR_SEEDS//_/ }; do python -I oracle/gen_connector_fuzz.py oracle/out/fuzz-connector "${r%-*}" "${r#*-}"; done
         python -I oracle/run_connector.py vllm-source oracle/out/fuzz-connector
     - name: save the connector fuzz corpus and vLLM's traces (cache miss)
-      if: steps.connector.outputs.cache-hit != 'true'
+      if: contains(inputs.corpora, 'connector') && steps.connector.outputs.cache-hit != 'true'
       uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: oracle/out/fuzz-connector
@@ -133,13 +172,14 @@ runs:
 
     # Tier 4: 2000 OffloadingConnector scenarios through vLLM's Scheduler with the real connector.
     - id: offloading
+      if: contains(inputs.corpora, 'offloading')
       name: restore the offloading fuzz corpus and vLLM's traces
       uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: oracle/out/fuzz-offloading
         key: ${{ steps.keys.outputs.offloading }}
     - name: generate the offloading fuzz corpus and vLLM's traces for it (cache miss)
-      if: steps.offloading.outputs.cache-hit != 'true'
+      if: contains(inputs.corpora, 'offloading') && steps.offloading.outputs.cache-hit != 'true'
       shell: bash
       env:
         ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
@@ -153,11 +193,40 @@ runs:
         for r in ${FUZZ_OFFLOAD_SEEDS//_/ }; do python -I oracle/gen_offloading_fuzz.py oracle/out/fuzz-offloading "${r%-*}" "${r#*-}"; done
         python -I oracle/run_offloading.py vllm-source oracle/out/fuzz-offloading
     - name: save the offloading fuzz corpus and vLLM's traces (cache miss)
-      if: steps.offloading.outputs.cache-hit != 'true'
+      if: contains(inputs.corpora, 'offloading') && steps.offloading.outputs.cache-hit != 'true'
       uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: oracle/out/fuzz-offloading
         key: ${{ steps.keys.outputs.offloading }}
+
+    # Tier 4: 3000 MultiConnector scenarios (NIXL and the offloading connector, both orders) through
+    # vLLM's Scheduler with the real connector.
+    - id: multi
+      if: contains(inputs.corpora, 'multi')
+      name: restore the multi-connector fuzz corpus and vLLM's traces
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: oracle/out/fuzz-multi
+        key: ${{ steps.keys.outputs.multi }}
+    - name: generate the multi-connector fuzz corpus and vLLM's traces for it (cache miss)
+      if: contains(inputs.corpora, 'multi') && steps.multi.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
+        ORACLE_MODEL: ${{ github.workspace }}/oracle-model
+        HF_HUB_OFFLINE: "1"
+      run: |
+        export ORACLE_MODEL_REVISION="$FUZZ_MODEL_REVISION"
+        mkdir -p oracle/out/fuzz-multi
+        # Seeds 20000+ add sliding-window KV cache groups; 40000+ async scheduling.
+        for r in ${FUZZ_MULTI_SEEDS//_/ }; do python -I oracle/gen_multiconnector_fuzz.py oracle/out/fuzz-multi "${r%-*}" "${r#*-}"; done
+        python -I oracle/run_multiconnector.py vllm-source oracle/out/fuzz-multi
+    - name: save the multi-connector fuzz corpus and vLLM's traces (cache miss)
+      if: contains(inputs.corpora, 'multi') && steps.multi.outputs.cache-hit != 'true'
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: oracle/out/fuzz-multi
+        key: ${{ steps.keys.outputs.multi }}
 
     # Provenance for this run's corpora: each corpus's key, whether it came from the cache, and
     # the blis-vllm commit of the run that generated its traces (the traces themselves depend
@@ -165,6 +234,7 @@ runs:
     - name: record where this run's fuzz traces came from
       shell: bash
       env:
+        CORPORA: ${{ inputs.corpora }}
         T2_KEY: ${{ steps.keys.outputs.t2 }}
         T2_HIT: ${{ steps.t2.outputs.cache-hit }}
         T3_KEY: ${{ steps.keys.outputs.t3 }}
@@ -173,6 +243,8 @@ runs:
         CONNECTOR_HIT: ${{ steps.connector.outputs.cache-hit }}
         OFFLOADING_KEY: ${{ steps.keys.outputs.offloading }}
         OFFLOADING_HIT: ${{ steps.offloading.outputs.cache-hit }}
+        MULTI_KEY: ${{ steps.keys.outputs.multi }}
+        MULTI_HIT: ${{ steps.multi.outputs.cache-hit }}
       run: |
         python3 -I - <<'PY'
         import glob, json, os
@@ -185,11 +257,18 @@ runs:
             return {"key": os.environ[key], "cache_hit": os.environ[hit] == "true",
                     "traces": len(traces), "generated_by_blis_vllm_commit": made_at}
 
-        out = {"run_blis_vllm_commit": os.environ["GITHUB_SHA"],
-               "tier2": corpus("T2_KEY", "T2_HIT", "fuzz"),
-               "tier3_and_dp": corpus("T3_KEY", "T3_HIT", "fuzz-t3", "fuzz-t3-dp"),
-               "connector": corpus("CONNECTOR_KEY", "CONNECTOR_HIT", "fuzz-connector"),
-               "offloading": corpus("OFFLOADING_KEY", "OFFLOADING_HIT", "fuzz-offloading")}
+        want = os.environ["CORPORA"].split()
+        out = {"run_blis_vllm_commit": os.environ["GITHUB_SHA"]}
+        if "t2" in want:
+            out["tier2"] = corpus("T2_KEY", "T2_HIT", "fuzz")
+        if "t3" in want:
+            out["tier3_and_dp"] = corpus("T3_KEY", "T3_HIT", "fuzz-t3", "fuzz-t3-dp")
+        if "connector" in want:
+            out["connector"] = corpus("CONNECTOR_KEY", "CONNECTOR_HIT", "fuzz-connector")
+        if "offloading" in want:
+            out["offloading"] = corpus("OFFLOADING_KEY", "OFFLOADING_HIT", "fuzz-offloading")
+        if "multi" in want:
+            out["multi"] = corpus("MULTI_KEY", "MULTI_HIT", "fuzz-multi")
         json.dump(out, open("oracle/out/fuzz-cache.json", "w"), indent=1)
         print(json.dumps(out, indent=1))
         PY

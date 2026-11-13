@@ -1,0 +1,94 @@
+{
+ "name": "mamba-pool-refused",
+ "description": "As mamba-pool-fits with 4096 bytes, less than one 128-token request needs: the start-up check refuses.",
+ "config": {
+  "max_num_seqs": 2,
+  "max_num_batched_tokens": 32,
+  "block_size": 8,
+  "num_blocks": 200,
+  "max_model_len": 128,
+  "long_prefill_token_threshold": 0,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "kv_layers": [
+   {
+    "count": 1,
+    "spec": "full",
+    "num_kv_heads": 1,
+    "head_size": 4
+   },
+   {
+    "count": 1,
+    "spec": "mamba",
+    "state_bytes": 192,
+    "page_size_padded": 256,
+    "block_size": 8,
+    "mamba_cache_mode": "align",
+    "num_speculative_blocks": 0,
+    "num_prefill_checkpoint_blocks": 0
+   }
+  ],
+  "kv_available_bytes": 4096,
+  "kv_startup_check": true
+ },
+ "requests": [
+  {
+   "id": "A",
+   "arrival_step": 0,
+   "prompt": [
+    46597,
+    39153,
+    3931,
+    7867,
+    19387,
+    41719,
+    34656,
+    702,
+    48042,
+    36188,
+    23593,
+    32934,
+    6059,
+    30496,
+    39170,
+    9211,
+    37630,
+    30023,
+    18386,
+    14448
+   ],
+   "output": [
+    42781,
+    3707,
+    45608,
+    21589
+   ]
+  },
+  {
+   "id": "B",
+   "arrival_step": 2,
+   "prompt": [
+    10301,
+    34604,
+    11471,
+    36871,
+    24591,
+    9547,
+    23920,
+    3472,
+    22238,
+    13017,
+    22084,
+    30393,
+    47314,
+    10759
+   ],
+   "output": [
+    13676,
+    13323,
+    18121
+   ]
+  }
+ ],
+ "max_steps": 60
+}

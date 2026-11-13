@@ -1,6 +1,7 @@
 package vllm
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -115,7 +116,7 @@ func TestPDThroughTheEngine(t *testing.T) {
 
 	d := mustEngine(t, consumer)
 	r = req("a", 80, 6)
-	r.RemotePrefill = true
+	r.RemotePrefill, r.Peer = true, peer
 	if err := d.Add(r, 0); err != nil {
 		t.Fatal(err)
 	}
@@ -129,6 +130,58 @@ func TestPDThroughTheEngine(t *testing.T) {
 	}
 	if emitted != 6 {
 		t.Fatalf("the decoder emitted %d tokens, want 6", emitted)
+	}
+}
+
+// kv_both is both a producer and a consumer (vllm/config/kv_transfer.py:129-135@5df63a72), and
+// which side a request is comes from its own kv_transfer_params. One kv_both engine therefore
+// serves a prefill leg as a kv_producer does (one token, blocks held as a handoff) and a decode
+// leg as a kv_consumer does (a load of the prompt's KV, then every token), and the legs behave as
+// they do on an engine of that single role, at one batch in flight. Beside concurrent batches a
+// kv_both engine is both at once (it defers block frees as a consumer and requires KV delivery as
+// a producer), so it is not either single role there: the tier-4 scenarios nixl-both-* show both
+// cases against vLLM's own NIXL scheduler.
+func TestKVBothServesEitherLegAsThatRoleDoes(t *testing.T) {
+	both := "kv_transfer: {connector: NixlConnector, kv_role: kv_both}\n"
+	leg := func(extra string, decode bool) ([]engine.Result, []engine.Transfer) {
+		e := mustEngine(t, extra)
+		r := req("a", 80, 6)
+		if decode {
+			r.RemotePrefill, r.Peer = true, peer
+		} else {
+			r.RemoteDecode, r.MaxOutputTokens = true, 1
+		}
+		if err := e.Add(r, 0); err != nil {
+			t.Fatal(err)
+		}
+		res, started, _ := runOne(t, e, 500)
+		return res, started
+	}
+	for _, decode := range []bool{false, true} {
+		want, wantStarted := leg(map[bool]string{false: producer, true: consumer}[decode], decode)
+		got, gotStarted := leg(both, decode)
+		if !reflect.DeepEqual(got, want) || !reflect.DeepEqual(gotStarted, wantStarted) {
+			t.Errorf("decode leg %v: a kv_both engine's results differ from a single-role engine's:\n got %+v %+v\nwant %+v %+v",
+				decode, got, gotStarted, want, wantStarted)
+		}
+	}
+	// The two legs share one engine: a prefill leg and a decode leg in flight together.
+	e := mustEngine(t, both)
+	pre, dec := req("p", 40, 4), req("d", 40, 4)
+	pre.RemoteDecode, pre.MaxOutputTokens = true, 1
+	dec.RemotePrefill, dec.Peer = true, peer
+	if err := e.Add(pre, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Add(dec, 0); err != nil {
+		t.Fatalf("a kv_both engine refused a decode leg beside a prefill leg: %v", err)
+	}
+	// Neither role refuses the other's leg only when it is kv_both.
+	if err := mustEngine(t, producer).Add(dec, 0); err == nil {
+		t.Error("a kv_producer accepted a decode leg")
+	}
+	if err := mustEngine(t, consumer).Add(pre, 0); err == nil {
+		t.Error("a kv_consumer accepted a prefill leg")
 	}
 }
 
@@ -150,7 +203,7 @@ func TestPDFailedPullFollowsTheLoadFailurePolicy(t *testing.T) {
 		}
 		d := mustEngine(t, extra)
 		r := req("a", 80, 6)
-		r.RemotePrefill = true
+		r.RemotePrefill, r.Peer = true, peer
 		if err := d.Add(r, 0); err != nil {
 			t.Fatal(err)
 		}
@@ -218,12 +271,14 @@ func TestPDConformanceWhenEveryPullFails(t *testing.T) {
 	for _, extra := range []string{consumer, "kv_transfer: {connector: NixlConnector, kv_role: kv_consumer, kv_load_failure_policy: recompute}\n"} {
 		// A lone failed pull, whose error finish no result carries, and a mix.
 		lone := req("z", 40, 6)
-		lone.RemotePrefill = true
+		lone.RemotePrefill, lone.Peer = true, peer
 		enginetest.TestEngine(t, build(t, extra), arrivals(lone), enginetest.Options{
+			Boundary:      boundary,
 			TransferFails: func(engine.Transfer) bool { return true }})
 		reqs := []engine.Request{req("a", 40, 6), req("b", 70, 3), req("c", 20, 9)}
-		reqs[0].RemotePrefill, reqs[2].RemotePrefill = true, true
+		reqs[0].RemotePrefill, reqs[0].Peer, reqs[2].RemotePrefill, reqs[2].Peer = true, peer, true, peer
 		enginetest.TestEngine(t, build(t, extra), arrivals(reqs...), enginetest.Options{
+			Boundary:      boundary,
 			TransferTime:  func(engine.Transfer) engine.Duration { return 250 },
 			TransferFails: func(engine.Transfer) bool { return true },
 		})
@@ -238,14 +293,14 @@ func TestPDConformance(t *testing.T) {
 		mark        func(*engine.Request)
 	}{
 		{"prefiller", producer, func(r *engine.Request) { r.RemoteDecode = true }},
-		{"decoder", consumer, func(r *engine.Request) { r.RemotePrefill = true }},
+		{"decoder", consumer, func(r *engine.Request) { r.RemotePrefill, r.Peer = true, peer }},
 		// The measured Muse P/D arm runs vLLM's default async scheduling: two batches in flight.
 		{"prefiller async", producer + "async_scheduling: true\nuse_v2_model_runner: true\n", func(r *engine.Request) { r.RemoteDecode = true }},
-		{"decoder async", consumer + "async_scheduling: true\nuse_v2_model_runner: true\n", func(r *engine.Request) { r.RemotePrefill = true }},
+		{"decoder async", consumer + "async_scheduling: true\nuse_v2_model_runner: true\n", func(r *engine.Request) { r.RemotePrefill, r.Peer = true, peer }},
 		{"decoder hybrid async", consumer + "async_scheduling: true\nuse_v2_model_runner: true\nkv_layers:\n" +
 			"- {count: 1, spec: full, num_kv_heads: 1, head_size: 64}\n" +
 			"- {count: 1, spec: sliding_window, sliding_window: 32, num_kv_heads: 1, head_size: 64}\n",
-			func(r *engine.Request) { r.RemotePrefill = true }},
+			func(r *engine.Request) { r.RemotePrefill, r.Peer = true, peer }},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			reqs := []engine.Request{req("a", 40, 6), req("b", 70, 3), req("c", 20, 9), req("d", 90, 4)}
@@ -258,6 +313,7 @@ func TestPDConformance(t *testing.T) {
 				}
 			}
 			enginetest.TestEngine(t, build(t, c.extra), arrivals(reqs...), enginetest.Options{
+				Boundary:     boundary,
 				TransferTime: func(engine.Transfer) engine.Duration { return 250 },
 			})
 		})
@@ -269,19 +325,21 @@ func TestPDConformance(t *testing.T) {
 func TestPDRefusals(t *testing.T) {
 	for _, c := range []struct{ name, extra string }{
 		{"unknown connector", "kv_transfer: {connector: LMCacheConnectorV1, kv_role: kv_producer}\n"},
-		{"kv_both", "kv_transfer: {connector: NixlConnector, kv_role: kv_both}\n"},
 		{"unknown role", "kv_transfer: {connector: NixlConnector, kv_role: decoder}\n"},
 		{"consumer at pp 2", consumer + "pipeline_parallel_size: 2\nasync_scheduling: true\nuse_v2_model_runner: true\n"},
-		{"producer at dp 2", producer + "data_parallel_size: 2\n"},
-		{"consumer at dp 2", consumer + "data_parallel_size: 2\n"},
 	} {
 		if _, err := build(t, c.extra)(); err == nil {
 			t.Errorf("%s: built, want refused", c.name)
 		}
 	}
+	// vLLM refuses a decoder at pp 2 by testing kv_role == "kv_consumer" alone (base_worker.py:775@5df63a72),
+	// so a kv_both pool at pp 2 starts.
+	if _, err := build(t, both+"pipeline_parallel_size: 2\nasync_scheduling: true\nuse_v2_model_runner: true\n")(); err != nil {
+		t.Errorf("kv_both at pp 2 refused, which vLLM starts: %v", err)
+	}
 	plain := mustEngine(t, "")
 	r := req("a", 40, 2)
-	r.RemotePrefill = true
+	r.RemotePrefill, r.Peer = true, peer
 	if err := plain.Add(r, 0); err == nil {
 		t.Error("an engine without a connector accepted a remote prefill")
 	}
@@ -319,11 +377,12 @@ func TestPDPrefillLegSamplesOneToken(t *testing.T) {
 	for i := range legs {
 		legs[i].RemoteDecode = true
 	}
-	enginetest.TestEngine(t, build(t, producer), arrivals(legs...), enginetest.Options{})
+	enginetest.TestEngine(t, build(t, producer), arrivals(legs...), enginetest.Options{Boundary: boundary})
 }
 
-// A hybrid model's handoff holds the prompt's full-attention blocks: every one of its tokens,
-// even where group 0 is a sliding window whose early slots are freed.
+// A hybrid model's handoff holds every transfer group's blocks: the full-attention group's cover
+// every prompt token even where group 0 is a sliding window whose early slots are freed, and the
+// window's last blocks are held beside them.
 func TestPDHybridHandoffHoldsThePrompt(t *testing.T) {
 	const windowFirst = "kv_layers:\n" +
 		"- {count: 1, spec: sliding_window, sliding_window: 32, num_kv_heads: 1, head_size: 64}\n" +
@@ -339,18 +398,17 @@ func TestPDHybridHandoffHoldsThePrompt(t *testing.T) {
 	for _, res := range results {
 		h = append(h, res.Handoffs...)
 	}
-	if len(h) != 1 || len(h[0].Blocks) != 10 {
-		t.Fatalf("handoffs %+v, want the 160-token prompt's 10 blocks", h)
+	// Both groups' blocks are held: the full-attention group's 10 and the window's 2 (a 32-token
+	// window in 16-token blocks keeps the blocks of its last 31 tokens).
+	if len(h) != 1 || len(h[0].Blocks) != 12 {
+		t.Fatalf("handoffs %+v, want the full-attention group's 10 blocks and the window's 2", h)
 	}
 }
 
-// Each refusal of a connector combination names the open issue that covers it (X28): kv_transfer
-// beside kv_offload is MultiConnector (#15), and either at dp > 1 is the data-parallel connector
-// work (#47).
+// Each refusal of a connector combination names the open issue that covers it (X28): the offload
+// connector at dp > 1 is the data-parallel connector work (#47).
 func TestConnectorCombinationRefusalsNameTheirIssue(t *testing.T) {
 	for _, c := range []struct{ name, extra, issue string }{
-		{"kv_transfer beside kv_offload", producer + cpuTier, "blis-vllm/issues/15"},
-		{"kv_transfer at dp 2", producer + "data_parallel_size: 2\n", "blis-vllm/issues/47"},
 		{"kv_offload at dp 2", cpuTier + "data_parallel_size: 2\n", "blis-vllm/issues/47"},
 	} {
 		_, err := resolve(mustConfig(t, c.extra))

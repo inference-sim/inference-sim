@@ -15,9 +15,6 @@ import (
 func TestKVOffloadDevices_DeviceModelFieldsAreNotACatalogFormat(t *testing.T) {
 	_, err := dataWithStorageDevices(t,
 		"nvme_dm:\n"+
-			"  read_bandwidth_mb_s: 7.0e3\n"+
-			"  write_bandwidth_mb_s: 5.0e3\n"+
-			"  base_latency_us: 80.0\n"+
 			"  saturation_queue_depth: 8\n")
 	if err == nil {
 		t.Fatal("a catalog table stating saturation_queue_depth loaded; the catalog format does not define it")

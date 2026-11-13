@@ -19,6 +19,10 @@ import (
 	"strings"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
+
+	"github.com/inference-sim/blis-vllm/core/placement"
 
 	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	_ "github.com/inference-sim/blis-vllm/compat/kv" // registers the KV store the engine is built with
@@ -69,6 +73,13 @@ type Engine struct {
 	// group is the data-parallel group the engine is a rank of (DPGroup), nil for none: the group
 	// steps its ranks, so a rank's ask for a step is the group's.
 	group *DPGroup
+	// pl is where the engine sits: its chip, layout and node. New states one node of the configuration's
+	// GPU, tensor and data widths; SetPlacement replaces it. Its Plan is what a P/D pull is priced against.
+	pl placement.Placement
+	// admission is the shape of the queue a request waits in before the engine admits it: the
+	// API server's render stage, as the engine's own settings state it (renderer_num_workers
+	// threads on each of api_server_count servers). The simulator queues requests on it.
+	admission plan.AdmissionQueue
 }
 
 type adapterLoad struct {
@@ -107,7 +118,9 @@ func New(id string, cfg cengine.SimConfig) (*Engine, error) {
 		return nil, fmt.Errorf("contract: %s: %w", id, err)
 	}
 	e := &Engine{core: core, rec: &recorder{}, horizon: cfg.Horizon, reqs: map[string]*cengine.Request{},
-		out: map[string]int{}, running: map[string]bool{}, wake: -1}
+		out: map[string]int{}, running: map[string]bool{}, wake: -1,
+		pl:        placement.Placement{Hardware: cfg.GPU, Tensor: max(cfg.TP, 1), Data: max(cfg.DP, 1), Nodes: 1},
+		admission: admissionQueueOf(cfg.Frontend)}
 	core.Host = host{e}
 	core.Rec = e.rec
 	return e, nil
@@ -115,9 +128,52 @@ func New(id string, cfg cengine.SimConfig) (*Engine, error) {
 
 var _ engine.Engine = (*Engine)(nil)
 
+// SetPlacement states where the engine sits, when it is not the single node of the configuration's GPU
+// that New assumes; a refused placement leaves the engine as it was.
+func (e *Engine) SetPlacement(p placement.Placement) error {
+	if err := p.Validate(); err != nil {
+		return fmt.Errorf("contract: %w", err)
+	}
+	e.pl = p
+	return nil
+}
+
+// Plan implements engine.Planned: the pool's placement, which is what a P/D pull is priced against. The
+// compatibility engine offloads to no tier it reports as a transfer, so the plan lists none; the lowered
+// layers, KV groups and graphs are the cost model's resolution, which is not built here
+// (blis-latency-kernel#84).
+func (e *Engine) Plan() plan.PoolPlan {
+	p := e.pl.Plan(nil)
+	p.Host.Admission = e.admission
+	return p
+}
+
+// admissionQueueOf is the queue vLLM's API server puts a request through before the engine admits
+// it: the tokenizer and the chat template run on the renderer's thread pool, renderer_num_workers
+// threads per API-server process (vllm/renderers/base.py:139-158 and hf.py:965 at v0.32.0), and
+// each of api_server_count processes has its own pool (vllm/entrypoints/cli/serve.py:107-137).
+// No threads is no queue; an unstated server count is one queue.
+func admissionQueueOf(f cengine.FrontendConfig) plan.AdmissionQueue {
+	return plan.AdmissionQueue{Servers: f.APIServerCount, WorkersPerServer: f.RendererNumWorkers}
+}
+
+var (
+	_ engine.Planned      = (*Engine)(nil)
+	_ placement.Placeable = (*Engine)(nil)
+)
+
+// PlaceAt implements engine.Placeable, the host's one way to say where an instance runs: the engine's pool
+// placement with its node and rack given. A node the pool lacks is refused and leaves the engine as it was.
+func (e *Engine) PlaceAt(at plan.Endpoint) error { return e.SetPlacement(e.pl.At(at.Node, at.Rack)) }
+
+var _ engine.Placeable = (*Engine)(nil)
+
 // Add enqueues a request, as the host's QueuedEvent does (EnqueueRequest). A request the engine
 // drops at enqueue (its length guards) is refused.
 func (e *Engine) Add(r engine.Request, now engine.Time) error {
+	if err := r.Validate(); err != nil {
+		return err
+	}
 	if _, dup := e.reqs[r.ID]; dup {
 		return fmt.Errorf("contract: request %s added twice", r.ID)
 	}
@@ -512,6 +568,17 @@ func (e *Engine) EnableKVEvents() {
 		}
 	})
 }
+
+// Fields implements engine.Engine. The compatibility engine models vLLM 0.29.0 and 0.31.0
+// behaviour, and the field list of design VLM-3 is stated for the 0.32.0 engine only
+// (blisvllm.FieldListJSON, core/vllm). This engine therefore reports a valid list that names
+// the compatibility engine and classifies nothing, rather than a 0.32.0 list that is not its
+// own. compat/ is deleted in M4.
+func (e *Engine) Fields() fields.FieldList { return compatFields }
+
+// compatFields is the compatibility engine's list: no field is classified.
+var compatFields = fields.FieldList{Kind: fields.Kind, Engine: fields.Engine{Kind: "vllm", Version: "compat"},
+	Fields: []fields.Field{}}
 
 // Snapshot is the engine's queues and KV pool.
 func (e *Engine) Snapshot() engine.State {

@@ -36,7 +36,7 @@ name: minimax-m25-h200-ep8
 engine_version: "0.32.0"
 
 model: minimax-m2.5
-coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-offload-tiers]
 
 cluster:
   hardware: h200
@@ -60,10 +60,10 @@ pools:
       # The checkpoint is fp8; serving fp8 puts the step on the fp8 efficiency
       # envelope rather than the bf16 one.
       quantization: fp8
-      cache_dtype: fp8
+      kv_cache_dtype: fp8
       block_size: 16
       max_num_batched_tokens: 8192
       max_num_seqs: 256
       max_model_len: 32768
-      cudagraph_mode: PIECEWISE
       gpu_memory_utilization: 0.9
+      compilation_config: {cudagraph_mode: PIECEWISE}

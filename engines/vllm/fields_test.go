@@ -103,7 +103,32 @@ func TestReadmeNamesEveryLeaveUnsetField(t *testing.T) {
 			}
 		}
 	}
-	if len(want) != 12 {
-		t.Errorf("fields.json has %d not_modelled leave_unset fields, want 12; update the README list and this count", len(want))
+	if len(want) != 13 {
+		t.Errorf("fields.json has %d not_modelled leave_unset fields, want 13; update the README list and this count", len(want))
 	}
+}
+
+// gpu_memory_utilization sizes the KV pool the engine admits against (compat/kernelmodel
+// KVMemory, after vLLM's request_memory), and a stated value reaches it, so the list classes it
+// modelled with the tests that show that as its evidence. A not_modelled field with the rule
+// leave_unset is dropped to the default by a scorer, which priced the pool at the wrong size for
+// every run that stated another value.
+func TestMemoryUtilizationIsClassedModelledWithItsEvidence(t *testing.T) {
+	l, err := fields.Load("fields.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range l.Fields {
+		if f.Name != "gpu_memory_utilization" || f.Source != fields.SourceConfig {
+			continue
+		}
+		if f.Status != fields.StatusModelled {
+			t.Fatalf("gpu_memory_utilization is %s; the engine sizes the KV pool from it", f.Status)
+		}
+		if len(f.Evidence.Traces) == 0 {
+			t.Error("gpu_memory_utilization is modelled and cites no evidence")
+		}
+		return
+	}
+	t.Fatal("fields.json has no gpu_memory_utilization")
 }

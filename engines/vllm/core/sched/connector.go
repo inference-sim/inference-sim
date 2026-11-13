@@ -70,6 +70,15 @@ type TransferParams struct {
 	PSideTruncated bool
 }
 
+// GroupLoader is a connector that states which KV cache groups its load for a request restores
+// (get_loaded_kv_cache_group_ids, vllm/distributed/kv_transfer/kv_connector/v1/base.py:490-500
+// @5df63a72), called after MatchedTokens returned a positive count. all is every group's index. A
+// connector that does not state it restores the prefix-cacheable groups, which no bounded-replay
+// group is.
+type GroupLoader interface {
+	LoadedGroups(r *Request, all []int) []int
+}
+
 // Capabilities are the configurations beside which a connector's scheduler side is modelled
 // and diff-tested against vLLM; SetConnector refuses the rest (connectorCapabilityIssue).
 type Capabilities struct {
@@ -80,6 +89,10 @@ type Capabilities struct {
 	Drafters bool
 	// ConcurrentBatches: async scheduling or max_concurrent_batches > 1.
 	ConcurrentBatches bool
+	// PackedGroups: the KV cache groups of DeepSeek V4's packed layouts: sliding windows with
+	// bounded replay, rings, and groups of their own block size; the connector must also be a
+	// GroupLoader.
+	PackedGroups bool
 }
 
 // ConnectorCapabilities is a connector that states its Capabilities; one that does not is
@@ -99,6 +112,10 @@ type AllocatedBlocks struct {
 	// get_block_ids() (vllm/v1/core/kv_cache_manager.py:81-107@5df63a72). A sliding window's
 	// freed slot is the null block's id, 0.
 	Groups [][]int
+	// Unhashed are the ids of each group's blocks that hold no prefix-cache hash and are not the
+	// null block: the blocks a load fills (KVCacheBlocks.get_unhashed_block_ids_all_groups,
+	// vllm/v1/core/kv_cache_manager.py:117-125@5df63a72).
+	Unhashed [][]int
 }
 
 // TransferOutcome is the worker side's report for one step (KVConnectorOutput,
@@ -250,10 +267,14 @@ func holdsKVBlocks(r *Request) bool {
 	return r.NumComputed > 0 || r.Status == WaitingForRemoteKVs
 }
 
-// updateWaitingForRemoteKV is _update_waiting_for_remote_kv (scheduler.py:3123-3173) for one
-// full-attention group with no replay window.
+// updateWaitingForRemoteKV is _update_waiting_for_remote_kv (scheduler.py:3123-3173): the load has
+// landed (or failed), so the loaded blocks are cached, and a bounded-replay window that the load
+// did not carry, or a failed load may have lost, is recomputed over the hit's last
+// prefix_replay_tokens. Otherwise a hit of the whole prompt recomputes its last token, so the next
+// can be sampled.
 func (s *Scheduler) updateWaitingForRemoteKV(r *Request) {
-	if s.recvFailed[r.ID] {
+	loadFailed := s.recvFailed[r.ID]
+	if loadFailed {
 		if r.NumComputed > 0 {
 			s.KV.CacheBlocks(r.ID, r.hashes, r.NumComputed, s.run(r))
 		} else {
@@ -263,7 +284,9 @@ func (s *Scheduler) updateWaitingForRemoteKV(r *Request) {
 	} else {
 		s.KV.CacheBlocks(r.ID, r.hashes, r.NumComputed, s.run(r))
 	}
-	if r.NumComputed == r.NumTokens() {
+	if replayed := s.markPrefixReplay(r, r.NumComputed, !loadFailed && s.loadRestoresReplayWindow(r)); replayed > 0 {
+		r.NumComputed -= replayed
+	} else if r.NumComputed == r.NumTokens() {
 		r.NumComputed = r.NumTokens() - 1
 	}
 	delete(s.recvDone, r.ID)

@@ -13,6 +13,7 @@ import (
 	"github.com/inference-sim/blis-vllm/core/vllm"
 
 	schemas "github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
@@ -85,11 +86,23 @@ func fixtureInputs(t testing.TB, scenario string) Inputs {
 	// A fixture states only what its run stated (X19); the cost model resolves no default
 	// (SUB-6), so gpu_memory_utilization is the engine's: blis-vllm's resolver gives vLLM's.
 	resolveMemoryUtilization(&eng, sc.EngineRelease())
-	return Inputs{
+	in := Inputs{
 		Scenario: sc, Deployment: dep, PoolIndex: 0,
 		Model: graph, Chip: chip, Fabric: fabric,
 		Devices: devices, Coefficients: sets, Rules: rulesFor(sc.EngineRelease()), Engine: &eng,
 	}
+	in.DraftFirstPassRows, in.DraftPassRequests = draftPasses(dep, 0)
+	return in
+}
+
+// draftPasses is how vLLM v0.32.0 runs an autoregressive drafter's passes, from a pool's engine block:
+// the engine states them (SUB-6) and the kernel prices what it is told.
+func draftPasses(dep *deployment.Deployment, pool int) (plan.FirstPassRows, plan.PassRequests) {
+	e, err := vllmsettings.Decode(dep.Pools[pool])
+	if err != nil {
+		return "", ""
+	}
+	return vllmsettings.DraftPasses(e)
 }
 
 // rulesFor is the vLLM rules pack for a fixture's declared release. The packs come from the
@@ -124,6 +137,10 @@ func newKernel(in Inputs) (*Kernel, error) {
 		}
 		resolveMemoryUtilization(&eng, in.Scenario.EngineRelease())
 		in.Engine = &eng
+		// A test that edits the drafter states the passes itself; otherwise they are the engine block's.
+		if rows, reqs := draftPasses(in.Deployment, in.PoolIndex); in.DraftFirstPassRows == "" && in.DraftPassRequests == "" {
+			in.DraftFirstPassRows, in.DraftPassRequests = rows, reqs
+		}
 	}
 	return New(in)
 }

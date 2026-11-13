@@ -3,12 +3,17 @@
 package pack_test
 
 import (
+	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/rules"
 	"github.com/inference-sim/blis-vllm/rules/v0_31"
+	"github.com/inference-sim/blis-vllm/rules/v0_32"
 )
 
 func ip(n int) *int { return &n }
@@ -100,5 +105,76 @@ func TestCUDAGraphCaptureSizesProperties(t *testing.T) {
 				t.Fatalf("m %d mnbt %d: %+v", m, mnbt, c)
 			}
 		}
+	}
+}
+
+// The v0.32.0 pack gives vLLM's own sizes for every configuration the oracle holds that states
+// max_cudagraph_capture_size or cudagraph_capture_sizes (core/lower/testdata/vllm_lower.json,
+// resolved by VllmConfig._set_cudagraph_sizes at vllm/config/vllm.py@5df63a72): the stated
+// values 2048, 2 and 1000 (992 on the stride), a maximum above or equal to
+// max_num_batched_tokens, and stated sizes. A deployment that states neither is the consumer's
+// to resolve, and the pack says so.
+func TestCUDAGraphCaptureSizesAreVLLMs032(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "core", "lower", "testdata", "vllm_lower.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		Capture []struct {
+			Case struct {
+				Name       string `json:"name"`
+				Mode       string `json:"mode"`
+				MaxBatched int    `json:"max_num_batched_tokens"`
+				MaxCapture *int   `json:"max_capture"`
+				Sizes      []int  `json:"sizes"`
+				SpecTokens int    `json:"spec_tokens"`
+				Eager      bool   `json:"enforce_eager"`
+				Perf       string `json:"performance_mode"`
+			} `json:"case"`
+			Resolved struct {
+				Max   int     `json:"max"`
+				Sizes []int   `json:"sizes"`
+				Error *string `json:"error"`
+			} `json:"resolved"`
+		} `json:"capture"`
+	}
+	if err := json.Unmarshal(raw, &f); err != nil {
+		t.Fatal(err)
+	}
+	p := v0_32.Pack()
+	stated := 0
+	for _, c := range f.Capture {
+		k := c.Case
+		if k.Eager || k.Perf == "interactivity" || k.MaxBatched <= 0 || k.SpecTokens > 0 {
+			continue // no schema field, or vLLM adds sizes the pack does not model
+		}
+		t.Run(k.Name, func(t *testing.T) {
+			got, resolved, err := p.CUDAGraphCaptureSizes(rules.CUDAGraphCaptureInput{Mode: k.Mode,
+				MaxNumBatchedTokens: k.MaxBatched, MaxCaptureSize: k.MaxCapture, CaptureSizes: k.Sizes})
+			if k.Mode != "NONE" && k.MaxCapture == nil && k.Sizes == nil {
+				if resolved {
+					t.Errorf("resolved a capture where nothing is stated: %+v", got)
+				}
+				return
+			}
+			stated++
+			if c.Resolved.Error != nil {
+				// An empty stated list is refused by the engine block's validation
+				// (engineconfig), not by the pack; the disagreeing pair is the pack's.
+				if len(k.Sizes) > 0 && !errors.Is(err, rules.ErrCUDAGraphCaptureInconsistent) {
+					t.Errorf("vLLM refuses (%s); the pack gave %+v, %v", *c.Resolved.Error, got, err)
+				}
+				return
+			}
+			if err != nil || !resolved {
+				t.Fatalf("resolved %v, err %v", resolved, err)
+			}
+			if got.Max != c.Resolved.Max || !slices.Equal(got.Sizes, c.Resolved.Sizes) {
+				t.Errorf("max %d sizes %v; vLLM max %d sizes %v", got.Max, got.Sizes, c.Resolved.Max, c.Resolved.Sizes)
+			}
+		})
+	}
+	if stated < 12 {
+		t.Errorf("only %d stated cases checked", stated)
 	}
 }

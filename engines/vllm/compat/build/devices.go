@@ -39,8 +39,10 @@ const (
 // deleted.
 //
 // The FILE format is blis-substrate's hardware.StorageDevice, decoded and validated by its
-// loader when the catalog is opened, so BLIS holds no second parser for it. Its keys carry their units
-// (read_bandwidth_mb_s, write_bandwidth_mb_s, base_latency_us).
+// loader when the catalog is opened, so BLIS holds no second parser for it. It names a tier class
+// and states no rate: the read rate, the write rate and the fixed cost per transfer are registry
+// coefficients (offload_tier_<tier>_read_rate, _write_rate, _base_latency, in the set
+// cost-model-offload-tiers), and a file that states one is refused by the loader.
 //
 // UNITS. ReadBandwidth/WriteBandwidth are bytes per microsecond; BaseLatency is
 // microseconds. Bytes/µs and MB/s (MB = 10^6 bytes, not MiB) are the SAME number —
@@ -108,13 +110,14 @@ func StorageDevices(data *load.Data) (map[string]KVOffloadDevice, error) {
 			"device_class named by a secondary tier cannot be resolved; point --catalog or %s at a "+
 			"catalog that has them", data.Catalog.Source, CatalogStorageDevicesRelPath, catalogEnvVar)
 	}
+	// The catalog names a tier class and states no rate for it: the read rate, the write rate
+	// and the fixed cost per transfer are registry coefficients, scoped to the hardware they
+	// describe, and the kernel prices every catalog-class tier from them (priceOffload installs
+	// the pricer and refuses a tier whose entries the scenario does not list). A class therefore
+	// resolves to a name alone; its rates stay zero here and nothing reads them.
 	devices := make(map[string]KVOffloadDevice, len(loaded))
 	for _, d := range loaded {
-		devices[d.Name] = KVOffloadDevice{
-			ReadBandwidth:  d.ReadBandwidthMBs,
-			WriteBandwidth: d.WriteBandwidthMBs,
-			BaseLatency:    d.BaseLatencyUs,
-		}
+		devices[d.Name] = KVOffloadDevice{}
 	}
 	return devices, nil
 }

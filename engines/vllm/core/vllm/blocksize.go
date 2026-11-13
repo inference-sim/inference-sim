@@ -7,6 +7,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -24,6 +25,13 @@ const MaxBlockSizeTP = 16
 // setting of the facts a CPU cannot discover: FlashAttention 3 and 4 in the wheel, FlashInfer's
 // TRTLLM kernels, and FlashMLA in the wheel. Otherwise it is refused, naming the fact.
 //
+// One of those facts is assumed rather than discovered: for compute capability 9.0 the oracle
+// assumes vLLM's wheel ships FlashAttention 3 (oracle.ASSUMED_FACTS, with its evidence), so a
+// Hopper combination resolves if the size is the same under the settings that agree with it. Such
+// a combination carries the assumption in AssumedFacts, and ResolveBlockSize puts it in the
+// source it returns. The assumption is about vLLM's release images, not derived from the pinned
+// tree; an engine built without FlashAttention 3 is resolved wrongly.
+//
 // The oracle runs each combination at every tensor-parallel width from 1 to 16 (TP_WIDTHS), and a
 // combination resolves only if the size is the same at all of them. The table is therefore
 // valid for a tensor-parallel width up to MaxBlockSizeTP, and ResolveBlockSize refuses a wider one.
@@ -33,15 +41,24 @@ const MaxBlockSizeTP = 16
 var blockSizeTable []byte
 
 type blockSizeCombination struct {
-	Model        string         `json:"model"`
-	GPU          string         `json:"gpu"`
-	Capability   string         `json:"capability"`
-	KVCacheDType string         `json:"kv_cache_dtype"`
-	Status       string         `json:"status"`
-	BlockSize    int            `json:"block_size"`
-	Backends     []string       `json:"backends"`
-	ByFacts      map[string]int `json:"by_facts"`
-	Note         string         `json:"note"`
+	Model        string   `json:"model"`
+	GPU          string   `json:"gpu"`
+	Capability   string   `json:"capability"`
+	KVCacheDType string   `json:"kv_cache_dtype"`
+	Status       string   `json:"status"`
+	BlockSize    int      `json:"block_size"`
+	Backends     []string `json:"backends"`
+	// AssumedFacts are the facts the resolution assumes, each with its evidence; empty when the
+	// size is the same under every setting.
+	AssumedFacts map[string]string `json:"assumed_facts"`
+	ByFacts      map[string]int    `json:"by_facts"`
+	Note         string            `json:"note"`
+}
+
+// blockSizeAssumption is a fact the oracle assumes for a compute capability.
+type blockSizeAssumption struct {
+	Value    bool   `json:"value"`
+	Evidence string `json:"evidence"`
 }
 
 type blockSizeFile struct {
@@ -51,8 +68,10 @@ type blockSizeFile struct {
 		What string `json:"what"`
 		Why  string `json:"why"`
 	} `json:"replacements"`
-	NotResolved  map[string]string      `json:"not_resolved"`
-	Combinations []blockSizeCombination `json:"combinations"`
+	// Assumptions are the facts assumed per compute capability.
+	Assumptions  map[string]map[string]blockSizeAssumption `json:"assumptions"`
+	NotResolved  map[string]string                         `json:"not_resolved"`
+	Combinations []blockSizeCombination                    `json:"combinations"`
 }
 
 var blockSizes = mustLoadBlockSizes()
@@ -193,11 +212,20 @@ func ResolveBlockSize(in BlockSizeInput) (BlockSize, error) {
 			return refuse(fmt.Sprintf("%s on compute capability %s with KV dtype %s is not the same under every setting of what a CPU cannot discover: %s",
 				c.Model, c.Capability, c.KVCacheDType, c.Note))
 		}
-		return BlockSize{Size: c.BlockSize, Source: fmt.Sprintf(
+		src := fmt.Sprintf(
 			"vLLM v0.32.0 resolves an unstated block_size from the attention backend it selects (%s) for %s on compute capability %s with KV dtype %s: "+
 				"Platform.update_block_size_for_backend, vllm/platforms/interface.py:757-781@5df63a72, backend selection platforms/cuda.py:83-180, 375-415; "+
 				"the oracle's table, oracle/blocksize",
-			strings.Join(c.Backends, ", "), c.Model, c.Capability, c.KVCacheDType)}, nil
+			strings.Join(c.Backends, ", "), c.Model, c.Capability, c.KVCacheDType)
+		facts := make([]string, 0, len(c.AssumedFacts))
+		for f := range c.AssumedFacts {
+			facts = append(facts, f)
+		}
+		sort.Strings(facts)
+		for _, f := range facts {
+			src += fmt.Sprintf("; assuming %s: %s", f, c.AssumedFacts[f])
+		}
+		return BlockSize{Size: c.BlockSize, Source: src}, nil
 	}
 	return refuse(fmt.Sprintf("%s on compute capability %s with KV dtype %q is not a combination the oracle resolves", in.Model, in.Capability, in.KVCacheDType))
 }

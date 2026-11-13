@@ -82,3 +82,61 @@ func TestAnAdapterChangesEveryBlockHash(t *testing.T) {
 		}
 	}
 }
+
+// A set PYTHONHASHSEED roots every chain at sha256(pickle(seed)), however it reads: "0", a number,
+// a word, and the empty string, which is set (os.getenv returns "" and resolve_none_hash_seed
+// tests for None). testdata/seeded_block_hashes.json was written by vLLM's own init_none_hash and
+// hash_block_tokens under each value (oracle/gen_seeded_block_hashes.py).
+func TestSeededBlockHashesAreVLLMs(t *testing.T) {
+	raw, err := os.ReadFile("testdata/seeded_block_hashes.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		Cases []struct {
+			Seed     *string    `json:"pythonhashseed"`
+			Name     string     `json:"name"`
+			BlockSz  int        `json:"block_size"`
+			Tokens   []int64    `json:"tokens"`
+			Extra    [][]string `json:"extra"`
+			NoneHash string     `json:"none_hash"`
+			Hashes   []string   `json:"hashes"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &f); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.Cases) < 10 {
+		t.Fatalf("%d seeded cases", len(f.Cases))
+	}
+	seen := map[string]bool{}
+	for _, c := range f.Cases {
+		label := "unset"
+		if c.Seed != nil {
+			label = "seed=" + *c.Seed
+		}
+		t.Run(label+"/"+c.Name, func(t *testing.T) {
+			if got := hex.EncodeToString(NoneHashFor(c.Seed)); got != c.NoneHash {
+				t.Errorf("NONE_HASH = %s, vLLM's is %s", got, c.NoneHash)
+			}
+			var keys []ExtraKey
+			for _, e := range c.Extra {
+				keys = append(keys, ExtraKey(e))
+			}
+			got := BlockHashes(c.Tokens, c.BlockSz, BlockKeys{Extra: keys, Seed: c.Seed})
+			if len(got) != len(c.Hashes) {
+				t.Fatalf("%d hashes, vLLM has %d", len(got), len(c.Hashes))
+			}
+			for i := range got {
+				if hex.EncodeToString(got[i]) != c.Hashes[i] {
+					t.Fatalf("block %d: %x, vLLM %s", i, got[i], c.Hashes[i])
+				}
+			}
+			seen[c.Hashes[0]] = true
+		})
+	}
+	// The seeds really differ: a hasher that ignored the seed would pass one case but not ten.
+	if len(seen) < 10 {
+		t.Errorf("only %d distinct first hashes across the seeded cases", len(seen))
+	}
+}

@@ -93,7 +93,10 @@ func TestTheBackendDecidesWhichContextParallelLayoutsADSAModelStarts(t *testing.
 			editEngine(t, in, func(e *engineconfig.Engine) { e.CacheDType = cache })
 			if blackwell {
 				chip := *in.Chip
-				chip.NVFP4Peak = 1
+				if chip.FP8Peak <= 0 {
+					t.Fatal("the chip has no FP8 peak, so a Blackwell NVFP4 peak of twice it is 0")
+				}
+				chip.NVFP4Peak = 2 * chip.FP8Peak
 				in.Chip = &chip
 			}
 		})

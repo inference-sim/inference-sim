@@ -22,7 +22,4 @@ pools:
       max_model_len: 262144
       moe_backend: marlin
       enable_prefix_caching: true
-      speculative:
-        method: dspark
-        num_spec_tokens: 7
-        draft_model: muse-spark-open-dspark
+      speculative_config: {method: dspark, num_speculative_tokens: 7, model: muse-spark-open-dspark}

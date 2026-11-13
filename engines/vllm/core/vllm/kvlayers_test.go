@@ -39,11 +39,11 @@ func TestKVLayersAreTheSchedulersGroups(t *testing.T) {
 			t.Errorf("%q: groups %v, want %v", c.extra, s.sched.KVGroups, c.want)
 		}
 	}
-	cfg, err := decodeConfig(block(t, "kv_layers:\n- {count: 2, spec: mamba, num_kv_heads: 1, head_size: 1}\n"))
+	cfg, err := decodeConfig(block(t, "kv_layers:\n- {count: 2, spec: ssm, num_kv_heads: 1, head_size: 1}\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := resolve(cfg); err == nil || !strings.Contains(err.Error(), `unknown KV layer spec "mamba"`) {
+	if _, err := resolve(cfg); err == nil || !strings.Contains(err.Error(), `unknown KV layer spec "ssm"`) {
 		t.Errorf("an unknown spec: %v, want it refused by name", err)
 	}
 }
@@ -115,8 +115,8 @@ func TestTheTrailingDrafterGroupIsFlagged(t *testing.T) {
 		name, extra string
 		eagle       []bool
 	}{
-		{"mtp", "speculative: {method: mtp, num_spec_tokens: 1}\nmtp_nextn_predict_layers: 1\n", []bool{false, true, false}},
-		{"dspark", "speculative: {method: dspark, num_spec_tokens: 2}\nuse_v2_model_runner: true\n", []bool{false, true, false}},
+		{"mtp", "speculative_config: {method: mtp, num_speculative_tokens: 1}\nmtp_nextn_predict_layers: 1\n", []bool{false, true, false}},
+		{"dspark", "speculative_config: {method: dspark, num_speculative_tokens: 2}\nuse_v2_model_runner: true\n", []bool{false, true, false}},
 		{"none", "", []bool{false, false, false}},
 	} {
 		t.Run(c.name, func(t *testing.T) {

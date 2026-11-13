@@ -7,6 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 
@@ -83,8 +86,34 @@ func TestOfFillsEverySetting(t *testing.T) {
 	populate(t, reflect.ValueOf(&e).Elem(), "Engine")
 	var missing []string
 	zeroes(reflect.ValueOf(Of(e)), "Settings", &missing)
-	if len(missing) > 0 {
-		t.Errorf("Of leaves these settings unfilled from a fully stated engine block: %v", missing)
+	noKey := map[string]bool{
+		// ServedWeights is the layout the engine serves a checkpoint in, resolved from the
+		// checkpoint's quantization (vLLM's ModelConfig._verify_quantization), not read from
+		// an engine block key, and it needs the checkpoint, which Of does not see. compat/kernelmodel's lowerQuantization
+		// states it for the checkpoints compat/quantization covers; the others price the graph as stored.
+		"Settings.ServedWeights": true}
+	var unfilled []string
+	for _, m := range missing {
+		if !noKey[m] {
+			unfilled = append(unfilled, m)
+		}
+	}
+	if len(unfilled) > 0 {
+		t.Errorf("Of leaves these settings unfilled from a fully stated engine block: %v", unfilled)
+	}
+}
+
+// The kernel reads no attention backend, linear backend, custom-op list, decoder-replay setting or
+// drafter cache dtype: which kernel runs is the engine's to resolve and report (VAL-8), and this engine
+// refuses a block that states one of them (core/vllm's unreadSettings). The block has no key at all
+// for the attention backend, the decoder-replay switch, the MSA decode backend or the per-kind and
+// per-quantization backends: a block that states one is refused by the strict decode, naming the key.
+func TestTheBlockHasNoKeyForTheBackendsTheKernelNoLongerReads(t *testing.T) {
+	for _, key := range []string{"attention_backend", "backend", "cudagraph_decoder_replay", "minimax_m3_msa_decode_backend", "backend_per_kind", "linear_backend_per_quant"} {
+		pool := deployment.Pool{Engine: mustBlock(t, key+": true\n")}
+		if _, err := Decode(pool); err == nil || !strings.Contains(err.Error(), key) {
+			t.Errorf("a block stating %s: Decode returned %v, want a refusal naming the key", key, err)
+		}
 	}
 }
 
@@ -143,6 +172,7 @@ func TestOfSharesNoMemoryWithTheBlock(t *testing.T) {
 func TestOfPoolDecodesThePoolsBlock(t *testing.T) {
 	var e engineconfig.Engine
 	populate(t, reflect.ValueOf(&e).Elem(), "Engine")
+	e.Frontend = engineconfig.FrontendRust // the block carries it as VLLM_USE_RUST_FRONTEND, 1 or 0
 	block, err := engineconfig.Encode(e)
 	if err != nil {
 		t.Fatal(err)
@@ -178,5 +208,39 @@ func TestOfCarriesAdaptiveVerification(t *testing.T) {
 		if got := Of(e).Speculative.EnableAdaptiveVerification; got != c.want {
 			t.Errorf("%s: EnableAdaptiveVerification = %v, want %v", c.name, got, c.want)
 		}
+	}
+}
+
+// mustBlock is an engine block written as YAML.
+func mustBlock(t *testing.T, src string) deployment.EngineBlock {
+	t.Helper()
+	var n yaml.Node
+	if err := yaml.Unmarshal([]byte(src), &n); err != nil {
+		t.Fatal(err)
+	}
+	return deployment.NewEngineBlock(n.Content[0])
+}
+
+// vLLM v0.32.0 runs EAGLE, EAGLE3 and MTP through one speculator: its first pass covers every
+// scheduled token and the head and later passes run for every request of the step. Any other
+// method, and no speculation, is left unstated, so the kernel refuses an autoregressive drafter this
+// engine model has not read (draft_passes_unstated) rather than pricing a guess; a parallel-block
+// drafter ignores both fields.
+func TestDraftPassesAreStatedForTheSpeculatorVLLMSharesOnly(t *testing.T) {
+	for _, method := range []string{"eagle", "eagle3", "mtp"} {
+		e := engineconfig.Engine{Speculative: &engineconfig.Speculative{Method: method, NumSpecTokens: 3}}
+		rows, reqs := DraftPasses(e)
+		if rows != plan.FirstPassScheduled || reqs != plan.PassRequestsAll {
+			t.Errorf("%s: FirstPassRows %q, PassRequests %q; want scheduled and all", method, rows, reqs)
+		}
+	}
+	for _, method := range []string{"dspark", "draft_model", "ngram", "dflash", ""} {
+		e := engineconfig.Engine{Speculative: &engineconfig.Speculative{Method: method, NumSpecTokens: 3}}
+		if rows, reqs := DraftPasses(e); rows != "" || reqs != "" {
+			t.Errorf("%q: states FirstPassRows %q, PassRequests %q; want neither", method, rows, reqs)
+		}
+	}
+	if rows, reqs := DraftPasses(engineconfig.Engine{}); rows != "" || reqs != "" {
+		t.Errorf("no speculation: %q, %q; want neither", rows, reqs)
 	}
 }

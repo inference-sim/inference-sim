@@ -26,6 +26,12 @@ func dep8(t *testing.T, backend, mode string, mnbt int, entries map[string]float
 	for _, n := range drop {
 		names[n] = true
 	}
+	// An entry the test states replaces the catalog's of the same name: the substrate's lookup
+	// (VAL-4) lets no set order decide between two entries of one name, method and scope, so the
+	// catalog's is removed.
+	for name := range entries {
+		names[name] = true
+	}
 	in := withoutEntries(fixtureInputs(t, v41), names)
 	pl := &in.Deployment.Pools[0].Parallel
 	pl.TP, pl.DP, pl.EnableExpertParallel = 1, 8, true

@@ -65,11 +65,56 @@ are reported as priced by the kernel's vLLM 0.31.0 behaviour.
 
 | Tier | Proves | Oracle | Status |
 |---|---|---|---|
-| T1 Configuration | the rules packs' accepted values, defaults and refusals are the release's own, read from its source | rules packs, `MatchSource` against the pinned source (the source text, not vLLM's config classes; running `EngineArgs`/`VllmConfig` on the same blocks is https://github.com/inference-sim/blis-vllm/issues/27) | 0.29, 0.31 and 0.32 packs each checked against their own release in CI (`packs-against-vllm`, results and provenance uploaded as `tier1-<pack>`); `rules/v0_32` passes all 37 source checks at `5df63a72`, and mutants of its new data, rules and parser are caught in CI (C6-C28, `oracle/mutate_rules.py`) |
-| T2 Scheduler and KV | per-step decisions with fixed capacity: tokens per request, preemptions, finishes, block contents by hash and ref count, prefix hits, request counts | `oracle/run_scheduler.py` (`create_scheduler`) | full attention, FCFS/priority, chunked prefill, long-prefill cap (and its adaptive floor), preemption, prefix caching, speculative decoding (EAGLE3, P-EAGLE, draft_model, PARD, MTP single and multi-module, DSpark; acceptance supplied), max_loras, watermark, max_num_active_seqs, max_num_scheduled_tokens, KV events, hybrid KV (full attention + sliding windows, a sliding-window-only model, layers sharing one spec merged into one group, and the extra tokens a multi-module MTP drafter keeps below the window), disable_hybrid_kv_cache_manager and SWA bounded replay (`dashboard-deepseek-v4.1-flash-replay`): 40 scenarios + 4000 fuzz seeds at zero mismatches, all mutants caught (`oracle/mutate.py`); Mamba groups, prefix_match_unit, the retention interval (blis-vllm#7) and DCP (blis-vllm#8) are follow-ups |
+| T1 Configuration | the rules packs' accepted values, defaults and refusals are the release's own, read from its source | rules packs, `MatchSource` against the pinned source; and the engine block's scheduler, cache and speculative settings run through vLLM's own `EngineArgs(...).create_engine_config()` (`oracle/run_engineargs.py`, 39 shapes in `oracle/engineargs-cases.json`: 16 accepted, 6 leaving a default to resolve, 17 refused by one rule each) and compared with the factory's `resolve`: 34 of the 39 agree on acceptance, and in every refused case the factory's message must contain the rule the case was written for; the other 5 leave max_num_seqs, max_num_batched_tokens, block_size or max_model_len unstated, which vLLM resolves from the model and the GPU and the factory refuses by design (the caller states them); every value both resolve is compared (`TestEngineArgsAgainstVLLM`). Only the v0.32.0 factory is compared that way; the 0.29 and 0.31 packs have the source check alone, and the settings the factory passes through to the cost model (backends, graph modes, quantization) are not in the cases | 0.29, 0.31 and 0.32 packs each checked against their own release in CI (`packs-against-vllm`, results and provenance uploaded as `tier1-<pack>`); `rules/v0_32` passes all 37 source checks at `5df63a72`, and mutants of its new data, rules and parser are caught in CI (C6-C28, `oracle/mutate_rules.py`); the EngineArgs comparison is re-derived from vLLM in `oracle-tier2` and has mutants (`oracle/mutate_engineargs.py`, E1-E13: a dropped or off-by-one refusal and a changed default fail it, with cases at budget 3, 5 active sequences and a long-prefill threshold of 513 for the off-by-one ones; a refusal the pack and the factory both make fails only when both are dropped) |
+| T2 Scheduler and KV | per-step decisions with fixed capacity: tokens per request, preemptions, finishes, block contents by hash and ref count, prefix hits, request counts | `oracle/run_scheduler.py` (`create_scheduler`) | full attention, FCFS/priority, chunked prefill (on, and off: `chunked-prefill-off*`), long-prefill cap (and its adaptive floor), preemption, prefix caching, speculative decoding (EAGLE3, P-EAGLE, draft_model, PARD, MTP single and multi-module, DSpark; acceptance supplied), max_loras, watermark, max_num_active_seqs, max_num_scheduled_tokens, KV events, hybrid KV (full attention + sliding windows, a sliding-window-only model, layers sharing one spec merged into one group, and the extra tokens a multi-module MTP drafter keeps below the window), disable_hybrid_kv_cache_manager and SWA bounded replay (`dashboard-deepseek-v4.1-flash-replay`): 40 scenarios + 4000 fuzz seeds at zero mismatches, all mutants caught (`oracle/mutate.py`); hybrid Mamba groups in align and none modes with prefill checkpoints and speculative blocks (37 `mamba-*` scenarios + 1000 hybrid fuzz seeds, `docs/recurrent-state.md`); prefix_match_unit, the sliding-window retention interval (blis-vllm#7) and DCP (blis-vllm#8) are follow-ups |
 | T3 EngineCore | async scheduling and the PP batch queue (`vllm/v1/engine/core.py:698-810@5df63a72`), DP waves and prefill throttling | `oracle/run_enginecore.py`: vLLM's own `step_with_batch_queue` on an EngineCore that holds the real (Async)Scheduler, only the executor mocked, the EngineCore built without its model and GPU setup (`oracle/mocks.json`) | batch queue, async scheduling and PP: 8 scenarios + 1000 fuzz seeds at zero mismatches (seeds 1000-1999: 603 with async scheduling on, 630 with PP 2 or 4, 698 on the V2 runner; `oracle/gen_fuzz_t3.py:29-35`), queue sizes 1-5, 10 of 10 mutants caught (`oracle/mutate_t3.py`). None of them drafts: the harness turns `check_for_draft_tokens` and `use_spec_decode` off (`oracle/run_enginecore.py:146-147`), so async scheduling with drafts is not proven here (blis-vllm#17). Limitation: the V2 model runner cannot start on the CPU wheel (no Triton, blis-vllm#3), so its effect on the scheduler and on the queue size reaches them through the scheduler's own `use_v2_model_runner` and `max_concurrent_batches`' own code, as vLLM's CPU tests do. Data parallel (`oracle/run_dp.py`): vLLM's own prefill throttle and wave sync (`DPEngineCoreProc._should_throttle_prefills`, `_has_global_unfinished_reqs`) and internal load balancer (`DPLBAsyncMPClient.get_core_engine_for_request`) across 2-4 ranks, the all-reduce and the coordinator's stats transport mocked: 5 scenarios + 1000 fuzz seeds at zero mismatches. The loop that steps them is the harness's transcription of `run_busy_loop` (dummy batches, the wave's end, a request starting the next wave), listed in `oracle/mocks.json` as such: those decisions are shown to match the transcription, not vLLM's loop itself (blis-vllm#26); with the batch queue, 21 of 21 tier-3 mutants caught |
-| T4 Connectors and offload | connector scheduler-side state machines under virtual time and controlled transport | real connector scheduler classes, transports mocked | NIXL pull mode and `kv_load_failure_policy`: 36 scenarios + 3300 fuzz seeds at zero mismatches, at each scenario's own `max_model_len`. Of the seeds, 300 run into `max_model_len`. Seeds 20000-20999 add hybrid KV cache groups (full attention + sliding windows) and DSpark/MTP drafters, through vLLM's own spec classes and SpeculativeConfig. Seeds 30000-30999 add async scheduling and PP through vLLM's own EngineCore.step_with_batch_queue on tier 3's bare EngineCore, with the transport's report riding on the popped batch's output. All non-equivalent mutants are caught (`core/connector/nixl`, `oracle/run_connector.py`, `oracle/mutate_t4.py`); the connector registry (`registry/`): an entry is earned only by one of these diff tests, checked on its golden traces' content and provenance, mutants R1-R10 caught; the OffloadingConnector over its CPU tier with LRU (`core/connector/offloading`, `oracle/run_offloading.py`): 13 scenarios + 3600 fuzz seeds (beside sliding-window groups, 2-6 workers, the batch queue and DSpark/EAGLE-3 drafters) at zero mismatches, 31 mutants caught and 5 equivalent (`oracle/mutate_offloading.py`); the other connectors are follow-ups (see the feature matrix) |
-| T5 Metrics | names, labels, histogram buckets and enablement of every computable `vllm:*` family | the generated manifest and vLLM's Prometheus loggers | inventory done: `docs/metrics-manifest.json`, 130 families from the v0.32.0 source (45 exact, 52 derived, 33 unavailable), regenerated in CI; the 45 families vLLM's own logger registers on CPU agree in type and labels, and their 19 histograms' bucket bounds are recorded from the live objects (`docs/metrics-buckets.json`); values: the 23 scheduler-decided exact families match vLLM's own logger sample for sample after every step (the 14 scenarios' committed metric goldens, 9,906 samples; 4,000 fuzz scenarios in CI, 5,498,523 samples; 0 mismatches); the 22 connector/offload exact families wait on tier 4 |
+| T3/T4 Data parallel with NIXL on every rank | the DP wave with a connector per rank: a rank waiting for remote KV counts as unfinished (its wave stays running, the rank steps with an empty schedule and runs a dummy batch); a producer rank that only holds finished requests' blocks does not keep the wave running and still steps; per-rank pulls and holds under different delays; a failed pull on one rank (`kv_load_failure_policy` fail) while the others continue; the internal load balancer spreading a burst of remote-prefill requests over four ranks; each of these with a batch queue per rank | `oracle/run_dp.py` with a `connector` (`oracle/scenarios-dp-nixl`): every rank is vLLM's own `Scheduler` and `NixlConnector` scheduler side, built by the connector oracle's helpers; the DP loop, wave sync and balancer are the T3 data-parallel row's, the transport is the T4 mock evaluated per rank (`oracle/mocks.json`, no new entry) | 5 scenarios at zero mismatches (`TestDPNixlAgainstVLLM`, `core/engine/dp_nixl_test.go`), rank by rank and step by step: routing, schedules, transfers, KV and connector state, dummy batches, waves. The goldens are the product here, as in the other oracle rows. Mutation: ending the wave when only a rank waiting for remote KV is unfinished (`DP.EndStep`) fails 2 of the 5. Not shown: a rank with no connector; `engine_id` and the side-channel port, which decide no scheduling step; a pull from a rank of another group (the transport is a mock) |
+| T4 Connectors and offload | connector scheduler-side state machines under virtual time and controlled transport | real connector scheduler classes, transports mocked | NIXL pull mode, `kv_load_failure_policy` and the three `kv_role`s (producer, consumer and `kv_both`): 42 scenarios + 3300 fuzz seeds at zero mismatches, at each scenario's own `max_model_len`. Of the seeds, 300 run into `max_model_len`. Seeds 20000-20999 add hybrid KV cache groups (full attention + sliding windows) and DSpark/MTP drafters, through vLLM's own spec classes and SpeculativeConfig. Seeds 30000-30999 add async scheduling and PP through vLLM's own EngineCore.step_with_batch_queue on tier 3's bare EngineCore, with the transport's report riding on the popped batch's output. All non-equivalent mutants are caught (`core/connector/nixl`, `oracle/run_connector.py`, `oracle/mutate_t4.py`); the connector registry (`registry/`): an entry is earned only by one of these diff tests, checked on its golden traces' content and provenance, mutants R1-R10 caught; the OffloadingConnector over its CPU tier with LRU (`core/connector/offloading`, `oracle/run_offloading.py`): 13 scenarios + 3600 fuzz seeds (beside sliding-window groups, 2-6 workers, the batch queue and DSpark/EAGLE-3 drafters) at zero mismatches, 31 mutants caught and 5 equivalent (`oracle/mutate_offloading.py`); the other connectors are follow-ups (see the feature matrix) |
+| T5 Metrics | names, labels, histogram buckets and enablement of every computable `vllm:*` family | the generated manifest and vLLM's Prometheus loggers | inventory done: `docs/metrics-manifest.json`, 130 families from the v0.32.0 source (49 exact, 48 derived, 33 unavailable), regenerated in CI; the 45 families vLLM's own logger registers on CPU agree in type and labels, and their 19 histograms' bucket bounds are recorded from the live objects (`docs/metrics-buckets.json`); values: the 27 exact families (23 scheduler-decided and the four speculative-decoding counters) match vLLM's own logger sample for sample after every step (the 22 scenarios' committed metric goldens, 13,652 samples; 4,000 fuzz scenarios in CI, 5,498,523 samples; 0 mismatches); the 22 connector/offload exact families wait on tier 4 |
+
+## The lowering
+
+`core/lower` is what the engine decides about a launch before the cost model prices it (design
+section 6): the CUDA-graph capture sizes, the graph a batch replays and the padded token count, the
+data-parallel padding, the decode threshold, a parallel-block drafter's padded rows, the KV
+groups' pages, the Engram host tables' sharing and shard, and the probabilistic draft sampler's
+logits buffer, the dual-batch-overlap split rule and the decode-context-parallel defaults. `oracle/lower/extract.py` takes the release's own definitions out of their modules
+by syntax tree and runs them as written, with the data-parallel all-reduce supplied the ranks'
+votes; its answers are `core/lower/testdata/vllm_lower.json`, which CI regenerates and compares
+(`oracle-tier2`). The Go tests compare the port with those answers: 57 capture configurations (35, of which 22 are repeated on a data-center Blackwell part)
+(including FULL mode, a request count above the platform ceiling, the recoverSSM kernel and the
+start-up refusals), 5,488 dispatch probes around their sizes, 16 data-parallel cases (including FULL
+mode and varlen graphs under ranks that differ), 6 drafter passes through the target's agreement,
+16 Engram sharing cases that include the config's own validator, 50 Engram shard cases, 24
+dual-batch-overlap configurations with 20 step probes each, 36 decode-context-parallel default
+cases, and the threshold and context rules. The oracle file was regenerated with the oracle environment's torch
+(2.15.0 here; CI pins 2.13.0+cpu in `oracle/requirements.lock`; every answer is an integer or a
+string, so the two agree).
+
+The oracle also prints vLLM's own KV pool sizing at a cache stored as fp8 (`kv_pool`: the spec classes
+of six architectures, `customize_attention_spec`, `get_kv_cache_groups` and
+`_get_kv_cache_bytes_per_block` under both layouts, 424 cases; `core/kv`'s `pool_oracle_test.go`,
+`vllmengine`'s `pool_oracle_test.go`) and MoE layouts (`moe_parallel`: `FusedMoEParallelConfig.make`,
+`use_sequence_parallel_moe` and `determine_expert_map` for every rank of 384 tp x pcp x dp layouts;
+`compat/kernelmodel`'s `ep_oracle_test.go`). Kimi-K3's KDA layers are not built: the engine maps no
+recurrent layer to a KV cache spec. Two limits of these comparisons: they run through the kernel and
+the rules pack, not through a lowering step of this repository (blis-vllm emits no `plan.Layout.Expert`),
+and the kernel rounds the pool once to the least common multiple of the layers' alignments, because the
+substrate's input has no per-layer alignment field (`TestSubstrateStatesNoPerLayerStrideAlignment`), so
+the layer-outermost rounding is compared on the pool oracle's own arithmetic, not through the kernel. The
+engine block's key for the fp8 setting is `cache_dtype`; `kv_cache_dtype` is the field list's name for it
+until a later rename.
+
+Not run against the release: the KV group pages (`GroupPages` in `core/kv`) outside those cases, which
+are checked against the pool's stride (`kv.PoolBytesPerBlock`), the figure vLLM sizes the pool from;
+the Engram table's rows and the draft-logits buffer, which are sums of
+figures the source states, tested by arithmetic; and the drafter's eager context store, which sits in
+a method that needs a GPU, so its rule over the oracle's recorded graph rows is stated in
+`core/lower` and tested there. What the oracle replaces is in `oracle/lower/replacements.json`,
+which `check_replacements.py` checks against the extractor, including a constructor bypass. Two
+things have no oracle here: the microbatching path of a graph dispatch (a case that reaches it is an
+error; the split rule itself is run) and dynamic speculative decoding, which the extractor refuses
+if a case reaches them.
 
 The engine interface (`core/vllm`) is checked in two ways. blis-schemas' `enginetest` checks the contract's laws on the v0.32.0 engine. A diff test drives tier-2 scenarios through `engine.Engine` (Add, then Schedule and Complete one batch at a time) and compares every step with vLLM's own Scheduler trace (`core/sched/testdata/golden`). Its mutants are in `oracle/mutate_e24.py`, which CI runs with the other sweeps. The factory builds one batch in flight only: with async scheduling or PP, vLLM's own loop decides which requests share a batch (`vllm/v1/engine/core.py:724-768@5df63a72`), and the adapter does not reproduce that loop yet, so it refuses those configurations (https://github.com/inference-sim/blis-vllm/issues/21). Tier 3 proves `core/engine`'s port of the loop, not the adapter.
 
@@ -78,6 +123,12 @@ The engine interface (`core/vllm`) is checked in two ways. blis-schemas' `engine
 - **Differential:** the same scenario through the oracle and through blis-vllm; every step's
   record is compared field by field, and the report names the **earliest** step and field that
   differ, not only the last.
+- **Refusal:** a T2 scenario with `"expect_groups_error": true` asks vLLM's own `get_kv_cache_groups`
+  about its `kv_layers` and nothing else, and its trace records the exception vLLM raised (type and
+  message) or null if it grouped them. `core/sched`'s `checkGroupsRefusal` holds `core/kv`'s grouping
+  to it: a layer set vLLM refuses must be refused by name, with the exception's type and the keyword
+  it rejected, and one vLLM groups must be grouped. The two `*-hybrid-disabled` DeepSeek scenarios
+  are these: vLLM v0.32.0 does not start DeepSeek V4 or V4.1 with `disable_hybrid_kv_cache_manager`.
 - **Property:** no lost requests, KV block conservation (used + free = total), budgets never
   exceeded, at most `max_num_seqs` running.
 - **Metamorphic, with step duration fixed:** both of the issue's claims are false *for vLLM
@@ -106,8 +157,8 @@ The engine interface (`core/vllm`) is checked in two ways. blis-schemas' `engine
   matrix row cites a mutant of its own feature: the scheduler knobs `watermark`,
   `long_prefill_token_threshold_adaptive` and `max_num_scheduled_tokens` have M52-M54, which
   touch only that knob. The tier-3, tier-4 and engine-interface sweeps are
-  `oracle/mutate_t3.py`, `mutate_t4.py` and `mutate_e24.py`; the metrics model's is
-  `oracle/mutate_metrics.py` (X1-X7, run against the 14 scenarios' metric goldens and the 4000
+  `oracle/mutate_t3.py`, `mutate_t4.py` and `mutate_e24.py`; the engine-block factory's comparison with EngineArgs is `oracle/mutate_engineargs.py`; the scheduler's decode-step allocation test has two mutants in `oracle/mutate_sched_alloc.py` (a whole-sequence copy when a block is hashed, and on every Update); the metrics model's is
+  `oracle/mutate_metrics.py` (X1-X17, run against the 22 scenarios' metric goldens and the 4000
   metric fuzz traces); the tier-1 rules' is `oracle/mutate_rules.py` (C1-C28: the `dcp-divides-tp`
   rule, C1-C5; the data v0.32.0 changed, C6-C11; the new `moe-ep-backend-binds-passthrough`
   rule, C12-C16; the source checks' parser, C17-C19; and `mla-prefill-backend-known` with
@@ -154,12 +205,27 @@ so the Go tests can run without Python. It is never overwritten without review:
 `oracle/run_scheduler.py` refuses to write into a `testdata/golden*` directory unless
 `BLIS_VLLM_ALLOW_GOLDEN_UPDATE=1`, and CI (`goldens-reviewed`, `oracle/check_goldens.py`) fails a
 push or pull request with a commit that changes the decisions an existing golden records (its
-`steps` or `finished`), or deletes one, without a `golden-reviewed: <reviewer>` trailer naming
-the person who checked it. A new golden for a new scenario, or a refresh of only the
+`steps` or `finished`), renames or deletes one, without a trailer for that trace that names it and
+gives the reason: `golden-reviewed: <trace>: <reason>` (design FID-3, section 7.7), where `<trace>` is
+the golden's path or file name, one trailer for each trace the commit changes. A trailer that names
+no changed trace, or gives no reason, does not count; a person's name is neither. A new golden for a new scenario, or a refresh of only the
 `provenance` block, needs no trailer; the check verifies the decisions are unchanged as JSON
 values (parsed and compared, so a reformatted file with the same decisions passes). It also fails a golden whose `blis_vllm_commit` is not a commit in the pushed
 history, so a golden's provenance always names a commit anyone can check out: a refresh takes
-its traces from the `oracle-traces` workflow run on main (`oracle/refresh_provenance.py`). The differential test also refuses a golden whose recorded
+its traces from the `oracle-traces` workflow run on main (`oracle/refresh_provenance.py`).
+A golden also records `oracle_inputs`: each file of `oracle/` its run executed or read (the runner and
+the helpers it imported, `oracle/mocks.json`, `oracle/requirements.lock`) and the scenario, with
+its sha256. A rebase or a reordering of a stack leaves the commit a golden names outside the
+history; the check then accepts the golden when every one of those files is byte-identical at the
+pushed head, because that is what the commit stood for: vLLM's output, produced by the oracle code
+and the scenario the head holds. A record that names a file head lacks or holds differently, that
+the named commit (when it can be read) does not bear out, or that is empty, fails, and so does a
+commit that is not a full commit id. The Go code around the oracle is not part of the record: it
+does not produce the golden, and the `oracle-tier2` job re-derives every golden from vLLM on each
+head. A golden recorded before the field existed is judged by the commit rule alone. A run started by hand
+(`workflow_dispatch`) has no pull request: `goldens-reviewed` and `ci-light` judge it against the
+`base` input, else against the nearest remote branch (not `scratch/*`) that is a strict ancestor of
+the dispatched one (`oracle/check_goldens.py --stack-base`). The differential test also refuses a golden whose recorded
 scenario hash, vLLM version and commit, or mock version does not match the scenario file and the
 pins it runs against, so a trace can only count as evidence for the scenario it came from.
 CI re-runs the pinned vLLM release on every scenario and fails if any committed golden's
@@ -169,6 +235,21 @@ goldens, `oracle/compare_goldens_t3.py` for the EngineCore and DP ones,
 `core/kv/testdata/block_hashes.json` with vLLM's own `hash_block_tokens`
 (`oracle/gen_block_hashes.py`, which fails on any difference), so a golden made on a
 developer's machine counts only while the release itself still produces it.
+
+### Golden changes: what a pull request that changes a golden says
+
+Every pull request body that changes or deletes an existing golden has a "Golden changes" section;
+one that does not says "Golden changes: none" under it. For each changed golden the section gives:
+
+- the trace (its path) and the commit that carries its `golden-reviewed` trailer;
+- what decisions changed: the step-level before and after, or the exact fields (`steps[i].scheduled`,
+  `finished.<id>.reason`, a metric series key), and not "regenerated";
+- why that is right: the oracle command that produced it, the vLLM version and commit, and the
+  result of `oracle/compare_goldens*.py` against a fresh run at the pinned release;
+- how a reviewing agent verifies it: rerun the named oracle runner at the pinned vLLM commit on the
+  scenario (`oracle/README.md` gives the command), compare with the committed golden through
+  `check_goldens.py` and the `compare_goldens*` script for the tier, and expect no difference in
+  decisions (a provenance-only difference is a refresh and needs no trailer).
 
 ## The compatibility engine's tests
 

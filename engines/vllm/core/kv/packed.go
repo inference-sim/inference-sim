@@ -7,6 +7,8 @@
 
 package kv
 
+import "errors"
+
 // pageBytes is a layer's page_size_bytes: heads x states per block x bytes per state, padded up
 // to the spec's alignment (AttentionSpec.page_size_bytes, kv_cache_interface.py:546-563;
 // _apply_alignment_padding, :670-676@5df63a72). A state covers TokensPerState tokens
@@ -14,6 +16,11 @@ package kv
 // or keys and values of HeadSize elements of ElemBytes each, keys only for MLA, an indexer and
 // a ring (head_size_v 0, :700, :1003).
 func pageBytes(l Layer) int {
+	if l.Spec == LayerMamba {
+		// MambaSpec.page_size_bytes: the states' bytes, or page_size_padded when set
+		// (kv_cache_interface.py:1067-1075@5df63a72).
+		return max(l.StateBytes, l.PageSizePadded)
+	}
 	states := l.BlockSize / max(l.TokensPerState, 1)
 	content := l.StateBytes
 	if content == 0 {
@@ -42,6 +49,31 @@ type specType struct {
 	window    int
 	replay    bool
 	blockSize int
+	// mamba is a mamba layer's uniform-type key (MambaSpec.is_uniform_with_collection).
+	mamba mambaKey
+}
+
+type mambaKey struct {
+	mode                     string
+	speculative, ckpt, align int
+	page                     int
+}
+
+// mambaMode is a Mamba layer's mamba_cache_mode: "none" when it states none (the CacheConfig
+// default, vllm/config/cache.py).
+func mambaMode(mode string) string {
+	if mode == "" {
+		return "none"
+	}
+	return mode
+}
+
+// pageAt is pageBytes at the engine's block size, for a layer that states none.
+func pageAt(l Layer, engine int) int {
+	if l.BlockSize == 0 {
+		l.BlockSize = engine
+	}
+	return pageBytes(l)
 }
 
 func typeOf(l Layer) specType {
@@ -52,13 +84,18 @@ func typeOf(l Layer) specType {
 		return specType{kind: SlidingWindowMLA, window: l.Window, replay: l.BoundedReplay, blockSize: l.BlockSize}
 	case LayerCircularBuffer:
 		return specType{kind: CircularBuffer, blockSize: l.BlockSize}
+	case LayerMamba:
+		return specType{kind: Mamba, blockSize: l.BlockSize, mamba: mambaKey{mambaMode(l.MambaCacheMode),
+			l.NumSpeculativeBlocks, l.NumPrefillCheckpointBlocks, l.PrefillCheckpointAlignment, pageBytes(l)}}
 	}
 	return specType{kind: FullAttention, blockSize: l.BlockSize}
 }
 
 // group is the KV cache group a spec type makes, at its block size.
 func (t specType) group() Group {
-	return Group{Kind: t.kind, Window: t.window, BlockSize: t.blockSize, BoundedReplay: t.replay}
+	return Group{Kind: t.kind, Window: t.window, BlockSize: t.blockSize, BoundedReplay: t.replay,
+		MambaCacheMode: t.mamba.mode, MambaSpeculativeBlocks: t.mamba.speculative,
+		MambaCheckpointBlocks: t.mamba.ckpt, MambaCheckpointAlignment: t.mamba.align}
 }
 
 // approximateGCD is _approximate_gcd (kv_cache_utils.py:1825-1857@5df63a72): the d in
@@ -103,10 +140,10 @@ func (b packedBucket) maxLayersPerPage() int {
 	return most
 }
 
-// isState is is_state_bucket (kv_cache_utils.py:1938-1944@5df63a72): a circular buffer always,
-// a sliding window when nothing repeats.
+// isState is is_state_bucket (kv_cache_utils.py:1941-1946@5df63a72): a Mamba layer or a circular
+// buffer always, a sliding window when nothing repeats.
 func (b packedBucket) isState(repeating bool) bool {
-	if b.typ.kind == CircularBuffer {
+	if b.typ.kind == CircularBuffer || b.typ.kind == Mamba {
 		return true
 	}
 	return !repeating && (b.typ.kind == SlidingWindow || b.typ.kind == SlidingWindowMLA)
@@ -132,13 +169,23 @@ func (b packedBucket) widestGroupBytes(n int) int {
 // cdiv(its repeats, that) groups, and a state bucket is split until a group fits the block the
 // others need. It returns nil when every layer has one page size, which vLLM groups another
 // way. Each group is one spec type at its own block size; members are each group's layers.
-func packedGroups(layers []Layer) (groups []Group, members [][]int) {
+//
+// A Mamba bucket is a state bucket like a circular buffer's: it may split down to one layer a
+// group, so its widest group is sized at one layer, and it is then split no finer than the
+// states the anchor block already holds (is_state_bucket :1941-1946, the anchor :1948-1960, the cap :1965-1970). engine is the engine's block
+// size, which a layer that states none has; an attention layer that states none with engine 0
+// has no page to pack, and is refused.
+func packedGroups(layers []Layer, engine int) (groups []Group, members [][]int, err error) {
 	pageSet := map[int]bool{}
 	for _, l := range layers {
-		pageSet[pageBytes(l)] = true
+		if l.Spec != LayerMamba && l.BlockSize == 0 && engine <= 0 {
+			return nil, nil, errors.New("kv: packing KV cache groups of unequal page sizes needs the engine's block size " +
+				"for a layer that states none (GroupOptions.BlockSize)")
+		}
+		pageSet[pageAt(l, engine)] = true
 	}
 	if len(pageSet) <= 1 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	var buckets []packedBucket
 	index := map[specType]int{}
@@ -151,7 +198,7 @@ func packedGroups(layers []Layer) (groups []Group, members [][]int) {
 			buckets = append(buckets, packedBucket{typ: t, layers: map[int][]int{}})
 		}
 		b := &buckets[bi]
-		p := pageBytes(l)
+		p := pageAt(l, engine)
 		if _, seen := b.layers[p]; !seen {
 			b.pages = append(b.pages, p)
 		}
@@ -195,7 +242,7 @@ func packedGroups(layers []Layer) (groups []Group, members [][]int) {
 	for _, b := range buckets {
 		n := numGroupsFor(b)
 		if anchor > 0 && b.isState(repeats > 0) {
-			perBlock := max(anchor/pageBytes(layers[b.layers[b.pages[0]][0]]), 1)
+			perBlock := max(anchor/b.pages[0], 1)
 			n = max(n, (b.n+perBlock-1)/perBlock)
 		}
 		if n == 1 {
@@ -224,5 +271,5 @@ func packedGroups(layers []Layer) (groups []Group, members [][]int) {
 			groups, members = append(groups, b.typ.group()), append(members, m)
 		}
 	}
-	return groups, members
+	return groups, members, nil
 }

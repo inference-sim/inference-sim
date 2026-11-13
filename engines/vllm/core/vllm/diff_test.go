@@ -36,6 +36,8 @@ type oracleScenario struct {
 		EnablePrefixCaching       bool   `json:"enable_prefix_caching"`
 		SchedulingPolicy          string `json:"scheduling_policy"`
 		MaxNumActiveSeqs          int    `json:"max_num_active_seqs"`
+		// EnableChunkedPrefill is stated by the chunked-prefill-off scenarios; unstated is true.
+		EnableChunkedPrefill *bool `json:"enable_chunked_prefill"`
 	} `json:"config"`
 	Requests []struct {
 		ID          string  `json:"id"`
@@ -65,8 +67,7 @@ type oracleTrace struct {
 	} `json:"finished"`
 }
 
-// adapterGoldens are the tier-2 scenarios the adapter is diff-tested on: every request arrives
-// at step 0 (the adapter receives arrivals through Add, not by step), no feature the factory
+// adapterGoldens are the tier-2 scenarios the adapter is diff-tested on: no feature the factory
 // does not build (hybrid KV groups, LoRA, MTP or draft_model drafters), and the oracle's
 // unlimited max_tokens is not used (an engine.Request's unset budget is vLLM's default,
 // max_model_len minus the prompt, which the oracle's 1<<20 equals only when the output ends
@@ -76,6 +77,9 @@ type oracleTrace struct {
 // the tier-2 oracle builds the scheduler directly and skips that check; core/sched diff-tests them.
 var adapterGoldens = []string{
 	"knob-max-active-seqs", "length-caps", "meta-more-kv-large", "meta-more-kv-small", "model-len-boundary",
+	// enable_chunked_prefill false: requests arrive over several steps, which adapterDivergence adds
+	// at the start of their step.
+	"chunked-prefill-off", "chunked-prefill-off-long-prefill",
 }
 
 func TestAdapterAgainstVLLM(t *testing.T) {
@@ -141,6 +145,9 @@ func adapterDivergence(t *testing.T, sc oracleScenario, want oracleTrace) string
 		"enable_prefix_caching: %t\nlong_prefill_token_threshold: %d\nmax_num_active_seqs: %d\n",
 		c.BlockSize, c.MaxNumSeqs, c.MaxNumBatchedTokens, maxLen, c.NumBlocks, policy,
 		c.EnablePrefixCaching, c.LongPrefillTokenThreshold, c.MaxNumActiveSeqs)
+	if c.EnableChunkedPrefill != nil {
+		src += fmt.Sprintf("enable_chunked_prefill: %t\n", *c.EnableChunkedPrefill)
+	}
 	var node yaml.Node
 	if err := yaml.Unmarshal([]byte(src), &node); err != nil {
 		t.Fatal(err)
@@ -150,22 +157,30 @@ func adapterDivergence(t *testing.T, sc oracleScenario, want oracleTrace) string
 		t.Fatal(err)
 	}
 	reqs := append(sc.Requests[:0:0], sc.Requests...)
-	sort.SliceStable(reqs, func(i, j int) bool { return reqs[i].ID < reqs[j].ID })
-	for _, r := range reqs {
-		er := engine.Request{ID: r.ID, Priority: r.Priority, MaxOutputTokens: r.MaxTokens}
-		for _, p := range r.Prompt {
-			er.Prompt = append(er.Prompt, int32(p))
+	sort.SliceStable(reqs, func(i, j int) bool {
+		if reqs[i].ArrivalStep != reqs[j].ArrivalStep {
+			return reqs[i].ArrivalStep < reqs[j].ArrivalStep
 		}
-		for _, o := range r.Output {
-			er.Output = append(er.Output, int32(o))
-		}
-		if err := e.Add(er, 0); err != nil {
-			t.Fatal(err)
-		}
-	}
+		return reqs[i].ID < reqs[j].ID
+	})
+	next := 0
 	finished := map[string]engine.Finished{}
 	now := engine.Time(0)
 	for i := 0; i < len(want.Steps)+5; i++ {
+		// A request arrives at the start of its step, as the oracle adds it.
+		for ; next < len(reqs) && reqs[next].ArrivalStep <= i; next++ {
+			r := reqs[next]
+			er := engine.Request{ID: r.ID, Priority: r.Priority, MaxOutputTokens: r.MaxTokens}
+			for _, p := range r.Prompt {
+				er.Prompt = append(er.Prompt, int32(p))
+			}
+			for _, o := range r.Output {
+				er.Output = append(er.Output, int32(o))
+			}
+			if err := e.Add(er, now); err != nil {
+				t.Fatal(err)
+			}
+		}
 		b, err := e.Schedule(now)
 		if err != nil {
 			t.Fatal(err)

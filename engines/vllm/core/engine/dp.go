@@ -70,12 +70,27 @@ type RankStep struct {
 // core.py:2281-2298).
 func (d *DP) Add(id string) int {
 	rank := d.LB.Choose(id)
+	d.startWave(rank)
+	return rank
+}
+
+// AddTo hands a request to the rank the client named (EngineCoreRequest.data_parallel_rank):
+// get_core_engine_for_request obeys it without consulting the load counts (core_client.py:
+// 1647-1650), so the counts and the rotating scan start stay as they were, and the request
+// counts against the rank's in-flight total. The wave starts as Add's does. A P/D proxy that
+// picks the prefill or decode rank itself sends its requests this way.
+func (d *DP) AddTo(id string, rank int) int {
+	rank = d.LB.Pin(id, rank)
+	d.startWave(rank)
+	return rank
+}
+
+func (d *DP) startWave(rank int) {
 	if !d.Waves[rank].Running {
 		for _, w := range d.Waves {
 			w.Running = true
 		}
 	}
-	return rank
 }
 
 // Step runs every rank's busy-loop iteration, then the wave's all-reduce on each. It is
@@ -195,6 +210,18 @@ func (lb *LoadBalancer) Choose(id string) int {
 	lb.reqs[id] = choice
 	lb.inflight[choice]++
 	return choice
+}
+
+// Pin is get_core_engine_for_request for a request that names its rank (core_client.py:1647-1650,
+// 1692-1696): the rank is the request's, and only the in-flight count and the request's
+// route change. A request already routed keeps its engine (session affinity, :1643-1645).
+func (lb *LoadBalancer) Pin(id string, rank int) int {
+	if e, ok := lb.reqs[id]; ok {
+		return e
+	}
+	lb.reqs[id] = rank
+	lb.inflight[rank]++
+	return rank
 }
 
 // Finished is process_engine_outputs (core_client.py:1703-1710): a finished request leaves

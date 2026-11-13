@@ -33,7 +33,7 @@ func (p trimPricer) VerifiedDrafts(b engine.Batch) []int {
 	return out
 }
 
-const adaptiveBlock = "use_v2_model_runner: true\nspeculative: {method: dspark, num_spec_tokens: 3, enable_adaptive_verification: true}\n"
+const adaptiveBlock = "use_v2_model_runner: true\nspeculative_config: {method: dspark, num_speculative_tokens: 3, enable_adaptive_verification: true}\n"
 
 func buildPriced(t testing.TB, extra string, p Pricer) func() (engine.Engine, error) {
 	t.Helper()
@@ -53,7 +53,7 @@ func adaptiveArrivals() []enginetest.Arrival {
 func TestUntrimmedVerificationIsUnchanged(t *testing.T) {
 	all := enginetest.Options{Accepted: func(_ engine.Batch, s engine.Scheduled) int { return s.Drafts }}
 	for _, extra := range []string{adaptiveBlock, adaptiveBlock + "async_scheduling: false\n",
-		"speculative: {method: eagle3, num_spec_tokens: 3}\n"} {
+		"speculative_config: {method: eagle3, num_speculative_tokens: 3}\n"} {
 		asked := 0
 		want := enginetest.TestEngine(t, buildPriced(t, extra, FixedPricer(100)), adaptiveArrivals(), all)
 		got := enginetest.TestEngine(t, buildPriced(t, extra, trimPricer{FixedPricer: 100, asked: &asked}),

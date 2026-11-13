@@ -38,6 +38,12 @@ type scenario struct {
 			Kind          string `json:"kind"`
 			SlidingWindow int    `json:"sliding_window"`
 		} `json:"kv_groups"`
+		// KVLayers are a model's attention layers as runs of one spec each, as tier 2 states them
+		// (DeepSeek V4.1's windows with bounded replay, compressed caches and rings).
+		KVLayers []kvLayerRun `json:"kv_layers"`
+		// DisableHybridKVCacheManager promotes the windows to full attention before grouping
+		// (unify_hybrid_kv_cache_specs), which leaves one group.
+		DisableHybridKVCacheManager bool `json:"disable_hybrid_kv_cache_manager"`
 		// AsyncScheduling, PipelineParallelSize and UseV2ModelRunner put more than one batch in
 		// flight, as tier 3 states them: the engine is then core/engine's batch queue.
 		AsyncScheduling      bool `json:"async_scheduling"`
@@ -102,10 +108,15 @@ type step struct {
 	RecvLanded         []string `json:"recv_landed"`
 	DelayFreed         []string `json:"delay_freed"`
 	KVHoldingWaiting   []string `json:"kv_holding_waiting"`
-	KVFetchStages      []int    `json:"kv_fetch_stages"`
-	NumRequests        int      `json:"num_requests"`
-	Aborted            []string `json:"aborted"`
-	Transport          struct {
+	// PullBlocks are the blocks a decoder's worker is asked to read, per KV cache group, for
+	// each pull planned this step; SentBlocks the blocks a finished prefill advertises. Recorded
+	// for scenarios that state kv_layers.
+	PullBlocks    map[string][]int `json:"pull_blocks,omitempty"`
+	SentBlocks    map[string][]int `json:"sent_blocks,omitempty"`
+	KVFetchStages []int            `json:"kv_fetch_stages"`
+	NumRequests   int              `json:"num_requests"`
+	Aborted       []string         `json:"aborted"`
+	Transport     struct {
 		Recving       []string `json:"recving"`
 		Sending       []string `json:"sending"`
 		Failed        []string `json:"failed"`
@@ -153,6 +164,14 @@ func run(t *testing.T, sc scenario) trace {
 			NextnPredictLayers: draftNextnLayers(t, sp.Draft)})
 	}
 	var layers []kv.Group
+	var packed []kv.Group
+	if len(c.KVLayers) > 0 {
+		var err error
+		packed, err = kv.GroupLayers(scenarioLayers(t, c.KVLayers), kv.GroupOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	for _, g := range c.KVGroups {
 		switch g.Kind {
 		case "full":
@@ -173,18 +192,25 @@ func run(t *testing.T, sc scenario) trace {
 		MaxNumSeqs: c.MaxNumSeqs, MaxNumBatchedTokens: c.MaxNumBatchedTokens, BlockSize: c.BlockSize,
 		NumBlocks: c.NumBlocks, MaxModelLen: c.MaxModelLen, LongPrefillTokenThreshold: c.LongPrefillTokenThreshold,
 		EnableChunkedPrefill: chunked, Policy: sched.Policy(c.SchedulingPolicy), EnablePrefixCaching: caching,
-		ReserveFullSequence: true, Watermark: c.Watermark, Spec: spec, KVGroups: kv.ResolveGroups(layers, false),
+		ReserveFullSequence: true, Watermark: c.Watermark, Spec: spec, KVGroups: kvGroups(packed, layers, c.DisableHybridKVCacheManager),
 		Async: c.AsyncScheduling, DecodeStagger: pp, UseV2ModelRunner: v2, MaxConcurrentBatches: queue,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	role := c.Connector.KVRole
-	if err := CheckWorker(pp, s.KV.NumGroups() > 1, role == "kv_consumer" || role == "kv_both"); err != nil {
+	if err := CheckWorker(pp, s.KV.NumGroups() > 1, role == "kv_consumer"); err != nil {
 		t.Fatal(err)
 	}
 	ncfg := Default()
-	ncfg.PrefillBackoff = Backoff(spec)
+	ncfg.PrefillBackoff = Backoff(spec, s.KV.PrefixReplayTokens() > 0)
+	for g := 0; g < s.KV.NumGroups(); g++ {
+		grp := Group{BlockSize: s.KV.GroupBlockSize(g)}
+		if gs := s.KV.GroupSpec(g); gs.Kind == kv.SlidingWindow || gs.Kind == kv.SlidingWindowMLA {
+			grp.Window = gs.Window
+		}
+		ncfg.Groups = append(ncfg.Groups, grp)
+	}
 	if v, ok := c.Connector.ExtraConfig["kv_recompute_threshold"].(float64); ok {
 		ncfg.RecomputeThreshold = int(v)
 	}
@@ -218,6 +244,7 @@ func run(t *testing.T, sc scenario) trace {
 	// reported are the transfers the transport mock has reported: each once, in the first
 	// output at or after its step (oracle/run_connector.py transport_report).
 	reported := map[string]bool{}
+	pullSeen := map[string]bool{}
 	tr := trace{Finished: map[string]finishRecord{}}
 	maxSteps := sc.MaxSteps
 	if maxSteps == 0 {
@@ -250,6 +277,18 @@ func run(t *testing.T, sc scenario) trace {
 		}
 		out := s.Schedule()
 		conn.BuildMeta()
+		var pulls map[string][]int
+		if len(c.KVLayers) > 0 {
+			for _, r := range reqs {
+				if counts, ok := conn.Pulled(r.ID); ok && !pullSeen[r.ID] {
+					pullSeen[r.ID] = true
+					if pulls == nil {
+						pulls = map[string][]int{}
+					}
+					pulls[r.ID] = counts
+				}
+			}
+		}
 		for _, id := range s.WaitingForRemoteKV() {
 			if _, ok := loadStarted[id]; !ok {
 				loadStarted[id] = i
@@ -354,6 +393,7 @@ func run(t *testing.T, sc scenario) trace {
 		}
 		var done []string
 		fins := s.UpdateWith(out, mock, o)
+		var sent map[string][]int
 		if spec.NumTokens > 0 && len(out.Scheduled) > 0 {
 			// The drafter proposes K drafts for every request the step ran, as the oracle's
 			// mock hands them over after update_from_output (EngineCore.post_step).
@@ -370,6 +410,12 @@ func run(t *testing.T, sc scenario) trace {
 		}
 		for _, f := range fins {
 			done = append(done, f.ID)
+			if counts, ok := conn.Sent(f.ID); ok && len(c.KVLayers) > 0 {
+				if sent == nil {
+					sent = map[string][]int{}
+				}
+				sent[f.ID] = counts
+			}
 			if _, ok := finishedAt[f.ID]; !ok {
 				finishedAt[f.ID] = i
 			}
@@ -379,6 +425,7 @@ func run(t *testing.T, sc scenario) trace {
 		}
 		nr, nw := s.Counts()
 		st.Step, st.Scheduled, st.Preempted, st.Finished = i, out.Scheduled, sortedStrings(out.Preempted), sortedStrings(done)
+		st.PullBlocks, st.SentBlocks = pulls, sent
 		st.FreeBlocks, st.Running, st.NumRunning, st.NumWaiting = s.KV.Pool.NumFree(), sortedStrings(s.Running()), nr, nw
 		st.KVUsage, st.Blocks = s.KV.Pool.Usage(), map[string]any{}
 		for _, id := range st.Running {
@@ -667,6 +714,56 @@ func recordState(s *sched.Scheduler, st *step) {
 	st.NumRequests = s.NumRequests()
 }
 
+// kvGroups is the scenario's KV cache groups: its layers' grouping, or its hybrid groups resolved.
+func kvGroups(fromLayers, hybrid []kv.Group, disableHybrid bool) []kv.Group {
+	if len(fromLayers) > 0 {
+		return fromLayers
+	}
+	return kv.ResolveGroups(hybrid, disableHybrid)
+}
+
+// kvLayerRun is a run of attention layers of one spec in a scenario's "kv_layers" (core/sched's
+// differential test states the same).
+type kvLayerRun struct {
+	Count          int    `json:"count"`
+	Spec           string `json:"spec"`
+	SlidingWindow  int    `json:"sliding_window"`
+	NumKVHeads     int    `json:"num_kv_heads"`
+	HeadSize       int    `json:"head_size"`
+	BlockSize      int    `json:"block_size"`
+	TokensPerState int    `json:"tokens_per_state"`
+	StateBytes     int    `json:"state_bytes"`
+	ElemBytes      int    `json:"elem_bytes"`
+	Alignment      int    `json:"alignment"`
+	BoundedReplay  bool   `json:"bounded_replay"`
+}
+
+// scenarioLayers is a scenario's kv_layers as core/kv's layers, with the oracle's element sizes
+// (oracle/run_scheduler.py layer_specs): the attention specs' caches float32 unless a run states
+// elem_bytes, DeepSeek V4's uint8 and one latent head.
+func scenarioLayers(t *testing.T, runs []kvLayerRun) []kv.Layer {
+	t.Helper()
+	var layers []kv.Layer
+	for _, r := range runs {
+		spec, err := kv.ParseLayerSpec(r.Spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		heads, elem := r.NumKVHeads, r.ElemBytes
+		if spec == kv.LayerMLA || spec == kv.LayerSlidingWindowMLA || spec == kv.LayerCircularBuffer {
+			heads = 1
+		} else if elem == 0 {
+			elem = 4
+		}
+		for i := 0; i < r.Count; i++ {
+			layers = append(layers, kv.Layer{Spec: spec, Window: r.SlidingWindow, KVHeads: heads, HeadSize: r.HeadSize,
+				BlockSize: r.BlockSize, TokensPerState: r.TokensPerState, StateBytes: r.StateBytes,
+				ElemBytes: elem, Alignment: r.Alignment, BoundedReplay: r.BoundedReplay})
+		}
+	}
+	return layers
+}
+
 func nonNilStrings(s []string) []string {
 	if s == nil {
 		return []string{}
@@ -754,6 +851,8 @@ func earliestDivergence(want, got trace) string {
 			{"kv_usage", fmt.Sprintf("%.12f", w.KVUsage), fmt.Sprintf("%.12f", g.KVUsage)},
 			{"spec_scheduled", nonNil(w.SpecScheduled), nonNil(g.SpecScheduled)},
 			{"blocks", nonNilBlocks(w.Blocks), nonNilBlocks(g.Blocks)},
+			{"pull_blocks", nonNilCounts(w.PullBlocks), nonNilCounts(g.PullBlocks)},
+			{"sent_blocks", nonNilCounts(w.SentBlocks), nonNilCounts(g.SentBlocks)},
 		} {
 			if !reflect.DeepEqual(f.w, f.g) {
 				return fmt.Sprintf("step %d, field %s: oracle %v, Go %v", i, f.name, f.w, f.g)
@@ -771,6 +870,14 @@ func nonNil(m map[string]int) map[string]int {
 		return map[string]int{}
 	}
 	return m
+}
+
+func nonNilCounts(m map[string][]int) map[string][]int {
+	out := map[string][]int{}
+	for k, v := range m {
+		out[k] = append([]int{}, v...)
+	}
+	return out
 }
 
 func nonNilBlocks(m map[string]any) map[string]any {

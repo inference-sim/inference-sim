@@ -38,6 +38,7 @@ package kernelmodel
 
 import (
 	"fmt"
+	"math"
 
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 )
@@ -59,7 +60,7 @@ type KVBudget struct {
 
 	// DeviceBytes is the chip's memory.
 	DeviceBytes int64
-	// BudgetBytes is DeviceBytes times the engine's gpu_memory_utilization.
+	// BudgetBytes is DeviceBytes times the engine's gpu_memory_utilization, rounded up to a byte.
 	BudgetBytes int64
 	// FixedBytes is the kernel's per-rank request-independent occupancy.
 	FixedBytes int64
@@ -210,24 +211,36 @@ func (m *Model) kvMemory(reservedBytes int64) (KVMemory, error) {
 	}
 
 	deviceBytes := int64(m.id.memoryGiB * float64(gibToBytes))
-	budget := int64(float64(deviceBytes) * util)
+	// vLLM requests ceil(total memory x utilization) bytes (request_memory, vllm/v1/worker/utils.py:724-726@5df63a72).
+	budget := int64(math.Ceil(float64(deviceBytes) * util))
 	fixed := m.k.FixedBytes().Total()
 
-	// A per-rank figure above the device's own memory cannot be per-rank, and dividing a
-	// budget by it would produce a capacity number that looks plausible and is not. See
-	// the guard note below for what it catches and why it refuses rather than
-	// compensates.
+	// A per-rank occupancy at or above the device's own memory leaves no KV at all, and no budget
+	// can be divided out of it. Two things produce one, and the message says which it can tell:
+	// a deployment too large for the part, whose weights alone do not fit (the figure is right),
+	// and a sharding term wrong in the kernel's memory path (the figure is not). The weights
+	// alone against the device tells them apart: weights that do not fit the part are the
+	// deployment's, and an occupancy over the part with weights that fit is the kernel's other
+	// terms, which this cannot attribute. Neither is guessed past.
 	if fixed >= deviceBytes {
+		fb := m.k.FixedBytes()
+		tp, ep := m.k.Resolved().TensorParallel(), m.k.Resolved().ExpertParallel()
+		if fb.Weights >= deviceBytes {
+			return KVMemory{}, fmt.Errorf(
+				"kernelmodel: %s does not fit %.1f GiB devices at tp=%d (expert-parallel width %d): "+
+					"one rank's weights alone are %.1f GiB, and its fixed occupancy %.1f GiB; "+
+					"widen tensor or expert parallelism or use a larger part. No KV budget exists",
+				m.id.model, float64(deviceBytes)/float64(gibToBytes), tp, ep,
+				float64(fb.Weights)/float64(gibToBytes), float64(fixed)/float64(gibToBytes))
+		}
 		return KVMemory{}, fmt.Errorf(
 			"kernelmodel: the kernel reports %.1f GiB of per-rank fixed occupancy on a "+
-				"%.1f GiB device (%s, tp=%d, expert-parallel width %d). A per-rank figure "+
-				"cannot exceed the part, so a sharding term in the kernel's memory path "+
-				"is wrong. No budget is guessed: one divided out of an impossible "+
-				"occupancy would look plausible and set the wrong resident batch",
-			float64(fixed)/float64(gibToBytes),
-			float64(deviceBytes)/float64(gibToBytes),
-			m.id.model, m.k.Resolved().TensorParallel(),
-			m.k.Resolved().ExpertParallel())
+				"%.1f GiB device (%s, tp=%d, expert-parallel width %d), of which the weights are "+
+				"%.1f GiB. The weights fit, so a term other than the weights is larger than the part, "+
+				"and a sharding term in the kernel's memory path may be wrong. No budget is guessed: "+
+				"one divided out of an impossible occupancy would look plausible and set the wrong resident batch",
+			float64(fixed)/float64(gibToBytes), float64(deviceBytes)/float64(gibToBytes),
+			m.id.model, tp, ep, float64(fb.Weights)/float64(gibToBytes))
 	}
 
 	allocatable := budget - fixed - reservedBytes/int64(m.k.Resolved().TensorParallel())

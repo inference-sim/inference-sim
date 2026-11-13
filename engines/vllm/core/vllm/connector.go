@@ -7,9 +7,13 @@ import (
 	"sort"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/blis-substrate/contracts/units"
 
+	"github.com/inference-sim/blis-vllm/core/connector/multi"
 	"github.com/inference-sim/blis-vllm/core/connector/nixl"
 	core "github.com/inference-sim/blis-vllm/core/engine"
+	"github.com/inference-sim/blis-vllm/core/kv"
 	"github.com/inference-sim/blis-vllm/core/sched"
 )
 
@@ -38,6 +42,13 @@ const (
 	roleBoth     kvRole = "kv_both"
 )
 
+// producer and consumer are KVTransferConfig.is_kv_producer and is_kv_consumer
+// (vllm/config/kv_transfer.py:129-135@5df63a72): kv_both is both. A kv_both engine is no fixed side
+// of a transfer: which side a request is comes from its own kv_transfer_params, do_remote_decode
+// for a prefill leg and do_remote_prefill for a decode leg, which the host sets for each request.
+func (r kvRole) producer() bool { return r == roleProducer || r == roleBoth }
+func (r kvRole) consumer() bool { return r == roleConsumer || r == roleBoth }
+
 // connectorConfig is the engine block's kv_transfer: the connector a P/D pool runs.
 type connectorConfig struct {
 	// Connector is kv_connector, the connector's registered name.
@@ -47,6 +58,11 @@ type connectorConfig struct {
 	// LoadFailurePolicy is kv_load_failure_policy, "fail" unstated
 	// (vllm/config/kv_transfer.py:88@5df63a72).
 	LoadFailurePolicy string `yaml:"kv_load_failure_policy,omitempty"`
+	// ExtraConfig is kv_connector_extra_config. Only MultiConnector reads one here: its "connectors"
+	// list of child KVTransferConfig objects, in the order vLLM tries them
+	// (multi_connector.py:226-249@5df63a72). multiconnector.go models the pair llm-d's P/D with
+	// offload runs, a NIXL child and the OffloadingConnector.
+	ExtraConfig *multiExtraConfig `yaml:"kv_connector_extra_config,omitempty"`
 }
 
 // nixlNames are the names vLLM's connector factory resolves to the NIXL pull scheduler
@@ -62,7 +78,20 @@ type pd struct {
 	// matched is each request's external tokens, as the connector last reported them to the
 	// scheduler (get_num_new_matched_tokens): what its load moves.
 	matched map[string]int
-	next    engine.TransferID
+	// next is the last transfer ID started; an engine with a KV offload shares it with the
+	// offload side, so the IDs of both are one sequence (newEngine).
+	next *engine.TransferID
+	// notif are the transfers that only tell the prefiller its blocks are no longer wanted,
+	// by transfer, with their request (see started).
+	notif map[engine.TransferID]string
+	// multi is the MultiConnector the NIXL connector is a child of, at index child; nil when it
+	// runs alone.
+	multi *multi.Connector
+	child int
+	// stride and lane make the IDs of a data-parallel group's ranks distinct: rank r of n states
+	// its k-th transfer as (k-1)*n + r + 1, so the group finds the rank of a TransferDone from the
+	// ID alone. An engine alone has stride 1 and lane 0, and its IDs are 1, 2, 3 ...
+	stride, lane int
 	// pulls are the decode side's loads in flight, and holds the prefill side's finished
 	// requests whose blocks wait to be read, by transfer.
 	pulls map[engine.TransferID]string
@@ -74,11 +103,19 @@ type pd struct {
 	remote, decode map[string]bool
 	// outcome is what the worker reports with the next applied output.
 	outcome sched.TransferOutcome
+	// at is the node and rack this engine's workers sit on, the end of a pull a decode engine receives
+	// at; peer is each remote-prefilled request's prefill, the end the pull reads from
+	// (engine.Request.Peer).
+	at   plan.Endpoint
+	peer map[string]plan.Endpoint
 }
 
 // buildConnector installs the engine block's connector on the scheduler, refusing one it does
 // not model and what vLLM's NIXL worker refuses at start-up for the parallel layout.
-func buildConnector(s *sched.Scheduler, c *connectorConfig, pp int, spec sched.Spec, hybrid bool) (*pd, error) {
+//
+// install is how the connector reaches the scheduler: SetConnector for an engine that runs it
+// alone, or the MultiConnector's list (multiconnector.go) beside an offload.
+func buildConnector(s *sched.Scheduler, c *connectorConfig, pp int, spec sched.Spec, hybrid bool, at plan.Endpoint, install installer) (*pd, error) {
 	if c == nil {
 		return nil, nil
 	}
@@ -87,11 +124,9 @@ func buildConnector(s *sched.Scheduler, c *connectorConfig, pp int, spec sched.S
 			"NixlPullConnector; registry/connectors.yaml)", c.Connector)
 	}
 	switch c.Role {
-	case roleProducer, roleConsumer:
-	case roleBoth:
-		return nil, fmt.Errorf("vllm: kv_transfer.kv_role kv_both is not modelled: a P/D pool is a prefiller or a decoder")
+	case roleProducer, roleConsumer, roleBoth:
 	default:
-		return nil, fmt.Errorf("vllm: kv_transfer.kv_role %q: want kv_producer or kv_consumer", c.Role)
+		return nil, fmt.Errorf("vllm: kv_transfer.kv_role %q: want kv_producer, kv_consumer or kv_both", c.Role)
 	}
 	recompute := false
 	switch c.LoadFailurePolicy {
@@ -105,14 +140,25 @@ func buildConnector(s *sched.Scheduler, c *connectorConfig, pp int, spec sched.S
 		return nil, fmt.Errorf("vllm: %w", err)
 	}
 	cfg := nixl.Default()
-	cfg.PrefillBackoff = nixl.Backoff(spec)
-	p := &pd{role: c.Role, nixl: nixl.New(cfg), matched: map[string]int{}, pulls: map[engine.TransferID]string{},
-		holds: map[engine.TransferID]string{}, pulling: map[string]bool{}, remote: map[string]bool{}, decode: map[string]bool{}}
+	cfg.PrefillBackoff = nixl.Backoff(spec, s.KV.PrefixReplayTokens() > 0)
+	for g := 0; g < s.KV.NumGroups(); g++ {
+		// blocks_per_sw reads the window of a SlidingWindowSpec (SlidingWindowMLASpec is one) and the
+		// group's own block size (base_scheduler.py:143-153@5df63a72).
+		grp := nixl.Group{BlockSize: s.KV.GroupBlockSize(g)}
+		if spec := s.KV.GroupSpec(g); spec.Kind == kv.SlidingWindow || spec.Kind == kv.SlidingWindowMLA {
+			grp.Window = spec.Window
+		}
+		cfg.Groups = append(cfg.Groups, grp)
+	}
+	p := &pd{role: c.Role, nixl: nixl.New(cfg), next: new(engine.TransferID), notif: map[engine.TransferID]string{},
+		matched: map[string]int{}, pulls: map[engine.TransferID]string{},
+		holds: map[engine.TransferID]string{}, pulling: map[string]bool{}, remote: map[string]bool{}, decode: map[string]bool{},
+		at: at, peer: map[string]plan.Endpoint{}, stride: 1}
 	// is_kv_consumer and is_kv_producer (vllm/config/kv_transfer.py:130-136@5df63a72) set
 	// defer_block_free and requires_kv_delivery beside more than one batch in flight
 	// (vllm/v1/core/sched/scheduler.py:184-194@5df63a72).
-	if err := s.SetConnector(metered{p.nixl, p.matched}, sched.ConnectorConfig{RecomputeLoadFailures: recompute,
-		Consumer: c.Role == roleConsumer, Producer: c.Role == roleProducer}); err != nil {
+	if err := install(metered{p.nixl, p.matched}, sched.ConnectorConfig{RecomputeLoadFailures: recompute,
+		Consumer: c.Role.consumer(), Producer: c.Role.producer()}); err != nil {
 		return nil, fmt.Errorf("vllm: %w", err)
 	}
 	return p, nil
@@ -140,26 +186,42 @@ func (p *pd) transferParams(r engine.Request, blockSize int) (*sched.TransferPar
 	case r.RemoteDecode && r.RemotePrefill:
 		return nil, fmt.Errorf("vllm: request %s is both a remote prefill and a remote decode", r.ID)
 	case r.RemoteDecode:
-		if p == nil || p.role != roleProducer {
+		if p == nil || !p.role.producer() {
 			return nil, fmt.Errorf("vllm: request %s is a disaggregated prefill, and this engine is not a kv_producer", r.ID)
 		}
 		p.decode[r.ID] = true
 		return &sched.TransferParams{DoRemoteDecode: true}, nil
 	case r.RemotePrefill:
-		if p == nil || p.role != roleConsumer {
+		if p == nil || !p.role.consumer() {
 			return nil, fmt.Errorf("vllm: request %s is a disaggregated decode, and this engine is not a kv_consumer", r.ID)
 		}
+		if r.Peer == nil {
+			return nil, fmt.Errorf("vllm: request %s is a disaggregated decode and states no peer to pull from", r.ID)
+		}
 		p.remote[r.ID] = true
+		p.peer[r.ID] = *r.Peer
 		return &sched.TransferParams{DoRemotePrefill: true, HasRemote: true,
 			RemoteBlocks: (len(r.Prompt) + blockSize - 1) / blockSize}, nil
 	}
 	return nil, nil
 }
 
+// newID is the next transfer's ID (stride, lane).
+func (p *pd) newID() engine.TransferID {
+	*p.next++
+	return (*p.next-1)*engine.TransferID(p.stride) + engine.TransferID(p.lane) + 1
+}
+
 // started reports the loads a schedule began: the remote-prefilled requests that entered
 // WAITING_FOR_REMOTE_KVS, in queue order, each once.
+//
+// Beside an offload (MultiConnector), the child that loads a request is the first that reported
+// tokens. When that is the offload, the request waits for the offload's load, and NIXL, given no
+// external tokens, only tells the prefiller to release its blocks (pull_scheduler.py:157-168,
+// base_worker's notification for a pull of nothing): a pull of no tokens, reported so the
+// simulator can end the prefiller's handoff, which lands no KV and reports no finished_recving.
 func (p *pd) started(s *sched.Scheduler) []engine.Transfer {
-	if p == nil || p.role != roleConsumer {
+	if p == nil || !p.role.consumer() {
 		return nil
 	}
 	var out []engine.Transfer
@@ -168,10 +230,30 @@ func (p *pd) started(s *sched.Scheduler) []engine.Transfer {
 			continue
 		}
 		p.pulling[id] = true
-		p.next++
-		p.pulls[p.next] = id
-		out = append(out, engine.Transfer{ID: p.next, Request: id, Kind: engine.TransferLoad, Tokens: p.matched[id],
-			Blocks: len(s.KV.Blocks(id))})
+		tid := p.newID()
+		tokens, release := p.matched[id], false
+		if p.multi != nil {
+			if c, ok := p.multi.Chosen(id); !ok || c != p.child {
+				tokens, release = 0, true
+			}
+		}
+		if release {
+			p.notif[tid] = id
+		} else {
+			p.pulls[tid] = id
+		}
+		// A pull from a peer: it reads the prefill's node and rack (engine.Request.Peer) and lands on this
+		// engine's, and uses no tier.
+		blocks := 0
+		if !release {
+			counts, _ := p.nixl.Pulled(id)
+			for _, n := range counts {
+				blocks += n
+			}
+		}
+		out = append(out, engine.Transfer{ID: tid, Request: id, Kind: engine.TransferLoad, Tokens: tokens,
+			Blocks: blocks, Move: plan.Transfer{Tokens: units.Tokens(tokens), From: p.peer[id], To: p.at,
+				Kind: plan.TransferPeer}})
 	}
 	p.nixl.BuildMeta()
 	return out
@@ -180,7 +262,7 @@ func (p *pd) started(s *sched.Scheduler) []engine.Transfer {
 // handoffs reports the prefill side's finished requests whose blocks the connector holds, each a
 // transfer the simulator ends once the decode side has read them, in finish order.
 func (p *pd) handoffs(s *sched.Scheduler, fins []sched.Finished) []engine.Handoff {
-	if p == nil || p.role != roleProducer {
+	if p == nil || !p.role.producer() {
 		return nil
 	}
 	var out []engine.Handoff
@@ -192,25 +274,32 @@ func (p *pd) handoffs(s *sched.Scheduler, fins []sched.Finished) []engine.Handof
 		if s.Request(f.ID) == nil {
 			continue // freed at once: nothing computed to read, or not a normal finish
 		}
-		p.next++
-		p.holds[p.next] = f.ID
-		// The prompt's blocks: a full-attention group's, which hold every token, rather than a
-		// sliding window's, whose freed slots are the null block (a hybrid model's group 0 may be
-		// either).
-		g := 0
-		for i := 0; i < s.KV.NumGroups(); i++ {
-			if s.KV.PrefixIndexable(uint32(i)) {
-				g = i
-				break
+		tid := p.newID()
+		p.holds[tid] = f.ID
+		// The blocks held for the read are every transfer group's, clipped as the connector clips the
+		// remote_block_ids it advertises (get_exchange_clipped_blocks, nixl/base_scheduler.py:262-300
+		// @5df63a72): all of a full-attention or MLA group's, a sliding window's last blocks, a
+		// ring's one. A sliding window's freed slots (the null block) hold nothing. Block ids are
+		// the pool's, so a block a prefix cache shares appears in every handoff that holds it.
+		ids := make([][]int, s.KV.NumGroups())
+		for g := range ids {
+			for _, b := range s.KV.GroupBlocks(g, f.ID) {
+				id := b.ID
+				if b.Null {
+					id = -1
+				}
+				ids[g] = append(ids[g], id)
 			}
 		}
 		var blocks []int64
-		for _, b := range s.KV.GroupBlocks(g, f.ID) {
-			if !b.Null {
-				blocks = append(blocks, int64(b.ID))
+		for _, grp := range p.nixl.Clip(ids) {
+			for _, id := range grp {
+				if id >= 0 {
+					blocks = append(blocks, int64(id))
+				}
 			}
 		}
-		out = append(out, engine.Handoff{ID: f.ID, Transfer: p.next, Blocks: blocks})
+		out = append(out, engine.Handoff{ID: f.ID, Transfer: tid, Blocks: blocks})
 	}
 	return out
 }
@@ -230,12 +319,21 @@ func (p *pd) done(id engine.TransferID, ok bool) error {
 		p.outcome.FinishedSending = append(p.outcome.FinishedSending, rid)
 		return nil
 	}
+	if rid, ok := p.notif[id]; ok {
+		// The prefiller's release notification landed; the offload's load, not this, brings the KV.
+		delete(p.notif, id)
+		delete(p.pulling, rid)
+		delete(p.matched, rid)
+		delete(p.remote, rid)
+		return nil
+	}
 	rid, pulling := p.pulls[id]
 	if !pulling {
 		return engine.ErrUnknownTransfer
 	}
 	delete(p.pulls, id)
 	delete(p.pulling, rid)
+	p.nixl.Forget(rid)
 	delete(p.matched, rid)
 	delete(p.remote, rid)
 	p.outcome.FinishedRecving = append(p.outcome.FinishedRecving, rid)
@@ -272,6 +370,7 @@ func (p *pd) aborted(id string) {
 	delete(p.decode, id)
 	if !p.pulling[id] {
 		delete(p.matched, id)
+		p.nixl.Forget(id)
 	}
 }
 
@@ -286,7 +385,7 @@ func (g *batchOutput) Transfers(b core.Batch) sched.TransferOutcome {
 		// (finished_recving), offload.go.
 		jobs, recv := g.off.take(b.ID)
 		if len(jobs) > 0 {
-			o.WorkerMeta = jobs
+			o.WorkerMeta = g.off.workerMeta(jobs)
 		}
 		o.FinishedRecving = append(o.FinishedRecving, recv...)
 	}

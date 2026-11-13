@@ -20,7 +20,7 @@ func TestKVEventsOfAnEmptyScheduleAreReported(t *testing.T) {
 		pending := map[engine.TransferID]bool{}
 		for _, id := range []string{"a", "bb", "ccc"} {
 			r := req(id, 80, 2)
-			r.RemotePrefill = true
+			r.RemotePrefill, r.Peer = true, peer
 			if err := e.Add(r, now); err != nil {
 				t.Fatal(err)
 			}

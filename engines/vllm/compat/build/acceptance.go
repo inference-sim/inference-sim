@@ -48,6 +48,10 @@ type AcceptanceInputs struct {
 	Hardware string
 	Workload *acceptance.Workload
 	Flags    AcceptanceFlags
+	// Drafter is the catalog name of the pool's separate drafter checkpoint
+	// (speculative.draft_model), or "" for the model's own in-graph speculator. A profile measured
+	// with a drafter matches only a run that names the same one.
+	Drafter string
 }
 
 // Acceptance is a run's resolved acceptance.
@@ -87,6 +91,8 @@ func ResolveAcceptance(in AcceptanceInputs, k int, method string) (Acceptance, b
 		SpeculativeMethod: method,
 		NumSpecTokens:     k,
 		Hardware:          in.Hardware,
+		Drafter:           in.Drafter,
+		Architecture:      targetArchitecture(in.Data, in.Shape.Model),
 		Workload:          acceptanceWorkloadTerms(in),
 		Scenario:          in.Shape.Acceptance,
 		FallbackCategory:  f.FallbackCategory,
@@ -120,6 +126,21 @@ func ResolveAcceptance(in AcceptanceInputs, k int, method string) (Acceptance, b
 	in.Data.RecordAcceptance(&res)
 	out.Res = res
 	return out, true, nil
+}
+
+// targetArchitecture is the architecture of the target model as its graph records it
+// (global.architecture), which a lookup that borrows across targets reads. It is empty when the
+// graph cannot be had; that skips the borrowing step, so the lookup can only refuse, never resolve
+// to another target's value.
+func targetArchitecture(data *load.Data, modelName string) string {
+	if data == nil {
+		return ""
+	}
+	g, err := data.Model(modelName)
+	if err != nil || g == nil {
+		return ""
+	}
+	return g.Global.Architecture
 }
 
 // acceptanceWorkloadTerms is the workload layer: what the simulated workload states (a

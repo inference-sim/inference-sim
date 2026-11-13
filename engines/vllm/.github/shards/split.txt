@@ -1,0 +1,5 @@
+# Packages whose tests are shared out by test name (the others by package). A package is listed
+# here when its tests alone take longer than a shard should. Paths relative to the module root.
+compat/kernelmodel
+vllmengine
+compat/build

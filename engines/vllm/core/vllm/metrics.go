@@ -49,11 +49,11 @@ func (e *Engine) recordSchedule(b core.Batch) {
 
 // finishStep records one update_from_output, which ends at at: the batch's schedule, its outputs
 // and finishes, and the scheduler gauges after it.
-func (e *Engine) finishStep(b core.Batch, emitted map[string]int, fins []sched.Finished, at engine.Time) {
+func (e *Engine) finishStep(b core.Batch, emitted map[string]int, drafts []metrics.Draft, fins []sched.Finished, at engine.Time) {
 	sc := e.sched[b.ID]
 	delete(e.sched, b.ID)
 	st := metrics.Step{Scheduled: sc.tokens, Preempted: sc.preempted, Admitted: sc.admitted,
-		Emitted: map[string]int{}}
+		Emitted: map[string]int{}, Drafts: drafts}
 	for id, n := range emitted {
 		st.Emitted[id] = n
 	}

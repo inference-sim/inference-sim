@@ -6,9 +6,12 @@ import (
 	"fmt"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
 
 	"github.com/inference-sim/blis-vllm/compat/dplb"
 	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	"github.com/inference-sim/blis-vllm/core/placement"
 )
 
 // DPGroup is a data-parallel replica of the compatibility engine behind engine.Engine: dp ranks,
@@ -60,6 +63,7 @@ func NewDPGroup(ids []string, cfg cengine.SimConfig) (*DPGroup, error) {
 			return nil, err
 		}
 		e.group = g
+		e.pl.Data = dp // the group's ranks are the pool's data-parallel width
 		g.ranks = append(g.ranks, e)
 		g.lbView = append(g.lbView, dpRank{g: g, k: k})
 	}
@@ -116,6 +120,10 @@ func (g *DPGroup) PickRank(now engine.Time, inFlight []int) (int, error) {
 
 // Add routes the request to the rank the balancer picks at now and enqueues it there.
 func (g *DPGroup) Add(r engine.Request, now engine.Time) error {
+	// A request that cannot exist is refused before the balancer picks a rank for it.
+	if err := r.Validate(); err != nil {
+		return err
+	}
 	return g.AddToRank(g.lb.Pick(g.lbView, now), r, now)
 }
 
@@ -123,6 +131,9 @@ func (g *DPGroup) Add(r engine.Request, now engine.Time) error {
 // external DP load balancer, every rank its own endpoint). A rank left with work waiting asks
 // the group for a step (the host loop's QueuedEvent).
 func (g *DPGroup) AddToRank(k int, r engine.Request, now engine.Time) error {
+	if err := r.Validate(); err != nil {
+		return err
+	}
 	if k < 0 || k >= len(g.ranks) {
 		return fmt.Errorf("contract: no rank %d in a group of %d", k, len(g.ranks))
 	}
@@ -377,6 +388,9 @@ func (g *DPGroup) Metrics(now engine.Time) engine.Metrics { return g.ranks[0].Me
 // RankMetrics is rank k's published view.
 func (g *DPGroup) RankMetrics(k int, now engine.Time) engine.Metrics { return g.ranks[k].Metrics(now) }
 
+// Fields is the compatibility engine's list (Engine.Fields).
+func (g *DPGroup) Fields() fields.FieldList { return compatFields }
+
 // Snapshot is the group's queues and KV pools, summed over the ranks.
 func (g *DPGroup) Snapshot() engine.State {
 	var s engine.State
@@ -427,6 +441,24 @@ func (g *DPGroup) View(k int) *RankView { return &RankView{g: g, k: k} }
 
 var _ engine.Engine = (*RankView)(nil)
 
+// Plan implements engine.Planned: the group's plan, which every rank states its transfers against; the rank's own
+// node is in the transfers it states, not in the plan.
+func (v *RankView) Plan() plan.PoolPlan { return v.g.Plan() }
+
+// SetPlacement states where this rank sits, as the host that builds an engine for each instance states the
+// instance's node (placement.Placeable); the other ranks are not moved.
+func (v *RankView) SetPlacement(p placement.Placement) error { return v.g.ranks[v.k].SetPlacement(p) }
+
+var (
+	_ engine.Planned      = (*RankView)(nil)
+	_ placement.Placeable = (*RankView)(nil)
+)
+
+// PlaceAt implements engine.Placeable for this rank, as SetPlacement states it: the other ranks are not moved.
+func (v *RankView) PlaceAt(at plan.Endpoint) error { return v.g.ranks[v.k].PlaceAt(at) }
+
+var _ engine.Placeable = (*RankView)(nil)
+
 func (v *RankView) Add(r engine.Request, now engine.Time) error { return v.g.AddToRank(v.k, r, now) }
 
 // Schedule admits the rank's waiting handoffs when it is idle, and on rank 0's view runs the
@@ -472,6 +504,7 @@ func (v *RankView) NextWake(now engine.Time) (engine.Time, bool) {
 func (v *RankView) InFlightLimit() int                     { return 1 }
 func (v *RankView) Metrics(now engine.Time) engine.Metrics { return v.g.RankMetrics(v.k, now) }
 func (v *RankView) Snapshot() engine.State                 { return v.g.RankSnapshot(v.k) }
+func (v *RankView) Fields() fields.FieldList               { return compatFields }
 
 // AdmitIdle admits the rank's waiting P/D handoffs at now when it has no other work and no step is
 // executing, as an idle decode engine does at once, and returns the pulls it started.
@@ -519,3 +552,40 @@ func (v *RankView) ServerSeriesSpan() (interval, end int64) {
 func (v *RankView) ServerSeriesBlock(id string, end int64) ([]byte, error) {
 	return v.g.ranks[v.k].ServerSeriesBlock(id, end)
 }
+
+// Plan implements engine.Planned: the pool's plan, which every rank states its transfers against; the
+// ranks share one placement, so any rank's is the group's.
+func (g *DPGroup) Plan() plan.PoolPlan { return g.ranks[0].Plan() }
+
+var _ engine.Planned = (*DPGroup)(nil)
+
+// SetPlacement states where the group sits: each rank is the replica of tensor x pipeline workers that fills the
+// nodes after the ranks before it (placement.Placeable). A refused placement leaves every rank as it was.
+func (g *DPGroup) SetPlacement(p placement.Placement) error {
+	if err := p.Validate(); err != nil {
+		return fmt.Errorf("contract: %w", err)
+	}
+	for i, r := range g.ranks {
+		pl := p.ForRank(i, max(p.Tensor, 1)*max(p.Pipeline, 1))
+		pl.Data = len(g.ranks)
+		if err := r.SetPlacement(pl); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+var _ placement.Placeable = (*DPGroup)(nil)
+
+// PlaceAt implements engine.Placeable for the group: the pool's placement with its first node and rack given,
+// each rank then sitting where the pool's layout puts it (SetPlacement). A group whose ranks fill the pool's
+// nodes starts at the first node, so any other node is refused.
+func (g *DPGroup) PlaceAt(at plan.Endpoint) error {
+	base := g.ranks[0].pl
+	if base.RanksPerNode > 0 && at.Node != 0 {
+		return fmt.Errorf("contract: the group's ranks fill the pool's nodes from the first, so it cannot start at node %d", at.Node)
+	}
+	return g.SetPlacement(base.At(at.Node, at.Rack))
+}
+
+var _ engine.Placeable = (*DPGroup)(nil)

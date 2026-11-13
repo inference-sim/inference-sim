@@ -12,8 +12,12 @@ import (
 	"sort"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
+	"github.com/inference-sim/blis-substrate/load"
 
 	core "github.com/inference-sim/blis-vllm/core/engine"
+	"github.com/inference-sim/blis-vllm/core/placement"
 	"github.com/inference-sim/blis-vllm/core/sched"
 )
 
@@ -39,8 +43,11 @@ import (
 // The iteration's own forward passes are what it prices; the group's all-reduce still ends
 // every iteration, so the contract keeps one iteration in flight.
 type DPGroup struct {
-	dp     *core.DP
-	ranks  []*rankState
+	dp    *core.DP
+	ranks []*rankState
+	// pool is the pool's placement as last stated, with the rack of each of its nodes: a rank's
+	// engine keeps only its own endpoint, so PlaceAt starts from this and not from a rank's.
+	pool   *placement.Placement
 	pricer Pricer
 	rankOf map[string]int
 	// abortedOn are the requests Finish aborted, or that finished, while an iteration in flight
@@ -103,13 +110,35 @@ func newDPGroup(st settings, pricer Pricer) (*DPGroup, error) {
 	n := st.dp.ranks
 	g := &DPGroup{dp: &core.DP{LB: core.NewLoadBalancer(n)}, pricer: pricer, rankOf: map[string]int{}, abortedOn: map[string]int{},
 		queueSize: max(st.queueSize, 1), statsIntervalUs: max(st.dp.statsIntervalUs, 1), epoch: -1}
+	if st.placement != nil {
+		pl := *st.placement
+		pl.NodeRacks = append([]int(nil), pl.NodeRacks...)
+		g.pool = &pl
+	}
 	for i := 0; i < n; i++ {
-		e, err := newEngine(st, pricer)
+		// Each rank is a replica of tensor x pipeline workers, which fill the pool's nodes in order.
+		rst := st
+		if st.placement != nil {
+			if need := st.placement.GroupNodes(n, rankWidth(*st.placement)); st.placement.Node+need > max(st.placement.Nodes, 1) {
+				return nil, fmt.Errorf("vllm: a group of %d data-parallel ranks fills %d node(s) from node %d, and the pool has %d",
+					n, need, st.placement.Node, max(st.placement.Nodes, 1))
+			}
+			pl := st.placement.ReplicaAt(i, rankWidth(*st.placement))
+			rst.placement = &pl
+		}
+		e, err := newEngine(rst, pricer)
 		if err != nil {
 			return nil, err
 		}
+		e.dp = n
 		rank := i
 		e.queued = func(id string) bool { return g.inFlight(rank, id) }
+		if e.pd != nil {
+			// Each rank is its own engine core with its own connector (vLLM gives each its own
+			// engine_id and side-channel port, nixl/base_scheduler.py:76-80@5df63a72), so each states
+			// its own transfers. The group tells them apart by ID alone (TransferDone).
+			e.pd.stride, e.pd.lane = n, i
+		}
 		g.ranks = append(g.ranks, &rankState{e: e})
 		g.dp.Ranks = append(g.dp.Ranks, e.core)
 		g.dp.Waves = append(g.dp.Waves, &core.Wave{PrefillScheduleInterval: st.dp.prefillInterval,
@@ -138,6 +167,10 @@ func (g *DPGroup) publish(now engine.Time) {
 // Add routes the request with the internal load balancer and hands it to that rank; a request
 // arriving at an idle wave starts the next wave on every rank (core.DP.Add).
 func (g *DPGroup) Add(r engine.Request, now engine.Time) error {
+	// A request that cannot exist is refused before the balancer sees it, so it takes no slot.
+	if err := r.Validate(); err != nil {
+		return err
+	}
 	if _, dup := g.rankOf[r.ID]; dup {
 		return fmt.Errorf("vllm: request %s added twice", r.ID)
 	}
@@ -189,6 +222,10 @@ func (g *DPGroup) Schedule(now engine.Time) (engine.Batch, error) {
 				it.rank[i] = cb
 			}
 			it.batch.Preempted = append(it.batch.Preempted, rb.Preempted...)
+			// The pulls this rank's schedule began, in rank order, whether or not it ran tokens: a
+			// decode rank admits a remote prefill into WAITING_FOR_REMOTE_KVS in a schedule that
+			// runs none.
+			it.batch.TransfersStarted = append(it.batch.TransfersStarted, rb.TransfersStarted...)
 		}
 		if !st.Block {
 			continue
@@ -199,7 +236,13 @@ func (g *DPGroup) Schedule(now engine.Time) (engine.Batch, error) {
 		}
 		res := e.core.StepEnd(st.Step)
 		steps[i].Step = res
-		e.finishStep(*res.Processed, nil, res.Finished, now)
+		e.finishStep(*res.Processed, nil, nil, res.Finished, now)
+		// A request this step ended without running it (a failed pull under kv_load_failure_policy
+		// "fail") finishes in the iteration's batch, as Engine.Schedule reports it.
+		e.emptyFinished = append(e.emptyFinished, res.Finished...)
+		fins := e.takeEmptyFinished()
+		it.batch.Finished = append(it.batch.Finished, fins...)
+		g.retire(fins)
 	}
 	if !it.batch.Empty() {
 		g.nextID++
@@ -242,6 +285,19 @@ func (g *DPGroup) dummyTime() engine.Duration {
 func (g *DPGroup) stepping() bool {
 	for i, r := range g.ranks {
 		if r.e.core.HasWork() || r.e.s.HasUnfinished() || g.dp.Waves[i].Running {
+			return true
+		}
+	}
+	return false
+}
+
+// polls reports whether the group, with no new input, would step again: a rank has unfinished requests, batches
+// queued, or a transfer outcome its next step reports, or a wave is running. A rank whose finished requests
+// the connector still holds has requests to schedule (has_requests) but nothing that changes until the host ends
+// the hold, so it does not keep the group polling (Engine.polls); the host's TransferDone steps it.
+func (g *DPGroup) polls() bool {
+	for i, r := range g.ranks {
+		if r.e.core.InFlight() > 0 || r.e.polls() || g.dp.Waves[i].Running {
 			return true
 		}
 	}
@@ -337,22 +393,23 @@ func (g *DPGroup) Complete(id engine.BatchID, outcome engine.Outcome, end engine
 		res.FirstTokens = append(res.FirstTokens, rr.FirstTokens...)
 		res.Finished = append(res.Finished, rr.Finished...)
 		res.KVEvents = append(res.KVEvents, rr.KVEvents...)
+		// A rank's block IDs are its own pool's, so two ranks hold a block of the same ID. The
+		// contract lets the host count distinct blocks across handoffs: give each rank's IDs a
+		// range of their own.
+		for _, h := range rr.Handoffs {
+			off := int64(i) * int64(e.s.KV.Pool.NumBlocks())
+			for k := range h.Blocks {
+				h.Blocks[k] += off
+			}
+			res.Handoffs = append(res.Handoffs, h)
+		}
 	}
 	if g.open != nil && !slices.Contains(g.open.waits, true) {
 		steps := g.open.steps
 		g.open = nil
 		g.endStep(steps)
 	}
-	for _, f := range res.Finished {
-		g.dp.LB.Finished(f.ID)
-		if r := g.rankOf[f.ID]; g.inFlight(r, f.ID) {
-			// A later iteration in flight still names it: its rank entry stays, and its ID is
-			// refused, until that iteration completes, as an aborted request's does.
-			g.abortedOn[f.ID] = r
-		} else {
-			delete(g.rankOf, f.ID)
-		}
-	}
+	g.retire(res.Finished)
 	for id, r := range g.abortedOn {
 		if !g.inFlight(r, id) {
 			delete(g.rankOf, id)
@@ -364,9 +421,28 @@ func (g *DPGroup) Complete(id engine.BatchID, outcome engine.Outcome, end engine
 	return res, nil
 }
 
-// TransferDone implements engine.Engine: the group starts no transfers.
-func (g *DPGroup) TransferDone(engine.TransferID, bool, engine.Time) error {
-	return engine.ErrUnknownTransfer
+// retire takes finished requests off the balancer and the group's rank map. A later iteration in
+// flight may still name one: its rank entry stays, and its ID is refused, until that iteration
+// completes, as an aborted request's does.
+func (g *DPGroup) retire(fins []engine.Finished) {
+	for _, f := range fins {
+		g.dp.LB.Finished(f.ID)
+		if r := g.rankOf[f.ID]; g.inFlight(r, f.ID) {
+			g.abortedOn[f.ID] = r
+		} else {
+			delete(g.rankOf, f.ID)
+		}
+	}
+}
+
+// TransferDone implements engine.Engine: the end of a transfer one of the ranks started. Each rank
+// numbers its transfers so that the ID names it (pd.newID), and the rank's connector reports the
+// outcome with its next applied output, as that rank's worker does. An ID no rank issued is unknown.
+func (g *DPGroup) TransferDone(id engine.TransferID, ok bool, now engine.Time) error {
+	if id == 0 {
+		return engine.ErrUnknownTransfer
+	}
+	return g.ranks[int((id-1)%engine.TransferID(len(g.ranks)))].e.TransferDone(id, ok, now)
 }
 
 // Finish ends a request on its rank.
@@ -390,7 +466,7 @@ func (g *DPGroup) Finish(id string, why engine.FinishReason, now engine.Time) er
 // NextWake implements engine.Engine: with no batch in flight, a group with work steps again when
 // its dummy batches end, as run_busy_loop steps again after them.
 func (g *DPGroup) NextWake(now engine.Time) (engine.Time, bool) {
-	if len(g.inflight) > 0 || g.open != nil || !g.stepping() {
+	if len(g.inflight) > 0 || g.open != nil || !g.polls() {
 		return 0, false
 	}
 	if g.busyUntil > now {
@@ -429,6 +505,9 @@ func (g *DPGroup) Metrics(now engine.Time) engine.Metrics {
 	return out
 }
 
+// Fields implements engine.Engine: every rank runs one release, so the group's list is Engine's.
+func (g *DPGroup) Fields() fields.FieldList { return fieldList }
+
 // Snapshot implements engine.Engine: the group's totals.
 func (g *DPGroup) Snapshot() engine.State {
 	var st engine.State
@@ -446,6 +525,81 @@ func (g *DPGroup) Snapshot() engine.State {
 
 // Assumptions are the pricer's disclosed assumptions, as Engine reports them.
 func (g *DPGroup) Assumptions() []string { return g.ranks[0].e.Assumptions() }
+
+// Plan implements engine.Planned: the pool's plan, which every rank states its transfers against. The
+// ranks differ in the node they sit on, which a transfer states, not in the plan.
+func (g *DPGroup) Plan() plan.PoolPlan { return g.ranks[0].e.Plan() }
+
+var _ engine.Planned = (*DPGroup)(nil)
+
+// rankWidth is the workers of one data-parallel rank, tensor x pipeline.
+func rankWidth(p placement.Placement) int { return max(p.Tensor, 1) * max(p.Pipeline, 1) }
+
+// SetPlacement states where the group sits: p.Node is the node of its first rank, and each rank is the replica
+// of tensor x pipeline workers that fills the nodes after the ranks before it (placement.Placeable). A
+// placement the pool cannot hold, or any rank having started a transfer, is refused and leaves every rank as it was.
+func (g *DPGroup) SetPlacement(p placement.Placement) error {
+	if err := p.Validate(); err != nil {
+		return fmt.Errorf("vllm: placement: %w", err)
+	}
+	per := make([]placement.Placement, len(g.ranks))
+	for i, r := range g.ranks {
+		per[i] = p.ReplicaAt(i, rankWidth(p))
+		if err := per[i].Validate(); err != nil {
+			return fmt.Errorf("vllm: placement of rank %d: %w", i, err)
+		}
+		if r.e.startedTransfers() {
+			return fmt.Errorf("vllm: placement: rank %d has started transfers against its old place", i)
+		}
+	}
+	for i, r := range g.ranks {
+		if err := r.e.SetPlacement(per[i]); err != nil {
+			return err
+		}
+	}
+	pl := p
+	pl.NodeRacks = append([]int(nil), p.NodeRacks...)
+	g.pool = &pl
+	return nil
+}
+
+var _ placement.Placeable = (*DPGroup)(nil)
+
+// PlaceAt implements engine.Placeable for the group: it is the pool's placement with its first node and rack
+// given, and each rank then sits where the pool's layout puts it (SetPlacement). A pool of several nodes holds
+// several groups (a pod each), and the host gives each its first node; one that would run past the pool's
+// last node is refused.
+func (g *DPGroup) PlaceAt(at plan.Endpoint) error {
+	first := g.ranks[0].e
+	if first.plan.Hardware == "" {
+		if at != (plan.Endpoint{}) {
+			return fmt.Errorf("vllm: the group states no placement, so it has no node %d rack %d to be placed at", at.Node, at.Rack)
+		}
+		return nil
+	}
+	base := first.placementOf()
+	if g.pool != nil {
+		// Keep the rack of every node the pool was given: At changes only the node asked for.
+		base.NodeRacks = append([]int(nil), g.pool.NodeRacks...)
+	}
+	if need := base.GroupNodes(len(g.ranks), rankWidth(base)); at.Node+need > max(base.Nodes, 1) {
+		return fmt.Errorf("vllm: the group fills %d node(s), so it cannot start at node %d of a pool of %d", need, at.Node, max(base.Nodes, 1))
+	}
+	return g.SetPlacement(base.At(at.Node, at.Rack))
+}
+
+var _ engine.Placeable = (*DPGroup)(nil)
+
+// RecordSelected registers the group's pricer with d, as Engine.RecordSelected does. The ranks
+// share one pricer (newDPGroup), so the group registers it once, not once per rank.
+func (g *DPGroup) RecordSelected(d *load.Data) {
+	if d == nil {
+		return
+	}
+	if r, ok := g.pricer.(interface{ RecordSelected(*load.Data) }); ok {
+		r.RecordSelected(d)
+	}
+}
 
 // EnableKVEvents turns on every rank's KV cache events: the group's results carry them, each
 // rank's in rank order (Complete).

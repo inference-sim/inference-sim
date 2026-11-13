@@ -2,7 +2,7 @@ kind: Scenario
 name: muse-h100-roce-armD-pp1-sync
 engine_version: "0.32.0"
 model: muse-spark-open-816b-a42b-nvfp4
-coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric, cost-model-offload-tiers]
 cluster:
   hardware: h100
   fabric: roce-200g
@@ -22,7 +22,7 @@ pools:
       max_model_len: 8192
       enable_prefix_caching: true
       gpu_memory_utilization: 0.9
-      cache_dtype: fp8
+      kv_cache_dtype: fp8
       async_scheduling: false
       moe_backend: marlin
 # Arm D on one node at PP1 x TP8, synchronous scheduling and no drafter: the one-batch twin of

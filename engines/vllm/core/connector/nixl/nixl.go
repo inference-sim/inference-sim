@@ -35,17 +35,58 @@ type Config struct {
 	// num_prefill_lookahead_tokens - 1); 0 for a full-attention model without a
 	// multi-module MTP drafter. Backoff derives it.
 	PrefillBackoff int
+	// Groups are the KV cache groups the connector moves, in group order, as block clipping reads
+	// them (blocks_per_sw, base_scheduler.py:143-153). Empty is one full-attention group.
+	Groups []Group
+}
+
+// Group is what NIXL's block clipping reads of one KV cache group: a sliding window's size, in
+// tokens, and the group's block size. Window is 0 for every group that is not a sliding window.
+type Group struct {
+	Window, BlockSize int
 }
 
 // Default is the defaults kv_connector_extra_config leaves (base_scheduler.py:160-175).
 func Default() Config { return Config{RecomputeThreshold: 64} }
 
-// Backoff is _prefill_backoff (base_scheduler.py:379-394) for a model without Mamba layers or
-// a bounded-replay window: num_prefill_lookahead_tokens - 1, so a multi-module MTP drafter's
-// lookahead window stays off the prefiller, which would otherwise embed unverified drafts in
-// the MTP layers' KV (base_scheduler.py:391-394). Mamba layers and DeepSeek V4.1's bounded
-// replay add a floor of one token, which SetConnector refuses (no such group is modelled here).
-func Backoff(spec sched.Spec) int { return max(0, spec.PrefillLookahead-1) }
+// Backoff is _prefill_backoff (base_scheduler.py:379-394): max(1 if the model has Mamba layers or
+// a bounded-replay group else 0, num_prefill_lookahead_tokens - 1). A multi-module MTP drafter's
+// lookahead window stays off the prefiller, which would otherwise embed unverified drafts in the
+// MTP layers' KV (:391-394); DeepSeek V4.1's bounded-replay window is not replayed after a P/D
+// load, so it is laid out for the one token the decoder recomputes. Mamba groups are not modelled
+// (SetConnector refuses them), so the floor is boundedReplay's.
+func Backoff(spec sched.Spec, boundedReplay bool) int {
+	floor := 0
+	if boundedReplay {
+		floor = 1
+	}
+	return max(floor, spec.PrefillLookahead-1)
+}
+
+// blocksPerWindow is blocks_per_sw for group g (base_scheduler.py:143-153): the blocks of a
+// sliding window the exchange keeps, cdiv(window, block size) + 1, the one block conservatively
+// covering a window that is not aligned to blocks; 0 for a group that is not a sliding window.
+func (c Config) blocksPerWindow(g int) int {
+	if g >= len(c.Groups) || c.Groups[g].Window == 0 {
+		return 0
+	}
+	return (c.Groups[g].Window+c.Groups[g].BlockSize-1)/c.Groups[g].BlockSize + 1
+}
+
+// ClipBlocks is get_exchange_clipped_blocks (base_scheduler.py:262-300) for a hybrid layout: every
+// full-attention group's blocks, and the last blocksPerWindow blocks of each sliding window (the
+// manager allocates a block for the whole sequence and frees the out-of-window ones only after the
+// request_finished hook). With no sliding window it is the identity.
+func (c Config) ClipBlocks(ids [][]int) [][]int {
+	out := make([][]int, len(ids))
+	for g, blocks := range ids {
+		if n := c.blocksPerWindow(g); n > 0 && len(blocks) > n {
+			blocks = blocks[len(blocks)-n:]
+		}
+		out[g] = blocks
+	}
+	return out
+}
 
 // CheckWorker refuses what vLLM's NIXL worker refuses at start-up for the parallel layout
 // (NixlBaseConnectorWorker.__init__, nixl/base_worker.py:757-779@5df63a72): with
@@ -82,12 +123,19 @@ type Scheduler struct {
 	send         map[string]bool
 	inBatch      map[string]bool
 	notProcessed map[string]bool
+	// pull is each request's blocks the worker is asked to read, per KV cache group: the
+	// unhashed blocks the decoder allocated for the load, clipped (update_state_after_alloc,
+	// pull_scheduler.py:149-155).
+	pull map[string][]int
+	// sent is each finished prefill's blocks it advertises to the decoder, per KV cache group,
+	// clipped (request_finished, pull_scheduler.py:262-270).
+	sent map[string][]int
 }
 
 // New builds the connector's scheduler side.
 func New(cfg Config) *Scheduler {
 	return &Scheduler{cfg: cfg, recv: map[string]bool{}, send: map[string]bool{}, inBatch: map[string]bool{},
-		notProcessed: map[string]bool{}}
+		notProcessed: map[string]bool{}, pull: map[string][]int{}, sent: map[string][]int{}}
 }
 
 // remoteTokenCount is _get_remote_prefill_token_count (base_scheduler.py:396-403).
@@ -124,8 +172,30 @@ func (s *Scheduler) truncateForPrefill(r *sched.Request) {
 // ConnectorModels implements sched.ConnectorCapabilities: what this model of NIXL's scheduler
 // side is diff-tested beside, against vLLM v0.32.0 (oracle/run_connector.py).
 func (s *Scheduler) ConnectorModels() sched.Capabilities {
-	return sched.Capabilities{HybridGroups: true, Drafters: true, ConcurrentBatches: true}
+	return sched.Capabilities{HybridGroups: true, Drafters: true, ConcurrentBatches: true, PackedGroups: true}
 }
+
+// LoadedGroups implements sched.GroupLoader: NIXL transfers the request's own blocks, so its load
+// restores every transfer group (NixlConnector.get_loaded_kv_cache_group_ids, nixl/connector.py:
+// 170-171), a bounded-replay window among them. Every group is a transfer group here
+// (KVCacheGroupSpec.enable_kv_transfer is true unless HiSparse turns it off).
+func (s *Scheduler) LoadedGroups(_ *sched.Request, all []int) []int { return all }
+
+// Pulled is how many blocks the decoder's worker was asked to read for request id, per KV cache
+// group, once its pull was planned: none per group when the local prefix cache held the whole
+// prompt. It reports false before then.
+func (s *Scheduler) Pulled(id string) ([]int, bool) { counts, ok := s.pull[id]; return counts, ok }
+
+// Clip is get_exchange_clipped_blocks over this connector's groups (Config.ClipBlocks).
+func (s *Scheduler) Clip(ids [][]int) [][]int { return s.cfg.ClipBlocks(ids) }
+
+// Sent is how many blocks a finished prefill advertised to its decoder for request id, per KV
+// cache group (remote_block_ids), once the connector held its blocks for the read; false when it
+// did not.
+func (s *Scheduler) Sent(id string) ([]int, bool) { counts, ok := s.sent[id]; return counts, ok }
+
+// Forget drops what Pulled holds for request id, once its pull has ended.
+func (s *Scheduler) Forget(id string) { delete(s.pull, id) }
 
 // MatchedTokens is get_num_new_matched_tokens (pull_scheduler.py:34-106).
 func (s *Scheduler) MatchedTokens(r *sched.Request, localComputed int) (int, bool) {
@@ -165,6 +235,16 @@ func (s *Scheduler) AfterAlloc(r *sched.Request, blocks sched.AllocatedBlocks, e
 	if p.DoRemotePrefill || (p.DoRemoteDecode && s.cfg.Bidirectional && !p.RemoteBlocksProcessed) {
 		if p.RemoteBlocks > 0 && p.HasRemote {
 			s.recv[r.ID] = true
+			// The blocks to pull are the unhashed ones the load fills, clipped to what the
+			// prefiller keeps; a full local hit (no external tokens) pulls none, and only
+			// notifies the prefiller to free its blocks (pull_scheduler.py:136-149).
+			counts := []int{}
+			if external > 0 {
+				for _, b := range s.cfg.ClipBlocks(blocks.Unhashed) {
+					counts = append(counts, len(b))
+				}
+			}
+			s.pull[r.ID] = counts
 		}
 		// Only one transfer per request.
 		p.DoRemotePrefill = false
@@ -207,6 +287,12 @@ func (s *Scheduler) FinishedAllGroups(r *sched.Request, blockIDs [][]int) bool {
 	}
 	if delay {
 		s.send[r.ID] = true
+		// The blocks sent are the clipped lists (pull_scheduler.py:262-270).
+		var counts []int
+		for _, b := range s.cfg.ClipBlocks(blockIDs) {
+			counts = append(counts, len(b))
+		}
+		s.sent[r.ID] = counts
 	}
 	return delay
 }
@@ -216,6 +302,8 @@ func (s *Scheduler) FinishedAllGroups(r *sched.Request, blockIDs [][]int) bool {
 func (s *Scheduler) AfterOutput(o sched.TransferOutcome) {
 	for _, id := range o.FinishedSending {
 		delete(s.send, id)
+		// The read is done: the advertised block counts are no longer needed.
+		delete(s.sent, id)
 	}
 }
 

@@ -91,6 +91,7 @@ func (m *Model) Provenance() sim.KernelPoolProvenance {
 		Assumptions:         []kernel.CoefficientOrigin{},
 		SkippedRules:        append([]string{}, m.rules.skipped...),
 		SkippedRuleFindings: append([]sim.RuleFinding{}, m.rules.findings...),
+		Substitutions:       append([]sim.Substitution{}, m.substitutions...),
 	}
 	origins := m.k.Provenance()
 	for _, o := range origins {

@@ -79,7 +79,13 @@ func TestKVOffloadConfig_Validate(t *testing.T) {
 		{"bad locality", func(c *KVOffloadConfig) { c.Tiers[0].Locality = "somewhere" }, "locality"},
 		{"read threads zero", func(c *KVOffloadConfig) { c.Tiers[0].NReadThreads = 0 }, "n_read_threads"},
 		{"write threads zero", func(c *KVOffloadConfig) { c.Tiers[0].NWriteThreads = 0 }, "n_write_threads"},
-		{"read bw zero", func(c *KVOffloadConfig) { c.Tiers[0].ReadBandwidth = 0 }, "read_bandwidth"},
+		{"read bw zero without a device class", func(c *KVOffloadConfig) {
+			c.Tiers[0].DeviceClass, c.Tiers[0].ReadBandwidth = "", 0
+		}, "read_bandwidth"},
+		{"write bw zero without a device class", func(c *KVOffloadConfig) {
+			c.Tiers[0].DeviceClass, c.Tiers[0].WriteBandwidth = "", 0
+		}, "write_bandwidth"},
+		{"read bw negative with a device class", func(c *KVOffloadConfig) { c.Tiers[0].ReadBandwidth = -1 }, "read_bandwidth"},
 		{"read bw NaN", func(c *KVOffloadConfig) { c.Tiers[0].ReadBandwidth = math.NaN() }, "read_bandwidth"},
 		{"read bw Inf", func(c *KVOffloadConfig) { c.Tiers[0].ReadBandwidth = math.Inf(1) }, "read_bandwidth"},
 		{"write bw negative", func(c *KVOffloadConfig) { c.Tiers[0].WriteBandwidth = -5 }, "write_bandwidth"},
@@ -118,6 +124,16 @@ func TestKVOffloadConfig_Validate(t *testing.T) {
 				t.Fatalf("error %q must name the offending field %q", err.Error(), tc.wantFrag)
 			}
 		})
+	}
+}
+
+// A tier that names a catalog device_class states no rate: the kernel prices it from registry
+// coefficients, so zero rates are valid for it and only for it.
+func TestKVOffloadConfig_Validate_ADeviceClassCarriesNoRate(t *testing.T) {
+	c := validEnabledConfig()
+	c.Tiers[0].ReadBandwidth, c.Tiers[0].WriteBandwidth, c.Tiers[0].BaseLatency = 0, 0, 0
+	if err := c.Validate(); err != nil {
+		t.Fatalf("a tier naming device_class %q with no rates must be valid: %v", c.Tiers[0].DeviceClass, err)
 	}
 }
 

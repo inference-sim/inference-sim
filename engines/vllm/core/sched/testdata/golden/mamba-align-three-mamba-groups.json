@@ -1,0 +1,1771 @@
+{
+ "finished": {
+  "A": {
+   "output_tokens": 6,
+   "reason": "stop",
+   "step": 7
+  },
+  "B": {
+   "output_tokens": 5,
+   "reason": "stop",
+   "step": 8
+  },
+  "C": {
+   "output_tokens": 5,
+   "reason": "stop",
+   "step": 9
+  }
+ },
+ "kv_config": {
+  "groups": [
+   {
+    "block_size": 8,
+    "page_size_bytes": 256,
+    "type": "FullAttentionSpec"
+   },
+   {
+    "block_size": 8,
+    "mamba_cache_mode": "align",
+    "num_prefill_checkpoint_blocks": 0,
+    "num_speculative_blocks": 0,
+    "page_size_bytes": 256,
+    "prefill_checkpoint_alignment": null,
+    "type": "MambaSpec"
+   },
+   {
+    "block_size": 8,
+    "mamba_cache_mode": "align",
+    "num_prefill_checkpoint_blocks": 0,
+    "num_speculative_blocks": 0,
+    "page_size_bytes": 256,
+    "prefill_checkpoint_alignment": null,
+    "type": "MambaSpec"
+   },
+   {
+    "block_size": 8,
+    "mamba_cache_mode": "align",
+    "num_prefill_checkpoint_blocks": 0,
+    "num_speculative_blocks": 0,
+    "page_size_bytes": 256,
+    "prefill_checkpoint_alignment": null,
+    "type": "MambaSpec"
+   }
+  ],
+  "hash_block_size": 8,
+  "mamba_has_prefill_checkpoint_blocks": false,
+  "mamba_partial_cache_hit": false,
+  "need_mamba_block_aligned_split": true,
+  "num_blocks": 200,
+  "scheduler_block_size": 8
+ },
+ "provenance": {
+  "blis_vllm_commit": "d855ac9d0501427f819cda43a5fbcde33966b640",
+  "lockfile_sha256": "8baca0cbd0f28f5455c4d2c1b39a81ac3c424089e4c875e93614794c77932167",
+  "mock_version": "gpu-mock/5+af60be80e293",
+  "mocks": [
+   "vllm.v1.outputs.ModelRunnerOutput",
+   "tests.v1.core.utils.create_scheduler",
+   "sampled token stream",
+   "vllm.v1.core.sched.scheduler.time",
+   "vllm.v1.metrics.stats.time",
+   "vllm.v1.engine.time",
+   "vllm.v1.outputs.DraftTokenIds",
+   "spec-decode acceptance",
+   "tests.v1.core.utils.VllmConfig",
+   "tests.v1.core.utils.SchedulerConfig",
+   "vllm.config.vllm.HAS_TRITON",
+   "KV event publisher",
+   "tests.v1.core.utils.KVCacheConfig",
+   "tests.v1.core.utils.CacheConfig",
+   "vllm.v1.executor.abstract.Executor",
+   "EngineCore construction",
+   "vllm.platforms.cpu async override",
+   "use_v2_model_runner (CPU wheel without Triton)",
+   "vllm.config.ParallelConfig.sync_dp_state",
+   "DP coordinator stats transport",
+   "DPLBAsyncMPClient construction",
+   "DPEngineCoreProc construction",
+   "DP wave loop (harness copy of DPEngineCoreProc.run_busy_loop)",
+   "NIXL connector scheduler config",
+   "KV-transfer parameters on a request",
+   "OffloadingConnector scheduler config",
+   "OffloadingConnector worker (OffloadingWorkerMetadata transport)",
+   "finished_req_ids iteration order (per-process hash seed)"
+  ],
+  "model": "facebook/opt-125m",
+  "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+  "oracle_inputs": {
+   "oracle/mocks.json": "29fec19aa8b5bd75e12b37893eea761684d4399a7e3bee1066cb749eac58769c",
+   "oracle/requirements.lock": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
+   "oracle/run_scheduler.py": "dd0cbc255201f6d63588c720f4e687276f4b73fec0f490e997afdaacc2a5a127",
+   "oracle/scenarios/mamba-align-three-mamba-groups.json": "b3f1ff85a589968e5dcf6403bd6321689977eb9aeed5a25ad7aa682ab5ddc1c4"
+  },
+  "platform": "linux-x86_64",
+  "python": "3.12.16",
+  "requirements_lock_sha256": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
+  "scenario_sha256": "b3f1ff85a589968e5dcf6403bd6321689977eb9aeed5a25ad7aa682ab5ddc1c4",
+  "seed": null,
+  "tier": 2,
+  "vllm_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+  "vllm_distribution": "0.32.0+cpu",
+  "vllm_version": "0.32.0"
+ },
+ "steps": [
+  {
+   "blocks": {
+    "A": [
+     [
+      [
+       "d4b489c3ba3818d987b464e23da09fb4a0111cf43c13636721cc22dce17e8f1a00000000",
+       1
+      ],
+      [
+       "e63a9e24792ab46697d3636d5ac68a24db331611a78f7621df045c8973d74f7d00000000",
+       1
+      ],
+      [
+       "65589b21755b9675e46a944f08f5eb3907c44abf5ea8c57dd456152b19b9e13900000000",
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 193,
+   "kv_usage": 0.03015075376884424,
+   "num_computed": {
+    "A": 24
+   },
+   "num_running": 1,
+   "num_tokens": {
+    "A": 41
+   },
+   "num_waiting": 0,
+   "preempted": [],
+   "prefix_hit": {
+    "A": 0
+   },
+   "running": [
+    "A"
+   ],
+   "scheduled": {
+    "A": 24
+   },
+   "step": 0
+  },
+  {
+   "blocks": {
+    "A": [
+     [
+      [
+       "d4b489c3ba3818d987b464e23da09fb4a0111cf43c13636721cc22dce17e8f1a00000000",
+       1
+      ],
+      [
+       "e63a9e24792ab46697d3636d5ac68a24db331611a78f7621df045c8973d74f7d00000000",
+       1
+      ],
+      [
+       "65589b21755b9675e46a944f08f5eb3907c44abf5ea8c57dd456152b19b9e13900000000",
+       1
+      ],
+      [
+       "9581a3b85ac418aa9bb2ea0761405398e4dc9e1328f155fa2e0693e9f2ef769100000000",
+       1
+      ],
+      [
+       "19a6f6f2f2dcd316b00191b6bb7c905c9a0661e1e0c350337b4d9c46231711e500000000",
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "19a6f6f2f2dcd316b00191b6bb7c905c9a0661e1e0c350337b4d9c46231711e500000001",
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "19a6f6f2f2dcd316b00191b6bb7c905c9a0661e1e0c350337b4d9c46231711e500000002",
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "19a6f6f2f2dcd316b00191b6bb7c905c9a0661e1e0c350337b4d9c46231711e500000003",
+       1
+      ]
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 188,
+   "kv_usage": 0.055276381909547756,
+   "num_computed": {
+    "A": 40
+   },
+   "num_running": 1,
+   "num_tokens": {
+    "A": 41
+   },
+   "num_waiting": 0,
+   "preempted": [],
+   "prefix_hit": {
+    "A": 0
+   },
+   "running": [
+    "A"
+   ],
+   "scheduled": {
+    "A": 16
+   },
+   "step": 1
+  },
+  {
+   "blocks": {
+    "A": [
+     [
+      [
+       "d4b489c3ba3818d987b464e23da09fb4a0111cf43c13636721cc22dce17e8f1a00000000",
+       1
+      ],
+      [
+       "e63a9e24792ab46697d3636d5ac68a24db331611a78f7621df045c8973d74f7d00000000",
+       1
+      ],
+      [
+       "65589b21755b9675e46a944f08f5eb3907c44abf5ea8c57dd456152b19b9e13900000000",
+       1
+      ],
+      [
+       "9581a3b85ac418aa9bb2ea0761405398e4dc9e1328f155fa2e0693e9f2ef769100000000",
+       1
+      ],
+      [
+       "19a6f6f2f2dcd316b00191b6bb7c905c9a0661e1e0c350337b4d9c46231711e500000000",
+       1
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "19a6f6f2f2dcd316b00191b6bb7c905c9a0661e1e0c350337b4d9c46231711e500000001",
+       1
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "19a6f6f2f2dcd316b00191b6bb7c905c9a0661e1e0c350337b4d9c46231711e500000002",
+       1
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "19a6f6f2f2dcd316b00191b6bb7c905c9a0661e1e0c350337b4d9c46231711e500000003",
+       1
+      ],
+      [
+       null,
+       1
+      ]
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 187,
+   "kv_usage": 0.06030150753768848,
+   "num_computed": {
+    "A": 41
+   },
+   "num_running": 1,
+   "num_tokens": {
+    "A": 42
+   },
+   "num_waiting": 0,
+   "preempted": [],
+   "prefix_hit": {
+    "A": 0
+   },
+   "running": [
+    "A"
+   ],
+   "scheduled": {
+    "A": 1
+   },
+   "step": 2
+  },
+  {
+   "blocks": {
+    "A": [
+     [
+      [
+       "d4b489c3ba3818d987b464e23da09fb4a0111cf43c13636721cc22dce17e8f1a00000000",
+       1
+      ],
+      [
+       "e63a9e24792ab46697d3636d5ac68a24db331611a78f7621df045c8973d74f7d00000000",
+       1
+      ],
+      [
+       "65589b21755b9675e46a944f08f5eb3907c44abf5ea8c57dd456152b19b9e13900000000",
+       1
+      ],
+      [
+       "9581a3b85ac418aa9bb2ea0761405398e4dc9e1328f155fa2e0693e9f2ef769100000000",
+       1
+      ],
+      [
+       "19a6f6f2f2dcd316b00191b6bb7c905c9a0661e1e0c350337b4d9c46231711e500000000",
+       1
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 190,
+   "kv_usage": 0.045226130653266305,
+   "num_computed": {
+    "A": 42
+   },
+   "num_running": 1,
+   "num_tokens": {
+    "A": 43
+   },
+   "num_waiting": 0,
+   "preempted": [],
+   "prefix_hit": {},
+   "running": [
+    "A"
+   ],
+   "scheduled": {
+    "A": 1
+   },
+   "step": 3
+  },
+  {
+   "blocks": {
+    "A": [
+     [
+      [
+       "d4b489c3ba3818d987b464e23da09fb4a0111cf43c13636721cc22dce17e8f1a00000000",
+       2
+      ],
+      [
+       "e63a9e24792ab46697d3636d5ac68a24db331611a78f7621df045c8973d74f7d00000000",
+       2
+      ],
+      [
+       "65589b21755b9675e46a944f08f5eb3907c44abf5ea8c57dd456152b19b9e13900000000",
+       2
+      ],
+      [
+       "9581a3b85ac418aa9bb2ea0761405398e4dc9e1328f155fa2e0693e9f2ef769100000000",
+       2
+      ],
+      [
+       "19a6f6f2f2dcd316b00191b6bb7c905c9a0661e1e0c350337b4d9c46231711e500000000",
+       2
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ]
+    ],
+    "B": [
+     [
+      [
+       "d4b489c3ba3818d987b464e23da09fb4a0111cf43c13636721cc22dce17e8f1a00000000",
+       2
+      ],
+      [
+       "e63a9e24792ab46697d3636d5ac68a24db331611a78f7621df045c8973d74f7d00000000",
+       2
+      ],
+      [
+       "65589b21755b9675e46a944f08f5eb3907c44abf5ea8c57dd456152b19b9e13900000000",
+       2
+      ],
+      [
+       "9581a3b85ac418aa9bb2ea0761405398e4dc9e1328f155fa2e0693e9f2ef769100000000",
+       2
+      ],
+      [
+       "19a6f6f2f2dcd316b00191b6bb7c905c9a0661e1e0c350337b4d9c46231711e500000000",
+       2
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "19a6f6f2f2dcd316b00191b6bb7c905c9a0661e1e0c350337b4d9c46231711e500000001",
+       1
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "19a6f6f2f2dcd316b00191b6bb7c905c9a0661e1e0c350337b4d9c46231711e500000002",
+       1
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "19a6f6f2f2dcd316b00191b6bb7c905c9a0661e1e0c350337b4d9c46231711e500000003",
+       1
+      ],
+      [
+       null,
+       1
+      ]
+     ]
+    ],
+    "C": [
+     [
+      [
+       "0e192c9b497641a3c68279bfd250c604c7e30d3ddb0ca350745002f877bad62800000000",
+       1
+      ],
+      [
+       "59f147deed1f7aaa6810bb1d89ffa93cab714ebf5cfcb19012b2da1b45327e3d00000000",
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "59f147deed1f7aaa6810bb1d89ffa93cab714ebf5cfcb19012b2da1b45327e3d00000001",
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "59f147deed1f7aaa6810bb1d89ffa93cab714ebf5cfcb19012b2da1b45327e3d00000002",
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "59f147deed1f7aaa6810bb1d89ffa93cab714ebf5cfcb19012b2da1b45327e3d00000003",
+       1
+      ]
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 178,
+   "kv_usage": 0.10552763819095479,
+   "num_computed": {
+    "A": 43,
+    "B": 44,
+    "C": 16
+   },
+   "num_running": 3,
+   "num_tokens": {
+    "A": 44,
+    "B": 45,
+    "C": 18
+   },
+   "num_waiting": 0,
+   "preempted": [],
+   "prefix_hit": {
+    "B": 40,
+    "C": 0
+   },
+   "running": [
+    "A",
+    "B",
+    "C"
+   ],
+   "scheduled": {
+    "A": 1,
+    "B": 4,
+    "C": 16
+   },
+   "step": 4
+  },
+  {
+   "blocks": {
+    "A": [
+     [
+      [
+       "d4b489c3ba3818d987b464e23da09fb4a0111cf43c13636721cc22dce17e8f1a00000000",
+       2
+      ],
+      [
+       "e63a9e24792ab46697d3636d5ac68a24db331611a78f7621df045c8973d74f7d00000000",
+       2
+      ],
+      [
+       "65589b21755b9675e46a944f08f5eb3907c44abf5ea8c57dd456152b19b9e13900000000",
+       2
+      ],
+      [
+       "9581a3b85ac418aa9bb2ea0761405398e4dc9e1328f155fa2e0693e9f2ef769100000000",
+       2
+      ],
+      [
+       "19a6f6f2f2dcd316b00191b6bb7c905c9a0661e1e0c350337b4d9c46231711e500000000",
+       2
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ]
+    ],
+    "B": [
+     [
+      [
+       "d4b489c3ba3818d987b464e23da09fb4a0111cf43c13636721cc22dce17e8f1a00000000",
+       2
+      ],
+      [
+       "e63a9e24792ab46697d3636d5ac68a24db331611a78f7621df045c8973d74f7d00000000",
+       2
+      ],
+      [
+       "65589b21755b9675e46a944f08f5eb3907c44abf5ea8c57dd456152b19b9e13900000000",
+       2
+      ],
+      [
+       "9581a3b85ac418aa9bb2ea0761405398e4dc9e1328f155fa2e0693e9f2ef769100000000",
+       2
+      ],
+      [
+       "19a6f6f2f2dcd316b00191b6bb7c905c9a0661e1e0c350337b4d9c46231711e500000000",
+       2
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ]
+    ],
+    "C": [
+     [
+      [
+       "0e192c9b497641a3c68279bfd250c604c7e30d3ddb0ca350745002f877bad62800000000",
+       1
+      ],
+      [
+       "59f147deed1f7aaa6810bb1d89ffa93cab714ebf5cfcb19012b2da1b45327e3d00000000",
+       1
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "59f147deed1f7aaa6810bb1d89ffa93cab714ebf5cfcb19012b2da1b45327e3d00000001",
+       1
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "59f147deed1f7aaa6810bb1d89ffa93cab714ebf5cfcb19012b2da1b45327e3d00000002",
+       1
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "59f147deed1f7aaa6810bb1d89ffa93cab714ebf5cfcb19012b2da1b45327e3d00000003",
+       1
+      ],
+      [
+       null,
+       1
+      ]
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 177,
+   "kv_usage": 0.11055276381909551,
+   "num_computed": {
+    "A": 44,
+    "B": 45,
+    "C": 18
+   },
+   "num_running": 3,
+   "num_tokens": {
+    "A": 45,
+    "B": 46,
+    "C": 19
+   },
+   "num_waiting": 0,
+   "preempted": [],
+   "prefix_hit": {
+    "C": 0
+   },
+   "running": [
+    "A",
+    "B",
+    "C"
+   ],
+   "scheduled": {
+    "A": 1,
+    "B": 1,
+    "C": 2
+   },
+   "step": 5
+  },
+  {
+   "blocks": {
+    "A": [
+     [
+      [
+       "d4b489c3ba3818d987b464e23da09fb4a0111cf43c13636721cc22dce17e8f1a00000000",
+       2
+      ],
+      [
+       "e63a9e24792ab46697d3636d5ac68a24db331611a78f7621df045c8973d74f7d00000000",
+       2
+      ],
+      [
+       "65589b21755b9675e46a944f08f5eb3907c44abf5ea8c57dd456152b19b9e13900000000",
+       2
+      ],
+      [
+       "9581a3b85ac418aa9bb2ea0761405398e4dc9e1328f155fa2e0693e9f2ef769100000000",
+       2
+      ],
+      [
+       "19a6f6f2f2dcd316b00191b6bb7c905c9a0661e1e0c350337b4d9c46231711e500000000",
+       2
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ]
+    ],
+    "B": [
+     [
+      [
+       "d4b489c3ba3818d987b464e23da09fb4a0111cf43c13636721cc22dce17e8f1a00000000",
+       2
+      ],
+      [
+       "e63a9e24792ab46697d3636d5ac68a24db331611a78f7621df045c8973d74f7d00000000",
+       2
+      ],
+      [
+       "65589b21755b9675e46a944f08f5eb3907c44abf5ea8c57dd456152b19b9e13900000000",
+       2
+      ],
+      [
+       "9581a3b85ac418aa9bb2ea0761405398e4dc9e1328f155fa2e0693e9f2ef769100000000",
+       2
+      ],
+      [
+       "19a6f6f2f2dcd316b00191b6bb7c905c9a0661e1e0c350337b4d9c46231711e500000000",
+       2
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ]
+    ],
+    "C": [
+     [
+      [
+       "0e192c9b497641a3c68279bfd250c604c7e30d3ddb0ca350745002f877bad62800000000",
+       1
+      ],
+      [
+       "59f147deed1f7aaa6810bb1d89ffa93cab714ebf5cfcb19012b2da1b45327e3d00000000",
+       1
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 180,
+   "kv_usage": 0.09547738693467334,
+   "num_computed": {
+    "A": 45,
+    "B": 46,
+    "C": 19
+   },
+   "num_running": 3,
+   "num_tokens": {
+    "A": 46,
+    "B": 47,
+    "C": 20
+   },
+   "num_waiting": 0,
+   "preempted": [],
+   "prefix_hit": {},
+   "running": [
+    "A",
+    "B",
+    "C"
+   ],
+   "scheduled": {
+    "A": 1,
+    "B": 1,
+    "C": 1
+   },
+   "step": 6
+  },
+  {
+   "blocks": {
+    "B": [
+     [
+      [
+       "d4b489c3ba3818d987b464e23da09fb4a0111cf43c13636721cc22dce17e8f1a00000000",
+       1
+      ],
+      [
+       "e63a9e24792ab46697d3636d5ac68a24db331611a78f7621df045c8973d74f7d00000000",
+       1
+      ],
+      [
+       "65589b21755b9675e46a944f08f5eb3907c44abf5ea8c57dd456152b19b9e13900000000",
+       1
+      ],
+      [
+       "9581a3b85ac418aa9bb2ea0761405398e4dc9e1328f155fa2e0693e9f2ef769100000000",
+       1
+      ],
+      [
+       "19a6f6f2f2dcd316b00191b6bb7c905c9a0661e1e0c350337b4d9c46231711e500000000",
+       1
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ]
+    ],
+    "C": [
+     [
+      [
+       "0e192c9b497641a3c68279bfd250c604c7e30d3ddb0ca350745002f877bad62800000000",
+       1
+      ],
+      [
+       "59f147deed1f7aaa6810bb1d89ffa93cab714ebf5cfcb19012b2da1b45327e3d00000000",
+       1
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ]
+    ]
+   },
+   "finished": [
+    "A"
+   ],
+   "free_blocks": 184,
+   "kv_usage": 0.07537688442211055,
+   "num_computed": {
+    "B": 47,
+    "C": 20
+   },
+   "num_running": 2,
+   "num_tokens": {
+    "B": 48,
+    "C": 21
+   },
+   "num_waiting": 0,
+   "preempted": [],
+   "prefix_hit": {},
+   "running": [
+    "B",
+    "C"
+   ],
+   "scheduled": {
+    "A": 1,
+    "B": 1,
+    "C": 1
+   },
+   "step": 7
+  },
+  {
+   "blocks": {
+    "C": [
+     [
+      [
+       "0e192c9b497641a3c68279bfd250c604c7e30d3ddb0ca350745002f877bad62800000000",
+       1
+      ],
+      [
+       "59f147deed1f7aaa6810bb1d89ffa93cab714ebf5cfcb19012b2da1b45327e3d00000000",
+       1
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ]
+    ]
+   },
+   "finished": [
+    "B"
+   ],
+   "free_blocks": 193,
+   "kv_usage": 0.03015075376884424,
+   "num_computed": {
+    "C": 21
+   },
+   "num_running": 1,
+   "num_tokens": {
+    "C": 22
+   },
+   "num_waiting": 0,
+   "preempted": [],
+   "prefix_hit": {},
+   "running": [
+    "C"
+   ],
+   "scheduled": {
+    "B": 1,
+    "C": 1
+   },
+   "step": 8
+  },
+  {
+   "blocks": {},
+   "finished": [
+    "C"
+   ],
+   "free_blocks": 199,
+   "kv_usage": 0.0,
+   "num_computed": {},
+   "num_running": 0,
+   "num_tokens": {},
+   "num_waiting": 0,
+   "preempted": [],
+   "prefix_hit": {},
+   "running": [],
+   "scheduled": {
+    "C": 1
+   },
+   "step": 9
+  }
+ ]
+}

@@ -81,6 +81,47 @@ func EndpointPlacements(model *kernelmodel.Model, pools *Pools, total, prefill, 
 	return out, nil
 }
 
+// EndpointGroupPlacements is EndpointPlacements for a host that runs a data-parallel group as one instance
+// (core/vllm's DPGroup): instance n is the pool's group number n, placed at the group's first node, with the
+// number of nodes the group spans. A pool whose group size its nodes cannot hold without overlap
+// (Model.GroupLayoutError), or more instances than the pool holds groups (Model.GroupCapacity), is refused.
+// model is the colocated run's kernel; pools, when non-nil, the P/D pools.
+func EndpointGroupPlacements(model *kernelmodel.Model, pools *Pools, total, prefill, decode int) (map[string]Placement, error) {
+	if model == nil {
+		return nil, nil
+	}
+	out := make(map[string]Placement, total)
+	for n := 0; n < total; n++ {
+		m, g := model, n
+		if pools != nil {
+			switch {
+			case n < prefill:
+				m = pools.Prefill
+			case n < prefill+decode:
+				m, g = pools.Decode, n-prefill
+			default:
+				return nil, fmt.Errorf("instance_%d has no kernel pool placement", n)
+			}
+		}
+		if err := m.GroupLayoutError(); err != nil {
+			return nil, fmt.Errorf("instance_%d: the %s pool: %w", n, m.Role(), err)
+		}
+		if g >= m.GroupCapacity() {
+			return nil, fmt.Errorf("instance_%d group %d exceeds the %s pool's %d-group capacity", n, g, m.Role(), m.GroupCapacity())
+		}
+		placement, nodeCount, rackDeclared := m.EndpointGroupPlacement(g)
+		t := Placement{NodeCount: nodeCount}
+		if nodeCount == 1 {
+			t.Hostname = fmt.Sprintf("blis-node-%d", placement.Node)
+		}
+		if rackDeclared && nodeCount == 1 {
+			t.Rack = fmt.Sprintf("blis-rack-%d", placement.Rack)
+		}
+		out[fmt.Sprintf("instance_%d", n)] = t
+	}
+	return out, nil
+}
+
 // OpenPools opens the prefill and decode pools of the run's scenario. It returns nil when no
 // kernel is open (colocated, false) or the run is not disaggregated, and refuses a
 // disaggregated run whose scenario does not state both pools -- a P/D topology on the CLI over
@@ -428,14 +469,28 @@ func RankInPool(id string, firstDecode int) int {
 // as its nodes have GPUs for. Called once the instance counts are final. colocated is the
 // run's kernel (nil when none is open).
 func RequireCapacity(scenario string, colocated *kernelmodel.Model, p *Pools, top Topology) error {
+	return requireCapacity(scenario, colocated, p, top, (*kernelmodel.Model).RankCapacity, "rank(s)")
+}
+
+// RequireGroupCapacity is RequireCapacity for a host that runs a data-parallel group as one instance (core/vllm's
+// DPGroup): a pool holds as many instances as its GPUs hold groups of dp x pp x tp ranks (Model.GroupCapacity).
+func RequireGroupCapacity(scenario string, colocated *kernelmodel.Model, p *Pools, top Topology) error {
+	return requireCapacity(scenario, colocated, p, top, (*kernelmodel.Model).GroupCapacity, "data-parallel group(s)")
+}
+
+func requireCapacity(scenario string, colocated *kernelmodel.Model, p *Pools, top Topology,
+	capacity func(*kernelmodel.Model) int, unit string) error {
 	if colocated == nil {
 		return nil
 	}
 	check := func(role string, n int, m *kernelmodel.Model) error {
-		if c := m.RankCapacity(); n > c {
+		if err := m.GroupLayoutError(); err != nil && unit != "rank(s)" {
+			return fmt.Errorf("scenario %q's %s pool: %w", scenario, m.Role(), err)
+		}
+		if c := capacity(m); n > c {
 			return fmt.Errorf("%d %s instance(s) requested, but scenario %q's %s pool "+
-				"holds %d rank(s) at its layout; raise the pool's nodes in the scenario or run fewer",
-				n, role, scenario, m.Role(), c)
+				"holds %d %s at its layout; raise the pool's nodes in the scenario or run fewer",
+				n, role, scenario, m.Role(), c, unit)
 		}
 		return nil
 	}
@@ -463,9 +518,9 @@ func tierTicks(m *kernelmodel.Model, tier string, toTier bool, bytes int64, inSe
 	d := m.Kernel().TierTime(tier, dir, bytes, inService)
 	if d >= time.Duration(math.MaxInt64/2) {
 		return 0, fmt.Errorf("the kernel cannot price a %d-byte transfer %s storage tier %q: "+
-			"either the catalog's %s defines no such device, or it states no bandwidth in that "+
-			"direction", bytes, map[bool]string{true: "to", false: "from"}[toTier],
-			tier, CatalogStorageDevicesRelPath)
+			"either the catalog's %s names no such tier, or the scenario's coefficient sets carry "+
+			"no offload_tier_%s_* entries for the hardware (the set cost-model-offload-tiers)",
+			bytes, map[bool]string{true: "to", false: "from"}[toTier], tier, CatalogStorageDevicesRelPath, tier)
 	}
 	return max(1, (d.Nanoseconds()+999)/1000), nil
 }

@@ -1,0 +1,31 @@
+# DeepSeek-V4.1-Flash on one 8-GPU H200 node under plain tensor parallelism, drafting five tokens a
+# step with DSpark under synthetic rejection sampling at a mean acceptance length of 3.51, behind
+# vLLM's Rust front end, in a container that sets PYTHONUNBUFFERED. This is the shape of the
+# InferenceX agentic rows measured on vLLM v0.33.0 (tensor parallel 8); it is stated at v0.32.0,
+# the release the engine models. The synthetic length is the run's supplied acceptance
+# (rejection_sample_method synthetic takes one: vllm/config/speculative.py:575@5df63a72).
+kind: Scenario
+name: deepseek-v41-flash-h200-tp8-dspark5-synthetic-rust
+engine_version: "0.32.0"
+model: deepseek-v4.1-flash
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+cluster:
+  hardware: h200
+  nodes: 1
+  gpus_per_node: 8
+---
+kind: Deployment
+name: deepseek-v41-flash-h200-tp8-dspark5-synthetic-rust
+pools:
+  - role: colocated
+    nodes: 1
+    parallel: {tp: 8, pp: 1, dp: 1, enable_expert_parallel: false}
+    engine:
+      block_size: 64
+      kv_cache_dtype: fp8
+      max_num_seqs: 1024
+      max_num_batched_tokens: 8192
+      max_model_len: 1048576
+      gpu_memory_utilization: 0.8
+      env: {VLLM_USE_RUST_FRONTEND: "1", PYTHONUNBUFFERED: "1"}
+      speculative_config: {method: dspark, num_speculative_tokens: 5, rejection_sample_method: synthetic, synthetic_acceptance_length: 3.51}

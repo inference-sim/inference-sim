@@ -1,0 +1,430 @@
+{
+ "finished": {
+  "A": {
+   "output_tokens": 4,
+   "reason": "stop",
+   "step": 4
+  },
+  "B": {
+   "output_tokens": 3,
+   "reason": "stop",
+   "step": 5
+  }
+ },
+ "kv_config": {
+  "groups": [
+   {
+    "block_size": 8,
+    "page_size_bytes": 256,
+    "type": "FullAttentionSpec"
+   },
+   {
+    "block_size": 8,
+    "mamba_cache_mode": "align",
+    "num_prefill_checkpoint_blocks": 0,
+    "num_speculative_blocks": 0,
+    "page_size_bytes": 256,
+    "prefill_checkpoint_alignment": null,
+    "type": "MambaSpec"
+   }
+  ],
+  "hash_block_size": 8,
+  "mamba_has_prefill_checkpoint_blocks": false,
+  "mamba_partial_cache_hit": false,
+  "need_mamba_block_aligned_split": true,
+  "num_blocks": 200,
+  "scheduler_block_size": 8
+ },
+ "kv_pool": {
+  "available_bytes": 4096,
+  "kv_cache_layout": "LBNHC",
+  "num_blocks": 16,
+  "startup": {
+   "max_concurrent_batches": 1,
+   "message": "To serve at least one request with the model's max seq len (128), (0.0 GiB KV cache is needed, which is larger than the available KV cache memory (0.0 GiB). Based on the available memory, the estimated maximum model length is 104. Try increasing `gpu_memory_utilization` (which also controls CPU memory on the CPU backend) or decreasing `max_model_len` when initializing the engine. See https://docs.vllm.ai/en/latest/configuration/conserving_memory/ for more details.",
+   "refused": true
+  }
+ },
+ "provenance": {
+  "blis_vllm_commit": "d855ac9d0501427f819cda43a5fbcde33966b640",
+  "lockfile_sha256": "8baca0cbd0f28f5455c4d2c1b39a81ac3c424089e4c875e93614794c77932167",
+  "mock_version": "gpu-mock/5+af60be80e293",
+  "mocks": [
+   "vllm.v1.outputs.ModelRunnerOutput",
+   "tests.v1.core.utils.create_scheduler",
+   "sampled token stream",
+   "vllm.v1.core.sched.scheduler.time",
+   "vllm.v1.metrics.stats.time",
+   "vllm.v1.engine.time",
+   "vllm.v1.outputs.DraftTokenIds",
+   "spec-decode acceptance",
+   "tests.v1.core.utils.VllmConfig",
+   "tests.v1.core.utils.SchedulerConfig",
+   "vllm.config.vllm.HAS_TRITON",
+   "KV event publisher",
+   "tests.v1.core.utils.KVCacheConfig",
+   "tests.v1.core.utils.CacheConfig",
+   "vllm.v1.executor.abstract.Executor",
+   "EngineCore construction",
+   "vllm.platforms.cpu async override",
+   "use_v2_model_runner (CPU wheel without Triton)",
+   "vllm.config.ParallelConfig.sync_dp_state",
+   "DP coordinator stats transport",
+   "DPLBAsyncMPClient construction",
+   "DPEngineCoreProc construction",
+   "DP wave loop (harness copy of DPEngineCoreProc.run_busy_loop)",
+   "NIXL connector scheduler config",
+   "KV-transfer parameters on a request",
+   "OffloadingConnector scheduler config",
+   "OffloadingConnector worker (OffloadingWorkerMetadata transport)",
+   "finished_req_ids iteration order (per-process hash seed)"
+  ],
+  "model": "facebook/opt-125m",
+  "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+  "oracle_inputs": {
+   "oracle/mocks.json": "29fec19aa8b5bd75e12b37893eea761684d4399a7e3bee1066cb749eac58769c",
+   "oracle/requirements.lock": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
+   "oracle/run_scheduler.py": "dd0cbc255201f6d63588c720f4e687276f4b73fec0f490e997afdaacc2a5a127",
+   "oracle/scenarios/mamba-pool-refused.json": "0d5b3a00eabb0903d07146eb9987bb27d0335c47b1616a3627592a3777a10031"
+  },
+  "platform": "linux-x86_64",
+  "python": "3.12.16",
+  "requirements_lock_sha256": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
+  "scenario_sha256": "0d5b3a00eabb0903d07146eb9987bb27d0335c47b1616a3627592a3777a10031",
+  "seed": null,
+  "tier": 2,
+  "vllm_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+  "vllm_distribution": "0.32.0+cpu",
+  "vllm_version": "0.32.0"
+ },
+ "steps": [
+  {
+   "blocks": {
+    "A": [
+     [
+      [
+       "589a3b56eb894fa7056a66dab029d6c9e2e967cbfc184ffaa7910268f4286c4500000000",
+       1
+      ],
+      [
+       "11f852ea2aedb96f7b9accd247ee4deeebb38c04174ec3ff9d7965cdf2b87dc500000000",
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "11f852ea2aedb96f7b9accd247ee4deeebb38c04174ec3ff9d7965cdf2b87dc500000001",
+       1
+      ]
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 196,
+   "kv_usage": 0.015075376884422065,
+   "num_computed": {
+    "A": 16
+   },
+   "num_running": 1,
+   "num_tokens": {
+    "A": 20
+   },
+   "num_waiting": 0,
+   "preempted": [],
+   "prefix_hit": {
+    "A": 0
+   },
+   "running": [
+    "A"
+   ],
+   "scheduled": {
+    "A": 16
+   },
+   "step": 0
+  },
+  {
+   "blocks": {
+    "A": [
+     [
+      [
+       "589a3b56eb894fa7056a66dab029d6c9e2e967cbfc184ffaa7910268f4286c4500000000",
+       1
+      ],
+      [
+       "11f852ea2aedb96f7b9accd247ee4deeebb38c04174ec3ff9d7965cdf2b87dc500000000",
+       1
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "11f852ea2aedb96f7b9accd247ee4deeebb38c04174ec3ff9d7965cdf2b87dc500000001",
+       1
+      ],
+      [
+       null,
+       1
+      ]
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 194,
+   "kv_usage": 0.025125628140703515,
+   "num_computed": {
+    "A": 20
+   },
+   "num_running": 1,
+   "num_tokens": {
+    "A": 21
+   },
+   "num_waiting": 0,
+   "preempted": [],
+   "prefix_hit": {
+    "A": 0
+   },
+   "running": [
+    "A"
+   ],
+   "scheduled": {
+    "A": 4
+   },
+   "step": 1
+  },
+  {
+   "blocks": {
+    "A": [
+     [
+      [
+       "589a3b56eb894fa7056a66dab029d6c9e2e967cbfc184ffaa7910268f4286c4500000000",
+       1
+      ],
+      [
+       "11f852ea2aedb96f7b9accd247ee4deeebb38c04174ec3ff9d7965cdf2b87dc500000000",
+       1
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ]
+    ],
+    "B": [
+     [
+      [
+       "80196648ed171573ca5b568ad02630228f8ce7b9e087595bc14ff251b06e540c00000000",
+       1
+      ]
+     ],
+     [
+      [
+       "80196648ed171573ca5b568ad02630228f8ce7b9e087595bc14ff251b06e540c00000001",
+       1
+      ]
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 193,
+   "kv_usage": 0.03015075376884424,
+   "num_computed": {
+    "A": 21,
+    "B": 8
+   },
+   "num_running": 2,
+   "num_tokens": {
+    "A": 22,
+    "B": 14
+   },
+   "num_waiting": 0,
+   "preempted": [],
+   "prefix_hit": {
+    "B": 0
+   },
+   "running": [
+    "A",
+    "B"
+   ],
+   "scheduled": {
+    "A": 1,
+    "B": 8
+   },
+   "step": 2
+  },
+  {
+   "blocks": {
+    "A": [
+     [
+      [
+       "589a3b56eb894fa7056a66dab029d6c9e2e967cbfc184ffaa7910268f4286c4500000000",
+       1
+      ],
+      [
+       "11f852ea2aedb96f7b9accd247ee4deeebb38c04174ec3ff9d7965cdf2b87dc500000000",
+       1
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ]
+    ],
+    "B": [
+     [
+      [
+       "80196648ed171573ca5b568ad02630228f8ce7b9e087595bc14ff251b06e540c00000000",
+       1
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "80196648ed171573ca5b568ad02630228f8ce7b9e087595bc14ff251b06e540c00000001",
+       1
+      ],
+      [
+       null,
+       1
+      ]
+     ]
+    ]
+   },
+   "finished": [],
+   "free_blocks": 191,
+   "kv_usage": 0.04020100502512558,
+   "num_computed": {
+    "A": 22,
+    "B": 14
+   },
+   "num_running": 2,
+   "num_tokens": {
+    "A": 23,
+    "B": 15
+   },
+   "num_waiting": 0,
+   "preempted": [],
+   "prefix_hit": {
+    "B": 0
+   },
+   "running": [
+    "A",
+    "B"
+   ],
+   "scheduled": {
+    "A": 1,
+    "B": 6
+   },
+   "step": 3
+  },
+  {
+   "blocks": {
+    "B": [
+     [
+      [
+       "80196648ed171573ca5b568ad02630228f8ce7b9e087595bc14ff251b06e540c00000000",
+       1
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "null",
+       0
+      ],
+      [
+       null,
+       1
+      ]
+     ]
+    ]
+   },
+   "finished": [
+    "A"
+   ],
+   "free_blocks": 196,
+   "kv_usage": 0.015075376884422065,
+   "num_computed": {
+    "B": 15
+   },
+   "num_running": 1,
+   "num_tokens": {
+    "B": 16
+   },
+   "num_waiting": 0,
+   "preempted": [],
+   "prefix_hit": {},
+   "running": [
+    "B"
+   ],
+   "scheduled": {
+    "A": 1,
+    "B": 1
+   },
+   "step": 4
+  },
+  {
+   "blocks": {},
+   "finished": [
+    "B"
+   ],
+   "free_blocks": 199,
+   "kv_usage": 0.0,
+   "num_computed": {},
+   "num_running": 0,
+   "num_tokens": {},
+   "num_waiting": 0,
+   "preempted": [],
+   "prefix_hit": {},
+   "running": [],
+   "scheduled": {
+    "B": 1
+   },
+   "step": 5
+  }
+ ]
+}

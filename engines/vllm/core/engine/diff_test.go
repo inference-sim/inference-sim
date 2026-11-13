@@ -28,10 +28,12 @@ type scenario struct {
 		LongPrefillTokenThreshold int    `json:"long_prefill_token_threshold"`
 		EnablePrefixCaching       bool   `json:"enable_prefix_caching"`
 		SchedulingPolicy          string `json:"scheduling_policy"`
-		PipelineParallelSize      int    `json:"pipeline_parallel_size"`
-		AsyncScheduling           bool   `json:"async_scheduling"`
-		UseV2ModelRunner          bool   `json:"use_v2_model_runner"`
-		Speculative               *struct {
+		// EnableChunkedPrefill is SchedulerConfig.enable_chunked_prefill; unstated is true.
+		EnableChunkedPrefill *bool `json:"enable_chunked_prefill"`
+		PipelineParallelSize int   `json:"pipeline_parallel_size"`
+		AsyncScheduling      bool  `json:"async_scheduling"`
+		UseV2ModelRunner     bool  `json:"use_v2_model_runner"`
+		Speculative          *struct {
 			Method    string `json:"method"`
 			NumTokens int    `json:"num_speculative_tokens"`
 			Draft     string `json:"draft"`
@@ -169,7 +171,7 @@ func run(t *testing.T, sc scenario) trace {
 	s, err := sched.New(sched.Config{
 		MaxNumSeqs: c.MaxNumSeqs, MaxNumBatchedTokens: c.MaxNumBatchedTokens, BlockSize: c.BlockSize,
 		NumBlocks: c.NumBlocks, MaxModelLen: maxLen, LongPrefillTokenThreshold: c.LongPrefillTokenThreshold,
-		EnableChunkedPrefill: true, Policy: sched.Policy(c.SchedulingPolicy), EnablePrefixCaching: c.EnablePrefixCaching,
+		EnableChunkedPrefill: c.EnableChunkedPrefill == nil || *c.EnableChunkedPrefill, Policy: sched.Policy(c.SchedulingPolicy), EnablePrefixCaching: c.EnablePrefixCaching,
 		ReserveFullSequence: true, Async: c.AsyncScheduling, DecodeStagger: pp, UseV2ModelRunner: c.UseV2ModelRunner,
 		Spec: spec, MaxConcurrentBatches: queue,
 	})

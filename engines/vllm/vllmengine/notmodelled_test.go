@@ -45,8 +45,8 @@ var engineKeys = map[string][]string{
 	"cudagraph_mode":                           {"compilation_config.cudagraph_mode"},
 	"max_cudagraph_capture_size":               {"max_cudagraph_capture_size", "compilation_config.max_cudagraph_capture_size"},
 	"cudagraph_capture_sizes":                  {"cudagraph_capture_sizes", "compilation_config.cudagraph_capture_sizes"},
-	"decoder_replay_cudagraph_capture_sizes":   {"compilation_config.decoder_replay_cudagraph_capture_sizes"},
 	"custom_ops":                               {"compilation_config.custom_ops"},
+	"decoder_replay_cudagraph_capture_sizes":   {"compilation_config.decoder_replay_cudagraph_capture_sizes"},
 	"use_trtllm_attention":                     {"attention_config.use_trtllm_attention"},
 	"mla_prefill_backend":                      {"attention_config.mla_prefill_backend"},
 	"indexer_kv_dtype":                         {"attention_config.indexer_kv_dtype"},
@@ -62,6 +62,7 @@ var engineKeys = map[string][]string{
 	"max_num_seqs":                             {"max_num_seqs"},
 	"long_prefill_token_threshold":             {"long_prefill_token_threshold"},
 	"long_prefill_token_threshold_adaptive":    {"long_prefill_token_threshold_adaptive"},
+	"enable_chunked_prefill":                   {"enable_chunked_prefill"},
 	"max_num_scheduled_tokens":                 {"max_num_scheduled_tokens"},
 	"max_num_active_seqs":                      {"max_num_active_seqs"},
 	"watermark":                                {"watermark"},
@@ -69,6 +70,7 @@ var engineKeys = map[string][]string{
 	"prefill_schedule_interval":                {"prefill_schedule_interval"},
 	"stream_interval":                          {"stream_interval"},
 	"disable_hybrid_kv_cache_manager":          {"disable_hybrid_kv_cache_manager"},
+	"language_model_only":                      {"language_model_only"},
 	"max_model_len":                            {"max_model_len"},
 	"kv_cache_memory_bytes":                    {"kv_cache_memory_bytes"},
 	"prefix_match_unit":                        {"prefix_match_unit"},
@@ -99,6 +101,7 @@ var engineKeys = map[string][]string{
 	"speculative.kv_cache_dtype":               {"speculative_config.kv_cache_dtype"},
 	"speculative.draft_sample_method":          {"speculative_config.draft_sample_method"},
 	"speculative.rejection_sample_method":      {"speculative_config.rejection_sample_method"},
+	"speculative.synthetic_acceptance_length":  {"speculative_config.synthetic_acceptance_length"},
 	"speculative.enable_adaptive_verification": {"speculative_config.enable_adaptive_verification"},
 	"engram_config.cpu_offload":                {"engram_config.cpu_offload"},
 	"engram_config.dp_shared_memory":           {"engram_config.dp_shared_memory"},
@@ -110,29 +113,24 @@ var engineKeys = map[string][]string{
 
 // refused sets each refused field in the engine block, as YAML under pools[0].engine.
 var refused = map[string]string{
-	"kv_cache_memory_bytes":                                     "kv_cache_memory_bytes: 4294967296\n",
-	"stream_interval":                                           "stream_interval: 8\n",
-	"attention_config.use_trtllm_attention":                     "use_trtllm_attention: true\n",
-	"attention_config.mla_prefill_backend":                      "mla_prefill_backend: FLASHINFER\n",
-	"kernel_config.linear_backend":                              "linear_backend: flashinfer\n",
-	"linear_backend":                                            "linear_backend: flashinfer\n",
-	"compilation_config.custom_ops":                             "custom_ops: ['+rms_norm']\n",
-	"compilation_config.decoder_replay_cudagraph_capture_sizes": "decoder_replay_cudagraph_capture_sizes: [1, 2]\n",
-	"attention_config.indexer_kv_dtype":                         "indexer_kv_dtype: fp8\n",
-	"speculative_config.kv_cache_dtype":                         "speculative: {method: eagle3, num_spec_tokens: 3, kv_cache_dtype: fp8}\n",
-	"speculative_config.rejection_sample_method":                "speculative: {method: eagle3, num_spec_tokens: 3, rejection_sample_method: synthetic}\n",
-	"kv_events_config.publisher":                                "kv_events: {enable_kv_cache_events: true, publisher: \"null\"}\n",
-	"kv_events_config.topic":                                    "kv_events: {enable_kv_cache_events: true, topic: kv}\n",
-	"mamba_ssm_cache_dtype":                                     "mamba_ssm_cache_dtype: float32\n",
-	"dbo_decode_token_threshold":                                "dbo: {enable_dbo: true, dbo_decode_token_threshold: 64}\n",
-	"dbo_prefill_token_threshold":                               "dbo: {enable_dbo: true, dbo_prefill_token_threshold: 1024}\n",
-	"eplb_config.window_size":                                   "eplb: {enable_eplb: true, window_size: 500}\n",
-	"eplb_config.step_interval":                                 "eplb: {enable_eplb: true, step_interval: 100}\n",
-	"prefix_match_unit":                                         "prefix_match_unit: 8\n",
-	"prefix_cache_retention_interval":                           "prefix_cache_retention_interval: 256\n",
-	"max_cpu_loras":                                             "max_loras: 2\nmax_cpu_loras: 4\n",
-	"mamba_cache_mode":                                          "mamba_cache_mode: align\n",
-	"swa_bounded_replay":                                        "swa_bounded_replay: false\n",
+	"kv_cache_memory_bytes":                 "kv_cache_memory_bytes: 4294967296\n",
+	"attention_config.use_trtllm_attention": "attention_config: {use_trtllm_attention: true}\n",
+	"attention_config.mla_prefill_backend":  "attention_config: {mla_prefill_backend: FLASHINFER}\n",
+	"kernel_config.linear_backend":          "linear_backend: flashinfer\n",
+	"linear_backend":                        "linear_backend: flashinfer\n",
+	"compilation_config.custom_ops":         "compilation_config: {custom_ops: ['+rms_norm']}\n",
+	"speculative_config.kv_cache_dtype":     "speculative_config: {method: eagle3, num_speculative_tokens: 3, kv_cache_dtype: fp8}\n",
+	"kv_events_config.publisher":            "kv_events_config: {enable_kv_cache_events: true, publisher: \"null\"}\n",
+	"kv_events_config.topic":                "kv_events_config: {enable_kv_cache_events: true, topic: kv}\n",
+	"mamba_ssm_cache_dtype":                 "mamba_ssm_cache_dtype: float32\n",
+	"dbo_decode_token_threshold":            "enable_dbo: true\ndbo_decode_token_threshold: 64\n",
+	"dbo_prefill_token_threshold":           "enable_dbo: true\ndbo_prefill_token_threshold: 1024\n",
+	"eplb_config.window_size":               "enable_eplb: true\neplb_config: {window_size: 500}\n",
+	"eplb_config.step_interval":             "enable_eplb: true\neplb_config: {step_interval: 100}\n",
+	"prefix_match_unit":                     "prefix_match_unit: 8\n",
+	"prefix_cache_retention_interval":       "prefix_cache_retention_interval: 256\n",
+	"max_cpu_loras":                         "max_loras: 2\nmax_cpu_loras: 4\n",
+	"mamba_cache_mode":                      "mamba_cache_mode: align\n",
 }
 
 // atDefault is the partner of each refused case (SIM-9's refusal pair): the same setting stated at
@@ -141,24 +139,19 @@ var refused = map[string]string{
 // unreadSettings (core/vllm/config.go), each cited there. A key whose default is "unstated" has no
 // such value, and its entry says so.
 var atDefault = map[string]string{
-	"stream_interval":                                           "stream_interval: 1\n",
-	"attention_config.indexer_kv_dtype":                         "indexer_kv_dtype: auto\n",
-	"kernel_config.linear_backend":                              "linear_backend: auto\n",
-	"linear_backend":                                            "linear_backend: auto\n",
-	"compilation_config.custom_ops":                             "custom_ops: []\n",
-	"compilation_config.decoder_replay_cudagraph_capture_sizes": "decoder_replay_cudagraph_capture_sizes: []\n",
-	"speculative_config.rejection_sample_method":                "speculative: {method: eagle3, num_spec_tokens: 3, rejection_sample_method: block}\n",
-	"kv_events_config.publisher":                                "kv_events: {enable_kv_cache_events: true, publisher: zmq}\n",
-	"kv_events_config.topic":                                    "kv_events: {enable_kv_cache_events: true, topic: \"\"}\n",
-	"mamba_ssm_cache_dtype":                                     "mamba_ssm_cache_dtype: auto\n",
-	"dbo_decode_token_threshold":                                "dbo: {enable_dbo: true, dbo_decode_token_threshold: 32}\n",
-	"dbo_prefill_token_threshold":                               "dbo: {enable_dbo: true, dbo_prefill_token_threshold: 512}\n",
-	"eplb_config.window_size":                                   "eplb: {enable_eplb: true, window_size: 1000}\n",
-	"eplb_config.step_interval":                                 "eplb: {enable_eplb: true, step_interval: 3000}\n",
-	"prefix_cache_retention_interval":                           "prefix_cache_retention_interval: 0\n",
-	"max_cpu_loras":                                             "max_loras: 2\nmax_cpu_loras: 2\n",
-	"mamba_cache_mode":                                          "mamba_cache_mode: none\n",
-	"swa_bounded_replay":                                        "swa_bounded_replay: true\n",
+	"kernel_config.linear_backend":    "linear_backend: auto\n",
+	"linear_backend":                  "linear_backend: auto\n",
+	"compilation_config.custom_ops":   "compilation_config: {custom_ops: []}\n",
+	"kv_events_config.publisher":      "kv_events_config: {enable_kv_cache_events: true, publisher: zmq}\n",
+	"kv_events_config.topic":          "kv_events_config: {enable_kv_cache_events: true, topic: \"\"}\n",
+	"mamba_ssm_cache_dtype":           "mamba_ssm_cache_dtype: auto\n",
+	"dbo_decode_token_threshold":      "enable_dbo: true\ndbo_decode_token_threshold: 32\n",
+	"dbo_prefill_token_threshold":     "enable_dbo: true\ndbo_prefill_token_threshold: 512\n",
+	"eplb_config.window_size":         "enable_eplb: true\neplb_config: {window_size: 1000}\n",
+	"eplb_config.step_interval":       "enable_eplb: true\neplb_config: {step_interval: 3000}\n",
+	"prefix_cache_retention_interval": "prefix_cache_retention_interval: 0\n",
+	"max_cpu_loras":                   "max_loras: 2\nmax_cpu_loras: 2\n",
+	"mamba_cache_mode":                "mamba_cache_mode: none\n",
 }
 
 // noDefaultValue lists the refused keys that vLLM leaves unstated (None), so no stated value is the
@@ -180,35 +173,33 @@ var noDefaultValue = map[string]string{
 // The test checks each really reaches the kernel's settings (vllmsettings.Of), so an entry cannot
 // outlive the kernel reading the key.
 var pricedByTheKernel = map[string]string{
-	"all2all_backend":                               "all2all_backend: allgather_reducescatter\n#75",
-	"disable_custom_all_reduce":                     "disable_custom_all_reduce: true\n#78",
-	"compilation_config.cudagraph_mode":             "cudagraph_mode: FULL\n#78",
-	"max_cudagraph_capture_size":                    "max_cudagraph_capture_size: 512\n#78",
-	"compilation_config.max_cudagraph_capture_size": "max_cudagraph_capture_size: 512\n#78",
-	"cudagraph_capture_sizes":                       "cudagraph_capture_sizes: [1, 2, 4]\n#78",
-	"compilation_config.cudagraph_capture_sizes":    "cudagraph_capture_sizes: [1, 2, 4]\n#78",
-	"disable_cascade_attn":                          "disable_cascade_attn: false\n#78",
-	"quantization":                                  "quantization: fp8\n#78",
-	"kv_cache_dtype":                                "cache_dtype: fp8\n#78",
-	"mamba_cache_dtype":                             "mamba_cache_dtype: float32\n#83",
-	"moe_backend":                                   "moe_backend: triton\n#77",
-	"kernel_config.moe_backend":                     "moe_backend: triton\n#77",
-	"gpu_memory_utilization":                        "gpu_memory_utilization: 0.8\n#73",
-	"enable_dbo":                                    "dbo: {enable_dbo: true}\n#74",
-	"enable_eplb":                                   "eplb: {enable_eplb: true}\n#76",
-	"eplb_config.num_redundant_experts":             "eplb: {enable_eplb: true, num_redundant_experts: 8}\n#76",
-	"engram_config.cpu_offload":                     "engram_config: {cpu_offload: false}\n#78",
-	"engram_config.dp_shared_memory":                "engram_config: {dp_shared_memory: true}\n#78",
-	"engram_config.use_thp":                         "engram_config: {use_thp: true}\n#78",
-	"dcp_comm_backend":                              "dcp_comm_backend: a2a\n#79",
-	"dcp_q_replicate":                               "dcp_q_replicate: true\n#8",
-	"cp_kv_cache_interleave_size":                   "cp_kv_cache_interleave_size: 4\n#8",
+	"all2all_backend":                   "all2all_backend: allgather_reducescatter\n#75",
+	"disable_custom_all_reduce":         "disable_custom_all_reduce: true\n#78",
+	"disable_cascade_attn":              "disable_cascade_attn: false\n#78",
+	"mamba_cache_dtype":                 "mamba_cache_dtype: float32\n#83",
+	"moe_backend":                       "moe_backend: triton\n#75",
+	"kernel_config.moe_backend":         "moe_backend: triton\n#75",
+	"enable_dbo":                        "enable_dbo: true\n#74",
+	"enable_eplb":                       "enable_eplb: true\n#108",
+	"eplb_config.num_redundant_experts": "enable_eplb: true\neplb_config: {num_redundant_experts: 8}\n#108",
+	"engram_config.cpu_offload":         "engram_config: {cpu_offload: false}\n#78",
+	"engram_config.dp_shared_memory":    "engram_config: {dp_shared_memory: true}\n#78",
+	"engram_config.use_thp":             "engram_config: {use_thp: true}\n#78",
+	"dcp_comm_backend":                  "dcp_comm_backend: a2a\n#109",
+	"dcp_q_replicate":                   "dcp_q_replicate: true\n#8",
+	"cp_kv_cache_interleave_size":       "cp_kv_cache_interleave_size: 4\n#8",
 	// Reachable only through Spec.Config: a deployment cannot state them, because
 	// deployment.PDTransfer has the connector alone and offload.connector_options refuses all but
 	// blocks_per_chunk (offloadOf). blis-vllm#89.
 	"kv_transfer_config.kv_load_failure_policy":    "#89",
 	"kv_transfer_config.kv_connector_extra_config": "#89",
 }
+
+// readByTheEngine are the not-modelled keys the engine reads through a rule of its own that depends
+// on the model, so the engine accepts them. Each value is a snippet the d079 deployment (a
+// text-only model) builds with, and the rule's test is named beside it. The entry is unused once
+// the field is classed modelled.
+var readByTheEngine = map[string]struct{ snippet, test string }{}
 
 func fieldList(t *testing.T) []fields.Field {
 	t.Helper()
@@ -232,7 +223,20 @@ func withEngine(t *testing.T, extra string) map[string]string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := strings.Replace(string(raw), "      gpu_memory_utilization: 0.92\n", "      gpu_memory_utilization: 0.92\n"+indent(extra, "      "), 1)
+	body := string(raw)
+	// A config object the base fixture already states (compilation_config) takes the snippet's
+	// keys into its own mapping: vLLM's names allow the object once.
+	var rest []string
+	for _, line := range strings.SplitAfter(extra, "\n") {
+		g, inner, ok := strings.Cut(strings.TrimSuffix(line, "\n"), ": {")
+		if ok && strings.HasSuffix(inner, "}") && strings.Contains(body, "      "+g+": {") {
+			body = strings.Replace(body, "      "+g+": {", "      "+g+": {"+strings.TrimSuffix(inner, "}")+", ", 1)
+			continue
+		}
+		rest = append(rest, line)
+	}
+	extra = strings.Join(rest, "")
+	body = strings.Replace(body, "      gpu_memory_utilization: 0.92\n", "      gpu_memory_utilization: 0.92\n"+indent(extra, "      "), 1)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "v.yaml")
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
@@ -298,6 +302,10 @@ func TestEveryNotModelledFieldIsRefusedOrExplained(t *testing.T) {
 					t.Errorf("%s: the refusal does not cite %s: %v", name, url, err)
 				}
 			})
+		case readByTheEngine[name].snippet != "":
+			if _, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: withEngine(t, readByTheEngine[name].snippet)}); err != nil {
+				t.Errorf("%s: %s, which %s covers, is refused: %v", name, readByTheEngine[name].snippet, readByTheEngine[name].test, err)
+			}
 		case pricedByTheKernel[name] != "":
 			nPriced++
 			entry := pricedByTheKernel[name]
@@ -309,8 +317,12 @@ func TestEveryNotModelledFieldIsRefusedOrExplained(t *testing.T) {
 				continue // reachable only through Spec.Config: nothing to set in a deployment
 			}
 			// The latency kernel reads the key: stating it changes the settings it prices from.
-			var e engineconfig.Engine
-			if err := yaml.Unmarshal([]byte(strings.TrimSuffix(entry[:strings.LastIndex(entry, "#")], "\n")), &e); err != nil {
+			var n yaml.Node
+			if err := yaml.Unmarshal([]byte(strings.TrimSuffix(entry[:strings.LastIndex(entry, "#")], "\n")), &n); err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
+			e, err := engineconfig.Decode(deployment.NewEngineBlock(n.Content[0]))
+			if err != nil {
 				t.Fatalf("%s: %v", name, err)
 			}
 			if reflect.DeepEqual(vllmsettings.Of(e), vllmsettings.Of(engineconfig.Engine{})) {
@@ -444,17 +456,33 @@ func TestADeploymentStatesDPSyncInterval(t *testing.T) {
 
 // rejection_sample_method is not_modelled (#29) only for the value that fixes the acceptance length.
 // "standard" and "block", the values recorded runs state, are accepted: acceptance is supplied, so
-// they decide nothing the engine takes from the setting. "synthetic" is refused.
+// they decide nothing the engine takes from the setting. "synthetic" fixes the length, which the
+// run supplies as speculative_config.synthetic_acceptance_length (#88): with it the block is
+// accepted, as the run's supplied acceptance profile; without it, as vLLM refuses it
+// (vllm/config/speculative.py:575), it is refused.
 func TestOnlySyntheticRejectionSamplingIsRefused(t *testing.T) {
 	Register()
 	for _, c := range []struct {
 		method  string
+		length  string
 		refused bool
-	}{{"standard", false}, {"block", false}, {"synthetic", true}} {
-		extra := "speculative: {method: eagle3, num_spec_tokens: 3, rejection_sample_method: " + c.method + "}\n"
+	}{
+		{"standard", "", false}, {"block", "", false}, {"synthetic", "", true},
+		{"synthetic", ", synthetic_acceptance_length: 2.5", false},
+		{"synthetic", ", synthetic_acceptance_length: 4.0", false},
+		{"synthetic", ", synthetic_acceptance_length: 4.5", true},
+		{"synthetic", ", synthetic_acceptance_length: 0.5", true},
+		{"block", ", synthetic_acceptance_length: 2.5", true},
+		{"", ", synthetic_acceptance_length: 2.5", true},
+	} {
+		extra := "speculative_config: {method: eagle3, num_speculative_tokens: 3"
+		if c.method != "" {
+			extra += ", rejection_sample_method: " + c.method
+		}
+		extra += c.length + "}\n"
 		_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: withEngine(t, extra)})
 		if c.refused != (err != nil) {
-			t.Errorf("rejection_sample_method %s: err %v, want refused %t", c.method, err, c.refused)
+			t.Errorf("rejection_sample_method %q%s: err %v, want refused %t", c.method, c.length, err, c.refused)
 		}
 	}
 }
@@ -471,7 +499,7 @@ func TestKVEventsPublisherDefaultFollowsEnableKVCacheEvents(t *testing.T) {
 	}{
 		{true, "zmq", false}, {true, "null", true}, {false, "null", false}, {false, "zmq", true},
 	} {
-		extra := fmt.Sprintf("kv_events: {enable_kv_cache_events: %t, publisher: %q}\n", c.enabled, c.publisher)
+		extra := fmt.Sprintf("kv_events_config: {enable_kv_cache_events: %t, publisher: %q}\n", c.enabled, c.publisher)
 		_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: withEngine(t, extra)})
 		if c.refused != (err != nil) {
 			t.Errorf("events %t, publisher %s: err %v, want refused %t", c.enabled, c.publisher, err, c.refused)
@@ -499,5 +527,39 @@ func TestPrepareStatesMambaModelOnlyForARecurrentModel(t *testing.T) {
 	}
 	if !m.HasRecurrentLayers() {
 		t.Error("nemotron3-ultra has recurrent layers and HasRecurrentLayers says it has none")
+	}
+}
+
+// attention_config.use_trtllm_attention is refused whatever its value, on every part. Which prefill
+// kernel runs is the engine's to resolve and to report as the implementation of attention.prefill
+// (VAL-8); this engine reports none yet, which needs the code hash of the trtllm-gen prefill kernel of
+// its FlashInfer pin, published by an engine release's kernel_impls.json (inference-sim/blis-registry#73).
+// The kernel reads no such setting, so a stated value would be priced as the default and dropped
+// without a word; the engine says so first, citing blis-vllm#80.
+func TestTheEngineRefusesUseTRTLLMAttentionWhateverItsValue(t *testing.T) {
+	Register()
+	build := func(t *testing.T, chip, line string) error {
+		t.Helper()
+		roots := withEngine(t, line)
+		raw, err := os.ReadFile(roots[RootScenario])
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := strings.Replace(string(raw), "hardware: b200", "hardware: "+chip, 1)
+		if err := os.WriteFile(roots[RootScenario], []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, err = engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots})
+		return err
+	}
+	for _, c := range []struct{ chip, line string }{
+		{"b200", "attention_config: {use_trtllm_attention: true}\n"}, {"h200", "attention_config: {use_trtllm_attention: true}\n"},
+		{"b200", "attention_config: {use_trtllm_attention: false}\n"}, {"h200", "attention_config: {use_trtllm_attention: false}\n"},
+	} {
+		err := build(t, c.chip, c.line)
+		if err == nil || !strings.Contains(err.Error(), "attention_config.use_trtllm_attention") ||
+			!strings.Contains(err.Error(), "blis-vllm/issues/80") {
+			t.Errorf("%s on %s: %v, want a refusal naming the field and blis-vllm#80", strings.TrimSpace(c.line), c.chip, err)
+		}
 	}
 }

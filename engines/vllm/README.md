@@ -39,6 +39,7 @@ that interface. The design is
 | `testdata/` | inputs of `compat/kernelmodel`'s tests: inference-sim's scenarios (`testdata/README.md`); the catalog and registry are the pinned blis-substrate's, through its loader |
 | `docs/feature-matrix.md` | every feature our sources use, its v0.32.0 citation, owner, oracle tier and status |
 | `docs/testing.md` | the oracle tiers, the shared GPU mock, provenance, golden-trace policy |
+| `docs/multiconnector.md` | the MultiConnector model: the choice rule, what is saved to which child, how it is tested, what it refuses |
 
 ## The field list (fields.json)
 
@@ -85,8 +86,21 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   it for every value: `max_num_seqs` and `max_num_batched_tokens`, by `ResolveBatch` in
   `core/vllm/batchdefaults.go`, and `gpu_memory_utilization`, whose default 0.92 `resolveEngine`
   in `compat/kernelmodel/engine_settings.go` fills in for every release the engine models.
-  `gpu_memory_utilization` stays `not_modelled`: the KV budget it sizes is priced by the cost
-  model, and nothing here compares that budget with vLLM's own memory profiling (VLM-3). `block_size` is `none`: the engine resolves an unstated one only
+  `gpu_memory_utilization` is `modelled`, and its rule stays `leave_unset` for a run that did not record it.
+  vLLM takes `ceil(total memory x utilization)` as the memory it may use (`request_memory`,
+  `vllm/v1/worker/utils.py:716-726@5df63a72`), subtracts what the profile run finds is not KV cache (weights, non-torch
+  memory and the peak activation) and the CUDA graph estimate (`Worker.determine_available_memory`,
+  `vllm/v1/worker/gpu_worker.py:733-745`; `VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS` defaults on), and cuts the rest into
+  whole pages (`get_kv_cache_config_from_groups`, `vllm/v1/core/kv_cache_utils.py:1588`). `KVMemory`
+  (`compat/kernelmodel/capacity.go`) takes the same budget and subtracts the kernel's per-rank fixed occupancy
+  (weights, activation peak, CUDA graph, EPLB replicas and communication buffers), so a stated value moves the
+  pool by exactly the memory it adds. The evidence is `compat/build/memory_utilization_test.go` (0.95 gives more
+  blocks than 0.9, by that rule, and neither is the default's) and `compat/kernelmodel/capacity_test.go`. What the
+  evidence does not show: the fixed occupancy is the kernel's estimate, not vLLM's profile run, and on the one
+  recorded case (DeepSeek-V4.1-Flash, tp 8, utilization 0.80) the pool is 47.56 GiB against vLLM's logged
+  61.18 GiB (blis-vllm#73 tracks closing that). The field's value classes are one class, since no comparison of the
+  field with a literal is found in the source (the budget is arithmetic). `kv_cache_memory_bytes`, which overrides
+  the utilization in vLLM, is refused when stated (blis-vllm#81). `block_size` is `none`: the engine resolves an unstated one only
   for the models, GPUs and KV dtypes in `oracle/blocksize/TABLE.tsv` (`ResolveBlockSize` in
   `core/vllm/blocksize.go`) and refuses the rest, citing blis-vllm#68, and a field has one
   estimation rule, which cannot say that.
@@ -97,8 +111,22 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   not stand in for that. The v0.32.0 engine refuses a not-modelled key of the engine block that nothing reads when it is
   stated away from vLLM's default (`TestEveryNotModelledFieldIsRefusedOrExplained` walks fields.json
   and gives each refusal a partner that states the default and builds), naming the field and citing
-  its issue. The keys the latency kernel reads and prices at vLLM v0.31.0's policy (`blis-vllm#73`
+  its issue. The keys the latency kernel reads and prices at vLLM v0.31.0's policy (`blis-vllm#74`
   to `#80`, `#83`, `#8`) are the walk's allow-list.
+
+  Those fields stay `not_modelled` in M2, and the list is the M3 scope: the kernel accepts and prices a stated value of
+  each at its vLLM v0.31.0 policy, and updating that policy to v0.32.0's is M3 (blis-vllm#78 holds the date), four
+  fields at a time. `cudagraph_mode`, `cudagraph_capture_sizes` and `gpu_memory_utilization` are the exceptions: they are `modelled`, with the
+  divergence disclosed in the engine's assumptions (for `gpu_memory_utilization`, the fixed occupancy above). A point that states one of the others is priced at the
+  kernel's v0.31.0 policy, and its substitution list should say so. The fields, with the kernel site that
+  prices each: `all2all_backend` (`kernel.go:798`), `disable_custom_all_reduce` (`layout.go:208`),
+  `disable_cascade_attn` (`new.go:2868`), `mamba_cache_dtype`
+  (`new.go:270`), `moe_backend` (`step_terms.go:393`), `enable_dbo` (`new.go:708`), `enable_eplb` and
+  `eplb_config.num_redundant_experts` (`new.go:1353`), the three `engram_config` keys (`draft.go:432`),
+  `dcp_comm_backend` (`new.go:550`), `dcp_q_replicate` (`new.go:533`), `cp_kv_cache_interleave_size`
+  (`dcp.go:88`) and `attention_config.use_trtllm_attention` (`settings_priced.go:203`, which prices
+  `true` on one lane and refuses `false`). The sites are in blis-substrate's `kernel` package (`layout.go` and `dcp.go` are in its resolve
+  package); they were read at the pinned layer and are not diffed against v0.32.0.
 
   Every `not_modelled` field with the rule `leave_unset` is named below, with what a deployment that
   states it gets, so leaving it unset gives vLLM's default (`TestReadmeNamesEveryLeaveUnsetField`
@@ -107,24 +135,113 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   - not a key of the engine block, so a deployment that states it is refused when the block
     is decoded (an unknown key), and a run that does not state it runs vLLM's default: `attention_backend`,
     `attention_config.backend` (blis-vllm#80), `attention_config.indexer_sparse_logits` (#84),
-    `speculative_config.synthetic_acceptance_length` (#88), `kv_offloading_backend` (#87) and the
+    `api_server_count` (#105; the engine's data-parallel group is one client, which is vLLM's internal-load-balancing count for
+    every value recorded runs state, so a scorer drops a recorded value and leaves it unset), `kv_offloading_backend` (#87) and the
     environment variable `VLLM_USE_SIMPLE_KV_OFFLOAD` (#87, refused by the block's `env`);
   - a deployment field, not a key of the engine block, that the engine reads from the deployment:
     `data_parallel_external_lb` (#86) and `data_parallel_hybrid_lb` (#64), both stated as the pool's
     `parallel.data_parallel_load_balancing`, and `data_parallel_size_local` (#55), stated as
     `parallel.dp_local` and refused when its packing differs from the engine's;
+  - environment variables that change what a run does but not what the cost model prices, where an unset
+    variable gives the same engine path for the values recorded runs state (the harness that writes the
+    stand-in checks that, and names the field and the recorded value on the point): `VLLM_FLASHINFER_ALLREDUCE_BACKEND`
+    (#80; `mnnvl` stated across nodes on compute capability 10.0 and up is what vLLM resolves `auto` to; stated on one node it
+    is not, because `auto` there allows a trtllm fallback and a stated `mnnvl` does not,
+    `flashinfer_all_reduce.py:143-178@5df63a72`, and every tensor-parallel all-reduce is priced from the NCCL sweep),
+    `UCX_RCACHE_MAX_UNRELEASED` (#62; vLLM sets 1024 itself, `nixl_utils.py:20-36@5df63a72`) and `UCX_TLS` (#62; the engine
+    prices a handoff between nodes over the NIC unless `UCX_CUDA_IPC_ENABLE_MNNVL=y` is stated, which is the path a list of
+    RDMA transports without `cuda_ipc` takes). `UCX_CUDA_IPC_ENABLE_MNNVL` is read by the engine
+    (`compat/kernelmodel`): `y` prices a handoff between nodes of one NVLink rack over NVLink and names the unchecked VMM
+    registration as an assumption; anything else prices it over the NIC and says so;
   - read by the latency kernel, which prices a stated value at vLLM v0.31.0's policy:
-    `gpu_memory_utilization` (#73) and `engram_config.cpu_offload` (#78), where `leave_unset` fills
+    `engram_config.cpu_offload` (#78), where `leave_unset` fills
     only a value the run did not record;
-  - refused when stated away from its default: `attention_config.indexer_kv_dtype` (#84). `auto`
-    and the model's own default size MiniMax-M3's indexer cache, and any other value is refused for
-    every model.
   The two CUDA-graph switches `cudagraph_decoder_replay` (decoder-replay graphs,
   blis-vllm#80) and `cudagraph_specialize_lora` (blis-vllm#78) are `not_modelled` with `none`.
-- **`inert_unproven` is a transition status**, allowed only until M2 (release plan §3.3). VLM-3's
-  other checks are M2 work and are not here yet: the inertness proofs that turn each
-  `inert_unproven` field into `proven_inert` or reclassify it, the perturbation test over every
-  `modelled` field, and the value classes each modelled field's scenarios cover.
+  `attention_config.indexer_kv_dtype` is `modelled`: the engine reads it and prices the indexer's key cache.
+  On DeepSeek V4 and V4.1 `auto` and `fp8` give the 132-byte record, as vLLM resolves them, and `bf16`, `nvfp4`
+  and `mxfp4` are refused with vLLM's reason or the kernel's (`mxfp4`'s 68-byte record is not what the graph
+  prices); on MiniMax-M3 `auto` and `bf16` size the indexer cache at two bytes a key value and `fp8` or `fp8_e4m3` at one (vLLM stores the keys as
+  float8_e4m3fn with no scale), the latency kernel pricing the same record, and any other value is refused; a model with
+  no indexer cache refuses every value but `auto` (blis-vllm#84). The covered class is `auto` and `fp8`.
+  `speculative_config.synthetic_acceptance_length` is `modelled` (blis-vllm#88): with `rejection_sample_method: synthetic` it is the run's supplied
+  acceptance length, in [1, num_spec_tokens + 1], taken at the rank of the scenario's pin; `synthetic` without it is refused.
+  `speculative_config.rejection_sample_method` and `env.VLLM_USE_RUST_FRONTEND` are `modelled`, and `env.PYTHONUNBUFFERED` is
+  `proven_inert`, for the DeepSeek-V4.1-Flash H200 rows of InferenceX (blis-vllm#106, #85): what each does in vLLM, what the
+  engine does and what stays an assumption (the Rust front end's admission rate) are in `docs/h200-v033-fields.md`.
+- **Value classes** (VLM-3) are in `fields/value_classes.json`, generated from the same
+  pinned source by `fields/gen_classes.py` for every `modelled` and `proven_inert` field: for a
+  boolean or enumerated field the values (a value some comparison singles out is a class, the
+  rest are one class); for a numeric field the domain (the field's own `ge`/`gt`/`le`/`lt`) cut at
+  every number the source compares it with. Each class cites the file and line of the comparisons
+  that form it and lists the traces whose scenario states a value in it (`covered_by`; a key a scenario leaves out runs the runner's default and is not counted). The
+  generator finds a comparison where the field, or a name the same function assigned from it, meets a
+  literal; it does not follow a value passed to another function, which `fields/classes_extra.json`
+  covers one site at a time with a reason, and the file's `limits` says so. `fields/test_classes.py`
+  fails when a modelled field has no classes, a class is backed by no comparison, or a cited line no
+  longer holds it; `TestEveryModelledFieldRecordsItsValueClasses` fails the same way without the
+  source. `fields.json` carries the classes themselves (the substrate's loader refuses a modelled
+  or proven-inert field without them): `fields/gen_fields.py --value-classes fields/value_classes.json`
+  writes them there. `fields/value_classes.json` stays as the generated basis (the comparisons and traces behind each class), which the tests read, and
+  `TestEveryModelledFieldRecordsItsValueClasses` fails if the two disagree.
+- **Value classes under-approximate.** A class edge is a comparison of the field with a literal that the
+  generator finds in the pinned source. It does not find a field read by name through a helper that takes
+  the name as a string (`_scheduler_config_int(vllm_config, "max_num_batched_tokens", 0)`,
+  `vllm/models/deepseek_v4/common/ops/cache_utils.py:812-814@5df63a72`), a comparison with
+  another field (listed under `relations`, 25 of them for `max_num_batched_tokens`), or a threshold made by
+  `min`, `range` or arithmetic (`max_cudagraph_capture_size` also depends on `min(max_num_tokens, ...)`,
+  `vllm/config/vllm.py:2446@5df63a72`). So a field with one class, `max_num_seqs` for one, is a field no
+  scanned comparison singles out, not a field the engine treats alike at every value, and a trace that covers
+  a class shows the port matches vLLM at the values that trace states, not at every value of the class. The
+  `limits` text of `fields/value_classes.json` says the same.
+- **Inertness proofs** (design §7.4, tier T1) are `oracle/inertness/<field>.json`, written by
+  `oracle/inertness.py` and named by the field's `proof`. The harness varies the field over one value
+  per value class and runs vLLM's own code: the real Scheduler on oracle scenarios (the scenario's
+  `scheduler_config` states the probe), `EngineArgs.create_engine_config()` (every field of the resolved
+  scheduler, cache, parallel and compilation config is compared across the probes except the field
+  itself), and for a front-end field the real `OutputProcessor` (the requests it hands back to the engine
+  core to abort are compared). A field is inert only if every run's decisions to the engine are identical
+  across the probes and every Python read of the field (found by `fields/gen_classes.py --reads`, plus
+  reviewed reads the scan cannot follow) has a disposition that holds: a line executed in the named run
+  (coverage is kept per run, and matches a file by its path inside vLLM so it counts the installed wheel CI
+  runs as well as a checkout), or a keyword passed on to a callee that has its own. The other cases §7.4
+  admits (a surface the engine refuses by name, a platform check false on CUDA) are not accepted by the
+  harness yet; a proof naming one fails as an unknown disposition. A front-end effect is recorded
+  (`frontend_effect`), not hidden. The read scan is of Python. A proof may list `named_in`, every file of
+  `vllm/` and `rust/` that names the field, and the check fails when the tree names it in a file the proof
+  does not list; that is how the Rust front end's reads of `stream_interval` (`rust/src/cmd/src/cli.rs:277`,
+  `rust/src/llm/src/lib.rs:97-102`, `rust/src/engine-core-client/src/client/output_channel.rs`) are listed
+  and reviewed without being run, and how the proof shows no file of the engine names it.
+  A variable no file of the serving process names has a proof of kind `unread`. That is a reviewed
+  static fact (`"argument": "reviewed_static_fact"`), not a run: the scan shows no file names the
+  variable, and what the proof says about why it cannot matter is an argument the harness does not check
+  beyond what its `refusal_tests` name. The three `MC_` variables belong to the Mooncake transfer-engine
+  library, which vLLM loads only through a Mooncake connector; a deployment selects one by connector name
+  or through NIXL's `kv_connector_extra_config` backends, and the Go tests the proofs name
+  (`TestAMooncakeConnectorNameIsRefused`, `TestTheConnectorBlockCannotStateWhichBackendNixlLoads`,
+  `TestNoMooncakeConnectorIsServed`) pin that the engine refuses both.
+  `TestEveryProvenInertFieldHasAPassingProof` holds the list to the files, to the value classes (the
+  probes reach every class), to the engine's Go code (no non-test file but the listed ones names the
+  field) and to the refusal tests (each still exists). `oracle/test_inertness.py` (about 5 minutes
+  with the pinned source) shows the harness failing a field that changes the schedule
+  (`enable_chunked_prefill` off), a config run and an output-processor run whose engine-facing result
+  changes, a read it was not told about, a stale read, a run that did not execute the line it is credited
+  with (including when an earlier run did), a file that names the field and is not listed, and a variable the
+  source names.
+  `stream_interval` is proven inert for the engine only. The simulator's delivery stage does not read it
+  yet (inference-sim#2035 is open), so a recorded point that states 20 or 32 is simulated without the
+  grouping its client saw, and the field is not G1-eligible until that stage reads it.
+- **Narrower issues.** Part of what some `not_modelled` fields need is now its own issue; the fields keep
+  the citations they had (the fields.json entry and its status are unchanged here):
+  `api_server_count` (blis-vllm#105),
+  `default_chat_template_kwargs` and thinking mode (#107), `enable_eplb` (#108), and decode context
+  parallelism and `prefix_match_unit` (#109). `api_server_count` has the estimation rule `none` and is
+  not delivered: stating it changes nothing the engine simulates only for the single-client data-parallel
+  case, because vLLM scales the in-flight routing score, the optimistic increment and each client's scan
+  start by the client count (`vllm/v1/engine/core_client.py:1639-1640,1671,1685@5df63a72`); #105 asks for
+  that model.
+- **`inert_unproven` is a transition status**, allowed only until M2 (release plan §3.3). The
+  perturbation test over every `modelled` field, VLM-3's other check, is not here yet.
 - `TestTheFieldListLoadsAndNamesThisRelease` loads the file with the substrate's strict loader,
   checks it names this release, is in canonical form, and that every cited trace exists.
 

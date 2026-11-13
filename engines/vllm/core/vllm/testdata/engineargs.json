@@ -1,0 +1,486 @@
+{
+ "cases": [
+  {
+   "accepted": true,
+   "name": "accepted-base",
+   "resolved": {
+    "block_size": 16,
+    "enable_chunked_prefill": true,
+    "enable_prefix_caching": true,
+    "long_prefill_token_threshold": 0,
+    "max_loras": 0,
+    "max_model_len": 512,
+    "max_num_batched_tokens": 64,
+    "max_num_seqs": 4,
+    "scheduling_policy": "fcfs",
+    "watermark": 0.0
+   }
+  },
+  {
+   "accepted": true,
+   "name": "accepted-priority",
+   "resolved": {
+    "block_size": 16,
+    "enable_chunked_prefill": true,
+    "enable_prefix_caching": true,
+    "long_prefill_token_threshold": 0,
+    "max_loras": 0,
+    "max_model_len": 512,
+    "max_num_batched_tokens": 64,
+    "max_num_seqs": 4,
+    "scheduling_policy": "priority",
+    "watermark": 0.0
+   }
+  },
+  {
+   "accepted": true,
+   "name": "accepted-fcfs",
+   "resolved": {
+    "block_size": 16,
+    "enable_chunked_prefill": true,
+    "enable_prefix_caching": true,
+    "long_prefill_token_threshold": 0,
+    "max_loras": 0,
+    "max_model_len": 512,
+    "max_num_batched_tokens": 64,
+    "max_num_seqs": 4,
+    "scheduling_policy": "fcfs",
+    "watermark": 0.0
+   }
+  },
+  {
+   "accepted": true,
+   "name": "accepted-no-prefix-caching",
+   "resolved": {
+    "block_size": 16,
+    "enable_chunked_prefill": true,
+    "enable_prefix_caching": false,
+    "long_prefill_token_threshold": 0,
+    "max_loras": 0,
+    "max_model_len": 512,
+    "max_num_batched_tokens": 64,
+    "max_num_seqs": 4,
+    "scheduling_policy": "fcfs",
+    "watermark": 0.0
+   }
+  },
+  {
+   "accepted": true,
+   "name": "accepted-prefix-caching",
+   "resolved": {
+    "block_size": 16,
+    "enable_chunked_prefill": true,
+    "enable_prefix_caching": true,
+    "long_prefill_token_threshold": 0,
+    "max_loras": 0,
+    "max_model_len": 512,
+    "max_num_batched_tokens": 64,
+    "max_num_seqs": 4,
+    "scheduling_policy": "fcfs",
+    "watermark": 0.0
+   }
+  },
+  {
+   "accepted": true,
+   "name": "accepted-long-prefill-threshold",
+   "resolved": {
+    "block_size": 16,
+    "enable_chunked_prefill": true,
+    "enable_prefix_caching": true,
+    "long_prefill_token_threshold": 64,
+    "max_loras": 0,
+    "max_model_len": 512,
+    "max_num_batched_tokens": 64,
+    "max_num_seqs": 4,
+    "scheduling_policy": "fcfs",
+    "watermark": 0.0
+   }
+  },
+  {
+   "accepted": true,
+   "name": "accepted-long-prefill-at-max-model-len",
+   "resolved": {
+    "block_size": 16,
+    "enable_chunked_prefill": true,
+    "enable_prefix_caching": true,
+    "long_prefill_token_threshold": 512,
+    "max_loras": 0,
+    "max_model_len": 512,
+    "max_num_batched_tokens": 64,
+    "max_num_seqs": 4,
+    "scheduling_policy": "fcfs",
+    "watermark": 0.0
+   }
+  },
+  {
+   "accepted": true,
+   "name": "accepted-max-active-seqs",
+   "resolved": {
+    "block_size": 16,
+    "enable_chunked_prefill": true,
+    "enable_prefix_caching": true,
+    "long_prefill_token_threshold": 0,
+    "max_loras": 0,
+    "max_model_len": 512,
+    "max_num_batched_tokens": 64,
+    "max_num_seqs": 4,
+    "scheduling_policy": "fcfs",
+    "watermark": 0.0
+   }
+  },
+  {
+   "accepted": true,
+   "name": "accepted-max-active-equal-seqs",
+   "resolved": {
+    "block_size": 16,
+    "enable_chunked_prefill": true,
+    "enable_prefix_caching": true,
+    "long_prefill_token_threshold": 0,
+    "max_loras": 0,
+    "max_model_len": 512,
+    "max_num_batched_tokens": 64,
+    "max_num_seqs": 4,
+    "scheduling_policy": "fcfs",
+    "watermark": 0.0
+   }
+  },
+  {
+   "accepted": true,
+   "name": "accepted-watermark",
+   "resolved": {
+    "block_size": 16,
+    "enable_chunked_prefill": true,
+    "enable_prefix_caching": true,
+    "long_prefill_token_threshold": 0,
+    "max_loras": 0,
+    "max_model_len": 512,
+    "max_num_batched_tokens": 64,
+    "max_num_seqs": 4,
+    "scheduling_policy": "fcfs",
+    "watermark": 0.1
+   }
+  },
+  {
+   "accepted": true,
+   "name": "accepted-async",
+   "resolved": {
+    "block_size": 16,
+    "enable_chunked_prefill": true,
+    "enable_prefix_caching": true,
+    "long_prefill_token_threshold": 0,
+    "max_loras": 0,
+    "max_model_len": 512,
+    "max_num_batched_tokens": 64,
+    "max_num_seqs": 4,
+    "scheduling_policy": "fcfs",
+    "watermark": 0.0
+   }
+  },
+  {
+   "accepted": true,
+   "name": "accepted-sync",
+   "resolved": {
+    "block_size": 16,
+    "enable_chunked_prefill": true,
+    "enable_prefix_caching": true,
+    "long_prefill_token_threshold": 0,
+    "max_loras": 0,
+    "max_model_len": 512,
+    "max_num_batched_tokens": 64,
+    "max_num_seqs": 4,
+    "scheduling_policy": "fcfs",
+    "watermark": 0.0
+   }
+  },
+  {
+   "accepted": true,
+   "name": "accepted-max-loras",
+   "resolved": {
+    "block_size": 16,
+    "enable_chunked_prefill": true,
+    "enable_prefix_caching": true,
+    "long_prefill_token_threshold": 0,
+    "max_loras": 2,
+    "max_model_len": 512,
+    "max_num_batched_tokens": 64,
+    "max_num_seqs": 4,
+    "scheduling_policy": "fcfs",
+    "watermark": 0.0
+   }
+  },
+  {
+   "accepted": true,
+   "name": "accepted-ngram",
+   "resolved": {
+    "block_size": 16,
+    "enable_chunked_prefill": true,
+    "enable_prefix_caching": true,
+    "long_prefill_token_threshold": 0,
+    "max_loras": 0,
+    "max_model_len": 512,
+    "max_num_batched_tokens": 64,
+    "max_num_seqs": 4,
+    "scheduling_policy": "fcfs",
+    "watermark": 0.0
+   }
+  },
+  {
+   "accepted": true,
+   "name": "accepted-ngram-async-off",
+   "resolved": {
+    "block_size": 16,
+    "enable_chunked_prefill": true,
+    "enable_prefix_caching": true,
+    "long_prefill_token_threshold": 0,
+    "max_loras": 0,
+    "max_model_len": 512,
+    "max_num_batched_tokens": 64,
+    "max_num_seqs": 4,
+    "scheduling_policy": "fcfs",
+    "watermark": 0.0
+   }
+  },
+  {
+   "accepted": true,
+   "name": "accepted-budget-equals-seqs",
+   "resolved": {
+    "block_size": 16,
+    "enable_chunked_prefill": true,
+    "enable_prefix_caching": true,
+    "long_prefill_token_threshold": 0,
+    "max_loras": 0,
+    "max_model_len": 512,
+    "max_num_batched_tokens": 4,
+    "max_num_seqs": 4,
+    "scheduling_policy": "fcfs",
+    "watermark": 0.0
+   }
+  },
+  {
+   "accepted": true,
+   "name": "default-max-num-seqs-unstated",
+   "resolved": {
+    "block_size": 16,
+    "enable_chunked_prefill": true,
+    "enable_prefix_caching": true,
+    "long_prefill_token_threshold": 0,
+    "max_loras": 0,
+    "max_model_len": 512,
+    "max_num_batched_tokens": 64,
+    "max_num_seqs": 64,
+    "scheduling_policy": "fcfs",
+    "watermark": 0.0
+   }
+  },
+  {
+   "accepted": true,
+   "name": "default-max-num-batched-tokens-unstated",
+   "resolved": {
+    "block_size": 16,
+    "enable_chunked_prefill": true,
+    "enable_prefix_caching": true,
+    "long_prefill_token_threshold": 0,
+    "max_loras": 0,
+    "max_model_len": 512,
+    "max_num_batched_tokens": 2048,
+    "max_num_seqs": 4,
+    "scheduling_policy": "fcfs",
+    "watermark": 0.0
+   }
+  },
+  {
+   "accepted": true,
+   "name": "default-block-size-unstated",
+   "resolved": {
+    "block_size": 128,
+    "enable_chunked_prefill": true,
+    "enable_prefix_caching": true,
+    "long_prefill_token_threshold": 0,
+    "max_loras": 0,
+    "max_model_len": 512,
+    "max_num_batched_tokens": 64,
+    "max_num_seqs": 4,
+    "scheduling_policy": "fcfs",
+    "watermark": 0.0
+   }
+  },
+  {
+   "accepted": true,
+   "name": "default-max-model-len-unstated",
+   "resolved": {
+    "block_size": 16,
+    "enable_chunked_prefill": true,
+    "enable_prefix_caching": true,
+    "long_prefill_token_threshold": 0,
+    "max_loras": 0,
+    "max_model_len": 2048,
+    "max_num_batched_tokens": 64,
+    "max_num_seqs": 4,
+    "scheduling_policy": "fcfs",
+    "watermark": 0.0
+   }
+  },
+  {
+   "accepted": true,
+   "name": "default-all-scheduler-unstated",
+   "resolved": {
+    "block_size": 16,
+    "enable_chunked_prefill": true,
+    "enable_prefix_caching": true,
+    "long_prefill_token_threshold": 0,
+    "max_loras": 0,
+    "max_model_len": 512,
+    "max_num_batched_tokens": 2048,
+    "max_num_seqs": 128,
+    "scheduling_policy": "fcfs",
+    "watermark": 0.0
+   }
+  },
+  {
+   "accepted": true,
+   "name": "default-async-unstated-with-ngram",
+   "resolved": {
+    "block_size": 16,
+    "enable_chunked_prefill": true,
+    "enable_prefix_caching": true,
+    "long_prefill_token_threshold": 0,
+    "max_loras": 0,
+    "max_model_len": 512,
+    "max_num_batched_tokens": 64,
+    "max_num_seqs": 4,
+    "scheduling_policy": "fcfs",
+    "watermark": 0.0
+   }
+  },
+  {
+   "accepted": false,
+   "error": "ValidationError: 1 validation error for SchedulerConfig | Value error, max_num_batched_tokens (2) must be greater than or equal to max_num_seqs (4). [type=value_error, input_value=ArgsKwargs((), {'runner_t..., 'stream_interval': 1}), input_type=ArgsKwargs] | For further information visit https://errors.pydantic.dev/2.14/v/value_error",
+   "name": "refused-budget-below-seqs"
+  },
+  {
+   "accepted": false,
+   "error": "ValidationError: 1 validation error for SchedulerConfig | Value error, max_num_batched_tokens (3) must be greater than or equal to max_num_seqs (4). [type=value_error, input_value=ArgsKwargs((), {'runner_t..., 'stream_interval': 1}), input_type=ArgsKwargs] | For further information visit https://errors.pydantic.dev/2.14/v/value_error",
+   "name": "refused-budget-one-below-seqs"
+  },
+  {
+   "accepted": false,
+   "error": "ValidationError: 1 validation error for SchedulerConfig | policy | Input should be 'fcfs' or 'priority' [type=literal_error, input_value='sjf', input_type=str]",
+   "name": "refused-unknown-policy"
+  },
+  {
+   "accepted": false,
+   "error": "ValidationError: 1 validation error for SchedulerConfig | Value error, max_num_active_seqs (9) cannot be greater than max_num_seqs (4). [type=value_error, input_value=ArgsKwargs((), {'runner_t..., 'stream_interval': 1}), input_type=ArgsKwargs] | For further information visit https://errors.pydantic.dev/2.14/v/value_error",
+   "name": "refused-max-active-above-seqs"
+  },
+  {
+   "accepted": false,
+   "error": "ValidationError: 1 validation error for SchedulerConfig | Value error, max_num_active_seqs (5) cannot be greater than max_num_seqs (4). [type=value_error, input_value=ArgsKwargs((), {'runner_t..., 'stream_interval': 1}), input_type=ArgsKwargs] | For further information visit https://errors.pydantic.dev/2.14/v/value_error",
+   "name": "refused-max-active-one-above-seqs"
+  },
+  {
+   "accepted": false,
+   "error": "ValidationError: 1 validation error for SchedulerConfig | Value error, long_prefill_token_threshold (600) cannot be greater than the max_model_len (512). [type=value_error, input_value=ArgsKwargs((), {'runner_t..., 'stream_interval': 1}), input_type=ArgsKwargs] | For further information visit https://errors.pydantic.dev/2.14/v/value_error",
+   "name": "refused-long-prefill-above-max-model-len"
+  },
+  {
+   "accepted": false,
+   "error": "ValidationError: 1 validation error for SchedulerConfig | Value error, long_prefill_token_threshold (513) cannot be greater than the max_model_len (512). [type=value_error, input_value=ArgsKwargs((), {'runner_t..., 'stream_interval': 1}), input_type=ArgsKwargs] | For further information visit https://errors.pydantic.dev/2.14/v/value_error",
+   "name": "refused-long-prefill-one-above-max-model-len"
+  },
+  {
+   "accepted": false,
+   "error": "ValidationError: 1 validation error for SchedulerConfig | max_num_seqs | Input should be greater than or equal to 1 [type=greater_than_equal, input_value=0, input_type=int]",
+   "name": "refused-zero-seqs"
+  },
+  {
+   "accepted": false,
+   "error": "ValidationError: 1 validation error for SchedulerConfig | max_num_seqs | Input should be greater than or equal to 1 [type=greater_than_equal, input_value=-1, input_type=int]",
+   "name": "refused-negative-seqs"
+  },
+  {
+   "accepted": false,
+   "error": "ValidationError: 1 validation error for SchedulerConfig | max_num_batched_tokens | Input should be greater than or equal to 1 [type=greater_than_equal, input_value=0, input_type=int]",
+   "name": "refused-zero-budget"
+  },
+  {
+   "accepted": false,
+   "error": "ValidationError: 1 validation error for SchedulerConfig | long_prefill_token_threshold | Input should be greater than or equal to 0 [type=greater_than_equal, input_value=-1, input_type=int]",
+   "name": "refused-negative-long-prefill"
+  },
+  {
+   "accepted": false,
+   "error": "ValidationError: 1 validation error for SchedulerConfig | watermark | Input should be less than 1 [type=less_than, input_value=1.0, input_type=float]",
+   "name": "refused-watermark-one"
+  },
+  {
+   "accepted": false,
+   "error": "ValidationError: 1 validation error for SchedulerConfig | watermark | Input should be less than 1 [type=less_than, input_value=1.5, input_type=float]",
+   "name": "refused-watermark-above-one"
+  },
+  {
+   "accepted": false,
+   "error": "ValidationError: 1 validation error for SchedulerConfig | watermark | Input should be greater than or equal to 0 [type=greater_than_equal, input_value=-0.1, input_type=float]",
+   "name": "refused-negative-watermark"
+  },
+  {
+   "accepted": false,
+   "error": "ValidationError: 1 validation error for VllmConfig | Value error, Currently, async scheduling is only supported with EAGLE/MTP/Draft Model/NGram GPU/DSpark/DFlash kind of speculative decoding [type=value_error, input_value=ArgsKwargs((), {'model_co... 'shutdown_timeout': 0}), input_type=ArgsKwargs] | For further information visit https://errors.pydantic.dev/2.14/v/value_error",
+   "name": "refused-async-with-ngram-stated"
+  },
+  {
+   "accepted": false,
+   "error": "ValidationError: 1 validation error for LoRAConfig | max_loras | Input should be greater than or equal to 1 [type=greater_than_equal, input_value=-1, input_type=int]",
+   "name": "refused-negative-max-loras"
+  },
+  {
+   "accepted": false,
+   "error": "ValidationError: 1 validation error for SpeculativeConfig | method | Input should be 'ngram', 'medusa', 'mlp_speculator', 'draft_model', 'suffix', 'custom_class', 'eagle', 'eagle3', 'extract_hidden_states', 'deepseek_mtp', 'dots3_note_mtp', 'mimo_mtp', 'mimo_v2_mtp', 'glm4_moe_mtp', 'glm4_moe_lite_mtp', 'glm_ocr_mtp', 'ernie_mtp', 'nemotron_h_mtp', 'exaone_moe_mtp', 'exaone4_5_mtp', 'qwen3_next_mt",
+   "name": "refused-unknown-speculative-method"
+  }
+ ],
+ "provenance": {
+  "blis_vllm_commit": "79a23776cef9065445f3588d720d882c087129ad+dirty",
+  "lockfile_sha256": "4d719a16c9f869f71dbb64aef90aede8cc3920b973cc81479e10a67c2d408748",
+  "mock_version": "gpu-mock/5+af60be80e293",
+  "mocks": [
+   "vllm.v1.outputs.ModelRunnerOutput",
+   "tests.v1.core.utils.create_scheduler",
+   "sampled token stream",
+   "vllm.v1.core.sched.scheduler.time",
+   "vllm.v1.metrics.stats.time",
+   "vllm.v1.engine.time",
+   "vllm.v1.outputs.DraftTokenIds",
+   "spec-decode acceptance",
+   "tests.v1.core.utils.VllmConfig",
+   "tests.v1.core.utils.SchedulerConfig",
+   "vllm.config.vllm.HAS_TRITON",
+   "KV event publisher",
+   "tests.v1.core.utils.KVCacheConfig",
+   "vllm.v1.executor.abstract.Executor",
+   "EngineCore construction",
+   "vllm.platforms.cpu async override",
+   "use_v2_model_runner (CPU wheel without Triton)",
+   "vllm.config.ParallelConfig.sync_dp_state",
+   "DP coordinator stats transport",
+   "DPLBAsyncMPClient construction",
+   "DPEngineCoreProc construction",
+   "DP wave loop (harness copy of DPEngineCoreProc.run_busy_loop)",
+   "NIXL connector scheduler config",
+   "KV-transfer parameters on a request",
+   "OffloadingConnector scheduler config",
+   "OffloadingConnector worker (OffloadingWorkerMetadata transport)",
+   "finished_req_ids iteration order (per-process hash seed)"
+  ],
+  "model": "facebook/opt-125m",
+  "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+  "platform": "darwin-arm64",
+  "python": "3.12.13",
+  "requirements_lock_sha256": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
+  "scenario_sha256": "4132e1e00e6b33c1e1c0e11cd0619192afaeb64cde1ff6c65f5f535d71a3f44d",
+  "seed": null,
+  "tier": 1,
+  "vllm_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+  "vllm_distribution": "0.32.0+cpu",
+  "vllm_version": "0.32.0"
+ }
+}

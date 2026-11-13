@@ -1,0 +1,470 @@
+{
+ "field": "stream_interval",
+ "release": "v0.32.0 5df63a7203cdb9328d824a27b682e77c7b9928be",
+ "claim": "The engine (scheduler, KV cache, engine core, cost model) makes no decision from stream_interval. It sets how many new tokens the front end groups into one delivery to the client: in the Python front end the OutputProcessor (vllm/v1/engine/output_processor.py:324-340@5df63a72), in the Rust front end the per-request output channel (rust/src/engine-core-client/src/client/output_channel.rs:65-74@5df63a72), whose source says the engine core ignores the value (rust/src/engine-core-client/src/protocol/sampling.rs:166-168@5df63a72). Scope of the evidence. The read scan (readers) is of Python. The Rust front end reads the setting too (rust/src/cmd/src/cli.rs:277-278, rust/src/llm/src/lib.rs:97-102, rust/src/engine-core-client/src/client.rs:639-646 and the files named_in lists): those reads are listed by file and reviewed, and the harness does not run Rust. named_in lists every file of vllm/ and rust/ (tests excluded for rust) that names the field at all, and the check fails when the tree names it anywhere else, so no file of the engine (vllm/v1/core, vllm/v1/engine/core.py, the workers) reads it. What the runs show: the scheduler traces, the whole resolved scheduler, cache, parallel and compilation config except the field itself, and the requests the OutputProcessor hands back to the engine core to abort are identical at every probe. The delivery to the client differs (frontend_effect_differs), as it should. output_processor.py:255, the request's own interval, runs only for the one scripted request that states 4. What this does not give. The simulator's delivery stage does not read stream_interval yet (inference-sim#2035 is open). The field is inert for the engine, and is not G1-eligible until that stage reads it: a recorded point that states 20 or 32 is simulated without the grouping its client saw (inter-token latency and chunk timing).",
+ "probes": [
+  {
+   "label": "default (1: every token is delivered)",
+   "value": 1
+  },
+  {
+   "label": "20 (580 InferenceX points)",
+   "value": 20
+  },
+  {
+   "label": "32 (186 points)",
+   "value": 32
+  }
+ ],
+ "runs": [
+  {
+   "id": "sched-prefix-cache",
+   "kind": "scheduler",
+   "apply": {
+    "scheduler_config": "stream_interval"
+   },
+   "scenarios": [
+    "oracle/scenarios/prefix-cache.json",
+    "oracle/scenarios/long-prefill-chunks.json",
+    "oracle/scenarios/preempt-fcfs.json",
+    "oracle/scenarios/spec-eagle3.json"
+   ]
+  },
+  {
+   "id": "config",
+   "kind": "config",
+   "apply": {
+    "engine_args": "stream_interval"
+   },
+   "observe": [
+    "scheduler_config.max_num_seqs",
+    "scheduler_config.max_num_batched_tokens",
+    "scheduler_config.enable_chunked_prefill",
+    "cache_config.block_size"
+   ],
+   "echo": "scheduler_config.stream_interval",
+   "compare": [
+    "scheduler_config",
+    "cache_config",
+    "parallel_config",
+    "compilation_config"
+   ]
+  },
+  {
+   "id": "outputproc",
+   "kind": "outputproc",
+   "script": {
+    "requests": {
+     "a": {
+      "prompt": 8,
+      "tokens": [
+       [
+        11
+       ],
+       [
+        12
+       ],
+       [
+        13
+       ],
+       [
+        14
+       ],
+       [
+        15
+       ],
+       [
+        16
+       ],
+       [
+        17
+       ],
+       [
+        18
+       ],
+       [
+        19
+       ],
+       [
+        20
+       ],
+       [
+        21
+       ],
+       [
+        22
+       ],
+       [
+        23
+       ],
+       [
+        24
+       ],
+       [
+        25
+       ],
+       [
+        26
+       ],
+       [
+        27
+       ],
+       [
+        28
+       ],
+       [
+        29
+       ],
+       [
+        30
+       ],
+       [
+        31
+       ],
+       [
+        32
+       ],
+       [
+        33
+       ],
+       [
+        34
+       ],
+       [
+        35
+       ],
+       [
+        36
+       ],
+       [
+        37
+       ],
+       [
+        38
+       ],
+       [
+        39
+       ],
+       [
+        40
+       ],
+       [
+        41
+       ],
+       [
+        42
+       ],
+       [
+        43
+       ],
+       [
+        44
+       ],
+       [
+        45
+       ],
+       [
+        46
+       ],
+       [
+        47
+       ],
+       [
+        48
+       ],
+       [
+        49
+       ],
+       [
+        50
+       ]
+      ]
+     },
+     "b": {
+      "prompt": 4,
+      "tokens": [
+       [
+        31
+       ],
+       [
+        32
+       ],
+       [
+        33
+       ],
+       [
+        34
+       ],
+       [
+        35
+       ]
+      ],
+      "stream_interval": 4
+     }
+    }
+   }
+  }
+ ],
+ "readers": [
+  {
+   "at": "vllm/engine/arg_utils.py:2641",
+   "disposition": {
+    "kind": "run",
+    "run": "config"
+   }
+  },
+  {
+   "at": "vllm/v1/engine/async_llm.py:174",
+   "disposition": {
+    "kind": "pass_through",
+    "callee": "OutputProcessor",
+    "keyword": "stream_interval"
+   }
+  },
+  {
+   "at": "vllm/v1/engine/llm_engine.py:107",
+   "disposition": {
+    "kind": "pass_through",
+    "callee": "OutputProcessor",
+    "keyword": "stream_interval"
+   }
+  },
+  {
+   "at": "vllm/v1/engine/output_processor.py:198",
+   "reviewed": true,
+   "expr": "self.stream_interval = stream_interval",
+   "disposition": {
+    "kind": "run",
+    "run": "outputproc"
+   }
+  },
+  {
+   "at": "vllm/v1/engine/output_processor.py:255",
+   "reviewed": true,
+   "expr": "stream_interval = max(sampling_params.stream_interval, stream_interval)",
+   "disposition": {
+    "kind": "run",
+    "run": "outputproc"
+   }
+  },
+  {
+   "at": "vllm/v1/engine/output_processor.py:298",
+   "reviewed": true,
+   "expr": "stream_interval=stream_interval,",
+   "disposition": {
+    "kind": "pass_through",
+    "callee": "cls",
+    "keyword": "stream_interval"
+   }
+  },
+  {
+   "at": "vllm/v1/engine/output_processor.py:324",
+   "reviewed": true,
+   "expr": "if self.stream_interval > 1:",
+   "disposition": {
+    "kind": "run",
+    "run": "outputproc"
+   }
+  },
+  {
+   "at": "vllm/v1/engine/output_processor.py:335",
+   "reviewed": true,
+   "expr": ">= self.stream_interval",
+   "disposition": {
+    "kind": "run",
+    "run": "outputproc"
+   }
+  },
+  {
+   "at": "vllm/v1/engine/output_processor.py:518",
+   "reviewed": true,
+   "expr": "self.stream_interval = stream_interval",
+   "disposition": {
+    "kind": "run",
+    "run": "outputproc"
+   }
+  },
+  {
+   "at": "vllm/v1/engine/output_processor.py:638",
+   "reviewed": true,
+   "expr": "stream_interval=self.stream_interval,",
+   "disposition": {
+    "kind": "pass_through",
+    "callee": "from_new_request",
+    "keyword": "stream_interval"
+   }
+  }
+ ],
+ "named_in": {
+  "vllm": [
+   "vllm/config/scheduler.py",
+   "vllm/engine/arg_utils.py",
+   "vllm/entrypoints/openai/chat_completion/protocol.py",
+   "vllm/entrypoints/openai/completion/protocol.py",
+   "vllm/sampling_params.py",
+   "vllm/v1/engine/async_llm.py",
+   "vllm/v1/engine/llm_engine.py",
+   "vllm/v1/engine/output_processor.py"
+  ],
+  "rust": [
+   "rust/src/cmd/src/cli.rs",
+   "rust/src/engine-core-client/src/client.rs",
+   "rust/src/engine-core-client/src/client/imp.rs",
+   "rust/src/engine-core-client/src/client/output_channel.rs",
+   "rust/src/engine-core-client/src/client/state.rs",
+   "rust/src/engine-core-client/src/client/stream.rs",
+   "rust/src/engine-core-client/src/protocol/sampling.rs",
+   "rust/src/llm/src/lib.rs",
+   "rust/src/llm/src/output.rs",
+   "rust/src/server/examples/external_engine_openai_qwen.rs",
+   "rust/src/server/src/config.rs",
+   "rust/src/server/src/lib.rs",
+   "rust/src/server/src/routes/openai/chat_completions/convert.rs",
+   "rust/src/server/src/routes/openai/chat_completions/types.rs",
+   "rust/src/server/src/routes/openai/completions/convert.rs",
+   "rust/src/server/src/routes/openai/completions/types.rs",
+   "rust/src/text/src/lower.rs",
+   "rust/src/text/src/request.rs"
+  ]
+ },
+ "go_identifiers": [
+  "StreamInterval"
+ ],
+ "go_files_allowed": [
+  "rules/engineconfig/engine.go",
+  "rules/engineconfig/validate.go",
+  "compat/kernelmodel/kernelmodel.go"
+ ],
+ "result": {
+  "vllm_commit": "v0.32.0 5df63a7203cdb9328d824a27b682e77c7b9928be",
+  "problems": [],
+  "named_in": {
+   "rust": 18,
+   "vllm": 8
+  },
+  "runs": {
+   "sched-prefix-cache": {
+    "decisions": {
+     "default (1: every token is delivered)": "2cf33fa5ced4f2fbd226d8ece878f3245e856673d0eec143b6780a951cbc8495",
+     "20 (580 InferenceX points)": "2cf33fa5ced4f2fbd226d8ece878f3245e856673d0eec143b6780a951cbc8495",
+     "32 (186 points)": "2cf33fa5ced4f2fbd226d8ece878f3245e856673d0eec143b6780a951cbc8495"
+    },
+    "identical": true
+   },
+   "config": {
+    "decisions": {
+     "default (1: every token is delivered)": "58a827a9587a61c0ce5e38eaf6f011864975d6bca6e975d67b4c2c409d835004",
+     "20 (580 InferenceX points)": "58a827a9587a61c0ce5e38eaf6f011864975d6bca6e975d67b4c2c409d835004",
+     "32 (186 points)": "58a827a9587a61c0ce5e38eaf6f011864975d6bca6e975d67b4c2c409d835004"
+    },
+    "identical": true,
+    "compared_sections": [
+     "scheduler_config",
+     "cache_config",
+     "parallel_config",
+     "compilation_config"
+    ],
+    "resolved": {
+     "default (1: every token is delivered)": {
+      "scheduler_config.max_num_seqs": 128,
+      "scheduler_config.max_num_batched_tokens": 2048,
+      "scheduler_config.enable_chunked_prefill": true,
+      "cache_config.block_size": 128
+     },
+     "20 (580 InferenceX points)": {
+      "scheduler_config.max_num_seqs": 128,
+      "scheduler_config.max_num_batched_tokens": 2048,
+      "scheduler_config.enable_chunked_prefill": true,
+      "cache_config.block_size": 128
+     },
+     "32 (186 points)": {
+      "scheduler_config.max_num_seqs": 128,
+      "scheduler_config.max_num_batched_tokens": 2048,
+      "scheduler_config.enable_chunked_prefill": true,
+      "cache_config.block_size": 128
+     }
+    },
+    "echo": {
+     "default (1: every token is delivered)": 1,
+     "20 (580 InferenceX points)": 20,
+     "32 (186 points)": 32
+    }
+   },
+   "outputproc": {
+    "decisions": {
+     "default (1: every token is delivered)": "aa6925ebc6a48f2d7b39ee56fca37fe98c2247841949aaa476393864da4b9b90",
+     "20 (580 InferenceX points)": "aa6925ebc6a48f2d7b39ee56fca37fe98c2247841949aaa476393864da4b9b90",
+     "32 (186 points)": "aa6925ebc6a48f2d7b39ee56fca37fe98c2247841949aaa476393864da4b9b90"
+    },
+    "identical": true,
+    "frontend_effect": {
+     "default (1: every token is delivered)": "a6547938665b0d599d1dd651fa75d39291242aecc87398d530ab2ffe31d718d0",
+     "20 (580 InferenceX points)": "365c52c8c530616199d4d0f242ce9a3d1065e827419b51bc93c1c51d190e0012",
+     "32 (186 points)": "9ca39d0204aed34c7455890e8695b2e2eb869c64137a32a8d435fe1648985ea2"
+    },
+    "frontend_effect_differs": true
+   }
+  },
+  "readers": [
+   {
+    "at": "vllm/engine/arg_utils.py:2641",
+    "disposition": "run",
+    "ran_in": [
+     "config"
+    ]
+   },
+   {
+    "at": "vllm/v1/engine/async_llm.py:174",
+    "disposition": "pass_through"
+   },
+   {
+    "at": "vllm/v1/engine/llm_engine.py:107",
+    "disposition": "pass_through"
+   },
+   {
+    "at": "vllm/v1/engine/output_processor.py:198",
+    "disposition": "run",
+    "ran_in": [
+     "outputproc"
+    ]
+   },
+   {
+    "at": "vllm/v1/engine/output_processor.py:255",
+    "disposition": "run",
+    "ran_in": [
+     "outputproc"
+    ]
+   },
+   {
+    "at": "vllm/v1/engine/output_processor.py:298",
+    "disposition": "pass_through"
+   },
+   {
+    "at": "vllm/v1/engine/output_processor.py:324",
+    "disposition": "run",
+    "ran_in": [
+     "outputproc"
+    ]
+   },
+   {
+    "at": "vllm/v1/engine/output_processor.py:335",
+    "disposition": "run",
+    "ran_in": [
+     "outputproc"
+    ]
+   },
+   {
+    "at": "vllm/v1/engine/output_processor.py:518",
+    "disposition": "run",
+    "ran_in": [
+     "outputproc"
+    ]
+   },
+   {
+    "at": "vllm/v1/engine/output_processor.py:638",
+    "disposition": "pass_through"
+   }
+  ],
+  "verdict": "inert"
+ }
+}

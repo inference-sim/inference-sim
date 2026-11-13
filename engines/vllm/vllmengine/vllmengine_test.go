@@ -13,6 +13,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/load"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
@@ -207,7 +208,7 @@ func TestPrepareStatesTheMTPDrafterLayers(t *testing.T) {
 		t.Errorf("d001 (deepseek-v4-pro, mtp): mtp_nextn_predict_layers %q, want the graph's 1", v)
 	}
 	var own yaml.Node
-	if err := yaml.Unmarshal([]byte("speculative: {method: mtp, num_spec_tokens: 2}\nmtp_nextn_predict_layers: 3\n"), &own); err != nil {
+	if err := yaml.Unmarshal([]byte("speculative_config: {method: mtp, num_speculative_tokens: 2}\nmtp_nextn_predict_layers: 3\n"), &own); err != nil {
 		t.Fatal(err)
 	}
 	if v := stated(d001.complete(own), "mtp_nextn_predict_layers"); v != "3" {
@@ -383,7 +384,14 @@ func TestKVPoolBlocksAreVLLMsOverTheKVCacheGroups(t *testing.T) {
 		// bf16 (its own dtype), so the pool holds what vLLM sizes for one uniform-type group of
 		// two page sizes: 72893 blocks (oracle/scenarios/dashboard-minimax-m3-fp8-kv-probe, at
 		// d106's bytes, and dashboard-minimax-m3-fp8-kv-pool at the dashboard's b200 TP8).
-		{"d106-fp8kv-032.yaml", func(kernelmodel.KVBudget) int64 { return 72893 }},
+		// The catalog's MiniMax-M3 graph now holds the router of each of its 57 MoE layers: a
+		// float32 weight of 128 x 6144, replicated on every rank (MiniMaxM3MoE.gate is a
+		// GateLinear, a ReplicatedLinear with params_dtype float32, vllm/models/minimax_m3/nvidia/
+		// model.py:231-239@5df63a72). That is 57 x 3145728 = 179306496 bytes of weights the KV
+		// budget no longer has: 52667592213 bytes instead of 52846898709. vLLM's own
+		// get_kv_cache_config_from_groups on those bytes and the same layers sizes 72645 blocks
+		// (oracle/run_scheduler.py on the probe scenario with kv_available_bytes 52667592213).
+		{"d106-fp8kv-032.yaml", func(kernelmodel.KVBudget) int64 { return 72645 }},
 	} {
 		t.Run(c.scenario, func(t *testing.T) {
 			t.Parallel()
@@ -446,15 +454,15 @@ func TestADeploymentVLLMRefusesAtStartupIsRefusedWithVLLMsMessage(t *testing.T) 
 
 // Muse-Spark-Open-816B-A42B's hybrid KV (16 full, 46 sliding-window layers at 2048) is checked
 // at start-up over its groups, as vLLM checks it, not as one full-attention group: a DP8
-// rank on H200 holds a 262,144-token request (a full-attention group at full context and three
+// rank on GB200 holds a 262,144-token request (a full-attention group at full context and three
 // sliding-window groups at their admission caps), which every layer at full context would not.
-// Each arm runs: H100 RoCE PP2 x TP8 with and without the DSpark drafter, H200 InfiniBand
-// DP8 x EP8, and GB200 TP8 x EP8 and DP8 x EP8 with DSpark over two trays of one NVL72 rack.
+// Each arm runs: H100 RoCE PP2 x TP8 with and without the DSpark drafter, and GB200 TP8 x EP8 and
+// DP8 x EP8 with DSpark over two trays of one NVL72 rack. The H200 DP8 arms are refused below:
+// vLLM does not build Muse-Spark with data parallelism on Hopper.
 func TestMuseSparkDeploymentsBuildAndRun(t *testing.T) {
 	Register()
 	for _, s := range []string{"muse-h100-roce-armB.yaml", "muse-h100-roce-armC.yaml",
-		"muse-h200-ib-dep8.yaml", "muse-h200-ib-dep8-dspark-128k.yaml", "muse-gb200-nvl-tep8.yaml",
-		"muse-gb200-nvl-dep8-dspark.yaml"} {
+		"muse-gb200-nvl-tep8.yaml", "muse-gb200-nvl-dep8-dspark.yaml"} {
 		t.Run(s, func(t *testing.T) {
 			t.Parallel()
 			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, s)}
@@ -484,17 +492,24 @@ func TestMuseSparkDeploymentsBuildAndRun(t *testing.T) {
 	}
 }
 
-// What vLLM refuses to start, the engine refuses, with vLLM's message: H200 DP8 x EP8 with the
-// DSpark drafter at a 262,144-token window leaves a rank 16,124 blocks, and one request needs
-// cdiv(262144, 16) = 16,384 for its full-attention group plus 4 x 1,153 for its sliding-window
-// groups (get_kv_cache_configs' check,
-// vllm/v1/core/kv_cache_utils.py:2627-2647@5df63a72). The same arm at 131,072 runs (above).
-func TestMuseSparkDeploymentVLLMRefusesIsRefused(t *testing.T) {
+// What vLLM refuses to start, the engine refuses, with vLLM's reason. On Hopper
+// Muse-Spark's MoE layers take the route-major Marlin path, which raises "MuseSpark1x
+// Triton/Marlin currently requires DP1 and PCP1" at model construction, so every H200 DP8 x EP8
+// arm is refused, with and without the DSpark drafter and at either window
+// (vllm/models/muse_spark/nvidia/muse_moe_runner.py:140-146@0f6b2619). The Blackwell DP8 arm
+// (TestMuseSparkDeploymentsBuildAndRun) takes the TRT-LLM path and builds, which is the control.
+func TestMuseSparkOnHopperWithDataParallelismIsRefused(t *testing.T) {
 	Register()
-	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "muse-h200-ib-dep8-dspark.yaml")}
-	_, err := engine.New(spec)
-	if err == nil || !strings.Contains(err.Error(), "To serve at least one request with the model's max seq len (262144)") {
-		t.Errorf("err %v, want vLLM's start-up refusal", err)
+	for _, s := range []string{"muse-h200-ib-dep8.yaml", "muse-h200-ib-dep8-dspark.yaml",
+		"muse-h200-ib-dep8-dspark-128k.yaml"} {
+		t.Run(s, func(t *testing.T) {
+			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, s)}
+			_, err := engine.New(spec)
+			if err == nil || !strings.Contains(err.Error(), "requires data parallelism 1") ||
+				!strings.Contains(err.Error(), "MuseSpark1x Triton/Marlin currently requires DP1 and PCP1") {
+				t.Errorf("err %v, want vLLM's Muse-Spark refusal on Hopper", err)
+			}
+		})
 	}
 }
 
@@ -551,13 +566,30 @@ func TestMuseSparkPDPoolsRunThroughTheEngine(t *testing.T) {
 		held = res.Handoffs
 	}
 	dec := r
-	dec.RemotePrefill = true
+	// The host hands the decode engine the prefill's address, as a P/D proxy does (engine.Request.Peer).
+	prefillAt := plan.Endpoint{Node: 0, Rack: 0}
+	dec.RemotePrefill, dec.Peer = true, &prefillAt
 	if err := d.Add(dec, now); err != nil {
 		t.Fatal(err)
 	}
 	b, err := d.Schedule(now)
 	if err != nil || len(b.TransfersStarted) != 1 || b.TransfersStarted[0].Tokens != 8192 {
 		t.Fatalf("decode schedule: %v, transfers %+v, want one pull of 8192 tokens", err, b.TransfersStarted)
+	}
+	// The production pool states its placement (kernelmodel.EnginePlacement), the engine is Planned by it, and
+	// the pull states its move from the prefill to the decode pool's first node against that plan.
+	pl, ok := d.(engine.Planned)
+	if !ok {
+		t.Fatal("the decode engine is not Planned")
+	}
+	if mv := b.TransfersStarted[0].Move; mv.Kind != plan.TransferPeer || mv.From != prefillAt || mv.Tokens != 8192 {
+		t.Errorf("the pull's move is %+v, want a peer move of 8192 tokens from %+v", mv, prefillAt)
+	}
+	if err := pl.Plan().CheckTransfer(b.TransfersStarted[0].Move); err != nil {
+		t.Errorf("the decode plan %+v refuses the pull's move: %v", pl.Plan(), err)
+	}
+	if pl.Plan().Hardware == "" {
+		t.Error("the production pool's plan names no chip")
 	}
 	now += 5000
 	if err := d.TransferDone(b.TransfersStarted[0].ID, true, now); err != nil {
@@ -749,5 +781,37 @@ func TestOneBuildWritesOneReport(t *testing.T) {
 	}
 	if len(shared.Report().Selected) == 0 {
 		t.Fatal("the build's lookups are not in the host's Data")
+	}
+}
+
+// A MiniMax-M3 deployment that does not state language_model_only builds, and the engine discloses
+// that the cost model prices the text decoder alone while vLLM keeps the vision tower resident.
+// Stating true is what is priced, so it discloses nothing about it. d116 is minimax-m3 on a b200.
+func TestEngineDisclosesWhatLanguageModelOnlyLeavesUnpriced(t *testing.T) {
+	Register()
+	raw, err := os.ReadFile(filepath.Join("testdata", "d116-032.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		stated    string
+		disclosed bool
+	}{{"", true}, {"      language_model_only: false\n", true}, {"      language_model_only: true\n", false}} {
+		body := strings.Replace(string(raw), "      gpu_memory_utilization: 0.92\n", "      gpu_memory_utilization: 0.92\n"+c.stated, 1)
+		path := filepath.Join(t.TempDir(), "v.yaml")
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		e, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: map[string]string{RootScenario: path}})
+		if err != nil {
+			t.Fatalf("%q: %v", c.stated, err)
+		}
+		found := false
+		for _, a := range e.(interface{ Assumptions() []string }).Assumptions() {
+			found = found || strings.HasPrefix(a, "language_model_only = ")
+		}
+		if found != c.disclosed {
+			t.Errorf("%q: language_model_only assumption disclosed: %t, want %t", c.stated, found, c.disclosed)
+		}
 	}
 }

@@ -65,12 +65,14 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 	"github.com/inference-sim/blis-substrate/load"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
+	"github.com/inference-sim/blis-vllm/core/placement"
 	vllmrules "github.com/inference-sim/blis-vllm/rules"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 
@@ -116,10 +118,19 @@ type Model struct {
 	// prices the settings converted from it (Inputs.Engine), and the simulator's settings and
 	// sizing read the rest (Engine).
 	engine engineconfig.Engine
+	// assumed are the pricing assumptions this package discloses beside the kernel's own
+	// (EngineAssumptions), each "name = value: reason".
+	assumed []string
+	// substitutions are the execution modes priced in place of the ones the deployment states
+	// (Provenance().Substitutions).
+	substitutions []sim.Substitution
+	// indexerRules resolves the DeepSeek indexer's cache dtype, from the release's rules; nil when
+	// they carry no such rule (indexerKVDTypeRules).
+	indexerRules indexerKVDTypeRules
 
 	decodeThreshold int
 	smBudget        int
-	// specTokens is the pool's draft length (engine.speculative.num_spec_tokens), 0 when it
+	// specTokens is the pool's draft length (engine.speculative_config.num_speculative_tokens), 0 when it
 	// does not speculate. See batchOf.
 	specTokens int
 	// pad is how a lockstep data-parallel step pads this pool's ranks (#1909).
@@ -144,6 +155,9 @@ type Model struct {
 	// resolved is the pool's engine settings as its release resolves them (resolveEngine): for
 	// vLLM 0.32.0 the batch settings a deployment leaves unstated, with each one's source.
 	resolved resolvedEngine
+	// replay is the pool's decoder-side bounded replay as it resolved, nil where the model runs
+	// none (decoder_replay.go); the batches StepTimeOfShapes prices state its rows.
+	replay *decoderReplay
 
 	// No Scenario, Deployment or pool index is retained. Engine settings and widths are
 	// read from the kernel, which resolved this pool: holding the documents to index back
@@ -163,6 +177,7 @@ type Model struct {
 type identity struct {
 	model         string
 	hardware      string
+	fabric        string
 	memoryGiB     float64
 	smCount       int
 	experts       int
@@ -179,6 +194,13 @@ type identity struct {
 	poolNodes   int
 	gpusPerNode int
 	gpusPerRack int
+	// rackHandoff is whether a KV handoff between two nodes of one NVLink rack runs over NVLink.
+	// NIXL moves KV over multi-node NVLink only when UCX_CUDA_IPC_ENABLE_MNNVL=y and the KV cache is
+	// registered as VMM; otherwise it can only use RDMA or TCP across nodes
+	// (docs/features/nixl_connector_usage.md:401@5df63a72). The engine block states the flag
+	// (UCX_CUDA_IPC_ENABLE_MNNVL) and cannot yet state the VMM registration, so a stated "y" is read
+	// as the run's NVLink path and is disclosed (rackHandoffAssumption); anything else is the NIC.
+	rackHandoff bool
 	// packaging is the cluster's packaging as blis-substrate resolved it, with each value's
 	// source; gpusPerNode and gpusPerRack are its two counts.
 	packaging scenario.Packaging
@@ -212,6 +234,7 @@ func identityOf(in latencykernel.Inputs, engine engineconfig.Engine, pk scenario
 	return identity{
 		model:           in.Scenario.Model,
 		hardware:        in.Chip.Name,
+		fabric:          in.Scenario.Cluster.Fabric,
 		memoryGiB:       in.Chip.MemoryGiB,
 		smCount:         in.Chip.SMCount,
 		experts:         experts,
@@ -222,6 +245,7 @@ func identityOf(in latencykernel.Inputs, engine engineconfig.Engine, pk scenario
 		poolNodes:       pool.Nodes,
 		gpusPerNode:     pk.GPUsPerNode,
 		gpusPerRack:     pk.GPUsPerRack,
+		rackHandoff:     engine.Env[envMNNVL] == "y",
 		packaging:       pk,
 		rankGPUs:        max(1, pl.PP) * max(1, pl.TP) * max(1, pl.PCP),
 		tpRanks:         max(1, pl.TP),
@@ -347,7 +371,16 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 	if err := checkDPLocal(pool.Parallel, pk.GPUsPerNode); err != nil {
 		return nil, fmt.Errorf("%s pool: %w", pool.Role, err)
 	}
+	if err := checkMuseSparkParallel(architectureOf(in.Model), in.Chip, pool.Parallel); err != nil {
+		return nil, fmt.Errorf("%s pool: %w", pool.Role, err)
+	}
 	settings := vllmsettings.Of(engine)
+	// The quantization vLLM serves is the checkpoint's recipe's, not what --quantization names
+	// (lowerQuantization).
+	quant, err := lowerQuantization(in.Model, engine.Quantization, &settings)
+	if err != nil {
+		return nil, fmt.Errorf("%s pool: %w", pool.Role, err)
+	}
 	// An unstated block_size, gpu_memory_utilization, max_num_seqs or max_num_batched_tokens the release resolves is priced at the
 	// resolved value, so the kernel and Engine describe one engine (resolveEngine).
 	r := resolveEngine(in, engine)
@@ -369,6 +402,11 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 		settings.MaxNumBatchedTokens = r.engine.MaxNumBatchedTokens
 	}
 	in.Engine = &settings
+	// How an autoregressive drafter's passes run is the engine's to state (SUB-6): vLLM v0.32.0's
+	// speculator for eagle, eagle3 and mtp; any other method is left unstated and the kernel refuses it.
+	in.DraftFirstPassRows, in.DraftPassRequests = vllmsettings.DraftPasses(engine)
+	// The indexer cache's record under the indexer_kv_dtype stated (lowerIndexerKV).
+	in.Model = lowerIndexerKV(in.Model, engine.IndexerKVDType)
 	k, err := latencykernel.New(in)
 	if err != nil {
 		return nil, err
@@ -384,6 +422,21 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 	// size, the memory budget and the batch settings the deployment left unstated.
 	m.resolved = resolveEngine(in, engine)
 	m.engine = m.resolved.engine
+	m.assumed = append(languageModelOnlyAssumptions(in.Model, engine), cudagraphAssumptions(engine)...)
+	if m.resolved.mamba != nil {
+		m.assumed = append(m.assumed, m.resolved.mamba.assumptions...)
+	}
+	m.assumed = append(m.assumed, rackHandoffAssumptions(m.id)...)
+	if s := languageModelOnlySubstitution(in.Model, engine); s != nil {
+		m.substitutions = append(m.substitutions, *s)
+	}
+	if s := cudagraphSubstitution(engine, k.Resolved().Overrides); s != nil {
+		m.substitutions = append(m.substitutions, *s)
+	}
+	if quant != nil {
+		m.substitutions = append(m.substitutions, *quant)
+	}
+	m.indexerRules, _ = in.Rules.(indexerKVDTypeRules)
 	m.rules = reportRules(in)
 	m.routing = routingRecordOf(in.Routing)
 	// The graph the kernel priced: the scenario's, with a drafter named by
@@ -393,6 +446,9 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 	if in.Rules != nil {
 		m.cacheDType = in.Rules.ResolveCacheDType(architectureOf(in.Model), m.id.capabilityMajor,
 			max(pool.Parallel.TP, 1), engine.CacheDType)
+	}
+	if err := m.resolveDecoderReplay(in, pool); err != nil {
+		return nil, err
 	}
 	return m, nil
 }
@@ -460,6 +516,11 @@ func OpenRole(scenario string, r Repos, role deployment.Role) (*Model, error) {
 	return OpenPool(scenario, r, index)
 }
 
+// EngineAssumptions are the assumptions this package makes in pricing the pool's engine block,
+// each as "name = value: reason", beside the kernel's own (Provenance). They are empty when the
+// block states everything the price depends on.
+func (m *Model) EngineAssumptions() []string { return append([]string(nil), m.assumed...) }
+
 // Role is the role of the pool this model prices.
 func (m *Model) Role() deployment.Role { return m.id.role }
 
@@ -498,16 +559,145 @@ func (m *Model) Packaging() scenario.Packaging { return m.id.packaging }
 // holding its first GPU. The rack is the node's position in GPUsPerRack-sized domains; a
 // cluster stating none gives every node its own, so no two nodes are taken to share an NVLink
 // domain the scenario never described.
-func (m *Model) PlacementOf(rank int) kernel.Placement {
+func (m *Model) PlacementOf(rank int) kernel.Placement { return m.placementAt(rank, m.id.rankGPUs) }
+
+// placementAt places the pool's n-th unit of width GPUs, the units packed onto the nodes in order.
+func (m *Model) placementAt(n, width int) kernel.Placement {
 	node := m.id.firstNode
 	if m.id.gpusPerNode > 0 {
-		node += rank * m.id.rankGPUs / m.id.gpusPerNode
+		node += n * width / m.id.gpusPerNode
 	}
-	rack := node
-	if m.id.gpusPerRack > 0 && m.id.gpusPerNode > 0 {
-		rack = node * m.id.gpusPerNode / m.id.gpusPerRack
+	return kernel.Placement{Node: node, Rack: m.handoffRack(node), Pool: m.id.role}
+}
+
+// handoffRack is the rack a handoff reads for a pool's node. It decides which link a handoff between two nodes
+// crosses (kernel.PDTransferDemand): one rack means the NVLink domain, two means the NICs. Without the NVLink path
+// every node is its own rack, so the handoff is priced over the NIC. Only handoffs read this rack; the pool's
+// collectives use EnginePlacementOf, whose racks are the hardware's. PlacementOf and GroupPlacementOf both place
+// through it, so a host that runs a rank per instance and one that runs a group agree.
+func (m *Model) handoffRack(node int) int {
+	if m.id.rackHandoff && m.id.gpusPerRack > 0 && m.id.gpusPerNode > 0 {
+		return node * m.id.gpusPerNode / m.id.gpusPerRack
 	}
-	return kernel.Placement{Node: node, Rack: rack, Pool: m.id.role}
+	return node
+}
+
+// GroupGPUs is the GPUs of one data-parallel group, dp x pp x tp x pcp: the pod a vLLM server runs on,
+// whose ranks sit behind one endpoint and whose engine is one instance of a host that builds the
+// whole group as one engine (core/vllm's DPGroup). It equals the GPUs of one rank at dp 1.
+func (m *Model) GroupGPUs() int { return m.id.rankGPUs * max(1, m.k.Resolved().DataParallel()) }
+
+// groupLayout is how the pool's nodes hold groups of GroupGPUs: perNode groups on each node when a group fits
+// in one, else nodesPer whole nodes for each group. A group is never split across a node boundary it does not
+// fill: a group of 6 GPUs on 8-GPU nodes takes 6 of a node's 8 and leaves 2 idle, rather than starting
+// at GPU 6 of the node and running into the next, which would overlap the next group's GPUs. A group wider than a
+// node must be a whole number of nodes (nodesPer), and one that is not is refused.
+func (m *Model) groupLayout() (perNode, nodesPer int, err error) {
+	return groupLayoutOf(m.GroupGPUs(), m.id.gpusPerNode)
+}
+
+// groupLayoutOf is groupLayout for groups of g GPUs on nodes of n.
+func groupLayoutOf(g, n int) (perNode, nodesPer int, err error) {
+	switch {
+	case n <= 0:
+		return 1, 1, nil
+	case g <= n:
+		return n / g, 1, nil
+	case g%n != 0:
+		return 0, 0, fmt.Errorf("a data-parallel group of %d GPUs does not fill whole %d-GPU nodes: it would share a node "+
+			"with a neighbouring group; state a dp, tp or pp whose product is a divisor or a multiple of the node's GPUs", g, n)
+	}
+	return 0, g / n, nil
+}
+
+// groupCapacityOf is how many groups of g GPUs nodes pool nodes of n GPUs hold; 0 for a refused layout.
+func groupCapacityOf(nodes, g, n int) int {
+	perNode, nodesPer, err := groupLayoutOf(g, n)
+	switch {
+	case err != nil:
+		return 0
+	case n <= 0:
+		return nodes
+	case nodesPer > 1:
+		return nodes / nodesPer
+	}
+	return nodes * perNode
+}
+
+// groupNodeOf is the node (counted from the pool's first) holding the first GPU of the pool's i-th group.
+func groupNodeOf(i, g, n int) int {
+	perNode, nodesPer, _ := groupLayoutOf(g, n)
+	switch {
+	case n <= 0:
+		return 0
+	case nodesPer > 1:
+		return i * nodesPer
+	}
+	return i / max(perNode, 1)
+}
+
+// GroupLayoutError is the refusal for a group size the pool's nodes cannot hold without overlap, nil when they can.
+func (m *Model) GroupLayoutError() error { _, _, err := m.groupLayout(); return err }
+
+// GroupCapacity is how many groups the pool's nodes hold (groupLayout): 0 for a layout that is refused. A host that
+// runs a group as one instance may run at most this many in the pool (RankCapacity counts ranks, for a host that
+// runs one instance for each).
+func (m *Model) GroupCapacity() int {
+	return groupCapacityOf(m.id.poolNodes, m.GroupGPUs(), m.id.gpusPerNode)
+}
+
+// GroupPlacementOf places the pool's g-th group on the node holding its first GPU (groupLayout): the groups that
+// fit in a node fill it before the next, and a wider group starts at a whole node.
+func (m *Model) GroupPlacementOf(g int) kernel.Placement {
+	node := m.id.firstNode + groupNodeOf(g, m.GroupGPUs(), m.id.gpusPerNode)
+	return kernel.Placement{Node: node, Rack: m.handoffRack(node), Pool: m.id.role}
+}
+
+// EndpointGroupPlacement is EndpointPlacement for a host that runs a group as one instance: the first node and
+// rack of the pool's g-th group, how many nodes the group spans, and whether the rack was declared.
+func (m *Model) EndpointGroupPlacement(g int) (kernel.Placement, int, bool) {
+	p := m.GroupPlacementOf(g)
+	if m.id.gpusPerNode <= 0 {
+		return p, 0, m.id.gpusPerRack > 0
+	}
+	_, nodesPer, _ := m.groupLayout()
+	return p, max(nodesPer, 1), m.id.gpusPerRack > 0
+}
+
+// EnginePlacement is where the pool sits, in the engine's terms (core/placement): the chip and fabric the
+// scenario names, the parallel widths the kernel resolved, the pool's nodes and the rack of each, and
+// the node of the pool's first replica (PlacementOf(0), counted from the pool's first node). A
+// Placement is what the engine states its transfers against, and the plan they are priced against.
+func (m *Model) EnginePlacement() placement.Placement { return m.EnginePlacementOf(0) }
+
+// EnginePlacementOf is the placement of the pool's rank-th replica: EnginePlacement with the node its ranks fill
+// (PlacementOf), counted from the pool's first node. A host that builds one engine for each instance states it
+// with the engine's SetPlacement (placement.Placeable).
+func (m *Model) EnginePlacementOf(rank int) placement.Placement {
+	return m.enginePlacement(m.PlacementOf(rank))
+}
+
+// EngineGroupPlacementOf is the placement of the pool's g-th group: EnginePlacement with the node the
+// group's first rank fills (GroupPlacementOf), counted from the pool's first node. The group's own
+// engine states where each of its ranks sits from it (core/vllm's DPGroup.SetPlacement).
+func (m *Model) EngineGroupPlacementOf(g int) placement.Placement {
+	return m.enginePlacement(m.GroupPlacementOf(g))
+}
+
+func (m *Model) enginePlacement(at kernel.Placement) placement.Placement {
+	r := m.k.Resolved()
+	p := placement.Placement{Hardware: m.id.hardware, Fabric: m.id.fabric, Tensor: m.id.tpRanks,
+		Pipeline: m.PipelineStages(), Data: r.DataParallel(), Expert: r.ExpertParallel(),
+		RanksPerNode: m.id.gpusPerNode, Nodes: m.id.poolNodes}
+	for n := 0; n < m.id.poolNodes; n++ {
+		rack := m.id.firstNode + n
+		if m.id.gpusPerRack > 0 && m.id.gpusPerNode > 0 {
+			rack = (m.id.firstNode + n) * m.id.gpusPerNode / m.id.gpusPerRack
+		}
+		p.NodeRacks = append(p.NodeRacks, rack)
+	}
+	p.Node = at.Node - m.id.firstNode
+	return p
 }
 
 // EndpointPlacement reports whether one simulated engine rank fits on one
@@ -545,6 +735,20 @@ func (m *Model) PDTransferTicks(tokens int64, from, to kernel.Placement) int64 {
 // Kernel exposes the adapted kernel. A caller that needs a memory or provenance answer
 // asks the kernel directly rather than having this adapter grow a passthrough per method.
 func (m *Model) Kernel() kernel.Kernel { return m.k }
+
+// RecordSelected registers the model's kernel with d, as the kernel's own RecordSelected does:
+// d lists the kernel's selected coefficients, and (with a substrate that observes kernels) reads
+// at report time which a priced step used outside its fit range. A host whose kernel is
+// opened inside an engine calls it once per kernel; a nil d, or a kernel without the method,
+// does nothing.
+func (m *Model) RecordSelected(d *load.Data) {
+	if d == nil {
+		return
+	}
+	if r, ok := m.k.(interface{ RecordSelected(*load.Data) }); ok {
+		r.RecordSelected(d)
+	}
+}
 
 // StepTime prices one forward pass over the scheduled batch.
 //
@@ -654,7 +858,7 @@ type ReqShape = kernel.ReqShape
 // least one. The shapes are the caller's: under speculation a decode's Scheduled is already
 // its verify width.
 func (m *Model) StepTimeOfShapes(reqs []ReqShape) int64 {
-	b := kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget}
+	b := m.replay.tail(kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget})
 	return max(1, ticks(m.k.StepTime(b).NoOverlap))
 }
 
@@ -685,7 +889,7 @@ func (m *Model) VerifiedDraftsOfShapes(reqs []ReqShape) []int {
 // ticks, at least one, the last carrying the rounding so the stages sum exactly to
 // StepTimeOfShapes. A single-stage pool returns that one figure.
 func (m *Model) StageTimesOfShapes(reqs []ReqShape) []int64 {
-	b := kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget}
+	b := m.replay.tail(kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget})
 	e := m.k.StepTime(b)
 	total := max(1, ticks(e.NoOverlap))
 	if len(e.Stages) == 0 {
@@ -950,21 +1154,23 @@ func unmodelledSettings(e engineconfig.Engine) []string {
 		}
 	}
 	add(e.LongPrefillTokenThresholdAdaptive != nil, "long_prefill_token_threshold_adaptive")
+	add(e.EnableChunkedPrefill != nil, "enable_chunked_prefill")
 	add(e.MaxNumScheduledTokens != 0, "max_num_scheduled_tokens")
 	add(e.MaxNumActiveSeqs != 0, "max_num_active_seqs")
 	add(e.Watermark != nil, "watermark")
 	add(e.PrefillScheduleInterval != 0, "prefill_schedule_interval")
 	add(e.StreamInterval != 0, "stream_interval")
 	add(e.DisableHybridKVCacheManager != nil, "disable_hybrid_kv_cache_manager")
+	add(e.LanguageModelOnly != nil, "language_model_only")
 	add(e.KVCacheMemoryBytes != nil, "kv_cache_memory_bytes")
 	add(e.PrefixMatchUnit != 0, "prefix_match_unit")
 	// The compatibility engine models vLLM's default interval 0, which keeps only the semantic
 	// checkpoints (compat/kv/prefix_hit.go), so a stated 0 is what it runs.
 	add(e.PrefixCacheRetentionInterval != nil && *e.PrefixCacheRetentionInterval != 0, "prefix_cache_retention_interval")
-	add(e.KVEvents != nil, "kv_events")
+	add(e.KVEvents != nil, "kv_events_config")
 	add(e.MaxLoRAs != 0, "max_loras")
 	add(e.MaxCPULoRAs != 0, "max_cpu_loras")
-	add(e.Speculative != nil && e.Speculative.DraftModel != "", "speculative.draft_model")
+	add(e.Speculative != nil && e.Speculative.DraftModel != "", "speculative_config.model")
 	// engine.env: blis-schemas requires a consumer to refuse or disclose every key it cannot
 	// honour (spec/deployment/deployment.go Engine.Env), and the compatibility engine reads none,
 	// so each stated key is named.
@@ -1011,11 +1217,16 @@ func ShapeOf(scenario string, r Repos) (Shape, error) {
 		sh.LongPrefillTokenThresholds = append(sh.LongPrefillTokenThresholds, e.LongPrefillTokenThreshold)
 		sh.DPLoadBalancings = append(sh.DPLoadBalancings, p.Parallel.DataParallelLoadBalancing)
 		sh.Unmodelled = append(sh.Unmodelled, unmodelledSettings(e))
+		// The engine block's synthetic_acceptance_length is the run's supplied acceptance, at the
+		// rank of the scenario's pin (AcceptanceWithEngine); every pool must state the same one.
+		if sh.Acceptance, err = AcceptanceWithEngine(sh.Acceptance, e); err != nil {
+			return Shape{}, fmt.Errorf("%s: pools[%d]: %w", scenario, i, err)
+		}
 	}
 	return sh, nil
 }
 
-// checkSpeculativeMethod refuses a pool whose engine.speculative.method the scenario's engine
+// checkSpeculativeMethod refuses a pool whose engine.speculative_config.method the scenario's engine
 // release does not accept, read from that release's rules (rules.EngineRules
 // SpeculativeMethodAccepted), so the accepted set moves with engine_version: dspark is
 // accepted at vLLM 0.31.0 because that release ships it.
@@ -1032,12 +1243,42 @@ func checkSpeculativeMethod(in latencykernel.Inputs, engine engineconfig.Engine)
 		return nil
 	}
 	if in.Rules == nil {
-		return fmt.Errorf("engine.speculative.method %q cannot be checked: no engine rules for "+
+		return fmt.Errorf("engine.speculative_config.method %q cannot be checked: no engine rules for "+
 			"version %q", sp.Method, in.Scenario.EngineRelease())
 	}
 	if !in.Rules.SpeculativeMethodAccepted(sp.Method) {
-		return fmt.Errorf("engine.speculative.method %q is not accepted by engine %s; it accepts %s",
+		return fmt.Errorf("engine.speculative_config.method %q is not accepted by engine %s; it accepts %s",
 			sp.Method, in.Rules.EngineVersion(), strings.Join(in.Rules.SpeculativeMethodNames(), ", "))
+	}
+	return nil
+}
+
+// museSparkArchitecture is the architecture of the Muse-Spark checkpoints (the catalog graphs'
+// global.architecture).
+const museSparkArchitecture = "MuseSparkForConditionalGeneration"
+
+// checkMuseSparkParallel refuses what vLLM refuses for Muse-Spark on a Hopper part: data or
+// prefill-context parallelism above 1. Its MoE layers take the route-major Marlin and Triton path
+// on every capability-90 device (MuseSparkModelOptNvFp4FusedMoE.__init__ for NVFP4 experts, and
+// MuseSparkUnquantizedFusedMoE.__init__ for the layers the checkpoint excludes), and that path
+// calls _validate_route_major_deployment, which raises NotImplementedError "MuseSpark1x
+// Triton/Marlin currently requires DP1 and PCP1" (vllm/models/muse_spark/nvidia/muse_moe_runner.py
+// :140-146,569-581,745-751@0f6b2619). The model is not in the pinned v0.32.0 release; the
+// compatibility engine takes it from the commit the catalog's Muse graphs were derived from, as
+// kvlayers.go does. Blackwell takes the TRT-LLM path, which has no such check.
+func checkMuseSparkParallel(arch string, chip *hardware.Chip, pl deployment.Parallelism) error {
+	if arch != museSparkArchitecture || chip == nil {
+		return nil
+	}
+	if fam, ok := chip.CapabilityMajor(); !ok || fam != 9 {
+		return nil
+	}
+	if pl.DP > 1 || pl.PCP > 1 {
+		return fmt.Errorf("Muse-Spark on %s (compute capability %s) requires data parallelism 1 and prefill-context "+
+			"parallelism 1 (got dp %d, pcp %d): its MoE layers take the route-major Marlin path on Hopper, which "+
+			"vLLM refuses to build with more (\"MuseSpark1x Triton/Marlin currently requires DP1 and PCP1\", "+
+			"vllm/models/muse_spark/nvidia/muse_moe_runner.py:140-146@0f6b2619). Blackwell is not affected",
+			chip.Name, chip.ComputeCapability, pl.DP, pl.PCP)
 	}
 	return nil
 }
@@ -1097,4 +1338,23 @@ func allLatent(g *model.Graph) bool {
 		}
 	}
 	return n > 0
+}
+
+// envMNNVL is the UCX variable that lets NIXL's cuda_ipc transport cross nodes over multi-node NVLink.
+const envMNNVL = "UCX_CUDA_IPC_ENABLE_MNNVL"
+
+// rackHandoffAssumptions discloses how a handoff between two nodes of one NVLink rack is priced.
+// It speaks only for a part whose rack is one NVLink domain (gpus_per_rack above one node).
+func rackHandoffAssumptions(id identity) []string {
+	if id.gpusPerRack <= 0 || id.gpusPerNode <= 0 || id.gpusPerRack <= id.gpusPerNode {
+		return nil
+	}
+	if id.rackHandoff {
+		return []string{"kv_handoff_path: " + envMNNVL + "=y is stated, so a handoff between nodes of one rack is " +
+			"priced over NVLink; that KV is registered as VMM, which NIXL needs for it " +
+			"(docs/features/nixl_connector_usage.md:401@5df63a72), is not checked"}
+	}
+	return []string{"kv_handoff_path: " + envMNNVL + "=y is not stated, so a handoff between nodes is priced over " +
+		"the NIC at the cluster fabric's rate even inside one NVLink rack; NIXL uses multi-node NVLink only with " +
+		"that flag and VMM-registered KV (docs/features/nixl_connector_usage.md:401@5df63a72)"}
 }

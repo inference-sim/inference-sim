@@ -66,7 +66,7 @@ def main() -> None:
         if "testdata/golden" in os.path.abspath(out_dir).replace(os.sep, "/") and \
                 os.environ.get("BLIS_VLLM_ALLOW_GOLDEN_UPDATE") != "1":
             sys.exit("refusing to write golden traces: set BLIS_VLLM_ALLOW_GOLDEN_UPDATE=1, and add "
-                     "a golden-reviewed: <reviewer> trailer to the commit")
+                     "a golden-reviewed: <trace>: <reason> trailer for each trace the commit changes")
         names = sorted(f for f in os.listdir(path)
                        if f.endswith(".json") and not f.endswith((".trace.json", ".metrics.json")))
         for name in names:
@@ -114,6 +114,7 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         max_num_batched_tokens=cfg["max_num_batched_tokens"],
         long_prefill_token_threshold=cfg.get("long_prefill_token_threshold", 0),
         enable_prefix_caching=cfg.get("enable_prefix_caching", False),
+        enable_chunked_prefill=cfg.get("enable_chunked_prefill", True),
         num_blocks=cfg["num_blocks"],
         block_size=block_size,
         max_model_len=cfg.get("max_model_len"),
@@ -430,7 +431,7 @@ def _kv(scheduler) -> dict:
 def provenance(vllm_root: str, scenario_path: str, here: str, engine: dict) -> dict:
     if here not in sys.path:
         sys.path.insert(0, here)
-    from run_scheduler import blis_vllm_commit, committed_lock_sha256, scenario_seed  # noqa: E402
+    from run_scheduler import blis_vllm_commit, committed_lock_sha256, oracle_inputs, scenario_seed  # noqa: E402
 
     def git(*args):
         try:
@@ -465,6 +466,7 @@ def provenance(vllm_root: str, scenario_path: str, here: str, engine: dict) -> d
         "lockfile_sha256": lock_digest,
         "requirements_lock_sha256": committed_lock_sha256(),
         "blis_vllm_commit": blis_vllm_commit(),
+        "oracle_inputs": oracle_inputs(scenario_path),
         "seed": scenario_seed(scenario_path),
     }
 

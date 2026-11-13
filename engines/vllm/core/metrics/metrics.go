@@ -74,6 +74,28 @@ type Step struct {
 	FirstTokens []string
 	// Finished are the requests the step finished.
 	Finished []Finish
+	// Forgotten are the requests a client aborted (AsyncLLM.abort): the frontend drops the request
+	// state before any output carries the abort back (OutputProcessor.abort_requests,
+	// output_processor.py:552-613@5df63a72), so the request is in no finish-reason sample and
+	// the events it held (a preemption, its prefill stats) are never counted. A request the
+	// engine itself ends (a pause in abort mode, a shutdown with no timeout) arrives instead as
+	// a Finished entry with Reason "abort", and is counted.
+	Forgotten []string
+	// EngineAborts is the number of requests the engine itself aborted this step (each is also a
+	// Finished entry with reason "abort"). The frontend processes their abort outputs as an
+	// iteration of their own, before the step's batch (EngineCoreProc._send_abort_outputs,
+	// core.py:2132-2140@5df63a72).
+	EngineAborts int
+	// Drafts are the requests that verified drafts this step, in scheduled order. The counters
+	// they feed are SpecDecodingStats.observe_draft's (vllm/v1/spec_decode/metrics.py:41-49).
+	Drafts []Draft
+}
+
+// Draft is one request's verify step: the drafts it was scheduled and the drafts the target
+// accepted. A grammar-invalidated draft is not counted as proposed (make_spec_decoding_stats,
+// scheduler.py:2961-2978@5df63a72); the caller passes the count net of those.
+type Draft struct {
+	Proposed, Accepted int
 }
 
 // Bucketed names a histogram family and its upper bounds, as vLLM registers it.
@@ -84,9 +106,12 @@ type Bucketed struct {
 
 // Model keeps the series of one engine.
 type Model struct {
-	gauges   map[string]float64
-	counters map[string]float64
-	hists    map[string]*histogram
+	// specTokens is num_speculative_tokens: the positions vllm:spec_decode_num_accepted_tokens_per_pos
+	// registers, which exists only when speculation is on (SpecDecodingProm, metrics.py:249-258).
+	specTokens int
+	gauges     map[string]float64
+	counters   map[string]float64
+	hists      map[string]*histogram
 	// pending is each admitted request's PrefillStats, set at its first admission and
 	// emitted with its first output token (scheduler.py:1074-1080, 2208-2212@5df63a72).
 	pending map[string]prefill
@@ -143,6 +168,22 @@ func New(hists []Bucketed) *Model {
 	}
 	for _, h := range hists {
 		m.hists[h.Family] = &histogram{bounds: append([]float64(nil), h.Bounds...), counts: make([]float64, len(h.Bounds))}
+	}
+	return m
+}
+
+// WithSpeculation registers the speculative-decoding counters, at zero, for a pool that drafts
+// numSpecTokens tokens a step: the three totals and one accepted-tokens counter for each draft
+// position (SpecDecodingProm.__init__, vllm/v1/spec_decode/metrics.py:200-258@5df63a72). A pool
+// without speculation registers none of them.
+func (m *Model) WithSpeculation(numSpecTokens int) *Model {
+	m.specTokens = numSpecTokens
+	for _, c := range []string{"vllm:spec_decode_num_drafts_total", "vllm:spec_decode_num_draft_tokens_total",
+		"vllm:spec_decode_num_accepted_tokens_total"} {
+		m.counters[c] = 0
+	}
+	for i := range numSpecTokens {
+		m.counters[fmt.Sprintf("vllm:spec_decode_num_accepted_tokens_per_pos_total{position=%d}", i)] = 0
 	}
 	return m
 }
@@ -211,10 +252,33 @@ func (m *Model) Step(s Step) {
 		generated += s.Emitted[id]
 	}
 	m.counters["vllm:generation_tokens_total"] += float64(generated)
+	// An engine-sent abort output is its own iteration to the logger (the frontend builds
+	// IterationStats for any output batch, and PrometheusStatLogger.record observes the
+	// iteration's tokens, zero here). A step that carries one is counted once more if it also
+	// ran a batch: the abort outputs are processed before the batch's.
+	if s.EngineAborts > 0 {
+		m.observe("vllm:iteration_tokens_total", 0)
+	}
 	if len(s.Emitted) > 0 || len(s.FirstTokens) > 0 {
 		// One observation per step that produced outputs: the prompt tokens computed for
 		// requests whose first token this is, plus the generated tokens (loggers.py:1272-1275).
 		m.observe("vllm:iteration_tokens_total", float64(computed+generated))
+	}
+	for _, d := range s.Drafts {
+		// SpecDecodingStats.observe_draft, applied by SpecDecodingProm.observe (metrics.py:41-49,
+		// 262-272): a draft per verifying request, the positions it proposed and the leading
+		// positions the target accepted.
+		m.counters["vllm:spec_decode_num_drafts_total"]++
+		m.counters["vllm:spec_decode_num_draft_tokens_total"] += float64(d.Proposed)
+		m.counters["vllm:spec_decode_num_accepted_tokens_total"] += float64(d.Accepted)
+		for i := 0; i < d.Accepted && i < m.specTokens; i++ {
+			m.counters[fmt.Sprintf("vllm:spec_decode_num_accepted_tokens_per_pos_total{position=%d}", i)]++
+		}
+	}
+	for _, id := range s.Forgotten {
+		delete(m.pending, id)
+		delete(m.preemptions, id)
+		delete(m.cached, id)
 	}
 	for _, f := range s.Finished {
 		f.CachedTokens = m.cached[f.ID]

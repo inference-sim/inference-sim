@@ -52,6 +52,7 @@ import (
 	"github.com/inference-sim/blis-substrate/load"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/blis-vllm/core/placement"
 	vllm "github.com/inference-sim/blis-vllm/core/vllm"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
@@ -176,6 +177,17 @@ func open(s engine.Spec, given *load.Data) (pool, error) {
 		}
 	}
 	repos := kernelmodel.Repos{Scenarios: filepath.Dir(path), Data: data}
+	// The kernel refuses a kernel-facing setting it cannot price, naming the registry's issue. The
+	// settings this engine does not model are refused first, naming this repository's, so the refusal
+	// does not depend on the order of the two checks. A block that does not decode is left to the
+	// checks below, which report it.
+	if node, _, err := poolBlock(path, s.Pool); err == nil {
+		if e, err := engineconfig.Decode(deployment.NewEngineBlock(&node)); err == nil {
+			if err := vllm.RefuseUnreadSettings(e); err != nil {
+				return pool{}, fmt.Errorf("vllmengine: %w", err)
+			}
+		}
+	}
 	m, err := kernelmodel.OpenPool(filepath.Base(path), repos, s.Pool)
 	if err != nil {
 		return pool{}, fmt.Errorf("vllmengine: %w", err)
@@ -513,7 +525,8 @@ func poolBlock(path string, index int) (yaml.Node, deployment.Parallelism, error
 		if index < 0 || index >= len(doc.Pools) {
 			return yaml.Node{}, deployment.Parallelism{}, fmt.Errorf("vllmengine: %s has %d pools, not a pool %d", path, len(doc.Pools), index)
 		}
-		return doc.Pools[index].Engine, doc.Pools[index].Parallel, nil
+		// A yaml.Node field keeps an alias (`engine: *eng`) or a merge key as the parser left it.
+		return *engineconfig.ResolveAliases(&doc.Pools[index].Engine), doc.Pools[index].Parallel, nil
 	}
 }
 
@@ -536,6 +549,7 @@ func (p pool) complete(given yaml.Node) yaml.Node {
 	if block.Kind == 0 {
 		block = p.engine
 	}
+	block = *engineconfig.ResolveAliases(&block)
 	if block.Kind == yaml.DocumentNode && len(block.Content) == 1 {
 		block = *block.Content[0]
 	}
@@ -546,6 +560,13 @@ func (p pool) complete(given yaml.Node) yaml.Node {
 	// What the deployment left unstated, as the release resolves it (Model.Engine): the factory
 	// (core/vllm resolve) refuses these when absent, for a caller that builds an engine with no
 	// resolver. A value the block states is never replaced.
+	if p.model.HasRecurrentLayers() {
+		// A hybrid model's block size is vLLM's aligned one even over a stated size: the platform
+		// raises the attention block until its page covers the recurrent state's
+		// (update_block_size_for_backend, vllm/platforms/interface.py:759-800@5df63a72), which
+		// resolved.BlockSize holds as the larger of that and the stated size.
+		deleteKey(&block, "block_size")
+	}
 	setIfAbsent(&block, "block_size", fmt.Sprint(p.resolved.BlockSize))
 	setIfAbsent(&block, "max_num_seqs", fmt.Sprint(p.resolved.MaxNumSeqs))
 	setIfAbsent(&block, "max_num_batched_tokens", fmt.Sprint(p.resolved.MaxNumBatchedTokens))
@@ -576,11 +597,29 @@ func (p pool) complete(given yaml.Node) yaml.Node {
 		kt := yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 		setIfAbsent(&kt, "connector", p.connector)
 		setIfAbsent(&kt, "kv_role", role)
+		if p.connector == multiConnector && p.offload != nil {
+			setNodeIfAbsent(&kt, "kv_connector_extra_config", multiChildren(role))
+		}
 		setNodeIfAbsent(&block, "kv_transfer", &kt)
 	}
 	if p.offload != nil {
 		// The deployment's offload block as the OffloadingConnector's configuration (offloadOf).
-		setNodeIfAbsent(&block, "kv_offload", cloneNode(p.offload))
+		off := cloneNode(p.offload)
+		if kt, ok := mapGet(&block, "kv_transfer"); ok && connectorOf(kt) == multiConnector {
+			// Beside a MultiConnector the offloading child states the tier under vLLM's names, in its own
+			// kv_connector_extra_config, and kv_offload keeps what vLLM derives from the model.
+			var tier *yaml.Node
+			off, tier = splitOffload(off)
+			fillOffloadChild(kt, tier)
+		}
+		setNodeIfAbsent(&block, "kv_offload", off)
+	}
+	if _, kt := mapGet(&block, "kv_transfer"); kt || p.offload != nil {
+		// A pool that can start a transfer states them against its placement and is priced against the plan
+		// built from it (core/vllm Config.Placement; engine.Planned).
+		if n, err := placementNode(p.model.EnginePlacement()); err == nil {
+			setNodeIfAbsent(&block, "placement", n)
+		}
 	}
 	if runs, err := p.model.KVLayers(); err == nil && len(runs) > 0 {
 		// The model's attention layers by the KV cache spec vLLM builds for each, which the
@@ -617,7 +656,10 @@ func vllmRuns(runs []kernelmodel.KVLayerRun) []vllm.KVLayerRun {
 		out[i] = vllm.KVLayerRun{Count: r.Count, Spec: r.Spec, SlidingWindow: r.SlidingWindow,
 			NumKVHeads: r.NumKVHeads, HeadSize: r.HeadSize, BlockSize: r.BlockSize, TokensPerState: r.TokensPerState,
 			StateBytes: r.StateBytes, ElemBytes: r.ElemBytes, Alignment: r.Alignment,
-			StrideAlignment: r.StrideAlignment, BoundedReplay: r.BoundedReplay}
+			StrideAlignment: r.StrideAlignment, BoundedReplay: r.BoundedReplay,
+			PageSizePadded: r.PageSizePadded, MambaCacheMode: r.MambaCacheMode,
+			NumSpeculativeBlocks: r.NumSpeculativeBlocks, NumPrefillCheckpointBlocks: r.NumPrefillCheckpointBlocks,
+			PrefillCheckpointAlignment: r.PrefillCheckpointAlignment}
 	}
 	return out
 }
@@ -718,8 +760,12 @@ func (k kernelPricer) Assumptions() []string {
 	for _, a := range k.m.Provenance().Assumptions {
 		out = append(out, a.Name+" = "+a.Scope)
 	}
-	return out
+	return append(out, k.m.EngineAssumptions()...)
 }
+
+// RecordSelected registers this pool's kernel with the host's Data (kernelmodel.Model.RecordSelected),
+// for core/vllm's Engine.RecordSelected and DPGroup.RecordSelected.
+func (k kernelPricer) RecordSelected(d *load.Data) { k.m.RecordSelected(d) }
 
 // shapes is the batch in the kernel's request shapes. The mapping is compat/kernelmodel's
 // (shapeOf): Scheduled is the tokens the forward pass runs, which under speculation is the verify
@@ -755,6 +801,16 @@ func setIfAbsent(m *yaml.Node, key, value string) {
 	setNodeIfAbsent(m, key, &yaml.Node{Kind: yaml.ScalarNode, Value: value})
 }
 
+// deleteKey removes key from a mapping node.
+func deleteKey(m *yaml.Node, key string) {
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if m.Content[i].Value == key {
+			m.Content = append(m.Content[:i], m.Content[i+2:]...)
+			return
+		}
+	}
+}
+
 // setNodeIfAbsent adds key: value to a mapping node that does not state key.
 func setNodeIfAbsent(m *yaml.Node, key string, value *yaml.Node) {
 	for i := 0; i+1 < len(m.Content); i += 2 {
@@ -774,3 +830,112 @@ func cloneNode(n *yaml.Node) *yaml.Node {
 	}
 	return &c
 }
+
+// mapGet is the value node of key in a mapping node, and whether it is there.
+func mapGet(m *yaml.Node, key string) (*yaml.Node, bool) {
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if m.Content[i].Value == key {
+			return m.Content[i+1], true
+		}
+	}
+	return nil, false
+}
+
+// placementNode is a placement as the engine block's placement mapping.
+func placementNode(p placement.Placement) (*yaml.Node, error) {
+	var n yaml.Node
+	if err := n.Encode(p); err != nil {
+		return nil, err
+	}
+	return &n, nil
+}
+
+// multiConnector and offloadChild name the MultiConnector and its offloading child as core/vllm does.
+const (
+	multiConnector = "MultiConnector"
+	offloadChild   = "OffloadingConnector"
+)
+
+// multiChildren is the kv_connector_extra_config a pool's MultiConnector takes from a deployment that
+// states pd_transfer.connector: MultiConnector and an offload block: a NIXL child in the pool's
+// kv_role, then the OffloadingConnector as kv_both. The schema does not state the children or their
+// order (the startup warning says so), so llm-d's composition is assumed, NIXL first, the first
+// connector that reports tokens loading them (multi_connector.py:434-456@5df63a72). A pool that
+// states its own kv_transfer in its engine block states the order itself.
+func multiChildren(role string) *yaml.Node {
+	var n yaml.Node
+	if err := n.Encode(map[string]any{"connectors": []map[string]any{
+		{"kv_connector": "NixlConnector", "kv_role": role},
+		{"kv_connector": offloadChild, "kv_role": "kv_both"},
+	}}); err != nil {
+		panic(err) // plain maps always encode
+	}
+	return &n
+}
+
+// connectorOf is a kv_transfer mapping's connector, "" when it states none.
+func connectorOf(kt *yaml.Node) string {
+	if v, ok := mapGet(kt, "connector"); ok {
+		return v.Value
+	}
+	return ""
+}
+
+// splitOffload separates the deployment's offload block (offloadOf) into what stays in kv_offload (the
+// connector and what vLLM derives from the model) and the tier the offloading child states under vLLM's
+// names: cpu_bytes_to_use, block_size, eviction_policy and spec_name.
+func splitOffload(off *yaml.Node) (derived, tier *yaml.Node) {
+	rename := map[string]string{"cpu_bytes": "cpu_bytes_to_use", "block_size": "block_size",
+		"eviction_policy": "eviction_policy", "spec": "spec_name"}
+	derived = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	tier = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	for i := 0; i+1 < len(off.Content); i += 2 {
+		k, v := off.Content[i], off.Content[i+1]
+		if name, ok := rename[k.Value]; ok {
+			tier.Content = append(tier.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: name}, v)
+			continue
+		}
+		derived.Content = append(derived.Content, k, v)
+	}
+	return derived, tier
+}
+
+// fillOffloadChild adds the deployment's tier to the offloading child of a MultiConnector's kv_transfer
+// wherever the child does not state a key: a value the engine block states is never replaced.
+func fillOffloadChild(kt, tier *yaml.Node) {
+	extra, ok := mapGet(kt, "kv_connector_extra_config")
+	if !ok {
+		return
+	}
+	kids, ok := mapGet(extra, "connectors")
+	if !ok {
+		return
+	}
+	for _, kid := range kids.Content {
+		if kid.Kind != yaml.MappingNode {
+			continue
+		}
+		if c, ok := mapGet(kid, "kv_connector"); !ok || c.Value != offloadChild {
+			continue
+		}
+		cfg, ok := mapGet(kid, "kv_connector_extra_config")
+		if !ok {
+			cfg = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+			setNodeIfAbsent(kid, "kv_connector_extra_config", cfg)
+		}
+		if cfg.Kind != yaml.MappingNode {
+			continue
+		}
+		for i := 0; i+1 < len(tier.Content); i += 2 {
+			setNodeIfAbsent(cfg, tier.Content[i].Value, tier.Content[i+1])
+		}
+	}
+}
+
+// Frontend and Frontender are the API-server settings a host gives an engine this package built
+// (renderer_num_workers, api_server_count), which the engine resolves into the admission queue its
+// plan states. See core/vllm.
+type (
+	Frontend   = vllm.Frontend
+	Frontender = vllm.Frontender
+)

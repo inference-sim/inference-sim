@@ -1,0 +1,146 @@
+name: ci-light
+
+# What keeps a stacked layer buildable. A pull request whose base is main runs the full set, ci.yml,
+# with the checks branch protection requires on main (go, lint, oracle-tier2, packs-against-vllm,
+# metrics-manifest, goldens-reviewed); any other base (a layer of a stack) runs this instead. The full
+# set stays available on any branch by workflow_dispatch (gh workflow run ci.yml --ref <branch>) and
+# runs on the pull request that merges to main.
+#
+# Nothing here weakens main: no rule requires a check on a layer, and the job ids below differ from
+# every required name, so a layer's check list is not read as the required set and no required name is
+# left waiting on a layer. The pull-request description and commit checks (blis.yml, `pr`) and the
+# private-name scan (private-names.yml) run on every pull request, whatever its base.
+#
+# What a layer gets: gofmt, go vet, go build, the tests of the Go packages it changes (against its own
+# base, never main), golangci-lint on what it touches, the generated-file checks of the field list
+# (fields/gen_fields.py --check, fields/gen_classes.py --check), and the golden-provenance check
+# (oracle/check_goldens.py with the guards' own tests), which stays on every layer because a layer
+# adds goldens and the platform, the lock and the commit a golden names are judged per layer.
+#
+# What a layer does not get, and the main-based pull request does: the full test suite and the race
+# detector, the in-package kernel tests, the rules packs compared with the vLLM releases they transcribe,
+# tier 2 (every scenario through vLLM's scheduler, the fuzz corpora), the metrics manifest and its
+# checks, and the artifacts they upload. A defect that a layer introduces and a later layer repairs or
+# hides is seen by those only at the top; run ci.yml by hand on a layer before approving it. The
+# oracle-traces workflow is dispatched by hand, never by a pull request, in a stack or out of it.
+
+on:
+  pull_request:
+    branches-ignore: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      base:
+        description: >-
+          The commit the golden check judges this branch against. Empty: the nearest remote branch that
+          is a strict ancestor of the dispatched one (oracle/check_goldens.py --stack-base).
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-light-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  light-go:
+    name: light - format, vet, build and changed packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then echo "not gofmt-formatted:"; echo "$unformatted"; exit 1; fi
+      - name: no replace directive
+        run: '! grep -n "^replace" go.mod'
+      - run: go vet ./...
+      - run: go build ./...
+      - name: the changed-test selection
+        run: .github/scripts/test-select-changed-tests.sh
+      # The packages that hold a Go file this layer changes, against the layer's own base: a layer is
+      # judged by its own diff.
+      - name: Tests of the packages this layer changes
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BASE:-}" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then BASE=HEAD~1; fi
+          mb="$(git merge-base "$BASE" HEAD)"
+          pkgs=""; inpackage=0
+          while read -r kind d; do
+            case "$kind" in
+            inpackage) inpackage=1 ;;
+            direct) if p="$(go list -e -f '{{if or .GoFiles .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' "./$d" 2>/dev/null)" && [ -n "$p" ]; then pkgs="$pkgs ./$d"; fi ;;
+            esac
+          done < <(git diff --name-only --diff-filter=d "$mb" HEAD -- '*.go' | xargs -r -n1 dirname | sort -u | .github/scripts/select-changed-tests.sh)
+          if [ -z "$pkgs" ] && [ "$inpackage" = 0 ]; then echo "no Go package changed"; exit 0; fi
+          if [ -n "$pkgs" ]; then echo "testing:$pkgs"; go test -count=1 -timeout 30m $pkgs; fi
+          # The kernel tests under kerneltests/_inpackage compile only inside blis-substrate's kernel
+          # package; go test of that directory fails on an internal import, so the script runs them.
+          if [ "$inpackage" = 1 ]; then echo "testing: kerneltests/_inpackage, through its script"; kerneltests/scripts/run-inpackage.sh; fi
+
+  light-lint:
+    name: light - golangci-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: Lint what the layer touches
+        uses: golangci/golangci-lint-action@9fae48acfc02a90574d7c304a1758ef9895495fa # v7.0.1
+        with:
+          version: v2.14.0
+          install-mode: goinstall
+          args: --new-from-merge-base=${{ github.event.pull_request.base.sha }} ./...
+
+  light-generated:
+    name: light - field list and value classes are generated from the release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: check out vLLM v0.32.0 at its pinned commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: vllm-project/vllm
+          ref: 5df63a7203cdb9328d824a27b682e77c7b9928be
+          path: vllm-source
+          fetch-depth: 1
+      - name: the checked-out vLLM is the pinned commit
+        run: test "$(git -C vllm-source rev-parse HEAD)" = 5df63a7203cdb9328d824a27b682e77c7b9928be
+      - name: fields.json is what the generator derives from status.json
+        run: python3 -I fields/gen_fields.py vllm-source fields/status.json --value-classes fields/value_classes.json --check fields.json
+      - name: value_classes.json is what the generator derives from fields.json
+        run: python3 -I fields/gen_classes.py vllm-source fields.json --check fields/value_classes.json
+
+  light-goldens:
+    name: light - golden provenance and reviewers
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - name: every golden added or changed in this layer is on CI's platform and lock, and every change names its reviewer
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || inputs.base }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ -z "$BASE" ]; then BASE="$(python3 -I oracle/check_goldens.py --stack-base "$HEAD")"; fi
+          echo "golden check: $BASE..$HEAD"
+          python3 -I oracle/check_goldens.py "$BASE" "$HEAD"
+      - name: the oracle's guards catch what they guard
+        run: python3 -I oracle/test_checks.py

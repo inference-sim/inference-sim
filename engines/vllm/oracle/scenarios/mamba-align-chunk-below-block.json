@@ -1,0 +1,149 @@
+{
+ "name": "mamba-align-chunk-below-block",
+ "description": "Align mode with a token budget of 5, below the block size 8: a prefill chunk cannot reach a block boundary, so it advances inside a block and re-aligns at the next boundary.",
+ "config": {
+  "max_num_seqs": 2,
+  "max_num_batched_tokens": 5,
+  "block_size": 8,
+  "num_blocks": 200,
+  "max_model_len": 128,
+  "long_prefill_token_threshold": 0,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "kv_layers": [
+   {
+    "count": 1,
+    "spec": "full",
+    "num_kv_heads": 1,
+    "head_size": 4
+   },
+   {
+    "count": 1,
+    "spec": "mamba",
+    "state_bytes": 192,
+    "page_size_padded": 256,
+    "block_size": 8,
+    "mamba_cache_mode": "align",
+    "num_speculative_blocks": 0,
+    "num_prefill_checkpoint_blocks": 0
+   }
+  ]
+ },
+ "requests": [
+  {
+   "id": "X",
+   "arrival_step": 0,
+   "prompt": [
+    25902,
+    8064,
+    35563,
+    49427,
+    16635,
+    9253,
+    2104,
+    23833,
+    27840,
+    33650,
+    46562,
+    38231,
+    34600,
+    40340,
+    19884,
+    40390,
+    25816,
+    1692,
+    7165,
+    23224,
+    2720
+   ],
+   "output": [
+    17518,
+    35136,
+    31037,
+    48018,
+    11037
+   ]
+  },
+  {
+   "id": "Y",
+   "arrival_step": 1,
+   "prompt": [
+    20802,
+    46510,
+    27068,
+    18701,
+    36526,
+    47106,
+    49746,
+    30452,
+    22442,
+    26331,
+    25841,
+    31274,
+    21200,
+    31464,
+    36498,
+    39124,
+    3889,
+    2151,
+    8928,
+    32601,
+    29361,
+    1894,
+    28910,
+    29075,
+    20585,
+    19608,
+    34553,
+    24726,
+    23506,
+    3045
+   ],
+   "output": [
+    11235,
+    32642,
+    7028,
+    15110,
+    30884
+   ]
+  },
+  {
+   "id": "Z",
+   "arrival_step": 6,
+   "prompt": [
+    25902,
+    8064,
+    35563,
+    49427,
+    16635,
+    9253,
+    2104,
+    23833,
+    27840,
+    33650,
+    46562,
+    38231,
+    34600,
+    40340,
+    19884,
+    40390,
+    40915,
+    33198,
+    43150,
+    8897,
+    9541,
+    48557,
+    14803,
+    4554,
+    17454
+   ],
+   "output": [
+    14925,
+    39007,
+    33771,
+    24429
+   ]
+  }
+ ],
+ "max_steps": 400
+}

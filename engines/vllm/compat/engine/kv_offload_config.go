@@ -307,11 +307,19 @@ func (t KVOffloadTier) validate(index int) error {
 	if t.NWriteThreads <= 0 {
 		return fmt.Errorf("kv_offload: secondary_tiers[%d].n_write_threads must be > 0, got %d", index, t.NWriteThreads)
 	}
-	if err := validatePositiveFinite(t.ReadBandwidth, index, "read_bandwidth"); err != nil {
-		return err
-	}
-	if err := validatePositiveFinite(t.WriteBandwidth, index, "write_bandwidth"); err != nil {
-		return err
+	// A tier that names a catalog device_class carries no rate of its own: the kernel prices it
+	// from registry coefficients, so zero means "priced elsewhere". A tier with no class states
+	// its rates, and they must be positive.
+	for _, bw := range []struct {
+		v     float64
+		field string
+	}{{t.ReadBandwidth, "read_bandwidth"}, {t.WriteBandwidth, "write_bandwidth"}} {
+		if t.DeviceClass != "" && bw.v == 0 {
+			continue
+		}
+		if err := validatePositiveFinite(bw.v, index, bw.field); err != nil {
+			return err
+		}
 	}
 	if math.IsNaN(t.BaseLatency) || math.IsInf(t.BaseLatency, 0) || t.BaseLatency < 0 {
 		return fmt.Errorf("kv_offload: secondary_tiers[%d].base_latency must be a finite value >= 0, got %v", index, t.BaseLatency)

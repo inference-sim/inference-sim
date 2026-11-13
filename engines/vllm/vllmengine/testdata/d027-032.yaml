@@ -24,8 +24,6 @@ pools:
       max_num_batched_tokens: 8192
       max_num_seqs: 256
       max_model_len: 4096
-      cudagraph_mode: PIECEWISE
       gpu_memory_utilization: 0.92
-      speculative:
-        method: dspark
-        num_spec_tokens: 2
+      speculative_config: {method: dspark, num_speculative_tokens: 2}
+      compilation_config: {cudagraph_mode: PIECEWISE}

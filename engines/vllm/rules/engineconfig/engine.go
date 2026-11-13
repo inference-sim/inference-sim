@@ -33,7 +33,10 @@ type Engine struct {
 	// AllReduceBackend records the resolved choice where a caller wants to state it
 	// directly rather than derive it. Values are "custom" and "nccl"; it is an
 	// override, and a deployment that states both this and DisableCustomAllReduce in
-	// conflict is rejected.
+	// conflict is rejected. It is the one key of the block with no vLLM name: the engine
+	// decides it from disable_custom_all_reduce and the layout, and EngineArgs has no such
+	// field. The rules packs read it (allreduce-backend-known, custom-allreduce-reachable), so
+	// it stays, and TestEveryBlockKeyIsAVLLMName lists it as the exception.
 	AllReduceBackend string `yaml:"allreduce_backend,omitempty"`
 	// CUDAGraphMode selects capture strategy, which sets the host launch term.
 	CUDAGraphMode string `yaml:"cudagraph_mode,omitempty"`
@@ -145,6 +148,15 @@ type Engine struct {
 	// threshold is nonzero (vllm/config/scheduler.py:86@5df63a72). Tri-state: nil is the
 	// engine default, false.
 	LongPrefillTokenThresholdAdaptive *bool `yaml:"long_prefill_token_threshold_adaptive,omitempty"`
+	// EnableChunkedPrefill lets a prefill be split across steps, so a waiting request whose
+	// whole prompt does not fit the step's remaining token budget runs the part that fits
+	// (--enable-chunked-prefill / --no-enable-chunked-prefill; SchedulerConfig default True,
+	// vllm/config/scheduler.py:134@5df63a72). Off, such a request waits for a step that has
+	// room (vllm/v1/core/sched/scheduler.py:1161@5df63a72), and an unstated max_num_batched_tokens
+	// is raised to max_model_len (vllm/engine/arg_utils.py:3136-3141@5df63a72). Tri-state: nil is
+	// the engine default for a causal decoder, true. vLLM refuses a stated max_num_batched_tokens
+	// below max_model_len while it is off (vllm/config/scheduler.py:314-327@5df63a72).
+	EnableChunkedPrefill *bool `yaml:"enable_chunked_prefill,omitempty"`
 	// MaxNumScheduledTokens is the most tokens the scheduler may issue in a step, smaller than
 	// max_num_batched_tokens where the model appends tokens to a batch, as speculative decoding
 	// does (vllm/config/scheduler.py:55@5df63a72). Zero means unset: the engine uses
@@ -180,6 +192,11 @@ type Engine struct {
 	// (vllm/config/scheduler.py:182@5df63a72). Tri-state: nil lets the engine decide from the
 	// environment and the configuration.
 	DisableHybridKVCacheManager *bool `yaml:"disable_hybrid_kv_cache_manager,omitempty"`
+	// LanguageModelOnly is MultiModalConfig.language_model_only (vllm/config/multimodal.py:304@5df63a72):
+	// every modality's limit is 0 (:696-700), and a multimodal model then builds no vision tower
+	// or projector, so their weights are not resident. Tri-state: nil states nothing, which is
+	// vLLM's default, false. A text-only model has no MultiModalConfig and is unaffected.
+	LanguageModelOnly *bool `yaml:"language_model_only,omitempty"`
 	// MaxModelLen is the context length: omitted, auto, or a count. See MaxModelLen.
 	MaxModelLen MaxModelLen `yaml:"max_model_len,omitempty"`
 	// KVCacheMemoryBytes fixes the KV cache's size per GPU in bytes, instead of deriving it
@@ -365,6 +382,14 @@ type Speculative struct {
 	// EnableAdaptiveVerification sizes the verification budget from per-request confidence;
 	// DSpark only (vllm/config/speculative.py:551@5df63a72). Tri-state: nil is false.
 	EnableAdaptiveVerification *bool `yaml:"enable_adaptive_verification,omitempty"`
+	// SyntheticAcceptanceLength is the target mean acceptance length of synthetic rejection
+	// sampling, in [1, num_spec_tokens+1]: vLLM resolves it to per-position unconditional rates
+	// by the minimum-variance schedule (vllm/config/speculative.py:545-549, 557-598@5df63a72). It
+	// is valid only with rejection_sample_method synthetic. Here it is the supplied acceptance
+	// profile of the run, at the rank of the scenario's own pin (compat/kernelmodel
+	// AcceptanceWithEngine); the schedule is the one blis-substrate's acceptance.MinimumVarianceRates
+	// derives. Nil is unstated.
+	SyntheticAcceptanceLength *float64 `yaml:"synthetic_acceptance_length,omitempty"`
 }
 
 // Sample-method vocabularies of vLLM v0.32.0 (vllm/config/speculative.py:84-85@5df63a72).

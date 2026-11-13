@@ -56,6 +56,7 @@ func TestEngineFieldNames(t *testing.T) {
 		"cp_kv_cache_interleave_size":  "--cp-kv-cache-interleave-size",
 		// inference-sim#2021 B9 and accuracy-dashboard#33, all at v0.32.0.
 		"long_prefill_token_threshold_adaptive":  "--long-prefill-token-threshold-adaptive",
+		"enable_chunked_prefill":                 "--enable-chunked-prefill / --no-enable-chunked-prefill",
 		"max_num_scheduled_tokens":               "--max-num-scheduled-tokens",
 		"max_num_active_seqs":                    "--max-num-active-seqs",
 		"watermark":                              "--watermark",
@@ -63,6 +64,7 @@ func TestEngineFieldNames(t *testing.T) {
 		"dp_sync_interval":                       "--data-parallel-sync-interval (parallel_config.dp_sync_interval)",
 		"stream_interval":                        "--stream-interval",
 		"disable_hybrid_kv_cache_manager":        "--disable-hybrid-kv-cache-manager / --no-disable-hybrid-kv-cache-manager",
+		"language_model_only":                    "--language-model-only / --no-language-model-only",
 		"kv_cache_memory_bytes":                  "--kv-cache-memory-bytes",
 		"prefix_match_unit":                      "--prefix-match-unit",
 		"prefix_cache_retention_interval":        "--prefix-cache-retention-interval",

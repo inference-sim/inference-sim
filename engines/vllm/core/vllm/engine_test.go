@@ -11,6 +11,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/rules"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
@@ -37,6 +38,11 @@ func block(t testing.TB, extra string) yaml.Node {
 			lines = append(lines, l)
 		}
 	}
+	// A pool that can start a transfer states where it sits (Config.Placement): two nodes of one rack, the
+	// engine on the first, and a prefill on the second.
+	if (strings.Contains(extra, "kv_transfer:") || strings.Contains(extra, "kv_offload:")) && !strings.Contains(extra, "placement:") {
+		extra += "placement: {hardware: h100, fabric: ib-400g, tensor: 1, nodes: 2, ranks_per_node: 8, node: 0, node_racks: [0, 0]}\n"
+	}
 	src := strings.Join(lines, "\n") + "\n" + extra
 	var n yaml.Node
 	if err := yaml.Unmarshal([]byte(src), &n); err != nil {
@@ -50,6 +56,9 @@ func spec(t testing.TB, extra string) engine.Spec {
 }
 
 func fixed(engine.Spec) (Pricer, error) { return FixedPricer(100), nil }
+
+// peer is the prefill a decode engine's request reads from in these tests: node 1 of rack 0.
+var peer = &plan.Endpoint{Node: 1, Rack: 0}
 
 func build(t testing.TB, extra string) func() (engine.Engine, error) {
 	t.Helper()
@@ -92,7 +101,7 @@ func TestConformance(t *testing.T) {
 		// Nine blocks hold one 128-token sequence beside the null block, the least vLLM starts with.
 		{"preemption under tight KV", "num_gpu_blocks: 9\nmax_model_len: 128\n", enginetest.Options{}, true},
 		{"priority preemption", "num_gpu_blocks: 9\nmax_model_len: 128\nscheduling_policy: priority\n", enginetest.Options{}, true},
-		{"eagle3 drafts accepted", "speculative: {method: eagle3, num_spec_tokens: 3}\n",
+		{"eagle3 drafts accepted", "speculative_config: {method: eagle3, num_speculative_tokens: 3}\n",
 			enginetest.Options{Accepted: func(engine.Batch, engine.Scheduled) int { return 2 }}, false},
 		{"long prefill cap", "long_prefill_token_threshold: 8\n", enginetest.Options{}, false},
 		{"no prefix caching", "enable_prefix_caching: false\n", enginetest.Options{}, false},
@@ -178,7 +187,7 @@ func TestUnstatedAsyncSchedulingResolvesAsVLLMDoes(t *testing.T) {
 		limit int
 	}{
 		{"unstated", unstated(""), 2},
-		{"unstated with an EAGLE drafter", unstated("speculative: {method: eagle, num_spec_tokens: 2}\n"), 2},
+		{"unstated with an EAGLE drafter", unstated("speculative_config: {method: eagle, num_speculative_tokens: 2}\n"), 2},
 		{"unstated with PP on the V2 runner", unstated("use_v2_model_runner: true\npipeline_parallel_size: 2\n"), 3},
 		{"stated off", spec(t, ""), 1},
 		{"stated on", spec(t, "async_scheduling: true\n"), 2},
@@ -233,6 +242,24 @@ func TestInFlightLimitIsMaxConcurrentBatches(t *testing.T) {
 
 // The factory refuses what it does not model or what vLLM refuses, each with its reason, and
 // never builds a v0.32.0 engine for another release (#2021 B6).
+// n-gram speculation builds, runs to completion and keeps every law of the engine contract
+// (design VLM-1; the tier-2 scenarios spec-ngram and spec-ngram-prefix-hit show its scheduling
+// against vLLM's own Scheduler). Its accepted drafts are the simulator's input, as the EAGLE
+// family's are.
+func TestNgramSpeculationBuildsAndKeepsTheContractsLaws(t *testing.T) {
+	tr := enginetest.TestEngine(t, build(t, "speculative_config: {method: ngram, num_speculative_tokens: 3}\n"),
+		arrivals(req("a", 40, 12), req("b", 70, 7), req("c", 20, 9)),
+		enginetest.Options{Accepted: func(engine.Batch, engine.Scheduled) int { return 2 }})
+	for id, f := range tr.Finished {
+		if f.Reason != engine.FinishStop {
+			t.Errorf("%s finished %+v, want stop", id, f)
+		}
+	}
+	if len(tr.Finished) != 3 {
+		t.Errorf("%d requests finished, want 3", len(tr.Finished))
+	}
+}
+
 func TestFactoryRefuses(t *testing.T) {
 	f := Factory{Pricer: fixed}
 	for _, c := range []struct {
@@ -243,21 +270,24 @@ func TestFactoryRefuses(t *testing.T) {
 		{"an unknown key", Version, "max_num_seqz: 3\n", "max_num_seqz"},
 		{"no KV blocks", Version, "num_gpu_blocks: 1\n", "num_gpu_blocks"},
 		{"an unknown policy", Version, "scheduling_policy: sjf\n", "fcfs and priority"},
-		{"an unmodelled draft method", Version, "speculative: {method: ngram, num_spec_tokens: 3}\n", "not built"},
-		{"a drafter whose slots the deployment cannot state", Version, "speculative: {method: draft_model, num_spec_tokens: 3}\n", "not built"},
-		{"dspark on the V1 runner", Version, "speculative: {method: dspark, num_spec_tokens: 3}\n", "V2 model runner"},
+		// vLLM refuses a stated async_scheduling beside ngram (vllm/config/vllm.py:1566-1576@5df63a72);
+		// stated off, or unstated (which resolves to synchronous), it builds (TestFactoryAccepts).
+		{"async scheduling stated with ngram", Version, "async_scheduling: true\nspeculative_config: {method: ngram, num_speculative_tokens: 3}\n", "only supported with"},
+		{"an unmodelled draft method", Version, "speculative_config: {method: medusa, num_speculative_tokens: 3}\n", "not built"},
+		{"a drafter whose slots the deployment cannot state", Version, "speculative_config: {method: draft_model, num_speculative_tokens: 3}\n", "not built"},
+		{"dspark on the V1 runner", Version, "speculative_config: {method: dspark, num_speculative_tokens: 3}\n", "V2 model runner"},
 		// The resolved runner decides, not either statement alone (vllm/config/vllm.py:2976-2979@5df63a72):
 		// an env key saying V1 refuses DSpark, and a field saying V1 beside an env key saying V2
 		// is refused as the contradiction it is, before DSpark could be built on either.
 		{"dspark on the V1 runner by its env key", Version, "use_v2_model_runner: null\n" +
-			"env: {VLLM_USE_V2_MODEL_RUNNER: \"0\"}\nspeculative: {method: dspark, num_spec_tokens: 3}\n", "V2 model runner"},
-		{"dspark on the V1 runner, the env saying V2", Version, "speculative: {method: dspark, num_spec_tokens: 3}\n" +
+			"env: {VLLM_USE_V2_MODEL_RUNNER: \"0\"}\nspeculative_config: {method: dspark, num_speculative_tokens: 3}\n", "V2 model runner"},
+		{"dspark on the V1 runner, the env saying V2", Version, "speculative_config: {method: dspark, num_speculative_tokens: 3}\n" +
 			"env: {VLLM_USE_V2_MODEL_RUNNER: \"1\"}\n", "disagree"},
 		// vLLM reads the runner only from VLLM_USE_V2_MODEL_RUNNER (vllm/config/vllm.py:720-722,
 		// vllm/envs.py:2151-2152@5df63a72); use_v2_model_runner restates it, so the two must agree.
 		{"the runner field and its env key disagree", Version, "use_v2_model_runner: true\n" +
 			"env: {VLLM_USE_V2_MODEL_RUNNER: \"0\"}\n", "disagree"},
-		{"an mtp drafter without its layer count", Version, "speculative: {method: mtp, num_spec_tokens: 2}\n", "mtp_nextn_predict_layers"},
+		{"an mtp drafter without its layer count", Version, "speculative_config: {method: mtp, num_speculative_tokens: 2}\n", "mtp_nextn_predict_layers"},
 		{"V1 runner with PP and async", Version, "async_scheduling: true\npipeline_parallel_size: 2\n", "V1 model runner"},
 		{"prefix_match_unit", Version, "prefix_match_unit: 8\n", "prefix_match_unit"},
 		{"max_cpu_loras", Version, "max_cpu_loras: 4\n", "max_cpu_loras"},
@@ -272,7 +302,7 @@ func TestFactoryRefuses(t *testing.T) {
 		{"a negative max_loras", Version, "max_loras: -1\n", "max_loras -1 is negative"},
 		{"a NaN watermark", Version, "watermark: .nan\n", "watermark NaN is outside"},
 		{"mamba_cache_mode on a model with no Mamba hook", Version, "mamba_cache_mode: align\n", "mamba_cache_mode \"align\" runs as \"align\", away from the default \"none\""},
-		{"swa_bounded_replay false on the V2 runner", Version, "swa_bounded_replay: false\nuse_v2_model_runner: true\n", "swa_bounded_replay is not modelled"},
+		{"swa_bounded_replay false beside a bounded-replay layer", Version, "swa_bounded_replay: false\nkv_layers:\n- {count: 1, spec: sliding_window_mla, sliding_window: 128, num_kv_heads: 1, head_size: 512, block_size: 32, state_bytes: 584, bounded_replay: true}\n- {count: 1, spec: mla, num_kv_heads: 1, head_size: 512, block_size: 128, tokens_per_state: 4, state_bytes: 584}\n", "swa_bounded_replay is false but"},
 		{"a pipeline_parallel_size of 0", Version, "pipeline_parallel_size: 0\n", "pipeline_parallel_size must be stated"},
 		// A DP rank's batch queue is diff-tested on one pipeline stage (oracle/run_dp.py).
 		{"DP with pipeline parallelism", Version, "data_parallel_size: 2\npipeline_parallel_size: 2\n", "data parallelism with pipeline parallelism"},
@@ -283,18 +313,19 @@ func TestFactoryRefuses(t *testing.T) {
 		{"env keys are named in order", Version, "env: {VLLM_B: \"1\", VLLM_A: \"1\"}\n", "VLLM_A, VLLM_B"},
 		// Adaptive verification: vLLM's own refusals the factory can see
 		// (vllm/config/vllm.py:2980-2981, 3001-3032@5df63a72).
-		{"adaptive verification on the V1 runner", Version, "speculative: {method: eagle3, num_spec_tokens: 3, enable_adaptive_verification: true}\nuse_v2_model_runner: false\n", "adaptive draft verification runs only on the V2 model runner"},
-		{"adaptive verification with LoRA", Version, "use_v2_model_runner: true\nmax_loras: 2\nspeculative: {method: dspark, num_spec_tokens: 3, enable_adaptive_verification: true}\n", "not currently compatible with LoRA"},
-		{"adaptive verification without full CUDA graphs", Version, "use_v2_model_runner: true\ncudagraph_mode: PIECEWISE\nspeculative: {method: dspark, num_spec_tokens: 3, enable_adaptive_verification: true}\n", "requires full CUDA graphs"},
-		{"adaptive verification with PP", Version, "use_v2_model_runner: true\npipeline_parallel_size: 2\nspeculative: {method: dspark, num_spec_tokens: 3, enable_adaptive_verification: true}\n", "pipeline parallelism"},
+		{"adaptive verification on the V1 runner", Version, "speculative_config: {method: eagle3, num_speculative_tokens: 3, enable_adaptive_verification: true}\nuse_v2_model_runner: false\n", "adaptive draft verification runs only on the V2 model runner"},
+		{"adaptive verification with LoRA", Version, "use_v2_model_runner: true\nmax_loras: 2\nspeculative_config: {method: dspark, num_speculative_tokens: 3, enable_adaptive_verification: true}\n", "not currently compatible with LoRA"},
+		{"adaptive verification without full CUDA graphs", Version, "use_v2_model_runner: true\nspeculative_config: {method: dspark, num_speculative_tokens: 3, enable_adaptive_verification: true}\ncompilation_config: {cudagraph_mode: PIECEWISE}\n", "requires full CUDA graphs"},
+		{"adaptive verification with a lowercase piecewise mode", Version, "use_v2_model_runner: true\nspeculative_config: {method: dspark, num_speculative_tokens: 3, enable_adaptive_verification: true}\ncompilation_config: {cudagraph_mode: piecewise}\n", "requires full CUDA graphs"},
+		{"adaptive verification with PP", Version, "use_v2_model_runner: true\npipeline_parallel_size: 2\nspeculative_config: {method: dspark, num_speculative_tokens: 3, enable_adaptive_verification: true}\n", "pipeline parallelism"},
 		// What rules/v0_32 refuses in an engine block (#2021 B11 step 2).
-		{"a cache dtype v0.32.0 does not accept", Version, "cache_dtype: fp9\n", "enum-values-known"},
+		{"a cache dtype v0.32.0 does not accept", Version, "kv_cache_dtype: fp9\n", "enum-values-known"},
 		{"an all2all backend v0.32.0 does not accept", Version, "all2all_backend: carrier_pigeon\n", "all2all-backend-known"},
 		{"a moe backend v0.32.0 does not accept", Version, "moe_backend: flashinfer_moe_ep_mega_cutedsl\n", "moe_backend"},
 		// No plugin can register an MLA prefill backend that is not a Python identifier
 		// (vllm/v1/attention/backends/mla/prefill/registry.py:85-86@5df63a72), so vLLM refuses it
 		// at startup whatever plugins are loaded, and so does the factory.
-		{"an MLA prefill backend no plugin can register", Version, "mla_prefill_backend: flash-attn\n", "mla-prefill-backend-known"},
+		{"an MLA prefill backend no plugin can register", Version, "attention_config: {mla_prefill_backend: flash-attn}\n", "mla-prefill-backend-known"},
 	} {
 		s := spec(t, c.extra)
 		s.UpstreamVersion = c.version
@@ -336,16 +367,27 @@ func TestFactoryAccepts(t *testing.T) {
 	for _, c := range []struct{ name, extra string }{
 		{"the V2 runner as its env key", "use_v2_model_runner: null\nenv: {VLLM_USE_V2_MODEL_RUNNER: \"0\"}\n"},
 		// The AsyncScheduler's placeholder drafts are diff-tested (core/engine t3-async-mtp*, t3-async-dspark).
-		{"async with drafts", "async_scheduling: true\nspeculative: {method: eagle3, num_spec_tokens: 3}\n"},
+		{"async with drafts", "async_scheduling: true\nspeculative_config: {method: eagle3, num_speculative_tokens: 3}\n"},
+		// The closest neighbours of the ngram refusal: async stated off, and async left to resolve
+		// (which falls back to synchronous for ngram, vllm/config/vllm.py:1598-1606@5df63a72).
+		{"ngram with async stated off", "async_scheduling: false\nspeculative_config: {method: ngram, num_speculative_tokens: 3}\n"},
+		{"ngram with async unstated", "speculative_config: {method: ngram, num_speculative_tokens: 3}\n"},
 		{"the runner field and its env key agreeing", "use_v2_model_runner: true\nenv: {VLLM_USE_V2_MODEL_RUNNER: \"1\"}\n" +
-			"speculative: {method: dspark, num_spec_tokens: 3}\n"},
+			"speculative_config: {method: dspark, num_speculative_tokens: 3}\n"},
 		{"dspark on V2 by its env key", "use_v2_model_runner: null\nenv: {VLLM_USE_V2_MODEL_RUNNER: \"1\"}\n" +
-			"speculative: {method: dspark, num_spec_tokens: 3}\n"},
-		{"adaptive verification on V2 with full graphs", "use_v2_model_runner: true\ncudagraph_mode: FULL_DECODE_ONLY\n" +
-			"speculative: {method: dspark, num_spec_tokens: 3, enable_adaptive_verification: true}\n"},
+			"speculative_config: {method: dspark, num_speculative_tokens: 3}\n"},
+		{"adaptive verification on V2 with full graphs", "use_v2_model_runner: true\ncompilation_config: {cudagraph_mode: FULL_DECODE_ONLY}\n" +
+			"speculative_config: {method: dspark, num_speculative_tokens: 3, enable_adaptive_verification: true}\n"},
+		// vLLM upper-cases the mode before it parses it (vllm/config/compilation.py:873-879@5df63a72).
+		{"adaptive verification with a lowercase full mode", "use_v2_model_runner: true\ncompilation_config: {cudagraph_mode: full_decode_only}\n" +
+			"speculative_config: {method: dspark, num_speculative_tokens: 3, enable_adaptive_verification: true}\n"},
+		// The factory sees one engine block and not the pool's parallel block, so EPLB beside
+		// expert parallelism is a shape the block can have; eplb-needs-expert-parallelism is the
+		// whole-document validator's (rules/v0_32 TestEPLBNeedsExpertParallelism).
+		{"EPLB stated in the block alone", "enable_eplb: true\n"},
 		{"adaptive verification at vLLM's default graph mode", "use_v2_model_runner: true\n" +
-			"speculative: {method: dspark, num_spec_tokens: 3, enable_adaptive_verification: true}\n"},
-		{"adaptive verification stated off, on the V1 runner", "speculative: {method: eagle3, num_spec_tokens: 3, " +
+			"speculative_config: {method: dspark, num_speculative_tokens: 3, enable_adaptive_verification: true}\n"},
+		{"adaptive verification stated off, on the V1 runner", "speculative_config: {method: eagle3, num_speculative_tokens: 3, " +
 			"enable_adaptive_verification: false}\n"},
 		// quantization-known is a warning: vLLM admits out-of-tree methods the pack cannot list.
 		{"an out-of-tree quantization method", "quantization: my_out_of_tree_method\n"},
@@ -382,7 +424,7 @@ func TestFactoryRulesRefuseOnlyWhatTheBlockStates(t *testing.T) {
 		!strings.Contains(err.Error(), "use_thp requires cpu_offload and not dp_shared_memory") {
 		t.Errorf("use_thp with dp_shared_memory: err %v, want the block's own refusal", err)
 	}
-	if _, err := build(t, "cache_dtype: fp9\n")(); err == nil || !strings.Contains(err.Error(), "enum-values-known") {
+	if _, err := build(t, "kv_cache_dtype: fp9\n")(); err == nil || !strings.Contains(err.Error(), "enum-values-known") {
 		t.Errorf("a cache dtype v0.32.0 does not accept: err %v, want the value-list refusal", err)
 	}
 }
@@ -635,7 +677,7 @@ func TestAcceptanceIsTheOutcomes(t *testing.T) {
 	for _, c := range []struct {
 		accepted, wantMax int
 	}{{0, 1}, {2, 3}, {7, 4}} {
-		tr := enginetest.TestEngine(t, build(t, "speculative: {method: eagle3, num_spec_tokens: 3}\n"),
+		tr := enginetest.TestEngine(t, build(t, "speculative_config: {method: eagle3, num_speculative_tokens: 3}\n"),
 			arrivals(req("a", 20, 13)), enginetest.Options{
 				Accepted: func(engine.Batch, engine.Scheduled) int { return c.accepted }})
 		most := 0
@@ -762,5 +804,53 @@ func TestRunnerStepsCountEmptySchedules(t *testing.T) {
 	}
 	if !reflect.DeepEqual(steps, []int{0, 2, 4}) {
 		t.Fatalf("batches at runner steps %v, want [0 2 4]: an empty schedule is a runner step", steps)
+	}
+}
+
+// Add applies engine.Request.Validate first, as the contract requires: a request with an adapter
+// path and no adapter name is refused with that error, on a single engine and on a data-parallel
+// group, and leaves no trace, so the same ID can be added once the request is valid.
+func TestAddRefusesWhatRequestValidateRefuses(t *testing.T) {
+	bad := req("a", 40, 3)
+	bad.AdapterPath = "/adapters/x"
+	good := req("a", 40, 3)
+	want := bad.Validate()
+	if want == nil {
+		t.Fatal("the substrate's Request.Validate accepts an adapter path with no adapter name")
+	}
+	for name, src := range map[string]string{
+		"engine":   "max_num_batched_tokens: 32\n",
+		"dp group": "max_num_batched_tokens: 32\ndata_parallel_size: 2\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg, err := decodeConfig(block(t, src))
+			if err != nil {
+				t.Fatal(err)
+			}
+			st, err := resolve(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var add func(engine.Request) error
+			if name == "engine" {
+				e, err := newEngine(st, FixedPricer(100))
+				if err != nil {
+					t.Fatal(err)
+				}
+				add = func(r engine.Request) error { return e.Add(r, 0) }
+			} else {
+				g, err := newDPGroup(st, FixedPricer(100))
+				if err != nil {
+					t.Fatal(err)
+				}
+				add = func(r engine.Request) error { return g.Add(r, 0) }
+			}
+			if got := add(bad); got == nil || got.Error() != want.Error() {
+				t.Fatalf("Add of an adapter path with no adapter name returned %v, want %v", got, want)
+			}
+			if err := add(good); err != nil {
+				t.Fatalf("the refused request left a trace: adding the same ID, valid, returned %v", err)
+			}
+		})
 	}
 }

@@ -55,7 +55,7 @@ func TestOpenRefusesAMisspelledEngineKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const key = "      cache_dtype: fp8\n"
+	const key = "      kv_cache_dtype: fp8\n"
 	if strings.Count(string(src), key) != 1 {
 		t.Fatalf("the fixture states cache_dtype %d times, want once", strings.Count(string(src), key))
 	}

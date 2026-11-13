@@ -3,6 +3,7 @@
 package latencykernel_test
 
 import (
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	. "github.com/inference-sim/blis-substrate/kernel"
 
 	"strings"
@@ -106,6 +107,7 @@ func TestTheDrafterIsPriced(t *testing.T) {
 	in.Model.Speculator.Drafting = model.DraftingAutoregressive
 	in.Model.Speculator.SequentialHead = nil
 	in.Model.Speculator.ContextStack = nil
+	in.DraftFirstPassRows, in.DraftPassRequests = plan.FirstPassScheduled, plan.PassRequestsAll
 	// An autoregressive draft reads only its ring, not the block positions beyond it.
 	if editNodes(in.Model, func(n model.Node) bool {
 		return n.Op == model.OpAttention && len(n.Caches) > 0 &&

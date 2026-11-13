@@ -579,7 +579,10 @@ func TestUnderDCPAMixedStepGetsNoOneLaunchRebate(t *testing.T) {
 		return mustDCPVariant(t, fixture, 8, 1, 2, func(in *Inputs) {
 			if blackwell {
 				chip := *in.Chip
-				chip.NVFP4Peak = 1
+				if chip.FP8Peak <= 0 {
+					t.Fatal("the chip has no FP8 peak, so a Blackwell NVFP4 peak of twice it is 0")
+				}
+				chip.NVFP4Peak = 2 * chip.FP8Peak
 				in.Chip = &chip
 			}
 		})
@@ -750,6 +753,17 @@ func TestRecurrentStateIsShardedByTensorParallelism(t *testing.T) {
 	}
 }
 
+// captureUnits is the unit a capture entry states: the one the substrate's own table of form units
+// (coefficient.RequiredUnit, which the registry validator reads) requires of the name, so a name the
+// table does not cover fails the test instead of taking a guessed unit.
+func captureUnits(name string) vocab.Unit {
+	u, ok := coefficient.RequiredUnit(name)
+	if !ok {
+		panic("no form unit covers " + name)
+	}
+	return u.Unit
+}
+
 // captureContract is docs/COEFF_CONTRACT.md v2.3's capture entries for FULL_AND_PIECEWISE,
 // at test magnitudes: a floor and a per-token cost for each graph family.
 func captureContract(drop ...string) []coefficient.Entry {
@@ -764,7 +778,7 @@ func captureContract(drop ...string) []coefficient.Entry {
 			skip = skip || d == name
 		}
 		if !skip {
-			out = append(out, coefficient.Entry{Name: name, Value: v, Units: "bytes_per_rank",
+			out = append(out, coefficient.Entry{Name: name, Value: v, Units: captureUnits(name),
 				Method: "assumed", Rationale: "test", Scope: coefficient.Scope{
 					Hardware: []string{"h200"}, Model: []string{"deepseek-v4.1-flash"}}})
 		}
@@ -893,7 +907,7 @@ func TestThePublishedV41CaptureFormReproducesItsStartUps(t *testing.T) {
 		"cudagraph_capture_bytes_per_decode_token_full_and_piecewise": 6772854,
 	} {
 		published = append(published, coefficient.Entry{Name: name, Value: v,
-			Units: "bytes_per_rank", Method: "measured", Fitted: true, Rationale: "test",
+			Units: captureUnits(name), Method: "measured", Fitted: true, Rationale: "test",
 			Scope: coefficient.Scope{Hardware: []string{"h200"},
 				Model: []string{"deepseek-v4.1-flash"}}})
 	}

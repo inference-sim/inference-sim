@@ -25,7 +25,7 @@ func withoutAdaptive(t *testing.T) map[string]string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const flag = "        enable_adaptive_verification: true\n"
+	const flag = ", enable_adaptive_verification: true"
 	if !strings.Contains(string(raw), flag) {
 		t.Fatalf("%s states no enable_adaptive_verification", adaptiveScenario)
 	}

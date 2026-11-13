@@ -9,6 +9,9 @@
 # blis-vllm and at the kernel tests' fixtures, and runs `go test` there. Nothing is edited in
 # the substrate or in this checkout.
 #
+# The kernel package's own tests and these take over ten minutes on a CI runner, so the default go test
+# timeout is raised to 30 minutes; a flag given on the command line comes after it and wins.
+#
 # Usage: kerneltests/scripts/run-inpackage.sh [go test flags...]
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -21,7 +24,14 @@ cp -R "$substrate/." "$work/"
 chmod -R u+w "$work"
 # The kernel's own tests stay as the substrate runs them; these run beside them, against the
 # fixtures under kerneltests/testdata and the substrate's own catalog/ and registry/.
-cp -R "$here/testdata" "$work/kernel/testdata"
+# The substrate's kernel/testdata may exist already (it holds its own files), so the fixtures go
+# into it and not beside it; a fixture that would replace a substrate file of the same name is an
+# error, because the substrate's own tests read that file.
+mkdir -p "$work/kernel/testdata"
+for f in "$here"/testdata/*; do
+	[[ -e "$work/kernel/testdata/$(basename "$f")" ]] && { echo "run-inpackage: fixture $(basename "$f") would overwrite the substrate's kernel/testdata file of that name" >&2; exit 1; }
+done
+cp -R "$here/testdata/." "$work/kernel/testdata/"
 for f in "$here"/_inpackage/*_test.go; do
 	# A file named like one of the kernel's own tests goes beside it, not over it.
 	cp "$f" "$work/kernel/vllm_$(basename "$f")"
@@ -31,4 +41,11 @@ cd "$work"
 # checkout, at whatever it holds now. go mod tidy adds the requirement the replacement needs.
 go mod edit -replace=github.com/inference-sim/blis-vllm="$repo"
 GOFLAGS=-mod=mod GOWORK=off go mod tidy >/dev/null
-GOFLAGS=-mod=mod GOWORK=off go test -count=1 "$@" ./kernel/
+# Only the tests copied in run. The kernel package also holds the substrate's own tests, which the substrate's
+# own CI runs at this commit on every one of its pull requests; running them again here repeated about 350
+# of the 500-odd seconds of this job (two tests alone take 221 and 51 s on a loaded laptop) and proved nothing
+# about this repository, because they import none of it. The helpers they share with the copied tests are still
+# compiled, since the whole package is. A -run on the command line comes after this one and wins, so
+# kerneltests/scripts/run-inpackage.sh -run . runs everything.
+only="^($(grep -hoE '^func (Test[A-Za-z0-9_]*)' "$here"/_inpackage/*_test.go | sed 's/^func //' | sort | paste -sd'|' -))\$"
+GOFLAGS=-mod=mod GOWORK=off go test -count=1 -timeout 30m -run "$only" "$@" ./kernel/

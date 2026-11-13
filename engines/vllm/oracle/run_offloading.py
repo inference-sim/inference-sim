@@ -73,7 +73,7 @@ def main() -> None:
         if "testdata/golden" in os.path.abspath(out_dir).replace(os.sep, "/") and \
                 os.environ.get("BLIS_VLLM_ALLOW_GOLDEN_UPDATE") != "1":
             sys.exit("refusing to write golden traces: set BLIS_VLLM_ALLOW_GOLDEN_UPDATE=1, and add "
-                     "a golden-reviewed: <reviewer> trailer to the commit")
+                     "a golden-reviewed: <trace>: <reason> trailer for each trace the commit changes")
         for name in sorted(f for f in os.listdir(path)
                            if f.endswith(".json") and not f.endswith(".trace.json")):
             trace = run_one(vllm_root, os.path.join(path, name))
@@ -89,6 +89,13 @@ class IdOrderedSet(set):
 
     def __iter__(self):
         return iter(sorted(set.__iter__(self)))
+
+
+def order_finished(scheduler) -> None:
+    """Hand the scheduler its finished_req_ids as a set that iterates by request ID (the
+    finished_req_ids entry of oracle/mocks.json), before each schedule(). Also used by
+    oracle/run_multiconnector.py."""
+    scheduler.finished_req_ids = IdOrderedSet(scheduler.finished_req_ids)
 
 
 def key_text(key: bytes) -> str:
@@ -184,7 +191,8 @@ def build_config(cfg: dict, model: str):
                                enable_prefix_caching=cfg.get("enable_prefix_caching", True),
                                prefix_cache_retention_interval=None)
     kv_transfer_config = KVTransferConfig(kv_connector=conn["name"], kv_role=conn.get("kv_role", "kv_both"),
-                                          kv_connector_extra_config=conn.get("extra_config") or {})
+                                          kv_connector_extra_config=conn.get("extra_config") or {},
+                                          kv_load_failure_policy=conn.get("kv_load_failure_policy", "fail"))
     from vllm.config import ParallelConfig  # noqa: E402
 
     # The engine's world size, the connector's num_workers (offloading/scheduler.py:335): every
@@ -361,7 +369,7 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
             steps.append({"step": step, "idle": True})
             step += 1
             continue
-        scheduler.finished_req_ids = IdOrderedSet(scheduler.finished_req_ids)
+        order_finished(scheduler)
         out = scheduler.schedule()
         meta = out.kv_connector_metadata
         record = {
@@ -575,7 +583,7 @@ def run_queued(scheduler, vllm_config, batch_queue_size, sc, scenario_path, vllm
         if aborts:
             core.aborts_queue.put_nowait(aborts)
         if has_work:
-            scheduler.finished_req_ids = IdOrderedSet(scheduler.finished_req_ids)
+            order_finished(scheduler)
             outputs, executed = core.step_with_batch_queue()
             core.post_step(executed)
         else:

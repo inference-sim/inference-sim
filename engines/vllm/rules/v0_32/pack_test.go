@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/contracts/check"
 	"github.com/inference-sim/blis-substrate/contracts/rules"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
@@ -23,8 +24,8 @@ func graniteGraph() *model.Graph {
 			WeightDType: model.DTypeFP8},
 		LayerKinds: []model.LayerKind{{ID: "attn_moe", Nodes: []model.Node{
 			{Op: model.OpAttention, AttentionKind: model.AttentionGQA,
-				NumQHeads: 48, NumKVHeads: 8, HeadDim: 64},
-			{Op: model.OpGroupedGEMM, N: 1536, K: 3072, Experts: 224, TopK: 8},
+				NumQHeads: 48, NumKVHeads: 8, HeadDim: 64, HoldsEngineKV: boolPtr(true)},
+			{Op: model.OpGroupedGEMM, N: 1536, K: 3072, Experts: 224, TopK: 8, Shared: boolPtr(false)},
 		}}},
 		Stack: model.Stack{Pattern: []string{"attn_moe"}, Repeat: 72},
 	}
@@ -99,9 +100,11 @@ func TestPackRuleSet(t *testing.T) {
 		"engram-excludes-dbo",
 		"engram-residency-default",
 		"enum-values-known",
+		"eplb-needs-expert-parallelism",
 		"eviction-policy-known",
 		"expert-divisibility-under-eplb",
 		"expert-imbalance-without-eplb",
+		"flashinfer-mega-deep-gemm-model",
 		"long-prefill-threshold-within-max-model-len",
 		"mamba-cache-mode-matches-model",
 		"max-model-len-within-context-window",
@@ -1359,5 +1362,100 @@ func TestDCPDividesTP(t *testing.T) {
 		if got := fired(run(t, dep(pool(c.tp, c.pcp, c.dcp)), graniteGraph()), "dcp-divides-tp"); got != c.want {
 			t.Errorf("%s (tp %d, pcp %d, dcp %d): fired %v, want %v", c.name, c.tp, c.pcp, c.dcp, got, c.want)
 		}
+	}
+}
+
+// boolPtr is a typed node property the validator requires (SUB-20).
+func boolPtr(b bool) *bool { return &b }
+
+// ruleErrors counts the error-severity problems a rule raised.
+func ruleErrors(p *rules.Problems, rule string) int {
+	n := 0
+	for _, it := range p.All() {
+		if it.Rule == rule && it.Severity == validate.SeverityError {
+			n++
+		}
+	}
+	return n
+}
+
+// vLLM refuses moe_backend flashinfer_moe_ep_mega_deep_gemm for a model that is not DeepSeek-V4
+// or V4.1 (validate_flashinfer_moe_ep_model, vllm/config/kernel.py:230-241@5df63a72).
+func TestFlashinferMegaDeepGemmNeedsDeepSeekV4(t *testing.T) {
+	pl := deployment.Parallelism{TP: 8, PP: 1, DP: 1, EnableExpertParallel: true}
+	d := dep(colocated(pl, engineconfig.Engine{MoEBackend: "flashinfer_moe_ep_mega_deep_gemm"}))
+	g := graniteGraph()
+	g.Global.Architecture = "GraniteMoeForCausalLM"
+	if p := run(t, d, g); !fired(p, "flashinfer-mega-deep-gemm-model") {
+		t.Errorf("a non-DeepSeek model was accepted with flashinfer_moe_ep_mega_deep_gemm:\n%s", p.Error())
+	}
+	for _, arch := range []string{"DeepseekV4ForCausalLM", "DeepSeekV4MTPModel", rules.ArchDeepseekV41} {
+		g := graniteGraph()
+		g.Global.Architecture = arch
+		if p := run(t, d, g); fired(p, "flashinfer-mega-deep-gemm-model") {
+			t.Errorf("%s was refused with flashinfer_moe_ep_mega_deep_gemm:\n%s", arch, p.Error())
+		}
+	}
+	// A graph that names no architecture is a warning, not an error: the refusal turns on it.
+	g = graniteGraph()
+	p := run(t, d, g)
+	if !fired(p, "flashinfer-mega-deep-gemm-model") || ruleErrors(p, "flashinfer-mega-deep-gemm-model") != 0 {
+		t.Errorf("an unnamed architecture should draw the rule's warning only:\n%s", p.Error())
+	}
+	// Another MoE backend is not the rule's business.
+	other := dep(colocated(pl, engineconfig.Engine{MoEBackend: "triton"}))
+	g = graniteGraph()
+	g.Global.Architecture = "GraniteMoeForCausalLM"
+	if p := run(t, other, g); fired(p, "flashinfer-mega-deep-gemm-model") {
+		t.Errorf("the rule fired for moe_backend triton:\n%s", p.Error())
+	}
+}
+
+// vLLM refuses EPLB without expert parallelism or with tp, pcp and dp all 1
+// (vllm/config/parallel.py:559-581@5df63a72), and num_redundant_experts without EPLB (:583-589).
+func TestEPLBNeedsExpertParallelism(t *testing.T) {
+	on := &engineconfig.EPLB{Enabled: true}
+	for _, c := range []struct {
+		name string
+		pl   deployment.Parallelism
+		eplb *engineconfig.EPLB
+		bad  bool
+	}{
+		{"EPLB without expert parallelism", deployment.Parallelism{TP: 8, PP: 1, DP: 1}, on, true},
+		{"EPLB with one rank", deployment.Parallelism{TP: 1, PP: 1, DP: 1, EnableExpertParallel: true}, on, true},
+		{"EPLB at tp 8 with expert parallelism", deployment.Parallelism{TP: 8, PP: 1, DP: 1, EnableExpertParallel: true}, on, false},
+		{"EPLB at dp 2 with expert parallelism", deployment.Parallelism{TP: 1, PP: 1, DP: 2, EnableExpertParallel: true}, on, false},
+		{"EPLB at pcp 2 with expert parallelism", deployment.Parallelism{TP: 1, PP: 1, DP: 1, PCP: 2, EnableExpertParallel: true}, on, false},
+		{"redundant experts without EPLB", deployment.Parallelism{TP: 8, PP: 1, DP: 1, EnableExpertParallel: true},
+			&engineconfig.EPLB{NumRedundantExperts: 8}, true},
+		{"no EPLB stated", deployment.Parallelism{TP: 8, PP: 1, DP: 1, EnableExpertParallel: true}, nil, false},
+	} {
+		d := dep(colocated(c.pl, engineconfig.Engine{EPLB: c.eplb}))
+		got := fired(run(t, d, graniteGraph()), "eplb-needs-expert-parallelism")
+		if got != c.bad {
+			t.Errorf("%s: rule fired %v, want %v", c.name, got, c.bad)
+		}
+	}
+}
+
+// CompilationConfig upper-cases a string before it parses cudagraph_mode
+// (vllm/config/compilation.py:873-879@5df63a72), so a lowercase mode is the same mode, and one
+// that is no mode is still refused.
+func TestCUDAGraphModeIsCaseInsensitive(t *testing.T) {
+	pl := deployment.Parallelism{TP: 8, PP: 1, DP: 1}
+	for _, mode := range []string{"full", "Full_And_Piecewise", "none", "FULL_DECODE_ONLY"} {
+		d := dep(colocated(pl, engineconfig.Engine{CUDAGraphMode: mode}))
+		if p := run(t, d, graniteGraph()); fired(p, "enum-values-known") {
+			t.Errorf("cudagraph_mode %q was refused, which vLLM accepts:\n%s", mode, p.Error())
+		}
+	}
+	d := dep(colocated(pl, engineconfig.Engine{CUDAGraphMode: "partial"}))
+	if p := run(t, d, graniteGraph()); !fired(p, "enum-values-known") {
+		t.Error("cudagraph_mode partial was accepted")
+	}
+	// A lowercase none captures no graph, so stated capture sizes are ignored, as for NONE.
+	d = dep(colocated(pl, engineconfig.Engine{CUDAGraphMode: "none", CUDAGraphCaptureSizes: []int{8, 16}}))
+	if p := run(t, d, graniteGraph()); !strings.Contains(p.Error(), "captures no graph") {
+		t.Errorf("lowercase none should draw the NONE warning for stated sizes:\n%s", p.Error())
 	}
 }
