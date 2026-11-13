@@ -1,0 +1,4136 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A discrete-event simulator for LLM inference serving systems">
+      
+      
+      
+      
+        <link rel="prev" href="../results/">
+      
+      
+        <link rel="next" href="../archon-pr-review/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
+    
+    
+      
+        <title>Trace Replay - BLIS — Blackbox Inference Simulator</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#trace-replay" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="BLIS — Blackbox Inference Simulator" class="md-header__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            BLIS — Blackbox Inference Simulator
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Trace Replay
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../concepts/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../validation/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Validation
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../evidence/price-change-report/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Change evidence
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../methodology/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Methodology
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../contributing/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../roadmap/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Roadmap
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../blog/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Blog
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="BLIS — Blackbox Inference Simulator" class="md-nav__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    BLIS — Blackbox Inference Simulator
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: Capacity Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../concepts/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/core-engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../routing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Routing (llm-d router)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../admission/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Admission Control
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scheduling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scheduling & Priority
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../latency-models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Latency Kernel
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../kv-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KV Cache & Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../workloads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workload Specifications
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Simulation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Metrics & Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trace Replay
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trace Replay
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-trace-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The trace format
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#blis-replay" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis replay
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="blis replay">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#replay-specific-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Replay-Specific Flags
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-replay-differs-from-blis-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How Replay Differs from blis run
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#replaying-otel-agentic-traces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Replaying OTel agentic traces
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Replaying OTel agentic traces">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#weka-cc-traces-blis-convert-weka" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Weka CC traces (blis convert weka)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#weka-subagent-replay-as-aiperf-runs-it-agentic-scenario-inferencex-agentx-mvp-1937" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Weka subagent replay as aiperf runs it: --agentic-scenario inferencex-agentx-mvp (#1937)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#faithful-high-concurrency-replay-session-mode-fixed-accumulate-1692" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Faithful high-concurrency replay: --session-mode fixed-accumulate (#1692)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../archon-pr-review/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Archon PR Review
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../skills-and-plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Skills & Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../validation/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Validation
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Validation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../validation/inferencex-agentic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    InferenceX DSV4.1 Agentic
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../validation/inferencex-single-turn/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    InferenceX Single-Turn
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../validation/internal-deployments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internal llm-d Deployments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../validation/llm-d-prism/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    llm-d Prism
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Change evidence
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Change evidence
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../evidence/price-change-report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Price-change report (vLLM 0.32.0 fixtures)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../evidence/golden-equivalence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Golden equivalence (Result schema 2)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/project-structure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/control-loops/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Control Loops
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Compatibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/workload-spec/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workload Spec Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../methodology/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Methodology
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_8" id="__nav_8_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Methodology
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../methodology/strategy-evolution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Strategy Evolution
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../methodology/hypothesis-bundles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Bundles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../contributing/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9" id="__nav_9_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/extension-recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extension Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/llm-d-router-fork/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The llm-d Router Fork
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/pr-workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PR Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/cross-repo-changes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changes Across the BLIS Repositories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/automated-delivery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Automated Delivery (L1)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/ci/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How CI Decides What to Run
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/external-pr-review/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    External PR Review
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/rfc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RFC Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/hypothesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Experiments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/perspectives/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Review Perspectives
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_12" >
+        
+          
+          <label class="md-nav__link" for="__nav_9_12" id="__nav_9_12_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Archon
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_12">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Archon
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/archon/baseline-analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Baseline Analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/archon/encode-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Encode Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/archon/pr-review-context/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PR Review Context
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_13" >
+        
+          
+          <label class="md-nav__link" for="__nav_9_13" id="__nav_9_13_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Standards
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_13">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Standards
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/standards/experiments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Experiment Standards
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/standards/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Antipattern Rules (R1-R23)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/standards/invariants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Invariants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/standards/principles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Engineering Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_14" >
+        
+          
+          <label class="md-nav__link" for="__nav_9_14" id="__nav_9_14_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_14_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_14">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Templates
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/templates/design-guidelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Guidelines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/templates/micro-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Micro Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/templates/archon-issue-examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Archon Issue Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/templates/hypothesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_11" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../blog/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Blog
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_11" id="__nav_11_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Blog
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_11_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_11_2" id="__nav_11_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Archive
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_11_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Archive
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
+      <a href="../../blog/archive/2026/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    2026
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_11_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_11_3" id="__nav_11_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Categories
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_11_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Categories
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
+      <a href="../../blog/category/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
+      <a href="../../blog/category/capacity-planning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capacity Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
+      <a href="../../blog/category/deep-dives/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deep Dives
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
+      <a href="../../blog/category/what-is-blis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    What is BLIS?
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-trace-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The trace format
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#blis-replay" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        blis replay
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="blis replay">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#replay-specific-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Replay-Specific Flags
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-replay-differs-from-blis-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How Replay Differs from blis run
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#replaying-otel-agentic-traces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Replaying OTel agentic traces
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Replaying OTel agentic traces">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#weka-cc-traces-blis-convert-weka" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Weka CC traces (blis convert weka)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#weka-subagent-replay-as-aiperf-runs-it-agentic-scenario-inferencex-agentx-mvp-1937" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Weka subagent replay as aiperf runs it: --agentic-scenario inferencex-agentx-mvp (#1937)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#faithful-high-concurrency-replay-session-mode-fixed-accumulate-1692" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Faithful high-concurrency replay: --session-mode fixed-accumulate (#1692)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="trace-replay">Trace Replay<a class="headerlink" href="#trace-replay" title="Permanent link">&para;</a></h1>
+<p><code>blis replay</code> runs a TraceV2 trace through the discrete-event simulator. A trace is a header
+YAML file and a data CSV file. Two commands write one: <code>blis run --trace-output</code> (header
+<code>mode: generated</code>) and <code>blis convert weka|otel</code> (header <code>mode: converted</code>). <code>blis replay
+--trace-output</code> writes <code>mode: replayed</code>. Replay runs on blis-latency-kernel through the same
+deployment path as <code>blis run</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>./blis<span class="w"> </span>replay<span class="w"> </span>--trace-header<span class="w"> </span>trace.yaml<span class="w"> </span>--trace-data<span class="w"> </span>trace.csv<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--scenarios<span class="w"> </span>testdata/kernel/aisimulate
+</code></pre></div>
+<div class="admonition note">
+<p class="admonition-title">What a header mode means</p>
+<p>A <code>generated</code> or <code>replayed</code> trace records the deployment BLIS ran. Replay keeps its header
+authoritative (INV-13): a scenario offload block or <code>--kv-offload-config</code> may only restate
+the recorded <code>kv_offload</code>, never add one. A <code>converted</code> trace records external traffic and
+no deployment, so replay takes the offload tiers from the scenario's offload block or
+<code>--kv-offload-config</code> (<a href="https://github.com/inference-sim/inference-sim/issues/2067">#2067</a>).
+The header modes are <code>generated</code>, <code>replayed</code> and <code>converted</code>; any other value is refused.
+<code>mode: real</code> was written by <code>blis observe</code>, which v0.16.0 removed, and is refused.</p>
+</div>
+<h2 id="the-trace-format">The trace format<a class="headerlink" href="#the-trace-format" title="Permanent link">&para;</a></h2>
+<p>A trace is in trace format version 4, the format blis-substrate's <code>contracts/spec/trace</code>
+defines (<code>trace_version: 4</code>). The data CSV's columns are read by name: <code>request_id</code>,
+<code>client_id</code>, <code>tenant_id</code>, <code>slo_class</code>, <code>session_id</code>, <code>round_index</code>, <code>prefix_group</code>,
+<code>prefix_length</code>, <code>streaming</code>, <code>input_tokens</code>, <code>output_tokens</code>, <code>text_tokens</code>, <code>image_tokens</code>,
+<code>audio_tokens</code>, <code>video_tokens</code>, <code>reason_ratio</code>, <code>model</code>, <code>deadline_us</code>, <code>arrival_time_us</code>,
+<code>first_chunk_time_us</code>, <code>last_chunk_time_us</code> and <code>status</code>, then <code>slo_target_us</code>, <code>adapter</code>,
+<code>think_time_us</code> and <code>input_tokens_reset</code> when some row carries one. A request is injected at
+its <code>arrival_time_us</code> with a prompt of <code>prefix_length</code> plus <code>input_tokens</code> tokens.</p>
+<p>Version 3, which v0.15.0 wrote, is refused. Convert a version 3 (or 2) trace with</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>./blis<span class="w"> </span>convert<span class="w"> </span>trace<span class="w"> </span>--header<span class="w"> </span>old.yaml<span class="w"> </span>--data<span class="w"> </span>old.csv<span class="w"> </span>--trace-output<span class="w"> </span>new
+</code></pre></div>
+<p>Version 4 is version 3 without what only <code>blis observe</code> wrote or read: the header keys
+<code>created_at</code>, <code>warm_up_requests</code>, <code>workload_spec</code>, <code>server</code>, <code>network</code> and
+<code>observed_kv_metrics</code>, and the columns <code>vllm_priority</code>, <code>x_request_id</code>, <code>server_input_tokens</code>,
+<code>send_time_us</code>, <code>num_chunks</code>, <code>error_message</code> and <code>finish_reason</code>. A <code>mode: real</code> header
+becomes <code>mode: converted</code>. The command names each dropped field that carried a value, and
+warns for the two that v0.15.0's replay read: <code>server_input_tokens</code>, the prompt length of a
+request with no prefix group, and <code>send_time_us</code>, the injection time where it differed from
+<code>arrival_time_us</code>. A trace <code>blis run</code> wrote carries neither difference, so it replays as it did.</p>
+<h2 id="blis-replay"><code>blis replay</code><a class="headerlink" href="#blis-replay" title="Permanent link">&para;</a></h2>
+<p>Replays a TraceV2 file through the BLIS discrete-event simulator. Instead of generating synthetic requests, replay loads request timing and token counts from the trace. It takes the same deployment inputs as <code>blis run</code> — <code>--scenario</code> and <code>--scenarios</code>, and the same data flags (<code>--catalog</code> or <code>BLIS_CATALOG</code>, <code>--registry</code> or <code>BLIS_REGISTRY</code>, which replace the embedded catalog and registry) — and builds the deployment and its kernels through the same code path.</p>
+<h3 id="replay-specific-flags">Replay-Specific Flags<a class="headerlink" href="#replay-specific-flags" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--trace-header</code></td>
+<td><code>string</code></td>
+<td><code>""</code></td>
+<td>Path to TraceV2 header YAML (required)</td>
+</tr>
+<tr>
+<td><code>--trace-data</code></td>
+<td><code>string</code></td>
+<td><code>""</code></td>
+<td>Path to TraceV2 data CSV (required)</td>
+</tr>
+<tr>
+<td><code>--scenario</code></td>
+<td><code>string</code></td>
+<td><code>""</code></td>
+<td>Scenario file name within <code>--scenarios</code> (required)</td>
+</tr>
+<tr>
+<td><code>--scenarios</code></td>
+<td><code>string</code></td>
+<td><code>""</code></td>
+<td>Directory of scenario YAMLs (required)</td>
+</tr>
+<tr>
+<td><code>--registry</code></td>
+<td><code>string</code></td>
+<td><code>""</code></td>
+<td>A directory with the layout of blis-substrate's <code>registry/</code> that replaces the embedded registry; or <code>BLIS_REGISTRY</code>. Without either, the embedded registry.</td>
+</tr>
+<tr>
+<td><code>--trace-output</code></td>
+<td><code>string</code></td>
+<td><code>""</code></td>
+<td>Export replay results as TraceV2 files (<code>&lt;prefix&gt;.yaml</code> + <code>&lt;prefix&gt;.csv</code>); header <code>mode: "replayed"</code></td>
+</tr>
+<tr>
+<td><code>--timeout</code></td>
+<td><code>int</code></td>
+<td><code>300</code></td>
+<td>Per-request deadline in seconds, overriding every round's trace deadline (<a href="https://github.com/inference-sim/inference-sim/issues/2064">#2064</a>). Negative disables the deadline; 0 is rejected. <strong>Applied only when explicitly set</strong> — unset, each round keeps its own recorded <code>deadline_us</code> (round 0 and every follow-up alike), or no deadline when <code>deadline_us</code> is 0. Symmetric with <code>blis run --timeout</code>.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Follow-up rounds honor the trace deadline (#2064)</p>
+<p>In a closed-loop replay, each session follow-up round now takes its deadline from the
+trace — the recorded <code>deadline_us</code> relative to that round's arrival, or no deadline when
+<code>deadline_us</code> is 0 — the same rule round 0 already followed. Before #2064 follow-ups
+silently received BLIS's 300 s default, so heavy agentic sessions (a long reasoning step
+or a large prefill under load) timed out at 300 s, cancelling the session and dropping
+every later round with nothing in the log. A timeout is now always warned about (with the
+timed-out-request count and a cancelled-session count), and <code>--timeout</code> sets or disables
+one deadline for all rounds.</p>
+</div>
+<p>Replay also accepts the shared simulation flags <code>blis run</code> keeps — the llm-d router's environment flags (<code>--gateway-latency</code>, <code>--epp-scrape-jitter</code>, <code>--kv-event-delay</code>; its deployment inputs are the scenario's <code>router:</code> block and pool labels), scheduling, saturation detection, <code>--num-instances</code>, P/D topology, LoRA, the speculative acceptance flags (<code>--speculative-acceptance-rate</code>/<code>-length</code> and the selectors; a run's <code>--workload</code> preset terms are not in the trace, so a replay passes them as selectors), KV offload, seed and horizon. Engine settings (block size, batch limits, max model length, prefix caching, cache dtype, parallelism, speculative draft length) come from the scenario. See <a href="../../reference/configuration/">Configuration</a> for the full list.</p>
+<p>A trace exported by <code>blis run</code> records the router inputs in its header (with any
+configuration inlined). Replay rebuilds that router. A replay scenario that states a router
+(<code>router:</code> block or pool labels) must state the recorded one, and router environment flags must
+match the recorded ones; a difference is refused. A scenario that states no router replays the
+recorded one. A trace without a recorded router (one from <code>blis convert</code>)
+routes with the router the scenario states, or the router's default configuration.</p>
+<div class="admonition note">
+<p class="admonition-title">Replay with the same scenario and flags as the run</p>
+<p>The deployment is not round-tripped through the trace header: replay rebuilds it from
+<code>--scenario</code> (and the kernel's KV budget) exactly as <code>blis run</code> does. A trace exported by
+<code>blis run</code> and replayed with the <strong>same scenario and identical flags</strong>, produces equal <code>metrics</code>, <code>requests</code> and <code>breakdowns</code> (INV-13). Both
+legs default the horizon to unlimited, so a default replay drains as the run did; if you
+pass <code>--horizon</code> to the run, pass the same to the replay. An MoE scenario with <code>dp &gt; 1</code> replays the same way — one replica per
+data-parallel rank on both legs. The autoscaler and node pools are rejected by
+<code>blis replay</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># 9223372036854775807 is 2^63-1 — `blis run`'s own --horizon default, i.e. unlimited.</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>--scenarios<span class="w"> </span>testdata/kernel/aisimulate<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">10</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">40</span><span class="w"> </span>--seed<span class="w"> </span><span class="m">42</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span>--horizon<span class="w"> </span><span class="m">9223372036854775807</span><span class="w"> </span>--trace-output<span class="w"> </span>traces/run1
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>./blis<span class="w"> </span>replay<span class="w"> </span>--trace-header<span class="w"> </span>traces/run1.yaml<span class="w"> </span>--trace-data<span class="w"> </span>traces/run1.csv<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span>--scenarios<span class="w"> </span>testdata/kernel/aisimulate<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">  </span>--seed<span class="w"> </span><span class="m">42</span><span class="w"> </span>--horizon<span class="w"> </span><span class="m">9223372036854775807</span>
+</code></pre></div>
+</div>
+<h3 id="how-replay-differs-from-blis-run">How Replay Differs from <code>blis run</code><a class="headerlink" href="#how-replay-differs-from-blis-run" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th><code>blis run</code></th>
+<th><code>blis replay</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Request source</strong></td>
+<td>Generated from workload spec or CLI distributions</td>
+<td>Loaded from TraceV2 CSV</td>
+</tr>
+<tr>
+<td><strong>Arrival times</strong></td>
+<td>Synthesized by arrival process (Poisson, etc.)</td>
+<td>Exact timestamps from trace</td>
+</tr>
+<tr>
+<td><strong>Token counts</strong></td>
+<td>Sampled from distributions</td>
+<td>Recorded values</td>
+</tr>
+<tr>
+<td><strong>Horizon</strong></td>
+<td>From <code>--horizon</code> flag or spec</td>
+<td>Unlimited, as in <code>blis run</code> (set with <code>--horizon</code>)</td>
+</tr>
+<tr>
+<td><strong>Output format</strong></td>
+<td>One <code>Result</code> document on stdout (<a href="../results/">Metrics &amp; Results</a>)</td>
+<td>The same <code>Result</code> document with a <code>request_rows</code> row per replayed request; <code>--results-path</code> was removed</td>
+</tr>
+<tr>
+<td><strong>Session support</strong></td>
+<td>Session manager creates follow-ups</td>
+<td>Session structure encoded in trace (no manager needed)</td>
+</tr>
+<tr>
+<td><strong>Trace export</strong></td>
+<td><code>--trace-output</code> (header <code>mode: "generated"</code>)</td>
+<td><code>--trace-output</code> (header <code>mode: "replayed"</code>); see restrictions below</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title"><code>--trace-output</code> faithfully re-exports closed-loop follow-up rounds (#1630)</p>
+<p>A closed-loop replay's <code>--trace-output</code> captures <strong>every</strong> round — the round-0
+requests <strong>and</strong> the follow-up rounds the session manager / pool driver generate
+during the run (previously only the round-0 wave was exported, #1621):</p>
+<ul>
+<li><strong>Accumulate corpus</strong> (<code>session_context_growth: accumulate</code> — e.g. a
+  <code>blis convert otel</code> / <code>blis convert weka</code> corpus): the re-export re-derives per-round
+  <code>input_tokens</code> <strong>deltas</strong> and <code>input_tokens_reset</code> compaction markers from the
+  replayed absolute inputs, sets <code>session_context_growth: accumulate</code> on the header,
+  and records the per-round think time. Re-replaying it (closed-loop) reproduces the
+  original run's per-request per-round input and metrics (INV-13 round-trip).</li>
+<li><strong>Non-accumulate multi-round corpus</strong>: the re-export carries absolute per-round
+  <code>input_tokens</code> (follow-ups inherit their session's <code>prefix_group</code>/<code>prefix_length</code>,
+  so the prefix is not double-counted) plus the captured <code>think_time_us</code>.</li>
+<li><strong>Pool mode</strong> (<code>--concurrent-sessions N</code>): the re-export is a <strong>complete</strong> session
+  corpus — all sessions (originals + clones) with every round, as a closed-loop
+  corpus. Replay it with <code>--session-mode closed-loop</code> (it is not re-cloned). Aggregate
+  <strong>conservation</strong> metrics (completed/injected requests, total input/output tokens)
+  reproduce; per-request and cache/latency aggregates are not guaranteed — pool
+  admission timing is data-dependent, and a non-accumulate clone's cache-busting
+  divergence is not preserved when it shares a <code>prefix_group</code>.</li>
+</ul>
+<p>Fixed-mode (<code>--session-mode fixed</code>) re-export is unchanged. Known boundary: a
+length-capped round (output truncated by the scenario's <code>max_model_len</code>) reproduces its
+input length but may diverge in prefix-cache token <em>content</em> across the cap boundary —
+replay huge-ISL agentic corpora with a scenario whose <code>max_model_len</code> is large enough to
+avoid capping.</p>
+</div>
+<div class="admonition warning">
+<p class="admonition-title">The scenario must match the server</p>
+<p>Replay prices every step with blis-latency-kernel for the deployment the scenario states. To compare against a real server, the scenario's model, hardware, parallelism and engine settings must match that server's. See <a href="../latency-models/">Latency Model</a>.</p>
+</div>
+<hr />
+<h2 id="replaying-otel-agentic-traces">Replaying OTel agentic traces<a class="headerlink" href="#replaying-otel-agentic-traces" title="Permanent link">&para;</a></h2>
+<p>BLIS can replay captured OpenTelemetry agent traces (e.g. the Exgentic
+<code>agent-llm-traces</code> dataset) as a fixed pool of N concurrent closed-loop sessions.
+Each session is a linear chain of LLM calls: BLIS waits for call N to complete,
+applies the recorded think/tool gap, then sends call N+1 — whose prompt reuses
+call N's entire prompt plus its output plus new tokens (a strictly-growing shared
+prefix for realistic KV-cache reuse).</p>
+<p>The dataset ships as Parquet, so first explode it to per-session OTel JSON:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">pyarrow.parquet</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pq</span><span class="o">,</span><span class="w"> </span><span class="nn">json</span><span class="o">,</span><span class="w"> </span><span class="nn">os</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="s2">"otel_json"</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">t</span> <span class="o">=</span> <span class="n">pq</span><span class="o">.</span><span class="n">read_table</span><span class="p">(</span><span class="s2">"data/train-00001-of-00039.parquet"</span><span class="p">)</span><span class="o">.</span><span class="n">to_pylist</span><span class="p">()</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">t</span><span class="p">):</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">({</span><span class="s2">"spans"</span><span class="p">:</span> <span class="n">row</span><span class="p">[</span><span class="s2">"spans"</span><span class="p">]},</span> <span class="nb">open</span><span class="p">(</span><span class="sa">f</span><span class="s2">"otel_json/trace_</span><span class="si">{</span><span class="n">i</span><span class="si">:</span><span class="s2">04d</span><span class="si">}</span><span class="s2">.json"</span><span class="p">,</span> <span class="s2">"w"</span><span class="p">))</span>
+</code></pre></div>
+<p>Then convert and replay:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Convert the trace corpus to a TraceV2 pair (accumulate = growing shared prefix).</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>blis<span class="w"> </span>convert<span class="w"> </span>otel<span class="w"> </span>--input<span class="w"> </span>otel_json<span class="w"> </span>--trace-output<span class="w"> </span>corpus<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--context-growth<span class="w"> </span>accumulate<span class="w"> </span>--max-think-time<span class="w"> </span>15s
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="c1"># Replay a fixed pool of 8 concurrent sessions, 200 total (corpus duplicated to fill).</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>blis<span class="w"> </span>replay<span class="w"> </span>--trace-header<span class="w"> </span>corpus.yaml<span class="w"> </span>--trace-data<span class="w"> </span>corpus.csv<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">  </span>--scenarios<span class="w"> </span>testdata/kernel/aisimulate<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">  </span>--concurrent-sessions<span class="w"> </span><span class="m">8</span><span class="w"> </span>--total-sessions<span class="w"> </span><span class="m">200</span>
+</code></pre></div>
+<p>The recorded source model names are pure provenance and are dropped during
+conversion — all calls are simulated under the scenario's model. (They are deliberately not
+written into the trace: <code>TraceRecord.Model</code> becomes the request's model at replay, and
+a name that differs from the simulated model would report every request under a model
+the run never simulated.)
+<code>--concurrent-sessions</code> implies closed-loop session semantics; without it,
+replay behaves as a standard fixed/closed-loop replay.</p>
+<p>By default the pool is <strong>self-draining</strong>: it runs until all <code>--total-sessions</code>
+sessions complete, regardless of how many waves that takes. You may pass <code>--horizon</code>
+to impose a hard cap on the simulated run — sessions still queued when the cap is
+reached are reported as un-admitted (a warning is logged) rather than silently
+dropped.</p>
+<div class="admonition tip">
+<p class="admonition-title">Subsetting a large corpus: add <code>--shuffle-corpus</code></p>
+<p><code>--total-sessions N</code> on its own is <strong>deterministic, ordered selection</strong>, not a
+random sample: with <code>N</code> below the corpus size it replays the <strong>first <code>N</code>
+sessions in file order</strong> and never touches the tail — a biased sample for a
+time-sorted or harness-grouped corpus. To draw a <em>representative</em> subset, add
+<code>--shuffle-corpus</code>, which applies a seeded Fisher-Yates permutation (reproducible
+from <code>--seed</code>, on a stream independent of token generation) before selection:
+<code>--total-sessions N --shuffle-corpus</code> yields a seeded-random <code>N</code>-of-corpus
+subset, while <code>--total-sessions ≥ corpus</code> simply randomizes the admission order
+with every session still running.</p>
+</div>
+<div class="admonition warning">
+<p class="admonition-title">Size the context window to the trace</p>
+<p>Real agentic traces (e.g. Exgentic <code>agent-llm-traces</code>) often carry very large
+prompts — tens of thousands to well over 100K input tokens per call, growing
+further each round as the shared prefix accumulates — which can exceed a
+scenario's <code>max_model_len</code>. If the run completes cleanly but reports
+<code>completed_requests: 0</code> with a matching <code>dropped_unservable</code> count, inspect the
+trace for empty prompts as well as requests that exceed the context window or KV
+budget. For oversized prompts, use a scenario whose <code>max_model_len</code> covers the
+largest round and whose computed KV budget can hold the growing sessions.</p>
+</div>
+<h3 id="weka-cc-traces-blis-convert-weka">Weka CC traces (<code>blis convert weka</code>)<a class="headerlink" href="#weka-cc-traces-blis-convert-weka" title="Permanent link">&para;</a></h3>
+<p>The <a href="https://huggingface.co/datasets/semianalysisai/cc-traces-weka-with-subagents-051926">SemiAnalysis WekaTrace</a>
+datasets are a second agentic-trace family. Unlike the OTel/Exgentic corpus they ship
+as <strong>JSONL</strong> — one proxy session per line — so no Parquet explosion step is needed:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Convert (one session per JSONL line) to the same TraceV2 corpus format.</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="c1"># --drop-subagents: this dataset's sessions carry sub-agent groups (see below).</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>blis<span class="w"> </span>convert<span class="w"> </span>weka<span class="w"> </span>--input<span class="w"> </span>traces.jsonl<span class="w"> </span>--trace-output<span class="w"> </span>corpus<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span>--context-growth<span class="w"> </span>accumulate<span class="w"> </span>--max-think-time<span class="w"> </span><span class="m">0</span><span class="w"> </span>--drop-subagents
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="c1"># Replay closed-loop (or as a concurrent pool, exactly as for OTel above).</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>blis<span class="w"> </span>replay<span class="w"> </span>--trace-header<span class="w"> </span>corpus.yaml<span class="w"> </span>--trace-data<span class="w"> </span>corpus.csv<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">  </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">  </span>--scenarios<span class="w"> </span>testdata/kernel/aisimulate<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">  </span>--session-mode<span class="w"> </span>closed-loop
+</code></pre></div>
+<p>Weka sessions grow to very long contexts; use a scenario whose pools' <code>max_model_len</code> covers
+them (a round longer than it is length-capped).</p>
+<p>The reader converts each session's <strong>linear main-agent stream</strong>. Sub-agent fan-out —
+<code>type:"subagent"</code> groups, whose nested requests run concurrently with the main agent — is
+<strong>not modelled yet</strong> (<a href="https://github.com/inference-sim/inference-sim/issues/1477">#1477</a>), so a
+session containing one is <strong>refused</strong> by default, naming the session and the work it carries.
+<code>--drop-subagents</code> converts such sessions anyway: the groups are dropped and their wall-clock is
+absorbed into the following main turn's think gap, which keeps the main agent's pacing but
+offers the engine none of the children's load, overlap or KV state — the replay
+<strong>under-loads</strong> the deployment, and the converter warns with the number of dropped groups and
+requests. Per-round <strong>pure client think</strong> is
+recomputed as <code>max(0, t_i − t_{i-1} − api_time_{i-1})</code> between consecutive main turns
+(carried in the <code>think_time_us</code> column, <code>--max-think-time</code> default <code>0</code> = uncapped,
+since Weka gaps are genuine away-from-keyboard times). The column is <strong>non-lossy</strong>
+(#1608): a genuinely-zero recomputed think (an overlapping turn) is recorded as <code>&amp;0</code>,
+distinct from a not-recorded (empty) cell, so an all-overlap session replays with the
+recorded zeros rather than degrading to arrival-gap think. The recorded <code>claude-*</code>
+model names are dropped during conversion (same reason as OTel: no phantom per-model metrics).</p>
+<div class="admonition note">
+<p class="admonition-title">Context compaction is represented (#1609)</p>
+<p>Weka input token counts are very large (p50 ≈ 110K, p90 ≈ 395K), so the
+<code>max_model_len</code> / KV-budget sizing warning above applies with extra
+force. Real Claude Code traffic <strong>compacts/trims context constantly</strong> — ~30% of
+rounds on the full <code>051926</code> dataset have <code>in_N &lt; in_{N-1}+out_{N-1}</code> (the model
+summarized or trimmed). The shared agentic-trace encoder emits a per-round
+<code>input_tokens_reset</code> marker (the recorded absolute) on exactly those non-monotone
+rounds, and accumulate closed-loop replay <strong>re-seeds its growing buffer to that
+absolute at the compaction boundary</strong>. The reconstructed cumulative input therefore
+tracks the recorded total — previously the buffer could only grow, clamped the delta
+to 0, and <strong>over-counted by ≈3–4×</strong> (+312% on that dataset). The re-seed intentionally
+breaks strict prefix identity across the boundary (a summary is not a literal prefix of
+the pre-compaction context), which also corrects the prefix-cache hit-rate over-estimate.
+The marker is a trailing conditional CSV column: absent for monotone sessions and for
+<code>blis run</code>, so a trace with no compaction round replays byte-identically to before
+(INV-6). Traces converted by an <strong>older build</strong> (no marker column) still over-count —
+re-run <code>convert</code> to get compaction-aware output. (The separate think-time lossy-0
+sentinel was resolved in #1608 — see the non-lossy note above.)</p>
+</div>
+<h3 id="weka-subagent-replay-as-aiperf-runs-it-agentic-scenario-inferencex-agentx-mvp-1937">Weka subagent replay as aiperf runs it: <code>--agentic-scenario inferencex-agentx-mvp</code> (#1937)<a class="headerlink" href="#weka-subagent-replay-as-aiperf-runs-it-agentic-scenario-inferencex-agentx-mvp-1937" title="Permanent link">&para;</a></h3>
+<p><code>blis convert weka</code> keeps only the main agent. To replay a Weka v7 corpus <strong>with</strong> its
+subagents, exactly as aiperf 0.12.0's <code>aiperf profile --scenario inferencex-agentx-mvp</code>
+does, give replay the raw corpus instead of a TraceV2 file:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>blis<span class="w"> </span>replay<span class="w"> </span>--agentic-scenario<span class="w"> </span>inferencex-agentx-mvp<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span>--corpus<span class="w"> </span>traces.jsonl<span class="w"> </span>--corpus-sha256<span class="w"> </span>&lt;hex&gt;<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span>--concurrency<span class="w"> </span><span class="m">64</span><span class="w"> </span>--seed<span class="w"> </span><span class="m">42</span><span class="w"> </span>--benchmark-duration<span class="w"> </span>900s<span class="w"> </span>--grace-period<span class="w"> </span>30s<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">  </span>--max-context-length<span class="w"> </span>max_model_len<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">  </span>--scenario<span class="w"> </span>&lt;scenario.yaml&gt;<span class="w"> </span>--scenarios<span class="w"> </span>&lt;dir&gt;<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">  </span>--output<span class="w"> </span>out.json
+</code></pre></div>
+<p><code>examples/agentx-dsv41-flash-h100-2x-tp8-dspark5.yaml</code> is a two-replica DeepSeek-V4.1-Flash
+H100 deployment to run it on. A sweep over concurrencies can add <code>--corpus-cache &lt;dir&gt;</code>:
+the first run writes a binary snapshot of the parsed corpus (keyed by the corpus digest,
+the max-context filter, chain splitting and the build), later runs load it in well under a
+second instead of re-parsing the JSON, and a missing, damaged or mismatched snapshot is
+ignored, logged and rewritten -- output is byte-identical either way.</p>
+<p>Not supported: the accelerated cache-pressure warm-up (<code>warmup: cache_pressure</code>, refused),
+<code>--synthesis-max-osl</code> (no such cap is applied; the descriptor has no field for it),
+<code>--trace-output</code> (refused), a trace-idle or per-turn delay cap (forbidden by the scenario),
+and model mapping (every request goes to the scenario's model). A warm-up request that ends
+in an error, which makes aiperf abort, is counted and warned about.</p>
+<p>The workload can also be given as <code>--workload-spec &lt;file&gt;</code> with a blis-schemas replay descriptor (<code>replay:</code>), which the
+flags override; the descriptor is validated as aiperf's scenario validator validates the
+scenario (a window under 900 s, another cache bust or idle cap, a missing corpus digest are
+refused). The corpus is streamed once and refused on a digest mismatch.</p>
+<p>What is replayed, each step a port of aiperf's code and checked send for send against
+aiperf's own runtime (<code>TestAgentXRuntimeMatchesAiperf</code>):</p>
+<ul>
+<li><strong>Session trees.</strong> Each trace is rebuilt as aiperf rebuilds it: flattened-agent chain
+  detection on the top-level requests and inside every subagent, SPAWN branches and
+  SPAWN_JOIN gates, end-to-start delays <code>max(0, t_k - t_{k-1} - api_{k-1})</code>, and the
+  recorded cross-stream replay barriers. Traces whose peak <code>in + max(out, 1)</code> (parent and
+  subagents) exceeds <code>--max-context-length</code> are dropped; <code>max_model_len</code> is the
+  deployment's resolved value.</li>
+<li><strong>Lanes.</strong> <code>--concurrency</code> counts session trees, not requests. Lane <em>i</em> replays root
+  <code>pool[i mod N]</code> from a snapshot instant t* drawn as aiperf draws it (numpy
+  <code>default_rng(sha256("{seed}:{trace}:{lane}")[:8]).uniform</code> over the trace's span). A
+  drained tree recycles its lane into the next root at turn 0.</li>
+<li><strong>Warm-up, window, grace.</strong> Every stream live at t* first sends its last pre-t* request
+  with max_tokens 1, aligned so every lane reaches t* together; profiling starts when the
+  warm-up drains and sends for <code>--benchmark-duration</code>; requests in flight then have
+  <code>--grace-period</code> to finish, after which they are cancelled and leave no aiperf record.
+  A 10 s global idle cap pulls in pending timers whenever nothing is in flight.</li>
+<li><strong>Prompts.</strong> A turn's prompt is its full message list (aiperf re-sends the whole history
+  every turn), split into user and assistant messages as aiperf's reconstructor splits it,
+  rendered through DeepSeek-V3-family chat-template tokens (BOS, a header per message, EOS
+  after assistant messages, the generation prompt) with the tree's cache-bust marker (10
+  tokens) at the head of the first user message. Message content is exactly the recorded
+  <code>in</code> tokens: hash blocks (equal across the tree's conversations) and per-turn synthetic
+  tails. So prefixes are shared within a tree up to the first message boundary two
+  conversations place differently, never across trees. The template adds 0.09% to the
+  content (median 27 messages per prompt). Outputs are <code>max(out, 1)</code> tokens (ignore_eos);
+  generated tokens are never fed back.</li>
+<li><strong>Outcomes.</strong> A cluster refusal (admission, routing, flow-control rejection or shed, queue
+  TTL, eviction, P/D decode-KV drop) or a client timeout is an error and the stream goes on;
+  a prompt past <code>max_model_len</code> is a context overflow and ends the stream; a request still in
+  flight at the grace end is cancelled. P/D, flow control and REDIRECT drains are supported.</li>
+<li><strong><code>--horizon</code>.</strong> The replay sets the run's end itself (the grace end, or the profiling
+  phase's completion when that comes first); a smaller <code>--horizon</code> cuts the run there, and
+  the measured window then ends at it.</li>
+</ul>
+<p>Every request carries <code>Phase</code> (<code>warmup</code> / <code>profile</code>, <code>grace</code> once it completes after the
+window) and an <code>agentic</code> tag (lane, tree, trace, stream, kind, turn, outcome:
+<code>completed</code>, <code>error</code>, <code>context_overflow</code>, <code>cancelled</code>), echoed per request in the results
+file, which also gets the measured window (the profiling phase's start and completion) and an
+<code>agentic</code> summary block. The laws are INV-AX1 … INV-AX4 in the invariant registry.</p>
+<h3 id="faithful-high-concurrency-replay-session-mode-fixed-accumulate-1692">Faithful high-concurrency replay: <code>--session-mode fixed-accumulate</code> (#1692)<a class="headerlink" href="#faithful-high-concurrency-replay-session-mode-fixed-accumulate-1692" title="Permanent link">&para;</a></h3>
+<p>An accumulate corpus can be replayed three ways. Only the third is faithful at
+concurrency &gt; 1:</p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Arrivals</th>
+<th>Accumulate inputs</th>
+<th>Faithful high-conc?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--session-mode closed-loop</code></td>
+<td>regenerated (<code>completion + think</code>)</td>
+<td>✅ reconstructed</td>
+<td>❌ self-throttles — arrivals chain to sim completion, so the queue drains instead of piling up and TTFT collapses to compute-only (30–100× low at conc ≥ 8)</td>
+</tr>
+<tr>
+<td><code>--session-mode fixed</code></td>
+<td>recorded</td>
+<td>❌ <strong>hard-rejected</strong> on an accumulate corpus (reads deltas as absolutes)</td>
+<td>❌ not usable</td>
+</tr>
+<tr>
+<td><code>--session-mode fixed-accumulate</code></td>
+<td><strong>recorded</strong></td>
+<td>✅ reconstructed</td>
+<td>✅ recorded arrivals carry the real cross-session overlap, so N large prefills pile into the scheduler at the real clock and produce genuine queue wait</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Convert once, then replay with recorded arrivals AND reconstructed growing context.</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="c1"># The motivating shape is a large MLA MoE on H200; any scenario works, as long as its</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="c1"># max_model_len covers the corpus's longest context.</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>blis<span class="w"> </span>convert<span class="w"> </span>weka<span class="w"> </span>--input<span class="w"> </span>traces.jsonl<span class="w"> </span>--trace-output<span class="w"> </span>corpus<span class="w"> </span>--context-growth<span class="w"> </span>accumulate<span class="w"> </span>--drop-subagents
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>blis<span class="w"> </span>replay<span class="w"> </span>--trace-header<span class="w"> </span>corpus.yaml<span class="w"> </span>--trace-data<span class="w"> </span>corpus.csv<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">  </span>--scenario<span class="w"> </span>llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">  </span>--scenarios<span class="w"> </span>testdata/kernel/aisimulate<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">  </span>--session-mode<span class="w"> </span>fixed-accumulate
+</code></pre></div>
+<p>The arrival timestamps are already in the corpus (<code>ArrivalTimeUs</code>, written per round by
+the converter) — this mode consumes data that exists today; no trace-format change. It
+requires an accumulate corpus, and is mutually exclusive with <code>--concurrent-sessions</code>
+(open-loop, so there is no session pool to maintain) and <code>--think-time-*</code> (arrivals are
+recorded, not regenerated). INV-10 (session causality) is <strong>scoped to closed-loop</strong> and
+does not apply — chaining arrivals to sim completion is exactly the feedback loop this
+mode breaks.</p>
+<div class="admonition warning">
+<p class="admonition-title">Intra-session overlap: recorded arrivals ignore sim completion</p>
+<p>Each round is injected at its recorded arrival regardless of when the previous round
+of the <strong>same</strong> session finishes in the sim. A real agentic client is serial (round N
+waits for round N−1's response), but the recorded inter-round gap includes the <em>real</em>
+server time; the moment sim service time exceeds that real time — exactly the
+queueing regime this mode creates — round N is injected while round N−1 is still
+decoding. Two consequences to keep in mind when reading results:</p>
+<ol>
+<li><strong>Measured concurrency is inflated</strong> above what a real serial client produces,
+   because same-session rounds can be in flight at once.</li>
+<li><strong>Prefix-cache hit rate is partly fictional</strong>: round N's prompt contains round
+   N−1's output tokens, which (under overlap) round N−1 has not finished emitting —
+   so part of the modeled prefix hit corresponds to tokens that did not yet exist.</li>
+</ol>
+<p>This is a distinct effect from the (faithful) <em>cross</em>-session overlap the mode
+reproduces, and it is not covered by the INV-10 exemption (which is about the arrival
+<em>source</em>). It is inherent to open-loop replay of a serial workload; closed-loop avoids
+it but at the cost of the self-throttling feedback loop this mode exists to break.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title"><code>--trace-output</code> produces an absolute (non-accumulate) corpus</p>
+<p>fixed-accumulate reconstructs each round's growing context in memory, so
+<code>--trace-output</code> re-exports the <strong>already-reconstructed absolute</strong> per-round inputs —
+the exported header carries <strong>no</strong> <code>session_context_growth</code>, and the CSV records
+absolute <code>input_tokens</code> (not deltas). This export is a faithful absolute-mode corpus:
+re-replay it with <code>--session-mode fixed</code> (the default). It is <strong>not</strong> an accumulate
+corpus, so <code>--session-mode fixed-accumulate</code> will reject it (the accumulate-corpus
+guard) — re-run the original <code>convert</code> step if you need to re-export deltas. This is
+lossless: the absolute inputs are exactly what fixed-accumulate reconstructed.</p>
+</div>
+<hr />
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../results/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Metrics &amp; Results">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Metrics & Results
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../archon-pr-review/" class="md-footer__link md-footer__link--next" aria-label="Next: Archon PR Review">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Archon PR Review
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.indexes", "navigation.sections", "navigation.expand", "navigation.footer", "navigation.top", "search.highlight", "search.suggest", "content.code.copy", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../javascripts/mermaid-text-fix.js"></script>
+      
+        <script src="../../javascripts/mathjax.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    
+  </body>
+</html>
