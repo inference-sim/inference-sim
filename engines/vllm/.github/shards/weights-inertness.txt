@@ -1,0 +1,20 @@
+# Seconds each test of oracle/test_inertness.py took on a hosted runner (python -I oracle/test_inertness.py -v --durations 20),
+# the weights the inertness shards are balanced by (see weights.txt). A test not listed weighs 1 second.
+CommittedProofs.test_every_committed_proof_is_what_the_harness_computes_now	64.3
+Controls.test_a_config_run_sees_a_resolved_value_it_was_not_told_to_watch	86.8
+Controls.test_a_config_run_sees_a_watched_value_change	50.5
+Controls.test_a_disposition_the_harness_does_not_check_is_refused	27.0
+Controls.test_a_field_that_changes_the_schedule_is_not_inert	28.9
+Controls.test_a_file_that_names_the_field_and_the_proof_does_not_list_fails	28.6
+Controls.test_a_listed_read_that_is_not_in_the_source_fails	29.7
+Controls.test_a_pass_through_that_is_not_one_fails	29.6
+Controls.test_a_read_with_no_disposition_fails	30.8
+Controls.test_a_reviewed_read_the_source_no_longer_holds_fails	27.1
+Controls.test_a_run_disposition_names_the_run_that_executed_the_line	29.4
+Controls.test_a_run_disposition_no_run_executed_fails	30.6
+Controls.test_a_variable_the_source_names_is_not_unread	0.9
+Controls.test_an_output_processor_run_sees_what_it_hands_back_to_the_engine	29.7
+CoverageMatching.test_a_file_whose_directory_only_ends_in_the_same_letters_does_not_count	0.0
+CoverageMatching.test_a_module_run_from_site_packages_counts_for_the_checkouts_path	0.0
+CoverageMatching.test_a_module_run_from_the_checkout_counts	0.0
+CoverageMatching.test_reset_forgets_the_earlier_run	0.0

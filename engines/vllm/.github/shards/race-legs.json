@@ -1,0 +1,10 @@
+[
+  {"name": "core", "pkgs": "./internal/substratedata ./core/vllm ./core/sched ./core/engine ./core/connector/...", "cache": "race-core", "save": true},
+  {"name": "compat", "pkgs": "./compat/prefix ./compat/engine ./compat/dplb ./compat/kv ./compat/kvtransfer", "cache": "race-compat", "save": true},
+  {"name": "vllmengine-0", "pkgs": "./vllmengine", "shards": 2, "shard": 0, "cache": "race-vllmengine", "save": true},
+  {"name": "vllmengine-1", "pkgs": "./vllmengine", "shards": 2, "shard": 1, "cache": "race-vllmengine", "save": false},
+  {"name": "kernelmodel-census-0", "race_pkgs": "./compat/kernelmodel", "run": "^TestBlockSizeResolutionOverTheCensusFixtures$", "slice": "0/4", "cache": "race-kernelmodel", "save": true},
+  {"name": "kernelmodel-census-1", "race_pkgs": "./compat/kernelmodel", "run": "^TestBlockSizeResolutionOverTheCensusFixtures$", "slice": "1/4", "cache": "race-kernelmodel", "save": false},
+  {"name": "kernelmodel-census-2", "race_pkgs": "./compat/kernelmodel", "run": "^TestBlockSizeResolutionOverTheCensusFixtures$", "slice": "2/4", "cache": "race-kernelmodel", "save": false},
+  {"name": "kernelmodel-census-3", "race_pkgs": "./compat/kernelmodel", "run": "^TestBlockSizeResolutionOverTheCensusFixtures$", "slice": "3/4", "cache": "race-kernelmodel", "save": false}
+]
