@@ -1,6 +1,7 @@
 package kernelmodel
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -83,6 +84,51 @@ var statedDiffers = map[string]string{
 
 type censusKey struct{ model, class string }
 
+// censusSlice reads BLIS_CENSUS_SLICE, "k/n": run only the fixtures whose position in the sorted file
+// list leaves remainder k when divided by n. Unset, it is 0/1 and every fixture runs. CI sets it only
+// for the race detector (ci.yml, go-race), whose run of this test is the slowest check there; the slices
+// run side by side and together cover every fixture, each fixture in exactly one slice. The exact
+// counts below are asserted by the unsliced run (go-test-rest), which is not weakened.
+func censusSlice() (k, n int, err error) {
+	v := os.Getenv("BLIS_CENSUS_SLICE")
+	if v == "" {
+		return 0, 1, nil
+	}
+	if _, err = fmt.Sscanf(v, "%d/%d", &k, &n); err != nil || n < 1 || k < 0 || k >= n {
+		return 0, 0, fmt.Errorf("BLIS_CENSUS_SLICE=%q: want k/n with 0 <= k < n", v)
+	}
+	return k, n, nil
+}
+
+// inCensusSlice says whether the fixture at position i of the sorted list belongs to slice k of n.
+func inCensusSlice(i, k, n int) bool { return i%n == k }
+
+// TestCensusSlicesPartitionTheFixtures: whatever the number of slices, every fixture position falls in
+// exactly one slice, so a sliced race run leaves no fixture unrun.
+func TestCensusSlicesPartitionTheFixtures(t *testing.T) {
+	for n := 1; n <= 12; n++ {
+		for i := 0; i < 700; i++ {
+			in := 0
+			for k := 0; k < n; k++ {
+				if inCensusSlice(i, k, n) {
+					in++
+				}
+			}
+			if in != 1 {
+				t.Fatalf("position %d of %d slices is in %d slices, want 1", i, n, in)
+			}
+		}
+	}
+	t.Setenv("BLIS_CENSUS_SLICE", "3/2")
+	if _, _, err := censusSlice(); err == nil {
+		t.Error("slice 3/2 is accepted")
+	}
+	t.Setenv("BLIS_CENSUS_SLICE", "1/4")
+	if k, n, err := censusSlice(); err != nil || k != 1 || n != 4 {
+		t.Errorf("slice 1/4 read as %d/%d, %v", k, n, err)
+	}
+}
+
 func TestBlockSizeResolutionOverTheCensusFixtures(t *testing.T) {
 	stated := regexp.MustCompile(`(?m)^# block_size (\d+): stated by the run\.$`)
 	strip := regexp.MustCompile(`(?m)^\s*block_size:\s*\d+\s*\n`)
@@ -96,6 +142,10 @@ func TestBlockSizeResolutionOverTheCensusFixtures(t *testing.T) {
 		}
 		files = append(files, m...)
 	}
+	sliceK, sliceN, err := censusSlice()
+	if err != nil {
+		t.Fatal(err)
+	}
 	// The fixtures are independent (each opens its own Data from a scenario of its own), so they run
 	// as parallel subtests; the counts are summed under a mutex and asserted exactly after they all end.
 	var (
@@ -106,7 +156,10 @@ func TestBlockSizeResolutionOverTheCensusFixtures(t *testing.T) {
 		coverage                     = map[censusKey]int{}
 	)
 	t.Run("fixtures", func(t *testing.T) {
-		for _, f := range files {
+		for i, f := range files {
+			if !inCensusSlice(i, sliceK, sliceN) {
+				continue
+			}
 			raw, err := os.ReadFile(f)
 			if err != nil {
 				t.Fatal(err)
@@ -203,6 +256,10 @@ func TestBlockSizeResolutionOverTheCensusFixtures(t *testing.T) {
 	}
 	t.Logf("v0.32.0 fixtures %d: stated by the run %d (reproduced %d, refused %d, differs %d); no size stated: refused %d (hybrid pieces %d), resolved %d",
 		nV032, nStated, statedClass["reproduced"], statedClass["refused"], statedClass["differs"], nRefused, nHybridPieces, nResolved)
+	if sliceN > 1 {
+		// A slice sees part of the fixtures, so its counts are part of the totals; the unsliced run asserts them.
+		return
+	}
 	if nV032 != 679 || nStated != 354 || nRefused != 26 || nResolved != 299 || nHybridPieces != 9 ||
 		statedClass["reproduced"] != 0 || statedClass["refused"] != 318 || statedClass["differs"] != 36 || len(statedDiffers) != 36 {
 		t.Errorf("the census counts changed: %d fixtures; stated %d (reproduced %d, refused %d, differs %d); no size stated: refused %d (hybrid %d), resolved %d; "+
