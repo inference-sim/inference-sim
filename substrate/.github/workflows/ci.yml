@@ -43,6 +43,7 @@ jobs:
       ledger: ${{ steps.filter.outputs.ledger }}
       registry: ${{ steps.filter.outputs.registry }}
       docs: ${{ steps.filter.outputs.docs }}
+      golang: ${{ steps.filter.outputs.golang }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -54,21 +55,32 @@ jobs:
           set -euo pipefail
           # On a push with no usable base, or a manual run, every job runs.
           if [ -z "${BASE:-}" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-            for k in contracts kernel catalog ledger registry docs; do echo "$k=true" >> "$GITHUB_OUTPUT"; done
+            for k in contracts kernel catalog ledger registry docs golang; do echo "$k=true" >> "$GITHUB_OUTPUT"; done
             exit 0
           fi
           changed=$(git diff --name-only "$BASE" HEAD)
           has() { if printf '%s\n' "$changed" | grep -Eq "$1"; then echo true; else echo false; fi; }
-          # A change to go.mod, go.sum, the workflow or the root package affects every Go job.
-          shared='^(go\.mod|go\.sum|[^/]+\.go|\.github/)'
+          # A change to go.mod, go.sum, a workflow, a composite action or the root package affects
+          # every Go job. Other files under .github/ are data that one job reads (or none): they run
+          # only the jobs named below, so a line in .github/tags.lock does not run the cost model.
+          shared='^(go\.mod|go\.sum|[^/]+\.go|\.github/(workflows|actions)/)'
+          # .github/quarantine.yaml: the skip report of the contracts job and the registry job's
+          # skip check read it. .github/check-runs.yaml and .github/gates.yaml: tools/release and
+          # tools/prcheck read them (the contracts job runs their tests). .github/tags.lock is read
+          # only by the nightly tag check; .github/modlint-deferral.yaml only by the format, vet and
+          # build job, which always runs.
+          github_data='^\.github/(quarantine|check-runs|gates)\.ya?ml$'
           # Any Python file can restate a Go rule, so a Python change runs the X15 lint here. The
           # loader (load/) reads the catalog and the registry, so a data change runs it too.
-          echo "contracts=$(has "$shared|^contracts/|^validate/|^tools/|^load/|^catalog/|^registry/|\.py$")" >> "$GITHUB_OUTPUT"
+          echo "contracts=$(has "$shared|$github_data|^contracts/|^validate/|^tools/|^load/|^catalog/|^registry/|\.py$")" >> "$GITHUB_OUTPUT"
           echo "kernel=$(has "$shared|^kernel/|^contracts/|^load/|^validate/")" >> "$GITHUB_OUTPUT"
           echo "catalog=$(has "$shared|^catalog/")"                      >> "$GITHUB_OUTPUT"
           echo "ledger=$(has "$shared|^catalog/ledger/|^ledger/")"       >> "$GITHUB_OUTPUT"
-          echo "registry=$(has "$shared|^registry/")"                    >> "$GITHUB_OUTPUT"
+          echo "registry=$(has "$shared|^\.github/quarantine\.yaml$|^registry/")" >> "$GITHUB_OUTPUT"
           echo "docs=$(has "$shared|^docs/|^mkdocs\.yml|^catalog/|^registry/|^contracts/example_test\.go")" >> "$GITHUB_OUTPUT"
+          # golangci-lint judges Go code only: it needs a Go file, the module files, its own
+          # configuration, or a workflow or action that builds it.
+          echo "golang=$(has "$shared|\.go$|^\.golangci\.yml$")" >> "$GITHUB_OUTPUT"
 
   # Formatting, vet and build for the whole module, on every change. They are fast, and a
   # change in one directory can break the build of another.
@@ -100,6 +112,8 @@ jobs:
   # and refuses a newer module.
   lint:
     name: golangci-lint
+    needs: changes
+    if: needs.changes.outputs.golang == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
