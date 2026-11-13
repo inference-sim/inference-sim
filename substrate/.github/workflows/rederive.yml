@@ -18,7 +18,8 @@ name: rederive
 #
 # It runs nightly on the full data (SUB-4, SUB-8), on every pull request that changes the
 # registry's coefficients, scripts or tests, and by hand. The checkout is ~135 MB and the
-# gates take ~20 minutes, which a pull request touching those paths pays. It is a gate: its
+# gates take ~7 minutes (four pytest processes at once, REDERIVE_JOBS), which a pull request
+# touching those paths pays. It is a gate: its
 # trigger paths are declared below and in .github/gates.yaml, and the nightly status page
 # shows it failing when its last real run is more than seven days old (X16).
 #
@@ -178,5 +179,10 @@ jobs:
           INFERENCEX_GOLDEN: ${{ github.workspace }}/inferencex/inferencex-e2e/infx/golden_al_distribution
           COLLECTIVEX_DATA: ${{ runner.temp }}/collectivex
           OPERATORX_DATA: ${{ runner.temp }}/collectivex
+          # The hosted runner has four cores and the tests are single-threaded subprocess runs of
+          # the writers: four pytest processes at once, each a disjoint share of the collected
+          # tests (tools/shard; rederive.sh checks each share before it runs it). The longest
+          # single test (relane_attention_swa.py, ~5 min) is now the floor, not the sum.
+          REDERIVE_JOBS: "4"
         working-directory: registry
         run: scripts/rederive.sh
