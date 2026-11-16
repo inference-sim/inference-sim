@@ -9,13 +9,13 @@
   "data": {
     "catalog": {
       "source": "path",
-      "hash": "77898711fca5254bf3047f951ab1ce6a3a3dd03cb9e29da11db7a39f42527a2c",
-      "combined_hash": "77898711fca5254bf3047f951ab1ce6a3a3dd03cb9e29da11db7a39f42527a2c"
+      "hash": "8d9a338fb0fd59e345b114fadd052d572a741d2881aeb190eaab7c5b761c923e",
+      "combined_hash": "8d9a338fb0fd59e345b114fadd052d572a741d2881aeb190eaab7c5b761c923e"
     },
     "registry": {
       "source": "path",
-      "hash": "a6436069c59ef8f02b3c8f4a4594eae056d9ab4b6528247cd32ee0401d2fe49b",
-      "combined_hash": "a6436069c59ef8f02b3c8f4a4594eae056d9ab4b6528247cd32ee0401d2fe49b"
+      "hash": "92e1ce643a2405c9704b0c08d7b9d4e9e28ff46481ca91e6eea9e5c2786fc714",
+      "combined_hash": "92e1ce643a2405c9704b0c08d7b9d4e9e28ff46481ca91e6eea9e5c2786fc714"
     },
     "released_data": false,
     "build": "unreleased"
@@ -810,6 +810,13 @@
         "value": "2",
         "source": "command_line"
       }
+    ],
+    "files": [
+      {
+        "path": "router/pd-always.yaml",
+        "sha256": "ab9168212bb2fac7077e57349fb8b480941142ba562211450c512c84762e7091",
+        "content": "# llm-d's deploy/config/pd-epp-config.yaml with the always-disagg-pd-decider in place of the\n# prefix-based one: every request is disaggregated (prefill on a prefill-role pod, decode on a\n# decode-role pod). The P/D scenarios here name it in their router block.\napiVersion: llm-d.ai/v1\nkind: EndpointPickerConfig\nplugins:\n- type: approx-prefix-cache-producer\n  parameters:\n    maxPrefixTokensToMatch: 16384\n    lruCapacityPerServer: 31250\n- type: prefix-cache-scorer\n- type: queue-scorer\n- type: prefill-filter\n- type: decode-filter\n- type: max-score-picker\n- type: always-disagg-pd-decider\n- type: disagg-profile-handler\n  parameters:\n    deciders:\n      prefill: always-disagg-pd-decider\nschedulingProfiles:\n- name: prefill\n  plugins:\n  - pluginRef: prefill-filter\n  - pluginRef: max-score-picker\n  - pluginRef: prefix-cache-scorer\n    weight: 2\n  - pluginRef: queue-scorer\n    weight: 1\n- name: decode\n  plugins:\n  - pluginRef: decode-filter\n  - pluginRef: max-score-picker\n  - pluginRef: prefix-cache-scorer\n    weight: 2\n  - pluginRef: queue-scorer\n    weight: 1\n"
+      }
     ]
   },
   "frame": {
@@ -891,7 +898,7 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.14.2-0.20261116222450-a1d5ad62849b",
+    "substrate": "v0.14.2-0.20261116224624-85d174a05ebe",
     "router": "v1.0.0-blis.4",
     "engine_module": "v0.32.1-0.20261116223031-74897bd9d6d2"
   },
