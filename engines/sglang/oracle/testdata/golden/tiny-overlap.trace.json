@@ -1,0 +1,232 @@
+{
+ "finished": {
+  "r0": {
+   "reason": {
+    "length": 4,
+    "type": "length"
+   },
+   "step": 5
+  },
+  "r1": {
+   "reason": {
+    "length": 3,
+    "type": "length"
+   },
+   "step": 3
+  },
+  "r2": {
+   "reason": {
+    "length": 2,
+    "type": "length"
+   },
+   "step": 5
+  }
+ },
+ "init_sent": 1,
+ "provenance": {
+  "blis_sglang_commit": "aa4ff8c8896f20b5bbc7f191efa3fae7ad5b0062",
+  "lockfile_sha256": "a3fb4e4773230faee4ffdd89437a96b2f3bfb3082e4be4cef4f44d44c66ed569",
+  "mock_version": "gpu-mock/1+f661ac85b715",
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+  "oracle_inputs": {
+   "oracle/harness.py": "d6b41346071ad58d135e02beda756b53f2bfc0b3578d8878913ab978d9e8ab22",
+   "oracle/mocks.json": "76af7a707b2d2f2e9f3cffdb133d80792aa9ee5b8d0383acb8dc983f91107610",
+   "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+   "oracle/run_scheduler.py": "f8852d36c9f96252001d3bbfa60b9241137ebee9c33b17744519ca4a5e1a91b5",
+   "oracle/scenarios/tiny-overlap.json": "5716756de17ecc7d67f2ef1de34802ddc3508cabf515d5efd672eeef5bd36381",
+   "oracle/stubs.py": "bb545f2caa9dbb4ceebc2e8bd563c5c7d178a1ae6ffd2c6a28d4476c3b2a2802"
+  },
+  "platform": "linux-x86_64",
+  "python": "3.12.16",
+  "requirements_lock_sha256": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+  "scenario_sha256": "5716756de17ecc7d67f2ef1de34802ddc3508cabf515d5efd672eeef5bd36381",
+  "seed": 0,
+  "sglang_commit": "297e54fd105e974cdf401e5b4d20253a22c16f90",
+  "tier": 2
+ },
+ "resolved": {
+  "attention_backend": "torch_native",
+  "chunked_prefill_size": 8192,
+  "device": "cpu",
+  "disable_overlap_schedule": false,
+  "max_running_requests": 8,
+  "max_total_tokens": 4096,
+  "page_size": 1,
+  "schedule_policy": "fcfs"
+ },
+ "shutdown_sent": true,
+ "steps": [
+  {
+   "arrivals": [
+    "r0",
+    "r1"
+   ],
+   "forwards": [
+    {
+     "available_tokens": 4082,
+     "batch_size": 2,
+     "extend_prefix_lens": [
+      0,
+      0
+     ],
+     "extend_seq_lens": [
+      8,
+      6
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_overlap",
+      "line": 2060,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "seq_lens": [
+      8,
+      6
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 0
+  },
+  {
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 4080,
+     "batch_size": 2,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_overlap",
+      "line": 2060,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "seq_lens": [
+      9,
+      7
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 1
+  },
+  {
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 4078,
+     "batch_size": 2,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_overlap",
+      "line": 2060,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "seq_lens": [
+      10,
+      8
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 2
+  },
+  {
+   "arrivals": [
+    "r2"
+   ],
+   "forwards": [
+    {
+     "available_tokens": 4074,
+     "batch_size": 1,
+     "extend_prefix_lens": [
+      6
+     ],
+     "extend_seq_lens": [
+      4
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_overlap",
+      "line": 2060,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "seq_lens": [
+      10
+     ]
+    }
+   ],
+   "outputs": [
+    {
+     "finished": [
+      "r1"
+     ],
+     "output_lens": [
+      3
+     ],
+     "rids": [
+      "r1"
+     ],
+     "type": "BatchTokenIDOutput"
+    }
+   ],
+   "step": 3
+  },
+  {
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 4072,
+     "batch_size": 2,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_overlap",
+      "line": 2060,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "seq_lens": [
+      11,
+      11
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 4
+  },
+  {
+   "arrivals": [],
+   "forwards": [],
+   "outputs": [
+    {
+     "finished": [
+      "r0",
+      "r2"
+     ],
+     "output_lens": [
+      4,
+      2
+     ],
+     "rids": [
+      "r0",
+      "r2"
+     ],
+     "type": "BatchTokenIDOutput"
+    }
+   ],
+   "step": 5
+  },
+  {
+   "arrivals": [],
+   "forwards": [],
+   "outputs": [],
+   "shutdown": true,
+   "step": 6
+  }
+ ],
+ "truncated": false
+}
