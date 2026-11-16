@@ -225,6 +225,11 @@ type AcceptanceEntry struct {
 	// whether they were derived from AL by vLLM's minimum-variance schedule rather than stated.
 	PerPositionRates []float64 `json:"per_position_rates"`
 	RatesDerived     bool      `json:"rates_derived"`
+	// Schedule is how the run realised the acceptance per step: "chain" when each step's
+	// accepted drafts were drawn (blis-substrate acceptance.ScheduleChain), empty for the
+	// deterministic mean. RequestLogitSD is the chain's per-request spread.
+	Schedule       string  `json:"schedule,omitempty"`
+	RequestLogitSD float64 `json:"request_logit_sd,omitempty"`
 }
 
 // ScenarioOverride is one setting a run took from somewhere other than its scenario.

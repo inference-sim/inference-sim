@@ -586,7 +586,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 // and replay, so a trace round-trips under identical flags (INV-13). Fatal on an invalid or
 // unresolvable config (CLI boundary, R6).
 func resolveSpeculativeConfig(cmd *cobra.Command) speculativeConfig {
-	acceptanceRecord = nil
+	acceptanceRecord, acceptanceChain = nil, nil
 	ar, speculating := resolveAcceptance(cmd, numSpeculativeTokens, speculativeMethod)
 	alpha := 0.0
 	if speculating {
@@ -598,11 +598,23 @@ func resolveSpeculativeConfig(cmd *cobra.Command) speculativeConfig {
 		alpha = speculativeAcceptance // refused below: a rate with nothing drafted
 	}
 	c := speculativeConfigOf(numSpeculativeTokens, alpha, speculativeMethod)
+	if speculating {
+		// A profile that states a chain schedule draws each step's acceptance instead of
+		// advancing by the mean (inference-sim#2094).
+		var err error
+		if acceptanceChain, err = acceptanceChainOf(ar.Res, c, ar.CLIRate != nil); err != nil {
+			logrus.Fatalf("%v", err)
+		}
+	}
 	if c.IsEnabled() {
 		acceptanceRecord = acceptanceRecordOf(ar.Res, c)
 		logAcceptance(acceptanceRecord, c.K)
 		logrus.Infof("speculative decoding enabled: method=%q k=%d acceptance=%.3f (mean %.3f tokens/step, verify width %d, %d lookahead KV slots)",
 			c.Method, c.K, c.Acceptance, c.EffectiveTokensPerStep(), c.VerifyWidth(), c.LookaheadTokens())
+		if acceptanceChain != nil {
+			logrus.Infof("speculative decoding: each step's accepted drafts are drawn from the profile's chain schedule (request_logit_sd %.3f, seeded by --seed)",
+				acceptanceChain.RequestLogitSD())
+		}
 		if c.Acceptance == 0 {
 			logrus.Warnf("speculative decoding: acceptance length 1 => no throughput gain but verify-width cost applies (net slowdown); this is usually not intended")
 		}

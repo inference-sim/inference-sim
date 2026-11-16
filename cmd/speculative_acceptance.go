@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+	"math"
 	"strings"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
@@ -44,6 +46,11 @@ var (
 	// acceptanceRecord is the resolved acceptance, recorded in the results file; nil when the
 	// run does not speculate.
 	acceptanceRecord *sim.AcceptanceRecord
+
+	// acceptanceChain is the resolved acceptance's chain schedule, which every engine driver of
+	// the run draws each step's accepted drafts from; nil when the run advances by the mean
+	// (inference-sim#2094).
+	acceptanceChain *acceptance.Chain
 )
 
 // registerAcceptanceFlags registers the acceptance flags on run and replay alike (INV-13). The
@@ -59,6 +66,27 @@ func registerAcceptanceFlags(cmd *cobra.Command) {
 
 // acceptanceRecordOf is the results-file record of a resolution as the run simulates it: the
 // length and rate are the config's own, so the record is what advanced requests.
+// acceptanceChainOf is the chain schedule the resolution states for an engine drafting c.K
+// tokens at rate c.Acceptance, or nil when it states none or the command line set the rate.
+// It refuses a chain whose positions or mean disagree with c, since the record and the draws
+// would then describe two different acceptances.
+func acceptanceChainOf(r acceptance.Resolution, c speculativeConfig, cliRate bool) (*acceptance.Chain, error) {
+	if cliRate || !c.IsEnabled() {
+		return nil, nil
+	}
+	chain, err := r.Chain()
+	if err != nil || chain == nil {
+		return nil, err
+	}
+	if chain.K() != c.K {
+		return nil, fmt.Errorf("speculative acceptance: the chain covers %d positions, the engine drafts %d", chain.K(), c.K)
+	}
+	if rate := r.AcceptanceRate(); math.Abs(rate-c.Acceptance) > 1e-12 {
+		return nil, fmt.Errorf("speculative acceptance: the chain's mean rate %v is not the rate %v the run advances by", rate, c.Acceptance)
+	}
+	return chain, nil
+}
+
 func acceptanceRecordOf(r acceptance.Resolution, c speculativeConfig) *sim.AcceptanceRecord {
 	rec := &sim.AcceptanceRecord{
 		Length:      c.EffectiveTokensPerStep(),
@@ -72,6 +100,10 @@ func acceptanceRecordOf(r acceptance.Resolution, c speculativeConfig) *sim.Accep
 			PerPositionRates: r.PerPositionRates,
 			RatesDerived:     r.RatesDerived,
 		},
+	}
+	if acceptanceChain != nil {
+		rec.Entry.Schedule = string(acceptance.ScheduleChain)
+		rec.Entry.RequestLogitSD = acceptanceChain.RequestLogitSD()
 	}
 	if p := r.Profile; p != nil {
 		rec.Entry.Key = p.Key().String()

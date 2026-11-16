@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math/rand"
 	"sort"
 	"strings"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/engine/env"
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 )
 
 // EngineDriverConfig is the host side of an engine-driven instance.
@@ -48,6 +50,14 @@ type EngineDriverConfig struct {
 	// compatibility engine's deterministic carry: a mean of α x drafts per step, no RNG
 	// (commitDecodeTokens). Zero accepts none.
 	Acceptance float64
+	// AcceptanceChain, when set, replaces the carry: each request draws its random effect once
+	// and each step's accepted drafts from the chain the resolved acceptance profile states
+	// (blis-substrate acceptance.ScheduleChain), from a stream of its own seeded by
+	// AcceptanceSeed and the request's ID (acceptanceStream), so the draws are the same for the same seed whatever
+	// else runs (INV-6). nil keeps the carry.
+	AcceptanceChain *acceptance.Chain
+	// AcceptanceSeed is the run's seed, which AcceptanceChain's streams derive from.
+	AcceptanceSeed int64
 	// ResumeGapFromLastToken measures the gap before a preempted request's first token after it
 	// resumes from its last token's emission (its arrival plus its TTFT and ITL so far), as the
 	// compatibility engine's executeBatchStep does for a resumed prefill; off, from the end of
@@ -196,9 +206,14 @@ type driverReq struct {
 	sent         int     // tokens delivered to the client (StreamInterval groups them)
 	clientEnd    int64   // the end of the step that delivered the last of them
 	acceptCarry  float64 // the fraction of an accepted draft the request is owed
-	resumed      bool    // preempted after its first token, not yet emitting again
-	lookedUp     bool    // its first admission's prefix-cache lookup is recorded
-	remote       bool    // a decode sub-request whose prompt a peer's prefill computed (LandRemote)
+	// chain is the request's conditional acceptance probability per draft position under an
+	// acceptance chain, fixed by its random effect at its first verification, and chainRNG
+	// the stream its steps draw from; nil without a chain.
+	chain    []float64
+	chainRNG *rand.Rand
+	resumed  bool // preempted after its first token, not yet emitting again
+	lookedUp bool // its first admission's prefix-cache lookup is recorded
+	remote   bool // a decode sub-request whose prompt a peer's prefill computed (LandRemote)
 }
 
 type driverBatch struct {
@@ -580,9 +595,13 @@ func (e *driverStepEnd) run(d *EngineDriver) {
 // verified drafts, how many the target accepted. The count is the compatibility engine's carry
 // rule (commitDecodeTokens): the request accrues α x drafts each step it verifies, and is told
 // the whole part, so the long-run mean is exactly α of the drafts, deterministically (INV-6).
+//
+// Under an acceptance chain (EngineDriverConfig.AcceptanceChain) the count is drawn instead: the
+// chain over the first s.Drafts positions, walked to its first rejection, as the target's
+// rejection sampler accepts a prefix of the drafts.
 func (d *EngineDriver) outcome(b engine.Batch) engine.Outcome {
 	var out engine.Outcome
-	if d.cfg.Acceptance <= 0 {
+	if d.cfg.Acceptance <= 0 && d.cfg.AcceptanceChain == nil {
 		return out
 	}
 	for _, s := range b.Reqs {
@@ -590,9 +609,18 @@ func (d *EngineDriver) outcome(b engine.Batch) engine.Outcome {
 		if r == nil || s.Drafts <= 0 {
 			continue
 		}
-		r.acceptCarry += d.cfg.Acceptance * float64(s.Drafts)
-		n := min(int(r.acceptCarry), s.Drafts)
-		r.acceptCarry -= float64(n)
+		var n int
+		if c := d.cfg.AcceptanceChain; c != nil {
+			if r.chain == nil {
+				r.chainRNG = acceptanceStream(d.cfg.AcceptanceSeed, s.ID)
+				r.chain = c.Request(r.chainRNG.NormFloat64())
+			}
+			n = acceptance.DrawAccepted(r.chain[:min(s.Drafts, len(r.chain))], r.chainRNG.Float64)
+		} else {
+			r.acceptCarry += d.cfg.Acceptance * float64(s.Drafts)
+			n = min(int(r.acceptCarry), s.Drafts)
+			r.acceptCarry -= float64(n)
+		}
 		if n > 0 {
 			if out.Accepted == nil {
 				out.Accepted = map[string]int{}
@@ -601,6 +629,12 @@ func (d *EngineDriver) outcome(b engine.Batch) engine.Outcome {
 		}
 	}
 	return out
+}
+
+// acceptanceStream is a request's own named substream of acceptance draws (NewStream), so one
+// request's draws do not depend on which other requests ran or in what order.
+func acceptanceStream(seed int64, requestID string) *rand.Rand {
+	return NewStream(seed, StreamName{Component: "engine/speculative", Purpose: "acceptance", Entity: "request/" + requestID})
 }
 
 // driverWakeEvent steps the engine at an instant it asked for.
