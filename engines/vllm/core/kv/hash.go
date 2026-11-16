@@ -66,6 +66,39 @@ func HashBlockUnder(root, parent BlockHash, tokens []int64, extra []ExtraKey) Bl
 	return hashBlockUnder(root, parent, tokens, extra)
 }
 
+// HashBlockLookahead is the block hash v0.33.0 computes when the hash covers the tokens after
+// the block (num_hash_lookahead_tokens > 0, get_request_block_hasher,
+// vllm/v1/core/kv_cache_utils.py:953-1037@4ba787ec): the block's own tokens stay the hashed
+// tokens, and the extra keys become the tuple (E, *lookahead), where E is the extra keys of the
+// block and its lookahead tokens (generate_lookahead_block_hash_extra_keys, :1039-1058), or None.
+func HashBlockLookahead(root, parent BlockHash, tokens []int64, extra []ExtraKey, lookahead []int64) BlockHash {
+	if len(parent) == 0 {
+		parent = root
+	}
+	var p pickler
+	p.frame(func() {
+		p.markTuple(func() { // (parent, tokens, (E, *lookahead))
+			p.bytes(parent)
+			p.intTuple(tokens)
+			p.markTuple(func() {
+				if len(extra) == 0 {
+					p.none()
+				} else {
+					p.markTuple(func() {
+						for _, k := range extra {
+							p.stringTuple(k)
+						}
+					}, len(extra))
+				}
+				for _, t := range lookahead {
+					p.int(t)
+				}
+			}, 1+len(lookahead))
+		}, 3)
+	})
+	return sha256Pickle(p.out)
+}
+
 func hashBlockUnder(root, parent BlockHash, tokens []int64, extra []ExtraKey) BlockHash {
 	if len(parent) == 0 {
 		parent = root

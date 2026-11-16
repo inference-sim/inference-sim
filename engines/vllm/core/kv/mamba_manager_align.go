@@ -500,7 +500,9 @@ func (a *mambaAlign) popBlocksForFree(id string) []*Block {
 	delete(a.lastStateBlockIdx, id)
 	delete(a.numRetired, id)
 	delete(a.checkpoints, id)
-	blocks := a.g.reqBlocks[id]
+	// MambaManager's override ends in the base class's, which drops the leading null blocks
+	// (single_type_kv_cache_manager.py:1952-1969@4ba787ec; trimNullHead).
+	blocks := trimNullHead(a.g.reqBlocks[id])
 	delete(a.g.reqBlocks, id)
 	delete(a.g.numCached, id)
 	return blocks
@@ -604,6 +606,11 @@ func (a *mambaAlign) cachePartialTailBlock(r mambaReq, numTokens int) []byte {
 	}
 	source := blocks[blockIdx]
 	if source.Null {
+		return nil
+	}
+	if source.Hash != nil && source.HashTokens == numTokens {
+		// Already keyed here by a hit or an earlier step: re-caching would mark it cached this
+		// step and defer every sibling that hits it (single_type_kv_cache_manager.py:2112-2115@4ba787ec).
 		return nil
 	}
 	return a.pool.CachePartialBlock(a.g.id, source, r.Hashes, numTokens, hashBlockSize, r.Run, false)

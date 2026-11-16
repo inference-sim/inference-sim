@@ -19,7 +19,11 @@ type Spec struct {
 	// PrefillLookahead is num_prefill_lookahead_tokens: prefill tokens past the computed
 	// range the drafter reads (vllm/config/vllm.py:643-665@5df63a72).
 	PrefillLookahead int
-	// EagleBlockDrop is use_eagle_block_drop (vllm/config/speculative.py:1950-1952@5df63a72).
+	// EagleBlockDrop is use_eagle_block_drop (vllm/config/speculative.py:2147-2149@4ba787ec): the
+	// drafter's KV at a position depends on the next token, so the trailing prefix-cache block
+	// is volatile. It holds for eagle, eagle3 and mtp only (needs_eagle_block_drop, :2122-2129);
+	// dflash and dspark build that KV from the target's hidden state alone. The scheduler turns
+	// it off when the block hashes cover the lookahead instead (HashLookahead).
 	EagleBlockDrop bool
 }
 
@@ -54,12 +58,14 @@ func ResolveSpec(o SpecOptions) Spec {
 		o.Method == "dflash" || o.Method == "dspark" // use_eagle, speculative.py:1944-1948
 	draftModel := o.Method == "draft_model" // uses_draft_model, :1963-1964
 	parallel := o.ParallelDrafting || o.Method == "dflash" || o.Method == "dspark"
-	s := Spec{NumTokens: k, EagleBlockDrop: useEagle && !o.DisableEagleBlockDrop}
+	needsDrop := useEagle && o.Method != "dflash" && o.Method != "dspark" // needs_eagle_block_drop
+	s := Spec{NumTokens: k, EagleBlockDrop: needsDrop && !o.DisableEagleBlockDrop}
 
-	// max_num_new_slots_for_drafting (speculative.py:1907-1926).
+	// max_num_new_slots_for_drafting (vllm/config/speculative.py:2058-2097@4ba787ec). DFlash and
+	// DSpark draft in a separate query pass and take no slots; v0.32.0 gave them K and K-1.
 	switch {
-	case o.Method == "dflash":
-		s.DraftSlots = k
+	case o.Method == "dflash" || o.Method == "dspark":
+		s.DraftSlots = 0
 	case parallel && draftModel:
 		s.DraftSlots = k
 	case parallel:

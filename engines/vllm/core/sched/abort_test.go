@@ -70,10 +70,10 @@ func TestRequestHashesAreTheBlockHashesOfItsTokens(t *testing.T) {
 	keys := kv.BlockKeys{Extra: []kv.ExtraKey{{"lora", "a1", "a1"}}, CacheSalt: "salt"}
 	prompt := []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 	r := &Request{Prompt: prompt, Keys: keys}
-	r.updateHashes(4)
+	r.updateHashes(4, 0)
 	for _, tok := range []int64{11, 12, 13, 14, 15, 16, 17} {
 		r.Output = append(r.Output, tok)
-		r.updateHashes(4)
+		r.updateHashes(4, 0)
 	}
 	want := kv.BlockHashes(append(append([]int64(nil), prompt...), r.Output...), 4, keys)
 	if len(r.hashes) != len(want) {
