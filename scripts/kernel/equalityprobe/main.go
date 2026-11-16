@@ -4,15 +4,19 @@
 // verification, the kernel's Resolved() and Provenance(), the engine assumptions and sources,
 // and a refusal's text. It is the price-equality check of the engine-settings review set
 // (inference-sim/blis-substrate#58): build it against two module sets, run both over the same
-// scenario directories, and compare the outputs with compare.py, which reports every field that
-// differs and whether a list differs only in order.
+// scenario directories, and compare the outputs with -compare, which reports every field that
+// differs and exits 1 when a price, a figure, a refusal or a record differs. A provenance field
+// may be allowed to differ in order only (-order-only).
+//
+// Every pool of every scenario is priced: pools are opened from 0 up until the scenario states
+// no more. A file that does not decode as a scenario is recorded once, with its error.
 //
 // It uses only blis-vllm compat/kernelmodel APIs that the M2 release (blis-substrate v0.14.0,
 // blis-vllm v0.32.0-blis.3) and this checkout's pins both have, so the same file builds in both.
 //
 // Usage: go run ./scripts/kernel/equalityprobe -scenarios <dir> > out.jsonl
 //
-//	python3 scripts/kernel/equalityprobe/compare.py old.jsonl new.jsonl
+//	go run ./scripts/kernel/equalityprobe -compare old.jsonl,new.jsonl -order-only origins,prov,assumed
 package main
 
 import (
@@ -53,7 +57,17 @@ type Price struct {
 
 func main() {
 	scenarios := flag.String("scenarios", "", "directory of scenarios (searched recursively)")
+	pair := flag.String("compare", "", "old.jsonl,new.jsonl: compare two outputs instead of pricing")
+	orderOnly := flag.String("order-only", "", "comma-separated fields allowed to differ in order only")
 	flag.Parse()
+	if *pair != "" {
+		old, new, ok := strings.Cut(*pair, ",")
+		if !ok {
+			fmt.Fprintln(os.Stderr, "equalityprobe: -compare takes old.jsonl,new.jsonl")
+			os.Exit(2)
+		}
+		os.Exit(runCompare(old, new, *orderOnly))
+	}
 	if *scenarios == "" {
 		fmt.Fprintln(os.Stderr, "equalityprobe: -scenarios is required")
 		os.Exit(2)
@@ -77,17 +91,19 @@ func main() {
 	enc := json.NewEncoder(os.Stdout)
 	for _, path := range files {
 		rel, _ := filepath.Rel(*scenarios, path)
-		for pool := 0; pool < 4; pool++ {
-			p, more := price(filepath.Dir(path), filepath.Base(path), d, pool)
+		for pool := 0; ; pool++ {
+			p, _ := price(filepath.Dir(path), filepath.Base(path), d, pool)
 			p.Fixture = filepath.ToSlash(rel)
 			p.Pool = pool
-			if !more && pool > 0 && strings.Contains(p.Err, "pool(s); pool") {
+			// Past the last pool the loader names the pool count; every pool before it is priced.
+			if pool > 0 && strings.Contains(p.Err, "pool(s); pool") {
 				break
 			}
 			if err := enc.Encode(p); err != nil {
 				fmt.Fprintln(os.Stderr, rel, err)
 			}
-			if !more {
+			// A file that is not a scenario has no pools to try.
+			if strings.Contains(p.Err, "decoding the scenario") || strings.Contains(p.Err, "pool(s); pool") {
 				break
 			}
 		}
