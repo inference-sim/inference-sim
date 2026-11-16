@@ -28,7 +28,7 @@ python -I oracle/check_lock.py oracle/requirements.lock <(pip freeze)
 After changing the lock, run `oracle/lock.sh` and commit all three files. CI runs
 `python -I oracle/check_lock.py --hashed oracle/requirements.lock oracle/requirements-hashed.txt`
 first, and it fails while they disagree; it then installs the pinned uv from
-`oracle/requirements-pip.txt` and runs `oracle/lock.sh --check`. To regenerate the lock, install `oracle/requirements.txt`
+`oracle/requirements-uv.txt`, outside the environment, and runs `oracle/lock.sh --check`. To regenerate the lock, install `oracle/requirements.txt`
 in a clean CPython 3.12 environment on Linux x86_64 with the PyTorch CPU index, then run
 `pip freeze > oracle/requirements.lock` and keep the header comment.
 

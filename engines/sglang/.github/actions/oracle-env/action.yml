@@ -54,7 +54,9 @@ runs:
         set -euo pipefail
         python -I oracle/check_lock.py --hashed oracle/requirements.lock oracle/requirements-hashed.txt
         python -m pip install --require-hashes -r oracle/requirements-pip.txt
-        oracle/lock.sh --check
+        # uv runs lock.sh --check; it is installed outside the environment the lock describes.
+        python -m pip install --require-hashes --target "$RUNNER_TEMP/uv" -r oracle/requirements-uv.txt
+        PATH="$RUNNER_TEMP/uv/bin:$PATH" oracle/lock.sh --check
         pip install --require-hashes --no-deps --extra-index-url https://download.pytorch.org/whl/cpu -r oracle/requirements-hashed.txt
         pip check
         pip freeze > oracle-env.lock
