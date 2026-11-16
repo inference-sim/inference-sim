@@ -49,6 +49,7 @@ REST_EXTRA = [
     r"^oracle/(scenarios[^/]*/|mocks\.json$|drafts/)",
     r"^docs/metrics-(manifest|buckets)\.json$",
     r"^fields\.json$",
+    r"^surface\.json$",
     r"^vllmengine/testdata/",
     r"^core/(kv|lower)/testdata/",
     r"^oracle/engineargs-cases\.json$",
