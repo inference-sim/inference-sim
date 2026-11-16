@@ -1,15 +1,15 @@
-# Original to blis-vllm.
-"""Fail unless the installed oracle environment is exactly the committed lock.
+# Generated from blis-substrate contracts/harness/oracle/check_lock.py by `go run github.com/inference-sim/blis-substrate/contracts/harness/cmd/harnessfiles`; do not edit.
+"""Fail unless the installed oracle environment is exactly the committed lock (FID-2).
 
-oracle/requirements.lock pins every package of the oracle's environment. CI installs it with
---no-deps and then compares `pip freeze` with it, so the environment a trace records
-(provenance lockfile_sha256) is the committed one, with nothing added and nothing resolved
-differently.
+oracle/requirements.lock pins every package of an engine repository's oracle environment. CI
+installs it with --no-deps and then compares `pip freeze` with it, so the environment a trace
+records (provenance requirements_lock_sha256) is the committed one, with nothing added and
+nothing resolved differently.
 
-CI installs the lock from oracle/requirements-hashed.txt, which oracle/lock.sh writes from it with
-the sha256 of every archive, under pip install --require-hashes (X21). --hashed checks that file
-names exactly the packages and versions the lock does, so the hashed install and the lock a trace
-records cannot drift apart.
+CI installs the lock from oracle/requirements-hashed.txt, which the repository's oracle/lock.sh
+writes from it with the sha256 of every archive, under pip install --require-hashes (X21).
+--hashed checks that file names exactly the packages and versions the lock does, so the hashed
+install and the lock a trace records cannot drift apart.
 
 Usage: python3 -I oracle/check_lock.py <oracle/requirements.lock> <pip freeze output>
        python3 -I oracle/check_lock.py --hashed <oracle/requirements.lock> <oracle/requirements-hashed.txt>
@@ -62,6 +62,9 @@ def main(lock: str, frozen: str) -> int:
 
 
 if __name__ == "__main__":
-    if sys.argv[1] == "--hashed":
+    if len(sys.argv) == 4 and sys.argv[1] == "--hashed":
         sys.exit(main_hashed(sys.argv[2], sys.argv[3]))
-    sys.exit(main(sys.argv[1], sys.argv[2]))
+    if len(sys.argv) == 3:
+        sys.exit(main(sys.argv[1], sys.argv[2]))
+    print(__doc__.split("Usage:", 1)[1].strip(), file=sys.stderr)
+    sys.exit(2)
