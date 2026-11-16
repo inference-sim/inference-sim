@@ -8464,3 +8464,13 @@ def test_pinned_headers_and_a_quantization_block_are_refused_together(tmp_path):
     raw["quantization_config"] = {"quant_method": "fp8"}
     with pytest.raises(derive_graph.DeriveError, match="pins its headers"):
         _derive_with_headers(_glm5_headers(), tmp_path, raw)
+def test_qwen35_nvfp4_refuses_a_quantized_deltanet_input_projection(tmp_path):
+    """The DeltaNet input projections are priced inside the recurrent update at the base width;
+    a list that leaves them quantized is refused rather than priced at a width they do not store."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    raw = config_of(QWEN35_NVFP4)
+    q = raw["quantization_config"]
+    q["ignore"] = [p for p in q["ignore"] if p != "model.language_model.layers.0.linear_attn*"]
+    with pytest.raises(derive_graph.DeriveError, match="in_proj_qkvz"):
+        _derive_raw(raw, tmp_path, "qwen-nvfp4-test")
