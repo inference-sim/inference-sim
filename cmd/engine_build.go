@@ -150,7 +150,7 @@ func resolveAcceptance(cmd *cobra.Command, k int, method string) (build.Acceptan
 	}
 	// The command line's and the workload's acceptance layers reach the engine's kernel too: a
 	// pool verifying adaptively sizes its draft budget from the run's acceptance
-	// (kernelmodel.SetAcceptanceOverrides, blis-latency-kernel#89), which must be the one the run
+	// (kernelmodel.SetAcceptanceOverrides, https://github.com/inference-sim/blis-latency-kernel/issues/89), which must be the one the run
 	// resolved here. The engines are built after this (engineDriverFactory).
 	setAcceptanceOverrides(fl, k)
 	return a, speculating
@@ -1061,7 +1061,7 @@ type poolOverrides struct {
 	PreemptionPolicy string
 
 	// LongPrefillTokenThreshold is the pool engine's long_prefill_token_threshold (nil = use
-	// global; blis-schemas#75), and DPLoadBalancing its data_parallel_load_balancing mode
+	// global; https://github.com/inference-sim/blis-schemas/issues/75), and DPLoadBalancing its data_parallel_load_balancing mode
 	// ("" = use global; #76): vLLM sets both per engine, so prefill and decode pools may differ.
 	LongPrefillTokenThreshold *int64
 	DPLoadBalancing           string

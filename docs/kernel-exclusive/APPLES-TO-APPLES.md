@@ -193,7 +193,7 @@ two give the same main phase. Three tests check that, rather than assume it:
 
 The empty-engine run of a prefix-caching point is printed beside it as information only and is
 never scored. A drain-gated two-phase trace format, which would replay the warm-up itself, is
-tracked as blis-schemas#56 and inference-sim#1926. What the warm-up does on real GPUs beyond the
+tracked as inference-sim/blis-substrate#156 and inference-sim#1926. What the warm-up does on real GPUs beyond the
 prefix cache (first-call compilation, allocator growth) is outside any simulator; the client
 discards the warm-up precisely so that none of it reaches the measured phase.
 

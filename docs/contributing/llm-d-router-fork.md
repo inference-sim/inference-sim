@@ -22,7 +22,7 @@ moves to `inference-sim/llm-d-router` at the tag, and the PR can leave draft.
 
 BLIS programs against one API: package `embed` of
 [blis-schemas](https://github.com/inference-sim/blis-schemas) (introduced in
-inference-sim/blis-schemas#99), versioned by blis-schemas' own tags. `embed.Runtime` (with the
+https://github.com/inference-sim/blis-schemas/issues/99), versioned by blis-schemas' own tags. `embed.Runtime` (with the
 optional `embed.RoundTripper`) is what BLIS implements; `embed.Router` and `embed.Flight` are
 what the router implements; the rest is plain data (`Request`, `Decision`, `Rejection`,
 `KVBatch`, `Requirements`, ...). The fork implements the contract with one constructor,

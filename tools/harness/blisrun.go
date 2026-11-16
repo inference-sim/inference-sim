@@ -137,7 +137,7 @@ func mainPhase(pl PointLengths) replayRun {
 // The primed main phase -- request 0's prompt already in the prefix cache when the main phase
 // starts -- written with existing trace features only, so that BLIS itself carries nothing of
 // the benchmark's protocol. The exact two-phase protocol (drain-gated phases) needs a trace
-// format extension, tracked as blis-schemas#56 and inference-sim#1926; until then this
+// format extension, tracked as inference-sim/blis-substrate#156 and inference-sim#1926; until then this
 // bracket is the stated uncertainty.
 //
 // The trace is the main phase plus `copies` warm-up sessions, listed FIRST:

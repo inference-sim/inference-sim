@@ -158,7 +158,7 @@ each tier transfer from that device (its `TierTime`). An explicit `read_bandwidt
 `write_bandwidth` or `base_latency` on a tier is refused. A catalog device's rates are O_DIRECT
 rates, so a tier with `direct_io: false` -- vLLM's buffered fallback on filesystems that reject
 O_DIRECT, such as overlayfs -- is refused too, until the kernel prices that regime
-([blis-latency-kernel#41](https://github.com/inference-sim/blis-latency-kernel/issues/41)). A class the catalog does not define, or
+([inference-sim/blis-substrate#110](https://github.com/inference-sim/blis-substrate/issues/110)). A class the catalog does not define, or
 a missing/malformed table, is a hard error naming the path. Under P/D disaggregation each pool
 sizes the tiers by its own bytes per block and prices them with its own kernel. A scenario's own
 `offload` block is the deployment's tier configuration (#1910): its `cpu_dram` tier is the CPU
