@@ -29,6 +29,8 @@ type resultInputs struct {
 	Deployment *deployment.Deployment
 	// Options are the command-line options that set the run, sorted by name (SIM-10).
 	Options []result.Option
+	// Files are the small input files the run read, whole, sorted by path (resultFiles).
+	Files []result.File
 	// Packaging is the cluster's packaging the kernel resolved (blis-substrate
 	// scenario.Cluster.Packaging), recorded when a value came from the chip's catalog entry
 	// rather than the scenario (SIM-10). Nil when the scenario states every value, which
@@ -112,6 +114,7 @@ func buildResult(in resultInputs, out resultMetrics) *result.Result {
 	r.Input.Packaging = in.Packaging
 	r.Input.Policy = in.Policy
 	r.Input.Options = in.Options
+	r.Input.Files = in.Files
 	r.Frame.Generator = in.Generator // buildFrame sets the seed and RNG from the same generator
 	for _, o := range in.Overrides {
 		r.Overrides = append(r.Overrides, result.Override{Setting: o.Setting, Input: o.Scenario, Run: o.Run, Source: o.Source})
