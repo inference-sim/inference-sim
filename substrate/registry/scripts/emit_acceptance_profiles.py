@@ -148,6 +148,8 @@ class Carried:
     rationale: list[str] = field(default_factory=list)
     transfer: tuple[str, str] | None = None
     rejected: tuple[int, int, str] | None = None
+    draft_sampler: str = ""
+    verifier: str = ""
 
 
 def read_curve(path: Path, identities: dict) -> Curve:
@@ -582,13 +584,19 @@ def collect(golden: Path = GOLDEN, catalog: Path = CATALOG):
             if k.transfer is None and k.model == model and k.curve.method == \
                     next(c.method for c in curves if c.stem == stem):
                 raise SystemExit(f"TRANSFERS {stem} is stale: {k.curve.stem} measures {model}")
-    # A key two curves claim is refused for both (D8): the key cannot state what differs.
+    # Every profile states the draft sampler and the verifier its source records
+    # (inference-sim/blis-substrate#174), so an unstated field means unstated, never a default.
+    for k in carried:
+        facts = k.curve.identity.get("collection") or {}
+        k.draft_sampler = key_value(facts, "draft_sample", k.curve.stem)
+        k.verifier = key_value(facts, "verify", k.curve.stem)
+    # A key two curves still claim is refused for both (D8): the key cannot state what differs.
     claims: dict[tuple, list[Carried]] = {}
     for k in carried:
         for thinking, cells in k.curve.values.items():
             for n in cells:
-                claims.setdefault((k.model, k.drafter, k.curve.method, n, thinking, category),
-                                  []).append(k)
+                claims.setdefault((k.model, k.drafter, k.curve.method, n, thinking, category,
+                                   k.draft_sampler, k.verifier), []).append(k)
     clash: dict[str, set[str]] = {}
     for owners in claims.values():
         if len({o.curve.stem for o in owners}) > 1:
@@ -600,12 +608,31 @@ def collect(golden: Path = GOLDEN, catalog: Path = CATALOG):
         if k.curve.stem in clash:
             others = ", ".join(f"{s}.yaml" for s in sorted(clash[k.curve.stem]))
             skipped.append((k.curve.stem, k.curve.model_key,
-                            f"its profile keys are also claimed by {others}, which a profile's "
-                            "key cannot tell apart (inference-sim/blis-substrate#174)"))
+                            f"its profile keys are also claimed by {others}, measured with the "
+                            "same target, drafter, method, draft sampler and verifier, so "
+                            "nothing a profile's key states tells them apart"))
         else:
             kept.append(k)
     skipped.sort()
     return kept, skipped, category, cat
+
+
+# The values a profile key takes for a sampler and a verifier (acceptance.DraftSampler,
+# acceptance.Verifier).
+DRAFT_SAMPLERS = ("greedy", "probabilistic")
+VERIFIERS = ("standard", "block", "relaxed")
+
+
+def key_value(facts: dict, name: str, stem: str) -> str:
+    """The key value of identities.yaml fact `name`: "" when the source leaves it unset
+    (unstated), its value otherwise; a value the key has no word for fails the run."""
+    value = (facts.get(name) or {}).get("value")
+    if value is None:
+        return ""
+    allowed = DRAFT_SAMPLERS if name == "draft_sample" else VERIFIERS
+    if value not in allowed:
+        raise SystemExit(f"{stem}: {name} {value!r} is not one of {allowed}, which a profile key states")
+    return str(value)
 
 
 def key_string(model, drafter, method, k, thinking, category) -> str:
@@ -622,6 +649,10 @@ def profiles(carried: list[Carried], category: str, cat: Catalog) -> list[dict]:
                 p = {"model": c.model}
                 if c.drafter:
                     p["drafter"] = c.drafter
+                if c.draft_sampler:
+                    p["draft_sampler"] = c.draft_sampler
+                if c.verifier:
+                    p["verifier"] = c.verifier
                 p.update({"architecture": cat.architectures[c.model],
                           "speculative_method": c.curve.method, "num_spec_tokens": k,
                           "thinking": thinking, "category": category, "acceptance_length": al})
@@ -642,6 +673,7 @@ def profiles(carried: list[Carried], category: str, cat: Catalog) -> list[dict]:
                 p["provenance"] = prov
                 out.append(p)
     out.sort(key=lambda p: (p["model"], p.get("drafter", ""), p["speculative_method"],
+                            p.get("draft_sampler", ""), p.get("verifier", ""),
                             p["thinking"], p["num_spec_tokens"]))
     return out
 

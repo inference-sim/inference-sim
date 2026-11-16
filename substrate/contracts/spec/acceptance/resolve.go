@@ -38,7 +38,12 @@ type Request struct {
 	Drafter           string
 	SpeculativeMethod string
 	NumSpecTokens     int
-	Hardware          string
+	// DraftSampler and Verifier are the run's, as its engine resolves them; empty is unstated,
+	// never a default. A lookup matches them exactly, and borrows across them only by
+	// StepOtherSettings, which names them as differing.
+	DraftSampler DraftSampler
+	Verifier     Verifier
+	Hardware     string
 	// Architecture is the architecture of the target model as its graph records it
 	// (global.architecture). Borrowing from another target needs it; without it that step is
 	// skipped.
@@ -208,9 +213,13 @@ func lookup(layer Layer, sets []*ProfileSet, req Request, fallback string, fallb
 	if !req.Workload.Thinking.Valid() {
 		return Resolution{}, fmt.Errorf("%s acceptance: thinking %q is not one of %v", layer, req.Workload.Thinking, AllThinkingModes())
 	}
+	if !req.DraftSampler.Valid() || !req.Verifier.Valid() {
+		return Resolution{}, fmt.Errorf("%s acceptance: draft sampler %q or verifier %q is not one of %v and %v",
+			layer, req.DraftSampler, req.Verifier, AllDraftSamplers(), AllVerifiers())
+	}
 	key := Key{Model: req.Model, Drafter: req.Drafter, SpeculativeMethod: req.SpeculativeMethod,
 		NumSpecTokens: req.NumSpecTokens, Thinking: req.Workload.Thinking,
-		Category: req.Workload.Category}
+		Category: req.Workload.Category, DraftSampler: req.DraftSampler, Verifier: req.Verifier}
 	// The workload's own category comes first, exact key and then every borrowing step. The
 	// fallback category stands in only when that category supplies nothing at all, and then
 	// the same two attempts are made under it.

@@ -102,6 +102,12 @@ type Profile struct {
 	// drafter checkpoint. It is part of what the value is a measurement of, so a profile that
 	// states none is a measurement with the model's own speculator.
 	Drafter string `yaml:"drafter,omitempty"`
+	// DraftSampler and Verifier name how the drafter sampled its drafts and how the target
+	// verified them, as the source records them (inference-sim/blis-substrate#174). Empty is
+	// unstated, never a default: a lookup matches it only against an unstated request field,
+	// and borrows across any other difference, naming the field (design D8).
+	DraftSampler DraftSampler `yaml:"draft_sampler,omitempty"`
+	Verifier     Verifier     `yaml:"verifier,omitempty"`
 	// Architecture is the architecture of the target model, as its graph records it
 	// (global.architecture, the configuration's architectures[0]). A lookup that borrows
 	// across targets reads it to find another target of the same architecture; a profile that
@@ -134,13 +140,17 @@ type Key struct {
 	NumSpecTokens     int
 	Thinking          Thinking
 	Category          string
+	DraftSampler      DraftSampler
+	Verifier          Verifier
 }
 
 // KeyFields are the fields of a Key, as a point record's profile substitution names a field in
 // which a profile differs from the run's (design D8, §11.3): model, drafter, speculative_method,
-// num_spec_tokens, thinking and category. A test holds the list equal to the struct.
+// num_spec_tokens, thinking, category, draft_sampler and verifier. A test holds the list equal to
+// the struct.
 func KeyFields() []string {
-	return []string{"model", "drafter", "speculative_method", "num_spec_tokens", "thinking", "category"}
+	return []string{"model", "drafter", "speculative_method", "num_spec_tokens", "thinking", "category",
+		"draft_sampler", "verifier"}
 }
 
 // String renders a key as model/method/k<K>/thinking-<mode>/category, the form
@@ -154,14 +164,24 @@ func (k Key) String() string {
 	if k.Drafter != "" {
 		model += "+" + k.Drafter
 	}
-	return fmt.Sprintf("%s/%s/k%d/thinking-%s/%s",
+	s := fmt.Sprintf("%s/%s/k%d/thinking-%s/%s",
 		model, k.SpeculativeMethod, k.NumSpecTokens, k.Thinking, k.Category)
+	// A sampler or verifier, when stated, follows the category, so a key without them renders
+	// as it always has.
+	if k.DraftSampler != "" {
+		s += "/draft-" + string(k.DraftSampler)
+	}
+	if k.Verifier != "" {
+		s += "/verify-" + string(k.Verifier)
+	}
+	return s
 }
 
 // Key returns the profile's identity.
 func (p Profile) Key() Key {
 	return Key{Model: p.Model, Drafter: p.Drafter, SpeculativeMethod: p.SpeculativeMethod,
-		NumSpecTokens: p.NumSpecTokens, Thinking: p.Thinking, Category: p.Category}
+		NumSpecTokens: p.NumSpecTokens, Thinking: p.Thinking, Category: p.Category,
+		DraftSampler: p.DraftSampler, Verifier: p.Verifier}
 }
 
 // Rates returns the stated per-position rates, or the minimum-variance schedule for the
