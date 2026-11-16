@@ -84,7 +84,7 @@ func (recvConnector) AfterOutput(sched.TransferOutcome)   {}
 // aborts queue after the output and before update_from_output (vllm/v1/engine/core.py:780-783,
 // 814-822@5df63a72).
 func TestCoreAppliesTransfersAndQueuedAborts(t *testing.T) {
-	s, err := sched.New(sched.Config{MaxNumSeqs: 4, MaxNumBatchedTokens: 64, BlockSize: 4, NumBlocks: 40,
+	s, err := sched.New(sched.Config{KVTransfer: true, MaxNumSeqs: 4, MaxNumBatchedTokens: 64, BlockSize: 4, NumBlocks: 40,
 		MaxModelLen: 128, EnableChunkedPrefill: true, Policy: sched.FCFS, EnablePrefixCaching: true,
 		ReserveFullSequence: true})
 	if err != nil {
