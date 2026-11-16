@@ -55,6 +55,12 @@ In short:
   `oracle/check_mocks.py` fails on one that is not, on one under a decision module, and on a copy
   of upstream code that is not declared as a transcription (FID-1, FID-8). Never change a golden
   trace's decisions without a `golden-reviewed: <trace>: <reason>` trailer (FID-3).
+- **Surface list.** `surface.json` lists every feature the pinned SGLang can select, read from its
+  registration and selection code by `tools/surface/gen_surface.py` (X9, SGL-4, SGL-6). Never edit
+  it by hand: change a status in `tools/surface/status.json` and regenerate with
+  `python3 -I tools/surface/gen_surface.py <sglang-source> tools/surface/status.json > surface.json`.
+  A refused item cites an open blis-sglang issue (X28); a framework is modelled only with recorded
+  and direct traces at its interface (FID-5).
 - Tests: `go test ./...`; lint: `golangci-lint run ./...` (v2.14.0).
 - **Process checks.** `.github/workflows/blis.yml` calls blis-substrate's shared checks by
   commit; `.github/workflows/private-names.yml` is the name scan. The section below and
