@@ -708,8 +708,11 @@ SHAPE_RULE = (
     "over the tests, of the squared worst error of each; the smallest such b on a tie. Curves "
     "are taken from every pinned file InferenceX does not mark provisional, carried as a "
     "profile or not, since a curve shows how acceptance decays whatever its model resolves to. "
-    "Curves measured under different draft samplers and verifiers are pooled within a method; "
-    "the exponent is an estimate, not a measurement.")
+    "Curves measured under different engines, draft samplers and verifiers are pooled within a "
+    "method; the exponent is an estimate, not a measurement, and is not judged against held-out "
+    "end-to-end runs until it passes the landing gate (VAL-6). Requests still advance by the "
+    "mean acceptance length until per-step draws land (inference-sim/blis-vllm#147), so the "
+    "shape prices adaptive verification only.")
 
 
 def natural_rates(al: float, k: int, b: float) -> list[float]:

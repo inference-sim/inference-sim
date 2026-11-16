@@ -75,8 +75,11 @@ shapes:
     the sum, over the tests, of the squared worst error of each; the smallest such b on a
     tie. Curves are taken from every pinned file InferenceX does not mark provisional, carried
     as a profile or not, since a curve shows how acceptance decays whatever its model resolves
-    to. Curves measured under different draft samplers and verifiers are pooled within a method;
-    the exponent is an estimate, not a measurement.'
+    to. Curves measured under different engines, draft samplers and verifiers are pooled within
+    a method; the exponent is an estimate, not a measurement, and is not judged against held-out
+    end-to-end runs until it passes the landing gate (VAL-6). Requests still advance by the
+    mean acceptance length until per-step draws land (inference-sim/blis-vllm#147), so the
+    shape prices adaptive verification only.'
   method: calibrated
 - speculative_method: dspark
   decay_exponent: 1.17
@@ -95,8 +98,11 @@ shapes:
     the sum, over the tests, of the squared worst error of each; the smallest such b on a
     tie. Curves are taken from every pinned file InferenceX does not mark provisional, carried
     as a profile or not, since a curve shows how acceptance decays whatever its model resolves
-    to. Curves measured under different draft samplers and verifiers are pooled within a method;
-    the exponent is an estimate, not a measurement.'
+    to. Curves measured under different engines, draft samplers and verifiers are pooled within
+    a method; the exponent is an estimate, not a measurement, and is not judged against held-out
+    end-to-end runs until it passes the landing gate (VAL-6). Requests still advance by the
+    mean acceptance length until per-step draws land (inference-sim/blis-vllm#147), so the
+    shape prices adaptive verification only.'
   method: calibrated
 - speculative_method: eagle3
   decay_exponent: 1.19
@@ -111,8 +117,11 @@ shapes:
     the sum, over the tests, of the squared worst error of each; the smallest such b on a
     tie. Curves are taken from every pinned file InferenceX does not mark provisional, carried
     as a profile or not, since a curve shows how acceptance decays whatever its model resolves
-    to. Curves measured under different draft samplers and verifiers are pooled within a method;
-    the exponent is an estimate, not a measurement.'
+    to. Curves measured under different engines, draft samplers and verifiers are pooled within
+    a method; the exponent is an estimate, not a measurement, and is not judged against held-out
+    end-to-end runs until it passes the landing gate (VAL-6). Requests still advance by the
+    mean acceptance length until per-step draws land (inference-sim/blis-vllm#147), so the
+    shape prices adaptive verification only.'
   method: calibrated
 - speculative_method: mtp
   decay_exponent: 1.44
@@ -130,8 +139,11 @@ shapes:
     the sum, over the tests, of the squared worst error of each; the smallest such b on a
     tie. Curves are taken from every pinned file InferenceX does not mark provisional, carried
     as a profile or not, since a curve shows how acceptance decays whatever its model resolves
-    to. Curves measured under different draft samplers and verifiers are pooled within a method;
-    the exponent is an estimate, not a measurement.'
+    to. Curves measured under different engines, draft samplers and verifiers are pooled within
+    a method; the exponent is an estimate, not a measurement, and is not judged against held-out
+    end-to-end runs until it passes the landing gate (VAL-6). Requests still advance by the
+    mean acceptance length until per-step draws land (inference-sim/blis-vllm#147), so the
+    shape prices adaptive verification only.'
   method: calibrated
 - decay_exponent: 1.27
   fitted_from:
@@ -160,8 +172,11 @@ shapes:
     the sum, over the tests, of the squared worst error of each; the smallest such b on a
     tie. Curves are taken from every pinned file InferenceX does not mark provisional, carried
     as a profile or not, since a curve shows how acceptance decays whatever its model resolves
-    to. Curves measured under different draft samplers and verifiers are pooled within a method;
-    the exponent is an estimate, not a measurement.'
+    to. Curves measured under different engines, draft samplers and verifiers are pooled within
+    a method; the exponent is an estimate, not a measurement, and is not judged against held-out
+    end-to-end runs until it passes the landing gate (VAL-6). Requests still advance by the
+    mean acceptance length until per-step draws land (inference-sim/blis-vllm#147), so the
+    shape prices adaptive verification only.'
   method: calibrated
 profiles:
 - model: deepseek-v4-pro

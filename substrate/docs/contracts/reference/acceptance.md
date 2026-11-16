@@ -48,8 +48,11 @@ p_i = q ^ (i ^ decay_exponent), with q chosen so the rates sum to AL - 1
 ```
 
 An exponent of 1 is a constant per-token acceptance probability; a larger one decays faster
-down the positions. The decay is an estimate: the resolution records it as the
-`natural_decay` schedule and names the shape, and a run records both.
+down the positions. The decay is an estimate (`method: calibrated`), not yet judged against
+held-out end-to-end runs (VAL-6): the resolution records it as the `natural_decay` schedule and
+names the shape, and a run records both. Requests still advance by the mean acceptance length
+until an engine draws the accepted count per step (inference-sim/blis-vllm#147), so today the
+shape changes only adaptive-verification pricing.
 
 Acceptance is not the kernel's input. K and the method stay in the deployment's
 [`speculative`](deployment.md) block, because they change what a step costs; acceptance

@@ -456,15 +456,16 @@ def test_the_set_states_a_shape_for_every_method_and_one_for_all():
 
 
 def test_a_natural_shape_predicts_a_held_out_curve_better_than_the_step():
-    """Leave one curve out: fit its method's exponent on the rest, spread the curve's largest-K
-    acceptance length with it, and compare with the lengths it measured at every smaller K.
-    The decay must beat the engine's step schedule on every curve, and by a wide margin overall."""
+    """Leave one source file out (both its thinking modes): fit its method's exponent on the
+    other files, spread each held-out curve's largest-K acceptance length with it, and compare
+    with the lengths it measured at every smaller K. The decay must beat the engine's step
+    schedule on every curve, and by a wide margin overall."""
     tests = emit.shape_tests()
     flat = [(m, src, c) for m in tests for src, c in tests[m]]
     natural, step = [], []
-    for i, (m, src, cells) in enumerate(flat):
-        rest = [c for j, (mm, _, c) in enumerate(flat) if j != i and mm == m] or \
-               [c for j, (_, _, c) in enumerate(flat) if j != i]
+    for m, src, cells in flat:
+        rest = [c for mm, s2, c in flat if s2 != src and mm == m] or \
+               [c for _, s2, c in flat if s2 != src]
         b = emit.fit_exponent(rest)
         k0 = max(cells)
         s = step_rates(cells[k0], k0)

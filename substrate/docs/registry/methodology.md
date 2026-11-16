@@ -1531,12 +1531,14 @@ vendored curve of the method measured at each K from 1 to its largest, carried a
 or not, so the Muse-Spark-Open DFlash2 curve informs the `dflash` shape although its drafter
 is not in the catalog. The rule is in each shape's `rule`.
 
-`validator/test_acceptance_profiles.py` checks the fit out of sample: with each curve left
+`validator/test_acceptance_profiles.py` checks the fit out of sample: with each source file left
 out of its method's fit, the decay predicts that curve's smaller-K lengths better than the
 step on every curve. For Muse-Spark-Open with DFlash2 at K 7, held out of the `dflash` fit, the
 rates its length alone derives are within 0.05 of the per-position rates its curve measures at
 every position. A shape is an estimate, so it states `method: calibrated`, and a run that uses
-one records it as such.
+one records it as such. The shapes are not yet judged against held-out end-to-end runs: that
+waits for the landing gate (VAL-6). Requests advance by the mean acceptance length until per-step
+draws land (inference-sim/blis-vllm#147), so a shape changes only adaptive-verification pricing.
 
 ### 12.6 Gates
 
