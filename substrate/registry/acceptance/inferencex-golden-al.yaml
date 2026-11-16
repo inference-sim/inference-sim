@@ -10,7 +10,7 @@ caveats:
 - Coding only. Every profile is SPEED-Bench's coding category, the only one InferenceX publishes;
   no other category has a value. A consumer must refuse other traffic, or fall back to coding
   with the substitution recorded; it must not substitute silently.
-- 'Measured on b300: deepseek-v4-pro, deepseek-v4-pro-0813, glm-5.2-fp8, glm-5.3, glm-5.3-flash,
+- 'Measured on b300: deepseek-v4-pro, deepseek-v4-pro-0813, glm-5.2-fp8, glm-5.3-flash, glm-5.3-nvfp4,
   kimi-k3, kimi-k3.1, minimax-m3, qwen3.5-397b-a17b-nvfp4. Acceptance depends mostly on the
   model, drafter and workload rather than the chip; a resolution on another part records the
   reuse.'
@@ -24,8 +24,6 @@ caveats:
 - deepseek-v4.1-flash with dspark at K 6-8 was rejected by the image vllm/vllm-openai:deepseekv41-flash-0909
   (https://github.com/SemiAnalysisAI/InferenceX/actions/runs/34494319147), so those K have
   no value.
-- glm-5.3 mtp is transferred from glm-5.3-nvfp4__mtp__native__default-default.yaml, measured
-  on glm-5.3-nvfp4, not on glm-5.3.
 - 'Drafter revision unstated: kimi-k3+kimi-k3-dspark (kimi-k3__dspark__kimi-k3-dspark__default-default.yaml),
   kimi-k3+kimi-k3-dspark (kimi-k3__dspark__kimi-k3-dspark__probabilistic-block.yaml), kimi-k3+kimi-k3-dspark
   (kimi-k3__dspark__kimi-k3-dspark__probabilistic-default.yaml), minimax-m3+minimax-m3-eagle3
@@ -38,10 +36,10 @@ caveats:
   describe a revision other than the catalog entry''s.'
 - Collection settings are transcribed from identities.yaml at e63beeeee981, SHA-256 447547adf1b3f73a3d03482dea2d031fc4755cc4f0f91eba4a308ca2fd5ef039
   (https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/identities.yaml).
-- 'The source files for deepseek-v4-pro, deepseek-v4-pro-0813, glm-5.2-fp8, glm-5.3, glm-5.3-flash,
-  kimi-k3, kimi-k3.1, minimax-m3, minimax-m3.1-flash, muse-spark-open-816b-a42b-nvfp4, qwen3.5-397b-a17b-nvfp4
-  name no engine image, so their engine_image reads "unrecorded: the source file names no
-  engine image".'
+- 'The source files for deepseek-v4-pro, deepseek-v4-pro-0813, glm-5.2-fp8, glm-5.3-flash,
+  glm-5.3-nvfp4, kimi-k3, kimi-k3.1, minimax-m3, minimax-m3.1-flash, muse-spark-open-816b-a42b-nvfp4,
+  qwen3.5-397b-a17b-nvfp4 name no engine image, so their engine_image reads "unrecorded: the
+  source file names no engine image".'
 - 'Not carried: kimi-k3.1-pro__dflash__kimi-k3.1-dflash2-preview__default-block.yaml (kimi-k3.1-pro),
   because its drafter RadixArk/Kimi-K3.1-Dflash2-Preview is not in the catalog as a drafter
   of kimi-k3.1.'
@@ -1349,262 +1347,6 @@ profiles:
       temperature: 1.0
       top_p: 0.95
       max_tokens: 4096
-- model: glm-5.3
-  verifier: standard
-  architecture: GlmMoeDsaForCausalLM
-  speculative_method: mtp
-  num_spec_tokens: 1
-  thinking: 'on'
-  category: coding
-  acceptance_length: 1.84
-  method: transferred
-  transferred_from: glm-5.3-nvfp4/mtp/k1/thinking-on/coding
-  transfer_rule: the acceptance length measured on an NVFP4 quantization of the same model
-    is carried unchanged to the model, whose base weights and MTP layers it shares
-  rationale: InferenceX measures GLM-5.3 only on its NVFP4 checkpoint (glm5.3_fp4_b300_sglang.sh
-    serves glm-5.3-nvfp4), which is a quantization of zai-org/GLM-5.3, the catalog's glm-5.3.
-    The quantized target accepts slightly differently from the checkpoint the catalog describes;
-    no curve measures that checkpoint.
-  provenance:
-    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-nvfp4__mtp__native__default-default.yaml
-    sha256: e88c647568007d864627ed5ff4000deb5479c216ba15a6350f2047802d888d3a
-    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41127067850
-    benchmark: SPEED-Bench
-    hardware: b300
-    engine_image: 'unrecorded: the source file names no engine image'
-    settings:
-      engine: sglang
-      verify: standard
-      adaptive: 'false'
-      topology: chain
-    sampling:
-      temperature: 1.0
-      top_p: 0.95
-      max_tokens: 4096
-- model: glm-5.3
-  verifier: standard
-  architecture: GlmMoeDsaForCausalLM
-  speculative_method: mtp
-  num_spec_tokens: 2
-  thinking: 'on'
-  category: coding
-  acceptance_length: 2.49
-  method: transferred
-  transferred_from: glm-5.3-nvfp4/mtp/k2/thinking-on/coding
-  transfer_rule: the acceptance length measured on an NVFP4 quantization of the same model
-    is carried unchanged to the model, whose base weights and MTP layers it shares
-  rationale: InferenceX measures GLM-5.3 only on its NVFP4 checkpoint (glm5.3_fp4_b300_sglang.sh
-    serves glm-5.3-nvfp4), which is a quantization of zai-org/GLM-5.3, the catalog's glm-5.3.
-    The quantized target accepts slightly differently from the checkpoint the catalog describes;
-    no curve measures that checkpoint.
-  provenance:
-    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-nvfp4__mtp__native__default-default.yaml
-    sha256: e88c647568007d864627ed5ff4000deb5479c216ba15a6350f2047802d888d3a
-    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41127067850
-    benchmark: SPEED-Bench
-    hardware: b300
-    engine_image: 'unrecorded: the source file names no engine image'
-    settings:
-      engine: sglang
-      verify: standard
-      adaptive: 'false'
-      topology: chain
-    sampling:
-      temperature: 1.0
-      top_p: 0.95
-      max_tokens: 4096
-- model: glm-5.3
-  verifier: standard
-  architecture: GlmMoeDsaForCausalLM
-  speculative_method: mtp
-  num_spec_tokens: 3
-  thinking: 'on'
-  category: coding
-  acceptance_length: 2.94
-  method: transferred
-  transferred_from: glm-5.3-nvfp4/mtp/k3/thinking-on/coding
-  transfer_rule: the acceptance length measured on an NVFP4 quantization of the same model
-    is carried unchanged to the model, whose base weights and MTP layers it shares
-  rationale: InferenceX measures GLM-5.3 only on its NVFP4 checkpoint (glm5.3_fp4_b300_sglang.sh
-    serves glm-5.3-nvfp4), which is a quantization of zai-org/GLM-5.3, the catalog's glm-5.3.
-    The quantized target accepts slightly differently from the checkpoint the catalog describes;
-    no curve measures that checkpoint.
-  provenance:
-    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-nvfp4__mtp__native__default-default.yaml
-    sha256: e88c647568007d864627ed5ff4000deb5479c216ba15a6350f2047802d888d3a
-    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41127067850
-    benchmark: SPEED-Bench
-    hardware: b300
-    engine_image: 'unrecorded: the source file names no engine image'
-    settings:
-      engine: sglang
-      verify: standard
-      adaptive: 'false'
-      topology: chain
-    sampling:
-      temperature: 1.0
-      top_p: 0.95
-      max_tokens: 4096
-- model: glm-5.3
-  verifier: standard
-  architecture: GlmMoeDsaForCausalLM
-  speculative_method: mtp
-  num_spec_tokens: 4
-  thinking: 'on'
-  category: coding
-  acceptance_length: 3.28
-  method: transferred
-  transferred_from: glm-5.3-nvfp4/mtp/k4/thinking-on/coding
-  transfer_rule: the acceptance length measured on an NVFP4 quantization of the same model
-    is carried unchanged to the model, whose base weights and MTP layers it shares
-  rationale: InferenceX measures GLM-5.3 only on its NVFP4 checkpoint (glm5.3_fp4_b300_sglang.sh
-    serves glm-5.3-nvfp4), which is a quantization of zai-org/GLM-5.3, the catalog's glm-5.3.
-    The quantized target accepts slightly differently from the checkpoint the catalog describes;
-    no curve measures that checkpoint.
-  provenance:
-    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-nvfp4__mtp__native__default-default.yaml
-    sha256: e88c647568007d864627ed5ff4000deb5479c216ba15a6350f2047802d888d3a
-    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41127067850
-    benchmark: SPEED-Bench
-    hardware: b300
-    engine_image: 'unrecorded: the source file names no engine image'
-    settings:
-      engine: sglang
-      verify: standard
-      adaptive: 'false'
-      topology: chain
-    sampling:
-      temperature: 1.0
-      top_p: 0.95
-      max_tokens: 4096
-- model: glm-5.3
-  verifier: standard
-  architecture: GlmMoeDsaForCausalLM
-  speculative_method: mtp
-  num_spec_tokens: 5
-  thinking: 'on'
-  category: coding
-  acceptance_length: 3.48
-  method: transferred
-  transferred_from: glm-5.3-nvfp4/mtp/k5/thinking-on/coding
-  transfer_rule: the acceptance length measured on an NVFP4 quantization of the same model
-    is carried unchanged to the model, whose base weights and MTP layers it shares
-  rationale: InferenceX measures GLM-5.3 only on its NVFP4 checkpoint (glm5.3_fp4_b300_sglang.sh
-    serves glm-5.3-nvfp4), which is a quantization of zai-org/GLM-5.3, the catalog's glm-5.3.
-    The quantized target accepts slightly differently from the checkpoint the catalog describes;
-    no curve measures that checkpoint.
-  provenance:
-    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-nvfp4__mtp__native__default-default.yaml
-    sha256: e88c647568007d864627ed5ff4000deb5479c216ba15a6350f2047802d888d3a
-    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41127067850
-    benchmark: SPEED-Bench
-    hardware: b300
-    engine_image: 'unrecorded: the source file names no engine image'
-    settings:
-      engine: sglang
-      verify: standard
-      adaptive: 'false'
-      topology: chain
-    sampling:
-      temperature: 1.0
-      top_p: 0.95
-      max_tokens: 4096
-- model: glm-5.3
-  verifier: standard
-  architecture: GlmMoeDsaForCausalLM
-  speculative_method: mtp
-  num_spec_tokens: 6
-  thinking: 'on'
-  category: coding
-  acceptance_length: 3.7
-  method: transferred
-  transferred_from: glm-5.3-nvfp4/mtp/k6/thinking-on/coding
-  transfer_rule: the acceptance length measured on an NVFP4 quantization of the same model
-    is carried unchanged to the model, whose base weights and MTP layers it shares
-  rationale: InferenceX measures GLM-5.3 only on its NVFP4 checkpoint (glm5.3_fp4_b300_sglang.sh
-    serves glm-5.3-nvfp4), which is a quantization of zai-org/GLM-5.3, the catalog's glm-5.3.
-    The quantized target accepts slightly differently from the checkpoint the catalog describes;
-    no curve measures that checkpoint.
-  provenance:
-    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-nvfp4__mtp__native__default-default.yaml
-    sha256: e88c647568007d864627ed5ff4000deb5479c216ba15a6350f2047802d888d3a
-    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41127067850
-    benchmark: SPEED-Bench
-    hardware: b300
-    engine_image: 'unrecorded: the source file names no engine image'
-    settings:
-      engine: sglang
-      verify: standard
-      adaptive: 'false'
-      topology: chain
-    sampling:
-      temperature: 1.0
-      top_p: 0.95
-      max_tokens: 4096
-- model: glm-5.3
-  verifier: standard
-  architecture: GlmMoeDsaForCausalLM
-  speculative_method: mtp
-  num_spec_tokens: 7
-  thinking: 'on'
-  category: coding
-  acceptance_length: 3.74
-  method: transferred
-  transferred_from: glm-5.3-nvfp4/mtp/k7/thinking-on/coding
-  transfer_rule: the acceptance length measured on an NVFP4 quantization of the same model
-    is carried unchanged to the model, whose base weights and MTP layers it shares
-  rationale: InferenceX measures GLM-5.3 only on its NVFP4 checkpoint (glm5.3_fp4_b300_sglang.sh
-    serves glm-5.3-nvfp4), which is a quantization of zai-org/GLM-5.3, the catalog's glm-5.3.
-    The quantized target accepts slightly differently from the checkpoint the catalog describes;
-    no curve measures that checkpoint.
-  provenance:
-    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-nvfp4__mtp__native__default-default.yaml
-    sha256: e88c647568007d864627ed5ff4000deb5479c216ba15a6350f2047802d888d3a
-    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41127067850
-    benchmark: SPEED-Bench
-    hardware: b300
-    engine_image: 'unrecorded: the source file names no engine image'
-    settings:
-      engine: sglang
-      verify: standard
-      adaptive: 'false'
-      topology: chain
-    sampling:
-      temperature: 1.0
-      top_p: 0.95
-      max_tokens: 4096
-- model: glm-5.3
-  verifier: standard
-  architecture: GlmMoeDsaForCausalLM
-  speculative_method: mtp
-  num_spec_tokens: 8
-  thinking: 'on'
-  category: coding
-  acceptance_length: 3.87
-  method: transferred
-  transferred_from: glm-5.3-nvfp4/mtp/k8/thinking-on/coding
-  transfer_rule: the acceptance length measured on an NVFP4 quantization of the same model
-    is carried unchanged to the model, whose base weights and MTP layers it shares
-  rationale: InferenceX measures GLM-5.3 only on its NVFP4 checkpoint (glm5.3_fp4_b300_sglang.sh
-    serves glm-5.3-nvfp4), which is a quantization of zai-org/GLM-5.3, the catalog's glm-5.3.
-    The quantized target accepts slightly differently from the checkpoint the catalog describes;
-    no curve measures that checkpoint.
-  provenance:
-    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-nvfp4__mtp__native__default-default.yaml
-    sha256: e88c647568007d864627ed5ff4000deb5479c216ba15a6350f2047802d888d3a
-    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41127067850
-    benchmark: SPEED-Bench
-    hardware: b300
-    engine_image: 'unrecorded: the source file names no engine image'
-    settings:
-      engine: sglang
-      verify: standard
-      adaptive: 'false'
-      topology: chain
-    sampling:
-      temperature: 1.0
-      top_p: 0.95
-      max_tokens: 4096
 - model: glm-5.3-flash
   verifier: standard
   architecture: Glm5NextForConditionalGeneration
@@ -1833,6 +1575,206 @@ profiles:
       kv_cache_dtype: fp8
       repetition_penalty: '1.0'
       chat_template_kwargs: '{"reasoning_effort": "max"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: glm-5.3-nvfp4
+  verifier: standard
+  architecture: GlmMoeDsaForCausalLM
+  speculative_method: mtp
+  num_spec_tokens: 1
+  thinking: 'on'
+  category: coding
+  acceptance_length: 1.84
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-nvfp4__mtp__native__default-default.yaml
+    sha256: e88c647568007d864627ed5ff4000deb5479c216ba15a6350f2047802d888d3a
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41127067850
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: sglang
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: glm-5.3-nvfp4
+  verifier: standard
+  architecture: GlmMoeDsaForCausalLM
+  speculative_method: mtp
+  num_spec_tokens: 2
+  thinking: 'on'
+  category: coding
+  acceptance_length: 2.49
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-nvfp4__mtp__native__default-default.yaml
+    sha256: e88c647568007d864627ed5ff4000deb5479c216ba15a6350f2047802d888d3a
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41127067850
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: sglang
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: glm-5.3-nvfp4
+  verifier: standard
+  architecture: GlmMoeDsaForCausalLM
+  speculative_method: mtp
+  num_spec_tokens: 3
+  thinking: 'on'
+  category: coding
+  acceptance_length: 2.94
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-nvfp4__mtp__native__default-default.yaml
+    sha256: e88c647568007d864627ed5ff4000deb5479c216ba15a6350f2047802d888d3a
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41127067850
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: sglang
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: glm-5.3-nvfp4
+  verifier: standard
+  architecture: GlmMoeDsaForCausalLM
+  speculative_method: mtp
+  num_spec_tokens: 4
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.28
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-nvfp4__mtp__native__default-default.yaml
+    sha256: e88c647568007d864627ed5ff4000deb5479c216ba15a6350f2047802d888d3a
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41127067850
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: sglang
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: glm-5.3-nvfp4
+  verifier: standard
+  architecture: GlmMoeDsaForCausalLM
+  speculative_method: mtp
+  num_spec_tokens: 5
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.48
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-nvfp4__mtp__native__default-default.yaml
+    sha256: e88c647568007d864627ed5ff4000deb5479c216ba15a6350f2047802d888d3a
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41127067850
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: sglang
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: glm-5.3-nvfp4
+  verifier: standard
+  architecture: GlmMoeDsaForCausalLM
+  speculative_method: mtp
+  num_spec_tokens: 6
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.7
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-nvfp4__mtp__native__default-default.yaml
+    sha256: e88c647568007d864627ed5ff4000deb5479c216ba15a6350f2047802d888d3a
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41127067850
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: sglang
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: glm-5.3-nvfp4
+  verifier: standard
+  architecture: GlmMoeDsaForCausalLM
+  speculative_method: mtp
+  num_spec_tokens: 7
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.74
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-nvfp4__mtp__native__default-default.yaml
+    sha256: e88c647568007d864627ed5ff4000deb5479c216ba15a6350f2047802d888d3a
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41127067850
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: sglang
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: glm-5.3-nvfp4
+  verifier: standard
+  architecture: GlmMoeDsaForCausalLM
+  speculative_method: mtp
+  num_spec_tokens: 8
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.87
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-nvfp4__mtp__native__default-default.yaml
+    sha256: e88c647568007d864627ed5ff4000deb5479c216ba15a6350f2047802d888d3a
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41127067850
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: sglang
+      verify: standard
+      adaptive: 'false'
+      topology: chain
     sampling:
       temperature: 1.0
       top_p: 0.95
