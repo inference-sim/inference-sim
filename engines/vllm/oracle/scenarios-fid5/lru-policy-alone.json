@@ -1,0 +1,175 @@
+{
+ "description": "LRUCachePolicy driven alone: a touch of a chunk still being written, an eviction asking for more than is evictable (atomic: nothing changes), a protected chunk skipped, a store miss for a resident key (a touch the manager never makes), request-finished ordering across two groups with and without positions, pinning between evictions, remove and clear.",
+ "policy": {
+  "capacity": 8
+ },
+ "calls": [
+  {
+   "m": "insert",
+   "key": "x1",
+   "chunk": {
+    "id": 0,
+    "ref": 0
+   }
+  },
+  {
+   "m": "insert",
+   "key": "x2",
+   "chunk": {
+    "id": 1,
+    "ref": -1
+   }
+  },
+  {
+   "m": "insert",
+   "key": "x3",
+   "chunk": {
+    "id": 2,
+    "ref": 0
+   }
+  },
+  {
+   "m": "touch",
+   "ctx": "a",
+   "keys": [
+    "x2",
+    "x1"
+   ]
+  },
+  {
+   "m": "ref",
+   "key": "x2",
+   "ref": 0
+  },
+  {
+   "m": "mark_evictable",
+   "key": "x2"
+  },
+  {
+   "m": "evict",
+   "n": 4
+  },
+  {
+   "m": "evict",
+   "n": 1,
+   "protected": [
+    "x3"
+   ]
+  },
+  {
+   "m": "get",
+   "key": "x3"
+  },
+  {
+   "m": "get",
+   "key": "x1"
+  },
+  {
+   "m": "on_store_miss",
+   "ctx": "a",
+   "keys": [
+    "x3",
+    "y1"
+   ]
+  },
+  {
+   "m": "insert",
+   "key": "y1/1",
+   "chunk": {
+    "id": 0,
+    "ref": 0
+   }
+  },
+  {
+   "m": "on_request_finished",
+   "ctx": "a",
+   "groups": [
+    [
+     "x3"
+    ],
+    [
+     "y1/1"
+    ]
+   ]
+  },
+  {
+   "m": "pos",
+   "ctx": "b",
+   "key": "x3",
+   "pos": 32
+  },
+  {
+   "m": "pos",
+   "ctx": "b",
+   "key": "y1/1",
+   "pos": 16
+  },
+  {
+   "m": "on_request_finished",
+   "ctx": "b",
+   "groups": [
+    [
+     "x3"
+    ],
+    [
+     "y1/1"
+    ]
+   ]
+  },
+  {
+   "m": "mark_non_evictable",
+   "key": "x3"
+  },
+  {
+   "m": "evict",
+   "n": 1
+  },
+  {
+   "m": "mark_evictable",
+   "key": "x3"
+  },
+  {
+   "m": "evict",
+   "n": 2
+  },
+  {
+   "m": "insert",
+   "key": "z1",
+   "chunk": {
+    "id": 3,
+    "ref": -1
+   }
+  },
+  {
+   "m": "remove",
+   "key": "z1"
+  },
+  {
+   "m": "get",
+   "key": "z1"
+  },
+  {
+   "m": "insert",
+   "key": "z2",
+   "chunk": {
+    "id": 4,
+    "ref": 0
+   }
+  },
+  {
+   "m": "clear"
+  },
+  {
+   "m": "get",
+   "key": "z2"
+  },
+  {
+   "m": "evict",
+   "n": 0
+  },
+  {
+   "m": "evict",
+   "n": 1
+  }
+ ]
+}

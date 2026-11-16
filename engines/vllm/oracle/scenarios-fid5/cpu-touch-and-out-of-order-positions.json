@@ -1,0 +1,110 @@
+{
+ "description": "touch, which the connector never calls, makes a chunk most recent; a request finishing with key positions out of offer order ranks its keys head to tail; each later store's eviction shows the order.",
+ "spec": {
+  "name": "CPUOffloadingSpec",
+  "cpu_bytes_to_use": 49152,
+  "worker_kv_bytes_per_block": 16384,
+  "world_size": 1,
+  "blocks_per_chunk": 1
+ },
+ "calls": [
+  {
+   "m": "on_new_request",
+   "ctx": "a"
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "a",
+   "keys": [
+    "t1",
+    "t2",
+    "t3"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "ctx": "a",
+   "keys": [
+    "t1",
+    "t2",
+    "t3"
+   ],
+   "success": true
+  },
+  {
+   "m": "touch",
+   "ctx": "a",
+   "keys": [
+    "t1"
+   ]
+  },
+  {
+   "m": "on_new_request",
+   "ctx": "b"
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "b",
+   "keys": [
+    "t4"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "ctx": "b",
+   "keys": [
+    "t4"
+   ],
+   "success": true
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "t1"
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "t2"
+  },
+  {
+   "m": "pos",
+   "ctx": "a",
+   "key": "t1",
+   "pos": 48
+  },
+  {
+   "m": "pos",
+   "ctx": "a",
+   "key": "t2",
+   "pos": 16
+  },
+  {
+   "m": "pos",
+   "ctx": "a",
+   "key": "t3",
+   "pos": 32
+  },
+  {
+   "m": "on_request_finished",
+   "ctx": "a"
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "b",
+   "keys": [
+    "t5"
+   ]
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "t1"
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "t3"
+  }
+ ]
+}
