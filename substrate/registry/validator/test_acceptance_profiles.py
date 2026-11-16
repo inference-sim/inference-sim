@@ -72,7 +72,7 @@ def remove_curve(golden: Path, stem: str) -> None:
 def test_the_committed_set_is_what_the_emitter_generates():
     r = subprocess.run([sys.executable, str(SCRIPT), "--check"], capture_output=True,
                        text=True, cwd=str(REPO), timeout=120,
-                       env={"PATH": "", "BLIS_CATALOG": "", "INFERENCEX_GOLDEN": ""})
+                       env={"PATH": "", "BLIS_CATALOG": "", "INFERENCEX_GOLDEN": str(GOLDEN)})
     assert r.returncode == 0, (
         "acceptance/inferencex-golden-al.yaml is not what emit_acceptance_profiles.py "
         f"renders from the vendored curves; re-run it.\n{r.stderr}")
