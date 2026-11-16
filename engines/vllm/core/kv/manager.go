@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/core/kv_cache_manager.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be).
+// Derived from vllm/v1/core/kv_cache_manager.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
 // Also vllm/v1/core/single_type_kv_cache_manager.py (SingleTypeKVCacheManager,
 // FullAttentionManager, SlidingWindowManager) and vllm/v1/core/kv_cache_coordinator.py
 // (UnitaryKVCacheCoordinator, HybridKVCacheCoordinator) for full-attention and

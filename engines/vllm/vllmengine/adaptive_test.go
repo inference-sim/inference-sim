@@ -55,7 +55,7 @@ func decodeBatch(n, ctx, k int) engine.Batch {
 // nothing is trimmed (VerifiedDrafts nil).
 func TestAdaptiveVerificationPricesTheTrimmedVerify(t *testing.T) {
 	spec := func(r map[string]string) engine.Spec {
-		return engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r}
+		return engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: r}
 	}
 	on, err := pricerFor(spec(roots(t, adaptiveScenario)), nil)
 	if err != nil {
@@ -106,7 +106,7 @@ func TestAdaptiveVerificationPricesTheTrimmedVerify(t *testing.T) {
 // it, though the simulator offers every scheduled draft.
 func TestAdaptiveVerificationRecipeRunsEndToEnd(t *testing.T) {
 	Register()
-	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, adaptiveScenario)}
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, adaptiveScenario)}
 	p, err := pricerFor(spec, nil)
 	if err != nil {
 		t.Fatal(err)

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/model_executor/models/gpt_oss.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be).
+// Derived from vllm/model_executor/models/gpt_oss.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
 // The KV cache spec each attention layer builds: gpt_oss.py:176 (per_layer_sliding_window),
 // vllm/models/minimax_m3/nvidia/model.py:562-571 (MiniMaxM3SparseAttention.get_kv_cache_spec)
 // and vllm/models/minimax_m3/common/indexer.py:145-154 (the indexer's), whose dtype is
