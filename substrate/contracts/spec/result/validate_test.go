@@ -597,3 +597,54 @@ func TestAcceptancePropertyRecordsEveryResolution(t *testing.T) {
 		}
 	}
 }
+
+// A run whose rates were derived records the schedule it assumed, and for a natural decay the
+// shape it took (inference-sim/blis-substrate#103); stated rates record none.
+func TestAcceptancePropertyRecordsADerivedSchedule(t *testing.T) {
+	rate := 0.3
+	shaped := &acceptance.ProfileSet{Kind: acceptance.Kind, Name: "s", Shapes: []acceptance.Shape{
+		{SpeculativeMethod: "dspark", DecayExponent: 1.17, FittedFrom: []string{"a.yaml"}, Rule: "fit"}}}
+	req := func(v *acceptance.Value) acceptance.Request {
+		return acceptance.Request{Model: "m", SpeculativeMethod: "dspark", NumSpecTokens: 7,
+			Registry: []*acceptance.ProfileSet{shaped}, CLI: v}
+	}
+	for _, c := range []struct {
+		name, schedule, shape string
+		v                     *acceptance.Value
+	}{
+		{"natural", "natural_decay", `s "dspark" decay_exponent 1.17`,
+			&acceptance.Value{NumSpecTokens: 7, AcceptanceRate: &rate, Realisation: acceptance.RealisationNatural}},
+		{"synthetic", "minimum_variance", "",
+			&acceptance.Value{NumSpecTokens: 7, AcceptanceRate: &rate, Realisation: acceptance.RealisationSynthetic}},
+		{"stated rates", "", "",
+			&acceptance.Value{NumSpecTokens: 2, PerPositionRates: []float64{0.5, 0.2}}},
+	} {
+		r := req(c.v)
+		r.NumSpecTokens = c.v.NumSpecTokens
+		res, err := acceptance.Resolve(r)
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		w := AcceptanceProperty(res)
+		if w.RatesSchedule != c.schedule || w.RatesShape != c.shape {
+			t.Errorf("%s: rates_schedule %q, rates_shape %q", c.name, w.RatesSchedule, w.RatesShape)
+		}
+		out := valid()
+		out.Input.WorkloadProperties = []WorkloadProperty{w}
+		if p := out.Validate(); !p.OK() {
+			t.Errorf("%s builds a property the schema refuses:\n%s", c.name, p.Error())
+		}
+	}
+	for _, c := range []struct{ name, schedule, shape, field string }{
+		{"an unknown schedule", "step", "", "rates_schedule"},
+		{"a decay with no shape", "natural_decay", "", "rates_shape"},
+		{"a shape with no decay", "minimum_variance", "s", "rates_shape"},
+	} {
+		out := valid()
+		out.Input.WorkloadProperties = []WorkloadProperty{{Name: SpeculativeAcceptance, Source: PropertyCommandLine,
+			Values: map[string]float64{"acceptance_length": 2}, RatesSchedule: c.schedule, RatesShape: c.shape}}
+		if p := out.Validate(); p.OK() || !strings.Contains(p.Error(), c.field) {
+			t.Errorf("%s: want a problem at %s, got %v", c.name, c.field, p.Error())
+		}
+	}
+}

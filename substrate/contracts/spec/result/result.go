@@ -335,6 +335,14 @@ type WorkloadProperty struct {
 	// Profiles lists every profile the value was read from, as set and key, the one that sets
 	// it first. An interpolation lists the two it lies between. Present with Step.
 	Profiles []string `yaml:"profiles,omitempty"`
+	// RatesSchedule says how per-position rates the source did not state were derived:
+	// "minimum_variance" (the engine's synthetic schedule) or "natural_decay" (a profile
+	// set's measured decay, named by RatesShape). It is an estimate the run assumed, so it is
+	// recorded; empty when the rates were stated.
+	RatesSchedule string `yaml:"rates_schedule,omitempty"`
+	// RatesShape names the shape a natural_decay schedule used, as set, method ("" for the
+	// shape fitted to every method) and decay exponent.
+	RatesShape string `yaml:"rates_shape,omitempty"`
 }
 
 // PropertySource is what supplied a workload property, highest precedence first (D8).

@@ -350,6 +350,12 @@ func (in Input) validate(p *validate.Problems) {
 			p.Field(at+".profile", "is stated exactly when source is profile")
 		}
 		w.validateBorrowing(p, at)
+		switch {
+		case w.RatesSchedule != "" && w.RatesSchedule != "minimum_variance" && w.RatesSchedule != "natural_decay":
+			p.Field(at+".rates_schedule", "%q is not one of minimum_variance, natural_decay", w.RatesSchedule)
+		case (w.RatesSchedule == "natural_decay") != (w.RatesShape != ""):
+			p.Field(at+".rates_shape", "is stated exactly when rates_schedule is natural_decay")
+		}
 		if len(w.Values) == 0 && w.Source != PropertyDefault {
 			p.Field(at+".values", "required: the values %s supplied", w.Source)
 		}

@@ -434,3 +434,50 @@ def test_a_transfer_lapses_once_its_curves_own_model_is_in_the_catalog(tmp_path)
     out = yaml.safe_load(emit.generate(GOLDEN, with_))
     mine = [p for p in out["profiles"] if stem_of(p) == GLM53]
     assert mine and {(p["model"], p["method"]) for p in mine} == {("glm-5.3-nvfp4", "measured")}
+
+
+def step_rates(al: float, k: int) -> list[float]:
+    """acceptance.MinimumVarianceRates, the engine's synthetic schedule."""
+    full = int(al - 1)
+    return [1.0 if i < full else (al - 1 - full if i == full else 0.0) for i in range(k)]
+
+
+def test_the_set_states_a_shape_for_every_method_and_one_for_all():
+    methods = {p["speculative_method"] for p in SET["profiles"]}
+    stated = {s.get("speculative_method", "") for s in SET["shapes"]}
+    assert methods | {""} <= stated
+    for s in SET["shapes"]:
+        assert s["fitted_from"] and all(emit.INFERENCEX_SHA in f for f in s["fitted_from"])
+
+
+def test_a_natural_shape_predicts_a_held_out_curve_better_than_the_step():
+    """Leave one curve out: fit its method's exponent on the rest, spread the curve's largest-K
+    acceptance length with it, and compare with the lengths it measured at every smaller K.
+    The decay must beat the engine's step schedule on every curve, and by a wide margin overall."""
+    tests = emit.shape_tests()
+    flat = [(m, src, c) for m in tests for src, c in tests[m]]
+    natural, step = [], []
+    for i, (m, src, cells) in enumerate(flat):
+        rest = [c for j, (mm, _, c) in enumerate(flat) if j != i and mm == m] or \
+               [c for j, (_, _, c) in enumerate(flat) if j != i]
+        b = emit.fit_exponent(rest)
+        k0 = max(cells)
+        s = step_rates(cells[k0], k0)
+        natural.append(emit.worst_error(cells, b))
+        step.append(max(abs(1 + sum(s[:k]) - al) for k, al in cells.items()))
+        assert natural[-1] < step[-1], (src, natural[-1], step[-1])
+    natural.sort(), step.sort()
+    assert natural[len(natural) // 2] * 4 < step[len(step) // 2]
+
+
+def test_a_rate_only_pin_at_k7_recovers_the_measured_per_position_profile():
+    """Muse-Spark-Open with DFlash2, measured at K 1-7: the rates its acceptance length at K 7
+    alone derives are within 0.05, at every position, of the per-position rates its curve
+    measures (AL(k) - AL(k-1)), and sum to the pinned length."""
+    [cells] = [c for src, c in emit.shape_tests()["dflash"] if MUSE in src]
+    [shape] = [s for s in SET["shapes"] if s.get("speculative_method") == "dflash"]
+    r = emit.natural_rates(cells[7], 7, shape["decay_exponent"])
+    measured = [cells[k] - cells.get(k - 1, 1.0) for k in range(1, 8)]
+    assert max(abs(a - b) for a, b in zip(r, measured)) <= 0.05
+    assert abs(1 + sum(r) - cells[7]) < 1e-9
+    assert max(abs(a - b) for a, b in zip(step_rates(cells[7], 7), measured)) > 0.05

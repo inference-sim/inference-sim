@@ -1,6 +1,8 @@
 package result
 
 import (
+	"fmt"
+
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 )
 
@@ -35,6 +37,15 @@ func AcceptanceProperty(r acceptance.Resolution) WorkloadProperty {
 		w.Source = PropertyWorkload
 	default:
 		w.Source = PropertyProfile
+	}
+	if r.RatesDerived {
+		w.RatesSchedule = string(r.Schedule)
+		if r.Schedule == "" {
+			w.RatesSchedule = string(acceptance.ScheduleMinimumVariance)
+		}
+		if r.Shape != nil {
+			w.RatesShape = fmt.Sprintf("%s %q decay_exponent %v", r.ShapeSet, r.Shape.SpeculativeMethod, r.Shape.DecayExponent)
+		}
 	}
 	if r.Profile == nil {
 		return w // a stated value: it came from no profile

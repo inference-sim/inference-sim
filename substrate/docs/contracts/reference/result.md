@@ -184,6 +184,8 @@ simulate, such as speculative acceptance or expert routing imbalance (D8).
 | `differed` | list of strings | with a borrowing step | Each key field in which a borrowed profile differs from the run's: `model`, `drafter`, `speculative_method` or `num_spec_tokens`. None for `exact`. |
 | `k_rule` | string | with `same_drafter_other_k` | How the borrowed value was brought to the run's K: `interpolated`, `above_largest`, `below_smallest_rates` or `below_smallest_proportional`. |
 | `profiles` | list of strings | with `step` | Every profile the value was read from, as set and key, the one that sets it first; an interpolation lists both it lies between. |
+| `rates_schedule` | string | no | How per-position rates the source did not state were derived, an estimate the run assumed: `minimum_variance` (the engine's synthetic schedule) or `natural_decay` (a profile set's measured decay). Left out when the rates were stated. |
+| `rates_shape` | string | with `natural_decay` | The shape the decay used: its set, its method (`""` for every method's) and its decay exponent. |
 
 ## `frame`
 
