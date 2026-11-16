@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
 	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
 )
@@ -29,7 +30,16 @@ func validateLowered(l plan.Lowered) error {
 	if err := p.ValidateResolved(); err != nil {
 		return err
 	}
+	captured := p.Graphs.Decode != plan.LaunchEager || p.Graphs.Other != plan.LaunchEager
 	switch {
+	case p.WeightFormat != "" && model.DType(p.WeightFormat).Bytes() <= 0:
+		return fmt.Errorf("the plan serves the weights as %q (Plan.WeightFormat), a format the cost "+
+			"model cannot size: it is none of the catalog's dtypes, so its weights would be priced "+
+			"at zero bytes", p.WeightFormat)
+	case captured && p.Graphs.Ceiling <= 0:
+		return fmt.Errorf("the plan launches steps from captured graphs (Plan.Graphs.Decode %q, "+
+			"Other %q) and states no capture ceiling (Plan.Graphs.Ceiling); the engine resolves it, "+
+			"and the cost model applies no default (SUB-6)", p.Graphs.Decode, p.Graphs.Other)
 	case p.Batch.Requests <= 0:
 		return fmt.Errorf("the plan states no request limit per step (Plan.Batch.Requests); the engine " +
 			"resolves it, and the cost model applies no default (SUB-6)")
@@ -58,6 +68,7 @@ func (k *Kernel) adoptLowered(l plan.Lowered) error {
 		return err
 	}
 	k.low = l.Plan
+	k.defaultCacheRecord = l.DefaultCacheRecord
 	k.cascadeAttention = l.Reported.CascadeAttention
 	c := l.Plan.Collectives
 	k.layout.SequenceParallelMoE = c.SequenceParallelMoE

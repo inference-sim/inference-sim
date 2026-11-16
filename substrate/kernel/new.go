@@ -142,6 +142,10 @@ func New(in Inputs) (*Kernel, error) {
 		return nil, fmt.Errorf("a kernel needs the pool's lowered plan, the settings the " +
 			"engine's lowering resolved (Inputs.Lowered)")
 	}
+	if in.Lowered != nil && in.Engine != nil {
+		return nil, fmt.Errorf("a kernel is given both the lowered plan (Inputs.Lowered) and the " +
+			"engine-settings carrier (Inputs.Engine); give the plan alone")
+	}
 	if err := rulesAnswer(in.Rules); err != nil {
 		return nil, fmt.Errorf("the engine rules for version %q cannot answer: %w",
 			in.Scenario.EngineRelease(), err)
@@ -243,16 +247,16 @@ func construct(in Inputs) (*Kernel, error) {
 	// With a lowered plan, the drafter is the graph the caller gives; from the carrier, the one
 	// it names must be the one given.
 	drafter := draftModelName(eng)
-	if in.Lowered != nil && in.Draft != nil {
-		drafter = in.Draft.Name
+	if in.Lowered != nil {
+		drafter = in.Lowered.Drafter
 	}
 	if name := drafter; name != "" || in.Draft != nil {
 		switch {
 		case in.Draft == nil:
-			return nil, fmt.Errorf("speculative.draft_model %q names a drafter whose graph was "+
+			return nil, fmt.Errorf("the pool drafts with %q, a drafter whose graph was "+
 				"not given (Inputs.Draft), so its passes cannot be priced", name)
 		case name != in.Draft.Name:
-			return nil, fmt.Errorf("speculative.draft_model %q, and the drafter graph given is %q",
+			return nil, fmt.Errorf("the pool drafts with %q, and the drafter graph given is %q",
 				name, in.Draft.Name)
 		}
 		d, err := in.Draft.ForCapability(family)

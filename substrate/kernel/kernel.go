@@ -63,6 +63,9 @@ type Kernel struct {
 	// cascadeAttention is the engine's resolution of cascade attention, which the kernel reports
 	// and does not price (plan.Lowered.Reported).
 	cascadeAttention bool
+	// defaultCacheRecord is the record the engine stores an unstated cache in
+	// (plan.Lowered.DefaultCacheRecord), which the cache_record assumption is judged against.
+	defaultCacheRecord string
 	// drafterName is the catalog model grafted on as the drafter (Inputs.Draft), "" for the
 	// target graph's own speculator.
 	drafterName string
@@ -1959,6 +1962,8 @@ func (k *Kernel) Deployment() deployment.Pool { return clonePool(k.pool) }
 // are shared, so treat it as read-only.
 func (k *Kernel) Graph() model.Graph { return *k.graph }
 
+// Engine returns the typed engine-settings carrier the kernel was built from (Inputs.Engine), a
+// deep copy; it is empty for a kernel built from a lowered plan, which reads no engine setting.
 func (k *Kernel) Engine() enginesettings.Settings { return k.engine.Clone() }
 
 // DecodeContextParallelWidth returns how many ranks shard the decode KV cache.

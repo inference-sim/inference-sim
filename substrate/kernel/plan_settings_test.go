@@ -11,6 +11,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/rules"
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
@@ -281,5 +282,59 @@ func TestAnAdaptiveVerifierThePlanStatesVerifiesFewerDrafts(t *testing.T) {
 	if at(false) == at(true) {
 		t.Error("adaptive verification moves no price at an acceptance length of 1.3, so the kernel " +
 			"does not price the verifier the plan states")
+	}
+}
+
+// The kernel refuses a plan that leaves out a setting it needs, or states one it cannot price,
+// naming the field, and applies no default in its place (SUB-6).
+func TestNewRefusesAPlanItCannotPriceByName(t *testing.T) {
+	d, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	open := func(f func(*plan.Lowered)) Inputs {
+		return planCase(t, d, "llama-3.1-70b-instruct", "h100", 1, "tp: 4, pp: 1, dp: 1", f)
+	}
+	if _, err := New(open(nil)); err != nil {
+		t.Fatalf("the fixture plan is refused: %v", err)
+	}
+	for _, c := range []struct {
+		name, want string
+		edit       func(*plan.Lowered)
+	}{
+		{"no request limit", "Plan.Batch.Requests", func(l *plan.Lowered) { l.Plan.Batch.Requests = 0 }},
+		{"no token limit", "Plan.Batch.Tokens", func(l *plan.Lowered) { l.Plan.Batch.Tokens = 0 }},
+		{"no page size", "Plan.PageTokens", func(l *plan.Lowered) { l.Plan.PageTokens = 0 }},
+		{"no KV element width", "Plan.Cache.ElementBytes", func(l *plan.Lowered) { l.Plan.Cache.ElementBytes = 0 }},
+		{"no state element width", "Plan.Cache.StateElementBytes", func(l *plan.Lowered) { l.Plan.Cache.StateElementBytes = 0 }},
+		{"a weight format no dtype names", "Plan.WeightFormat", func(l *plan.Lowered) { l.Plan.WeightFormat = "awq" }},
+		{"captured graphs with no ceiling", "Plan.Graphs.Ceiling", func(l *plan.Lowered) { l.Plan.Graphs.Ceiling = 0 }},
+		{"a launch word the plan does not know", "Graphs.Decode", func(l *plan.Lowered) { l.Plan.Graphs.Decode = "full" }},
+		{"a drafter named and not given", "whose graph was not given", func(l *plan.Lowered) { l.Drafter = "minimax-m3-eagle3" }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if _, err := New(open(c.edit)); err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Errorf("err %v, want a refusal naming %q", err, c.want)
+			}
+		})
+	}
+	// Eager launches need no capture ceiling.
+	if _, err := New(open(func(l *plan.Lowered) {
+		l.Plan.Graphs = plan.GraphPolicy{Decode: plan.LaunchEager, Other: plan.LaunchEager}
+	})); err != nil {
+		t.Errorf("an eager plan with no ceiling is refused: %v", err)
+	}
+}
+
+// A caller hands the kernel the plan or, until it is deleted, the carrier: never both.
+func TestNewRefusesBothThePlanAndTheCarrier(t *testing.T) {
+	d, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := planCase(t, d, "llama-3.1-70b-instruct", "h100", 1, "tp: 4, pp: 1, dp: 1", nil)
+	in.Engine = &enginesettings.Settings{}
+	if _, err := New(in); err == nil || !strings.Contains(err.Error(), "Inputs.Engine") {
+		t.Errorf("err %v, want a refusal naming both inputs", err)
 	}
 }

@@ -85,6 +85,10 @@ func (k *Kernel) legacyLower(in Inputs, eng enginesettings.Settings, g *model.Gr
 	}
 	p.Cache.Record = record
 	p.Cache.StateElementBytes = cacheDTypeBytes(eng.MambaCacheDType, model.DTypeFP32)
+	out.DefaultCacheRecord = k.rules.ResolveCacheDType(arch, k.family, lay.TP, "")
+	if s := eng.Speculative; s != nil {
+		out.Drafter = s.DraftModel
+	}
 	if err := refuseV4Layouts(in, eng, record); err != nil {
 		return nil, err
 	}
@@ -125,9 +129,8 @@ func (k *Kernel) legacyLower(in Inputs, eng enginesettings.Settings, g *model.Gr
 	case "all":
 		p.Cache.Recurrent = plan.RecurrentEveryPage
 	default:
-		// The recurrent cache mode is a closed literal (price.RecurrentCacheMode); a word outside
-		// it was priced as a mode of its own, which no recurrent layer reads.
-		p.Cache.Recurrent = plan.RecurrentStates(mode)
+		return nil, fmt.Errorf("mamba_cache_mode %q is not one this kernel prices: it keeps the "+
+			"latest state (none), one a page boundary (align) or one a page (all)", mode)
 	}
 
 	// The context bound: a count, auto, or unstated.

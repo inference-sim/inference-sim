@@ -144,40 +144,42 @@ type EngramPlacement struct {
 // outside (0, 1], a word outside its list.
 func (p PoolPlan) ValidateResolved() error {
 	var bad []string
-	add := func(format string, a ...any) { bad = append(bad, fmt.Sprintf(format, a...)) }
-	if p.Batch.Requests < 0 || p.Batch.Tokens < 0 {
-		add("Batch is %d requests and %d tokens; neither is negative", p.Batch.Requests, p.Batch.Tokens)
+	negative := func(field string, v int64) {
+		if v < 0 {
+			bad = append(bad, fmt.Sprintf("%s is %d; it is never negative", field, v))
+		}
 	}
-	if p.MaxContext < 0 || p.PageTokens < 0 {
-		add("MaxContext %d and PageTokens %d; neither is negative", p.MaxContext, p.PageTokens)
+	width := func(field string, v float64) {
+		if v < 0 {
+			bad = append(bad, fmt.Sprintf("%s is %v bytes; it is never negative", field, v))
+		}
 	}
+	word := func(field string, v string, ok bool) {
+		if !ok {
+			bad = append(bad, fmt.Sprintf("%s %q is not a known word", field, v))
+		}
+	}
+	negative("Batch.Requests", int64(p.Batch.Requests))
+	negative("Batch.Tokens", int64(p.Batch.Tokens))
+	negative("MaxContext", int64(p.MaxContext))
+	negative("PageTokens", int64(p.PageTokens))
 	if p.MemoryFraction < 0 || p.MemoryFraction > 1 {
-		add("MemoryFraction is %v; it is a share of the GPU's memory, in (0, 1], or 0 for not stated", p.MemoryFraction)
+		bad = append(bad, fmt.Sprintf("MemoryFraction is %v; it is a share of the GPU's memory, in "+
+			"(0, 1], or 0 for not stated", p.MemoryFraction))
 	}
-	if !p.Cache.Recurrent.Valid() {
-		add("Cache.Recurrent %q is not a known word", p.Cache.Recurrent)
-	}
-	if p.Cache.ElementBytes < 0 || p.Cache.LatentCellBytes < 0 || p.Cache.StateElementBytes < 0 {
-		add("Cache states a negative width")
-	}
-	if p.MoE.RedundantExperts < 0 {
-		add("MoE.RedundantExperts is %d", p.MoE.RedundantExperts)
-	}
-	if !p.DecodeContext.Combine.Valid() {
-		add("DecodeContext.Combine %q is not a known word", p.DecodeContext.Combine)
-	}
-	if p.DecodeContext.Interleave < 0 || p.Engram.Shards < 0 {
-		add("DecodeContext.Interleave %d and Engram.Shards %d; neither is negative", p.DecodeContext.Interleave, p.Engram.Shards)
-	}
-	if !p.Graphs.Decode.Valid() || !p.Graphs.Other.Valid() {
-		add("Graphs.Decode %q and Graphs.Other %q must be launch words", p.Graphs.Decode, p.Graphs.Other)
-	}
-	if p.Graphs.Ceiling < 0 || p.Drafts.RetainedTokens < 0 {
-		add("Graphs.Ceiling %d and Drafts.RetainedTokens %d; neither is negative", p.Graphs.Ceiling, p.Drafts.RetainedTokens)
-	}
-	if p.InFlight < 0 {
-		add("InFlight is %d", p.InFlight)
-	}
+	word("Cache.Recurrent", string(p.Cache.Recurrent), p.Cache.Recurrent.Valid())
+	width("Cache.ElementBytes", p.Cache.ElementBytes)
+	width("Cache.LatentCellBytes", p.Cache.LatentCellBytes)
+	width("Cache.StateElementBytes", p.Cache.StateElementBytes)
+	negative("MoE.RedundantExperts", int64(p.MoE.RedundantExperts))
+	word("DecodeContext.Combine", string(p.DecodeContext.Combine), p.DecodeContext.Combine.Valid())
+	negative("DecodeContext.Interleave", int64(p.DecodeContext.Interleave))
+	negative("Engram.Shards", int64(p.Engram.Shards))
+	word("Graphs.Decode", string(p.Graphs.Decode), p.Graphs.Decode.Valid())
+	word("Graphs.Other", string(p.Graphs.Other), p.Graphs.Other.Valid())
+	negative("Graphs.Ceiling", int64(p.Graphs.Ceiling))
+	negative("Drafts.RetainedTokens", int64(p.Drafts.RetainedTokens))
+	negative("InFlight", int64(p.InFlight))
 	if len(bad) > 0 {
 		return fmt.Errorf("the plan's resolved settings: %s", strings.Join(bad, "; "))
 	}
@@ -203,6 +205,14 @@ type Lowered struct {
 	// Reported are settings the engine resolved that the cost model reports in its resolution
 	// (kernel.Resolution) as it received them, and prices nothing from.
 	Reported ReportedSettings
+	// Drafter is the catalog model whose graph is the drafter, when the drafter is a checkpoint of
+	// its own; "" is the target graph's own speculator. The cost model checks that the drafter
+	// graph it is given is this one, and prices that graph.
+	Drafter string
+	// DefaultCacheRecord is the record the engine stores a cache in when the deployment states
+	// no cache format. The cost model reports a stated cache sized at its base record only when
+	// the cache runs under another record; it prices nothing from it.
+	DefaultCacheRecord string
 }
 
 // ReportedSettings are settings the engine resolved that the cost model reports and does not
