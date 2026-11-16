@@ -45,6 +45,13 @@ from pathlib import Path
 
 import yaml
 
+# The shared drafter rule lives with the catalog: catalog/scripts/drafter_links.py of the catalog
+# this run reads ($BLIS_CATALOG), else of this repository.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "catalog" / "scripts"))
+if os.environ.get("BLIS_CATALOG"):
+    sys.path.insert(0, str(Path(os.environ["BLIS_CATALOG"]) / "scripts"))
+import drafter_links  # noqa: E402
+
 REPO = Path(__file__).resolve().parent.parent
 TARGET = REPO / "acceptance" / "inferencex-golden-al.yaml"
 SET_NAME = "inferencex-golden-al"
@@ -210,6 +217,8 @@ def load_identities(golden: Path) -> dict:
 class Catalog:
     models: dict[str, dict]           # name -> model.yaml
     architectures: dict[str, str]
+    root: Path = Path(".")
+    links: object = None              # drafter_links.Catalog, read on first use
 
     def targets(self) -> dict[str, str]:
         return {n: d["source"]["repo"] for n, d in self.models.items() if not d.get("targets")}
@@ -230,7 +239,7 @@ def load_catalog(root: Path) -> Catalog:
             raise SystemExit(f"{p.parent.name}: its graph records no global.architecture, which "
                              "a lookup that borrows across targets reads (design D8)")
         archs[g["name"]] = arch
-    return Catalog(models, archs)
+    return Catalog(models, archs, root)
 
 
 def catalog_name(key: str, targets: dict[str, str]) -> str:
@@ -246,28 +255,14 @@ def catalog_name(key: str, targets: dict[str, str]) -> str:
 
 
 def catalog_drafter(model: str, draft: str, cat: Catalog) -> str:
-    """The catalog drafter a curve's `draft` names for model: "" for its own speculator."""
-    entry = cat.models[model]
-    listed = entry.get("drafters") or []
-    if draft == "native":
-        if "speculator" in listed:
-            return ""
-        own = [d for d in listed if d in cat.models
-               and cat.models[d]["source"]["repo"] == entry["source"]["repo"]]
-        if len(own) == 1:
-            return own[0]
-        raise Refused(f"its drafter ships with {model} (native), but {model} lists no in-graph "
-                      "speculator and no single drafter entry in its own repository")
-    hits = [n for n, d in cat.models.items()
-            if d["source"]["repo"].lower() == draft.lower() and model in (d.get("targets") or [])]
-    if not hits:
-        raise Refused(f"its drafter {draft} is not in the catalog as a drafter of {model}")
-    if len(hits) > 1:
-        raise SystemExit(f"drafter {draft} matches several catalog entries: {sorted(hits)}")
-    if hits[0] not in listed:
-        raise Refused(f"its drafter {draft} is the catalog's {hits[0]}, which {model} does not "
-                      "list among its drafters")
-    return hits[0]
+    """The catalog drafter a curve's `draft` names for model: "" for its own speculator. The rule
+    is catalog/scripts/drafter_links.py's, which every script that resolves a drafter shares."""
+    if cat.links is None:
+        cat.links = drafter_links.Catalog(cat.root)
+    try:
+        return drafter_links.resolve(cat.links, model, draft)
+    except drafter_links.Unresolved as e:
+        raise Refused(str(e))
 
 
 def source_url(stem: str) -> str:
@@ -538,18 +533,21 @@ def collect(golden: Path = GOLDEN, catalog: Path = CATALOG):
         try:
             if c.stem in SKIP:
                 raise Refused(SKIP[c.stem])
-            transfer = None
+            # The models the curve is carried to: its own, when the catalog has it, as measured;
+            # and a TRANSFERS model, as transferred, until a curve measures that model (then
+            # the transfer is stale, below).
+            homes: list[tuple[str, tuple[str, str] | None]] = []
             try:
-                model = catalog_name(c.model_key, targets)
+                homes.append((catalog_name(c.model_key, targets), None))
             except Refused:
-                # A transfer applies only while the curve's own model is not in the catalog;
-                # once it is, the curve is carried as measured on it.
                 if c.stem not in TRANSFERS:
                     raise
-                model, rule, why = TRANSFERS[c.stem]
-                if model not in targets:
-                    raise SystemExit(f"TRANSFERS {c.stem}: {model} is not a catalog model")
-                transfer = (rule, why)
+            if c.stem in TRANSFERS:
+                target, rule, why = TRANSFERS[c.stem]
+                if target not in targets:
+                    raise SystemExit(f"TRANSFERS {c.stem}: {target} is not a catalog model")
+                homes.append((target, (rule, why)))
+            model, transfer = homes[0]
             drafter = catalog_drafter(model, str((c.identity.get("collection") or {})
                                                  .get("draft")), cat)
             prov, mode_sampling, mode_settings, rationale, category = provenance(c, catalog)
@@ -568,11 +566,16 @@ def collect(golden: Path = GOLDEN, catalog: Path = CATALOG):
             skipped.append((c.stem, c.model_key, str(e)))
             continue
         categories.add(category)
-        k = Carried(c, model, drafter, prov, mode_sampling, mode_settings, rationale, transfer)
+        rejected = None
         for line in c.header:
             if m := re.search(r"Draft lengths (\d+)-(\d+) rejected by the image[^:]*: (\S+)", line):
-                k.rejected = (int(m.group(1)), int(m.group(2)), m.group(3))
-        carried.append(k)
+                rejected = (int(m.group(1)), int(m.group(2)), m.group(3))
+        for home, how in homes:
+            d = drafter if home == model else catalog_drafter(
+                home, str((c.identity.get("collection") or {}).get("draft")), cat)
+            k = Carried(c, home, d, prov, mode_sampling, mode_settings, list(rationale), how)
+            k.rejected = rejected
+            carried.append(k)
     if len(categories) != 1:
         raise SystemExit(f"expected one category, found {sorted(categories)}")
     category = categories.pop()

@@ -410,10 +410,11 @@ def test_the_identities_file_is_cited_with_its_hash():
     assert any(lock["files"]["identities.yaml"] in c and "identities.yaml" in c for c in SET["caveats"])
 
 
-def test_a_transfer_lapses_once_its_curves_own_model_is_in_the_catalog(tmp_path):
-    """While the catalog lacks glm-5.3-nvfp4 its curve is transferred to glm-5.3; once the
-    catalog has it, the curve is carried as measured on it and no transfer is written. Both
-    catalogs are fixtures, so the test holds with or without the real entry."""
+def test_a_curve_is_carried_on_its_own_model_and_transferred_until_measured(tmp_path):
+    """While the catalog lacks glm-5.3-nvfp4, its curve is transferred to glm-5.3. Once the
+    catalog has it, the curve is carried as measured on it and still transferred to glm-5.3,
+    with the same values, since no curve measures glm-5.3 itself. Both catalogs are fixtures,
+    so the test holds with or without the real entry."""
     without = tmp_path / "without"
     shutil.copytree(CATALOG, without)
     shutil.rmtree(without / "models" / "glm-5.3-nvfp4", ignore_errors=True)
@@ -431,6 +432,10 @@ def test_a_transfer_lapses_once_its_curves_own_model_is_in_the_catalog(tmp_path)
     g = yaml.safe_load((d / "graph.yaml").read_text())
     g["name"] = "glm-5.3-nvfp4"
     (d / "graph.yaml").write_text(yaml.safe_dump(g, sort_keys=False))
-    out = yaml.safe_load(emit.generate(GOLDEN, with_))
-    mine = [p for p in out["profiles"] if stem_of(p) == GLM53]
-    assert mine and {(p["model"], p["method"]) for p in mine} == {("glm-5.3-nvfp4", "measured")}
+    out2 = yaml.safe_load(emit.generate(GOLDEN, with_))
+    mine2 = [p for p in out2["profiles"] if stem_of(p) == GLM53]
+    assert {(p["model"], p["method"]) for p in mine2} == {("glm-5.3-nvfp4", "measured"),
+                                                          ("glm-5.3", "transferred")}
+    value = lambda ps, m: {(p["thinking"], p["num_spec_tokens"]): p["acceptance_length"]
+                           for p in ps if p["model"] == m}
+    assert value(mine2, "glm-5.3") == value(mine, "glm-5.3") == value(mine2, "glm-5.3-nvfp4")
