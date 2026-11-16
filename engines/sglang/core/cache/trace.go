@@ -43,11 +43,17 @@ type Call struct {
 // GoldenDir is where the framework's traces are committed.
 const GoldenDir = "testdata/golden-fid5"
 
-// LoadTraces reads every trace under dir/recorded and dir/direct, keyed "<kind>/<name>".
+// traceDirs is each trace directory under GoldenDir and the kind of trace it holds: recorded
+// holds the tier-2 scenarios of oracle/scenarios, t2 the cache's own scheduler scenarios of
+// oracle/scenarios/cache, direct the driver's sequences of oracle/scenarios-cache-iface.
+var traceDirs = [][2]string{{"recorded", "recorded"}, {"t2", "recorded"}, {"direct", "direct"}}
+
+// LoadTraces reads every trace under dir's trace directories, keyed "<directory>/<name>".
 func LoadTraces(dir string) (map[string]Trace, error) {
 	out := map[string]Trace{}
-	for _, kind := range []string{"recorded", "direct"} {
-		paths, err := filepath.Glob(filepath.Join(dir, kind, "*.trace.json"))
+	for _, d := range traceDirs {
+		sub, kind := d[0], d[1]
+		paths, err := filepath.Glob(filepath.Join(dir, sub, "*.trace.json"))
 		if err != nil {
 			return nil, err
 		}
@@ -61,9 +67,9 @@ func LoadTraces(dir string) (map[string]Trace, error) {
 				return nil, fmt.Errorf("%s: %w", p, err)
 			}
 			if tr.Kind != kind {
-				return nil, fmt.Errorf("%s: a %q trace in the %s directory", p, tr.Kind, kind)
+				return nil, fmt.Errorf("%s: a %q trace in the %s directory", p, tr.Kind, sub)
 			}
-			out[kind+"/"+strings.TrimSuffix(filepath.Base(p), ".trace.json")] = tr
+			out[sub+"/"+strings.TrimSuffix(filepath.Base(p), ".trace.json")] = tr
 		}
 	}
 	return out, nil
