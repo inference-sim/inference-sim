@@ -47,3 +47,25 @@ func sum(xs []float64) float64 {
 	}
 	return s
 }
+
+// A run's draft sampler and verifier reach the lookup: DeepSeek-V4.1-Flash, measured with
+// probabilistic drafting and block verification, matches exactly at those settings, and a run
+// that states neither borrows, naming both.
+func TestARunsSamplerAndVerifierReachTheLookup(t *testing.T) {
+	data, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	terms := acceptance.Workload{Category: "coding", Thinking: acceptance.ThinkingOn}
+	in := AcceptanceInputs{Scenario: "s", Shape: kernelmodel.Shape{Model: "deepseek-v4.1-flash"}, Data: data, Workload: &terms,
+		DraftSampler: acceptance.DraftProbabilistic, Verifier: acceptance.VerifierBlock}
+	got, ok, err := ResolveAcceptance(in, 3, "dspark")
+	if err != nil || !ok || got.Res.Step != acceptance.StepExact {
+		t.Fatalf("at the profile's settings: %v %v step %q", ok, err, got.Res.Step)
+	}
+	in.DraftSampler, in.Verifier = "", ""
+	got, ok, err = ResolveAcceptance(in, 3, "dspark")
+	if err != nil || !ok || got.Res.Step != acceptance.StepOtherSettings {
+		t.Fatalf("with neither stated: %v %v step %q", ok, err, got.Res.Step)
+	}
+}

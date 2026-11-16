@@ -55,6 +55,11 @@ type AcceptanceInputs struct {
 	// (speculative.draft_model), or "" for the model's own in-graph speculator. A profile measured
 	// with a drafter matches only a run that names the same one.
 	Drafter string
+	// DraftSampler and Verifier are the run's draft sampler and verifier as its deployment
+	// states them (speculative.draft_sample_method and rejection_sample_method), or "" when it
+	// states none, which the lookup treats as unstated (design D8, inference-sim/blis-substrate#174).
+	DraftSampler acceptance.DraftSampler
+	Verifier     acceptance.Verifier
 }
 
 // Acceptance is a run's resolved acceptance.
@@ -95,6 +100,8 @@ func ResolveAcceptance(in AcceptanceInputs, k int, method string) (Acceptance, b
 		NumSpecTokens:     k,
 		Hardware:          in.Hardware,
 		Drafter:           in.Drafter,
+		DraftSampler:      in.DraftSampler,
+		Verifier:          in.Verifier,
 		Architecture:      targetArchitecture(in.Data, in.Shape.Model),
 		Workload:          acceptanceWorkloadTerms(in),
 		Scenario:          in.Shape.Acceptance,
