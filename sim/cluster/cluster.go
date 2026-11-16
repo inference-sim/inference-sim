@@ -1855,6 +1855,7 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 		merged.KVThrashOpportunities += m.KVThrashOpportunities
 		merged.StepOwners = append(merged.StepOwners, m.StepOwners...)
 		merged.ClientGaps = append(merged.ClientGaps, m.ClientGaps...)
+		merged.ClientChunkGaps = append(merged.ClientChunkGaps, m.ClientChunkGaps...)
 		merged.MeasuredContextOverflows += m.MeasuredContextOverflows
 		merged.MeasuredFailures += m.MeasuredFailures
 		merged.StillQueued += m.StillQueued

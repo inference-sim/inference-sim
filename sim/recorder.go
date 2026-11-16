@@ -60,8 +60,10 @@ func (m *Metrics) RecordCompletion(c Completion) {
 	m.AllITLs = append(m.AllITLs, req.ITL...)
 	gaps := req.ClientTokenGaps()
 	m.ClientGaps = append(m.ClientGaps, gaps...)
+	m.ClientChunkGaps = append(m.ClientChunkGaps, req.ClientITL...)
 	m.StepOwners = append(m.StepOwners,
-		StepOwner{CompletionUs: c.E2E + req.ArrivalTime, Steps: len(req.ITL), ClientGaps: len(gaps), Phase: req.Phase})
+		StepOwner{CompletionUs: c.E2E + req.ArrivalTime, Steps: len(req.ITL), ClientGaps: len(gaps),
+			ClientChunkGaps: len(req.ClientITL), Phase: req.Phase})
 }
 
 func (m *Metrics) RecordLengthCapped(req *Request) {
