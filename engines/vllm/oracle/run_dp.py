@@ -179,6 +179,9 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     for i in range(dp):
         core = object.__new__(DPEngineCoreProc)
         core.dp_group = object()
+        # v0.33.0 reads the DP state through the core's own config
+        # (_has_global_unfinished_reqs, vllm/v1/engine/core.py:2560@4ba787ec): the rank's real one.
+        core.vllm_config = ranks[i].vllm_config
         core.dp_sync_interval = sync_interval
         core.prefill_schedule_interval = interval
         core.step_counter = 0
