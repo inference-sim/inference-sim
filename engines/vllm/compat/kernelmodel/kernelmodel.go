@@ -438,8 +438,8 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 		return nil, err
 	}
 	in.Lowered = low
-	// How an autoregressive drafter's passes run is the engine's to state (SUB-6): vLLM v0.32.0's
-	// speculator for eagle, eagle3 and mtp; any other method is left unstated and the kernel refuses it.
+	// How a drafter's passes run is the engine's to state (SUB-6): vLLM's speculator for eagle,
+	// eagle3 and mtp, and DFlash and DSpark; any other method is left unstated and the kernel refuses it.
 	in.DraftFirstPassRows, in.DraftPassRequests = vllmsettings.DraftPasses(engine)
 	// The indexer cache's record under the indexer_kv_dtype stated (lowerIndexerKV).
 	in.Model = lowerIndexerKV(in.Model, engine.IndexerKVDType)
