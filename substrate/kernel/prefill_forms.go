@@ -1,6 +1,7 @@
 package latencykernel
 
 import (
+	"math"
 	"strings"
 	"time"
 
@@ -200,9 +201,15 @@ func sumCeil(lo, hi, ratio int) float64 {
 // registry's form counts them: per query at absolute position p (1-based), FlashMLA's 64-token
 // blocks over its window, min(p, window), and over its selection, min(floor(p / ratio),
 // index_topk), times the cache record and the padded heads over 64. A layer with no ratio
-// selects nothing; one with a ratio and no top-k reads its whole compressed stream.
+// and no top-k selects nothing; one with a ratio and no top-k reads its whole compressed
+// stream. A layer with a top-k and no ratio selects from an uncompressed stream, ratio 1:
+// that is a DSA layer (GLM-5, GLM-5.3), whose indexer picks index_topk of every cached
+// position, as decode already reads it (selectedKVTokensFor takes the ratio as at least 1).
 func sparsePrefillReadBytes(chunks []chunk, window, topk, ratio, record int,
 	heads float64) float64 {
+	if ratio <= 0 && topk > 0 {
+		ratio = 1
+	}
 	var blocks float64
 	for _, c := range chunks {
 		lo, hi := c.prefix+1, c.prefix+c.sched
@@ -231,6 +238,19 @@ func scorerPrefillReadBytes(chunks []chunk, ratio, record, heads int) float64 {
 		}
 	}
 	return keys * float64(record) * float64(heads) / 64
+}
+
+// sparsePrefillRecord is the record a sparse layer's prefill form counts: the cache the graph
+// states (primaryRecord), or, where it states none, the layer's engine KV bytes a token,
+// perToken, the record decode reads for the same layer (decodeReadBytes). A DSA layer
+// keeps its latent in the engine's own KV cache and states no cache of its own, so without
+// the fallback its measured prefill form was never used and its prefill was priced on the
+// part-wide pair.
+func sparsePrefillRecord(l *price.PlannedLayer, perToken float64) int {
+	if r := primaryRecord(l); r > 0 {
+		return r
+	}
+	return int(math.Round(perToken))
 }
 
 // primaryRecord is the bytes of one record of a sparse layer's window cache, the record its
