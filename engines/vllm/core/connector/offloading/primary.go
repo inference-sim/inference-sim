@@ -1,0 +1,92 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+// Derived from vllm/v1/kv_offload/tiering/manager.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
+// CPUPrimaryTierOffloadingManager (:114-173): the CPU tier's OffloadingManager methods, and the
+// read/write aliases the tiering manager calls them by.
+
+package offloading
+
+import "fmt"
+
+// CPUPrimary is the CPU tier as a primary tier under TieringOffloadingManager
+// (CPUPrimaryTierOffloadingManager, vllm/v1/kv_offload/tiering/manager.py:114-173@4ba787ec): the
+// same CPUOffloadingManager and LRU policy this package's scheduler uses, exported for
+// core/connector/tiering. Each method is the cpuManager method it names; nothing here decides.
+type CPUPrimary struct{ m *cpuManager }
+
+// NewCPUPrimary is a CPU tier of numChunks chunks.
+func NewCPUPrimary(numChunks int) *CPUPrimary { return &CPUPrimary{m: newCPUManager(numChunks)} }
+
+// Access is one request's access state in the CPU tier (_RequestCacheAccess and the ReqContext's
+// key positions); the caller keeps one per request.
+type Access struct{ a *reqAccess }
+
+// NewAccess is a request's access state.
+func NewAccess() *Access { return &Access{a: newReqAccess()} }
+
+// SetPosition is ReqContext.set_offload_key_position.
+func (a *Access) SetPosition(k Key, end int) { a.a.positions[k] = end }
+
+// MakeKey is make_offload_key (vllm/v1/kv_offload/base.py:30-32).
+func MakeKey(hash []byte, group int) Key { return makeKey(hash, group) }
+
+// NumChunks is the tier's capacity.
+func (p *CPUPrimary) NumChunks() int { return p.m.numChunks }
+
+// Lookup is lookup: found, and whether the chunk is ready (HIT) or its store in flight
+// (HIT_PENDING).
+func (p *CPUPrimary) Lookup(k Key) (found, ready bool) {
+	switch p.m.lookup(k) {
+	case hit:
+		return true, true
+	case hitPending:
+		return true, false
+	}
+	return false, false
+}
+
+// LoadSource is get_load_source.
+func (p *CPUPrimary) LoadSource() string { return p.m.loadSource() }
+
+// PrepareLoad is prepare_load.
+func (p *CPUPrimary) PrepareLoad(keys []Key, a *Access) []int { return p.m.prepareLoad(keys, a.a) }
+
+// PrepareRead is prepare_read (tiering/manager.py:150-158): _prepare_load with record_access
+// False (cpu/manager.py:221-242), which pins the chunks as prepare_load does and records no access.
+func (p *CPUPrimary) PrepareRead(keys []Key) []int {
+	m := p.m
+	ids := make([]int, len(keys))
+	for i, k := range keys {
+		c := m.lru.chunks[k]
+		if c == nil || !c.ready() {
+			panic(fmt.Sprintf("offloading: chunk %x is not ready for reading", []byte(k)))
+		}
+		if c.refCnt == 0 {
+			m.lru.markNonEvictable(k)
+			m.numEvictable--
+		}
+		c.refCnt++
+		ids[i] = c.id
+	}
+	return ids
+}
+
+// CompleteLoad is complete_load, and complete_read.
+func (p *CPUPrimary) CompleteLoad(keys []Key) { p.m.completeLoad(keys) }
+
+// PrepareStore is prepare_store, and prepare_write.
+func (p *CPUPrimary) PrepareStore(keys []Key, a *Access) (stored []Key, chunkIDs []int, evicted []Key, ok bool) {
+	return p.m.prepareStore(keys, a.a)
+}
+
+// CompleteStore is complete_store, and complete_write.
+func (p *CPUPrimary) CompleteStore(keys []Key, success bool) { p.m.completeStore(keys, success) }
+
+// Touch is touch.
+func (p *CPUPrimary) Touch(keys []Key) { p.m.touch(keys) }
+
+// OnRequestFinished is on_request_finished.
+func (p *CPUPrimary) OnRequestFinished(a *Access) { p.m.requestFinished(a.a) }
+
+// ResetCache is reset_cache.
+func (p *CPUPrimary) ResetCache() { p.m.resetCache() }
