@@ -138,7 +138,9 @@ class Monitor:
         if tname == "Tensor" and mod.startswith("torch"):
             return x.tolist()
         if mod.startswith("torch"):
-            return str(x)  # a dtype or device
+            # A dtype or device by its name; any other torch object (a process group) by its type,
+            # since its text names its address.
+            return str(x) if tname in ("dtype", "device") else {"_t": tname}
         if tname == "array":
             return list(x)
         if tname == "RadixKey":
