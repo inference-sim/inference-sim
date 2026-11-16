@@ -38,9 +38,13 @@ def modelled_tag():
 
 
 def fetch(repo, ref, into):
-    """One commit of repo at ref (a tag or a commit) into the empty directory into."""
+    """One commit of repo at ref into the new directory into. A ref of 40 hexadecimal digits is a
+    commit; any other is a release tag, fetched as a tag so the generator can check it."""
+    if os.path.exists(into):
+        raise gen.Refused(f"{into} exists; regen.py fetches into a new directory (choose another --keep)")
     os.makedirs(into)
-    for args in (["init", "-q"], ["fetch", "-q", "--depth", "1", repo, ref], ["checkout", "-q", "FETCH_HEAD"]):
+    spec = ref if re.fullmatch(r"[0-9a-f]{40}", ref) else f"+refs/tags/{ref}:refs/tags/{ref}"
+    for args in (["init", "-q"], ["fetch", "-q", "--depth", "1", repo, spec], ["checkout", "-q", "FETCH_HEAD"]):
         r = subprocess.run(["git", "-C", into, *args], capture_output=True, text=True)
         if r.returncode != 0:
             raise gen.Refused(f"fetching {repo} at {ref}: {r.stderr.strip()}")
@@ -57,6 +61,8 @@ def main(argv):
     try:
         tag = args.tag or modelled_tag()
         cls = gen.load_classification(tag)
+        if args.keep and os.path.exists(args.keep) and os.listdir(args.keep):
+            raise gen.Refused(f"--keep {args.keep} is not empty; regen.py fetches into an empty directory")
         work = args.keep or tempfile.mkdtemp(prefix="kernel-impls-")
         try:
             vllm = fetch(VLLM_REPO, tag, os.path.join(work, "vllm"))

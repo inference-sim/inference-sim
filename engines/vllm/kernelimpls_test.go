@@ -55,11 +55,12 @@ func TestTheKernelImplTableLoadsAndNamesThisRelease(t *testing.T) {
 // measured on one does not price the other.
 func TestTheLoweringStatesTheBuildTheLookupMatches(t *testing.T) {
 	const lib, variant = "flashinfer", "trtllm_batch_context_with_kv_cache"
-	b200, err := Implementation(plan.PrimAttentionPrefill, lib, variant, 10, 0)
+	sel := AttentionSelection("FLASHINFER")
+	b200, err := Implementation(plan.PrimAttentionPrefill, sel, lib, variant, 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	b300, err := Implementation(plan.PrimAttentionPrefill, lib, variant, 10, 3)
+	b300, err := Implementation(plan.PrimAttentionPrefill, sel, lib, variant, 10, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,20 +82,22 @@ func TestTheLoweringStatesTheBuildTheLookupMatches(t *testing.T) {
 	}
 }
 
-// A build the table does not identify is stated with no code hash, which matches no keyed
-// entry: a primitive the table does not cover, a device architecture it does not cover, and a
-// kernel under a primitive whose gaps say the table does not list everything.
-func TestABuildTheTableDoesNotIdentifyHasNoHash(t *testing.T) {
+// A build the table does not know is stated with no code hash, which matches no keyed entry: a
+// primitive or architecture the table does not cover, a backend it names as a gap, and a kernel a
+// gap inside a listed backend names.
+func TestABuildTheTableDoesNotKnowHasNoHash(t *testing.T) {
 	for name, c := range map[string]struct {
 		prim         plan.Primitive
+		backend      string
 		lib, variant string
 		major, minor int
 	}{
-		"a primitive the table does not cover":           {plan.PrimGEMM, "cublas", "gemm", 10, 0},
-		"an architecture the table does not cover":       {plan.PrimAttentionPrefill, "flashinfer", "trtllm_batch_context_with_kv_cache", 12, 0},
-		"a kernel of a backend the table names as a gap": {plan.PrimAttentionDecode, "flashinfer", "trtllm_batch_decode_with_kv_cache_mla", 10, 0},
+		"a primitive the table does not cover":     {plan.PrimGEMM, "FLASHINFER", "cublas", "gemm", 10, 0},
+		"an architecture the table does not cover": {plan.PrimAttentionPrefill, "FLASHINFER", "flashinfer", "trtllm_batch_context_with_kv_cache", 12, 0},
+		"a backend the table names as a gap":       {plan.PrimAttentionDecode, "FLASHINFER_MLA", "flashinfer", "trtllm_batch_decode_with_kv_cache_mla", 10, 0},
+		"a kernel a gap of a listed backend names": {plan.PrimAttentionPrefill, "FLASHINFER", "flashinfer", "BatchAttentionWithAttentionSinkWrapper", 9, 0},
 	} {
-		got, err := Implementation(c.prim, c.lib, c.variant, c.major, c.minor)
+		got, err := Implementation(c.prim, AttentionSelection(c.backend), c.lib, c.variant, c.major, c.minor)
 		if err != nil {
 			t.Errorf("%s: %v", name, err)
 		}
@@ -104,12 +107,28 @@ func TestABuildTheTableDoesNotIdentifyHasNoHash(t *testing.T) {
 	}
 }
 
+// A build the table knows the release cannot run is an error, not a silent unidentified
+// implementation: FA3 on a B200 (vLLM runs FA3 on SM90 only), and a misspelt library.
+func TestABuildTheReleaseCannotRunIsAnError(t *testing.T) {
+	for name, c := range map[string]struct {
+		lib, variant string
+		major, minor int
+	}{
+		"FA3 on SM100":       {"vllm-flash-attn", "_vllm_fa3_C.fwd", 10, 0},
+		"a misspelt library": {"vllm-flashattn", "_vllm_fa2_C.varlen_fwd", 9, 0},
+	} {
+		if got, err := Implementation(plan.PrimAttentionPrefill, AttentionSelection("FLASH_ATTN"), c.lib, c.variant, c.major, c.minor); err == nil {
+			t.Errorf("%s: %+v and no error", name, got)
+		}
+	}
+}
+
 // On an H100 (9.0), vLLM's FlashAttention selection moves a layer FA3 cannot serve (a head size
 // above 256, or attention sinks it does not support) to FA4 when FA4 is available
 // (vllm/v1/attention/backends/fa_utils.py, get_flash_attn_version). The lowering must find
 // FA4's SM90 build, not report it unidentified.
 func TestFA4IsABuildOnSM90(t *testing.T) {
-	got, err := Implementation(plan.PrimAttentionPrefill, "vllm-flash-attn", "cute.flash_attn_varlen_func", 9, 0)
+	got, err := Implementation(plan.PrimAttentionPrefill, AttentionSelection("FLASH_ATTN"), "vllm-flash-attn", "cute.flash_attn_varlen_func", 9, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
