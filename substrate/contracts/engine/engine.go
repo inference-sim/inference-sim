@@ -270,6 +270,13 @@ type Batch struct {
 	// whose asynchronous KV load failed under a fail-the-request policy, which the engine
 	// finishes at its next schedule. A request finished here never appears in a Result.
 	Finished []Finished
+	// SkipDrafts says the drafter proposes no drafts in this step, because no request on any
+	// rank of the engine's data-parallel group can use them (vLLM v0.33.0's skip_drafts, ANDed
+	// across the group: vllm/v1/worker/gpu/dp_utils.py:75-88@4ba787ec). The engine decides it,
+	// states the same value on every rank's batch of the step, and prices the step without the
+	// passes that propose (kernel.Batch.SkipDrafts). An engine that does not speculate, or whose
+	// upstream always proposes, leaves it false.
+	SkipDrafts bool
 }
 
 // Empty reports whether the batch runs nothing.
