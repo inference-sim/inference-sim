@@ -897,8 +897,15 @@ type ReqShape = kernel.ReqShape
 // BLIS batch once batchOf has translated it: the kernel's NoOverlap step time in ticks, at
 // least one. The shapes are the caller's: under speculation a decode's Scheduled is already
 // its verify width.
-func (m *Model) StepTimeOfShapes(reqs []ReqShape) int64 {
-	b := m.replay.tail(kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget})
+func (m *Model) StepTimeOfShapes(reqs []ReqShape) int64 { return m.StepTimeOfStep(reqs, false) }
+
+// StepTimeOfStep is StepTimeOfShapes for a step that states whether its drafter proposes drafts:
+// skipDrafts is vLLM v0.33.0's skip_drafts, already agreed across the data-parallel group, and
+// the kernel then prices the drafter's work that keeps its KV in step but not the passes that
+// propose (kernel.Batch.SkipDrafts).
+func (m *Model) StepTimeOfStep(reqs []ReqShape, skipDrafts bool) int64 {
+	b := m.replay.tail(kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget,
+		SkipDrafts: skipDrafts})
 	return max(1, ticks(m.k.StepTime(b).NoOverlap))
 }
 
@@ -928,8 +935,13 @@ func (m *Model) VerifiedDraftsOfShapes(reqs []ReqShape) []int {
 // pool runs more than one (the kernel's StepEstimate.Stages): each stage's NoOverlap figure in
 // ticks, at least one, the last carrying the rounding so the stages sum exactly to
 // StepTimeOfShapes. A single-stage pool returns that one figure.
-func (m *Model) StageTimesOfShapes(reqs []ReqShape) []int64 {
-	b := m.replay.tail(kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget})
+func (m *Model) StageTimesOfShapes(reqs []ReqShape) []int64 { return m.StageTimesOfStep(reqs, false) }
+
+// StageTimesOfStep is StageTimesOfShapes for a step that states whether its drafter proposes
+// drafts (StepTimeOfStep).
+func (m *Model) StageTimesOfStep(reqs []ReqShape, skipDrafts bool) []int64 {
+	b := m.replay.tail(kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget,
+		SkipDrafts: skipDrafts})
 	e := m.k.StepTime(b)
 	total := max(1, ticks(e.NoOverlap))
 	if len(e.Stages) == 0 {

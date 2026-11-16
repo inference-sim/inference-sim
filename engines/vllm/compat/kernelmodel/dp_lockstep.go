@@ -98,11 +98,19 @@ func (m *Model) StepTimesAcrossDP(batches [][]*sim.Request) []int64 {
 // padding, an empty rank as the dummy batch. The shapes are the caller's: under speculation a
 // decode's Scheduled is already its verify width.
 func (m *Model) StepTimesAcrossDPOfShapes(ranks [][]ReqShape) []int64 {
+	return m.StepTimesAcrossDPOfStep(ranks, false)
+}
+
+// StepTimesAcrossDPOfStep is StepTimesAcrossDPOfShapes for a step that states whether its
+// drafters propose drafts: skipDrafts is the group's agreed skip_drafts, every rank's
+// (dp_utils.py:75-88@4ba787ec), so each rank's batch carries it (StepTimeOfStep).
+func (m *Model) StepTimesAcrossDPOfStep(ranks [][]ReqShape, skipDrafts bool) []int64 {
 	kbs := make([]kernel.Batch, len(ranks))
 	maxTokens := 0
 	allDecode := true
 	for i, reqs := range ranks {
-		kbs[i] = kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget}
+		kbs[i] = kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget,
+			SkipDrafts: skipDrafts}
 		dummy := len(reqs) == 0
 		if dummy {
 			kbs[i].PadTokens = m.pad.dummyWidth

@@ -599,6 +599,9 @@ func (e *Engine) batchOf(cb core.Batch) (engine.Batch, error) {
 	if err := e.noteVerified(cb.ID, b); err != nil {
 		return engine.Batch{}, err
 	}
+	// skip_drafts (vllm/v1/core/sched/output.py:334@4ba787ec): the drafter proposes nothing after
+	// this step. On one engine the scheduler's flag is the step's; a DPGroup ANDs its ranks'.
+	b.SkipDrafts = cb.Out.SkipDrafts
 	b.Preempted = append([]string(nil), cb.Out.Preempted...)
 	b.TransfersStarted = e.pd.started(e.s)
 	if e.off != nil {

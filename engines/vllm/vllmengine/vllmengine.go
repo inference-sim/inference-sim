@@ -701,7 +701,7 @@ type kernelPricer struct {
 
 // StepTime implements core/vllm.Pricer.
 func (k kernelPricer) StepTime(b engine.Batch) engine.Duration {
-	return engine.Duration(k.m.StepTimeOfShapes(shapes(b)))
+	return engine.Duration(k.m.StepTimeOfStep(shapes(b), b.SkipDrafts))
 }
 
 // VerifiedDrafts implements core/vllm.VerifyingPricer: how many of each request's scheduled
@@ -742,9 +742,9 @@ func (k kernelPricer) GroupTransferTime(t engine.Transfer, groupBlocks []int) en
 }
 
 // StageTimes implements core/vllm.StagePricer: the batch's price split by pipeline stage
-// (compat/kernelmodel.StageTimesOfShapes), summing to StepTime.
+// (compat/kernelmodel.StageTimesOfStep), summing to StepTime.
 func (k kernelPricer) StageTimes(b engine.Batch) []engine.Duration {
-	got := k.m.StageTimesOfShapes(shapes(b))
+	got := k.m.StageTimesOfStep(shapes(b), b.SkipDrafts)
 	out := make([]engine.Duration, len(got))
 	for i, d := range got {
 		out[i] = engine.Duration(d)
@@ -773,14 +773,19 @@ func (k kernelPricer) RecordSelected(d *load.Data) { k.m.RecordSelected(d) }
 // through; CachedTokens is zero because a prefix hit is already in Computed, and the kernel
 // subtracts CachedTokens from Scheduled only for a caller that has not.
 // StepTimesAcrossDP implements core/vllm.DPPricer: one lockstep step of a data-parallel group,
-// each rank priced with the group's padding (compat/kernelmodel.StepTimesAcrossDPOfShapes, the
+// each rank priced with the group's padding (compat/kernelmodel.StepTimesAcrossDPOfStep, the
 // rule the compatibility engine prices its lockstep with), an empty rank as vLLM's dummy batch.
 func (k kernelPricer) StepTimesAcrossDP(ranks []engine.Batch) []engine.Duration {
 	in := make([][]kernelmodel.ReqShape, len(ranks))
 	for i, b := range ranks {
 		in[i] = shapes(b)
 	}
-	got := k.m.StepTimesAcrossDPOfShapes(in)
+	// The group's skip_drafts is every rank's (core/vllm DPGroup states it on each).
+	skip := len(ranks) > 0
+	for _, b := range ranks {
+		skip = skip && b.SkipDrafts
+	}
+	got := k.m.StepTimesAcrossDPOfStep(in, skip)
 	out := make([]engine.Duration, len(got))
 	for i, d := range got {
 		out[i] = engine.Duration(d)
