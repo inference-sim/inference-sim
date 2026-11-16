@@ -532,15 +532,16 @@ jobs:
 
   # Tier 5: every vllm:* family vLLM v0.32.0 defines, read from its source and classified
   # exact / derived / unavailable (docs/metrics-manifest.json). A family the release adds or
-  # drops, or a manifest that is not current, fails here. Runs when fields/, fields.json, the manifest, its
-  # generator or the connector registry changed; always reports.
+  # drops, or a manifest that is not current, fails here; so does a field list or a kernel table
+  # (kernel_impls.json) that is not current. Runs when fields/, fields.json, kernels/,
+  # kernel_impls.json, the manifest, its generator or the connector registry changed; always reports.
   metrics-manifest:
     needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - if: needs.changes.outputs.metrics != 'true'
-        run: echo "not selected - none of fields/, fields.json, the manifest, its generator or the registry changed"
+        run: echo "not selected - none of fields/, fields.json, kernels/, kernel_impls.json, the manifest, its generator or the registry changed"
       - if: needs.changes.outputs.metrics == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - id: go
@@ -580,6 +581,35 @@ jobs:
         env:
           VLLM_SOURCE: ${{ github.workspace }}/vllm-source
         run: python3 -I fields/test_classes.py
+      # kernel_impls.json (design 6.2, VAL-8): every attention kernel vLLM v0.32.0 can emit, with the code hash the
+      # coefficient registry keys its entries by. The generator reads vLLM's own selection code, and each library's
+      # source at vLLM's pin; it checks each checkout's commit or version against the pin it reads from vLLM, so a
+      # ref below that does not match vLLM's pin fails here.
+      - name: check out FlashInfer at vLLM v0.32.0's pin (flashinfer-python==0.7.0.post1, tag v0.7.0.post1)
+        if: needs.changes.outputs.metrics == 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: flashinfer-ai/flashinfer
+          ref: 946200de1ae94fc93fdd0926f0a13afd1fa7f0f1
+          path: flashinfer-source
+          fetch-depth: 1
+      - name: check out vllm-flash-attn at vLLM v0.32.0's pin (cmake/external_projects/vllm_flash_attn.cmake)
+        if: needs.changes.outputs.metrics == 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: vllm-project/flash-attention
+          ref: 9cd61de38763d712bb6ce56e2a02cc2bf718c89f
+          path: flash-attn-source
+          fetch-depth: 1
+      - name: kernel_impls.json is current for the pinned release
+        if: needs.changes.outputs.metrics == 'true'
+        run: >-
+          python3 -I kernels/gen_kernel_impls.py vllm-source kernels/attention.json
+          --source flashinfer=flashinfer-source --source vllm-flash-attn=flash-attn-source
+          --check kernel_impls.json
+      - name: the kernel-table generator's tests
+        if: needs.changes.outputs.metrics == 'true'
+        run: python3 -I kernels/test_gen_kernel_impls.py
       - name: the manifest is current for the pinned release
         if: needs.changes.outputs.metrics == 'true'
         run: |

@@ -49,6 +49,7 @@ REST_EXTRA = [
     r"^oracle/(scenarios[^/]*/|mocks\.json$|drafts/)",
     r"^docs/metrics-(manifest|buckets)\.json$",
     r"^fields\.json$",
+    r"^kernel_impls\.json$",
     r"^vllmengine/testdata/",
     r"^core/(kv|lower)/testdata/",
     r"^oracle/engineargs-cases\.json$",
@@ -76,7 +77,7 @@ ORACLE_PATHS = [
     r"^rules/v0_32/testdata/",
 ]
 METRICS_GO = ["./cmd/metricsmanifest", "./registry"]
-METRICS_PATHS = [r"^fields/", r"^fields\.json$", r"^docs/metrics-manifest\.json$"]
+METRICS_PATHS = [r"^fields/", r"^fields\.json$", r"^docs/metrics-manifest\.json$", r"^kernels/", r"^kernel_impls\.json$"]
 GOLDEN_PATHS = [r"^oracle/", r"^core/.*/testdata/", r"^tools/migrateengineblock/"]
 BENCH_GO = ["./core/sched", "./core/vllm"]
 PACKS = {"v0_29": "./rules/v0_29", "v0_31": "./rules/v0_31", "v0_32": "./rules/v0_32"}

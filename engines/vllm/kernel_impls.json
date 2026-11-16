@@ -1,0 +1,996 @@
+{
+  "kind": "KernelImplTable",
+  "engine": {
+    "kind": "vllm",
+    "version": "0.32.0",
+    "commit": "5df63a7203cdb9328d824a27b682e77c7b9928be"
+  },
+  "primitives": [
+    "attention.decode",
+    "attention.prefill"
+  ],
+  "archs": [
+    "sm_100a",
+    "sm_103a",
+    "sm_90a"
+  ],
+  "gaps": [
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend B12X",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend CUTLASS_MLA",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend CUTLASS_MSA",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend FLASHINFER: BatchAttentionWithAttentionSinkWrapper (attention sinks)",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend FLASHINFER_MLA",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend FLASHINFER_MLA_SPARSE",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend FLASHINFER_MLA_SPARSE_DSV4",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend FLASHINFER_MLA_SPARSE_DSV41",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend FLASHINFER_MLA_SPARSE_SM120",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend FLASHINFER_MLA_SPARSE_SM90",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend FLASHMLA",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend FLASHMLA_MEGA_ATTN_DSV41",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend FLASHMLA_SPARSE",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend FLASHMLA_SPARSE_DSV4",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend FLASHMLA_SPARSE_DSV41",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend FLASH_ATTN: _flash_attn_fwd_combine (combining decode-context-parallel partial outputs)",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend FLASH_ATTN_DIFFKV",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend FLASH_ATTN_MLA",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend FLASH_ATTN_MLA_SPARSE",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend FLEX_ATTENTION",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend HPC_ATTN",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend MINIMAX_M3_SPARSE",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend TOKENSPEED_MLA",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend TRITON_ATTN_DIFFKV",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend TRITON_FLASHINFER",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend TRITON_FLASH_ATTN",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend TRITON_MLA",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend TRITON_MSA",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend TURBOQUANT",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend ULTRAQUANT",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend B12X",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend CUTLASS_MLA",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend CUTLASS_MSA",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend FLASHINFER: BatchAttentionWithAttentionSinkWrapper (attention sinks)",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend FLASHINFER: merge_attn_states (merging the outputs of a split prefill)",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend FLASHINFER_MLA",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend FLASHINFER_MLA_SPARSE",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend FLASHINFER_MLA_SPARSE_DSV4",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend FLASHINFER_MLA_SPARSE_DSV41",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend FLASHINFER_MLA_SPARSE_SM120",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend FLASHINFER_MLA_SPARSE_SM90",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend FLASHMLA",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend FLASHMLA_MEGA_ATTN_DSV41",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend FLASHMLA_SPARSE",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend FLASHMLA_SPARSE_DSV4",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend FLASHMLA_SPARSE_DSV41",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend FLASH_ATTN: merge_attn_states (merging the outputs of a split prefill)",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend FLASH_ATTN_DIFFKV",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend FLASH_ATTN_MLA",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend FLASH_ATTN_MLA_SPARSE",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend FLEX_ATTENTION",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend HPC_ATTN",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend MINIMAX_M3_SPARSE",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend TOKENSPEED_MLA",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend TRITON_ATTN_DIFFKV",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend TRITON_FLASHINFER",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend TRITON_FLASH_ATTN",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend TRITON_MLA",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend TRITON_MSA",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend TURBOQUANT",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend ULTRAQUANT",
+      "issue": "inference-sim/blis-vllm#151"
+    }
+  ],
+  "libraries": [
+    {
+      "name": "flashinfer",
+      "version": "0.7.0.post1",
+      "pinned": true,
+      "pin": "requirements/cuda.txt:13@5df63a72",
+      "origin": "https://github.com/flashinfer-ai/flashinfer 946200de1ae94fc93fdd0926f0a13afd1fa7f0f1"
+    },
+    {
+      "name": "vllm-csrc",
+      "version": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+      "pinned": true,
+      "pin": "the engine release itself",
+      "origin": "https://github.com/vllm-project/vllm 5df63a7203cdb9328d824a27b682e77c7b9928be"
+    },
+    {
+      "name": "vllm-flash-attn",
+      "version": "9cd61de38763d712bb6ce56e2a02cc2bf718c89f",
+      "pinned": true,
+      "pin": "cmake/external_projects/vllm_flash_attn.cmake:42@5df63a72",
+      "origin": "https://github.com/vllm-project/flash-attention 9cd61de38763d712bb6ce56e2a02cc2bf718c89f"
+    }
+  ],
+  "implementations": [
+    {
+      "primitive": "attention.decode",
+      "library": "flashinfer",
+      "library_version": "0.7.0.post1",
+      "variant": "BatchDecodeWithPagedKVCacheWrapper",
+      "target_arch": "sm_100a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "3rdparty/cutlass commit b46b16d003484063bca4ed365e44095c4c6ed633",
+        "csrc tree 9167a8180f1eb700330db537639e17f291b72cd1",
+        "flashinfer/jit tree 2bbebc5d37d5594b3a0837e84139abeb74591b6d",
+        "include tree ab5c332fedb696d4056c11520e85a0cdb9039c3b"
+      ],
+      "code_hash": "78b95b40577841de3992920ee11fe7a4c5ccefa1576620ac31e242ed3c7b429f",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:1328@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.decode",
+      "library": "flashinfer",
+      "library_version": "0.7.0.post1",
+      "variant": "BatchDecodeWithPagedKVCacheWrapper",
+      "target_arch": "sm_103a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "3rdparty/cutlass commit b46b16d003484063bca4ed365e44095c4c6ed633",
+        "csrc tree 9167a8180f1eb700330db537639e17f291b72cd1",
+        "flashinfer/jit tree 2bbebc5d37d5594b3a0837e84139abeb74591b6d",
+        "include tree ab5c332fedb696d4056c11520e85a0cdb9039c3b"
+      ],
+      "code_hash": "f3a7e3f005f1a9d6e71d30223b366984254436bd9944d3976f7649175259c2e0",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:1328@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.decode",
+      "library": "flashinfer",
+      "library_version": "0.7.0.post1",
+      "variant": "BatchDecodeWithPagedKVCacheWrapper",
+      "target_arch": "sm_90a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "3rdparty/cutlass commit b46b16d003484063bca4ed365e44095c4c6ed633",
+        "csrc tree 9167a8180f1eb700330db537639e17f291b72cd1",
+        "flashinfer/jit tree 2bbebc5d37d5594b3a0837e84139abeb74591b6d",
+        "include tree ab5c332fedb696d4056c11520e85a0cdb9039c3b"
+      ],
+      "code_hash": "419158ad40355d05c9d1c7688dff33275fdd805deb9f668e4ec828ab764f3ded",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:1328@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.decode",
+      "library": "flashinfer",
+      "library_version": "0.7.0.post1",
+      "variant": "trtllm_batch_decode_with_kv_cache",
+      "target_arch": "sm_100a",
+      "hash_basis": "binary",
+      "hash_inputs": [
+        "TRTLLM_GEN_FMHA checksums.txt sha256:d79b5c51fc8597fac57dae0da4afa114fb2014575e4ec3df099ad856d97cabc3"
+      ],
+      "code_hash": "40a5dea552029ea07ddb3963dc1ceada23c90529c242273dae0f982f235ad11f",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/utils/flashinfer.py:648@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:2582@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.decode",
+      "library": "flashinfer",
+      "library_version": "0.7.0.post1",
+      "variant": "trtllm_batch_decode_with_kv_cache",
+      "target_arch": "sm_103a",
+      "hash_basis": "binary",
+      "hash_inputs": [
+        "TRTLLM_GEN_FMHA checksums.txt sha256:d79b5c51fc8597fac57dae0da4afa114fb2014575e4ec3df099ad856d97cabc3"
+      ],
+      "code_hash": "738a0c3aca6da6272f45439234009572c0e7eddaa55f6ad56d61668131a9565a",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/utils/flashinfer.py:648@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:2582@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.decode",
+      "library": "flashinfer",
+      "library_version": "0.7.0.post1",
+      "variant": "xqa_batch_decode_with_kv_cache",
+      "target_arch": "sm_90a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "csrc/xqa tree 0f1563c9b4e9534c31851c9197fdb5a03beaace1"
+      ],
+      "code_hash": "5de9f59899d60497de844373cc69352a25150caa4ce553a5eb6c5cd4280dfdba",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/utils/flashinfer.py:648@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:2515@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.decode",
+      "library": "vllm-csrc",
+      "library_version": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+      "variant": "unified_attention",
+      "target_arch": "sm_100a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "vllm/v1/attention/ops/triton_unified_attention.py blob 63a9cdc7f9562277b617f20d7a021ec0aa63c542"
+      ],
+      "code_hash": "ea935b30a545d4425a2eae44c55ca7ca71033e6a3ce2cd5e3969f518c966a6ae",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:163@5df63a72",
+        "vllm/v1/attention/backends/triton_attn.py:665@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.decode",
+      "library": "vllm-csrc",
+      "library_version": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+      "variant": "unified_attention",
+      "target_arch": "sm_103a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "vllm/v1/attention/ops/triton_unified_attention.py blob 63a9cdc7f9562277b617f20d7a021ec0aa63c542"
+      ],
+      "code_hash": "d5f0968e2aa2100e602f125b7dc5b2e0725b54d1fd730343ecc069752a423c95",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:163@5df63a72",
+        "vllm/v1/attention/backends/triton_attn.py:665@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.decode",
+      "library": "vllm-csrc",
+      "library_version": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+      "variant": "unified_attention",
+      "target_arch": "sm_90a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "vllm/v1/attention/ops/triton_unified_attention.py blob 63a9cdc7f9562277b617f20d7a021ec0aa63c542"
+      ],
+      "code_hash": "aeafaee318a751089c47c5f13213ad6a8f42a53a167c450c3c2f568e59ed2231",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:163@5df63a72",
+        "vllm/v1/attention/backends/triton_attn.py:665@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.decode",
+      "library": "vllm-flash-attn",
+      "library_version": "9cd61de38763d712bb6ce56e2a02cc2bf718c89f",
+      "variant": "_vllm_fa2_C.varlen_fwd",
+      "target_arch": "sm_100a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "csrc/cutlass commit 62750a2b75c802660e4894434dc55e839f322277",
+        "csrc/flash_attn tree d66b97a4516bd95939d51d2056fbc443595702ac"
+      ],
+      "code_hash": "22628f95fb9e6df3df13216f4f7f08addf004f8ec8110678dbace60b9e42aa6b",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:162@5df63a72",
+        "vllm/v1/attention/backends/fa_utils.py:74@5df63a72",
+        "vllm/v1/attention/backends/flash_attn.py:116@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.decode",
+      "library": "vllm-flash-attn",
+      "library_version": "9cd61de38763d712bb6ce56e2a02cc2bf718c89f",
+      "variant": "_vllm_fa2_C.varlen_fwd",
+      "target_arch": "sm_103a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "csrc/cutlass commit 62750a2b75c802660e4894434dc55e839f322277",
+        "csrc/flash_attn tree d66b97a4516bd95939d51d2056fbc443595702ac"
+      ],
+      "code_hash": "2dbc533001a481929996aa74bba8a04e9950ea624fd777201b06c6c99715ecca",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:162@5df63a72",
+        "vllm/v1/attention/backends/fa_utils.py:74@5df63a72",
+        "vllm/v1/attention/backends/flash_attn.py:116@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.decode",
+      "library": "vllm-flash-attn",
+      "library_version": "9cd61de38763d712bb6ce56e2a02cc2bf718c89f",
+      "variant": "_vllm_fa2_C.varlen_fwd",
+      "target_arch": "sm_90a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "csrc/cutlass commit 62750a2b75c802660e4894434dc55e839f322277",
+        "csrc/flash_attn tree d66b97a4516bd95939d51d2056fbc443595702ac"
+      ],
+      "code_hash": "37df19aeaf4ae963986e35d2b80a465da6c255d223cd0cee381c5babc96e0b75",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:162@5df63a72",
+        "vllm/v1/attention/backends/fa_utils.py:74@5df63a72",
+        "vllm/v1/attention/backends/flash_attn.py:116@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.decode",
+      "library": "vllm-flash-attn",
+      "library_version": "9cd61de38763d712bb6ce56e2a02cc2bf718c89f",
+      "variant": "_vllm_fa3_C.fwd",
+      "target_arch": "sm_90a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "csrc/cutlass commit 62750a2b75c802660e4894434dc55e839f322277",
+        "hopper tree d808080acafc12279d47757521afb8cb221ab4df"
+      ],
+      "code_hash": "e64a6739c78bb8dcb8f2e6fec539b9b8bfc77498122dcefdd116f36fb4d9d7af",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:162@5df63a72",
+        "vllm/v1/attention/backends/fa_utils.py:74@5df63a72",
+        "vllm/v1/attention/backends/flash_attn.py:116@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.decode",
+      "library": "vllm-flash-attn",
+      "library_version": "9cd61de38763d712bb6ce56e2a02cc2bf718c89f",
+      "variant": "cute.flash_attn_varlen_func",
+      "target_arch": "sm_100a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "flash_attn/cute tree fd262544a2dbd41647f1af969e36f61597c6fbdf"
+      ],
+      "code_hash": "2bd369c6c8947dbf5c53963c6195c86cb7a8f3f8a85c5a4801d4eea44e91d408",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:162@5df63a72",
+        "vllm/v1/attention/backends/fa_utils.py:74@5df63a72",
+        "vllm/v1/attention/backends/flash_attn.py:116@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.decode",
+      "library": "vllm-flash-attn",
+      "library_version": "9cd61de38763d712bb6ce56e2a02cc2bf718c89f",
+      "variant": "cute.flash_attn_varlen_func",
+      "target_arch": "sm_103a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "flash_attn/cute tree fd262544a2dbd41647f1af969e36f61597c6fbdf"
+      ],
+      "code_hash": "2a2b8144a72bf6d1c239953314bf0f953a0a96d59c31a005045d879f1d6f824e",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:162@5df63a72",
+        "vllm/v1/attention/backends/fa_utils.py:74@5df63a72",
+        "vllm/v1/attention/backends/flash_attn.py:116@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "flashinfer",
+      "library_version": "0.7.0.post1",
+      "variant": "BatchPrefillWithPagedKVCacheWrapper",
+      "target_arch": "sm_100a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "3rdparty/cutlass commit b46b16d003484063bca4ed365e44095c4c6ed633",
+        "csrc tree 9167a8180f1eb700330db537639e17f291b72cd1",
+        "flashinfer/jit tree 2bbebc5d37d5594b3a0837e84139abeb74591b6d",
+        "include tree ab5c332fedb696d4056c11520e85a0cdb9039c3b"
+      ],
+      "code_hash": "1e9ec7fd1a40b957c6b8fea36ead804cb68201d3f2912d9d05681c758fe1df92",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:329@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "flashinfer",
+      "library_version": "0.7.0.post1",
+      "variant": "BatchPrefillWithPagedKVCacheWrapper",
+      "target_arch": "sm_103a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "3rdparty/cutlass commit b46b16d003484063bca4ed365e44095c4c6ed633",
+        "csrc tree 9167a8180f1eb700330db537639e17f291b72cd1",
+        "flashinfer/jit tree 2bbebc5d37d5594b3a0837e84139abeb74591b6d",
+        "include tree ab5c332fedb696d4056c11520e85a0cdb9039c3b"
+      ],
+      "code_hash": "3ec1539cbe8a073c2ce6ec6b9ce89fa61462b7eb7555bddadd35590baf14c63c",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:329@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "flashinfer",
+      "library_version": "0.7.0.post1",
+      "variant": "BatchPrefillWithPagedKVCacheWrapper",
+      "target_arch": "sm_90a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "3rdparty/cutlass commit b46b16d003484063bca4ed365e44095c4c6ed633",
+        "csrc tree 9167a8180f1eb700330db537639e17f291b72cd1",
+        "flashinfer/jit tree 2bbebc5d37d5594b3a0837e84139abeb74591b6d",
+        "include tree ab5c332fedb696d4056c11520e85a0cdb9039c3b"
+      ],
+      "code_hash": "18740de6519139ddca39f1b5989527c31cda3db358e561d11972f6107f843d68",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:329@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "flashinfer",
+      "library_version": "0.7.0.post1",
+      "variant": "BatchPrefillWithRaggedKVCacheWrapper",
+      "target_arch": "sm_100a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "3rdparty/cutlass commit b46b16d003484063bca4ed365e44095c4c6ed633",
+        "csrc tree 9167a8180f1eb700330db537639e17f291b72cd1",
+        "flashinfer/jit tree 2bbebc5d37d5594b3a0837e84139abeb74591b6d",
+        "include tree ab5c332fedb696d4056c11520e85a0cdb9039c3b"
+      ],
+      "code_hash": "bec8ca365dd3b0d089619f2449767543372bab479e9a1a14eddde0c3a9f1f956",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:330@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "flashinfer",
+      "library_version": "0.7.0.post1",
+      "variant": "BatchPrefillWithRaggedKVCacheWrapper",
+      "target_arch": "sm_103a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "3rdparty/cutlass commit b46b16d003484063bca4ed365e44095c4c6ed633",
+        "csrc tree 9167a8180f1eb700330db537639e17f291b72cd1",
+        "flashinfer/jit tree 2bbebc5d37d5594b3a0837e84139abeb74591b6d",
+        "include tree ab5c332fedb696d4056c11520e85a0cdb9039c3b"
+      ],
+      "code_hash": "75132914c1fb0ee44a31994272bab14047a99138030f0b8096606c23937e8c6c",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:330@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "flashinfer",
+      "library_version": "0.7.0.post1",
+      "variant": "BatchPrefillWithRaggedKVCacheWrapper",
+      "target_arch": "sm_90a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "3rdparty/cutlass commit b46b16d003484063bca4ed365e44095c4c6ed633",
+        "csrc tree 9167a8180f1eb700330db537639e17f291b72cd1",
+        "flashinfer/jit tree 2bbebc5d37d5594b3a0837e84139abeb74591b6d",
+        "include tree ab5c332fedb696d4056c11520e85a0cdb9039c3b"
+      ],
+      "code_hash": "465e3b322a28adb69a5307b70ebb7076e04510079426b0c85e3665461a98abf6",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:330@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "flashinfer",
+      "library_version": "0.7.0.post1",
+      "variant": "trtllm_batch_context_with_kv_cache",
+      "target_arch": "sm_100a",
+      "hash_basis": "binary",
+      "hash_inputs": [
+        "TRTLLM_GEN_FMHA checksums.txt sha256:d79b5c51fc8597fac57dae0da4afa114fb2014575e4ec3df099ad856d97cabc3"
+      ],
+      "code_hash": "067cb9ca807e02e7aa18c3bf09939010917c43ab25d906e060189d01d0e2ffbd",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/utils/flashinfer.py:648@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:2362@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "flashinfer",
+      "library_version": "0.7.0.post1",
+      "variant": "trtllm_batch_context_with_kv_cache",
+      "target_arch": "sm_103a",
+      "hash_basis": "binary",
+      "hash_inputs": [
+        "TRTLLM_GEN_FMHA checksums.txt sha256:d79b5c51fc8597fac57dae0da4afa114fb2014575e4ec3df099ad856d97cabc3"
+      ],
+      "code_hash": "80b933ffc85aeeb749607286d708f7e47e6a7e7ecc013d9bad0c5a74cb635535",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/utils/flashinfer.py:648@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:2362@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "vllm-csrc",
+      "library_version": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+      "variant": "context_attention_fwd",
+      "target_arch": "sm_100a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "vllm/v1/attention/ops/triton_prefill_attention.py blob 9e8482b5ecdd7a0c7603cc86c07e4b1ead514a62"
+      ],
+      "code_hash": "9bcaacb12b1610c65dbe61113a89f712f1ee98bab8ab121470243a11a048ff10",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:163@5df63a72",
+        "vllm/v1/attention/backends/triton_attn.py:750@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "vllm-csrc",
+      "library_version": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+      "variant": "context_attention_fwd",
+      "target_arch": "sm_103a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "vllm/v1/attention/ops/triton_prefill_attention.py blob 9e8482b5ecdd7a0c7603cc86c07e4b1ead514a62"
+      ],
+      "code_hash": "fdd6607c6fc4c29ff7d4b773dbe448a60fb192b28be6235d1e7733f45d451beb",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:163@5df63a72",
+        "vllm/v1/attention/backends/triton_attn.py:750@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "vllm-csrc",
+      "library_version": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+      "variant": "context_attention_fwd",
+      "target_arch": "sm_90a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "vllm/v1/attention/ops/triton_prefill_attention.py blob 9e8482b5ecdd7a0c7603cc86c07e4b1ead514a62"
+      ],
+      "code_hash": "00e103d488f872f853b96e52e37ec0a3409770485c13c1e9bedba6834a35fd23",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:163@5df63a72",
+        "vllm/v1/attention/backends/triton_attn.py:750@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "vllm-csrc",
+      "library_version": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+      "variant": "unified_attention",
+      "target_arch": "sm_100a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "vllm/v1/attention/ops/triton_unified_attention.py blob 63a9cdc7f9562277b617f20d7a021ec0aa63c542"
+      ],
+      "code_hash": "ea935b30a545d4425a2eae44c55ca7ca71033e6a3ce2cd5e3969f518c966a6ae",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:163@5df63a72",
+        "vllm/v1/attention/backends/triton_attn.py:665@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "vllm-csrc",
+      "library_version": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+      "variant": "unified_attention",
+      "target_arch": "sm_103a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "vllm/v1/attention/ops/triton_unified_attention.py blob 63a9cdc7f9562277b617f20d7a021ec0aa63c542"
+      ],
+      "code_hash": "d5f0968e2aa2100e602f125b7dc5b2e0725b54d1fd730343ecc069752a423c95",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:163@5df63a72",
+        "vllm/v1/attention/backends/triton_attn.py:665@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "vllm-csrc",
+      "library_version": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+      "variant": "unified_attention",
+      "target_arch": "sm_90a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "vllm/v1/attention/ops/triton_unified_attention.py blob 63a9cdc7f9562277b617f20d7a021ec0aa63c542"
+      ],
+      "code_hash": "aeafaee318a751089c47c5f13213ad6a8f42a53a167c450c3c2f568e59ed2231",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:163@5df63a72",
+        "vllm/v1/attention/backends/triton_attn.py:665@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "vllm-flash-attn",
+      "library_version": "9cd61de38763d712bb6ce56e2a02cc2bf718c89f",
+      "variant": "_vllm_fa2_C.varlen_fwd",
+      "target_arch": "sm_100a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "csrc/cutlass commit 62750a2b75c802660e4894434dc55e839f322277",
+        "csrc/flash_attn tree d66b97a4516bd95939d51d2056fbc443595702ac"
+      ],
+      "code_hash": "22628f95fb9e6df3df13216f4f7f08addf004f8ec8110678dbace60b9e42aa6b",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:162@5df63a72",
+        "vllm/v1/attention/backends/fa_utils.py:74@5df63a72",
+        "vllm/v1/attention/backends/flash_attn.py:116@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "vllm-flash-attn",
+      "library_version": "9cd61de38763d712bb6ce56e2a02cc2bf718c89f",
+      "variant": "_vllm_fa2_C.varlen_fwd",
+      "target_arch": "sm_103a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "csrc/cutlass commit 62750a2b75c802660e4894434dc55e839f322277",
+        "csrc/flash_attn tree d66b97a4516bd95939d51d2056fbc443595702ac"
+      ],
+      "code_hash": "2dbc533001a481929996aa74bba8a04e9950ea624fd777201b06c6c99715ecca",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:162@5df63a72",
+        "vllm/v1/attention/backends/fa_utils.py:74@5df63a72",
+        "vllm/v1/attention/backends/flash_attn.py:116@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "vllm-flash-attn",
+      "library_version": "9cd61de38763d712bb6ce56e2a02cc2bf718c89f",
+      "variant": "_vllm_fa2_C.varlen_fwd",
+      "target_arch": "sm_90a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "csrc/cutlass commit 62750a2b75c802660e4894434dc55e839f322277",
+        "csrc/flash_attn tree d66b97a4516bd95939d51d2056fbc443595702ac"
+      ],
+      "code_hash": "37df19aeaf4ae963986e35d2b80a465da6c255d223cd0cee381c5babc96e0b75",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:162@5df63a72",
+        "vllm/v1/attention/backends/fa_utils.py:74@5df63a72",
+        "vllm/v1/attention/backends/flash_attn.py:116@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "vllm-flash-attn",
+      "library_version": "9cd61de38763d712bb6ce56e2a02cc2bf718c89f",
+      "variant": "_vllm_fa3_C.fwd",
+      "target_arch": "sm_90a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "csrc/cutlass commit 62750a2b75c802660e4894434dc55e839f322277",
+        "hopper tree d808080acafc12279d47757521afb8cb221ab4df"
+      ],
+      "code_hash": "e64a6739c78bb8dcb8f2e6fec539b9b8bfc77498122dcefdd116f36fb4d9d7af",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:162@5df63a72",
+        "vllm/v1/attention/backends/fa_utils.py:74@5df63a72",
+        "vllm/v1/attention/backends/flash_attn.py:116@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "vllm-flash-attn",
+      "library_version": "9cd61de38763d712bb6ce56e2a02cc2bf718c89f",
+      "variant": "cute.flash_attn_varlen_func",
+      "target_arch": "sm_100a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "flash_attn/cute tree fd262544a2dbd41647f1af969e36f61597c6fbdf"
+      ],
+      "code_hash": "2bd369c6c8947dbf5c53963c6195c86cb7a8f3f8a85c5a4801d4eea44e91d408",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:162@5df63a72",
+        "vllm/v1/attention/backends/fa_utils.py:74@5df63a72",
+        "vllm/v1/attention/backends/flash_attn.py:116@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "vllm-flash-attn",
+      "library_version": "9cd61de38763d712bb6ce56e2a02cc2bf718c89f",
+      "variant": "cute.flash_attn_varlen_func",
+      "target_arch": "sm_103a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "flash_attn/cute tree fd262544a2dbd41647f1af969e36f61597c6fbdf"
+      ],
+      "code_hash": "2a2b8144a72bf6d1c239953314bf0f953a0a96d59c31a005045d879f1d6f824e",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:162@5df63a72",
+        "vllm/v1/attention/backends/fa_utils.py:74@5df63a72",
+        "vllm/v1/attention/backends/flash_attn.py:116@5df63a72"
+      ]
+    }
+  ]
+}
