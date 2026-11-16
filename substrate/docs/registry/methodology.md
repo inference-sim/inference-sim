@@ -1520,7 +1520,23 @@ profiles say `b200`. The emitter's `RUN_HARDWARE` table holds each run's runner,
 the GitHub API, and is checked against every file that also states a part. Files that name
 no engine image say so in `engine_image`.
 
-### 12.5 Gates
+### 12.5 Shapes: how natural acceptance decays
+
+A value measured from natural acceptance usually states only its rate or length. The
+engine's minimum-variance schedule would spread it as a step ([1, 1, 0.1, 0, ...] for 30% at
+K 7), which no measured curve resembles. The set's `shapes` say how it decays instead:
+p_i = q^(i^b), with q solved so the rates sum to AL − 1 (`acceptance.NaturalRates`), and one
+exponent b per speculative method plus one for every method. The emitter fits each b to every
+vendored curve of the method measured at each K from 1 to its largest, carried as a profile
+or not, so the Muse-Spark-Open DFlash2 curve informs the `dflash` shape although its drafter
+is not in the catalog. The rule is in each shape's `rule`.
+
+`validator/test_acceptance_profiles.py` checks the fit out of sample: with each curve left
+out of its method's fit, the decay predicts that curve's smaller-K lengths better than the
+step on every curve. For Muse-Spark-Open with DFlash2 at K 7, the rates its length alone
+derives are within 0.05 of the per-position rates its curve measures at every position.
+
+### 12.6 Gates
 
 `emit_acceptance_profiles.py --check` runs in every CI job
 (`validator/test_acceptance_profiles.py`), after the job fetches the pinned curves. The scheduled

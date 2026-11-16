@@ -664,7 +664,8 @@ def caveats(carried: list[Carried], skipped, category: str) -> list[str]:
     out.append("Natural acceptance. Every curve was collected with real verification "
                "(InferenceX README, How a golden AL curve is collected), so each value is a "
                "natural acceptance length; InferenceX's AgentX runs then force it with the "
-               "engine's synthetic rejection sampler.")
+               "engine's synthetic rejection sampler. The set's shapes, fitted to every "
+               "vendored curve, spread a natural value that states no per-position rates.")
     for c in carried:
         if c.rejected:
             lo, hi, run = c.rejected
@@ -696,10 +697,80 @@ class _Dumper(yaml.SafeDumper):
         return True
 
 
+# The decay exponents a shape may take: the grid the fit searches, [0.5, 2] in steps of 0.01,
+# the bounds acceptance.Shape validates.
+EXPONENTS = [round(0.5 + i / 100, 2) for i in range(151)]
+SHAPE_RULE = (
+    "Each curve and thinking mode measured at every K from 1 to its largest, K0, is a test: "
+    "its acceptance length at K0 is spread with p_i = q^(i^b), q solved so the rates sum to "
+    "AL-1, and 1 + p_1 + ... + p_k is compared with the curve's measured acceptance length at "
+    "every k <= K0. b is the exponent on the grid 0.50, 0.51, ..., 2.00 that minimises the sum, "
+    "over the tests, of the squared worst error of each; the smallest such b on a tie. Curves "
+    "are taken from every vendored file InferenceX does not mark provisional, carried as a "
+    "profile or not, since a curve shows how acceptance decays whatever its model resolves to.")
+
+
+def natural_rates(al: float, k: int, b: float) -> list[float]:
+    """acceptance.NaturalRates: p_i = q^(i^b), q in [0, 1] solved so the rates sum to al-1."""
+    def rates(q):
+        return [q ** (i ** b) for i in range(1, k + 1)]
+    want = al - 1
+    if want <= 0:
+        return [0.0] * k
+    if want >= k:
+        return [1.0] * k
+    lo, hi = 0.0, 1.0
+    for _ in range(200):
+        q = (lo + hi) / 2
+        lo, hi = (q, hi) if sum(rates(q)) < want else (lo, q)
+    return rates((lo + hi) / 2)
+
+
+def worst_error(cells: dict[int, float], b: float) -> float:
+    k0 = max(cells)
+    r = natural_rates(cells[k0], k0, b)
+    return max(abs(1 + sum(r[:k]) - al) for k, al in cells.items())
+
+
+def fit_exponent(tests: list[dict[int, float]]) -> float:
+    return min(EXPONENTS, key=lambda b: (sum(worst_error(c, b) ** 2 for c in tests), b))
+
+
+def shape_tests(golden: Path = GOLDEN) -> dict[str, list[tuple[str, dict[int, float]]]]:
+    """Every curve and thinking mode a shape is fitted to, by method, with its source."""
+    identities = load_identities(golden)
+    out: dict[str, list] = {}
+    for p in sorted(x for x in golden.glob("*.yaml") if x.name != IDENTITIES):
+        c = read_curve(p, identities)
+        if (c.identity.get("collection") or {}).get("provisional") is True:
+            continue
+        for thinking in sorted(c.values):
+            cells = c.values[thinking]
+            if sorted(cells) == list(range(1, max(cells) + 1)) and max(cells) > 1:
+                out.setdefault(c.method, []).append((source_url(c.stem), cells))
+    return out
+
+
+def shapes(golden: Path = GOLDEN) -> list[dict]:
+    tests = shape_tests(golden)
+    every = [t for m in sorted(tests) for t in tests[m]]
+    out = []
+    for method, ts in [(m, tests[m]) for m in sorted(tests)] + [("", every)]:
+        s = {}
+        if method:
+            s["speculative_method"] = method
+        s["decay_exponent"] = fit_exponent([c for _, c in ts])
+        s["fitted_from"] = sorted({src for src, _ in ts})
+        s["rule"] = SHAPE_RULE
+        out.append(s)
+    return out
+
+
 def generate(golden: Path = GOLDEN, catalog: Path = CATALOG) -> str:
     carried, skipped, category, cat = collect(golden, catalog)
     doc = {"kind": "AcceptanceProfileSet", "name": SET_NAME,
            "caveats": caveats(carried, skipped, category),
+           "shapes": shapes(golden),
            "profiles": profiles(carried, category, cat)}
     header = (
         "# Speculative acceptance lengths, from SemiAnalysis InferenceX's golden curves.\n"

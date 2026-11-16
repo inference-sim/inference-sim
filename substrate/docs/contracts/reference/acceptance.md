@@ -39,6 +39,18 @@ This is how vLLM, and the InferenceX runs that force a published AL, realise one
 simulator using it reproduces those runs. Natural acceptance spreads more than this
 schedule does, so per-request tails derived from it are optimistic.
 
+A value that measured natural acceptance says so (`realisation: natural`). With no rates of
+its own it is spread with `NaturalRates` and the decay a profile set fits to its measured
+curves (its `shapes`, below):
+
+```
+p_i = q ^ (i ^ decay_exponent), with q chosen so the rates sum to AL - 1
+```
+
+An exponent of 1 is a constant per-token acceptance probability; a larger one decays faster
+down the positions. The decay is an estimate: the resolution records it as the
+`natural_decay` schedule and names the shape, and a run records both.
+
 Acceptance is not the kernel's input. K and the method stay in the deployment's
 [`speculative`](deployment.md) block, because they change what a step costs; acceptance
 changes only how far requests advance.
@@ -59,7 +71,22 @@ InferenceX's golden SPEED-Bench curves:
 | `kind` | string | yes | Always `AcceptanceProfileSet`. |
 | `name` | string | yes | The set's identity. By convention it equals the file name, which is what a scenario's `acceptance.profiles` uses. |
 | `caveats` | list of strings | no | What the set does not cover and how far its values travel. No entry may be empty. |
+| `shapes` | list | no | How natural acceptance spreads over the draft positions, fitted to the set's measured curves, below. |
 | `profiles` | list | yes | At least one profile, below. |
+
+### Shapes
+
+One shape per speculative method, and one fitted to every method's curves, which a method with
+none of its own takes. Two shapes for one method are an error.
+
+<!-- fields: acceptance.Shape -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `speculative_method` | string | no | The method whose curves it was fitted to. Left out for the shape fitted to every method's. |
+| `decay_exponent` | number | yes | The exponent of the decay above, in [0.5, 2]. |
+| `fitted_from` | list of strings | yes | The source of every curve it was fitted to. No entry may be empty. |
+| `rule` | string | yes | How the exponent was fitted. |
 
 ### Profiles
 
@@ -131,6 +158,7 @@ speculates another K it is refused rather than rescaled.
 | `acceptance_rate` | number | one of three | (AL − 1) / K, in [0, 1]. Not with `acceptance_length`. |
 | `per_position_rates` | list of numbers | one of three | K rates, as for a profile. Alone, they state AL as 1 + their sum; with either of the others, they must agree with it. |
 | `source` | string | no | Where the value came from, recorded with the resolution. |
+| `realisation` | string | no | How the run realised its acceptance: `natural` (real verification) or `synthetic` (the engine's forced acceptance). A natural value with no rates is spread with its method's shape, and refused when no set states one; a synthetic or unstated one with `MinimumVarianceRates`. |
 
 ## Scenario pin
 

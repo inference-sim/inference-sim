@@ -308,6 +308,7 @@ var documented = map[string]struct {
 	"acceptance.Profile":          {typ: reflect.TypeOf(acceptance.Profile{})},
 	"acceptance.Provenance":       {typ: reflect.TypeOf(acceptance.Provenance{})},
 	"acceptance.Sampling":         {typ: reflect.TypeOf(acceptance.Sampling{})},
+	"acceptance.Shape":            {typ: reflect.TypeOf(acceptance.Shape{})},
 	"acceptance.Value":            {typ: reflect.TypeOf(acceptance.Value{})},
 	"acceptance.Pin":              {typ: reflect.TypeOf(acceptance.Pin{})},
 	"routing.ProfileSet":          {typ: reflect.TypeOf(routing.ProfileSet{})},
