@@ -1,0 +1,61 @@
+# The functions no main package of this module reaches that stay, each with its reason
+# (design LIF-7; checked by scripts/deadcode-check.sh, which also fails on an entry that has
+# gone stale). Format: package directory, function as deadcode names it, reason.
+#
+# Prefer deleting the code, or moving a helper only its own package's tests use into a _test.go
+# file of that package. An entry is for what cannot do either: an interface method a type must
+# have, a function reached only through reflection or go:linkname, or a helper the tests of
+# another package call (Go shares no _test.go code across packages).
+
+# Cross-package test helpers in packages a binary links.
+sim Fates cross-package test helper: sim/cluster's TestFates_EveryFateHasAKnownBadScenario enumerates every fate through it, and the fate list is unexported
+sim/cluster NewClusterSimulator cross-package test helper: the tests of cmd and sim/llmd build clusters with it; replacing it with BuildClusterSimulator needs sim/cluster/cluster.go, held by another open change
+sim/workload AgentXReplay.InFlight cross-package test helper: sim/cluster's agentx integration test checks the replay's in-flight count with it
+sim/workload TraceFieldStatus cross-package test helper: cmd's SIM-11 trace-field test reads the field-status tables through it, and the tables are unexported
+sim/workload SessionManager.States cross-package test helper: sim/cluster's disaggregation test tallies session states with it (INV-11)
+sim/workload SessionPoolDriver.Unstarted cross-package test helper: tools/harness's protocol test checks that the pool pushed every session
+
+# internal/invariantscan is a test-helper package: the INV-1 conservation tests of sim and
+# sim/cluster scan their own test files with it. No binary imports it.
+internal/invariantscan InstanceBuckets test-helper package used by the tests of sim and sim/cluster
+internal/invariantscan ClusterOnlyBuckets test-helper package used by the tests of sim and sim/cluster
+internal/invariantscan Finding.String test-helper package used by the tests of sim and sim/cluster
+internal/invariantscan bucketSet test-helper package used by the tests of sim and sim/cluster
+internal/invariantscan bucketNameOf test-helper package used by the tests of sim and sim/cluster
+internal/invariantscan exprKey test-helper package used by the tests of sim and sim/cluster
+internal/invariantscan bucketsIn test-helper package used by the tests of sim and sim/cluster
+internal/invariantscan isLedger test-helper package used by the tests of sim and sim/cluster
+internal/invariantscan FindConservationSums test-helper package used by the tests of sim and sim/cluster
+internal/invariantscan scanScope test-helper package used by the tests of sim and sim/cluster
+internal/invariantscan ScanTestDir test-helper package used by the tests of sim and sim/cluster
+
+# internal/substratedata is a test-helper package: it locates the pinned blis-substrate module's
+# catalog and registry for the tests of cmd, internal/bytegate and scripts. No binary imports it.
+internal/substratedata Dir test-helper package used by the tests of cmd, internal/bytegate and scripts
+internal/substratedata download test-helper package used by the tests of cmd, internal/bytegate and scripts
+internal/substratedata goOutput test-helper package used by the tests of cmd, internal/bytegate and scripts
+internal/substratedata Catalog test-helper package used by the tests of cmd, internal/bytegate and scripts
+internal/substratedata Registry test-helper package used by the tests of cmd, internal/bytegate and scripts
+internal/substratedata sub test-helper package used by the tests of cmd, internal/bytegate and scripts
+internal/substratedata MustCatalog test-helper package used by the tests of cmd, internal/bytegate and scripts
+internal/substratedata MustRegistry test-helper package used by the tests of cmd, internal/bytegate and scripts
+internal/substratedata must test-helper package used by the tests of cmd, internal/bytegate and scripts
+
+# sim/internal/testutil is a test-helper package: a fake latency model and transfer-pricing test
+# doubles (the methods implement the engine environment's interfaces) for the tests of sim,
+# sim/cluster and sim/llmd. No binary imports it.
+sim/internal/testutil DefaultFakeLatency test-helper package used by the tests of sim, sim/cluster and sim/llmd
+sim/internal/testutil FakeLatency.Validate test-helper package used by the tests of sim, sim/cluster and sim/llmd
+sim/internal/testutil FakeLatency.QueueingTicksFor test-helper package used by the tests of sim, sim/cluster and sim/llmd
+sim/internal/testutil FakeLatency.StepTicks test-helper package used by the tests of sim, sim/cluster and sim/llmd
+sim/internal/testutil FixedPull test-helper package used by the tests of sim, sim/cluster and sim/llmd
+sim/internal/testutil PullEnv.TransferDemand test-helper package used by the tests of sim, sim/cluster and sim/llmd
+sim/internal/testutil PullEnv.refuse test-helper package used by the tests of sim, sim/cluster and sim/llmd
+sim/internal/testutil PullEnv.Graph test-helper package used by the tests of sim, sim/cluster and sim/llmd
+sim/internal/testutil PullEnv.Chip test-helper package used by the tests of sim, sim/cluster and sim/llmd
+sim/internal/testutil PullEnv.Memory test-helper package used by the tests of sim, sim/cluster and sim/llmd
+sim/internal/testutil PullEnv.Price test-helper package used by the tests of sim, sim/cluster and sim/llmd
+sim/internal/testutil PullEnv.HostDemand test-helper package used by the tests of sim, sim/cluster and sim/llmd
+sim/internal/testutil PullEnv.Acceptance test-helper package used by the tests of sim, sim/cluster and sim/llmd
+sim/internal/testutil WithHost test-helper package used by the tests of sim, sim/cluster and sim/llmd
+sim/internal/testutil hostEnv.HostDemand test-helper package used by the tests of sim, sim/cluster and sim/llmd

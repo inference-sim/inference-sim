@@ -19,7 +19,7 @@ import (
 
 const ciModule = "github.com/inference-sim/inference-sim"
 
-var ciGroups = strings.Fields("build lint core cluster kernel workload cmd root scripts llmd bytegate other stack selected actionlint claudemd")
+var ciGroups = strings.Fields("build lint core cluster kernel workload cmd root scripts llmd bytegate other stack selected actionlint claudemd deadcode")
 
 // changesFor runs the filter on a list of paths and returns the groups it turns on, sorted.
 func changesFor(t *testing.T, args []string, paths ...string) []string {
@@ -77,9 +77,9 @@ func TestCIChangesSampleChangeLists(t *testing.T) {
 		{"a test file of the cluster package", []string{"sim/cluster/instance_test.go"},
 			groupsOf("lint cluster cmd")},
 		{"production code of the cluster package", []string{"sim/cluster/instance.go"},
-			groupsOf("build lint cluster cmd root llmd other bytegate selected")},
+			groupsOf("build lint cluster cmd root llmd other bytegate selected deadcode")},
 		{"production code of the core package", []string{"sim/metrics.go"},
-			groupsOf("build lint core cluster kernel workload cmd root llmd other bytegate selected")},
+			groupsOf("build lint core cluster kernel workload cmd root llmd other bytegate selected deadcode")},
 		{"a byte gate golden file", []string{"testdata/bytegate/golden/a.json"},
 			groupsOf("bytegate workload cmd")},
 		{"a kernel fixture", []string{"testdata/kernel/glm5-h200-tp8.yaml"},
@@ -101,7 +101,8 @@ func TestCIChangesSampleChangeLists(t *testing.T) {
 		{"two changes add up", []string{"testdata/trace-v3/a.csv", "docs/index.md"},
 			groupsOf("workload core cluster cmd scripts stack")},
 		{"a move out of a package counts at both ends", []string{"sim/cluster/a.go", "sim/llmd/a.go"},
-			groupsOf("build lint cluster cmd root llmd other bytegate selected")},
+			groupsOf("build lint cluster cmd root llmd other bytegate selected deadcode")},
+		{"the dead-code allow-list", []string{"scripts/deadcode-allow.list"}, groupsOf("deadcode scripts")},
 	} {
 		got := changesFor(t, nil, c.paths...)
 		if !sameSet(got, c.want) {
