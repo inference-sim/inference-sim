@@ -112,6 +112,7 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 			s.EnableServerSeries(iv)
 		}
 		cfg := sim.EngineDriverConfig{Horizon: horizon, Acceptance: acceptance, StreamInterval: streamInterval,
+			AcceptanceChain: acceptanceChain, AcceptanceSeed: seed,
 			Environment: kernelPDOpened.environmentOf(ic, kernelOpened)}
 		hostOverheads(&cfg, m)
 		return sim.NewEngineDriver(eng, cfg), nil

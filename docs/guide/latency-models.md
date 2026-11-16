@@ -31,7 +31,7 @@ To read a checkout instead, pass `--catalog` or set `BLIS_CATALOG`:
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout v0.14.0
+git -C blis-substrate checkout 714116f4fcbd9dbfeaf904cbb511d48d85806d5b
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
@@ -411,6 +411,19 @@ none.
   per-request fractional carry (no RNG), so runs stay byte-identical for a seed (INV-6).
   Rejected drafts do not advance the request: the next step's context is the previous one
   plus the accepted tokens, never plus the verify width (INV-K2).
+- **Drawn progress: a chain schedule.** A registry profile that states `schedule: chain`
+  (blis-substrate's acceptance reference) replaces the carry for the run. Each request draws
+  one random effect, `request_logit_sd` wide on the logit scale, which fixes the conditional
+  acceptance probability of every draft position for its life; each step then accepts drafts
+  one by one at those probabilities until the first rejection, as rejection sampling does. The
+  mean over requests is the profile's per-position rates, so the mean `g` is unchanged; what
+  changes is that steps and requests vary, which widens the per-request TPOT distribution.
+  Draws come from each request's own named substream of `--seed`, so the same seed gives the
+  same bytes (INV-6). A value from the command line, the scenario or the workload, and a
+  borrowed profile, keep the carry. The record's `entry` then states `schedule: chain` and
+  `request_logit_sd`. `glm53-h200-agentic` is such a profile: GLM-5.3 with MTP at K 3,
+  measured on 8xH200, selected with `--speculative-category agentic --speculative-thinking on`
+  (#2094).
 
 Progress stops at the completion boundary: the final step is granted only the tokens the
 request still needs, as vLLM trims the accepted tail once `check_stop` fires. A request's
