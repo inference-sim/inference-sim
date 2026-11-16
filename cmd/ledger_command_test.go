@@ -37,9 +37,10 @@ func checkout(t *testing.T, published map[string][]byte) string {
 	cfg := readFile(t, filepath.Join(src, "ledger.yaml"))
 	for _, k := range []string{"sha256", "generated_by", "generated_on", "rotation_owner"} {
 		v := map[string]string{"sha256": fixtureSeed, "generated_by": "test", "generated_on": "2026-11-11", "rotation_owner": "test"}[k]
-		re := regexp.MustCompile(`(?m)^(  ` + k + `:) ""`)
+		// The substrate's ledger.yaml may record a real seed or none; the fixture replaces either.
+		re := regexp.MustCompile(`(?m)^(  ` + k + `:) "[^"]*"`)
 		if !re.MatchString(cfg) {
-			t.Fatalf("ledger.yaml has no empty seed.%s to fill", k)
+			t.Fatalf("ledger.yaml has no seed.%s to replace", k)
 		}
 		cfg = re.ReplaceAllString(cfg, `${1} "`+v+`"`)
 	}
@@ -470,8 +471,9 @@ func TestEmbedPatternsEqualTheLoadersPatterns(t *testing.T) {
 	if why := embedPatternsDiffer(bad, substrate.CatalogPatterns, substrate.RegistryPatterns); !strings.Contains(why, "workloads") {
 		t.Errorf("a go:embed line that omits a loader pattern was not found: %q", why)
 	}
-	extra := strings.Replace(string(dataGo), "//go:embed registry/", "//go:embed catalog/ledger/published/*.yaml registry/", 1)
-	if why := embedPatternsDiffer(extra, substrate.CatalogPatterns, substrate.RegistryPatterns); !strings.Contains(why, "published") {
+	// A pattern no loader reads, so the known-bad case holds whatever the release embeds.
+	extra := strings.Replace(string(dataGo), "//go:embed registry/", "//go:embed catalog/not-a-loader-pattern/*.yaml registry/", 1)
+	if why := embedPatternsDiffer(extra, substrate.CatalogPatterns, substrate.RegistryPatterns); !strings.Contains(why, "not-a-loader-pattern") {
 		t.Errorf("a go:embed line with a pattern the loader lacks was not found: %q", why)
 	}
 }
