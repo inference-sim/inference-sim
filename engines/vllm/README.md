@@ -266,7 +266,10 @@ fields and environment variables are the field list's, above.
   fails when the regenerated list differs from the committed one, when an item has no status, when a
   status names an item vLLM does not register, when a status lacks what X9 asks of it, or when a KV
   file loads a module by a name no `path_loader` item accounts for.
-- To regenerate after editing the status file:
+- **The release** is the one `provenance.go`'s `Upstream` record names; the generator reads it
+  from there, refuses a vLLM checkout at another commit, and holds no version of its own
+  (`--upstream-tag` and `--upstream-commit` name another release). Moving to a new release
+  changes `provenance.go` and the status file, and the list is regenerated with the same command:
   `python3 -I tools/surface/gen_surface.py <vllm-source> tools/surface/status.json > surface.json`.
 
 ## Licence

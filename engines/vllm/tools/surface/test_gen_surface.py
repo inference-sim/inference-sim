@@ -173,6 +173,14 @@ MANIFEST = {"generator": "test", "vllm": "0.32.0", "families": [
     {"name": "vllm:num_requests_running", "defined": "vllm/v1/metrics/loggers.py:10", "class": "exact"}]}
 
 ISSUE = "https://github.com/inference-sim/blis-vllm/issues/1"
+PROVENANCE = """package blisvllm
+
+var Upstream = UpstreamRelease{
+	Version: "0.32.0",
+	Tag:     "v0.32.0",
+	Commit:  "5df63a7203cdb9328d824a27b682e77c7b9928be",
+}
+"""
 GOLDEN = "oracle/scenarios/basic.json"
 
 
@@ -223,6 +231,7 @@ class Tree:
         self.write(self.repo, "docs/metrics-manifest.json", json.dumps(MANIFEST))
         self.write(self.repo, GOLDEN, "{}")
         self.write(self.repo, "oracle/run_x.py", "")
+        self.write(self.repo, "provenance.go", PROVENANCE)
 
     @staticmethod
     def write(root, rel, text):
@@ -367,6 +376,32 @@ class GenSurfaceTest(unittest.TestCase):
         s = good_status()
         s["items"]["connector:StoreConnector"] = {"status": "refused", "issue": ISSUE, "evidence": [GOLDEN]}
         self.assertIn("do not belong with status refused", self.refusal(s))
+
+    def test_the_release_is_provenance_gos_unless_named(self):
+        code, out, err = run(self.tree, good_status())
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out)["upstream"], {"name": "vllm", "tag": "v0.32.0",
+                                                       "commit": "5df63a7203cdb9328d824a27b682e77c7b9928be"})
+        # Another release: its own commit in every out-of-scope citation, and its own manifest.
+        other = ("v0.33.0", "4ba787ec995" + "0" * 29)
+        code, _, err = run(self.tree, good_status(), "--upstream-tag", other[0], "--upstream-commit", other[1])
+        self.assertEqual(code, 1)
+        self.assertIn("docs/metrics-manifest.json is for vLLM 0.32.0, not v0.33.0", err)
+        MANIFEST_33 = dict(MANIFEST, vllm="0.33.0")
+        self.tree.write(self.tree.repo, "docs/metrics-manifest.json", json.dumps(MANIFEST_33))
+        code, _, err = run(self.tree, good_status(), "--upstream-tag", other[0], "--upstream-commit", other[1])
+        self.assertEqual(code, 1)
+        self.assertIn("is not vllm/<path>:<lines>@4ba787ec", err)
+        s = good_status()
+        s["items"]["speculative_method:deepseek_mtp"]["citation"] = "vllm/config/speculative.py:2@4ba787ec"
+        code, out, err = run(self.tree, s, "--upstream-tag", other[0], "--upstream-commit", other[1])
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out)["upstream"]["tag"], "v0.33.0")
+
+    def test_a_half_named_release_fails(self):
+        code, _, err = run(self.tree, good_status(), "--upstream-tag", "v0.33.0")
+        self.assertEqual(code, 1)
+        self.assertIn("go together", err)
 
     def test_check_fails_on_drift_and_passes_when_current(self):
         code, out, err = run(self.tree, good_status())
