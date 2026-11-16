@@ -63,6 +63,18 @@ if [ "$before" != "$after" ]; then
   exit 1
 fi
 echo "testing $(echo "$pkgs" | wc -l | tr -d ' ') packages at the versions inference-sim selects"
+# The engine and router tests that read the substrate's data (the catalog and the registry) find it
+# through `go list -m` in their own module, which names the substrate their own go.mod requires,
+# not the one the binary links. Point them at the selected substrate's data, so they test what the
+# binary runs (LIF-2). A value the caller sets wins.
+go mod download github.com/inference-sim/blis-substrate >/dev/null
+substrate_dir="$(go list -m -f '{{.Dir}}' github.com/inference-sim/blis-substrate)"
+if [ -z "$substrate_dir" ] || [ ! -d "$substrate_dir/catalog" ]; then
+  echo "ERROR: the selected blis-substrate has no catalog directory (got '$substrate_dir')" >&2
+  exit 1
+fi
+export BLIS_CATALOG="${BLIS_CATALOG:-$substrate_dir/catalog}" BLIS_REGISTRY="${BLIS_REGISTRY:-$substrate_dir/registry}"
+echo "substrate data: $(go list -m -f '{{.Version}}' github.com/inference-sim/blis-substrate) at $substrate_dir"
 
 shard="${SELECTED_DEPS_SHARD:-}"
 if [ -z "$shard" ]; then
