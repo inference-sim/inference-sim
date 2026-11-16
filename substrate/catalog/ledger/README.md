@@ -245,41 +245,47 @@ the artifact under source `aisimulate`, `artifacts[e2e-accuracy-web]` (D3):
 
 | Field | Value |
 |---|---|
-| Run | `ai-dynamo/aisimulate` actions run 36849388864, attempt 1 |
-| Evaluated commit | `cab77b9c7888b1c40df8cd3228f5e03c355ef23c` (branch `main`) |
-| Artifact | `e2e-accuracy-web-0d6e4079e36703eb`, zip SHA-256 `a3cdf7b4937223a76e32ca028c5442ba1aab523e914d71d2244e5753140d9f5c` |
-| File read | `summary.json`, SHA-256 `e1a380ad7b06ae7f27edc95357e24219f4003e3ed73a3f93ff0dcd192578a3a2` |
-| Measured values | InferenceX release `db-dump/2026-09-28` (the artifact's `measurement_source_url`) |
-| Kept by GitHub until | 2026-12-30; a copy is authentic when its SHA-256 matches |
+| Run | `ai-dynamo/aisim` actions run 43584761964, attempt 1 (the repository was `ai-dynamo/aisimulate`) |
+| Evaluated commit | `a4bbb52b3adebc57c5cb264a6924e82e02af676b` (branch `main`) |
+| Artifact | `e2e-accuracy-web-0d6e4079e36703eb`, zip SHA-256 `47c03314e552b442e6716fd0fdc0b865ee031d391b39b14d066f23592f775aaa` |
+| File read | `summary.json`, SHA-256 `d5012fef06f4e63abebf0cdb43104b699c303f937b77d0de9ba0db6b2350b8c2` |
+| Measured values | InferenceX, through the Hugging Face dataset `ai-dynamo/aisim-infx-cache` at `37cdb0319a7e695f560e43ba79441dcea6029374` (the artifact's `measurement_source_url`; not publicly readable) |
+| Kept by GitHub until | 2027-02-12; a copy is authentic when its SHA-256 matches |
 
 The extractor reads the pin from `kernel/scripts/aisimulate_e2e.pin.json`, and
 `TestExtractorPinEqualsTheLedgerEntry` requires that file to equal the ledger entry. It refuses a
 `summary.json` whose SHA-256 differs, whose snapshot states another run id or attempt, another
 evaluated commit (or "latest", or no commit record) or another release tag, whose campaign
-status is not `complete`, that yields no point, or whose sweep and point counts differ from the
-pin's. To reproduce:
+status is not `complete`, whose totals have no `aisim` block, that yields no point, or whose
+sweep and point counts differ from the pin's. The artifact names each checkpoint by its Hugging
+Face path; the extractor keeps a topology when exactly one catalog model's `source.repo` is that
+path. To reproduce:
 
 ```sh
-gh api repos/ai-dynamo/aisimulate/actions/artifacts/11159236747/zip > a.zip
-shasum -a 256 a.zip                                  # a3cdf7b4...d9f5c
+gh api repos/ai-dynamo/aisim/actions/artifacts/14111555985/zip > a.zip
+shasum -a 256 a.zip                                  # 47c03314...75aaa
 mkdir x && (cd x && unzip ../a.zip)
 python3 -I kernel/scripts/extract_aisimulate_e2e.py x/summary.json -o corpus.json
-# 204 sweeps, 1066 points, 88 distinct deployments -> corpus.json
-# (54 topologies skipped: fewer than three successful points)
-shasum -a 256 corpus.json                            # 4128d4e8...fe97 (Python 3.14)
+# 103 sweeps, 561 points, 73 distinct deployments -> corpus.json
+#   skipped  215  checkpoint not in catalog
+#   skipped  271  fewer than three successful points
+#   skipped  143  serving=aggregated spec=mtp
+#   skipped  563  serving=disaggregated spec=none
+shasum -a 256 corpus.json                            # dee98391...96c0 (Python 3.15)
 ```
 
-The run took 0.3 s and 28 MB on a laptop. The corpus is shape only: every value is
-normalised to its sweep's lowest concurrency, so it says nothing about absolute latency. It is an
-evaluation set, never fitted to. The predictions are NVIDIA's; the ground truth is InferenceX's,
-and the run's overall conclusion is `failure` only because two release-branch jobs failed (the
-job for `main` succeeded and the summary's campaign status is `complete`). To move to a newer
-artifact, change the ledger entry and the pin file in one pull request. The artifact has no unit
-list yet: it holds relatives, not InferenceX units, so no role is drawn for it.
+The skipped figures count points, so the kept and skipped points add up to the artifact's 1,753.
+The corpus is shape only: every value is normalised to its sweep's lowest concurrency, so it says
+nothing about absolute latency, and the artifact's absolute latencies are not carried. It is an
+evaluation set, never fitted to. The predictions are NVIDIA's; the ground truth is InferenceX's.
+Disaggregated and speculative topologies are not in the corpus: a step-time ratio at one
+deployment cannot price two pools or a drafter. To move to a newer artifact, change the ledger
+entry and the pin file in one pull request. The artifact has no unit list yet: it holds
+relatives, not InferenceX units, so no role is drawn for it.
 
 ## Other sources
 
-AISimulate (`ai-dynamo/aisimulate` at `2f0f4cd8`) and the forward-pass dataset
+AISimulate (`ai-dynamo/aisimulate` at `2f0f4cd8`, since renamed `ai-dynamo/aisim`) and the forward-pass dataset
 (`nvidia/aisimulate-fpm-dataset` at `dbfcdd9e`) are listed in `sources.yaml` with their
 licences, but they have no unit list yet. Both are reachable from CI, and their ingest tools
 are not yet written. The forward-pass dataset's README states that it has no approved
