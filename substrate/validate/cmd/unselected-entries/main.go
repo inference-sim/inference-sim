@@ -49,24 +49,24 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if fs.NArg() != 1 {
-		fmt.Fprintln(stderr, "usage: unselected-entries [-selected RESULT]... [-kernel-impls TABLE]... <registry root>")
+		_, _ = fmt.Fprintln(stderr, "usage: unselected-entries [-selected RESULT]... [-kernel-impls TABLE]... <registry root>")
 		return 2
 	}
 	root := fs.Arg(0)
 	paths, err := registry.SetPaths(root)
 	if err != nil {
-		fmt.Fprintf(stderr, "scanning %s: %v\n", root, err)
+		_, _ = fmt.Fprintf(stderr, "scanning %s: %v\n", root, err)
 		return 2
 	}
 	if len(paths) == 0 {
-		fmt.Fprintf(stderr, "%s: no coefficient sets found under coefficients/\n", root)
+		_, _ = fmt.Fprintf(stderr, "%s: no coefficient sets found under coefficients/\n", root)
 		return 2
 	}
 	sets := map[string]*coefficient.Set{}
 	for _, p := range paths {
 		s, err := contracts.LoadCoefficientSet(p)
 		if err != nil {
-			fmt.Fprintln(stderr, err)
+			_, _ = fmt.Fprintln(stderr, err)
 			return 2
 		}
 		sets[dataset.Stem(p)] = s
@@ -75,7 +75,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	for _, p := range selected {
 		r, err := contracts.LoadResult(p)
 		if err != nil {
-			fmt.Fprintln(stderr, err)
+			_, _ = fmt.Fprintln(stderr, err)
 			return 2
 		}
 		reports = append(reports, r.SelectedEntries)
@@ -84,20 +84,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 	for _, p := range tables {
 		t, err := contracts.LoadKernelImplTable(p)
 		if err != nil {
-			fmt.Fprintln(stderr, err)
+			_, _ = fmt.Fprintln(stderr, err)
 			return 2
 		}
 		tabs = append(tabs, t)
 	}
 	found := dataset.FindUnselected(sets, reports, tabs)
 	for _, u := range found {
-		fmt.Fprintln(stdout, u)
+		_, _ = fmt.Fprintln(stdout, u)
 	}
 	total := 0
 	for _, s := range sets {
 		total += len(s.Coefficients)
 	}
-	fmt.Fprintf(stderr, "%d of %d entries are neither selected by the %d run(s) given nor published by the %d table(s) given (VAL-8)\n",
+	_, _ = fmt.Fprintf(stderr, "%d of %d entries are neither selected by the %d run(s) given nor published by the %d table(s) given (VAL-8)\n",
 		len(found), total, len(reports), len(tabs))
 	if len(found) > 0 {
 		return 1
