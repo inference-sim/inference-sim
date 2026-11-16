@@ -57,7 +57,7 @@ registry. Nothing is fetched at run time.
 ## Install and run
 
 <!-- BEGIN GENERATED from stack.json: toolchain -->
-Requires Go 1.27.4, the toolchain blis-substrate's contracts/toolchain names at the pinned release.
+Requires Go 1.27.2, the toolchain blis-substrate's contracts/toolchain names at the pinned release.
 <!-- END GENERATED -->
 
 ```bash

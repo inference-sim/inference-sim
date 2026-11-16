@@ -5,7 +5,7 @@
 - **Go** ([Download Go](https://go.dev/dl/)):
 
 <!-- BEGIN GENERATED from stack.json: toolchain -->
-Requires Go 1.27.4, the toolchain blis-substrate's contracts/toolchain names at the pinned release.
+Requires Go 1.27.2, the toolchain blis-substrate's contracts/toolchain names at the pinned release.
 <!-- END GENERATED -->
 
 - **Git** — for cloning the repository
@@ -100,7 +100,7 @@ it is stale.
 | vllm (engine) | `0.32.0` | `5df63a7203cd` |
 | llm-d (router) | `1.0.0` | `b9393d1a9f1d` |
 | llm-d guides | | `4427f55cb626` |
-| Go toolchain | `go1.27.4` | |
+| Go toolchain | `go1.27.2` | |
 <!-- END GENERATED -->
 
 Every loader parses its files strictly, so data from another substrate version can be refused
