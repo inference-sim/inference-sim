@@ -29,7 +29,7 @@ func childWith(keys string) string {
 
 const tiering = ", spec: TieringOffloadingSpec"
 
-// notVisibleCases are deployments that make vLLM v0.32.0 load code it does not ship, each with the
+// notVisibleCases are deployments that make the modelled vLLM release load code it does not ship, each with the
 // setting the refusal names and the value. item is the surface.json path_loader item a case runs,
 // where it is one.
 var notVisibleCases = []struct {

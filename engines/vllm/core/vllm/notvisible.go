@@ -11,7 +11,8 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/pointrecord"
 )
 
-// Code BLIS does not have (design §11.4, code_not_visible). vLLM v0.32.0 loads a component from a
+// Code BLIS does not have (design §11.4, code_not_visible). The vLLM release this build models (Version)
+// loads a component from a
 // module path, or by a name its in-tree registration does not hold, in these places
 // (surface.json, category path_loader):
 //
@@ -54,14 +55,19 @@ type CodeNotVisibleError struct {
 }
 
 func (e *CodeNotVisibleError) Error() string {
-	return fmt.Sprintf("vllm: %s %q names code vLLM v0.32.0 does not ship: %s; a run that loads it is not "+
-		"simulated (code_not_visible, design §11.4)", e.Setting, e.Value, e.Loads)
+	return fmt.Sprintf("vllm: %s %q names code %s does not ship: %s; a run that loads it is not "+
+		"simulated (code_not_visible, design §11.4)", e.Setting, e.Value, release, e.Loads)
 }
 
 // G5Code is the reason a point that states the setting is not scored.
 func (e *CodeNotVisibleError) G5Code() pointrecord.G5Code { return pointrecord.CodeNotVisible }
 
-// The names vLLM v0.32.0 registers in-tree, as surface.json lists them (TestTheRegisteredNamesAreTheSurfaceList).
+// release names the vLLM release this build models in a refusal.
+const release = "vLLM " + Version
+
+// The names the release registers in-tree, as surface.json lists them
+// (TestTheRegisteredNamesAreTheSurfaceList, which fails when the list is regenerated for a release
+// that registers others).
 var (
 	// registeredConnectors: KVConnectorFactory.register_connector
 	// (vllm/distributed/kv_transfer/kv_connector/factory.py:153-249@5df63a72).
@@ -113,7 +119,7 @@ func refuseNotVisible(c Config) error {
 	}
 	if ev := c.KVEvents; ev != nil && ev.Publisher != "" && !slices.Contains(registeredPublishers, ev.Publisher) {
 		return &CodeNotVisibleError{Setting: "kv_events_config.publisher", Value: ev.Publisher,
-			Loads: "vLLM v0.32.0 publishes through null or zmq only; another publisher is one a plugin registered with " +
+			Loads: release + " publishes through null or zmq only; another publisher is one a plugin registered with " +
 				"EventPublisherFactory.register_publisher (vllm/distributed/kv_events.py:566-598@5df63a72)"}
 	}
 	if c.SchedulerCls != "" {
@@ -185,7 +191,7 @@ func connectorNotVisible(at, name string, modulePath *string) error {
 			key = ".kv_connector"
 		}
 		return &CodeNotVisibleError{Setting: at + key, Value: name,
-			Loads: "vLLM v0.32.0 registers no such connector, so only one an out-of-tree plugin registered could run " +
+			Loads: release + " registers no such connector, so only one an out-of-tree plugin registered could run " +
 				"(vllm/distributed/kv_transfer/kv_connector/factory.py:125-131@5df63a72)"}
 	}
 	return nil
@@ -203,7 +209,7 @@ type offloadKeys struct {
 func offloadNotVisible(at string, k offloadKeys) error {
 	spec := defaultOr(k.spec, "CPUOffloadingSpec")
 	if !slices.Contains(registeredSpecs, spec) {
-		loads := "vLLM v0.32.0 registers no such spec, so only one a plugin registered could run"
+		loads := release + " registers no such spec, so only one a plugin registered could run"
 		if k.specModulePath != "" {
 			loads = fmt.Sprintf("vLLM imports spec %q from spec_module_path %q", spec, k.specModulePath)
 		}
@@ -213,7 +219,7 @@ func offloadNotVisible(at string, k offloadKeys) error {
 	// Both registered specs read eviction_policy and cache_policy_module_path (cpu/spec.py:134-137,
 	// tiering/spec.py:365@5df63a72); the path is read only for a name the registry does not hold.
 	if policy := defaultOr(k.policy, "lru"); !slices.Contains(registeredPolicies, policy) {
-		loads := "vLLM v0.32.0 registers no such eviction policy, so only one a plugin registered could run"
+		loads := release + " registers no such eviction policy, so only one a plugin registered could run"
 		if k.policyModulePath != "" {
 			loads = fmt.Sprintf("vLLM imports policy %q from cache_policy_module_path %q", policy, k.policyModulePath)
 		}
@@ -239,7 +245,7 @@ func offloadNotVisible(at string, k offloadKeys) error {
 					"(vllm/v1/kv_offload/tiering/factory.py:100-144@5df63a72)", typ)}
 		case typ != "" && !slices.Contains(registeredTiers, typ):
 			return &CodeNotVisibleError{Setting: tat + ".type", Value: typ,
-				Loads: "vLLM v0.32.0 registers no such secondary tier, so only one a plugin registered could run " +
+				Loads: release + " registers no such secondary tier, so only one a plugin registered could run " +
 					"(vllm/v1/kv_offload/tiering/factory.py:100-144@5df63a72)"}
 		}
 		if p, ok := t["policy"].(string); ok && typ == "kvcr" && strings.Contains(p, ".") {
