@@ -6,8 +6,6 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
-
-	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
 )
 
 // cloneLowered is a deep copy of the parts the kernel keeps: a caller editing the plan it passed does
@@ -74,10 +72,7 @@ func (k *Kernel) adoptLowered(l plan.Lowered) error {
 	k.layout.SequenceParallelMoE = c.SequenceParallelMoE
 	k.layout.ModelSequenceParallel = c.SequenceParallelModel
 	k.layout.CustomAllReduce = l.Reported.SMAllReduce
-	for _, o := range l.Overrides {
-		k.layout.Overrides = append(k.layout.Overrides, resolve.Override{Field: o.Field,
-			Requested: o.Requested, Resolved: o.Resolved, Reason: o.Reason})
-	}
+	k.overrides = l.Overrides
 	for _, n := range l.Notes {
 		k.assume(n.Name, n.Value, n.Reason)
 	}

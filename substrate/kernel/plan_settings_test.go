@@ -11,11 +11,11 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/rules"
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/units"
 	"github.com/inference-sim/blis-substrate/load"
 )
 
@@ -32,12 +32,34 @@ func fixtureLowered() plan.Lowered {
 		MaxContext: 8192,
 		PageTokens: 16,
 		Cache:      plan.CacheFormat{ElementBytes: 2, StateElementBytes: 4},
-		Graphs: plan.GraphPolicy{Decode: plan.LaunchGraph, Other: plan.LaunchPiecewise, Ceiling: 512,
-			Buckets: []int{1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64, 128, 256, 512}},
-		InFlight:      1,
+		Graphs: plan.GraphPolicy{Decode: plan.LaunchGraph, Other: plan.LaunchPiecewise, Ceiling: 128,
+			Buckets: []int{1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128}},
+		InFlight:      2,
 		DecodeContext: plan.DecodeContextPlan{Interleave: 1},
-		Engram:        plan.EngramPlacement{Shards: 1},
+		Engram:        plan.EngramPlacement{Host: true, Shards: 1},
 	}}
+}
+
+// wideCapture states a capture ladder up to 512 tokens.
+func wideCapture(l *plan.Lowered) {
+	l.Plan.Graphs.Ceiling = 512
+	l.Plan.Graphs.Buckets = []int{1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64, 128, 256, 512}
+}
+
+// noDrafter is a Repos.DraftModel for a pool that names no drafter.
+func noDrafter(*deployment.Deployment, int) (string, error) { return "", nil }
+
+// lowerTo is a Repos.Lower that hands every pool fixtureLowered with the context bound, the page
+// size and the memory share a test states, edited further by f.
+func lowerTo(maxContext, page int, util float64, f ...func(*plan.Lowered)) func(Inputs) (*plan.Lowered, error) {
+	return func(Inputs) (*plan.Lowered, error) {
+		l := fixtureLowered()
+		l.Plan.MaxContext, l.Plan.PageTokens, l.Plan.MemoryFraction = units.Tokens(maxContext), units.Tokens(page), util
+		for _, e := range f {
+			e(&l)
+		}
+		return &l, nil
+	}
 }
 
 // planRules are the rules the cases price under: the windowed rules (a window cache holds its
@@ -72,7 +94,7 @@ func planCase(t *testing.T, d *load.Data, modelName, chip string, nodes int, par
 		f(&low)
 	}
 	r := Repos{Scenarios: dir, Data: d, Rules: func(string) rules.EngineRules { return planRules{} },
-		DraftModel: func(*deployment.Deployment, int) (string, error) { return "", nil },
+		DraftModel: noDrafter,
 		Lower:      func(Inputs) (*plan.Lowered, error) { return &low, nil }}
 	in, err := OpenInputs("s.yaml", r, 0)
 	if err != nil {
@@ -163,7 +185,7 @@ func TestEachResolvedPlanSettingMovesAPrice(t *testing.T) {
 		base  func(*plan.Lowered)
 		edit  func(*plan.Lowered)
 	}{
-		{"BatchLimits.Requests", v41, func(l *plan.Lowered) { l.Plan.Drafts.Chain = 5 },
+		{"BatchLimits.Requests", v41, func(l *plan.Lowered) { l.Plan.Drafts.Chain = 5; wideCapture(l) },
 			func(l *plan.Lowered) { l.Plan.Batch.Requests = 2 }},
 		{"BatchLimits.Tokens", dense, nil, func(l *plan.Lowered) { l.Plan.Batch.Tokens = 2048 }},
 		{"PoolPlan.MaxContext", ringed, nil, func(l *plan.Lowered) { l.Plan.MaxContext = 2048 }},
@@ -186,13 +208,13 @@ func TestEachResolvedPlanSettingMovesAPrice(t *testing.T) {
 		{"DecodeContextPlan.Combine", dcp, nil, func(l *plan.Lowered) { l.Plan.DecodeContext.Combine = plan.CombineAllToAll }},
 		{"DecodeContextPlan.Interleave", dcp, nil, func(l *plan.Lowered) { l.Plan.DecodeContext.Interleave = 16 }},
 		{"PoolPlan.Microbatch", v41, nil, func(l *plan.Lowered) { l.Plan.Microbatch = true }},
-		{"EngramPlacement.Host", v41, nil, func(l *plan.Lowered) { l.Plan.Engram.Host = true }},
+		{"EngramPlacement.Host", v41, nil, func(l *plan.Lowered) { l.Plan.Engram.Host = false }},
 		{"EngramPlacement.Shards", v41ep, func(l *plan.Lowered) { l.Plan.Engram.Host = true },
 			func(l *plan.Lowered) { l.Plan.Engram.Shards = 4 }},
 		{"GraphPolicy.Decode", dense, nil, func(l *plan.Lowered) { l.Plan.Graphs.Decode = plan.LaunchPiecewise }},
 		{"GraphPolicy.Other", dense, nil, func(l *plan.Lowered) { l.Plan.Graphs.Other = plan.LaunchGraph }},
-		{"GraphPolicy.Ceiling", dense, nil, func(l *plan.Lowered) { l.Plan.Graphs.Ceiling = 64 }},
-		{"GraphPolicy.Buckets", v41, func(l *plan.Lowered) { l.Plan.Drafts.Chain = 5 },
+		{"GraphPolicy.Ceiling", dense, nil, func(l *plan.Lowered) { l.Plan.Graphs.Ceiling = 32 }},
+		{"GraphPolicy.Buckets", v41, func(l *plan.Lowered) { l.Plan.Drafts.Chain = 5; wideCapture(l) },
 			func(l *plan.Lowered) { l.Plan.Graphs.Buckets = []int{1, 512} }},
 		{"DraftPolicy.Chain", latent, func(l *plan.Lowered) { l.Plan.Drafts.Chain = 1 },
 			func(l *plan.Lowered) { l.Plan.Drafts.Chain = 3 }},
@@ -200,7 +222,7 @@ func TestEachResolvedPlanSettingMovesAPrice(t *testing.T) {
 			func(l *plan.Lowered) { l.Plan.Drafts.RetainedTokens = 4096 }},
 		{"DraftPolicy.OwnWorkspace", v41, func(l *plan.Lowered) { l.Plan.Drafts.Chain = 5 },
 			func(l *plan.Lowered) { l.Plan.Drafts.OwnWorkspace = true }},
-		{"PoolPlan.InFlight", ringed, func(l *plan.Lowered) { l.Plan.MaxContext = 131072 },
+		{"PoolPlan.InFlight", ringed, func(l *plan.Lowered) { l.Plan.MaxContext = 131072; l.Plan.InFlight = 1 },
 			func(l *plan.Lowered) { l.Plan.InFlight = 2 }},
 	} {
 		t.Run(c.field, func(t *testing.T) {
@@ -323,19 +345,6 @@ func TestNewRefusesAPlanItCannotPriceByName(t *testing.T) {
 		l.Plan.Graphs = plan.GraphPolicy{Decode: plan.LaunchEager, Other: plan.LaunchEager}
 	})); err != nil {
 		t.Errorf("an eager plan with no ceiling is refused: %v", err)
-	}
-}
-
-// A caller hands the kernel the plan or, until it is deleted, the carrier: never both.
-func TestNewRefusesBothThePlanAndTheCarrier(t *testing.T) {
-	d, err := load.Embedded()
-	if err != nil {
-		t.Fatal(err)
-	}
-	in := planCase(t, d, "llama-3.1-70b-instruct", "h100", 1, "tp: 4, pp: 1, dp: 1", nil)
-	in.Engine = &enginesettings.Settings{}
-	if _, err := New(in); err == nil || !strings.Contains(err.Error(), "Inputs.Engine") {
-		t.Errorf("err %v, want a refusal naming both inputs", err)
 	}
 }
 

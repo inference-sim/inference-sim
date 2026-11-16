@@ -494,7 +494,7 @@ func (k *Kernel) statedReadBytes(caches []price.PlannedCache, topk, window, ctx 
 			}
 			if k.layout.DCP > 1 {
 				entries = int(dcpLocalTokens([]int{entries}, k.layout.DCP,
-					k.decodeContext.Interleave))
+					int(k.decodeContext.Interleave)))
 			}
 			total += float64(entries) * float64(c.EntryBytes)
 		}

@@ -46,8 +46,9 @@ registry files nothing loaded.
 declares; `DraftModel`, which names the drafter a pool's engine block names; and `Lower`, the
 engine's lowering of a pool, which resolves every engine setting into the plan the kernel prices
 (`plan.Lowered`). The kernel applies no default to that plan and reads no engine setting.
-`EngineSettings`, the typed engine-settings carrier it read before, is transitional and leaves
-with blis-substrate#58. `RulesKind` names the
+Two engine rules still sit in the layout geometry, the MoE group's width and whether an MoE
+layer dispatches; moving them into the plan is blis-substrate#172.
+`RulesKind` names the
 engine kind those rules are for; `Open` refuses a scenario whose `engine` block names another
 kind, and an empty `RulesKind` means `vllm`. For vLLM all of these come from
 blis-vllm, which is why the examples on these pages live there.

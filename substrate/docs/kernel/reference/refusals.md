@@ -35,43 +35,19 @@ change. The engine's reasons cite the vLLM v0.31.0 source in the code beside the
 
 ## The engine would not start it
 
-These are layouts vLLM v0.31.0 refuses at startup.
+These are layouts vLLM v0.31.0 refuses at startup that depend on the model graph or the parallel
+layout alone. The refusals that depend on an engine setting (a cache data type, a block size, a
+decode-context combine or interleave, a backend choice) are the engine's lowering's, made before
+the kernel is built; for vLLM they are blis-vllm's `compat/lowering`.
 
 **Context parallelism**
 
 - Prefill-context parallelism on a model with any layer whose attention is not latent, or
   with a recurrent layer.
 - Prefill- and decode-context parallelism together on anything but DSA sparse attention.
-- The `a2a` decode-context combine together with prefill-context parallelism.
-- A decode-context combine backend the engine release does not accept.
-- With decode-context parallelism on, a stated `cp_kv_cache_interleave_size` larger than the
-  block size or not dividing it, unless a NIXL connector is configured. With a
-  `MultiConnector`, whose child connectors a deployment cannot name, an interleave that does
-  not fit, or one left unstated, is refused because the outcome cannot be known.
 
-**Sparse attention (DeepSeek sparse attention, DSA: DeepSeek-V3.2, GLM-5)**
+**Architecture**
 
-- A stated block size that is not a multiple of 64.
-- A chip older than Hopper, where no sparse-attention backend runs.
-- A cache data type no backend on the chip serves under the requested parallelism.
-- Decode-context parallelism on FlashMLA's sparse backend with a 16-bit cache, with the
-  `a2a` combine, with local and gathered head counts that pad to different kernel sizes, or,
-  without prefill-context parallelism, with 32 or more attention heads per rank; or prefill-
-  and decode-context parallelism there on a cache other than `fp8_ds_mla`.
-
-**Cache data types**
-
-- A cache data type vLLM does not accept, or a recurrent-state data type it does not accept.
-- `fp8_inc`, which no CUDA attention backend serves.
-- The packed `fp8_ds_mla` and `nvfp4_ds_mla` layouts on a model whose target stack holds any
-  attention that is not sparse.
-- Plain `nvfp4` on a model with latent attention.
-
-**Block size and architecture**
-
-- A block size a DeepSeek-V4-family model's sparse backends do not accept: DeepSeek-V4.1's
-  run 64-token kernel blocks on SM90 and 128-token ones on SM100, and DeepSeek-V4's run
-  256-token blocks on every part.
 - A model graph that states facts by GPU generation, on a chip whose compute capability the
   catalog does not state or whose generation the graph does not describe.
 
@@ -139,14 +115,11 @@ kernel reads no setting and applies no engine default.
   whose graph states its caches, whose sizes are per layer kind over the whole stack rather
   than per stage. A drafter that reads an auxiliary hidden state of a layer outside the
   target's stack.
-- `dcp_q_replicate` where it would take effect: decode-context parallelism without
-  prefill-context parallelism, on a latent-attention model. It trades a collective for a
-  replicated projection the kernel cannot identify in the graph, so pricing only the saving
-  would make it look free.
-- A cache data type vLLM accepts whose page layout the kernel does not size: the `turboquant`
-  and per-token-head formats.
-- A quantization, CUDA graph mode or decode-context combine backend the kernel does not
-  price.
+- A plan whose resolved settings no engine can mean (a negative count, a memory share outside
+  (0, 1], a word outside its list), or that leaves out a value the kernel needs and applies no
+  default to: the request and token limits per step, the page size, and the KV and recurrent
+  element widths (SUB-6).
+- A pair of graph launches the registry states no capture memory for.
 - A deployment that speculates through an autoregressive drafter, a named EAGLE3 head or the
   graph's own MTP, when the pool's plan does not state which rows the drafter's first pass
   processes or for which requests its head and later passes run (`draft_passes_unstated`,
@@ -156,21 +129,12 @@ kernel reads no setting and applies no engine default.
 
 ## The weight layout the engine says it serves
 
-`Settings.ServedWeights` states, class by class (linear, linear scale, routed experts, router,
+`plan.Lowered.ServedLayout` states, class by class (linear, linear scale, routed experts, router,
 head, embedding), the dtype the engine serves the checkpoint in. The kernel proves the target
 graph stores exactly that and refuses a difference as `served_weights_mismatch`, naming each class
 with both values. A class the graph does not contain is empty, so a graph with its router, head or
 embedding removed cannot match, and a class at another dtype cannot either. The engine model
 resolves its own quantization setting and passes the result.
-
-## A quantization spelling the kernel does not price
-
-The kernel prices the quantization spellings `servedDType` lists (`fp8`, `ptpc_fp8`,
-`fbgemm_fp8`, `modelopt`, `modelopt_fp4`, `nvfp4`, `mxfp4` and the weight-only integer names) and
-refuses any other as "not one this kernel prices". It recognises no engine's own resolution of a
-quantization setting: vLLM's `mxfp8`, `modelopt_mxfp8`, `gpt_oss_mxfp4` and `modelopt_mixed` name
-a method the checkpoint declares, which the engine model reads, so it leaves `Quantization` empty
-for a checkpoint served as stored and states the layout in `ServedWeights` above.
 
 ## A coefficient is missing
 
@@ -191,7 +155,6 @@ Optional coefficients are not refused when missing; see
 
 The checks run in `New` and the functions it calls in
 [`new.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/new.go),
-[`sparse_mla.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/sparse_mla.go)
+[`lowered.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/lowered.go)
 and [`internal/resolve`](https://github.com/inference-sim/blis-substrate/tree/main/kernel/internal/resolve),
-and the tests in `refusals_test.go`, `sparse_mla_test.go` and `dcp_knobs_test.go` check most of
-them.
+and its tests check most of them.

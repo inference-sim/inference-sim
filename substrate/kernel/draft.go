@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
-	"strings"
+
 	"time"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
@@ -160,16 +160,6 @@ func (k *Kernel) liftDraftPasses(d *price.DraftPlan, drafter string) error {
 	k.draftFirstPass = k.statedFirstPassRows == plan.FirstPassScheduled
 	k.draftAllRequests = k.statedPassRequests == plan.PassRequestsAll
 	return nil
-}
-
-// specMethod is a speculative method's name as vLLM v0.31.0 runs it: every model-specific
-// MTP name (deepseek_mtp, nemotron_h_mtp, ... -- MTPModelTypes) is replaced with mtp
-// (vllm/config/speculative.py:39-67, 1135-1139).
-func specMethod(m string) string {
-	if strings.HasSuffix(m, "_mtp") {
-		return "mtp"
-	}
-	return m
 }
 
 // priceDraft prices one step's draft work, adding each resource's time to per, and returns

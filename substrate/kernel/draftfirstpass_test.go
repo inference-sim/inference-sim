@@ -6,7 +6,6 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/kernel/internal/price"
 	"github.com/inference-sim/blis-substrate/load"
 )
@@ -30,7 +29,7 @@ func passesOf(in Inputs, rows plan.FirstPassRows, reqs plan.PassRequests) Inputs
 // scheduled token and that the head and later passes run for every request (vLLM v0.32.0).
 func eagle3Kernel(t *testing.T, d *load.Data, target, drafter, chip string, n int) *Kernel {
 	t.Helper()
-	k := mustKernel(t, withNamedDrafter(t, d, target, drafter, chip, "eagle3", n))
+	k := mustKernel(t, withNamedDrafter(t, d, target, drafter, chip, n))
 	if !k.draftFirstPass || !k.draftAllRequests {
 		t.Fatalf("%s with %s: first pass over the scheduled tokens %v, all requests %v", target, drafter, k.draftFirstPass, k.draftAllRequests)
 	}
@@ -176,9 +175,7 @@ func TestAnyAutoregressiveDrafterIsChargedByTheStatementNotTheMethod(t *testing.
 	}
 	in := quantCase(t, d, "minimax-m3-mxfp8", "b200")
 	mtp := func(rows plan.FirstPassRows, reqs plan.PassRequests) *Kernel {
-		return mustKernel(t, passesOf(withEngine(in, func(e *enginesettings.Settings) {
-			e.Speculative = &enginesettings.Speculative{Method: "mtp", NumSpecTokens: 3}
-		}), rows, reqs))
+		return mustKernel(t, passesOf(drafting(in, 3), rows, reqs))
 	}
 	verify := make([]kernel.ReqShape, 16)
 	for i := range verify {
@@ -196,13 +193,6 @@ func TestAnyAutoregressiveDrafterIsChargedByTheStatementNotTheMethod(t *testing.
 	if k := oneRow; k.draftFirstPass {
 		t.Error("per_request charged a first pass over the scheduled tokens")
 	}
-	// The kernel reads no method: a different name for the drafter, the same statement, the same price.
-	other := mustKernel(t, passesOf(withEngine(in, func(e *enginesettings.Settings) {
-		e.Speculative = &enginesettings.Speculative{Method: "mtp", NumSpecTokens: 3}
-	}), plan.FirstPassScheduled, plan.PassRequestsAll))
-	if pricesOf(other) != pricesOf(scheduled) {
-		t.Error("two kernels with the same statement price differently")
-	}
 }
 
 // vLLM's propose runs the head and the later passes for every request, a request still in the
@@ -214,7 +204,7 @@ func TestTheHeadAndLaterPassesAreChargedForRequestsStillInTheirPrompt(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	in := withNamedDrafter(t, d, "minimax-m3-mxfp8", "minimax-m3-eagle3", "b200", "eagle3", 3)
+	in := withNamedDrafter(t, d, "minimax-m3-mxfp8", "minimax-m3-eagle3", "b200", 3)
 	all := mustKernel(t, passesOf(in, plan.FirstPassScheduled, plan.PassRequestsAll))
 	sampling := mustKernel(t, passesOf(in, plan.FirstPassScheduled, plan.PassRequestsSampling))
 	unfinished := func(n int) kernel.ReqShape { return kernel.ReqShape{Scheduled: n, Computed: 0, PromptLen: 4 * n} }
