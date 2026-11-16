@@ -72,9 +72,10 @@ func TestHarnessCopiesAreCurrent(t *testing.T) {
 	}
 }
 
-// TestUpstreamIsAnExactPin: the release this build models is named by version, tag and full
-// commit, so CI can check the checkout it compares against.
-func TestUpstreamIsAnExactPin(t *testing.T) {
+// TestUpstreamRecordIsWellFormed: the release this build models is named by a release version, a tag
+// and a full commit id. It checks the record's form only; that the checkout CI compares against is
+// that commit is the rev-parse step of ci.yml.
+func TestUpstreamRecordIsWellFormed(t *testing.T) {
 	for _, p := range Upstream.Problems() {
 		t.Error(p)
 	}
