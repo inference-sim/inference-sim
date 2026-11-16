@@ -284,6 +284,7 @@ var documented = map[string]struct {
 	"model.Graph":                 {typ: reflect.TypeOf(model.Graph{})},
 	"model.Licence":               {typ: reflect.TypeOf(model.Licence{})},
 	"model.ConfigPin":             {typ: reflect.TypeOf(model.ConfigPin{})},
+	"model.HeaderPin":             {typ: reflect.TypeOf(model.HeaderPin{})},
 	"model.Derivation":            {typ: reflect.TypeOf(model.Derivation{})},
 	"model.GlobalShape":           {typ: reflect.TypeOf(model.GlobalShape{})},
 	"model.LayerKind":             {typ: reflect.TypeOf(model.LayerKind{})},
