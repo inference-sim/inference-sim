@@ -467,7 +467,7 @@ func main() {
 	fmt.Println("request 0 have completed (its prompt cached, the engine idle); a point with caching off")
 	fmt.Println("is scored on the main phase from an empty engine, which is then the same state. The")
 	fmt.Println("cold run of a prefix-caching point is reported below as information only. Exact")
-	fmt.Println("two-phase replay in the trace format: blis-schemas#56, inference-sim#1926.")
+	fmt.Println("two-phase replay in the trace format: inference-sim/blis-substrate#156, inference-sim#1926.")
 	fmt.Println("Shape error divides each side by its own value at the sweep's lowest concurrency and")
 	fmt.Println("excludes that anchor; mape compares absolute latency at every point.")
 	fmt.Printf("\n%d sweeps, %d points for TPOT shape, over all tiers\n", sweeps, points)

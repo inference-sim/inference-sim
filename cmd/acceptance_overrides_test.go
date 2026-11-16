@@ -11,7 +11,7 @@ import (
 )
 
 // The kernel sizes an adaptive verify budget from the run's acceptance
-// (blis-latency-kernel#89), so the command line's and the workload's acceptance layers reach it
+// (https://github.com/inference-sim/blis-latency-kernel/issues/89), so the command line's and the workload's acceptance layers reach it
 // (setAcceptanceOverrides), as they reach the simulator's own resolution
 // (build.ResolveAcceptance): the CLI value, the workload's terms with the CLI's category and
 // thinking mode applied, and the fallback category.

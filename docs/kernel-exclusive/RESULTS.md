@@ -119,7 +119,7 @@ MEASURED-OR-RESOLVED.
   Llama-3.1-70B points, whose runs captured no log and so take vLLM's default of prefix caching
   on, plus the 5 minimax points above), the scored figure lies a median 1.998% (at most 6.861%)
   from the cold one on TTFT, and a median 0.0092% (at most 0.1508%) on TPOT. A drain-gated
-  two-phase trace is blis-schemas#56 / inference-sim#1926.
+  two-phase trace is inference-sim/blis-substrate#156 / inference-sim#1926.
 - **Sent prompt lengths.** The client's prompt construction was reproduced at the run-date and
   today's revision of each tokenizer (`testdata/inferencex-workloads/prompt-lengths.json`: 360
   points, 7 pinned revisions). It gives `|sent - target|` = 0 and no server-added token at every
