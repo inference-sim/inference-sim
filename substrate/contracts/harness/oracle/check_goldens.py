@@ -42,8 +42,55 @@ import re
 import subprocess
 import sys
 
-CONFIG_KEYS = {"commit_field", "ci_platform", "golden_dirs", "golden_files", "harness_files",
-               "decision_prefixes", "upstream_names"}
+# The keys of oracle/harness.json and what each must hold. Every key is required and no other is
+# allowed. A string must not be empty, and a list must hold non-empty strings. golden_files may be
+# an empty list (an engine with no golden file outside its golden directories); every other list
+# must name something, because a check given nothing to compare passes on nothing (X16).
+CONFIG_SCHEMA = {
+    "commit_field": "string",
+    "ci_platform": "string",
+    "golden_dirs": "list",
+    "golden_files": "list, may be empty",
+    "harness_files": "list",
+    "decision_prefixes": "list",
+    "upstream_names": "list",
+}
+
+
+def config_problems(cfg) -> list[str]:
+    """What is wrong with a parsed oracle/harness.json, each naming its key."""
+    if not isinstance(cfg, dict):
+        return [f"the configuration is a {type(cfg).__name__}, not an object"]
+    bad = [f"{k}: missing" for k in sorted(set(CONFIG_SCHEMA) - set(cfg))]
+    bad += [f"{k}: not a key of the configuration" for k in sorted(set(cfg) - set(CONFIG_SCHEMA))]
+    for key, kind in sorted(CONFIG_SCHEMA.items()):
+        if key not in cfg:
+            continue
+        v = cfg[key]
+        if kind == "string":
+            if not isinstance(v, str) or not v.strip():
+                bad.append(f"{key}: must be a non-empty string, not {v!r}")
+            continue
+        if not isinstance(v, list) or not all(isinstance(x, str) and x.strip() for x in v):
+            bad.append(f"{key}: must be a list of non-empty strings, not {v!r}")
+        elif not v and kind == "list":
+            bad.append(f"{key}: is empty; the check it configures would pass on nothing")
+    if isinstance(cfg.get("golden_dirs"), list):
+        slashless = [d for d in cfg["golden_dirs"] if isinstance(d, str) and not d.endswith("/")]
+        if slashless:
+            bad.append(f"golden_dirs: each entry must end with '/': {slashless}")
+    return bad
+
+
+def read_config(path: str) -> dict:
+    """Read oracle/harness.json, or exit naming every key that is wrong."""
+    with open(path) as f:
+        cfg = json.load(f)
+    bad = config_problems(cfg)
+    if bad:
+        raise SystemExit(f"{path}: " + "; ".join(bad))
+    return cfg
+
 
 # Set by main from oracle/harness.json.
 GOLDEN_DIRS: tuple = ()
@@ -53,16 +100,8 @@ CI_PLATFORM = ""
 
 
 def load_config(path: str) -> None:
-    """Read oracle/harness.json: every key required, no other key allowed."""
     global GOLDEN_DIRS, GOLDEN_FILES, COMMIT_FIELD, CI_PLATFORM
-    with open(path) as f:
-        cfg = json.load(f)
-    missing, extra = CONFIG_KEYS - set(cfg), set(cfg) - CONFIG_KEYS
-    if missing or extra:
-        raise SystemExit(f"{path}: missing keys {sorted(missing)}, unknown keys {sorted(extra)}")
-    bad = [d for d in cfg["golden_dirs"] if not d.endswith("/")]
-    if bad:
-        raise SystemExit(f"{path}: golden_dirs entries end with '/': {bad}")
+    cfg = read_config(path)
     GOLDEN_DIRS, GOLDEN_FILES = tuple(cfg["golden_dirs"]), tuple(cfg["golden_files"])
     COMMIT_FIELD, CI_PLATFORM = cfg["commit_field"], cfg["ci_platform"]
 
@@ -132,6 +171,8 @@ def unreachable_commits(head: str) -> list[str]:
         prov = json.loads(git("show", f"{head}:{path}")).get("provenance", {})
         commit = prov.get(COMMIT_FIELD)
         if commit is None:
+            out.append(f"{path}: its provenance records no {COMMIT_FIELD} (commit_field), so no one can tell "
+                       "which commit produced it")
             continue
         well_formed = bool(re.fullmatch(r"[0-9a-f]{40}", commit))
         if commit not in reachable:
@@ -221,6 +262,11 @@ def main(base: str, head: str) -> int:
     for d in unguarded(head):
         print(f"{d}: a golden directory oracle/check_goldens.py does not guard; add it to golden_dirs in oracle/harness.json")
         bad = 1
+    tracked = set(git("ls-tree", "-r", "--name-only", head).splitlines())
+    for f in GOLDEN_FILES:
+        if f not in tracked:
+            print(f"{f}: a golden file oracle/harness.json names (golden_files), which {head} does not hold")
+            bad = 1
     for problem in unreachable_commits(head):
         print(problem)
         bad = 1

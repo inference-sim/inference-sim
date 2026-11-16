@@ -8,7 +8,8 @@ nothing resolved differently.
 CI installs the lock from oracle/requirements-hashed.txt, which the repository's oracle/lock.sh
 writes from it with the sha256 of every archive, under pip install --require-hashes (X21).
 --hashed checks that file names exactly the packages and versions the lock does, so the hashed
-install and the lock a trace records cannot drift apart.
+install and the lock a trace records cannot drift apart. Both comparisons normalise project names
+as PEP 503 does, and a lock that pins nothing fails (X16).
 
 Usage: python3 -I oracle/check_lock.py <oracle/requirements.lock> <pip freeze output>
        python3 -I oracle/check_lock.py --hashed <oracle/requirements.lock> <oracle/requirements-hashed.txt>
@@ -41,8 +42,17 @@ def hashed_pins(path: str) -> set[str]:
     return out
 
 
-def main_hashed(lock: str, hashed: str) -> int:
+def lock_pins(lock: str) -> set[str]:
+    """The lock's pins, canonicalised; a lock with none fails, since every comparison with it
+    would pass on nothing."""
     want = {canonical(p) for p in pins(lock)}
+    if not want:
+        raise SystemExit(f"{lock}: pins no package")
+    return want
+
+
+def main_hashed(lock: str, hashed: str) -> int:
+    want = lock_pins(lock)
     got = {canonical(p) for p in hashed_pins(hashed)}
     for p in sorted(want - got):
         print(f"{hashed}: {p} is in the lock but not hashed")
@@ -52,7 +62,7 @@ def main_hashed(lock: str, hashed: str) -> int:
 
 
 def main(lock: str, frozen: str) -> int:
-    want, got = pins(lock), pins(frozen)
+    want, got = lock_pins(lock), {canonical(p) for p in pins(frozen)}
     for p in sorted(want - got):
         print(f"{lock}: {p} is not installed")
     for p in sorted(got - want):

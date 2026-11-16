@@ -73,6 +73,7 @@ var rules = ProvenanceRules{
 	Licence:  []string{"// SPDX-License-Identifier: Apache-2.0", "// SPDX-FileCopyrightText: Copyright the upstream authors"},
 	Moved:    regexp.MustCompile(`^// Moved from other/\S+ at [0-9a-f]{40}`),
 	Original: "// Original to blis-engine.",
+	Release:  Upstream{Version: "1.2.3", Tag: "v1.2.3", Commit: strings.Repeat("0a", 20)},
 }
 
 func TestEveryWayOfStatingProvenancePasses(t *testing.T) {
@@ -105,6 +106,10 @@ func TestAFileThatStatesNoProvenanceOrDropsTheLicenceFails(t *testing.T) {
 			"\n// Derived from upstream/sched.py at Upstream v1.2.3 (" + commit + ").\npackage x\n",
 		"derived, short commit": rules.Licence[0] + "\n" + rules.Licence[1] +
 			"\n// Derived from upstream/sched.py at Upstream v1.2.3 (0a0a0a0).\npackage x\n",
+		"derived from another release": rules.Licence[0] + "\n" + rules.Licence[1] +
+			"\n// Derived from upstream/sched.py at Upstream v1.2.2 (" + strings.Repeat("0b", 20) + ").\npackage x\n",
+		"another tag, this commit": rules.Licence[0] + "\n" + rules.Licence[1] +
+			"\n// Derived from upstream/sched.py at Upstream v1.2.34 (" + commit + ").\npackage x\n",
 	} {
 		root := t.TempDir()
 		write(t, root, "f.go", src)
@@ -122,6 +127,11 @@ func TestIncompleteProvenanceRulesAreRefused(t *testing.T) {
 	if _, err := ProvenanceProblems(t.TempDir(), nil, ProvenanceRules{Original: "// Original."}); err == nil {
 		t.Error("rules with no Derived pattern or licence were accepted; every file would be judged on Original alone")
 	}
+	noRelease := rules
+	noRelease.Release = Upstream{}
+	if _, err := ProvenanceProblems(t.TempDir(), nil, noRelease); err == nil {
+		t.Error("rules with no Release were accepted; a header naming any release would pass")
+	}
 }
 
 func TestClockReadsAndGoroutinesAreFound(t *testing.T) {
@@ -130,17 +140,25 @@ func TestClockReadsAndGoroutinesAreFound(t *testing.T) {
 	write(t, root, "b.go", "package x\nimport tm \"time\"\nfunc g() { tm.Sleep(1); <-tm.After(1) }\n")
 	write(t, root, "c.go", "package x\nimport \"time\"\nfunc h(d time.Duration) time.Duration { return d * time.Millisecond }\n")
 	write(t, root, "d.go", "package x\ntype clock struct{}\nfunc (clock) Now() int { return 0 }\nvar time clock\nfunc k() int { return time.Now() }\n")
-	bad, err := ClockAndGoroutineUses(root, []string{"a.go", "b.go", "c.go", "d.go"})
+	write(t, root, "e.go", "package x\nimport (\n\t\"time\"\n\ttm \"time\"\n)\nfunc m() { _ = time.Now(); tm.Sleep(1) }\n")
+	write(t, root, "f.go", "package x\nimport . \"time\"\nfunc n() { _ = Now() }\n")
+	write(t, root, "g.go", "package x\nimport \"sync\"\nfunc o() { var wg sync.WaitGroup; wg.Go(func() {}); wg.Wait() }\n")
+	bad, err := ClockAndGoroutineUses(root, []string{"a.go", "b.go", "c.go", "d.go", "e.go", "f.go", "g.go"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Each finding names the file and line, and what was found there; c.go uses only durations, and
-	// d.go's "time" is its own variable, not the package.
+	// d.go's "time" is its own variable, not the package. e.go imports time under two names, f.go
+	// dot-imports it, and g.go starts a goroutine with sync.WaitGroup.Go.
 	want := [][2]string{
 		{"a.go:3:", "starts a goroutine"},
 		{"a.go:3:", "calls time.Now"},
 		{"b.go:3:", "calls time.Sleep"},
 		{"b.go:3:", "calls time.After"},
+		{"e.go:6:", "calls time.Now"},
+		{"e.go:6:", "calls time.Sleep"},
+		{"f.go:2:", "dot-imports package time"},
+		{"g.go:3:", "calls a Go method"},
 	}
 	if len(bad) != len(want) {
 		t.Fatalf("ClockAndGoroutineUses = %q, want %d findings", bad, len(want))

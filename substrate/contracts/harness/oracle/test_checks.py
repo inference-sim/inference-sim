@@ -44,9 +44,9 @@ def git_bytes(cwd, *args):
 
 def write_config(directory, **over):
     """A scratch oracle/harness.json in directory; its path."""
-    cfg = {"commit_field": "engine_commit", "ci_platform": "linux-x86_64", "golden_dirs": [],
-           "golden_files": [], "harness_files": ["run_*.py"], "decision_prefixes": ["upstream.sched."],
-           "upstream_names": []}
+    cfg = {"commit_field": "engine_commit", "ci_platform": "linux-x86_64",
+           "golden_dirs": ["core/x/testdata/golden/"], "golden_files": [], "harness_files": ["run_*.py"],
+           "decision_prefixes": ["upstream.sched."], "upstream_names": ["event_loop_normal"]}
     cfg.update(over)
     path = os.path.join(directory, "harness.json")
     with open(path, "w") as f:
@@ -66,9 +66,15 @@ class CheckGoldens(unittest.TestCase):
         self.config = write_config(tempfile.mkdtemp(), golden_dirs=[d + "/" for d in self.DIRS],
                                    golden_files=["core/kv/testdata/block_hashes.json"])
         git(self.repo, "init", "-q")
+        # Every golden written below names this commit, which is in every later head's history,
+        # unless a test names another (write()).
+        git(self.repo, "commit", "-q", "--allow-empty", "-m", "root")
+        self.root = git(self.repo, "rev-parse", "HEAD")
         for d in self.DIRS:
             os.makedirs(os.path.join(self.repo, d))
             self.write(f"{d}/g.json", {"provenance": {"v": 1}, "steps": [{"a": 1}], "finished": {}})
+        os.makedirs(os.path.join(self.repo, "core/kv/testdata"))
+        self.write("core/kv/testdata/block_hashes.json", {"provenance": {"v": 1}, "none_hash": "00", "cases": []})
         os.makedirs(os.path.join(self.repo, "oracle"))
         with open(os.path.join(self.repo, "oracle/requirements.lock"), "w") as f:
             f.write("pkg==1\n")
@@ -91,19 +97,49 @@ class CheckGoldens(unittest.TestCase):
         p.update(kw)
         return p
 
-    def write(self, rel, obj):
+    def write(self, rel, obj, raw=False):
+        """Write a golden; unless raw, its provenance names self.root when it names no commit."""
+        if not raw and isinstance(obj, dict):
+            obj = {**obj, "provenance": {"engine_commit": self.root, **obj.get("provenance", {})}}
         with open(os.path.join(self.repo, rel), "w") as f:
             json.dump(obj, f)
 
     def check(self):
         return self.goldens(self.base, "HEAD")
 
+    def test_a_golden_that_records_no_commit_fails(self):
+        for name, doc in [("no field", {"provenance": {"v": 1}, "steps": []}), ("no provenance", {"steps": []})]:
+            with self.subTest(name):
+                git(self.repo, "reset", "-q", "--hard", self.base)
+                self.write("core/sched/testdata/golden/n.json", doc, raw=True)
+                self.commit("a golden that names no commit")
+                r = self.check()
+                self.assertEqual(r.returncode, 1, r.stdout)
+                self.assertIn("records no engine_commit (commit_field)", r.stdout)
+
+    def test_a_named_golden_file_head_lacks_fails(self):
+        os.remove(os.path.join(self.repo, "core/kv/testdata/block_hashes.json"))
+        self.commit("drop the golden file")
+        r = self.check()
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("core/kv/testdata/block_hashes.json: a golden file oracle/harness.json names", r.stdout)
+
+    def test_a_configuration_with_a_missing_unknown_empty_or_mistyped_key_fails(self):
+        with open(self.config) as f:
+            cfg = json.load(f)
+        for name, broken, key in config_breakages(cfg):
+            with self.subTest(name):
+                with open(self.config, "w") as f:
+                    json.dump(broken, f)
+                r = self.check()
+                self.assertNotEqual(r.returncode, 0, r.stdout)
+                self.assertIn(key, r.stderr)
+
     def commit(self, msg):
         git(self.repo, "add", "-A")
         git(self.repo, "commit", "-qm", msg)
 
     def test_the_block_hash_fixture_is_guarded(self):
-        os.makedirs(os.path.join(self.repo, "core/kv/testdata"), exist_ok=True)
         a, b = {"name": "a", "hashes": ["aa"]}, {"name": "b", "hashes": ["bb"]}
         self.write("core/kv/testdata/block_hashes.json", {"provenance": {"v": 1}, "none_hash": "00", "cases": [a]})
         self.commit("add the fixture")
@@ -416,6 +452,26 @@ class CheckGoldens(unittest.TestCase):
         self.assertIn("core/newtier/testdata/golden/", r.stdout)
 
 
+def config_breakages(cfg):
+    """Each way a configuration can be wrong, with the key the refusal must name: every key
+    missing, an unknown key, every list key empty (golden_files may be) or holding a non-string,
+    every key the wrong type, an empty string, and a golden directory without its slash."""
+    out = []
+    for k in sorted(cfg):
+        out.append((f"{k} missing", {x: v for x, v in cfg.items() if x != k}, k))
+        if isinstance(cfg[k], list):
+            if k != "golden_files":
+                out.append((f"{k} empty", {**cfg, k: []}, k))
+            out.append((f"{k} holds a number", {**cfg, k: [1]}, k))
+            out.append((f"{k} a string", {**cfg, k: "x"}, k))
+        else:
+            out.append((f"{k} empty", {**cfg, k: ""}, k))
+            out.append((f"{k} a list", {**cfg, k: [cfg[k]]}, k))
+    out.append(("an unknown key", {**cfg, "golden_dir": []}, "golden_dir"))
+    out.append(("a golden dir without its slash", {**cfg, "golden_dirs": ["core/x/testdata/golden"]}, "golden_dirs"))
+    return out
+
+
 def digest(mocks):
     canonical = json.dumps(mocks, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(canonical.encode()).hexdigest()[:12]
@@ -487,7 +543,7 @@ class CheckMocks(unittest.TestCase):
             "import upstream.cache as c\ndel c.hash_page",
         ]:
             with self.subTest(code=code):
-                self.setUp()
+                self.files = {"run_x.py": RUNNER}
                 self.plant(code)
                 self.assertFails(self.check(), "not listed in mocks.json")
 
@@ -585,17 +641,39 @@ class CheckMocks(unittest.TestCase):
         self.mocks.append(self.transcription(kind="environment", symbol="upstream.x.event_loop_normal"))
         self.assertFails(self.check(), "only a transcription has transcribed_in")
 
-    def test_a_configuration_with_a_missing_or_unknown_key_fails(self):
+    def test_a_configuration_with_a_missing_unknown_empty_or_mistyped_key_fails(self):
         with open(self.config) as f:
             cfg = json.load(f)
-        for name, broken in [("missing", {k: v for k, v in cfg.items() if k != "decision_prefixes"}),
-                             ("unknown", {**cfg, "golden_dir": []})]:
+        for name, broken, key in config_breakages(cfg):
             with self.subTest(name):
                 with open(self.config, "w") as f:
                     json.dump(broken, f)
                 r = self.check()
-                self.assertNotEqual(r.returncode, 0)
-                self.assertIn("keys", r.stderr)
+                self.assertNotEqual(r.returncode, 0, r.stdout)
+                self.assertIn(key, r.stderr)
+
+    # --- a transcription installs its declared copy, and a declaration names a real copy ---
+
+    def test_a_transcription_site_must_install_its_declared_copy(self):
+        self.plant("import upstream.sched.scheduler as s\n"
+                   "def event_loop_normal(x):\n    pass\n"
+                   "def run_one2(x):\n    pass\n"
+                   "s.Scheduler.schedule = run_one2")
+        entry = self.transcription(symbol="upstream.sched.scheduler.Scheduler.schedule",
+                                   sites=["run_x.py:s.Scheduler.schedule"])
+        self.mocks.append(entry)
+        self.assertFails(self.check(), "binds run_one2, not a function its transcribed_in lists")
+        self.files["run_x.py"] = self.files["run_x.py"].replace("s.Scheduler.schedule = run_one2",
+                                                                "s.Scheduler.schedule = event_loop_normal")
+        r = self.check()
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_a_declaration_with_no_copy_behind_it_fails(self):
+        self.plant("def drive(x):\n    pass")
+        self.mocks.append(self.transcription(transcribed_in=["run_x.py:drive"]))
+        self.assertFails(self.check(), "run_x.py:drive: declared in transcribed_in, but check_mocks finds no copy")
+        self.mocks[-1] = self.transcription(transcribed_in=["run_x.py"])
+        self.assertFails(self.check(), "run_x.py: declared in transcribed_in, but check_mocks finds no copy")
 
 
 class CheckLockHashed(unittest.TestCase):
@@ -632,6 +710,26 @@ class CheckLockHashed(unittest.TestCase):
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn("torch==9.9.9+cpu is in the lock but not hashed", r.stdout)
 
+
+    def test_an_empty_lock_fails(self):
+        for args in (["--hashed"], []):
+            with self.subTest(args=args):
+                for name in ("lock", "other"):
+                    with open(os.path.join(self.dir, name), "w") as f:
+                        f.write("# only comments\n")
+                r = run([sys.executable, "-I", CHECK_LOCK, *args, os.path.join(self.dir, "lock"),
+                         os.path.join(self.dir, "other")], self.dir)
+                self.assertNotEqual(r.returncode, 0, r.stdout)
+                self.assertIn("pins no package", r.stderr)
+
+    def test_the_installed_set_is_compared_by_canonical_name(self):
+        with open(os.path.join(self.dir, "lock"), "w") as f:
+            f.write("docstring_parser==0.18.0\n")
+        with open(os.path.join(self.dir, "frozen"), "w") as f:
+            f.write("docstring-parser==0.18.0\n")
+        r = run([sys.executable, "-I", CHECK_LOCK, os.path.join(self.dir, "lock"), os.path.join(self.dir, "frozen")],
+                self.dir)
+        self.assertEqual(r.returncode, 0, r.stdout)
 
     def test_the_installed_set_must_equal_the_lock(self):
         for name, frozen, text in [("missing", "docstring_parser==0.18.0\n", "is not installed"),

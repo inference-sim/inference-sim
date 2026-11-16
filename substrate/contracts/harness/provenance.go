@@ -25,6 +25,9 @@ type ProvenanceRules struct {
 	Moved *regexp.Regexp
 	// Original is the header line, or its prefix, of a file original to the repository.
 	Original string
+	// Release is the upstream release the repository models. A derived file's header must name
+	// its tag and its commit, so a file translated from another release fails (VLM-2, SGL-2).
+	Release Upstream
 }
 
 // header is a file's first comment block: its leading lines that start with "//".
@@ -46,6 +49,9 @@ func ProvenanceProblems(root string, files []string, r ProvenanceRules) ([]strin
 	if r.Derived == nil || r.Original == "" || len(r.Licence) == 0 {
 		return nil, fmt.Errorf("harness: ProvenanceRules needs Derived, Licence and Original")
 	}
+	if p := r.Release.Problems(); len(p) > 0 {
+		return nil, fmt.Errorf("harness: ProvenanceRules.Release: %s", strings.Join(p, "; "))
+	}
 	var bad []string
 	for _, p := range files {
 		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(p)))
@@ -54,7 +60,11 @@ func ProvenanceProblems(root string, files []string, r ProvenanceRules) ([]strin
 		}
 		h := header(string(raw))
 		var derived, moved, orig bool
+		var derivedLine string
 		for _, l := range h {
+			if r.Derived.MatchString(l) && !derived {
+				derivedLine = l
+			}
 			derived = derived || r.Derived.MatchString(l)
 			moved = moved || (r.Moved != nil && r.Moved.MatchString(l))
 			orig = orig || strings.HasPrefix(l, r.Original)
@@ -64,10 +74,30 @@ func ProvenanceProblems(root string, files []string, r ProvenanceRules) ([]strin
 			if len(h) < len(r.Licence) || strings.Join(h[:len(r.Licence)], "\n") != strings.Join(r.Licence, "\n") {
 				bad = append(bad, fmt.Sprintf("%s is derived from the upstream but does not start with the upstream's licence lines %q", p, r.Licence))
 			}
+			if !containsWord(derivedLine, r.Release.Tag) || !strings.Contains(derivedLine, r.Release.Commit) {
+				bad = append(bad, fmt.Sprintf("%s is derived from a release other than the one this repository models (%s, %s): %q", p, r.Release.Tag, r.Release.Commit, derivedLine))
+			}
 		case moved, orig:
 		default:
 			bad = append(bad, fmt.Sprintf("%s states no provenance: start its first comment block with a line matching %q, a moved-from line, or %q", p, r.Derived.String(), r.Original))
 		}
 	}
 	return bad, nil
+}
+
+// containsWord reports whether s holds w with no letter, digit or dot right after it, so tag v0.5.2
+// is not found inside v0.5.23.
+func containsWord(s, w string) bool {
+	for i := strings.Index(s, w); i >= 0; {
+		end := i + len(w)
+		if end == len(s) || !(s[end] == '.' || s[end] >= '0' && s[end] <= '9' || s[end] >= 'a' && s[end] <= 'z' || s[end] >= 'A' && s[end] <= 'Z') {
+			return true
+		}
+		j := strings.Index(s[i+1:], w)
+		if j < 0 {
+			return false
+		}
+		i += 1 + j
+	}
+	return false
 }

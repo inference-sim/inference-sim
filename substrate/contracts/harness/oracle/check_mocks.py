@@ -44,17 +44,53 @@ import sys
 
 KINDS = {"gpu", "clock", "transport", "environment", "platform", "external-service", "transcription"}
 
-CONFIG_KEYS = {"commit_field", "ci_platform", "golden_dirs", "golden_files", "harness_files",
-               "decision_prefixes", "upstream_names"}
+# The keys of oracle/harness.json and what each must hold. Every key is required and no other is
+# allowed. A string must not be empty, and a list must hold non-empty strings. golden_files may be
+# an empty list (an engine with no golden file outside its golden directories); every other list
+# must name something, because a check given nothing to compare passes on nothing (X16).
+CONFIG_SCHEMA = {
+    "commit_field": "string",
+    "ci_platform": "string",
+    "golden_dirs": "list",
+    "golden_files": "list, may be empty",
+    "harness_files": "list",
+    "decision_prefixes": "list",
+    "upstream_names": "list",
+}
+
+
+def config_problems(cfg) -> list[str]:
+    """What is wrong with a parsed oracle/harness.json, each naming its key."""
+    if not isinstance(cfg, dict):
+        return [f"the configuration is a {type(cfg).__name__}, not an object"]
+    bad = [f"{k}: missing" for k in sorted(set(CONFIG_SCHEMA) - set(cfg))]
+    bad += [f"{k}: not a key of the configuration" for k in sorted(set(cfg) - set(CONFIG_SCHEMA))]
+    for key, kind in sorted(CONFIG_SCHEMA.items()):
+        if key not in cfg:
+            continue
+        v = cfg[key]
+        if kind == "string":
+            if not isinstance(v, str) or not v.strip():
+                bad.append(f"{key}: must be a non-empty string, not {v!r}")
+            continue
+        if not isinstance(v, list) or not all(isinstance(x, str) and x.strip() for x in v):
+            bad.append(f"{key}: must be a list of non-empty strings, not {v!r}")
+        elif not v and kind == "list":
+            bad.append(f"{key}: is empty; the check it configures would pass on nothing")
+    if isinstance(cfg.get("golden_dirs"), list):
+        slashless = [d for d in cfg["golden_dirs"] if isinstance(d, str) and not d.endswith("/")]
+        if slashless:
+            bad.append(f"golden_dirs: each entry must end with '/': {slashless}")
+    return bad
 
 
 def load_config(path: str) -> dict:
-    """oracle/harness.json: every key required, no other key allowed."""
+    """Read oracle/harness.json, or exit naming every key that is wrong."""
     with open(path) as f:
         cfg = json.load(f)
-    missing, extra = CONFIG_KEYS - set(cfg), set(cfg) - CONFIG_KEYS
-    if missing or extra:
-        raise SystemExit(f"{path}: missing keys {sorted(missing)}, unknown keys {sorted(extra)}")
+    bad = config_problems(cfg)
+    if bad:
+        raise SystemExit(f"{path}: " + "; ".join(bad))
     return cfg
 
 
@@ -78,22 +114,26 @@ class Sites(ast.NodeVisitor):
 
     def __init__(self):
         self.sites: dict[str, int] = {}
+        # The name each site binds, when the value written is a plain name (a function the
+        # harness defines, for example); None otherwise.
+        self.values: dict[str, str | None] = {}
 
-    def add(self, target: str, line: int) -> None:
+    def add(self, target: str, line: int, value=None) -> None:
         self.sites.setdefault(target, line)
+        self.values.setdefault(target, value.id if isinstance(value, ast.Name) else None)
 
-    def _store(self, t, line):
+    def _store(self, t, line, value=None):
         if isinstance(t, (ast.Tuple, ast.List)):
             for e in t.elts:
                 self._store(e, line)
         elif isinstance(t, ast.Attribute) and _root(t) != "self":
-            self.add(_chain(t), line)
+            self.add(_chain(t), line, value)
         elif isinstance(t, ast.Subscript) and isinstance(t.value, ast.Attribute) and _root(t.value) != "self":
             self.add(_chain(t.value) + "[]", line)
 
     def visit_Assign(self, node):
         for t in node.targets:
-            self._store(t, node.lineno)
+            self._store(t, node.lineno, node.value)
         self.generic_visit(node)
 
     def visit_AugAssign(self, node):
@@ -113,7 +153,7 @@ class Sites(ast.NodeVisitor):
         fn = _chain(node.func)
         if fn in ("setattr", "delattr") and node.args and _root(node.args[0]) != "self":
             name = node.args[1].value if len(node.args) > 1 and isinstance(node.args[1], ast.Constant) else "?"
-            self.add(f"{_chain(node.args[0])}.{name}", node.lineno)
+            self.add(f"{_chain(node.args[0])}.{name}", node.lineno, node.args[2] if len(node.args) > 2 else None)
         if fn == "object.__new__" and node.args:
             self.add(f"object.__new__({_chain(node.args[0])})", node.lineno)
         self.generic_visit(node)
@@ -131,15 +171,17 @@ def parse(oracle_dir: str, name: str):
     return src, ast.parse(src, name)
 
 
-def harness_sites(oracle_dir: str, names: list[str]) -> dict[str, int]:
-    out = {}
+def harness_sites(oracle_dir: str, names: list[str]) -> tuple[dict[str, int], dict[str, str | None]]:
+    """Every site the harness files make, as {"<file>:<target>": line}, and the name each binds."""
+    out, values = {}, {}
     for name in names:
         _, tree = parse(oracle_dir, name)
         v = Sites()
         v.visit(tree)
         for target, line in v.sites.items():
             out[f"{name}:{target}"] = line
-    return out
+            values[f"{name}:{target}"] = v.values.get(target)
+    return out, values
 
 
 def derived_header(src: str) -> bool:
@@ -206,7 +248,7 @@ def main(path: str, config: str) -> int:
         sym, kind = m["symbol"], m["kind"]
         if kind not in KINDS:
             bad.append(f"{sym}: kind {kind!r} is not one of {sorted(KINDS)}")
-        if kind not in ("clock", "transcription") and prefixes and sym.startswith(prefixes):
+        if kind not in ("clock", "transcription") and sym.startswith(prefixes):
             bad.append(f"{sym}: replaces decision code ({kind})")
         if kind == "transcription":
             if not str(m.get("upstream", "")).strip():
@@ -222,7 +264,18 @@ def main(path: str, config: str) -> int:
             bad.append(f"{sym}: only a transcription has transcribed_in ({kind})")
         for s in m.get("sites", []):
             listed[s] = sym
-    found = harness_sites(oracle_dir, names)
+    found, bound = harness_sites(oracle_dir, names)
+    # A transcription of decision code may write only its declared copy into the upstream: each
+    # of its sites binds a function its transcribed_in lists.
+    for m in spec["mocks"]:
+        if m["kind"] != "transcription" or not m["symbol"].startswith(prefixes):
+            continue
+        for site in m.get("sites", []):
+            file = site.split(":", 1)[0]
+            value = bound.get(site)
+            if value is None or f"{file}:{value}" not in m.get("transcribed_in", []):
+                bad.append(f"{m['symbol']}: transcription site {site} binds {value or 'something other than a name'}, "
+                           "not a function its transcribed_in lists (a transcription installs its copy, nothing else)")
     for site, line in sorted(found.items()):
         if site not in listed:
             file = site.split(":", 1)[0]
@@ -231,6 +284,9 @@ def main(path: str, config: str) -> int:
     for site, sym in sorted(listed.items()):
         if site not in found:
             bad.append(f"{sym}: lists site {site}, which no harness file makes (remove it)")
+    for where in sorted(declared - set(found_copies)):
+        bad.append(f"{where}: declared in transcribed_in, but check_mocks finds no copy there (no Derived from "
+                   "header, or a function not named in upstream_names); remove the declaration or name the copy")
     for where, why in sorted(found_copies.items()):
         if where not in declared:
             bad.append(f"{where}: {why}, and no transcription entry declares it in transcribed_in (FID-8)")

@@ -9,7 +9,9 @@
 //     SGL-2).
 //   - ClockAndGoroutineUses, the check that engine code reads no clock and starts no goroutine
 //     (X6).
-//   - The files an engine repository keeps as copies (Copies): the golangci-lint settings, and the
+//   - The files an engine repository keeps as copies (Copies): the golangci-lint settings (for now
+//     golangci-lint's default set; the X6 map-iteration and fused multiply-add lints are added by
+//     inference-sim/inference-sim#2078's cross-platform determinism item), and the
 //     oracle's lock check (FID-2), manifest check (FID-1, FID-8) and golden-trace check (FID-3).
 //     WriteCopies writes them and StaleCopies reports a copy that differs from this version's
 //     (X7); cmd/harnessfiles runs either from the command line.
