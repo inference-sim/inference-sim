@@ -54,6 +54,9 @@ REST_EXTRA = [
     r"^core/(kv|lower)/testdata/",
     r"^oracle/engineargs-cases\.json$",
 ]
+# The files the root package's TestHarnessCopiesAreCurrent compares with blis-substrate's contracts/harness
+# (X7): a change to one alone must run it.
+HARNESS_COPIES = [r"^oracle/check_(mocks|goldens|lock)\.py$", r"^oracle/harness\.json$", r"^\.golangci\.yml$"]
 # The census reads kerneltests/testdata (REST_EXTRA); the race legs of other packages read what REST_EXTRA names.
 RACE_EXTRA = REST_EXTRA
 
@@ -246,7 +249,7 @@ def decide(files, everything=False, legs_file=LEGS_FILE):
     out["lint"] = any_match(files, modfiles + [r"^\.golangci\.yml$"]) or any(is_lint_go(f) for f in files)
 
     d, rf = closure(["./..."], exclude=r"/kerneltests(/|$)")
-    out["rest"] = any_match(files, modfiles + [SHARD_TOOL] + REST_EXTRA) or in_closure(files, d, rf)
+    out["rest"] = any_match(files, modfiles + [SHARD_TOOL] + REST_EXTRA + HARNESS_COPIES) or in_closure(files, d, rf)
 
     kd, krf = closure(["./kerneltests/..."])
     out["kerneltests"] = any_match(files, modfiles + [SHARD_TOOL] + KERNELTESTS_PATHS) or in_closure(files, kd, krf)

@@ -42,8 +42,34 @@ def run_scenario(vllm_root: str, path: str) -> dict:
     return {"provenance": prov, **mon.trace}
 
 
+def pending(golden_dir: str) -> str | None:
+    """The golden directory's <dir>.pending.json beside it, when the traces wait for an issue: its reason, or None.
+    It stands only for the vLLM release it names, and only while no trace is committed beside it,
+    as core/connector/offloading/fid5_test.go also checks."""
+    path = os.path.normpath(golden_dir) + ".pending.json"
+    if not os.path.exists(path):
+        return None
+    with open(path) as f:
+        p = json.load(f)
+    import vllm  # noqa: E402
+
+    have = [f for f in os.listdir(golden_dir) if f.endswith(".fid5.json")] if os.path.isdir(golden_dir) else []
+    if have:
+        raise SystemExit("%s: %d trace(s) committed beside %s; remove it" % (golden_dir, len(have), path))
+    if not vllm.__version__.startswith(p["release"].lstrip("v")):
+        raise SystemExit(path + " defers the traces for %s, and the oracle runs vLLM %s: record them (%s)"
+                         % (p["release"], vllm.__version__, p["waits_for"]))
+    return "%s (%s)" % (p["waits_for"], p["why"])
+
+
 def compare(out_dir: str, golden_dir: str, names: list, prefix: str = PREFIX) -> int:
-    """Each trace written equals its golden, and every golden of the prefix was written."""
+    """Each trace written equals its golden, and every golden of the prefix was written. While the
+    goldens are pending, the traces are written (to the run's artifact) and nothing is compared."""
+    why = pending(golden_dir)
+    if why is not None:
+        print("%d %s trace(s) written to %s; not compared: the goldens are pending until %s"
+              % (len(names), prefix.rstrip("-"), out_dir, why))
+        return 0
     bad = 0
     for n in names:
         with open(os.path.join(out_dir, n)) as f:
