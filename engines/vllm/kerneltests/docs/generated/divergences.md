@@ -34,7 +34,7 @@ A parallel-block drafter such as DSpark is charged under its own CUDA graphs and
 
 *Coverage limit, in `KVBytesPerToken` in [`kernel/internal/price/memory.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/internal/price/memory.go).*
 
-The kernel does not size every KV cache layout vLLM has. It refuses the per-token-head quantized formats rather than size them. Padded pages and a cache that compresses several tokens into one stored state are sized only where the model graph states its caches; a graph that does not is sized as one full-length cache per layer.
+The kernel does not size every KV cache layout vLLM has. The engine's lowering refuses the per-token-head quantized formats rather than hand the kernel a width for them. Padded pages and a cache that compresses several tokens into one stored state are sized only where the model graph states its caches; a graph that does not is sized as one full-length cache per layer.
 
 ??? quote "The note in the source"
     The layouts that state their own size are applied by the kernel where a deployment names
