@@ -899,9 +899,10 @@ func (w WorkloadProperty) validateBorrowing(p *validate.Problems, at string) {
 	if w.Source != PropertyProfile {
 		p.Field(at+".step", "is stated only when source is profile, because only a profile lookup borrows")
 	}
-	steps := map[string]bool{"exact": true, "same_drafter_other_k": true, "other_drafter": true, "other_target": true}
+	steps := map[string]bool{"exact": true, "same_drafter_other_k": true, "same_drafter_other_settings": true,
+		"other_drafter": true, "other_target": true}
 	if !steps[w.Step] {
-		p.Field(at+".step", "%q is not one of exact, same_drafter_other_k, other_drafter, other_target", w.Step)
+		p.Field(at+".step", "%q is not one of exact, same_drafter_other_k, same_drafter_other_settings, other_drafter, other_target", w.Step)
 	}
 	if len(w.Profiles) == 0 {
 		p.Field(at+".profiles", "required with step: the profiles the value was read from")
@@ -928,12 +929,13 @@ func (w WorkloadProperty) validateBorrowing(p *validate.Problems, at string) {
 	}
 }
 
-var profileKeyFields = []string{"model", "drafter", "speculative_method", "num_spec_tokens"}
+var profileKeyFields = []string{"model", "drafter", "speculative_method", "num_spec_tokens", "draft_sampler", "verifier", "engine"}
 
 // ProfileKeyFields returns the key fields in which a borrowed acceptance profile can differ
-// from the run's (design D8): the target model, the drafter, the speculative method and the
-// number of speculative tokens. A point record's profile substitution names them from the same
-// list.
+// from the run's (design D8): the target model, the drafter, the speculative method, the
+// number of speculative tokens, and the draft sampler and verifier
+// (inference-sim/blis-substrate#174). A point record's profile substitution names them from the
+// same list.
 func ProfileKeyFields() []string { return append([]string(nil), profileKeyFields...) }
 
 // IsProfileKeyField reports whether name is one of ProfileKeyFields.

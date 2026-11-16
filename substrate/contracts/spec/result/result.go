@@ -321,7 +321,8 @@ type WorkloadProperty struct {
 	// PropertyProfile.
 	Profile string `yaml:"profile,omitempty"`
 	// Step is how a profile lookup found its value (D8): "exact" for the run's exact key, or
-	// the borrowing step that supplied it: "same_drafter_other_k", "other_drafter" or
+	// the borrowing step that supplied it: "same_drafter_other_k", "same_drafter_other_settings",
+	// "other_drafter" or
 	// "other_target". Present exactly when Source is PropertyProfile and the property is a
 	// profile lookup that can borrow (speculative acceptance).
 	Step string `yaml:"step,omitempty"`
