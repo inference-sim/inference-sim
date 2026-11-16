@@ -12,6 +12,18 @@
   "archs": [
     "sm_100a"
   ],
+  "gaps": [
+    {
+      "primitive": "attention.decode",
+      "selection": "attention backend FLASHINFER_MLA",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "attention.prefill",
+      "selection": "attention backend FLASHINFER_MLA",
+      "issue": "inference-sim/blis-vllm#151"
+    }
+  ],
   "libraries": [
     {
       "name": "flashinfer",
@@ -35,7 +47,9 @@
       "code_hash": "40a5dea552029ea07ddb3963dc1ceada23c90529c242273dae0f982f235ad11f",
       "toolkit": "13.0.3",
       "selected_by": [
-        "vllm/v1/attention/backends/flashinfer.py:20@5df63a72"
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/utils/flashinfer.py:648@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:2582@5df63a72"
       ]
     },
     {
@@ -51,7 +65,9 @@
       "code_hash": "067cb9ca807e02e7aa18c3bf09939010917c43ab25d906e060189d01d0e2ffbd",
       "toolkit": "13.0.3",
       "selected_by": [
-        "vllm/v1/attention/backends/flashinfer.py:21@5df63a72"
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/utils/flashinfer.py:648@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:2362@5df63a72"
       ]
     }
   ]
