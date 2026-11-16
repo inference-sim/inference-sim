@@ -1,0 +1,9 @@
+{
+ "kind": "ValueClasses",
+ "engine": {
+  "kind": "sglang",
+  "version": "0.5.23"
+ },
+ "limits": "Comparisons are found where the field, or a name the same function assigned from it, is compared with a literal: ==, !=, <, <=, >, >=, in, not in, is None, is not None, and a bare truth test. A value passed to another function, stored in a container or computed before the comparison is not followed, and a ServerArgs field is recognised only through the base names listed in CONFIG_BASES. The classes under-approximate what SGLang does with the field: a field with one class is one no scanned comparison singles out, not one SGLang treats alike at every value.",
+ "fields": {}
+}
