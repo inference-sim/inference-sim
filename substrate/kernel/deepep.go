@@ -80,7 +80,7 @@ func (k *Kernel) deepEPVariant() string {
 // liftDeepEP resolves the DeepEP price when one runs. Where the registry has none for this
 // part and width, or the expert group leaves the node (the measurement is one node), the
 // generic routed all-to-all stands and that is recorded rather than silent
-// (blis-latency-kernel#57).
+// (https://github.com/inference-sim/blis-latency-kernel/issues/57).
 func (k *Kernel) liftDeepEP(c *resolve.Coefficients) {
 	k.deepEP = nil
 	if !k.routedAll2All() {
