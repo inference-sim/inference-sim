@@ -43,7 +43,7 @@ func flashSched(t *testing.T, consumer bool, wrap func(*Scheduler) sched.Connect
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := sched.New(sched.Config{MaxNumSeqs: 4, MaxNumBatchedTokens: 512, BlockSize: flashBlock, NumBlocks: 400,
+	s, err := sched.New(sched.Config{KVTransfer: true, MaxNumSeqs: 4, MaxNumBatchedTokens: 512, BlockSize: flashBlock, NumBlocks: 400,
 		MaxModelLen: 1024, EnableChunkedPrefill: true, Policy: sched.FCFS, EnablePrefixCaching: true,
 		ReserveFullSequence: true, KVGroups: groups})
 	if err != nil {
@@ -234,7 +234,7 @@ func TestPackedGroupsNeedAConnectorThatStatesItsLoadedGroups(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := sched.New(sched.Config{MaxNumSeqs: 4, MaxNumBatchedTokens: 512, BlockSize: flashBlock, NumBlocks: 400,
+	s, err := sched.New(sched.Config{KVTransfer: true, MaxNumSeqs: 4, MaxNumBatchedTokens: 512, BlockSize: flashBlock, NumBlocks: 400,
 		MaxModelLen: 1024, EnableChunkedPrefill: true, Policy: sched.FCFS, EnablePrefixCaching: true, KVGroups: groups})
 	if err != nil {
 		t.Fatal(err)

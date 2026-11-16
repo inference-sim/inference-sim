@@ -277,7 +277,7 @@ func runDPNixl(t *testing.T, sc dpnScenario) dpnTrace {
 	var gpus []*dpnGPU
 	var conns []*nixl.Scheduler
 	for i := 0; i < n; i++ {
-		s, err := sched.New(sched.Config{
+		s, err := sched.New(sched.Config{KVTransfer: true, // the connector this test installs (kv_transfer_config)
 			MaxNumSeqs: c.MaxNumSeqs, MaxNumBatchedTokens: c.MaxNumBatchedTokens, BlockSize: c.BlockSize,
 			NumBlocks: c.NumBlocks, MaxModelLen: c.MaxModelLen, LongPrefillTokenThreshold: c.LongPrefillTokenThreshold,
 			EnableChunkedPrefill: chunked, Policy: sched.Policy(c.SchedulingPolicy), EnablePrefixCaching: caching,

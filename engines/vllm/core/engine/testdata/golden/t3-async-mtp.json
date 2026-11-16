@@ -125,7 +125,7 @@
   }
  },
  "provenance": {
-  "blis_vllm_commit": "d855ac9d0501427f819cda43a5fbcde33966b640",
+  "blis_vllm_commit": "74a07eccbdafffe39f57b9738e49bee225f4bece",
   "engine": {
    "async_scheduling": true,
    "max_concurrent_batches": 2,
@@ -133,8 +133,8 @@
    "scheduler_class": "AsyncScheduler",
    "use_v2_model_runner": false
   },
-  "lockfile_sha256": "8baca0cbd0f28f5455c4d2c1b39a81ac3c424089e4c875e93614794c77932167",
-  "mock_version": "gpu-mock/5+af60be80e293",
+  "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
+  "mock_version": "gpu-mock/7+f4274aa648c4",
   "mocks": [
    "vllm.v1.outputs.ModelRunnerOutput",
    "tests.v1.core.utils.create_scheduler",
@@ -168,32 +168,32 @@
   "model": "facebook/opt-125m",
   "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
   "oracle_inputs": {
-   "oracle/mocks.json": "29fec19aa8b5bd75e12b37893eea761684d4399a7e3bee1066cb749eac58769c",
-   "oracle/requirements.lock": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
-   "oracle/run_enginecore.py": "52f5ca457d4f046679d0ca364c599a8015a4c30c8cf197a5eaf0b8829e4e1a71",
-   "oracle/run_scheduler.py": "dd0cbc255201f6d63588c720f4e687276f4b73fec0f490e997afdaacc2a5a127",
+   "oracle/mocks.json": "afd576782c5322ce4c6aa4cdb72fb513e3e78cd8ea54dd6043af0cdf5680a658",
+   "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+   "oracle/run_enginecore.py": "bb562e23d0ae394ca5d3a099a6083bec69ee7aff5915f35995277a07609a7c0f",
+   "oracle/run_scheduler.py": "1239a1d64f057fcb543789762859ea33211627e3f2b66b46087ed9ee936222f6",
    "oracle/scenarios-t3/t3-async-mtp.json": "6d28632a8369738d19c89a1630a2b932fd90fa7497f5e85812d632a71c7cebe6"
   },
   "platform": "linux-x86_64",
   "python": "3.12.16",
-  "requirements_lock_sha256": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
+  "requirements_lock_sha256": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
   "scenario_sha256": "6d28632a8369738d19c89a1630a2b932fd90fa7497f5e85812d632a71c7cebe6",
   "seed": null,
   "tier": 3,
-  "vllm_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
-  "vllm_distribution": "0.32.0+cpu",
-  "vllm_version": "0.32.0"
+  "vllm_commit": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "vllm_distribution": "0.33.0+cpu",
+  "vllm_version": "0.33.0"
  },
  "steps": [
   {
    "blocks": {
     "a": [
      [
-      "e5a938e6718580ea5eee6f8f4efaf690fd334c8e953ae2befcc52251696ec68f00000000",
+      "863eaa6ae7ddfe122b19dc1b007cf1059b80fe3a10c3582a669254efd016268600000000",
       1
      ],
      [
-      "12bae9dc19e1b1e85e8ea57e906bb93217c9cd9fcf25cf3312ed634e425a504b00000000",
+      "966f4ea1931c16567373bab888016cf7d8116b94096a4da7f8a2322faa27fc3d00000000",
       1
      ],
      [
@@ -224,11 +224,11 @@
    "blocks": {
     "a": [
      [
-      "e5a938e6718580ea5eee6f8f4efaf690fd334c8e953ae2befcc52251696ec68f00000000",
+      "863eaa6ae7ddfe122b19dc1b007cf1059b80fe3a10c3582a669254efd016268600000000",
       1
      ],
      [
-      "12bae9dc19e1b1e85e8ea57e906bb93217c9cd9fcf25cf3312ed634e425a504b00000000",
+      "966f4ea1931c16567373bab888016cf7d8116b94096a4da7f8a2322faa27fc3d00000000",
       1
      ],
      [
@@ -242,7 +242,7 @@
     ],
     "b": [
      [
-      "bd5f3956a1b2646a1c32c25cb3ead63b2c9d0b90ea45627d7ad73eb96ce4bc0900000000",
+      "b58166f11fd60759efc86830eef57a07b24a2f3d8cf51e19d9f2926689599abd00000000",
       1
      ],
      [
@@ -280,15 +280,15 @@
    "blocks": {
     "a": [
      [
-      "e5a938e6718580ea5eee6f8f4efaf690fd334c8e953ae2befcc52251696ec68f00000000",
+      "863eaa6ae7ddfe122b19dc1b007cf1059b80fe3a10c3582a669254efd016268600000000",
       1
      ],
      [
-      "12bae9dc19e1b1e85e8ea57e906bb93217c9cd9fcf25cf3312ed634e425a504b00000000",
+      "966f4ea1931c16567373bab888016cf7d8116b94096a4da7f8a2322faa27fc3d00000000",
       1
      ],
      [
-      "5e17dcd88de9ecf18b684d15f138d3d9875f9895d6fc3c8aa6a6cfe6bd95ba2300000000",
+      "ff8fd4605a4d6b7eabb87a30468aac188c060c9723d0912021fbe6b9016015c200000000",
       1
      ],
      [
@@ -302,7 +302,7 @@
     ],
     "b": [
      [
-      "bd5f3956a1b2646a1c32c25cb3ead63b2c9d0b90ea45627d7ad73eb96ce4bc0900000000",
+      "b58166f11fd60759efc86830eef57a07b24a2f3d8cf51e19d9f2926689599abd00000000",
       1
      ],
      [
@@ -340,15 +340,15 @@
    "blocks": {
     "a": [
      [
-      "e5a938e6718580ea5eee6f8f4efaf690fd334c8e953ae2befcc52251696ec68f00000000",
+      "863eaa6ae7ddfe122b19dc1b007cf1059b80fe3a10c3582a669254efd016268600000000",
       1
      ],
      [
-      "12bae9dc19e1b1e85e8ea57e906bb93217c9cd9fcf25cf3312ed634e425a504b00000000",
+      "966f4ea1931c16567373bab888016cf7d8116b94096a4da7f8a2322faa27fc3d00000000",
       1
      ],
      [
-      "5e17dcd88de9ecf18b684d15f138d3d9875f9895d6fc3c8aa6a6cfe6bd95ba2300000000",
+      "ff8fd4605a4d6b7eabb87a30468aac188c060c9723d0912021fbe6b9016015c200000000",
       1
      ],
      [
@@ -362,11 +362,11 @@
     ],
     "b": [
      [
-      "bd5f3956a1b2646a1c32c25cb3ead63b2c9d0b90ea45627d7ad73eb96ce4bc0900000000",
+      "b58166f11fd60759efc86830eef57a07b24a2f3d8cf51e19d9f2926689599abd00000000",
       1
      ],
      [
-      "35b0cdb6f0ce558f83135d98d939a6b4e49dbe677bbb08f585c5fcb6271567cb00000000",
+      "1072665fbd9b98eaed74a60a4934be6432aef264ad98e6fcfa752a2de938376100000000",
       1
      ],
      [
@@ -404,19 +404,19 @@
    "blocks": {
     "a": [
      [
-      "e5a938e6718580ea5eee6f8f4efaf690fd334c8e953ae2befcc52251696ec68f00000000",
+      "863eaa6ae7ddfe122b19dc1b007cf1059b80fe3a10c3582a669254efd016268600000000",
       1
      ],
      [
-      "12bae9dc19e1b1e85e8ea57e906bb93217c9cd9fcf25cf3312ed634e425a504b00000000",
+      "966f4ea1931c16567373bab888016cf7d8116b94096a4da7f8a2322faa27fc3d00000000",
       1
      ],
      [
-      "5e17dcd88de9ecf18b684d15f138d3d9875f9895d6fc3c8aa6a6cfe6bd95ba2300000000",
+      "ff8fd4605a4d6b7eabb87a30468aac188c060c9723d0912021fbe6b9016015c200000000",
       1
      ],
      [
-      "0bd2c153d28bd499ad353465fa0dc59a448a8a79bd320d43b388ef918b78b86f00000000",
+      "15008cecd9db80fa6217198d42d02c6c8a0c5c867de6b5d34597e4bd0c21907100000000",
       1
      ],
      [
@@ -430,11 +430,11 @@
     ],
     "b": [
      [
-      "bd5f3956a1b2646a1c32c25cb3ead63b2c9d0b90ea45627d7ad73eb96ce4bc0900000000",
+      "b58166f11fd60759efc86830eef57a07b24a2f3d8cf51e19d9f2926689599abd00000000",
       1
      ],
      [
-      "35b0cdb6f0ce558f83135d98d939a6b4e49dbe677bbb08f585c5fcb6271567cb00000000",
+      "1072665fbd9b98eaed74a60a4934be6432aef264ad98e6fcfa752a2de938376100000000",
       1
      ],
      [
@@ -472,19 +472,19 @@
    "blocks": {
     "a": [
      [
-      "e5a938e6718580ea5eee6f8f4efaf690fd334c8e953ae2befcc52251696ec68f00000000",
+      "863eaa6ae7ddfe122b19dc1b007cf1059b80fe3a10c3582a669254efd016268600000000",
       1
      ],
      [
-      "12bae9dc19e1b1e85e8ea57e906bb93217c9cd9fcf25cf3312ed634e425a504b00000000",
+      "966f4ea1931c16567373bab888016cf7d8116b94096a4da7f8a2322faa27fc3d00000000",
       1
      ],
      [
-      "5e17dcd88de9ecf18b684d15f138d3d9875f9895d6fc3c8aa6a6cfe6bd95ba2300000000",
+      "ff8fd4605a4d6b7eabb87a30468aac188c060c9723d0912021fbe6b9016015c200000000",
       1
      ],
      [
-      "0bd2c153d28bd499ad353465fa0dc59a448a8a79bd320d43b388ef918b78b86f00000000",
+      "15008cecd9db80fa6217198d42d02c6c8a0c5c867de6b5d34597e4bd0c21907100000000",
       1
      ],
      [
@@ -502,15 +502,15 @@
     ],
     "b": [
      [
-      "bd5f3956a1b2646a1c32c25cb3ead63b2c9d0b90ea45627d7ad73eb96ce4bc0900000000",
+      "b58166f11fd60759efc86830eef57a07b24a2f3d8cf51e19d9f2926689599abd00000000",
       1
      ],
      [
-      "35b0cdb6f0ce558f83135d98d939a6b4e49dbe677bbb08f585c5fcb6271567cb00000000",
+      "1072665fbd9b98eaed74a60a4934be6432aef264ad98e6fcfa752a2de938376100000000",
       1
      ],
      [
-      "61f2b5bbdc32e696e1a2c271a860194fc94b9325b9c2a529f1d9769d39cce0a200000000",
+      "9e41dd6b8fe54522f90960e5c9ed84b13db879db68514f955a805de2d917235900000000",
       1
      ],
      [
