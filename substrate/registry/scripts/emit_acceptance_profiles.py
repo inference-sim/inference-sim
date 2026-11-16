@@ -5,8 +5,10 @@
 
 Every acceptance length, and every provenance field, is read from SemiAnalysis InferenceX's
 `inferencex-e2e/infx/golden_al_distribution/`: its curve files and the `identities.yaml`
-that states how each curve was collected. They are vendored under
-validator/testdata/inferencex/ at INFERENCEX_SHA. Nothing is typed in here but the explicit
+that states how each curve was collected. No InferenceX file is committed (X12):
+validator/testdata/inferencex/curves.json pins the commit and the SHA-256 of each file, and
+scripts/fetch_inferencex_curves.py fetches them; the emitter refuses files that are not the
+pinned ones. Nothing is typed in here but the explicit
 skips and transfers below and the hardware of the runs whose file names none (RUN_HARDWARE),
 each with its evidence.
 
@@ -27,8 +29,8 @@ whose profile key another curve also claims: a key states the target, drafter, m
 thinking mode and category, not the draft sampler or the verifier, and D8 refuses two
 profiles that share a key under different settings rather than choose one.
 
-$INFERENCEX_GOLDEN and $BLIS_CATALOG override the vendored copies; an empty value means the
-vendored copy. `--check` re-renders and exits non-zero if the committed file would change.
+$INFERENCEX_GOLDEN names the curve directory (default: the fetch cache at the pinned commit) and
+$BLIS_CATALOG the catalog; an empty value means the default. `--check` re-renders and exits non-zero if the committed file would change.
 """
 
 from __future__ import annotations
@@ -47,11 +49,15 @@ REPO = Path(__file__).resolve().parent.parent
 TARGET = REPO / "acceptance" / "inferencex-golden-al.yaml"
 SET_NAME = "inferencex-golden-al"
 
-INFERENCEX_SHA = "67c3ed26f9c196b3e8286053a44838b4f0024756"
-INFERENCEX_URL = "https://github.com/SemiAnalysisAI/InferenceX"
-GOLDEN_PATH = "inferencex-e2e/infx/golden_al_distribution"
+# The InferenceX commit and the SHA-256 of every file the emitter reads. The files themselves
+# are not committed (X12): scripts/fetch_inferencex_curves.py fetches them at the commit.
+LOCK = REPO / "validator" / "testdata" / "inferencex" / "curves.json"
+_LOCK = json.loads(LOCK.read_text())
+INFERENCEX_SHA = _LOCK["commit"]
+INFERENCEX_URL = _LOCK["repository"]
+GOLDEN_PATH = _LOCK["path"]
 GOLDEN = Path(os.environ.get("INFERENCEX_GOLDEN")
-              or REPO / "validator" / "testdata" / "inferencex" / "golden_al_distribution")
+              or LOCK.parent / "cache" / INFERENCEX_SHA / "golden_al_distribution")
 CATALOG = Path(os.environ.get("BLIS_CATALOG") or REPO.parent / "catalog")
 IDENTITIES = "identities.yaml"
 
@@ -103,7 +109,10 @@ SAMPLING = {"temperature": float, "top_p": float, "top_k": int}
 SAMPLING_SETTINGS = ("presence_penalty", "repetition_penalty")
 # Header pieces read as sampling (`key: value`, or `key=value` on a per-mode line).
 HEADER_SAMPLING = {"temperature": "temperature", "temp": "temperature", "top_p": "top_p",
-                   "top_k": "top_k", "presence_penalty": "presence_penalty"}
+                   "top_k": "top_k", "presence_penalty": "presence_penalty",
+                   "repetition_penalty": "repetition_penalty"}
+# Keys a header's `key: value | ...` line states that are not sampling, each read elsewhere.
+HEADER_OTHER = {"dataset", "output_len", "model", "image", "TP"}
 PART = re.compile(r"\b(GB\d{3}|[ABH]\d{3}|MI\d{3}X?)\b", re.IGNORECASE)
 MEASURED_ON = re.compile(r"Measured on (\S+) \((.*)\), per num_speculative_tokens\.")
 
@@ -285,16 +294,29 @@ def header_sampling(c: Curve) -> tuple[dict, dict[str, dict]]:
             # `temp 0.6 top_p 0.95 top_k 20 presence_penalty 0.0 | chat_template_kwargs: ...`
             first = body.split("|")[0]
             pairs = re.findall(r"\b([a-z_]+)[ =]([-\d.]+)\b", first)
-            per_mode[THINKING[mm.group(1)]] = {HEADER_SAMPLING[k]: v for k, v in pairs
-                                               if k in HEADER_SAMPLING}
+            if unknown := sorted({k for k, _ in pairs} - HEADER_SAMPLING.keys()):
+                raise SystemExit(f"{c.stem}: header sampling {unknown} for {mm.group(1)} is not "
+                                 "transcribed; map it in emit_acceptance_profiles.py or refuse the curve")
+            mode = per_mode.setdefault(THINKING[mm.group(1)], {})
+            for k, v in pairs:
+                put(mode, HEADER_SAMPLING[k], v, c.stem)
             continue
         if line.startswith(("dataset:", "temperature:", "model:")):
             for k, v in header_pieces(line):
                 if k in HEADER_SAMPLING:
-                    common[HEADER_SAMPLING[k]] = v
+                    put(common, HEADER_SAMPLING[k], v, c.stem)
                 elif k == "output_len":
-                    common["max_tokens"] = v
+                    put(common, "max_tokens", v, c.stem)
+                elif k not in HEADER_OTHER:
+                    raise SystemExit(f"{c.stem}: header piece {k!r} states a value this emitter "
+                                     "does not transcribe")
     return common, per_mode
+
+
+def put(d: dict, key: str, value: str, stem: str) -> None:
+    """Record a header value, refusing one stated twice, differently."""
+    if d.setdefault(key, value) != value:
+        raise SystemExit(f"{stem}: {key!r} is stated twice, differently ({d[key]} and {value})")
 
 
 def header_kwargs(c: Curve, mode: str):
@@ -333,6 +355,9 @@ def hardware_of(c: Curve, cat_root: Path) -> tuple[str, str | None, int | None]:
     run_id = c.source_run.rstrip("/").rsplit("/", 1)[-1]
     observed = RUN_HARDWARE.get(run_id)
     stated, tp, rationale = None, None, None
+    lines = [m for line in c.header if (m := MEASURED_ON.fullmatch(line))]
+    if len({m.group(0) for m in lines}) > 1:
+        raise SystemExit(f"{c.stem}: two different measured-on lines")
     for line in c.header:
         if m := MEASURED_ON.fullmatch(line):
             if m.group(1) != c.model_key:
@@ -383,17 +408,8 @@ def provenance(c: Curve, cat_root: Path) -> tuple[dict, dict, dict, list[str], s
     """The provenance a curve states, its per-mode sampling and settings, rationales, and its
     category."""
     collection = c.identity.get("collection") or {}
-    unknown = sorted(set(collection) - set(FACTS) - {"engine", "draft", "provisional"})
-    if unknown:
-        raise SystemExit(f"{c.stem}: identities.yaml states {unknown}, which this emitter does "
-                         "not transcribe")
     if collection.get("provisional") is True:
         raise Refused("InferenceX marks it provisional: not measured for its model")
-    expected_draft = "native" if collection.get("draft") == "native" else \
-        re.sub(r"[^a-z0-9.]+", "-", str(collection.get("draft", "")).split("/")[-1].lower())
-    if expected_draft != c.draft:
-        raise SystemExit(f"{c.stem}: its name's draft {c.draft!r} is not identities.yaml's "
-                         f"{collection.get('draft')!r}")
     bench, category = category_of(c)
     hardware, hw_rationale, tp = hardware_of(c, cat_root)
     image = None
@@ -450,6 +466,52 @@ def provenance(c: Curve, cat_root: Path) -> tuple[dict, dict, dict, list[str], s
     return prov, mode_sampling, mode_settings, rationale, category
 
 
+def check_curve(c: Curve) -> None:
+    """Every format check that needs no catalog, run on every curve before any is resolved, so
+    a change in a curve no catalog model resolves still fails the run."""
+    collection = c.identity.get("collection") or {}
+    unknown = sorted(set(collection) - set(FACTS) - {"engine", "draft", "provisional"})
+    if unknown:
+        raise SystemExit(f"{c.stem}: identities.yaml states {unknown}, which this emitter does "
+                         "not transcribe")
+    for name in ("engine", "draft"):
+        if not isinstance(collection.get(name), str) or not collection[name]:
+            raise SystemExit(f"{c.stem}: identities.yaml states no collection.{name}")
+    for name in FACTS:
+        fact = collection.get(name)
+        if not isinstance(fact, dict) or "value" not in fact or "source" not in fact:
+            raise SystemExit(f"{c.stem}: identities.yaml fact {name} is not {{value, source}}")
+    expected_draft = "native" if collection["draft"] == "native" else \
+        re.sub(r"[^a-z0-9.]+", "-", collection["draft"].split("/")[-1].lower())
+    if expected_draft != c.draft:
+        raise SystemExit(f"{c.stem}: its name's draft {c.draft!r} is not identities.yaml's "
+                         f"{collection['draft']!r}")
+    category_of(c)
+    header_sampling(c)
+    for mode in (c.collection or {}).get("modes") or {}:
+        cast_sampling(dict(((c.collection["modes"][mode] or {}).get("sampling")) or {}),
+                      f"{c.stem} {mode}")
+    for line in c.header:
+        if m := MEASURED_ON.fullmatch(line):
+            if m.group(1) != c.model_key:
+                raise SystemExit(f"{c.stem}: measured on {m.group(1)}, keyed {c.model_key}")
+
+
+def verify_inputs(golden: Path = GOLDEN, lock: dict = _LOCK) -> None:
+    """The files in golden are exactly the ones curves.json pins, each with its SHA-256."""
+    if not golden.is_dir():
+        raise SystemExit(f"{golden}: no InferenceX curves; run scripts/fetch_inferencex_curves.py")
+    have = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in golden.glob("*.yaml")}
+    if missing := sorted(lock["files"].keys() - have.keys()):
+        raise SystemExit(f"{golden}: curves.json pins {missing}, which are not there")
+    if extra := sorted(have.keys() - lock["files"].keys()):
+        raise SystemExit(f"{golden}: {extra} are not in curves.json; move the pin "
+                         "(scripts/refresh_inferencex_curves.py)")
+    for name, want in sorted(lock["files"].items()):
+        if have[name] != want:
+            raise SystemExit(f"{golden}/{name}: SHA-256 {have[name]}, curves.json pins {want}")
+
+
 def collect(golden: Path = GOLDEN, catalog: Path = CATALOG):
     identities = load_identities(golden)
     files = sorted(p for p in golden.glob("*.yaml") if p.name != IDENTITIES)
@@ -459,10 +521,15 @@ def collect(golden: Path = GOLDEN, catalog: Path = CATALOG):
     for stem, reason in SKIP.items():
         if stem not in stems or not reason.strip():
             raise SystemExit(f"SKIP {stem}: a skip names a curve file and states a reason")
+    for stem in TRANSFERS:
+        if stem not in stems:
+            raise SystemExit(f"TRANSFERS {stem} names no curve file; the transfer is stale")
     cat = load_catalog(catalog)
     targets = cat.targets()
     # Every file is read, carried or not, so a format change anywhere fails here.
     curves = [read_curve(p, identities) for p in files]
+    for c in curves:
+        check_curve(c)
     carried: list[Carried] = []
     skipped: list[tuple[str, str, str]] = []
     categories = set()
@@ -497,6 +564,7 @@ def collect(golden: Path = GOLDEN, catalog: Path = CATALOG):
                     if not rev.startswith(m.group(2)):
                         raise Refused(f"it was measured with {m.group(1)} at revision "
                                       f"{m.group(2)}, and the catalog's {drafter} is {rev}")
+                    prov["settings"]["draft_revision"] = m.group(2)
         except Refused as e:
             skipped.append((c.stem, c.model_key, str(e)))
             continue
@@ -509,12 +577,19 @@ def collect(golden: Path = GOLDEN, catalog: Path = CATALOG):
     if len(categories) != 1:
         raise SystemExit(f"expected one category, found {sorted(categories)}")
     category = categories.pop()
+    # A transfer fills a model no curve measures; once one does, the transfer is stale.
+    for stem, (model, _, _) in TRANSFERS.items():
+        for k in carried:
+            if k.transfer is None and k.model == model and k.curve.method == \
+                    next(c.method for c in curves if c.stem == stem):
+                raise SystemExit(f"TRANSFERS {stem} is stale: {k.curve.stem} measures {model}")
     # A key two curves claim is refused for both (D8): the key cannot state what differs.
     claims: dict[tuple, list[Carried]] = {}
     for k in carried:
         for thinking, cells in k.curve.values.items():
             for n in cells:
-                claims.setdefault((k.model, k.drafter, k.curve.method, n, thinking), []).append(k)
+                claims.setdefault((k.model, k.drafter, k.curve.method, n, thinking, category),
+                                  []).append(k)
     clash: dict[str, set[str]] = {}
     for owners in claims.values():
         if len({o.curve.stem for o in owners}) > 1:
@@ -526,10 +601,8 @@ def collect(golden: Path = GOLDEN, catalog: Path = CATALOG):
         if k.curve.stem in clash:
             others = ", ".join(f"{s}.yaml" for s in sorted(clash[k.curve.stem]))
             skipped.append((k.curve.stem, k.curve.model_key,
-                            f"its profile keys are also claimed by {others}, measured with the "
-                            "same target, drafter and method under another draft sampler or "
-                            "verifier, which a profile's key cannot state yet "
-                            "(inference-sim/blis-substrate#174)"))
+                            f"its profile keys are also claimed by {others}, which a profile's "
+                            "key cannot tell apart (inference-sim/blis-substrate#174)"))
         else:
             kept.append(k)
     skipped.sort()
@@ -598,6 +671,15 @@ def caveats(carried: list[Carried], skipped, category: str) -> list[str]:
         if c.transfer:
             out.append(f"{c.model} {c.curve.method} is transferred from {c.curve.stem}.yaml, "
                        f"measured on {c.curve.model_key}, not on {c.model}.")
+    unrevised = sorted(f"{c.model}+{c.drafter} ({c.curve.stem}.yaml)" for c in carried
+                       if c.drafter and "draft_revision" not in c.provenance["settings"])
+    if unrevised:
+        out.append(f"Drafter revision unstated: {', '.join(unrevised)}. The source names the drafter "
+                   "but not the revision it was measured at, so the profile may describe a revision "
+                   "other than the catalog entry's.")
+    out.append(f"Collection settings are transcribed from {IDENTITIES} at {INFERENCEX_SHA[:12]}, "
+               f"SHA-256 {_LOCK['files'][IDENTITIES]} ({INFERENCEX_URL}/blob/{INFERENCEX_SHA}/"
+               f"{GOLDEN_PATH}/{IDENTITIES}).")
     unimaged = sorted({c.model for c in carried if c.provenance["engine_image"] == IMAGE_UNRECORDED})
     if unimaged:
         out.append(f"The source files for {', '.join(unimaged)} name no engine image, so "
@@ -630,6 +712,7 @@ def generate(golden: Path = GOLDEN, catalog: Path = CATALOG) -> str:
 
 
 def main(argv: list[str]) -> int:
+    verify_inputs()
     text = generate()
     if argv[1:] == ["--check"]:
         if not TARGET.is_file() or TARGET.read_text() != text:

@@ -1466,9 +1466,11 @@ yields. The generated tables and the set's caveats are on the
 ### 12.1 One source, transcribed
 
 Every value comes from SemiAnalysis InferenceX's
-`inferencex-e2e/infx/golden_al_distribution/`: its curve files and `identities.yaml`, vendored
-under `validator/testdata/inferencex/` at the commit `scripts/emit_acceptance_profiles.py`
-cites. Each profile's provenance cites its curve file at that commit and the file's SHA-256.
+`inferencex-e2e/infx/golden_al_distribution/`: its curve files and `identities.yaml`, at the commit
+`validator/testdata/inferencex/curves.json` pins, the last that changed a curve. No InferenceX file is
+committed (X12): `curves.json` holds the commit and each file's SHA-256, and
+`scripts/fetch_inferencex_curves.py` fetches the files at the commit, failing on a hash that differs.
+The emitter refuses files that are not exactly the pinned ones. Each profile's provenance cites its curve file at that commit and the file's SHA-256.
 The emitter reads each acceptance length from the curve file, how the curve was collected
 (engine, drafter, draft sampler, verifier, adaptive verification, topology and KV-cache
 dtypes) from `identities.yaml`, and the sampling and chat-template arguments of each thinking
@@ -1521,11 +1523,11 @@ no engine image say so in `engine_image`.
 ### 12.5 Gates
 
 `emit_acceptance_profiles.py --check` runs in every CI job
-(`validator/test_acceptance_profiles.py`), because its inputs are vendored. The scheduled
-`acceptance-refresh` workflow moves the vendored curves to InferenceX's latest commit
+(`validator/test_acceptance_profiles.py`), after the job fetches the pinned curves. The scheduled
+`acceptance-refresh` workflow moves the pin to the last InferenceX commit that changed a curve
 (`scripts/refresh_inferencex_curves.py`), regenerates the set and opens a pull request when
 it changes. The `rederive`
-job also checks the vendored curves against InferenceX at its pinned commit
+job also checks the pinned hashes against an InferenceX checkout at its pinned commit
 (`INFERENCEX_SHA` in `.github/workflows/rederive.yml`), checks the catalog models against
 the repository's `catalog/`, and re-runs the emitter against the upstream checkout. Schema
 validation is `validate-registry` (`validate/cmd/validate-registry`), which reads

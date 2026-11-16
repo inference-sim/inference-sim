@@ -12,6 +12,7 @@ name.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import shutil
 import subprocess
@@ -23,12 +24,16 @@ import yaml
 
 REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REPO / "scripts" / "emit_acceptance_profiles.py"
-GOLDEN = REPO / "validator" / "testdata" / "inferencex" / "golden_al_distribution"
 CATALOG = REPO.parent / "catalog"
 SET = yaml.safe_load((REPO / "acceptance" / "inferencex-golden-al.yaml").read_text())
 
 sys.path.insert(0, str(REPO / "scripts"))
 import emit_acceptance_profiles as emit  # noqa: E402
+
+# The pinned InferenceX files, fetched by scripts/fetch_inferencex_curves.py (or
+# $INFERENCEX_GOLDEN). Absent, every test here fails, naming the fetch: none skips (X16).
+GOLDEN = emit.GOLDEN
+emit.verify_inputs(GOLDEN)
 
 GLM52 = "glm-5.2-fp8__mtp__native__default-default"
 EAGLE = "minimax-m3__eagle3__minimax-m3-eagle3__default-default"
@@ -73,13 +78,36 @@ def test_the_committed_set_is_what_the_emitter_generates():
         f"renders from the vendored curves; re-run it.\n{r.stderr}")
 
 
-def test_every_profile_cites_the_vendored_file_by_commit_and_hash():
-    vendored = (GOLDEN.parent / "VENDORED.md").read_text()
-    assert emit.INFERENCEX_SHA in vendored
+def test_every_profile_cites_the_pinned_file_by_commit_and_hash():
+    lock = json.loads(emit.LOCK.read_text())
     for p in SET["profiles"]:
-        assert emit.INFERENCEX_SHA in p["provenance"]["source"]
+        assert lock["commit"] in p["provenance"]["source"]
         body = (GOLDEN / f"{stem_of(p)}.yaml").read_bytes()
-        assert p["provenance"]["sha256"] == hashlib.sha256(body).hexdigest(), stem_of(p)
+        assert p["provenance"]["sha256"] == hashlib.sha256(body).hexdigest() \
+            == lock["files"][f"{stem_of(p)}.yaml"], stem_of(p)
+
+
+def test_no_inferencex_file_is_committed():
+    """X12: the repository holds the pin (identifiers and hashes), never the files."""
+    tracked = subprocess.run(["git", "ls-files", "validator/testdata/inferencex"], cwd=str(REPO),
+                             capture_output=True, text=True, check=True).stdout.split()
+    assert tracked and all(not t.endswith(tuple(json.loads(emit.LOCK.read_text())["files"]))
+                           for t in tracked), tracked
+
+
+@pytest.mark.parametrize("change", ["edit", "extra", "missing"])
+def test_the_emitter_refuses_files_that_are_not_the_pinned_ones(tmp_path, change):
+    golden = copy_golden(tmp_path)
+    if change == "edit":
+        f = golden / f"{GLM52}.yaml"
+        f.write_text(f.read_text().replace("1.84", "1.85", 1))
+    elif change == "extra":
+        shutil.copy(golden / f"{GLM52}.yaml", golden / "glm-5.4__mtp__native__default-default.yaml")
+    else:
+        (golden / f"{GLM52}.yaml").unlink()
+    r = subprocess.run([sys.executable, "-I", str(SCRIPT), "--check"], capture_output=True, text=True,
+                       cwd=str(REPO), timeout=120, env={"PATH": "", "INFERENCEX_GOLDEN": str(golden)})
+    assert r.returncode != 0 and "curves.json" in r.stderr, r.stderr
 
 
 def test_every_profile_is_the_value_its_source_file_states():
@@ -276,3 +304,95 @@ def test_hardware_a_file_states_must_agree_with_its_run(tmp_path):
     f.write_text(f.read_text().replace("(B300, vLLM MTP)", "(H200, vLLM MTP)"))
     with pytest.raises(SystemExit, match="ran on b300"):
         emit.collect(golden, CATALOG)
+
+
+GLM53 = "glm-5.3-nvfp4__mtp__native__default-default"
+
+
+def test_a_measured_curve_for_a_transfers_model_makes_the_transfer_stale(tmp_path):
+    """If InferenceX measures GLM-5.3 itself, the transfer from its NVFP4 checkpoint must not
+    quietly collide with it and leave glm-5.3 with no profile: the run fails and names both."""
+    golden = copy_golden(tmp_path)
+    new = "glm-5.3__mtp__native__default-default"
+    (golden / f"{new}.yaml").write_text((golden / f"{GLM53}.yaml").read_text()
+                                        .replace("glm-5.3-nvfp4", "glm-5.3"))
+    ids = yaml.safe_load((golden / emit.IDENTITIES).read_text())
+    add_identity(golden, new, ids[GLM53])
+    with pytest.raises(SystemExit, match=f"TRANSFERS {GLM53} is stale: {new} measures glm-5.3"):
+        emit.collect(golden, CATALOG)
+
+
+def test_a_transfer_whose_curve_is_gone_fails(tmp_path):
+    golden = copy_golden(tmp_path)
+    remove_curve(golden, GLM53)
+    with pytest.raises(SystemExit, match=f"TRANSFERS {GLM53} names no curve file"):
+        emit.collect(golden, CATALOG)
+
+
+def _header(tmp_path, stem, old, new):
+    golden = copy_golden(tmp_path)
+    f = golden / f"{stem}.yaml"
+    assert old in f.read_text()
+    f.write_text(f.read_text().replace(old, new, 1))
+    return golden
+
+
+def test_an_untranscribed_header_sampling_parameter_fails(tmp_path):
+    golden = _header(tmp_path, GLM53, "# thinking_on: chat template default",
+                     "# thinking_on: temp 1.0 min_p 0.05 | chat template default")
+    with pytest.raises(SystemExit, match="min_p"):
+        emit.collect(golden, CATALOG)
+
+
+def test_a_header_repetition_penalty_is_transcribed(tmp_path):
+    golden = _header(tmp_path, GLM53, "# thinking_on: chat template default",
+                     "# thinking_on: temp 1.0 repetition_penalty 1.05 | chat template default")
+    out = generated(golden)
+    p = next(p for p in out["profiles"] if stem_of(p) == GLM53)
+    assert p["provenance"]["settings"]["repetition_penalty"] == "1.05"
+
+
+def test_a_header_value_stated_twice_differently_fails(tmp_path):
+    golden = _header(tmp_path, GLM53, "| top_p: 0.95 |", "| top_p: 0.95 | top_p: 0.9 |")
+    with pytest.raises(SystemExit, match="stated twice, differently"):
+        emit.collect(golden, CATALOG)
+
+
+def test_two_different_measured_on_lines_fail(tmp_path):
+    line = "# Measured on glm-5.3-nvfp4 (NVIDIA B300 SXM6 AC, SGLang MTP), per num_speculative_tokens."
+    golden = _header(tmp_path, GLM53, line, line + "\n" + line.replace("B300 SXM6 AC", "B200"))
+    with pytest.raises(SystemExit, match="two different measured-on lines"):
+        emit.collect(golden, CATALOG)
+
+
+def test_a_curve_no_catalog_model_resolves_is_still_checked(tmp_path):
+    """Qwen3.8-Flash-Next is not in the catalog, so it is not carried; a format change in it
+    still fails the run, rather than on the day the model is added."""
+    golden = copy_golden(tmp_path)
+    stem = "qwen3.8-flash-next-fp8__mtp__native__default-default"
+    ids = yaml.safe_load((golden / emit.IDENTITIES).read_text())
+    ids[stem]["collection"]["tree_width"] = {"value": 4, "source": "explicit"}
+    (golden / emit.IDENTITIES).write_text(yaml.safe_dump(ids, sort_keys=False))
+    with pytest.raises(SystemExit, match="tree_width"):
+        emit.collect(golden, CATALOG)
+
+
+def test_an_identity_with_no_draft_fails(tmp_path):
+    golden = copy_golden(tmp_path)
+    ids = yaml.safe_load((golden / emit.IDENTITIES).read_text())
+    del ids[EAGLE]["collection"]["draft"]
+    (golden / emit.IDENTITIES).write_text(yaml.safe_dump(ids, sort_keys=False))
+    with pytest.raises(SystemExit, match="no collection.draft"):
+        emit.collect(golden, CATALOG)
+
+
+def test_a_stated_drafter_revision_is_recorded_and_an_unstated_one_is_named():
+    k31 = [p for p in SET["profiles"] if p.get("drafter") == "kimi-k3.1-dspark"]
+    assert k31 and {p["provenance"]["settings"]["draft_revision"] for p in k31} == {"6a2ef20a"}
+    caveat = next(c for c in SET["caveats"] if c.startswith("Drafter revision unstated"))
+    assert "minimax-m3+minimax-m3-eagle3" in caveat and "kimi-k3.1" not in caveat
+
+
+def test_the_identities_file_is_cited_with_its_hash():
+    lock = json.loads(emit.LOCK.read_text())
+    assert any(lock["files"]["identities.yaml"] in c and "identities.yaml" in c for c in SET["caveats"])
