@@ -1,5 +1,7 @@
 {
  "breakable": [
+  "AliceAIForCausalLM",
+  "BeamForCausalLM",
   "DeepSeekV4MTPModel",
   "DeepseekV32ForCausalLM",
   "DeepseekV32MTPModel",
@@ -21,9 +23,13 @@
   "KimiLinearForCausalLM",
   "MiniMaxM3SparseForCausalLM",
   "MiniMaxM3SparseForConditionalGeneration",
+  "MuseSpark1xForCausalLM",
+  "MuseSparkForConditionalGeneration",
   "Qwen4ExpForCausalLM",
   "Qwen4ExpForConditionalGeneration",
-  "Qwen4ExpMTP"
+  "Qwen4ExpMTP",
+  "Step5ForCausalLM",
+  "Step5ForConditionalGeneration"
  ],
  "capture": [
   {
@@ -69129,7 +69135,7 @@
    }
   }
  ],
- "commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+ "commit": "4ba787ec9959e566d3b587a796dff07673324da5",
  "dbo": {
   "defaults": [
    {
@@ -72166,7 +72172,7 @@
        24
       ],
       "eager": false,
-      "reqs": 24
+      "reqs": 20
      },
      "tokens": 24
     },
@@ -72181,7 +72187,7 @@
        24
       ],
       "eager": false,
-      "reqs": 24
+      "reqs": 20
      },
      "tokens": 24
     },
@@ -72196,7 +72202,7 @@
        24
       ],
       "eager": false,
-      "reqs": 24
+      "reqs": 20
      },
      "tokens": 24
     }
@@ -72506,7 +72512,7 @@
        16
       ],
       "eager": false,
-      "reqs": 16
+      "reqs": 12
      },
      "tokens": 16
     },
@@ -72520,7 +72526,7 @@
        16
       ],
       "eager": false,
-      "reqs": 16
+      "reqs": 12
      },
      "tokens": 16
     }
@@ -72560,7 +72566,7 @@
        32
       ],
       "eager": false,
-      "reqs": 8
+      "reqs": 7
      },
      "tokens": 32
     },
@@ -72574,7 +72580,7 @@
        32
       ],
       "eager": false,
-      "reqs": 8
+      "reqs": 7
      },
      "tokens": 32
     }
@@ -72762,7 +72768,7 @@
        24
       ],
       "eager": false,
-      "reqs": 24
+      "reqs": 20
      },
      "tokens": 24
     },
@@ -72776,7 +72782,7 @@
        24
       ],
       "eager": false,
-      "reqs": 24
+      "reqs": 20
      },
      "tokens": 24
     }
@@ -72926,7 +72932,7 @@
        16
       ],
       "eager": false,
-      "reqs": 16
+      "reqs": 8
      },
      "tokens": 16
     },
@@ -72940,7 +72946,7 @@
        16
       ],
       "eager": false,
-      "reqs": 16
+      "reqs": 8
      },
      "tokens": 16
     }

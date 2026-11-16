@@ -34,7 +34,7 @@ import (
 )
 
 // Upstream is the vLLM commit the recorded answers are for.
-const Upstream = "5df63a7203cdb9328d824a27b682e77c7b9928be"
+const Upstream = "4ba787ec9959e566d3b587a796dff07673324da5"
 
 // unlisted is the stated value oracle.py uses for "a string no vLLM release names"; vLLM's answer to
 // it is its answer to every value the oracle did not list.

@@ -213,8 +213,9 @@ func dedupSorted(x []int) []int {
 }
 
 // Breakable is whether an architecture runs breakable CUDA graphs by default on CUDA
-// (default_breakable_cudagraph_architectures, vllm/config/vllm.py:104-121@5df63a72;
-// DEFAULT_BREAKABLE_CUDAGRAPH_ARCHITECTURES, :74-100). Such a piecewise replay runs one piece for
+// (default_breakable_cudagraph_architectures, vllm/config/vllm.py:113-129@4ba787ec;
+// DEFAULT_BREAKABLE_CUDAGRAPH_ARCHITECTURES, :76-109; v0.33.0 adds AliceAI, Beam, MuseSpark and
+// Step5). Such a piecewise replay runs one piece for
 // each eager region, which the engine states in the plan and the cost model prices.
 func Breakable(architecture string) bool {
 	_, ok := breakable[architecture]
@@ -232,6 +233,9 @@ func BreakableArchitectures() []string {
 }
 
 var breakable = map[string]struct{}{
+	"AliceAIForCausalLM": {}, "BeamForCausalLM": {},
+	"MuseSpark1xForCausalLM": {}, "MuseSparkForConditionalGeneration": {},
+	"Step5ForCausalLM": {}, "Step5ForConditionalGeneration": {},
 	"DeepseekV32MTPModel": {}, "DeepseekV32ForCausalLM": {}, "DeepseekV4ForCausalLM": {},
 	"DeepseekV4ForConditionalGeneration": {}, "DeepSeekV4MTPModel": {}, "DeepseekV41ForCausalLM": {},
 	"Dots3NoteForCausalLM": {}, "Dots3NoteMTPModel": {}, "Glm5NextForCausalLM": {},

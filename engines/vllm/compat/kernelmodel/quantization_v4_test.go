@@ -42,7 +42,7 @@ func loadQuantizationOracle(t *testing.T) quantizationOracle {
 		t.Fatal(err)
 	}
 	o, ok := doc.Checkpoints["deepseek-v4-pro"]
-	if !ok || doc.Commit != "5df63a7203cdb9328d824a27b682e77c7b9928be" {
+	if !ok || doc.Commit != "4ba787ec9959e566d3b587a796dff07673324da5" {
 		t.Fatalf("the oracle file has no deepseek-v4-pro entry at 5df63a72 (vllm %s)", doc.Commit)
 	}
 	o.Commit, o.Model = doc.Commit, "deepseek-v4-pro"
