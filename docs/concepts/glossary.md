@@ -54,7 +54,7 @@ Total time from request arrival to final token completion. Computed as `TTFT + s
 
 ### Engine
 
-What runs one instance's batches, reached through blis-schemas' `engine.Engine` interface (`Add`, `Schedule`, `StepTime`, `Complete`, `Finish`, `NextWake`, ...). `sim.EngineDriver` drives it from the event loop. A scenario's `engine_version: "0.32.0"` selects blis-vllm's translated vLLM v0.32.0 engine; with none stated the scenario is refused. See [Core Engine](core-engine.md).
+What runs one instance's batches, reached through blis-schemas' `engine.Engine` interface (`Add`, `Schedule`, `StepTime`, `Complete`, `Finish`, `NextWake`, ...). `sim.EngineDriver` drives it from the event loop. A scenario's `engine: {kind: vllm, version: "0.32.0"}` selects blis-vllm's translated vLLM v0.32.0 engine; with none stated the scenario is refused. See [Core Engine](core-engine.md).
 
 ### EndpointPickerConfig
 
@@ -130,7 +130,7 @@ A YAML configuration file (`--policy-config`) that specifies priority, schedulin
 
 ### Preemption
 
-KV cache eviction under memory pressure. When the batch formation algorithm cannot allocate blocks for a continuing request, it evicts requests from the batch, frees their blocks, and re-enqueues them at the front of the wait queue. By default (`--preemption-policy fcfs`), BLIS evicts from the batch tail. `--preemption-policy priority` is refused on 0.32.0 for now. See [Core Engine: Batch Formation](core-engine.md#the-engine-interface).
+KV cache eviction under memory pressure. When the batch formation algorithm cannot allocate blocks for a continuing request, it evicts requests from the batch, frees their blocks, and re-enqueues them at the front of the wait queue. Under the pool's `engine.scheduling_policy: fcfs` (the default), BLIS evicts from the batch tail. `scheduling_policy: priority` is refused on 0.32.0 for now. See [Core Engine: Batch Formation](core-engine.md#the-engine-interface).
 
 ### Prefill Phase
 

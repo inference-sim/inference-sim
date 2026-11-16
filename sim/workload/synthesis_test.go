@@ -180,7 +180,7 @@ func TestSynthesizeFromDistribution_GeneratesRequests(t *testing.T) {
 	spec := SynthesizeFromDistribution(params)
 	spec.Seed = 42
 
-	requests, err := GenerateRequests(spec, 100_000_000, int64(params.NumRequests))
+	requests, err := generateRequests(spec, 100_000_000, int64(params.NumRequests))
 	if err != nil {
 		t.Fatalf("GenerateRequests failed: %v", err)
 	}

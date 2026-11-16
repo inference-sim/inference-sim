@@ -46,9 +46,9 @@ func makeSharedPrefixGroupRequests() []*sim.Request {
 }
 
 // TestResolveReplayKVOffload_UnrecordedDeploymentAllowsFlagAdd verifies that a trace
-// recording no deployment (allowFlagAdd=true: a converted trace, #2067, or an agentic
-// replay) with no header offload config accepts a scenario- or flag-supplied config, and
-// a trace blis run wrote (allowFlagAdd=false) still rejects it (INV-13).
+// recording no deployment (allowScenarioAdd=true: a converted trace, #2067, or an agentic
+// replay) with no header offload config accepts the scenario's config, and a trace blis run
+// wrote (allowScenarioAdd=false) still rejects it (INV-13).
 func TestResolveReplayKVOffload_UnrecordedDeploymentAllowsFlagAdd(t *testing.T) {
 	flagCfg := kvOffloadConfig{
 		Enabled: true, CPUBytesToUse: 1 << 30, BlockSize: 16, BlocksPerChunk: 1,
@@ -57,14 +57,14 @@ func TestResolveReplayKVOffload_UnrecordedDeploymentAllowsFlagAdd(t *testing.T) 
 	// No recorded deployment: no header offload, flag supplied, add ALLOWED.
 	got, err := resolveReplayKVOffload(nil, true, flagCfg, true)
 	if err != nil {
-		t.Fatalf("a trace recording no deployment must accept --kv-offload-config, got %v", err)
+		t.Fatalf("a trace recording no deployment must accept the scenario's offload block, got %v", err)
 	}
 	if !got.IsEnabled() {
-		t.Fatal("returned config should be the flag-supplied offload config")
+		t.Fatal("returned config should be the scenario's offload config")
 	}
 	// Sim-generated trace: identical inputs, add NOT allowed → error (INV-13).
 	if _, err := resolveReplayKVOffload(nil, true, flagCfg, false); err == nil {
-		t.Fatal("sim-generated trace must still reject a flag-added offload config (INV-13)")
+		t.Fatal("sim-generated trace must still reject a scenario-added offload config (INV-13)")
 	}
 }
 

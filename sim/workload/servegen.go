@@ -813,7 +813,7 @@ func findNearestDataset(queryTimestamp int, datasetByTimestamp map[int]datasetWi
 // windows without matching dataset entries are skipped.
 //
 // The resulting ClientSpec uses per-window overrides on ActiveWindow, triggering
-// the time-varying generator path in GenerateRequests. Client-level fields
+// the time-varying generator path (generateTimeVaryingWorkloadLazy). Client-level fields
 // provide fallback defaults (used only if a window lacks overrides).
 func loadServeGenChunk(chunkID, tracePath, datasetPath string) (*ClientSpec, error) {
 	// Parse all trace rows.
