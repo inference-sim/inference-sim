@@ -10,10 +10,17 @@ its revision (`source.path`, else config.json), checks its hash against model.ya
 to OUTDIR/<entry>/config.json. Then `derive_graph.py --check --fetched OUTDIR --allow-unfetched`
 re-derives those entries, so a hand edit of one of their graphs fails the pull request.
 
-An entry may also pin the safetensors headers of its shards (model.yaml `headers`), which the
-deriver reads stored widths from when config.json states no quantization (SUB-15). Each header is
-fetched by HTTP range request, the 8-byte length and then the header JSON, never the weights; its
-SHA-256 is checked against the pin, and it is written to OUTDIR/<entry>/headers/<shard>.json.
+An entry may also pin the safetensors headers of its shards (model.yaml `headers`), with the
+shard index that names them (`shard_index`), which the deriver reads stored widths from when
+config.json states no quantization (SUB-15). These are fetched without a token, by both the
+pull-request job and the nightly job. The index is fetched whole and the pinned shards must be
+exactly the files its weight_map names; each header is fetched by HTTP range request, the 8-byte
+length and then the header JSON, never the weights. Every hash is checked against its pin, and
+only when all of them verify are they written, to OUTDIR/<entry>/headers/index.json and
+OUTDIR/<entry>/headers/<shard>.json.
+
+The nightly job runs this script with --token-env HF_TOKEN, which sends the token for config
+files, and --require-all, which fails on anything left unfetched.
 
 An entry whose repository answers 401, 403 or 404 (gated or private) is listed and left unfetched
 for the token job. A file whose hash differs from the pin is an error: the pin or the revision is
@@ -26,6 +33,8 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
+import os
 import struct
 import sys
 import time
@@ -44,14 +53,17 @@ def url_of(source: dict) -> str:
 
 
 def fetch(url: str, opener=urllib.request.urlopen, retries: int = 3,
-          span: tuple[int, int] | None = None) -> bytes | int | None:
+          span: tuple[int, int] | None = None, token: str | None = None) -> bytes | int | None:
     """The file's bytes, or bytes span[0] to span[1] inclusive by range request; the HTTP status
-    for a refusal (401, 403, 404); None after the network failed `retries` times."""
+    for a refusal (401, 403, 404); None after the network failed `retries` times. `token`, where
+    given, is sent as a bearer token (the nightly job's, for a gated repository)."""
     for attempt in range(retries):
         try:
             req = urllib.request.Request(url)
             if span:
                 req.add_header("Range", f"bytes={span[0]}-{span[1]}")
+            if token:
+                req.add_header("Authorization", "Bearer " + token)
             with opener(req, timeout=60) as r:
                 return r.read()
         except urllib.error.HTTPError as e:
@@ -79,29 +91,53 @@ def header_of(source: dict, shard: str, opener) -> bytes | int | None:
 
 
 def fetch_headers(name: str, m: dict, out: Path, opener) -> str | None:
-    """Fetch and check every pinned header of one entry. Returns why it failed, None when every
-    header was written; a refusal or an outage is reported as "unfetched: ...", a hash that
-    differs as the error itself."""
-    d = out / name / "headers"
-    d.mkdir(parents=True, exist_ok=True)
+    """Fetch and check an entry's shard index and every pinned header, without a token (a
+    header-pinned repository is public). Returns why it failed, None when all were written. A
+    refusal or an outage is reported as "unfetched: ...", a hash that differs, or pins that are
+    not the index's shards, as the error itself. Nothing is written unless every file verifies,
+    so a partial fetch is never read as a complete one."""
+    def check(path, got, pin):
+        if not isinstance(got, bytes):
+            return f"unfetched: {'network' if got is None else 'HTTP ' + str(got)}"
+        digest = hashlib.sha256(got).hexdigest()
+        if digest != pin:
+            return (f"{name}: {path} at {m['source']['revision']} hashes to {digest}, not the "
+                    f"pinned {pin}")
+        return None
+
+    index_pin = m.get("shard_index") or {}
+    index_url = f"{HOST}/{m['source']['repo']}/resolve/{m['source']['revision']}/{index_pin.get('path')}"
+    index = fetch(index_url, opener)
+    why = check(index_pin.get("path"), index, index_pin.get("sha256"))
+    if why:
+        return why
+    shards = sorted(set((json.loads(index).get("weight_map") or {}).values()))
+    pinned = sorted(p["path"] for p in m["headers"])
+    if shards != pinned:
+        return (f"{name}: the headers pinned are not the shards {index_pin['path']} names "
+                f"(missing {sorted(set(shards) - set(pinned))}, extra {sorted(set(pinned) - set(shards))})")
 
     def one(pin):
         return pin, header_of(m["source"], pin["path"], opener)
 
+    got_all = {}
     with ThreadPoolExecutor(max_workers=8) as pool:
         for pin, got in pool.map(one, m["headers"]):
-            if not isinstance(got, bytes):
-                return f"unfetched: {'network' if got is None else 'HTTP ' + str(got)}"
-            digest = hashlib.sha256(got).hexdigest()
-            if digest != pin["sha256"]:
-                return (f"{name}: the header of {pin['path']} at {m['source']['revision']} hashes "
-                        f"to {digest}, not the pinned {pin['sha256']}")
-            (d / (pin["path"].replace("/", "__") + ".json")).write_bytes(got)
+            why = check(f"the header of {pin['path']}", got, pin["sha256"])
+            if why:
+                return why
+            got_all[pin["path"]] = got
+    d = out / name / "headers"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "index.json").write_bytes(index)
+    for path, got in got_all.items():
+        (d / (path.replace("/", "__") + ".json")).write_bytes(got)
     return None
 
 
-def run(catalog: Path, out: Path, opener=urllib.request.urlopen) -> tuple[list[str], list[str], list[str]]:
-    """Returns (fetched, unfetched, hash errors) entry names."""
+def run(catalog: Path, out: Path, opener=urllib.request.urlopen,
+        token: str | None = None) -> tuple[list[str], list[str], list[str]]:
+    """Returns (fetched, unfetched, hash errors) entry names. `token` is sent for config files."""
     fetched, unfetched, bad = [], [], []
     for card in sorted((catalog / "models").glob("*/model.yaml")):
         m = yaml.safe_load(card.read_text()) or {}
@@ -117,7 +153,7 @@ def run(catalog: Path, out: Path, opener=urllib.request.urlopen) -> tuple[list[s
         pin = (m.get("config") or {}).get("sha256")
         if not pin:
             continue
-        got = fetch(url_of(m["source"]), opener)
+        got = fetch(url_of(m["source"]), opener, token=token)
         if not isinstance(got, bytes):
             unfetched.append(f"{name} ({'network' if got is None else 'HTTP ' + str(got)})")
             continue
@@ -136,14 +172,25 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("out")
     ap.add_argument("--catalog", default=str(Path(__file__).resolve().parent.parent))
+    ap.add_argument("--token-env", default=None,
+                    help="the environment variable holding the access token sent for config files "
+                         "(the nightly job's); headers are fetched without one")
+    ap.add_argument("--require-all", action="store_true",
+                    help="fail on any file left unfetched (the nightly job, which must re-derive all)")
     args = ap.parse_args()
-    fetched, unfetched, bad = run(Path(args.catalog), Path(args.out))
-    print(f"{len(fetched)} pinned config(s) fetched and hash-checked")
+    token = None
+    if args.token_env:
+        token = os.environ.get(args.token_env)
+        if not token:
+            print(f"{args.token_env} is empty; the token job cannot run (X16)", file=sys.stderr)
+            return 1
+    fetched, unfetched, bad = run(Path(args.catalog), Path(args.out), token=token)
+    print(f"{len(fetched)} pinned file set(s) fetched and hash-checked")
     if unfetched:
-        print("left for the token job: " + ", ".join(unfetched))
+        print("left unfetched: " + ", ".join(unfetched))
     for line in bad:
         print(line, file=sys.stderr)
-    return 1 if bad else 0
+    return 1 if bad or (args.require_all and unfetched) else 0
 
 
 if __name__ == "__main__":

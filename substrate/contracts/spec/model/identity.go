@@ -58,6 +58,11 @@ type Identity struct {
 	// length at the start of the file. The headers are fetched by range request and never
 	// committed (X12); pull-request and nightly jobs check each against its pin.
 	Headers []HeaderPin `yaml:"headers,omitempty"`
+	// ShardIndex pins the checkpoint's shard index (model.safetensors.index.json), whose
+	// weight_map names the shards the engine loads. A model that pins headers pins it too, and
+	// the pinned headers must be exactly the shards it names (checked when the files are fetched):
+	// "every shard" in SUB-15 is every shard the index names, not every file in the repository.
+	ShardIndex *HeaderPin `yaml:"shard_index,omitempty"`
 	// Drafters lists what can draft tokens for this target (design D8): the word
 	// "speculator" for the in-graph speculator its graph.yaml states (its MTP layers, say), and
 	// the catalog name of each separate drafter checkpoint. The catalog check requires every
@@ -92,7 +97,7 @@ type Licence struct {
 }
 
 // HeaderPin is one shard's safetensors header, by the shard's path in the repository and the
-// SHA-256 of the header bytes.
+// SHA-256 of the header bytes; as ShardIndex, the index file and the SHA-256 of the whole file.
 type HeaderPin struct {
 	Path   string `yaml:"path"`
 	SHA256 string `yaml:"sha256"`
@@ -165,6 +170,21 @@ func (id *Identity) validateStructure(p *validate.Problems) {
 			p.Field(at+".path", "%q is pinned twice", h.Path)
 		}
 		shards[h.Path] = true
+	}
+	switch {
+	case len(id.Headers) > 0 && id.ShardIndex == nil:
+		p.Field("shard_index", "required with headers: pin the index whose weight_map names the shards")
+	case len(id.Headers) == 0 && id.ShardIndex != nil:
+		p.Field("shard_index", "is pinned with no headers; pin the headers it names, or remove it")
+	case id.ShardIndex != nil:
+		if !strings.HasSuffix(id.ShardIndex.Path, ".safetensors.index.json") {
+			p.Field("shard_index.path", "%q must name a .safetensors.index.json file", id.ShardIndex.Path)
+		} else if err := checkRepoPath(id.ShardIndex.Path); err != "" {
+			p.Field("shard_index.path", "%q %s", id.ShardIndex.Path, err)
+		}
+		if !validate.IsSHA256(id.ShardIndex.SHA256) {
+			p.Field("shard_index.sha256", "%q is not a lowercase hex SHA-256", id.ShardIndex.SHA256)
+		}
 	}
 	seen := map[string]bool{}
 	for i, d := range id.Drafters {

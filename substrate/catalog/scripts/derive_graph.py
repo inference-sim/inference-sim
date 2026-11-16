@@ -6818,8 +6818,9 @@ def main() -> int:
         # An entry that pins its shards' safetensors headers is derived from them as well
         # (SUB-15). They are never committed: without the fetched headers the graph is neither
         # written nor checked, and is counted with the entries that are not re-derivable.
-        pins = ((yaml.safe_load((entry / "model.yaml").read_text()) or {}).get("headers") or []) \
-            if (entry / "model.yaml").is_file() else []
+        card = (yaml.safe_load((entry / "model.yaml").read_text()) or {}) \
+            if (entry / "model.yaml").is_file() else {}
+        pins = card.get("headers") or []
         headers = None
         if pins:
             hdir = Path(args.fetched) / entry.name / "headers" if args.fetched else None
@@ -6830,7 +6831,19 @@ def main() -> int:
                     failed.append(f"{entry.name}: no fetched headers at {hdir}")
                 continue
             headers, why = {}, None
-            for pin in pins:
+            index_pin = card.get("shard_index") or {}
+            index = hdir / "index.json"
+            if not index.is_file():
+                why = "no fetched shard index"
+            elif hashlib.sha256(index.read_bytes()).hexdigest() != index_pin.get("sha256"):
+                why = f"the fetched shard index is not the pinned {index_pin.get('sha256')}"
+            else:
+                named = sorted(set((json.loads(index.read_bytes()).get("weight_map") or {}).values()))
+                if named != sorted(p["path"] for p in pins):
+                    why = (f"the pinned headers are not the shards {index_pin.get('path')} names "
+                           f"(missing {sorted(set(named) - {p['path'] for p in pins})}, extra "
+                           f"{sorted({p['path'] for p in pins} - set(named))})")
+            for pin in ([] if why else pins):
                 f = hdir / (pin["path"].replace("/", "__") + ".json")
                 if not f.is_file():
                     why = f"no fetched header for {pin['path']}"

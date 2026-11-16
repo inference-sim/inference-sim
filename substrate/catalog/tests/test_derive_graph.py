@@ -201,12 +201,16 @@ def test_a_hand_edit_of_a_header_pinned_entry_is_detected_once_fetched(tree_copy
     headers = _glm5_headers()
     body = json.dumps(headers).encode()
     pins = [{"path": "model.safetensors", "sha256": hashlib.sha256(body).hexdigest()}]
+    index = json.dumps({"weight_map": {"a": "model.safetensors"}}).encode()
     card = yaml.safe_load((d / "model.yaml").read_text())
     card["headers"] = pins
+    card["shard_index"] = {"path": "model.safetensors.index.json",
+                           "sha256": hashlib.sha256(index).hexdigest()}
     (d / "model.yaml").write_text(yaml.safe_dump(card))
     fetched = tmp_path / "fetched" / "glm-5-nvfp4" / "headers"
     fetched.mkdir(parents=True)
     (fetched / "model.safetensors.json").write_bytes(body)
+    (fetched / "index.json").write_bytes(index)
     run = lambda: subprocess.run([sys.executable, str(DERIVER), str(tree_copy), "--check", "--model",
                                   "glm-5-nvfp4", "--fetched", str(tmp_path / "fetched")],
                                  capture_output=True, text=True)
@@ -221,6 +225,15 @@ def test_a_hand_edit_of_a_header_pinned_entry_is_detected_once_fetched(tree_copy
     (fetched / "model.safetensors.json").write_bytes(body + b" ")
     r = run()
     assert r.returncode != 0 and "not the pinned" in r.stderr
+    # SUB-15's "every shard" is every shard the index names: a pin set that is not exactly
+    # them is refused, whatever the headers say.
+    (fetched / "model.safetensors.json").write_bytes(body)
+    two = json.dumps({"weight_map": {"a": "model.safetensors", "b": "model-2.safetensors"}}).encode()
+    (fetched / "index.json").write_bytes(two)
+    card["shard_index"]["sha256"] = hashlib.sha256(two).hexdigest()
+    (d / "model.yaml").write_text(yaml.safe_dump(card))
+    r = run()
+    assert r.returncode != 0 and "missing ['model-2.safetensors']" in r.stderr
 
 
 def test_a_failure_names_its_model_once(tmp_path):
@@ -8425,14 +8438,6 @@ def test_glm5_nvfp4_widths_come_from_its_shard_headers(tmp_path):
     plain = _derive_with_headers(None, tmp_path)
     assert "nvfp4" not in {w for k in plain["layer_kinds"] for n in k["nodes"]
                            if (w := n.get("weight_dtype"))}
-
-
-def test_the_committed_glm5_nvfp4_graph_is_the_header_derivation():
-    g = graph_of(GLM5_NVFP4)
-    assert _widths(g, "attn_moe")["experts"][0] == "nvfp4"
-    assert {w for w, _ in _widths(g, "mtp_moe").values()} == {"bf16"}
-    pins = yaml.safe_load((GLM5_NVFP4 / "model.yaml").read_text())["headers"]
-    assert len(pins) == 282 and len({p["path"] for p in pins}) == len(pins)
 
 
 @pytest.mark.parametrize("edit,why", [

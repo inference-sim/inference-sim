@@ -1,7 +1,9 @@
 name: glm-5-nvfp4
 # config.json states no quantization: the layout is in each shard's safetensors header, which
 # the deriver reads (SUB-15). The headers are fetched by range request and not committed; each
-# is pinned here by the SHA-256 of its header bytes (X12).
+# is pinned here by the SHA-256 of its header bytes (X12). The pins are the 282 shards the index
+# names; the repository's mtp-bf16.safetensors is in no weight_map, vLLM never loads it, and it is
+# not pinned.
 source:
   provider: huggingface
   repo: nvidia/GLM-5-NVFP4
@@ -11,6 +13,9 @@ licence:
   id: MIT
   evidence: https://huggingface.co/nvidia/GLM-5-NVFP4/raw/dc54ff55a7e9e71b85db953d8bc22eca894b44c6/README.md
 drafters: [speculator]
+shard_index:
+  path: model.safetensors.index.json
+  sha256: 7bb3adca0023698e8e492c0551d344182a7060216e138a74f9730fb325b1465e
 headers:
   - path: model-00001-of-00282.safetensors
     sha256: 142901358254b25b0b6c11f6ecee6ccdb1a289c6161caabf9489d93debbcdc1d
