@@ -162,13 +162,15 @@ class Monitor:
         return {"keys": self.keys(e.keys), "medium": e.medium.name, "removed": bool(e.removed)}
 
     # --- events ---
+    # Each callback runs inside the lambda registered for it, so the interface method's own frame is
+    # two above the callback's: sys._getframe(2).
 
     def _top(self, iface) -> bool:
         return not any(r[2] == iface for r in self.stack)
 
     def _start(self, code, offset):
         iface, m = self.codes[code]
-        f = sys._getframe(1)
+        f = sys._getframe(2)
         rec = None
         if self._top(iface):
             rec = {"m": m, "args": self.args(iface, m, f)}
@@ -181,12 +183,12 @@ class Monitor:
             self.stack.append((code, rec, iface, f))
 
     def _yield(self, code, offset, value):
-        r = self.gens.get(sys._getframe(1))
+        r = self.gens.get(sys._getframe(2))
         if r is not None:
             r[1]["ret"].append(self.event(value))
 
     def _return(self, code, offset, value):
-        f = sys._getframe(1)
+        f = sys._getframe(2)
         if code.co_flags & CO_GENERATOR:
             self.gens.pop(f, None)
             return

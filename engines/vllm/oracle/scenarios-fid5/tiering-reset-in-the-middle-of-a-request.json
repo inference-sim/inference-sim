@@ -2,8 +2,8 @@
  "description": "TieringOffloadingSpec with no secondary tiers, whose manager forwards to its CPU primary tier: reset_cache while a store is in flight: the cache starts empty at slot 0, the pre-reset completion changes nothing, the request's earlier access is discarded, and finishing twice or finishing a request never seen is a no-op.",
  "spec": {
   "name": "TieringOffloadingSpec",
-  "cpu_bytes_to_use": 8192,
-  "worker_kv_bytes_per_block": 4096,
+  "cpu_bytes_to_use": 32768,
+  "worker_kv_bytes_per_block": 16384,
   "world_size": 1,
   "blocks_per_chunk": 1
  },

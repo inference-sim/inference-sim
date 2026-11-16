@@ -2,8 +2,8 @@
  "description": "A chunk looked up while its store is in flight is HIT_PENDING; one request loads the same chunk twice; schedule ends with new and preempted requests change nothing on a CPU tier.",
  "spec": {
   "name": "CPUOffloadingSpec",
-  "cpu_bytes_to_use": 8192,
-  "worker_kv_bytes_per_block": 4096,
+  "cpu_bytes_to_use": 32768,
+  "worker_kv_bytes_per_block": 16384,
   "world_size": 1,
   "blocks_per_chunk": 1
  },

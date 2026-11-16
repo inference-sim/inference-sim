@@ -2,8 +2,8 @@
  "description": "touch, which the connector never calls, makes a chunk most recent; a request finishing with key positions out of offer order ranks its keys head to tail; each later store's eviction shows the order.",
  "spec": {
   "name": "CPUOffloadingSpec",
-  "cpu_bytes_to_use": 12288,
-  "worker_kv_bytes_per_block": 4096,
+  "cpu_bytes_to_use": 49152,
+  "worker_kv_bytes_per_block": 16384,
   "world_size": 1,
   "blocks_per_chunk": 1
  },

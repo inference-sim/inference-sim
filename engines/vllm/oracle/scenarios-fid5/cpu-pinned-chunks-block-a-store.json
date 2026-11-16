@@ -2,8 +2,8 @@
  "description": "Two requests read the same chunk at once; while it is pinned a store that needs both slots fails, after one load completes it still fails, and after both it evicts.",
  "spec": {
   "name": "CPUOffloadingSpec",
-  "cpu_bytes_to_use": 8192,
-  "worker_kv_bytes_per_block": 4096,
+  "cpu_bytes_to_use": 32768,
+  "worker_kv_bytes_per_block": 16384,
   "world_size": 1,
   "blocks_per_chunk": 1
  },
