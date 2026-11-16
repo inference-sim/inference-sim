@@ -20,6 +20,10 @@ func valid() *Table {
 		Kind:       Kind,
 		Engine:     Engine{Kind: "an-engine", Version: "1.2.3", Commit: strings.Repeat("ab", 20)},
 		Primitives: []string{"attention.decode", "attention.prefill"},
+		Gaps: []Gap{
+			{Primitive: "attention.decode", Selection: "backend A", Issue: "org/repo#1"},
+			{Primitive: "attention.decode", Selection: "backend B", Issue: "org/repo#2"},
+		},
 		Libraries: []Library{
 			{Name: "attnlib", Version: "0.6.0", Pin: "seen in runs r1", Origin: "pypi attnlib==0.6.0"},
 			{Name: "attnlib", Version: "0.7.0", Pinned: true, Pin: "requirements.txt:12@0123abcd", Origin: "pypi attnlib==0.7.0"},
@@ -68,6 +72,12 @@ func TestEachWayATableCanBeWrongIsRefused(t *testing.T) {
 		{"a primitive that is not lowered", "primitives[1]", func(t *Table) { t.Primitives[1] = "attention" }},
 		{"primitives out of order", "primitives[1]", func(t *Table) { t.Primitives = []string{"attention.prefill", "attention.decode"} }},
 		{"a primitive twice", "primitives[1]", func(t *Table) { t.Primitives = []string{"attention.decode", "attention.decode"} }},
+		{"gap of an uncovered primitive", "gaps[0].primitive", func(t *Table) { t.Gaps[0].Primitive = "gemm" }},
+		{"gap with no selection", "gaps[0].selection", func(t *Table) { t.Gaps[0].Selection = "" }},
+		{"gap with no issue", "gaps[1].issue", func(t *Table) { t.Gaps[1].Issue = "" }},
+		{"gap whose issue is not owner/repo#n", "gaps[1].issue", func(t *Table) { t.Gaps[1].Issue = "#2" }},
+		{"gaps out of order", "gaps[1]", func(t *Table) { t.Gaps[0], t.Gaps[1] = t.Gaps[1], t.Gaps[0] }},
+		{"a gap twice", "gaps[1]", func(t *Table) { t.Gaps[1] = t.Gaps[0] }},
 		{"library with no name", "libraries[0].name", func(t *Table) { t.Libraries[0].Name = "" }},
 		{"library with no version", "libraries[0].version", func(t *Table) { t.Libraries[0].Version = "" }},
 		{"library with no pin citation", "libraries[1].pin", func(t *Table) { t.Libraries[1].Pin = "" }},
@@ -191,6 +201,9 @@ func TestTheLookupsFindTheRowsOfABuild(t *testing.T) {
 	sibling.CodeHash = strings.Repeat("0", 64)
 	if tab.Lists(sibling) {
 		t.Errorf("Lists matched a different build of the same kernel (VAL-8)")
+	}
+	if gs := tab.GapsFor("attention.decode"); len(gs) != 2 || len(tab.GapsFor("attention.prefill")) != 0 {
+		t.Errorf("GapsFor reports the wrong gaps: %+v", gs)
 	}
 	if !tab.Covers("attention.decode") || tab.Covers("gemm") {
 		t.Errorf("Covers reports the wrong primitives")

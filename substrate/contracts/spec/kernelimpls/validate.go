@@ -54,6 +54,7 @@ func (t *Table) Marshal() ([]byte, error) {
 
 var (
 	commitRE = regexp.MustCompile(`^[0-9a-f]{40}$`)
+	issueRE  = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[1-9][0-9]*$`)
 	archRE   = regexp.MustCompile(`^sm_[0-9]{2,3}[af]?$`)
 )
 
@@ -65,6 +66,7 @@ func (t *Table) Validate() error {
 	}
 	t.validateEngine(&p)
 	covered := t.validatePrimitives(&p)
+	t.validateGaps(&p, covered)
 	libs := t.validateLibraries(&p)
 	t.validateImplementations(&p, covered, libs)
 	if !p.OK() {
@@ -104,6 +106,27 @@ func (t *Table) validatePrimitives(p *check.Problems) map[string]bool {
 		covered[w] = true
 	}
 	return covered
+}
+
+func (t *Table) validateGaps(p *check.Problems, covered map[string]bool) {
+	for i, g := range t.Gaps {
+		at := fmt.Sprintf("gaps[%d]", i)
+		if !covered[g.Primitive] {
+			p.Field(at+".primitive", "%q is not one of the table's primitives", g.Primitive)
+		}
+		if strings.TrimSpace(g.Selection) == "" {
+			p.Field(at+".selection", "required: the upstream choice whose kernels are not listed")
+		}
+		if !issueRE.MatchString(g.Issue) {
+			p.Field(at+".issue", "must name the issue as <owner>/<repo>#<n>, got %q", g.Issue)
+		}
+		if i > 0 {
+			prev := t.Gaps[i-1]
+			if prev.Primitive > g.Primitive || (prev.Primitive == g.Primitive && prev.Selection >= g.Selection) {
+				p.Field(at, "gap %s %q is out of order or repeated: gaps are sorted by primitive, then selection", g.Primitive, g.Selection)
+			}
+		}
+	}
 }
 
 type libKey struct{ name, version string }

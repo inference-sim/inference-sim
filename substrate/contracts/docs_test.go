@@ -385,6 +385,7 @@ var documented = map[string]struct {
 	"pointrecord.Note":            {typ: reflect.TypeOf(pointrecord.Note{})},
 	"kernelimpls.Table":           {typ: reflect.TypeOf(kernelimpls.Table{})},
 	"kernelimpls.Engine":          {typ: reflect.TypeOf(kernelimpls.Engine{})},
+	"kernelimpls.Gap":             {typ: reflect.TypeOf(kernelimpls.Gap{})},
 	"kernelimpls.Library":         {typ: reflect.TypeOf(kernelimpls.Library{})},
 	"kernelimpls.Implementation":  {typ: reflect.TypeOf(kernelimpls.Implementation{})},
 	"result.Result":               {typ: reflect.TypeOf(result.Result{})},

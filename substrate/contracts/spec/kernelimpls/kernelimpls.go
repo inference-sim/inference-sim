@@ -32,10 +32,14 @@ type Table struct {
 	// Engine names the engine release whose kernels the table lists.
 	Engine Engine `json:"engine" yaml:"engine"`
 	// Primitives are the lowered primitives (plan.Primitive words) whose implementations the
-	// table lists completely: every kernel the release can emit for one of them is a row. A
-	// primitive not named here is not covered, and a reader learns nothing from a missing row
-	// for it. Sorted, each once.
+	// table lists: every kernel the release can emit for one of them is a row, except where Gaps
+	// names a selection the table does not yet list. A primitive not named here is not covered,
+	// and a reader learns nothing from a missing row for it. Sorted, each once.
 	Primitives []string `json:"primitives" yaml:"primitives"`
+	// Gaps are the upstream selections, under a covered primitive, whose kernels the table does
+	// not yet list, each with the issue that adds them. A reader that finds no row for a build
+	// of such a selection learns nothing from it. Sorted by primitive and then selection.
+	Gaps []Gap `json:"gaps,omitempty" yaml:"gaps,omitempty"`
 	// Libraries are the kernel libraries the rows name, at each version the table covers: the
 	// release's pinned version, and any other version runs of the release were seen with.
 	// Sorted by name and then version, in byte order.
@@ -43,6 +47,17 @@ type Table struct {
 	// Implementations has one row per (primitive, library, library version, variant, target
 	// architecture), sorted in that order, in byte order.
 	Implementations []Implementation `json:"implementations" yaml:"implementations"`
+}
+
+// Gap is an upstream selection whose kernels a table does not yet list.
+type Gap struct {
+	// Primitive is one of Table.Primitives.
+	Primitive string `json:"primitive" yaml:"primitive"`
+	// Selection names the upstream choice, in the upstream's own words: a backend, a kernel
+	// path or a setting's value.
+	Selection string `json:"selection" yaml:"selection"`
+	// Issue tracks the work that lists its kernels, as <owner>/<repo>#<n>.
+	Issue string `json:"issue" yaml:"issue"`
 }
 
 // Engine names an engine release.

@@ -29,9 +29,25 @@ canonical bytes, and an engine repository checks its committed file by comparing
 |---|---|---|---|
 | `kind` | string | yes | Always `KernelImplTable`. |
 | `engine` | mapping | yes | The engine release whose kernels the table lists, below. |
-| `primitives` | list of strings | yes | The lowered primitives whose implementations the table lists completely, sorted, each once. A primitive not named here is not covered, and a missing row for it says nothing. |
+| `primitives` | list of strings | yes | The lowered primitives whose implementations the table lists, sorted, each once: every kernel the release can emit for one of them is a row, except where `gaps` names a selection not yet listed. A primitive not named here is not covered, and a missing row for it says nothing. |
+| `gaps` | list | no | The upstream selections under a covered primitive whose kernels the table does not yet list, below. |
 | `libraries` | list | yes | Each kernel library at each version the table covers, below. |
 | `implementations` | list | yes | One row per primitive, library, library version, variant and target architecture, below. |
+
+### `gaps`
+
+<!-- fields: kernelimpls.Gap -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `primitive` | string | yes | One of `primitives`. |
+| `selection` | string | yes | The upstream choice, in the upstream's own words: a backend, a kernel path or a setting's value. |
+| `issue` | string | yes | The issue that lists its kernels, as `<owner>/<repo>#<n>`. |
+
+Sorted by primitive and then selection, each once. A gap is how a table says what it does not
+know, as a field list's `not_modelled` does: a reader that finds no row for a build of a gap's
+selection learns nothing from the missing row, and an engine's lowering reports such a build with
+no code hash, which matches no keyed entry.
 
 ### `engine`
 

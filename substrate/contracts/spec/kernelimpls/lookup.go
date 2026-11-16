@@ -12,6 +12,17 @@ func (t *Table) Covers(primitive string) bool {
 	return false
 }
 
+// GapsFor returns the selections under the primitive whose kernels the table does not yet list.
+func (t *Table) GapsFor(primitive string) []Gap {
+	var out []Gap
+	for _, g := range t.Gaps {
+		if g.Primitive == primitive {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
 // PinnedVersion returns the version of the library the release pins, and false when the table
 // names no such library.
 func (t *Table) PinnedVersion(library string) (string, bool) {
