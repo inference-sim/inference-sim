@@ -506,9 +506,9 @@ func TestPPBindingStageFollowsTheDeploymentsUtilization(t *testing.T) {
 		t.Errorf("util 0: err %v, want a refusal naming gpu_memory_utilization and SUB-6", err)
 	}
 
-	// The default comes from the resolver, with its source: 0.92, vllm/config/cache.py:102 at 5df63a7203.
+	// The default comes from the resolver, with its source: 0.92, vllm/config/cache.py:215 at 4ba787ec99.
 	v, src := resolvedMemoryUtilization(t, ppInputs(t, "minimax-m25-h200-tp8.yaml", 3, 2))
-	if v != 0.92 || !strings.Contains(src, "vllm/config/cache.py:102@5df63a72") {
-		t.Errorf("the resolver's default is %v (%q), want 0.92 from vllm/config/cache.py:102@5df63a72", v, src)
+	if v != 0.92 || !strings.Contains(src, "vllm/config/cache.py:215@4ba787ec") {
+		t.Errorf("the resolver's default is %v (%q), want 0.92 from vllm/config/cache.py:215@4ba787ec", v, src)
 	}
 }
