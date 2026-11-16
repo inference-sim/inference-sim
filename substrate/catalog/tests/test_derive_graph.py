@@ -118,8 +118,11 @@ def test_hand_edit_is_detected(tmp_path):
 
 def test_a_hand_edit_of_any_committed_config_entry_is_detected(tree_copy):
     """Every entry whose config.json is committed, edited at once: the run names each of them.
-    (One run, not one per entry: the check re-derives every entry and reports all that differ.)"""
-    names = [d.name for d in model_dirs()]
+    (One run, not one per entry: the check re-derives every entry and reports all that differ.)
+    An entry that pins its shard headers is re-derived only from fetched headers, so it is
+    counted with the pinned entries (test_the_committed_pinned_entries_are_counted_apart_from_the_current_ones)
+    and its hand edit is caught under --fetched (test_a_hand_edit_of_a_header_pinned_entry_is_detected_once_fetched)."""
+    names = [d.name for d in model_dirs() if not _header_pinned(d)]
     saved = {}
     for name in names:
         saved[name] = _edit_hidden_size(tree_copy / "models" / name / "graph.yaml")
@@ -180,10 +183,44 @@ def test_the_committed_pinned_entries_are_counted_apart_from_the_current_ones():
     r = subprocess.run([sys.executable, str(DERIVER), str(ROOT), "--check"],
                        capture_output=True, text=True)
     pinned = [d.name for d in sorted(MODELS.iterdir())
-              if d.is_dir() and not (d / "config.json").is_file()]
+              if d.is_dir() and (not (d / "config.json").is_file() or _header_pinned(d))]
     assert pinned, "the catalog holds hash-pinned entries"
     assert f"{len(pinned)} not re-derivable offline" in r.stdout, r.stdout
     assert r.stderr.strip().endswith(", ".join(pinned)), r.stderr
+
+
+def _header_pinned(d: Path) -> bool:
+    return bool((yaml.safe_load((d / "model.yaml").read_text()) or {}).get("headers"))
+
+
+def test_a_hand_edit_of_a_header_pinned_entry_is_detected_once_fetched(tree_copy, tmp_path):
+    """With its headers fetched, a header-pinned entry is re-derived and a hand edit of its
+    graph is named; a fetched header whose bytes differ from the pin fails the entry."""
+    import hashlib
+    d = tree_copy / "models" / "glm-5-nvfp4"
+    headers = _glm5_headers()
+    body = json.dumps(headers).encode()
+    pins = [{"path": "model.safetensors", "sha256": hashlib.sha256(body).hexdigest()}]
+    card = yaml.safe_load((d / "model.yaml").read_text())
+    card["headers"] = pins
+    (d / "model.yaml").write_text(yaml.safe_dump(card))
+    fetched = tmp_path / "fetched" / "glm-5-nvfp4" / "headers"
+    fetched.mkdir(parents=True)
+    (fetched / "model.safetensors.json").write_bytes(body)
+    run = lambda: subprocess.run([sys.executable, str(DERIVER), str(tree_copy), "--check", "--model",
+                                  "glm-5-nvfp4", "--fetched", str(tmp_path / "fetched")],
+                                 capture_output=True, text=True)
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    (d / "graph.yaml").write_text(derive_graph.dump(derive_graph.derive(d / "config.json", "glm-5-nvfp4",
+                                                                        headers=headers)))
+    assert run().returncode == 0
+    _edit_hidden_size(d / "graph.yaml")
+    r = run()
+    assert r.returncode != 0 and "glm-5-nvfp4: graph.yaml differs" in r.stderr
+    (fetched / "model.safetensors.json").write_bytes(body + b" ")
+    r = run()
+    assert r.returncode != 0 and "not the pinned" in r.stderr
 
 
 def test_a_failure_names_its_model_once(tmp_path):
@@ -8323,3 +8360,102 @@ def test_modelopt_mixed_precision_refuses_what_vllm_refuses_or_this_deriver_cann
     import derive_graph  # noqa: E402
     with pytest.raises(derive_graph.DeriveError, match=why):
         _derive_raw(_mixed(layers, packed), tmp_path, "glm-mixed-test")
+
+
+# --- Widths read from safetensors headers (SUB-15): nvidia/GLM-5-NVFP4 ---------------------
+
+GLM5_NVFP4 = MODELS / "glm-5-nvfp4"
+
+
+def _glm5_headers(edit=None) -> dict:
+    """Headers in the layout nvidia/GLM-5-NVFP4's shards state (read from the pinned headers;
+    not committed): NVFP4 experts, shared experts and dense MLPs, BF16 attention, indexer, head
+    and the MTP layer 78. Two experts a layer are enough: a layer's experts share one width."""
+    t = text_config(config_of(GLM5_NVFP4))
+    n, dense, k = t["num_hidden_layers"], t["first_k_dense_replace"], 6144
+    h = {"lm_head.weight": {"dtype": "BF16", "shape": [154880, k]}}
+
+    def nvfp4(m):
+        h[m + ".weight"] = {"dtype": "U8", "shape": [2048, k // 2]}
+        h[m + ".weight_scale"] = {"dtype": "F8_E4M3", "shape": [2048, k // 16]}
+
+    def bf16(m):
+        h[m + ".weight"] = {"dtype": "BF16", "shape": [2048, k]}
+
+    for i in range(n + 1):
+        p = f"model.layers.{i}."
+        for a in ("q_a_proj", "kv_a_proj_with_mqa", "q_b_proj", "kv_b_proj", "o_proj",
+                  "indexer.wq_b", "indexer.wk", "indexer.weights_proj"):
+            bf16(p + "self_attn." + a)
+        quant = bf16 if i == n else nvfp4
+        if i < dense:
+            for a in ("gate_proj", "up_proj", "down_proj"):
+                quant(p + "mlp." + a)
+        else:
+            for e in range(2):
+                for a in ("gate_proj", "up_proj", "down_proj"):
+                    quant(p + f"mlp.experts.{e}." + a)
+            for a in ("gate_proj", "up_proj", "down_proj"):
+                quant(p + "mlp.shared_experts." + a)
+    if edit:
+        edit(h)
+    return h
+
+
+def _derive_with_headers(headers, tmp_path, raw=None):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps(raw or config_of(GLM5_NVFP4)))
+    return derive_graph.derive(p, "glm-5-nvfp4", headers=headers)
+
+
+def test_glm5_nvfp4_widths_come_from_its_shard_headers(tmp_path):
+    """GLM-5-NVFP4's config.json states no quantization; its headers state NVFP4 experts,
+    shared experts and dense MLPs, BF16 elsewhere, and a BF16 MTP layer. Without the headers
+    the same config derives bf16 throughout, so the headers are what the widths come from."""
+    g = _derive_with_headers(_glm5_headers(), tmp_path)
+    assert g["global"]["weight_dtype"] == "bf16"
+    dense = _widths(g, "attn_dense")
+    assert (dense["mlp_gate_up"][0], dense["mlp_down"][0], dense["o_proj"][0]) == ("nvfp4", "nvfp4", "bf16")
+    moe = _widths(g, "attn_moe")
+    assert moe["experts"][0] == "nvfp4" and "shared_experts" not in moe   # shared at the same width
+    assert g["speculator"]["stack"]["pattern"] == ["mtp_moe"]
+    assert {w for w, _ in _widths(g, "mtp_moe").values()} == {"bf16"}
+    plain = _derive_with_headers(None, tmp_path)
+    assert "nvfp4" not in {w for k in plain["layer_kinds"] for n in k["nodes"]
+                           if (w := n.get("weight_dtype"))}
+
+
+def test_the_committed_glm5_nvfp4_graph_is_the_header_derivation():
+    g = graph_of(GLM5_NVFP4)
+    assert _widths(g, "attn_moe")["experts"][0] == "nvfp4"
+    assert {w for w, _ in _widths(g, "mtp_moe").values()} == {"bf16"}
+    pins = yaml.safe_load((GLM5_NVFP4 / "model.yaml").read_text())["headers"]
+    assert len(pins) == 282 and len({p["path"] for p in pins}) == len(pins)
+
+
+@pytest.mark.parametrize("edit,why", [
+    (lambda h: h.pop("model.layers.5.mlp.experts.0.gate_proj.weight_scale"), "no F8_E4M3 weight_scale"),
+    (lambda h: h.__setitem__("model.layers.5.mlp.experts.0.gate_proj.weight_scale",
+                             {"dtype": "F8_E4M3", "shape": [2048, 6144 // 32]}), "not one scale per 16"),
+    (lambda h: h.__setitem__("model.layers.5.mlp.experts.1.gate_proj.weight",
+                             {"dtype": "BF16", "shape": [2048, 6144]}), "one node cannot price both"),
+    (lambda h: [h.pop(k) for k in list(h) if k.startswith("model.layers.7.self_attn.o_proj")], "hold no weight"),
+    (lambda h: h.__setitem__("model.layers.5.self_attn.o_proj.weight",
+                             {"dtype": "I8", "shape": [2048, 6144]}), "does not read"),
+])
+def test_header_widths_refuse_a_layout_they_cannot_read(tmp_path, edit, why):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match=why):
+        _derive_with_headers(_glm5_headers(edit), tmp_path)
+
+
+def test_pinned_headers_and_a_quantization_block_are_refused_together(tmp_path):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    raw = config_of(GLM5_NVFP4)
+    raw["quantization_config"] = {"quant_method": "fp8"}
+    with pytest.raises(derive_graph.DeriveError, match="pins its headers"):
+        _derive_with_headers(_glm5_headers(), tmp_path, raw)

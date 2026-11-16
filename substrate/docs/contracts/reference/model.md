@@ -414,6 +414,7 @@ the entry is and where its `config.json` came from.
 | `source` | mapping | yes | Where the vendor configuration was fetched from, below. |
 | `licence` | mapping | no | The licence `config.json` is published under, below (X12). The loader decodes it and does not require it; `validate-catalog` requires it in the project's own catalog. |
 | `config` | mapping | no | The SHA-256 of a `config.json` that is not committed, below (X12). |
+| `headers` | list of mappings | no | The safetensors headers the deriver reads stored widths from, for a checkpoint whose `config.json` does not state its quantization, below (SUB-15, X12). |
 | `drafters` | list of strings | no | What can draft tokens for this model (D8): `speculator` for the speculator its own graph states, and the catalog name of each separate drafter checkpoint. `validate-catalog` requires a graph with a speculator to list `speculator`, and each named drafter to name this model among its `targets`. |
 | `targets` | list of strings | no | On a separate drafter's entry: the catalog names of the models it drafts for. Each of them lists this entry in its `drafters`. One drafter checkpoint serves every model whose hidden states it was trained to read, and an architecture shipped in several quantisations is several catalog entries, so a drafter may have several targets; acceptance is keyed by the target and drafter pair (D8). |
 
@@ -516,6 +517,22 @@ no model with a committed `config.json` needs.
 A model whose licence is not on the allow-list commits this hash in place of the file. The
 nightly fetch job retrieves the file with the access token, checks the hash, and derives the
 graph; pull-request jobs check the hash, the revision and the graph's `derived_from` hash only.
+
+### `headers`
+
+<!-- fields: model.HeaderPin -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `path` | string | yes | The shard's path in the repository, a `.safetensors` file. Each shard is pinned once. |
+| `sha256` | string | yes | The SHA-256 of the shard's header: the JSON after the 8-byte length at the start of the file. |
+
+A graph field is computed from `config.json` and the header of every shard (SUB-15). When
+`config.json` states no quantization, the stored width of each tensor is read from its header:
+an NVFP4 weight is U8 with an F8_E4M3 `weight_scale` of one column per 16 elements, an FP8
+weight is F8_E4M3, and a BF16 weight is unquantized. Only the headers are fetched, by range
+request, never the weights, and they are not committed (X12): `fetch_pinned_configs.py` checks
+each against its pin, and the deriver re-derives from them.
 
 `model.yaml` and `graph.yaml` do not accept `_comment` keys, unlike the chip, fabric,
 storage-class and workload-shape files.

@@ -167,3 +167,30 @@ func TestIdentityValidateChecksDrafterNames(t *testing.T) {
 		}
 	}
 }
+
+// A model's header pins name safetensors shards inside the repository, each once, with a
+// SHA-256 (SUB-15, X12). Each way a pin can be wrong is refused.
+func TestIdentityValidateChecksHeaderPins(t *testing.T) {
+	sha := strings.Repeat("ab", 32)
+	card := func(pins ...HeaderPin) *Identity {
+		return &Identity{Name: "m", Source: &Source{Provider: "huggingface", Repo: "org/m", Revision: "v"},
+			Headers: pins}
+	}
+	if p := card(HeaderPin{"model-00001-of-00002.safetensors", sha},
+		HeaderPin{"model-00002-of-00002.safetensors", sha}).Validate(); !p.OK() {
+		t.Fatalf("well-formed header pins failed:\n%s", p.Error())
+	}
+	for name, c := range map[string]struct {
+		pins []HeaderPin
+		want string
+	}{
+		"not a shard":  {[]HeaderPin{{"config.json", sha}}, ".safetensors"},
+		"outside":      {[]HeaderPin{{"../x.safetensors", sha}}, "element"},
+		"bad hash":     {[]HeaderPin{{"a.safetensors", "ABC"}}, "SHA-256"},
+		"pinned twice": {[]HeaderPin{{"a.safetensors", sha}, {"a.safetensors", sha}}, "twice"},
+	} {
+		if p := card(c.pins...).Validate(); p.OK() || !strings.Contains(p.Error(), c.want) {
+			t.Errorf("%s: want a refusal naming %q, got %v", name, c.want, p.Error())
+		}
+	}
+}

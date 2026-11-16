@@ -51,6 +51,13 @@ type Identity struct {
 	// allow-list: such a model commits only this hash and the source revision, and the
 	// deriver fetches the file in a nightly job that holds the access token (X12).
 	Config *ConfigPin `yaml:"config,omitempty"`
+	// Headers pins the safetensors headers the deriver reads stored widths from, for a
+	// checkpoint whose config.json does not state its quantization (SUB-15: a graph field is
+	// computed from config.json and the safetensors header of every shard, the header only).
+	// Each names a shard and the SHA-256 of its header, the JSON that follows the 8-byte
+	// length at the start of the file. The headers are fetched by range request and never
+	// committed (X12); pull-request and nightly jobs check each against its pin.
+	Headers []HeaderPin `yaml:"headers,omitempty"`
 	// Drafters lists what can draft tokens for this target (design D8): the word
 	// "speculator" for the in-graph speculator its graph.yaml states (its MTP layers, say), and
 	// the catalog name of each separate drafter checkpoint. The catalog check requires every
@@ -82,6 +89,13 @@ type Licence struct {
 	// card's front matter, the provider's API record of that revision, or, when the ID
 	// names a licence file because the card does not, that file.
 	Evidence string `yaml:"evidence"`
+}
+
+// HeaderPin is one shard's safetensors header, by the shard's path in the repository and the
+// SHA-256 of the header bytes.
+type HeaderPin struct {
+	Path   string `yaml:"path"`
+	SHA256 string `yaml:"sha256"`
 }
 
 // ConfigPin is the SHA-256 of a vendor config.json that is not committed.
@@ -137,6 +151,20 @@ func (id *Identity) validateStructure(p *validate.Problems) {
 	p.Merge("source", id.Source.Validate())
 	if id.Config != nil && !validate.IsSHA256(id.Config.SHA256) {
 		p.Field("config.sha256", "%q is not a lowercase hex SHA-256", id.Config.SHA256)
+	}
+	shards := map[string]bool{}
+	for i, h := range id.Headers {
+		at := fmt.Sprintf("headers[%d]", i)
+		if err := checkShardPath(h.Path); err != "" {
+			p.Field(at+".path", "%q %s", h.Path, err)
+		}
+		if !validate.IsSHA256(h.SHA256) {
+			p.Field(at+".sha256", "%q is not a lowercase hex SHA-256", h.SHA256)
+		}
+		if shards[h.Path] {
+			p.Field(at+".path", "%q is pinned twice", h.Path)
+		}
+		shards[h.Path] = true
 	}
 	seen := map[string]bool{}
 	for i, d := range id.Drafters {
@@ -259,8 +287,27 @@ func (s *Source) ConfigPath() string {
 	return s.Path
 }
 
+// checkShardPath returns why a path cannot name a safetensors shard in the repository, or "".
+func checkShardPath(p string) string {
+	if !strings.HasSuffix(p, ".safetensors") {
+		return "must name a .safetensors shard"
+	}
+	return checkRepoPath(p)
+}
+
 // checkConfigPath returns why a path cannot name a file in the repository, or "".
 func checkConfigPath(p string) string {
+	if err := checkRepoPath(p); err != "" {
+		return err
+	}
+	if !strings.HasSuffix(p, ".json") {
+		return "must name a .json file"
+	}
+	return ""
+}
+
+// checkRepoPath returns why a path cannot name a file inside the repository, or "".
+func checkRepoPath(p string) string {
 	if strings.HasPrefix(p, "/") || strings.Contains(p, "\\") {
 		return "must be relative to the repository root, with / separators"
 	}
@@ -275,9 +322,6 @@ func checkConfigPath(p string) string {
 		if !letter && (r < '0' || r > '9') && !strings.ContainsRune("._-/", r) {
 			return "may contain only letters, digits and . _ - /"
 		}
-	}
-	if !strings.HasSuffix(p, ".json") {
-		return "must name a .json file"
 	}
 	return ""
 }

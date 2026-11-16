@@ -89,3 +89,52 @@ def test_derive_graph_rederives_what_was_fetched_and_counts_the_rest_apart():
         r = subprocess.run([sys.executable, str(DERIVER), str(ROOT), "--check", "--fetched", empty],
                            capture_output=True, text=True)
         assert r.returncode != 0 and "no fetched config.json" in r.stderr
+
+
+def _header_file(header: bytes) -> bytes:
+    import struct
+    return struct.pack("<Q", len(header)) + header + b"\0" * 64   # the tensor data, never read
+
+
+def ranged(files: dict):
+    """An opener that serves byte ranges and records each request's Range."""
+    seen = []
+
+    def open_(req, timeout=0):
+        rng = req.get_header("Range")
+        seen.append(rng)
+        for path, body in files.items():
+            if req.full_url.endswith("/" + path):
+                lo, hi = (int(x) for x in rng.removeprefix("bytes=").split("-"))
+                return Reply(body[lo:hi + 1])
+        raise urllib.error.HTTPError(req.full_url, 404, "x", {}, None)
+    return open_, seen
+
+
+def _headers_tree(tmp_path, pins):
+    d = tmp_path / "models" / "m"
+    d.mkdir(parents=True)
+    card = {"name": "m", "source": {"repo": "org/m", "revision": "r" * 40}, "headers": pins}
+    (d / "model.yaml").write_text(yaml.safe_dump(card))
+    return tmp_path
+
+
+def test_pinned_headers_are_fetched_by_range_and_hash_checked(tmp_path):
+    header = b'{"a.weight": {"dtype": "BF16", "shape": [2, 2], "data_offsets": [0, 8]}}'
+    files = {"model-1.safetensors": _header_file(header)}
+    cat = _headers_tree(tmp_path / "c", [{"path": "model-1.safetensors",
+                                          "sha256": hashlib.sha256(header).hexdigest()}])
+    open_, seen = ranged(files)
+    fetched, unfetched, bad = fp.run(cat, tmp_path / "out", open_)
+    assert fetched == ["m (headers)"] and not unfetched and not bad
+    assert (tmp_path / "out" / "m" / "headers" / "model-1.safetensors.json").read_bytes() == header
+    # The length, then exactly the header: the tensor data is never requested.
+    assert seen == ["bytes=0-7", f"bytes=8-{8 + len(header) - 1}"]
+
+
+def test_a_header_whose_hash_differs_from_its_pin_is_an_error(tmp_path):
+    files = {"model-1.safetensors": _header_file(b'{"b": 1}')}
+    cat = _headers_tree(tmp_path / "c", [{"path": "model-1.safetensors", "sha256": "0" * 64}])
+    open_, _ = ranged(files)
+    fetched, unfetched, bad = fp.run(cat, tmp_path / "out", open_)
+    assert not fetched and len(bad) == 1 and "not the pinned" in bad[0]
