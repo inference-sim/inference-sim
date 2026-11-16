@@ -1,14 +1,16 @@
 {
   "kind": "Stack",
-  "toolchain": "go1.27.2",
+  "toolchain": "go1.27.4",
   "modules": [
     {
       "path": "github.com/inference-sim/blis-substrate",
-      "version": "v0.14.0"
+      "version": "v0.14.1-0.20261116200936-b0c239524832",
+      "commit": "b0c23952483233e4189e0bb61721325bb13eeb0b"
     },
     {
       "path": "github.com/inference-sim/blis-vllm",
-      "version": "v0.32.0-blis.3"
+      "version": "v0.32.1-0.20261116201644-864084473553",
+      "commit": "86408447355391925275d45996e9fd888075f98d"
     },
     {
       "path": "github.com/inference-sim/llm-d-router",

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/blis-substrate/contracts/vocab"
 	"github.com/sirupsen/logrus"
 	logtest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/spf13/cobra"
@@ -20,7 +21,7 @@ func TestDerivedRatesNameTheirSchedule(t *testing.T) {
 	}
 	natural := acceptance.Resolution{AcceptanceLength: al, PerPositionRates: rates, RatesDerived: true,
 		Schedule: acceptance.ScheduleNaturalDecay, ShapeSet: "inferencex-golden-al",
-		Shape: &acceptance.Shape{SpeculativeMethod: "dspark", DecayExponent: 1.17}, Layer: acceptance.LayerCLI}
+		Shape: &acceptance.Shape{SpeculativeMethod: "dspark", DecayExponent: 1.17, Method: vocab.MethodCalibrated}, Layer: acceptance.LayerCLI}
 	step, _ := acceptance.MinimumVarianceRates(al, 7)
 	forced := acceptance.Resolution{AcceptanceLength: al, PerPositionRates: step, RatesDerived: true,
 		Schedule: acceptance.ScheduleMinimumVariance, Layer: acceptance.LayerCLI}
@@ -30,7 +31,7 @@ func TestDerivedRatesNameTheirSchedule(t *testing.T) {
 		name, schedule, shape, warn string
 		r                           acceptance.Resolution
 	}{
-		{"natural", "natural_decay", `inferencex-golden-al "dspark" decay_exponent 1.17`, "natural decay of shape", natural},
+		{"natural", "natural_decay", `inferencex-golden-al "dspark" decay_exponent 1.17 method calibrated`, "fitted natural decay", natural},
 		{"forced", "minimum_variance", "", "minimum-variance schedule", forced},
 		{"stated", "", "", "", stated},
 	} {

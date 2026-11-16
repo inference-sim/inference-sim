@@ -57,7 +57,7 @@ registry. Nothing is fetched at run time.
 ## Install and run
 
 <!-- BEGIN GENERATED from stack.json: toolchain -->
-Requires Go 1.27.2, the toolchain blis-substrate's contracts/toolchain names at the pinned release.
+Requires Go 1.27.4, the toolchain blis-substrate's contracts/toolchain names at the pinned release.
 <!-- END GENERATED -->
 
 ```bash
@@ -81,7 +81,7 @@ blis-substrate (or keep a directory with the layout of its `catalog/`) and name 
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout v0.14.0
+git -C blis-substrate checkout b0c23952483233e4189e0bb61721325bb13eeb0b
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->

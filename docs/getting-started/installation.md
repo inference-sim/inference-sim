@@ -5,7 +5,7 @@
 - **Go** ([Download Go](https://go.dev/dl/)):
 
 <!-- BEGIN GENERATED from stack.json: toolchain -->
-Requires Go 1.27.2, the toolchain blis-substrate's contracts/toolchain names at the pinned release.
+Requires Go 1.27.4, the toolchain blis-substrate's contracts/toolchain names at the pinned release.
 <!-- END GENERATED -->
 
 - **Git** — for cloning the repository
@@ -78,7 +78,7 @@ directories:
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout v0.14.0
+git -C blis-substrate checkout b0c23952483233e4189e0bb61721325bb13eeb0b
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
@@ -94,13 +94,13 @@ it is stale.
 <!-- BEGIN GENERATED from stack.json: versions -->
 | Component | Version | Commit |
 |---|---|---|
-| `github.com/inference-sim/blis-substrate` | `v0.14.0` |  |
-| `github.com/inference-sim/blis-vllm` | `v0.32.0-blis.3` |  |
+| `github.com/inference-sim/blis-substrate` | `v0.14.1-0.20261116200936-b0c239524832` | `b0c239524832` |
+| `github.com/inference-sim/blis-vllm` | `v0.32.1-0.20261116201644-864084473553` | `864084473553` |
 | `github.com/inference-sim/llm-d-router` | `v1.0.0-blis.4` |  |
 | vllm (engine) | `0.32.0` | `5df63a7203cd` |
 | llm-d (router) | `1.0.0` | `b9393d1a9f1d` |
 | llm-d guides | | `4427f55cb626` |
-| Go toolchain | `go1.27.2` | |
+| Go toolchain | `go1.27.4` | |
 <!-- END GENERATED -->
 
 Every loader parses its files strictly, so data from another substrate version can be refused

@@ -82,7 +82,7 @@ func acceptanceRecordOf(r acceptance.Resolution, c speculativeConfig) *sim.Accep
 			rec.Entry.RatesSchedule = string(acceptance.ScheduleMinimumVariance)
 		}
 		if s := r.Shape; s != nil {
-			rec.Entry.RatesShape = fmt.Sprintf("%s %q decay_exponent %v", r.ShapeSet, s.SpeculativeMethod, s.DecayExponent)
+			rec.Entry.RatesShape = fmt.Sprintf("%s %q decay_exponent %v method %s", r.ShapeSet, s.SpeculativeMethod, s.DecayExponent, s.Method)
 		}
 	}
 	if p := r.Profile; p != nil {
@@ -118,7 +118,7 @@ func logAcceptance(r *sim.AcceptanceRecord, k int) {
 	if r.Entry.RatesDerived {
 		how := "the engine's minimum-variance schedule, which forced acceptance follows; a rate measured from natural acceptance decays instead (--speculative-acceptance-realisation natural)"
 		if r.Entry.RatesSchedule == string(acceptance.ScheduleNaturalDecay) {
-			how = "the natural decay of shape " + r.Entry.RatesShape
+			how = "the fitted natural decay (an estimate) of shape " + r.Entry.RatesShape
 		}
 		logrus.Warnf("speculative acceptance: no per-position rates were stated, so they were derived with %s; recorded in the results file as rates_schedule %s",
 			how, r.Entry.RatesSchedule)
