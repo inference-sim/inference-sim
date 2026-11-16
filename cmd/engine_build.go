@@ -129,6 +129,9 @@ const (
 // given to a run that does not speculate is warned about and ignored.
 func resolveAcceptance(cmd *cobra.Command, k int, method string) (build.Acceptance, bool) {
 	fl := cmd.Flags()
+	if err := checkRealisationFlag(fl); err != nil {
+		logrus.Fatalf("%v", err)
+	}
 	a, speculating, err := build.ResolveAcceptance(build.AcceptanceInputs{
 		Scenario: kernelScenario, Shape: scenarioShape, Data: mustRunData(), Hardware: gpu,
 		Workload: workloadAcceptance,
@@ -138,6 +141,7 @@ func resolveAcceptance(cmd *cobra.Command, k int, method string) (build.Acceptan
 			Thinking: speculativeThinking, Category: speculativeCategory, FallbackCategory: speculativeFallbackCategory,
 			ThinkingSet: fl.Changed(build.AcceptanceThinkingFlag), CategorySet: fl.Changed(build.AcceptanceCategoryFlag),
 			FallbackSet: fl.Changed(build.AcceptanceFallbackFlag),
+			Realisation: acceptance.Realisation(speculativeRealisation),
 		},
 	}, k, method)
 	if err != nil {
@@ -604,6 +608,9 @@ func acceptanceOverridesOf(fl *pflag.FlagSet, k int) kernelmodel.AcceptanceOverr
 	case fl.Changed(build.AcceptanceLengthFlag):
 		l := speculativeAcceptanceLength
 		cli = &acceptance.Value{NumSpecTokens: k, AcceptanceLength: &l, Source: "--" + build.AcceptanceLengthFlag}
+	}
+	if cli != nil {
+		cli.Realisation = acceptance.Realisation(speculativeRealisation)
 	}
 	var terms *acceptance.Workload
 	if workloadAcceptance != nil || fl.Changed(build.AcceptanceThinkingFlag) || fl.Changed(build.AcceptanceCategoryFlag) {

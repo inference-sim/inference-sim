@@ -4,18 +4,18 @@
   "name": "muse-h200-ib-tep8-dspark.r4-s2",
   "engine": {
     "kind": "vllm",
-    "version": "0.33.0"
+    "version": "0.32.0"
   },
   "data": {
     "catalog": {
       "source": "path",
-      "hash": "77898711fca5254bf3047f951ab1ce6a3a3dd03cb9e29da11db7a39f42527a2c",
-      "combined_hash": "77898711fca5254bf3047f951ab1ce6a3a3dd03cb9e29da11db7a39f42527a2c"
+      "hash": "db74e4bb49f75d658e5d0850934da60daf513274b937a03b7ab994760bd6d21f",
+      "combined_hash": "db74e4bb49f75d658e5d0850934da60daf513274b937a03b7ab994760bd6d21f"
     },
     "registry": {
       "source": "path",
-      "hash": "a6436069c59ef8f02b3c8f4a4594eae056d9ab4b6528247cd32ee0401d2fe49b",
-      "combined_hash": "a6436069c59ef8f02b3c8f4a4594eae056d9ab4b6528247cd32ee0401d2fe49b"
+      "hash": "96944ae26b4e0d41517f4fa1558a37cd03ddfb4f13c810a7592e79c795dec8d3",
+      "combined_hash": "96944ae26b4e0d41517f4fa1558a37cd03ddfb4f13c810a7592e79c795dec8d3"
     },
     "released_data": false,
     "build": "unreleased"
@@ -717,10 +717,7 @@
           "source": "internal deployment measurements: 1.84 accepted tokens per DSpark draft at c16 on H100 PP2xTP8, fixed 7-token verify (AL = 1 + accepted)"
         }
       },
-      "engine": {
-        "kind": "vllm",
-        "version": "0.33.0"
-      },
+      "engine_version": "0.32.0",
       "cluster": {
         "hardware": "h200",
         "nodes": 1,
@@ -849,9 +846,9 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.14.2-0.20261116205042-39e7839a62bf",
+    "substrate": "v0.14.1-0.20261116211231-01cbd6dbe0fb",
     "router": "v1.0.0-blis.4",
-    "engine_module": "v0.32.1-0.20261116205246-a20a1dd4a5e3"
+    "engine_module": "v0.32.1-0.20261116211503-b75132da28c0"
   },
   "window": {
     "start_us": 250000,
@@ -1442,6 +1439,7 @@
               0
             ],
             "rates_derived": true,
+            "rates_schedule": "minimum_variance",
             "source": "internal deployment measurements: 1.84 accepted tokens per DSpark draft at c16 on H100 PP2xTP8, fixed 7-token verify (AL = 1 + accepted)"
           },
           "length": 2.84,
@@ -1530,24 +1528,6 @@
           {
             "KernelMatch": "",
             "Method": "assumed",
-            "Name": "cudagraph_mode",
-            "Primitive": "",
-            "Running": "",
-            "Scope": "FULL_AND_PIECEWISE: vLLM v0.31.0's default (vllm/config/compilation.py:614); the engine downgrades it where an attention backend does not support full graphs, which the kernel cannot see",
-            "Set": "blis-latency-kernel"
-          },
-          {
-            "KernelMatch": "",
-            "Method": "assumed",
-            "Name": "max_cudagraph_capture_size",
-            "Primitive": "",
-            "Running": "",
-            "Scope": "512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph",
-            "Set": "blis-latency-kernel"
-          },
-          {
-            "KernelMatch": "",
-            "Method": "assumed",
             "Name": "modality",
             "Primitive": "",
             "Running": "",
@@ -1566,6 +1546,24 @@
           {
             "KernelMatch": "",
             "Method": "assumed",
+            "Name": "cudagraph_mode",
+            "Primitive": "",
+            "Running": "",
+            "Scope": "FULL_AND_PIECEWISE: vLLM v0.31.0's default (vllm/config/compilation.py:614); the engine downgrades it where an attention backend does not support full graphs, which the kernel cannot see",
+            "Set": "blis-latency-kernel"
+          },
+          {
+            "KernelMatch": "",
+            "Method": "assumed",
+            "Name": "max_cudagraph_capture_size",
+            "Primitive": "",
+            "Running": "",
+            "Scope": "512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph",
+            "Set": "blis-latency-kernel"
+          },
+          {
+            "KernelMatch": "",
+            "Method": "assumed",
             "Name": "routing_imbalance",
             "Primitive": "",
             "Running": "",
@@ -1578,7 +1576,7 @@
             "Name": "engine_version",
             "Primitive": "",
             "Running": "",
-            "Scope": "0.31.0: the scenario declares vLLM 0.33.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
+            "Scope": "0.31.0: the scenario declares vLLM 0.32.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
             "Set": "blis-latency-kernel"
           }
         ],
