@@ -18,7 +18,8 @@ caveats:
   the reuse.'
 - Natural acceptance. Every curve was collected with real verification (InferenceX README,
   How a golden AL curve is collected), so each value is a natural acceptance length; InferenceX's
-  AgentX runs then force it with the engine's synthetic rejection sampler.
+  AgentX runs then force it with the engine's synthetic rejection sampler. The set's shapes,
+  fitted to every vendored curve, spread a natural value that states no per-position rates.
 - deepseek-v4.1-flash with dspark at K 6-8 was rejected by the image vllm/vllm-openai:deepseekv41-flash-0909
   (https://github.com/SemiAnalysisAI/InferenceX/actions/runs/34494319147), so those K have
   no value.
@@ -61,6 +62,122 @@ caveats:
   because its model qwen3.5-397b-a17b-nvfp4 is no catalog model''s repository.'
 - 'Not carried: qwen3.8-flash-next-fp8__mtp__native__default-default.yaml (qwen3.8-flash-next-fp8),
   because its model qwen3.8-flash-next-fp8 is no catalog model''s repository.'
+shapes:
+- speculative_method: dflash
+  decay_exponent: 1.24
+  fitted_from:
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3.1-pro__dflash__kimi-k3.1-dflash2-preview__default-block.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/muse-spark-open-816b-a42b-nvfp4__dflash__muse-spark-open-dflash2__default-default.yaml
+  rule: 'Each curve and thinking mode measured at every K from 1 to its largest, K0, is a
+    test: its acceptance length at K0 is spread with p_i = q^(i^b), q solved so the rates
+    sum to AL-1, and 1 + p_1 + ... + p_k is compared with the curve''s measured acceptance
+    length at every k <= K0. b is the exponent on the grid 0.50, 0.51, ..., 2.00 that minimises
+    the sum, over the tests, of the squared worst error of each; the smallest such b on a
+    tie. Curves are taken from every pinned file InferenceX does not mark provisional, carried
+    as a profile or not, since a curve shows how acceptance decays whatever its model resolves
+    to. Curves measured under different engines, draft samplers and verifiers are pooled within
+    a method; the exponent is an estimate, not a measurement, and is not judged against held-out
+    end-to-end runs until it passes the landing gate (VAL-6). Requests still advance by the
+    mean acceptance length until per-step draws land (inference-sim/blis-vllm#147), so the
+    shape prices adaptive verification only.'
+  method: calibrated
+- speculative_method: dspark
+  decay_exponent: 1.17
+  fitted_from:
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/deepseek-v4-pro-0813__dspark__native__probabilistic-default.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/deepseek-v4.1-flash__dspark__native__probabilistic-block.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3.1-pro__dspark__kimi-k3.1-pro-dspark-preview__probabilistic-block.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__default-default.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-block.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-default.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3.1-flash__dspark__native__probabilistic-block.yaml
+  rule: 'Each curve and thinking mode measured at every K from 1 to its largest, K0, is a
+    test: its acceptance length at K0 is spread with p_i = q^(i^b), q solved so the rates
+    sum to AL-1, and 1 + p_1 + ... + p_k is compared with the curve''s measured acceptance
+    length at every k <= K0. b is the exponent on the grid 0.50, 0.51, ..., 2.00 that minimises
+    the sum, over the tests, of the squared worst error of each; the smallest such b on a
+    tie. Curves are taken from every pinned file InferenceX does not mark provisional, carried
+    as a profile or not, since a curve shows how acceptance decays whatever its model resolves
+    to. Curves measured under different engines, draft samplers and verifiers are pooled within
+    a method; the exponent is an estimate, not a measurement, and is not judged against held-out
+    end-to-end runs until it passes the landing gate (VAL-6). Requests still advance by the
+    mean acceptance length until per-step draws land (inference-sim/blis-vllm#147), so the
+    shape prices adaptive verification only.'
+  method: calibrated
+- speculative_method: eagle3
+  decay_exponent: 1.19
+  fitted_from:
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-block.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-default.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3__default-default.yaml
+  rule: 'Each curve and thinking mode measured at every K from 1 to its largest, K0, is a
+    test: its acceptance length at K0 is spread with p_i = q^(i^b), q solved so the rates
+    sum to AL-1, and 1 + p_1 + ... + p_k is compared with the curve''s measured acceptance
+    length at every k <= K0. b is the exponent on the grid 0.50, 0.51, ..., 2.00 that minimises
+    the sum, over the tests, of the squared worst error of each; the smallest such b on a
+    tie. Curves are taken from every pinned file InferenceX does not mark provisional, carried
+    as a profile or not, since a curve shows how acceptance decays whatever its model resolves
+    to. Curves measured under different engines, draft samplers and verifiers are pooled within
+    a method; the exponent is an estimate, not a measurement, and is not judged against held-out
+    end-to-end runs until it passes the landing gate (VAL-6). Requests still advance by the
+    mean acceptance length until per-step draws land (inference-sim/blis-vllm#147), so the
+    shape prices adaptive verification only.'
+  method: calibrated
+- speculative_method: mtp
+  decay_exponent: 1.44
+  fitted_from:
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/deepseek-v4-pro__mtp__native__default-default.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.2-fp8__mtp__native__default-default.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-flash__mtp__native__default-default.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-nvfp4__mtp__native__default-default.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/qwen3.5-397b-a17b-nvfp4__mtp__native__default-default.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/qwen3.8-flash-next-fp8__mtp__native__default-default.yaml
+  rule: 'Each curve and thinking mode measured at every K from 1 to its largest, K0, is a
+    test: its acceptance length at K0 is spread with p_i = q^(i^b), q solved so the rates
+    sum to AL-1, and 1 + p_1 + ... + p_k is compared with the curve''s measured acceptance
+    length at every k <= K0. b is the exponent on the grid 0.50, 0.51, ..., 2.00 that minimises
+    the sum, over the tests, of the squared worst error of each; the smallest such b on a
+    tie. Curves are taken from every pinned file InferenceX does not mark provisional, carried
+    as a profile or not, since a curve shows how acceptance decays whatever its model resolves
+    to. Curves measured under different engines, draft samplers and verifiers are pooled within
+    a method; the exponent is an estimate, not a measurement, and is not judged against held-out
+    end-to-end runs until it passes the landing gate (VAL-6). Requests still advance by the
+    mean acceptance length until per-step draws land (inference-sim/blis-vllm#147), so the
+    shape prices adaptive verification only.'
+  method: calibrated
+- decay_exponent: 1.27
+  fitted_from:
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/deepseek-v4-pro-0813__dspark__native__probabilistic-default.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/deepseek-v4-pro__mtp__native__default-default.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/deepseek-v4.1-flash__dspark__native__probabilistic-block.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.2-fp8__mtp__native__default-default.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-flash__mtp__native__default-default.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-nvfp4__mtp__native__default-default.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3.1-pro__dflash__kimi-k3.1-dflash2-preview__default-block.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3.1-pro__dspark__kimi-k3.1-pro-dspark-preview__probabilistic-block.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__default-default.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-block.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-default.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3.1-flash__dspark__native__probabilistic-block.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-block.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-default.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3__default-default.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/muse-spark-open-816b-a42b-nvfp4__dflash__muse-spark-open-dflash2__default-default.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/qwen3.5-397b-a17b-nvfp4__mtp__native__default-default.yaml
+  - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/qwen3.8-flash-next-fp8__mtp__native__default-default.yaml
+  rule: 'Each curve and thinking mode measured at every K from 1 to its largest, K0, is a
+    test: its acceptance length at K0 is spread with p_i = q^(i^b), q solved so the rates
+    sum to AL-1, and 1 + p_1 + ... + p_k is compared with the curve''s measured acceptance
+    length at every k <= K0. b is the exponent on the grid 0.50, 0.51, ..., 2.00 that minimises
+    the sum, over the tests, of the squared worst error of each; the smallest such b on a
+    tie. Curves are taken from every pinned file InferenceX does not mark provisional, carried
+    as a profile or not, since a curve shows how acceptance decays whatever its model resolves
+    to. Curves measured under different engines, draft samplers and verifiers are pooled within
+    a method; the exponent is an estimate, not a measurement, and is not judged against held-out
+    end-to-end runs until it passes the landing gate (VAL-6). Requests still advance by the
+    mean acceptance length until per-step draws land (inference-sim/blis-vllm#147), so the
+    shape prices adaptive verification only.'
+  method: calibrated
 profiles:
 - model: deepseek-v4-pro
   architecture: DeepseekV4ForCausalLM
