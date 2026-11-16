@@ -88,117 +88,82 @@ For a workload with max 7,000 input tokens and block size 16: `ceil(7000/16) = 4
 
 ## Tiered Caching (GPU + CPU Offload)
 
-The legacy single CPU tier is enabled with `--kv-cpu-blocks`:
+The scenario deployment's `offload` block configures the offload tiers. It is the only source
+of offload configuration; no flag sets it. It maps onto vLLM's OffloadingConnector:
+
+```yaml
+offload:
+  connector: OffloadingConnector    # or SimpleCPUOffloadConnector; may be left out
+  spec: CPUOffloadingSpec           # or TieringOffloadingSpec; may be left out
+  eviction_policy: lru              # lru only (vLLM's arc is not simulated yet)
+  tiers:
+    - tier: cpu_dram                # the CPU tier (vLLM cpu_bytes_to_use); required, and first
+      bytes: 17179869184
+```
 
 ```bash
-./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-  --scenarios testdata/kernel/aisimulate \
-  --kv-cpu-blocks 50000 \
-  --kv-offload-threshold 0.9 \
+./blis run --scenario llama-offload.yaml \
+  --scenarios my-scenarios \
   --rate 100 --num-requests 500
 ```
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--kv-cpu-blocks` | 0 | CPU-tier blocks (0 = disabled) |
-| `--kv-offload-threshold` | 0.9 | GPU utilization fraction above which blocks offload to CPU |
+Here `my-scenarios/llama-offload.yaml` is a copy of the canonical scenario with the block above
+added to its deployment.
 
-The GPU↔CPU transfer is priced by the kernel from the catalog's `cpu_dram` storage device (`<catalog>/devices/storage.yaml`). There are no transfer-rate flags. For a multi-tier hierarchy, use `--kv-offload-config` instead; the two are mutually exclusive.
+Each tier names a catalog storage device (`<catalog>/devices/storage.yaml` in the catalog in
+use: the embedded copy, or the directory `--catalog` / `BLIS_CATALOG` names), and the kernel
+prices each tier transfer from that device (its `TierTime`). There are no transfer-rate flags. A
+class the catalog does not define, or a missing or malformed table, is a hard error naming the
+path. The rules:
 
-### Multi-Tier Offload Config Surface (`--kv-offload-config`)
+- The `cpu_dram` tier is required, and it must be the first tier: every secondary tier sits
+  behind the CPU tier, as in vLLM.
+- The v0.32.0 engine models the `cpu_dram` tier only and refuses a secondary tier, such as
+  `tier: nvme_gen4` (blis-vllm#63). A secondary tier needs `spec: TieringOffloadingSpec`, and
+  its device must be one the catalog defines.
+- An object store (`s3`) is refused: vLLM reaches it through its `obj` tier, which BLIS does
+  not simulate.
+- `SimpleCPUOffloadConnector` takes one `cpu_dram` tier and offloads every block.
+- Another connector or spec, `prefetch_depth`, `arc` and a 0-byte tier are refused by name.
 
-!!! warning "Deprecated flag"
-    `--kv-offload-config` is deprecated in v0.16.0 and removed in v0.19.0
-    ([#2037](https://github.com/inference-sim/inference-sim/issues/2037)). State the scenario's
-    `offload` block instead; the flag may only restate it.
+vLLM's defaults apply to what blis-schemas cannot state: the offload block size (one GPU
+block per chunk), `offload_prompt_only: true` and `tokens_per_hash`. Under P/D disaggregation
+each pool sizes the tiers by its own bytes per block and prices them with its own kernel. See
+[Latency models](latency-models.md#kv-offload) for the mapping.
 
-The scalar flags above cover the single CPU tier. For vLLM's **multi-tier** offload
-(CPU → disk / object store), BLIS captures the full config surface through one strict-YAML
-file — `--kv-offload-config <path>` — with a single top-level `kv_offload:` block. This
-mirrors `--lora-config` / `--saturation-config`: absent ⇒ the offload subsystem is inert and
-output is byte-identical to a build without it.
-
-```bash
-./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-  --scenarios testdata/kernel/aisimulate \
-  --kv-offload-config offload.yaml
-```
-
-```yaml
-kv_offload:
-  cpu_bytes_to_use: 17179869184     # required when the block is present
-  block_size: 16                    # optional; default = GPU block size (mutually
-                                    #   exclusive with blocks_per_chunk)
-  # blocks_per_chunk: 1             # alternate encoding of block_size (default 1); > 1 coalesces
-                                    #   GPU blocks into offload chunks (INV-K6)
-  eviction_policy: lru              # lru only (vLLM's arc is not simulated yet)
-  offload_prompt_only: true         # vLLM DEFAULT (prompt-only). false => promptAndDecode:
-                                    #   full decode blocks are offloaded and reused too (see below)
-  # self_describing_kv_events: false
-  # tokens_per_hash: 16             # default = GPU block size
-  secondary_tiers:
-    - type: fs                      # only "fs" is representable today; obj/p2p error loudly
-      root_dir: /mnt/kv-cache
-      n_read_threads: 16            # vLLM default 16
-      n_write_threads: 16           # vLLM default 16
-      locality: LOCAL               # LOCAL | REMOTE (optional)
-      direct_io: true               # REQUIRED — BLIS makes vLLM's runtime O_DIRECT probe explicit;
-                                    #   false (buffered I/O) is refused: not priced yet
-      device_class: nvme_gen4       # REQUIRED — a catalog storage device; the kernel prices transfers
-```
-
-Defaults match vLLM knob-for-knob. Anything vLLM accepts either maps to a BLIS config or
-fails **loudly** at startup — never silently ignored: `store_threshold >= 2` is rejected
-(vLLM's `TieringOffloadingSpec` rejects it), and `obj`/`p2p`/`example` tier types are rejected
-(no faithful BLIS mapping yet).
-
-Every tier must name a `device_class` from the catalog's storage-device table
-(`<catalog>/devices/storage.yaml` in the catalog in use: the embedded copy, or the directory `--catalog` / `BLIS_CATALOG` names); the kernel prices
-each tier transfer from that device (its `TierTime`). An explicit `read_bandwidth`,
-`write_bandwidth` or `base_latency` on a tier is refused. A catalog device's rates are O_DIRECT
-rates, so a tier with `direct_io: false` -- vLLM's buffered fallback on filesystems that reject
-O_DIRECT, such as overlayfs -- is refused too, until the kernel prices that regime
-([blis-latency-kernel#41](https://github.com/inference-sim/blis-latency-kernel/issues/41)). A class the catalog does not define, or
-a missing/malformed table, is a hard error naming the path. Under P/D disaggregation each pool
-sizes the tiers by its own bytes per block and prices them with its own kernel. A scenario's own
-`offload` block is the deployment's tier configuration (#1910): its `cpu_dram` tier is the CPU
-tier, and `--kv-offload-config` may only restate it (a disagreement is refused, naming the
-fields). See [Latency models](latency-models.md#kv-offload) for the mapping and what it refuses.
-
-**Chunks (`blocks_per_chunk`, INV-K6).** The tiers hold vLLM's offload chunks: `blocks_per_chunk` GPU
-blocks keyed by their last block's hash. The CPU tier holds `cpu_bytes_to_use // (bytes per block ×
-blocks_per_chunk)` chunks, evicts whole chunks in LRU order, and every tier transfer moves one chunk.
-A load starts at the chunk holding the GPU-cached boundary, covers whole chunks, and is skipped when
-it is shorter than one chunk. A store offers whole prompt chunks only. A CPU budget under one chunk
-is refused at startup. blis-schemas' `offload` block cannot yet state the width (the proposed field
-is `offload.blocks_per_chunk`), so `--kv-offload-config` supplies it beside a scenario block. Every
-other field must still agree.
+**Chunks (INV-K6).** The tiers hold vLLM's offload chunks: GPU blocks keyed by their last
+block's hash. The CPU tier holds `cpu_bytes_to_use // (bytes per block × blocks_per_chunk)`
+chunks, evicts whole chunks in LRU order, and every tier transfer moves one chunk. A load starts
+at the chunk holding the GPU-cached boundary, covers whole chunks, and is skipped when it is
+shorter than one chunk. A store offers whole prompt chunks only. A CPU budget under one chunk is
+refused at startup. blis-schemas' `offload` block cannot yet state the width (the proposed field
+is `offload.blocks_per_chunk`), so a scenario runs one GPU block per chunk.
 
 The resolved config is recorded in the exported trace header, so a `blis run --trace-output`
-round-trips through `blis replay` (INV-13): on replay the header is authoritative and a config
-the binary cannot reproduce fails loudly rather than silently degrading to single-tier.
+round-trips through `blis replay` (INV-13): on replay the header is authoritative, a scenario
+`offload` block may only restate it, and a config the binary cannot reproduce fails loudly
+rather than silently degrading to single-tier.
 
-The `offload_prompt_only` knob is an explicit policy over *what enters the tiers*. Modeling
-vLLM's mechanism (`_calc_num_offloadable_tokens` + `storable_chunks`), a request's computed KV is
-truncated to the prompt length when `true` (the default), then floor-divided into whole chunks — so
-a chunk containing any decode token is never offloaded (a prompt of `1.5 ×` the chunk size offloads
-exactly 1 chunk). With `offload_prompt_only: false` (vLLM's `promptAndDecode`), full decode blocks
-are offloaded too; because BLIS already hashes every completed block prefix-consistently (for
+**What enters the tiers.** Modeling vLLM's mechanism (`_calc_num_offloadable_tokens` +
+`storable_chunks`), a request's computed KV is truncated to the prompt length under vLLM's
+default `offload_prompt_only: true`, then floor-divided into whole chunks, so a chunk containing
+any decode token is never offloaded (a prompt of `1.5 ×` the chunk size offloads exactly 1
+chunk). The `SimpleCPUOffloadConnector` has no prompt-only clamp: full decode blocks are
+offloaded too. Because BLIS hashes every completed block prefix-consistently (for
 `block_size > 1`), a later request on the same instance whose **input contains earlier output
-tokens** (multi-turn / agentic workloads) reloads that decode KV from the tiers instead of
-recomputing it. A reloaded prefix is billed as a **cache hit** — its tokens are dropped from the
+tokens** (multi-turn / agentic workloads) then reloads that decode KV from the tier instead of
+recomputing it. A reloaded prefix is billed as a **cache hit**: its tokens are dropped from the
 prefill forward pass, so it lowers that request's prefill compute and TTFT rather than being
-charged as a full recompute (#1699; the same correction applies to the legacy `--kv-cpu-blocks`
-tier). Reuse is single-instance (offload tiers are per-instance and invisible to the router).
+charged as a full recompute (#1699). Reuse is single-instance (offload tiers are per-instance
+and invisible to the router).
 
 At `block_size == 1` decode blocks take a guarded allocation path that leaves them unhashed, so
-decode-offload is inert there — a degenerate offload block size (real offload block sizes track
-the GPU block size). With no `--kv-offload-config`, behavior is unchanged (INV-6).
+decode-offload is inert there. With no `offload` block, behavior is unchanged (INV-6).
 
 ### Enabling and Disabling Offload
 
-Offload is **off by default**. There is one switch — the presence of `--kv-offload-config`
-(or, for the legacy tier, a non-zero `--kv-cpu-blocks`). The two are mutually exclusive.
+Offload is **off by default**. There is one switch: the presence of an `offload` block in the
+scenario's deployment.
 
 ### Sizing the CPU Tier
 
@@ -221,7 +186,7 @@ sampled `input_distribution` length, not carved out of it.
 !!! note "`cpu_bytes_to_use` is per GPU, not per deployment"
     Under tensor parallelism the KV cache is sharded across ranks, so both sides of that division
     are per-rank quantities. The host memory a deployment actually consumes is `TP × cpu_bytes_to_use`.
-    A node-level memory budget must therefore be divided by TP before it goes in the file. This
+    A node-level memory budget must therefore be divided by TP before it goes in the `cpu_dram` tier's `bytes`. This
     matches vLLM, where `cpu_bytes_to_use` is likewise a per-worker budget.
 
 ## Chunked Prefill
@@ -265,5 +230,5 @@ done
 ## Further Reading
 
 - [Core Engine: The engine interface](../concepts/core-engine.md#the-engine-interface) — where the engine's KV cache sits
-- [Configuration Reference](../reference/configuration.md#kv-cache-configuration) — all KV cache flags
+- [Configuration Reference](../reference/configuration.md#kv-cache-configuration) — KV cache configuration
 - [Metrics & Results](results.md) — understanding preemption rate, cache hit rate, KV thrashing

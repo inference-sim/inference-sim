@@ -667,7 +667,7 @@ func TestServeGenMultiPeriod_E2E_GeneratorConsumption(t *testing.T) {
 	spec.ServeGenData = nil
 
 	// WHEN: Generating requests from the CohortSpec
-	requests, genErr := GenerateRequests(spec, 42, 3000000000) // 3000s horizon
+	requests, genErr := generateRequests(spec, 42, 3000000000) // 3000s horizon
 
 	// THEN: Request generation should succeed
 	if genErr != nil {

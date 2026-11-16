@@ -10,7 +10,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/workload"
 	"github.com/stretchr/testify/assert"
@@ -529,49 +528,8 @@ func TestApplyTimeoutToSpec_NotCalledForSpecFile(t *testing.T) {
 	}
 }
 
-// TestApplyTimeoutToRequests_ZeroSetsDeadlineZero verifies that applyTimeoutToRequests
-// with timeoutSecs=0 sets Deadline=0 on all requests regardless of ArrivalTime.
-// Zero disables the deadline; a nil Timeout for session clients would trigger the 300s
-// default in computeDeadline, so the explicit-zero post-pass is required (#1127).
-func TestApplyTimeoutToRequests_ZeroSetsDeadlineZero(t *testing.T) {
-	wl := &workload.GeneratedWorkload{
-		Requests: []*sim.Request{
-			{ID: "r0", ArrivalTime: 0, Deadline: 300_000_000},
-			{ID: "r1", ArrivalTime: 1_000_000, Deadline: 301_000_000},
-		},
-	}
-
-	applyTimeoutToRequests(wl, 0)
-
-	for i, req := range wl.Requests {
-		if req.Deadline != 0 {
-			t.Errorf("request[%d] Deadline = %d; want 0 (no timeout)", i, req.Deadline)
-		}
-	}
-}
-
-// TestApplyTimeoutToRequests_NonZeroSetsDeadlineFromArrival verifies that a positive
-// timeout sets Deadline = ArrivalTime + timeoutUs on each request.
-func TestApplyTimeoutToRequests_NonZeroSetsDeadlineFromArrival(t *testing.T) {
-	wl := &workload.GeneratedWorkload{
-		Requests: []*sim.Request{
-			{ID: "r0", ArrivalTime: 0},
-			{ID: "r1", ArrivalTime: 500_000},
-		},
-	}
-
-	applyTimeoutToRequests(wl, 60)
-
-	for i, req := range wl.Requests {
-		want := req.ArrivalTime + 60_000_000
-		if req.Deadline != want {
-			t.Errorf("request[%d] Deadline = %d; want %d (ArrivalTime + 60s)", i, req.Deadline, want)
-		}
-	}
-}
-
 // TestApplyTimeoutToRequests_ZeroSetsSessionBlueprintExplicitZero verifies that
-// applyTimeoutToRequests with timeoutSecs=0 sets session blueprint Timeout to an
+// applyTimeoutToSessions with timeoutSecs=0 sets session blueprint Timeout to an
 // explicit *int64(0), not nil. nil would trigger the 300s default for follow-up rounds.
 func TestApplyTimeoutToRequests_ZeroSetsSessionBlueprintExplicitZero(t *testing.T) {
 	wl := &workload.GeneratedWorkload{
@@ -581,7 +539,7 @@ func TestApplyTimeoutToRequests_ZeroSetsSessionBlueprintExplicitZero(t *testing.
 		},
 	}
 
-	applyTimeoutToRequests(wl, 0)
+	applyTimeoutToSessions(wl, 0)
 
 	for i, bp := range wl.Sessions {
 		if bp.Timeout == nil {
@@ -603,7 +561,7 @@ func TestApplyTimeoutToRequests_NonZeroSetsSessionBlueprintTimeout(t *testing.T)
 		},
 	}
 
-	applyTimeoutToRequests(wl, 120)
+	applyTimeoutToSessions(wl, 120)
 
 	for i, bp := range wl.Sessions {
 		if bp.Timeout == nil {
@@ -613,26 +571,6 @@ func TestApplyTimeoutToRequests_NonZeroSetsSessionBlueprintTimeout(t *testing.T)
 		want := int64(120_000_000)
 		if *bp.Timeout != want {
 			t.Errorf("session[%d] Timeout = %d; want %d (120s in µs)", i, *bp.Timeout, want)
-		}
-	}
-}
-
-// TestApplyTimeoutToRequests_NegativeSetsDeadlineZero verifies that a negative timeoutSecs
-// (the "disabled" sentinel, e.g. default -1) sets req.Deadline=0 on all requests.
-// Negative must not produce a negative deadline (INV-5 violation: deadline < arrival).
-func TestApplyTimeoutToRequests_NegativeSetsDeadlineZero(t *testing.T) {
-	wl := &workload.GeneratedWorkload{
-		Requests: []*sim.Request{
-			{ID: "r0", ArrivalTime: 0, Deadline: 300_000_000},
-			{ID: "r1", ArrivalTime: 1_000_000, Deadline: 301_000_000},
-		},
-	}
-
-	applyTimeoutToRequests(wl, -1)
-
-	for i, req := range wl.Requests {
-		if req.Deadline != 0 {
-			t.Errorf("request[%d] Deadline = %d; want 0 (negative input means disabled, not negative deadline)", i, req.Deadline)
 		}
 	}
 }
@@ -647,7 +585,7 @@ func TestApplyTimeoutToRequests_NegativeSetsSessionBlueprintExplicitZero(t *test
 		},
 	}
 
-	applyTimeoutToRequests(wl, -1)
+	applyTimeoutToSessions(wl, -1)
 
 	for i, bp := range wl.Sessions {
 		if bp.Timeout == nil {
@@ -685,10 +623,6 @@ func TestRunCmd_TraceOutput_RecordCountMatchesRequests(t *testing.T) {
 	origInstances := numInstances
 	origSeed := seed
 	origThreshold := longPrefillTokenThreshold
-	origKVCPU := kvCPUBlocks
-	origOffload := kvOffloadThreshold
-	origBandwidth := kvTransferBandwidth
-	origBaseLatency := kvTransferBaseLatency
 	origScheduler := scheduler
 	origPolicyConfig := policyConfigPath
 	origMaxModelLen := maxModelLen
@@ -725,10 +659,6 @@ func TestRunCmd_TraceOutput_RecordCountMatchesRequests(t *testing.T) {
 		numInstances = origInstances
 		seed = origSeed
 		longPrefillTokenThreshold = origThreshold
-		kvCPUBlocks = origKVCPU
-		kvOffloadThreshold = origOffload
-		kvTransferBandwidth = origBandwidth
-		kvTransferBaseLatency = origBaseLatency
 		scheduler = origScheduler
 		policyConfigPath = origPolicyConfig
 		maxModelLen = origMaxModelLen
@@ -844,14 +774,13 @@ func buildTestCohort() workload.CohortSpec {
 }
 
 // runRunCmdAndCaptureTraces invokes runCmd.Run with a distribution-mode
-// workload at the given seed and lazyGeneration flag, capturing both the
-// exported TraceV2 header bytes and data bytes. It restores every package-
+// workload at the given seed, capturing both the exported TraceV2 header bytes
+// and data bytes. It restores every package-
 // level CLI variable it touches on return — using the existing helper
 // captured by TestRunCmd_TraceOutput_RecordCountMatchesRequests's pattern.
 //
-// Used by the byte-identity tests below (BC-2 / BC-4 / #1441) to compare
-// eager vs lazy mode output without running the binary subprocess.
-func runRunCmdAndCaptureTraces(t *testing.T, seedVal int64, numReq int, lazyFlag bool) (headerBytes, dataBytes []byte) {
+// Used by the determinism test below (BC-5 / #1441) without running the binary subprocess.
+func runRunCmdAndCaptureTraces(t *testing.T, seedVal int64, numReq int) (headerBytes, dataBytes []byte) {
 	t.Helper()
 	tmpDir := t.TempDir()
 	tracePrefix := filepath.Join(tmpDir, "trace")
@@ -867,7 +796,6 @@ func runRunCmdAndCaptureTraces(t *testing.T, seedVal int64, numReq int, lazyFlag
 	rate = 1.0
 	numRequests = numReq
 	seed = seedVal
-	lazyGeneration = lazyFlag
 	promptTokensMean = 64
 	promptTokensStdev = 8
 	promptTokensMin = 2
@@ -883,7 +811,6 @@ func runRunCmdAndCaptureTraces(t *testing.T, seedVal int64, numReq int, lazyFlag
 	testCmd.Flags().Float64Var(&rate, "rate", 0, "")
 	testCmd.Flags().StringVar(&workloadType, "workload", "", "")
 	testCmd.Flags().StringVar(&traceOutput, "trace-output", "", "")
-	testCmd.Flags().BoolVar(&lazyGeneration, "lazy-generation", false, "")
 	args := []string{
 		"--defaults-filepath", defaultsPath,
 		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
@@ -892,9 +819,6 @@ func runRunCmdAndCaptureTraces(t *testing.T, seedVal int64, numReq int, lazyFlag
 		"--rate", "1.0",
 		"--workload", "distribution",
 		"--trace-output", tracePrefix,
-	}
-	if lazyFlag {
-		args = append(args, "--lazy-generation=true")
 	}
 	if err := testCmd.ParseFlags(args); err != nil {
 		t.Fatalf("ParseFlags: %v", err)
@@ -915,13 +839,12 @@ func runRunCmdAndCaptureTraces(t *testing.T, seedVal int64, numReq int, lazyFlag
 // origCmdLevelVars captures the subset of package-level CLI variables
 // runRunCmdAndCaptureTraces mutates. It mirrors the explicit save/restore
 // dance in TestRunCmd_TraceOutput_RecordCountMatchesRequests but as a
-// helper to keep the lazy-generation tests short.
+// helper to keep the generation tests short.
 type origCmdLevelVars struct {
 	model, policyConfig, traceOut, logLvl, catalogDir, gpuVal                string
 	defaultsFile                                                             string
-	totalKV, blockSize, maxRunning, maxSched, simHorizon, kvCPU, baseLatency int64
+	totalKV, blockSize, maxRunning, maxSched, simHorizon                     int64
 	threshold, maxModelLen                                                   int64
-	offload, bandwidth                                                       float64
 	instances, tp, counterfactualK, numReqs, concurrencyV, thinkTime, prefix int
 	rateV                                                                    float64
 	seedV                                                                    int64
@@ -929,7 +852,6 @@ type origCmdLevelVars struct {
 	promptMean, promptStdev, promptMin, promptMax                            int
 	outputMean, outputStdev, outputMin, outputMax                            int
 	requestTimeout                                                           int
-	lazy                                                                     bool
 }
 
 func captureCmdLevelVars() origCmdLevelVars {
@@ -937,9 +859,8 @@ func captureCmdLevelVars() origCmdLevelVars {
 		model:   model,
 		totalKV: totalKVBlocks, blockSize: blockSizeTokens, maxRunning: maxNumSeqs,
 		maxSched: maxNumBatchedTokens, instances: numInstances, seedV: seed,
-		threshold: longPrefillTokenThreshold, kvCPU: kvCPUBlocks, offload: kvOffloadThreshold,
-		bandwidth: kvTransferBandwidth, baseLatency: kvTransferBaseLatency,
-		sched: scheduler, policyConfig: policyConfigPath,
+		threshold: longPrefillTokenThreshold,
+		sched:     scheduler, policyConfig: policyConfigPath,
 		maxModelLen: maxModelLen, traceLvl: traceLevel, counterfactualK: counterfactualK,
 		simHorizon: simulationHorizon, workloadT: workloadType, rateV: rate,
 		numReqs: numRequests, concurrencyV: concurrency, thinkTime: thinkTimeMs,
@@ -950,7 +871,7 @@ func captureCmdLevelVars() origCmdLevelVars {
 		workloadSpec: workloadSpecPath, requestTimeout: requestTimeoutSecs,
 		traceOut: traceOutput, logLvl: logLevel, catalogDir: catalogPath,
 		gpuVal: gpu, tp: tensorParallelism,
-		lazy: lazyGeneration, defaultsFile: defaultsFilePath,
+		defaultsFile: defaultsFilePath,
 	}
 }
 
@@ -963,10 +884,6 @@ func (o origCmdLevelVars) restore() {
 	numInstances = o.instances
 	seed = o.seedV
 	longPrefillTokenThreshold = o.threshold
-	kvCPUBlocks = o.kvCPU
-	kvOffloadThreshold = o.offload
-	kvTransferBandwidth = o.bandwidth
-	kvTransferBaseLatency = o.baseLatency
 	scheduler = o.sched
 	policyConfigPath = o.policyConfig
 	maxModelLen = o.maxModelLen
@@ -994,71 +911,35 @@ func (o origCmdLevelVars) restore() {
 	catalogPath = o.catalogDir
 	gpu = o.gpuVal
 	tensorParallelism = o.tp
-	lazyGeneration = o.lazy
 	defaultsFilePath = o.defaultsFile
 }
 
-// TestRunCmd_LazyGeneration_FlagRegistered verifies the --lazy-generation flag is registered
-// on `blis run` and defaults to true: streaming generation is the default since v0.16.0
-// (#1449), and the eager generator runs only on an explicit --lazy-generation=false.
-func TestRunCmd_LazyGeneration_FlagRegistered(t *testing.T) {
-	flag := runCmd.Flags().Lookup("lazy-generation")
-	if flag == nil {
-		t.Fatal("--lazy-generation flag must be registered on runCmd")
-	}
-	if flag.DefValue != "true" {
-		t.Errorf("--lazy-generation default = %q, want %q", flag.DefValue, "true")
-	}
-}
-
-// TestRunCmd_LazyVsEager_Distribution_ByteIdentical pins BC-4: under the
-// same seed, model, and workload, `blis run --lazy-generation` produces
-// TraceV2 output (YAML header + CSV data) byte-identical to `blis run`
-// without the flag.
-//
-// NOTE: Do NOT use t.Parallel() — mutates package-level vars.
-func TestRunCmd_LazyVsEager_Distribution_ByteIdentical(t *testing.T) {
-	hdrEager, dataEager := runRunCmdAndCaptureTraces(t /*seed=*/, 1234 /*numReq=*/, 8 /*lazy=*/, false)
-	hdrLazy, dataLazy := runRunCmdAndCaptureTraces(t, 1234, 8, true)
-	if !bytes.Equal(hdrEager, hdrLazy) {
-		t.Fatalf("trace header diverged between eager and lazy modes\nEAGER:\n%s\nLAZY:\n%s", hdrEager, hdrLazy)
-	}
-	if !bytes.Equal(dataEager, dataLazy) {
-		t.Fatalf("trace data diverged between eager and lazy modes\nEAGER:\n%s\nLAZY:\n%s", dataEager, dataLazy)
-	}
-	if len(dataEager) == 0 {
-		t.Fatal("trace data is empty; tests must produce non-zero output to be meaningful")
-	}
-}
-
 // TestRunCmd_LazyGeneration_SameSeed_Deterministic pins BC-5 (INV-6):
-// `blis run --lazy-generation --seed S` invoked twice produces
-// byte-identical trace output across the two runs.
+// `blis run --seed S` invoked twice streams byte-identical trace output
+// across the two runs.
 //
 // NOTE: Do NOT use t.Parallel() — mutates package-level vars.
 func TestRunCmd_LazyGeneration_SameSeed_Deterministic(t *testing.T) {
-	hdrA, dataA := runRunCmdAndCaptureTraces(t /*seed=*/, 2026 /*numReq=*/, 6 /*lazy=*/, true)
-	hdrB, dataB := runRunCmdAndCaptureTraces(t, 2026, 6, true)
+	hdrA, dataA := runRunCmdAndCaptureTraces(t /*seed=*/, 2026 /*numReq=*/, 6)
+	hdrB, dataB := runRunCmdAndCaptureTraces(t, 2026, 6)
 	if !bytes.Equal(hdrA, hdrB) {
 		t.Fatalf("lazy trace header non-deterministic across runs with seed 2026")
 	}
 	if !bytes.Equal(dataA, dataB) {
 		t.Fatalf("lazy trace data non-deterministic across runs with seed 2026")
 	}
+	if len(dataA) == 0 {
+		t.Fatal("trace data is empty; the test must produce output to be meaningful")
+	}
 }
 
 // TestRunCmd_LazyGeneration_Concurrency_Streams pins the CLI seam for #1459:
-// when --lazy-generation is combined with a workload-spec containing a
-// concurrency client, cmd/root.go MUST build the streaming source (concurrency
-// is now a supported lazy shape) and complete the run normally, producing a
-// trace file. Before #1459 this shape fell back to the eager generator; the run
-// still succeeds either way, so the observable CLI contract (run completes, no
-// Fatalf, trace written) is unchanged — this guards against a regression that
-// would break the run for concurrency specs under --lazy-generation.
+// for a workload-spec containing a concurrency client, cmd/root.go builds the
+// streaming source and completes the run normally, producing a trace file.
 //
 // We use --workload-spec rather than --concurrency for control of the
 // per-flag interactions on the run command; the spec-based path is the
-// closest production path that exercises concurrency under lazy generation.
+// closest production path that exercises concurrency under streaming generation.
 //
 // NOTE: Do NOT use t.Parallel() — mutates package-level vars.
 func TestRunCmd_LazyGeneration_Concurrency_Streams(t *testing.T) {
@@ -1097,13 +978,11 @@ clients:
 	workloadSpecPath = specPath
 	simulationHorizon = 2_000_000
 	seed = 2031
-	lazyGeneration = true
 
 	testCmd := &cobra.Command{}
 	registerSimConfigFlags(testCmd)
 	testCmd.Flags().StringVar(&workloadSpecPath, "workload-spec", "", "")
 	testCmd.Flags().StringVar(&traceOutput, "trace-output", "", "")
-	testCmd.Flags().BoolVar(&lazyGeneration, "lazy-generation", false, "")
 	args := []string{
 		"--defaults-filepath", defaultsPath,
 		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
@@ -1111,14 +990,13 @@ clients:
 		"--workload-spec", specPath,
 		"--horizon", "2000000",
 		"--trace-output", tracePrefix,
-		"--lazy-generation=true",
 	}
 	if err := testCmd.ParseFlags(args); err != nil {
 		t.Fatalf("ParseFlags: %v", err)
 	}
-	// If concurrency generation under --lazy-generation were broken (e.g. an
-	// accidental Fatalf), the test process would exit here. A normal return =
-	// the lazy streaming path built the source and the run completed.
+	// If streaming concurrency generation were broken (e.g. an accidental
+	// Fatalf), the test process would exit here. A normal return = the
+	// streaming path built the source and the run completed.
 	runCmd.Run(testCmd, nil)
 
 	if _, err := os.Stat(tracePrefix + ".csv"); err != nil {

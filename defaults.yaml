@@ -35,7 +35,7 @@ lora:
 # KV-cache offload storage-device physics (H5, #1587) used to live here as a
 # `kv_offload_devices:` block. #1770 removed it: the table was duplicated with the
 # catalog's devices/storage.yaml and nothing kept the copies in sync, so the CATALOG is
-# now the single source of truth. --kv-offload-config's per-tier `device_class` resolves
+# now the single source of truth. Each tier of the scenario's `offload` block resolves
 # against <catalog>/devices/storage.yaml (--catalog / BLIS_CATALOG names the catalog clone
 # root). Re-adding the block here does not work: strict parsing (R10) refuses it.
 version: 0.0.1
