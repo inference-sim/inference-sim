@@ -3,8 +3,23 @@ package cmd
 import (
 	"testing"
 
+	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
+
+// streamedRequests is every request the workload generator streams for spec (the only
+// generation path, #1451), drained in order.
+func streamedRequests(spec *workload.WorkloadSpec, horizon, maxRequests int64) ([]*sim.Request, error) {
+	src, _, _, err := workload.GenerateWorkloadLazy(spec, horizon, maxRequests)
+	if err != nil {
+		return nil, err
+	}
+	var out []*sim.Request
+	for r, ok := src.Next(); ok; r, ok = src.Next() {
+		out = append(out, r)
+	}
+	return out, src.Err()
+}
 
 // makeTestSpec returns a minimal WorkloadSpec for seed tests.
 func makeTestSpec(seed int64) *workload.WorkloadSpec {
@@ -32,11 +47,11 @@ func TestSeedOverride_DifferentSeeds_DifferentWorkloads(t *testing.T) {
 	spec2.Seed = 200 // simulates Changed("seed") → spec.Seed = 200
 
 	horizon := int64(1e6)
-	r1, err := workload.GenerateRequests(spec1, horizon, 50)
+	r1, err := streamedRequests(spec1, horizon, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r2, err := workload.GenerateRequests(spec2, horizon, 50)
+	r2, err := streamedRequests(spec2, horizon, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,11 +85,11 @@ func TestSeedOverride_SameSeed_IdenticalWorkload(t *testing.T) {
 	spec2 := makeTestSpec(123)
 
 	horizon := int64(1e6)
-	r1, err := workload.GenerateRequests(spec1, horizon, 50)
+	r1, err := streamedRequests(spec1, horizon, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r2, err := workload.GenerateRequests(spec2, horizon, 50)
+	r2, err := streamedRequests(spec2, horizon, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,11 +120,11 @@ func TestSeedOverride_YAMLSeedPreserved_WhenCLINotSpecified(t *testing.T) {
 	specB := makeTestSpec(42)
 
 	horizon := int64(1e6)
-	r1, err := workload.GenerateRequests(specA, horizon, 50)
+	r1, err := streamedRequests(specA, horizon, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r2, err := workload.GenerateRequests(specB, horizon, 50)
+	r2, err := streamedRequests(specB, horizon, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,11 +175,11 @@ func TestSeedDeterminism_MultiTurnAccumulate(t *testing.T) {
 	spec2 := makeMultiTurnAccumulateSpec(seed)
 
 	horizon := int64(1e7)
-	r1, err := workload.GenerateRequests(spec1, horizon, 100)
+	r1, err := streamedRequests(spec1, horizon, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r2, err := workload.GenerateRequests(spec2, horizon, 100)
+	r2, err := streamedRequests(spec2, horizon, 100)
 	if err != nil {
 		t.Fatal(err)
 	}

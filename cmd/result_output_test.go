@@ -273,7 +273,7 @@ func TestResult_ViewSummaryRendersToStderrOnly(t *testing.T) {
 // --policy-config bundle verbatim.
 func TestResult_InputRecordsWhatTheRunWasGiven(t *testing.T) {
 	bundle := filepath.Join(t.TempDir(), "policy.yaml")
-	if err := os.WriteFile(bundle, []byte("scheduler: fcfs\n"), 0o644); err != nil {
+	if err := os.WriteFile(bundle, []byte("priority:\n  policy: constant\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	stdout, stderr, err := runKernelCLI(t, resultRunArgs("--policy-config", bundle)...)
@@ -289,7 +289,7 @@ func TestResult_InputRecordsWhatTheRunWasGiven(t *testing.T) {
 	if g.Load.RequestRate != 10 || stop.Requests != 30 || g.Seed != 7 || stop.HorizonS == nil || *stop.HorizonS != 600 {
 		t.Errorf("frame generator %+v, stop %+v; want rate 10, 30 requests, seed 7, horizon 600 s", g, stop)
 	}
-	if in.Policy["scheduler"] != "fcfs" {
+	if p, ok := in.Policy["priority"].(map[string]any); !ok || p["policy"] != "constant" {
 		t.Errorf("input.policy = %v, want the bundle verbatim", in.Policy)
 	}
 	if r.Revisions.Simulator == "" || r.Revisions.Substrate == "" || r.Engine.Kind != "vllm" ||

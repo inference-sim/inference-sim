@@ -214,7 +214,7 @@ inference_perf:
 		t.Fatal(err)
 	}
 	perStage := func(s *WorkloadSpec) [2]int {
-		reqs, err := GenerateRequests(s, 40_000_000, 0)
+		reqs, err := generateRequests(s, 40_000_000, 0)
 		if err != nil {
 			t.Fatal(err)
 		}

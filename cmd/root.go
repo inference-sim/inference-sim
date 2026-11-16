@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -57,7 +56,6 @@ var (
 	maxNumSeqs                int64                  // Maximum number of requests in the Running batch (vLLM: --max-num-seqs)
 	maxNumBatchedTokens       int64                  // Maximum total number of tokens across requests in the Running batch (vLLM: --max-num-batched-tokens)
 	noEnablePrefixCaching     bool                   // --no-enable-prefix-caching: disable cross-request GPU prefix reuse (vLLM parity, #1867)
-	swaBoundedReplay          optionalBool           // --swa-bounded-replay: overrides the resolved DeepSeek-V4.1 SWA bounded replay
 	prefixHit                 kvPrefixHit            // how the KV cache groups cut a prefix hit, from the kernel's model
 	blockSizeTokens           int64                  // Number of tokens per KV block
 	defaultsFilePath          string                 // Path to default constants: the LoRA cost coefficients
@@ -84,10 +82,6 @@ var (
 	scenarioEngine            engineRef              // the engine the scenario selects (selectEngine); set by adoptKernelDeployment
 	kernelPDOpened            *kernelPools           // the per-role kernels openKernelPools opened; nil for a colocated run
 	scenarioScheduler         string                 // the scheduler the scenario's engine states ("" = none)
-	scenarioPreemption        string                 // the preemption policy the scenario's engine states ("" = none)
-	schedulerSource           string                 // what chose the scheduler: "--scheduler", "--policy-config", "" = the scenario
-	preemptionSource          string                 // likewise for the preemption policy
-	scenarioDisaggregated     bool                   // the scenario states prefill and decode pools (each pool records its own overrides)
 	scenarioOffload           *deployment.Offload    // the scenario deployment's offload block, nil when it states none (#1910)
 	scenarioOverrides         []sim.ScenarioOverride // what the run took from other than its scenario (results file)
 	maxModelLen               int64                  // the scenario's engine.max_model_len: max total sequence length (input + output)
@@ -103,7 +97,7 @@ var (
 
 	sloPriorityOverrides map[string]int // SLO class → engine priority overrides (nil = defaults)
 
-	// Scheduler and preemption config
+	// The scheduler and preemption policy, from the scenario's engine.scheduling_policy
 	scheduler        string // Scheduler name
 	preemptionPolicy string // Preemption victim selection policy
 
@@ -141,14 +135,8 @@ var (
 
 	// Workload spec config (PR10)
 	workloadSpecPath string // Path to YAML workload specification file
-	lazyGeneration   bool   // --lazy-generation: stream requests from the generator (default true; =false selects the eager generator, deprecated in v0.16.0, #1451)
 
-	// Tiered KV cache config (PR12)
-	kvCPUBlocks           int64
-	kvOffloadThreshold    float64
-	kvTransferBandwidth   float64 // no flag sets it: the kernel prices the legacy CPU tier (KVTransferTicksPerBlock)
-	kvTransferBaseLatency int64   // no flag sets it, for the same reason
-	dpLoadBalancing       string  // --dp-load-balancing: internal | hybrid | external (#1909)
+	dpLoadBalancing string // the scenario's parallel.data_parallel_load_balancing: internal | hybrid | external (#1909)
 
 	// PD disaggregation config
 	prefillInstances       int  // Number of instances dedicated to prefill
@@ -252,27 +240,13 @@ func refuseDPAutoscaler(isMoE bool, dp int, autoscalerActive bool) error {
 		"disable the autoscaler", dp)
 }
 
-// adoptSchedulingPolicy takes the instance scheduler from the scenario's
+// adoptSchedulingPolicy takes the instance scheduler and preemption policy from the scenario's
 // engine.scheduling_policy, vLLM's own setting: fcfs, or priority (served lowest priority value
-// first, then by arrival -- BLIS's priority-fcfs). Precedence is an explicit --scheduler, then a
-// --policy-config bundle (applied later, when --scheduler is unset), then the scenario, then
-// the default. An explicit --scheduler that differs is a deliberate policy experiment and is
-// kept, with a warning that the simulated engine no longer matches the scenario.
-func adoptSchedulingPolicy(cmd *cobra.Command, m *engineModel) {
+// first, then by arrival -- BLIS's priority-fcfs). The scenario is the only source (#2037).
+func adoptSchedulingPolicy(m *engineModel) {
 	stated := enginePolicyOf(m)
-	scenarioScheduler, scenarioPreemption = stated.scheduler, stated.preemption
-	if cmd.Flags().Changed("scheduler") {
-		schedulerSource = "--scheduler"
-		recordPolicyOverride("scheduler", "", scenarioScheduler, scheduler, schedulerSource)
-	} else {
-		scheduler = stated.scheduler
-	}
-	if cmd.Flags().Changed("preemption-policy") {
-		preemptionSource = "--preemption-policy"
-		recordPolicyOverride("preemption_policy", "", scenarioPreemption, preemptionPolicy, preemptionSource)
-	} else {
-		preemptionPolicy = stated.preemption
-	}
+	scenarioScheduler = stated.scheduler
+	scheduler, preemptionPolicy = stated.scheduler, stated.preemption
 }
 
 // enginePolicyOf resolves a pool's engine.scheduling_policy (build.EnginePolicyOf); a policy
@@ -288,28 +262,6 @@ func enginePolicyOf(m *engineModel) enginePolicy {
 // enginePolicy is a pool's resolved queue order and preemption policy.
 type enginePolicy struct{ scheduler, preemption string }
 
-// recordPolicyOverride notes, when the policy a run simulates for setting differs from the one
-// its scenario states (scope names a pool, "" = the run), that source chose it: warned on
-// stderr and recorded in the results file (scenarioOverrides), so a run that no longer
-// reproduces its scenario says so in the file that reports it, not only in a log line. No-op
-// when the two agree; a pool that states no policy runs vLLM's default, fcfs (enginePolicyOf).
-func recordPolicyOverride(setting, scope, stated, run, source string) {
-	// A disaggregated run records its overrides per pool (poolOverridesOf), where each pool's
-	// own stated policy is known; a run-level record would repeat the first pool's.
-	if stated == "" || run == stated || (scope == "" && scenarioDisaggregated) {
-		return
-	}
-	name := setting
-	if scope != "" {
-		name = setting + " (" + scope + " pool)"
-	}
-	logrus.Warnf("%s sets %s %s, overriding scenario %q's engine.scheduling_policy (BLIS %s); "+
-		"the results file records the override", source, name, run, kernelScenario, stated)
-	scenarioOverrides = append(scenarioOverrides, sim.ScenarioOverride{
-		Setting: name, Scenario: stated, Run: run, Source: source,
-	})
-}
-
 // adoptKernelDeployment resolves the deployment from the --scenario kernel scenario, and is
 // fatal when --scenario, --scenarios or --registry is missing.
 //
@@ -323,35 +275,29 @@ func recordPolicyOverride(setting, scope, stated, run, source string) {
 // who chose it. The gates still execute, on these values.
 func adoptKernelDeployment(cmd *cobra.Command) {
 	// A fresh adoption starts with no scenario facts recorded (tests adopt more than once).
-	scenarioScheduler, scenarioPreemption, scenarioOverrides = "", "", nil
-	schedulerSource, preemptionSource, scenarioDisaggregated = "", "", false
+	scenarioScheduler, scenarioOverrides = "", nil
 	scenarioRouter, scenarioStatesRouter = routerInputs{}, false
 	in := adoptInputs(cmd)
 	// The engine is selected, and a release this build does not run refused (LIF-6), before the
 	// deployment is read: no other check runs on a scenario this build cannot run.
 	if kernelScenario != "" && kernelScenarioDir != "" {
-		sel, err := selectEngine(filepath.Join(kernelScenarioDir, kernelScenario))
+		ref, err := selectEngine(filepath.Join(kernelScenarioDir, kernelScenario))
 		if err != nil {
 			logrus.Fatalf("%v", err)
 		}
-		if sel.Deprecated {
-			logrus.Warn(engineDeprecationWarning(kernelScenario, sel.Ref))
-		}
-		scenarioEngine = sel.Ref
+		scenarioEngine = ref
 	}
 	a, err := adoptScenario(in)
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
 	shape := a.Shape
-	// The scenario's offload block is the run's tier configuration (#1910); --kv-offload-config
-	// may only restate it (resolveKVOffloadConfig).
+	// The scenario's offload block is the run's tier configuration (#1910).
 	scenarioOffload = shape.Offload
-	adoptScenarioEngineKnobs(cmd, shape)
+	adoptScenarioEngineKnobs(shape)
 	scenarioShape = shape
 	acceptanceRecord = nil
 	prefixCacheRecords = nil
-	scenarioDisaggregated = a.Disaggregated
 	// The router's inputs are the deployment's too: its router block and pool labels.
 	adoptScenarioRouter(shape)
 	if err := openFirstPool(in, &a); err != nil {
@@ -359,7 +305,7 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	}
 	m, settings := a.Model, a.Settings
 	kernelOpened = m
-	adoptSchedulingPolicy(cmd, m)
+	adoptSchedulingPolicy(m)
 	dep := a.Deployment
 	model = strings.ToLower(dep.Model)
 	gpu = dep.Hardware
@@ -450,19 +396,8 @@ func resolvePolicies(cmd *cobra.Command) *sim.PolicyBundle {
 				"Request priority is now static (set at enqueue via SLOPriorityMap.InvertForVLLM). "+
 				"Use SLOClass in your workload spec for tier-based priority.", bundle.Priority.Policy)
 		}
-		if bundle.Scheduler != "" && !cmd.Flags().Changed("scheduler") {
-			scheduler = bundle.Scheduler
-			schedulerSource = "--policy-config"
-			recordPolicyOverride("scheduler", "", scenarioScheduler, scheduler, schedulerSource)
-		}
-		if bundle.Preemption.Policy != "" && !cmd.Flags().Changed("preemption-policy") {
-			preemptionPolicy = bundle.Preemption.Policy
-			preemptionSource = "--policy-config"
-			recordPolicyOverride("preemption_policy", "", scenarioPreemption, preemptionPolicy, preemptionSource)
-		}
 	}
 
-	checkPolicyNames(scheduler, preemptionPolicy)
 	if !trace.IsValidTraceLevel(traceLevel) {
 		logrus.Fatalf("Unknown trace level %q. Valid: none, decisions", traceLevel)
 	}
@@ -478,14 +413,6 @@ func resolvePolicies(cmd *cobra.Command) *sim.PolicyBundle {
 	if traceLevel != "none" && !summarizeTrace {
 		logrus.Infof("Decision tracing enabled (trace-level=%s). Use --summarize-trace to print summary.", traceLevel)
 	}
-	if kvCPUBlocks < 0 {
-		logrus.Fatalf("--kv-cpu-blocks must be >= 0, got %d", kvCPUBlocks)
-	}
-	if kvOffloadThreshold < 0 || kvOffloadThreshold > 1 || math.IsNaN(kvOffloadThreshold) || math.IsInf(kvOffloadThreshold, 0) {
-		logrus.Fatalf("--kv-offload-threshold must be a finite value in [0, 1], got %f", kvOffloadThreshold)
-	}
-	requireDPLoadBalancingMode(dpLoadBalancing)
-
 	logrus.Infof("Policy config: scheduler=%s, preemption=%s", scheduler, preemptionPolicy)
 	return loadedBundle
 }
@@ -500,10 +427,10 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&defaultsFilePath, "defaults-filepath", defaultDefaultsPath, "Path to default constants: the LoRA cost coefficients (the copy compiled into the binary is used when this is unset and no defaults.yaml is in the working directory)")
 	registerDataFlags(cmd)
 
-	// Engine settings are the scenario's (#2021 B6): block size, sequence and token caps,
-	// max_model_len, long_prefill_token_threshold, prefix caching, cache dtype, speculation; the
-	// KV budget is the kernel's. The flags below override the scenario only where stated.
-	cmd.Flags().Var(&swaBoundedReplay, "swa-bounded-replay", "Override DeepSeek-V4.1's SWA bounded replay (true|false), over the scenario's engine.swa_bounded_replay. Unset, the pool states it or it resolves as vLLM v0.31.0 does: on under the V2 model runner without prefill context parallelism. false is also what engine builds before the feature run")
+	// Engine settings are the scenario's (#2021 B6, #2037): block size, sequence and token caps,
+	// max_model_len, long_prefill_token_threshold, prefix caching, cache dtype, speculation, the
+	// scheduling policy, SWA bounded replay, data-parallel load balancing and the offload tiers;
+	// the KV budget is the kernel's. No flag restates them (removed_flags.go).
 	registerFrontendFlags(cmd)
 	cmd.Flags().Float64Var(&serverSeriesIntervalS, "server-series-interval-s", 0, "Bin width in seconds of the per-engine vLLM /metrics time series (KV usage, running/waiting, prefix-cache and prompt-token-by-source counters, generation tokens) written as server_series to the --metrics-path file only; 0 disables it")
 
@@ -518,10 +445,6 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	// The llm-d router: its own inputs, and the environment around it (router.go).
 	registerRouterFlags(cmd)
 
-	// Scheduler and preemption config
-	cmd.Flags().StringVar(&scheduler, "scheduler", "fcfs", "Instance scheduler: fcfs, priority-fcfs, sjf, reverse-priority")
-	cmd.Flags().StringVar(&preemptionPolicy, "preemption-policy", "fcfs", "Preemption victim selection: fcfs (tail-of-batch), priority (least-urgent SLO tier)")
-
 	// Policy bundle config
 	cmd.Flags().StringVar(&policyConfigPath, "policy-config", "", "Path to YAML policy configuration file")
 
@@ -533,15 +456,6 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().IntVar(&counterfactualK, "counterfactual-k", 0, "Record the top-k endpoints the router scored, with their state, per routing decision")
 	cmd.Flags().BoolVar(&summarizeTrace, "summarize-trace", false, "Print trace summary after simulation")
 
-	// Tiered KV cache (PR12)
-	cmd.Flags().Int64Var(&kvCPUBlocks, "kv-cpu-blocks", 0, "CPU tier KV cache blocks (0 = disabled, single-tier mode). Typical: 1/3 of the kernel's per-rank GPU KV blocks")
-	cmd.Flags().Float64Var(&kvOffloadThreshold, "kv-offload-threshold", 0.9, "GPU utilization (0-1) above which blocks are offloaded to CPU. Default: offload when GPU >90% full")
-	cmd.Flags().StringVar(&dpLoadBalancing, "dp-load-balancing", defaultDPLoadBalancing,
-		"How a dp>1 MoE replica's requests reach its ranks, as vLLM's serve flags choose: "+
-			"internal (default; one endpoint per replica, vLLM's DP balancer picks the rank), "+
-			"hybrid (--data-parallel-hybrid-lb; the same for a replica on one node), or "+
-			"external (--data-parallel-external-lb / --data-parallel-multi-port-external-lb; "+
-			"every rank is its own router endpoint). Ranks step in lockstep in every mode")
 	cmd.Flags().Float64Var(&modelAutoscalerIntervalUs, "model-autoscaler-interval-us", 0, "Autoscaler tick interval in microseconds (0 = disabled). Overrides policy-config autoscaler.interval_us when non-zero.")
 
 	// PD disaggregation config
@@ -568,16 +482,6 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	// trace round-trips under identical flags (INV-13). Default off => byte-identical.
 	registerAcceptanceFlags(cmd)
 	registerRoutingFlags(cmd)
-
-	// KV-cache offload config surface (H5, #1587). One flag: a strict-YAML file with a
-	// single top-level kv_offload: block (CPU tier + ordered secondary tiers, per-tier
-	// device physics). Registered on run and replay (INV-13). Absent => the offload
-	// subsystem is inert and output is byte-identical to a build without the feature
-	// (BC-G5). On replay the trace header is authoritative; a passed flag must match the
-	// header (see resolveKVOffloadConfig / the replay wiring). device_class names resolve
-	// against the CATALOG's storage-device table, <catalog>/devices/storage.yaml (#1770),
-	// read only when some tier actually names a class.
-	cmd.Flags().StringVar(&kvOffloadConfigPath, "kv-offload-config", "", "Path to a YAML file with a top-level kv_offload: block (multi-tier KV-cache offload config: cpu_bytes_to_use, block_size/blocks_per_chunk, eviction_policy, offload_prompt_only, secondary_tiers[] with per-tier device_class/direct_io). Every secondary tier names a device_class from the catalog's storage-device table at <catalog>/"+catalogStorageDevicesRelPath+" (located by --catalog / "+catalogEnvVar+"); the kernel prices its transfers from that device, so a tier stating its own read_bandwidth/write_bandwidth/base_latency is refused. When the scenario states an offload block, that block is the configuration and this file may only restate it (a file resolving differently is refused). Absent, with no scenario block => offload subsystem inert. On replay the trace header is authoritative.")
 }
 
 // resolveSpeculativeConfig builds the speculative-decoding / MTP config (#1528): K and the
@@ -629,22 +533,13 @@ func applyTimeoutToSpec(spec *workload.WorkloadSpec, timeoutSecs int) {
 	}
 }
 
-// applyTimeoutToRequests re-applies timeout to already-generated requests and session
-// blueprints. This corrects deadlines for inference_perf specs: spec.Clients is empty
-// when applyTimeoutToSpec runs and is populated inside GenerateWorkload, so the initial
-// deadlines are computed from nil Timeout. Safe to call for all spec types.
-// timeoutSecs>0 sets deadline=ArrivalTime+timeout; timeoutSecs<=0 sets deadline=0 (disabled).
-func applyTimeoutToRequests(wl *workload.GeneratedWorkload, timeoutSecs int) {
+// applyTimeoutToSessions re-applies the timeout to the session blueprints the generator built:
+// for inference_perf specs, spec.Clients is empty when applyTimeoutToSpec runs and is populated
+// inside the generator. timeoutSecs>0 sets the timeout; timeoutSecs<=0 disables it.
+func applyTimeoutToSessions(wl *workload.GeneratedWorkload, timeoutSecs int) {
 	var timeoutUs int64
 	if timeoutSecs > 0 {
 		timeoutUs = int64(timeoutSecs) * 1_000_000
-	}
-	for _, req := range wl.Requests {
-		if timeoutUs == 0 {
-			req.Deadline = 0
-		} else {
-			req.Deadline = req.ArrivalTime + timeoutUs
-		}
 	}
 	for i := range wl.Sessions {
 		t := timeoutUs
@@ -687,13 +582,11 @@ var runCmd = &cobra.Command{
 		loraReservedBytesForKV = adapterReservedBytesFor(loraCfg)
 		applyKernelLoRAReservation()
 
-		// KV-cache offload config surface (#1587): resolve ONCE (R4), validated at the
-		// CLI boundary. Inert (zero value) when --kv-offload-config is absent (BC-G5).
-		// Recorded in the exported trace header below for run/replay parity (BC-G6).
-		kvOffloadCfg := resolveKVOffloadConfig(cmd)
-		// #1590 (H1): --kv-offload-config (multi-tier chain) and --kv-cpu-blocks (legacy
-		// single CPU tier) are distinct offload models; setting both is ambiguous.
-		requireOneOffloadModel(kvOffloadCfg.IsEnabled(), false)
+		// KV-cache offload config (#1587, #1910): the scenario's offload block, resolved ONCE
+		// (R4) and validated at the CLI boundary. Inert (zero value) when the scenario states
+		// none (BC-G5). Recorded in the exported trace header below for run/replay parity
+		// (BC-G6).
+		kvOffloadCfg := resolveKVOffloadConfig()
 
 		// Resolve the latency model (single code path shared with replayCmd).
 		lr := resolveLatencyConfig(cmd)
@@ -723,10 +616,9 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("--concurrency and --rate are mutually exclusive; use one or the other")
 		}
 
-		// Workload configuration — all paths synthesize a v2 WorkloadSpec
-		// and generate requests via workload.GenerateRequests (BC-10).
+		// Workload configuration — all paths synthesize a v2 WorkloadSpec and stream requests
+		// from workload.GenerateWorkloadLazy (BC-10).
 		var spec *workload.WorkloadSpec
-		var preGeneratedRequests []*sim.Request
 		var sessionMgr *workload.SessionManager
 
 		if workloadSpecPath != "" {
@@ -817,39 +709,17 @@ var runCmd = &cobra.Command{
 		if requestTimeoutSecs == 0 {
 			logrus.Fatalf("--timeout must be positive (seconds) or negative to disable; got 0")
 		}
-		// Pre-expand inference-perf / ServeGen specs (LAZY MODE ONLY) so
-		// the timeout-application step below sees every client — including
-		// those populated by expansion. Without this, --lazy-generation +
-		// --workload-spec=inference_perf.yaml + an explicit --timeout
-		// would build streaming states from clients whose Timeout is nil
-		// (because expansion inside GenerateWorkloadLazy happens AFTER
-		// applyTimeoutToSpec runs), producing the default 300 s deadline
-		// instead of the user-requested value (PR #1453 self-review).
-		//
-		// Scoped to `lazyGeneration` so it does not run for eager-only
-		// invocations. Running it unconditionally would clear the
-		// spec.InferencePerf marker before GenerateWorkload's Validate,
-		// which suppresses the mixed-slo_class check via
-		// `s.InferencePerf == nil && s.ServeGenData == nil` in spec.go.
-		// Today all inference-perf-expanded clients carry SLOClass="standard"
-		// (uniform → check can't fire), so eager was accidentally safe.
-		// But scoping here defends against a future ExpandInferencePerfSpec
-		// change that emits mixed/empty slo_class from silently failing
-		// eager runs that previously validated (PR #1453 review round 3).
-		//
-		// REMOVING THIS CALL re-introduces the lazy timeout bug silently.
-		// The regression is covered by
-		// TestGenerateWorkloadLazy_InferencePerf_TimeoutAppliedAfterPreExpand
-		// at the library layer; the cmd-level smoke is covered by the
-		// inference-perf byte-identity check verified during PR review.
-		//
-		// ExpandClientsAndCohorts is idempotent — the generators'
-		// validateAndExpandSpec runs it again with no effect since both
-		// branches guard on len(spec.Clients) == 0. (#1441)
-		if lazyGeneration {
-			if err := workload.ExpandClientsAndCohorts(spec); err != nil {
-				logrus.Fatalf("Failed to expand workload spec: %v", err)
-			}
+		// Pre-expand inference-perf / ServeGen specs so the timeout-application step below
+		// sees every client, including those expansion populates. Without this, a
+		// --workload-spec=inference_perf.yaml run with an explicit --timeout would build
+		// streaming states from clients whose Timeout is nil (expansion inside
+		// GenerateWorkloadLazy happens after applyTimeoutToSpec runs), producing the default
+		// 300 s deadline instead of the requested one (PR #1453 self-review). Covered by
+		// TestGenerateWorkloadLazy_InferencePerf_TimeoutAppliedAfterPreExpand. Expansion is
+		// idempotent: the generator's validateAndExpandSpec runs it again with no effect, since
+		// both branches guard on len(spec.Clients) == 0 (#1441).
+		if err := workload.ExpandClientsAndCohorts(spec); err != nil {
+			logrus.Fatalf("Failed to expand workload spec: %v", err)
 		}
 		if workloadSpecPath == "" || cmd.Flags().Changed("timeout") {
 			applyTimeoutToSpec(spec, requestTimeoutSecs)
@@ -866,64 +736,28 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("Workload requires either num_requests or --horizon to bound generation")
 		}
 
-		// Streaming generation (#1441) is the default since v0.16.0 (#1449): build
-		// a streaming workload source instead of materializing the full request
-		// slice. Every spec the eager generator accepts is streamed: multi-session
-		// reasoning (#1458), concurrency clients (#1459), and time-varying /
-		// per-window workloads (#1460). --lazy-generation=false selects the eager
-		// generator, which v0.16.0 deprecates and v0.19.0 removes (#1450, #1451).
-		var wl *workload.GeneratedWorkload
-		// lazyRequestSource is typed as the interface satisfied by
-		// *workload.lazyRequestSource: Next() delivers requests to the
-		// cluster; Err() surfaces any terminal sampler/generator error
-		// recorded on a per-client state after the run completes, so
-		// cmd can Fatalf and match the eager path's abort-on-invalid-spec
-		// behavior (PR #1453 review round 3).
-		var lazyRequestSource interface {
-			Next() (*sim.Request, bool)
-			Err() error
+		// Requests are streamed from the workload generator (#1441): every workload class,
+		// including multi-session reasoning (#1458), concurrency clients (#1459) and
+		// time-varying / per-window workloads (#1460). The source's Err surfaces a terminal
+		// sampler or generator error recorded during the run (PR #1453 review round 3).
+		requestSource, sessions, followUpBudget, err := workload.GenerateWorkloadLazy(spec, simulationHorizon, maxRequests)
+		if err != nil {
+			logrus.Fatalf("Failed to build the workload: %v", err)
 		}
-		if lazyGeneration {
-			src, sessions, followUpBudget, lazyErr := workload.GenerateWorkloadLazy(spec, simulationHorizon, maxRequests)
-			// As of #1460 there is no ErrLazyUnsupported* fallback class — every
-			// spec the eager generator accepts is streamed. Any error is a real
-			// spec/validation failure → abort (matches eager's error handling).
-			if lazyErr != nil {
-				logrus.Fatalf("Failed to build lazy workload: %v", lazyErr)
-			}
-			lazyRequestSource = src
-			wl = &workload.GeneratedWorkload{Sessions: sessions, FollowUpBudget: followUpBudget}
-		}
-		if wl == nil {
-			var err error
-			wl, err = workload.GenerateWorkload(spec, simulationHorizon, maxRequests) //nolint:staticcheck // the deprecated eager path --lazy-generation=false selects, until v0.19.0 (#1451)
-			if err != nil {
-				logrus.Fatalf("Failed to generate workload: %v", err)
-			}
-		}
-		// Re-apply timeout to generated requests and session blueprints.
-		// For inference_perf specs, spec.Clients was empty at applyTimeoutToSpec time
-		// and populated inside GenerateWorkload — deadlines need correction here.
-		// In lazy mode wl.Requests is nil (no-op for the request loop); session
-		// blueprint Timeout pointers still need refresh.
+		wl := &workload.GeneratedWorkload{Sessions: sessions, FollowUpBudget: followUpBudget}
+		// Apply the timeout to the session blueprints, which expansion inside the generator may
+		// have populated after applyTimeoutToSpec ran.
 		if workloadSpecPath == "" || cmd.Flags().Changed("timeout") {
-			applyTimeoutToRequests(wl, requestTimeoutSecs)
+			applyTimeoutToSessions(wl, requestTimeoutSecs)
 		}
-		preGeneratedRequests = wl.Requests
 		if len(wl.Sessions) > 0 {
 			sessionMgr = workload.NewSessionManager(wl.Sessions)
 			if wl.FollowUpBudget >= 0 {
 				sessionMgr.SetFollowUpBudget(wl.FollowUpBudget)
 			}
-			if lazyRequestSource != nil {
-				logrus.Infof("Generated streaming source + %d session blueprints (closed-loop, lazy)", len(wl.Sessions))
-			} else {
-				logrus.Infof("Generated %d requests + %d session blueprints (closed-loop)", len(wl.Requests), len(wl.Sessions))
-			}
-		} else if lazyRequestSource != nil {
-			logrus.Infof("Generated streaming workload source (lazy, #1441)")
+			logrus.Infof("Generated a streaming source and %d session blueprints (closed-loop)", len(wl.Sessions))
 		} else {
-			logrus.Infof("Generated %d requests via unified workload pipeline", len(wl.Requests))
+			logrus.Infof("Generated a streaming workload source (#1441)")
 		}
 
 		if numInstances < 1 {
@@ -1069,7 +903,7 @@ var runCmd = &cobra.Command{
 		// The kernel prices every offload transfer: the secondary tiers through TierTime and
 		// the legacy CPU tier as one whole per-block reload charge. Shared with replayCmd
 		// through one helper (R23, INV-13).
-		kernelCPUTierTicks := applyKernelOffloadPricing(&kvOffloadCfg)
+		applyKernelOffloadPricing(&kvOffloadCfg)
 		// A disaggregated run's pools each size and price the offload by their own kernel.
 		if kernelPD != nil {
 			kernelPD.applyOffload(kvOffloadCfg, &prefillOverrides, &decodeOverrides)
@@ -1086,7 +920,7 @@ var runCmd = &cobra.Command{
 		if topologyErr != nil {
 			logrus.Fatalf("scenario endpoint placement: %v", topologyErr)
 		}
-		ec := engineConfigFor(cmd, lr.ModelConfig, dataParallelism, kvOffloadCfg, kernelCPUTierTicks, loraCfg)
+		ec := engineConfigFor(cmd, lr.ModelConfig, dataParallelism, kvOffloadCfg, loraCfg)
 		runEngine := engineConfigOfRun(ec, simulationHorizon, seed, lr.KernelModel, sloPriorityOverrides)
 		config := cluster.DeploymentConfig{
 			InstanceConfig:                 instanceConfigOf(runEngine),
@@ -1150,16 +984,7 @@ var runCmd = &cobra.Command{
 				return followUps
 			}
 		}
-		// RequestSource: streaming in lazy mode, eager-slice otherwise.
-		// The workload package's lazy source satisfies cluster.RequestSource
-		// via structural typing — both define the same Next() method.
-		var clusterRequestSource cluster.RequestSource
-		if lazyRequestSource != nil {
-			clusterRequestSource = lazyRequestSource
-		} else {
-			clusterRequestSource = cluster.NewSliceRequestSource(preGeneratedRequests)
-		}
-		cs, csErr := cluster.BuildClusterSimulator(config, clusterRequestSource, onRequestDone)
+		cs, csErr := cluster.BuildClusterSimulator(config, requestSource, onRequestDone)
 		if csErr != nil {
 			// A startup refusal: the scenario names a combination the engine does not build.
 			logrus.Fatalf("%v", csErr)
@@ -1180,9 +1005,7 @@ var runCmd = &cobra.Command{
 		// event loop) is visible at export time.
 		//
 		// Only install when --trace-output is set (BC-1: zero overhead when
-		// trace is disabled). Saturation analysis continues to use the
-		// preGeneratedRequests + followUpRequests path below — those slices
-		// remain populated for that purpose only.
+		// trace is disabled).
 		//
 		// Install/export coupling: traceArrivals is declared nil here and
 		// assigned a non-nil empty slice ONLY inside the install branch.
@@ -1215,15 +1038,11 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("Simulation failed: %v", err)
 		}
 
-		// Surface any terminal sampler / generator error the lazy source
-		// recorded on a per-client state during the run. Eager mode would
-		// have hit logrus.Fatalf inside cmd on the same invalid spec;
-		// without this check, lazy mode would exit 0 with reduced traffic
+		// Surface any terminal sampler / generator error the source recorded on a per-client
+		// state during the run; without this check the run would exit 0 with reduced traffic
 		// and misleading capacity numbers (PR #1453 review round 3).
-		if lazyRequestSource != nil {
-			if err := lazyRequestSource.Err(); err != nil {
-				logrus.Fatalf("Lazy workload sampler failure: %v", err)
-			}
+		if err := requestSource.Err(); err != nil {
+			logrus.Fatalf("Workload sampler failure: %v", err)
 		}
 
 		// Cancelled-session count (#2064, BC-5): parity with blis replay. A timed-out or
@@ -1585,7 +1404,6 @@ func init() {
 	runCmd.Flags().IntVar(&outputTokensMin, "output-tokens-min", defaultOutputMin, "Min Output Token Count")
 	runCmd.Flags().IntVar(&outputTokensMax, "output-tokens-max", defaultOutputMax, "Max Output Token Count")
 	runCmd.Flags().StringVar(&workloadSpecPath, "workload-spec", "", "Path to YAML workload specification file (overrides --workload)")
-	runCmd.Flags().BoolVar(&lazyGeneration, "lazy-generation", true, "Stream requests from the workload generator (#1441) instead of pre-generating the full slice; the default since v0.16.0 (#1449). --lazy-generation=false selects the eager generator, which produces the same requests (INV-6). Supports every workload class — single-shot, single- and multi-session reasoning (#1458), concurrency clients (#1459), and time-varying / per-window workloads (#1460).")
 	runCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "Per-request deadline in seconds (default 300s matches the session-client default in computeDeadline). Negative = disabled; 0 is rejected.")
 	runCmd.Flags().StringVar(&goodputSLOTTFT, "slo-ttft", "", "Per-class TTFT goodput thresholds (e.g. \"critical=100ms,standard=500ms\"). Precedence: CLI > trace header > workload spec.")
 	runCmd.Flags().StringVar(&goodputSLOITL, "slo-itl", "", "Per-class mean ITL goodput thresholds (e.g. \"critical=50ms,standard=150ms\").")
@@ -1599,7 +1417,7 @@ func init() {
 	// The Result document's encoding, file and summary view (#1871).
 	registerResultFlags(runCmd)
 
-	markDeprecatedFlags(runCmd, nil)
+	refuseRemovedFlags(runCmd)
 
 	// Attach `run` as a subcommand to `root`
 	rootCmd.AddCommand(runCmd)
@@ -1608,30 +1426,6 @@ func init() {
 // prefixCacheRecords are each opened pool's prefix-hit resolution, keyed by role, for the
 // results file.
 var prefixCacheRecords map[string]sim.PrefixCacheRecord
-
-// optionalBool is a boolean flag that tells "unset" from false.
-type optionalBool struct{ v *bool }
-
-func (o *optionalBool) String() string {
-	if o.v == nil {
-		return ""
-	}
-	return strconv.FormatBool(*o.v)
-}
-
-func (o *optionalBool) Set(s string) error {
-	b, err := strconv.ParseBool(s)
-	if err != nil {
-		return err
-	}
-	o.v = &b
-	return nil
-}
-
-func (o *optionalBool) Type() string { return "bool" }
-
-// IsBoolFlag lets the flag be passed bare (--swa-bounded-replay) as true.
-func (o *optionalBool) IsBoolFlag() bool { return true }
 
 // serverSeriesIntervalUs is --server-series-interval-s in ticks (us); 0 when off. A negative
 // or sub-microsecond width is refused.

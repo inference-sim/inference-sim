@@ -199,7 +199,7 @@ func NewNormalizedExponentialSampler(rng *rand.Rand, count int64, durationUs int
 //
 // This is the only ArrivalSampler implementation that returns 0.
 // Callers using CustomSampler must handle zero-IAT as exhaustion signal;
-// see GenerateRequests for the zero-IAT guard pattern in all request generation loops.
+// see clientStreamState.produceNextSingleShot (stream.go) for the zero-IAT guard pattern.
 func (s *NormalizedExponentialSampler) SampleIAT(_ *rand.Rand) int64 {
 	if s.index >= len(s.intervals) {
 		return 0 // Exhausted

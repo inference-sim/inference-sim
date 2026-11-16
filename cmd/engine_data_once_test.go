@@ -127,7 +127,7 @@ func TestContractEngine_EveryPoolsLookupsLandInTheRunsOneReport(t *testing.T) {
 	}
 	var after []int
 	for pool := 0; pool < 2; pool++ {
-		spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: contractRoots(scenarioPath), Pool: pool, Seed: 1}
+		spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: contractRoots(scenarioPath), Pool: pool, Seed: 1}
 		if _, err := newContractEngine(spec, data); err != nil {
 			t.Fatalf("pool %d: %v", pool, err)
 		}
@@ -162,7 +162,7 @@ func TestContractEngine_RootBesideDataIsRefusedAndDataAloneBuilds(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Pool: 0, Seed: 1}
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Pool: 0, Seed: 1}
 
 	roots := contractRoots(scenarioPath)
 	for k := range roots {

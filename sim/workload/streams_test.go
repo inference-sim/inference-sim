@@ -31,7 +31,7 @@ func TestNamedStreams_OnePurposeDoesNotMoveAnother(t *testing.T) {
 		}
 	}
 	gen := func(outputMean float64, n int64) []*sim.Request {
-		reqs, err := GenerateRequests(spec(outputMean), 1<<40, n)
+		reqs, err := generateRequests(spec(outputMean), 1<<40, n)
 		if err != nil {
 			t.Fatal(err)
 		}

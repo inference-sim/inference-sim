@@ -14,10 +14,10 @@ deployment path as `blis run`.
 
 !!! note "What a header mode means"
     A `generated` or `replayed` trace records the deployment BLIS ran. Replay keeps its header
-    authoritative (INV-13): a scenario offload block or `--kv-offload-config` may only restate
+    authoritative (INV-13): a scenario offload block may only restate
     the recorded `kv_offload`, never add one. A `converted` trace records external traffic and
-    no deployment, so replay takes the offload tiers from the scenario's offload block or
-    `--kv-offload-config` ([#2067](https://github.com/inference-sim/inference-sim/issues/2067)).
+    no deployment, so replay takes the offload tiers from the scenario's offload block
+    ([#2067](https://github.com/inference-sim/inference-sim/issues/2067)).
     The header modes are `generated`, `replayed` and `converted`; any other value is refused.
     `mode: real` was written by `blis observe`, which v0.16.0 removed, and is refused.
 

@@ -37,9 +37,6 @@ func TestReplayCmd_SimConfigFlags_Registered(t *testing.T) {
 		// registerSimConfigFlags: the llm-d router's environment (cmd/router.go); its deployment inputs are the scenario's
 		"gateway-latency", "epp-scrape-jitter", "kv-event-delay",
 
-		// registerSimConfigFlags: priority, scheduler, and preemption
-		"scheduler", "preemption-policy",
-
 		// registerSimConfigFlags: policy bundle
 		"policy-config",
 
@@ -48,9 +45,6 @@ func TestReplayCmd_SimConfigFlags_Registered(t *testing.T) {
 
 		// registerSimConfigFlags: decision trace
 		"trace-level", "counterfactual-k", "summarize-trace",
-
-		// registerSimConfigFlags: tiered KV cache
-		"kv-cpu-blocks", "kv-offload-threshold",
 
 		// replay-specific: the Result
 		"from-result",
@@ -76,26 +70,6 @@ func TestReplayCmd_TraceOutputFlag_Registered(t *testing.T) {
 	if f.DefValue != "" {
 		t.Errorf("--trace-output default must be empty (optional flag), got %q", f.DefValue)
 	}
-}
-
-// TestReplayCmd_LazyGenerationFlag_AcceptedAsNoOp pins BC-9 of #1441:
-// --lazy-generation is registered on replay for CLI symmetry with
-// `blis run` but has no effect (replay reads requests from a captured
-// trace and never invokes the workload generator).
-func TestReplayCmd_LazyGenerationFlag_AcceptedAsNoOp(t *testing.T) {
-	f := replayCmd.Flags().Lookup("lazy-generation")
-	if f == nil {
-		t.Fatal("replayCmd missing --lazy-generation flag (BC-9, #1441)")
-	}
-	if f.DefValue != "false" {
-		t.Errorf("--lazy-generation default = %q, want %q", f.DefValue, "false")
-	}
-	// Flag value must parse without error.
-	if err := replayCmd.Flags().Set("lazy-generation", "true"); err != nil {
-		t.Errorf("flag parse failed: %v", err)
-	}
-	// Reset for other tests.
-	_ = replayCmd.Flags().Set("lazy-generation", "false")
 }
 
 func TestReplayCmd_TraceHeaderFlag_Registered(t *testing.T) {
@@ -157,10 +131,6 @@ mode: generated
 	origInstances := numInstances
 	origSeed := seed
 	origThreshold := longPrefillTokenThreshold
-	origKVCPU := kvCPUBlocks
-	origOffload := kvOffloadThreshold
-	origBandwidth := kvTransferBandwidth
-	origBaseLatency := kvTransferBaseLatency
 	origScheduler := scheduler
 	origPolicyConfig := policyConfigPath
 	origMaxModelLen := maxModelLen
@@ -186,10 +156,6 @@ mode: generated
 		numInstances = origInstances
 		seed = origSeed
 		longPrefillTokenThreshold = origThreshold
-		kvCPUBlocks = origKVCPU
-		kvOffloadThreshold = origOffload
-		kvTransferBandwidth = origBandwidth
-		kvTransferBaseLatency = origBaseLatency
 		scheduler = origScheduler
 		policyConfigPath = origPolicyConfig
 		maxModelLen = origMaxModelLen
@@ -217,10 +183,6 @@ mode: generated
 	numInstances = 1
 	seed = 42
 	longPrefillTokenThreshold = 0
-	kvCPUBlocks = 0
-	kvOffloadThreshold = 0.9
-	kvTransferBandwidth = 100.0
-	kvTransferBaseLatency = 0
 	scheduler = "fcfs"
 	policyConfigPath = ""
 	maxModelLen = 0
@@ -332,10 +294,6 @@ mode: generated
 	origInstances := numInstances
 	origSeed := seed
 	origThreshold := longPrefillTokenThreshold
-	origKVCPU := kvCPUBlocks
-	origOffload := kvOffloadThreshold
-	origBandwidth := kvTransferBandwidth
-	origBaseLatency := kvTransferBaseLatency
 	origScheduler := scheduler
 	origPolicyConfig := policyConfigPath
 	origMaxModelLen := maxModelLen
@@ -361,10 +319,6 @@ mode: generated
 		numInstances = origInstances
 		seed = origSeed
 		longPrefillTokenThreshold = origThreshold
-		kvCPUBlocks = origKVCPU
-		kvOffloadThreshold = origOffload
-		kvTransferBandwidth = origBandwidth
-		kvTransferBaseLatency = origBaseLatency
 		scheduler = origScheduler
 		policyConfigPath = origPolicyConfig
 		maxModelLen = origMaxModelLen
@@ -422,10 +376,6 @@ mode: generated
 	defer func() { resultOutput = origOutput }()
 	resultOutput = resultsFilePath
 	longPrefillTokenThreshold = 0
-	kvCPUBlocks = 0
-	kvOffloadThreshold = 0.9
-	kvTransferBandwidth = 100.0
-	kvTransferBaseLatency = 0
 	scheduler = "fcfs"
 	policyConfigPath = ""
 	maxModelLen = 0
@@ -522,10 +472,6 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	origInstances := numInstances
 	origSeed := seed
 	origThreshold := longPrefillTokenThreshold
-	origKVCPU := kvCPUBlocks
-	origOffload := kvOffloadThreshold
-	origBandwidth := kvTransferBandwidth
-	origBaseLatency := kvTransferBaseLatency
 	origScheduler := scheduler
 	origPolicyConfig := policyConfigPath
 	origMaxModelLen := maxModelLen
@@ -551,10 +497,6 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 		numInstances = origInstances
 		seed = origSeed
 		longPrefillTokenThreshold = origThreshold
-		kvCPUBlocks = origKVCPU
-		kvOffloadThreshold = origOffload
-		kvTransferBandwidth = origBandwidth
-		kvTransferBaseLatency = origBaseLatency
 		scheduler = origScheduler
 		policyConfigPath = origPolicyConfig
 		maxModelLen = origMaxModelLen
@@ -581,10 +523,6 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	numInstances = 1
 	seed = 42
 	longPrefillTokenThreshold = 0
-	kvCPUBlocks = 0
-	kvOffloadThreshold = 0.9
-	kvTransferBandwidth = 100.0
-	kvTransferBaseLatency = 0
 	scheduler = "fcfs"
 	policyConfigPath = ""
 	maxModelLen = 0
@@ -656,10 +594,6 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		origInstances := numInstances
 		origSeed := seed
 		origThreshold := longPrefillTokenThreshold
-		origKVCPU := kvCPUBlocks
-		origOffload := kvOffloadThreshold
-		origBandwidth := kvTransferBandwidth
-		origBaseLatency := kvTransferBaseLatency
 		origScheduler := scheduler
 		origPolicyConfig := policyConfigPath
 		origMaxModelLen := maxModelLen
@@ -685,10 +619,6 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 			numInstances = origInstances
 			seed = origSeed
 			longPrefillTokenThreshold = origThreshold
-			kvCPUBlocks = origKVCPU
-			kvOffloadThreshold = origOffload
-			kvTransferBandwidth = origBandwidth
-			kvTransferBaseLatency = origBaseLatency
 			scheduler = origScheduler
 			policyConfigPath = origPolicyConfig
 			maxModelLen = origMaxModelLen
@@ -715,10 +645,6 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		numInstances = 1
 		seed = 42
 		longPrefillTokenThreshold = 0
-		kvCPUBlocks = 0
-		kvOffloadThreshold = 0.9
-		kvTransferBandwidth = 100.0
-		kvTransferBaseLatency = 0
 		scheduler = "fcfs"
 		policyConfigPath = ""
 		maxModelLen = 0
@@ -804,10 +730,6 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 	origInstances := numInstances
 	origSeed := seed
 	origThreshold := longPrefillTokenThreshold
-	origKVCPU := kvCPUBlocks
-	origOffload := kvOffloadThreshold
-	origBandwidth := kvTransferBandwidth
-	origBaseLatency := kvTransferBaseLatency
 	origScheduler := scheduler
 	origPolicyConfig := policyConfigPath
 	origMaxModelLen := maxModelLen
@@ -833,10 +755,6 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 		numInstances = origInstances
 		seed = origSeed
 		longPrefillTokenThreshold = origThreshold
-		kvCPUBlocks = origKVCPU
-		kvOffloadThreshold = origOffload
-		kvTransferBandwidth = origBandwidth
-		kvTransferBaseLatency = origBaseLatency
 		scheduler = origScheduler
 		policyConfigPath = origPolicyConfig
 		maxModelLen = origMaxModelLen
@@ -863,10 +781,6 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 	numInstances = 1
 	seed = 42
 	longPrefillTokenThreshold = 0
-	kvCPUBlocks = 0
-	kvOffloadThreshold = 0.9
-	kvTransferBandwidth = 100.0
-	kvTransferBaseLatency = 0
 	scheduler = "fcfs"
 	policyConfigPath = ""
 	maxModelLen = 0
@@ -944,10 +858,6 @@ func TestReplayCmd_AutoscalerBundleFatal(t *testing.T) {
 		numInstances = 1
 		seed = 42
 		longPrefillTokenThreshold = 0
-		kvCPUBlocks = 0
-		kvOffloadThreshold = 0.9
-		kvTransferBandwidth = 100.0
-		kvTransferBaseLatency = 0
 		scheduler = "fcfs"
 		policyConfigPath = bundlePath
 		maxModelLen = 0
@@ -1021,10 +931,6 @@ func TestReplayCmd_NodePoolsBundleFatal(t *testing.T) {
 		numInstances = 1
 		seed = 42
 		longPrefillTokenThreshold = 0
-		kvCPUBlocks = 0
-		kvOffloadThreshold = 0.9
-		kvTransferBandwidth = 100.0
-		kvTransferBaseLatency = 0
 		scheduler = "fcfs"
 		policyConfigPath = bundlePath
 		maxModelLen = 0
@@ -1111,10 +1017,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 	origInstances := numInstances
 	origSeed := seed
 	origThreshold := longPrefillTokenThreshold
-	origKVCPU := kvCPUBlocks
-	origOffload := kvOffloadThreshold
-	origBandwidth := kvTransferBandwidth
-	origBaseLatency := kvTransferBaseLatency
 	origScheduler := scheduler
 	origPolicyConfig := policyConfigPath
 	origMaxModelLen := maxModelLen
@@ -1140,10 +1042,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 		numInstances = origInstances
 		seed = origSeed
 		longPrefillTokenThreshold = origThreshold
-		kvCPUBlocks = origKVCPU
-		kvOffloadThreshold = origOffload
-		kvTransferBandwidth = origBandwidth
-		kvTransferBaseLatency = origBaseLatency
 		scheduler = origScheduler
 		policyConfigPath = origPolicyConfig
 		maxModelLen = origMaxModelLen
@@ -1171,10 +1069,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 	numInstances = 2
 	seed = 42
 	longPrefillTokenThreshold = 0
-	kvCPUBlocks = 0
-	kvOffloadThreshold = 0.9
-	kvTransferBandwidth = 100.0
-	kvTransferBaseLatency = 0
 	scheduler = "fcfs"
 	policyConfigPath = ""
 	maxModelLen = 0
@@ -1239,10 +1133,6 @@ func TestReplayCmd_AutoscalerFlagFatal(t *testing.T) {
 		numInstances = 1
 		seed = 42
 		longPrefillTokenThreshold = 0
-		kvCPUBlocks = 0
-		kvOffloadThreshold = 0.9
-		kvTransferBandwidth = 100.0
-		kvTransferBaseLatency = 0
 		scheduler = "fcfs"
 		policyConfigPath = ""
 		maxModelLen = 0
@@ -1312,10 +1202,6 @@ func TestReplayCmd_PDTopologyFatal(t *testing.T) {
 		numInstances = 2 // 4 prefill + 0 decode > 2 total: invalid topology
 		seed = 42
 		longPrefillTokenThreshold = 0
-		kvCPUBlocks = 0
-		kvOffloadThreshold = 0.9
-		kvTransferBandwidth = 25.0
-		kvTransferBaseLatency = 0
 		scheduler = "fcfs"
 		policyConfigPath = ""
 		maxModelLen = 0
@@ -1820,10 +1706,6 @@ func TestReplayCmd_AccumulateHeaderRequiresClosedLoop(t *testing.T) {
 		numInstances = 1
 		seed = 42
 		longPrefillTokenThreshold = 0
-		kvCPUBlocks = 0
-		kvOffloadThreshold = 0.9
-		kvTransferBandwidth = 100.0
-		kvTransferBaseLatency = 0
 		scheduler = "fcfs"
 		policyConfigPath = ""
 		maxModelLen = 0
@@ -1950,10 +1832,6 @@ func TestReplayCmd_PoolRejectsNonSessionRecords(t *testing.T) {
 		numInstances = 1
 		seed = 42
 		longPrefillTokenThreshold = 0
-		kvCPUBlocks = 0
-		kvOffloadThreshold = 0.9
-		kvTransferBandwidth = 100.0
-		kvTransferBaseLatency = 0
 		scheduler = "fcfs"
 		policyConfigPath = ""
 		maxModelLen = 0

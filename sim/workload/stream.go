@@ -16,34 +16,32 @@ import (
 // ErrLazyUnsupported* fallback sentinel as of #1460:
 //
 //   - Concurrency clients (Concurrency > 0, #1459): seed requests +
-//     SessionBlueprints are produced by the shared
-//     generateConcurrencySeedsAndBlueprints helper (also used by the eager
-//     GenerateWorkload), and each seed is pushed onto the global arrival heap as
-//     its own entry so the merge reproduces eager's stable-sort-by-arrival
-//     byte-for-byte. The seed set is O(N virtual users), present up front in both
-//     modes — no horizon-length pre-materialization to stream away.
+//     SessionBlueprints are produced by the
+//     generateConcurrencySeedsAndBlueprints helper, and each seed is pushed onto
+//     the global arrival heap as its own entry, so seeds merge with open-loop
+//     requests in arrival order (open-loop first on ties). The seed set is
+//     O(N virtual users) and present up front; there is no horizon-length
+//     pre-materialization to stream away.
 //
 //   - Multi-session reasoning (SingleSession=false, #1458): each such client is a
 //     traffic source spawning many independent, overlapping sessions across the
-//     horizon. Eager interleaves them via its global merge-sort; the lazy
-//     generator reproduces the interleaving with a small per-client internal merge
-//     over its LIVE sessions (see clientStreamState.liveSessions and
+//     horizon. The streaming source interleaves them in arrival order with a small
+//     per-client internal merge over its LIVE sessions (see clientStreamState.liveSessions and
 //     produceNextReasoning), bounding resident sessions to the concurrent working
 //     set (≈ arrival_rate × session_duration, Little's law) — independent of
 //     horizon.
 //
 //   - Time-varying / per-window workloads (#1460): clients whose lifecycle windows
 //     carry per-window trace_rate/arrival/input_distribution/output_distribution
-//     overrides. Eager (generateTimeVaryingRequests) generates each window as a
-//     self-contained batch in spec order, concatenates all, and stable-sorts by
-//     arrival; the lazy path (generateTimeVaryingWorkloadLazy) reuses the eager
-//     generateRequestsForWindow one window at a time, merging built window batches
+//     overrides. generateTimeVaryingWorkloadLazy generates each window as a
+//     self-contained batch with generateRequestsForWindow, one window at a time in
+//     spec order, merging built window batches
 //     through a per-client live-window heap with a suffix-min emit gate (see
 //     clientStreamState.liveWindows and produceNextTimeVarying). Resident memory is
 //     the concurrent-window working set rather than all windows of all clients — a
 //     win for the many-small-windows layout; a single huge window still materializes
-//     one full batch (generateRequestsForWindow is all-at-once), so it yields no
-//     memory advantage over eager.
+//     one full batch (generateRequestsForWindow is all-at-once), so it gives no
+//     memory saving.
 
 // clientStreamState holds per-client streaming production state.
 // One per "live" client in the original allClients order (the order matters:
@@ -66,8 +64,8 @@ type clientStreamState struct {
 	isSingleSession bool
 	isClosedLoop    bool
 
-	// Single-shot mode: monotonic IAT accumulator (matches the
-	// `currentTime` accumulator in GenerateRequests' non-reasoning loop).
+	// Single-shot mode: monotonic IAT accumulator; each request's arrival
+	// time is the running sum of the client's inter-arrival draws.
 	currentTime int64
 
 	// Reasoning single-session mode: pendingSession holds the client's one
@@ -91,22 +89,20 @@ type clientStreamState struct {
 	liveSessions   *liveSessionHeap
 	nextSessionIdx int   // monotonic per-client session-build index (emit tie-break)
 	sessionsBuilt  int   // sessions buildSession has generated, each named by its index
-	msClientCap    int64 // per-client build cap = 2*maxRequests (0 = unbounded); mirrors eager's perClientCap
+	msClientCap    int64 // per-client build cap = 2*maxRequests (0 = unbounded)
 	msReqCount     int64 // count of ALL rounds built for this client (for msClientCap)
 	msBuildDone    bool  // true once no further session can be built (horizon/sampler/lifecycle/cap)
 
 	// Time-varying mode (per-window parameter overrides, #1460): a client whose
 	// lifecycle windows carry per-window trace_rate/arrival/input_distribution/
-	// output_distribution overrides. The eager path (generateTimeVaryingRequests)
-	// generates each window as a self-contained batch (all IATs sampled up front,
-	// rescaled to fill the window, then content) IN SPEC ORDER, concatenates all
-	// clients' all windows, and stable-sorts by arrival. Because windows can be
-	// overlapping or out-of-order in spec, the per-client concatenation is NOT
-	// arrival-monotonic. The lazy path reuses generateRequestsForWindow verbatim
-	// (one window at a time), keeps an internal min-heap of built-but-not-drained
-	// window batches, and applies an emit-safety gate keyed on the suffix-minimum
-	// window start — yielding the client's requests in arrival order so it feeds
-	// the global heap a monotonic sub-stream byte-identical to eager's global sort.
+	// output_distribution overrides. generateRequestsForWindow generates each
+	// window as a self-contained batch (all IATs sampled up front, rescaled to
+	// fill the window, then content), one window at a time IN SPEC ORDER. Because
+	// windows can be overlapping or out-of-order in spec, the per-client sequence
+	// of batches is NOT arrival-monotonic. The state keeps an internal min-heap of
+	// built-but-not-drained window batches and applies an emit-safety gate keyed
+	// on the suffix-minimum window start, so the client yields its requests in
+	// arrival order and feeds the global heap a monotonic sub-stream.
 	isTimeVarying  bool
 	allClients     []ClientSpec // shared read-only; needed by computeProportionalRate inside generateRequestsForWindow
 	aggregateRate  float64      // spec.AggregateRate (0 = absolute-rate mode)
@@ -130,8 +126,8 @@ type clientStreamState struct {
 	// generator call (multimodal token generation, reasoning session
 	// generation). Set alongside `exhausted = true` on the failure
 	// path. Surfaced up via lazyRequestSource.Err() so cmd/root.go
-	// can Fatalf and match the eager path's abort-on-invalid-spec
-	// behavior — instead of silently reducing traffic and exiting 0
+	// can Fatalf and abort the run on an invalid spec, instead of
+	// silently reducing traffic and exiting 0
 	// with misleading capacity numbers (#1453 self-review round 3).
 	lastErr error
 
@@ -148,9 +144,9 @@ type clientStreamState struct {
 // advancing the client's RNG and perClientSeq. Returns (nil, 0, false)
 // when exhausted.
 //
-// CRITICAL: This method must consume RNG draws in the same order as the
-// eager loop in GenerateRequests for the corresponding client kind.
-// Any reordering breaks INV-6 (byte-identical stdout across modes).
+// CRITICAL: This method must consume RNG draws in a fixed order for each
+// client kind. Any reordering changes the workload a given seed produces,
+// so earlier results no longer reproduce (INV-6).
 func (s *clientStreamState) produceNext() (*sim.Request, int64, bool) {
 	if s.exhausted {
 		return nil, 0, false
@@ -176,8 +172,8 @@ func (s *clientStreamState) produceNextSingleShot() (*sim.Request, int64, bool) 
 		}
 		iat := s.arrivalSampler.SampleIAT(s.arrivalRNG)
 		if iat == 0 {
-			// Stateful sampler exhausted (mirrors the `iat == 0 → break`
-			// guard in GenerateRequests' non-reasoning per-client loop).
+			// Stateful sampler exhausted: a zero IAT is the exhaustion
+			// signal (see NormalizedExponentialSampler.SampleIAT).
 			s.exhausted = true
 			return nil, 0, false
 		}
@@ -186,8 +182,8 @@ func (s *clientStreamState) produceNextSingleShot() (*sim.Request, int64, bool) 
 			s.exhausted = true
 			return nil, 0, false
 		}
-		// Lifecycle window filtering (mirrors the lifecycle/lastWindowEnd
-		// check in GenerateRequests' non-reasoning loop).
+		// Lifecycle window filtering: skip arrivals outside every active
+		// window, and stop once past the last window's end.
 		if s.client.Lifecycle != nil && !isInActiveWindow(s.currentTime, s.client.Lifecycle) {
 			if s.currentTime >= lastWindowEndUs(s.client.Lifecycle) {
 				s.exhausted = true
@@ -196,8 +192,8 @@ func (s *clientStreamState) produceNextSingleShot() (*sim.Request, int64, bool) 
 			continue
 		}
 
-		// Token generation: the same call GenerateRequests' single-shot path makes, from
-		// the request's own streams (requestStreams), so the two paths cannot diverge.
+		// Token generation draws from the request's own streams (requestStreams), so a
+		// request's content depends only on its client and sequence number.
 		inputTokens, outputTokens, textCount, imageCount, audioCount, videoCount, err := requestContent(
 			requestStreams(s.streams, s.perClientSeq), s.client.Multimodal, s.inputSampler, s.outputSampler)
 		{
@@ -208,7 +204,7 @@ func (s *clientStreamState) produceNextSingleShot() (*sim.Request, int64, bool) 
 				// user-facing log happens on the Phase 3 pass only (skipped
 				// during the blueprint pre-pass to avoid double-logging).
 				// lazyRequestSource.Err() surfaces this to cmd/root.go so it
-				// can Fatalf and match the eager path's abort-on-invalid-spec.
+				// can Fatalf and abort the run on the invalid spec.
 				s.recordError(fmt.Errorf("multimodal token generation: %w", err))
 				return nil, 0, false
 			}
@@ -255,15 +251,14 @@ func (s *clientStreamState) produceNextReasoning() (*sim.Request, int64, bool) {
 }
 
 // produceNextSingleSession streams a SingleSession=true reasoning client: one
-// session per client, cycling through its rounds. Mirrors the SingleSession
-// branch of GenerateRequests' reasoning path (generator.go). No per-client cap
-// applies (eager's single-session branch does not use perClientCap).
+// session per client, cycling through its rounds. No per-client build cap
+// applies: the client builds exactly one session.
 func (s *clientStreamState) produceNextSingleSession() (*sim.Request, int64, bool) {
 	for {
 		// Drain the (only) session's pending rounds. All rounds are yielded,
 		// including non-round-0 rounds of closed-loop sessions, so each counts
-		// toward maxRequests at the lazyRequestSource level — matching eager's
-		// "produce all rounds, sort+truncate, then filter round-0" sequencing.
+		// toward maxRequests at the lazyRequestSource level: the cap applies to
+		// all rounds in arrival order, before the round-0 filter.
 		// The round-0-only filter for closed-loop sessions is applied at
 		// lazyRequestSource.Next, after the cap-counting heap pop.
 		for s.pendingSessionIdx < len(s.pendingSession) {
@@ -271,7 +266,6 @@ func (s *clientStreamState) produceNextSingleSession() (*sim.Request, int64, boo
 			s.pendingSessionIdx++
 			if req.ArrivalTime >= s.horizon {
 				// Rounds are chronological; remaining are past horizon too.
-				// Mirrors the `break` in GenerateRequests' reasoning round loop.
 				s.pendingSession = nil
 				s.pendingSessionIdx = 0
 				break
@@ -325,7 +319,7 @@ func (s *clientStreamState) produceNextSingleSession() (*sim.Request, int64, boo
 // horizon. It keeps a min-heap of live (built-but-not-drained) sessions keyed by
 // each session's next-round arrival, and yields the client's rounds in arrival
 // order so the client feeds the global heap an arrival-monotonic sub-stream
-// (BC-2), byte-identical to the set eager's global merge-sort produces (BC-1).
+// (BC-2), equal to the client's rounds stable-sorted by arrival (BC-1).
 //
 // Emit-safety gate: session start times increase strictly (currentTime grows by
 // each positive IAT), so any not-yet-built session starts strictly after
@@ -349,7 +343,7 @@ func (s *clientStreamState) produceNextMultiSession() (*sim.Request, int64, bool
 			if req.ArrivalTime >= s.horizon {
 				// Rounds are chronological within a session; this and every
 				// later round of this session are past the horizon. Drop the
-				// whole session (mirrors eager's per-session round-loop break).
+				// whole session.
 				heap.Pop(s.liveSessions)
 				continue
 			}
@@ -381,8 +375,8 @@ func (s *clientStreamState) produceNextMultiSession() (*sim.Request, int64, bool
 	}
 }
 
-// buildNextSession replicates one iteration of eager's multi-session build loop
-// (GenerateRequests, generator.go): honor the per-client cap and horizon, draw
+// buildNextSession runs one iteration of the multi-session build loop: honor
+// the per-client cap and horizon, draw
 // one IAT, apply lifecycle gating, build one session, and push it onto the live
 // heap. Returns false when no session was built. On the terminal no-build cases
 // (horizon reached, cap hit, sampler exhausted, lifecycle past the last window)
@@ -390,7 +384,7 @@ func (s *clientStreamState) produceNextMultiSession() (*sim.Request, int64, bool
 // (the caller loops and tries the next IAT); on a generator error it records the
 // error (sticky-exhausts) so lazyRequestSource.Err() can surface it.
 func (s *clientStreamState) buildNextSession() bool {
-	// Loop-top guards, in the same order as eager's build loop.
+	// Loop-top guards, checked before any IAT draw.
 	if s.currentTime >= s.horizon { // `for currentTime < horizon`
 		s.msBuildDone = true
 		return false
@@ -420,15 +414,14 @@ func (s *clientStreamState) buildNextSession() bool {
 	if err != nil {
 		return false // recordError already set exhausted + lastErr
 	}
-	// Count ALL built rounds toward the per-client cap, matching eager's
-	// `clientReqCount += len(reasoningReqs)` (before horizon/lifecycle filter).
+	// Count ALL built rounds toward the per-client cap, before the
+	// horizon/lifecycle filter drops any of them.
 	s.msReqCount += int64(len(reasoningReqs))
 	// Only push sessions that actually produced rounds. A zero-round session is
 	// unreachable today (Validate() enforces MaxRounds >= 1, so
 	// GenerateReasoningRequests always returns >= 1 round), but pushing an empty
-	// session would panic in liveSessionHeap.Less via head()→rounds[0]. Eager
-	// is a no-op on an empty slice (it ranges over reasoningReqs); mirror that
-	// robustness. The session still counts toward the cap above (matching eager).
+	// session would panic in liveSessionHeap.Less via head()→rounds[0], so an
+	// empty session is skipped.
 	if len(reasoningReqs) > 0 {
 		heap.Push(s.liveSessions, &liveSession{rounds: reasoningReqs, cursor: 0, sessionIdx: s.nextSessionIdx})
 		s.nextSessionIdx++
@@ -459,8 +452,8 @@ func computeSuffixMinStart(windows []ActiveWindow) []int64 {
 // lifecycle windows carry per-window parameter overrides. It keeps a min-heap of
 // live (built-but-not-drained) window batches keyed by each batch's next-request
 // arrival, and yields the client's requests in arrival order so the client feeds
-// the global heap an arrival-monotonic sub-stream (BC-2), byte-identical to the
-// set eager's global merge-sort produces (BC-1).
+// the global heap an arrival-monotonic sub-stream (BC-2), equal to the client's
+// window batches concatenated in spec order and stable-sorted by arrival (BC-1).
 //
 // Emit-safety gate: windows are built in SPEC order, so the not-yet-built windows
 // are exactly the suffix windows[windowBuildIdx:], and each such window's earliest
@@ -469,7 +462,7 @@ func computeSuffixMinStart(windows []ActiveWindow) []int64 {
 // on every future request's arrival. A live head with arrival <= that bound cannot
 // be preceded by any future window's request and is safe to emit; the `<=` is
 // correct on ties because the future window is later in spec order (higher
-// windowIdx) and eager's stable sort orders the already-built (lower-windowIdx)
+// windowIdx) and the heap's windowIdx tie-break orders the already-built (lower-windowIdx)
 // request first. A head with arrival > the bound might be preceded by a future
 // window's first request, so we build the next window first and re-check. Once
 // building is done (twBuildDone), every remaining live head is safe to drain.
@@ -510,12 +503,11 @@ func (s *clientStreamState) produceNextTimeVarying() (*sim.Request, int64, bool)
 	}
 }
 
-// buildNextTimeVaryingWindow builds the next lifecycle window (spec order) via the
-// reused eager generateRequestsForWindow, mirroring generateTimeVaryingRequests'
-// per-window loop: skip windows starting at/after the horizon (no RNG draw), clamp
-// the window end to the horizon, generate the window's request batch, stable-sort
-// it by arrival (multi-session batches are not arrival-monotonic — eager relies on
-// its global sort), and push it onto the live-window heap. Returns false when no
+// buildNextTimeVaryingWindow builds the next lifecycle window (spec order) via
+// generateRequestsForWindow: skip windows starting at/after the horizon (no RNG
+// draw), clamp the window end to the horizon, generate the window's request batch,
+// stable-sort it by arrival (multi-session batches are not arrival-monotonic), and
+// push it onto the live-window heap. Returns false when no
 // window was built this call. Sets twBuildDone once every window has been consumed;
 // a zero-request or skipped window returns false WITHOUT twBuildDone so the caller
 // loops to the next window. On a generator error it records the error
@@ -524,12 +516,11 @@ func (s *clientStreamState) buildNextTimeVaryingWindow() bool {
 	for s.windowBuildIdx < len(s.windows) {
 		w := s.windows[s.windowBuildIdx]
 		s.windowBuildIdx++
-		// Skip windows that start beyond the horizon (mirrors eager's
-		// `if window.StartUs >= horizon { continue }` — no RNG draw).
+		// Skip windows that start at or beyond the horizon (no RNG draw).
 		if w.StartUs >= s.horizon {
 			continue
 		}
-		// Clamp window end to the horizon (mirrors eager's effectiveWindow clamp).
+		// Clamp window end to the horizon.
 		effWindow := w
 		if effWindow.EndUs > s.horizon {
 			effWindow.EndUs = s.horizon
@@ -550,9 +541,8 @@ func (s *clientStreamState) buildNextTimeVaryingWindow() bool {
 			continue
 		}
 		// Multi-session reasoning appends session rounds in build order, not arrival
-		// order (session N+1's round 0 can precede session N's later rounds). Eager
-		// fixes this only in its global sort; reproduce that with a per-batch stable
-		// sort. No-op for single-shot (currentTime += iat is monotonic) and
+		// order (session N+1's round 0 can precede session N's later rounds), so the
+		// batch is stable-sorted by arrival. No-op for single-shot (currentTime += iat is monotonic) and
 		// single-session (rounds are chronological).
 		sort.SliceStable(batch, func(i, j int) bool {
 			return batch[i].ArrivalTime < batch[j].ArrivalTime
@@ -565,11 +555,11 @@ func (s *clientStreamState) buildNextTimeVaryingWindow() bool {
 }
 
 // buildSession generates one reasoning session at startTime and sets the
-// per-round Deadline/SLOTargetUs (mirrors GenerateRequests' reasoning path).
+// per-round Deadline/SLOTargetUs.
 // GenerateReasoningRequests seeds/prepends the prefix internally (#1445).
 // On error it records the terminal error on the state and returns it; callers
-// stop producing so lazyRequestSource.Err() surfaces it to cmd for a Fatalf
-// matching eager's abort-on-invalid-spec behavior.
+// stop producing so lazyRequestSource.Err() surfaces it to cmd, which
+// Fatalfs on the invalid spec.
 func (s *clientStreamState) buildSession(startTime int64) ([]*sim.Request, error) {
 	sessionID := clientSessionID(s.clientIdx, s.sessionsBuilt)
 	s.sessionsBuilt++
@@ -599,7 +589,7 @@ func (s *clientStreamState) buildSession(startTime int64) ([]*sim.Request, error
 // running in dryRun mode — the blueprint pre-pass runs the same
 // samplers as Phase 3 and would double-log the same error otherwise.
 // lazyRequestSource.Err() aggregates these errors across states so
-// cmd/root.go can Fatalf on invalid-spec failures (matching eager).
+// cmd/root.go can Fatalf on invalid-spec failures.
 func (s *clientStreamState) recordError(err error) {
 	s.exhausted = true
 	s.lastErr = err
@@ -609,9 +599,8 @@ func (s *clientStreamState) recordError(err error) {
 }
 
 // heapEntry is one priority-queue entry. The ordering key is
-// (arrivalUs, clientIdx, perClientSeq) — the second component matches
-// sort.SliceStable's tie-break behavior in the eager path (lower
-// allClients index emitted first on identical arrivals), and the third
+// (arrivalUs, clientIdx, perClientSeq) — the second component emits the
+// lower allClients index first on identical arrivals, and the third
 // breaks any residual ties deterministically.
 type heapEntry struct {
 	arrivalUs    int64
@@ -646,10 +635,10 @@ func (h *heapByArrival) Pop() interface{} {
 
 // liveSession is one in-flight session of a multi-session reasoning client
 // (#1458). rounds holds that session's pre-computed rounds (already filtered
-// for nothing — filtering happens at emit time to mirror eager); cursor points
+// for nothing — horizon and lifecycle filtering happen at emit time); cursor points
 // at the next round to emit. sessionIdx is the client's monotonic build index,
 // used as the deterministic tie-break when two sessions' next rounds share an
-// arrival time (matches eager's stable-sort-by-append-order).
+// arrival time (earlier-built session first).
 type liveSession struct {
 	rounds     []*sim.Request
 	cursor     int
@@ -661,8 +650,8 @@ type liveSession struct {
 func (ls *liveSession) head() *sim.Request { return ls.rounds[ls.cursor] }
 
 // liveSessionHeap orders live sessions by (next-round arrival, sessionIdx).
-// The arrival key reproduces the global sort; the sessionIdx key reproduces
-// eager's within-client stable-sort tie-break (earlier-built session first).
+// The arrival key gives arrival order; the sessionIdx key breaks ties
+// deterministically (earlier-built session first).
 type liveSessionHeap []*liveSession
 
 func (h liveSessionHeap) Len() int { return len(h) }
@@ -685,13 +674,12 @@ func (h *liveSessionHeap) Pop() interface{} {
 
 // liveWindow is one built-but-not-fully-drained lifecycle window batch of a
 // time-varying client (#1460). batch holds that window's requests, produced by
-// the reused eager generateRequestsForWindow and stable-sorted by ArrivalTime
-// (multi-session reasoning within a window is NOT arrival-monotonic — eager only
-// fixes this in its global sort — so the per-batch sort is load-bearing). cursor
+// generateRequestsForWindow and stable-sorted by ArrivalTime (multi-session
+// reasoning within a window is NOT arrival-monotonic, so the per-batch sort is
+// load-bearing). cursor
 // points at the next request to emit. windowIdx is the client's window spec index,
 // used as the deterministic tie-break when two windows' next requests share an
-// arrival time (matches eager's stable-sort-by-concat-order: earlier spec window
-// first).
+// arrival time (earlier spec window first).
 type liveWindow struct {
 	batch     []*sim.Request
 	cursor    int
@@ -703,8 +691,8 @@ type liveWindow struct {
 func (lw *liveWindow) head() *sim.Request { return lw.batch[lw.cursor] }
 
 // liveWindowHeap orders live windows by (next-request arrival, windowIdx). The
-// arrival key reproduces eager's global sort; the windowIdx key reproduces
-// eager's within-client stable-sort tie-break (earlier-spec window first).
+// arrival key gives arrival order; the windowIdx key breaks ties
+// deterministically (earlier-spec window first).
 type liveWindowHeap []*liveWindow
 
 func (h liveWindowHeap) Len() int { return len(h) }
@@ -747,8 +735,8 @@ type lazyRequestSource struct {
 // Err returns the first terminal sampler / generator error recorded on any
 // per-client state after the cluster has finished draining the source
 // (i.e. after cluster.Run returns). Callers MUST invoke Err() post-Run
-// and Fatalf on a non-nil value to match the eager path's
-// abort-on-invalid-spec behavior (issue #1441, PR #1453 review round 3).
+// and Fatalf on a non-nil value, so an invalid spec aborts the run
+// (issue #1441, PR #1453 review round 3).
 // Returns nil when every state exhausted cleanly.
 //
 // Scan order is per-client-index so the surfaced error is deterministic
@@ -772,10 +760,10 @@ func (l *lazyRequestSource) Err() error {
 //  2. Ask that entry's state to produce its next candidate; if it does,
 //     push the new entry back onto the heap.
 //  3. If the popped request belongs to a closed-loop session AND its
-//     RoundIndex > 0, it is a non-emitted intermediate round (matches
-//     GenerateWorkload's round-0-only filter for closed-loop sessions).
-//     Such rounds DO count toward maxRequests (so the eager/lazy total
-//     budget matches) but are NOT yielded to the cluster — we loop and
+//     RoundIndex > 0, it is a non-emitted intermediate round: the cluster
+//     sees only round 0 of a closed-loop session, and the SessionManager
+//     generates the follow-ups. Such rounds DO count toward maxRequests
+//     but are NOT yielded to the cluster — we loop and
 //     pop the next entry instead.
 //  4. Assign req.ID = "request_<emitted>" in pop order, then increment
 //     the emit counter.
@@ -806,9 +794,9 @@ func (l *lazyRequestSource) Next() (*sim.Request, bool) {
 			})
 		}
 		// Count this pop against the global maxRequests budget regardless
-		// of whether it surfaces to the cluster — this preserves eager/lazy
-		// parity, where GenerateWorkload produces all rounds, truncates to
-		// maxRequests, then filters round-0 for closed-loop sessions.
+		// of whether it surfaces to the cluster: the cap applies to all
+		// rounds in arrival order, and the round-0 filter for closed-loop
+		// sessions runs after it.
 		l.popped++
 		// Intermediate closed-loop rounds are suppressed; loop to pop the
 		// next candidate. The cluster only ever sees round-0 of closed-loop
@@ -816,10 +804,8 @@ func (l *lazyRequestSource) Next() (*sim.Request, bool) {
 		if e.state.isClosedLoop && e.req.RoundIndex != 0 {
 			continue
 		}
-		// Sequential IDs are assigned in yield order, matching
-		// GenerateWorkload's post-filter sequential-ID renumbering pass
-		// (where it reassigns `req.ID = fmt.Sprintf("request_%d", i)`
-		// over the filtered + sorted slice).
+		// Sequential IDs are assigned in yield order, so IDs are dense
+		// (request_0, request_1, ...) over the requests the cluster sees.
 		e.req.ID = fmt.Sprintf("request_%d", l.yielded)
 		l.yielded++
 		return e.req, true
@@ -828,7 +814,7 @@ func (l *lazyRequestSource) Next() (*sim.Request, bool) {
 
 // clientPrep captures the per-client information collected during the
 // construction prelude of GenerateWorkloadLazy: one per client that
-// GenerateRequests generates for, with the scenario seed its named
+// generates requests, with the scenario seed its named
 // streams derive from (clientStreams(specSeed, idx)).
 type clientPrep struct {
 	idx      int
@@ -849,7 +835,7 @@ type clientPrep struct {
 	aggregateRate float64
 }
 
-// GenerateWorkloadLazy mirrors GenerateWorkload's setup but returns a
+// GenerateWorkloadLazy validates and expands spec and returns a
 // streaming RequestSource instead of materializing the request slice.
 // Memory consumption while the cluster drains the source is
 // O(num_clients + max_session_rounds), independent of total request count.
@@ -857,7 +843,8 @@ type clientPrep struct {
 // Returns:
 //   - source: implements cluster.RequestSource via structural typing.
 //   - sessions: deterministic session blueprints for closed-loop reasoning AND
-//     concurrency clients (#1459), in the same order as GenerateWorkload.
+//     concurrency clients (#1459): closed-loop reasoning blueprints first,
+//     then concurrency blueprints.
 //   - followUpBudget: the shared concurrencyFollowUpBudget value — -1 when
 //     unbounded (maxRequests<=0) or there are no concurrency users; >=0 (the cap
 //     on follow-ups) for concurrency specs under a finite maxRequests (#1459).
@@ -866,29 +853,26 @@ type clientPrep struct {
 //     multi-session reasoning #1458, concurrency #1459, time-varying #1460) is
 //     streamed. Time-varying specs dispatch to generateTimeVaryingWorkloadLazy.
 //
-// Determinism: same seed produces the same source byte-identically to
-// GenerateWorkload's request stream (BC-3).
+// Determinism: the same spec, seed, horizon and maxRequests produce a
+// byte-identical request stream (BC-3).
 func GenerateWorkloadLazy(spec *WorkloadSpec, horizon int64, maxRequests int64) (
 	*lazyRequestSource, []SessionBlueprint, int64, error) {
 
-	// NOTE: the horizon<=0 check MUST come before the maxRequests<0 check to match
-	// eager's guard order exactly (GenerateRequests checks horizon<=0 first,
-	// returning before its maxRequests<0 check — generator.go). Reversing them
-	// would make lazy reject a horizon<=0 && maxRequests<0 spec that eager accepts.
+	// NOTE: the horizon<=0 check MUST come before the maxRequests<0 check: a
+	// horizon<=0 spec is accepted even with maxRequests<0 (it yields an empty
+	// workload, or only concurrency seeds). Reversing them would reject it.
 	if horizon <= 0 {
 		// Empty workload: return an immediately-exhausted source — UNLESS the
-		// spec has concurrency clients. Eager's concurrency seed loop is
-		// horizon-independent: GenerateRequests returns nil at horizon<=0 (before
-		// validateAndExpandSpec AND before its maxRequests<0 check), but
-		// GenerateWorkload still emits the seed set (treating maxRequests<=0 as
-		// unbounded). To match (BC-1/INV-6) we must too. Concurrency is a
+		// spec has concurrency clients. The concurrency seed set is
+		// horizon-independent, so it is still emitted at horizon<=0 (treating
+		// maxRequests<=0 as unbounded) (BC-1/INV-6). Concurrency is a
 		// spec.Clients-only field (cohorts never carry it), so this needs no expansion.
 		if !specHasConcurrencyClient(spec) {
 			return &lazyRequestSource{h: &heapByArrival{}, maxRequests: maxRequests}, nil, -1, nil
 		}
-		// Concurrency at horizon<=0: mirror eager's zero-horizon sequence, which
-		// does NOT run validateAndExpandSpec/UpgradeV1ToV2 and does NOT reject a
-		// negative maxRequests (the seed cap's `maxRequests > 0` guard treats it as
+		// Concurrency at horizon<=0: skip validateAndExpandSpec/UpgradeV1ToV2 and
+		// do NOT reject a negative maxRequests (the seed cap's `maxRequests > 0`
+		// guard treats it as
 		// unbounded). Assemble allClients from the raw spec, emit only the
 		// (horizon-independent) concurrency seeds with keptOpen=0, and return.
 		// See GenerateWorkloadLazy's "Validation symmetry" note in the plan (#1459).
@@ -904,9 +888,8 @@ func GenerateWorkloadLazy(spec *WorkloadSpec, horizon int64, maxRequests int64) 
 		return nil, nil, 0, err
 	}
 
-	// Build working client list (mirrors the same allClients assembly
-	// in GenerateRequests: copy spec.Clients, then append cohort-
-	// expanded clients).
+	// Build working client list: copy spec.Clients, then append
+	// cohort-expanded clients.
 	allClients := append([]ClientSpec{}, spec.Clients...)
 	if len(spec.Cohorts) > 0 {
 		allClients = append(allClients, ExpandCohorts(spec.Cohorts)...)
@@ -914,8 +897,7 @@ func GenerateWorkloadLazy(spec *WorkloadSpec, horizon int64, maxRequests int64) 
 
 	// Time-varying dispatch. Clients with per-window parameter overrides
 	// (trace_rate/arrival/input_distribution/output_distribution) take a distinct
-	// generation path in eager (generateTimeVaryingRequests); the lazy path mirrors
-	// it in generateTimeVaryingWorkloadLazy. There is NO remaining
+	// generation path, generateTimeVaryingWorkloadLazy. There is NO remaining
 	// unsupported class — multi-session reasoning, concurrency clients
 	// and time-varying workloads are all streamed.
 	if hasPerWindowParameters(allClients) {
@@ -925,8 +907,8 @@ func GenerateWorkloadLazy(spec *WorkloadSpec, horizon int64, maxRequests int64) 
 	clientRates := normalizeRateFractions(allClients, spec.AggregateRate)
 	prefixes := generatePrefixTokens(allClients, spec.Seed)
 
-	// Phase 1: prelude — one prep per client with a positive rate, matching the eager
-	// loop's `if clientRate <= 0 { continue }` guard. Each client draws from its own
+	// Phase 1: prelude — one prep per client with a positive rate (a client with
+	// rate <= 0 generates nothing). Each client draws from its own
 	// streams (clientStreams), named by its position in allClients.
 	preps := make([]clientPrep, 0, len(allClients))
 	for i := range allClients {
@@ -965,13 +947,12 @@ func assembleLazySourceFromPreps(
 ) (*lazyRequestSource, []SessionBlueprint, int64, error) {
 	// Phase 2: blueprint pre-pass (closed-loop reasoning clients only).
 	//
-	// Mirrors GenerateWorkload's closed-loop blueprint construction, which scans the
-	// truncated `reqs` slice for round-0 SessionIDs per closed-loop client and builds one
-	// blueprint per surviving session, in sorted order. The pre-pass simulates the
+	// One blueprint is built per closed-loop session whose round 0 survives the
+	// maxRequests cap, in sorted session-ID order per client. The pre-pass simulates the
 	// streaming `Next()` loop with cloned per-client states up to the same `maxRequests`
 	// cap Phase 3 imposes, to find the exact set of round-0 emissions that survive the
 	// cap: a session whose round 0 the cap drops must get no blueprint, or the session
-	// manager would generate follow-ups eager never generates (INV-6, INV-13).
+	// manager would generate follow-ups for a session that never started (INV-6, INV-13).
 	survivingPerClient, keptOpen, emittedOpen, err := enumerateSurvivingSessionsPerClient(preps, prefixes, horizon, maxRequests)
 	if err != nil {
 		return nil, nil, 0, err
@@ -985,10 +966,9 @@ func assembleLazySourceFromPreps(
 		if len(sessIDs) == 0 {
 			continue // no round-0 of this client's sessions survived the cap
 		}
-		// Sort session IDs to match GenerateWorkload's deterministic
-		// blueprint-construction order (sort.Strings on the map of seen IDs).
+		// Sort session IDs so blueprint order is deterministic.
 		sort.Strings(sessIDs)
-		// Build samplers once per client (mirrors the eager blueprint loop).
+		// Build samplers once per client.
 		inputSampler, err := NewLengthSampler(p.client.InputDist)
 		if err != nil {
 			return nil, nil, 0, fmt.Errorf("client %q input distribution for blueprint: %w", p.client.ID, err)
@@ -997,9 +977,8 @@ func assembleLazySourceFromPreps(
 		if err != nil {
 			return nil, nil, 0, fmt.Errorf("client %q output distribution for blueprint: %w", p.client.ID, err)
 		}
-		// Per-session prefix: GenerateWorkload extracts from req.InputTokens,
-		// but the value is exactly prefixes[client.PrefixGroup] (eager prepends
-		// it in the same way before populating req.InputTokens). We use it
+		// Per-session prefix: the prefix prepended to each request's InputTokens
+		// is exactly prefixes[client.PrefixGroup]. We use it
 		// directly to avoid materializing requests just to read them back.
 		var prefixTokens []sim.TokenID
 		if p.client.PrefixGroup != "" {
@@ -1053,11 +1032,11 @@ func assembleLazySourceFromPreps(
 	}
 
 	// Phase 4: concurrency seed phase (#1459). Concurrency clients have
-	// RateFraction == 0, so they never appear in `preps` (Phase 1 skips them,
-	// exactly as GenerateRequests does), and `keptOpen` — the number of open-loop
+	// RateFraction == 0, so they never appear in `preps` (Phase 1 skips them),
+	// and `keptOpen` — the number of open-loop
 	// requests the source will emit under the cap — is the pop count from the
 	// Phase 2 dry-run. Push the seeds as individual heap entries (see the shared
-	// helper) so the global merge reproduces eager's stable-sort-by-arrival.
+	// helper) so the global merge orders them by arrival, open-loop first on ties.
 	sessions, followUpBudget, err := appendConcurrencySeedsToHeap(
 		h, allClients, prefixes, specSeed, horizon, maxRequests, keptOpen, emittedOpen, sessions)
 	if err != nil {
@@ -1066,35 +1045,32 @@ func assembleLazySourceFromPreps(
 	return &lazyRequestSource{h: h, maxRequests: maxRequests, states: states}, sessions, followUpBudget, nil
 }
 
-// generateTimeVaryingWorkloadLazy is the lazy counterpart of eager's
-// generateTimeVaryingRequests (generator.go): it streams a workload whose clients
+// generateTimeVaryingWorkloadLazy streams a workload whose clients
 // carry per-window parameter overrides. It builds one prep per LIFECYCLE client (in
-// allClients order; clients WITHOUT lifecycle windows are warned and skipped, matching
-// eager's mixed-always-on-and-windowed handling), then delegates Phases 2–4 to the shared
+// allClients order; clients WITHOUT lifecycle windows are warned and skipped, since
+// mixing always-on and windowed clients is not supported), then delegates Phases 2–4 to the shared
 // assembleLazySourceFromPreps. Per-client streaming is handled by
 // produceNextTimeVarying (see buildClientStreamState's time-varying branch), which
-// reuses the eager generateRequestsForWindow one window at a time.
+// calls generateRequestsForWindow one window at a time.
 //
-// Determinism (INV-6): the only lazy-authored draws are the prefix tokens, from each
-// group's own stream as in eager's TV path. The per-window IAT/content draws happen
-// inside the reused generateRequestsForWindow, from the same named streams, so they
-// cannot diverge.
+// Determinism (INV-6): the only draws made here are the prefix tokens, from each
+// group's own stream. The per-window IAT/content draws happen
+// inside generateRequestsForWindow, from each window's own named streams.
 func generateTimeVaryingWorkloadLazy(
 	spec *WorkloadSpec, horizon int64, maxRequests int64, allClients []ClientSpec,
 ) (*lazyRequestSource, []SessionBlueprint, int64, error) {
 	prefixes := generatePrefixTokens(allClients, spec.Seed)
 
 	// Phase 1 (time-varying prelude): one prep per client WITH lifecycle windows, in
-	// allClients order. Unlike the non-TV prelude (gated on clientRate > 0), eager's
+	// allClients order. Unlike the non-TV prelude (gated on clientRate > 0), the
 	// TV path generates for every windowed client and skips windowless clients with a
-	// warning (generateTimeVaryingRequests); we mirror that gating exactly.
+	// warning.
 	preps := make([]clientPrep, 0, len(allClients))
 	for i := range allClients {
 		client := &allClients[i]
 		if client.Lifecycle == nil || len(client.Lifecycle.Windows) == 0 {
 			// Windowless clients generate nothing on the TV path (mixed always-on +
-			// windowed clients are not supported). Warn and skip, matching
-			// generateTimeVaryingRequests.
+			// windowed clients are not supported). Warn and skip.
 			logrus.Warnf("generateTimeVaryingWorkloadLazy: client %q has no lifecycle windows and will generate no requests (mixed always-on + windowed clients are not supported)", client.ID)
 			continue
 		}
@@ -1131,12 +1107,12 @@ var exhaustedSentinelState = &clientStreamState{exhausted: true}
 // (arrival, len(allClients), generationIndex). len(allClients) is strictly
 // greater than every real client/cohort index (allClients is already fully
 // cohort-expanded here), so at equal arrival open-loop pops before seeds; the
-// generation index orders seeds among themselves — reproducing eager's
-// sort.SliceStable over [open-loop…, seed_0, seed_1, …] exactly.
+// generation index orders seeds among themselves, so the emitted order equals a
+// stable sort by arrival of [open-loop…, seed_0, seed_1, …].
 //
 // It returns the updated blueprint slice (concurrency blueprints appended after
-// any closed-loop reasoning blueprints — a concurrency spec has none, matching
-// eager) and the follow-up budget (shared formula with eager). This single site
+// any closed-loop reasoning blueprints — a concurrency spec has none) and the
+// follow-up budget (concurrencyFollowUpBudget). This single site
 // is used by both the normal path and the horizon<=0 concurrency path so the
 // heap-wiring cannot drift.
 func appendConcurrencySeedsToHeap(
@@ -1172,11 +1148,10 @@ func appendConcurrencySeedsToHeap(
 	return sessions, budget, nil
 }
 
-// generateConcurrencyOnlyLazyAtZeroHorizon mirrors eager's horizon<=0 behavior
-// for specs with concurrency clients (#1459): eager emits the horizon-independent
+// generateConcurrencyOnlyLazyAtZeroHorizon handles horizon<=0 for specs with
+// concurrency clients (#1459): it emits the horizon-independent
 // concurrency seed set even at horizon<=0, WITHOUT running
-// validateAndExpandSpec/UpgradeV1ToV2 (GenerateRequests returns first). We match
-// that exactly — no validate/expand — assembling allClients from the raw spec,
+// validateAndExpandSpec/UpgradeV1ToV2, assembling allClients from the raw spec,
 // with keptOpen=0 (no open-loop requests exist at horizon<=0).
 func generateConcurrencyOnlyLazyAtZeroHorizon(spec *WorkloadSpec, horizon int64, maxRequests int64) (
 	*lazyRequestSource, []SessionBlueprint, int64, error) {
@@ -1209,21 +1184,20 @@ func specHasConcurrencyClient(spec *WorkloadSpec) bool {
 }
 
 // buildClientStreamState constructs one client's streaming state, drawing
-// from the client's named streams (clientStreams); sampler construction
-// mirrors the eager generator's per-client sampler construction in
-// GenerateRequests, including the CustomSamplerFactory's own stream.
+// from the client's named streams (clientStreams); a CustomSamplerFactory,
+// when set, gets its own stream (purposeArrivalSchedule).
 //
-// maxRequests seeds the multi-session per-client build cap (2*maxRequests),
-// mirroring eager's perClientCap. It is only consulted by multi-session
-// reasoning clients — single-shot and single-session lazy rely on the global
+// maxRequests seeds the multi-session per-client build cap (2*maxRequests).
+// It is only consulted by multi-session
+// reasoning clients — single-shot and single-session rely on the global
 // popped-cap in lazyRequestSource.Next (build order == arrival order there),
-// but multi-session build order != arrival order, so the per-client cap must
-// bound building exactly as eager does to keep byte-identity (#1458).
+// but multi-session build order != arrival order, so the per-client cap
+// bounds building; it is part of what defines the generated workload (#1458).
 func buildClientStreamState(p clientPrep, horizon int64, maxRequests int64) (*clientStreamState, error) {
 	streams := clientStreams(p.specSeed, p.idx)
 
-	// Time-varying branch (#1460): the eager generateTimeVaryingRequests builds
-	// no client-level samplers — per-window samplers are built inside
+	// Time-varying branch (#1460): no client-level samplers are built —
+	// per-window samplers are built inside
 	// generateRequestsForWindow, from each window's own streams. So the TV state
 	// carries no client-level samplers; it only needs the per-window context.
 	if p.isTimeVarying {
@@ -1280,8 +1254,8 @@ func buildClientStreamState(p clientPrep, horizon int64, maxRequests int64) (*cl
 		state.isClosedLoop = isClosedLoop(p.client)
 		if !state.isSingleSession {
 			state.liveSessions = &liveSessionHeap{}
-			// Per-client build cap = 2*maxRequests (eager's perClientCap, with
-			// the same int64-overflow guard). 0 means unbounded (maxRequests<=0).
+			// Per-client build cap = 2*maxRequests, with an
+			// int64-overflow guard. 0 means unbounded (maxRequests<=0).
 			if maxRequests > 0 {
 				perClientCap := 2 * maxRequests
 				if perClientCap < maxRequests { // overflow → treat as unbounded
@@ -1299,26 +1273,25 @@ func buildClientStreamState(p clientPrep, horizon int64, maxRequests int64) (*cl
 // closed-loop reasoning client (keyed by allClients index), the set of
 // SessionIDs whose round-0 emission survived the cap, and (2) keptOpen —
 // the total number of pops (= the number of open-loop / non-concurrency
-// requests the source will emit under the cap). This mirrors the eager flow's
-// "produce all rounds, sort+truncate to maxRequests, then scan the truncated
-// slice for SessionIDs per closed-loop client" sequence.
+// requests the source will emit under the cap). The cap applies to all rounds
+// in arrival order; the SessionIDs are read from the round-0 requests that
+// survive it.
 //
-// keptOpen == eager's len(round0Only): concurrency clients have RateFraction == 0
+// Concurrency clients have RateFraction == 0
 // and are never in `preps`, so the dry-run heap holds only open-loop states and
 // its pop count is exactly min(genOpen, maxRequests). The concurrency seed phase
-// (#1459) consumes keptOpen to reproduce eager's seed cap
+// (#1459) consumes keptOpen as alreadyKept in its seed cap
 // (alreadyKept + len(seeds) >= maxRequests).
 //
 // LOAD-BEARING INVARIANT (INV-6): keptOpen counts ALL pops, including any
-// intermediate closed-loop reasoning rounds (RoundIndex > 0), whereas eager's
-// alreadyKept = len(round0Only) EXCLUDES those intermediate rounds. These two
-// counts are equal only because a spec can never contain both concurrency clients
+// intermediate closed-loop reasoning rounds (RoundIndex > 0), which the cluster
+// never receives, whereas the seed cap should count only requests the cluster
+// receives. These two counts are equal only because a spec can never contain both concurrency clients
 // and multi-turn/reasoning clients (spec.Validate hard-errors that mix — see
 // spec.go, `hasConcurrency && hasMultiTurn`). So whenever concurrency seeds are
-// being generated there are provably zero intermediate closed-loop rounds, and
-// keptOpen == len(round0Only). If that mutual-exclusion validation is ever
-// relaxed, this equality breaks and the seed cap would bind earlier in lazy than
-// eager — revisit the concurrency seed phase here and in GenerateWorkload.
+// being generated there are provably zero intermediate closed-loop rounds. If
+// that mutual-exclusion validation is ever relaxed, this equality breaks and the
+// seed cap would bind too early — revisit the concurrency seed phase here.
 //
 // Uses CLONED per-client states, which draw from the same named streams
 // as Phase 3's but advance none of Phase 3's generators. The dry-run yields rounds and counts toward
@@ -1389,9 +1362,7 @@ func enumerateSurvivingSessionsPerClient(
 		if e.state.isClosedLoop && e.req.RoundIndex != 0 {
 			suppressed++ // popped and counted, never emitted: the session manager serves it
 		}
-		// Only round-0 entries are observed by GenerateWorkload's
-		// blueprint-building loop (it filters round-0 only when keying
-		// the SessionID lookup). Intermediate rounds advance state and
+		// Only round-0 entries name a surviving session. Intermediate rounds advance state and
 		// count toward the cap but produce no blueprint.
 		if e.req.RoundIndex != 0 || e.req.SessionID == "" {
 			continue
@@ -1406,8 +1377,8 @@ func enumerateSurvivingSessionsPerClient(
 		}
 	}
 	// popped is the number of open-loop / closed-loop-round-0-and-intermediate
-	// requests emitted under the cap == eager's len(reqs) after truncation.
+	// requests popped under the cap.
 	// (Concurrency clients are absent from preps, so they never count here.)
-	// emitted == eager's len(round0Only): what the cluster is given up front.
+	// popped - suppressed is what the cluster is given up front.
 	return surviving, popped, popped - suppressed, nil
 }

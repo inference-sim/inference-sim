@@ -41,7 +41,6 @@ var resultFlagsExempt = map[string]map[string]string{
 		"trace-output":      "output path only (the files are artifacts)",
 		"saturation-report": "output path only",
 		"counterfactual-k":  "adds candidate rows to the in-memory decision trace; no Result byte reads them",
-		"lazy-generation":   "generates the same requests (INV-6 eager == lazy)",
 		"scenario":          "input.scenario and input.deployment",
 		"scenarios":         "input.scenario and input.deployment",
 		"catalog":           "revisions.catalog",
@@ -56,8 +55,6 @@ var resultFlagsExempt = map[string]map[string]string{
 		"slo-ttft":          "goodput.targets",
 		"slo-itl":           "goodput.targets",
 		"slo-e2e":           "goodput.targets",
-		"scheduler":         "overrides, against the scenario's stated policy (recordPolicyOverride)",
-		"preemption-policy": "overrides, against the scenario's stated policy (recordPolicyOverride)",
 	},
 	"replay": {
 		"help":               "no effect",
@@ -70,7 +67,6 @@ var resultFlagsExempt = map[string]map[string]string{
 		"saturation-report":  "output path only",
 		"counterfactual-k":   "adds candidate rows to the in-memory decision trace; no Result byte reads them",
 		"fitness-weights":    "has no effect in replay",
-		"lazy-generation":    "accepted for symmetry with run; has no effect",
 		"corpus-cache":       "a parse cache; output is identical with or without it",
 		"scenario":           "input.scenario and input.deployment",
 		"scenarios":          "input.scenario and input.deployment",
@@ -92,15 +88,13 @@ var resultFlagsExempt = map[string]map[string]string{
 		"benchmark-duration": "input.run.workload.replay",
 		"grace-period":       "input.run.workload.replay",
 		"max-context-length": "input.run.workload.replay",
-		"scheduler":          "overrides, against the scenario's stated policy (recordPolicyOverride)",
-		"preemption-policy":  "overrides, against the scenario's stated policy (recordPolicyOverride)",
 	},
 }
 
 // resultFlagFiles are the flags whose value is a file the run reads: they are recorded by the
 // file's sha256, never its path (a fact of the host).
 var resultFlagFiles = map[string]bool{
-	"workload-spec": true, "lora-config": true, "kv-offload-config": true, "defaults-filepath": true,
+	"workload-spec": true, "lora-config": true, "defaults-filepath": true,
 	"saturation-config": true,
 }
 
@@ -173,7 +167,6 @@ var optionsExcluded = map[string]string{
 	"view": "stderr rendering only", "log": "stderr verbosity only",
 	"saturation-report": "output path only; the report is not referenced by the Result",
 	"counterfactual-k":  "adds in-memory decision-trace rows; no Result byte reads them",
-	"lazy-generation":   "generates the same requests (INV-6 eager == lazy)",
 	"corpus-cache":      "a parse cache; output is identical with or without it",
 	"from-result":       "the reproduction source; recorded as rerun_of",
 	"scenario":          "input.scenario and input.deployment", "scenarios": "input.scenario and input.deployment",
@@ -186,7 +179,7 @@ var optionsExcluded = map[string]string{
 // file's sha256 and never its path (a fact of the host), and --from-result takes the file again
 // from the command line and checks it against the digest.
 var optionFileFlags = map[string]bool{
-	"workload-spec": true, "lora-config": true, "kv-offload-config": true, "defaults-filepath": true,
+	"workload-spec": true, "lora-config": true, "defaults-filepath": true,
 	"saturation-config": true, "trace-header": true, "trace-data": true, "corpus": true,
 }
 
