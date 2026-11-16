@@ -14,7 +14,7 @@ import (
 )
 
 // vLLM keys a block's hash on the LoRA adapter's name and path (_gen_lora_extra_hash_keys,
-// vllm/v1/core/kv_cache_utils.py:578-595@5df63a72), not on lora_int_id. core/kv/testdata/block_hashes.json
+// vllm/v1/core/kv_cache_utils.py:590-607@4ba787ec), not on lora_int_id. core/kv/testdata/block_hashes.json
 // holds vLLM's own hashes for a name whose path differs from it, and for the same name pointed at
 // another adapter, over the same tokens (oracle/gen_block_hashes.py). The key the engine builds for
 // a request (loraExtraKey, from Adapter and AdapterPath) must reproduce them. That holds when the

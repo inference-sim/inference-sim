@@ -71,7 +71,7 @@ func layersOf(n int, s LayerSpec, window, heads, head int) []Layer {
 
 // The pool's block from a model's layers as vLLM groups them: the groups' members are what
 // get_kv_cache_groups puts in each (a bucket of n layers split into ceil(n / size) groups of its
-// layers [i::groups], kv_cache_utils.py:1462-1501@5df63a72), each layer's page its spec's.
+// layers [i::groups], kv_cache_planning.py:516-555@4ba787ec), each layer's page its spec's.
 func TestPoolBytesPerBlockSizesTheGroupsVLLMBuilds(t *testing.T) {
 	var gptOSS []Layer
 	for range 18 {

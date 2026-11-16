@@ -12,7 +12,7 @@ which side of the transfer this engine is:
     meanwhile is reported too; with a batch queue, the first output processed from then on), and optionally that it failed as a whole ("recv_failed") or
     which of the pulled blocks failed
     ("invalid_blocks", by index into the request's blocks the pull fills: its unhashed ones,
-    what NIXL hands its worker, nixl/pull_scheduler.py:150-155@5df63a72);
+    what NIXL hands its worker, nixl/pull_scheduler.py:150-155@4ba787ec);
   - "remote_decode" (this engine is the prefiller, kv_producer): the request's blocks are kept
     after it finishes until the decoder has read them; the scenario gives how many steps after
     the finish the worker's output reports the send done ("send_delay", at least 1).
@@ -50,14 +50,14 @@ beside several groups, because NIXL's worker never reports one there (nixl/base_
 
 A scenario may also run more than one batch in flight ("async_scheduling",
 "pipeline_parallel_size", "use_v2_model_runner", as tier 3 states them). The engine is then
-vLLM's own EngineCore.step_with_batch_queue (vllm/v1/engine/core.py:698-810@5df63a72) over the
+vLLM's own EngineCore.step_with_batch_queue (vllm/v1/engine/core.py:708-820@4ba787ec) over the
 real (Async)Scheduler and connector, on tier 3's bare EngineCore (run_enginecore.py
 engine_core). The GPU mock reads which requests sample when a batch executes and samples them
 when the batch queue pops it. The transport mock's report rides on that output as its
 KVConnectorOutput, evaluated at the pop. A client's abort at a step is queued on the
 EngineCore's aborts queue, which vLLM drains after the next popped batch's output and before
-update_from_output (core.py:780-783, 814-822). vLLM refuses a decoder or a hybrid layout with
-PP > 1 in NIXL's worker (nixl/base_worker.py:757-779), so such a scenario is refused here
+update_from_output (core.py:790-793, 824-832). vLLM refuses a decoder or a hybrid layout with
+PP > 1 in NIXL's worker (nixl/base_worker.py:868-890), so such a scenario is refused here
 before it is run.
 
 Per step it records what tier 2 records (tokens scheduled, preempted, finished, the KV state
@@ -175,11 +175,11 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     v2 = bool(cfg.get("use_v2_model_runner", False)) or (bool(spec) and spec["method"] == "dspark")
     if pp > 1 and (conn["kv_role"] != "kv_producer" or hybrid):
         sys.exit(f"{scenario_path}: vLLM's NIXL pull worker refuses pipeline_parallel_size > 1 for a decoder "
-                 "and for a hybrid KV cache layout (nixl/base_worker.py:757-779@5df63a72)")
+                 "and for a hybrid KV cache layout (nixl/base_worker.py:868-890@4ba787ec)")
     if pp > 1 and async_sched and not v2:
         sys.exit(f"{scenario_path}: the V1 model runner does not support PP with async scheduling "
-                 "(vllm/config/vllm.py:2970-2974@5df63a72)")
-    # DSpark runs only on the V2 model runner (vllm/config/vllm.py:2976-2979@5df63a72): the
+                 "(vllm/config/vllm.py:3104-3108@4ba787ec)")
+    # DSpark runs only on the V2 model runner (vllm/config/vllm.py:3110-3113@4ba787ec): the
     # environment of a GPU host selects it (run_scheduler.py v2_runner_env, oracle/mocks.json).
     restore_env = v2_runner_env(v2)
     if pp > 1:
@@ -370,7 +370,7 @@ def pulled_blocks(out) -> dict:
     """The blocks a decoder's worker is asked to read for each pull planned in a schedule, per KV
     cache group: the length of each group's local_block_ids in the step's NixlConnectorMetadata
     (reqs_to_recv), the unhashed blocks update_state_after_alloc clipped to what the prefiller keeps
-    (get_exchange_clipped_blocks, nixl/base_scheduler.py:262-300; pull_scheduler.py:149-156@5df63a72).
+    (get_exchange_clipped_blocks, nixl/base_scheduler.py:265-303; pull_scheduler.py:149-156@4ba787ec).
     Recorded for scenarios that state "kv_layers"."""
     meta = out.kv_connector_metadata
     return {rid: [len(g) for g in m.local_block_ids] for rid, m in sorted(getattr(meta, "reqs_to_recv", {}).items())}
@@ -396,7 +396,7 @@ def apply_scenario_config(vllm_config, cfg: dict) -> None:
 
 def add_kv_params(req, r: dict, block_size: int) -> None:
     """The KV-transfer parameters a P/D proxy hands each side, set on the Request (as
-    create_request builds them, tests/v1/kv_connector/unit/utils.py:246-264@5df63a72)."""
+    create_request builds them, tests/v1/kv_connector/unit/utils.py:247-265@4ba787ec)."""
     if r.get("remote_prefill"):
         req.kv_transfer_params = dict(
             do_remote_prefill=True, do_remote_decode=False, remote_engine_id="prefiller",
@@ -693,8 +693,8 @@ def kv_cache_config(cfg: dict, vllm_config):
         specs.append(KVCacheGroupSpec([f"layer{i}"], layer))
     if vllm_config.scheduler_config.disable_hybrid_kv_cache_manager:
         # With the flag vLLM promotes every sliding window to full attention before it groups
-        # (get_kv_cache_groups, kv_cache_utils.py:2173-2174, unify_hybrid_kv_cache_specs,
-        # :1799-1822@5df63a72), so the layers form one uniform group (:2185-2189); both calls are
+        # (get_kv_cache_groups, kv_cache_planning.py:1127-1128, unify_hybrid_kv_cache_specs,
+        # :853-876@4ba787ec), so the layers form one uniform group (:1139-1143); both calls are
         # vLLM's own, as run_scheduler.py build_scheduler makes them.
         from vllm.v1.core.kv_cache_planning import (  # noqa: E402
             _get_kv_cache_groups_uniform_spec,

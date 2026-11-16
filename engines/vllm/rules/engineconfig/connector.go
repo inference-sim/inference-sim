@@ -39,7 +39,7 @@ type ConnectorOptions struct {
 	KVLoadFailurePolicy string `yaml:"kv_load_failure_policy,omitempty"`
 }
 
-// kvLoadFailurePolicies is vLLM v0.32.0's closed literal (vllm/config/kv_transfer.py:88@5df63a72).
+// kvLoadFailurePolicies is vLLM v0.32.0's closed literal (vllm/config/kv_transfer.py:88@4ba787ec).
 var kvLoadFailurePolicies = map[string]bool{"recompute": true, "fail": true}
 
 // DecodeConnectorOptions opens an offload's connector options strictly, as Decode opens an

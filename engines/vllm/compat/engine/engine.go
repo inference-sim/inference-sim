@@ -52,7 +52,7 @@ type EngineCore struct {
 	// lastStepEmpty is whether the last executed step scheduled no tokens.
 	lastStepEmpty bool
 	// lastStepPreempted is whether the last step's schedule preempted a request. Such a step
-	// skipped its WAITING phase (vllm/v1/core/sched/scheduler.py:900@5df63a72), so the next
+	// skipped its WAITING phase (vllm/v1/core/sched/scheduler.py:1050@4ba787ec), so the next
 	// poll may admit what this one could not; the engine must not park on it (canPark).
 	lastStepPreempted bool
 	// pollMissesAtStep is the KV store's PollMisses at the start of the last step.
@@ -108,7 +108,7 @@ type EngineCore struct {
 	remoteKVWaiting int
 	// inflightPullBlocks is the first-step blocks of the remote-KV pulls this engine admitted
 	// whose KV has not landed yet: vLLM's _inflight_prefill_reserved_blocks
-	// (sched/scheduler.py:3088-3091@5df63a72), one term of what a new pull must leave free
+	// (sched/scheduler.py:3432-3435@4ba787ec), one term of what a new pull must leave free
 	// (AdmitRemoteKV). inflightPulls holds each pull's share, so a landed pull gives back what
 	// it took.
 	inflightPullBlocks int64

@@ -10,22 +10,22 @@ import (
 	"fmt"
 )
 
-// Block is one KV block: vLLM's KVCacheBlock (kv_cache_utils.py:178-235). A block's ID
+// Block is one KV block: vLLM's KVCacheBlock (kv_cache_utils.py:164-221). A block's ID
 // is an allocator detail; what a block holds is its hash and reference count.
 type Block struct {
 	ID     int
 	RefCnt int
 	// Hash is set while the block is a full, cached prefix block, nil otherwise. It is the
 	// block hash with its KV cache group ID appended as 4 big-endian bytes, as vLLM keys
-	// its cache (make_block_hash_with_group_id, kv_cache_utils.py:74-84).
+	// its cache (make_block_hash_with_group_id, kv_cache_utils.py:60-70).
 	Hash []byte
 	// HashTokens is the prefix length Hash covers: a full block's end, or inside the block for a
-	// partial entry (block_hash_num_tokens, kv_cache_utils.py:192-224@5df63a72). Valid while
+	// partial entry (block_hash_num_tokens, kv_cache_utils.py:178-210@4ba787ec). Valid while
 	// Hash is set.
 	HashTokens int
 	// extra holds the further hash keys that also reach this block, which a partial entry adds
 	// to a block that already has a primary hash (cached_block_hashes_by_block,
-	// block_pool.py:176-178@5df63a72).
+	// block_pool.py:180-182@4ba787ec).
 	extra [][]byte
 	// Null marks the pool's reserved null block, which never holds KV.
 	Null bool
@@ -266,7 +266,7 @@ func WithGroup(h BlockHash, group uint32) []byte {
 	return append(append(make([]byte, 0, len(h)+4), h...), byte(group>>24), byte(group>>16), byte(group>>8), byte(group))
 }
 
-// insert is _insert_block_hash (block_pool.py:575-609@5df63a72): the first hash a block
+// insert is _insert_block_hash (block_pool.py:615-649@4ba787ec): the first hash a block
 // takes is its primary one, with the prefix length it covers; a later one is an extra key to
 // the same block.
 func (p *Pool) insert(h []byte, b *Block, tokens int) {
@@ -324,11 +324,11 @@ func (p *Pool) evict(b *Block) bool {
 	return true
 }
 
-// MaybeEvictCached is _maybe_evict_cached_block (block_pool.py:729-750@5df63a72): it drops
+// MaybeEvictCached is _maybe_evict_cached_block (block_pool.py:769-790@4ba787ec): it drops
 // every cache entry that reaches b and reports whether there was one.
 func (p *Pool) MaybeEvictCached(b *Block) bool { return p.evict(b) }
 
-// IsBlockWritable is is_block_writable (block_pool.py:770-772@5df63a72): a sole owner may
+// IsBlockWritable is is_block_writable (block_pool.py:812-814@4ba787ec): a sole owner may
 // write a block that is not null and holds no cached hash.
 func (p *Pool) IsBlockWritable(b *Block) bool { return !b.Null && b.RefCnt == 1 && b.Hash == nil }
 

@@ -49,8 +49,8 @@ func TestMambaNoneAllocatesSpeculativeBlocks(t *testing.T) {
 }
 
 // Mamba keeps only the last computed token's state: get_num_skipped_tokens is
-// num_computed_tokens - 1 (single_type_kv_cache_manager.py:1954-1960@5df63a72), and
-// remove_skipped_blocks frees the blocks wholly below it (:672-710). At block size 4, after 10
+// num_computed_tokens - 1 (single_type_kv_cache_manager.py:1971-1977@4ba787ec), and
+// remove_skipped_blocks frees the blocks wholly below it (:682-720). At block size 4, after 10
 // computed tokens 9 are skipped: blocks 0 and 1 are freed into null slots, block 2 stays.
 func TestMambaNoneFreesBlocksBelowTheLastToken(t *testing.T) {
 	m := NewManagerWith(10, 4, 64, false, 0, Options{Groups: []Group{noneGroup(4, 0)}})

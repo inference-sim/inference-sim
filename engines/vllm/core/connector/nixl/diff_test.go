@@ -18,7 +18,7 @@ import (
 	"github.com/inference-sim/blis-vllm/internal/upstream"
 )
 
-// eosToken is tests/v1/core/utils.py:43@5df63a72, which the GPU mock samples last.
+// eosToken is tests/v1/core/utils.py:49@4ba787ec, which the GPU mock samples last.
 const eosToken = 50256
 
 // scenario is a connector scenario (oracle/README.md, "Connector scenarios").

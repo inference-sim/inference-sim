@@ -76,7 +76,7 @@ func secondAdmission(t *testing.T, r map[string]string, prompt int) engine.Sched
 
 // swa_bounded_replay: false on DeepSeek-V4.1 under the V2 runner (DSpark needs it) leaves the
 // sliding-window caches prefix-cacheable with no replay window (SlidingWindowMLASpec.prefix_cacheable
-// and prefix_replay_tokens, vllm/v1/kv_cache_interface.py:968-974@5df63a72). The default, bounded
+// and prefix_replay_tokens, vllm/v1/kv_cache_interface.py:1027-1033@4ba787ec). The default, bounded
 // replay, recomputes the last window (128 tokens) of every hit: a repeated 1000-token prompt
 // hits 960 tokens either way, but the bounded engine computes the 128 before the hit again and
 // the unbounded one only the 40 past it. The pool holds the same blocks (only the sliding-window
@@ -98,7 +98,7 @@ func TestSWABoundedReplayOffRunsTheUnboundedLayout(t *testing.T) {
 }
 
 // disable_hybrid_kv_cache_manager: true unifies a hybrid model's layers to one full-attention
-// group (unify_hybrid_kv_cache_specs, vllm/v1/core/kv_cache_utils.py:1799-1822@5df63a72), whose
+// group (unify_hybrid_kv_cache_specs, vllm/v1/core/kv_cache_planning.py:853-876@4ba787ec), whose
 // block holds every layer's page: gpt-oss-120b's 36 layers instead of the 18 of a hybrid group,
 // so the pool holds half the blocks; the 62 layers of Muse-Spark (16 full, 46 windows) instead of
 // the 16 of its widest group. Prefix hits of a model whose windows were promoted are full
@@ -154,7 +154,7 @@ func TestDisablingTheHybridManagerOnDeepSeekIsVLLMsOwnStartupFailure(t *testing.
 // A P/D pair of Muse-Spark pools with the hybrid manager off runs through NIXL as one
 // full-attention group: the prefill hands off its 8192-token prompt, the decoder pulls all of it
 // and emits (vLLM keeps the hybrid manager off when a user states it, and NIXL then needs no HMA,
-// nixl/base_scheduler.py:95-100@5df63a72).
+// nixl/base_scheduler.py:95-100@4ba787ec).
 func TestAPDPairWithTheHybridManagerOffRuns(t *testing.T) {
 	r := withEngineLines(t, "muse-h100-roce-1p1d.yaml", "      disable_hybrid_kv_cache_manager: true\n")
 	var engines [2]engine.Engine
