@@ -1264,7 +1264,7 @@ func (k *Kernel) lift(c *resolve.Coefficients, g *model.Graph, cacheBytes float6
 	// mode (vllm/v1/worker/gpu/cudagraph_utils.py:499-529; V1's
 	// vllm/v1/cudagraph_dispatcher.py:270-279). A deployment that states the maximum or the
 	// sizes is resolved as the engine resolves them, through the rules pack
-	// (rules.Pack.CUDAGraphCaptureSizes, blis-schemas#72; VllmConfig._set_cudagraph_sizes,
+	// (rules.Pack.CUDAGraphCaptureSizes, https://github.com/inference-sim/blis-schemas/issues/72; VllmConfig._set_cudagraph_sizes,
 	// vllm/config/vllm.py:2388-2660): capped at max_num_batched_tokens, and expanded on the
 	// 1, 2, 4, step-8, step-16 ladder, so the ceiling is the largest size that runs.
 	// Unstated, it is min(max_num_seqs x decode_query_len x 2, 512), or 1024 on a
@@ -2214,7 +2214,7 @@ func formatFit(f price.Format, grouped bool, chip hardware.Chip, hopper bool) fi
 	case f.DType == model.DTypeNVFP4 && grouped:
 		// A native-FP4 part's NVFP4 fused MoE (FlashInfer TRT-LLM, CUTLASS NvFp4) runs its
 		// own grouped kernels, whose efficiency is not the dense FlashInfer CuTe-DSL linear's
-		// (blis-registry#51). Its own grouped ramp is read where the registry carries one,
+		// (https://github.com/inference-sim/blis-registry/issues/51). Its own grouped ramp is read where the registry carries one,
 		// the dense NVFP4 ramp otherwise, which is recorded.
 		spec := dtypeFitSuffix(f.DType, chip)
 		if spec.suffix == "nvfp4" {

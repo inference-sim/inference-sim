@@ -40,7 +40,7 @@ unreachable. That was discovered by grepping the kernel for the key, not the reg
 Check both.
 
 Each unread family is either given a reader or removed, and the decision is recorded
-(inference-sim/blis-registry#36):
+(https://github.com/inference-sim/blis-registry/issues/36):
 
 * **Removed:** `hbm_constant_latency` and `p2p_latency`, the two NVIDIA-simulator constants
   whose fixed cost the kernel's measured attention and collective floors already carry, so
@@ -50,11 +50,11 @@ Each unread family is either given a reader or removed, and the decision is reco
 * **Kept, with a named reader:** the `gemm_*_fp8_block` ramps. They are what vLLM runs for
   a 128×128 block-scaled FP8 checkpoint (DeepGEMM and FlashInfer block-scaled kernels), and
   their fit differs from per-tensor FP8 (h100: 0.749 / 160 against 0.648 / 131). A ramp
-  selected by block scaling, blis-latency-kernel#34, is what would read them; the cost model
+  selected by block scaling, https://github.com/inference-sim/blis-latency-kernel/issues/34, is what would read them; the cost model
   does not select one.
-* **Given readers:** `cost-model-memory` (blis-latency-kernel#22); the weight-only Marlin
+* **Given readers:** `cost-model-memory` (https://github.com/inference-sim/blis-latency-kernel/issues/22); the weight-only Marlin
   ramps on parts with no native four-bit peak, the indexer pair and the host-gather rate
-  (§10.5), through blis-latency-kernel#44, which also added the role-keyed attention lookup.
+  (§10.5), through https://github.com/inference-sim/blis-latency-kernel/issues/44, which also added the role-keyed attention lookup.
   The [reference overview](reference/index.md#which-sets-the-kernel-reads) lists every
   family that has no reader, so "committed" is never read as "live".
 
@@ -671,7 +671,7 @@ GB300 (21), H200 (13), GB200 (4), B300_SXM (4). So:
   one previously recorded here. Four Kimi-K3 artifacts are all vLLM and all on **GB300**,
   two of them on `vllm/0.1.dev19262` — the same collection the kernel fit used, which is
   the cleanest possible pairing. An earlier revision of this section said the catalog had
-  no `gb300` chip; it has carried one since blis-catalog#23, and this registry carries
+  no `gb300` chip; it has carried one since https://github.com/inference-sim/blis-catalog/issues/23, and this registry carries
   102 GB300 coefficients including the KDA pair. The dataset's own
   catalog index lists both artifacts as `aic_fpm_forward_perf` with
   `phases: [decode, prefill]`, 5,266 and 4,874 rows at `tep8`.
@@ -693,11 +693,11 @@ GB300 (21), H200 (13), GB200 (4), B300_SXM (4). So:
   `CutlassExpertsMxfp4` (W4A4) on SM100. So scoring that run needs the kernel to price
   Marlin W4A16 experts at the BF16 rate class, which is what
   `gemm_*_w4a16_mxfp4_grouped` on gb300 measures (§10.5). The cost model selects
-  ramps by weight format and chip (blis-latency-kernel#44), which on gb300 is the FP4 class -- right for stock
+  ramps by weight format and chip (https://github.com/inference-sim/blis-latency-kernel/issues/44), which on gb300 is the FP4 class -- right for stock
   v0.31.0 -- so this entry stays unread until a deployment can state that its MoE backend
   is Marlin. The scoring attempt recorded on
   #25 also over-predicted by ~2x with the FASTER FP4 rate class, and making the KDA read
-  free left that unchanged, so the MoE/GEMM composition is a second blocker. #41 carries
+  free left that unchanged, so the MoE/GEMM composition is a second blocker. inference-sim/blis-substrate#129 carries
   the validation forward.
 
   Note also that FPM carries no per-kernel or per-node column at all — the truth
@@ -967,7 +967,7 @@ and only the end-to-end check could tell that this made it unusable.
 
 ### 10.5 DeepSeek-V4.1-Flash on H200: what vLLM v0.31.0 runs, and what is measured of it
 
-inference-sim/blis-registry#37, #38 and #39 asked for the coefficients the kernels vLLM
+https://github.com/inference-sim/blis-registry/issues/37, https://github.com/inference-sim/blis-registry/issues/38 and https://github.com/inference-sim/blis-registry/issues/39 asked for the coefficients the kernels vLLM
 v0.31.0 runs for DeepSeek-V4.1-Flash on SM90 need. Every kernel identity below is read from
 the v0.31.0 tag (`db9527a4`); every number is written by
 `scripts/fit_deepseek_v41_h200.py` or `scripts/fit_marlin_grouped_ramp.py`, both with
@@ -1064,7 +1064,7 @@ that every compressed layer reads at least two blocks.
 was fitted on Pro's 128-head rows — the `h128` instance, which Pro runs only below TP 2,
 since FlashMLA pads `n_local_heads` — and was to be charged against the kernel's selection
 rule for Pro's csa4 layers: up to 262,912 tokens at a 1 M context, outside every measured
-row on the block axis (vLLM itself reads far less there; blis-latency-kernel#32). Every V4.1
+row on the block axis (vLLM itself reads far less there; https://github.com/inference-sim/blis-latency-kernel/issues/32). Every V4.1
 sparse read is on the `h64` instance at every TP width and inside the block axis. The entry
 is scoped to this model, so no other deployment moves.
 
@@ -1085,7 +1085,7 @@ assuming it if a future sweep's throughput stops exceeding the HBM peak.
 weight-only GEMM is two costs, a BF16 `mma.sync` compute and a narrow weight read. The
 kernel sums them for the routed term, and fitting the ramp as what remains after the
 kernel's own memory half is the only way it composes back to the measurement. That couples
-it to the cost model's routed term as blis-latency-kernel#44 (`483f6aa`) implements it:
+it to the cost model's routed term as https://github.com/inference-sim/blis-latency-kernel/issues/44 (`483f6aa`) implements it:
 
 * compute and memory summed, the ramp evaluated at the step's token count, compute at the
   BF16 peak, memory as `ExpertsTouched` experts' stored bytes at BwPeak × `hbm_derate`,
@@ -1125,8 +1125,8 @@ under **SGLang only** -- another engine, another MoE kernel (`w4a16_mxfp4_hummin
 and another checkpoint revision (`fb2764a5` against the catalog's `52544481`). The only vLLM
 V4.1 leaf is a historical GB200 dev build labelled "comparator". So FPM cannot be the arbiter
 §3 requires for V4.1's vLLM pricing; an earlier version of this section said it could.
-blis-registry#42 stays open with no arbiter until a vLLM V4.1 forward-pass measurement
-exists. Separately, the kernel before blis-latency-kernel#44 could not
+inference-sim/blis-substrate#130 stays open with no arbiter until a vLLM V4.1 forward-pass measurement
+exists. Separately, the kernel before https://github.com/inference-sim/blis-latency-kernel/issues/44 could not
 price the model: it refused the `fp8_ds_mla` cache (#36), charged 20,480 KV bytes per token
 against roughly 1,790 (#30), dropped the 128-token window from the sparse read (#32) and
 did not pad FlashMLA's heads (#39). #44 closes all four. Three
@@ -1140,11 +1140,11 @@ consumer-contract points go with the entries, each stated in them:
 * **Routed FLOPs under pure TP.** This ramp's FLOPs are each rank's own (`inter / tp`). #44
   divides routed FLOPs by tp on the weight-only Marlin ramps, as this fit requires, and keeps
   its documented over-charge on the native ramps, where it cancels a measured error;
-  blis-latency-kernel#47 tracks removing it there. A consumer that charged this ramp the
+  inference-sim/blis-substrate#112 tracks removing it there. A consumer that charged this ramp the
   whole expert would price its compute half tp times too slow.
 * **gb300's Marlin ramp stays unread** while ramps are chosen by format and chip, which on
   gb300 is the FP4 class — right for stock v0.31.0. It is for scoring the Kimi-K3 preview
-  build's FPM run, for blis-registry#41 (the Kimi-K3/GB300 FPM check of the KDA pair).
+  build's FPM run, for inference-sim/blis-substrate#129 (the Kimi-K3/GB300 FPM check of the KDA pair).
 
 Every V4.1 attention read in the catalog's graph (blis-catalog 0.3.0) is `sparse_mla`, the window-only layers (0,
 1, and the DSpark drafts at a 133-token window) included, all inside the block axis above.
@@ -1188,7 +1188,7 @@ error at V4.1's operating point is "about 10-20% fast, from 71 rows", not 1.067x
 explicit exception.** No vLLM forward-pass measurement of V4.1 exists on any part (§10.5:
 FPM's V4.1 rows are SGLang), so the rule cannot be met by waiting for the data on hand; the
 alternative is to keep pricing V4.1 with entries fitted on other kernels, which is the known
-larger error. Each entry therefore says it has no arbiter, and blis-registry#42 stays open
+larger error. Each entry therefore says it has no arbiter, and inference-sim/blis-substrate#130 stays open
 until a vLLM V4.1 forward-pass measurement exists. The SM90 sparse prefill device code is unchanged between
 the FlashMLA pins of vLLM 0.25.0 and 0.31.0 (renames only). V4.1's ratio-1/2 layers gather
 their whole compressed stream before the kernel; the ratio-128 rows hold that gather only at
@@ -1348,7 +1348,7 @@ form; it is recorded as held-out evidence for that term on gb300 and moves no va
 `cost-model-memory.yaml` exists because a consumer was carrying three per-rank memory
 magnitudes as constants in its own source — CUDA-graph capture at 512 MiB, collective
 buffers at 392 MiB, activation scratch at "a few live buffers" (×4) — where no provenance
-readout could see them (inference-sim/blis-registry#33). They set how many sequences
+readout could see them (https://github.com/inference-sim/blis-registry/issues/33). They set how many sequences
 fit, so they are not soft numbers.
 
 ### 11.1 The composition, taken from NVIDIA's capacity path
@@ -1452,13 +1452,13 @@ On `deepseek-v3-h200-fp8-sglang-tp8` (tp 8, `hidden_size` 7168, 8,192 batched to
 | **total** | **1,417,674,752** | **6,202,327,040** |
 
 The cost model reads every term of the set and refuses a scenario that does not list it
-(inference-sim/blis-latency-kernel#22).
+(https://github.com/inference-sim/blis-latency-kernel/issues/22).
 
 ## 12. Speculative acceptance profiles
 
 `acceptance/inferencex-golden-al.yaml` holds the acceptance lengths a simulator advances
-speculating requests by (inference-sim/blis-registry#44), in the contracts' acceptance
-format (blis-schemas#65). It
+speculating requests by (https://github.com/inference-sim/blis-registry/issues/44), in the contracts' acceptance
+format (https://github.com/inference-sim/blis-schemas/issues/65). It
 is not a coefficient set: acceptance does not price a step, it sets how many tokens a step
 yields. The generated tables and the set's caveats are on the
 [acceptance reference page](reference/acceptance.md).
@@ -1507,7 +1507,7 @@ classified in the emitter's `CURVES` table, and an unclassified file fails the r
 A measured profile must name the part it was measured on. Most headers state it ("B300,
 vLLM MTP"). The DeepSeek-V4.1-Flash file states none, and its collecting job ran on
 InferenceX's `b200-nscale` cluster, launched through the B200 benchmark base, so its
-profiles say `b200`. blis-registry#44 describes the curve as measured on B300; the run
+profiles say `b200`. https://github.com/inference-sim/blis-registry/issues/44 describes the curve as measured on B300; the run
 contradicts that, and the run is what is recorded. The emitter's `RUN_HARDWARE` table
 holds each run's runner, read through the GitHub API, and is checked against every header
 that also states a part. Files that name no engine image say so in `engine_image`: their
@@ -1528,4 +1528,4 @@ job also checks the vendored curves against InferenceX at its pinned commit
 (`INFERENCEX_SHA` in `.github/workflows/rederive.yml`), checks the catalog models against
 the repository's `catalog/`, and re-runs the emitter against the upstream checkout. Schema
 validation is `validate-registry` (`validate/cmd/validate-registry`), which reads
-`acceptance/` (blis-schemas#74), in CI's `registry` job.
+`acceptance/` (https://github.com/inference-sim/blis-schemas/issues/74), in CI's `registry` job.

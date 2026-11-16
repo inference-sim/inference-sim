@@ -42,7 +42,7 @@ does not belong to); prefix caching and speculation not stated are left out, so
 v0.31.0's defaults apply (caching on, no drafting). A stated drafter the catalog graph does
 not describe is not written at all (see UNPRICED_SPECULATORS): a file without its
 speculative block would load as a target-only deployment and be priced as one, so the
-generator skips the scenario and reports it (blis-latency-kernel#74).
+generator skips the scenario and reports it (inference-sim/blis-substrate#124).
 The rest are NOT vLLM's defaults, and the written header says how each differs: block_size
 16 is only the nominal default, which a backend may raise (vllm/platforms/interface.py),
 and a DSA sparse-MLA model is stated at 64, the size vLLM picks for it and a multiple of the

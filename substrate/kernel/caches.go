@@ -179,7 +179,7 @@ type poolGroup struct {
 }
 
 // resolveKVPool groups the stated caches through the rules pack (rules.Pack.KVCacheGroups,
-// blis-schemas#66), from the records and pages they are sized at here. Where the pack does
+// https://github.com/inference-sim/blis-schemas/issues/66), from the records and pages they are sized at here. Where the pack does
 // not model the grouping, the caches stay sized at their own pages, and that is recorded.
 func (k *Kernel) resolveKVPool() error {
 	var layers []rules.KVCacheLayer

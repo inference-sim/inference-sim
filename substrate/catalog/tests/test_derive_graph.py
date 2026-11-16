@@ -187,7 +187,7 @@ def test_the_committed_pinned_entries_are_counted_apart_from_the_current_ones():
 
 
 def test_a_failure_names_its_model_once(tmp_path):
-    """Each failure line names the model exactly once (blis-catalog#28).
+    """Each failure line names the model exactly once (https://github.com/inference-sim/blis-catalog/issues/28).
 
     A DeriveError carries the model name itself, because derive() is called directly
     and its message has to stand alone there; main() prefixed it again, printing
@@ -1660,7 +1660,7 @@ def node_cost(n: dict) -> tuple:
         # Omitted here, the signature read GLM-5.3-Flash's mHC mixing as two plain
         # norms.
         n.get("bytes_per_token"),
-        # What blis-schemas#55 prices beyond the shape: how a node splits over tensor
+        # What https://github.com/inference-sim/blis-schemas/issues/55 prices beyond the shape: how a node splits over tensor
         # parallelism, the caches a read holds and their records, a launch that writes a
         # cache record only every per_tokens tokens, work proportional to the context, a
         # gather's table and where it lives, and a node that reuses another's weights.
@@ -2703,7 +2703,7 @@ def test_collectives_land_where_the_parallelism_needs_them():
         g = graph_of(d)
         # A family that decides sequence parallelism itself names its architecture, and
         # its MoE reduction stands down under that rule rather than the engine-wide one
-        # (DeepSeek-V4.1: nvidia/model.py:239-247, 324-327; blis-schemas#55).
+        # (DeepSeek-V4.1: nvidia/model.py:239-247, 324-327; https://github.com/inference-sim/blis-schemas/issues/55).
         own_sp = g["global"].get("architecture") in OWN_SEQUENCE_PARALLELISM
         mlp_reduction = ("tensor_parallel_unless_sequence_parallel" if own_sp
                          else "tensor_parallel_unless_sp_moe")
@@ -2769,7 +2769,7 @@ def test_every_emit_condition_is_one_a_resolver_knows():
     The deriver's EMIT_ constants are the whole vocabulary, so a committed graph naming
     anything else would reach a resolver with no branch for it. The two conditions the
     model's own sequence parallelism decides need the graph to name its architecture,
-    since that is what a rules pack decides them by (blis-schemas#55)."""
+    since that is what a rules pack decides them by (https://github.com/inference-sim/blis-schemas/issues/55)."""
     dg = _dg()
     known = {dg.EMIT_TENSOR_PARALLEL, dg.EMIT_EXPERT_PARALLEL,
              dg.EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE,
@@ -4716,7 +4716,7 @@ def test_deepseek_v41_splits_across_tensor_parallel_ranks_where_vllm_does():
         elif n["op"] == "Attention" and not role:
             # The main read's per-rank heads are FlashMLA's padding to 64, a property of
             # the backend and the TP width, so its layout is left to the consumer
-            # (inference-sim/blis-latency-kernel#39).
+            # (https://github.com/inference-sim/blis-latency-kernel/issues/39).
             assert "tp" not in n
         else:
             assert n["tp"] == split.get(role, "replicated"), (role, n["tp"])

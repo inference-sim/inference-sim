@@ -10,7 +10,7 @@
 // decoded from, and the kernel resolves and records what the engine decided.
 //
 // Moved verbatim, but for this comment, from blis-latency-kernel/enginesettings (blis-latency-
-// kernel#82 at f556c19), so that the kernel and an engine model share it without importing each
+// https://github.com/inference-sim/blis-latency-kernel/issues/82 at f556c19), so that the kernel and an engine model share it without importing each
 // other.
 package enginesettings
 

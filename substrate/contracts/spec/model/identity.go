@@ -31,7 +31,7 @@ import (
 // is a verbatim vendor file whose keys the derived graph — not this schema — interprets.
 // Between that structural check and this identity, the command reproduces validate_models'
 // model-entry checks in full, so it can stand in for them when blis-catalog wires it into CI
-// (#22, catalog#14).
+// (https://github.com/inference-sim/blis-schemas/issues/22, https://github.com/inference-sim/blis-catalog/issues/14).
 //
 // Field values aside, the loader (LoadModelIdentity) decodes strict: an unknown key is
 // rejected, where the catalog's Python gate reads model.yaml leniently and ignores extra

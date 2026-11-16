@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// X17 (blis-schemas#105): lint is a required check of this repository. Branch protection
+// X17 (https://github.com/inference-sim/blis-schemas/issues/105): lint is a required check of this repository. Branch protection
 // requires the check run "required", and that job passes only when every job it needs
 // passed, so lint is required exactly when the golangci-lint job is one of its needs.
 // Known-bad input: the same workflow with lint left out of the list.

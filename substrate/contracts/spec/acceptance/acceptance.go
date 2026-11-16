@@ -1,7 +1,7 @@
 // Package acceptance describes how far speculative decoding advances a request per
 // verification step: a profile set of measured acceptance lengths hosted in blis-registry,
 // the inline values a workload, a scenario or a command line may state instead, and the
-// resolution that picks one of them for a run (blis-schemas#65).
+// resolution that picks one of them for a run (https://github.com/inference-sim/blis-schemas/issues/65).
 //
 // The canonical quantity is the mean acceptance length AL: the tokens a request gains per
 // verification step, counting the target's bonus token, so AL lies in [1, K+1] for K

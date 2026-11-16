@@ -13,7 +13,7 @@ Two descriptor fields are deliberately NOT emitted: `mem_empirical_constant_late
 and `p2p_latency`. Nothing in BLIS reads them, and a reader would double-count -- the
 kernel's per-kernel attention floors and per-operation collective floors are measured
 and already carry the fixed cost these two constants stand in for in NVIDIA's own
-simulator (inference-sim/blis-registry#36).
+simulator (https://github.com/inference-sim/blis-registry/issues/36).
 
 A100-80 IS AN ALIAS OF A100-SXM (methodology section 5), so the `a100_pcie` descriptor
 is not emitted and the `a100_sxm` one is scoped to both names. Emitting both put two

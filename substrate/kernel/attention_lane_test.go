@@ -294,7 +294,7 @@ func TestTheLaneAbsentOrKeyedToAnotherBuildLeavesThePooledPair(t *testing.T) {
 	if !ok {
 		t.Fatal("the lane was not priced and no assumption says so")
 	}
-	for _, want := range []string{"trtllm-gen", trtllmGenPrefillFloor + "fp8", "blis-registry#73"} {
+	for _, want := range []string{"trtllm-gen", trtllmGenPrefillFloor + "fp8", "inference-sim/blis-substrate#149"} {
 		if !strings.Contains(why, want) {
 			t.Errorf("the assumption does not name %q: %s", want, why)
 		}
