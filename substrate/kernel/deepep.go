@@ -2,6 +2,7 @@ package latencykernel
 
 import (
 	"fmt"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"strings"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
@@ -41,13 +42,28 @@ func (d *deepEPA2A) secondsFor(bytes float64, graphed bool) float64 {
 	return d.seconds(bytes)
 }
 
+// deepEPBackend is the DeepEP kernel family the plan's dispatch runs, in the words the
+// registry's coefficients are named by (deepep_high_throughput, deepep_low_latency,
+// deepep_v2), or "" for a dispatch that is not one of them.
+func (k *Kernel) deepEPBackend() string {
+	switch k.low.MoE.Dispatch {
+	case plan.DispatchDeepEPHighThroughput:
+		return "deepep_high_throughput"
+	case plan.DispatchDeepEPLowLatency:
+		return "deepep_low_latency"
+	case plan.DispatchDeepEPV2:
+		return "deepep_v2"
+	}
+	return ""
+}
+
 // deepEPVariant names the measured DeepEP family the resolved backend runs, or "" for a
 // backend that is not DeepEP. DeepEP v2 picks its path once, from enforce_eager, not per
 // step: use_cudagraph = not enforce_eager (vllm/model_executor/layers/fused_moe/
 // all2all_utils.py:286-298 at v0.31.0). The deployment states no enforce_eager, so a
 // resolved cudagraph mode of NONE is read as it.
 func (k *Kernel) deepEPVariant() string {
-	switch k.rules.EffectiveAll2AllBackend(k.engine.All2AllBackend) {
+	switch k.deepEPBackend() {
 	case "deepep_high_throughput":
 		return "deepep_high_throughput"
 	case "deepep_low_latency":
@@ -131,8 +147,8 @@ func (k *Kernel) deepEPBufferBytes(g *model.Graph) int64 {
 	if !k.routedAll2All() {
 		return 0
 	}
-	backend := k.rules.EffectiveAll2AllBackend(k.engine.All2AllBackend)
-	if !strings.HasPrefix(backend, "deepep_") {
+	backend := k.deepEPBackend()
+	if backend == "" {
 		return 0
 	}
 	nvl := int64(deepEPBufferMB) << 20
@@ -232,7 +248,7 @@ func (k *Kernel) refuseUnallocatableDeepEP() error {
 			"rank beside %.1f GiB of weights, more than the part's %.0f GiB, so vLLM v0.31.0 "+
 			"fails allocating them at weight loading (all2all.py:288-327; DeepEP "+
 			"get_low_latency_rdma_size_hint); lower max_num_batched_tokens",
-			k.rules.EffectiveAll2AllBackend(k.engine.All2AllBackend), k.batchedTokens,
+			k.deepEPBackend(), k.batchedTokens,
 			float64(buf)/(1<<30), float64(k.fixed.Weights)/(1<<30), k.chip.MemoryGiB)
 	}
 	return nil

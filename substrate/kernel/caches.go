@@ -425,23 +425,14 @@ func (k *Kernel) maxInFlightTokens() int {
 	return batches * k.batchedTokens
 }
 
-// extraRetainedTokens is extra_retained_tokens, max(0, num_prefill_lookahead_tokens - 1)
-// (vllm/v1/core/kv_cache_utils.py:2738-2744): num_speculative_tokens - 1 for multi-module MTP,
-// zero for every other drafter, which reads one token ahead or none
-// (vllm/config/vllm.py:657-677; use_multi_module_mtp, vllm/config/speculative.py:1973-1979).
+// extraRetainedTokens is the KV tokens a request keeps beyond its context for the drafter to
+// read ahead, as the engine states them (Plan.Drafts.RetainedTokens); none while the pool does
+// not speculate.
 func (k *Kernel) extraRetainedTokens() int {
-	s := k.engine.Speculative
-	if s == nil || s.Method != "mtp" || !k.speculating || k.plan.Draft == nil {
+	if !k.speculating {
 		return 0
 	}
-	modules := 0
-	for _, l := range k.plan.Draft.Layers {
-		modules += l.Count
-	}
-	if min(modules, s.NumSpecTokens) > 1 {
-		return s.NumSpecTokens - 1
-	}
-	return 0
+	return int(k.low.Drafts.RetainedTokens)
 }
 
 // cacheTransferBytes is what a P/D handoff moves of the stated caches for a sequence of
@@ -515,8 +506,5 @@ func (k *Kernel) statedReadBytes(caches []price.PlannedCache, topk, window, ctx 
 // numSpecTokens is the draft tokens per request per step the deployment runs, zero when it
 // does not speculate.
 func (k *Kernel) numSpecTokens() int {
-	if s := k.engine.Speculative; s != nil && s.NumSpecTokens > 0 {
-		return s.NumSpecTokens
-	}
-	return 0
+	return max(k.low.Drafts.Chain, 0)
 }

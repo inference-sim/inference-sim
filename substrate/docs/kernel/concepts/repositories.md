@@ -11,7 +11,7 @@ contracts, the catalog and the registry.</p>
 | [`catalog/`](../../catalog/index.md) | declared facts: models, chips, fabrics, storage tiers, workloads | Reads a model's graph, a chip, a fabric and the storage tiers |
 | [`registry/`](../../registry/index.md) | learned numbers: coefficients, each with its method and scope | Reads the coefficient sets a scenario names |
 | **`kernel/`** | pricing | — |
-| [blis-vllm](https://github.com/inference-sim/blis-vllm) | vLLM's engine behaviour, and its rules packs | Its rules packs and its engine-settings decoder are what a caller passes as `Repos.Rules` and `Repos.EngineSettings`; the kernel does not import blis-vllm |
+| [blis-vllm](https://github.com/inference-sim/blis-vllm) | vLLM's engine behaviour, and its rules packs | Its rules packs and its lowering are what a caller passes as `Repos.Rules` and `Repos.Lower`; the kernel does not import blis-vllm |
 | [inference-sim](https://github.com/inference-sim/inference-sim) | simulation: queues, batching, admission, preemption | Imports the kernel and calls it once per simulated step |
 
 --8<-- "docs/kernel/figures/repositories.html"

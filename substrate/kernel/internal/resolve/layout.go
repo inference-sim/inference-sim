@@ -154,6 +154,27 @@ func ResolveLayout(pk scenario.Packaging, pool deployment.Pool, eng enginesettin
 // decides whether the model's own sequence parallelism is on.
 func ResolveLayoutFor(pk scenario.Packaging, pool deployment.Pool, eng enginesettings.Settings, fab Fabric,
 	rules EngineRules, architecture string) (Layout, error) {
+	l, err := ResolveGeometry(pk, pool, fab)
+	if err != nil {
+		return Layout{}, err
+	}
+	pl := pool.Parallel
+	l.SequenceParallelMoE = rules.SequenceParallelMoE(
+		eng.All2AllBackend, pl.EnableExpertParallel, pl.TP, pl.DP)
+	if architecture != "" {
+		l.ModelSequenceParallel = rules.ModelSequenceParallel(architecture, pl,
+			eng.MoEBackend)
+	}
+	l.CustomAllReduce, l.Overrides = CustomAllReduce(eng, l, fab, rules)
+	return l, nil
+}
+
+// ResolveGeometry is the part of a pool's layout that follows from its parallel widths, the
+// cluster's packaging and the fabric alone: the widths, the MoE group, and the nodes the widest
+// group spans. The engine decisions that follow from them (SequenceParallelMoE,
+// ModelSequenceParallel, CustomAllReduce) are the engine's lowering's to state, and the result
+// leaves them false.
+func ResolveGeometry(pk scenario.Packaging, pool deployment.Pool, fab Fabric) (Layout, error) {
 	pl := pool.Parallel
 	if pl.TP < 1 || pl.DP < 1 {
 		return Layout{}, fmt.Errorf("tensor- and data-parallel widths must be at least 1")
@@ -189,20 +210,12 @@ func ResolveLayoutFor(pk scenario.Packaging, pool deployment.Pool, eng engineset
 	if l.GPUsPerRack > 0 && widest <= l.GPUsPerRack && fab.RackIsOneDomain {
 		l.NodesSpanned = 1
 	}
-
-	l.SequenceParallelMoE = rules.SequenceParallelMoE(
-		eng.All2AllBackend, pl.EnableExpertParallel, pl.TP, pl.DP)
-	if architecture != "" {
-		l.ModelSequenceParallel = rules.ModelSequenceParallel(architecture, pl,
-			eng.MoEBackend)
-	}
-	l.CustomAllReduce, l.Overrides = resolveCustomAllReduce(eng, l, fab, rules)
 	return l, nil
 }
 
-// resolveCustomAllReduce decides whether the SM-consuming reduction kernel runs, and
-// records why when a request for it is declined.
-func resolveCustomAllReduce(e enginesettings.Settings, l Layout, fab Fabric,
+// CustomAllReduce decides whether the SM-consuming reduction kernel runs, and records why when a
+// request for it is declined.
+func CustomAllReduce(e enginesettings.Settings, l Layout, fab Fabric,
 	rules EngineRules) (bool, []Override) {
 	requested := true
 	if e.DisableCustomAllReduce != nil {
