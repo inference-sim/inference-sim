@@ -122,7 +122,7 @@ func withEngineRules(r Repos) Repos {
 		r.RulesVersions = vllmrules.Versions
 		r.RulesKind = "vllm"
 	}
-	if r.DraftModel == nil && r.EngineSettings == nil {
+	if r.DraftModel == nil {
 		// The kernel opens no engine block: the drafter the block names is read here, so the
 		// kernel's loader opens its graph, and the pool's settings reach the kernel only as the
 		// plan the lowering resolves them to (fromDecoded).
@@ -437,7 +437,7 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 	if err != nil {
 		return nil, err
 	}
-	in.Lowered, in.Engine = low, nil
+	in.Lowered = low
 	// How an autoregressive drafter's passes run is the engine's to state (SUB-6): vLLM v0.32.0's
 	// speculator for eagle, eagle3 and mtp; any other method is left unstated and the kernel refuses it.
 	in.DraftFirstPassRows, in.DraftPassRequests = vllmsettings.DraftPasses(engine)

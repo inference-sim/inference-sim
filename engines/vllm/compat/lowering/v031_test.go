@@ -1,6 +1,6 @@
 // Original to blis-vllm.
 // Moved from blis-substrate's kernel tests (kernel/sparse_mla_test.go, int4_test.go and
-// refusals_v41_test.go at 00817b10798cbc00f560e51921c30c7084fa5e0c) with the resolution they test
+// refusals_v41_test.go, served_test.go, namedrafter_test.go and internal/resolve/layout_test.go at 00817b10798cbc00f560e51921c30c7084fa5e0c) with the resolution they test
 // (blis-substrate#58).
 
 package lowering
@@ -9,10 +9,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
+	vllmrules "github.com/inference-sim/blis-vllm/rules"
 )
 
 // A model-specific MTP name is the method vLLM runs as mtp, so a deployment naming mtp
@@ -193,5 +196,105 @@ func TestAnAutoCacheFollowsTheComputeWidthNotTheStorageWidth(t *testing.T) {
 	// head_size/2 + head_size/16 bytes a head (vllm/utils/torch_utils.py:543-545).
 	if got := cacheDTypeBytes("nvfp4", model.DTypeBF16); got != 0.5625 {
 		t.Errorf("an explicit nvfp4 cache = %.4f bytes, want 0.5625", got)
+	}
+}
+
+// The custom all-reduce request is resolved, not obeyed: the layout may decline it, and a
+// declined request records why. A prediction that assumed the request honoured would charge SM
+// occupancy that does not occur and omit NIC traffic that does.
+func TestCustomAllReduceRequestIsResolvedNotObeyed(t *testing.T) {
+	no := false
+	rules := vllmrules.Lookup("0.32.0")
+	for _, c := range []struct {
+		what        string
+		gpusPerNode int
+		tp          int
+		rackDomain  bool
+		wantCustom  bool
+		wantReason  string
+	}{
+		{"tp 8 within a node: honoured", 8, 8, false, true, ""},
+		{"tp 3 is an unsupported width: declined", 8, 3, false, false, "rank counts"},
+		{"tp 16 spans nodes without multi-node NVLink: declined", 8, 16, false, false, "spans more than"},
+		{"tp 16 spans nodes with multi-node NVLink: honoured", 8, 16, true, true, ""},
+		{"stated off", 8, 8, false, false, ""},
+	} {
+		t.Run(c.what, func(t *testing.T) {
+			s := vllmsettings.Settings{DisableCustomAllReduce: &no}
+			if c.what == "stated off" {
+				s.AllReduceBackend = "nccl"
+			}
+			got, overrides := customAllReduce(s, layout{TP: c.tp, DP: 1, GPUsPerNode: c.gpusPerNode},
+				c.rackDomain, rules)
+			if got != c.wantCustom {
+				t.Fatalf("custom all-reduce %v, want %v", got, c.wantCustom)
+			}
+			if c.wantReason == "" {
+				if len(overrides) != 0 {
+					t.Errorf("an honoured or unrequested custom all-reduce records %+v", overrides)
+				}
+				return
+			}
+			if len(overrides) != 1 || !strings.Contains(overrides[0].Reason, c.wantReason) {
+				t.Errorf("overrides %+v, want one naming %q", overrides, c.wantReason)
+			}
+		})
+	}
+}
+
+// A declined all-reduce request reaches the Result on the all_reduce_backend row, whatever field
+// name the lowering gives it: the conversion in package result is checked against the lowering.
+func TestADeclinedAllReduceRequestReachesOneRowOfTheResult(t *testing.T) {
+	ok, overrides := customAllReduce(vllmsettings.Settings{}, layout{TP: 3, DP: 1}, false, vllmrules.Lookup("0.32.0"))
+	if ok || len(overrides) != 1 {
+		t.Fatalf("tp 3 should decline the custom all-reduce: %v %v", ok, overrides)
+	}
+	o := overrides[0]
+	var rows []result.Resolution
+	for _, x := range result.ResolutionsOf(kernel.Resolution{AllReduceBackend: "nccl",
+		Overrides: []kernel.Override{{Field: o.Field, Requested: o.Requested, Resolved: o.Resolved, Reason: o.Reason}}}) {
+		if strings.Contains(x.Setting, "reduce") {
+			rows = append(rows, x)
+		}
+	}
+	if len(rows) != 1 || rows[0].Setting != "all_reduce_backend" || rows[0].Host != "custom" || rows[0].Reason == "" {
+		t.Errorf("rows %+v, want one all_reduce_backend row with the host value and the reason", rows)
+	}
+}
+
+// The cost model recognises no quantization spelling beyond the ones servedDType prices: a
+// ModelOpt or microscaling spelling is resolved by the checkpoint's recipe (package
+// quantization) before the lowering, and reaches it empty.
+func TestAQuantizationSpellingTheCostModelDoesNotPriceIsRefused(t *testing.T) {
+	for _, spelling := range []string{"modelopt_mixed", "mxfp8", "modelopt_mxfp8", "gpt_oss_mxfp4"} {
+		_, err := tryLower(t, where{"minimax-m3-nvfp4", "b200", "tp: 4, pp: 1, dp: 1"},
+			vllmsettings.Settings{Quantization: spelling})
+		if err == nil || !strings.Contains(err.Error(), "not one this kernel prices") {
+			t.Errorf("quantization %q: %v", spelling, err)
+		}
+	}
+}
+
+// A deployment method that is not the drafter's describes another drafter, and is refused.
+func TestADeploymentMethodThatIsNotTheDraftersIsRefused(t *testing.T) {
+	target, err := data.Model("minimax-m3-mxfp8")
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := data.Model("minimax-m3-eagle3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := where{"minimax-m3-mxfp8", "b200", "tp: 4, pp: 1, dp: 1"}
+	in := func(method string) error {
+		_, err := tryLowerWithDraft(t, at, target, draft, vllmsettings.Settings{Speculative: &vllmsettings.Speculative{
+			Method: method, NumSpecTokens: 3, DraftModel: draft.Name}})
+		return err
+	}
+	if err := in("eagle3"); err != nil {
+		t.Fatalf("the drafter's own method was refused: %v", err)
+	}
+	if err := in("mtp"); err == nil || !strings.Contains(err.Error(), "a mtp drafter is not described") {
+		t.Errorf("err %v, want the refusal of a method the drafter does not describe", err)
 	}
 }

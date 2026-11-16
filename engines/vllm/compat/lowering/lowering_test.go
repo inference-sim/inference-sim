@@ -84,10 +84,10 @@ func tryLowerOn(t *testing.T, at where, chip *hardware.Chip, s vllmsettings.Sett
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(graph) > 0 {
+	if len(graph) > 0 && graph[0] != nil {
 		g = graph[0]
 	}
-	return Lower(Input{Scenario: sc, Deployment: dep, Model: g, Chip: chip,
+	return Lower(Input{Scenario: sc, Deployment: dep, Model: g, Draft: draftOf(graph), Chip: chip,
 		Rules: vllmrules.Lookup("0.32.0"), Settings: s})
 }
 
@@ -518,4 +518,18 @@ func TestAMultiModuleMTPDrafterRetainsTheDraftedTokensLessOne(t *testing.T) {
 	if l.Plan.Drafts.RetainedTokens != 2 {
 		t.Errorf("Drafts.RetainedTokens %d, want 2", l.Plan.Drafts.RetainedTokens)
 	}
+}
+
+// draftOf is the drafter graph a test passes after the target's, or nil.
+func draftOf(graph []*model.Graph) *model.Graph {
+	if len(graph) > 1 {
+		return graph[1]
+	}
+	return nil
+}
+
+// tryLowerWithDraft lowers the deployment with the target and a named drafter.
+func tryLowerWithDraft(t *testing.T, at where, target, draft *model.Graph, s vllmsettings.Settings) (*plan.Lowered, error) {
+	t.Helper()
+	return tryLower(t, at, s, target, draft)
 }
