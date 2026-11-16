@@ -846,9 +846,9 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.14.0",
+    "substrate": "v0.14.1-0.20261116175117-72bca20afae6",
     "router": "v1.0.0-blis.4",
-    "engine_module": "v0.32.0-blis.3"
+    "engine_module": "v0.32.1-0.20261116180215-36584a97dcea"
   },
   "window": {
     "start_us": 250000,
@@ -1527,24 +1527,6 @@
           {
             "KernelMatch": "",
             "Method": "assumed",
-            "Name": "modality",
-            "Primitive": "",
-            "Running": "",
-            "Scope": "text_decoder_of_multimodal: the graph prices the text decoder of a multimodal model: its vision or audio tower, and the encoder work a multimodal request adds, are not priced",
-            "Set": "blis-latency-kernel"
-          },
-          {
-            "KernelMatch": "",
-            "Method": "assumed",
-            "Name": "compute_rate_fp32",
-            "Primitive": "",
-            "Running": "",
-            "Scope": "bf16: FP32 weights run at the TF32 tensor-core rate, taken as half the dense BF16 peak as NVIDIA's datasheets state it for every catalog part; the catalog states no TF32 peak, and the ramp is BF16's",
-            "Set": "blis-latency-kernel"
-          },
-          {
-            "KernelMatch": "",
-            "Method": "assumed",
             "Name": "cudagraph_mode",
             "Primitive": "",
             "Running": "",
@@ -1558,6 +1540,24 @@
             "Primitive": "",
             "Running": "",
             "Scope": "512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph",
+            "Set": "blis-latency-kernel"
+          },
+          {
+            "KernelMatch": "",
+            "Method": "assumed",
+            "Name": "modality",
+            "Primitive": "",
+            "Running": "",
+            "Scope": "text_decoder_of_multimodal: the graph prices the text decoder of a multimodal model: its vision or audio tower, and the encoder work a multimodal request adds, are not priced",
+            "Set": "blis-latency-kernel"
+          },
+          {
+            "KernelMatch": "",
+            "Method": "assumed",
+            "Name": "compute_rate_fp32",
+            "Primitive": "",
+            "Running": "",
+            "Scope": "bf16: FP32 weights run at the TF32 tensor-core rate, taken as half the dense BF16 peak as NVIDIA's datasheets state it for every catalog part; the catalog states no TF32 peak, and the ramp is BF16's",
             "Set": "blis-latency-kernel"
           },
           {
