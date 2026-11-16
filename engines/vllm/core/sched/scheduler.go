@@ -710,10 +710,12 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 		}
 	}
 
-	// The LoRAs the scheduled running requests hold (:888-897).
+	// The LoRAs every running request holds, scheduled this step or not: one left out of this
+	// step can join a later batch (vllm/v1/core/sched/scheduler.py:1038-1047@4ba787ec; v0.32.0
+	// counted only the scheduled ones).
 	scheduledLoRAs := map[int]bool{}
 	if s.cfg.MaxLoRAs > 0 {
-		for _, r := range scheduledRunning {
+		for _, r := range s.running {
 			if r.LoRA > 0 {
 				scheduledLoRAs[r.LoRA] = true
 			}
