@@ -1,5 +1,5 @@
 {
- "description": "LRUCachePolicy driven alone: a touch of a chunk still being written, an eviction asking for more than is evictable (atomic: nothing changes), a protected chunk skipped, a store miss for a resident key (a touch the manager never makes), request-finished ordering across two groups with and without positions, pinning between evictions, remove and clear.",
+ "description": "LRUCachePolicy driven alone: a touch of a chunk still being written, an eviction asking for more than is evictable (atomic: nothing changes), a protected chunk skipped, a store miss for a resident key (a touch the manager never makes), request-finished ordering across two groups with and without positions, pinning between evictions, remove and clear. From v0.33.0 an insert carries the storing request, and a chunk whose key has a position on that request takes the request's rank, tail before head (vllm/v1/kv_offload/cpu/policies/lru.py:107-121@4ba787ec): two positioned chunks of one request, then an unpositioned one; on_request_access (lru.py:132-152) skipping a key with no position and a key not resident, and never lowering a rank; a newer request raising an older request's chunk; an eviction asking for more than is evictable; and a request outliving a clear, which takes a new rank in the new cache generation.",
  "policy": {
   "capacity": 8
  },
@@ -10,7 +10,8 @@
    "chunk": {
     "id": 0,
     "ref": 0
-   }
+   },
+   "ctx": "s"
   },
   {
    "m": "insert",
@@ -18,7 +19,8 @@
    "chunk": {
     "id": 1,
     "ref": -1
-   }
+   },
+   "ctx": "s"
   },
   {
    "m": "insert",
@@ -26,7 +28,8 @@
    "chunk": {
     "id": 2,
     "ref": 0
-   }
+   },
+   "ctx": "s"
   },
   {
    "m": "touch",
@@ -78,7 +81,8 @@
    "chunk": {
     "id": 0,
     "ref": 0
-   }
+   },
+   "ctx": "s"
   },
   {
    "m": "on_request_finished",
@@ -138,7 +142,8 @@
    "chunk": {
     "id": 3,
     "ref": -1
-   }
+   },
+   "ctx": "s"
   },
   {
    "m": "remove",
@@ -154,7 +159,8 @@
    "chunk": {
     "id": 4,
     "ref": 0
-   }
+   },
+   "ctx": "s"
   },
   {
    "m": "clear"
@@ -170,6 +176,133 @@
   {
    "m": "evict",
    "n": 1
+  },
+  {
+   "m": "pos",
+   "ctx": "r",
+   "key": "x4",
+   "pos": 48
+  },
+  {
+   "m": "pos",
+   "ctx": "r",
+   "key": "x5",
+   "pos": 32
+  },
+  {
+   "m": "insert",
+   "ctx": "r",
+   "key": "x4",
+   "chunk": {
+    "id": 0,
+    "ref": 0
+   }
+  },
+  {
+   "m": "insert",
+   "ctx": "r",
+   "key": "x5",
+   "chunk": {
+    "id": 1,
+    "ref": 0
+   }
+  },
+  {
+   "m": "insert",
+   "ctx": "s",
+   "key": "x6",
+   "chunk": {
+    "id": 2,
+    "ref": 0
+   }
+  },
+  {
+   "m": "on_request_access",
+   "ctx": "r",
+   "keys": [
+    "x6",
+    "w9"
+   ]
+  },
+  {
+   "m": "pos",
+   "ctx": "r",
+   "key": "x6",
+   "pos": 16
+  },
+  {
+   "m": "pos",
+   "ctx": "r",
+   "key": "w9",
+   "pos": 64
+  },
+  {
+   "m": "on_request_access",
+   "ctx": "r",
+   "keys": [
+    "x6",
+    "w9"
+   ]
+  },
+  {
+   "m": "pos",
+   "ctx": "q",
+   "key": "x4",
+   "pos": 48
+  },
+  {
+   "m": "on_request_access",
+   "ctx": "q",
+   "keys": [
+    "x4"
+   ]
+  },
+  {
+   "m": "evict",
+   "n": 4
+  },
+  {
+   "m": "evict",
+   "n": 2
+  },
+  {
+   "m": "get",
+   "key": "x4"
+  },
+  {
+   "m": "clear"
+  },
+  {
+   "m": "pos",
+   "ctx": "q",
+   "key": "x7",
+   "pos": 16
+  },
+  {
+   "m": "insert",
+   "ctx": "q",
+   "key": "x7",
+   "chunk": {
+    "id": 3,
+    "ref": 0
+   }
+  },
+  {
+   "m": "insert",
+   "ctx": "s",
+   "key": "x8",
+   "chunk": {
+    "id": 4,
+    "ref": 0
+   }
+  },
+  {
+   "m": "evict",
+   "n": 1
+  },
+  {
+   "m": "get",
+   "key": "x8"
   }
  ]
 }

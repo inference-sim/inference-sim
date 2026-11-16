@@ -16,9 +16,10 @@ A sequence:
               "world_size": n, "blocks_per_chunk": n, "extra": {...}},   (or "policy": {"capacity": n})
      "calls": [{"m": "<method>", "ctx": "<request>", "key": "<label>", "keys": [...], ...}, ...]}
 A key label "name" or "name/<group>" is the OffloadKey sha256(name) + the group as 4 big-endian
-bytes (make_offload_key, vllm/v1/kv_offload/base.py:29-31@5df63a72). Besides the interface methods a
+bytes (make_offload_key, vllm/v1/kv_offload/base.py:30-32@4ba787ec). Besides the interface methods a
 sequence may "pos" (set a key's end position on a request, as the scheduler does), and, for a policy
-alone, "ref" (set a chunk's ref_cnt, as the manager does).
+alone, "ref" (set a chunk's ref_cnt, as the manager does). A policy "insert" names the storing
+request ("ctx"), as the manager does from v0.33.0 (cpu/manager.py:360-361@4ba787ec).
 
 Usage:
     python -I oracle/drive_kv_interfaces.py <vllm checkout> <sequence dir> <out dir> [--check <golden dir>]
@@ -126,7 +127,7 @@ def call_manager(mgr, m: str, c: dict, ctx, ks, ScheduleEndContext) -> None:
         mgr.on_schedule_end(ScheduleEndContext(new_req_ids=c.get("new", []), preempted_req_ids=c.get("preempted", [])))
     elif m == "take_events":
         list(mgr.take_events())
-    elif m in ("has_pending_work", "reset_cache", "get_stats"):
+    elif m in ("has_pending_work", "reset_cache", "on_reset_flushed", "get_stats"):
         getattr(mgr, m)()
     else:
         raise SystemExit("unknown manager call %r" % m)
@@ -137,10 +138,10 @@ def call_policy(pol, m: str, c: dict, ctx, ks, chunks: dict, ChunkStatus) -> Non
         ch = ChunkStatus(c["chunk"]["id"])
         ch.ref_cnt = c["chunk"].get("ref", -1)
         chunks[c["key"]] = ch
-        pol.insert(key_of(c["key"]), ch)
+        pol.insert(key_of(c["key"]), ch, ctx(c))
     elif m in ("get", "remove", "mark_evictable", "mark_non_evictable"):
         getattr(pol, m)(key_of(c["key"]))
-    elif m in ("touch", "on_store_miss"):
+    elif m in ("touch", "on_store_miss", "on_request_access"):
         getattr(pol, m)(ks(c), ctx(c))
     elif m == "on_request_finished":
         groups = tuple(tuple(key_of(k) for k in g) for g in c["groups"])

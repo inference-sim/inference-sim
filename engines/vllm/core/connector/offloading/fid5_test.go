@@ -222,7 +222,7 @@ func replaySpec(t *testing.T, calls []fid5Call) int {
 	return n
 }
 
-// cpuStatNames are the CPU tier's get_stats metrics (vllm/v1/kv_offload/cpu/common.py:8-13@5df63a72).
+// cpuStatNames are the CPU tier's get_stats metrics (vllm/v1/kv_offload/cpu/common.py:14-17@4ba787ec).
 const (
 	statUsage = "vllm:kv_offload_cpu_cache_usage_perc"
 	statWrite = "vllm:kv_offload_cpu_cache_write_usage_perc"
@@ -240,6 +240,15 @@ func replayManager(t *testing.T, numChunks int, calls []fid5Call) {
 		}
 		return acc[name]
 	}
+	// positioned is the call's request with the token positions it held when vLLM's manager read
+	// them (prepare_load and prepare_store, cpu/manager.py:163-189 and :360-361@4ba787ec).
+	positioned := func(c fid5Call) *reqAccess {
+		a := access(c)
+		for h, p := range arg[map[string]int](t, c, "positions") {
+			a.positions[key(t, h)] = p
+		}
+		return a
+	}
 	for i, c := range calls {
 		switch c.M {
 		case "on_new_request":
@@ -249,7 +258,7 @@ func replayManager(t *testing.T, numChunks int, calls []fid5Call) {
 		case "get_load_source":
 			same(t, i, c, m.loadSource())
 		case "prepare_load":
-			same(t, i, c, m.prepareLoad(keys(t, arg[[]string](t, c, "keys")), access(c)))
+			same(t, i, c, m.prepareLoad(keys(t, arg[[]string](t, c, "keys")), positioned(c)))
 		case "touch":
 			m.touch(keys(t, arg[[]string](t, c, "keys")))
 			same(t, i, c, nil)
@@ -257,7 +266,7 @@ func replayManager(t *testing.T, numChunks int, calls []fid5Call) {
 			m.completeLoad(keys(t, arg[[]string](t, c, "keys")))
 			same(t, i, c, nil)
 		case "prepare_store":
-			stored, ids, evicted, ok := m.prepareStore(keys(t, arg[[]string](t, c, "keys")), access(c))
+			stored, ids, evicted, ok := m.prepareStore(keys(t, arg[[]string](t, c, "keys")), positioned(c))
 			if !ok {
 				same(t, i, c, nil)
 				break
@@ -274,9 +283,11 @@ func replayManager(t *testing.T, numChunks int, calls []fid5Call) {
 			}
 			m.requestFinished(a)
 			same(t, i, c, nil)
-		case "on_schedule_end", "shutdown":
+		case "on_schedule_end", "on_reset_flushed", "shutdown":
 			// OffloadingManager's defaults, which the CPU manager keeps: nothing to do
-			// (vllm/v1/kv_offload/base.py:395-421@5df63a72).
+			// (vllm/v1/kv_offload/base.py:463-510@4ba787ec). A tiering manager with no secondary
+			// tiers never holds promotions, so its on_reset_flushed has nothing to release either
+			// (tiering/manager.py:1199-1203).
 			same(t, i, c, nil)
 		case "has_pending_work":
 			same(t, i, c, m.hasPendingWork())
@@ -316,6 +327,18 @@ func compareStats(t *testing.T, i int, c fid5Call, st cpuStats) {
 
 func replayPolicy(t *testing.T, calls []fid5Call) {
 	p := newLRU()
+	acc := map[string]*reqAccess{}
+	// access is the call's request, with the token positions vLLM read from it during the call.
+	access := func(c fid5Call) *reqAccess {
+		name := arg[string](t, c, "ctx")
+		if acc[name] == nil {
+			acc[name] = newReqAccess()
+		}
+		for h, v := range arg[map[string]int](t, c, "positions") {
+			acc[name].positions[key(t, h)] = v
+		}
+		return acc[name]
+	}
 	for i, c := range calls {
 		switch c.M {
 		case "insert":
@@ -323,8 +346,11 @@ func replayPolicy(t *testing.T, calls []fid5Call) {
 				ID  int `json:"id"`
 				Ref int `json:"ref"`
 			}](t, c, "chunk")
-			// The recorded v0.32.0 call has no request context: insert ranks it next, as v0.32.0 did.
-			p.insert(key(t, arg[string](t, c, "key")), &chunk{refCnt: ch.Ref, id: ch.ID}, nil)
+			// The storing request ranks a key it positions (lru.py:107-121@4ba787ec).
+			p.insert(key(t, arg[string](t, c, "key")), &chunk{refCnt: ch.Ref, id: ch.ID}, access(c))
+			same(t, i, c, nil)
+		case "on_request_access":
+			p.onRequestAccess(keys(t, arg[[]string](t, c, "keys")), access(c))
 			same(t, i, c, nil)
 		case "get":
 			// The chunk's ref_cnt is the manager's to change, outside the policy; its slot is the

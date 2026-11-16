@@ -3,9 +3,13 @@
 
 A framework's trace is the sequence of calls made at its interface, each with its arguments and
 vLLM's answer. Two interfaces are traced here: OffloadingManager (vllm/v1/kv_offload/base.py:
-235-421@5df63a72), as the connector's scheduler side calls it, and CachePolicy
-(vllm/v1/kv_offload/cpu/policies/base.py:48-140@5df63a72), as the manager calls it. Each spec's
-get_manager is recorded with what the spec derived from its config (OffloadingSpec, base.py:595-640).
+283-510@4ba787ec), as the connector's scheduler side calls it, and CachePolicy
+(vllm/v1/kv_offload/cpu/policies/base.py:48-160@4ba787ec), as the manager calls it. Each spec's
+get_manager is recorded with what the spec derived from its config (OffloadingSpec, base.py:692-757).
+
+Two OffloadingManager members are not traced, because neither decides anything about the cache:
+lock (base.py:284-304), a context manager that only excludes other threads, and config_info
+(base.py:496-501), the static labels of the vllm:kv_offload_config_info metric, read once.
 
 Interface calls are observed with sys.monitoring (PEP 669): events on the code objects of the
 interface methods, nothing more. No vLLM object, class or module is written to, so this replaces
@@ -27,9 +31,9 @@ import sys
 
 MANAGER_METHODS = ("on_new_request", "lookup", "get_load_source", "prepare_load", "touch", "complete_load",
                    "prepare_store", "complete_store", "on_request_finished", "take_events", "on_schedule_end",
-                   "has_pending_work", "reset_cache", "get_stats", "shutdown")
-POLICY_METHODS = ("get", "insert", "remove", "touch", "on_store_miss", "on_request_finished", "evict", "clear",
-                  "mark_evictable", "mark_non_evictable")
+                   "has_pending_work", "reset_cache", "on_reset_flushed", "get_stats", "shutdown")
+POLICY_METHODS = ("get", "insert", "remove", "touch", "on_store_miss", "on_request_access", "on_request_finished",
+                  "evict", "clear", "mark_evictable", "mark_non_evictable")
 CO_GENERATOR = 0x20
 
 
@@ -94,8 +98,13 @@ class Monitor:
         if iface == "manager":
             if m in ("lookup", "get_load_source"):
                 out["key"] = self.key(a["key"])
-            elif m in ("prepare_load", "touch", "complete_load", "prepare_store"):
+            elif m in ("touch", "complete_load"):
                 out["keys"] = self.keys(a["keys"])
+            elif m in ("prepare_load", "prepare_store"):
+                # From v0.33.0 both rank the request's keys by the positions it holds now
+                # (cpu/manager.py:163-189 and :360-361@4ba787ec).
+                ks = list(a["keys"])
+                out["keys"], out["positions"] = self.keys(ks), self.positions(a["req_context"], ks)
             elif m == "complete_store":
                 out["keys"], out["success"] = self.keys(a["keys"]), bool(a.get("success", True))
             elif m == "on_request_finished":
@@ -108,7 +117,12 @@ class Monitor:
             if m in ("get", "remove", "mark_evictable", "mark_non_evictable"):
                 out["key"] = self.key(a["key"])
             elif m == "insert":
+                # The storing request's position of the key ranks the chunk (lru.py:107-121@4ba787ec).
                 out["key"], out["chunk"] = self.key(a["key"]), self.chunk(a["chunk"])
+                out["positions"] = self.positions(a["req_context"], [a["key"]])
+            elif m == "on_request_access":
+                ks = list(a["keys"])
+                out["keys"], out["positions"] = self.keys(ks), self.positions(a["req_context"], ks)
             elif m in ("touch", "on_store_miss"):
                 ks = list(a["keys"])
                 out["keys"] = self.keys(ks)
@@ -161,7 +175,8 @@ class Monitor:
         return repr(v)
 
     def event(self, e) -> dict:
-        return {"keys": self.keys(e.keys), "medium": e.medium.name, "removed": bool(e.removed)}
+        return {"keys": self.keys(e.keys), "medium": e.medium.name, "removed": bool(e.removed),
+                "metadata_only": bool(e.metadata_only)}
 
     # --- events ---
     # Each callback runs inside the lambda registered for it, so the interface method's own frame is
