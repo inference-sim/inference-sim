@@ -27,6 +27,68 @@ def run(cmd, cwd, env=None):
     return subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True)
 
 
+class CheckGoldensOverThisLayout(unittest.TestCase):
+    """oracle/check_goldens.py with blis-vllm's own oracle/harness.json: every golden directory the
+    repository holds is guarded, so is core/kv/testdata/block_hashes.json (vLLM's hash_block_tokens
+    output), and a commit that changes a recorded case of it without a trailer fails."""
+
+    BLOCK_HASHES = "core/kv/testdata/block_hashes.json"
+
+    def config(self):
+        with open(os.path.join(HERE, "harness.json")) as f:
+            return json.load(f)
+
+    def test_every_golden_directory_and_the_block_hashes_are_guarded(self):
+        cfg = self.config()
+        found = set()
+        for top, dirs, _ in os.walk(ROOT):
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+            rel = os.path.relpath(top, ROOT).replace(os.sep, "/")
+            parts = rel.split("/")
+            if len(parts) > 1 and parts[-2] == "testdata" and parts[-1].startswith("golden"):
+                found.add(rel + "/")
+        self.assertTrue(found, "no testdata/golden* directory found; the walk is broken")
+        self.assertEqual(sorted(found - set(cfg["golden_dirs"])), [], "golden directories oracle/harness.json does not guard")
+        self.assertIn(self.BLOCK_HASHES, cfg["golden_files"])
+        self.assertTrue(os.path.exists(os.path.join(ROOT, self.BLOCK_HASHES)))
+
+    def test_a_block_hash_change_without_a_trailer_fails(self):
+        repo = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, repo)
+
+        def git(*args):
+            r = run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", *args], repo)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            return r.stdout.strip()
+
+        git("init", "-q")
+        git("commit", "-q", "--allow-empty", "-m", "root")
+        root = git("rev-parse", "HEAD")
+        with open(os.path.join(ROOT, self.BLOCK_HASHES)) as f:
+            doc = json.load(f)
+        self.assertGreater(len(doc["cases"]), 0)
+        doc["provenance"] = {**doc.get("provenance", {}), "blis_vllm_commit": root}
+        path = os.path.join(repo, self.BLOCK_HASHES)
+        os.makedirs(os.path.dirname(path))
+        with open(path, "w") as f:
+            json.dump(doc, f)
+        os.makedirs(os.path.join(repo, "oracle"))
+        shutil.copy(os.path.join(HERE, "requirements.lock"), os.path.join(repo, "oracle/requirements.lock"))
+        git("add", "-A")
+        git("commit", "-qm", "the fixture")
+        base = git("rev-parse", "HEAD")
+        first = doc["cases"][0]
+        key = next(k for k in first if k != "name")
+        first[key] = "changed"
+        with open(path, "w") as f:
+            json.dump(doc, f)
+        git("commit", "-qam", "change a recorded case")
+        r = run([sys.executable, "-I", os.path.join(HERE, "check_goldens.py"), "--config", os.path.join(HERE, "harness.json"),
+                 base, "HEAD"], repo)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("block_hashes.json decisions changed without a golden-reviewed: trailer", r.stdout)
+
+
 class CheckMocks(unittest.TestCase):
     """oracle/check_mocks.py over a scratch oracle directory."""
 
