@@ -3,7 +3,7 @@ module github.com/inference-sim/blis-vllm
 go 1.27.2
 
 require (
-	github.com/inference-sim/blis-substrate v0.14.2-0.20261116234330-b9bce3434eb5 // TEMPORARY: the pushed head of inference-sim/blis-substrate branch m3/parallel-block-requests, until it is released
+	github.com/inference-sim/blis-substrate v0.14.2-0.20261116235528-52f8fbbd1cfa // TEMPORARY: the pushed head of inference-sim/blis-substrate branch m3/parallel-block-requests, until it is released
 	github.com/sirupsen/logrus v1.9.4
 	github.com/stretchr/testify v1.12.1
 	gopkg.in/yaml.v3 v3.0.1
