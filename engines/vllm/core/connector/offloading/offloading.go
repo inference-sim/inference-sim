@@ -144,13 +144,26 @@ type reqState struct {
 	signaled bool
 }
 
+// manager is the OffloadingManager (vllm/v1/kv_offload/base.py:283-505@4ba787ec) as the
+// connector's scheduler side calls it: each method is the cpuManager method of the same name. The
+// CPU tier is one; the tiering manager, which fronts the CPU tier with secondary tiers, is another.
+type manager interface {
+	lookup(k Key) lookup
+	prepareLoad(keys []Key, a *reqAccess) []int
+	completeLoad(keys []Key)
+	prepareStore(keys []Key, a *reqAccess) (stored []Key, chunkIDs []int, evicted []Key, ok bool)
+	completeStore(keys []Key, success bool)
+	requestFinished(a *reqAccess)
+}
+
 // Scheduler is OffloadingConnectorScheduler for one engine.
 type Scheduler struct {
 	cfg        Config
 	groups     []groupCfg
 	full, swa  []int // _full_attention_groups, _sliding_window_groups (largest window first)
 	alignment  int   // alignment_tokens
-	manager    *cpuManager
+	manager    manager
+	cpu        *cpuManager // the CPU tier, which manager is or fronts
 	reqs       map[string]*reqState
 	loadJobs   []Job
 	flush      map[int]bool
@@ -183,7 +196,8 @@ func New(cfg Config) (*Scheduler, error) {
 				"beside which the connector is not diff-tested (%s)", g, Issue)
 		}
 	}
-	s := &Scheduler{cfg: cfg, manager: newCPUManager(cfg.NumChunks), reqs: map[string]*reqState{},
+	cpu := newCPUManager(cfg.NumChunks)
+	s := &Scheduler{cfg: cfg, manager: cpu, cpu: cpu, reqs: map[string]*reqState{},
 		flush: map[int]bool{}, allocated: map[int]bool{}, jobs: map[int]*jobStatus{}, pendingOf: map[int]map[int]bool{}}
 	if cfg.PrefixCaching {
 		s.loading = map[Key]bool{}
@@ -994,11 +1008,11 @@ type CPUChunk struct {
 
 // CPU is the CPU tier, least recent first, with its free and evictable chunk counts.
 func (s *Scheduler) CPU() (chunks []CPUChunk, free, evictable int) {
-	for _, k := range s.manager.lru.inRankOrder() {
-		c := s.manager.lru.chunks[k]
+	for _, k := range s.cpu.lru.inRankOrder() {
+		c := s.cpu.lru.chunks[k]
 		chunks = append(chunks, CPUChunk{Key: k, ID: c.id, RefCnt: c.refCnt})
 	}
-	return chunks, s.manager.numFree(), s.manager.numEvictable
+	return chunks, s.cpu.numFree(), s.cpu.numEvictable
 }
 
 // Group returns the key's group.
