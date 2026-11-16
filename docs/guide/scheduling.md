@@ -2,7 +2,7 @@
 
 Routing decides **which instance** receives a request. Scheduling decides **what order** requests are processed within an instance. These are independent policy axes — you can combine any router configuration with any scheduler.
 
-Each instance's engine orders its requests by its pool's `engine.scheduling_policy` in the scenario, as vLLM's `--scheduling-policy` does: `fcfs` (the default) or `priority`. No flag or policy-bundle key sets it; `--scheduler` and `--preemption-policy` were removed in v0.18.0 ([#2037](https://github.com/inference-sim/inference-sim/issues/2037)). On vLLM v0.32.0 priority scheduling (`scheduling_policy: priority`, SLO priority overrides) is refused for now: the host does not yet carry request priority across the engine contract. The priority sections below describe what `priority` selects.
+Each instance's engine orders its requests by its pool's `engine.scheduling_policy` in the scenario, as vLLM's `--scheduling-policy` does: `fcfs` (the default) or `priority`. No flag or policy-bundle key sets it; `--scheduler` and `--preemption-policy` were removed in v0.18.0. On vLLM v0.32.0 priority scheduling (`scheduling_policy: priority`, SLO priority overrides) is refused for now: the host does not yet carry request priority across the engine contract. The priority sections below describe what `priority` selects.
 
 ```yaml
 # In each pool of the scenario's deployment:
