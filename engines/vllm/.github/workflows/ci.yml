@@ -83,6 +83,7 @@ jobs:
       packs_v0_29: ${{ steps.filter.outputs.packs_v0_29 }}
       packs_v0_31: ${{ steps.filter.outputs.packs_v0_31 }}
       packs_v0_32: ${{ steps.filter.outputs.packs_v0_32 }}
+      packs_v0_33: ${{ steps.filter.outputs.packs_v0_33 }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -481,6 +482,9 @@ jobs:
           - pack: v0_32
             tag: v0.32.0
             commit: 5df63a7203cdb9328d824a27b682e77c7b9928be
+          - pack: v0_33
+            tag: v0.33.0
+            commit: 4ba787ec9959e566d3b587a796dff07673324da5
     steps:
       - if: needs.changes.outputs[format('packs_{0}', matrix.pack)] != 'true'
         run: echo "not selected - nothing this pack's tests read changed"
@@ -722,7 +726,7 @@ jobs:
       # resolution and record-width code, run unmodified over a stub platform (FID-1, FID-8).
       - name: the indexer cache dtype table is vLLM's own
         run: |
-          python -I oracle/indexer/oracle.py vllm-source check rules/v0_32/testdata/vllm_indexer_kv_dtype.json
+          python -I oracle/indexer/oracle.py vllm-source check rules/v0_33/testdata/vllm_indexer_kv_dtype.json
           python3 -I oracle/lower/check_replacements.py oracle/indexer/oracle.py oracle/indexer/replacements.json
       # Tier 5: the families vLLM's own Prometheus logger registers at runtime agree with the
       # manifest the source scan wrote (type and labels).

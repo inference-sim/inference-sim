@@ -13,7 +13,7 @@ import (
 
 	"github.com/inference-sim/blis-vllm/core/vllm"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
-	"github.com/inference-sim/blis-vllm/rules/v0_32"
+	"github.com/inference-sim/blis-vllm/rules/v0_33"
 )
 
 // resolvedEngine is a pool's engine block with the settings its release resolves filled in,
@@ -243,7 +243,7 @@ func architectureOf(g *model.Graph) string {
 		return g.Global.Architecture
 	}
 	if _, ok := glmMoeDsaConfigs[g.DerivedFrom.SHA256]; ok {
-		return v0_32.ArchGlmMoeDsa
+		return v0_33.ArchGlmMoeDsa
 	}
 	return ""
 }
