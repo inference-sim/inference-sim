@@ -76,6 +76,12 @@ which is how vLLM's engine core consumes its batch queue: it appends each schedu
 one end and takes results from the other. A batch that runs nothing (`Empty`) is not in
 flight, but may still start transfers.
 
+`Batch.SkipDrafts` says the drafter proposes no drafts in the step, because no request on any
+rank of the engine's data-parallel group can use them (vLLM v0.33.0's `skip_drafts`, ANDed across
+the group). The engine states the same value on every rank's batch of the step, and its
+`StepTime` prices the step without the passes that propose (`kernel.Batch.SkipDrafts`). An engine
+that does not speculate leaves it false.
+
 ## Transfers
 
 An engine reports each asynchronous KV move once, as an `engine.Transfer` among a batch's
