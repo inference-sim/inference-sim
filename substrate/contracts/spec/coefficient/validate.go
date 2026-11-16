@@ -53,7 +53,7 @@ func (s *Set) Validate() *validate.Problems {
 	// keys duplicate identity on the name ALONE and so rejects one set holding
 	// gemm_eps_max_bf16 at both {hardware: h100} and {hardware: h200}. The (name, scope,
 	// method) rule is the more expressive one and is authoritative once the registry adopts this
-	// validator as its single gate (blis-registry#29); until then a set this accepts could
+	// validator as its single gate (https://github.com/inference-sim/blis-registry/issues/29); until then a set this accepts could
 	// be rejected by the registry's Python gate, so the loosening is a contract change, not
 	// a like-for-like migration.
 	seen := map[string]bool{}

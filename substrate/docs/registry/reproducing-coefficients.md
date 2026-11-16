@@ -297,7 +297,7 @@ bodies are not present". The entries `fit_deepep_ll_graph.py` and `fit_host_link
 cite runs the API no longer serves (33356406487, 36334392363, 36367074689, 36402856875, and
 the swap_blocks bodies sha256 `26cad6ccbdaa`; each answered 404 on 2026-11-05). They stay as
 committed, and cannot be re-derived from public data. Their two tests are on
-`.github/quarantine.yaml` under inference-sim/blis-registry#57, so the gate reports them
+`.github/quarantine.yaml` under https://github.com/inference-sim/blis-registry/issues/57, so the gate reports them
 and fails when the entries expire, until the bodies are restored or the entries are
 re-cited through a reviewed refit.
 
@@ -511,8 +511,8 @@ When the removals below were made, the cost model requested five sets
 724 entries.
 
 `cost-model-memory` supplies the memory magnitudes the kernel had hard-coded
-(inference-sim/blis-registry#33); the cost model reads it
-(inference-sim/blis-latency-kernel#22). Every set under `coefficients/` has a reader, and
+(https://github.com/inference-sim/blis-registry/issues/33); the cost model reads it
+(https://github.com/inference-sim/blis-latency-kernel/issues/22). Every set under `coefficients/` has a reader, and
 [the reference overview](reference/index.md#which-sets-the-kernel-reads) lists the
 families within them that have none.
 

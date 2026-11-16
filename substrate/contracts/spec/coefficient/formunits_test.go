@@ -32,7 +32,7 @@ func TestAUnitThatTheFormulaDoesNotNeedIsRefused(t *testing.T) {
 		{"gemm_m_half_bf16", vocab.UnitDimensionless},
 		{"host_output_token", vocab.UnitMicrosecondsPerRequest},
 		{"cudagraph_capture_bytes_full", vocab.UnitBytesPerMicrosecond},
-		// blis-schemas#86: the per-token capture slopes multiply a token count, so a size per rank
+		// https://github.com/inference-sim/blis-schemas/issues/86: the per-token capture slopes multiply a token count, so a size per rank
 		// is the wrong unit for them, and a per-token unit is the wrong unit for a size.
 		{"cudagraph_capture_bytes_per_mixed_token_full_and_piecewise", vocab.UnitBytesPerRank},
 		{"cudagraph_capture_bytes_per_decode_token_full_and_piecewise", vocab.UnitBytesPerRank},

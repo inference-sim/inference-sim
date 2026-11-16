@@ -12,7 +12,7 @@ AISimulate rows, catalog descriptor and committed siblings, never from another p
 values. Run fit_marlin_grouped_ramp.py first: the W8A16 rationale cites the part's grouped
 Marlin ramp.
 
-Owns six entries per part, two fitted and four assumed (inference-sim/blis-registry#37,
+Owns six entries per part, two fitted and four assumed (https://github.com/inference-sim/blis-registry/issues/37,
 #38, #39):
 
   cost-model-attention.yaml, scoped {hardware: [<part>], model: [deepseek-v4.1-flash]}
@@ -121,7 +121,7 @@ PARTS = {
              "e2e": ("NO END-TO-END CHECK EXISTS FOR vLLM: AISimulate FPM (revision "
                      "03e006de) carries DeepSeek-V4.1-Flash on h200 under SGLang only -- "
                      "another engine, MoE kernel and checkpoint revision -- so it cannot "
-                     "arbitrate vLLM v0.31.0 pricing; blis-registry#42 has no arbiter until "
+                     "arbitrate vLLM v0.31.0 pricing; inference-sim/blis-substrate#130 has no arbiter until "
                      "a vLLM V4.1 forward-pass measurement exists, see methodology section "
                      "10.5.")},
     "h100": {"sku": "h100_sxm", "name": "H100", "sibling": "h200",
@@ -608,7 +608,7 @@ def entries(chip: str, g: dict, fm: dict, ix: dict, peak: float, fp8_tflops: flo
               f"for compute-bound GEMMs. TO REPLACE IT: an {chip} GEMM sweep with "
               f"MarlinMxfp8LinearKernel forced (AISimulate's vLLM GEMM collector has no "
               f"Marlin path). Read by no consumer until blis-latency-kernel selects a ramp "
-              f"by weight format and chip (blis-latency-kernel#34)."),
+              f"by weight format and chip (https://github.com/inference-sim/blis-latency-kernel/issues/34)."),
         lines("gemm_m_half_w8a16_mxfp8", bf16_mh, "tokens", "assumed", False, PART_SCOPE,
               [("model", f"NVIDIA AISimulate systems/data/{sku}/gemm/vllm/0.25.0/"
                 "gemm_perf.parquet via gemm_m_half_bf16", "primary")],
@@ -653,7 +653,7 @@ def entries(chip: str, g: dict, fm: dict, ix: dict, peak: float, fp8_tflops: flo
               f"ParallelEngramEmbedding.lookup(background=True) with cpu_offload on an {name} "
               f"host over 1-8,192 tokens at TP 1 and 8, and fit floor + bytes / rate. Read "
               f"by no consumer until the schema can state a host-resident gather "
-              f"(blis-schemas#48, blis-latency-kernel#38). NOT host_link_bandwidth, which is now "
+              f"(https://github.com/inference-sim/blis-schemas/issues/48, https://github.com/inference-sim/blis-latency-kernel/issues/38). NOT host_link_bandwidth, which is now "
               f"the measured copy-engine payload rate (fit_host_link.py); re-deriving this bound "
               f"from a measured SM-driven ceiling (vLLM PR #42212, ~51 GB/s on H100) was tried and "
               f"failed its held-out gate (h100 capped-replay ITL worse), so it is parked."),

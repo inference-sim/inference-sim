@@ -3,7 +3,7 @@
 
 WHAT THIS CLOSES. blis-latency-kernel priced every routed all-to-all backend -- DeepEP
 low-latency, high-throughput and v2 alike -- with NCCL's all-to-all floor and rate
-(blis-latency-kernel#57). DeepEP's kernels are not NCCL's: HT synchronises with the host
+(https://github.com/inference-sim/blis-latency-kernel/issues/57). DeepEP's kernels are not NCCL's: HT synchronises with the host
 to size its receive buffer, LL sends one message per (token, expert), v2 runs either an
 expanding eager path or a capturable one. This writer fits each from its own measurement.
 

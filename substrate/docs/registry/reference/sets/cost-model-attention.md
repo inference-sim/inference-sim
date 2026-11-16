@@ -51,7 +51,7 @@ against 20.0 pooled over both), is `attention_prefill_floor_trtllm_gen_kv_{bf16,
 non-latent layers when the engine reports that kernel as the implementation of the prefill
 primitive and an entry lists it (VAL-8), and not otherwise. They are `transferred`, not `measured`: no kernel hash shows the
 0.25.0 build runs the kernel of the v0.32.0 pin, and a `measured` entry needs one (D5, VAL-8;
-the hashes are tracked in inference-sim/blis-registry#73). So a lane price grades one rank lower
+the hashes are tracked in inference-sim/blis-substrate#149). So a lane price grades one rank lower
 than the pooled `measured` pair fitted on the same sweep; that is the label's cost, not the
 data's. Each entry records the range its rows covered, and every row has no cached prefix, so a
 prefill with cached context is outside the data. The lane replaces the pooled pair for every
