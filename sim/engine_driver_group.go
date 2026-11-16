@@ -227,7 +227,7 @@ func (d *EngineDriver) kickGroup(now int64) {
 		if !ran {
 			continue
 		}
-		o.notePreempted(ob)
+		o.notePreempted(ob, now)
 		o.admit(ob, now, now)
 		o.Metrics.Busy.Record(d.eng, ob, now, end)
 	}
