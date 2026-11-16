@@ -27,3 +27,36 @@ func TestMambaCheckpointLeavesTheHashLookahead(t *testing.T) {
 		t.Errorf("position(98, 16, drop, lookahead 3) = %d, want 80", got)
 	}
 }
+
+// A drafter whose layers fall in two groups flags both (vllm/v1/core/kv_cache_planning.py:
+// 1650-1656@4ba787ec): here a full-attention and a sliding-window draft layer after the
+// target's. v0.32.0 flagged only the group of the model's last layer, and only for MTP and
+// DeepSeek V4 drafters (_annotate_eagle_groups, vllm/v1/core/kv_cache_utils.py:2029-2083@5df63a72).
+func TestEveryGroupHoldingADraftLayerIsTheDrafters(t *testing.T) {
+	var layers []Layer
+	for range 4 {
+		layers = append(layers, Layer{Spec: LayerFull, KVHeads: 8, HeadSize: 128},
+			Layer{Spec: LayerSlidingWindow, Window: 64, KVHeads: 8, HeadSize: 128})
+	}
+	layers = append(layers, Layer{Spec: LayerFull, KVHeads: 8, HeadSize: 128, Draft: true},
+		Layer{Spec: LayerSlidingWindow, Window: 64, KVHeads: 8, HeadSize: 128, Draft: true})
+	groups, err := GroupLayers(layers, GroupOptions{TagDraftGroups: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 2 {
+		t.Fatalf("groups %v, want a full and a sliding-window group", groups)
+	}
+	for i, g := range groups {
+		if !g.Eagle {
+			t.Errorf("group %d (%v) is not flagged, though it holds a draft layer", i, g)
+		}
+	}
+	// Without the tag (a drafter that drops no block) no group is flagged.
+	groups, _ = GroupLayers(layers, GroupOptions{})
+	for i, g := range groups {
+		if g.Eagle {
+			t.Errorf("untagged: group %d flagged", i)
+		}
+	}
+}

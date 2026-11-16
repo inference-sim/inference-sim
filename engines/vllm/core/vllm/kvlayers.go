@@ -34,6 +34,9 @@ type KVLayerRun struct {
 	Alignment       int    `yaml:"alignment,omitempty"`
 	StrideAlignment int    `yaml:"stride_alignment,omitempty"`
 	BoundedReplay   bool   `yaml:"bounded_replay,omitempty"`
+	// Draft marks a drafter's layers (KVCacheSpec.is_draft, vllm/v1/kv_cache_interface.py:215
+	// @4ba787ec): the groups holding them are the drafter's (kv.GroupOptions.TagDraftGroups).
+	Draft bool `yaml:"draft,omitempty"`
 	// A "mamba" run is MambaSpec (kv.LayerMamba): StateBytes is its state_content_bytes per
 	// rank, BlockSize its mamba_block_size, and the fields below the rest of the spec.
 	PageSizePadded             int    `yaml:"page_size_padded,omitempty"`
@@ -45,10 +48,10 @@ type KVLayerRun struct {
 
 // KVGroups is the scheduler's KV cache groups for a model's layers, as vLLM groups them
 // (kv.GroupLayers); nil for no layers. disableHybrid is disable_hybrid_kv_cache_manager, and
-// trailingDrafter is _uses_trailing_mtp_layers (kv_cache_utils.py:1997-2013@5df63a72): the
-// drafter's layers are the last ones, so the group holding the last layer is the drafter's.
-func KVGroups(runs []KVLayerRun, disableHybrid, trailingDrafter bool) ([]kv.Group, error) {
-	return KVGroupsWith(runs, kv.GroupOptions{DisableHybrid: disableHybrid, TrailingDrafter: trailingDrafter})
+// tagDraftGroups is use_eagle_block_drop (TagsDraftGroups): the groups holding a run marked
+// draft are then the drafter's (vllm/v1/core/kv_cache_planning.py:1650-1656@4ba787ec).
+func KVGroups(runs []KVLayerRun, disableHybrid, tagDraftGroups bool) ([]kv.Group, error) {
+	return KVGroupsWith(runs, kv.GroupOptions{DisableHybrid: disableHybrid, TagDraftGroups: tagDraftGroups})
 }
 
 // KVGroupsWith is KVGroups with every option get_kv_cache_groups reads (kv.GroupOptions), among
@@ -277,7 +280,7 @@ func KVLayers(runs []KVLayerRun) ([]kv.Layer, error) {
 			layers = append(layers, kv.Layer{Spec: spec, Window: r.SlidingWindow, KVHeads: r.NumKVHeads,
 				HeadSize: r.HeadSize, BlockSize: r.BlockSize, TokensPerState: r.TokensPerState,
 				StateBytes: r.StateBytes, ElemBytes: r.ElemBytes, Alignment: r.Alignment,
-				StrideAlignment: r.StrideAlignment, BoundedReplay: r.BoundedReplay,
+				StrideAlignment: r.StrideAlignment, BoundedReplay: r.BoundedReplay, Draft: r.Draft,
 				PageSizePadded: r.PageSizePadded, MambaCacheMode: r.MambaCacheMode,
 				NumSpeculativeBlocks: r.NumSpeculativeBlocks, NumPrefillCheckpointBlocks: r.NumPrefillCheckpointBlocks,
 				PrefillCheckpointAlignment: r.PrefillCheckpointAlignment})
@@ -286,22 +289,17 @@ func KVLayers(runs []KVLayerRun) ([]kv.Layer, error) {
 	return layers, nil
 }
 
-// trailingDrafter is _uses_trailing_mtp_layers (vllm/v1/core/kv_cache_utils.py:1997-2013@5df63a72):
-// an EAGLE-family drafter (use_eagle, vllm/config/speculative.py:1944-1948) whose KV layers
-// register after the target's, which is MTP on any model and every EAGLE-family method on
-// DeepSeek V4 and V4.1. The engine block does not name the model, so a DeepSeek V4 layer spec
-// stands for its model type.
-func trailingDrafter(method string, runs []KVLayerRun) bool {
+// TagsDraftGroups is whether get_kv_cache_groups tags the drafter's groups for a speculative
+// method: the speculative config's use_eagle_block_drop, which holds for eagle, eagle3 and mtp
+// (needs_eagle_block_drop, vllm/config/speculative.py:2122-2149@4ba787ec;
+// vllm/v1/core/kv_cache_planning.py:1650-1656). The drafter's groups are then the ones holding
+// a run marked draft, whatever the model. v0.32.0 found the drafter's group by position instead,
+// the one holding the model's last layer, for MTP and DeepSeek V4 drafters only
+// (_uses_trailing_mtp_layers, vllm/v1/core/kv_cache_utils.py:1997-2013@5df63a72).
+func TagsDraftGroups(method string) bool {
 	switch method {
-	case "mtp":
+	case "eagle", "eagle3", "mtp":
 		return true
-	case "eagle", "eagle3", "dflash", "dspark":
-		for _, r := range runs {
-			switch r.Spec {
-			case "mla", "sliding_window_mla", "circular_buffer":
-				return true
-			}
-		}
 	}
 	return false
 }
@@ -323,7 +321,7 @@ func checkKVLayersFit(c Config, blockSize, maxModelLen, inFlight, prefillLookahe
 		return err
 	}
 	o := kv.GroupOptions{DisableHybrid: c.DisableHybridKVCacheManager != nil && *c.DisableHybridKVCacheManager,
-		TrailingDrafter: trailingDrafter(method, c.KVLayers)}
+		TagDraftGroups: TagsDraftGroups(method)}
 	var perBlock int64
 	if c.KVAvailableBytes > 0 {
 		if _, err = kv.PoolBytesPerBlock(layers, o, blockSize); err != nil {

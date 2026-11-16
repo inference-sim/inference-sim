@@ -656,7 +656,7 @@ func vllmRuns(runs []kernelmodel.KVLayerRun) []vllm.KVLayerRun {
 		out[i] = vllm.KVLayerRun{Count: r.Count, Spec: r.Spec, SlidingWindow: r.SlidingWindow,
 			NumKVHeads: r.NumKVHeads, HeadSize: r.HeadSize, BlockSize: r.BlockSize, TokensPerState: r.TokensPerState,
 			StateBytes: r.StateBytes, ElemBytes: r.ElemBytes, Alignment: r.Alignment,
-			StrideAlignment: r.StrideAlignment, BoundedReplay: r.BoundedReplay,
+			StrideAlignment: r.StrideAlignment, BoundedReplay: r.BoundedReplay, Draft: r.Draft,
 			PageSizePadded: r.PageSizePadded, MambaCacheMode: r.MambaCacheMode,
 			NumSpeculativeBlocks: r.NumSpeculativeBlocks, NumPrefillCheckpointBlocks: r.NumPrefillCheckpointBlocks,
 			PrefillCheckpointAlignment: r.PrefillCheckpointAlignment}

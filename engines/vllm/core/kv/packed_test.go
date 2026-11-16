@@ -207,10 +207,9 @@ func TestApproximateGCD(t *testing.T) {
 	}
 }
 
-// With a trailing drafter (MTP, or DeepSeek V4's DSpark), the group holding the model's last
-// layer is the drafter's (_annotate_eagle_groups, kv_cache_utils.py:2051-2109@5df63a72): the
-// probes above mark it, deepseek-v4-pro's second window group with MTP and
-// deepseek-v4.1-flash's third with DSpark.
+// The groups holding a layer marked draft are the drafter's (vllm/v1/core/kv_cache_planning.py:
+// 1650-1656@4ba787ec). With each probe's last layer marked, deepseek-v4-pro's second window group
+// is flagged and deepseek-v4.1-flash's third, the groups v0.32.0 found by position.
 func TestPackedGroupsFlagTheDrafterGroup(t *testing.T) {
 	for _, c := range []struct {
 		name   string
@@ -221,7 +220,8 @@ func TestPackedGroupsFlagTheDrafterGroup(t *testing.T) {
 		{"deepseek-v4.1-flash 128 dspark", deepseekV41FlashLayers(128, 2, false), 2},
 		{"deepseek-v4.1-flash 64 dspark", deepseekV41FlashLayers(64, 2, false), 2},
 	} {
-		got, err := GroupLayers(c.layers, GroupOptions{TrailingDrafter: true})
+		c.layers[len(c.layers)-1].Draft = true
+		got, err := GroupLayers(c.layers, GroupOptions{TagDraftGroups: true})
 		if err != nil {
 			t.Fatalf("%s: %v", c.name, err)
 		}

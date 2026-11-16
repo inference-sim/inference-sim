@@ -3,6 +3,7 @@
 package vllm
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -99,28 +100,31 @@ func TestKVPoolBlocksKeepAStatedElementSize(t *testing.T) {
 	}
 }
 
-// A trailing drafter's group is flagged when the engine block resolves: vLLM locates the drafter's
-// layers by position when they register after the target's (_uses_trailing_mtp_layers,
-// vllm/v1/core/kv_cache_utils.py:1997-2013@5df63a72), which is MTP on any model and every
-// EAGLE-family method on DeepSeek V4. Here two DeepSeek V4 windows and a compressed cache, the
-// drafter's window last: packed, the windows are two groups beside the compressed one, and the
-// second window group holds the drafter's layer, so only it is the drafter's; with no drafter no
-// group is.
+// The drafter's groups are the ones holding a layer marked draft (KVCacheSpec.is_draft), tagged
+// when the method drops the EAGLE block (vllm/v1/core/kv_cache_planning.py:1650-1656@4ba787ec).
+// Here two DeepSeek V4 windows and a compressed cache, packed as two window groups beside the
+// compressed one. v0.32.0 flagged the group of the model's last layer for MTP and DSpark alike
+// (_uses_trailing_mtp_layers, vllm/v1/core/kv_cache_utils.py:1997-2013@5df63a72). v0.33.0 flags
+// the group of the marked layer, which need not be last; flags none for DSpark, which drops no
+// block; and flags none when no layer is marked, so the coordinator then flags every group
+// (kv_cache_coordinator.py:129-135).
 func TestTheTrailingDrafterGroupIsFlagged(t *testing.T) {
 	const deepseek = "kv_layers:\n" +
 		"- {count: 1, spec: sliding_window_mla, sliding_window: 128, num_kv_heads: 1, head_size: 512, block_size: 64, state_bytes: 584, alignment: 576}\n" +
 		"- {count: 1, spec: mla, num_kv_heads: 1, head_size: 512, block_size: 256, tokens_per_state: 128, state_bytes: 584, alignment: 576}\n" +
-		"- {count: 1, spec: sliding_window_mla, sliding_window: 128, num_kv_heads: 1, head_size: 512, block_size: 64, state_bytes: 584, alignment: 576}\n"
+		"- {count: 1, spec: sliding_window_mla, sliding_window: 128, num_kv_heads: 1, head_size: 512, block_size: 64, state_bytes: 584, alignment: 576%s}\n"
+	const mtp = "speculative_config: {method: mtp, num_speculative_tokens: 1}\nmtp_nextn_predict_layers: 1\n"
 	for _, c := range []struct {
-		name, extra string
-		eagle       []bool
+		name, mark, extra string
+		eagle             []bool
 	}{
-		{"mtp", "speculative_config: {method: mtp, num_speculative_tokens: 1}\nmtp_nextn_predict_layers: 1\n", []bool{false, true, false}},
-		{"dspark", "speculative_config: {method: dspark, num_speculative_tokens: 2}\nuse_v2_model_runner: true\n", []bool{false, true, false}},
-		{"none", "", []bool{false, false, false}},
+		{"mtp, the last layer marked draft", ", draft: true", mtp, []bool{false, true, false}},
+		{"mtp, no layer marked", "", mtp, []bool{false, false, false}},
+		{"dspark", ", draft: true", "speculative_config: {method: dspark, num_speculative_tokens: 2}\nuse_v2_model_runner: true\n", []bool{false, false, false}},
+		{"no drafter", "", "", []bool{false, false, false}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			cfg, err := decodeConfig(block(t, deepseek+"block_size: 256\n"+c.extra))
+			cfg, err := decodeConfig(block(t, fmt.Sprintf(deepseek, c.mark)+"block_size: 256\n"+c.extra))
 			if err != nil {
 				t.Fatal(err)
 			}
