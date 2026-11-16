@@ -186,8 +186,8 @@ def entries(chip: str, g: dict, f: dict, peak: float, partwide_floor: float,
     sku, name = part["sku"], part["name"]
     scope = base.model_scope(chip)
     rec = BLOCK * g["record"]
-    src = [("model", f"NVIDIA AISimulate systems/data/{sku}/sparse_attention/vllm/0.25.0/"
-            f"{base.FLASHMLA_TABLE} (NVIDIA {name}), {base.FLASHMLA_LANE}, "
+    src = [("model", f"{base.table_cite(sku, base.FLASHMLA_TABLE)} (NVIDIA {name}), "
+            f"{base.FLASHMLA_LANE}, "
             f"{base.FLASHMLA_FIT_MODEL} (64 query heads, the h64 kernel), {f['n']} decode "
             f"points at <= {g['v41_blocks']} blocks", "primary"),
            ("model", "vLLM v0.31.0 models/deepseek_v41/nvidia/flashmla.py "

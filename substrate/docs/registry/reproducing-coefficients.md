@@ -20,19 +20,19 @@ the data comes from, and which command regenerates which file.
 
 | | |
 |---|---|
-| Repository | <https://github.com/ai-dynamo/aisimulate> |
+| Repository | <https://github.com/ai-dynamo/aisim> (renamed from `ai-dynamo/aisimulate` at f85518b3; the old name redirects) |
 | Docs | <https://ai-dynamo.org/aisimulate/> |
 | Licence | Apache-2.0, with one MIT third-party file carved out in the `LICENSE` NOTICE and attributed in `THIRD_PARTY_NOTICES.md`. GitHub's license API reports `NOASSERTION` because of that preamble; the text itself says "Except for the third-party material identified in that notice file, this codebase is licensed under the Apache License 2.0", and source files carry `SPDX-License-Identifier: Apache-2.0`. |
 | Provenance | Successor to [`ai-dynamo/aiconfigurator`](https://github.com/ai-dynamo/aiconfigurator); method described in arXiv:2601.06288. |
-| Fetch | `git clone https://github.com/ai-dynamo/aisimulate` — the sweeps are checked into git as Parquet. Git LFS is needed only for retained legacy `.txt` assets, which no fit in this registry reads. `pip install aisimulate` also ships the tree inside the wheel. |
-| Pin | Every committed value re-derives at `2f0f4cd8606d580567b253d02f3d699fe36db865` (2026-10-10), with the repository's own `catalog/` at the same commit as the registry. The `rederive` workflow checks out AISimulate at `AISIMULATE_SHA`; bump it deliberately, with the diff the writers produce. A catalog change to a part's datasheet figure moves every rate fitted as a fraction of it, so the writers' `--check` runs on the pull request that makes it. |
+| Fetch | `git clone https://github.com/ai-dynamo/aisim` — the sweeps are checked into git as Parquet. Git LFS is needed only for retained legacy `.txt` assets, which no fit in this registry reads. `pip install aisimulate` also ships the tree inside the wheel. |
+| Pin | Every committed value re-derives at `6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18` (2026-11-16), with the repository's own `catalog/` at the same commit as the registry. The `rederive` workflow checks out AISimulate at `AISIMULATE_SHA`; bump it deliberately, with the diff the writers produce. Two families read a second commit: the h100/h200 vLLM 0.31.0 all-reduce at `AISIMULATE_ALLREDUCE_SHA` (7980e950), and the DeepSeek-V4.1 FlashMLA sparse decode kernel table `dsv4_hca_attn_module_perf` at `AISIMULATE_DSV4_KERNEL_SHA` (2f0f4cd8, exported as `AISIMULATE_DSV4_KERNEL_DATA`), which AISimulate retired at e8cbe2dc; its successor times the whole attention module, a different measurement boundary. A catalog change to a part's datasheet figure moves every rate fitted as a fraction of it, so the writers' `--check` runs on the pull request that makes it. |
 | Python | `pip install --require-hashes -r scripts/requirements-fit.txt`, from `registry/`: the validator's dependencies plus `numpy`, `pandas` and `pyarrow`, which the fitters need to read Parquet. |
 
 The two trees the fits read are **not** at the repository root:
 
 ```
-python/aisimulate/src/aisimulate_core/systems/<sku>.yaml          # system descriptors
-python/aisimulate/src/aisimulate_core/systems/data/<sku>/<op>/<framework>/<version>/*.parquet
+python/aisim/src/aisim_core/systems/<sku>.yaml          # system descriptors
+python/aisim/src/aisim_core/systems/data/<sku>/<op>/<framework>/<version>/*.parquet
 ```
 
 Export that second path once; every script below honours it. The fitters read the
@@ -40,7 +40,8 @@ repository's `catalog/` unless `BLIS_CATALOG` names another directory, and
 `scripts/rederive.sh` requires it. Run them from `registry/`:
 
 ```bash
-export AISIMULATE_DATA=<aisimulate>/python/aisimulate/src/aisimulate_core/systems/data
+export AISIMULATE_DATA=<aisim>/python/aisim/src/aisim_core/systems/data
+export AISIMULATE_DSV4_KERNEL_DATA=<aisim @2f0f4cd8>/python/aisimulate/src/aisimulate_core/systems/data  # the DeepSeek-V4.1 writers
 export BLIS_CATALOG=$PWD/../catalog
 ```
 
@@ -113,7 +114,7 @@ the `systems` directory, not `systems/data`:
 
 ```bash
 python scripts/emit_primitives.py \
-    <aisimulate>/python/aisimulate/src/aisimulate_core/systems "$BLIS_CATALOG"
+    <aisim>/python/aisim/src/aisim_core/systems "$BLIS_CATALOG"
 ```
 
 and its output is a reference to compare the descriptor entries against, not a file to
@@ -381,7 +382,7 @@ citations name the git SHA where that file can still be read.
 `scripts/emit_memory.py` writes the whole file, and `--check` gates it.
 
 * The activation multiples and floor are `vendor_spec`, read with `ast` from AISimulate's
-  `aisimulate_core/sdk/backends/` (located from `$AISIMULATE_DATA`, two directories up).
+  `aisim_core/sdk/backends/` (located from `$AISIMULATE_DATA`, two directories up).
   Verified against AISimulate `70305030`.
 * The CUDA-graph capture bytes are `assumed`, the median per mode of the committed
   `registry/docs/vllm-cudagraph-capture-samples.csv`. That CSV is regenerated from the vLLM issue
@@ -467,7 +468,7 @@ to what a later re-run produces). The order matters in one place: prefill attent
 the bf16 GEMM ramp **from the registry**, so the envelope must be committed first.
 
 ```bash
-export AISIMULATE_DATA=<aisimulate>/python/aisimulate/src/aisimulate_core/systems/data
+export AISIMULATE_DATA=<aisim>/python/aisim/src/aisim_core/systems/data
 export BLIS_CATALOG=$PWD/../catalog
 
 # 1. descriptors (vendor_spec, from NVIDIA's own systems/gb300.yaml)
