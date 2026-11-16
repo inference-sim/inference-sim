@@ -195,14 +195,17 @@ def _listed(text: str, key: str) -> list[str]:
 
 
 def _repo(text: str) -> str | None:
-    m = re.search(r"^\s+repo:\s*(\S+)\s*$", text, re.M)
+    """The Hugging Face repository a model.yaml's top-level `source:` block names: its direct
+    two-space `repo:` key, and no other block's (a base model's or a quantisation's)."""
+    m = re.search(r"^source:[ \t]*\n(?:[ \t]+.*\n|[ \t]*\n)*?  repo:[ \t]*(\S+)[ \t]*$", text, re.M)
     return m.group(1) if m else None
 
 
 def _speculator(graph: str) -> str | None:
     """The method a graph's speculator states, as a deployment states it: every model-specific
     MTP name is mtp (the catalog's derive_graph.vllm_speculative_method)."""
-    m = re.search(r"^speculator:\s*\n(?:\s+.*\n)*?\s+method:\s*(\S+)", graph, re.M)
+    # The speculator block's own two-space `method:`, never one nested under another of its keys.
+    m = re.search(r"^speculator:[ \t]*\n(?:[ \t]+.*\n|[ \t]*\n)*?  method:[ \t]*(\S+)", graph, re.M)
     if not m:
         return None
     return "mtp" if m.group(1).endswith("_mtp") else m.group(1)
@@ -227,7 +230,7 @@ def speculative_drafter(dep: dict, catalog: Path = DEFAULT_CATALOG) -> tuple[str
     own = _speculator(graph) == spec
     draft = stated.get("draft_model")
     k = stated.get("num_speculative_tokens")
-    if not draft or draft == _repo(model_yaml):
+    if not draft or draft.casefold() == (_repo(model_yaml) or "").casefold():
         if own:
             return None, None
         return None, (f"{model} drafts with {spec} x{k} and names no draft checkpoint, and its "
@@ -302,7 +305,10 @@ def emit(dep: dict, workloads: set[str], labels: set[str],
     if "enable_prefix_caching" in stated:
         lines.append("# enable_prefix_caching: stated by the run.")
     if spec and drafter:
-        lines.append(f"# speculative: stated by the run, drafting with the catalog's {drafter}.")
+        # The corpus's stated_config records the draft checkpoint's repository but no revision
+        # (extract_inferencex_direct.DEPLOYMENT_FIELDS), so the drafter's revision is unchecked.
+        lines.append(f"# speculative: stated by the run, drafting with the catalog's {drafter}; "
+                     "the run records no draft revision.")
     elif spec:
         lines.append("# speculative: stated by the run.")
     lines += [
