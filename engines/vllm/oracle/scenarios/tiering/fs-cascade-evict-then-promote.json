@@ -1,0 +1,174 @@
+{
+ "description": "A chunk stored to the CPU tier is cascaded to the fs tier; once the CPU tier evicts it, a lookup finds it on disk: RETRY until the step's lookup batch resolves, then HIT_PENDING while it is promoted, then HIT, loaded from DISK.",
+ "spec": {
+  "name": "TieringOffloadingSpec",
+  "cpu_bytes_to_use": 49152,
+  "worker_kv_bytes_per_block": 16384,
+  "world_size": 1,
+  "blocks_per_chunk": 1,
+  "extra": {
+   "secondary_tiers": [
+    {
+     "type": "fs",
+     "root_dir": "@root",
+     "n_read_threads": 1,
+     "n_write_threads": 0
+    }
+   ]
+  }
+ },
+ "calls": [
+  {
+   "m": "on_new_request",
+   "ctx": "a"
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "a",
+   "keys": [
+    "k1",
+    "k2"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "ctx": "a",
+   "keys": [
+    "k1",
+    "k2"
+   ]
+  },
+  {
+   "m": "has_pending_work"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": [
+    "a"
+   ]
+  },
+  {
+   "m": "on_request_finished",
+   "ctx": "a"
+  },
+  {
+   "m": "on_new_request",
+   "ctx": "b"
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "b",
+   "keys": [
+    "k3",
+    "k4",
+    "k5"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "ctx": "b",
+   "keys": [
+    "k3",
+    "k4",
+    "k5"
+   ]
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k1"
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k2"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": [
+    "b"
+   ]
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k1"
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k2"
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k6"
+  },
+  {
+   "m": "has_pending_work"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": []
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k1"
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k2"
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k6"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": []
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k6"
+  },
+  {
+   "m": "get_load_source",
+   "ctx": "b",
+   "key": "k1"
+  },
+  {
+   "m": "prepare_load",
+   "ctx": "b",
+   "keys": [
+    "k1",
+    "k2"
+   ]
+  },
+  {
+   "m": "complete_load",
+   "ctx": "b",
+   "keys": [
+    "k1",
+    "k2"
+   ]
+  },
+  {
+   "m": "has_pending_work"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": []
+  },
+  {
+   "m": "on_request_finished",
+   "ctx": "b"
+  },
+  {
+   "m": "take_events"
+  }
+ ]
+}
