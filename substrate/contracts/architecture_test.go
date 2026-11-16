@@ -129,22 +129,6 @@ func TestTheFieldListImportsNoEngineKnowledge(t *testing.T) {
 	}
 }
 
-// TestEngineSettingsImportOnlyTheStandardLibrary: a latency kernel prices from these settings
-// and an engine model fills them from its own engine block, so they import nothing either side
-// would then share.
-func TestEngineSettingsImportOnlyTheStandardLibrary(t *testing.T) {
-	out, err := exec.Command("go", "list", "-deps", "-f", "{{if not .Standard}}{{.ImportPath}}{{end}}",
-		"./kernel/enginesettings").Output()
-	if err != nil {
-		t.Fatalf("go list -deps ./kernel/enginesettings: %v", err)
-	}
-	for _, dep := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if dep != "" && dep != "github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings" {
-			t.Errorf("kernel/enginesettings depends on %s; it must need only the standard library", dep)
-		}
-	}
-}
-
 // TestEmbedImportsOnlyTheStandardLibrary: the router contract is implemented in a router's
 // repository and called from a simulator's, so importing it must cost either side nothing but
 // this module. A dependency here would become a dependency of every router that implements it.

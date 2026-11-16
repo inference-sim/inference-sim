@@ -6,9 +6,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/rules"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/units"
 	"github.com/inference-sim/blis-substrate/load"
 )
@@ -40,9 +38,7 @@ pools:
 `
 	r, name := openRepos(t, d, body)
 	r.Rules = func(string) rules.EngineRules { return inertRules{} }
-	r.EngineSettings = func(*deployment.Deployment, int) (enginesettings.Settings, error) {
-		return enginesettings.Settings{BlockSize: 16, MaxNumSeqs: 64, MaxNumBatchedTokens: 8192, MaxModelLen: 8192}, nil
-	}
+	r.DraftModel, r.Lower = noDrafter, lowerTo(8192, 16, 0)
 	k, err := OpenPool(name, r, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -162,10 +158,7 @@ func specKernel(t *testing.T) *Kernel {
 		t.Fatal(err)
 	}
 	for _, c := range perturbationScenarios(t, d, "muse-spark-open-dspark") {
-		in := c.in
-		st := in.Engine
-		st.Speculative = &enginesettings.Speculative{Method: "dspark", NumSpecTokens: 7}
-		in.Engine = st
+		in := withPlan(c.in, func(l *plan.Lowered) { l.Plan.Drafts.Chain, l.Plan.Drafts.OwnWorkspace = 7, true })
 		k, err := New(in)
 		if err != nil {
 			continue

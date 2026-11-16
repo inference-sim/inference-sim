@@ -33,10 +33,11 @@ import "math"
 // 576 * dtype_width").
 //
 // The layouts that state their own size are applied by the kernel where a deployment names
-// them, or where its backend repacks the cache (the packed ds_mla caches; see Kernel.lift and
-// sparseMLABackend in the root package). COVERAGE LIMIT: per-token-head quantization adds two
-// fp32 scales a token (vllm/model_executor/layers/attention/mla_attention.py:1580-1593), so
-// the kernel refuses those cache dtypes rather than size them here; padded pages are sized by
+// them, or where its backend repacks the cache (the packed ds_mla caches, whose cell the plan
+// states; see Kernel.lift in the root package). COVERAGE LIMIT: per-token-head quantization adds
+// two fp32 scales a token (vllm/model_executor/layers/attention/mla_attention.py:1580-1593), so
+// the engine's lowering refuses those cache dtypes rather than hand the kernel a width it does
+// not describe (for vLLM, blis-vllm's compat/lowering); padded pages are sized by
 // their own specs (vllm/v1/kv_cache_interface.py:527-536), and a compressed cache (a
 // compress_ratio layer) holds fewer states than tokens. Neither is modelled HERE: a graph
 // that states its caches (blis-schemas model.Cache) is sized from them in the root package

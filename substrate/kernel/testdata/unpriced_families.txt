@@ -146,7 +146,6 @@ collective_transition_rate_reduce_scatter_int8_<R>rank_h200 # never read
 collective_transition_rate_reduce_scatter_int8_<R>rank_l40s # never read
 cudagraph_capture_bytes_full # never read
 cudagraph_capture_bytes_full_decode_only # never read
-cudagraph_capture_bytes_per_decode_token_full_and_piecewise # read but changes no price
 cudagraph_capture_bytes_piecewise # never read
 engine_workspace_bytes # read but changes no price
 gemm_eps_max_fp8_block # never read

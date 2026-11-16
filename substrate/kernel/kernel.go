@@ -28,7 +28,6 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
@@ -54,9 +53,6 @@ type Kernel struct {
 	plan   *price.Plan
 	pool   deployment.Pool
 	chip   hardware.Chip
-	// engine is the typed engine-settings carrier a caller handed in (Inputs.Engine), a deep
-	// copy the kernel owns, kept only for Engine; zero when the caller handed a lowered plan.
-	engine enginesettings.Settings
 	// low is the pool's plan as the engine's lowering resolved it (Inputs.Lowered): the engine
 	// settings the kernel prices from, in neutral words. Nothing else of the engine is read.
 	low plan.PoolPlan
@@ -325,7 +321,10 @@ type Kernel struct {
 
 	// decodeContext is how the decode-context-parallel combine runs: its backend and the
 	// stripe each rank holds. Meaningful only when the layout's DCP exceeds one.
-	decodeContext resolve.DecodeContext
+	decodeContext plan.DecodeContextPlan
+	// overrides are the settings the engine's lowering resolved to other than stated
+	// (plan.Lowered.Overrides), reported in Resolved as received.
+	overrides []plan.Override
 
 	// Fixed occupancy, computed once.
 	fixed kernel.MemoryBreakdown
@@ -1301,9 +1300,8 @@ func (k *Kernel) dcpDecodeTokens(l *price.PlannedLayer, kind model.AttentionKind
 	if !bounded && !shards {
 		return -1
 	}
-	// The stripe as resolved: stated, pinned to the block size under NIXL, or the
-	// engine's default of 1 (resolve.ResolveDecodeContext).
-	interleave := k.decodeContext.Interleave
+	// The stripe as the engine resolved it (Plan.DecodeContext.Interleave).
+	interleave := int(k.decodeContext.Interleave)
 	var total float64
 	for _, ctx := range contexts {
 		if ctx <= 0 {
@@ -1406,7 +1404,7 @@ func (k *Kernel) dcpDecodeCollectives(l *price.PlannedLayer,
 			r*attnHeads*queryWidth*activationBytes)
 	}
 
-	if k.decodeContext.CommBackend == resolve.DCPAllToAll {
+	if k.decodeContext.Combine == plan.CombineAllToAll {
 		const lsePack = 2 // an fp32 LSE in two 16-bit lanes
 		charge(collKey{Op: model.OpAll2All, Group: price.GroupDCP},
 			r*attnHeads*(outWidth+lsePack)*activationBytes)
@@ -1953,18 +1951,12 @@ func (k *Kernel) Resolved() kernel.Resolution { return k.resolution }
 // worth more than one a reader has to keep.
 func (k *Kernel) Deployment() deployment.Pool { return clonePool(k.pool) }
 
-// Engine returns the engine settings the kernel prices with: the caller's decoding of the
-// pool's engine block (Inputs.Engine), as a deep copy for the same reason Deployment is one.
 // Graph is the model graph this kernel priced: the scenario's graph as served on the chip
-// (its architecture overlay resolved), with a drafter named by speculative.draft_model grafted
+// (its architecture overlay resolved), with the drafter the plan names (Inputs.Draft) grafted
 // on as its speculator. An engine model sizing its KV cache groups reads the same layers, so it
 // does not rebuild a second answer to which layers run. A copy the caller may keep; its slices
 // are shared, so treat it as read-only.
 func (k *Kernel) Graph() model.Graph { return *k.graph }
-
-// Engine returns the typed engine-settings carrier the kernel was built from (Inputs.Engine), a
-// deep copy; it is empty for a kernel built from a lowered plan, which reads no engine setting.
-func (k *Kernel) Engine() enginesettings.Settings { return k.engine.Clone() }
 
 // DecodeContextParallelWidth returns how many ranks shard the decode KV cache.
 //

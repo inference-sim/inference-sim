@@ -16,7 +16,6 @@ var relaxations = []Relaxation{
 	{Repo: "blis-vllm", Path: "rules/v0_29/", Milestone: 4, Reason: "rules/v0_29 (plan §3.3)"},
 	{Repo: "blis-vllm", Path: "rules/v0_31/", Milestone: 4, Reason: "rules/v0_31 and the v0.31 resolution code (plan §3.3)"},
 	{Repo: "blis-substrate", Path: "contracts/rules/", Milestone: 4, Reason: "contracts/rules (plan §3.3)"},
-	{Repo: "blis-substrate", Path: "contracts/kernel/enginesettings/", Milestone: 4, Reason: "contracts/kernel/enginesettings (plan §3.3)"},
 	{Repo: "inference-sim", Path: "cmd/", Match: "scheduler", Milestone: 4, Reason: "--scheduler (inference-sim #2037)"},
 	{Repo: "inference-sim", Path: "cmd/", Match: "preemption-policy", Milestone: 4, Reason: "--preemption-policy (#2037)"},
 	{Repo: "inference-sim", Path: "cmd/", Match: "dp-load-balancing", Milestone: 4, Reason: "--dp-load-balancing (#2037)"},
