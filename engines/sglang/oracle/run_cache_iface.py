@@ -23,7 +23,7 @@ A sequence:
      "cache": {"page_size": n, "kv_size": n, "max_num_reqs": n, "max_context_len": n,
                "layer_num": n, "head_num": n, "head_dim": n, "kv_cache_events": bool},
      "calls": [{"on": "cache"|"allocator"|"req_to_token", "m": method, ...arguments, "as": name}]}
-A call's arguments: "tokens" (a key), "value" (a name bound by "as", or [name, start, end] for a
+A call's arguments: "tokens" (a key, namespaced by "extra_key" and "cache_salt" when given), "value" (a name bound by "as", or [name, start, end] for a
 slice of it), "node" (a name bound to a match or insert result, whose last device node it is),
 "lock" (a name bound by inc_lock_ref), "n", "num_tokens", "prev_prefix_len".
 
@@ -117,7 +117,8 @@ def build_cache(cfg: dict):
                                             kvcache=kv, need_sort=False)
     params = CacheInitParams(disable=False, req_to_token_pool=req_to_token, token_to_kv_pool_allocator=alloc,
                              page_size=page, tree_components=(ComponentType.FULL,),
-                             enable_kv_cache_events=bool(cfg.get("kv_cache_events", False)))
+                             enable_kv_cache_events=bool(cfg.get("kv_cache_events", False)),
+                             dynamo_kv_event_format=bool(cfg.get("dynamo_kv_event_format", False)))
     return UnifiedRadixCache(params=params), alloc, req_to_token
 
 
@@ -149,7 +150,7 @@ def drive_sequence(sglang_root: str, path: str) -> dict:
         return getattr(r, "last_device_node", r)
 
     def key(c):
-        return RadixKey(array("q", c["tokens"]))
+        return RadixKey(array("q", c["tokens"]), c.get("extra_key"), cache_salt=c.get("cache_salt"))
 
     with mon:
         cache, alloc, req_to_token = build_cache(sq["cache"])

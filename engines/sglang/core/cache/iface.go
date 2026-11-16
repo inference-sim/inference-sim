@@ -171,7 +171,9 @@ type Req struct {
 	KV             ReqKV
 	LastNode       *NodeID
 	Lock           *TreeLock
-	Finished       bool
+	// PrefixLen is the matched prefix the request's extend starts after.
+	PrefixLen int
+	Finished  bool
 }
 
 // PrefixCache is BasePrefixCache (base_prefix_cache.py:390-741@297e54fd): what the scheduler
@@ -350,7 +352,20 @@ type Allocator interface {
 	// cannot fit.
 	MaxNewTokensForMemory(inputTokens, maxNewTokens, tokenCapacity int, slidingWindowSize, chunkSize *int) (int, bool)
 	VerifyByteAccounting() []string
+	// MambaFullCacheDonor is the shared-pool donor (allocator/base.py:192-194@297e54fd), or nil
+	// for an allocator with none, which every modelled allocator is.
+	MambaFullCacheDonor() MambaFullCacheDonor
+	// GetExtendAllocationDemand is the tokens an extend batch evicts for before a paged extend
+	// (allocator/base.py:144-153@297e54fd).
+	GetExtendAllocationDemand(prefixLens, seqLens []int, conservativeNumTokens, shardSize int) int
 	GetKVCache() KVPool
+}
+
+// MambaFullCacheDonor is MambaFullCacheDonor (allocator/base.py:27-38@297e54fd): a shared pool
+// whose FULL slots can fund Mamba state. No modelled allocator is one.
+type MambaFullCacheDonor interface {
+	FullTokensBeforeMambaRecheck(targetSize int) int
+	PrepareMambaAllocation(targetSize int)
 }
 
 // Segment is one (slots, start position) pair of free_segments.
