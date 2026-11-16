@@ -12,7 +12,7 @@ import (
 )
 
 // graphResolver is the kernel's typed report of its CUDA-graph resolution
-// (blis-latency-kernel CaptureTokens and GraphModes, kernel#54): the largest step a captured
+// (blis-latency-kernel CaptureTokens and GraphModes, https://github.com/inference-sim/blis-latency-kernel/issues/54): the largest step a captured
 // graph covers, and the modes -- "FULL", "PIECEWISE" or "NONE" -- a uniform decode step and
 // every other step run under, after the kernel's overrides.
 type graphResolver interface {

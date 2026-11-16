@@ -36,7 +36,7 @@ func engineCapacity(k *Kernel, gib float64, maxModelLen int) (tokens, slack floa
 // DSpark K=5, --max-model-len 1048576, --max-num-batched-tokens 8192, --block-size 64,
 // max_cudagraph_capture_size 64) reported 61.18 GiB of KV cache and 28,706,997 tokens
 // (vllm:cache_config_info of our calibration runs,
-// and inference-sim/blis-latency-kernel#46). From the same 61.18 GiB the kernel's figures give
+// and https://github.com/inference-sim/blis-latency-kernel/issues/46). From the same 61.18 GiB the kernel's figures give
 // the same count, to the rounding of the logged GiB; sized at the steady decode hold they
 // would give 25% more.
 func TestKVCapacityIsTheEnginesOwnFigureOnH200(t *testing.T) {

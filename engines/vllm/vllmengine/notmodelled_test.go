@@ -177,8 +177,8 @@ var pricedByTheKernel = map[string]string{
 	"disable_custom_all_reduce":         "disable_custom_all_reduce: true\n#78",
 	"disable_cascade_attn":              "disable_cascade_attn: false\n#78",
 	"mamba_cache_dtype":                 "mamba_cache_dtype: float32\n#83",
-	"moe_backend":                       "moe_backend: triton\n#75",
-	"kernel_config.moe_backend":         "moe_backend: triton\n#75",
+	"moe_backend":                       "moe_backend: triton\n#150",
+	"kernel_config.moe_backend":         "moe_backend: triton\n#150",
 	"enable_dbo":                        "enable_dbo: true\n#74",
 	"enable_eplb":                       "enable_eplb: true\n#108",
 	"eplb_config.num_redundant_experts": "enable_eplb: true\neplb_config: {num_redundant_experts: 8}\n#108",
@@ -533,7 +533,7 @@ func TestPrepareStatesMambaModelOnlyForARecurrentModel(t *testing.T) {
 // attention_config.use_trtllm_attention is refused whatever its value, on every part. Which prefill
 // kernel runs is the engine's to resolve and to report as the implementation of attention.prefill
 // (VAL-8); this engine reports none yet, which needs the code hash of the trtllm-gen prefill kernel of
-// its FlashInfer pin, published by an engine release's kernel_impls.json (inference-sim/blis-registry#73).
+// its FlashInfer pin, published by an engine release's kernel_impls.json (inference-sim/blis-substrate#149).
 // The kernel reads no such setting, so a stated value would be priced as the default and dropped
 // without a word; the engine says so first, citing blis-vllm#80.
 func TestTheEngineRefusesUseTRTLLMAttentionWhateverItsValue(t *testing.T) {

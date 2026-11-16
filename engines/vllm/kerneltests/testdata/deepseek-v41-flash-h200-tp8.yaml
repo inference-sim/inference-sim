@@ -1,6 +1,6 @@
 # DeepSeek-V4.1-Flash on one 8-GPU H200 node under plain tensor parallelism, with DSpark
-# drafting five tokens a step: the deployment blis-catalog#29's graph and the kernel issues it
-# raised (blis-latency-kernel#30-#40) were measured on.
+# drafting five tokens a step: the deployment https://github.com/inference-sim/blis-catalog/issues/29's graph and the kernel issues it
+# raised (https://github.com/inference-sim/blis-latency-kernel/issues/30 to https://github.com/inference-sim/blis-latency-kernel/issues/40) were measured on.
 #
 # Hand-written. The cache dtype is stated as fp8, which V4.1's attention backend serves as its
 # packed fp8_ds_mla record on SM90; the block size is left unstated, so the engine picks the

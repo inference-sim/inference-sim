@@ -121,7 +121,7 @@ func (p Placement) GroupNodes(replicas, ranksPerReplica int) int {
 // Plan is the PoolPlan this placement and its KV tiers describe. It states the pool's chip, network,
 // layout and KV tiers, which are the engine's own; it does not state the lowered layers, the KV groups,
 // the captured graphs or the memory breakdown, which are the cost model's resolution and are not moved
-// here (blis-latency-kernel#84). A transfer is priced against the plan's tiers and layout alone
+// here (https://github.com/inference-sim/blis-latency-kernel/issues/84). A transfer is priced against the plan's tiers and layout alone
 // (PoolPlan.CheckTransfer). The result shares no memory with the placement.
 func (p Placement) Plan(tiers []plan.KVTier) plan.PoolPlan {
 	return plan.PoolPlan{Hardware: p.Hardware, Fabric: p.Fabric, Layout: p.Layout(), Tiers: append([]plan.KVTier(nil), tiers...)}

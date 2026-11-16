@@ -61,7 +61,7 @@ func TestKVOffloadFromDeployment_RefusesWhatTheModelDoesNotImplement(t *testing.
 		{"a secondary tier without the tiering spec", deployment.Offload{Tiers: append(cpu, deployment.Tier{Device: "nvme_gen4", Bytes: 1 << 40})}, `offload.tiers[1] ("nvme_gen4")`},
 		{"an object store", deployment.Offload{Spec: "TieringOffloadingSpec", Tiers: append(cpu, deployment.Tier{Device: "s3", Bytes: 1 << 40})}, "obj secondary tier"},
 		{"no CPU tier", deployment.Offload{Spec: "TieringOffloadingSpec", Tiers: []deployment.Tier{{Device: "nvme_gen4", Bytes: 1 << 40}}}, "offload.tiers[0]"},
-		// The connector options came with the v0.32.0 engine (blis-schemas#102); a stated one
+		// The connector options came with the v0.32.0 engine (https://github.com/inference-sim/blis-schemas/issues/102); a stated one
 		// would otherwise run at the model's default (blocks_per_chunk 1, eager stores).
 		{"blocks_per_chunk", deployment.Offload{Tiers: cpu, ConnectorOptions: connectorOptions(engineconfig.ConnectorOptions{BlocksPerChunk: 16})}, "offload.connector_options (blocks_per_chunk)"},
 		{"lazy_offload on the simple connector", deployment.Offload{Tiers: cpu, Connector: SimpleConnector,
