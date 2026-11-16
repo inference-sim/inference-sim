@@ -5,7 +5,6 @@ package blisvllm
 import (
 	_ "embed"
 	"fmt"
-	"sync"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/spec/kernelimpls"
@@ -20,18 +19,12 @@ import (
 //go:embed kernel_impls.json
 var KernelImplsJSON []byte
 
-var (
-	tableOnce sync.Once
-	table     *kernelimpls.Table
-	tableErr  error
-)
+// table is the embedded table, parsed once when the package is initialised.
+var table, tableErr = kernelimpls.Parse("kernel_impls.json", KernelImplsJSON)
 
 // KernelImpls returns the table, loaded through the substrate's strict loader, which recomputes
 // every row's code hash.
-func KernelImpls() (*kernelimpls.Table, error) {
-	tableOnce.Do(func() { table, tableErr = kernelimpls.Parse("kernel_impls.json", KernelImplsJSON) })
-	return table, tableErr
-}
+func KernelImpls() (*kernelimpls.Table, error) { return table, tableErr }
 
 // ArchOf names the architecture of a device of compute capability major.minor as the table
 // does: 9.0 is sm_90a, 10.0 sm_100a, 10.3 sm_103a.
