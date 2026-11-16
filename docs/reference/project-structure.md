@@ -24,7 +24,6 @@ inference-sim/
 │   ├── catalog_root.go        # The run's data: the catalog and registry embedded in the pinned blis-substrate, replaced by --catalog / BLIS_CATALOG or --registry / BLIS_REGISTRY, with --catalog-overlay / --registry-overlay; runData opens them once
 │   ├── catalog_provenance.go  # Build pins and each opened pool's kernel evidence (kernelProvenance, buildVersions), the Result's reports.kernel and revisions
 │   ├── catalog_workloads.go   # Named workload presets read from the catalog: <catalog>/workloads/<name>.yaml (#1769). The single reader and PresetConfig construction site behind `blis run --workload` and `blis convert preset`; strict KnownFields parsing (R10), refusals name the path and list the presets the catalog defines
-│   ├── catalog_load.go        # Strict WHOLE-catalog load behind the R1/C6 CI gate (#1750): loads every entry through the code path a run uses (models, presets via readCatalogPresetWorkload, devices via loadCatalogStorageDevices), plus strict readers for the two namespaces no run reads yet (`models/*/model.yaml`, `hardware/*.yaml`). Requires both halves of a model entry, refuses a GPU/tensor-parallel key in any catalog-authored YAML, accumulates and sorts problems (INV-6). Driven by scripts/catalog-load-gate.sh; there is deliberately NO validate subcommand
 │   └── default_config.go      # defaults.yaml loading: the LoRA cost coefficients (and `version`) only
 ├── internal/                  # Repo-root internal packages (test tooling; not importable outside this module)
 │   └── invariantscan/         # AST scan for hand-rolled INV-1 conservation sums (#1720) — used by the guard tests in sim/, sim/cluster/. Root-level rather than sim/internal so cmd/ can import it too.
@@ -56,8 +55,7 @@ inference-sim/
 │   ├── cluster_event.go       # ClusterArrivalEvent, ScalingTickEvent, ScaleActuationEvent; cluster event queue
 │   ├── gateway.go             # Gateway interface (everything between arrival and dispatch: admission, flow control, endpoint picking), GatewayHost, Placement, Rejection (INV-1 buckets), IdleFastForwarder; sim/llmd is the production implementation
 │   ├── metrics.go             # RawMetrics, Distribution, FitnessResult, CollectRawMetrics (accepts priorityPolicy), ComputeFitness (returns (FitnessResult, error)), anomaly detection, ParseFitnessWeights with NaN/Inf validation, per-SLO-class metrics, JainFairnessIndex
-│   ├── deployment.go          # DeploymentConfig embeds sim.SimConfig + cluster-only fields; ToSimConfig() returns the embedded config
-│   └── evaluation.go          # EvaluationResult wrapper (RawMetrics + FitnessResult + trace + summary)
+│   └── deployment.go          # DeploymentConfig embeds sim.SimConfig + cluster-only fields; ToSimConfig() returns the embedded config
 ├── sim/llmd/                  # The embedded llm-d router (Endpoint Picker), from the inference-sim fork of llm-d-router; see docs/guide/routing.md and docs/contributing/llm-d-router-fork.md
 │   ├── gateway.go             # Gateway (implements cluster.Gateway): builds the router (blis-schemas embed) from EPP flags, EndpointPickerConfig and manifests, with BLIS's pre-build checks (Config.Check); translates arrivals into router requests, decisions into dispatches, rejection kinds into INV-1 buckets; DefaultEPPFlags
 │   ├── router.go              # newRouter = the fork's pkg/embed.New, the only identifier BLIS takes from the fork (imports_test.go guards it)
@@ -85,7 +83,6 @@ inference-sim/
 │   ├── reasoning.go           # Reasoning multi-turn with context accumulation
 │   ├── session.go             # SessionManager: closed-loop session tracking, follow-up round generation on completion
 │   ├── inference_perf.go      # inference-perf format: InferencePerfSpec, expansion, validation
-│   ├── scenarios.go           # Built-in presets (bursty, unfair, prefix-heavy, mixed-slo)
 │   ├── convert.go             # Format converters: ConvertServeGen, ConvertPreset, ComposeSpecs
 │   ├── cohort.go              # CohortSpec expansion: diurnal, spike, drain patterns → lifecycle windows
 │   └── synthesis.go           # Flag-to-spec synthesis: SynthesizeFromDistribution, SynthesizeFromPreset
@@ -101,8 +98,7 @@ inference-sim/
 │                               #  scenario fixtures (P/D, MTP) are at testdata/scenarios/.)
 ├── tools/                     # Offline scoring tools, outside the simulator (sim/, cmd/ link blis-vllm only through cmd/engine_build.go)
 │   ├── harness/               # Closed-loop runs against the AISimulate accuracy corpus (the blis-latency-kernel adapter itself is blis-vllm compat/kernelmodel)
-│   │   ├── corpora/           # The scorers' default roots: substrate data and the measurement corpora (BLIS_MEASUREMENTS)
-│   │   └── internal/artifacts/ # Gates the harness tests on the kernel artifact roots; the measurement-corpus tests run under -tags scoring
+│   │   └── corpora/           # The scorers' default roots: substrate data and the measurement corpora (BLIS_MEASUREMENTS)
 │   ├── metricscore/           # The scorer behind the evaluation tables: every estimator on every metric, on three tiers of points
 │   ├── kernelscore/           # Scores the concurrency-response shape against the AISimulate snapshot
 │   ├── sensitivity/           # How much each assumed engine setting (and the length draw) moves the score

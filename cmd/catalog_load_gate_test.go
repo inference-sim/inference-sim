@@ -13,6 +13,9 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/blis-vllm/compat/build"
+
 	blisschemas "github.com/inference-sim/blis-substrate/contracts"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	schemamodel "github.com/inference-sim/blis-substrate/contracts/spec/model"
@@ -617,4 +620,16 @@ func collectCatalogDeploymentFacts(node any, prefix string) []string {
 		}
 	}
 	return offenders
+}
+
+// loadCatalogStorageDevices is the storage-device table the engine reads from the catalog in
+// use (build.StorageDevices).
+func loadCatalogStorageDevices(data *load.Data) (map[string]build.KVOffloadDevice, error) {
+	return build.StorageDevices(data)
+}
+
+// catalogStorageDevicesPath locates the storage-device table inside a catalog directory, for
+// the gate's diagnostics.
+func catalogStorageDevicesPath(catalog string) string {
+	return filepath.Join(catalog, build.CatalogDevicesSubdir, build.CatalogStorageDevicesFile)
 }

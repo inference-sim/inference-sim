@@ -177,30 +177,6 @@ func (cs *ClusterSimulator) popEvent() clusterEventEntry {
 	return entry
 }
 
-// instanceSender is inst's outbox for the cluster events it sends: the requests a drain
-// redirects from it. Its sender identity is its index.
-func (cs *ClusterSimulator) instanceSender(inst *InstanceSimulator) *eventSender {
-	if s, ok := cs.instanceSenders[inst.ID()]; ok {
-		return s
-	}
-	idx := -1
-	for i, in := range cs.instances {
-		if in == inst {
-			idx = i
-			break
-		}
-	}
-	if idx < 0 {
-		panic(fmt.Sprintf("ClusterSimulator.instanceSender: instance %s is not in the cluster", inst.ID()))
-	}
-	if cs.instanceSenders == nil {
-		cs.instanceSenders = make(map[InstanceID]*eventSender)
-	}
-	s := &eventSender{id: senderFirstInstance + senderID(idx)}
-	cs.instanceSenders[inst.ID()] = s
-	return s
-}
-
 // buildClusterState constructs the autoscaler's view of the cluster from live instance state.
 // Filters to instances that are routable (IsRoutable()) and, when req is non-nil and
 // has a non-empty Model, further filters to instances serving that model (T044, T048).

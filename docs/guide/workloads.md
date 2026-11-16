@@ -588,17 +588,6 @@ Available presets in the catalog (`<catalog>/workloads/`):
 | `summarization` | 4096 | 512 | Long-document summarization (high input, moderate output) |
 | `multidoc` | 10240 | 1536 | Multi-document processing (very long inputs) |
 
-### Scenario Presets (Programmatic)
-
-The `sim/workload/scenarios.go` module provides scenario functions for common workload patterns. These are used internally by the simulator and in hypothesis experiments:
-
-| Scenario | Function | Key Characteristics |
-|----------|----------|-------------------|
-| Bursty traffic | `ScenarioBurstyTraffic` | Gamma CV=3.5, exponential tokens, `batch` SLO |
-| Unfair tenants | `ScenarioUnfairTenants` | 90% low-priority batch + 10% high-priority critical |
-| Prefix-heavy | `ScenarioPrefixHeavy` | 80% shared-prefix + 20% unique, tests prefix caching |
-| Mixed SLO | `ScenarioMixedSLO` | Equal mix of critical/standard/batch classes |
-
 ### Example Files
 
 BLIS ships with example workload specs in `examples/`:

@@ -4,8 +4,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	"github.com/inference-sim/inference-sim/tools/harness/internal/artifacts"
 )
 
 // The committed evidence carries its provenance -- the generator, the environment, every pinned
@@ -89,11 +87,11 @@ func TestAnUnverifiedPromptLengthIsAGap(t *testing.T) {
 // Every MEASURED-OR-RESOLVED point's sent prompt lengths are its targets per the evidence -- the
 // tier requires it -- so the scorer, which replays the targets, replays exactly what was sent.
 func TestEveryMeasuredOrResolvedPointSentItsTarget(t *testing.T) {
-	c, err := LoadCorpus(artifacts.Measurement(t, "aisimulate_e2e.json"))
+	c, err := LoadCorpus(measurementPath(t, "aisimulate_e2e.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	set, err := LoadEngineSettings(artifacts.Measurement(t, "inferencex_engine_settings.json"))
+	set, err := LoadEngineSettings(measurementPath(t, "inferencex_engine_settings.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

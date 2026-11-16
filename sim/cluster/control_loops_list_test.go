@@ -6,7 +6,8 @@ package cluster
 // it models and its validation status and evidence (design 8.9), so a reader can tell a policy
 // the model verified from one it validated.
 //
-// docs/reference/control-loops.md is generated from this list (TestControlLoopsPage).
+// docs/reference/control-loops.md is generated from this list (TestControlLoopsPage). No binary
+// reads the list, only that page's generator, so it lives in a test file (design LIF-7).
 
 // ValidationStatus says how far a control loop's behaviour has been checked against the system
 // it models (design section 8.9).

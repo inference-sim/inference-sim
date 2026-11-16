@@ -20,16 +20,6 @@ type TraceSink interface {
 	Close()
 }
 
-// NoOpSink discards every record. It is the default sink when no report path is
-// requested, so the replay loop can run unconditionally without allocating.
-type NoOpSink struct{}
-
-// NewNoOpSink returns a sink that discards all records.
-func NewNoOpSink() *NoOpSink { return &NoOpSink{} }
-
-func (n *NoOpSink) Record(int64, string, Result) {}
-func (n *NoOpSink) Close()                       {}
-
 // InMemoryCollector keeps verdict records in the order they were recorded, for
 // later serialization by WriteCombinedReport.
 type InMemoryCollector struct {

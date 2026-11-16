@@ -5,13 +5,12 @@ import (
 
 	"github.com/inference-sim/blis-vllm/compat/build"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	"github.com/inference-sim/inference-sim/tools/harness/internal/artifacts"
 )
 
 // settingsPath is the engine settings extracted from InferenceX's launch logs, under
 // BLIS_MEASUREMENTS.
 func settingsPath(t testing.TB) string {
-	return artifacts.Measurement(t, "inferencex_engine_settings.json")
+	return measurementPath(t, "inferencex_engine_settings.json")
 }
 
 // No scored vLLM point may be configured from a value this project invented. Each must be
@@ -31,7 +30,7 @@ func TestNoScoredVLLMPointUsesAnInventedSetting(t *testing.T) {
 		t.Fatalf("engine settings: %v", err)
 	}
 	c, err := LoadCorpus(
-		artifacts.Measurement(t, "aisimulate_e2e.json"))
+		measurementPath(t, "aisimulate_e2e.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +150,7 @@ func TestMeasuredSettingsWinOverResolvedDefaults(t *testing.T) {
 		t.Fatalf("engine settings: %v", err)
 	}
 	c, err := LoadCorpus(
-		artifacts.Measurement(t, "aisimulate_e2e.json"))
+		measurementPath(t, "aisimulate_e2e.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +215,7 @@ func TestWithoutASettingsFileAVLLMSweepStillResolves(t *testing.T) {
 // defaults, and substituting one engine's for another's would be a different deployment.
 func TestANonVLLMSweepDoesNotTakeVLLMDefaults(t *testing.T) {
 	c, err := LoadCorpus(
-		artifacts.Measurement(t, "aisimulate_e2e.json"))
+		measurementPath(t, "aisimulate_e2e.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

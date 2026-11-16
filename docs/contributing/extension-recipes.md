@@ -102,7 +102,6 @@ To add a new autoscaler `Engine` implementation (e.g., a cost-minimizing MIP sol
 
 Examples:
 - See `UnlimitedEngine` in `sim/cluster/engine.go` for a simple inventory-ignoring engine
-- See `GreedyEngine` in `sim/cluster/engine.go` for an inventory-respecting greedy engine with exact-N sizing
 
 ## Adding New Per-Request Metric Fields
 

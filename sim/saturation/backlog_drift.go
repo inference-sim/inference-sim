@@ -49,11 +49,6 @@ type BacklogDriftDetector struct {
 	windowSizeUs  int64 // WindowSize in microseconds, cached from config
 }
 
-// NewBacklogDriftDetector creates a BacklogDriftDetector with default configuration.
-func NewBacklogDriftDetector() Detector {
-	return newBacklogDriftDetector(DefaultBacklogDriftConfig())
-}
-
 // NewBacklogDriftDetectorWithConfig creates a BacklogDriftDetector with an
 // explicit config (#1515). The config's WindowSize governs the streaming bucket
 // width; the default-config constructor hardwires the 60s production window, which

@@ -141,16 +141,6 @@ func allow(typ string) (bool, string) {
 	return false, cmp.Or(signalReasons[typ], notAudited)
 }
 
-// IsSupported reports whether BLIS's signal policy allows router plugins of type typ. Every type it
-// allows is also one the fork can host (TestSupportedTypesAreHostedByTheFork holds it there), so a
-// supported type runs.
-func IsSupported(typ string) bool { return supported[typ] }
-
-// UnsupportedReason is why BLIS's signal policy refuses plugins of type typ, or "" for a supported
-// type or one with no signal-level reason. A type the fork cannot host is refused by the fork, with
-// the fork's reason, at startup; this returns "" for it.
-func UnsupportedReason(typ string) string { return signalReasons[typ] }
-
 // legacyMetricFlags name the engine series the router reads when its configuration does not, in
 // the order they are checked.
 var legacyMetricFlags = []string{

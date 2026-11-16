@@ -2,8 +2,6 @@ package harness
 
 import (
 	"testing"
-
-	"github.com/inference-sim/inference-sim/tools/harness/internal/artifacts"
 )
 
 // TTFT must RISE with concurrency. A model whose TTFT does not move while its own step time
@@ -28,7 +26,7 @@ import (
 // broken queueing path rather than on a modelling trade that is documented elsewhere.
 func TestTTFTRisesWithConcurrency(t *testing.T) {
 	c, err := LoadCorpus(
-		artifacts.Measurement(t, "aisimulate_e2e.json"))
+		measurementPath(t, "aisimulate_e2e.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +60,7 @@ func TestTTFTRisesWithConcurrency(t *testing.T) {
 // its answer with the constant would be a tuning knob rather than a measurement.
 func TestTTFTSpikeSelectionIsDecidedByTheDataNotTheThreshold(t *testing.T) {
 	c, err := LoadCorpus(
-		artifacts.Measurement(t, "aisimulate_e2e.json"))
+		measurementPath(t, "aisimulate_e2e.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +95,7 @@ func TestTTFTSpikeSelectionIsDecidedByTheDataNotTheThreshold(t *testing.T) {
 // it would renormalise the sweep rather than remove a bad point.
 func TestTTFTSpikeNeverExcludesTheAnchor(t *testing.T) {
 	c, err := LoadCorpus(
-		artifacts.Measurement(t, "aisimulate_e2e.json"))
+		measurementPath(t, "aisimulate_e2e.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +117,7 @@ func TestTTFTSpikeNeverExcludesTheAnchor(t *testing.T) {
 // four bad ones.
 func TestPointExclusionKeepsTheRestOfAnAffectedSweep(t *testing.T) {
 	c, err := LoadCorpus(
-		artifacts.Measurement(t, "aisimulate_e2e.json"))
+		measurementPath(t, "aisimulate_e2e.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

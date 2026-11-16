@@ -543,18 +543,6 @@ func requestIndex(id string) (int, error) {
 	return strconv.Atoi(strings.TrimPrefix(id, prefix))
 }
 
-// MAPE is the mean absolute percentage error of predicted against measured.
-func MAPE(predicted, measured []float64) float64 {
-	if len(predicted) != len(measured) || len(predicted) == 0 {
-		return math.NaN()
-	}
-	var sum float64
-	for i := range predicted {
-		sum += math.Abs(predicted[i]-measured[i]) / measured[i]
-	}
-	return 100 * sum / float64(len(predicted))
-}
-
 // Median of a copy of xs.
 func Median(xs []float64) float64 {
 	if len(xs) == 0 {

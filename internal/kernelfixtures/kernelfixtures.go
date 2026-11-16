@@ -26,6 +26,3 @@ func Root() string {
 // AISimulate is the directory of fixtures generated from AISimulate's end-to-end corpus, which
 // the simulator's kernel tests open.
 func AISimulate() string { return filepath.Join(Root(), "aisimulate") }
-
-// Direct is the directory of fixtures generated from the InferenceX direct corpus.
-func Direct() string { return filepath.Join(Root(), "direct") }

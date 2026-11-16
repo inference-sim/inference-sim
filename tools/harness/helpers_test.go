@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	"github.com/inference-sim/inference-sim/tools/harness/internal/artifacts"
 )
 
 // testRepos is the artifact roots the harness tests run against: this repository's
@@ -86,7 +85,7 @@ func (e *buildError) Error() string { return e.err.Error() + "\n" + e.out }
 // exercises the same inputs the score does.
 func testSweep(t *testing.T) Sweep {
 	t.Helper()
-	c, err := LoadCorpus(artifacts.Measurement(t, "aisimulate_e2e.json"))
+	c, err := LoadCorpus(measurementPath(t, "aisimulate_e2e.json"))
 	if err != nil {
 		t.Fatalf("corpus: %v", err)
 	}

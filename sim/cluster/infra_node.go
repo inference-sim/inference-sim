@@ -14,20 +14,6 @@ const (
 	NodeStateTerminated   NodeState = "Terminated"
 )
 
-// validNodeStates is the unexported validation map (R8).
-var validNodeStates = map[NodeState]struct{}{
-	NodeStateProvisioning: {},
-	NodeStateReady:        {},
-	NodeStateDraining:     {},
-	NodeStateTerminated:   {},
-}
-
-// IsValidNodeState returns true if s is a known NodeState value.
-func IsValidNodeState(s string) bool {
-	_, ok := validNodeStates[NodeState(s)]
-	return ok
-}
-
 // Node represents a single machine in a node pool.
 // Carries a fixed inventory of GPUs tracked as allocated or free.
 type Node struct {

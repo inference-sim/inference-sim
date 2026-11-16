@@ -29,12 +29,6 @@ type CompositeDetector struct {
 	sensitivity float64
 }
 
-// NewCompositeDetector creates a composite detector at its default sensitivity
-// (1.0), which is byte-identical to the pre-#1614 detector.
-func NewCompositeDetector() Detector {
-	return NewCompositeDetectorWithSensitivity(defaultCompositeSensitivity)
-}
-
 // NewCompositeDetectorWithSensitivity is the canonical constructor (R4): both
 // exported constructors route through it so the struct literal lives in exactly
 // one place.
