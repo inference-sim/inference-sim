@@ -1,7 +1,7 @@
 # Original to blis-vllm.
 """Regenerate kernel_impls.json for a vLLM release in one command.
 
-    python3 -I kernels/regen.py              # the release this build models (provenance.go's Tag)
+    python3 -I kernels/regen.py              # the release this build models (internal/upstream's Tag)
     python3 -I kernels/regen.py v0.33.0      # another release with a classification in kernels/
     python3 -I kernels/regen.py --check      # fail when kernel_impls.json is not current
 
@@ -29,11 +29,13 @@ VLLM_REPO = "https://github.com/vllm-project/vllm"
 
 
 def modelled_tag():
-    """The vLLM tag this build models: Upstream.Tag in provenance.go."""
-    with open(os.path.join(ROOT, "provenance.go"), encoding="utf-8") as f:
-        m = re.search(r'^\s*Tag:\s*"([^"]+)"', f.read(), re.M)
+    """The vLLM tag this build models: Tag in internal/upstream/upstream.go, the one place the
+    release is named (provenance.go's Upstream reads it)."""
+    rel = os.path.join("internal", "upstream", "upstream.go")
+    with open(os.path.join(ROOT, rel), encoding="utf-8") as f:
+        m = re.search(r'^\s*Tag\s*=\s*"([^"]+)"', f.read(), re.M)
     if not m:
-        raise gen.Refused("provenance.go names no Upstream Tag")
+        raise gen.Refused(f"{rel} names no Tag")
     return m.group(1)
 
 
@@ -53,7 +55,7 @@ def fetch(repo, ref, into):
 
 def main(argv):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("tag", nargs="?", help="the vLLM release tag (default: provenance.go's Upstream.Tag)")
+    ap.add_argument("tag", nargs="?", help="the vLLM release tag (default: the Tag internal/upstream names)")
     ap.add_argument("--out", default=os.path.join(ROOT, "kernel_impls.json"), help="the table to write or check")
     ap.add_argument("--check", action="store_true", help="fail when --out is not current instead of writing it")
     ap.add_argument("--keep", metavar="DIR", help="fetch into DIR and keep the sources")
