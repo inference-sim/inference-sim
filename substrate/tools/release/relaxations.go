@@ -10,18 +10,9 @@ package main
 // plan changes, this list changes in the same pull request; TestRelaxationsMatchThePlan
 // pins it, and a reviewer compares the two.
 var relaxations = []Relaxation{
-	{Repo: "inference-sim", Path: "", Match: "engine_version", Milestone: 4,
-		Reason: "the scenario field engine_version (plan §3.3)"},
 	{Repo: "blis-vllm", Path: "compat/", Milestone: 4, Reason: "blis-vllm's compat/ (plan §3.3)"},
 	{Repo: "blis-vllm", Path: "rules/v0_29/", Milestone: 4, Reason: "rules/v0_29 (plan §3.3)"},
 	{Repo: "blis-vllm", Path: "rules/v0_31/", Milestone: 4, Reason: "rules/v0_31 and the v0.31 resolution code (plan §3.3)"},
 	{Repo: "blis-substrate", Path: "contracts/rules/", Milestone: 4, Reason: "contracts/rules (plan §3.3)"},
 	{Repo: "blis-substrate", Path: "contracts/kernel/enginesettings/", Milestone: 4, Reason: "contracts/kernel/enginesettings (plan §3.3)"},
-	{Repo: "inference-sim", Path: "cmd/", Match: "scheduler", Milestone: 4, Reason: "--scheduler (inference-sim #2037)"},
-	{Repo: "inference-sim", Path: "cmd/", Match: "preemption-policy", Milestone: 4, Reason: "--preemption-policy (#2037)"},
-	{Repo: "inference-sim", Path: "cmd/", Match: "dp-load-balancing", Milestone: 4, Reason: "--dp-load-balancing (#2037)"},
-	{Repo: "inference-sim", Path: "cmd/", Match: "swa-bounded-replay", Milestone: 4, Reason: "--swa-bounded-replay (#2037)"},
-	{Repo: "inference-sim", Path: "cmd/", Match: "kv-offload-config", Milestone: 4, Reason: "--kv-offload-config (#2037)"},
-	{Repo: "inference-sim", Path: "", Match: "lazy-generation", Milestone: 4, Reason: "eager workload generation and --lazy-generation (#1451)"},
-	{Repo: "inference-sim", Path: "", Match: "eager", Milestone: 4, Reason: "eager workload generation (#1451)"},
 }
