@@ -132,7 +132,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - uses: ./.github/actions/oracle-env
+      - id: env
+        uses: ./.github/actions/oracle-env
       - name: every replacement the harness makes is listed, and none is decision code
         run: python -I oracle/check_mocks.py oracle/mocks.json
       - name: a KV-transfer or KV-store client in the lock is at its peers.json pin
@@ -141,14 +142,16 @@ jobs:
         run: python -I oracle/run_import.py sglang-source
       # Tier 2: every scenario through SGLang's own Scheduler (run_scheduler_process), its event loop
       # unmodified. The runner fails unless every request finishes, the loop ends on the harness's
-      # ShutdownReq, and every forward pass was launched from SGLang's own event loop.
+      # ShutdownReq, every forward pass was launched from SGLang's own event loop at the checkout,
+      # the tree core is the Python one, and no clocked module still reads the real clock.
       - name: run every scenario through SGLang's scheduler
         env:
           ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
           HF_HUB_OFFLINE: "1"
         run: |
           set -euo pipefail
-          export ORACLE_MODEL="$PWD/oracle-model" ORACLE_MODEL_REVISION=7ae557604adf67be50417f59c2c2f167def9a775
+          export ORACLE_MODEL="$PWD/oracle-model"
           mkdir -p oracle-traces
           for s in oracle/scenarios/*.json; do
             name="$(basename "$s" .json)"
@@ -173,6 +176,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: every commit changing a golden trace has a golden-reviewed trailer
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}

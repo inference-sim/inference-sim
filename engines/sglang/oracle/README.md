@@ -54,8 +54,8 @@ files `check_mocks.py` reads, and the golden directories.
 ## Tier 2: the scheduler
 
 ```sh
-ORACLE_MODEL=<config files of Qwen/Qwen2.5-0.5B-Instruct@7ae55760> \
-ORACLE_MODEL_REVISION=7ae557604adf67be50417f59c2c2f167def9a775 ORACLE_LOCKFILE=<pip freeze> HF_HUB_OFFLINE=1 \
+ORACLE_MODEL=<config files of Qwen/Qwen2.5-0.5B-Instruct at the revision .github/actions/oracle-env pins> \
+ORACLE_MODEL_REVISION=<that revision> ORACLE_LOCKFILE=<pip freeze> HF_HUB_OFFLINE=1 \
   python -I oracle/run_scheduler.py <sglang checkout> oracle/scenarios/<scenario>.json [out.json]
 ```
 
@@ -64,8 +64,12 @@ as SGLang's launcher does. That entry point publishes the runtime context, build
 `Scheduler(server_args, port_args)` through `Scheduler.__init__`, and runs the event loop that
 ServerArgs selects. `harness.py` makes the replacements `mocks.json` lists before SGLang's
 scheduler module is imported. These are the model runner's forward pass, sampling, weight loading,
-attention backends and CUDA graphs (GPU); the device memory query (platform); the scheduler's ZMQ
-sockets (transport); and the scheduler module's clock.
+attention backends and CUDA graphs (GPU); the device memory queries (platform); the tokenizer
+socket (an outside service) and the scheduler's other sockets (transport); and the clock of every
+loaded decision module and observability module. The runner fails if one of those still reads the
+real clock after the run, if a receive ends with arrivals undelivered, or if the tree core is not
+the Python one. It removes the caller's `SGLANG_*` variables, sets only those it lists, and writes
+no trace when a check fails.
 
 The event loops run unmodified. The socket the scheduler reads from the tokenizer starts a step
 on its first receive in each loop iteration and yields that step's arrivals. Once every request
@@ -78,7 +82,10 @@ A trace records, for each loop iteration:
 
 - the requests that arrived;
 - each forward pass: its mode, batch size, sequence, extend and prefix lengths, and the allocator's free tokens;
-- each output the scheduler sent.
+- each output the scheduler sent;
+
+and, once, the pool size SGLang reported at start-up, the tree-cache, tree-core and allocator
+classes, the receive settings and the `SGLANG_*` variables the scheduler ran with.
 
 The committed goldens are under `testdata/golden/`. CI runs every scenario and checks
 that each golden equals the fresh trace outside its provenance (`compare_goldens.py`). A runner

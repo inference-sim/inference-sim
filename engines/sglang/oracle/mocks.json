@@ -1,5 +1,5 @@
 {
-  "version": "gpu-mock/2+5e73a68f1479",
+  "version": "gpu-mock/4+4be739f2a212",
   "description": "Every replacement the oracle harness makes in SGLang's code, by kind (gpu, clock, transport, environment, platform, external-service, transcription), with the sites oracle/check_mocks.py finds. No entry is a transcription: the event loops run as released.",
   "mocks": [
     {
@@ -19,7 +19,7 @@
     {
       "symbol": "sglang.srt.model_executor.model_runner.ModelRunner.load_model",
       "kind": "gpu",
-      "how": "builds no weights: an empty torch module stands for the model, its dtype is the model config's, its sliding window is SGLang's own resolve_sliding_window_size, and its loader reports no preloaded weights, as SGLang's in-tree simulator does (tools/sglang-simulator/src/sglang_simulator/simulation/sglang/model_runner.py:44-59@297e54fd)",
+      "how": "builds no weights: an empty torch module stands for the model, its dtype is the model config's, its sliding window is SGLang's own resolve_sliding_window_size, and its loader reports no preloaded weights, as SGLang's in-tree simulator does (tools/sglang-simulator/src/sglang_simulator/simulation/sglang/model_runner.py:44-59@297e54fd); a model class that defines get_attention_sliding_window_size or is_prefill_aware_swa is refused by name, since the empty model cannot report them",
       "sites": [
         "harness.py:runner.load_model",
         "harness.py:mr.model",
@@ -74,48 +74,74 @@
       ]
     },
     {
-      "symbol": "sglang.srt.utils.common.get_available_gpu_memory",
+      "symbol": "sglang.srt.utils.common.get_available_gpu_memory and get_device_memory_capacity",
       "kind": "platform",
-      "how": "the device's free memory is the scenario's device_memory_gib, not the host's, so KVCacheConfigurator._profile_available_bytes sizes the pool from the scenario by SGLang's own arithmetic, capped by max_total_tokens; replaced in sglang.srt.utils.common and its re-export in sglang.srt.utils before any module that imports it is loaded",
+      "how": "the device's free memory and its capacity are the scenario's device_memory_gib, not the host's: ServerArgs resolution (arg_groups/memory_hook.py:78@297e54fd reads the capacity) and KVCacheConfigurator._profile_available_bytes size from the scenario by SGLang's own arithmetic. Replaced in sglang.srt.utils.common and its re-export in sglang.srt.utils before any module that imports them is loaded. tiny-memory.json sets no max_total_tokens, so the profiled memory sizes its pool",
       "sites": [
         "harness.py:utils_common.get_available_gpu_memory",
-        "harness.py:srt_utils.get_available_gpu_memory"
+        "harness.py:srt_utils.get_available_gpu_memory",
+        "harness.py:utils_common.get_device_memory_capacity",
+        "harness.py:srt_utils.get_device_memory_capacity"
       ]
     },
     {
       "symbol": "sglang.srt.managers.scheduler_components.ipc_channels.get_zmq_socket",
-      "kind": "transport",
-      "how": "the scheduler's ZMQ sockets (SchedulerIpcChannels.create): the PULL socket from the tokenizer yields, on its first receive of each loop iteration, that iteration's scenario arrivals (TokenizedGenerateReqInput, through SGLang's msgpack codec), then zmq.Again; once every request has finished it yields a ShutdownReq, which SGLang's own Scheduler.handle_shutdown turns into gracefully_exit, ending the loop. The DEALER RPC socket yields nothing. The PUSH sockets record what the scheduler sends.",
+      "kind": "external-service",
+      "how": "the tokenizer, an outside service (design \u00a77.3): the PULL socket SchedulerIpcChannels.create makes yields, on its first receive of each loop iteration, that iteration's scenario arrivals (TokenizedGenerateReqInput, through SGLang's msgpack codec), then zmq.Again; once every request has finished it yields a ShutdownReq, which SGLang's own Scheduler.handle_shutdown turns into gracefully_exit, ending the loop. A receive that ends an iteration with arrivals undelivered fails the run. The same factory makes the transport sockets of the next entry; any other socket type raises.",
       "sites": [
         "harness.py:ipc_channels.get_zmq_socket"
       ]
     },
     {
-      "symbol": "sglang.srt.managers.scheduler.time",
+      "symbol": "the scheduler's RPC and output sockets",
+      "kind": "transport",
+      "how": "made by the factory of the entry above: the DEALER RPC socket yields nothing, and its receive marks the end of an iteration's receives; each PUSH socket records what the scheduler sends",
+      "sites": []
+    },
+    {
+      "symbol": "time in every clocked module",
       "kind": "clock",
-      "how": "the scheduler module's time: monotonic, perf_counter and time read 1e6 s plus step_seconds per loop iteration; every other attribute is the real module's",
+      "how": "every loaded module under a decision prefix of oracle/harness.json, and every sglang.srt.observability module, binds a virtual clock in place of the time module, and of time.monotonic, perf_counter, time and their _ns forms where it bound them by name: 1e6 s plus step_seconds per loop iteration. Installed before Scheduler.__init__ and again at the first step, for modules it imported; the runner fails if one still binds the real clock after the run.",
       "sites": [
-        "harness.py:scheduler_module.time"
+        "harness.py:mod.?"
       ]
     },
     {
-      "symbol": "SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND",
+      "symbol": "the scheduler's watchdog threads",
       "kind": "environment",
-      "how": "set to python in the scheduler process, so the unified radix cache runs its Python tree core (SGL-1); SGLang's default is the Rust core (python/sglang/srt/environ.py:741@297e54fd)",
+      "how": "Scheduler.__init__ starts SGLang's watchdog (managers/scheduler.py:1476-1486, create_scheduler_watchdog in managers/scheduler_components/invariant_checker.py:494@297e54fd), which runs as released. It reads the clock and forward_ct and can only end the process after watchdog_timeout without progress; it decides nothing the trace records, and a run that it ended fails",
+      "sites": []
+    },
+    {
+      "symbol": "SGLANG_* in the scheduler process",
+      "kind": "environment",
+      "how": "every SGLANG_* variable of the caller's environment is removed; SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python is set, so the unified radix cache runs its Python tree core (SGL-1; SGLang's default is Rust, python/sglang/srt/environ.py:741@297e54fd). The trace records the variables and the tree-core class, and the runner fails on any other core",
       "sites": [
         "run_scheduler.py:os.environ[]"
       ]
     },
     {
+      "symbol": "ServerArgs load_format=dummy",
+      "kind": "environment",
+      "how": "the runner's ServerArgs: no weight files are read (the GPU replacement loads none)",
+      "sites": []
+    },
+    {
+      "symbol": "ServerArgs skip_tokenizer_init=True",
+      "kind": "environment",
+      "how": "the runner's ServerArgs: requests arrive as token ids and outputs leave as token ids; the tokenizer is the outside service above",
+      "sites": []
+    },
+    {
       "symbol": "the base platform",
       "kind": "platform",
-      "how": "the oracle runs SGLang's base SRTPlatform: no CUDA device, SGLANG_USE_CPU_ENGINE unset, ServerArgs device cpu, attention_backend torch_native, sampling_backend pytorch, CUDA graphs disabled, as SGLang's own CPU simulator CI runs it. Restoring what the CUDA platform would resolve for the scenario's chip is FID-1 work not done in this spike; the trace's resolved block records the values this run used.",
+      "how": "the oracle runs SGLang's base SRTPlatform: no CUDA device, SGLANG_USE_CPU_ENGINE unset, and the runner's ServerArgs device=cpu, attention_backend=torch_native, sampling_backend=pytorch and disable_cuda_graph=True, as SGLang's own CPU simulator CI runs it. Restoring what the CUDA platform would resolve for the scenario's chip is FID-1 work not done here; each trace's resolved block records the values the run used.",
       "sites": []
     },
     {
       "symbol": "run_scheduler_process pipe_writer",
       "kind": "transport",
-      "how": "the pipe on which run_scheduler_process reports its start-up to the launcher is an object of the runner's that keeps what is sent",
+      "how": "the pipe on which run_scheduler_process reports its start-up to the launcher is an object of the runner's that keeps what is sent; the trace records its pool sizes",
       "sites": []
     }
   ]

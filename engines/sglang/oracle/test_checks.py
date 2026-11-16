@@ -196,6 +196,205 @@ class CheckPeers(unittest.TestCase):
         self.assertEqual(self.check("numpy==2.0.0\n").returncode, 0)
 
 
+def import_oracle(name):
+    sys.path.insert(0, HERE)
+    try:
+        return __import__(name)
+    finally:
+        sys.path.remove(HERE)
+
+
+class CopiesOfTheLoopAreRefused(unittest.TestCase):
+    """check_mocks.py with this repository's configuration: a harness copy of an event loop, or a
+    write of one into the Scheduler, fails (FID-8)."""
+
+    def check_with(self, extra):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d)
+        for name in os.listdir(HERE):
+            if name.endswith(".py") or name.endswith(".json"):
+                shutil.copy(os.path.join(HERE, name), d)
+        with open(os.path.join(d, "harness.py"), "a") as f:
+            f.write(extra)
+        return run([sys.executable, "-I", os.path.join(HERE, "check_mocks.py"), "--config",
+                    os.path.join(HERE, "harness.json"), os.path.join(d, "mocks.json")], d)
+
+    def test_the_committed_harness_passes(self):
+        self.assertEqual(self.check_with("").returncode, 0)
+
+    def test_a_copied_loop_fails(self):
+        r = self.check_with("\n\ndef event_loop_normal(scheduler):\n    while not scheduler.gracefully_exit:\n        pass\n")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("harness.py:event_loop_normal: defines event_loop_normal", r.stdout)
+
+    def test_a_write_into_the_scheduler_fails(self):
+        r = self.check_with("\n\ndef f(s):\n    pass\n\n\nimport sglang.srt.managers.scheduler as sm\nsm.Scheduler.event_loop_normal = f\n")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("writes sm.Scheduler.event_loop_normal, which is not listed", r.stdout)
+
+
+class CompareGoldens(unittest.TestCase):
+    """oracle/compare_goldens.py over scratch scenario, golden and fresh directories."""
+
+    TRACE = {"provenance": {"sglang_commit": "c" * 40, "mock_version": "gpu-mock/1+x", "model": "m",
+                            "model_revision": "r", "requirements_lock_sha256": "l", "scenario_sha256": "s"},
+             "steps": [{"forwards": [{"extend_prefix_lens": [6]}]}]}
+
+    def dirs(self, scenarios=("a",), goldens=("a",), fresh=None):
+        top = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, top)
+        out = {}
+        for d in ("scenarios", "golden", "fresh"):
+            out[d] = os.path.join(top, d)
+            os.makedirs(out[d])
+        def put(path, doc):
+            with open(path, "w") as f:
+                json.dump(doc, f)
+
+        for n in scenarios:
+            put(os.path.join(out["scenarios"], n + ".json"), {})
+            put(os.path.join(out["fresh"], n + ".trace.json"), fresh or self.TRACE)
+        for n in goldens:
+            put(os.path.join(out["golden"], n + ".trace.json"), self.TRACE)
+        return out
+
+    def compare(self, d):
+        return run([sys.executable, "-I", os.path.join(HERE, "compare_goldens.py"), d["fresh"], "c" * 40,
+                    d["scenarios"], d["golden"]], HERE)
+
+    def test_the_same_trace_passes(self):
+        self.assertEqual(self.compare(self.dirs()).returncode, 0)
+
+    def test_a_changed_prefix_length_fails(self):
+        fresh = json.loads(json.dumps(self.TRACE))
+        fresh["steps"][0]["forwards"][0]["extend_prefix_lens"] = [0]
+        r = self.compare(self.dirs(fresh=fresh))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("/steps/0/forwards/0/extend_prefix_lens/0: 6 != 0", r.stdout)
+
+    def test_a_missing_golden_an_orphan_golden_and_no_scenario_fail(self):
+        for name, d, text in [("no golden", self.dirs(scenarios=("a", "b")), "b: no golden"),
+                              ("orphan", self.dirs(goldens=("a", "z")), "z.trace.json: no scenario"),
+                              ("no scenario", self.dirs(scenarios=(), goldens=()), "no scenario in")]:
+            with self.subTest(name):
+                r = self.compare(d)
+                self.assertEqual(r.returncode, 1, r.stdout)
+                self.assertIn(text, r.stdout)
+
+    def test_a_stale_provenance_fails(self):
+        fresh = json.loads(json.dumps(self.TRACE))
+        fresh["provenance"]["mock_version"] = "gpu-mock/2+y"
+        r = self.compare(self.dirs(fresh=fresh))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("mock_version", r.stdout)
+
+
+class Runner(unittest.TestCase):
+    """oracle/run_scheduler.py's own guards."""
+
+    def test_it_refuses_to_write_a_golden_without_the_flag(self):
+        env = {k: v for k, v in os.environ.items() if k != "BLIS_SGLANG_ALLOW_GOLDEN_UPDATE"}
+        r = subprocess.run([sys.executable, "-I", os.path.join(HERE, "run_scheduler.py"), "nowhere",
+                            os.path.join(HERE, "scenarios", "tiny.json"), os.path.join(HERE, "testdata/golden/x.json")],
+                           cwd=HERE, env=env, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 2, r.stderr)
+        self.assertIn("refusing to write a golden trace", r.stderr)
+
+    def result(self, **over):
+        fwd = {"loop": {"function": "event_loop_normal", "file": "python/sglang/srt/managers/scheduler.py",
+                        "upstream_code": True}}
+        res = {"steps": [{"step": 0, "forwards": [fwd]}], "finished": {"r0": {}}, "shutdown_sent": True,
+               "truncated": False, "classes": {"tree_core": "UnifiedTreeCore"}, "harness_problems": []}
+        res.update(over)
+        return res
+
+    SCENARIO = {"requests": [{"rid": "r0"}], "overlap": False, "max_steps": 8}
+
+    def test_a_good_result_has_no_problem(self):
+        rs = import_oracle("run_scheduler")
+        self.assertEqual(rs.trace_problems(self.result(), self.SCENARIO), [])
+
+    def test_each_guard_fails_on_what_it_guards(self):
+        rs = import_oracle("run_scheduler")
+        cases = [
+            ("no loop", {"steps": [{"step": 0, "forwards": [{"loop": {"function": None}}]}]}, "not from SGLang's"),
+            ("a copy", {"steps": [{"step": 0, "forwards": [{"loop": {"function": "event_loop_normal",
+                       "file": "python/sglang/srt/managers/scheduler.py", "upstream_code": False}}]}]}, "not from SGLang's"),
+            ("the other loop", {"steps": [{"step": 0, "forwards": [{"loop": {"function": "event_loop_overlap",
+                       "file": "python/sglang/srt/managers/scheduler.py", "upstream_code": True}}]}]}, "not from SGLang's"),
+            ("no forward", {"steps": [{"step": 0, "forwards": []}]}, "no forward pass ran"),
+            ("no shutdown", {"shutdown_sent": False}, "before the harness sent its ShutdownReq"),
+            ("truncated", {"truncated": True}, "did not finish within max_steps"),
+            ("unfinished", {"finished": {}}, "expected ['r0']"),
+            ("the Rust core", {"classes": {"tree_core": "RustUnifiedTreeCore"}}, "not the Python UnifiedTreeCore"),
+            ("a harness problem", {"harness_problems": ["x reads the real clock"]}, "x reads the real clock"),
+        ]
+        for name, over, text in cases:
+            with self.subTest(name):
+                got = rs.trace_problems(self.result(**over), self.SCENARIO)
+                self.assertTrue(any(text in p for p in got), got)
+
+
+class Harness(unittest.TestCase):
+    """oracle/harness.py's guards that need no SGLang import."""
+
+    def test_a_loop_is_upstream_only_at_the_checkouts_definition(self):
+        h = import_oracle("harness")
+        top = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, top)
+        path = os.path.join(top, "python/sglang/srt/managers/scheduler.py")
+        os.makedirs(os.path.dirname(path))
+        src = "class Scheduler:\n    @staticmethod\n    def event_loop_normal(run, record):\n        record.append(record_loop(run))\n"
+        with open(path, "w") as f:
+            f.write(src)
+        run_ = h.Run({"requests": [], "max_steps": 1}, top)
+        for name, filename, want in [("the checkout's", path, True), ("a copy elsewhere", os.path.join(top, "copy.py"), False)]:
+            with self.subTest(name):
+                scope = {"record_loop": h.running_loop}
+                exec(compile(src, filename, "exec"), scope)
+                got = []
+                scope["Scheduler"].event_loop_normal(run_, got)
+                self.assertEqual(got[0]["function"], "event_loop_normal")
+                self.assertIs(got[0]["upstream_code"], want)
+
+    def test_arrivals_left_when_an_iteration_ends_are_a_problem(self):
+        h = import_oracle("harness")
+
+        class Two(h.Run):
+            def begin_step(self):
+                self.step += 1
+                return ["a", "b"]
+
+        run_ = Two({"requests": [], "max_steps": 9}, HERE)
+        tok = h.TokenizerSocket(run_)
+        rpc = h.SilentSocket(tok)
+        self.assertEqual(tok.recv_pyobj(), "a")
+        try:
+            rpc.recv_pyobj()
+        except Exception:
+            pass  # zmq.Again, or no zmq here: the iteration has ended either way
+        self.assertEqual(tok.recv_pyobj(), "a")
+        self.assertTrue(any("left undelivered" in p for p in run_.problems), run_.problems)
+
+    def test_a_clocked_module_on_the_real_clock_is_found_and_replaced(self):
+        h = import_oracle("harness")
+        import time as real
+        import types as ty
+        mod = ty.ModuleType("sglang.srt.mem_cache.scratch_clock")
+        mod.time = real
+        mod.monotonic = real.monotonic
+        sys.modules[mod.__name__] = mod
+        self.addCleanup(sys.modules.pop, mod.__name__)
+        found = [p for p in h.clock_problems() if "scratch_clock still reads the real clock through" in p]
+        self.assertEqual(len(found), 1, h.clock_problems())
+        self.assertIn("monotonic", found[0])
+        self.assertIn("time", found[0])
+        run_ = h.Run({"requests": [], "max_steps": 1}, HERE)
+        h.install_clock(h.VirtualTime(run_, 0.5))
+        self.assertFalse(any("scratch_clock" in p for p in h.clock_problems()))
+        self.assertEqual(mod.monotonic(), 1_000_000.0)
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         sys.exit(__doc__.split("Usage:", 1)[1].strip())
