@@ -9,12 +9,12 @@ import (
 
 	"github.com/inference-sim/blis-substrate/kernel/internal/artifacttest"
 	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/blis-vllm/compat/lowering"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 	"github.com/inference-sim/blis-vllm/core/vllm"
 
 	schemas "github.com/inference-sim/blis-substrate/contracts"
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
@@ -89,8 +89,9 @@ func fixtureInputs(t testing.TB, scenario string) Inputs {
 	in := Inputs{
 		Scenario: sc, Deployment: dep, PoolIndex: 0,
 		Model: graph, Chip: chip, Fabric: fabric,
-		Devices: devices, Coefficients: sets, Rules: rulesFor(sc.EngineRelease()), Engine: &eng,
+		Devices: devices, Coefficients: sets, Rules: rulesFor(sc.EngineRelease()),
 	}
+	in.Lowered = mustLower(t, in, eng)
 	in.DraftFirstPassRows, in.DraftPassRequests = draftPasses(dep, 0)
 	return in
 }
@@ -122,13 +123,49 @@ func withRules(r Repos) Repos {
 	r.Rules = RulesFrom(vllmrules.Lookup)
 	r.RulesVersions = vllmrules.Versions
 	r.RulesKind = "vllm"
-	r.EngineSettings = vllmsettings.OfPool
+	r.DraftModel = draftModelOf
+	r.Lower = lowerPool
 	return r
 }
 
-// newKernel is New on inputs a test has edited, with the engine settings decoded from the edited
-// pool, as a caller decodes the block it hands the kernel (vllmsettings): a test that rewrites
-// in.Deployment.Pools[i].Engine prices what it wrote.
+// draftModelOf is the drafter a pool's engine block names, for Repos.DraftModel.
+func draftModelOf(dep *deployment.Deployment, pool int) (string, error) {
+	e, err := vllmsettings.Decode(dep.Pools[pool])
+	if err != nil || e.Speculative == nil {
+		return "", err
+	}
+	return e.Speculative.DraftModel, nil
+}
+
+// lowerPool is the lowering of a pool's engine block as it states it, for Repos.Lower.
+func lowerPool(in Inputs) (*plan.Lowered, error) {
+	eng, err := vllmsettings.OfPool(in.Deployment, in.PoolIndex)
+	if err != nil {
+		return nil, err
+	}
+	return lower(in, eng)
+}
+
+// lower is the plan blis-vllm's lowering resolves the settings to, for the pool of in.
+func lower(in Inputs, eng vllmsettings.Settings) (*plan.Lowered, error) {
+	return lowering.Lower(lowering.Input{Scenario: in.Scenario, Deployment: in.Deployment,
+		PoolIndex: in.PoolIndex, Model: in.Model, Draft: in.Draft, Chip: in.Chip, Rules: in.Rules,
+		Settings: eng})
+}
+
+// mustLower is lower, failing the test on a refusal.
+func mustLower(t testing.TB, in Inputs, eng vllmsettings.Settings) *plan.Lowered {
+	t.Helper()
+	l, err := lower(in, eng)
+	if err != nil {
+		t.Fatalf("lowering the pool's settings: %v", err)
+	}
+	return l
+}
+
+// newKernel is New on inputs a test has edited, with the plan lowered from the edited pool's
+// engine block, as a caller lowers the block it hands the kernel (package lowering): a test that
+// rewrites in.Deployment.Pools[i].Engine prices what it wrote.
 func newKernel(in Inputs) (*Kernel, error) {
 	if in.Deployment != nil && in.PoolIndex >= 0 && in.PoolIndex < len(in.Deployment.Pools) {
 		eng, err := vllmsettings.OfPool(in.Deployment, in.PoolIndex)
@@ -136,7 +173,9 @@ func newKernel(in Inputs) (*Kernel, error) {
 			return nil, err
 		}
 		resolveMemoryUtilization(&eng, in.Scenario.EngineRelease())
-		in.Engine = &eng
+		if in.Lowered, err = lower(in, eng); err != nil {
+			return nil, err
+		}
 		// A test that edits the drafter states the passes itself; otherwise they are the engine block's.
 		if rows, reqs := draftPasses(in.Deployment, in.PoolIndex); in.DraftFirstPassRows == "" && in.DraftPassRequests == "" {
 			in.DraftFirstPassRows, in.DraftPassRequests = rows, reqs
@@ -272,7 +311,7 @@ func withResolvedMemoryUtilization(t *testing.T, in Inputs) Inputs {
 
 // resolveMemoryUtilization gives a pool that states no gpu_memory_utilization vLLM's default for the
 // release, as blis-vllm's resolver does before it builds the kernel; the cost model resolves none.
-func resolveMemoryUtilization(eng *enginesettings.Settings, release string) {
+func resolveMemoryUtilization(eng *vllmsettings.Settings, release string) {
 	if eng.GPUMemoryUtilization == 0 {
 		if d, ok := vllm.DefaultMemoryUtilization(release); ok {
 			eng.GPUMemoryUtilization = d.Value

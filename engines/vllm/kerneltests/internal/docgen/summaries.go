@@ -13,8 +13,8 @@ package main
 var summaries = map[string]struct{ title, summary string }{
 	"internal/price/memory.go|KVBytesPerToken|Coverage limit": {
 		"KV cache layouts not sized",
-		"The kernel does not size every KV cache layout vLLM has. It refuses the per-token-head " +
-			"quantized formats rather than size them. Padded pages and a cache that compresses " +
+		"The kernel does not size every KV cache layout vLLM has. The engine's lowering refuses " +
+			"the per-token-head quantized formats rather than hand the kernel a width for them. Padded pages and a cache that compresses " +
 			"several tokens into one stored state are sized only where the model graph states " +
 			"its caches; a graph that does not is sized as one full-length cache per layer.",
 	},
@@ -123,12 +123,5 @@ var summaries = map[string]struct{ title, summary string }{
 			"charged for a 1/(dp × tp) slice of each expert, where vLLM gives it 1/(dp × pcp × " +
 			"tp). Dividing by pcp as well would leave out a reduction the kernel does not price, " +
 			"and make the experts cheaper than the engine runs them.",
-	},
-	"sparse_mla.go|sparseMLABackend|Coverage limit": {
-		"Choosing the sparse attention backend",
-		"For DeepSeek sparse attention, which backend vLLM chooses depends on facts the model " +
-			"graph does not state: whether the checkpoint quantizes its KV cache, the installed " +
-			"FlashInfer version, and one head dimension. The kernel assumes the common case for " +
-			"each, and the catalog has no chip of the SM120 generation, whose backend differs.",
 	},
 }
