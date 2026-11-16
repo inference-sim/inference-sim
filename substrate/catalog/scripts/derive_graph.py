@@ -5881,6 +5881,211 @@ EAGLE3_TARGETS = {
 }
 
 
+# The dflash_config keys a DFlash2 drafter's configuration may state, each read by the engine's
+# DFlash2 model (vLLM v0.33.0 model_executor/models/qwen3_dflash2.py and the qwen3_dflash.py it
+# extends) and by this handler, or read by the engine and not changing what is priced
+# (final_logit_softcapping and output_multiplier scale the candidate logits;
+# input_embedding_scale scales the embedding output). Any other key changes the draft: causal,
+# use_swa, swa_window_size, attention_sink_bias and attention_value_scale change the attention
+# (_resolve_layer_attention and DFlashQwen3DecoderLayer, qwen3_dflash.py:96-156, 316-345), and
+# a key the engine does not know may be one a later release reads. Each is refused.
+DFLASH2_KEYS = frozenset({
+    "attention_mode", "block_size", "conv_group_size", "conv_kernel_size",
+    "final_logit_softcapping", "input_embedding_scale", "mask_token_id", "output_multiplier",
+    "selector_rank", "selector_top_k", "target_layer_ids",
+})
+
+# The bytes a token of one captured target state, for a DFlash2 drafter whose target captures
+# more than one hidden-width activation. The drafter's configuration does not name its target,
+# so this is recorded per drafter entry, with the target's code as the source. Muse Spark keeps
+# its residual stream in fp32 (residual_dtype = torch.float32,
+# vllm/models/muse_spark/nvidia/model.py:1531@v0.33.0) and appends that stream at each capture
+# point (:1705-1722), 4 x hidden_size bytes; its DSpark drafter states the same.
+DFLASH2_TARGET_STATE_BYTES = {
+    "muse-spark-open-dflash2": ("fp32", 8192),
+}
+
+
+def handler_dflash2(cfg, raw, model):
+    """A DFlash2 drafter (architecture DFlash2DraftModel, served by DFlash2Qwen3ForCausalLM,
+    vLLM v0.33.0 model_executor/models/qwen3_dflash2.py, registry.py:666), a checkpoint of its
+    own that a deployment names as its speculative draft model with method dflash.
+
+    The graph is the drafter, and states itself as the speculator a kernel prices beside the
+    target. num_hidden_layers DFlash layers (DFlash2Qwen3DecoderLayer, qwen3_dflash2.py:
+    229-287): the input norm; the attention-side grouped convolution's prepare, whose
+    kernel_projection is a replicated linear of 2 x conv_kernel_size x (hidden /
+    conv_group_size) rows (DFlashGroupedConv, :170-227), and the convolution over the block;
+    the Qwen3 attention, a fused QKV projection, per-head Q and K norms and RoPE, the
+    attention and o_proj (DFlashQwen3Attention, qwen3_dflash.py:159-296); the convolution's
+    finish; the post-attention norm and the MLP's convolution prepare; the SwiGLU MLP of
+    intermediate_size (Qwen2MLP); the MLP convolution's finish. The stack runs ONCE a step over
+    the block (parallel drafting, config/speculative.py:1581-1582). Every layer is
+    sliding-window attention over sliding_window tokens; a configuration whose is_causal is
+    false makes it non-causal (_dflash_layer_causal, qwen3_dflash.py:62-73), so each query
+    reads its window plus the block.
+
+    Before the pass, the context stack runs over the target's scheduled tokens: the fc
+    projection of one captured state per target_layer_ids entry (a replicated linear,
+    _get_dflash_fc_input_size, qwen3_dflash.py:84-95), the hidden norm, ONE projection of every
+    layer's K and V (the layers' K and V rows concatenated after loading, _build_context_kv_buffers,
+    qwen3_dflash.py:505-534, so those rows are resident twice), and each layer's K norm, RoPE and
+    cache insert (precompute_and_store_context_kv, :633-708). After the pass: the final norm and
+    the target's lm_head over the block, then the candidate selector (CandidateSelector,
+    qwen3_dflash2.py:314-358): a replicated projection of the hidden state to selector_rank, and
+    the predecessor and successor codebook rows of the selector_top_k candidates a position.
+
+    NOT PRICED, each small: the token lookup, which reads the target's table (the checkpoint
+    ships no embed_tokens); the convolutions' base kernels and the norms' weight vectors; the
+    edge scores, top_k x top_k x selector_rank multiply-adds a position, and the walk over them.
+    THE HEAD IS THE TARGET'S: the checkpoint ships no lm_head (has_own_lm_head is not set), so the
+    graph states one lm_head, as every graph must, aliased to the target's.
+
+    attention_mode mla (an MLA DFlash2 drafter) is refused: v0.33.0's DFlash attention builds a
+    QKV projection over head_dim and has no latent-attention path, and SGLang v0.5.23's
+    (python/sglang/srt/models/dflash.py DFlashAttention) has none either, so neither pinned
+    engine runs such a checkpoint."""
+    def whole(v, key):
+        if isinstance(v, bool) or not isinstance(v, int):
+            raise DeriveError(f"{model}: {key} is {v!r}, not a whole number")
+        return v
+
+    def positive(v, key):
+        if whole(v, key) < 1:
+            raise DeriveError(f"{model}: {key} is {v}; this architecture needs at least 1")
+        return v
+
+    draft = cfg.get("dflash_config")
+    if not isinstance(draft, dict):
+        raise DeriveError(f"{model}: no dflash_config; the engine reads the convolution, the "
+                          f"selector and the capture layers from it")
+    mode = draft.get("attention_mode", "gqa")
+    if mode != "gqa":
+        raise DeriveError(f"{model}: dflash_config.attention_mode is {mode!r}; vLLM v0.33.0's "
+                          f"DFlash attention is the GQA one only (qwen3_dflash.py:159-296), and "
+                          f"SGLang v0.5.23's too, so no pinned engine runs this drafter")
+    unread = sorted(set(draft) - DFLASH2_KEYS)
+    if unread:
+        raise DeriveError(f"{model}: dflash_config states {unread}, which this handler does not "
+                          f"read; each changes the draft the engine builds")
+    hidden = whole(require(cfg, "hidden_size", model), "hidden_size")
+    layers = positive(require(cfg, "num_layers", model), "num_hidden_layers")
+    nq = whole(require(cfg, "num_q_heads", model), "num_attention_heads")
+    nkv = whole(require(cfg, "num_kv_heads", model), "num_key_value_heads")
+    dh = head_dim(cfg, model)
+    vocab = whole(require(cfg, "vocab_size", model), "vocab_size")
+    ffn = positive(require(cfg, "ffn_size", model), "intermediate_size")
+    if cfg.get("draft_vocab_size", vocab) != vocab:
+        raise DeriveError(f"{model}: draft_vocab_size differs from vocab_size; the engine then maps "
+                          f"draft ids to target ids, which this handler does not price")
+    if cfg.get("attention_bias"):
+        raise DeriveError(f"{model}: attention_bias is set; this handler prices bias-free projections")
+    taps = positive(draft.get("conv_kernel_size"), "dflash_config.conv_kernel_size")
+    group = positive(draft.get("conv_group_size"), "dflash_config.conv_group_size")
+    if hidden % group:
+        raise DeriveError(f"{model}: conv_group_size {group} does not divide hidden_size {hidden}, "
+                          f"which the engine refuses (qwen3_dflash2.py:182-185)")
+    rank = positive(draft.get("selector_rank"), "dflash_config.selector_rank")
+    top_k = positive(draft.get("selector_top_k"), "dflash_config.selector_top_k")
+    block = positive(draft.get("block_size"), "dflash_config.block_size")
+    if not 0 <= whole(draft.get("mask_token_id"), "dflash_config.mask_token_id") < vocab:
+        raise DeriveError(f"{model}: the mask token is outside the vocabulary")
+    layer_types = cfg.get("layer_types")
+    if layer_types is None or len(layer_types) != layers or set(layer_types) != {"sliding_attention"}:
+        raise DeriveError(f"{model}: layer_types {layer_types!r}; this handler prices a draft whose "
+                          f"every layer is sliding-window attention")
+    window = positive(require(cfg, "sliding_window", model), "sliding_window")
+    if cfg.get("is_causal") is not False:
+        raise DeriveError(f"{model}: is_causal is {cfg.get('is_causal')!r}; this handler prices the "
+                          f"non-causal draft, whose queries read the whole block")
+    target_layers = whole(require_key(cfg, "num_target_layers", model), "num_target_layers")
+    targets = draft.get("target_layer_ids") or ()
+    target_hidden = whole(cfg.get("target_hidden_size") or hidden, "target_hidden_size")
+    aux_layers = draft_aux_hidden_state_layers(cfg, model, target_layers, states=len(targets))
+    base = base_dtype(cfg, raw, model)
+    if raw_quant(cfg, model) or raw_quant(raw, model):
+        raise DeriveError(f"{model}: a quantized DFlash2 checkpoint; this handler prices the "
+                          f"unquantized one")
+    act = DTYPE_WIDTHS[base]
+    groups = hidden // group
+
+    def traffic(role, nbytes, tp=None):
+        node = dict(norm(role), bytes_per_token=int(nbytes))
+        if tp:
+            node["tp"] = tp
+        return node
+
+    def with_tp(node, tp):
+        node["tp"] = tp
+        return node
+
+    def conv(side):
+        # One kernel projection a convolution, then its taps over the block, read and written
+        # at hidden width (_grouped_conv, qwen3_dflash2.py:144-167).
+        return [with_tp(gemm(f"{side}_conv_kernel_projection", 2 * taps * groups, hidden), "replicated"),
+                traffic(f"{side}_conv_prepare", 2 * hidden * act, tp="replicated")]
+
+    attention = {"op": "Attention", "holds_engine_kv": True, "kind": "swa", "n_q": nq,
+                 "n_kv": nkv, "d_h": dh, "window": window + block}
+    layer = [
+        norm("input_norm"),
+        *conv("attention"),
+        gemm("qkv_proj", (nq + 2 * nkv) * dh, hidden),
+        # The per-head Q and K norms and RoPE over q and k.
+        traffic("qk_norm_rope", 2 * (nq + nkv) * dh * act),
+        attention,
+        gemm("o_proj", hidden, nq * dh),
+        collective("AllReduce", "attn_out", EMIT_TENSOR_PARALLEL),
+        traffic("attention_conv_finish", 2 * hidden * act, tp="replicated"),
+        norm("post_attn_norm"),
+        *conv("mlp"),
+        gemm("mlp_gate_up", 2 * ffn, hidden),
+        gemm("mlp_down", hidden, ffn),
+        collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL),
+        traffic("mlp_conv_finish", 2 * hidden * act, tp="replicated"),
+    ]
+    context = [
+        with_tp(gemm("dflash_fc", hidden, target_hidden * len(targets)), "replicated"),
+        traffic("dflash_hidden_norm", 2 * hidden * act, tp="replicated"),
+        gemm("dflash_context_kv", layers * 2 * nkv * dh, hidden),
+    ]
+    for d in range(layers):
+        # The K norm, RoPE and the cache insert over the projected K and V.
+        context.append(traffic(f"dflash_context_kv_insert_{d}", 2 * 2 * nkv * dh * act))
+    kinds = [{"id": "dflash_layer", "nodes": layer, "edges": chain(layer)},
+             {"id": "dflash_context", "nodes": context, "edges": chain(context)}]
+    head = [traffic("final_norm", 2 * hidden * act, tp="replicated"),
+            with_tp(gemm("lm_head", vocab, hidden), "column")]
+    speculator = {
+        # dflash has no default draft length (config/speculative.py:1614-1618 refuses a
+        # deployment that states none), so the graph states 1, the least a deployment can.
+        "method": "dflash",
+        "num_spec_tokens": 1,
+        "drafting": "parallel_block",
+        "shares_target_head": True,
+        "stack": {"pattern": ["dflash_layer"], "repeat": layers},
+        "context_stack": {"pattern": ["dflash_context"], "repeat": 1},
+        "head": [traffic("dflash_final_norm", 2 * hidden * act, tp="replicated"),
+                 {**with_tp(gemm("dflash_lm_head", vocab, hidden), "column"),
+                  "aliases": "head.lm_head"},
+                 with_tp(gemm("selector_hidden_projection", rank, hidden), "replicated"),
+                 {"op": "Gather", "role": "selector_codebooks", "rows": 2 * vocab,
+                  "row_bytes": rank * act, "rows_per_token": 2 * top_k,
+                  "out_bytes_per_token": 2 * top_k * rank * act}],
+        "aux_hidden_state_layers": aux_layers,
+    }
+    wider = DFLASH2_TARGET_STATE_BYTES.get(model)
+    if wider:
+        dtype, width = wider
+        if width != target_hidden:
+            raise DeriveError(f"{model}: the recorded target width {width} is not the fc's "
+                              f"{target_hidden}")
+        speculator["aux_hidden_state_bytes_per_token"] = width * DTYPE_WIDTHS[dtype]
+    extras = {"global": {"architecture": raw["architectures"][0]}, "head": head,
+              "speculator": speculator}
+    return kinds, {"pattern": ["dflash_layer"], "repeat": layers}, extras
+
+
 def eagle3_default_aux_layers(layers: int) -> list[int]:
     """The capture layers vLLM's SupportsEagle3 default gives a target of `layers` layers."""
     return sorted({2, layers // 2, layers - 3})
@@ -6067,6 +6272,9 @@ HANDLERS = {
     "MuseSparkDSparkModel": handler_muse_spark_dspark,
     "K3DSparkModel": handler_k3_dspark,
     "DSparkMiniMaxDraftModel": handler_minimax_dspark,
+    # A DFlash2 drafter, a Qwen3-style draft head with grouped convolutions and a candidate
+    # selector (vLLM v0.33.0 registry.py:666, model_executor/models/qwen3_dflash2.py).
+    "DFlash2DraftModel": handler_dflash2,
     # Kimi-K2.5 is a vision-language model whose TEXT decoder vLLM instantiates as
     # DeepseekV2ForCausalLM over config.text_config
     # (model_executor/models/kimi_k25.py:371-376, architectures=["DeepseekV2ForCausalLM"]),

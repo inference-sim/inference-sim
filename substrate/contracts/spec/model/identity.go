@@ -77,6 +77,10 @@ type Licence struct {
 	// no licence, or names only "other", the ID names the licence file read at the pinned
 	// revision instead (LicenseRef-deepseek for DeepSeek-V3's LICENSE-MODEL), never a
 	// placeholder such as LicenseRef-other or LicenseRef-none-stated, which names no text.
+	// When the card names no licence and the repository holds no licence file, the ID is
+	// SPDX's NONE (no licence is present), and the evidence is the provider's API record of
+	// the pinned revision, which shows both. NONE is not on the allow-list, so such a model
+	// commits only its config.json's hash and revision (X12).
 	ID string `yaml:"id"`
 	// Evidence is the URL the licence was read from, at the pinned revision: the model
 	// card's front matter, the provider's API record of that revision, or, when the ID
@@ -200,7 +204,15 @@ func (id *Identity) validateLicence(p *validate.Problems) {
 		return
 	}
 	p.Merge("licence", id.Licence.Validate(id.Source))
+	if id.Licence.ID == NoLicence && (id.Config == nil || id.Config.SHA256 == "") {
+		p.Field("licence", "id %s states that no licence is present, so the config.json is not on the "+
+			"allow-list: pin it by config.sha256 and commit only the hash (X12)", NoLicence)
+	}
 }
+
+// NoLicence is SPDX's identifier for "no licence is present": the model card names none and
+// the repository holds no licence file.
+const NoLicence = "NONE"
 
 var licenceRef = regexp.MustCompile(`^(LicenseRef-[A-Za-z0-9.-]+|[A-Za-z0-9][A-Za-z0-9.+-]*)$`)
 
@@ -221,7 +233,7 @@ func (l *Licence) Validate(src *Source) *validate.Problems {
 	case !licenceRef.MatchString(l.ID):
 		p.Field("id", "%q is not an SPDX identifier or LicenseRef-<name>", l.ID)
 	case placeholderLicences[l.ID]:
-		p.Field("id", "%q names no licence text; name the licence file read at the pinned revision, and cite that file as the evidence", l.ID)
+		p.Field("id", "%q names no licence text; name the licence file read at the pinned revision, and cite that file as the evidence, or, when the revision states no licence at all, write %s", l.ID, NoLicence)
 	}
 	if !strings.HasPrefix(l.Evidence, "https://") {
 		p.Field("evidence", "%q is not an https URL", l.Evidence)
