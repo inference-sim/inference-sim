@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
@@ -30,6 +31,7 @@ var (
 	speculativeThinking         string  // --speculative-thinking (on|off): selects the profile
 	speculativeCategory         string  // --speculative-category: selects the profile
 	speculativeFallbackCategory string  // --speculative-fallback-category: recorded substitute
+	speculativeRealisation      string  // --speculative-acceptance-realisation: natural|synthetic
 
 	// scenarioShape is the scenario's deployment shape and its acceptance and workload terms,
 	// read once by adoptKernelDeployment.
@@ -54,6 +56,7 @@ func registerAcceptanceFlags(cmd *cobra.Command) {
 	cmd.MarkFlagsMutuallyExclusive(acceptanceRateFlag, acceptanceLengthFlag)
 	cmd.Flags().StringVar(&speculativeThinking, "speculative-thinking", "", "Speculative decoding: whether the target runs with thinking on ("+strings.Join(acceptance.AllThinkingModes(), "|")+"); with --"+acceptanceCategoryFlag+" it selects the registry's acceptance profile, overriding the workload's own selectors.")
 	cmd.Flags().StringVar(&speculativeCategory, "speculative-category", "", "Speculative decoding: the workload category (e.g. coding) that selects the registry's acceptance profile, overriding the workload's own.")
+	cmd.Flags().StringVar(&speculativeRealisation, "speculative-acceptance-realisation", "", "Speculative decoding: how the run whose rate or length --"+acceptanceRateFlag+" or --"+acceptanceLengthFlag+" states realised its acceptance ("+strings.Join(acceptance.AllRealisations(), "|")+"). natural spreads it over the draft positions with the decay the registry measures for the speculative method; synthetic, or leaving it out, with the engine's minimum-variance schedule for forced acceptance. Only with one of those two flags.")
 	cmd.Flags().StringVar(&speculativeFallbackCategory, "speculative-fallback-category", "", "Speculative decoding: a category whose profile to use, recorded as a fallback, when the workload's category has none. Without it an unmatched category is refused. Unlike the acceptance value, where the CLI is highest, a scenario pin's own fallback_category wins over this flag, as blis-schemas' acceptance.Resolve applies them.")
 }
 
@@ -72,6 +75,15 @@ func acceptanceRecordOf(r acceptance.Resolution, c speculativeConfig) *sim.Accep
 			PerPositionRates: r.PerPositionRates,
 			RatesDerived:     r.RatesDerived,
 		},
+	}
+	if r.RatesDerived {
+		rec.Entry.RatesSchedule = string(r.Schedule)
+		if rec.Entry.RatesSchedule == "" {
+			rec.Entry.RatesSchedule = string(acceptance.ScheduleMinimumVariance)
+		}
+		if s := r.Shape; s != nil {
+			rec.Entry.RatesShape = fmt.Sprintf("%s %q decay_exponent %v", r.ShapeSet, s.SpeculativeMethod, s.DecayExponent)
+		}
 	}
 	if p := r.Profile; p != nil {
 		rec.Entry.Key = p.Key().String()
@@ -103,4 +115,27 @@ func logAcceptance(r *sim.AcceptanceRecord, k int) {
 	if r.Entry.MeasuredOn != "" {
 		logrus.Warnf("speculative acceptance: the profile was measured on %s, not %s", r.Entry.MeasuredOn, gpu)
 	}
+	if r.Entry.RatesDerived {
+		how := "the engine's minimum-variance schedule, which forced acceptance follows; a rate measured from natural acceptance decays instead (--speculative-acceptance-realisation natural)"
+		if r.Entry.RatesSchedule == string(acceptance.ScheduleNaturalDecay) {
+			how = "the natural decay of shape " + r.Entry.RatesShape
+		}
+		logrus.Warnf("speculative acceptance: no per-position rates were stated, so they were derived with %s; recorded in the results file as rates_schedule %s",
+			how, r.Entry.RatesSchedule)
+	}
+}
+
+// checkRealisationFlag refuses --speculative-acceptance-realisation without the rate or length
+// it qualifies, and a value that is not a realisation.
+func checkRealisationFlag(fl interface{ Changed(string) bool }) error {
+	if !fl.Changed("speculative-acceptance-realisation") {
+		return nil
+	}
+	if !acceptance.Realisation(speculativeRealisation).Valid() {
+		return fmt.Errorf("--speculative-acceptance-realisation %q is not one of %v", speculativeRealisation, acceptance.AllRealisations())
+	}
+	if !fl.Changed(acceptanceRateFlag) && !fl.Changed(acceptanceLengthFlag) {
+		return fmt.Errorf("--speculative-acceptance-realisation qualifies a value; state --%s or --%s with it", acceptanceRateFlag, acceptanceLengthFlag)
+	}
+	return nil
 }

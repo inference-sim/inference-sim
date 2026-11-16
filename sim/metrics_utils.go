@@ -225,6 +225,11 @@ type AcceptanceEntry struct {
 	// whether they were derived from AL by vLLM's minimum-variance schedule rather than stated.
 	PerPositionRates []float64 `json:"per_position_rates"`
 	RatesDerived     bool      `json:"rates_derived"`
+	// RatesSchedule names how derived rates were derived, an estimate the run assumed:
+	// "minimum_variance" (the engine's schedule for forced acceptance) or "natural_decay" (the
+	// registry's measured decay for the method, named by RatesShape). Empty when stated.
+	RatesSchedule string `json:"rates_schedule,omitempty"`
+	RatesShape    string `json:"rates_shape,omitempty"`
 }
 
 // ScenarioOverride is one setting a run took from somewhere other than its scenario.
