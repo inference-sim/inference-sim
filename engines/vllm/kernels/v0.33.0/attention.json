@@ -1,8 +1,8 @@
 {
   "_comment": "Edited by people; kernels/gen_kernel_impls.py reads it with vLLM's own selection code and refuses a classification that disagrees with it. The module docstring says what comes from where.",
   "upstream": {
-    "version": "0.32.0",
-    "commit": "5df63a7203cdb9328d824a27b682e77c7b9928be"
+    "tag": "v0.33.0",
+    "commit": "4ba787ec9959e566d3b587a796dff07673324da5"
   },
   "archs": {
     "sm_90a": {
@@ -90,7 +90,10 @@
         "use_trtllm_attention": "a selection predicate",
         "scaled_fp8_quant": "quantizes the query to FP8 ahead of the kernel; not an attention primitive",
         "cp_lse_ag_out_rs": "the decode-context-parallel all-gather and reduce-scatter of partial outputs: a collective",
-        "dcp_a2a_lse_reduce": "the decode-context-parallel all-to-all of partial outputs: a collective"
+        "dcp_a2a_lse_reduce": "the decode-context-parallel all-to-all of partial outputs: a collective",
+        "get_device_sm_count": "reads the device's SM count",
+        "get_trtllm_gen_multi_ctas_kv_counter_bytes": "sizes a trtllm-gen workspace counter",
+        "mask_dcp_empty_shards_": "masks the partial outputs of empty decode-context-parallel shards with PyTorch ops; not an attention kernel"
       },
       "gaps": [
         {
@@ -203,6 +206,10 @@
       "status": "gap",
       "issue": "inference-sim/blis-vllm#151"
     },
+    "FLASH_ATTN_MLA_SPARSE_FA4": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
     "FLEX_ATTENTION": {
       "status": "gap",
       "issue": "inference-sim/blis-vllm#151"
@@ -247,9 +254,21 @@
       "status": "not_cuda",
       "reason": "a ROCm backend; the ROCm platform selects it (vllm/platforms/rocm.py)"
     },
+    "ROCM_FLASHMLA_SPARSE_DSV41": {
+      "status": "not_cuda",
+      "reason": "a ROCm backend; the ROCm platform selects it (vllm/platforms/rocm.py)"
+    },
+    "ROCM_OCTAVE": {
+      "status": "not_cuda",
+      "reason": "a ROCm backend; the ROCm platform selects it (vllm/platforms/rocm.py)"
+    },
     "ROCM_SEGMENTED_ATTN": {
       "status": "not_cuda",
       "reason": "a ROCm backend; the ROCm platform selects it (vllm/platforms/rocm.py)"
+    },
+    "STEP5_DSA": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
     },
     "TOKENSPEED_MLA": {
       "status": "gap",
@@ -263,7 +282,8 @@
       "status": "listed",
       "not_kernels": {
         "triton_reshape_and_cache_flash": "writes the KV cache; not an attention primitive",
-        "triton_reshape_and_cache_flash_per_token_head_quant": "writes the KV cache; not an attention primitive"
+        "triton_reshape_and_cache_flash_per_token_head_quant": "writes the KV cache; not an attention primitive",
+        "MAX_3D_QUERY_LEN": "a constant"
       }
     },
     "TRITON_ATTN_DIFFKV": {
@@ -489,7 +509,8 @@
       ],
       "archs": [
         "sm_100a",
-        "sm_103a"
+        "sm_103a",
+        "sm_90a"
       ],
       "gates": [
         "vllm/v1/attention/backends/fa_utils.py:get_flash_attn_version"
@@ -499,7 +520,7 @@
           "flash_attn/cute"
         ]
       },
-      "note": "FA4 (CuTe DSL), the default on SM10x (get_flash_attn_version); compiled just in time"
+      "note": "FA4 (CuTe DSL), the default on SM10x, and on SM90 for the cases FA3 does not support when FA4 is available (get_flash_attn_version); compiled just in time"
     },
     {
       "backend": "TRITON_ATTN",

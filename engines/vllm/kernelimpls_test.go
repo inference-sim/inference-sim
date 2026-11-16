@@ -103,3 +103,17 @@ func TestABuildTheTableDoesNotIdentifyHasNoHash(t *testing.T) {
 		}
 	}
 }
+
+// On an H100 (9.0), vLLM's FlashAttention selection moves a layer FA3 cannot serve (a head size
+// above 256, or attention sinks it does not support) to FA4 when FA4 is available
+// (vllm/v1/attention/backends/fa_utils.py, get_flash_attn_version). The lowering must find
+// FA4's SM90 build, not report it unidentified.
+func TestFA4IsABuildOnSM90(t *testing.T) {
+	got, err := Implementation(plan.PrimAttentionPrefill, "vllm-flash-attn", "cute.flash_attn_varlen_func", 9, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.CodeHash == "" {
+		t.Errorf("FA4 on SM90 is not identified: %+v", got)
+	}
+}

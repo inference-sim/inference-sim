@@ -623,6 +623,24 @@
       ]
     },
     {
+      "primitive": "attention.decode",
+      "library": "vllm-flash-attn",
+      "library_version": "9cd61de38763d712bb6ce56e2a02cc2bf718c89f",
+      "variant": "cute.flash_attn_varlen_func",
+      "target_arch": "sm_90a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "flash_attn/cute tree fd262544a2dbd41647f1af969e36f61597c6fbdf"
+      ],
+      "code_hash": "99377dc94219ed37e710ed7c09b0017c1b79640379b9870c8fb7f397b2237285",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:162@5df63a72",
+        "vllm/v1/attention/backends/fa_utils.py:74@5df63a72",
+        "vllm/v1/attention/backends/flash_attn.py:116@5df63a72"
+      ]
+    },
+    {
       "primitive": "attention.prefill",
       "library": "flashinfer",
       "library_version": "0.7.0.post1",
@@ -985,6 +1003,24 @@
         "flash_attn/cute tree fd262544a2dbd41647f1af969e36f61597c6fbdf"
       ],
       "code_hash": "2a2b8144a72bf6d1c239953314bf0f953a0a96d59c31a005045d879f1d6f824e",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:162@5df63a72",
+        "vllm/v1/attention/backends/fa_utils.py:74@5df63a72",
+        "vllm/v1/attention/backends/flash_attn.py:116@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "vllm-flash-attn",
+      "library_version": "9cd61de38763d712bb6ce56e2a02cc2bf718c89f",
+      "variant": "cute.flash_attn_varlen_func",
+      "target_arch": "sm_90a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "flash_attn/cute tree fd262544a2dbd41647f1af969e36f61597c6fbdf"
+      ],
+      "code_hash": "99377dc94219ed37e710ed7c09b0017c1b79640379b9870c8fb7f397b2237285",
       "toolkit": "13.0.3",
       "selected_by": [
         "vllm/platforms/cuda.py:162@5df63a72",

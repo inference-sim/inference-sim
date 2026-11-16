@@ -80,7 +80,7 @@ def git_tree(root, files):
 
 def classification(commit):
     return {
-        "upstream": {"version": "9.9.9", "commit": commit},
+        "upstream": {"tag": "v9.9.9", "commit": commit},
         "archs": {"sm_100a": {}, "sm_90a": {}},
         "libraries": {
             "fastlib": {"pip": "fastlib-python", "requirements": "requirements/cuda.txt", "repo": "https://example.org/fastlib",
@@ -267,12 +267,40 @@ class GenKernelImplsTest(unittest.TestCase):
         cls["upstream"]["commit"] = "0" * 40
         self.assertIn("0" * 40, self.refused(cls))
 
+    def test_a_classification_of_another_release_is_refused(self):
+        path = os.path.join(self.tmp.name, "cls.json")
+        with open(path, "w") as f:
+            json.dump(self.cls, f)
+        with self.assertRaises(gen.Refused) as ctx:
+            gen.load_classification("v9.9.8", path)
+        self.assertIn("v9.9.9", str(ctx.exception))
+        self.assertEqual(gen.load_classification("v9.9.9", path)["upstream"]["commit"], self.commit)
+
+    def test_a_release_with_no_classification_is_refused(self):
+        with self.assertRaises(gen.Refused) as ctx:
+            gen.load_classification("v0.0.1")
+        self.assertIn("v0.0.1", str(ctx.exception))
+
+    def test_each_releases_classification_is_found_by_its_tag(self):
+        here = os.path.dirname(os.path.abspath(__file__))
+        tags = sorted(d for d in os.listdir(here) if os.path.isfile(os.path.join(here, d, "attention.json")))
+        self.assertTrue(tags, "no classification under kernels/<tag>/")
+        for tag in tags:
+            self.assertEqual(gen.load_classification(tag)["upstream"]["tag"], tag)
+
+    def test_the_pins_regen_fetches_are_the_ones_vllm_states(self):
+        pins = gen.library_pins(self.vllm, self.cls)
+        self.assertEqual(pins["fastlib"][2:], ("https://example.org/fastlib", "v1.2.3"))
+        self.assertEqual(pins["otherlib"][2:], ("https://example.org/other", self.other_commit))
+        self.assertIsNone(pins["vllm-csrc"][2], "the engine's own kernels are read from vLLM itself")
+
     def test_check_fails_on_a_table_that_is_not_current(self):
         path = os.path.join(self.tmp.name, "cls.json")
         with open(path, "w") as f:
             json.dump(self.cls, f)
         out = os.path.join(self.tmp.name, "kernel_impls.json")
-        args = [self.vllm, path, "--source", f"fastlib={self.fastlib}", "--source", f"otherlib={self.other}"]
+        args = [self.vllm, "--upstream", "v9.9.9", "--classification", path,
+                "--source", f"fastlib={self.fastlib}", "--source", f"otherlib={self.other}"]
         buf = io.StringIO()
         with redirect_stdout(buf):
             self.assertEqual(gen.main(args), 0)
