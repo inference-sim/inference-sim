@@ -65,6 +65,9 @@ type mambaAlignConfig struct {
 	PrefillCheckpointAlignment int
 	// DropEagleCheckpointBlock is set by the coordinator when EAGLE is on (:173-180).
 	DropEagleCheckpointBlock bool
+	// HashLookahead is the block pool's num_hash_lookahead_tokens
+	// (single_type_kv_cache_manager.py:1761-1766, 2047-2052, 2087-2092@4ba787ec).
+	HashLookahead int
 	// RetentionInterval is prefix_cache_retention_interval: nil is dense, 0 keeps the replay
 	// boundaries' states only, a positive multiple of SchedulerBlockSize a state per segment
 	// as well (kv_cache_coordinator.py:182-188).
@@ -139,11 +142,13 @@ func newMambaAlign(pool *Pool, g *group, cfg mambaAlignConfig) (*mambaAlign, err
 }
 
 // mambaPrefillCheckpointPosition is get_mamba_prefill_checkpoint_position
-// (kv_cache_interface.py:1110-1121@5df63a72): the reusable boundary of a prefill.
-func mambaPrefillCheckpointPosition(numTokens, hashBlockSize int, dropEagleBlock bool) int {
-	// Without EAGLE, one token is left to recompute on resend; EAGLE's block drop already
-	// leaves tokens to recompute.
-	proofLimit := numTokens - 1
+// (kv_cache_interface.py:1169-1186@4ba787ec): the reusable boundary of a prefill. hashLookahead is
+// num_hash_lookahead_tokens.
+func mambaPrefillCheckpointPosition(numTokens, hashBlockSize int, dropEagleBlock bool, hashLookahead int) int {
+	// Leave tokens for logits recomputation and for the checkpoint's hash, which covers the
+	// hashLookahead tokens after it; EAGLE's block drop already leaves tokens to recompute.
+	// v0.32.0 left one token whatever the lookahead (:1110-1121@5df63a72).
+	proofLimit := numTokens - max(1, hashLookahead)
 	if dropEagleBlock {
 		proofLimit = numTokens
 	}
@@ -345,7 +350,7 @@ func (a *mambaAlign) numBlocksToAllocate(id string, newComputed []*Block, totalC
 	if numLocalComputed%a.blockSize != 0 && len(newComputed) > 0 {
 		panic("kv: enable_partial_hash_hits is not modelled: a local hit ends inside a mamba block")
 	}
-	checkpointPosition := mambaPrefillCheckpointPosition(numTokens, a.alignment, a.cfg.DropEagleCheckpointBlock)
+	checkpointPosition := mambaPrefillCheckpointPosition(numTokens, a.alignment, a.cfg.DropEagleCheckpointBlock, a.cfg.HashLookahead)
 	if !a.needsInternalCheckpoint(id, totalComputed, numTokens, checkpointPosition, prefillEnd) {
 		checkpointPosition = 0
 	}
@@ -573,7 +578,7 @@ func (a *mambaAlign) cachePartialTailBlock(r mambaReq, numTokens int) []byte {
 		// The prompt's final chunk caches only up to its last full block, so its checkpoint is
 		// the prompt's reusable boundary, not a transient one.
 		isPromptCheckpoint := ck.position == mambaPrefillCheckpointPosition(r.NumPromptTokens, a.alignment,
-			a.cfg.DropEagleCheckpointBlock)
+			a.cfg.DropEagleCheckpointBlock, a.cfg.HashLookahead)
 		isRetainedCheckpoint := false
 		if ck.position%a.blockSize == 0 {
 			bi := ck.position/a.blockSize - 1
@@ -595,7 +600,7 @@ func (a *mambaAlign) cachePartialTailBlock(r mambaReq, numTokens int) []byte {
 		return nil
 	}
 	latestPromptHashBoundary := mambaPrefillCheckpointPosition(r.NumPromptTokens, hashBlockSize,
-		a.cfg.DropEagleCheckpointBlock)
+		a.cfg.DropEagleCheckpointBlock, a.cfg.HashLookahead)
 	if numTokens != latestPromptHashBoundary {
 		return nil
 	}
