@@ -190,3 +190,62 @@ func GoName(m string) string {
 }
 
 var initialisms = map[string]string{"kv": "KV", "swa": "SWA", "lru": "LRU", "id": "ID", "ids": "IDs", "kvcache": "KVCache"}
+
+// RowWrite is a ReqToTokenPool.write call (memory_pool.py:414-415@297e54fd) as the positions it
+// sets: each (row, position) with its slot. SGLang indexes the pool two ways, (row, slice) for a
+// run of one row and ([rows], [positions]) for one slot in each of several rows.
+func (c Call) RowWrite() ([]RowSlot, error) {
+	var idx []json.RawMessage
+	if err := c.Arg("indices", &idx); err != nil {
+		return nil, err
+	}
+	var values []int64
+	if err := c.Arg("values", &values); err != nil {
+		return nil, err
+	}
+	if len(idx) != 2 {
+		return nil, fmt.Errorf("write (seq %d): %d indices, want 2", c.Seq, len(idx))
+	}
+	var row int
+	if err := json.Unmarshal(idx[0], &row); err == nil {
+		var s struct {
+			T     string `json:"_t"`
+			Start *int   `json:"start"`
+			Stop  *int   `json:"stop"`
+			Step  *int   `json:"step"`
+		}
+		if err := json.Unmarshal(idx[1], &s); err != nil || s.T != "slice" || s.Start == nil || s.Stop == nil ||
+			(s.Step != nil && *s.Step != 1) {
+			return nil, fmt.Errorf("write (seq %d): the second index is not a bounded slice: %s", c.Seq, idx[1])
+		}
+		if *s.Stop-*s.Start != len(values) {
+			return nil, fmt.Errorf("write (seq %d): slice [%d:%d) of %d values", c.Seq, *s.Start, *s.Stop, len(values))
+		}
+		out := make([]RowSlot, len(values))
+		for i, v := range values {
+			out[i] = RowSlot{Row: row, Pos: *s.Start + i, Slot: v}
+		}
+		return out, nil
+	}
+	var rows, pos []int
+	if err := json.Unmarshal(idx[0], &rows); err != nil {
+		return nil, fmt.Errorf("write (seq %d): rows: %w", c.Seq, err)
+	}
+	if err := json.Unmarshal(idx[1], &pos); err != nil {
+		return nil, fmt.Errorf("write (seq %d): positions: %w", c.Seq, err)
+	}
+	if len(rows) != len(pos) || len(pos) != len(values) {
+		return nil, fmt.Errorf("write (seq %d): %d rows, %d positions, %d values", c.Seq, len(rows), len(pos), len(values))
+	}
+	out := make([]RowSlot, len(values))
+	for i, v := range values {
+		out[i] = RowSlot{Row: rows[i], Pos: pos[i], Slot: v}
+	}
+	return out, nil
+}
+
+// RowSlot is one position of a request's row and the slot written there.
+type RowSlot struct {
+	Row, Pos int
+	Slot     int64
+}

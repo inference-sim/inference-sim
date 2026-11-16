@@ -187,3 +187,51 @@ func TestGoNameMapsSGLangMethodNames(t *testing.T) {
 		}
 	}
 }
+
+// A replay rebuilds the request pool from the writes: each write names the positions it sets,
+// in both of the forms SGLang indexes the pool with. Replaying every write of a scheduler run
+// gives each request's row as SGLang's checkpoint read it.
+func TestRowWritesReplayIntoTheRowsCheckpointReads(t *testing.T) {
+	tr, ok := loadGoldens(t)["recorded/tiny"]
+	if !ok {
+		t.Fatal("no recorded/tiny trace")
+	}
+	rows := map[int]map[int]int64{}
+	var checked, sliced int
+	for _, c := range tr.Calls {
+		switch {
+		case c.Iface == ReqToTokenIface && c.Method == "write":
+			slots, err := c.RowWrite()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(slots) > 1 && slots[0].Row == slots[len(slots)-1].Row {
+				sliced++
+			}
+			for _, s := range slots {
+				if rows[s.Row] == nil {
+					rows[s.Row] = map[int]int64{}
+				}
+				rows[s.Row][s.Pos] = s.Slot
+			}
+		case c.Iface == PrefixCacheIface && c.Method == "checkpoint" && c.In == nil:
+			var req struct {
+				KV  ReqKV   `json:"kv"`
+				Row []int64 `json:"row"`
+			}
+			if err := c.Arg("req", &req); err != nil {
+				t.Fatal(err)
+			}
+			for pos, slot := range req.Row {
+				if got := rows[*req.KV.ReqPoolIdx][pos]; got != slot {
+					t.Errorf("checkpoint (seq %d): row %d position %d holds slot %d after the replayed writes; SGLang read %d",
+						c.Seq, *req.KV.ReqPoolIdx, pos, got, slot)
+				}
+			}
+			checked++
+		}
+	}
+	if checked == 0 || sliced == 0 {
+		t.Errorf("%d checkpoints checked against %d sliced writes; the trace must have both", checked, sliced)
+	}
+}

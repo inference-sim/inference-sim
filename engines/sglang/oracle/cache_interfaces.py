@@ -179,6 +179,12 @@ class Monitor:
                 out[k] = self.enc(getattr(r, k), depth + 1)
         if hasattr(r, "last_node"):
             out["last_node"] = self.enc(r.last_node, depth + 1)
+        # The tree lock the request holds and its matched prefix, which checkpoint, unlock and
+        # prefix_device_indices read.
+        if hasattr(r, "lock"):
+            out["lock"] = self.enc(r.lock, depth + 1)
+        if hasattr(r, "prefix_len"):
+            out["prefix_len"] = self.enc(r.prefix_len, depth + 1)
         out["finished"] = bool(r.finished()) if hasattr(r, "finished") else None
         return out
 
