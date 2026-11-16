@@ -4,7 +4,7 @@
 # Run it with --prefill-instances 1 --decode-instances 1 --num-instances 2.
 kind: Scenario
 name: muse-h100-roce-1p1d
-engine: {kind: vllm, version: "0.32.0"}
+engine: {kind: vllm, version: "0.33.0"}
 model: muse-spark-open-816b-a42b-nvfp4
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]
 cluster:

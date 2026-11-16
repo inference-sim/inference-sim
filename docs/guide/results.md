@@ -25,7 +25,7 @@ jq '.metrics.ttft_p99_ms.value' result.json
 
 | Section | What it holds |
 |---|---|
-| `engine` | The engine the scenario names: `kind` (`vllm`) and the upstream `version` it runs (`0.32.0`). |
+| `engine` | The engine the scenario names: `kind` (`vllm`) and the upstream `version` it runs (`0.33.0`). |
 | `data` | The catalog and registry the run read (design §3.3, SIM-6): for each, `source` (`embedded`, the copy compiled into the pinned blis-substrate, or `path` with `--catalog`/`--registry`), its content `hash`, the `overlays` applied with their hashes, and the `combined_hash`; `released_data` (true only for a tagged build reading both embedded copies with no overlay); and `build`, the release tag or `unreleased`. |
 | `selected_entries` | The catalog and registry entries the run read, each by identity and hash, and the `unread_files` the loader opened but no reader used (VAL-6). |
 | `input` | The resolved `scenario` and `deployment`, and a `--policy-config` bundle verbatim under `policy`. |

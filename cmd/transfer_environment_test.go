@@ -300,7 +300,7 @@ func TestPlaceInstance_TwoDecodeInstancesStateTheirOwnNodes(t *testing.T) {
 	}
 	pull := func(index int) engine.Transfer {
 		t.Helper()
-		spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0",
+		spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0",
 			Roots: contractRoots(filepath.Join(dir, "glm-5-two-decode-nodes.yaml")), Pool: 1, Seed: 1}
 		eng, err := newContractEngine(spec, data)
 		if err != nil {
@@ -357,7 +357,7 @@ func TestPlaceInstance_AnEngineThatAcceptsNoPlacementIsRefusedInADisaggregatedRu
 	if err != nil {
 		t.Fatal(err)
 	}
-	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0",
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0",
 		Roots: contractRoots(filepath.Join(pdScenarios, "glm-5-h200-3p1d-ib.yaml")), Pool: 0, Seed: 1}
 	eng, err := newContractEngine(spec, data)
 	if err != nil {
