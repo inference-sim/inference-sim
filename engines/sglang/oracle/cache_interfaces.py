@@ -6,6 +6,7 @@ The cache framework is six abstract classes of SGLang v0.5.23 (python/sglang/srt
 
   prefix_cache   BasePrefixCache            base_prefix_cache.py:390, with insert (every tree
                                             cache defines it; InsertParams, :77, is its argument)
+                                            and __init__ (its CacheInitParams)
   tree_core      UnifiedTreeCoreInterface   unified_cache/unified_tree_core_interface.py:167
   component      TreeComponent              unified_cache/components/base.py:173
   allocator      BaseTokenToKVPoolAllocator allocator/base.py:41
@@ -42,7 +43,7 @@ import sys
 
 # (interface, module, abstract class, extra methods)
 INTERFACES = (
-    ("prefix_cache", "sglang.srt.mem_cache.base_prefix_cache", "BasePrefixCache", ("insert",)),
+    ("prefix_cache", "sglang.srt.mem_cache.base_prefix_cache", "BasePrefixCache", ("insert", "__init__")),
     ("tree_core", "sglang.srt.mem_cache.unified_cache.unified_tree_core_interface", "UnifiedTreeCoreInterface", ()),
     ("component", "sglang.srt.mem_cache.unified_cache.components.base", "TreeComponent", ()),
     ("allocator", "sglang.srt.mem_cache.allocator.base", "BaseTokenToKVPoolAllocator", ("__init__",)),
@@ -62,7 +63,7 @@ CO_GENERATOR = 0x20
 MAX_DEPTH = 8
 
 # What a pool or allocator is, once built: the attributes its sizing sets.
-SIZING = ("size", "page_size", "dtype", "store_dtype", "layer_num", "head_num", "head_dim", "v_head_dim",
+SIZING = ("disable", "size", "page_size", "dtype", "store_dtype", "layer_num", "head_num", "head_dim", "v_head_dim",
           "kv_lora_rank", "qk_rope_head_dim", "index_head_dim", "max_context_len", "need_sort")
 
 
@@ -124,10 +125,10 @@ class Monitor:
     def enc(self, x, depth=0):
         if depth > MAX_DEPTH:
             return {"_t": type(x).__name__}
-        if x is None or isinstance(x, (bool, int, float, str)):
-            return x
         if isinstance(x, enum.Enum):
             return x.name
+        if x is None or isinstance(x, (bool, int, float, str)):
+            return x
         if isinstance(x, slice):
             return {"_t": "slice", "start": self.enc(x.start), "stop": self.enc(x.stop), "step": self.enc(x.step)}
         tname = type(x).__name__
