@@ -11,8 +11,9 @@
 // Every pool of every scenario is priced: pools are opened from 0 up until the scenario states
 // no more. A file that does not decode as a scenario is recorded once, with its error.
 //
-// It uses only blis-vllm compat/kernelmodel APIs that the M2 release (blis-substrate v0.14.0,
-// blis-vllm v0.32.0-blis.3) and this checkout's pins both have, so the same file builds in both.
+// It uses only blis-vllm compat/kernelmodel APIs that both the M2 release's substrate and engine
+// (the pins stack.json names on main before this review set) and this checkout's pins have, so the
+// same file builds in both.
 //
 // Usage: go run ./scripts/kernel/equalityprobe -scenarios <dir> > out.jsonl
 //
