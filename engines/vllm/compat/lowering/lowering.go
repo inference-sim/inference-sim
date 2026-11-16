@@ -1,6 +1,6 @@
 // Original to blis-vllm.
 // The engine-settings resolution the cost model ran until engine lowering took it over, moved
-// unchanged from blis-substrate's kernel/new.go, async.go, draft.go and internal/resolve at
+// unchanged from blis-substrate's kernel/new.go, its async-scheduling file, draft.go and internal/resolve at
 // 00817b10798cbc00f560e51921c30c7084fa5e0c (blis-substrate#58).
 
 // Package lowering resolves a vLLM pool's settings into the neutral settings of the pool's plan

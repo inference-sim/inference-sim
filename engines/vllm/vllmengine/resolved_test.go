@@ -9,7 +9,6 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-
 	"github.com/inference-sim/blis-substrate/contracts/engine"
 )
 
