@@ -1,0 +1,55 @@
+{
+  "kind": "KernelImplTable",
+  "engine": {
+    "kind": "vllm",
+    "version": "0.32.0",
+    "commit": "5df63a7203cdb9328d824a27b682e77c7b9928be"
+  },
+  "primitives": [
+    "attention.decode",
+    "attention.prefill"
+  ],
+  "libraries": [
+    {
+      "name": "flashinfer",
+      "version": "0.7.0.post1",
+      "pinned": true,
+      "pin": "requirements/cuda.txt:13@5df63a72",
+      "origin": "https://github.com/flashinfer-ai/flashinfer 946200de1ae94fc93fdd0926f0a13afd1fa7f0f1"
+    }
+  ],
+  "implementations": [
+    {
+      "primitive": "attention.decode",
+      "library": "flashinfer",
+      "library_version": "0.7.0.post1",
+      "variant": "trtllm_batch_decode_with_kv_cache",
+      "target_arch": "sm_100a",
+      "hash_basis": "binary",
+      "hash_inputs": [
+        "TRTLLM_GEN_FMHA checksums.txt sha256:d79b5c51fc8597fac57dae0da4afa114fb2014575e4ec3df099ad856d97cabc3"
+      ],
+      "code_hash": "40a5dea552029ea07ddb3963dc1ceada23c90529c242273dae0f982f235ad11f",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/v1/attention/backends/flashinfer.py:20@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "flashinfer",
+      "library_version": "0.7.0.post1",
+      "variant": "trtllm_batch_context_with_kv_cache",
+      "target_arch": "sm_100a",
+      "hash_basis": "binary",
+      "hash_inputs": [
+        "TRTLLM_GEN_FMHA checksums.txt sha256:d79b5c51fc8597fac57dae0da4afa114fb2014575e4ec3df099ad856d97cabc3"
+      ],
+      "code_hash": "067cb9ca807e02e7aa18c3bf09939010917c43ab25d906e060189d01d0e2ffbd",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/v1/attention/backends/flashinfer.py:21@5df63a72"
+      ]
+    }
+  ]
+}

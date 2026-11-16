@@ -23,6 +23,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/evaluation"
 	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
+	"github.com/inference-sim/blis-substrate/contracts/spec/kernelimpls"
 	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/contracts/spec/pointrecord"
@@ -148,6 +149,11 @@ func TestDocExamplesValidate(t *testing.T) {
 			t.Error(err)
 		}
 	})
+	t.Run("kernel-implementation table", func(t *testing.T) {
+		if _, err := LoadKernelImplTable(ex("kernel-impl-table.json")); err != nil {
+			t.Error(err)
+		}
+	})
 	t.Run("trace", func(t *testing.T) {
 		requireSilent(t, "trace", Validate(Bundle{Rules: openAnyEngine,
 			Scenario: fixture(LoadScenario(ex("trace-binding.yaml"))),
@@ -193,6 +199,7 @@ func TestDocExamplesValidate(t *testing.T) {
 		"connector-registry.yaml": true,
 		"result.json":             true,
 		"field-list.json":         true,
+		"kernel-impl-table.json":  true,
 		"trace-header.yaml":       true, "trace-data.csv": true, "workload-spec.yaml": true, "point-record.json": true,
 	}
 	all, err := filepath.Glob(ex("*"))
@@ -376,6 +383,10 @@ var documented = map[string]struct {
 	"pointrecord.Facets":          {typ: reflect.TypeOf(pointrecord.Facets{})},
 	"pointrecord.Parallelism":     {typ: reflect.TypeOf(pointrecord.Parallelism{})},
 	"pointrecord.Note":            {typ: reflect.TypeOf(pointrecord.Note{})},
+	"kernelimpls.Table":           {typ: reflect.TypeOf(kernelimpls.Table{})},
+	"kernelimpls.Engine":          {typ: reflect.TypeOf(kernelimpls.Engine{})},
+	"kernelimpls.Library":         {typ: reflect.TypeOf(kernelimpls.Library{})},
+	"kernelimpls.Implementation":  {typ: reflect.TypeOf(kernelimpls.Implementation{})},
 	"result.Result":               {typ: reflect.TypeOf(result.Result{})},
 	"result.Engine":               {typ: reflect.TypeOf(result.Engine{})},
 	"result.Data":                 {typ: reflect.TypeOf(result.Data{})},
