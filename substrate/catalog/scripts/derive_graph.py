@@ -731,6 +731,87 @@ def modelopt_placed_width(raw: dict[str, Any], model: str, arch: str):
     return lambda prefix: None if modelopt_excluded(prefix, excluded) else width
 
 
+# The safetensors headers of the checkpoint being derived, tensor name -> {"dtype", "shape"},
+# when its model.yaml pins them (SUB-15); set by derive() for one call and cleared after.
+_HEADERS: dict[str, dict[str, Any]] | None = None
+
+# vLLM's fused linears and the checkpoint tensors each one loads (the packed_modules_mapping of
+# the model classes: deepseek_v2.py and deepseek_v32/attention.py, fused_qkv_a_proj and
+# wk_weights_proj; every model's qkv_proj and gate_up_proj).
+FUSED_SHARDS = {
+    "fused_qkv_a_proj": ("q_a_proj", "kv_a_proj_with_mqa"),
+    "wk_weights_proj": ("wk", "weights_proj"),
+    "qkv_proj": ("q_proj", "k_proj", "v_proj"),
+    "gate_up_proj": ("gate_proj", "up_proj"),
+}
+
+
+def header_module_widths(headers: dict[str, dict[str, Any]], model: str) -> dict[str, str | None]:
+    """The stored width of every module the headers hold a weight for, None for one stored
+    unquantized. Read from the tensors themselves (SUB-15): an NVFP4 weight is U8, two values a
+    byte, with an F8_E4M3 weight_scale of one column per 16 values (ModelOpt's NVFP4 layout,
+    ModelOptNvFp4LinearMethod.create_weights, modelopt.py@v0.33.0); an FP8 weight is F8_E4M3; a
+    BF16, F16 or F32 weight is unquantized. Any other layout is refused, never guessed."""
+    out: dict[str, str | None] = {}
+    for name, t in headers.items():
+        if not name.endswith(".weight"):
+            continue
+        module, dtype = name[:-len(".weight")], t.get("dtype")
+        if dtype in ("BF16", "F16", "F32"):
+            out[module] = None
+        elif dtype == "F8_E4M3":
+            out[module] = "fp8"
+        elif dtype == "U8":
+            scale = headers.get(module + ".weight_scale") or {}
+            if scale.get("dtype") != "F8_E4M3":
+                raise DeriveError(f"{model}: {name} is U8 with no F8_E4M3 weight_scale; this deriver "
+                                  f"reads U8 only as NVFP4")
+            cols, scols = t["shape"][-1], scale["shape"][-1]
+            if not scols or 2 * cols != 16 * scols:
+                raise DeriveError(f"{model}: {name} packs {2 * cols} values a row against "
+                                  f"{scols} scales, not one scale per 16 (NVFP4)")
+            out[module] = "nvfp4"
+        else:
+            raise DeriveError(f"{model}: {name} is stored {dtype}, a layout this deriver does "
+                              f"not read")
+    return out
+
+
+def header_width_of(spec: dict[str, Any], model: str):
+    """`width_of(prefix)` for the vLLM module `prefix`, answered from the pinned headers: the
+    module's own weight, else the shards a fused module loads, else every module under it (a
+    routed experts layer holds one weight per expert). A module the headers do not hold, or one
+    whose parts are stored at two widths, is refused."""
+    widths = {}
+    for module, w in header_module_widths(_HEADERS or {}, model).items():
+        for old, new in spec["prefix"].items():
+            if module.startswith(old):
+                module = new + module[len(old):]
+                break
+        widths[module] = w
+
+    def uniform(found: set, prefix: str):
+        if len(found) != 1:
+            raise DeriveError(f"{model}: the headers store {prefix} at {sorted(map(str, found))}; "
+                              f"one node cannot price both")
+        return found.pop()
+
+    def width_of(prefix):
+        if prefix in widths:
+            return widths[prefix]
+        base, _, proj = prefix.rpartition(".")
+        shards = FUSED_SHARDS.get(proj)
+        if shards:
+            names = [f"{base}.{n}" for n in shards]
+            if all(n in widths for n in names):
+                return uniform({widths[n] for n in names}, prefix)
+        under = {w for m, w in widths.items() if m.startswith(prefix + ".")}
+        if under:
+            return uniform(under, prefix)
+        raise DeriveError(f"{model}: the pinned headers hold no weight for {prefix}")
+    return width_of
+
+
 def modelopt_place_widths(kinds: list[dict[str, Any]], stack: dict[str, Any],
                           raw: dict[str, Any], model: str,
                           draft: tuple[str, list[int]] | None = None) -> list[dict[str, Any]]:
@@ -752,7 +833,8 @@ def modelopt_place_widths(kinds: list[dict[str, Any]], stack: dict[str, Any],
     modules' names."""
     arch = architecture_of(raw, model)
     spec = MODELOPT_MODULES[arch]
-    width_of = modelopt_placed_width(raw, model, arch)
+    width_of = (header_width_of(spec, model) if _HEADERS is not None
+                else modelopt_placed_width(raw, model, arch))
     if width_of(spec["head"]):
         raise DeriveError(f"{model}: the ModelOpt list leaves {spec['head']} quantized; "
                           f"the head is priced at the base width")
@@ -2385,8 +2467,16 @@ def handler_minimax_m2(cfg, raw, model):
 
 def modelopt_placed(result, raw, model, draft=None):
     """A handler result with the widths a ModelOpt checkpoint stores, or the result as it
-    is for a checkpoint that is not ModelOpt. `draft` is modelopt_place_widths'."""
+    is for a checkpoint that is not ModelOpt. `draft` is modelopt_place_widths'. A checkpoint
+    whose config.json states no quantization and whose model.yaml pins its shard headers is
+    placed from those headers (SUB-15)."""
     quant = raw.get("quantization_config") or {}
+    if _HEADERS is not None:
+        if quant:
+            raise DeriveError(f"{model}: the entry pins its headers and its config.json states a "
+                              f"quantization; read one, so pin no headers")
+        kinds = modelopt_place_widths(result[0], result[1], raw, model, draft=draft)
+        return (kinds, *result[1:])
     if str(quant.get("quant_method", "")).lower() != "modelopt":
         return result
     kinds = modelopt_place_widths(result[0], result[1], raw, model, draft=draft)
@@ -2413,6 +2503,16 @@ def handler_glm_moe_dsa(cfg, raw, model):
     result = handler_moe(cfg, raw, model)
     layers = int(require(cfg, "num_layers", model))
     spec = int(pick(cfg, "num_spec_tokens") or 0)
+    placed = _HEADERS is not None or str(((raw.get("quantization_config") or {})
+                                          .get("quant_method", ""))).lower() == "modelopt"
+    if spec and placed and not any(k["id"] == DRAFT_KIND_ID for k in result[0]):
+        # A family that indexes every layer declares no draft kind, and derive() would mirror the
+        # last declared one, whose widths are the decoder's. The checkpoint can store its MTP layer
+        # at another width (GLM-5-NVFP4's model.layers.78 is BF16), so the draft layer is declared
+        # here as a copy of that kind and placed at its own module names.
+        last = result[0][-1]
+        result = ([*result[0], {"id": DRAFT_KIND_ID, "nodes": [dict(n) for n in last["nodes"]],
+                                "edges": [list(e) for e in last["edges"]]}], *result[1:])
     has_draft = any(k["id"] == DRAFT_KIND_ID for k in result[0])
     draft = (DRAFT_KIND_ID, list(range(layers, layers + spec))) if spec and has_draft else None
     return modelopt_placed(result, raw, model, draft=draft)
@@ -6569,8 +6669,18 @@ EXTRA_GLOBAL_KEYS = frozenset({"architecture", "weight_scale", "context_window",
                                "pipeline_boundary_bytes_per_token"})
 
 
-def derive(config_path: Path, model: str) -> dict[str, Any]:
-    """Derive one graph from one vendor config."""
+def derive(config_path: Path, model: str, headers: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Derive one graph from one vendor config, and from its shards' safetensors headers when
+    the entry pins them (tensor name -> {"dtype", "shape"}, every shard merged)."""
+    global _HEADERS
+    _HEADERS = headers
+    try:
+        return _derive(config_path, model)
+    finally:
+        _HEADERS = None
+
+
+def _derive(config_path: Path, model: str) -> dict[str, Any]:
     source = config_path.read_bytes()
     raw = json.loads(source)
     cfg = text_config(raw)
@@ -6932,6 +7042,53 @@ def main() -> int:
                 failed.append(f"{entry.name}: the fetched config.json has sha256 {got}, "
                               f"not the pinned {pinned}")
                 continue
+        # An entry that pins its shards' safetensors headers is derived from them as well
+        # (SUB-15). They are never committed: without the fetched headers the graph is neither
+        # written nor checked, and is counted with the entries that are not re-derivable.
+        card = (yaml.safe_load((entry / "model.yaml").read_text()) or {}) \
+            if (entry / "model.yaml").is_file() else {}
+        pins = card.get("headers") or []
+        headers = None
+        if pins:
+            hdir = Path(args.fetched) / entry.name / "headers" if args.fetched else None
+            if hdir is None or not hdir.is_dir():
+                if args.fetched is None or args.allow_unfetched:
+                    unverified.append(entry.name)
+                else:
+                    failed.append(f"{entry.name}: no fetched headers at {hdir}")
+                continue
+            headers, why = {}, None
+            index_pin = card.get("shard_index") or {}
+            index = hdir / "index.json"
+            if not index.is_file():
+                why = "no fetched shard index"
+            elif hashlib.sha256(index.read_bytes()).hexdigest() != index_pin.get("sha256"):
+                why = f"the fetched shard index is not the pinned {index_pin.get('sha256')}"
+            else:
+                named = sorted(set((json.loads(index.read_bytes()).get("weight_map") or {}).values()))
+                if named != sorted(p["path"] for p in pins):
+                    why = (f"the pinned headers are not the shards {index_pin.get('path')} names "
+                           f"(missing {sorted(set(named) - {p['path'] for p in pins})}, extra "
+                           f"{sorted({p['path'] for p in pins} - set(named))})")
+            for pin in ([] if why else pins):
+                f = hdir / (pin["path"].replace("/", "__") + ".json")
+                if not f.is_file():
+                    why = f"no fetched header for {pin['path']}"
+                    break
+                body = f.read_bytes()
+                got = hashlib.sha256(body).hexdigest()
+                if got != pin["sha256"]:
+                    why = f"the fetched header of {pin['path']} has sha256 {got}, not the pinned {pin['sha256']}"
+                    break
+                one = json.loads(body)
+                one.pop("__metadata__", None)
+                if set(one) & set(headers):
+                    why = f"{pin['path']} repeats tensors another shard holds"
+                    break
+                headers.update(one)
+            if why:
+                failed.append(f"{entry.name}: {why}")
+                continue
         # Each entry is the full line to print. A DeriveError already names the model,
         # because derive() is also called directly and its message has to stand alone
         # there; the other failures do not, so only they get the prefix.
@@ -6939,7 +7096,7 @@ def main() -> int:
             failed.append(f"{entry.name}: no config.json")
             continue
         try:
-            graph = derive(cfg, entry.name)
+            graph = derive(cfg, entry.name, headers=headers)
         except DeriveError as exc:
             why = str(exc)
             # Every message in this file starts with the model name; one that does not

@@ -196,3 +196,47 @@ func TestIdentityValidateLicenceRecordsNoLicenceOnAHashOnlyEntry(t *testing.T) {
 		t.Errorf("a placeholder licence passed, or its refusal did not name %s: %v", NoLicence, p.Error())
 	}
 }
+
+// A model's header pins name safetensors shards inside the repository, each once, with a
+// SHA-256 (SUB-15, X12). Each way a pin can be wrong is refused.
+func TestIdentityValidateChecksHeaderPins(t *testing.T) {
+	sha := strings.Repeat("ab", 32)
+	card := func(pins ...HeaderPin) *Identity {
+		return &Identity{Name: "m", Source: &Source{Provider: "huggingface", Repo: "org/m", Revision: "v"},
+			Headers: pins, ShardIndex: &HeaderPin{"model.safetensors.index.json", sha}}
+	}
+	if p := card(HeaderPin{"model-00001-of-00002.safetensors", sha},
+		HeaderPin{"model-00002-of-00002.safetensors", sha}).Validate(); !p.OK() {
+		t.Fatalf("well-formed header pins failed:\n%s", p.Error())
+	}
+	for name, c := range map[string]struct {
+		pins []HeaderPin
+		want string
+	}{
+		"not a shard":  {[]HeaderPin{{"config.json", sha}}, ".safetensors"},
+		"outside":      {[]HeaderPin{{"../x.safetensors", sha}}, "element"},
+		"bad hash":     {[]HeaderPin{{"a.safetensors", "ABC"}}, "SHA-256"},
+		"pinned twice": {[]HeaderPin{{"a.safetensors", sha}, {"a.safetensors", sha}}, "twice"},
+	} {
+		if p := card(c.pins...).Validate(); p.OK() || !strings.Contains(p.Error(), c.want) {
+			t.Errorf("%s: want a refusal naming %q, got %v", name, c.want, p.Error())
+		}
+	}
+	ok := HeaderPin{"a.safetensors", sha}
+	for name, c := range map[string]struct {
+		index *HeaderPin
+		pins  []HeaderPin
+		want  string
+	}{
+		"headers, no index":  {nil, []HeaderPin{ok}, "required with headers"},
+		"index, no headers":  {&HeaderPin{"model.safetensors.index.json", sha}, nil, "no headers"},
+		"index not an index": {&HeaderPin{"config.json", sha}, []HeaderPin{ok}, ".safetensors.index.json"},
+		"index hash":         {&HeaderPin{"model.safetensors.index.json", "x"}, []HeaderPin{ok}, "SHA-256"},
+	} {
+		id := card(c.pins...)
+		id.ShardIndex = c.index
+		if p := id.Validate(); p.OK() || !strings.Contains(p.Error(), c.want) {
+			t.Errorf("%s: want a refusal naming %q, got %v", name, c.want, p.Error())
+		}
+	}
+}
