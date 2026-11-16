@@ -5,15 +5,28 @@
 // carries no definition of its own, so the simulator, the scoring harness and config
 // search read one meaning for each name.
 //
-// Time to first token, time per output token and inter-token latency follow the
-// benchmark client BLIS is compared with: vLLM's `vllm bench serve` at v0.32.0
-// (vllm/benchmarks/serve.py:624-634). Time per output token excludes
-// the first token and is a statistic over requests, each request's own (latency - TTFT) /
-// (output tokens - 1). Inter-token latency is pooled over every gap between consecutive
-// output tokens of every request with at least two output tokens (inference-sim #1894), as
-// `vllm bench serve` pools them. aiperf's inter-token latency is a per-request mean, a
-// different population, so it is not cited for that family. Output tokens per second follows
-// aiperf. interactivity_p50 and interactivity_p90 are 1000 over the time-per-output-token
+// Time to first token, time per output token, inter-token latency and inter-chunk latency
+// follow the benchmark clients BLIS is compared with, and each states the client fields it
+// equals. The clients disagree on what they call ITL, so a definition is never read from a
+// client's field name:
+//
+//   - tpot is per request, each request's own (latency - TTFT) / (output tokens - 1). It is
+//     `vllm bench serve`'s TPOT, aiperf's inter_token_latency (its ITL), and inference-perf's
+//     time_per_output_token.
+//   - itl is pooled over every gap between consecutive output tokens of every request with at
+//     least two output tokens (inference-sim #1894). Tokens that reach the client in one chunk
+//     share its arrival time, so the gaps between them are zero: under speculative decoding,
+//     where one step emits several tokens in one chunk, most gaps are zero. It is
+//     inference-perf's inter_token_latency when inference-perf re-tokenizes the streamed text
+//     (a tokenizer is configured).
+//   - icl is pooled over every gap between consecutive chunks streamed to the client, one gap
+//     per chunk after the first. It is `vllm bench serve`'s ITL, aiperf's inter_chunk_latency,
+//     and inference-perf's inter_token_latency when no tokenizer is configured. With one token
+//     per chunk, icl and itl are the same samples.
+//
+// Time to first token and end-to-end latency follow `vllm bench serve` at v0.32.0
+// (vllm/benchmarks/serve.py:624-634). Output tokens per second follows aiperf.
+// interactivity_p50 and interactivity_p90 are 1000 over the time-per-output-token
 // percentile in milliseconds, and interactivity_of_mean_tpot is 1000 over its mean; neither
 // vllm bench serve nor aiperf reports them, and InferenceX stores them (median_intvty,
 // p90_intvty, mean_intvty). The mean over requests of 1/TPOT, interactivity_mean, is a
@@ -63,8 +76,14 @@ const (
 	// FormulaTPOT is a request's (E2E latency - TTFT) / (output tokens - 1): its mean
 	// time per output token after the first.
 	FormulaTPOT Formula = "tpot"
-	// FormulaITL is one gap between two consecutive output tokens of one request.
+	// FormulaITL is one gap between two consecutive output tokens of one request. Tokens
+	// that reach the client in one chunk share its arrival time, so the gap between them is
+	// zero.
 	FormulaITL Formula = "itl"
+	// FormulaICL is one gap between two consecutive chunks streamed to one request's client:
+	// the time from one chunk's arrival to the next's. A chunk carries every token the server
+	// sends at once, several under speculative decoding.
+	FormulaICL Formula = "icl"
 	// FormulaE2E is a request's time from arrival at the client to its last output token.
 	FormulaE2E Formula = "e2e"
 	// FormulaStepInterval is the time from the end of one engine step to the end of the
@@ -138,6 +157,9 @@ const (
 	// PopulationTokens is every gap between consecutive output tokens of every request in
 	// PopulationRequestsTwoTokens, pooled.
 	PopulationTokens Population = "tokens"
+	// PopulationChunks is every gap between consecutive chunks streamed to the client of
+	// every completed request with at least two chunks, pooled.
+	PopulationChunks Population = "chunks"
 	// PopulationSteps is every engine step in the window that emitted a token.
 	PopulationSteps Population = "steps"
 	// PopulationAdmissions is every admission of a request to an engine in the window.
@@ -328,6 +350,33 @@ func (d Definition) sameMeaning(o Definition) bool {
 
 const (
 	vllmServe = "vllm v0.32.0 vllm/benchmarks/serve.py:624-634"
+
+	// The latency definitions cite every client whose field equals them. aiperf and
+	// inference-perf are read at their release tags: aiperf v0.12.0
+	// (be53bf2953d30e46c500e6a80fc1f8b6f84bc718) and inference-perf v0.7.0
+	// (5804ea6b7ebd2bfceff29cf113311ed3af95146e).
+	//
+	// tpotFollows: vllm's TPOT, (latency - TTFT) / (output_len - 1) per request; aiperf's
+	// inter_token_latency, (request latency - TTFT) / (OSL - 1); inference-perf's
+	// time_per_output_token, (last token time - first token time) / (output tokens - 1).
+	tpotFollows = vllmServe + " (TPOT); aiperf v0.12.0 src/aiperf/metrics/types/inter_token_latency_metric.py:24,55 " +
+		"(inter_token_latency); inference-perf v0.7.0 inference_perf/reportgen/base.py:653-657 (time_per_output_token)"
+	// itlFollows: inference-perf with a tokenizer gives every token of a chunk the chunk's
+	// arrival time (base.py:614-622) and pools the gaps between consecutive token times
+	// (:659-662, :734, :781).
+	itlFollows = "inference-perf v0.7.0 inference_perf/reportgen/base.py:614-622,659-662,734,781 " +
+		"(inter_token_latency, a tokenizer configured)"
+	// iclFollows: vllm appends one gap per streamed chunk after the first
+	// (endpoint_request_func.py:270 for completions, :442 for chat) and pools them
+	// (serve.py:632, :766-769); aiperf's inter_chunk_latency is one gap per content chunk
+	// after the first, pooled; inference-perf without a tokenizer keeps one time per chunk
+	// (apis/chat.py:578) and pools their gaps. aiperf's percentiles of it are t-digest
+	// estimates (src/aiperf/metrics/list_metric_aggregation.py), not numpy_linear; its mean is
+	// exact.
+	iclFollows = "vllm v0.32.0 vllm/benchmarks/lib/endpoint_request_func.py:270,442 and vllm/benchmarks/serve.py:632,766-769 (ITL); " +
+		"aiperf v0.12.0 src/aiperf/metrics/types/inter_chunk_latency_metric.py:31,63-73 (inter_chunk_latency; mean only, " +
+		"its percentiles are t-digest estimates); inference-perf v0.7.0 inference_perf/apis/chat.py:578 and " +
+		"inference_perf/reportgen/base.py:659-662,734,781 (inter_token_latency, no tokenizer)"
 	aiperfTPS = "aiperf 0.12.0 src/aiperf/metrics/types/output_token_throughput_metrics.py:40-78"
 
 	// InferenceX is read at two commits: 08d7a9cd (2026-06-11), where the fixed-sequence
@@ -372,9 +421,11 @@ var latencyFamilies = []latencyFamily{
 	{"ttft", FormulaTTFT, PopulationRequests,
 		"Time to first token", vllmServe, false},
 	{"tpot", FormulaTPOT, PopulationRequestsTwoTokens,
-		"Time per output token, excluding the first, computed per request", vllmServe, false},
+		"Time per output token, excluding the first, computed per request (aiperf's ITL)", tpotFollows, false},
 	{"itl", FormulaITL, PopulationTokens,
-		"Inter-token latency, pooled over every gap between output tokens", vllmServe, false},
+		"Inter-token latency, pooled over every gap between output tokens, zero between tokens of one chunk", itlFollows, false},
+	{"icl", FormulaICL, PopulationChunks,
+		"Inter-chunk latency, pooled over every gap between chunks streamed to the client (vllm bench serve's ITL)", iclFollows, false},
 	{"e2e", FormulaE2E, PopulationRequests,
 		"Request latency, arrival to last output token", vllmServe, false},
 	{"step_interval", FormulaStepInterval, PopulationSteps,
