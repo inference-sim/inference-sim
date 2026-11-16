@@ -569,6 +569,9 @@ MODELOPT_MODULES: dict[str, dict[str, Any]] = {
             "o_proj": "self_attn.o_proj",
             "mixer_out": "linear_attn.out_proj",
             "experts": "mlp.experts",
+            # vLLM builds mtp.fc unquantized under ModelOpt FP4 whatever the list says
+            # (qwen3_5_mtp.py:89-97), so no quantization reaches it.
+            "mtp_fc": None,
         },
         "shared": ("mlp.shared_expert.gate_up_proj", "mlp.shared_expert.down_proj"),
         # Linears a kind runs that no GEMM node prices: the DeltaNet input projections ride in the
@@ -5007,16 +5010,27 @@ def handler_qwen3_5_moe(cfg, raw, model):
     ]
     sequence = ["attn_moe" if t == "full_attention" else "gdn_moe" for t in types]
     stack = compress(sequence)
+    # The MTP module (Qwen3_5MultiTokenPredictor, model_executor/models/qwen3_5_mtp.py:66-160
+    # @4ba787ec) runs, once a draft token, an input stage before its full-attention MoE layer:
+    # pre_fc_norm_embedding over the token embedding, pre_fc_norm_hidden over the previous
+    # hidden state, and fc, a ColumnParallelLinear(2 x hidden -> hidden, gather_output) over the
+    # two concatenated, whose gather is an all-gather of its output. fc is BF16 in every committed
+    # checkpoint: the FP8 one names mtp.fc in modules_to_not_convert, the bf16 ones are
+    # unquantized, and vLLM forces it unquantized under ModelOpt FP4 whatever the list says
+    # (:89-97). So the draft kind is declared, with that stage, rather than mirrored from attn_moe;
+    # under ModelOpt it is also placed at its own module names, since the list can leave it at
+    # another width than the decoder's (Qwen3.5-NVFP4 excludes mtp.layers.0* whole).
+    mtp = int(pick(cfg, "num_spec_tokens") or 0)
+    if mtp:
+        lead = [norm("mtp_pre_fc_norm_embedding"), norm("mtp_pre_fc_norm_hidden"),
+                dict(gemm("mtp_fc", hidden, 2 * hidden), weight_dtype=base_dtype(cfg, raw, model),
+                     tp="column"),
+                collective("AllGather", "mtp_fc_out", EMIT_TENSOR_PARALLEL)]
+        draft = lead + [dict(n) for n in full]
+        kinds.append({"id": DRAFT_KIND_ID, "nodes": draft, "edges": chain(draft)})
     quant = raw.get("quantization_config") or {}
     if str(quant.get("quant_method", "")).lower() != "modelopt":
         return kinds, stack
-    # A ModelOpt checkpoint's widths, node by node. Its MTP module is a full-attention MoE
-    # layer like attn_moe, but the list can leave it at another width than the decoder's
-    # (Qwen3.5-NVFP4 excludes mtp.layers.0* whole), so it is declared as the draft kind and
-    # placed at its own module names rather than mirrored from attn_moe.
-    mtp = int(pick(cfg, "num_spec_tokens") or 0)
-    if mtp:
-        kinds.append({"id": DRAFT_KIND_ID, "nodes": [dict(n) for n in full], "edges": chain(full)})
     kinds = modelopt_place_widths(kinds, stack, raw, model,
                                   draft=(DRAFT_KIND_ID, list(range(mtp))) if mtp else None)
     return kinds, stack

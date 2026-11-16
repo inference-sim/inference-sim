@@ -8474,3 +8474,22 @@ def test_qwen35_nvfp4_refuses_a_quantized_deltanet_input_projection(tmp_path):
     q["ignore"] = [p for p in q["ignore"] if p != "model.language_model.layers.0.linear_attn*"]
     with pytest.raises(derive_graph.DeriveError, match="in_proj_qkvz"):
         _derive_raw(raw, tmp_path, "qwen-nvfp4-test")
+
+
+# --- The Qwen3.5 MTP input stage (blis-substrate#201) ------------------------------------
+
+@pytest.mark.parametrize("name", ["qwen3.5-397b-a17b", "qwen3.5-397b-a17b-fp8",
+                                  "qwen3.5-397b-a17b-nvfp4", "qwen3.6-35b-a3b"])
+def test_qwen35_mtp_layer_runs_its_fc(name):
+    """The MTP predictor normalises the embedding and the previous hidden state and projects the
+    two through fc, a column-parallel BF16 linear of 2 x hidden -> hidden whose output is
+    gathered, before its decoder layer; FP8 and NVFP4 checkpoints keep it BF16 too."""
+    g = graph_of(MODELS / name)
+    hidden = g["global"]["hidden_size"]
+    assert g["speculator"]["stack"]["pattern"] == ["mtp_moe"]
+    draft = {k["id"]: k for k in g["layer_kinds"]}["mtp_moe"]["nodes"]
+    assert [n.get("role") for n in draft[:4]] == ["mtp_pre_fc_norm_embedding", "mtp_pre_fc_norm_hidden",
+                                                  "mtp_fc", "mtp_fc_out"]
+    fc = draft[2]
+    assert (fc["n"], fc["k"], fc["weight_dtype"], fc["tp"]) == (hidden, 2 * hidden, "bf16", "column")
+    assert (draft[3]["op"], draft[3]["emit"]) == ("AllGather", "tensor_parallel")

@@ -134,6 +134,19 @@ layer_kinds:
 - id: mtp_moe
   nodes:
   - op: Elementwise
+    role: mtp_pre_fc_norm_embedding
+  - op: Elementwise
+    role: mtp_pre_fc_norm_hidden
+  - op: GEMM
+    role: mtp_fc
+    n: 4096
+    k: 8192
+    weight_dtype: bf16
+    tp: column
+  - op: AllGather
+    role: mtp_fc_out
+    emit: tensor_parallel
+  - op: Elementwise
     role: input_norm
   - op: GEMM
     role: qkv_proj
@@ -185,6 +198,14 @@ layer_kinds:
     - 7
   - - 7
     - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
 stack:
   pattern:
   - gdn_moe
