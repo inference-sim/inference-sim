@@ -294,6 +294,11 @@ func TestADeploymentMethodThatIsNotTheDraftersIsRefused(t *testing.T) {
 	if err := in("eagle3"); err != nil {
 		t.Fatalf("the drafter's own method was refused: %v", err)
 	}
+	l, err := tryLowerWithDraft(t, at, target, draft, vllmsettings.Settings{Speculative: &vllmsettings.Speculative{
+		Method: "eagle3", NumSpecTokens: 3, DraftModel: draft.Name}})
+	if err != nil || l.Drafter != draft.Name {
+		t.Errorf("Drafter %q (%v), want the named %q", l.Drafter, err, draft.Name)
+	}
 	if err := in("mtp"); err == nil || !strings.Contains(err.Error(), "a mtp drafter is not described") {
 		t.Errorf("err %v, want the refusal of a method the drafter does not describe", err)
 	}

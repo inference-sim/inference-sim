@@ -34,14 +34,15 @@ A parallel-block drafter such as DSpark is charged under its own CUDA graphs and
 
 *Coverage limit, in `KVBytesPerToken` in [`kernel/internal/price/memory.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/internal/price/memory.go).*
 
-The kernel does not size every KV cache layout vLLM has. It refuses the per-token-head quantized formats rather than size them. Padded pages and a cache that compresses several tokens into one stored state are sized only where the model graph states its caches; a graph that does not is sized as one full-length cache per layer.
+The kernel does not size every KV cache layout vLLM has. The engine's lowering refuses the per-token-head quantized formats rather than hand the kernel a width for them. Padded pages and a cache that compresses several tokens into one stored state are sized only where the model graph states its caches; a graph that does not is sized as one full-length cache per layer.
 
 ??? quote "The note in the source"
     The layouts that state their own size are applied by the kernel where a deployment names
-    them, or where its backend repacks the cache (the packed ds\_mla caches; see Kernel.lift and
-    sparseMLABackend in the root package). COVERAGE LIMIT: per-token-head quantization adds two
-    fp32 scales a token (vllm/model\_executor/layers/attention/mla\_attention.py:1580-1593), so
-    the kernel refuses those cache dtypes rather than size them here; padded pages are sized by
+    them, or where its backend repacks the cache (the packed ds\_mla caches, whose cell the plan
+    states; see Kernel.lift in the root package). COVERAGE LIMIT: per-token-head quantization adds
+    two fp32 scales a token (vllm/model\_executor/layers/attention/mla\_attention.py:1580-1593), so
+    the engine's lowering refuses those cache dtypes rather than hand the kernel a width it does
+    not describe (for vLLM, blis-vllm's compat/lowering); padded pages are sized by
     their own specs (vllm/v1/kv\_cache\_interface.py:527-536), and a compressed cache (a
     compress\_ratio layer) holds fewer states than tokens. Neither is modelled HERE: a graph
     that states its caches (blis-schemas model.Cache) is sized from them in the root package
