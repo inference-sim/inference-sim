@@ -25,7 +25,7 @@ A sequence:
      "calls": [{"on": "cache"|"allocator"|"req_to_token", "m": method, ...arguments, "as": name}]}
 A call's arguments: "tokens" (a key, namespaced by "extra_key" and "cache_salt" when given), "value" (a name bound by "as", or [name, start, end] for a
 slice of it), "node" (a name bound to a match or insert result, whose last device node it is),
-"lock" (a name bound by inc_lock_ref), "n", "num_tokens", "prev_prefix_len".
+"lock" (a name bound by inc_lock_ref), "n", "num_tokens", "prev_prefix_len", "priority". The cache block may name an "eviction_policy".
 
 Usage:
     python -I oracle/run_cache_iface.py recorded <sglang checkout> <scenario.json> <out.json>
@@ -118,7 +118,8 @@ def build_cache(cfg: dict):
     params = CacheInitParams(disable=False, req_to_token_pool=req_to_token, token_to_kv_pool_allocator=alloc,
                              page_size=page, tree_components=(ComponentType.FULL,),
                              enable_kv_cache_events=bool(cfg.get("kv_cache_events", False)),
-                             dynamo_kv_event_format=bool(cfg.get("dynamo_kv_event_format", False)))
+                             dynamo_kv_event_format=bool(cfg.get("dynamo_kv_event_format", False)),
+                             eviction_policy=cfg.get("eviction_policy", "lru"))
     return UnifiedRadixCache(params=params), alloc, req_to_token
 
 
@@ -160,7 +161,8 @@ def drive_sequence(sglang_root: str, path: str) -> dict:
             if m == "match_prefix":
                 out = t.match_prefix(MatchPrefixParams(key=key(c)))
             elif m == "insert":
-                out = t.insert(InsertParams(key=key(c), value=value(c), prev_prefix_len=c.get("prev_prefix_len", 0)))
+                out = t.insert(InsertParams(key=key(c), value=value(c), prev_prefix_len=c.get("prev_prefix_len", 0),
+                                            priority=c.get("priority", 0)))
             elif m == "evict":
                 out = t.evict(EvictParams(num_tokens=c["num_tokens"]))
             elif m == "inc_lock_ref":
