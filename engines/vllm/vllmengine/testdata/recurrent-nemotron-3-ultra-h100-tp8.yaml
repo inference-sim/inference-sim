@@ -5,7 +5,7 @@
 # recurrent-state mapping.
 kind: Scenario
 name: recurrent-nemotron-3-ultra-h100-tp8
-engine_version: "0.32.0"
+engine_version: "0.33.0"
 
 model: nemotron-3-ultra-550b-a55b-nvfp4
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]

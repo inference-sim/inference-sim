@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/inference-sim/blis-vllm/core/vllm"
 )
 
 // The census of X19/VLM-1 over the committed fixtures (kerneltests/testdata/direct and
@@ -132,7 +134,8 @@ func TestCensusSlicesPartitionTheFixtures(t *testing.T) {
 func TestBlockSizeResolutionOverTheCensusFixtures(t *testing.T) {
 	stated := regexp.MustCompile(`(?m)^# block_size (\d+): stated by the run\.$`)
 	strip := regexp.MustCompile(`(?m)^\s*block_size:\s*\d+\s*\n`)
-	release := regexp.MustCompile(`(?m)^(?:engine_version:\s*"?0\.32\.0"?|\s+version:\s*"?0\.32\.0"?)\s*$`)
+	v := regexp.QuoteMeta(vllm.Version)
+	release := regexp.MustCompile(`(?m)^(?:engine_version:\s*"?` + v + `"?|\s+version:\s*"?` + v + `"?)\s*$`)
 	modelOf := regexp.MustCompile(`(?m)^model: (\S+)`)
 	var files []string
 	for _, d := range []string{"direct", "aisimulate"} {

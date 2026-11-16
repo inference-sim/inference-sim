@@ -36,7 +36,7 @@ func withEngineLines(t *testing.T, scenario, lines string) map[string]string {
 
 func newEngine(r map[string]string) (engine.Engine, error) {
 	Register()
-	return engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r})
+	return engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: r})
 }
 
 // engineKVBlocks is the engine's KV pool in blocks, the null block included.
@@ -159,7 +159,7 @@ func TestAPDPairWithTheHybridManagerOffRuns(t *testing.T) {
 	r := withEngineLines(t, "muse-h100-roce-1p1d.yaml", "      disable_hybrid_kv_cache_manager: true\n")
 	var engines [2]engine.Engine
 	for i := range engines {
-		spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r, Pool: i}
+		spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: r, Pool: i}
 		var err error
 		if engines[i], err = engine.New(spec); err != nil {
 			t.Fatal(err)

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/core/single_type_kv_cache_manager.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be):
+// Derived from vllm/v1/core/single_type_kv_cache_manager.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5):
 // MambaManager with mamba_cache_mode "none" (:1415-2112): get_num_blocks_to_allocate (:1676-1716),
 // allocate_new_blocks (:1780-1800) and get_num_skipped_tokens (:1954-1960), over the
 // SingleTypeKVCacheManager they extend (:174-251, 672-710).

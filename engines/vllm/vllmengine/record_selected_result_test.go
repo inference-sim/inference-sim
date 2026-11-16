@@ -25,7 +25,7 @@ func TestARunPricingTheTRTLLMLaneOnB200ProducesValidSelectedEntries(t *testing.T
 		"nothing stated on b200": {"", false},
 	} {
 		t.Run(name, func(t *testing.T) {
-			e, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: withEngine(t, c.extra)})
+			e, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: withEngine(t, c.extra)})
 			if err != nil {
 				t.Fatal(err)
 			}

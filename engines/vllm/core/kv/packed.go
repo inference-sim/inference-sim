@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/core/kv_cache_utils.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be):
+// Derived from vllm/v1/core/kv_cache_utils.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5):
 // _approximate_gcd (:1825-1857) and _get_packed_kv_cache_groups (:1860-2014), with the page
 // sizes of vllm/v1/kv_cache_interface.py's AttentionSpec (:511-571), MLAAttentionSpec
 // (:686-760), SlidingWindowMLASpec (:949-1033) and CircularBufferSpec (:909-946).

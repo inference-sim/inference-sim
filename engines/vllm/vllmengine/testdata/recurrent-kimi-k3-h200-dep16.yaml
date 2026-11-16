@@ -4,7 +4,7 @@
 # deployment is a test input for the recurrent-state mapping, not a published arm.
 kind: Scenario
 name: recurrent-kimi-k3-h200-dep16
-engine_version: "0.32.0"
+engine_version: "0.33.0"
 
 model: kimi-k3
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]

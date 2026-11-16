@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-vllm/core/kv"
+	"github.com/inference-sim/blis-vllm/internal/upstream"
 )
 
 // eosToken is tests/v1/core/utils.py:43@5df63a72 (EOS_TOKEN_ID), which the oracle's GPU mock
@@ -674,8 +675,8 @@ func checkProvenance(t *testing.T, scenarioPath string, tr trace) {
 	for _, c := range []struct{ field, got, want string }{
 		{"scenario_sha256", p.ScenarioSHA256, hex.EncodeToString(sum[:])},
 		// A build may carry a local version label ("0.32.0+cpu"); the release is what counts.
-		{"vllm_version", strings.SplitN(p.VLLMVersion, "+", 2)[0], "0.32.0"},
-		{"vllm_commit", p.VLLMCommit, "5df63a7203cdb9328d824a27b682e77c7b9928be"},
+		{"vllm_version", strings.SplitN(p.VLLMVersion, "+", 2)[0], upstream.Version},
+		{"vllm_commit", p.VLLMCommit, upstream.Commit},
 		{"mock_version", p.MockVersion, mockVersion(t)},
 	} {
 		if c.got != c.want {
