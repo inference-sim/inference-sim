@@ -1,7 +1,7 @@
 {
  "field": "PYTHONNOUSERSITE",
  "kind": "unread",
- "release": "v0.32.0 5df63a7203cdb9328d824a27b682e77c7b9928be",
+ "release": "v0.33.0 4ba787ec9959e566d3b587a796dff07673324da5",
  "claim": "Reviewed static fact, not a run of vLLM's code: no file of vLLM v0.32.0's serving process (vllm/, csrc/, rust/) names PYTHONNOUSERSITE; the result lists the files the scan read. CPython reads it when the interpreter starts, to leave the user's site-packages directory off sys.path. That it changes which installed packages are importable and no scheduling, KV-cache or pricing decision of the engine is a reading of the interpreter's documented behaviour, not something the harness shows. Recorded InferenceX runs state it as an environment variable of the container.",
  "argument": "reviewed_static_fact",
  "names": [
@@ -14,8 +14,8 @@
   }
  ],
  "result": {
-  "vllm_commit": "v0.32.0 5df63a7203cdb9328d824a27b682e77c7b9928be",
-  "files_scanned": 4120,
+  "vllm_commit": "v0.33.0 4ba787ec9959e566d3b587a796dff07673324da5",
+  "files_scanned": 4528,
   "occurrences": {
    "PYTHONNOUSERSITE": []
   },
