@@ -128,6 +128,8 @@ class Monitor:
             return x
         if isinstance(x, enum.Enum):
             return x.name
+        if isinstance(x, slice):
+            return {"_t": "slice", "start": self.enc(x.start), "stop": self.enc(x.stop), "step": self.enc(x.step)}
         tname = type(x).__name__
         mod = type(x).__module__ or ""
         if tname == "Tensor" and mod.startswith("torch"):
