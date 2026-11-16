@@ -1090,6 +1090,52 @@ func engineResolutions(models []*engineModel, dep deployment.Deployment) ([]resu
 	return out, nil
 }
 
+// poolMemoryOf is the breakdown of the opened pool m, with loraReserved bytes of the replica's
+// HBM set aside for adapters (sharded over its tensor-parallel GPUs, as the KV budget does)
+// and kvBlocks the blocks its instances were built with (0 when none is known). It reads the
+// kernel's own figures, the ones the KV budget was derived from, so the breakdown cannot
+// disagree with the pool. It reads the pool model, so it is here at the build site.
+func poolMemoryOf(m *engineModel, loraReserved, kvBlocks int64) (poolMemory, error) {
+	mem, err := m.KVMemory()
+	if err != nil {
+		return poolMemory{}, err
+	}
+	fixed := m.Kernel().FixedBytes()
+	loraPerGPU := loraReserved / int64(m.Kernel().Resolved().TensorParallel())
+	out := poolMemory{
+		PerGPU: memoryBytes{
+			DeviceTotal:      mem.DeviceBytes,
+			Budget:           mem.BudgetBytes,
+			Weights:          fixed.Weights,
+			ActivationPeak:   fixed.ActivationPeak,
+			CUDAGraph:        fixed.CUDAGraph,
+			EPLBRedundant:    fixed.EPLBRedundant,
+			CommBuffers:      fixed.CommBuffers,
+			NonTorchInBudget: fixed.NonTorchInBudget,
+			EngineBuffers:    fixed.EngineBuffers,
+			LoRAReserved:     loraPerGPU,
+			KVPool:           mem.AllocatableBytes - loraPerGPU,
+		},
+		// The engine takes the whole fixed occupancy from the budget, or all of it but the
+		// graphs when vLLM's profiler does not estimate them; the bytes it left say which.
+		CUDAGraphInBudget: mem.BudgetBytes-mem.AllocatableBytes == mem.FixedBytes,
+		GPUsPerReplica:    m.WorldSize(),
+		KVBlocks:          kvBlocks,
+	}
+	if e, err := m.Engine(); err == nil {
+		out.BlockSizeTokens = int64(e.BlockSize)
+	}
+	if b, err := m.KVBudgetReserving(loraReserved); err == nil {
+		out.KVBytesPerBlock = b.PerBlockBytes
+		out.NumGPUBlocks = b.PerRankBlocks
+	}
+	if m.PipelineStages() == 1 {
+		r := out.PerGPU.scaled(int64(out.GPUsPerReplica))
+		out.PerReplica = &r
+	}
+	return out, nil
+}
+
 // provenanceOf is a pool's kernel evidence as the host's report records it, field for field.
 func provenanceOf(p cengine.KernelPoolProvenance) sim.KernelPoolProvenance {
 	out := sim.KernelPoolProvenance{MethodCounts: p.MethodCounts, Evidenced: p.Evidenced, Total: p.Total,
