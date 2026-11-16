@@ -90,7 +90,7 @@ func ProvenanceProblems(root string, files []string, r ProvenanceRules) ([]strin
 func containsWord(s, w string) bool {
 	for i := strings.Index(s, w); i >= 0; {
 		end := i + len(w)
-		if end == len(s) || !(s[end] == '.' || s[end] >= '0' && s[end] <= '9' || s[end] >= 'a' && s[end] <= 'z' || s[end] >= 'A' && s[end] <= 'Z') {
+		if end == len(s) || !continuesWord(s[end]) {
 			return true
 		}
 		j := strings.Index(s[i+1:], w)
@@ -100,4 +100,9 @@ func containsWord(s, w string) bool {
 		i += 1 + j
 	}
 	return false
+}
+
+// continuesWord reports whether c, right after a tag, would make it part of a longer one.
+func continuesWord(c byte) bool {
+	return c == '.' || '0' <= c && c <= '9' || 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z'
 }
