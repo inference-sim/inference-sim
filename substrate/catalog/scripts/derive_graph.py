@@ -1990,10 +1990,21 @@ def attention_block(cfg: dict[str, Any], model: str, hidden: int, *,
         dh = attn["d_h"]
         qkv_out = (nq + 2 * nkv) * dh
         o_in = nq * dh
+    # A config that states attn_output_gate (Qwen3-Next, Qwen3.5 and 3.6 state it true) has
+    # Qwen3NextAttention project a gate beside the query: qkv_proj holds twice the query rows,
+    # the two are split per head, and the attention output is multiplied by sigmoid(gate)
+    # before o_proj (model_executor/models/qwen3_next.py:315-320, 436-467@4ba787ec). The
+    # multiply reads the output and the gate and writes the product.
+    gated = cfg.get("attn_output_gate") is True
+    if gated:
+        qkv_out += nq * dh
+    gate = [dict(norm("attn_output_gate"), bytes_per_token=3 * nq * dh *
+                 DTYPE_WIDTHS[base_dtype(cfg, raw or cfg, model)])] if gated else []
     return [
         norm("input_norm"),
         gemm("qkv_proj", qkv_out, hidden),
         attn,
+        *gate,
         gemm("o_proj", hidden, o_in),
         collective("AllReduce", "attn_out", EMIT_TENSOR_PARALLEL),
     ]

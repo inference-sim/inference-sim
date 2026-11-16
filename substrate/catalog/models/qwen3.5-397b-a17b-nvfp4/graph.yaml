@@ -75,7 +75,7 @@ layer_kinds:
     role: input_norm
   - op: GEMM
     role: qkv_proj
-    n: 9216
+    n: 17408
     k: 4096
   - op: Attention
     holds_engine_kv: true
@@ -83,6 +83,9 @@ layer_kinds:
     n_q: 32
     n_kv: 2
     d_h: 256
+  - op: Elementwise
+    role: attn_output_gate
+    bytes_per_token: 49152
   - op: GEMM
     role: o_proj
     n: 4096
@@ -131,13 +134,15 @@ layer_kinds:
     - 7
   - - 7
     - 8
+  - - 8
+    - 9
 - id: mtp_moe
   nodes:
   - op: Elementwise
     role: input_norm
   - op: GEMM
     role: qkv_proj
-    n: 9216
+    n: 17408
     k: 4096
   - op: Attention
     holds_engine_kv: true
@@ -145,6 +150,9 @@ layer_kinds:
     n_q: 32
     n_kv: 2
     d_h: 256
+  - op: Elementwise
+    role: attn_output_gate
+    bytes_per_token: 49152
   - op: GEMM
     role: o_proj
     n: 4096
@@ -185,6 +193,8 @@ layer_kinds:
     - 7
   - - 7
     - 8
+  - - 8
+    - 9
 stack:
   pattern:
   - gdn_moe
