@@ -8280,7 +8280,7 @@ def test_dflash2_drafts_a_block_from_the_targets_captured_states(tmp_path):
 
 
 @pytest.mark.parametrize("edit,why", [
-    ({"dflash_config": {**DFLASH2_CFG["dflash_config"], "attention_mode": "mla"}}, "GQA one only"),
+    ({"dflash_config": {**DFLASH2_CFG["dflash_config"], "attention_mode": "mla"}}, "neither pinned engine supports.*blis-sglang#21"),
     ({"dflash_config": {**DFLASH2_CFG["dflash_config"], "causal": True}}, "does not read"),
     ({"is_causal": True}, "non-causal"),
     ({"draft_vocab_size": 32000}, "draft_vocab_size differs"),

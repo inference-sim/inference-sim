@@ -5944,7 +5944,7 @@ def handler_dflash2(cfg, raw, model):
     attention_mode mla (an MLA DFlash2 drafter) is refused: v0.33.0's DFlash attention builds a
     QKV projection over head_dim and has no latent-attention path, and SGLang v0.5.23's
     (python/sglang/srt/models/dflash.py DFlashAttention) has none either, so neither pinned
-    engine runs such a checkpoint (inference-sim/blis-substrate#179)."""
+    engine runs such a checkpoint (inference-sim/blis-sglang#21, inference-sim/blis-substrate#179)."""
     def whole(v, key):
         if isinstance(v, bool) or not isinstance(v, int):
             raise DeriveError(f"{model}: {key} is {v!r}, not a whole number")
@@ -5961,10 +5961,11 @@ def handler_dflash2(cfg, raw, model):
                           f"selector and the capture layers from it")
     mode = draft.get("attention_mode", "gqa")
     if mode != "gqa":
-        raise DeriveError(f"{model}: dflash_config.attention_mode is {mode!r}; vLLM v0.33.0's "
-                          f"DFlash attention is the GQA one only (qwen3_dflash.py:159-296), and "
-                          f"SGLang v0.5.23's too, so no pinned engine runs this drafter "
-                          f"(inference-sim/blis-substrate#179)")
+        raise DeriveError(f"{model}: dflash_config.attention_mode is {mode!r}, an MLA DFlash "
+                          f"drafter, which neither pinned engine supports: vLLM v0.33.0's DFlash "
+                          f"attention is GQA only (qwen3_dflash.py:159-296), and SGLang v0.5.23's "
+                          f"is too; SGLang serves MLA drafts only after that release "
+                          f"(inference-sim/blis-sglang#21, inference-sim/blis-substrate#179)")
     unread = sorted(set(draft) - DFLASH2_KEYS)
     if unread:
         raise DeriveError(f"{model}: dflash_config states {unread}, which this handler does not "
