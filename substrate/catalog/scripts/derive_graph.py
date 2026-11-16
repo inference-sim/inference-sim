@@ -380,7 +380,15 @@ MODELOPT_PER_NODE_ARCHS = frozenset({
     "KimiK25ForConditionalGeneration",
     "MiniMaxM2ForCausalLM",
     "Qwen3_5MoeForConditionalGeneration",
+    "GlmMoeDsaForCausalLM",
+    "Glm5NextForConditionalGeneration",
 })
+
+# The per-node architectures whose MIXED_PRECISION checkpoints are placed from their
+# quantized_layers map, each checked against a committed checkpoint (GLM-5.3-NVFP4). Another
+# architecture's mixed block is still refused: its module names have not been read against
+# a real map.
+MODELOPT_MIXED_ARCHS = frozenset({"GlmMoeDsaForCausalLM"})
 
 
 def modelopt_exclusions(quant: dict[str, Any]) -> list[str]:
@@ -485,6 +493,73 @@ MODELOPT_MODULES: dict[str, dict[str, Any]] = {
     # layers/fused_moe/utils.py:55-89), so on NVIDIA parts the two keep their own widths. The MTP
     # module is built under "mtp" (Qwen3_5MTP, qwen3_5_mtp.py:226-234; its layers at
     # mtp.layers.{i}, :122).
+    # GLM-5's DSA family (GlmMoeDsaForCausalLM, vLLM v0.33.0 vllm/models/deepseek_v32): a
+    # DeepseekV32DecoderLayer at model.layers.{i} (nvidia/model.py:57-120, 224) whose attention
+    # is self_attn.fused_qkv_a_proj, q_b_proj, kv_b_proj and o_proj with the indexer's wq_b and
+    # wk_weights_proj under self_attn.indexer (attention.py:76-85, 187-269); a dense layer's
+    # MLP is mlp.gate_up_proj and mlp.down_proj, a sparse layer's experts mlp.experts with the
+    # shared experts at mlp.shared_experts (DeepseekV2MLP and DeepseekV2MoE,
+    # model_executor/models/deepseek_v2.py:267-276, 371-399). The MTP layer is built at
+    # model.layers.{num_hidden_layers + k} (mtp.py:175-184), its decoder layer under that same
+    # prefix (:94-96).
+    "GlmMoeDsaForCausalLM": {
+        "layer": "model.layers.{i}.",
+        "draft_layer": "model.layers.{i}.",
+        "head": "lm_head",
+        "roles": {
+            "qkv_a_proj": "self_attn.fused_qkv_a_proj",
+            "q_b_proj": "self_attn.q_b_proj",
+            "kv_b_proj": "self_attn.kv_b_proj",
+            "o_proj": "self_attn.o_proj",
+            "index_wq_b": "self_attn.indexer.wq_b",
+            "index_wk_weights_proj": "self_attn.indexer.wk_weights_proj",
+            "mlp_gate_up": "mlp.gate_up_proj",
+            "mlp_down": "mlp.down_proj",
+            "experts": "mlp.experts",
+        },
+        "shared": ("mlp.shared_experts.gate_up_proj", "mlp.shared_experts.down_proj"),
+        "prefix": {},
+        "stacked": {".gate_proj": ".gate_up_proj", ".up_proj": ".gate_up_proj"},
+    },
+    # GLM-5.3-Flash (Glm5NextForConditionalGeneration, vLLM v0.33.0 vllm/models/glm5next): the
+    # text decoder under "language_model" (common/model.py:1229), whose mapper renames
+    # "model.language_model." to "language_model.model." and "lm_head." to
+    # "language_model.lm_head." (the Glm4v convention, :1170-1175). A KDA layer's projections
+    # are self_attn.in_proj_qkvbfg_a (q, k, v, b and the f and g down-projections fused),
+    # f_b_proj, g_b_proj and o_proj (common/kda.py:253-319); a sparse-MLA layer's are
+    # self_attn.fused_qkv_a_proj, q_b_proj, kv_b_proj and o_proj with the indexer's wq_b and
+    # wk_weights_proj under self_attn.indexer (common/attention.py:234-244, 432-473, 527); the
+    # MLP is mlp.gate_up_proj and mlp.down_proj, the experts mlp.experts and the shared experts
+    # mlp.shared_experts (common/model.py:191-323). The hyper-connection mixers (hc_attn_fn,
+    # hc_ffn_fn, :468-479), the indexer's FP32 head-gate copy of wk_weights_proj's rows and its
+    # kpool gate (attention.py:219-226) are parameters, not linears, so no quantization reaches
+    # them (None). The MTP layer is model.layers.{num_hidden_layers + k}: its eh_proj at that
+    # prefix and its decoder layer under mtp_block (common/mtp.py:54, 284).
+    "Glm5NextForConditionalGeneration": {
+        "layer": "language_model.model.layers.{i}.",
+        "draft_layer": "model.layers.{i}.mtp_block.",
+        "draft_roles": {"mtp_eh_proj": "model.layers.{i}.eh_proj"},
+        "head": "language_model.lm_head",
+        "roles": {
+            "hc_attn_fn": None, "hc_ffn_fn": None,
+            "kda_q_proj": "self_attn.in_proj_qkvbfg_a", "kda_k_proj": "self_attn.in_proj_qkvbfg_a",
+            "kda_v_proj": "self_attn.in_proj_qkvbfg_a", "kda_b_proj": "self_attn.in_proj_qkvbfg_a",
+            "kda_f_a_proj": "self_attn.in_proj_qkvbfg_a", "kda_g_a_proj": "self_attn.in_proj_qkvbfg_a",
+            "kda_f_b_proj": "self_attn.f_b_proj", "kda_g_b_proj": "self_attn.g_b_proj",
+            "kda_o_proj": "self_attn.o_proj",
+            "qkv_a_proj": "self_attn.fused_qkv_a_proj", "q_b_proj": "self_attn.q_b_proj",
+            "kv_b_proj": "self_attn.kv_b_proj", "o_proj": "self_attn.o_proj",
+            "index_wq_b": "self_attn.indexer.wq_b",
+            "index_wk_weights_proj": "self_attn.indexer.wk_weights_proj",
+            "index_head_gate_proj": None, "index_kpool_compress_gate": None,
+            "mlp_gate_up": "mlp.gate_up_proj", "mlp_down": "mlp.down_proj",
+            "experts": "mlp.experts",
+        },
+        "shared": ("mlp.shared_experts.gate_up_proj", "mlp.shared_experts.down_proj"),
+        "prefix": {"model.language_model.": "language_model.model.",
+                   "lm_head.": "language_model.lm_head.", "model.visual.": "visual."},
+        "stacked": {".gate_proj": ".gate_up_proj", ".up_proj": ".gate_up_proj"},
+    },
     "Qwen3_5MoeForConditionalGeneration": {
         "layer": "language_model.model.layers.{i}.",
         "draft_layer": "mtp.layers.{i}.",
@@ -542,25 +617,100 @@ def modelopt_config_exclusions(quant: dict[str, Any], model: str) -> tuple[str, 
     return str(algo).upper(), listed
 
 
-def modelopt_placed_width(raw: dict[str, Any], model: str, arch: str) -> tuple[str, Any]:
-    """The width a ModelOpt checkpoint's quantized modules store, and a predicate
-    `quantized(prefix)` that answers for a module vLLM names `prefix`.
+def modelopt_placed_width(raw: dict[str, Any], model: str, arch: str):
+    """`width_of(prefix)`: the width a ModelOpt checkpoint stores the module vLLM names
+    `prefix` at, or None where it stays unquantized.
 
-    The predicate is vLLM's: a module the exclusion list names (is_layer_excluded) stays
-    unquantized, every other linear and every FusedMoE is quantized
-    (ModelOptQuantConfigBase.get_quant_method, modelopt.py:224-262@v0.32.0). Only a
-    uniform NVFP4 layout is read. MIXED_PRECISION chooses the algorithm per layer from a
-    `quantized_layers` map and is not placed here."""
+    vLLM's rule (ModelOptQuantConfigBase.get_quant_method and is_layer_excluded,
+    model_executor/layers/quantization/modelopt.py:191-262@v0.33.0): a module the exclusion
+    list names stays unquantized. Under a uniform quant_algo every other linear and routed
+    expert layer is quantized at it; only NVFP4 is placed this way. Under MIXED_PRECISION
+    the algorithm is looked up per module in `quantized_layers`, and a module it does not
+    name stays unquantized (ModelOptMixedPrecisionConfig, :1574-1890: _resolve_quant_algo
+    and get_quant_method's "Layer not in quantized_layers -- leave unquantized")."""
     quant = raw.get("quantization_config") or {}
     if str(quant.get("quant_method", "")).lower() != "modelopt":
         raise DeriveError(f"{model}: quant_method {quant.get('quant_method')!r}; this "
                           f"handler reads ModelOpt's layout")
     algo, listed = modelopt_config_exclusions(quant, model)
-    if algo == "MIXED_PRECISION":
+    spec = MODELOPT_MODULES[arch]
+
+    def renamed(p):
+        # The loader's renames reach a name in the order it applies them: stacked, then
+        # prefix (WeightsMapper._map_name_with_shard).
+        for old, new in spec["stacked"].items():
+            if old in p:
+                p = p.replace(old, new, 1)
+        for old, new in spec["prefix"].items():
+            if p.startswith(old):
+                p = p.replace(old, new, 1)
+        return p
+
+    excluded = modelopt_exclusions({"ignore": [renamed(p) for p in listed]})
+    if algo == "MIXED_PRECISION" and arch not in MODELOPT_MIXED_ARCHS:
         raise DeriveError(
             f"{model}: quant_algo MIXED_PRECISION picks the algorithm per layer from a "
-            f"quantized_layers map, which this handler does not place; only a uniform "
-            f"NVFP4 layout is priced")
+            f"quantized_layers map, which this deriver places only for "
+            f"{sorted(MODELOPT_MIXED_ARCHS)}")
+    if algo == "MIXED_PRECISION":
+        layers = quant.get("quantized_layers")
+        if not isinstance(layers, dict) or not layers:
+            raise DeriveError(f"{model}: MIXED_PRECISION with no quantized_layers map, which "
+                              f"vLLM refuses")
+        recipe = {}
+        for key, info in layers.items():
+            got = QUANT_ALGOS.get(str((info or {}).get("quant_algo", "")).upper())
+            if got not in ("nvfp4", "fp8"):
+                raise DeriveError(f"{model}: quantized_layers names {key} at "
+                                  f"{(info or {}).get('quant_algo')!r}, which this deriver "
+                                  f"does not place")
+            # The map is read as written: vLLM applies the loader's renames to the exclusion
+            # list only, and matches these keys through its own candidates below.
+            recipe[key] = got
+        packed = quant.get("packed_modules_mapping") or {}
+        fused = {"qkv_proj": ("q_proj", "k_proj", "v_proj"), "gate_up_proj": ("gate_proj", "up_proj")}
+
+        def one(found, prefix):
+            if len(found) > 1:
+                raise DeriveError(f"{model}: {prefix} fuses shards at {sorted(found)}, which "
+                                  f"vLLM refuses")
+            return found.pop() if found else None
+
+        def candidates(prefix):
+            # _quantized_layer_prefix_candidates (modelopt.py:1828-1842): the prefix, and
+            # the language-model spelling swapped either way.
+            out = [prefix]
+            if prefix.endswith(".lm_head"):
+                out.append("lm_head")
+            for a, b in (("language_model.model.", "model.language_model."),
+                         ("model.language_model.", "language_model.model.")):
+                if prefix.startswith(a):
+                    out.append(b + prefix[len(a):])
+            return out
+
+        def width_of(prefix):
+            if modelopt_excluded(prefix, excluded):
+                return None
+            for c in candidates(prefix):
+                got = lookup(c)
+                if got:
+                    return got
+            return None
+
+        def lookup(prefix):
+            if prefix in recipe:                                   # direct
+                return recipe[prefix]
+            base, _, proj = prefix.rpartition(".")
+            for shards in (packed.get(proj), fused.get(proj)):     # a fused module's shards
+                if shards:
+                    got = one({recipe[f"{base}.{n}"] for n in shards if f"{base}.{n}" in recipe}, prefix)
+                    if got:
+                        return got
+            under = {w for k, w in recipe.items() if k.startswith(prefix + ".")}
+            if under:                                              # a parent module
+                return one(under, prefix)
+            return None
+        return width_of
     width = QUANT_ALGOS.get(algo)
     if width is None:
         raise DeriveError(f"{model}: ModelOpt quant_algo {algo!r} is not one this deriver "
@@ -574,25 +724,12 @@ def modelopt_placed_width(raw: dict[str, Any], model: str, arch: str) -> tuple[s
     if any(w.get("group_size") not in (None, 16) for w in groups):
         raise DeriveError(f"{model}: an NVFP4 weight group of "
                           f"{sorted({w.get('group_size') for w in groups})}, not 16")
-    spec = MODELOPT_MODULES[arch]
-    patterns = []
-    for p in listed:
-        # The loader's renames reach the list in the order it applies them to a name:
-        # stacked, then prefix (WeightsMapper._map_name_with_shard).
-        for old, new in spec["stacked"].items():
-            if old in p:
-                p = p.replace(old, new, 1)
-        for old, new in spec["prefix"].items():
-            if p.startswith(old):
-                p = p.replace(old, new, 1)
-        patterns.append(p)
-    excluded = modelopt_exclusions({"ignore": patterns})
-    return width, lambda prefix: not modelopt_excluded(prefix, excluded)
+    return lambda prefix: None if modelopt_excluded(prefix, excluded) else width
 
 
 def modelopt_place_widths(kinds: list[dict[str, Any]], stack: dict[str, Any],
                           raw: dict[str, Any], model: str,
-                          draft: tuple[str, int] | None = None) -> list[dict[str, Any]]:
+                          draft: tuple[str, list[int]] | None = None) -> list[dict[str, Any]]:
     """Give each weight node of a ModelOpt checkpoint the width vLLM stores it at.
 
     The global width stays the base dtype and a quantized node carries the quantized one,
@@ -606,26 +743,33 @@ def modelopt_place_widths(kinds: list[dict[str, Any]], stack: dict[str, Any],
     `*.mlp.shared_expert.*`), the shared half becomes a node of its own at its own width
     (split_shared_experts), as a checkpoint that states the two widths does.
 
-    `draft`, where given, is (kind id, module count): a draft kind whose layers the engine
-    builds under the architecture's draft_layer prefix, asked at those modules' names."""
+    `draft`, where given, is (kind id, module indices): a draft kind whose layers the engine
+    builds under the architecture's draft_layer prefix at those indices, asked at those
+    modules' names."""
     arch = architecture_of(raw, model)
     spec = MODELOPT_MODULES[arch]
-    width, quantized = modelopt_placed_width(raw, model, arch)
-    if quantized(spec["head"]):
+    width_of = modelopt_placed_width(raw, model, arch)
+    if width_of(spec["head"]):
         raise DeriveError(f"{model}: the ModelOpt list leaves {spec['head']} quantized; "
                           f"the head is priced at the base width")
     layers_of: dict[str, list[tuple[str, int]]] = {}
     for i, kid in enumerate(expand_stack(stack)):
         layers_of.setdefault(kid, []).append((spec["layer"], i))
+    draft_kind = draft[0] if draft else None
     if draft:
-        kid, count = draft
+        kid, indices = draft
         if "draft_layer" not in spec:
             raise DeriveError(f"{model}: {arch} has no recorded vLLM prefix for its draft layers")
-        layers_of[kid] = [(spec["draft_layer"], i) for i in range(count)]
+        layers_of[kid] = [(spec["draft_layer"], i) for i in indices]
     base = base_dtype(raw, raw, model)
 
+    def name(fmt, i, path, kind, role):
+        # A draft module the engine builds outside its draft layer's prefix names its own path.
+        whole = spec.get("draft_roles", {}).get(role) if kind["id"] == draft_kind else None
+        return whole.format(i=i) if whole else fmt.format(i=i) + path
+
     def uniform(kind, role, paths, idx):
-        answers = {p: {i: quantized(fmt.format(i=i) + p) for fmt, i in idx} for p in paths}
+        answers = {p: {i: width_of(name(fmt, i, p, kind, role)) for fmt, i in idx} for p in paths}
         flat = {a for per in answers.values() for a in per.values()}
         if len(flat) != 1:
             where = {p: sorted(i for i, a in per.items() if a) for p, per in answers.items()}
@@ -644,16 +788,23 @@ def modelopt_place_widths(kinds: list[dict[str, Any]], stack: dict[str, Any],
             if node["op"] not in ("GEMM", "GroupedGEMM") or not idx:
                 nodes.append(node)
                 continue
-            if role not in spec["roles"]:
+            known = role in spec["roles"] or (kind["id"] == draft_kind
+                                               and role in spec.get("draft_roles", {}))
+            if not known:
                 raise DeriveError(f"{model}: {arch} has no recorded vLLM module for the "
                                   f"{role!r} node, so the ModelOpt list cannot place it")
-            routed = uniform(kind, role, [spec["roles"][role]], idx)
+            path = spec["roles"].get(role, "")
+            if path is None:
+                # A parameter rather than a linear: no quantization method reaches it.
+                nodes.append(node)
+                continue
+            routed = uniform(kind, role, [path], idx)
             if routed:
-                node = dict(node, weight_dtype=width)
+                node = dict(node, weight_dtype=routed)
             if role == "experts" and node.get("shared_experts"):
                 shared = uniform(kind, "shared_experts", list(spec["shared"]), idx)
                 if shared != routed:
-                    nodes += split_shared_experts(node, width if shared else base)
+                    nodes += split_shared_experts(node, shared or base)
                     continue
             nodes.append(node)
         out.append(dict(kind, nodes=nodes))
@@ -759,6 +910,11 @@ def weight_dtype(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> str:
         # global width is the base, and each node carries NVFP4 where the list leaves its
         # module quantized. Any other architecture is refused rather than priced at the
         # base throughout.
+        if (fmt == "modelopt" and str(quant.get("quant_algo", "")).upper() == "MIXED_PRECISION"
+                and (raw.get("architectures") or [None])[0] in MODELOPT_MIXED_ARCHS):
+            # Per module, from quantized_layers (modelopt_placed_width); the global width is
+            # the base, as for a uniform layout.
+            return base_dtype(cfg, raw, model)
         if fmt == "modelopt" and quant.get("quant_algo"):
             algo = QUANT_ALGOS.get(str(quant["quant_algo"]).upper())
             if algo is None:
@@ -2216,14 +2372,39 @@ def handler_minimax_m2(cfg, raw, model):
     return modelopt_placed(result, raw, model)
 
 
-def modelopt_placed(result, raw, model):
+def modelopt_placed(result, raw, model, draft=None):
     """A handler result with the widths a ModelOpt checkpoint stores, or the result as it
-    is for a checkpoint that is not ModelOpt."""
+    is for a checkpoint that is not ModelOpt. `draft` is modelopt_place_widths'."""
     quant = raw.get("quantization_config") or {}
     if str(quant.get("quant_method", "")).lower() != "modelopt":
         return result
-    kinds = modelopt_place_widths(result[0], result[1], raw, model)
+    kinds = modelopt_place_widths(result[0], result[1], raw, model, draft=draft)
     return (kinds, *result[1:])
+
+
+def handler_glm5_next_placed(cfg, raw, model):
+    """GLM-5.3-Flash, priced by handler_glm5_next, with a ModelOpt checkpoint's widths placed
+    node by node; its MTP layer, the draft kind the handler declares, at the names vLLM
+    builds it under (GLM-5.3-Flash-NVFP4 excludes model.layers.45* whole)."""
+    result = handler_glm5_next(cfg, raw, model)
+    layers = int(require(cfg, "num_layers", model))
+    spec = int(pick(cfg, "num_spec_tokens") or 0)
+    has_draft = any(k["id"] == DRAFT_KIND_ID for k in result[0])
+    draft = (DRAFT_KIND_ID, list(range(layers, layers + spec))) if spec and has_draft else None
+    return modelopt_placed(result, raw, model, draft=draft)
+
+
+def handler_glm_moe_dsa(cfg, raw, model):
+    """GLM-5's DSA family, priced by handler_moe, with a ModelOpt checkpoint's widths placed
+    node by node. Its MTP layer, the draft kind handler_moe declares, is asked at the module
+    names vLLM builds it under, model.layers.{num_hidden_layers + k}: GLM-5.2-NVFP4 excludes
+    that layer whole (model.layers.78*), so it is bf16 beside the decoder's NVFP4 experts."""
+    result = handler_moe(cfg, raw, model)
+    layers = int(require(cfg, "num_layers", model))
+    spec = int(pick(cfg, "num_spec_tokens") or 0)
+    has_draft = any(k["id"] == DRAFT_KIND_ID for k in result[0])
+    draft = (DRAFT_KIND_ID, list(range(layers, layers + spec))) if spec and has_draft else None
+    return modelopt_placed(result, raw, model, draft=draft)
 
 
 def handler_kimi_k25(cfg, raw, model):
@@ -4726,7 +4907,7 @@ def handler_qwen3_5_moe(cfg, raw, model):
     if mtp:
         kinds.append({"id": DRAFT_KIND_ID, "nodes": [dict(n) for n in full], "edges": chain(full)})
     kinds = modelopt_place_widths(kinds, stack, raw, model,
-                                  draft=(DRAFT_KIND_ID, mtp) if mtp else None)
+                                  draft=(DRAFT_KIND_ID, list(range(mtp))) if mtp else None)
     return kinds, stack
 
 
@@ -6110,7 +6291,7 @@ HANDLERS = {
     # across layers, pools at ratios 1 and 2 where V4 asserts 4 or 128, and adds engram
     # layers and a DSpark draft module. See handler_deepseek_v41.
     "DeepseekV41ForCausalLM": handler_deepseek_v41,
-    "GlmMoeDsaForCausalLM": handler_moe,
+    "GlmMoeDsaForCausalLM": handler_glm_moe_dsa,
     "InklingForConditionalGeneration": handler_moe,
     "GptOssForCausalLM": handler_moe,
     "MiniMaxM2ForCausalLM": handler_minimax_m2,
@@ -6122,7 +6303,7 @@ HANDLERS = {
     # The same text decoder plus a DSA indexer on the latent layers (dsa_config); its
     # architecture is routed to vllm.models.kimi_k3 in vLLM v0.34.0rc0 (registry.py:489-492).
     "KimiK31ForConditionalGeneration": handler_kimi_k3,
-    "Glm5NextForConditionalGeneration": handler_glm5_next,
+    "Glm5NextForConditionalGeneration": handler_glm5_next_placed,
     # Muse Spark's language model is the text decoder of a multimodal checkpoint; the
     # vision and audio towers are not priced (modality text_decoder_of_multimodal).
     "MuseSparkForConditionalGeneration": handler_muse_spark,

@@ -8265,3 +8265,61 @@ def test_modelopt_placement_refuses_a_role_split_across_one_kinds_layers(tmp_pat
         q["ignore"] = [p for p in raw["quantization_config"]["ignore"]] + [pattern]
     with pytest.raises(derive_graph.DeriveError, match=why):
         _derive_raw(raw, tmp_path, "qwen-nvfp4-test")
+
+
+# --- ModelOpt NVFP4 on GLM-5's DSA family and GLM-5.3-Flash -------------------------------
+
+@pytest.mark.parametrize("name,dense_mlp", [
+    # GLM-5.2-NVFP4 excludes its three dense layers whole (model.layers.0* to 2.*).
+    ("glm-5.2-nvfp4", "bf16"),
+    # GLM-5.3-NVFP4 is MIXED_PRECISION: its quantized_layers map names the dense MLPs at FP8
+    # and the routed experts at NVFP4, and names nothing else, which vLLM leaves unquantized.
+    ("glm-5.3-nvfp4", "fp8"),
+])
+def test_glm_dsa_nvfp4_places_experts_dense_layers_and_the_draft_layer(name, dense_mlp):
+    g = graph_of(MODELS / name)
+    assert g["global"]["weight_dtype"] == "bf16"
+    dense = _widths(g, "attn_dense_indexed")
+    assert (dense["mlp_gate_up"][0], dense["mlp_down"][0]) == (dense_mlp, dense_mlp)
+    assert {dense[r][0] for r in ("qkv_a_proj", "q_b_proj", "kv_b_proj", "o_proj")} == {"bf16"}
+    sparse = _widths(g, "attn_moe_noindex")
+    assert (sparse["experts"][0], sparse["shared_experts"]) == ("nvfp4", ("bf16", 1))
+    # The MTP layer, model.layers.78, is excluded whole.
+    assert {w for w, _ in _widths(g, "mtp_moe").values()} == {"bf16"}
+
+
+def test_glm53_flash_nvfp4_quantizes_its_experts_and_dense_mlps():
+    """GLM-5.3-Flash-NVFP4 excludes every self_attn module (KDA and sparse MLA), the router
+    gates, the shared experts and the MTP layer (model.layers.45*): the routed experts and
+    the three dense layers' MLPs store NVFP4. The hyper-connection mixers are parameters, not
+    linears, and keep their FP32 width."""
+    g = graph_of(MODELS / "glm-5.3-flash-nvfp4")
+    dense = _widths(g, "kda_dense")
+    assert (dense["mlp_gate_up"][0], dense["mlp_down"][0]) == ("nvfp4", "nvfp4")
+    assert (dense["hc_attn_fn"][0], dense["kda_q_proj"][0], dense["kda_o_proj"][0]) == ("fp32", "bf16", "bf16")
+    moe = _widths(g, "mla_moe")
+    assert (moe["experts"][0], moe["shared_experts"][0], moe["kv_b_proj"][0]) == ("nvfp4", "bf16", "bf16")
+    assert "nvfp4" not in {w for w, _ in _widths(g, "mtp_moe").values()}
+
+
+def _mixed(layers: dict, packed: dict | None = None) -> dict:
+    raw = config_of(MODELS / "glm-5.3")
+    raw["quantization_config"] = {"quant_method": "modelopt", "quant_algo": "MIXED_PRECISION",
+                                  "ignore": [], "quantized_layers": layers,
+                                  **({"packed_modules_mapping": packed} if packed else {})}
+    return raw
+
+
+@pytest.mark.parametrize("layers,packed,why", [
+    ({"model.layers.0.mlp.gate_proj": {"quant_algo": "INT4_AWQ"}}, None, "does not (map|place)"),
+    ({f"model.layers.{i}.mlp.{p}": {"quant_algo": a} for i in range(3)
+      for p, a in (("gate_proj", "FP8"), ("up_proj", "NVFP4"))},
+     {"gate_up_proj": ["gate_proj", "up_proj"]}, "fuses shards"),
+    ({}, None, "no quantized_layers"),
+])
+def test_modelopt_mixed_precision_refuses_what_vllm_refuses_or_this_deriver_cannot_place(
+        tmp_path, layers, packed, why):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match=why):
+        _derive_raw(_mixed(layers, packed), tmp_path, "glm-mixed-test")
