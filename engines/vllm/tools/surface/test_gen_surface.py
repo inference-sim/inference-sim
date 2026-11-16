@@ -181,6 +181,26 @@ var Upstream = UpstreamRelease{
 	Commit:  "5df63a7203cdb9328d824a27b682e77c7b9928be",
 }
 """
+PROVENANCE_INDIRECT = """package blisvllm
+
+import (
+	"github.com/inference-sim/blis-vllm/internal/upstream"
+)
+
+var Upstream = UpstreamRelease{
+	Version: upstream.Version,
+	Tag:     upstream.Tag,
+	Commit:  upstream.Commit,
+}
+"""
+UPSTREAM_GO = """package upstream
+
+const (
+	Version = "0.33.0"
+	Tag = "v0.33.0"
+	Commit = "4ba787ec9959e566d3b587a796dff07673324da5"
+)
+"""
 GOLDEN = "oracle/scenarios/basic.json"
 
 
@@ -397,6 +417,25 @@ class GenSurfaceTest(unittest.TestCase):
         code, out, err = run(self.tree, s, "--upstream-tag", other[0], "--upstream-commit", other[1])
         self.assertEqual(code, 0, err)
         self.assertEqual(json.loads(out)["upstream"]["tag"], "v0.33.0")
+
+    def test_the_release_is_read_through_provenance_gos_references(self):
+        # v0.33.0's provenance.go names the release once, in internal/upstream (X23).
+        self.tree.write(self.tree.repo, "provenance.go", PROVENANCE_INDIRECT)
+        self.tree.write(self.tree.repo, "internal/upstream/upstream.go", UPSTREAM_GO)
+        code, out, err = run(self.tree, good_status(), "--upstream-tag", "v0.32.0",
+                             "--upstream-commit", "5df63a7203cdb9328d824a27b682e77c7b9928be")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(gen_surface.provenance_upstream(self.tree.repo),
+                         ("v0.33.0", "4ba787ec9959e566d3b587a796dff07673324da5"))
+
+    def test_an_unresolvable_reference_fails(self):
+        self.tree.write(self.tree.repo, "provenance.go", PROVENANCE_INDIRECT)
+        # internal/upstream is missing, so Tag and Commit name nothing.
+        with self.assertRaisesRegex(gen_surface.GenError, "no Upstream record with a Tag and a 40-hex Commit"):
+            gen_surface.provenance_upstream(self.tree.repo)
+        self.tree.write(self.tree.repo, "internal/upstream/upstream.go", UPSTREAM_GO.replace("4ba787ec", "4ba787"))
+        with self.assertRaisesRegex(gen_surface.GenError, "40-hex"):
+            gen_surface.provenance_upstream(self.tree.repo)
 
     def test_a_half_named_release_fails(self):
         code, _, err = run(self.tree, good_status(), "--upstream-tag", "v0.33.0")
