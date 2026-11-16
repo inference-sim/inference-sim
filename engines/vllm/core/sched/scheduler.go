@@ -608,8 +608,10 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 	prefillScheduled := false
 	// drafts_needed (scheduler.py:731-734@4ba787ec): whether a request this step schedules can
 	// use the drafts proposed after it. It stays set if that request is preempted later in the
-	// step.
-	draftsNeeded := !(s.cfg.Spec.Lookahead > 0 && s.cfg.UseV2ModelRunner)
+	// step. It starts as not can_skip_drafts: only a drafter with its own forward pass, on the V2
+	// model runner, skips (:316-321).
+	canSkipDrafts := s.cfg.Spec.Lookahead > 0 && s.cfg.UseV2ModelRunner
+	draftsNeeded := !canSkipDrafts
 
 	// The long-prefill cap is waived when one request is all there is (:640-655).
 	nr, nw := s.Counts()
