@@ -401,6 +401,7 @@ var documented = map[string]struct {
 	"result.Option":               {typ: reflect.TypeOf(result.Option{})},
 	"result.WorkloadProperty":     {typ: reflect.TypeOf(result.WorkloadProperty{})},
 	"result.RatesShape":           {typ: reflect.TypeOf(result.RatesShape{})},
+	"result.File":                 {typ: reflect.TypeOf(result.File{})},
 	"result.Frame":                {typ: reflect.TypeOf(result.Frame{})},
 	"result.Generator":            {typ: reflect.TypeOf(result.Generator{})},
 	"result.InitialState":         {typ: reflect.TypeOf(result.InitialState{})},

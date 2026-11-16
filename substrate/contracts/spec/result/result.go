@@ -286,6 +286,9 @@ type Input struct {
 	// and that BLIS does not simulate, such as speculative acceptance or expert routing
 	// imbalance, each with what supplied it (D8). Sorted by name.
 	WorkloadProperties []WorkloadProperty `yaml:"workload_properties,omitempty"`
+	// Files are the small input files the run read, whole (File), sorted by path: what a
+	// reproduction needs that the scenario, deployment, policy and options do not hold.
+	Files []File `yaml:"files,omitempty"`
 }
 
 // Option is one option that changes the Result.
