@@ -1,0 +1,79 @@
+# The oracle's direct pins for CI (Linux x86_64, CPython 3.12, CPU only). requirements.lock is the
+# whole environment these resolve to; regenerate both together (oracle/README.md).
+#
+# SGLang itself is not installed: the runners read it from a checkout of the pinned commit
+# (sglang-source/python first on sys.path), so the code under test is exactly that commit.
+#
+# torch is SGLang's pin (python/pyproject.toml:6,90@297e54fd, torch==2.14.1) as the PyTorch CPU
+# wheel. triton is what that torch release requires on Linux (triton~=3.8.0 in torch 2.14.1's
+# metadata); SGLang imports it unconditionally (python/sglang/srt/utils/common.py:91@297e54fd).
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.14.1+cpu
+triton==3.8.0
+#
+# Every other entry of SGLang's dependency list (python/pyproject.toml:24-101@297e54fd), with its
+# own pin where SGLang gives one, except these, which are not installed:
+#   CUDA-only kernels and runtimes: cuda-python, flash-attn-4, flashinfer_python[cu13],
+#     humming-kernels[cu13], nvidia-cutlass-dsl[cu13], nvidia-mathdx, nvshmem4py-cu13,
+#     quack-kernels, sgl-deep-ep, sgl-deep-gemm, sgl-flash-mla, sglang-kernel, tilelang,
+#     torch_memory_saver. A module of one that the scheduler imports is stubbed by
+#     oracle/stubs.py and listed in oracle/mocks.json; any other import of one fails.
+#   Media and profiling, which the scheduler does not import: av, decord2, py-spy, torchaudio,
+#     torchcodec. (torchvision comes in as timm's dependency, from the PyPI CPU index.)
+aiohttp
+anthropic>=0.20.0
+apache-tvm-ffi==0.1.11
+blobfile==3.0.0
+build
+compressed-tensors==0.18.0
+datasets
+deepseek-recipe==0.2.0 ; (sys_platform == 'linux' and (platform_machine == 'x86_64' or platform_machine == 'aarch64')) or sys_platform == 'darwin'
+distro
+easydict
+einops
+fastapi
+gguf
+interegular
+IPython
+kernels>=0.14.1,<0.15
+llguidance>=1.7.6,<2.0.0
+mistral_common>=1.11.5
+modelscope
+msgspec
+ninja
+numba==0.65.1
+numpy
+nvidia-ml-py
+openai==2.8.0
+openai-harmony==0.0.4
+orjson
+outlines==0.1.11
+packaging
+partial_json_parser
+pillow
+prometheus-client>=0.20.0
+psutil
+pybase64
+pydantic
+python-dateutil<3
+python-multipart
+pyzmq>=25.1.2
+regex
+requests
+scipy
+sentencepiece==0.2.1
+setproctitle
+smg-grpc-servicer>=0.9.0
+soundfile==0.13.1
+tiktoken
+timm==1.0.25
+tml-renderers==0.1.0 ; (sys_platform == 'linux' and (platform_machine == 'x86_64' or platform_machine == 'aarch64')) or (sys_platform == 'darwin' and platform_machine == 'arm64')
+tokenizers==0.23.2
+tqdm
+transformers==5.19.0
+uvicorn>=0.51
+uvloop
+watchfiles
+xgrammar==0.2.7
+xxhash
+zstandard

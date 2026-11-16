@@ -2,7 +2,7 @@ name: ci
 
 # The repository's own checks. Every pull request runs them, whatever its base, so each layer of a
 # stack is judged on its own head. The checks branch protection requires are `go`, `lint` and
-# `oracle-checks`.
+# `oracle-checks` and `oracle`.
 
 on:
   push:
@@ -121,3 +121,17 @@ jobs:
         run: python -I oracle/check_modules.py sglang-source
       - name: the guards fail on what they guard
         run: python -I oracle/test_checks.py sglang-source
+  # The oracle's environment (SGL-1, FID-2): SGLang checked out at the commit provenance.go pins, the
+  # locked environment installed by hash and checked against the lock (.github/actions/oracle-env),
+  # the manifest check (FID-1, FID-8), and the scheduler importing from the checkout on CPU.
+  oracle:
+    name: oracle
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: ./.github/actions/oracle-env
+      - name: every replacement the harness makes is listed, and none is decision code
+        run: python -I oracle/check_mocks.py oracle/mocks.json
+      - name: the scheduler imports from the pinned checkout in the locked environment
+        run: python -I oracle/run_import.py sglang-source

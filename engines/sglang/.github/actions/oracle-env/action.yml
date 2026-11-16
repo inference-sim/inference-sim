@@ -1,0 +1,61 @@
+name: oracle environment
+description: >-
+  The pinned oracle environment, as the oracle job of ci.yml uses it: Python 3.12, SGLang checked out at the
+  commit provenance.go pins into sglang-source (the step fails unless the checkout is that commit), every
+  package of oracle/requirements.lock installed from oracle/requirements-hashed.txt (every archive's
+  sha256, no resolving; the step fails unless what got installed is exactly the lock), and the scenario
+  model's configuration at its pinned revision in oracle-model. The caller has checked out the repository.
+outputs:
+  python-version:
+    description: The exact Python setup-python installed.
+    value: ${{ steps.python.outputs.python-version }}
+runs:
+  using: composite
+  steps:
+    - id: python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      with:
+        python-version: "3.12"
+        cache: pip
+        cache-dependency-path: oracle/requirements-hashed.txt
+    # SGLang is read from its source at the pinned tag, never installed: the runners put
+    # sglang-source/python first on sys.path. The tag v0.5.23 sits on SGLang's release branch.
+    - name: check out SGLang v0.5.23 at its pinned commit
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      with:
+        repository: sgl-project/sglang
+        ref: 297e54fd105e974cdf401e5b4d20253a22c16f90
+        path: sglang-source
+        fetch-depth: 1
+    - name: the checked-out SGLang is the pinned commit
+      shell: bash
+      run: |
+        set -euo pipefail
+        want="$(sed -n 's/^\tCommit: *"\([0-9a-f]\{40\}\)",$/\1/p' provenance.go)"
+        got="$(git -C sglang-source rev-parse HEAD)"
+        echo "provenance.go pins $want; sglang-source is at $got"
+        test -n "$want" && test "$got" = "$want"
+    # The whole environment is pinned (oracle/requirements.lock, every package ==) and installed
+    # without resolving, from oracle/requirements-hashed.txt with every archive's sha256
+    # (oracle/lock.sh, X21), so neither a transitive release nor a replaced archive can change a
+    # run; the step fails if what got installed is not exactly the lock.
+    - name: install the oracle environment
+      shell: bash
+      run: |
+        set -euo pipefail
+        python -I oracle/check_lock.py --hashed oracle/requirements.lock oracle/requirements-hashed.txt
+        python -m pip install --require-hashes -r oracle/requirements-pip.txt
+        pip install --require-hashes --no-deps --extra-index-url https://download.pytorch.org/whl/cpu -r oracle/requirements-hashed.txt
+        pip check
+        pip freeze > oracle-env.lock
+        python -I oracle/check_lock.py oracle/requirements.lock oracle-env.lock
+    # The scenario model, as configuration only (no weights), at a pinned revision, so a change on
+    # the Hub cannot change a run.
+    - name: fetch the scenario model's configuration at its pinned revision
+      shell: bash
+      run: |
+        python -I - <<'PY'
+        from huggingface_hub import snapshot_download
+        snapshot_download("Qwen/Qwen2.5-0.5B-Instruct", revision="7ae557604adf67be50417f59c2c2f167def9a775",
+                          local_dir="oracle-model", allow_patterns=["*.json", "*.txt"])
+        PY
