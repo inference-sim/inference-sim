@@ -165,6 +165,7 @@ nav:
     - Point record: contracts/reference/point-record.md
     - JSON Schemas: contracts/reference/schemas.md
     - Field list: contracts/reference/fields.md
+    - Kernel-implementation table: contracts/reference/kernel-impls.md
     - Router table: contracts/reference/router-table.md
     - Kernel interface: contracts/reference/kernel.md
     - Engine interface: contracts/reference/engine.md
