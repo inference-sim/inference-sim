@@ -12,7 +12,7 @@ import (
 )
 
 // A data-parallel deployment runs as one instance per logical --num-instances, whose engine is
-// the whole data-parallel group (blis-vllm's v0.32.0 engine): its ranks, waves and balancer are
+// the whole data-parallel group (blis-vllm's v0.33.0 engine): its ranks, waves and balancer are
 // the engine's, and the host places no rank replicas.
 
 // dpFixtureNumRequests is the --num-requests every DP fixture in cmd/ passes. Kept as

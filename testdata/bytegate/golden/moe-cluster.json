@@ -4,18 +4,18 @@
   "name": "gpt-oss-120b-h100-fp4-vllm-tp2.r30-s5-oddf182e8",
   "engine": {
     "kind": "vllm",
-    "version": "0.32.0"
+    "version": "0.33.0"
   },
   "data": {
     "catalog": {
       "source": "path",
-      "hash": "db74e4bb49f75d658e5d0850934da60daf513274b937a03b7ab994760bd6d21f",
-      "combined_hash": "db74e4bb49f75d658e5d0850934da60daf513274b937a03b7ab994760bd6d21f"
+      "hash": "77898711fca5254bf3047f951ab1ce6a3a3dd03cb9e29da11db7a39f42527a2c",
+      "combined_hash": "77898711fca5254bf3047f951ab1ce6a3a3dd03cb9e29da11db7a39f42527a2c"
     },
     "registry": {
       "source": "path",
-      "hash": "8dbcf3b85eed842f2bc798b34d2b95716fc58117750f4164d869b26770353fe0",
-      "combined_hash": "8dbcf3b85eed842f2bc798b34d2b95716fc58117750f4164d869b26770353fe0"
+      "hash": "a6436069c59ef8f02b3c8f4a4594eae056d9ab4b6528247cd32ee0401d2fe49b",
+      "combined_hash": "a6436069c59ef8f02b3c8f4a4594eae056d9ab4b6528247cd32ee0401d2fe49b"
     },
     "released_data": false,
     "build": "unreleased"
@@ -740,7 +740,7 @@
       ],
       "engine": {
         "kind": "vllm",
-        "version": "0.32.0"
+        "version": "0.33.0"
       },
       "cluster": {
         "hardware": "h100",
@@ -872,9 +872,9 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.14.1-0.20261116200733-2ce0e12e1b81",
+    "substrate": "v0.14.2-0.20261116205042-39e7839a62bf",
     "router": "v1.0.0-blis.4",
-    "engine_module": "v0.32.1-0.20261116201259-1902e25acc48"
+    "engine_module": "v0.32.1-0.20261116205246-a20a1dd4a5e3"
   },
   "window": {
     "start_us": 33333,
@@ -2833,7 +2833,7 @@
             "Name": "engine_version",
             "Primitive": "",
             "Running": "",
-            "Scope": "0.31.0: the scenario declares vLLM 0.32.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
+            "Scope": "0.31.0: the scenario declares vLLM 0.33.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
             "Set": "blis-latency-kernel"
           }
         ],
@@ -3204,7 +3204,7 @@
         },
         "skipped_rule_findings": [
           {
-            "message": "pools[0].engine.quantization: \"nvfp4\" is not an in-tree method of engine 0.32.0; if it is an out-of-tree method this is expected, otherwise check the spelling. In-tree methods are [auto_awq auto_gptq awq awq_marlin compressed-tensors deepseek_v4_fp8 experts_int8 fbgemm_fp8 fp8 fp8_per_block fp8_per_channel fp8_per_tensor fp_quant gpt_oss_mxfp4 gptq gptq_marlin humming inc int8_per_channel_weight_only modelopt modelopt_fp4 modelopt_mixed modelopt_mxfp8 moe_wna16 mxfp4 mxfp8 nvfp4_per_token online quark torchao]",
+            "message": "pools[0].engine.quantization: \"nvfp4\" is not an in-tree method of engine 0.33.0; if it is an out-of-tree method this is expected, otherwise check the spelling. In-tree methods are [auto_awq auto_gptq awq awq_marlin compressed-tensors deepseek_v4_fp8 experts_int8 fbgemm_fp8 fp8 fp8_per_block fp8_per_channel fp8_per_tensor fp_quant gpt_oss_mxfp4 gptq gptq_marlin humming inc int8_per_channel_weight_only modelopt modelopt_fp4 modelopt_mixed modelopt_mxfp8 moe_wna16 mxfp4 mxfp8 nvfp4_per_token online quark torchao]",
             "rule": "quantization-known",
             "severity": "warning"
           }

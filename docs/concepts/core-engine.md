@@ -11,8 +11,8 @@ engine it reaches only through blis-schemas' `engine.Engine` interface. The driv
 clock and the event queue, the client timeouts and the metrics; the engine makes every
 scheduling, KV-cache and output decision and prices its own steps. The engine is
 [blis-vllm](https://github.com/inference-sim/blis-vllm), built at one site,
-`cmd/engine_build.go`, for the scenario's `engine: {kind: vllm, version: "0.32.0"}`: blis-vllm's translated
-vLLM v0.32.0 engine. A scenario that names no engine is refused. The core loop is:
+`cmd/engine_build.go`, for the scenario's `engine: {kind: vllm, version: "0.33.0"}`: blis-vllm's translated
+vLLM v0.33.0 engine. A scenario that names no engine is refused. The core loop is:
 
 ```
 while events remain and clock < horizon:
@@ -115,7 +115,7 @@ These are the conceptual timestamps in a request's lifecycle. Some are stored as
 ### Preemption
 
 When KV cache pressure forces eviction, running requests are preempted:
-1. Request is removed from the running batch. Under the pool's `engine.scheduling_policy: fcfs` (the default), the tail of the batch is evicted. `scheduling_policy: priority`, which evicts the least-urgent request, is refused on 0.32.0 for now.
+1. Request is removed from the running batch. Under the pool's `engine.scheduling_policy: fcfs` (the default), the tail of the batch is evicted. `scheduling_policy: priority`, which evicts the least-urgent request, is refused on 0.33.0 for now.
 2. Its KV blocks are freed
 3. It is re-enqueued at the front of the wait queue (not the back)
 4. A debug log is emitted and `PreemptionCount` is incremented
@@ -136,7 +136,7 @@ The two engine guards fire before the request enters the wait queue, mirroring v
 
 Step time and host overheads come from **blis-latency-kernel**. The engine asks the kernel to
 price each batch it forms (blis-vllm's kernel adapter, `compat/kernelmodel`), from the model
-graph, chip and coefficients the scenario names; the 0.32.0 engine is priced with the kernel's
+graph, chip and coefficients the scenario names; the 0.33.0 engine is priced with the kernel's
 0.31.0 tuning, and a run says so on stderr. See the
 [Latency Models guide](../guide/latency-models.md).
 
@@ -152,7 +152,7 @@ This matches vLLM, where CPU post-processing runs concurrently with GPU executio
 
 ## Scheduling Policies
 
-Each instance's engine orders its waiting requests by the pool's engine block `scheduling_policy`, as vLLM does. The same field sets the preemption victim. Priority scheduling (`scheduling_policy: priority`) is refused on 0.32.0 for now. See [Scheduling & Priority](../guide/scheduling.md).
+Each instance's engine orders its waiting requests by the pool's engine block `scheduling_policy`, as vLLM does. The same field sets the preemption victim. Priority scheduling (`scheduling_policy: priority`) is refused on 0.33.0 for now. See [Scheduling & Priority](../guide/scheduling.md).
 
 ## Metrics
 

@@ -31,7 +31,7 @@ To read a checkout instead, pass `--catalog` or set `BLIS_CATALOG`:
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout 2ce0e12e1b81cd7c5646c1f3b93bacab852a9a57
+git -C blis-substrate checkout 39e7839a62bf710fb744efdff317557409a5c720
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
@@ -64,7 +64,7 @@ A scenario is a blis-schemas file of two YAML documents, a `Scenario` and a `Dep
 ```yaml
 kind: Scenario
 name: llama-3.1-70b-instruct-h200-fp8-vllm-tp4
-engine: {kind: vllm, version: "0.32.0"}
+engine: {kind: vllm, version: "0.33.0"}
 model: llama-3.1-70b-instruct
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads,
                cost-model-attention, cost-model-recurrent, cost-model-memory]
@@ -99,7 +99,7 @@ pools:
 
 The scenario and the kernel supply, with no flag to restate them: the model, the hardware,
 TP/DP/EP, the KV block budget (from the kernel's memory methods, per data-parallel rank),
-block size, `max_num_seqs`, `max_num_batched_tokens`, `max_model_len` (must be stated as an explicit count on 0.32.0; unstated or `auto` is refused,
+block size, `max_num_seqs`, `max_num_batched_tokens`, `max_model_len` (must be stated as an explicit count on 0.33.0; unstated or `auto` is refused,
 as is a window one rank's KV cache cannot hold), prefix caching, the KV cache dtype, and the speculative draft length and
 method. The flags that used to state these (`--model`, `--hardware`, `--tp`, `--dp`,
 `--total-kv-blocks`, `--max-num-seqs`, `--max-model-len`, `--kv-cache-dtype`,
@@ -139,10 +139,10 @@ A scenario that cannot be resolved -- absent file, unreadable coefficient set, u
 engine version, a deployment that does not fit -- aborts the run naming what failed. There
 is no fallback.
 
-The scenario's `engine` must be `{kind: vllm, version: "0.32.0"}`, and a scenario that states none
+The scenario's `engine` must be `{kind: vllm, version: "0.33.0"}`, and a scenario that states none
 is refused. A scenario that states the removed `engine_version` is refused with a message naming
 `engine: {kind, version}`.
-It runs blis-vllm's translated vLLM v0.32.0 engine, priced with the kernel's 0.31.0 tuning (the
+It runs blis-vllm's translated vLLM v0.33.0 engine, priced with the kernel's 0.31.0 tuning (the
 run says so on stderr), and refuses priority scheduling for now. The engine block must state
 `max_model_len` as an explicit number (unstated or `auto` is refused), plus `max_num_seqs` and
 `max_num_batched_tokens`. Any other release is refused, naming it.
@@ -164,7 +164,7 @@ nominal line rate, which makes the handoff about 23% fast on `ib-400g`, and reco
 the Result as an `assumed` `fabric_bandwidth_efficiency` under `reports.kernel.<pool>.assumptions`.
 Every disaggregated scenario this repository ships lists it, and a test requires that.
 
-At `engine: {kind: vllm, version: "0.32.0"}` each pool's engine is blis-vllm's v0.32.0 engine, which runs vLLM's
+At `engine: {kind: vllm, version: "0.33.0"}` each pool's engine is blis-vllm's v0.33.0 engine, which runs vLLM's
 NIXL scheduler as the pool's `kv_role`: `kv_producer` for the prefill pool and `kv_consumer` for the
 decode pool. The prefill leg samples one token and holds its blocks for the pull. The decode leg waits
 in `WAITING_FOR_REMOTE_KVS` until the pull lands. Under PP the engine refuses what vLLM's NIXL worker
@@ -466,7 +466,7 @@ vLLM's OffloadingConnector:
 
 - **Tiers.** A `cpu_dram` tier of `bytes` is the CPU tier (`cpu_bytes_to_use`), and it must be
   the first tier. A tier naming another catalog storage device class is a secondary tier,
-  which the v0.32.0 engine refuses (blis-vllm#63). vLLM's defaults apply to everything the schema does not state:
+  which the v0.33.0 engine refuses (blis-vllm#63). vLLM's defaults apply to everything the schema does not state:
   block size, `offload_prompt_only`, `tokens_per_hash`.
 - **Accepted settings.** `connector` may be `OffloadingConnector`, `SimpleCPUOffloadConnector`
   (one `cpu_dram` tier) or left out; `spec` may be

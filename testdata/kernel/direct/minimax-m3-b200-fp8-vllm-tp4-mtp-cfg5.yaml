@@ -9,7 +9,7 @@
 # deployment: 8k1k.
 #
 # Only stated values are written (design X19); the engine resolves every other
-# setting as vLLM 0.32.0 does. Stated by the run: block_size, gpu_memory_utilization, enable_prefix_caching, speculative_method, num_speculative_tokens.
+# setting as vLLM 0.33.0 does. Stated by the run: block_size, gpu_memory_utilization, enable_prefix_caching, speculative_method, num_speculative_tokens.
 # max_model_len 32768 is derived from the workload: the engine requires it stated
 # and the corpus does not state it.
 # speculative: the run drafts with eagle3 x3, NOT written: the catalog graph
@@ -18,7 +18,7 @@ kind: Scenario
 name: minimax-m3-b200-fp8-vllm-tp4-mtp-cfg5
 engine:
   kind: vllm
-  version: "0.32.0"
+  version: "0.33.0"
 
 model: minimax-m3
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
