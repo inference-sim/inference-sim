@@ -82,9 +82,10 @@ func TestStreamIntervalOf_ReadsTheScenariosValue(t *testing.T) {
 
 // At the values InferenceX states (10, 20, 32) a run starts, the engine accepts the field (it
 // changes when a client sees tokens, not what the scheduler does), and the grouping reaches the
-// Result through one series: the client-observed inter-token latency, itl_*. Tokens of a group
-// arrive together, so the median gap falls to zero and the gap before a group grows, while the
-// number of gaps and their mean (the stream's length over its tokens) stay. TTFT, TPOT, E2E, the
+// Result through the two client-observed series: the inter-token latency, itl_*, and the
+// inter-chunk latency, icl_*. Tokens of a group arrive together, so itl's median gap falls to
+// zero and the gap before a group grows, while the number of gaps and their mean (the stream's
+// length over its tokens) stay; icl has one gap per group, so fewer, longer gaps. TTFT, TPOT, E2E, the
 // engine's step intervals and every other section are those of the run that states none. A run at
 // 1 (vLLM's default) is the same run, byte for byte.
 func TestStreamInterval_StatedValuesReshapeTheITLSeriesAndNothingElse(t *testing.T) {
@@ -113,6 +114,7 @@ func TestStreamInterval_StatedValuesReshapeTheITLSeriesAndNothingElse(t *testing
 	baseMean, baseN := fig(baseMetrics, "itl_mean_ms")
 	baseP50, _ := fig(baseMetrics, "itl_p50_ms")
 	baseP99, _ := fig(baseMetrics, "itl_p99_ms")
+	baseICLMean, baseICLN := fig(baseMetrics, "icl_mean_ms")
 	if baseN < 30 || baseP50 <= 0 {
 		t.Fatalf("non-vacuity: itl has %v samples and a median of %v at the default", baseN, baseP50)
 	}
@@ -130,7 +132,7 @@ func TestStreamInterval_StatedValuesReshapeTheITLSeriesAndNothingElse(t *testing
 		}
 		gm, _ := got["metrics"].(map[string]any)
 		for id, want := range baseMetrics {
-			if strings.HasPrefix(id, "itl_") {
+			if strings.HasPrefix(id, "itl_") || strings.HasPrefix(id, "icl_") {
 				continue
 			}
 			if !reflect.DeepEqual(gm[id], want) {
@@ -151,6 +153,11 @@ func TestStreamInterval_StatedValuesReshapeTheITLSeriesAndNothingElse(t *testing
 		}
 		if p99 <= baseP99 {
 			t.Errorf("stream_interval %s: itl p99 %v, want above the default's %v: the gap before a group", v, p99, baseP99)
+		}
+		iclMean, iclN := fig(gm, "icl_mean_ms")
+		if iclN >= baseICLN || iclMean <= baseICLMean {
+			t.Errorf("stream_interval %s: icl has %v gaps of mean %v, want fewer than the default's %v and longer than its %v",
+				v, iclN, iclMean, baseICLN, baseICLMean)
 		}
 	}
 }
