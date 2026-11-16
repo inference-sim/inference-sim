@@ -1,0 +1,82 @@
+name: ci
+
+# The repository's own checks. Every pull request runs them, whatever its base, so each layer of a
+# stack is judged on its own head. The checks branch protection requires are `go` and `lint`.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  # gofmt, no replace directive, go vet, go build and go test. The tests include the shared checks
+  # from blis-substrate's contracts/harness: every Go file states its provenance (SGL-2), no clock
+  # and no goroutine (X6), the harness copies are current (X7), the import rule (X7, design §5) and
+  # the exact upstream pin.
+  go:
+    name: go
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - id: go
+        uses: ./.github/actions/go-setup
+        with:
+          build-cache: build
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then echo "not gofmt-formatted:"; echo "$unformatted"; exit 1; fi
+      - name: no replace directive
+        run: '! grep -n "^replace" go.mod'
+      - name: go vet
+        run: go vet ./...
+      - name: go build
+        run: go build ./...
+      - name: go test
+        run: go test -count=1 ./...
+      - if: github.event_name != 'pull_request'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/go-build
+          key: ${{ steps.go.outputs.build-key }}
+      - if: github.event_name != 'pull_request' && steps.go.outputs.mod-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ steps.go.outputs.mod-key }}
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - id: go
+        uses: ./.github/actions/go-setup
+        with:
+          build-cache: lint
+      # golangci-lint refuses a module newer than the Go that built it, so it is built from
+      # source with the Go go.mod names. Its settings are .golangci.yml, the harness copy.
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@9fae48acfc02a90574d7c304a1758ef9895495fa # v7.0.1
+        with:
+          version: v2.14.0
+          install-mode: goinstall
+      - if: github.event_name != 'pull_request'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/go-build
+          key: ${{ steps.go.outputs.build-key }}

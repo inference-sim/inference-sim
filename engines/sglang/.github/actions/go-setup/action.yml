@@ -1,0 +1,61 @@
+name: go setup with caches
+description: >-
+  Install the Go that go.mod names, and restore the module cache and a build cache for the calling job.
+  setup-go's own cache is off: its key is the runner image, Go and go.sum, one key for every job, so
+  the first job to finish saved it, the others failed to reserve it, and a new runner image
+  (ubuntu24 to ubuntu26) emptied it. Here the module cache is keyed on go.sum alone, and the
+  build cache on the job group, go.sum and the commit, restoring the newest earlier entry of the
+  group. Go's caches are content-addressed, so a stale entry is never wrong, only less useful. Saving
+  is the caller's step (actions/cache/save), taken on pushes to main and manual runs, not on pull
+  requests, so a pull request reads the caches of main and never fills them.
+inputs:
+  build-cache:
+    description: A name for the build cache of this kind of job (rest, race, lint, ...). Empty - no build cache.
+    default: ""
+outputs:
+  mod-key:
+    description: The key the module cache is saved under.
+    value: ${{ steps.keys.outputs.mod }}
+  mod-hit:
+    description: "true when the module cache was restored under exactly mod-key (no need to save it)."
+    value: ${{ steps.mod.outputs.cache-hit }}
+  build-key:
+    description: The key the build cache is saved under (empty without build-cache).
+    value: ${{ steps.keys.outputs.build }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+      with:
+        go-version-file: go.mod
+        cache: false
+    - id: keys
+      shell: bash
+      env:
+        NAME: ${{ inputs.build-cache }}
+      run: |
+        set -euo pipefail
+        sum="$(sha256sum go.sum | cut -c1-16)"
+        echo "mod=gomod-${RUNNER_OS}-${sum}" >> "$GITHUB_OUTPUT"
+        if [ -n "$NAME" ]; then
+          echo "build=gobuild-${NAME}-${RUNNER_OS}-${sum}-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "prefix=gobuild-${NAME}-${RUNNER_OS}-" >> "$GITHUB_OUTPUT"
+        else
+          echo "build=" >> "$GITHUB_OUTPUT"
+        fi
+    - id: mod
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ steps.keys.outputs.mod }}
+    # Every module in the build list is in the module cache from here on, whatever the cache held: steps
+    # that ask where blis-substrate lives (go list -m -f '{{.Dir}}', kerneltests/scripts/run-inpackage.sh) read it.
+    # With the cache restored this downloads nothing.
+    - shell: bash
+      run: go mod download
+    - if: inputs.build-cache != ''
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ~/.cache/go-build
+        key: ${{ steps.keys.outputs.build }}
+        restore-keys: ${{ steps.keys.outputs.prefix }}

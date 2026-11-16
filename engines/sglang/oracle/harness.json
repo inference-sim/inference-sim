@@ -1,0 +1,31 @@
+{
+  "commit_field": "blis_sglang_commit",
+  "ci_platform": "linux-x86_64",
+  "golden_dirs": [],
+  "golden_files": [],
+  "harness_files": [
+    "run_*.py",
+    "harness.py"
+  ],
+  "decision_prefixes": [
+    "sglang.srt.managers.scheduler.",
+    "sglang.srt.managers.scheduler_pp_mixin.",
+    "sglang.srt.managers.scheduler_input_blocker.",
+    "sglang.srt.managers.scheduler_components.batch_result_processor.",
+    "sglang.srt.managers.scheduler_components.dp_attn.",
+    "sglang.srt.managers.scheduler_components.dynamic_chunk_sizer.",
+    "sglang.srt.managers.scheduler_components.new_token_ratio_tracker.",
+    "sglang.srt.managers.scheduler_components.output_streamer.",
+    "sglang.srt.managers.scheduler_components.recv_skipper.",
+    "sglang.srt.managers.schedule_policy.",
+    "sglang.srt.managers.schedule_batch.",
+    "sglang.srt.managers.cache_controller.",
+    "sglang.srt.managers.overlap_utils.",
+    "sglang.srt.mem_cache.",
+    "sglang.srt.disaggregation.",
+    "sglang.srt.speculative.",
+    "sglang.srt.arg_groups.",
+    "sglang.srt.server_args."
+  ],
+  "upstream_names": []
+}
