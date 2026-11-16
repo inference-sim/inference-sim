@@ -31,6 +31,9 @@ case_ "another workflow (blis, mutation)"       "-" "-" -- .github/workflows/bli
 case_ "a Python file of the oracle"             "goldens oracle" "-" -- oracle/gen_fuzz.py
 case_ "the oracle's fuzz cache action"          "oracle" "-" -- .github/actions/oracle-fuzz/action.yml
 case_ "fields.json only"                        "bench go inpackage kerneltests metrics oracle race rest" "$EVERY_LEG" -- fields.json
+case_ "a harness copy (check_mocks.py)"          "goldens oracle rest" "-" -- oracle/check_mocks.py
+case_ "the harness configuration"               "goldens oracle rest" "-" -- oracle/harness.json
+case_ "the harness's lint settings"             "lint rest" "-" -- .golangci.yml
 case_ "a fields generator"                      "metrics" "-" -- fields/gen_fields.py
 case_ "the surface list's status file"           "metrics" "-" -- tools/surface/status.json
 case_ "an oracle golden only"                   "bench goldens metrics oracle race rest" "core" -- core/sched/testdata/golden/dashboard-deepseek-v4-pro-layers.json
