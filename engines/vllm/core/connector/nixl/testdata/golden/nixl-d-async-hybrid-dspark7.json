@@ -8,7 +8,7 @@
   "d2": {
    "output_tokens": 6,
    "reason": "stop",
-   "step": 10
+   "step": 9
   },
   "l0": {
    "output_tokens": 14,
@@ -17,14 +17,14 @@
   }
  },
  "provenance": {
-  "blis_vllm_commit": "d855ac9d0501427f819cda43a5fbcde33966b640",
+  "blis_vllm_commit": "74a07eccbdafffe39f57b9738e49bee225f4bece",
   "engine": {
    "async_scheduling": true,
    "max_concurrent_batches": 2,
    "scheduler_class": "AsyncScheduler"
   },
-  "lockfile_sha256": "8baca0cbd0f28f5455c4d2c1b39a81ac3c424089e4c875e93614794c77932167",
-  "mock_version": "gpu-mock/5+af60be80e293",
+  "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
+  "mock_version": "gpu-mock/7+f4274aa648c4",
   "mocks": [
    "vllm.v1.outputs.ModelRunnerOutput",
    "tests.v1.core.utils.create_scheduler",
@@ -58,22 +58,22 @@
   "model": "facebook/opt-125m",
   "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
   "oracle_inputs": {
-   "oracle/mocks.json": "29fec19aa8b5bd75e12b37893eea761684d4399a7e3bee1066cb749eac58769c",
-   "oracle/requirements.lock": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
-   "oracle/run_connector.py": "8b10bfc6ee5d8e8ba92edf2a45831e22fe0a2f91c8bc6dc8b3998edf3d764a4e",
-   "oracle/run_enginecore.py": "52f5ca457d4f046679d0ca364c599a8015a4c30c8cf197a5eaf0b8829e4e1a71",
-   "oracle/run_scheduler.py": "dd0cbc255201f6d63588c720f4e687276f4b73fec0f490e997afdaacc2a5a127",
+   "oracle/mocks.json": "afd576782c5322ce4c6aa4cdb72fb513e3e78cd8ea54dd6043af0cdf5680a658",
+   "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+   "oracle/run_connector.py": "a07e1ccdb18f30cac3ef5386d19010b088e6ae074bd414208b59b6686595b6f0",
+   "oracle/run_enginecore.py": "bb562e23d0ae394ca5d3a099a6083bec69ee7aff5915f35995277a07609a7c0f",
+   "oracle/run_scheduler.py": "1239a1d64f057fcb543789762859ea33211627e3f2b66b46087ed9ee936222f6",
    "oracle/scenarios/connector/nixl-d-async-hybrid-dspark7.json": "a35fcad89ab826b045c112603772b3af5568b5bd30f5bc93255e8d74fc9278fc"
   },
   "platform": "linux-x86_64",
   "python": "3.12.16",
-  "requirements_lock_sha256": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
+  "requirements_lock_sha256": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
   "scenario_sha256": "a35fcad89ab826b045c112603772b3af5568b5bd30f5bc93255e8d74fc9278fc",
   "seed": null,
   "tier": 4,
-  "vllm_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
-  "vllm_distribution": "0.32.0+cpu",
-  "vllm_version": "0.32.0"
+  "vllm_commit": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "vllm_distribution": "0.33.0+cpu",
+  "vllm_version": "0.33.0"
  },
  "steps": [
   {
@@ -817,40 +817,101 @@
        1
       ]
      ]
+    ],
+    "d1": [
+     [
+      [
+       "07037e1671fa7b5f2cd784a09edfec9e4faab9bdc189692217cdb2525f3375c000000000",
+       1
+      ],
+      [
+       "7aad91a73b0a07866119a8bc2e287bab65152dc8e7a968e503c05063399ed0a700000000",
+       1
+      ],
+      [
+       "39429a6a9f75d98d5e7ea81c7f9b88f2e3318249aea597128488503fb4d4b4a800000000",
+       1
+      ],
+      [
+       null,
+       1
+      ],
+      [
+       null,
+       1
+      ],
+      [
+       null,
+       1
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "07037e1671fa7b5f2cd784a09edfec9e4faab9bdc189692217cdb2525f3375c000000001",
+       1
+      ],
+      [
+       "7aad91a73b0a07866119a8bc2e287bab65152dc8e7a968e503c05063399ed0a700000001",
+       1
+      ],
+      [
+       "39429a6a9f75d98d5e7ea81c7f9b88f2e3318249aea597128488503fb4d4b4a800000001",
+       1
+      ],
+      [
+       null,
+       1
+      ],
+      [
+       null,
+       1
+      ],
+      [
+       null,
+       1
+      ],
+      [
+       null,
+       1
+      ]
+     ]
     ]
    },
    "delay_freed": [],
    "finished": [
     "l0"
    ],
-   "free_blocks": 6,
+   "free_blocks": 0,
    "kv_fetch_stages": [
     1,
     0,
-    1
+    0
    ],
-   "kv_holding_waiting": [
-    "d1"
-   ],
-   "kv_usage": 0.8983050847457628,
+   "kv_holding_waiting": [],
+   "kv_usage": 1.0,
    "num_requests": 3,
-   "num_running": 1,
-   "num_waiting": 2,
+   "num_running": 2,
+   "num_waiting": 1,
    "preempted": [],
    "processed": true,
    "queue_len": 1,
-   "recv_landed": [
-    "d1"
-   ],
+   "recv_landed": [],
    "running": [
-    "d0"
+    "d0",
+    "d1"
    ],
    "scheduled": {
     "d0": 8,
+    "d1": 8,
     "l0": 8
    },
    "spec_scheduled": {
     "d0": 7,
+    "d1": 7,
     "l0": 7
    },
    "step": 4,
@@ -860,41 +921,97 @@
     "recving": [],
     "sending": []
    },
-   "waiting_for_remote_kv": [
-    "d1"
-   ]
+   "waiting_for_remote_kv": []
   },
   {
    "aborted": [],
-   "blocks": {},
+   "blocks": {
+    "d1": [
+     [
+      [
+       "07037e1671fa7b5f2cd784a09edfec9e4faab9bdc189692217cdb2525f3375c000000000",
+       1
+      ],
+      [
+       "7aad91a73b0a07866119a8bc2e287bab65152dc8e7a968e503c05063399ed0a700000000",
+       1
+      ],
+      [
+       "39429a6a9f75d98d5e7ea81c7f9b88f2e3318249aea597128488503fb4d4b4a800000000",
+       1
+      ],
+      [
+       "c08958dc07f6ef83e45af77c9550c64aee8f59e15863c22e55f5e7b9f89b4ba100000000",
+       1
+      ],
+      [
+       null,
+       1
+      ],
+      [
+       null,
+       1
+      ],
+      [
+       null,
+       1
+      ]
+     ],
+     [
+      [
+       "07037e1671fa7b5f2cd784a09edfec9e4faab9bdc189692217cdb2525f3375c000000001",
+       1
+      ],
+      [
+       "7aad91a73b0a07866119a8bc2e287bab65152dc8e7a968e503c05063399ed0a700000001",
+       1
+      ],
+      [
+       "39429a6a9f75d98d5e7ea81c7f9b88f2e3318249aea597128488503fb4d4b4a800000001",
+       1
+      ],
+      [
+       "c08958dc07f6ef83e45af77c9550c64aee8f59e15863c22e55f5e7b9f89b4ba100000001",
+       1
+      ],
+      [
+       null,
+       1
+      ],
+      [
+       null,
+       1
+      ],
+      [
+       null,
+       1
+      ]
+     ]
+    ]
+   },
    "delay_freed": [],
    "finished": [
     "d0"
    ],
-   "free_blocks": 27,
+   "free_blocks": 45,
    "kv_fetch_stages": [
     1,
     0,
-    1
+    0
    ],
-   "kv_holding_waiting": [
-    "d1"
-   ],
-   "kv_usage": 0.5423728813559322,
+   "kv_holding_waiting": [],
+   "kv_usage": 0.23728813559322037,
    "num_requests": 2,
-   "num_running": 0,
-   "num_waiting": 2,
+   "num_running": 1,
+   "num_waiting": 1,
    "preempted": [],
    "processed": true,
    "queue_len": 1,
    "recv_landed": [],
-   "running": [],
-   "scheduled": {
-    "d0": 8
-   },
-   "spec_scheduled": {
-    "d0": 7
-   },
+   "running": [
+    "d1"
+   ],
+   "scheduled": {},
    "step": 5,
    "transport": {
     "failed": [],
@@ -911,7 +1028,7 @@
    "blocks": {},
    "delay_freed": [],
    "finished": [],
-   "free_blocks": 33,
+   "free_blocks": 31,
    "kv_fetch_stages": [
     0,
     0,
@@ -920,7 +1037,7 @@
    "kv_holding_waiting": [
     "d2"
    ],
-   "kv_usage": 0.44067796610169496,
+   "kv_usage": 0.47457627118644063,
    "num_requests": 1,
    "num_running": 0,
    "num_waiting": 1,
@@ -951,120 +1068,6 @@
    "waiting_for_remote_kv": [
     "d2"
    ]
-  },
-  {
-   "aborted": [],
-   "blocks": {
-    "d2": [
-     [
-      [
-       "43a89a840e8478ba2ecc5d3bd7ffdf9d931f388a3d676e9756aa39f87a06ba8b00000000",
-       1
-      ],
-      [
-       "1bd6c4683eafa9110a7765adb7bca38a9e119054d1fadf8fa62d6d22e39f449000000000",
-       1
-      ],
-      [
-       "2135a16ae3717117846c75920ab7b45f864c0f56522b7133c2ee648f3687105800000000",
-       1
-      ],
-      [
-       "020aa6249276b60dbe6e05f3fee4cc9728157792db4bb1faea4d696da8ead19200000000",
-       1
-      ],
-      [
-       "ec13d8b6875e4edc603a9112e841901f78fb95845c3294e6e0716587d43ac2db00000000",
-       1
-      ],
-      [
-       "5d2949377b8a23dc09a98d57598b86cb119ebe84c892b8cae50380f9637aebe900000000",
-       1
-      ],
-      [
-       null,
-       1
-      ],
-      [
-       null,
-       1
-      ],
-      [
-       null,
-       1
-      ]
-     ],
-     [
-      [
-       "43a89a840e8478ba2ecc5d3bd7ffdf9d931f388a3d676e9756aa39f87a06ba8b00000001",
-       1
-      ],
-      [
-       "1bd6c4683eafa9110a7765adb7bca38a9e119054d1fadf8fa62d6d22e39f449000000001",
-       1
-      ],
-      [
-       "2135a16ae3717117846c75920ab7b45f864c0f56522b7133c2ee648f3687105800000001",
-       1
-      ],
-      [
-       "020aa6249276b60dbe6e05f3fee4cc9728157792db4bb1faea4d696da8ead19200000001",
-       1
-      ],
-      [
-       "ec13d8b6875e4edc603a9112e841901f78fb95845c3294e6e0716587d43ac2db00000001",
-       1
-      ],
-      [
-       "5d2949377b8a23dc09a98d57598b86cb119ebe84c892b8cae50380f9637aebe900000001",
-       1
-      ],
-      [
-       null,
-       1
-      ],
-      [
-       null,
-       1
-      ],
-      [
-       null,
-       1
-      ]
-     ]
-    ]
-   },
-   "delay_freed": [],
-   "finished": [],
-   "free_blocks": 41,
-   "kv_fetch_stages": [
-    0,
-    0,
-    0
-   ],
-   "kv_holding_waiting": [],
-   "kv_usage": 0.30508474576271183,
-   "num_requests": 1,
-   "num_running": 1,
-   "num_waiting": 0,
-   "preempted": [],
-   "processed": true,
-   "queue_len": 1,
-   "recv_landed": [],
-   "running": [
-    "d2"
-   ],
-   "scheduled": {
-    "d2": 26
-   },
-   "step": 7,
-   "transport": {
-    "failed": [],
-    "invalid_blocks": 0,
-    "recving": [],
-    "sending": []
-   },
-   "waiting_for_remote_kv": []
   },
   {
    "aborted": [],
@@ -1177,9 +1180,9 @@
     "d2"
    ],
    "scheduled": {
-    "d2": 5
+    "d2": 31
    },
-   "step": 8,
+   "step": 7,
    "transport": {
     "failed": [],
     "invalid_blocks": 0,
@@ -1244,12 +1247,12 @@
      ],
      [
       [
-       "null",
-       0
+       "43a89a840e8478ba2ecc5d3bd7ffdf9d931f388a3d676e9756aa39f87a06ba8b00000001",
+       1
       ],
       [
-       "null",
-       0
+       "1bd6c4683eafa9110a7765adb7bca38a9e119054d1fadf8fa62d6d22e39f449000000001",
+       1
       ],
       [
        "2135a16ae3717117846c75920ab7b45f864c0f56522b7133c2ee648f3687105800000001",
@@ -1296,14 +1299,14 @@
    },
    "delay_freed": [],
    "finished": [],
-   "free_blocks": 37,
+   "free_blocks": 35,
    "kv_fetch_stages": [
     0,
     0,
     0
    ],
    "kv_holding_waiting": [],
-   "kv_usage": 0.3728813559322034,
+   "kv_usage": 0.4067796610169492,
    "num_requests": 1,
    "num_running": 1,
    "num_waiting": 0,
@@ -1320,7 +1323,7 @@
    "spec_scheduled": {
     "d2": 7
    },
-   "step": 9,
+   "step": 8,
    "transport": {
     "failed": [],
     "invalid_blocks": 0,
@@ -1358,7 +1361,7 @@
    "spec_scheduled": {
     "d2": 7
    },
-   "step": 10,
+   "step": 9,
    "transport": {
     "failed": [],
     "invalid_blocks": 0,
@@ -1389,7 +1392,7 @@
    "recv_landed": [],
    "running": [],
    "scheduled": {},
-   "step": 11,
+   "step": 10,
    "transport": {
     "failed": [],
     "invalid_blocks": 0,
@@ -1420,7 +1423,7 @@
    "recv_landed": [],
    "running": [],
    "scheduled": {},
-   "step": 12,
+   "step": 11,
    "transport": {
     "failed": [],
     "invalid_blocks": 0,
