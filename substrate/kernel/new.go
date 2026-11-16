@@ -1682,7 +1682,7 @@ func formatFit(f price.Format, grouped bool, chip hardware.Chip, hopper bool) fi
 	case f.DType == model.DTypeNVFP4 && grouped:
 		// A native-FP4 part's NVFP4 fused MoE (FlashInfer TRT-LLM, CUTLASS NvFp4) runs its
 		// own grouped kernels, whose efficiency is not the dense FlashInfer CuTe-DSL linear's
-		// (blis-registry#51). Its own grouped ramp is read where the registry carries one,
+		// (https://github.com/inference-sim/blis-registry/issues/51). Its own grouped ramp is read where the registry carries one,
 		// the dense NVFP4 ramp otherwise, which is recorded.
 		spec := dtypeFitSuffix(f.DType, chip)
 		if spec.suffix == "nvfp4" {
