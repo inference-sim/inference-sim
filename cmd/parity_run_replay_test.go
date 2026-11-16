@@ -1,30 +1,22 @@
 package cmd
 
-// Run/replay parity matrix for the lazy-generation feature (issue #1442, A4).
+// Run/replay parity matrix for streaming workload generation (issues #1441, #1442).
 //
-// This file is the authoritative CLI-level enforcement point for two claims
-// that make --lazy-generation (A3, #1441) safe:
+// This file is the CLI-level enforcement point for two claims about the streaming
+// generator, the only generation path (#1451):
 //
-//  1. BC-3 (trace byte-identity): `blis run --trace-output` produces
-//     byte-identical TraceV2 files (header YAML + data CSV) whether run in
-//     eager or lazy mode, across a coverage matrix of workload shapes
-//     (single-turn chatbot; multi-turn accumulate cohort — the #1438
-//     reproducer shape; single-session reasoning; multi-session reasoning,
-//     #1458; and concurrency clients, #1459 — see paritySpecShapes for the
-//     authoritative, up-to-date list). Because the exported trace captures
-//     every fresh arrival at the cluster boundary (#1440), byte-identity here
-//     proves the two generation modes drive the cluster identically —
-//     including closed-loop follow-up rounds produced at runtime by the
-//     SessionManager.
+//  1. BC-5 (determinism, INV-6): `blis run --trace-output` produces byte-identical
+//     TraceV2 files (header YAML + data CSV) across two runs at the same seed, over a
+//     coverage matrix of workload shapes (single-turn chatbot; multi-turn accumulate
+//     cohort — the #1438 reproducer shape; single-session reasoning; multi-session
+//     reasoning, #1458; concurrency clients, #1459; time-varying windows, #1460 — see
+//     paritySpecShapes for the authoritative list). Because the exported trace captures
+//     every fresh arrival at the cluster boundary (#1440), including closed-loop
+//     follow-up rounds produced at runtime by the SessionManager, this covers what the
+//     cluster was driven with.
 //
-//  2. BC-4 (INV-13 run/replay parity): a trace exported from a `blis run`
-//     replays (via `blis replay --session-mode fixed`) to identical per-request
-//     rows, and the eager-sourced and lazy-sourced replays agree. This is
-//     INV-13 under both generation modes.
-//
-// It also pins BC-5 (lazy determinism, INV-6: two lazy runs at the same seed
-// yield identical traces) and BC-6 (an unsupported lazy shape falls back to the
-// eager generator transparently — same trace bytes, not merely non-fatal).
+//  2. BC-4 (INV-13 run/replay parity): a trace exported from a `blis run` replays (via
+//     `blis replay --session-mode fixed`) to the run's per-request rows.
 //
 // BC-7 (replay rejects unsupported features loudly) is already covered by
 // TestReplayCmd_AutoscalerFlagFatal / TestReplayCmd_AutoscalerBundleFatal in
@@ -289,7 +281,7 @@ clients:
 // seam a user hits with `blis run --workload-spec X --trace-output Y`.
 //
 // Restores every package-level CLI var it touches via captureCmdLevelVars().
-func runSpecAndCaptureTrace(t *testing.T, specYAML string, seedVal, horizon int64, lazyFlag bool) (headerBytes, dataBytes []byte) {
+func runSpecAndCaptureTrace(t *testing.T, specYAML string, seedVal, horizon int64) (headerBytes, dataBytes []byte) {
 	t.Helper()
 	tmpDir := t.TempDir()
 	tracePrefix := filepath.Join(tmpDir, "trace")
@@ -308,14 +300,12 @@ func runSpecAndCaptureTrace(t *testing.T, specYAML string, seedVal, horizon int6
 	workloadType = ""
 	simulationHorizon = horizon
 	seed = seedVal
-	lazyGeneration = lazyFlag
 	requestTimeoutSecs = 300 // non-zero; matches runCmd flag default
 
 	testCmd := &cobra.Command{}
 	registerSimConfigFlags(testCmd)
 	testCmd.Flags().StringVar(&workloadSpecPath, "workload-spec", "", "")
 	testCmd.Flags().StringVar(&traceOutput, "trace-output", "", "")
-	testCmd.Flags().BoolVar(&lazyGeneration, "lazy-generation", false, "")
 	testCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "")
 	args := []string{
 		"--defaults-filepath", defaultsPath,
@@ -324,9 +314,6 @@ func runSpecAndCaptureTrace(t *testing.T, specYAML string, seedVal, horizon int6
 		"--workload-spec", specPath,
 		"--horizon", strconv.FormatInt(horizon, 10),
 		"--trace-output", tracePrefix,
-	}
-	if lazyFlag {
-		args = append(args, "--lazy-generation=true")
 	}
 	if err := testCmd.ParseFlags(args); err != nil {
 		t.Fatalf("ParseFlags: %v", err)
@@ -344,9 +331,9 @@ func runSpecAndCaptureTrace(t *testing.T, specYAML string, seedVal, horizon int6
 	return hdr, data
 }
 
-// TestParity_RunReplay_TraceByteIdentity_Matrix pins BC-3 and BC-5 across the
-// coverage matrix: for each shape, the eager and lazy runs produce
-// byte-identical traces, and two lazy runs at the same seed are also identical.
+// TestParity_RunReplay_TraceByteIdentity_Matrix pins BC-5 across the coverage
+// matrix: for each shape, two runs at the same seed produce byte-identical
+// traces, and the trace carries request records.
 //
 // NOTE: Do NOT use t.Parallel() — mutates package-level vars.
 func TestParity_RunReplay_TraceByteIdentity_Matrix(t *testing.T) {
@@ -354,30 +341,16 @@ func TestParity_RunReplay_TraceByteIdentity_Matrix(t *testing.T) {
 	for _, shape := range paritySpecShapes() {
 		shape := shape
 		t.Run(shape.name, func(t *testing.T) {
-			hdrEager, dataEager := runSpecAndCaptureTrace(t, shape.yaml, seed, shape.horizon, false)
-			hdrLazy, dataLazy := runSpecAndCaptureTrace(t, shape.yaml, seed, shape.horizon, true)
-
-			// BC-3: eager and lazy traces are byte-identical.
-			if !bytes.Equal(hdrEager, hdrLazy) {
-				t.Fatalf("%s: trace header diverged eager vs lazy\nEAGER:\n%s\nLAZY:\n%s",
-					shape.name, hdrEager, hdrLazy)
-			}
-			if !bytes.Equal(dataEager, dataLazy) {
-				t.Fatalf("%s: trace data diverged eager vs lazy\nEAGER:\n%s\nLAZY:\n%s",
-					shape.name, dataEager, dataLazy)
-			}
-
+			hdr, data := runSpecAndCaptureTrace(t, shape.yaml, seed, shape.horizon)
 			// The test must produce a non-trivial trace, else byte-identity is
 			// vacuous. A header-only CSV (just the column row) is not enough.
-			if lineCount(dataEager) < 2 {
+			if lineCount(data) < 2 {
 				t.Fatalf("%s: trace CSV has < 2 lines (%d) — no request records; test is vacuous",
-					shape.name, lineCount(dataEager))
+					shape.name, lineCount(data))
 			}
-
-			// BC-5 (INV-6): a second lazy run at the same seed is identical.
-			hdrLazy2, dataLazy2 := runSpecAndCaptureTrace(t, shape.yaml, seed, shape.horizon, true)
-			if !bytes.Equal(hdrLazy, hdrLazy2) || !bytes.Equal(dataLazy, dataLazy2) {
-				t.Fatalf("%s: lazy trace non-deterministic across two runs at seed %d", shape.name, seed)
+			hdr2, data2 := runSpecAndCaptureTrace(t, shape.yaml, seed, shape.horizon)
+			if !bytes.Equal(hdr, hdr2) || !bytes.Equal(data, data2) {
+				t.Fatalf("%s: trace non-deterministic across two runs at seed %d", shape.name, seed)
 			}
 		})
 	}
@@ -392,13 +365,13 @@ func lineCount(b []byte) int {
 // runSpecAndCaptureStdout drives runCmd.Run with a --workload-spec file and
 // captures everything written to os.Stdout (the deterministic results channel
 // per INV-6; diagnostics go to stderr via logrus and are not captured). No
-// trace is exported. Used to assert stdout-level determinism and eager≡lazy
-// stdout parity — the literal INV-6 statement ("same seed → byte-identical
-// stdout"), complementing the trace byte-identity above.
+// trace is exported. Used to assert stdout-level determinism — the literal
+// INV-6 statement ("same seed → byte-identical stdout"), complementing the
+// trace byte-identity above.
 //
 // NOTE: mutates package-level CLI vars and os.Stdout; caller must not run in
 // parallel. Restores both.
-func runSpecAndCaptureStdout(t *testing.T, specYAML string, seedVal, horizon int64, lazyFlag bool) []byte {
+func runSpecAndCaptureStdout(t *testing.T, specYAML string, seedVal, horizon int64) []byte {
 	t.Helper()
 	tmpDir := t.TempDir()
 	specPath := filepath.Join(tmpDir, "workload.yaml")
@@ -415,13 +388,11 @@ func runSpecAndCaptureStdout(t *testing.T, specYAML string, seedVal, horizon int
 	workloadType = ""
 	simulationHorizon = horizon
 	seed = seedVal
-	lazyGeneration = lazyFlag
 	requestTimeoutSecs = 300
 
 	testCmd := &cobra.Command{}
 	registerSimConfigFlags(testCmd)
 	testCmd.Flags().StringVar(&workloadSpecPath, "workload-spec", "", "")
-	testCmd.Flags().BoolVar(&lazyGeneration, "lazy-generation", false, "")
 	testCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "")
 	args := []string{
 		"--defaults-filepath", defaultsPath,
@@ -429,9 +400,6 @@ func runSpecAndCaptureStdout(t *testing.T, specYAML string, seedVal, horizon int
 		"--seed", strconv.FormatInt(seedVal, 10),
 		"--workload-spec", specPath,
 		"--horizon", strconv.FormatInt(horizon, 10),
-	}
-	if lazyFlag {
-		args = append(args, "--lazy-generation=true")
 	}
 	if err := testCmd.ParseFlags(args); err != nil {
 		t.Fatalf("ParseFlags: %v", err)
@@ -460,30 +428,26 @@ func runSpecAndCaptureStdout(t *testing.T, specYAML string, seedVal, horizon int
 }
 
 // TestParity_RunStdout_DeterministicAndEagerLazyIdentical pins the literal
-// INV-6 statement for lazy mode: same seed → byte-identical stdout, and eager
-// and lazy modes produce identical stdout. This is the stdout-channel companion
-// to the trace byte-identity matrix (stdout is the canonical deterministic
-// results channel; trace is a file artifact). Uses the chatbot shape.
+// INV-6 statement for streaming generation: same seed → the same Result outside
+// runtime. This is the stdout-channel companion to the trace byte-identity
+// matrix (stdout is the canonical deterministic results channel; trace is a
+// file artifact). Uses the chatbot shape. The invariant registry names this
+// test (X13), so it keeps its name though the eager generator it once compared
+// against is gone (#1451).
 //
 // NOTE: Do NOT use t.Parallel() — mutates package-level vars and os.Stdout.
 func TestParity_RunStdout_DeterministicAndEagerLazyIdentical(t *testing.T) {
 	const seed int64 = 20260708
 	shape := paritySpecShapes()[0] // chatbot
 
-	eager := runSpecAndCaptureStdout(t, shape.yaml, seed, shape.horizon, false)
-	lazy := runSpecAndCaptureStdout(t, shape.yaml, seed, shape.horizon, true)
-	lazy2 := runSpecAndCaptureStdout(t, shape.yaml, seed, shape.horizon, true)
+	first := runSpecAndCaptureStdout(t, shape.yaml, seed, shape.horizon)
+	second := runSpecAndCaptureStdout(t, shape.yaml, seed, shape.horizon)
 
-	if len(eager) == 0 {
+	if len(first) == 0 {
 		t.Fatal("run produced empty stdout; test is vacuous")
 	}
-	// INV-6 (determinism): two lazy runs at the same seed match outside runtime.
-	if withoutRuntime(t, string(lazy)) != withoutRuntime(t, string(lazy2)) {
-		t.Fatalf("lazy Result non-deterministic outside runtime across two runs at seed %d", seed)
-	}
-	// eager ≡ lazy at the Result level.
-	if withoutFlagRecord(t, string(eager)) != withoutFlagRecord(t, string(lazy)) {
-		t.Fatalf("stdout diverged between eager and lazy modes\nEAGER:\n%s\nLAZY:\n%s", eager, lazy)
+	if withoutRuntime(t, string(first)) != withoutRuntime(t, string(second)) {
+		t.Fatalf("Result non-deterministic outside runtime across two runs at seed %d", seed)
 	}
 }
 
@@ -526,10 +490,6 @@ func replaySpecTrace(t *testing.T, traceHeaderFile, traceDataFile string) []resu
 	defer func() { resultOutput = origOutput }()
 	resultOutput = resultsFile
 	longPrefillTokenThreshold = 0
-	kvCPUBlocks = 0
-	kvOffloadThreshold = 0.9
-	kvTransferBandwidth = 100.0
-	kvTransferBaseLatency = 0
 	scheduler = "fcfs"
 	policyConfigPath = ""
 	maxModelLen = 0
@@ -582,7 +542,7 @@ func replaySpecTrace(t *testing.T, traceHeaderFile, traceDataFile string) []resu
 // paths of the exported trace files (kept on disk for the replay leg). Unlike
 // runSpecAndCaptureTrace it does not read the bytes back; the caller replays
 // the files. The temp dir is created under t so it is cleaned up automatically.
-func runSpecToTraceFiles(t *testing.T, specYAML string, seedVal, horizon int64, lazyFlag bool) (headerFile, dataFile string) {
+func runSpecToTraceFiles(t *testing.T, specYAML string, seedVal, horizon int64) (headerFile, dataFile string) {
 	t.Helper()
 	tmpDir := t.TempDir()
 	tracePrefix := filepath.Join(tmpDir, "trace")
@@ -600,14 +560,12 @@ func runSpecToTraceFiles(t *testing.T, specYAML string, seedVal, horizon int64, 
 	workloadType = ""
 	simulationHorizon = horizon
 	seed = seedVal
-	lazyGeneration = lazyFlag
 	requestTimeoutSecs = 300
 
 	testCmd := &cobra.Command{}
 	registerSimConfigFlags(testCmd)
 	testCmd.Flags().StringVar(&workloadSpecPath, "workload-spec", "", "")
 	testCmd.Flags().StringVar(&traceOutput, "trace-output", "", "")
-	testCmd.Flags().BoolVar(&lazyGeneration, "lazy-generation", false, "")
 	testCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "")
 	args := []string{
 		"--defaults-filepath", defaultsPath,
@@ -616,9 +574,6 @@ func runSpecToTraceFiles(t *testing.T, specYAML string, seedVal, horizon int64, 
 		"--workload-spec", specPath,
 		"--horizon", strconv.FormatInt(horizon, 10),
 		"--trace-output", tracePrefix,
-	}
-	if lazyFlag {
-		args = append(args, "--lazy-generation=true")
 	}
 	if err := testCmd.ParseFlags(args); err != nil {
 		t.Fatalf("ParseFlags: %v", err)
@@ -649,53 +604,47 @@ func rowMaps(rows []result.RequestRow) (ttft, e2e map[string]float64) {
 	return ttft, e2e
 }
 
-// TestParity_RunReplay_INV13_BothModes pins BC-4 (INV-13) end-to-end: a trace
-// exported from `blis run` replays to non-empty per-request rows, and the
-// eager-sourced and lazy-sourced replays produce identical TTFT/E2E per request.
+// TestParity_RunReplay_INV13 pins BC-4 (INV-13) end-to-end: a trace exported
+// from `blis run` replays to non-empty per-request rows, and a second run at the
+// same seed, exported and replayed, gives every request the same TTFT and E2E.
 //
 // Uses the chatbot shape (bounded runtime); the byte-identity matrix above
-// covers the reproducer and reasoning shapes. Because the eager and lazy traces
-// are byte-identical (proven above), their replays are necessarily identical —
-// this test confirms the full run→export→replay pipeline works under both modes
-// and that INV-13 holds, not just that the traces match.
+// covers the reproducer and reasoning shapes.
 //
 // NOTE: Do NOT use t.Parallel() — mutates package-level vars.
-func TestParity_RunReplay_INV13_BothModes(t *testing.T) {
+func TestParity_RunReplay_INV13(t *testing.T) {
 	const seed int64 = 20260708
 	shape := paritySpecShapes()[0] // chatbot
 
-	eagerHdr, eagerData := runSpecToTraceFiles(t, shape.yaml, seed, shape.horizon, false)
-	lazyHdr, lazyData := runSpecToTraceFiles(t, shape.yaml, seed, shape.horizon, true)
+	firstHdr, firstData := runSpecToTraceFiles(t, shape.yaml, seed, shape.horizon)
+	secondHdr, secondData := runSpecToTraceFiles(t, shape.yaml, seed, shape.horizon)
 
-	eagerResults := replaySpecTrace(t, eagerHdr, eagerData)
-	lazyResults := replaySpecTrace(t, lazyHdr, lazyData)
+	first := replaySpecTrace(t, firstHdr, firstData)
+	second := replaySpecTrace(t, secondHdr, secondData)
 
-	if len(eagerResults) == 0 {
-		t.Fatal("INV-13: eager-sourced replay produced no completed requests")
+	if len(first) == 0 {
+		t.Fatal("INV-13: the replay produced no completed requests")
 	}
-	if len(eagerResults) != len(lazyResults) {
-		t.Fatalf("INV-13: completed request count differs eager=%d lazy=%d",
-			len(eagerResults), len(lazyResults))
+	if len(first) != len(second) {
+		t.Fatalf("INV-13: completed request count differs %d vs %d", len(first), len(second))
 	}
 
-	eagerTTFT, eagerE2E := rowMaps(eagerResults)
-	lazyTTFT, lazyE2E := rowMaps(lazyResults)
-	for id, wantTTFT := range eagerTTFT {
-		gotTTFT, ok := lazyTTFT[id]
+	firstTTFT, firstE2E := rowMaps(first)
+	secondTTFT, secondE2E := rowMaps(second)
+	for id, wantTTFT := range firstTTFT {
+		gotTTFT, ok := secondTTFT[id]
 		if !ok {
-			t.Errorf("INV-13: request %s present in eager replay, missing from lazy replay", id)
+			t.Errorf("INV-13: request %s present in the first replay, missing from the second", id)
 			continue
 		}
 		if gotTTFT != wantTTFT {
-			t.Errorf("INV-13: request %s TTFT eager=%f lazy=%f", id, wantTTFT, gotTTFT)
+			t.Errorf("INV-13: request %s TTFT %f vs %f", id, wantTTFT, gotTTFT)
 		}
-		if eagerE2E[id] != lazyE2E[id] {
-			t.Errorf("INV-13: request %s E2E eager=%f lazy=%f", id, eagerE2E[id], lazyE2E[id])
+		if firstE2E[id] != secondE2E[id] {
+			t.Errorf("INV-13: request %s E2E %f vs %f", id, firstE2E[id], secondE2E[id])
 		}
 	}
 }
 
-// Time-varying trace parity is now covered positively by the "time-varying" row
-// of paritySpecShapes() flowing through TestParity_RunReplay_TraceByteIdentity_Matrix
-// (eager≡lazy trace + lazy determinism) — no separate fallback test is needed, as
-// there is no fallback anymore (#1460).
+// Time-varying traces are covered by the "time-varying" row of paritySpecShapes()
+// flowing through TestParity_RunReplay_TraceByteIdentity_Matrix (#1460).

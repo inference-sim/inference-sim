@@ -154,7 +154,6 @@ func TestPoolOverrides_Validate(t *testing.T) {
 		{"TotalKVBlocks negative", poolOverrides{TotalKVBlocks: i64Ptr(-1)}, "TotalKVBlocks must be > 0"},
 		{"MaxNumSeqs 0", poolOverrides{MaxNumSeqs: i64Ptr(0)}, "MaxNumSeqs must be > 0"},
 		{"MaxNumBatchedTokens 0", poolOverrides{MaxNumBatchedTokens: i64Ptr(0)}, "MaxNumBatchedTokens must be > 0"},
-		{"KVTransferTicksPerBlock negative", poolOverrides{KVTransferTicksPerBlock: i64Ptr(-1)}, "KVTransferTicksPerBlock must be >= 0"},
 		{"LongPrefillTokenThreshold negative", poolOverrides{LongPrefillTokenThreshold: i64Ptr(-1)}, "LongPrefillTokenThreshold must be >= 0"},
 		{"an unknown DP balancer", poolOverrides{DPLoadBalancing: "random"}, "is not internal, hybrid or external"},
 	} {

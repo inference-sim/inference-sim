@@ -102,13 +102,12 @@ Two more inputs have a default:
 The Result records which data the run read under `data`. See
 [Catalog compatibility](docs/getting-started/installation.md#catalog-compatibility).
 
-**vLLM versions.** A scenario names its engine as `engine: {kind: vllm, version: "0.32.0"}`, or
-with the deprecated `engine_version: "0.32.0"`, accepted with a warning until M4. This build runs
+**vLLM versions.** A scenario names its engine as `engine: {kind: vllm, version: "0.32.0"}`. A
+scenario that states `engine_version` is refused with a message naming that form. This build runs
 blis-vllm's translated vLLM v0.32.0 engine (the latency kernel's 0.31.0 tuning prices it, and the
 run says so on stderr). A scenario naming another release is refused; for vLLM 0.29.0 and 0.31.0
 the refusal names v0.15.0, the last inference-sim release that runs them. Priority
-scheduling (`scheduling_policy: priority`, `--scheduler priority-fcfs` or `reverse-priority`,
-`--preemption-policy priority`, SLO priority overrides) is refused for now. The engine block must
+scheduling (`scheduling_policy: priority`, SLO priority overrides) is refused for now. The engine block must
 state `max_model_len` as an explicit number (unstated or `auto` is refused), plus `max_num_seqs`
 and `max_num_batched_tokens`.
 
@@ -206,7 +205,7 @@ disaggregates every request.
 ### KV caching and offload
 
 Block-level KV accounting with prefix caching, and tiered offload whose tiers name catalog
-storage devices (`--kv-offload-config`).
+storage devices (the scenario deployment's `offload` block).
 → [KV cache](docs/guide/kv-cache.md)
 
 ### Autoscaling

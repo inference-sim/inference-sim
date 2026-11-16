@@ -8,7 +8,6 @@
 package sim
 
 import (
-	"maps"
 	"slices"
 
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
@@ -227,18 +226,3 @@ type KVPrefixHit struct {
 	// 1059-1079, 3038-3050). 0: off.
 	ReplayTokens int64 `json:"replay_tokens,omitempty"`
 }
-
-// The scheduler and preemption policy names an engine accepts (--scheduler,
-// --preemption-policy, a policy bundle's), as the compatibility engine's scheduler names them.
-var (
-	validSchedulers         = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true, "reverse-priority": true}
-	validPreemptionPolicies = map[string]bool{"": true, "fcfs": true, "priority": true}
-)
-
-// SchedulerNameTable and PreemptionPolicyNameTable return copies of the name tables, so a caller
-// that edits one changes nothing here.
-func SchedulerNameTable() map[string]bool        { return maps.Clone(validSchedulers) }
-func PreemptionPolicyNameTable() map[string]bool { return maps.Clone(validPreemptionPolicies) }
-
-// IsValidScheduler returns true if name is a recognized scheduler.
-func IsValidScheduler(name string) bool { return validSchedulers[name] }

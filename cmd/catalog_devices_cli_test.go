@@ -9,52 +9,32 @@ import (
 	"testing"
 )
 
-// CLI-level contracts for #1770: a real `blis run` / `blis replay` resolves a
-// --kv-offload-config `device_class` from the CATALOG (<catalog>/devices/storage.yaml).
+// CLI-level contracts for #1770: a real `blis run` resolves the storage devices its scenario's
+// offload block names from the CATALOG (<catalog>/devices/storage.yaml).
 //
-//	BC-7  INV-6 — an offload run naming a device_class is unchanged by the cutover: two
-//	      catalogs holding the same device table produce byte-identical stdout, and the
-//	      numbers that reach the simulation are the catalog's (observable in the exported
-//	      trace header, which is written from the resolved kvOffloadConfig).
-//	BC-8  INV-13 — run and replay share resolveKVOffloadConfig, so replaying a trace with
-//	      the same --kv-offload-config succeeds: on replay the header is authoritative and
-//	      a flag that resolves to different numbers is refused, so a PASS here can only
-//	      mean replay resolved the class from the catalog to the run's numbers.
-//	BC-9  a catalog whose table is missing is refused at the CLI naming the path (R1) —
-//	      never a silent fall back to zero physics or to a built-in table.
+//	BC-9  a catalog whose table is missing or malformed is refused at the CLI naming the path
+//	      (R1) — never a silent fall back to zero physics or to a built-in table — and a tier
+//	      naming a device the table does not define is refused naming it.
 //
-// Why the trace header rather than a stdout diff for the "numbers reached the sim" half:
-// the storage-device physics are not observable in the aggregate stdout of a small run
-// (the secondary tier sees no traffic there), so a stdout-only comparison between two
-// device classes would be vacuous. The header IS the resolved config, so asserting on it
-// proves the catalog numbers were what the run was configured with — and the unit-level
-// equivalence test (TestBundledCatalogDevices_MatchHistoricalDefaultsBlock) pins that
-// those numbers are the pre-cutover ones.
+// The scenario is the only source of the offload tiers (#2037). The v0.32.0 engine models the
+// cpu_dram tier only and refuses a secondary tier (blis-vllm#63), so these legs offload to
+// cpu_dram, except where a refusal of the named device comes first.
 
 // Environment variables driving the re-exec subprocess legs.
 const (
-	devicesCLILegEnv     = "BLIS_KVDEV_CLI_LEG"
-	devicesCLICatalogEnv = "BLIS_KVDEV_CLI_CATALOG"
-	devicesCLIOffloadEnv = "BLIS_KVDEV_CLI_OFFLOAD"
-	devicesCLITraceEnv   = "BLIS_KVDEV_CLI_TRACE"
+	devicesCLILegEnv       = "BLIS_KVDEV_CLI_LEG"
+	devicesCLICatalogEnv   = "BLIS_KVDEV_CLI_CATALOG"
+	devicesCLIScenariosEnv = "BLIS_KVDEV_CLI_SCENARIOS"
 )
 
-// writeOffloadConfigWithClass writes a --kv-offload-config file whose single fs tier
-// resolves its physics from the named device_class, and returns the path.
-func writeOffloadConfigWithClass(t *testing.T, deviceClass string) string {
+// cpuTierOffload is an offload block with the cpu_dram tier alone.
+const cpuTierOffload = "offload:\n  connector: OffloadingConnector\n  spec: CPUOffloadingSpec\n  tiers:\n    - tier: cpu_dram\n      bytes: 1073741824\n"
+
+// offloadScenarios writes the test scenario with offload, an offload block, into a fresh
+// scenario directory and returns it.
+func offloadScenarios(t *testing.T, offload string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "offload.yaml")
-	body := "kv_offload:\n" +
-		"  cpu_bytes_to_use: 1073741824\n" +
-		"  secondary_tiers:\n" +
-		"    - type: fs\n" +
-		"      root_dir: /mnt/kv\n" +
-		"      direct_io: true\n" +
-		"      device_class: " + deviceClass + "\n"
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatalf("write offload config: %v", err)
-	}
-	return path
+	return writeOffloadScenario(t, testScenariosDir(t), kernelTestScenario, "", offload)
 }
 
 // newDeviceCatalog builds a catalog CLONE ROOT that is the vendored catalog -- so the kernel
@@ -71,17 +51,15 @@ func newDeviceCatalog(t *testing.T, table string) string {
 	return root
 }
 
-// runDevicesCLILeg re-execs this test binary as the named leg, returning stdout, stderr
-// and the run error (nil on success). Callers that require success assert on err
-// themselves — the refusal legs need the failure.
-func runDevicesCLILeg(t *testing.T, testName, leg, catalog, offloadPath, tracePrefix string) (stdout, stderr string, err error) {
+// runDevicesCLILeg re-execs this test binary as a `blis run` over the scenarios directory
+// and the catalog, returning stdout, stderr and the run error (nil on success).
+func runDevicesCLILeg(t *testing.T, testName, catalog, scenarios string) (stdout, stderr string, err error) {
 	t.Helper()
 	cmd := exec.Command(os.Args[0], "-test.run=^"+testName+"$")
 	cmd.Env = append(os.Environ(),
-		devicesCLILegEnv+"="+leg,
+		devicesCLILegEnv+"=run",
 		devicesCLICatalogEnv+"="+catalog,
-		devicesCLIOffloadEnv+"="+offloadPath,
-		devicesCLITraceEnv+"="+tracePrefix,
+		devicesCLIScenariosEnv+"="+scenarios,
 		// Neutralize any ambient BLIS_CATALOG so a leg cannot pass via the environment
 		// instead of the catalog it was handed.
 		catalogEnvVar+"=",
@@ -97,41 +75,13 @@ func runDevicesCLILeg(t *testing.T, testName, leg, catalog, offloadPath, tracePr
 // whether it did (in which case the parent test body must not run). Legs terminate the
 // process, so this never returns true.
 func devicesCLISubprocess() bool {
-	leg := os.Getenv(devicesCLILegEnv)
-	if leg == "" {
+	if os.Getenv(devicesCLILegEnv) == "" {
 		return false
 	}
-	catalog := os.Getenv(devicesCLICatalogEnv)
-	offload := os.Getenv(devicesCLIOffloadEnv)
-	tracePrefix := os.Getenv(devicesCLITraceEnv)
-
-	scenarios, err := scenarioDirWithOffloadSet(testScenarios, kernelTestScenario)
-	if err != nil {
-		os.Exit(2)
-	}
-	base := []string{
-		"--scenario", kernelTestScenario, "--scenarios", scenarios, "--registry", testRegistryDir(),
-		"--seed", "42",
-		"--defaults-filepath", "../defaults.yaml",
-		"--catalog", catalog,
-		"--kv-offload-config", offload,
-	}
-	var args []string
-	switch leg {
-	case "run", "run-export":
-		args = append([]string{"run", "--num-requests", "20"}, base...)
-		if leg == "run-export" {
-			args = append(args, "--trace-output", tracePrefix)
-		}
-	case "replay":
-		args = append([]string{"replay",
-			"--trace-header", tracePrefix + ".yaml",
-			"--trace-data", tracePrefix + ".csv"}, base...)
-	default:
-		os.Exit(2)
-	}
-
-	rootCmd.SetArgs(args)
+	rootCmd.SetArgs([]string{"run", "--num-requests", "20",
+		"--scenario", kernelTestScenario, "--scenarios", os.Getenv(devicesCLIScenariosEnv),
+		"--registry", testRegistryDir(), "--seed", "42", "--defaults-filepath", "../defaults.yaml",
+		"--catalog", os.Getenv(devicesCLICatalogEnv)})
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
@@ -139,132 +89,10 @@ func devicesCLISubprocess() bool {
 	return true
 }
 
-// ---------------------------------------------------------------------------
-// BC-7: INV-6 — the catalog table is what the run uses, and where the catalog
-// sits is not an input to the simulation
-// ---------------------------------------------------------------------------
-
-// TestRunCmd_KVOffloadDeviceClass_ResolvesFromCatalog is the cutover guard at the
-// `blis run` boundary. Three legs over one offload config naming device_class nvme_gen4:
-//
-//   - bundled catalog vs a temp clone-root catalog carrying the SAME table ⇒ byte-identical
-//     stdout (INV-6: the catalog's location and layout are not simulation inputs);
-//   - the exported trace header records 7000/5000/80 — the catalog's nvme_gen4 numbers,
-//     i.e. exactly what the deleted defaults.yaml block supplied;
-//   - a catalog whose nvme_gen4 carries DIFFERENT numbers records those instead, which is
-//     the non-vacuity half: the table really is read per-run rather than baked in.
-func TestRunCmd_KVOffloadDeviceClass_ResolvesFromCatalog(t *testing.T) {
-	if devicesCLISubprocess() {
-		return
-	}
-	const name = "TestRunCmd_KVOffloadDeviceClass_ResolvesFromCatalog"
-	offload := writeOffloadConfigWithClass(t, "nvme_gen4")
-	_, bundled, _ := kernelRepos(t)
-
-	// The temp catalog's table is a verbatim copy of the historical nvme_gen4 numbers.
-	sameTable := newDeviceCatalog(t,
-		"nvme_gen4: {_comment: \"a test class\"}\n")
-
-	viaBundled, _, err := runDevicesCLILeg(t, name, "run", bundled, offload, "")
-	if err != nil {
-		t.Fatalf("bundled-catalog leg failed: %v\n%s", err, viaBundled)
-	}
-	viaTemp, tempErrOut, err := runDevicesCLILeg(t, name, "run", sameTable, offload, "")
-	if err != nil {
-		t.Fatalf("temp-catalog leg failed: %v\nstdout:\n%s\nstderr:\n%s", err, viaTemp, tempErrOut)
-	}
-
-	// Non-vacuity: an empty or metric-less stdout would make the comparison trivial.
-	if !completedAny(viaBundled) {
-		t.Fatalf("non-vacuity: offload run produced no metrics:\n%s", viaBundled)
-	}
-	if withoutRevisionsAndRuntime(t, viaBundled) != withoutRevisionsAndRuntime(t, viaTemp) {
-		t.Errorf("the Result must be byte-identical outside revisions and runtime for two catalogs holding the same device table (INV-6)\nbundled:\n%s\ntemp:\n%s",
-			viaBundled, viaTemp)
-	}
-
-	// The class reaches the simulation by name: the exported header is written from the resolved
-	// kvOffloadConfig, and a class states no number of its own (the tier's rates are registry
-	// entries, priced by the kernel).
-	tracePrefix := filepath.Join(t.TempDir(), "offload")
-	if out, errOut, err := runDevicesCLILeg(t, name, "run-export", bundled, offload, tracePrefix); err != nil {
-		t.Fatalf("export leg failed: %v\nstdout:\n%s\nstderr:\n%s", err, out, errOut)
-	}
-	if header := readTraceHeader(t, tracePrefix+".yaml"); !strings.Contains(header, "device_class: nvme_gen4") {
-		t.Errorf("trace header must record the device class nvme_gen4:\n%s", header)
-	}
-}
-
-// readTraceHeader reads an exported TraceV2 header file as text. Kept as text because the
-// assertions are about the recorded numbers being present, not about re-deriving the
-// header's schema.
-func readTraceHeader(t *testing.T, path string) string {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read trace header %s: %v", path, err)
-	}
-	return string(data)
-}
-
-// ---------------------------------------------------------------------------
-// BC-8: INV-13 — run and replay resolve the same table
-// ---------------------------------------------------------------------------
-
-// TestReplayCmd_KVOffloadDeviceClass_MatchesRunResolution is the INV-13 half, and it is
-// self-checking: on replay the trace header is authoritative and reconcileReplayKVOffload
-// refuses a --kv-offload-config that resolves to anything other than the recorded config.
-// So the success leg passes ONLY if replay resolved device_class nvme_gen4 from the
-// catalog to byte-for-byte the numbers the exporting run resolved.
-//
-// The negative control makes that non-vacuous: replaying the same trace against a catalog
-// whose nvme_gen4 carries different numbers is refused. If replay ignored the catalog (or
-// both legs silently used zero physics), the control leg would pass and this test would
-// fail — which is exactly the drift #1770 exists to prevent.
-func TestReplayCmd_KVOffloadDeviceClass_MatchesRunResolution(t *testing.T) {
-	if devicesCLISubprocess() {
-		return
-	}
-	const name = "TestReplayCmd_KVOffloadDeviceClass_MatchesRunResolution"
-	offload := writeOffloadConfigWithClass(t, "nvme_gen4")
-	_, bundled, _ := kernelRepos(t)
-
-	tracePrefix := filepath.Join(t.TempDir(), "offload")
-	if out, errOut, err := runDevicesCLILeg(t, name, "run-export", bundled, offload, tracePrefix); err != nil {
-		t.Fatalf("export leg failed: %v\nstdout:\n%s\nstderr:\n%s", err, out, errOut)
-	}
-	if _, err := os.Stat(tracePrefix + ".csv"); err != nil {
-		t.Fatalf("trace export produced no data file: %v", err)
-	}
-
-	// Same catalog table (a temp clone-root copy) ⇒ replay's flag reconciles with the header.
-	sameTable := newDeviceCatalog(t,
-		"nvme_gen4: {_comment: \"a test class\"}\n")
-	out, errOut, err := runDevicesCLILeg(t, name, "replay", sameTable, offload, tracePrefix)
-	if err != nil {
-		t.Fatalf("replay with the same device table must reconcile with the header (INV-13): %v\nstdout:\n%s\nstderr:\n%s",
-			err, out, errOut)
-	}
-	if !completedAny(out) {
-		t.Fatalf("non-vacuity: replay produced no metrics:\n%s", out)
-	}
-
-	// A catalog that does not define the class the trace recorded is refused, so replay reads the
-	// catalog and not only the header.
-	without := newDeviceCatalog(t, "")
-	if _, _, err := runDevicesCLILeg(t, name, "replay", without, offload, tracePrefix); err == nil {
-		t.Error("replay against a catalog that does not define the recorded device class must be refused")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// BC-9: a catalog with no device table is refused at the CLI
-// ---------------------------------------------------------------------------
-
 // TestRunCmd_KVOffloadDeviceClass_MissingCatalogTableIsRefused: pointing --catalog at a
-// catalog that has models/ but no devices/storage.yaml, while naming a device_class, is a
-// hard error naming the path. The alternative — resolving the class to a zero-valued
-// device — is plausible-but-wrong storage physics with no diagnostic anywhere.
+// catalog that has models/ but no devices/storage.yaml, for a scenario that offloads, is a
+// hard error naming the path. The alternative — resolving the tier to a zero-valued device —
+// is plausible-but-wrong storage physics with no diagnostic anywhere.
 func TestRunCmd_KVOffloadDeviceClass_MissingCatalogTableIsRefused(t *testing.T) {
 	if devicesCLISubprocess() {
 		return
@@ -277,10 +105,10 @@ func TestRunCmd_KVOffloadDeviceClass_MissingCatalogTableIsRefused(t *testing.T) 
 		t.Fatalf("remove devices namespace: %v", err)
 	}
 
-	offload := writeOffloadConfigWithClass(t, "nvme_gen4")
-	stdout, stderr, err := runDevicesCLILeg(t, name, "run", noDevices, offload, "")
+	scenarios := offloadScenarios(t, cpuTierOffload)
+	stdout, stderr, err := runDevicesCLILeg(t, name, noDevices, scenarios)
 	if err == nil {
-		t.Fatalf("a device_class with no catalog device table must be refused:\n%s", stdout)
+		t.Fatalf("an offloading run with no catalog device table must be refused:\n%s", stdout)
 	}
 	// blis-substrate's loader opens the catalog whole when the run starts and names each
 	// file relative to the catalog it was refused in.
@@ -293,56 +121,40 @@ func TestRunCmd_KVOffloadDeviceClass_MissingCatalogTableIsRefused(t *testing.T) 
 	// Negative control: restoring the table makes the SAME invocation succeed, so the
 	// refusal is attributable to the missing table and not to anything else in the leg.
 	restored := newDeviceCatalog(t, "nvme_gen4: {_comment: \"a test class\"}\n")
-	if out, errOut, err := runDevicesCLILeg(t, name, "run", restored, offload, ""); err != nil {
+	if out, errOut, err := runDevicesCLILeg(t, name, restored, scenarios); err != nil {
 		t.Errorf("negative control: the same run with a device table present must succeed: %v\nstdout:\n%s\nstderr:\n%s",
 			err, out, errOut)
 	}
 }
 
-// ---------------------------------------------------------------------------
-// The engine's offload resolution reaches the CLI's fatal exit with its message
-// ---------------------------------------------------------------------------
-
 // TestRunCmd_KVOffloadRefusalsReachTheCLI: the KV offload configuration is resolved by the
 // engine (blis-vllm compat/build, called from cmd/engine_build.go), and each kind of refusal
 // ends `blis run` with it on stderr, naming what to fix: a malformed storage-device table (the
-// loader opens the catalog first, so its decoding error names the catalog and the file in it), a device_class the
-// table does not define, an invalid kv_offload block, and a tier stating its own physics. A
-// refusal is never a silent fallback. The messages are the ones the CLI gave before the move.
+// loader opens the catalog first, so its decoding error names the catalog and the file in it),
+// and a tier naming a device class the table does not define. A refusal is never a silent
+// fallback.
 func TestRunCmd_KVOffloadRefusalsReachTheCLI(t *testing.T) {
 	if devicesCLISubprocess() {
 		return
 	}
 	const name = "TestRunCmd_KVOffloadRefusalsReachTheCLI"
 	good := "nvme_gen4: {_comment: \"a test class\"}\n"
-	write := func(body string) string {
-		p := filepath.Join(t.TempDir(), "offload.yaml")
-		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		return p
-	}
 	malformed := newDeviceCatalog(t, good)
 	if err := os.WriteFile(catalogStorageDevicesPath(malformed), []byte("nvme_gen4: {_comment: [\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	floppy := strings.Replace(cpuTierOffload, "spec: CPUOffloadingSpec", "spec: TieringOffloadingSpec", 1) +
+		"    - tier: floppy\n      bytes: 1073741824\n"
 	for _, c := range []struct {
 		name, catalog, offload string
 		want                   []string
 	}{
-		{"a malformed device table", malformed, writeOffloadConfigWithClass(t, "nvme_gen4"),
+		{"a malformed device table", malformed, cpuTierOffload,
 			[]string{malformed + " is refused", catalogStorageDevicesRelPath + ": yaml:", "did not find expected node content"}},
-		{"an unknown device class", newDeviceCatalog(t, good), writeOffloadConfigWithClass(t, "floppy"),
-			[]string{"floppy"}},
-		{"an invalid kv_offload block", newDeviceCatalog(t, good),
-			write("kv_offload:\n  cpu_bytes_to_use: 1073741824\n  store_threshold: 3\n"),
-			[]string{"store_threshold"}},
-		{"explicit tier physics", newDeviceCatalog(t, good),
-			write("kv_offload:\n  cpu_bytes_to_use: 1073741824\n  secondary_tiers:\n    - type: fs\n      root_dir: /mnt/kv\n      direct_io: true\n      device_class: nvme_gen4\n      read_bandwidth: 1.0\n"),
-			[]string{"read_bandwidth"}},
+		{"an unknown device class", newDeviceCatalog(t, good), floppy, []string{"floppy"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			stdout, stderr, err := runDevicesCLILeg(t, name, "run", c.catalog, c.offload, "")
+			stdout, stderr, err := runDevicesCLILeg(t, name, c.catalog, offloadScenarios(t, c.offload))
 			if err == nil {
 				t.Fatalf("the run must be refused:\n%s", stdout)
 			}

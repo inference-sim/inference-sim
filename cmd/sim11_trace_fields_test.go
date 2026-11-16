@@ -148,7 +148,7 @@ func sim11Precise(t *testing.T, speculative bool) func(*workload.TraceHeader, []
 //     is replayed whole (build.ReconcileReplayKVOffload), and the round trip is pinned by
 //     TestKVOffload_EndToEnd_RunReplayRoundTrip and TestINV13_RunReplayParity_Offload.
 //   - Header.Mode: consumed only through replayRecordsDeployment (mode converted lets
-//     --kv-offload-config add a deployment), tested by TestTraceHeader_RecordsDeployment.
+//     the scenario's offload block add a deployment), tested by TestTraceHeader_RecordsDeployment.
 //   - Header.SessionContextGrowth, Record.ThinkTimeUs, Record.InputTokensReset: consumed by the
 //     closed-loop and fixed-accumulate modes, pinned by
 //     TestReplayCmd_ClosedLoopAccumulate_FaithfulReExport and TestReplayFixedAccumulate_*.
@@ -287,7 +287,7 @@ func TestSIM11_TraceFieldsConsumedChangeTheResult(t *testing.T) {
 }
 
 // TestReplayRecordsDeployment: the header's mode is consumed in one place. A trace of mode
-// converted records no deployment, so --kv-offload-config may add one; a generated or replayed trace records
+// converted records no deployment, so the scenario's offload block may add one; a generated or replayed trace records
 // its deployment, and an agentic replay has no trace header at all.
 func TestReplayRecordsDeployment(t *testing.T) {
 	for _, c := range []struct {

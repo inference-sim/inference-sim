@@ -717,7 +717,10 @@
           "source": "internal deployment measurements: 1.84 accepted tokens per DSpark draft at c16 on H100 PP2xTP8, fixed 7-token verify (AL = 1 + accepted)"
         }
       },
-      "engine_version": "0.32.0",
+      "engine": {
+        "kind": "vllm",
+        "version": "0.32.0"
+      },
       "cluster": {
         "hardware": "h200",
         "nodes": 1,
