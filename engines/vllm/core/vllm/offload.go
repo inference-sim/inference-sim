@@ -76,6 +76,22 @@ type offloadConfig struct {
 	// Workers unstated. The oracle runs num_copies = world size only (its CPU platform has no
 	// shared region, cpu/spec.py:161-166); 1 changes only the chunk count.
 	Copies int `yaml:"copies,omitempty"`
+	// ModulePath is kv_connector_module_path; SpecModulePath, CachePolicyModulePath, SecondaryTiers and
+	// Backpressure are kv_connector_extra_config's spec_module_path (vllm/v1/kv_offload/factory.py:30-51),
+	// cache_policy_module_path (cpu/spec.py:135-137), secondary_tiers and backpressure
+	// (tiering/spec.py:285-313@5df63a72). They choose the code vLLM runs: what it would load from
+	// outside the release is refused (refuseNotVisible), and a secondary tier is refused by its type.
+	ModulePath            *string          `yaml:"kv_connector_module_path,omitempty"`
+	SpecModulePath        string           `yaml:"spec_module_path,omitempty"`
+	CachePolicyModulePath string           `yaml:"cache_policy_module_path,omitempty"`
+	SecondaryTiers        []map[string]any `yaml:"secondary_tiers,omitempty"`
+	Backpressure          map[string]any   `yaml:"backpressure,omitempty"`
+}
+
+// offloadKeys are the block's code-choosing keys.
+func (c *offloadConfig) offloadKeys() offloadKeys {
+	return offloadKeys{spec: c.Spec, specModulePath: c.SpecModulePath, policy: c.EvictionPolicy,
+		policyModulePath: c.CachePolicyModulePath, tiers: c.SecondaryTiers, backpressure: c.Backpressure}
 }
 
 // offload is an engine's KV offload side: its connector, the jobs in flight as transfers, and
@@ -130,6 +146,15 @@ func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method 
 	if c.BytesPerBlock <= 0 {
 		return nil, fmt.Errorf("vllm: kv_offload.bytes_per_block must be stated: one worker's KV bytes a GPU block, " +
 			"which sizes the CPU tier in chunks (offloading/config.py:136-151@5df63a72); the caller's memory model states it")
+	}
+	if c.Spec == "TieringOffloadingSpec" {
+		// Each secondary tier type vLLM v0.32.0 registers is refused by name; refuseNotVisible has
+		// refused any other. CPUOffloadingSpec reads no secondary_tiers.
+		for i, t := range c.SecondaryTiers {
+			typ, _ := t["type"].(string)
+			return nil, fmt.Errorf("vllm: kv_offload secondary_tiers[%d] type %q is not modelled: TieringOffloadingSpec runs only "+
+				"its CPU primary tier here (vllm/v1/kv_offload/tiering/factory.py:146-174@5df63a72; %s)", i, typ, issueBase+"63")
+		}
 	}
 	if err := offloading.Check(offloading.Options{SpecName: c.Spec, EvictionPolicy: c.EvictionPolicy}); err != nil {
 		return nil, fmt.Errorf("vllm: %w", err)

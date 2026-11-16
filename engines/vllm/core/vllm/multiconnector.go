@@ -68,12 +68,14 @@ func (m *multiExtraConfig) UnmarshalYAML(n *yaml.Node) error {
 }
 
 // childConfig is one child's KVTransferConfig as the engine models it: vLLM's own field names.
-// Any other KVTransferConfig field (engine_id, kv_port, kv_buffer_device, kv_connector_module_path,
-// enable_permute_local_kv, kv_load_failure_policy) is not modelled and the strict decode of the
-// engine block refuses it by name.
+// Any other KVTransferConfig field (engine_id, kv_port, kv_buffer_device, enable_permute_local_kv,
+// kv_load_failure_policy) is not modelled and the strict decode of the engine block refuses it by
+// name. kv_connector_module_path is read so that it is refused as code BLIS does not have
+// (refuseNotVisible).
 type childConfig struct {
-	KVConnector string `yaml:"kv_connector"`
-	KVRole      kvRole `yaml:"kv_role"`
+	KVConnector string  `yaml:"kv_connector"`
+	KVRole      kvRole  `yaml:"kv_role"`
+	ModulePath  *string `yaml:"kv_connector_module_path,omitempty"`
 	// ExtraConfig is the child's kv_connector_extra_config: the offloading child's CPU tier keys.
 	// A NIXL child's extra config is not modelled, so any key there is refused.
 	ExtraConfig *childExtra `yaml:"kv_connector_extra_config,omitempty"`
@@ -87,6 +89,21 @@ type childExtra struct {
 	BlockSize         int    `yaml:"block_size,omitempty"`
 	EvictionPolicy    string `yaml:"eviction_policy,omitempty"`
 	OffloadPromptOnly *bool  `yaml:"offload_prompt_only,omitempty"`
+	// The keys that choose the code the offloading connector runs, read so that what vLLM would load
+	// from outside the release is refused (refuseNotVisible) and a secondary tier is refused by its
+	// type (buildOffload): spec_module_path (vllm/v1/kv_offload/factory.py:30-51),
+	// cache_policy_module_path (cpu/spec.py:135-137), secondary_tiers and backpressure
+	// (tiering/spec.py:285-313@5df63a72).
+	SpecModulePath        string           `yaml:"spec_module_path,omitempty"`
+	CachePolicyModulePath string           `yaml:"cache_policy_module_path,omitempty"`
+	SecondaryTiers        []map[string]any `yaml:"secondary_tiers,omitempty"`
+	Backpressure          map[string]any   `yaml:"backpressure,omitempty"`
+}
+
+// offloadKeys are the child's code-choosing keys.
+func (x *childExtra) offloadKeys() offloadKeys {
+	return offloadKeys{spec: x.SpecName, specModulePath: x.SpecModulePath, policy: x.EvictionPolicy,
+		policyModulePath: x.CachePolicyModulePath, tiers: x.SecondaryTiers, backpressure: x.Backpressure}
 }
 
 // installer hands the scheduler the connector an engine's block built (Scheduler.SetConnector), or
@@ -189,7 +206,9 @@ func checkConnectorPair(c *connectorConfig, off *offloadConfig) (*offloadConfig,
 		key    string
 		stated bool
 	}{{"cpu_bytes", off.CPUBytes != 0}, {"block_size", off.BlockSize != 0}, {"eviction_policy", off.EvictionPolicy != ""},
-		{"offload_prompt_only", off.OffloadPromptOnly != nil}, {"spec", off.Spec != ""}} {
+		{"offload_prompt_only", off.OffloadPromptOnly != nil}, {"spec", off.Spec != ""},
+		{"spec_module_path", off.SpecModulePath != ""}, {"cache_policy_module_path", off.CachePolicyModulePath != ""},
+		{"secondary_tiers", off.SecondaryTiers != nil}, {"backpressure", off.Backpressure != nil}} {
 		if d.stated {
 			return nil, fmt.Errorf("vllm: kv_offload.%s beside a MultiConnector: the offloading child's own "+
 				"kv_connector_extra_config states it as vLLM does; state it there once", d.key)
@@ -201,6 +220,8 @@ func checkConnectorPair(c *connectorConfig, off *offloadConfig) (*offloadConfig,
 	}
 	merged.Spec, merged.CPUBytes, merged.BlockSize = x.SpecName, x.CPUBytesToUse, x.BlockSize
 	merged.EvictionPolicy, merged.OffloadPromptOnly = x.EvictionPolicy, x.OffloadPromptOnly
+	merged.SpecModulePath, merged.CachePolicyModulePath = x.SpecModulePath, x.CachePolicyModulePath
+	merged.SecondaryTiers, merged.Backpressure = x.SecondaryTiers, x.Backpressure
 	return &merged, nil
 }
 
