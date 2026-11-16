@@ -1,0 +1,27 @@
+{
+  "commit": "e63beeeee981b5f7bd055685a32cc38ad30c7fdb",
+  "date": "2026-11-05",
+  "files": {
+    "deepseek-v4-pro-0813__dspark__native__probabilistic-default.yaml": "69315993ea50c7baa216a2a23e8c052c3742d2fc0cd13b620c4c3556f07a0c6e",
+    "deepseek-v4-pro__mtp__native__default-default.yaml": "4d2d6acf5cbd9de3411c3bcc49ee59eb2da99d4e2e02049e8506129566288323",
+    "deepseek-v4.1-flash__dspark__native__probabilistic-block.yaml": "30dccc016e224cba504dcbf8c4f79a322785d3c4312d5ea2fa5950487f09bea5",
+    "glm-5.2-fp8__mtp__native__default-default.yaml": "ec256f07caba73ec13ef74c01d996037414cebf749139bfc803e18c103ec19f2",
+    "glm-5.3-flash__mtp__native__default-default.yaml": "be259d8c7a16450744d428d07a663335a51e90c29df31232e5c0b066cc4cbd96",
+    "glm-5.3-nvfp4__mtp__native__default-default.yaml": "e88c647568007d864627ed5ff4000deb5479c216ba15a6350f2047802d888d3a",
+    "identities.yaml": "447547adf1b3f73a3d03482dea2d031fc4755cc4f0f91eba4a308ca2fd5ef039",
+    "kimi-k3.1-pro__dflash__kimi-k3.1-dflash2-preview__default-block.yaml": "8b0eb0da499b787b59e6f75e21a48be96478fcd11cfb2a7415713d6a653d8a36",
+    "kimi-k3.1-pro__dspark__kimi-k3.1-pro-dspark-preview__probabilistic-block.yaml": "c7438169d2ac4be53e6cf468209b2c21d9a38d9e9246869464583d7108e7b1ca",
+    "kimi-k3__dspark__kimi-k3-dspark__default-default.yaml": "f713d34e0fa710ebfced32e7881936ab54f0b6565df4855e2c4762b7d7996145",
+    "kimi-k3__dspark__kimi-k3-dspark__probabilistic-block.yaml": "7a71bc4546a8fa03230b75ad54a9485f142aaad61da69ee5bcb5b4518bd8eefe",
+    "kimi-k3__dspark__kimi-k3-dspark__probabilistic-default.yaml": "7c6826e034df543c2e1d29ae5c74e82d1b9a1abd3b36af78aaa5b2ee0e8c96d1",
+    "minimax-m3.1-flash__dspark__native__probabilistic-block.yaml": "8374c399e5149bf2217a155c93fc8aaad540718ddec6925be1dfa7171d57bed5",
+    "minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-block.yaml": "61f69a335125dfc10604c57ec2cd07bdf0f0589e8885baac33888ef258aedb97",
+    "minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-default.yaml": "11530156af304ef7836c672f7cfd8ab5f7dd1766c6be5b6903807de2125efee3",
+    "minimax-m3__eagle3__minimax-m3-eagle3__default-default.yaml": "c51cadcaeee75b1d4cdf47d115cccbaef07cafa4ce8c190b5db2ef63f0abd9ea",
+    "muse-spark-open-816b-a42b-nvfp4__dflash__muse-spark-open-dflash2__default-default.yaml": "e3b612484d29bca2c8ac02ab2f5db7a125bec199f75e7c2d06a849846dfceeae",
+    "qwen3.5-397b-a17b-nvfp4__mtp__native__default-default.yaml": "d348ecfced935b3491b8982c4446672e7bfcb1e8114dbe868aace72e5ea4fbde",
+    "qwen3.8-flash-next-fp8__mtp__native__default-default.yaml": "f52db72cf40207edfef2b23028edbbe60e739618b680b8c44ed089373f187b70"
+  },
+  "path": "inferencex-e2e/infx/golden_al_distribution",
+  "repository": "https://github.com/SemiAnalysisAI/InferenceX"
+}

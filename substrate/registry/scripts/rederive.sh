@@ -32,14 +32,12 @@ n=$(find "$AISIMULATE_DATA" -name '*.parquet' | wc -l)
 echo "AISimulate parquets present: $n"
 test "$n" -gt 500
 
-# With an InferenceX checkout, the vendored golden curves must be its curves, all of
-# them, and the emitter must cite INFERENCEX_SHA (when given) and reproduce the set.
+# With an InferenceX checkout, its golden curves must be the files curves.json pins, all of
+# them (the emitter refuses otherwise), curves.json must name INFERENCEX_SHA (when given), and
+# the emitter must reproduce the set.
 if [ -n "${INFERENCEX_GOLDEN:-}" ]; then
-  vendored=validator/testdata/inferencex/golden_al_distribution
-  diff <(cd "$vendored" && ls -1 *.yaml) <(cd "$INFERENCEX_GOLDEN" && ls -1 *.yaml)
-  for f in "$vendored"/*.yaml; do diff "$f" "$INFERENCEX_GOLDEN/${f##*/}"; done
   if [ -n "${INFERENCEX_SHA:-}" ]; then
-    grep -q "^INFERENCEX_SHA = \"$INFERENCEX_SHA\"$" scripts/emit_acceptance_profiles.py
+    grep -q "\"commit\": \"$INFERENCEX_SHA\"" validator/testdata/inferencex/curves.json
   fi
   python scripts/emit_acceptance_profiles.py --check
 fi
