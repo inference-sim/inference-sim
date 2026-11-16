@@ -16,10 +16,12 @@ The cache framework is six abstract classes of SGLang v0.5.23 (python/sglang/srt
 An interface's methods are the functions its abstract class defines (public ones, and __init__ for
 the three pools and the allocator, whose construction is their sizing), as each loaded subclass
 defines or inherits them. A trace is the sequence of calls made into an interface from outside it,
-each with its arguments and SGLang's answer. A call an interface makes into itself (UnifiedRadixCache
-.checkpoint calling its own insert, TokenToKVPoolAllocator.__init__ calling the base __init__) is
-that implementation's business and is not recorded; a call it makes into another interface (the
-radix cache freeing slots at the allocator) is recorded there, with `in` naming the enclosing call.
+each with its arguments and SGLang's answer. A call an implementation makes into its own interface
+(UnifiedRadixCache.checkpoint calling its own insert, TokenToKVPoolAllocator.__init__ calling the
+base __init__) is its business and is not recorded; a call it makes into another interface (the
+radix cache freeing slots at the allocator) is recorded there, with `in` naming the enclosing
+recorded call, and so is a call that comes back through another interface (the allocator's
+evict_to_free_tokens calling the cache's evict_for_alloc, which frees slots at the allocator).
 
 Calls are observed with sys.monitoring (PEP 669), as events on the code objects of the interface
 methods. No SGLang object, class or module is written to, so this replaces nothing and needs no
@@ -207,7 +209,11 @@ class Monitor:
     # --- events ---
 
     def _top(self, iface) -> bool:
-        return not any(r[2] == iface for r in self.stack)
+        # A call is at the interface unless the innermost interface call in progress is one of
+        # the same interface: a call an implementation makes into itself. A call that re-enters
+        # an interface through another one (the allocator's evict_to_free_tokens calling the
+        # cache's evict_for_alloc, which frees slots at the allocator) is at the interface.
+        return not self.stack or self.stack[-1][2] != iface
 
     def _enclosing(self):
         for _, rec, _, _ in reversed(self.stack):

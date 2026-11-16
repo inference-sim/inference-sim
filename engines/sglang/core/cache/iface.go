@@ -263,6 +263,8 @@ type TreeCore interface {
 	EvictDeviceEnd(c ComponentType)
 	EvictableSize() int
 	ProtectedSize() int
+	FullEvictableSize() int
+	FullProtectedSize() int
 }
 
 // Component is TreeComponent (components/base.py:173-891@297e54fd): one kind of KV state the
@@ -324,6 +326,12 @@ type Allocator interface {
 	AvailableSize() int
 	// Alloc takes needSize slots, or returns false when fewer are free.
 	Alloc(needSize int) ([]int64, bool)
+	// AllocExtend gives each request of an extend batch the slots for its new tokens, filling
+	// the partly used page that ends at lastLoc first (allocator/paged.py:204-300@297e54fd); false
+	// when too few pages are free.
+	AllocExtend(prefixLens, seqLens []int, lastLoc []int64, extendNumTokens int) ([]int64, bool)
+	// AllocDecode gives each request of a decode batch the slot for its next token (paged.py).
+	AllocDecode(seqLens []int, lastLoc []int64) ([]int64, bool)
 	Free(slots []int64)
 	// FreeSegment frees slots that begin at row position startPos; FreeSegments frees several.
 	FreeSegment(slots []int64, startPos int)
