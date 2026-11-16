@@ -188,6 +188,10 @@ type PrefixCache interface {
 	// FreeKVRow frees the slots of row positions in the half-open ranges of req's row.
 	FreeKVRow(req *Req, ranges [][2]int)
 	Evict(p EvictParams) EvictResult
+	// EvictForAlloc evicts for an allocation short by p's counts: it stops once the allocator
+	// can serve them, which may be before p's counts are evicted (unified_radix_cache.py:697-779
+	// @297e54fd).
+	EvictForAlloc(p EvictParams) EvictResult
 	IncLockRef(n NodeID) LockReceipt
 	DecLockRef(n NodeID, r LockReceipt)
 	Lock(n NodeID) *TreeLock
@@ -201,7 +205,8 @@ type PrefixCache interface {
 	ProtectedSize() int
 	FullEvictableSize() int
 	FullProtectedSize() int
-	TotalSize() int
+	// TotalSize is the FULL device slots the tree holds, and those of its other components.
+	TotalSize() (int, int)
 	TakeEvents() []Event
 	SupportsSWA() bool
 	SupportsMamba() bool
