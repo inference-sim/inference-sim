@@ -553,17 +553,17 @@ jobs:
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
-      - name: check out vLLM v0.32.0 at its pinned commit
+      - name: check out vLLM v0.33.0 at its pinned commit
         if: needs.changes.outputs.metrics == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: vllm-project/vllm
-          ref: 5df63a7203cdb9328d824a27b682e77c7b9928be
+          ref: 4ba787ec9959e566d3b587a796dff07673324da5
           path: vllm-source
           fetch-depth: 1
       - name: the checked-out vLLM is the pinned commit
         if: needs.changes.outputs.metrics == 'true'
-        run: test "$(git -C vllm-source rev-parse HEAD)" = 5df63a7203cdb9328d824a27b682e77c7b9928be
+        run: test "$(git -C vllm-source rev-parse HEAD)" = 4ba787ec9959e566d3b587a796dff07673324da5
       - name: fields.json is current for the pinned release
         if: needs.changes.outputs.metrics == 'true'
         run: python3 -I fields/gen_fields.py vllm-source fields/status.json --value-classes fields/value_classes.json --check fields.json
@@ -607,7 +607,7 @@ jobs:
       - name: record the manifest's provenance
         if: needs.changes.outputs.metrics == 'true'
         run: |
-          printf '{"tier": 5, "check": "metrics-manifest", "vllm_tag": "v0.32.0", "vllm_commit": "%s", "blis_vllm_commit": "%s", "go_version": "%s"}\n' \
+          printf '{"tier": 5, "check": "metrics-manifest", "vllm_tag": "v0.33.0", "vllm_commit": "%s", "blis_vllm_commit": "%s", "go_version": "%s"}\n' \
             "$(git -C vllm-source rev-parse HEAD)" "$GITHUB_SHA" "$(go env GOVERSION)" > manifest-out/provenance.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always() && needs.changes.outputs.metrics == 'true'
