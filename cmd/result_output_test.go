@@ -1485,3 +1485,92 @@ cohorts:
 		t.Fatalf("replay in the default mode: err %v, stderr %q; want a refusal naming fixed-accumulate", err, lastLines(stderr, 3))
 	}
 }
+
+// Every row states the simulated time its fate was written (ended_us), for every fate, so a
+// request that did not complete has the time it was dropped, timed out or cut off. A timeout is
+// the client's deadline after the arrival, and a request the horizon cuts off ends at the horizon.
+func TestResult_RowsStateWhenTheirFateWasWritten(t *testing.T) {
+	common := []string{"run", "--scenario", kernelTestScenario, "--seed", "7", "--num-requests", "30",
+		"--rate", "300", "--output-tokens", "400", "--output-tokens-stdev", "0", "--output-tokens-min", "400",
+		"--output-tokens-max", "400"}
+	run := func(extra ...string) *result.Result {
+		t.Helper()
+		out, stderr, err := runKernelCLI(t, append(append([]string{}, common...), extra...)...)
+		if err != nil {
+			t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+		}
+		return parseResult(t, out)
+	}
+	for _, row := range run().RequestRows {
+		if row.EndedUs == nil {
+			t.Fatalf("%s (%s) states no ended_us", row.ID, row.Fate)
+		}
+		if row.Fate == result.FateCompleted && row.E2EUs != nil && *row.EndedUs < row.ArrivalUs+*row.E2EUs {
+			t.Errorf("%s ended at %d, before its arrival %d plus its e2e %d", row.ID, *row.EndedUs, row.ArrivalUs, *row.E2EUs)
+		}
+	}
+	t.Run("timed out", func(t *testing.T) {
+		n := 0
+		for _, row := range run("--timeout", "1").RequestRows {
+			if row.Fate == result.FateTimedOut {
+				n++
+				if row.EndedUs == nil || *row.EndedUs != row.ArrivalUs+1_000_000 {
+					t.Errorf("%s timed out with ended_us %v, want arrival %d plus the 1 s timeout", row.ID, row.EndedUs, row.ArrivalUs)
+				}
+			}
+		}
+		if n == 0 {
+			t.Fatal("non-vacuity: nothing timed out")
+		}
+	})
+	t.Run("cut by horizon", func(t *testing.T) {
+		n := 0
+		for _, row := range run("--horizon", "600000").RequestRows {
+			if row.Fate == result.FateInFlightAtHorizon || row.Fate == result.FateQueuedAtHorizon {
+				n++
+				if row.EndedUs == nil || *row.EndedUs != 600000 {
+					t.Errorf("%s (%s) has ended_us %v, want the horizon 600000", row.ID, row.Fate, row.EndedUs)
+				}
+			}
+		}
+		if n == 0 {
+			t.Fatal("non-vacuity: the horizon cut nothing off")
+		}
+	})
+}
+
+// A request shed by the gateway has the time it was shed. Under the bounded flow-control queue of
+// TestResult_RequestsCountEveryFateAndGenerated, a dropped request has ended_us at or after its arrival, and one
+// that expired in flow control leaves at least the 2 s TTL after its arrival (the router's expiry
+// sweep notices it at the next sweep, so later, never earlier).
+func TestResult_ShedRowsStateWhenTheyWereShed(t *testing.T) {
+	dir := colocatedRouterVariant(t, "router:\n  epp_flags: [--pool-name=vllm, --refresh-metrics-interval=20ms]\n"+
+		"  endpoint_picker_config: epp-config.yaml\n  manifests: [pool.yaml]\n", "      app: vllm\n",
+		map[string]string{"epp-config.yaml": writeRouterFile(t, "epp-config.yaml", inv13Config),
+			"pool.yaml": writeRouterFile(t, "pool.yaml", inv13Manifests)})
+	stdout, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml", "--num-instances", "2",
+		"--rate", "2000", "--num-requests", "1500", "--seed", "7", "--horizon", "600000000",
+		"--gateway-latency", "300", "--epp-scrape-jitter", "5000", noRenderQueue[0], noRenderQueue[1])
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+	}
+	dropped, expired := 0, 0
+	for _, row := range parseResult(t, stdout).RequestRows {
+		if row.Fate != result.FateDropped {
+			continue
+		}
+		dropped++
+		if row.EndedUs == nil || *row.EndedUs < row.ArrivalUs {
+			t.Fatalf("%s dropped (%s) with ended_us %v, before its arrival %d", row.ID, row.DropReason, row.EndedUs, row.ArrivalUs)
+		}
+		if row.DropReason == result.DropGatewayExpired {
+			expired++
+		}
+		if row.DropReason == result.DropGatewayExpired && *row.EndedUs-row.ArrivalUs < 2_000_000 {
+			t.Errorf("%s expired %d us after its arrival, before the 2 s TTL", row.ID, *row.EndedUs-row.ArrivalUs)
+		}
+	}
+	if expired == 0 {
+		t.Fatalf("non-vacuity: no request expired in flow control (%d drops)", dropped)
+	}
+}
