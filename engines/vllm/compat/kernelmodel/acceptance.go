@@ -32,6 +32,38 @@ type AcceptanceOverrides struct {
 	FallbackCategory string
 }
 
+// Engine is the engine name this module models, as acceptance profiles record it.
+const Engine = "vllm"
+
+// vLLM's defaults for the drafting and verification settings: SpeculativeConfig.draft_sample_method
+// "greedy" (vllm/config/speculative.py:634@4ba787ec) and rejection_sample_method "standard"
+// (vllm/config/speculative.py:562@4ba787ec), at v0.33.0.
+const (
+	DefaultDraftSampler = acceptance.DraftGreedy
+	DefaultVerifier     = acceptance.VerifierStandard
+)
+
+// ResolvedSampling is the draft sampler and verifier vLLM runs a speculative block with: each as
+// the block states it, or vLLM's default when it states none. Synthetic rejection sampling forces
+// the acceptance rather than verifying drafts, so it resolves no verifier ("").
+func ResolvedSampling(sp *engineconfig.Speculative) (acceptance.DraftSampler, acceptance.Verifier) {
+	sampler, verifier := DefaultDraftSampler, DefaultVerifier
+	if sp == nil {
+		return sampler, verifier
+	}
+	if sp.DraftSampleMethod != "" {
+		sampler = acceptance.DraftSampler(sp.DraftSampleMethod)
+	}
+	switch sp.RejectionSampleMethod {
+	case "":
+	case "synthetic":
+		verifier = ""
+	default:
+		verifier = acceptance.Verifier(sp.RejectionSampleMethod)
+	}
+	return sampler, verifier
+}
+
 // SyntheticAcceptanceSource names the engine block's synthetic_acceptance_length as the source of a
 // pinned acceptance value.
 const SyntheticAcceptanceSource = "engine.speculative.synthetic_acceptance_length"
@@ -54,23 +86,33 @@ func AcceptanceWithEngine(pin *acceptance.Pin, e engineconfig.Engine) (*acceptan
 		return pin, nil
 	}
 	l := *sp.SyntheticAcceptanceLength
+	// The engine forces this length with synthetic rejection sampling, so the value is synthetic:
+	// its rates are the engine's minimum-variance schedule, never a natural decay.
+	forced := &acceptance.Value{NumSpecTokens: sp.NumSpecTokens, AcceptanceLength: &l,
+		Source: SyntheticAcceptanceSource, Realisation: acceptance.RealisationSynthetic}
 	if pin == nil {
-		return &acceptance.Pin{Value: &acceptance.Value{NumSpecTokens: sp.NumSpecTokens, AcceptanceLength: &l,
-			Source: SyntheticAcceptanceSource}}, nil
+		return &acceptance.Pin{Value: forced}, nil
 	}
 	if v := pin.Value; v != nil {
 		if v.NumSpecTokens != sp.NumSpecTokens || v.AcceptanceLength == nil || *v.AcceptanceLength != l {
 			return nil, fmt.Errorf("engine.speculative.synthetic_acceptance_length %v at num_spec_tokens %d contradicts the "+
 				"acceptance the scenario pins (%s); state one, or the same value in both", l, sp.NumSpecTokens, describeValue(v))
 		}
-		return pin, nil
+		if v.Realisation == acceptance.RealisationNatural {
+			return nil, fmt.Errorf("engine.speculative.synthetic_acceptance_length %v forces the acceptance the scenario pins as "+
+				"realisation natural; a forced acceptance is synthetic", l)
+		}
+		stated := *v
+		stated.Realisation = acceptance.RealisationSynthetic
+		merged := *pin
+		merged.Value = &stated
+		return &merged, nil
 	}
 	// The block's length is a stated value, and vLLM with a synthetic length forces that acceptance rather
 	// than drawing on any measured profile, so the scenario's profile selection (a profile set, a
 	// fallback category, exact_only) has nothing to select and is dropped: the substrate refuses a pin that
 	// states a value together with any of them. The value is all the merged pin states.
-	return &acceptance.Pin{Value: &acceptance.Value{NumSpecTokens: sp.NumSpecTokens, AcceptanceLength: &l,
-		Source: SyntheticAcceptanceSource}}, nil
+	return &acceptance.Pin{Value: forced}, nil
 }
 
 // describeValue is a pinned value for a refusal.
@@ -113,17 +155,23 @@ func resolveAcceptance(in latencykernel.Inputs, e engineconfig.Engine, data *loa
 	if err != nil {
 		return nil, err
 	}
+	sampler, verifier := ResolvedSampling(e.Speculative)
 	req := acceptance.Request{
-		Model:             in.Scenario.Model,
-		Drafter:           e.Speculative.DraftModel,
-		Architecture:      targetArchitecture(in, data),
-		SpeculativeMethod: e.Speculative.Method,
-		NumSpecTokens:     e.Speculative.NumSpecTokens,
-		Hardware:          in.Chip.Name,
-		Workload:          bindingAcceptanceTerms(in.Scenario.Workload),
-		Scenario:          pin,
-		CLI:               o.CLI,
-		FallbackCategory:  o.FallbackCategory,
+		Model:               in.Scenario.Model,
+		Drafter:             e.Speculative.DraftModel,
+		DraftSampler:        sampler,
+		Verifier:            verifier,
+		Engine:              Engine,
+		DefaultDraftSampler: DefaultDraftSampler,
+		DefaultVerifier:     DefaultVerifier,
+		Architecture:        targetArchitecture(in, data),
+		SpeculativeMethod:   e.Speculative.Method,
+		NumSpecTokens:       e.Speculative.NumSpecTokens,
+		Hardware:            in.Chip.Name,
+		Workload:            bindingAcceptanceTerms(in.Scenario.Workload),
+		Scenario:            pin,
+		CLI:                 o.CLI,
+		FallbackCategory:    o.FallbackCategory,
 	}
 	if o.Workload != nil {
 		req.Workload = *o.Workload
