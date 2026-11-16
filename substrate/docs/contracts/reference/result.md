@@ -151,6 +151,7 @@ state none of the three, so most coefficients are not evaluated until the regist
 | `policy` | mapping | no | The simulator's policy bundle, verbatim, when one was given. |
 | `options` | list | no | Every option that changes a byte of the Result (SIM-10), sorted by name. |
 | `workload_properties` | list | no | Each workload property and what supplied it (D8), sorted by name. |
+| `files` | list | no | The small input files the run read, whole, sorted by `path`: the router's endpoint-picker configuration and manifests, and each configuration file an option names. Each is `path`, `sha256` (of `content`) and `content`. A trace or a corpus is never held here; `options` names it by sha256. |
 
 <!-- fields: scenario.Packaging -->
 
@@ -184,6 +185,21 @@ simulate, such as speculative acceptance or expert routing imbalance (D8).
 | `differed` | list of strings | with a borrowing step | Each key field in which a borrowed profile differs from the run's: `model`, `drafter`, `speculative_method` or `num_spec_tokens`. None for `exact`. |
 | `k_rule` | string | with `same_drafter_other_k` | How the borrowed value was brought to the run's K: `interpolated`, `above_largest`, `below_smallest_rates` or `below_smallest_proportional`. |
 | `profiles` | list of strings | with `step` | Every profile the value was read from, as set and key, the one that sets it first; an interpolation lists both it lies between. |
+
+### `files`
+
+A small input file the run read, held whole, so that `--from-result` reproduces the run without
+it (DEV-7): the endpoint-picker configuration and manifests the deployment's router names, and each
+configuration file an option names. A trace or a corpus is bulk data and is never held here; its
+option records its sha256 (Principle 6 of blis-substrate#154).
+
+<!-- fields: result.File -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `path` | string | yes | The file as the input names it: the router's path, or the option's name. Listed once each, sorted. |
+| `sha256` | string | yes | The lowercase hex sha256 of `content`. |
+| `content` | string | yes | The file's bytes. |
 
 ## `frame`
 

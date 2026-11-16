@@ -768,6 +768,26 @@
       ],
       "type": "object"
     },
+    "result.File": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "content",
+        "path",
+        "sha256"
+      ],
+      "type": "object"
+    },
     "result.Frame": {
       "additionalProperties": false,
       "properties": {
@@ -930,6 +950,12 @@
       "properties": {
         "deployment": {
           "$ref": "#/$defs/deployment.Deployment"
+        },
+        "files": {
+          "items": {
+            "$ref": "#/$defs/result.File"
+          },
+          "type": "array"
         },
         "options": {
           "items": {
