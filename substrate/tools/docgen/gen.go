@@ -30,6 +30,7 @@ var enumDirs = []string{
 	"contracts/spec/measurement",
 	"contracts/spec/router",
 	"contracts/spec/fields",
+	"contracts/spec/kernelimpls",
 	"contracts/spec/routertable",
 	"contracts/spec/result",
 	"contracts/spec/trace",
