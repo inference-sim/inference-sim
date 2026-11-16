@@ -42,6 +42,13 @@ class _Finder(importlib.abc.MetaPathFinder):
         return None
 
 
+def problems(stubbed, mocks: dict) -> list:
+    """Each stubbed name that is not the symbol of an environment entry of the manifest."""
+    listed = {m["symbol"] for m in mocks.get("mocks", []) if m.get("kind") == "environment"}
+    return [f"stubs.py stubs {name}, which no environment entry of oracle/mocks.json names (FID-1)"
+            for name in stubbed if name not in listed]
+
+
 def install() -> None:
     if STUBBED and not any(isinstance(f, _Finder) for f in sys.meta_path):
         sys.meta_path.insert(0, _Finder())

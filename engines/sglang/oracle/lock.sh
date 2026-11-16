@@ -8,7 +8,8 @@
 # for CPython 3.12 on Linux x86_64, the platform CI runs, and writes:
 #
 #   oracle/requirements-hashed.txt  the same packages, each with the sha256 of every archive
-#   oracle/requirements-pip.txt     the pip release CI upgrades to first, with its hashes
+#   oracle/requirements-pip.txt     the pip and uv releases CI installs first, with their hashes; uv is
+#                                   what runs this script's --check in CI
 #
 # CI installs both with pip install --require-hashes, so an archive that changed fails the
 # install. oracle/check_lock.py --hashed checks that requirements-hashed.txt pins exactly what
@@ -19,12 +20,17 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 pip_release="26.2.2"
+uv_release="0.13.8"
 check=false
-[ "${1:-}" = "--check" ] && check=true
+case "${1:-}" in
+  "") ;;
+  --check) check=true ;;
+  *) echo "usage: oracle/lock.sh [--check]" >&2; exit 2 ;;
+esac
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 grep -v '^#' requirements.lock > "$tmp/requirements.in"
-echo "pip==$pip_release" > "$tmp/pip.in"
+printf 'pip==%s\nuv==%s\n' "$pip_release" "$uv_release" > "$tmp/pip.in"
 compile() {
   (cd "$tmp" && uv pip compile --quiet --generate-hashes --no-header --no-annotate \
     --python-version 3.12 --python-platform x86_64-unknown-linux-gnu \

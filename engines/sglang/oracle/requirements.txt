@@ -5,8 +5,10 @@
 # (sglang-source/python first on sys.path), so the code under test is exactly that commit.
 #
 # torch is SGLang's pin (python/pyproject.toml:6,90@297e54fd, torch==2.14.1) as the PyTorch CPU
-# wheel. triton is what that torch release requires on Linux (triton~=3.8.0 in torch 2.14.1's
-# metadata); SGLang imports it unconditionally (python/sglang/srt/utils/common.py:91@297e54fd).
+# wheel. triton is installed because SGLang imports it unconditionally
+# (python/sglang/srt/utils/common.py:91@297e54fd); the CPU wheel requires none. 3.8.0 is what torch
+# 2.14.1's CUDA build requires on Linux (Requires-Dist triton~=3.8.0,
+# https://pypi.org/pypi/torch/2.14.1/json), so it is the triton SGLang runs with on a GPU.
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.14.1+cpu
 triton==3.8.0
@@ -19,7 +21,8 @@ triton==3.8.0
 #     torch_memory_saver. A module of one that the scheduler imports is stubbed by
 #     oracle/stubs.py and listed in oracle/mocks.json; any other import of one fails.
 #   Media and profiling, which the scheduler does not import: av, decord2, py-spy, torchaudio,
-#     torchcodec. (torchvision comes in as timm's dependency, from the PyPI CPU index.)
+#     torchcodec. torchvision, which SGLang lists (python/pyproject.toml:94@297e54fd), is installed
+#     as its CPU wheel from download.pytorch.org (0.29.2+cpu in the lock).
 aiohttp
 anthropic>=0.20.0
 apache-tvm-ffi==0.1.11

@@ -27,7 +27,8 @@ python -I oracle/check_lock.py oracle/requirements.lock <(pip freeze)
 
 After changing the lock, run `oracle/lock.sh` and commit all three files. CI runs
 `python -I oracle/check_lock.py --hashed oracle/requirements.lock oracle/requirements-hashed.txt`
-first, and it fails while they disagree. To regenerate the lock, install `oracle/requirements.txt`
+first, and it fails while they disagree; it then installs the pinned uv from
+`oracle/requirements-pip.txt` and runs `oracle/lock.sh --check`. To regenerate the lock, install `oracle/requirements.txt`
 in a clean CPython 3.12 environment on Linux x86_64 with the PyTorch CPU index, then run
 `pip freeze > oracle/requirements.lock` and keep the header comment.
 
@@ -38,8 +39,9 @@ runners drive. CI runs it, together with the manifest check
 `python -I oracle/check_mocks.py oracle/mocks.json`.
 
 `oracle/peers.json` pins the KV-transfer and KV-store clients SGLang drives (Mooncake, NIXL,
-LMCache) and gives the source of each pin. None of them is installed, because each is a CUDA
-build.
+LMCache) and gives the source of each pin. None is in the lock yet, so a scenario that selects one
+is refused by name. When a store package enters the lock, it runs as code under test at its pin
+(FID-12); `oracle/check_peers.py`, run in CI, fails if the lock pins one at another version.
 
 ## The shared checks
 

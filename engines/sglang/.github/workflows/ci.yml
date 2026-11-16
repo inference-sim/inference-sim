@@ -130,8 +130,12 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/oracle-env
       - name: every replacement the harness makes is listed, and none is decision code
         run: python -I oracle/check_mocks.py oracle/mocks.json
+      - name: a KV-transfer or KV-store client in the lock is at its peers.json pin
+        run: python -I oracle/check_peers.py
       - name: the scheduler imports from the pinned checkout in the locked environment
         run: python -I oracle/run_import.py sglang-source
