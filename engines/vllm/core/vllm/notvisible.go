@@ -77,7 +77,7 @@ var (
 		"NixlPullConnector", "NixlPushConnector", "OffloadingConnector", "SimpleCPUOffloadConnector"}
 	// registeredSpecs: OffloadingSpecFactory.register_spec (vllm/v1/kv_offload/factory.py:62-68@5df63a72).
 	registeredSpecs = []string{"CPUOffloadingSpec", "TieringOffloadingSpec"}
-	// registeredTiers: SecondaryTierFactory.register_tier (vllm/v1/kv_offload/tiering/factory.py:146-174@5df63a72).
+	// registeredTiers: SecondaryTierFactory.register_tier (vllm/v1/kv_offload/tiering/factory.py:146-174@4ba787ec).
 	registeredTiers = []string{"example", "fs", "kvcr", "obj", "p2p"}
 	// registeredPolicies: CachePolicyFactory.register_cache_policy
 	// (vllm/v1/kv_offload/cpu/policies/factory.py:86-91@5df63a72).

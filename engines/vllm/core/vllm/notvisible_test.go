@@ -134,7 +134,16 @@ func TestAPathVLLMDoesNotReadIsNotCodeNotVisible(t *testing.T) {
 // The kvcr and example tiers are registered in-tree (vllm/v1/kv_offload/tiering/factory.py:146-174
 // @5df63a72); like fs, obj and p2p they are refused by type as not modelled, not as code BLIS lacks.
 func TestEveryRegisteredSecondaryTierIsRefusedByItsType(t *testing.T) {
+	// The tiers the engine builds are the ones surface.json marks modelled; every other is refused.
+	for _, it := range surfaceItems(t, "secondary_tier") {
+		if name := it["name"].(string); (it["status"] == "modelled") != modelledTiers[name] {
+			t.Errorf("secondary tier %s: surface.json status %v, engine builds it: %v", name, it["status"], modelledTiers[name])
+		}
+	}
 	for _, typ := range registeredTiers {
+		if modelledTiers[typ] {
+			continue
+		}
 		t.Run(typ, func(t *testing.T) {
 			_, err := build(t, offloadWith(tiering+", secondary_tiers: [{type: "+typ+"}]"))()
 			if err == nil {
