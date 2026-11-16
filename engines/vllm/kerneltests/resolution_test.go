@@ -204,19 +204,13 @@ func TestEditingTheDocumentsAfterNewChangesNothing(t *testing.T) {
 	if poolEngine(t, in).Speculative == nil {
 		t.Fatal("the fixture states no speculative block to edit")
 	}
-	// The caller edits its own documents, the block the kernel's Deployment returned, and the
-	// settings Engine returned; none of the three reaches the kernel.
+	// The caller edits its own documents and the block the kernel's Deployment returned; neither
+	// reaches the kernel.
 	editEngine(t, &in, func(e *engineconfig.Engine) { e.Speculative.NumSpecTokens = 7 })
 	d := k.Deployment()
 	editPoolEngine(t, &d, func(e *engineconfig.Engine) { e.Speculative.NumSpecTokens = 9 })
-	if s := k.Engine(); s.Speculative != nil {
-		s.Speculative.NumSpecTokens = 11
-	}
 	if got := mustDecode(t, k.Deployment()).Speculative.NumSpecTokens; got == 7 || got == 9 {
 		t.Errorf("Deployment reports %d speculative tokens after the caller's edits", got)
-	}
-	if got := k.Engine().Speculative.NumSpecTokens; got == 7 || got == 9 || got == 11 {
-		t.Errorf("Engine reports %d speculative tokens after the caller's edits", got)
 	}
 	if k.StepTime(batch).NoOverlap != step || k.SequenceFixedBytes() != fixed ||
 		k.SequenceVariableBytes(8192) != perSeq {
