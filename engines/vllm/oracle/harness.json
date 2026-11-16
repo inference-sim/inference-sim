@@ -25,5 +25,13 @@
     "vllm.distributed.kv_transfer.kv_connector.v1.",
     "vllm.v1.kv_offload."
   ],
-  "upstream_names": []
+  "upstream_names": [
+    "schedule",
+    "update_from_output",
+    "run_busy_loop",
+    "step_with_batch_queue",
+    "_has_global_unfinished_reqs",
+    "get_core_engine_for_request",
+    "_should_throttle_prefills"
+  ]
 }

@@ -21,6 +21,7 @@ var provenanceRules = harness.ProvenanceRules{
 	},
 	Moved:    regexp.MustCompile(`^// Moved from (inference-sim|blis-latency-kernel)/\S+ at [0-9a-f]{40}`),
 	Original: "// Original to blis-vllm.",
+	Release:  Upstream,
 }
 
 // TestEveryFileStatesItsProvenance: each Go file says where its logic comes from, in its first
