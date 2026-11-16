@@ -10,9 +10,11 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/units"
+
+	"github.com/inference-sim/blis-vllm/internal/upstream"
 )
 
-// vllm_lower.json is vLLM v0.32.0's own answers for every case below, printed by
+// vllm_lower.json is the pinned release's own answers for every case below, printed by
 // oracle/lower/extract.py, which runs the release's functions as written. CI regenerates the file
 // and fails if it differs (ci.yml, oracle-tier2), so these tests compare the port with the release
 // and not with a copy of it.
@@ -179,7 +181,7 @@ func loadOracle(t *testing.T) oracleFile {
 	if err := json.Unmarshal(raw, &o); err != nil {
 		t.Fatal(err)
 	}
-	if o.Commit != "5df63a7203cdb9328d824a27b682e77c7b9928be" {
+	if o.Commit != upstream.Commit {
 		t.Fatalf("the oracle file is for commit %s, not the pinned release", o.Commit)
 	}
 	return o

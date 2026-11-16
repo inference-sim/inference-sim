@@ -144,11 +144,9 @@ func SyncDP(m *GraphManager, ranks []RankBatch) ([]Launch, []Sync, error) {
 	for i, r := range ranks {
 		d := m.Dispatch(r.Reqs, maxTokens, uniform, bound)
 		out[i] = Launch{Mode: d.Mode, Tokens: d.Tokens}
-		reqs := maxReqs
-		if d.Mode == GraphFull && d.Reqs != nil {
-			reqs = *d.Reqs
-		}
-		syncs[i] = Sync{Reqs: reqs, Tokens: d.Tokens}
+		// The agreement's request bound is the ranks' largest request count, whatever graph runs
+		// (vllm/v1/worker/gpu/dp_utils.py:197-203@4ba787ec); v0.32.0 took a FULL graph's padded count.
+		syncs[i] = Sync{Reqs: maxReqs, Tokens: d.Tokens}
 	}
 	return out, syncs, nil
 }
