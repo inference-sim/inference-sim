@@ -85,6 +85,10 @@ type Metrics struct {
 	// ClientGaps is every completed request's client-observed inter-token series
 	// (Request.ClientTokenGaps), in append order, attributed to requests by StepOwners.
 	ClientGaps []int64
+	// ClientChunkGaps is every completed request's gaps between the chunks streamed to its
+	// client (Request.ClientITL: one per chunk after the first), in append order, attributed
+	// to requests by StepOwners. It is the registry's icl, vllm bench serve's ITL.
+	ClientChunkGaps []int64
 	// MeasuredContextOverflows and MeasuredFailures count measured requests that were never
 	// served (RecordUnserved).
 	MeasuredContextOverflows int
