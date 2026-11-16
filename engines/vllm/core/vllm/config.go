@@ -96,6 +96,10 @@ type Config struct {
 	// states it (offload: connector, tiers, eviction_policy); a caller restates it here with the
 	// bytes a block its memory model sizes. Unstated is no offload.
 	KVOffload *offloadConfig `yaml:"kv_offload,omitempty"`
+	// SchedulerCls is vLLM's scheduler_cls, the qualified name it resolves the scheduler class from
+	// (vllm/config/scheduler.py:177, 228-253@5df63a72). The engine runs vLLM's own Scheduler or
+	// AsyncScheduler, so a stated one is refused (refuseNotVisible).
+	SchedulerCls string `yaml:"scheduler_cls,omitempty"`
 
 	// statedZero names the scheduler fields the block stated as 0 (max_num_seqs,
 	// max_num_batched_tokens). The settings struct reads 0 as unstated, and a block that states 0
@@ -191,6 +195,10 @@ const maxModelLenIssue = "https://github.com/inference-sim/blis-vllm/issues/69"
 func resolve(c Config) (settings, error) {
 	var s settings
 	e := c.Engine
+	// Code BLIS does not have is refused first: the reason takes precedence (design §11.4).
+	if err := refuseNotVisible(c); err != nil {
+		return s, err
+	}
 	if err := refuseUnmodelled(e, c.DataParallelSize > 1); err != nil {
 		return s, err
 	}

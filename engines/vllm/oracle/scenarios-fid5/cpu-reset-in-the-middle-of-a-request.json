@@ -1,0 +1,87 @@
+{
+ "description": "reset_cache while a store is in flight: the cache starts empty at slot 0, the pre-reset completion changes nothing, the request's earlier access is discarded, and finishing twice or finishing a request never seen is a no-op.",
+ "spec": {
+  "name": "CPUOffloadingSpec",
+  "cpu_bytes_to_use": 32768,
+  "worker_kv_bytes_per_block": 16384,
+  "world_size": 1,
+  "blocks_per_chunk": 1
+ },
+ "calls": [
+  {
+   "m": "on_new_request",
+   "ctx": "a"
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "a",
+   "keys": [
+    "r1",
+    "r2"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "ctx": "a",
+   "keys": [
+    "r1"
+   ],
+   "success": true
+  },
+  {
+   "m": "reset_cache"
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "r1"
+  },
+  {
+   "m": "on_request_finished",
+   "ctx": "a"
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "a",
+   "keys": [
+    "r3"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "ctx": "a",
+   "keys": [
+    "r3"
+   ],
+   "success": true
+  },
+  {
+   "m": "complete_store",
+   "ctx": "a",
+   "keys": [
+    "r2"
+   ],
+   "success": true
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "r2"
+  },
+  {
+   "m": "on_request_finished",
+   "ctx": "a"
+  },
+  {
+   "m": "on_request_finished",
+   "ctx": "a"
+  },
+  {
+   "m": "on_request_finished",
+   "ctx": "never"
+  },
+  {
+   "m": "get_stats"
+  }
+ ]
+}

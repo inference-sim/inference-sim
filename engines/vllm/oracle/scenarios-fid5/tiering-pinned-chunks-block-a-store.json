@@ -1,0 +1,122 @@
+{
+ "description": "TieringOffloadingSpec with no secondary tiers, whose manager forwards to its CPU primary tier: Two requests read the same chunk at once; while it is pinned a store that needs both slots fails, after one load completes it still fails, and after both it evicts.",
+ "spec": {
+  "name": "TieringOffloadingSpec",
+  "cpu_bytes_to_use": 32768,
+  "worker_kv_bytes_per_block": 16384,
+  "world_size": 1,
+  "blocks_per_chunk": 1
+ },
+ "calls": [
+  {
+   "m": "on_new_request",
+   "ctx": "a"
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "a",
+   "keys": [
+    "p1",
+    "p2"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "ctx": "a",
+   "keys": [
+    "p1",
+    "p2"
+   ],
+   "success": true
+  },
+  {
+   "m": "on_new_request",
+   "ctx": "b"
+  },
+  {
+   "m": "on_new_request",
+   "ctx": "c"
+  },
+  {
+   "m": "prepare_load",
+   "ctx": "b",
+   "keys": [
+    "p1"
+   ]
+  },
+  {
+   "m": "prepare_load",
+   "ctx": "c",
+   "keys": [
+    "p1"
+   ]
+  },
+  {
+   "m": "on_new_request",
+   "ctx": "d"
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "d",
+   "keys": [
+    "d1",
+    "d2"
+   ]
+  },
+  {
+   "m": "get_stats"
+  },
+  {
+   "m": "complete_load",
+   "ctx": "b",
+   "keys": [
+    "p1"
+   ]
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "d",
+   "keys": [
+    "d1",
+    "d2"
+   ]
+  },
+  {
+   "m": "complete_load",
+   "ctx": "c",
+   "keys": [
+    "p1"
+   ]
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "d",
+   "keys": [
+    "d1",
+    "d2"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "ctx": "d",
+   "keys": [
+    "d1",
+    "d2"
+   ],
+   "success": true
+  },
+  {
+   "m": "lookup",
+   "ctx": "d",
+   "key": "p1"
+  },
+  {
+   "m": "lookup",
+   "ctx": "d",
+   "key": "p2"
+  },
+  {
+   "m": "get_stats"
+  }
+ ]
+}

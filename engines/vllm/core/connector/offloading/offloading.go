@@ -786,7 +786,7 @@ func (s *Scheduler) buildStores(step sched.StepOutput) []Job {
 			s.advanceStored(st, tokens)
 			continue
 		}
-		stored, chunkIDs, ok := s.manager.prepareStore(newKeys, st.access)
+		stored, chunkIDs, _, ok := s.manager.prepareStore(newKeys, st.access)
 		if !ok {
 			// "cannot store chunks" (:1735-1740): nothing advances; the chunks are offered again.
 			continue
@@ -921,7 +921,7 @@ func (s *Scheduler) Completed(done []Completion) {
 		}
 		st := s.reqs[js.req]
 		if js.store {
-			s.manager.completeStore(js.keys)
+			s.manager.completeStore(js.keys, true)
 		} else {
 			s.manager.completeLoad(js.keys)
 			for _, k := range js.keys {

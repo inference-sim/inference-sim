@@ -63,6 +63,10 @@ type connectorConfig struct {
 	// (multi_connector.py:226-249@5df63a72). multiconnector.go models the pair llm-d's P/D with
 	// offload runs, a NIXL child and the OffloadingConnector.
 	ExtraConfig *multiExtraConfig `yaml:"kv_connector_extra_config,omitempty"`
+	// ModulePath is kv_connector_module_path, the module vLLM imports the connector class from ahead
+	// of its registry (vllm/distributed/kv_transfer/kv_connector/factory.py:103-124@5df63a72). A
+	// stated one is refused as code BLIS does not have (refuseNotVisible).
+	ModulePath *string `yaml:"kv_connector_module_path,omitempty"`
 }
 
 // nixlNames are the names vLLM's connector factory resolves to the NIXL pull scheduler

@@ -49,6 +49,7 @@ REST_EXTRA = [
     r"^oracle/(scenarios[^/]*/|mocks\.json$|drafts/)",
     r"^docs/metrics-(manifest|buckets)\.json$",
     r"^fields\.json$",
+    r"^surface\.json$",
     r"^vllmengine/testdata/",
     r"^core/(kv|lower)/testdata/",
     r"^oracle/engineargs-cases\.json$",
@@ -76,7 +77,10 @@ ORACLE_PATHS = [
     r"^rules/v0_32/testdata/",
 ]
 METRICS_GO = ["./cmd/metricsmanifest", "./registry"]
-METRICS_PATHS = [r"^fields/", r"^fields\.json$", r"^docs/metrics-manifest\.json$"]
+# The surface list (tools/surface/gen_surface.py) reads its status file, the committed list, and the
+# repository paths a modelled item names as its evidence: the oracle scenarios and the golden traces.
+METRICS_PATHS = [r"^fields/", r"^fields\.json$", r"^docs/metrics-manifest\.json$", r"^tools/surface/",
+                 r"^surface\.json$", r"^oracle/scenarios", r"^core/.*/testdata/golden"]
 GOLDEN_PATHS = [r"^oracle/", r"^core/.*/testdata/", r"^tools/migrateengineblock/"]
 BENCH_GO = ["./core/sched", "./core/vllm"]
 PACKS = {"v0_29": "./rules/v0_29", "v0_31": "./rules/v0_31", "v0_32": "./rules/v0_32"}

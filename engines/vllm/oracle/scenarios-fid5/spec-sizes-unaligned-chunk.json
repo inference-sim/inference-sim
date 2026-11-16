@@ -1,0 +1,15 @@
+{
+ "description": "CPUOffloadingSpec sizes its tier from cpu_bytes_to_use, the worker bytes a block, the world size and blocks_per_chunk, each chunk rounded up to the alignment.",
+ "spec": {
+  "name": "CPUOffloadingSpec",
+  "cpu_bytes_to_use": 122980,
+  "worker_kv_bytes_per_block": 5000,
+  "world_size": 2,
+  "blocks_per_chunk": 1
+ },
+ "calls": [
+  {
+   "m": "get_stats"
+  }
+ ]
+}
