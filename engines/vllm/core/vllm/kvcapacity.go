@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/core/kv_cache_utils.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be):
-// update_kv_cache_capacity (:2316-2334), which the engine core runs once its KV cache is sized.
+// Derived from vllm/v1/core/kv_cache_utils.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5):
+// update_kv_cache_capacity (:1136-1155), which the engine core runs once its KV cache is sized.
 
 package vllm
 

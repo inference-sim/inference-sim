@@ -2,7 +2,7 @@
 # so the pool's start-up figure can be set beside vLLM's own (core/kv/testdata/vllm_kv_capacity.json).
 kind: Scenario
 name: muse-gb200-tp4-dspark3
-engine_version: "0.32.0"
+engine_version: "0.33.0"
 model: muse-spark-open-816b-a42b-nvfp4
 acceptance:
   value:

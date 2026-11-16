@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/core/kv_cache_utils.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be):
-// get_max_concurrency_for_kv_cache_config (:1195-1227), get_kv_cache_capacity (:2300-2308) and
-// update_kv_cache_capacity (:2316-2334); and the padding layers _get_kv_cache_groups_uniform_page_size
-// warns of (:1477-1490).
+// Derived from vllm/v1/core/kv_cache_utils.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5):
+// get_max_concurrency_for_kv_cache_config (:1061-1093), get_kv_cache_capacity (:1120-1128) and
+// update_kv_cache_capacity (:1136-1155); and vllm/v1/core/kv_cache_planning.py: the padding layers
+// _get_kv_cache_groups_uniform_page_size warns of (:534-541).
 
 package kv
 
@@ -11,7 +11,7 @@ import "fmt"
 
 // Capacity is the KV pool as vLLM reports it at start-up: "GPU KV cache size: Tokens tokens,
 // Maximum concurrency for max_model_len tokens per request: Concurrency x"
-// (update_kv_cache_capacity, kv_cache_utils.py:2316-2334@5df63a72).
+// (update_kv_cache_capacity, kv_cache_utils.py:1136-1155@4ba787ec).
 //
 // Tokens is not the pool's blocks times the block size. A request of max_model_len tokens takes
 // blocks from every KV cache group at once, each group as many as its spec holds for one request
@@ -35,7 +35,7 @@ type Capacity struct {
 
 // StartupCapacity is vLLM's start-up KV pool figure for a pool of numBlocks blocks (the null
 // block included) over the layers' KV cache groups at limits: get_kv_cache_capacity
-// (kv_cache_utils.py:2300-2308@5df63a72) over get_max_concurrency_for_kv_cache_config (:1195-1227).
+// (kv_cache_utils.py:1120-1128@4ba787ec) over get_max_concurrency_for_kv_cache_config (:1061-1093).
 // A pool on the host (HiSparse) is not modelled.
 func StartupCapacity(layers []Layer, o GroupOptions, blockSize int, limits RequestLimits, numBlocks int64) (Capacity, error) {
 	groups, err := GroupLayers(layers, o.at(blockSize))
@@ -89,7 +89,7 @@ func (m *Manager) StartupCapacity() (Capacity, error) {
 
 // PaddingLayers is the layers vLLM adds to fill the KV cache groups of one page size, which it
 // warns of at start-up ("Add N padding layers, may waste at most P% KV cache memory",
-// _get_kv_cache_groups_uniform_page_size, kv_cache_utils.py:1477-1490@5df63a72): every group is
+// _get_kv_cache_groups_uniform_page_size, kv_cache_planning.py:534-541@4ba787ec): every group is
 // as wide as the widest, so each group short of it pages the missing layers' memory in every
 // block. On packed groups of several page sizes, or a single group, it is 0.
 func PaddingLayers(layers []Layer, o GroupOptions, blockSize int) (int, error) {

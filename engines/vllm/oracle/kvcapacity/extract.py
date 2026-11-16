@@ -20,7 +20,7 @@ max_in_flight_tokens and num_prefill_lookahead_tokens); the CacheConfig is vLLM'
 KV cache layout is resolved by vLLM's own resolve_kv_cache_layout over its default preference.
 No decision is replaced.
 
-The release is the one provenance.go names (Upstream.Commit); the functions are found where
+The release is the one internal/upstream/upstream.go names (Commit); the functions are found where
 that release keeps them (vllm/v1/core/kv_cache_utils.py, or vllm/v1/core/kv_cache_planning.py
 in a release that has it), so the same cases run on another release's source.
 
@@ -28,7 +28,7 @@ Usage:
     python -I oracle/kvcapacity/extract.py <vllm source root> print            the cases and vLLM's answers, as JSON
     python -I oracle/kvcapacity/extract.py <vllm source root> check <file>     fail unless <file> is what print gives
 
-<vllm source root> is a directory holding vllm/ at Upstream.Commit, run with a Python that has
+<vllm source root> is a directory holding vllm/ at internal/upstream's Commit, run with a Python that has
 torch installed (the oracle environment, oracle/requirements.lock).
 """
 import json
@@ -43,9 +43,10 @@ MAX_MODEL_LEN = 1 << 20
 
 
 def upstream_commit():
-    with open(os.path.join(HERE, "..", "..", "provenance.go"), encoding="utf-8") as f:
-        m = re.search(r'Commit:\s*"([0-9a-f]{40})"', f.read())
-    assert m, "provenance.go names no Upstream commit"
+    """The modelled release's commit, from internal/upstream/upstream.go (Commit = "...")."""
+    with open(os.path.join(HERE, "..", "..", "internal", "upstream", "upstream.go"), encoding="utf-8") as f:
+        m = re.search(r'Commit\s*=\s*"([0-9a-f]{40})"', f.read())
+    assert m, "internal/upstream/upstream.go names no Commit"
     return m.group(1)
 
 
