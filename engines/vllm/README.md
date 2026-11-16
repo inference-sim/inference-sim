@@ -258,15 +258,19 @@ runs, so the cost model's lookup matches a coefficient only for that build.
 - **What runs** comes from vLLM's own selection code, not by hand: `kernels/gen_kernel_impls.py`
   reads every `AttentionBackendEnum` member, the backends `_get_backend_priorities` selects on CUDA,
   every name each listed backend imports from a kernel library, and the line of each kernel's call
-  and of each architecture gate. `kernels/attention.json`, which people edit, gives each backend a
-  status and each kernel its library, variant, primitives, architectures and hash inputs; the
+  and of each architecture gate. `kernels/<tag>/attention.json`, one per vLLM release and edited
+  by people, gives each backend a status and each kernel its library, variant, primitives, architectures and hash inputs; the
   generator refuses a backend or an import it does not classify, and a classification the source no
   longer supports.
 - **Versions and hashes** come from the pinned sources: the library versions from
   `requirements/cuda.txt` and the GIT_TAG of vLLM's build, the toolkit from `docker/Dockerfile`, a
   source kernel's hash inputs from the git objects of its source at the pin, and a binary kernel's
-  from the SHA-256 its library records for the precompiled package. CI checks out each library at
-  vLLM's pin and runs the generator with `--check`.
+  from the SHA-256 its library records for the precompiled package.
+- **One command** regenerates the table: `python3 -I kernels/regen.py [TAG]` fetches vLLM at the tag
+  (default: `Upstream.Tag` in `provenance.go`), and each library at the pin vLLM's build files state,
+  then runs the generator; CI runs it with `--check`. Classifications exist for v0.32.0 and v0.33.0;
+  a new release gets its own, copied from the nearest and completed until the generator, run against
+  the new source, refuses nothing.
 - **What it does not list yet** is named in `gaps`: the MLA, sparse-MLA and model-driven backends, and
   the remaining CUDA backends, with inference-sim/blis-vllm#151. A lowering that asks for a build of a
   primitive with gaps, and finds no row, gets the implementation with no code hash, which matches no

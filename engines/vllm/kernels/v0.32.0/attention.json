@@ -1,0 +1,547 @@
+{
+  "_comment": "Edited by people; kernels/gen_kernel_impls.py reads it with vLLM's own selection code and refuses a classification that disagrees with it. The module docstring says what comes from where.",
+  "upstream": {
+    "tag": "v0.32.0",
+    "commit": "5df63a7203cdb9328d824a27b682e77c7b9928be"
+  },
+  "archs": {
+    "sm_90a": {
+      "capability": "9.0",
+      "chips": "H100, H200"
+    },
+    "sm_100a": {
+      "capability": "10.0",
+      "chips": "B200, GB200"
+    },
+    "sm_103a": {
+      "capability": "10.3",
+      "chips": "B300, GB300"
+    }
+  },
+  "libraries": {
+    "flashinfer": {
+      "pip": "flashinfer-python",
+      "requirements": "requirements/cuda.txt",
+      "repo": "https://github.com/flashinfer-ai/flashinfer",
+      "version_file": "version.txt",
+      "checksums": "flashinfer/artifacts.py",
+      "modules": [
+        "flashinfer",
+        "vllm.utils.flashinfer"
+      ]
+    },
+    "vllm-flash-attn": {
+      "cmake": "cmake/external_projects/vllm_flash_attn.cmake",
+      "repo": "https://github.com/vllm-project/flash-attention",
+      "modules": [
+        "vllm.vllm_flash_attn",
+        "vllm.v1.attention.backends.fa_utils"
+      ]
+    },
+    "vllm-csrc": {
+      "engine": true,
+      "repo": "https://github.com/vllm-project/vllm",
+      "modules": [
+        "vllm._custom_ops",
+        "vllm.v1.attention.ops"
+      ]
+    }
+  },
+  "backends": {
+    "AMX_MLA": {
+      "status": "not_cuda",
+      "reason": "a CPU backend; the CPU platform selects it (vllm/platforms/cpu.py)"
+    },
+    "B12X": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "CPU_ATTN": {
+      "status": "not_cuda",
+      "reason": "a CPU backend; the CPU platform selects it (vllm/platforms/cpu.py)"
+    },
+    "CPU_MLA": {
+      "status": "not_cuda",
+      "reason": "a CPU backend; the CPU platform selects it (vllm/platforms/cpu.py)"
+    },
+    "CUSTOM": {
+      "status": "not_lowered",
+      "reason": "a placeholder a third party registers at run time; the release ships no class for it"
+    },
+    "CUTLASS_MLA": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "CUTLASS_MSA": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "FLASHINFER": {
+      "status": "listed",
+      "not_kernels": {
+        "FP4Tensor": "a tensor type",
+        "get_seq_lens": "computes sequence lengths on the host side of planning",
+        "fast_decode_plan": "plans a decode wrapper's work; runs no attention kernel",
+        "nvfp4_quantize_append_paged_kv_cache_with_slot_mapping": "writes the KV cache; not an attention primitive",
+        "can_use_trtllm_attention": "a selection predicate",
+        "force_use_trtllm_attention": "reads the setting that forces trtllm-gen",
+        "pin_host_range_buf": "pins a host buffer",
+        "supports_trtllm_attention": "a selection predicate",
+        "use_trtllm_attention": "a selection predicate",
+        "scaled_fp8_quant": "quantizes the query to FP8 ahead of the kernel; not an attention primitive",
+        "cp_lse_ag_out_rs": "the decode-context-parallel all-gather and reduce-scatter of partial outputs: a collective",
+        "dcp_a2a_lse_reduce": "the decode-context-parallel all-to-all of partial outputs: a collective"
+      },
+      "gaps": [
+        {
+          "primitive": "attention.decode",
+          "selection": "BatchAttentionWithAttentionSinkWrapper (attention sinks)",
+          "call": "BatchAttentionWithAttentionSinkWrapper",
+          "issue": "inference-sim/blis-vllm#151"
+        },
+        {
+          "primitive": "attention.prefill",
+          "selection": "BatchAttentionWithAttentionSinkWrapper (attention sinks)",
+          "call": "BatchAttentionWithAttentionSinkWrapper",
+          "issue": "inference-sim/blis-vllm#151"
+        },
+        {
+          "primitive": "attention.prefill",
+          "selection": "merge_attn_states (merging the outputs of a split prefill)",
+          "call": "merge_attn_states",
+          "issue": "inference-sim/blis-vllm#151"
+        }
+      ]
+    },
+    "FLASHINFER_MLA": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "FLASHINFER_MLA_SPARSE": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "FLASHINFER_MLA_SPARSE_DSV4": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "FLASHINFER_MLA_SPARSE_DSV41": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "FLASHINFER_MLA_SPARSE_SM120": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "FLASHINFER_MLA_SPARSE_SM90": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "FLASHMLA": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "FLASHMLA_MEGA_ATTN_DSV41": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "FLASHMLA_SPARSE": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "FLASHMLA_SPARSE_DSV4": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "FLASHMLA_SPARSE_DSV41": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "FLASH_ATTN": {
+      "status": "listed",
+      "not_kernels": {
+        "compile_flash_attn_varlen_func_from_specs": "compiles FA4 kernels ahead of the first step; runs none",
+        "get_scheduler_metadata": "computes FA3's tile schedule; not an attention primitive",
+        "is_flash_attn_varlen_func_available": "a selection predicate",
+        "get_flash_attn_version": "the version selection the FA kernels' gate cites",
+        "flash_attn_supports_sinks": "a selection predicate",
+        "flash_attn_supports_quant_query_input": "a selection predicate",
+        "flash_attn_supports_kv_cache_dtype": "a selection predicate",
+        "is_fa_version_supported": "a selection predicate",
+        "uses_fa4_hd256_kernel": "a selection predicate",
+        "FA4_HD256_PAGE_SIZE": "a constant",
+        "scalar_to_ssa": "a CuTe DSL helper",
+        "ssa_to_scalar": "a CuTe DSL helper",
+        "reshape_and_cache_flash": "writes the KV cache; not an attention primitive",
+        "cp_lse_ag_out_rs": "the decode-context-parallel all-gather and reduce-scatter of partial outputs: a collective",
+        "dcp_a2a_lse_reduce": "the decode-context-parallel all-to-all of partial outputs: a collective"
+      },
+      "gaps": [
+        {
+          "primitive": "attention.decode",
+          "selection": "_flash_attn_fwd_combine (combining decode-context-parallel partial outputs)",
+          "call": "_flash_attn_fwd_combine",
+          "issue": "inference-sim/blis-vllm#151"
+        },
+        {
+          "primitive": "attention.prefill",
+          "selection": "merge_attn_states (merging the outputs of a split prefill)",
+          "call": "merge_attn_states",
+          "issue": "inference-sim/blis-vllm#151"
+        }
+      ]
+    },
+    "FLASH_ATTN_DIFFKV": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "FLASH_ATTN_MLA": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "FLASH_ATTN_MLA_SPARSE": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "FLEX_ATTENTION": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "HPC_ATTN": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "MINIMAX_M3_SPARSE": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "NO_ATTENTION": {
+      "status": "not_lowered",
+      "reason": "a model with no attention layer runs no attention kernel"
+    },
+    "ROCM_AITER_FA": {
+      "status": "not_cuda",
+      "reason": "a ROCm backend; the ROCm platform selects it (vllm/platforms/rocm.py)"
+    },
+    "ROCM_AITER_MLA": {
+      "status": "not_cuda",
+      "reason": "a ROCm backend; the ROCm platform selects it (vllm/platforms/rocm.py)"
+    },
+    "ROCM_AITER_MLA_SPARSE": {
+      "status": "not_cuda",
+      "reason": "a ROCm backend; the ROCm platform selects it (vllm/platforms/rocm.py)"
+    },
+    "ROCM_AITER_TRITON_MLA": {
+      "status": "not_cuda",
+      "reason": "a ROCm backend; the ROCm platform selects it (vllm/platforms/rocm.py)"
+    },
+    "ROCM_AITER_UNIFIED_ATTN": {
+      "status": "not_cuda",
+      "reason": "a ROCm backend; the ROCm platform selects it (vllm/platforms/rocm.py)"
+    },
+    "ROCM_ATTN": {
+      "status": "not_cuda",
+      "reason": "a ROCm backend; the ROCm platform selects it (vllm/platforms/rocm.py)"
+    },
+    "ROCM_FLASHMLA_SPARSE_DSV4": {
+      "status": "not_cuda",
+      "reason": "a ROCm backend; the ROCm platform selects it (vllm/platforms/rocm.py)"
+    },
+    "ROCM_SEGMENTED_ATTN": {
+      "status": "not_cuda",
+      "reason": "a ROCm backend; the ROCm platform selects it (vllm/platforms/rocm.py)"
+    },
+    "TOKENSPEED_MLA": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "TORCH_SDPA": {
+      "status": "not_lowered",
+      "reason": "names no class: the tag selects PyTorch SDPA for a vision encoder only (registry.py), which the engine does not lower"
+    },
+    "TRITON_ATTN": {
+      "status": "listed",
+      "not_kernels": {
+        "triton_reshape_and_cache_flash": "writes the KV cache; not an attention primitive",
+        "triton_reshape_and_cache_flash_per_token_head_quant": "writes the KV cache; not an attention primitive"
+      }
+    },
+    "TRITON_ATTN_DIFFKV": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "TRITON_FLASHINFER": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "TRITON_FLASH_ATTN": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "TRITON_MLA": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "TRITON_MSA": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "TURBOQUANT": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "ULTRAQUANT": {
+      "status": "gap",
+      "issue": "inference-sim/blis-vllm#151"
+    },
+    "XPU_MLA_SPARSE": {
+      "status": "not_cuda",
+      "reason": "an XPU backend; the XPU platform selects it (vllm/platforms/xpu.py)"
+    }
+  },
+  "kernels": [
+    {
+      "backend": "FLASHINFER",
+      "library": "flashinfer",
+      "variant": "trtllm_batch_context_with_kv_cache",
+      "call": "trtllm_batch_context_with_kv_cache",
+      "primitives": [
+        "attention.prefill"
+      ],
+      "archs": [
+        "sm_100a",
+        "sm_103a"
+      ],
+      "gates": [
+        "vllm/utils/flashinfer.py:supports_trtllm_attention"
+      ],
+      "hash": {
+        "artifact": "TRTLLM_GEN_FMHA"
+      },
+      "note": "trtllm-gen prefill: SM100 family only (supports_trtllm_attention); the cubins ship precompiled"
+    },
+    {
+      "backend": "FLASHINFER",
+      "library": "flashinfer",
+      "variant": "trtllm_batch_decode_with_kv_cache",
+      "call": "trtllm_batch_decode_with_kv_cache",
+      "primitives": [
+        "attention.decode"
+      ],
+      "archs": [
+        "sm_100a",
+        "sm_103a"
+      ],
+      "gates": [
+        "vllm/utils/flashinfer.py:supports_trtllm_attention"
+      ],
+      "hash": {
+        "artifact": "TRTLLM_GEN_FMHA"
+      },
+      "note": "trtllm-gen decode on the SM100 family"
+    },
+    {
+      "backend": "FLASHINFER",
+      "library": "flashinfer",
+      "variant": "xqa_batch_decode_with_kv_cache",
+      "call": "flashinfer_xqa_batch_decode_with_kv_cache",
+      "primitives": [
+        "attention.decode"
+      ],
+      "archs": [
+        "sm_90a"
+      ],
+      "gates": [
+        "vllm/utils/flashinfer.py:supports_trtllm_attention"
+      ],
+      "hash": {
+        "source": [
+          "csrc/xqa"
+        ]
+      },
+      "note": "XQA decode: SM90 and SM12x (supports_trtllm_attention); built just in time from csrc/xqa"
+    },
+    {
+      "backend": "FLASHINFER",
+      "library": "flashinfer",
+      "variant": "BatchPrefillWithPagedKVCacheWrapper",
+      "call": "BatchPrefillWithPagedKVCacheWrapper",
+      "primitives": [
+        "attention.prefill"
+      ],
+      "archs": [
+        "sm_100a",
+        "sm_103a",
+        "sm_90a"
+      ],
+      "hash": {
+        "source": [
+          "3rdparty/cutlass",
+          "csrc",
+          "flashinfer/jit",
+          "include"
+        ]
+      },
+      "note": "the native paged prefill, built just in time; FlashInfer picks its FA2 or FA3 template inside the build"
+    },
+    {
+      "backend": "FLASHINFER",
+      "library": "flashinfer",
+      "variant": "BatchPrefillWithRaggedKVCacheWrapper",
+      "call": "BatchPrefillWithRaggedKVCacheWrapper",
+      "primitives": [
+        "attention.prefill"
+      ],
+      "archs": [
+        "sm_100a",
+        "sm_103a",
+        "sm_90a"
+      ],
+      "hash": {
+        "source": [
+          "3rdparty/cutlass",
+          "csrc",
+          "flashinfer/jit",
+          "include"
+        ]
+      },
+      "note": "the native ragged prefill of new tokens, built just in time"
+    },
+    {
+      "backend": "FLASHINFER",
+      "library": "flashinfer",
+      "variant": "BatchDecodeWithPagedKVCacheWrapper",
+      "call": "BatchDecodeWithPagedKVCacheWrapper",
+      "primitives": [
+        "attention.decode"
+      ],
+      "archs": [
+        "sm_100a",
+        "sm_103a",
+        "sm_90a"
+      ],
+      "hash": {
+        "source": [
+          "3rdparty/cutlass",
+          "csrc",
+          "flashinfer/jit",
+          "include"
+        ]
+      },
+      "note": "the native paged decode, built just in time"
+    },
+    {
+      "backend": "FLASH_ATTN",
+      "library": "vllm-flash-attn",
+      "variant": "_vllm_fa3_C.fwd",
+      "call": "flash_attn_varlen_func",
+      "primitives": [
+        "attention.decode",
+        "attention.prefill"
+      ],
+      "archs": [
+        "sm_90a"
+      ],
+      "gates": [
+        "vllm/v1/attention/backends/fa_utils.py:get_flash_attn_version"
+      ],
+      "hash": {
+        "source": [
+          "csrc/cutlass",
+          "hopper"
+        ]
+      },
+      "note": "FA3, the default on SM90 (get_flash_attn_version)"
+    },
+    {
+      "backend": "FLASH_ATTN",
+      "library": "vllm-flash-attn",
+      "variant": "_vllm_fa2_C.varlen_fwd",
+      "call": "flash_attn_varlen_func",
+      "primitives": [
+        "attention.decode",
+        "attention.prefill"
+      ],
+      "archs": [
+        "sm_100a",
+        "sm_103a",
+        "sm_90a"
+      ],
+      "gates": [
+        "vllm/v1/attention/backends/fa_utils.py:get_flash_attn_version"
+      ],
+      "hash": {
+        "source": [
+          "csrc/cutlass",
+          "csrc/flash_attn"
+        ]
+      },
+      "note": "FA2, the fallback on every architecture (get_flash_attn_version)"
+    },
+    {
+      "backend": "FLASH_ATTN",
+      "library": "vllm-flash-attn",
+      "variant": "cute.flash_attn_varlen_func",
+      "call": "flash_attn_varlen_func",
+      "primitives": [
+        "attention.decode",
+        "attention.prefill"
+      ],
+      "archs": [
+        "sm_100a",
+        "sm_103a",
+        "sm_90a"
+      ],
+      "gates": [
+        "vllm/v1/attention/backends/fa_utils.py:get_flash_attn_version"
+      ],
+      "hash": {
+        "source": [
+          "flash_attn/cute"
+        ]
+      },
+      "note": "FA4 (CuTe DSL), the default on SM10x, and on SM90 for the cases FA3 does not support when FA4 is available (get_flash_attn_version); compiled just in time"
+    },
+    {
+      "backend": "TRITON_ATTN",
+      "library": "vllm-csrc",
+      "variant": "unified_attention",
+      "call": "unified_attention",
+      "primitives": [
+        "attention.decode",
+        "attention.prefill"
+      ],
+      "archs": [
+        "sm_100a",
+        "sm_103a",
+        "sm_90a"
+      ],
+      "hash": {
+        "source": [
+          "vllm/v1/attention/ops/triton_unified_attention.py"
+        ]
+      },
+      "note": "vLLM's Triton kernel for a mixed batch, compiled just in time"
+    },
+    {
+      "backend": "TRITON_ATTN",
+      "library": "vllm-csrc",
+      "variant": "context_attention_fwd",
+      "call": "context_attention_fwd",
+      "primitives": [
+        "attention.prefill"
+      ],
+      "archs": [
+        "sm_100a",
+        "sm_103a",
+        "sm_90a"
+      ],
+      "hash": {
+        "source": [
+          "vllm/v1/attention/ops/triton_prefill_attention.py"
+        ]
+      },
+      "note": "vLLM's Triton prefill kernel for the cases unified_attention does not serve"
+    }
+  ]
+}

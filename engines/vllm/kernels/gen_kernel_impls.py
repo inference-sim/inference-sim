@@ -8,7 +8,7 @@ VAL-8). Its type, validator and hash rule are blis-substrate's contracts/spec/ke
 test (kernel_impls_test.go) loads the committed file with that loader, which recomputes every
 hash, so this script and the rule cannot drift apart.
 
-WHAT COMES FROM vLLM, AND WHAT FROM kernels/attention.json.
+WHAT COMES FROM vLLM, AND WHAT FROM kernels/<tag>/attention.json.
   From vLLM v0.32.0's own source, read with the ast module (vLLM is not imported):
     - the attention backends, every member of AttentionBackendEnum
       (vllm/v1/attention/backends/registry.py), and the module of each;
@@ -25,7 +25,7 @@ WHAT COMES FROM vLLM, AND WHAT FROM kernels/attention.json.
     - the git object id of every source path a kernel's hash covers;
     - the SHA-256 the library records for a precompiled kernel package (FlashInfer's
       flashinfer/artifacts.py, CheckSumHash), for a kernel that ships only as a binary.
-  From kernels/attention.json, which people edit: the status of each backend, and for each kernel
+  From kernels/<tag>/attention.json, which people edit: the status of each backend, and for each kernel
   of a listed backend its library, variant, primitives, architectures, gate and hash inputs.
 
 The script refuses to write a table when the classification and the source disagree: an
@@ -36,8 +36,14 @@ module no longer imports; a kernel never called in its backend's module; a gate 
 not exist; a checkout at another commit or version than the pin. So the table is complete for the
 backends it lists by construction, and a backend it does not list is a gap with an issue.
 
-Usage:
-    python3 -I kernels/gen_kernel_impls.py <vllm-source> kernels/attention.json \\
+ONE CLASSIFICATION PER RELEASE. kernels/<tag>/attention.json classifies the vLLM release <tag>
+(v0.32.0, v0.33.0); --upstream names the tag, and the generator refuses a classification of another
+tag or a source tree at another commit. A new release gets its own classification: copy the
+nearest one, set its tag and commit, and run the generator against the new source, which names
+every backend and import that has to be classified.
+
+Usage (kernels/regen.py does all of it, fetching the sources, in one command):
+    python3 -I kernels/gen_kernel_impls.py <vllm-source> --upstream v0.33.0 \\
         --source flashinfer=<dir> --source vllm-flash-attn=<dir> > kernel_impls.json
     python3 -I kernels/gen_kernel_impls.py ... --check kernel_impls.json
 """
@@ -234,23 +240,44 @@ def artifact_checksum(root, rel, artifact):
 # ---------------------------------------------------------------------------------------------
 
 
+def classification_path(tag):
+    """The classification of the vLLM release tag: kernels/<tag>/attention.json."""
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), tag, "attention.json")
+
+
+def library_pins(vllm, cls):
+    """Each library's pinned version, where vLLM states it, and the git ref of its source at that
+    pin: {name: (version, pin, repo, ref)}. A pip library's ref is its release tag, the
+    classification's tag_format applied to the version; a library vLLM's build fetches is fetched
+    at the commit its GIT_TAG names; the engine's own kernels are vLLM itself (repo None)."""
+    commit = git(vllm, "rev-parse", "HEAD")
+    out = {}
+    for name, lib in sorted(cls["libraries"].items()):
+        if "pip" in lib:
+            version, pin = pip_pin(vllm, lib["requirements"], lib["pip"], commit)
+            ref = lib.get("tag_format", "v{version}").format(version=version)
+        elif "cmake" in lib:
+            version, pin = cmake_pin(vllm, lib["cmake"], commit)
+            ref = version
+        elif lib.get("engine"):
+            version, pin, ref = commit, "the engine release itself", None
+        else:
+            raise Refused(f"library {name}: no pip, cmake or engine pin")
+        out[name] = (version, pin, None if lib.get("engine") else lib["repo"], ref)
+    return out
+
+
 def generate(vllm, cls, sources):
     up = cls["upstream"]
     commit = git(vllm, "rev-parse", "HEAD")
     if commit != up["commit"]:
-        raise Refused(f"{vllm} is at {commit}; the classification is for vLLM {up['version']} at {up['commit']}")
+        raise Refused(f"{vllm} is at {commit}; the classification is for vLLM {up['tag']} at {up['commit']}")
 
     archs = cls["archs"]
     libs = {}
+    pins = library_pins(vllm, cls)
     for name, lib in sorted(cls["libraries"].items()):
-        if "pip" in lib:
-            version, pin = pip_pin(vllm, lib["requirements"], lib["pip"], commit)
-        elif "cmake" in lib:
-            version, pin = cmake_pin(vllm, lib["cmake"], commit)
-        elif lib.get("engine"):
-            version, pin = commit, "the engine release itself"
-        else:
-            raise Refused(f"library {name}: no pip, cmake or engine pin")
+        version, pin = pins[name][0], pins[name][1]
         root = vllm if lib.get("engine") else sources.get(name)
         if root is None:
             raise Refused(f"library {name}: no checkout given (--source {name}=<dir>)")
@@ -357,7 +384,7 @@ def generate(vllm, cls, sources):
                   key=lambda g: (g["primitive"], g["selection"]))
     return {
         "kind": "KernelImplTable",
-        "engine": {"kind": "vllm", "version": up["version"], "commit": commit},
+        "engine": {"kind": "vllm", "version": up["tag"].removeprefix("v"), "commit": commit},
         "primitives": sorted(PRIMITIVES),
         "archs": sorted(archs),
         "gaps": gaps,
@@ -381,10 +408,27 @@ def render(table):
     return json.dumps(table, indent=2, ensure_ascii=False) + "\n"
 
 
+def load_classification(tag, path=None):
+    """The classification for the vLLM release tag (kernels/<tag>/attention.json unless path is
+    given). It must name the same tag: a table is generated for one release."""
+    path = path or classification_path(tag)
+    if not os.path.exists(path):
+        raise Refused(f"no classification for vLLM {tag}: {path} does not exist; copy the nearest release's and "
+                      f"run the generator against {tag}'s source, which names every backend and import to classify")
+    with open(path, encoding="utf-8") as f:
+        cls = json.load(f)
+    if cls["upstream"].get("tag") != tag:
+        raise Refused(f"{path} classifies vLLM {cls['upstream'].get('tag')}, not {tag}")
+    return cls
+
+
 def main(argv):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("vllm_source")
-    ap.add_argument("classification")
+    ap.add_argument("--upstream", required=True, metavar="TAG",
+                    help="the vLLM release tag the source is checked out at, such as v0.33.0")
+    ap.add_argument("--classification", metavar="FILE",
+                    help="the classification to use instead of kernels/<TAG>/attention.json")
     ap.add_argument("--source", action="append", default=[], metavar="LIBRARY=DIR",
                     help="a library's source checkout at vLLM's pin")
     ap.add_argument("--check", metavar="FILE", help="compare with FILE instead of writing")
@@ -395,9 +439,8 @@ def main(argv):
         if not d:
             ap.error(f"--source {s}: want LIBRARY=DIR")
         sources[name] = d
-    with open(args.classification, encoding="utf-8") as f:
-        cls = json.load(f)
     try:
+        cls = load_classification(args.upstream, args.classification)
         out = render(generate(args.vllm_source, cls, sources))
     except Refused as e:
         print(f"gen_kernel_impls: {e}", file=sys.stderr)
