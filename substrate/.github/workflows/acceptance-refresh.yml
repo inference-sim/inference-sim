@@ -1,0 +1,125 @@
+name: acceptance refresh
+
+# Keeps the acceptance profiles current with InferenceX (design §12.2, D8). Each day it reads
+# InferenceX's latest commit, vendors that commit's golden acceptance curves, moves the pin
+# (scripts/refresh_inferencex_curves.py) and regenerates acceptance/inferencex-golden-al.yaml.
+# When the output changes it opens a draft pull request; CI on that pull request runs the
+# emitter's --check, which stays the drift gate. A new curve whose model and drafter resolve
+# in the catalog arrives in that pull request with no script edit; one that does not is named,
+# with its reason, in the set's caveats.
+#
+# Token: a pull request opened with the default GITHUB_TOKEN starts no workflows, so after
+# opening it this job dispatches ci.yml on its branch. An optional PIN_BOT_TOKEN secret
+# (contents and pull-requests write) opens it as that user instead, and CI then runs on its own.
+
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: acceptance-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    env:
+      GH_TOKEN: ${{ secrets.PIN_BOT_TOKEN || secrets.GITHUB_TOKEN }}
+      HAS_BOT_TOKEN: ${{ secrets.PIN_BOT_TOKEN != '' }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ secrets.PIN_BOT_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Check out InferenceX at its latest commit (the golden curves only)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: SemiAnalysisAI/InferenceX
+          path: inferencex
+          fetch-depth: 1
+          sparse-checkout: |
+            inferencex-e2e/infx/golden_al_distribution
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+
+      - name: Install the emitter's dependencies
+        run: pip install --require-hashes -r registry/scripts/requirements.txt
+
+      - name: Vendor the curves and move the pin
+        id: refresh
+        run: |
+          set -euo pipefail
+          sha="$(git -C inferencex rev-parse HEAD)"
+          date="$(git -C inferencex log -1 --format=%cs)"
+          rm -rf inferencex/.git
+          out="$(python3 -I registry/scripts/refresh_inferencex_curves.py \
+            "$PWD/inferencex/inferencex-e2e/infx/golden_al_distribution" "$sha" "$date")"
+          echo "$out"
+          rm -rf inferencex
+          if [ "$out" = "unchanged" ] || git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          { echo "changed=true"; echo "sha=$sha"; echo "branch=bump/inferencex-curves-${sha:0:12}"; } >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/go-toolchain
+        if: steps.refresh.outputs.changed == 'true'
+
+      # The pull request's own CI runs every check; these are the ones that say whether the
+      # regenerated set loads, so a set that does not is reported here rather than opened.
+      - name: Check the regenerated set
+        if: steps.refresh.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          python3 -I registry/scripts/emit_acceptance_profiles.py --check
+          (cd registry && python3 -m pytest -q validator/test_acceptance_profiles.py)
+          go run ./validate/cmd/validate-registry registry
+
+      - name: Open the pull request
+        if: steps.refresh.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          sha="${{ steps.refresh.outputs.sha }}"; branch="${{ steps.refresh.outputs.branch }}"
+          if [ -n "$(gh pr list --head "$branch" --state all --json number --jq '.[].number')" ]; then
+            echo "$branch already has a pull request"
+            exit 0
+          fi
+          git config user.name "blis-substrate-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add -A registry .github/workflows/rederive.yml
+          git commit -m "Move the vendored InferenceX golden curves to ${sha:0:12}
+
+          Opened by acceptance-refresh.yml: refresh_inferencex_curves.py vendored the curves
+          of InferenceX $sha and regenerated acceptance/inferencex-golden-al.yaml."
+          git push origin "$branch"
+          {
+            echo "Moves the vendored InferenceX golden acceptance curves to \`$sha\` and regenerates \`registry/acceptance/inferencex-golden-al.yaml\`."
+            echo
+            echo "Every curve whose model and drafter resolve in the catalog is carried; the set's caveats name each one that is not, with the reason. Review the diff of the caveats for a curve that should be carried, which usually means a catalog entry to add."
+            echo
+            echo "\`\`\`"
+            git diff --stat HEAD~1
+            echo "\`\`\`"
+            echo
+            echo "🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+          } > "$RUNNER_TEMP/body.md"
+          gh pr create --draft --base main --head "$branch" \
+            --title "Move the vendored InferenceX golden curves to ${sha:0:12}" \
+            --body-file "$RUNNER_TEMP/body.md"
+          if [ "$HAS_BOT_TOKEN" != true ]; then
+            gh workflow run ci.yml --ref "$branch"
+          fi

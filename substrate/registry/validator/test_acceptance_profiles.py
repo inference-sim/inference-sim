@@ -3,12 +3,15 @@
 `emit_acceptance_profiles.py --check` is the drift gate, as `--check` is for the coefficient
 writers. Its inputs are in the repository (validator/testdata/inferencex and the catalog),
 so unlike those writers' gates it runs in every CI job rather than only in `rederive`.
-The other tests re-read the vendored curves by a second path and check the refusals: a
-model the catalog does not hold is left out and named, never mapped to a near name.
+The other tests re-read the vendored curves by a second path, and check what the emitter
+does with a curve it has never seen: one whose model and drafter resolve is carried with
+its drafter, and one that does not resolve is left out and named, never mapped to a near
+name.
 """
 
 from __future__ import annotations
 
+import hashlib
 import re
 import shutil
 import subprocess
@@ -27,6 +30,39 @@ SET = yaml.safe_load((REPO / "acceptance" / "inferencex-golden-al.yaml").read_te
 sys.path.insert(0, str(REPO / "scripts"))
 import emit_acceptance_profiles as emit  # noqa: E402
 
+GLM52 = "glm-5.2-fp8__mtp__native__default-default"
+EAGLE = "minimax-m3__eagle3__minimax-m3-eagle3__default-default"
+GQA = "minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-default"
+GQA_BLOCK = "minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-block"
+MUSE = "muse-spark-open-816b-a42b-nvfp4__dflash__muse-spark-open-dflash2__default-default"
+
+
+def stem_of(p: dict) -> str:
+    return p["provenance"]["source"].rsplit("/", 1)[-1].removesuffix(".yaml")
+
+
+def generated(golden: Path) -> dict:
+    return yaml.safe_load(emit.generate(golden, CATALOG))
+
+
+def copy_golden(tmp_path: Path) -> Path:
+    golden = tmp_path / "golden"
+    shutil.copytree(GOLDEN, golden)
+    return golden
+
+
+def add_identity(golden: Path, stem: str, identity: dict) -> None:
+    ids = yaml.safe_load((golden / emit.IDENTITIES).read_text())
+    ids[stem] = identity
+    (golden / emit.IDENTITIES).write_text(yaml.safe_dump(ids, sort_keys=False))
+
+
+def remove_curve(golden: Path, stem: str) -> None:
+    (golden / f"{stem}.yaml").unlink()
+    ids = yaml.safe_load((golden / emit.IDENTITIES).read_text())
+    del ids[stem]
+    (golden / emit.IDENTITIES).write_text(yaml.safe_dump(ids, sort_keys=False))
+
 
 def test_the_committed_set_is_what_the_emitter_generates():
     r = subprocess.run([sys.executable, str(SCRIPT), "--check"], capture_output=True,
@@ -37,82 +73,176 @@ def test_the_committed_set_is_what_the_emitter_generates():
         f"renders from the vendored curves; re-run it.\n{r.stderr}")
 
 
-def test_the_vendored_curves_are_the_commit_the_emitter_cites():
+def test_every_profile_cites_the_vendored_file_by_commit_and_hash():
     vendored = (GOLDEN.parent / "VENDORED.md").read_text()
     assert emit.INFERENCEX_SHA in vendored
     for p in SET["profiles"]:
         assert emit.INFERENCEX_SHA in p["provenance"]["source"]
+        body = (GOLDEN / f"{stem_of(p)}.yaml").read_bytes()
+        assert p["provenance"]["sha256"] == hashlib.sha256(body).hexdigest(), stem_of(p)
 
 
 def test_every_profile_is_the_value_its_source_file_states():
     """A second path: read each cited file directly and compare cell by cell."""
     for p in SET["profiles"]:
-        stem = p["provenance"]["source"].rsplit("/", 1)[-1].removesuffix(".yaml")
-        [(_, modes)] = yaml.safe_load((GOLDEN / f"{stem}.yaml").read_text()).items()
+        doc = yaml.safe_load((GOLDEN / f"{stem_of(p)}.yaml").read_text())
+        [modes] = [v for k, v in doc.items() if k not in ("source_run", "collection")]
         stated = modes[f"thinking_{p['thinking']}"][p["num_spec_tokens"]]
-        assert p["acceptance_length"] == stated, (stem, p["thinking"], p["num_spec_tokens"])
+        assert p["acceptance_length"] == stated, (stem_of(p), p["thinking"], p["num_spec_tokens"])
 
 
 def test_every_cell_of_a_carried_curve_is_carried():
-    carried = {p["provenance"]["source"].rsplit("/", 1)[-1] for p in SET["profiles"]}
-    got = {(p["provenance"]["source"].rsplit("/", 1)[-1], p["thinking"], p["num_spec_tokens"])
-           for p in SET["profiles"]}
-    for name in carried:
-        [(_, modes)] = yaml.safe_load((GOLDEN / name).read_text()).items()
+    got = {(stem_of(p), p["thinking"], p["num_spec_tokens"]) for p in SET["profiles"]}
+    for stem in {s for s, _, _ in got}:
+        doc = yaml.safe_load((GOLDEN / f"{stem}.yaml").read_text())
+        [modes] = [v for k, v in doc.items() if k not in ("source_run", "collection")]
         for mode, cells in modes.items():
             for k in cells:
-                assert (name, mode.removeprefix("thinking_"), k) in got
+                assert (stem, mode.removeprefix("thinking_"), k) in got
 
 
-def test_every_model_is_a_catalog_model_and_every_curve_left_out_is_named():
+def test_every_curve_left_out_is_named_with_its_reason():
     catalog = {p.parent.name for p in (CATALOG / "models").glob("*/model.yaml")}
     assert {p["model"] for p in SET["profiles"]} <= catalog
-    carried = {p["provenance"]["source"].rsplit("/", 1)[-1] for p in SET["profiles"]}
-    for f in sorted(GOLDEN.glob("*.yaml")):
-        if f.name not in carried:
-            assert any(c.startswith(f"Not carried: {f.name} ") for c in SET["caveats"]), f.name
+    assert {p["drafter"] for p in SET["profiles"] if "drafter" in p} <= catalog
+    carried = {stem_of(p) for p in SET["profiles"]}
+    for f in sorted(GOLDEN.glob("*__*.yaml")):
+        if f.stem not in carried:
+            assert any(c.startswith(f"Not carried: {f.name} (") and ", because " in c
+                       for c in SET["caveats"]), f.name
 
 
-def test_a_copied_profile_carries_the_value_it_names():
-    by_key = {emit.key_string(p["model"], p["speculative_method"], p["num_spec_tokens"],
-                              p["thinking"], p["category"]): p for p in SET["profiles"]}
-    copied = [p for p in SET["profiles"] if p["method"] == "transferred"]
-    assert copied
-    for p in copied:
-        assert by_key[p["transferred_from"]]["method"] == "measured"
-        assert by_key[p["transferred_from"]]["acceptance_length"] == p["acceptance_length"]
+def test_a_new_curve_whose_model_resolves_is_carried_with_no_script_edit(tmp_path):
+    """InferenceX adds a curve file and its identity; the emitter carries it as it is."""
+    golden = copy_golden(tmp_path)
+    new = "glm-5.2__mtp__native__default-default"
+    text = (golden / f"{GLM52}.yaml").read_text().replace("glm-5.2-fp8", "glm-5.2")
+    (golden / f"{new}.yaml").write_text(text)
+    ids = yaml.safe_load((golden / emit.IDENTITIES).read_text())
+    add_identity(golden, new, ids[GLM52])
+    out = generated(golden)
+    ours = [p for p in out["profiles"] if stem_of(p) == new]
+    assert ours and {p["model"] for p in ours} == {"glm-5.2"}
+    assert all(p["method"] == "measured" and "drafter" not in p for p in ours)
 
 
-def test_a_model_key_resolves_by_repository_basename_or_is_refused():
-    models = emit.catalog_models(CATALOG)
-    assert emit.catalog_name("glm-5.2-fp8", models) == ("glm-5.2-fp8", None)
-    assert emit.catalog_name("deepseek-v4.1-flash", models) == ("deepseek-v4.1-flash", None)
-    with pytest.raises(emit.Refused):
-        # The catalog holds Qwen/Qwen3.5-397B-A17B, not the NVFP4 checkpoint InferenceX ran.
-        emit.catalog_name("qwen3.5-397b-a17b-nvfp4", models)
+def test_a_curve_measured_with_a_separate_drafter_names_it():
+    eagle = [p for p in SET["profiles"] if stem_of(p) == EAGLE]
+    assert eagle and {p["drafter"] for p in eagle} == {"minimax-m3-eagle3"}
+    assert {p["provenance"]["settings"]["draft_model"] for p in eagle} == {
+        "Inferact/MiniMax-M3-EAGLE3"}
 
 
-def test_an_alias_whose_catalog_evidence_moved_is_an_error():
-    models = dict(emit.catalog_models(CATALOG), **{"glm-5.3": "zai-org/GLM-5.3-Other"})
-    with pytest.raises(SystemExit, match="alias glm-5.3-fp8"):
-        emit.catalog_name("glm-5.3-fp8", models)
+def test_two_drafters_of_one_target_are_two_profiles(tmp_path):
+    """The base and GQA EAGLE3 curves share every key field but the drafter. With the drafter
+    in the key, both are carried; neither stands for the other."""
+    golden = copy_golden(tmp_path)
+    remove_curve(golden, GQA_BLOCK)
+    out = generated(golden)
+    by = {}
+    for p in out["profiles"]:
+        if p["model"] == "minimax-m3" and p["thinking"] == "on" and p["num_spec_tokens"] == 3:
+            by[p["drafter"]] = p["acceptance_length"]
+    stated = {d: yaml.safe_load((golden / f"{s}.yaml").read_text())["minimax-m3"]["thinking_on"][3]
+              for d, s in (("minimax-m3-eagle3", EAGLE), ("minimax-m3-eagle3-gqa", GQA))}
+    assert stated["minimax-m3-eagle3"] != stated["minimax-m3-eagle3-gqa"]
+    assert by == stated
 
 
-def test_an_unclassified_curve_fails_rather_than_being_skipped(tmp_path):
-    golden = tmp_path / "golden"
-    shutil.copytree(GOLDEN, golden)
-    shutil.copy(golden / "glm5.2_mtp.yaml", golden / "glm5.4_mtp.yaml")
-    with pytest.raises(SystemExit, match="unclassified golden curves"):
+def test_curves_that_claim_one_key_are_both_refused():
+    """The two GQA curves differ only in the verifier, which a key cannot state (D8)."""
+    carried = {stem_of(p) for p in SET["profiles"]}
+    assert GQA not in carried and GQA_BLOCK not in carried
+    caveat = next(c for c in SET["caveats"] if c.startswith(f"Not carried: {GQA}.yaml"))
+    assert f"{GQA_BLOCK}.yaml" in caveat
+
+
+def test_a_drafter_the_catalog_lacks_is_refused_and_named():
+    carried = {stem_of(p) for p in SET["profiles"]}
+    assert MUSE not in carried
+    caveat = next(c for c in SET["caveats"] if c.startswith(f"Not carried: {MUSE}.yaml"))
+    assert "RadixArk/Muse-Spark-Open-DFlash2 is not in the catalog" in caveat
+
+
+def test_a_drafter_measured_at_another_revision_is_refused(tmp_path):
+    golden = copy_golden(tmp_path)
+    stem = "kimi-k3.1-pro__dspark__kimi-k3.1-pro-dspark-preview__probabilistic-block"
+    f = golden / f"{stem}.yaml"
+    assert "@ 6a2ef20a" in f.read_text()
+    f.write_text(f.read_text().replace("@ 6a2ef20a", "@ 0123abcd"))
+    out = generated(golden)
+    assert stem not in {stem_of(p) for p in out["profiles"]}
+    assert any(c.startswith(f"Not carried: {stem}.yaml") and "0123abcd" in c
+               for c in out["caveats"])
+
+
+def test_an_explicit_skip_needs_a_reason(monkeypatch):
+    monkeypatch.setattr(emit, "SKIP", {GLM52: " "})
+    with pytest.raises(SystemExit, match="states a reason"):
+        emit.collect(GOLDEN, CATALOG)
+
+
+def test_an_explicit_skip_is_left_out_with_its_reason(monkeypatch):
+    monkeypatch.setattr(emit, "SKIP", {GLM52: "a test reason"})
+    carried, skipped, _, _ = emit.collect(GOLDEN, CATALOG)
+    assert GLM52 not in {c.curve.stem for c in carried}
+    assert (GLM52, "glm-5.2-fp8", "a test reason") in skipped
+
+
+def test_a_provisional_curve_is_refused(tmp_path):
+    golden = copy_golden(tmp_path)
+    ids = yaml.safe_load((golden / emit.IDENTITIES).read_text())
+    ids[GLM52]["collection"]["provisional"] = True
+    (golden / emit.IDENTITIES).write_text(yaml.safe_dump(ids, sort_keys=False))
+    out = generated(golden)
+    assert GLM52 not in {stem_of(p) for p in out["profiles"]}
+
+
+def test_a_curve_file_with_no_identity_fails(tmp_path):
+    golden = copy_golden(tmp_path)
+    shutil.copy(golden / f"{GLM52}.yaml", golden / "glm-5.4__mtp__native__default-default.yaml")
+    with pytest.raises(SystemExit, match="identities.yaml states no identity"):
         emit.collect(golden, CATALOG)
 
 
-def test_an_untranscribed_header_setting_fails_rather_than_being_dropped(tmp_path):
-    golden = tmp_path / "golden"
-    shutil.copytree(GOLDEN, golden)
-    f = golden / "glm5.2_mtp.yaml"
-    f.write_text(f.read_text().replace("| output_len: 4096", "| output_len: 4096 | min_p: 0.1", 1))
+def test_an_untranscribed_identity_fact_fails_rather_than_being_dropped(tmp_path):
+    golden = copy_golden(tmp_path)
+    ids = yaml.safe_load((golden / emit.IDENTITIES).read_text())
+    ids[GLM52]["collection"]["tree_width"] = {"value": 4, "source": "explicit"}
+    (golden / emit.IDENTITIES).write_text(yaml.safe_dump(ids, sort_keys=False))
+    with pytest.raises(SystemExit, match="tree_width"):
+        emit.collect(golden, CATALOG)
+
+
+def test_an_untranscribed_sampling_parameter_fails_rather_than_being_dropped(tmp_path):
+    golden = copy_golden(tmp_path)
+    f = golden / f"{GLM52}.yaml"
+    assert "top_p: 0.95, repetition_penalty" in f.read_text()
+    f.write_text(f.read_text().replace("top_p: 0.95, repetition_penalty",
+                                       "top_p: 0.95, min_p: 0.1, repetition_penalty"))
     with pytest.raises(SystemExit, match="min_p"):
         emit.collect(golden, CATALOG)
+
+
+def test_identity_facts_and_per_mode_sampling_are_transcribed():
+    p = next(p for p in SET["profiles"] if stem_of(p).startswith("deepseek-v4.1-flash__")
+             and p["thinking"] == "off")
+    s = p["provenance"]["settings"]
+    assert (s["draft_sample"], s["verify"], s["adaptive"]) == ("probabilistic", "block", "false")
+    assert s["chat_template_kwargs"] == '{"thinking": false}'
+    assert p["provenance"]["sampling"]["temperature"] == 1.0
+
+
+def test_a_transferred_profile_cites_its_measured_source():
+    moved = [p for p in SET["profiles"] if p["method"] == "transferred"]
+    assert moved
+    for p in moved:
+        assert p["transfer_rule"] and p["rationale"]
+        assert p["transferred_from"].split("/", 1)[1] == p_key_tail(p)
+
+
+def p_key_tail(p: dict) -> str:
+    return f"{p['speculative_method']}/k{p['num_spec_tokens']}/thinking-{p['thinking']}/{p['category']}"
 
 
 def test_k_values_the_image_rejected_have_no_profile():
@@ -122,65 +252,27 @@ def test_k_values_the_image_rejected_have_no_profile():
     assert ks and not ks & set(range(int(lo), int(hi) + 1))
 
 
-def _mutated(tmp_path, stem, old, new):
-    golden = tmp_path / "golden"
-    shutil.copytree(GOLDEN, golden)
-    f = golden / f"{stem}.yaml"
-    assert old in f.read_text()
-    f.write_text(f.read_text().replace(old, new, 1))
-    return golden
+def test_a_model_key_resolves_by_repository_basename_or_is_refused():
+    targets = emit.load_catalog(CATALOG).targets()
+    assert emit.catalog_name("glm-5.2-fp8", targets) == "glm-5.2-fp8"
+    assert emit.catalog_name("kimi-k3.1-pro", targets) == "kimi-k3.1"
+    with pytest.raises(emit.Refused):
+        # The catalog holds Qwen/Qwen3.5-397B-A17B, not the NVFP4 checkpoint InferenceX ran.
+        emit.catalog_name("qwen3.5-397b-a17b-nvfp4", targets)
 
 
-@pytest.mark.parametrize("piece", ["min-p: 0.1", "min_p=0.1", "top_p2: 0.9"])
-def test_a_header_value_of_any_spelling_fails_unless_transcribed(tmp_path, piece):
-    """Hyphens, digits and `=` in a key must not let a stated value slip past the parser."""
-    golden = _mutated(tmp_path, "glm5.2_mtp", "| output_len: 4096", f"| output_len: 4096 | {piece}")
-    with pytest.raises(SystemExit, match="not transcribed|does not transcribe"):
+def test_a_native_drafter_in_the_targets_own_repository_is_that_entry():
+    """MiniMax-M3.1-Flash ships its DSpark drafter under dspark/ in its own repository, which
+    InferenceX calls native and the catalog holds as minimax-m3.1-flash-dspark."""
+    cat = emit.load_catalog(CATALOG)
+    assert emit.catalog_drafter("minimax-m3.1-flash", "native", cat) == "minimax-m3.1-flash-dspark"
+    assert emit.catalog_drafter("deepseek-v4.1-flash", "native", cat) == ""
+
+
+def test_hardware_a_file_states_must_agree_with_its_run(tmp_path):
+    golden = copy_golden(tmp_path)
+    f = golden / f"{GLM52}.yaml"
+    assert "(B300, vLLM MTP)" in f.read_text()
+    f.write_text(f.read_text().replace("(B300, vLLM MTP)", "(H200, vLLM MTP)"))
+    with pytest.raises(SystemExit, match="ran on b300"):
         emit.collect(golden, CATALOG)
-
-
-def test_an_uncarried_curve_header_is_still_read_strictly(tmp_path):
-    golden = _mutated(tmp_path, "qwen3.8next_mtp", "| output_len: 4096",
-                      "| output_len: 4096 | min-p: 0.1")
-    with pytest.raises(SystemExit, match="min-p"):
-        emit.collect(golden, CATALOG)
-
-
-def test_speculative_config_pieces_are_transcribed():
-    h = emit.read_header(GOLDEN / "dsv4-pro-0813-dspark.yaml")
-    assert h.get("method") == "dspark"
-    assert h.get("draft_sample_method") == "probabilistic"
-
-
-def test_a_stated_method_must_be_the_curves_method(tmp_path):
-    golden = _mutated(tmp_path, "dsv41flash_dspark", "# method: dspark |", "# method: mtp |")
-    with pytest.raises(SystemExit, match="states method 'mtp'"):
-        emit.collect(golden, CATALOG)
-
-
-def test_a_header_with_no_method_field_is_checked_by_its_measured_on_line(tmp_path):
-    assert emit.read_header(GOLDEN / "glm5.2_mtp.yaml").get("method") is None
-    golden = _mutated(tmp_path, "glm5.2_mtp", "(B300, vLLM MTP)", "(B300, vLLM EAGLE3)")
-    with pytest.raises(SystemExit, match="measured with 'vLLM EAGLE3'"):
-        emit.collect(golden, CATALOG)
-
-
-def test_an_unreviewed_collector_fails_rather_than_its_precision_going_unstated(tmp_path):
-    golden = _mutated(tmp_path, "glm5.2_mtp", "glm52_fp4_b300_vllm.sh", "glm53_fp4_b300_vllm.sh")
-    with pytest.raises(SystemExit, match="not in COLLECTORS"):
-        emit.collect(golden, CATALOG)
-
-
-def test_a_drafter_in_its_targets_repository_is_not_a_model_key(tmp_path):
-    """MiniMax-M3.1-Flash ships its DSpark drafter under dspark/ in the same repository, so
-    two catalog entries share `source.repo`. A collector's model key names the served model,
-    never the drafter, so the key resolves to the target and not to an ambiguity."""
-    for name, extra in (("m31", ""), ("m31-dspark", "targets: [m31]\n")):
-        d = tmp_path / "models" / name
-        d.mkdir(parents=True)
-        (d / "model.yaml").write_text(
-            f"name: {name}\nsource:\n  provider: huggingface\n  repo: Org/Model-3.1\n"
-            f"  revision: r\n{extra}")
-    models = emit.catalog_models(tmp_path)
-    assert models == {"m31": "Org/Model-3.1"}
-    assert emit.catalog_name("model-3.1", models) == ("m31", None)

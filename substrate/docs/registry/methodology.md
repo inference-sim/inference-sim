@@ -1466,64 +1466,64 @@ yields. The generated tables and the set's caveats are on the
 ### 12.1 One source, transcribed
 
 Every value comes from SemiAnalysis InferenceX's
-`inferencex-e2e/infx/golden_al_distribution/*.yaml`, vendored under
-`validator/testdata/inferencex/` at the commit `scripts/emit_acceptance_profiles.py` cites.
-The emitter reads each acceptance length, and every provenance field a file's header
-states (the source Actions run, benchmark, category, sampling, image, TP and engine
-settings, including `speculative-config: a=b | c=d` lines), and types none of them. Every
-header is read, carried or not: a piece stating a value, as `key: value` or `key=value`
-with any spelling of key, that the emitter does not know how to transcribe fails the run,
-so a setting cannot be silently dropped. Only named prose lines are exempt. A header that
-states `method:` must state the curve's method; one that does not is checked against its
-"Measured on (..., vLLM <method>)" line. An acceptance length is `measured`; the
-one file InferenceX marks provisional is `transferred`, with `transferred_from` naming the measured
-profile it repeats and `transfer_rule` stating why that carries over, and the emitter checks that the two values agree.
+`inferencex-e2e/infx/golden_al_distribution/`: its curve files and `identities.yaml`, vendored
+under `validator/testdata/inferencex/` at the commit `scripts/emit_acceptance_profiles.py`
+cites. Each profile's provenance cites its curve file at that commit and the file's SHA-256.
+The emitter reads each acceptance length from the curve file, how the curve was collected
+(engine, drafter, draft sampler, verifier, adaptive verification, topology and KV-cache
+dtypes) from `identities.yaml`, and the sampling and chat-template arguments of each thinking
+mode from the file's `collection` block, or from its header where it has none. It types none
+of them. A collection fact or sampling parameter the emitter does not know how to transcribe
+fails the run, so a setting cannot be silently dropped. Every curve was collected with real
+verification, so each value is a natural acceptance length.
 
-### 12.2 Model names: resolved, or refused
+### 12.2 Carried by default: models and drafters resolved, or refused
 
-InferenceX keys a curve by the lower-cased basename of the Hugging Face repository it
-served (`MODEL_KEY` in its SPEED-Bench collectors). The emitter resolves that key to the
-catalog model whose `source.repo` has that basename, against the vendored copy of every
-catalog `model.yaml`. A key that resolves to none is not carried, and the set's caveats
-name it. A quantised checkpoint is a different catalog model, so InferenceX's
-`qwen3.5-397b-a17b-nvfp4` does not become the catalog's bf16 `qwen3.5-397b-a17b`.
+A new curve is carried with no script edit when its model and its drafter resolve in the
+catalog (design §12.2). InferenceX keys a curve by the lower-cased basename of the Hugging
+Face repository it served; the emitter resolves that key to the catalog model whose
+`source.repo` has that basename. A quantised checkpoint is a different catalog model, so
+InferenceX's `qwen3.5-397b-a17b-nvfp4` does not become the catalog's bf16
+`qwen3.5-397b-a17b`.
 
-One alias is allowed, with its evidence in the emitter: `glm-5.3-fp8`, the provisional
-curve's key, is InferenceX's name for `zai-org/GLM-5.3`, the catalog's `glm-5.3`. The
-emitter fails if the catalog stops recording that repository for it.
+A curve's drafter is `native` or a Hugging Face repository. A repository resolves to the
+catalog drafter entry with that `source.repo` that the model lists and that names the model
+as its target, and the profile records it as `drafter` (design D8). `native` is the model's
+in-graph speculator when its entry lists `speculator`, and otherwise the one drafter entry it
+lists that ships in its own repository (MiniMax-M3.1-Flash's DSpark drafter). A curve whose
+header names the drafter's revision is refused when the catalog's entry is another revision.
+A curve that does not resolve is not carried, and the set's caveats name it with the reason;
+the drafters InferenceX measures and the catalog lacks are listed there.
+
+The emitter's `SKIP` table may leave out a resolving curve, each with a stated reason; it is
+empty. Its `TRANSFERS` table moves a curve to a catalog model it was not measured on, as
+method `transferred`, with the rule and its evidence. It holds one: GLM-5.3's curve, which
+InferenceX measures only on the NVFP4 quantization of `zai-org/GLM-5.3`.
 
 ### 12.3 Curves a key cannot tell apart
 
-A profile is keyed by model, method, K, thinking mode and category; it cannot state the
-drafter or the draft sampler. Where InferenceX publishes two curves that differ only in
-those, at most one can be carried. The emitter follows InferenceX's own resolver
-(`curves.py`, `curve_name`): MiniMax-M3's base EAGLE3 curve is carried and the GQA-drafter
-variant is not, and neither Kimi-K3 DSpark curve is carried, because the resolver itself
-refuses to choose between greedy and probabilistic draft sampling. Every file is
-classified in the emitter's `CURVES` table, and an unclassified file fails the run.
+A profile is keyed by model, drafter, method, K, thinking mode and category; it cannot state
+the draft sampler or the verifier. Where InferenceX publishes two curves that differ only in
+those, the emitter carries neither, as D8 refuses two profiles that share a key under
+different settings rather than choose one. The three Kimi-K3 DSpark curves and the two
+MiniMax-M3 GQA-drafter curves are left out for that reason.
 
 ### 12.4 Hardware: stated, or read from the run
 
-A measured profile must name the part it was measured on. Most headers state it ("B300,
-vLLM MTP"). The DeepSeek-V4.1-Flash file states none, and its collecting job ran on
+A measured profile must name the part it was measured on. Most files state it in their
+"Measured on" line. The DeepSeek-V4.1-Flash file states none, and its collecting job ran on
 InferenceX's `b200-nscale` cluster, launched through the B200 benchmark base, so its
-profiles say `b200`. blis-registry#44 describes the curve as measured on B300; the run
-contradicts that, and the run is what is recorded. The emitter's `RUN_HARDWARE` table
-holds each run's runner, read through the GitHub API, and is checked against every header
-that also states a part. Files that name no engine image say so in `engine_image`: their
-runs' logs have expired, so the image cannot be recovered.
-
-The collectors are named `<prefix>_fp4_b300_vllm.sh` because `speedbench-al.yml` requires
-that name and labels every collection `PRECISION: fp4`; the fp4 is not what they serve.
-Each serves its checkpoint's own weights, and the DeepSeek-V4-Pro and GLM-5.2 collectors
-set `--kv-cache-dtype fp8`, which their profiles record as `kv_cache_dtype`. The
-emitter's `COLLECTORS` table holds what each collector serves, and a curve whose
-collector it has not read fails the run.
+profiles say `b200`. The emitter's `RUN_HARDWARE` table holds each run's runner, read through
+the GitHub API, and is checked against every file that also states a part. Files that name
+no engine image say so in `engine_image`.
 
 ### 12.5 Gates
 
 `emit_acceptance_profiles.py --check` runs in every CI job
-(`validator/test_acceptance_profiles.py`), because its inputs are vendored. The `rederive`
+(`validator/test_acceptance_profiles.py`), because its inputs are vendored. The scheduled
+`acceptance-refresh` workflow moves the vendored curves to InferenceX's latest commit
+(`scripts/refresh_inferencex_curves.py`), regenerates the set and opens a pull request when
+it changes. The `rederive`
 job also checks the vendored curves against InferenceX at its pinned commit
 (`INFERENCEX_SHA` in `.github/workflows/rederive.yml`), checks the catalog models against
 the repository's `catalog/`, and re-runs the emitter against the upstream checkout. Schema
