@@ -30,6 +30,7 @@ func (s *ProfileSet) Validate() *validate.Problems {
 	if len(s.Profiles) == 0 {
 		p.Field("profiles", "a set with no profiles carries nothing")
 	}
+	validateShapes(p, s.Shapes)
 	// Two profiles with one key would leave a resolver to pick whichever came last.
 	seen := map[Key]int{}
 	for i, pr := range s.Profiles {
@@ -209,6 +210,9 @@ func (v *Value) Validate() *validate.Problems {
 		return p
 	}
 	k := v.NumSpecTokens
+	if v.Realisation != "" && !v.Realisation.Valid() {
+		p.Field("realisation", "%q is not one of %v", v.Realisation, AllRealisations())
+	}
 	switch {
 	case v.AcceptanceLength != nil && v.AcceptanceRate != nil:
 		p.Errorf("acceptance_length and acceptance_rate are two spellings of one number; state one")

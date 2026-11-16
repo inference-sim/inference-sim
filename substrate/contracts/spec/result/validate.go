@@ -11,6 +11,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/check"
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/metrics"
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 )
@@ -350,6 +351,25 @@ func (in Input) validate(p *validate.Problems) {
 			p.Field(at+".profile", "is stated exactly when source is profile")
 		}
 		w.validateBorrowing(p, at)
+		switch {
+		case w.RatesSchedule != "" && w.RatesSchedule != "minimum_variance" && w.RatesSchedule != "natural_decay":
+			p.Field(at+".rates_schedule", "%q is not one of minimum_variance, natural_decay", w.RatesSchedule)
+		case (w.RatesSchedule == "natural_decay") != (w.RatesShape != nil):
+			p.Field(at+".rates_shape", "is stated exactly when rates_schedule is natural_decay")
+		case w.RatesShape != nil:
+			s := w.RatesShape
+			if s.Set == "" {
+				p.Field(at+".rates_shape.set", "required: the profile set that holds the shape")
+			}
+			if p.FiniteField(at+".rates_shape.decay_exponent", s.DecayExponent) &&
+				(s.DecayExponent < acceptance.MinDecayExponent || s.DecayExponent > acceptance.MaxDecayExponent) {
+				p.Field(at+".rates_shape.decay_exponent", "must lie in [%v, %v], got %v",
+					acceptance.MinDecayExponent, acceptance.MaxDecayExponent, s.DecayExponent)
+			}
+			if !acceptance.ShapeMethod(s.Method) {
+				p.Field(at+".rates_shape.method", "%q is not calibrated or assumed: a fitted shape is an estimate", s.Method)
+			}
+		}
 		if len(w.Values) == 0 && w.Source != PropertyDefault {
 			p.Field(at+".values", "required: the values %s supplied", w.Source)
 		}
