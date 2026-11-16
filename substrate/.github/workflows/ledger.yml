@@ -319,3 +319,37 @@ jobs:
             echo "the join failed; the detail of a record it could not read is withheld" >&2
             exit 1
           fi
+
+  # The configiq unit list regenerated from the pinned Hugging Face revision, byte for byte
+  # (D4). It holds no seed and runs in no environment: the export reads third-party Parquet
+  # files with pyarrow, which a seed-holding job does not run. The download is public and needs
+  # no token; ingest-configiq refuses any file whose SHA-256 differs from sources.yaml.
+  configiq-generated:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: ./.github/actions/go-toolchain
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Regenerate the configiq units from the pinned revision (D4)
+        run: |
+          set -euo pipefail
+          printf 'pyarrow==18.1.0 --hash=sha256:c52f81aa6f6575058d8e2c782bf79d4f9fdc89887f16825ec3a66607a5dd8e30\n' > "$RUNNER_TEMP/req.txt"
+          python3 -m pip install --no-deps --require-hashes -r "$RUNNER_TEMP/req.txt"
+          data="$RUNNER_TEMP/configiq"
+          go run ./ledger/cmd/ledger configiq-assets catalog/ledger > "$RUNNER_TEMP/assets.txt"
+          while read -r rev name; do
+            mkdir -p "$data/$(dirname "$name")"
+            curl -fsSL -o "$data/$name" \
+              "https://huggingface.co/datasets/redhat-performance/configiq-performance-upstream-data/resolve/$rev/$name"
+          done < "$RUNNER_TEMP/assets.txt"
+          python3 -I ledger/configiq/export.py "$data" > "$RUNNER_TEMP/configiq-rows.jsonl"
+          go run ./ledger/cmd/ledger ingest-configiq -check -rows "$RUNNER_TEMP/configiq-rows.jsonl" -data "$data" catalog/ledger

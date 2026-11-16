@@ -4,6 +4,13 @@
 //	    Generate units/inferencex.jsonl.gz, reports/inferencex.yaml, legacy-map.yaml and
 //	    legacy-points.jsonl.gz in DIR from the rows export.sql printed and from the records
 //	    sources.yaml pins as supplements, which it fetches from the source's API.
+//	ledger ingest-configiq -rows R -data D [-check] DIR
+//	    Generate units/configiq.jsonl.gz and reports/configiq.yaml in DIR from the downloaded
+//	    configiq revision D (checked against its sources.yaml pins) and the rows
+//	    ledger/configiq/export.py printed from it; with -check, require the committed files to
+//	    equal them byte for byte (D4).
+//	ledger configiq-assets DIR
+//	    Print the configiq revision and each file it pins, one per line, for the nightly job.
 //	ledger check [-release] DIR
 //	    Load and check every committed ledger file (D3, D4, D6). With -release, also require
 //	    the three published lists a release carries, the fit and anchor lists nonempty.
@@ -63,6 +70,7 @@ import (
 
 	validate "github.com/inference-sim/blis-substrate/contracts/check"
 	"github.com/inference-sim/blis-substrate/ledger"
+	"github.com/inference-sim/blis-substrate/ledger/configiq"
 	"github.com/inference-sim/blis-substrate/ledger/inferencex"
 )
 
@@ -70,6 +78,7 @@ func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 
 var roleKeys = map[string]ledger.RoleKeyFunc{
 	inferencex.SourceID: inferencex.RoleKey,
+	configiq.SourceID:   configiq.RoleKey,
 }
 
 type usageError struct{ msg string }
@@ -78,11 +87,13 @@ func (u usageError) Error() string { return u.msg }
 
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		_, _ = fmt.Fprintln(stderr, "usage: ledger <ingest-inferencex|supplement-records|pin-supplement|check|check-generated|check-base|generate-aliases|scan-roles|lint-workflows|release|join|check-report|candidate-units|measured-inferencex|aggregate|method-error> ...")
+		_, _ = fmt.Fprintln(stderr, "usage: ledger <ingest-inferencex|ingest-configiq|configiq-assets|supplement-records|pin-supplement|check|check-generated|check-base|generate-aliases|scan-roles|lint-workflows|release|join|check-report|candidate-units|measured-inferencex|aggregate|method-error> ...")
 		return 2
 	}
 	cmds := map[string]func([]string, io.Writer) error{
 		"ingest-inferencex":   cmdIngest,
+		"ingest-configiq":     cmdIngestConfigiq,
+		"configiq-assets":     cmdConfigiqAssets,
 		"check":               cmdCheck,
 		"check-generated":     cmdCheckGenerated,
 		"check-base":          cmdCheckBase,
