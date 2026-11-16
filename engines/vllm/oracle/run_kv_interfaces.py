@@ -43,21 +43,21 @@ def run_scenario(vllm_root: str, path: str) -> dict:
 
 
 def pending(golden_dir: str) -> str | None:
-    """The golden directory's PENDING.json, when the traces wait for an issue: its reason, or None.
+    """The golden directory's <dir>.pending.json beside it, when the traces wait for an issue: its reason, or None.
     It stands only for the vLLM release it names, and only while no trace is committed beside it,
     as core/connector/offloading/fid5_test.go also checks."""
-    path = os.path.join(golden_dir, "PENDING.json")
+    path = os.path.normpath(golden_dir) + ".pending.json"
     if not os.path.exists(path):
         return None
     with open(path) as f:
         p = json.load(f)
     import vllm  # noqa: E402
 
-    have = [f for f in os.listdir(golden_dir) if f.endswith(".fid5.json")]
+    have = [f for f in os.listdir(golden_dir) if f.endswith(".fid5.json")] if os.path.isdir(golden_dir) else []
     if have:
-        raise SystemExit("%s: %d trace(s) committed beside PENDING.json; remove it" % (golden_dir, len(have)))
+        raise SystemExit("%s: %d trace(s) committed beside %s; remove it" % (golden_dir, len(have), path))
     if not vllm.__version__.startswith(p["release"].lstrip("v")):
-        raise SystemExit("PENDING.json defers the traces for %s, and the oracle runs vLLM %s: record them (%s)"
+        raise SystemExit(path + " defers the traces for %s, and the oracle runs vLLM %s: record them (%s)"
                          % (p["release"], vllm.__version__, p["waits_for"]))
     return "%s (%s)" % (p["waits_for"], p["why"])
 
