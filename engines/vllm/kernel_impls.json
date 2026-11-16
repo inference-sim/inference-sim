@@ -324,6 +324,13 @@
   "libraries": [
     {
       "name": "flashinfer",
+      "version": "0.6.13",
+      "pinned": false,
+      "pin": "the trtllm-gen prefill sweep's B300 run: ai-dynamo/aisimulate 2f0f4cd8606d580567b253d02f3d699fe36db865 python/aisimulate/src/aisimulate_core/systems/data/b300_sxm/attention/vllm/0.25.0/collection_meta.yaml names image vllm/vllm-openai@sha256:e1c1ff1af9a15921bfa11d1d95047258c1797392cdbfa296e7639da446b23f97, whose build sets FLASHINFER_VERSION=0.6.13",
+      "origin": "https://github.com/flashinfer-ai/flashinfer 57ba7eeb7ea3003a2d6ad5d9a057c4f952709bac"
+    },
+    {
+      "name": "flashinfer",
       "version": "0.7.0.post1",
       "pinned": true,
       "pin": "requirements/cuda.txt:13@5df63a72",
@@ -345,6 +352,120 @@
     }
   ],
   "implementations": [
+    {
+      "primitive": "attention.decode",
+      "library": "flashinfer",
+      "library_version": "0.6.13",
+      "variant": "BatchDecodeWithPagedKVCacheWrapper",
+      "target_arch": "sm_100a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "3rdparty/cutlass commit b46b16d003484063bca4ed365e44095c4c6ed633",
+        "csrc tree e2c177de64777259c0837efad977d98cdd1de1dd",
+        "flashinfer/jit tree 9b13516b7ef6be53cab26a2accd5504ef73c064c",
+        "include tree 259b69278456722526bbd350ec3062ec665dcc72"
+      ],
+      "code_hash": "7127a527fcb0f113574d70b96f33affa47577c8214fdc7089a9a9aaeace24c83",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:1328@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.decode",
+      "library": "flashinfer",
+      "library_version": "0.6.13",
+      "variant": "BatchDecodeWithPagedKVCacheWrapper",
+      "target_arch": "sm_103a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "3rdparty/cutlass commit b46b16d003484063bca4ed365e44095c4c6ed633",
+        "csrc tree e2c177de64777259c0837efad977d98cdd1de1dd",
+        "flashinfer/jit tree 9b13516b7ef6be53cab26a2accd5504ef73c064c",
+        "include tree 259b69278456722526bbd350ec3062ec665dcc72"
+      ],
+      "code_hash": "2e75b9cc99bf80f59d58fa5679e6e224a7ab3e85f0e2af07c692c229151ee81a",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:1328@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.decode",
+      "library": "flashinfer",
+      "library_version": "0.6.13",
+      "variant": "BatchDecodeWithPagedKVCacheWrapper",
+      "target_arch": "sm_90a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "3rdparty/cutlass commit b46b16d003484063bca4ed365e44095c4c6ed633",
+        "csrc tree e2c177de64777259c0837efad977d98cdd1de1dd",
+        "flashinfer/jit tree 9b13516b7ef6be53cab26a2accd5504ef73c064c",
+        "include tree 259b69278456722526bbd350ec3062ec665dcc72"
+      ],
+      "code_hash": "72ee999bd37c7d96cddb89d5dc2aa6cdb249c21ac7bb853d90218a0c3b0ac73f",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:1328@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.decode",
+      "library": "flashinfer",
+      "library_version": "0.6.13",
+      "variant": "trtllm_batch_decode_with_kv_cache",
+      "target_arch": "sm_100a",
+      "hash_basis": "binary",
+      "hash_inputs": [
+        "TRTLLM_GEN_FMHA checksums.txt sha256:c2d9399b2537be785882354a4f9902ed6c03136c0ea341e201eac40c3923e1dc"
+      ],
+      "code_hash": "58b42b60524d05ad392179a6cc7608aa70144b3e71c9a86c22fe58b85e0de570",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/utils/flashinfer.py:648@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:2582@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.decode",
+      "library": "flashinfer",
+      "library_version": "0.6.13",
+      "variant": "trtllm_batch_decode_with_kv_cache",
+      "target_arch": "sm_103a",
+      "hash_basis": "binary",
+      "hash_inputs": [
+        "TRTLLM_GEN_FMHA checksums.txt sha256:c2d9399b2537be785882354a4f9902ed6c03136c0ea341e201eac40c3923e1dc"
+      ],
+      "code_hash": "5d510bfe6f905aefa18b72dbcafb76375e99e9cb17621118a4c9b28781b76a78",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/utils/flashinfer.py:648@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:2582@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.decode",
+      "library": "flashinfer",
+      "library_version": "0.6.13",
+      "variant": "xqa_batch_decode_with_kv_cache",
+      "target_arch": "sm_90a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "csrc/xqa tree 488da3110027181c75edf120b30f7e9b2d163543"
+      ],
+      "code_hash": "9d8e1b3e6f3c40a0f36a3f5a6996660de32a605a7fde6437b7c17de05bc95433",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/utils/flashinfer.py:648@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:2515@5df63a72"
+      ]
+    },
     {
       "primitive": "attention.decode",
       "library": "flashinfer",
@@ -638,6 +759,162 @@
         "vllm/platforms/cuda.py:162@5df63a72",
         "vllm/v1/attention/backends/fa_utils.py:74@5df63a72",
         "vllm/v1/attention/backends/flash_attn.py:116@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "flashinfer",
+      "library_version": "0.6.13",
+      "variant": "BatchPrefillWithPagedKVCacheWrapper",
+      "target_arch": "sm_100a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "3rdparty/cutlass commit b46b16d003484063bca4ed365e44095c4c6ed633",
+        "csrc tree e2c177de64777259c0837efad977d98cdd1de1dd",
+        "flashinfer/jit tree 9b13516b7ef6be53cab26a2accd5504ef73c064c",
+        "include tree 259b69278456722526bbd350ec3062ec665dcc72"
+      ],
+      "code_hash": "9ba5f9895baa251a8b9e5535f02b9707879399e7c6e935a5810cabdd3233f4a5",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:329@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "flashinfer",
+      "library_version": "0.6.13",
+      "variant": "BatchPrefillWithPagedKVCacheWrapper",
+      "target_arch": "sm_103a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "3rdparty/cutlass commit b46b16d003484063bca4ed365e44095c4c6ed633",
+        "csrc tree e2c177de64777259c0837efad977d98cdd1de1dd",
+        "flashinfer/jit tree 9b13516b7ef6be53cab26a2accd5504ef73c064c",
+        "include tree 259b69278456722526bbd350ec3062ec665dcc72"
+      ],
+      "code_hash": "2298841ca62f3bb22b2d515f4c585c02b0de93fd70eac74e257bc322daf13469",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:329@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "flashinfer",
+      "library_version": "0.6.13",
+      "variant": "BatchPrefillWithPagedKVCacheWrapper",
+      "target_arch": "sm_90a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "3rdparty/cutlass commit b46b16d003484063bca4ed365e44095c4c6ed633",
+        "csrc tree e2c177de64777259c0837efad977d98cdd1de1dd",
+        "flashinfer/jit tree 9b13516b7ef6be53cab26a2accd5504ef73c064c",
+        "include tree 259b69278456722526bbd350ec3062ec665dcc72"
+      ],
+      "code_hash": "d897331e08f4f67c10c21b588e9d10bed59263436b7d20bf0721d0bd552bc32c",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:329@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "flashinfer",
+      "library_version": "0.6.13",
+      "variant": "BatchPrefillWithRaggedKVCacheWrapper",
+      "target_arch": "sm_100a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "3rdparty/cutlass commit b46b16d003484063bca4ed365e44095c4c6ed633",
+        "csrc tree e2c177de64777259c0837efad977d98cdd1de1dd",
+        "flashinfer/jit tree 9b13516b7ef6be53cab26a2accd5504ef73c064c",
+        "include tree 259b69278456722526bbd350ec3062ec665dcc72"
+      ],
+      "code_hash": "bb68ea0481f3b0c4d45ade1bfcfb4e1489978390cb468dd2963d6839703ba187",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:330@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "flashinfer",
+      "library_version": "0.6.13",
+      "variant": "BatchPrefillWithRaggedKVCacheWrapper",
+      "target_arch": "sm_103a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "3rdparty/cutlass commit b46b16d003484063bca4ed365e44095c4c6ed633",
+        "csrc tree e2c177de64777259c0837efad977d98cdd1de1dd",
+        "flashinfer/jit tree 9b13516b7ef6be53cab26a2accd5504ef73c064c",
+        "include tree 259b69278456722526bbd350ec3062ec665dcc72"
+      ],
+      "code_hash": "b623a9fbc8d6ca63dc128f84802886b06999b3162618a609b9e61fe1339f20bf",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:330@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "flashinfer",
+      "library_version": "0.6.13",
+      "variant": "BatchPrefillWithRaggedKVCacheWrapper",
+      "target_arch": "sm_90a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "3rdparty/cutlass commit b46b16d003484063bca4ed365e44095c4c6ed633",
+        "csrc tree e2c177de64777259c0837efad977d98cdd1de1dd",
+        "flashinfer/jit tree 9b13516b7ef6be53cab26a2accd5504ef73c064c",
+        "include tree 259b69278456722526bbd350ec3062ec665dcc72"
+      ],
+      "code_hash": "493e4452b6770228b6101d422c4cdb7ed773ef5c3343355444c5d5d7cd7f00c8",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:330@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "flashinfer",
+      "library_version": "0.6.13",
+      "variant": "trtllm_batch_context_with_kv_cache",
+      "target_arch": "sm_100a",
+      "hash_basis": "binary",
+      "hash_inputs": [
+        "TRTLLM_GEN_FMHA checksums.txt sha256:c2d9399b2537be785882354a4f9902ed6c03136c0ea341e201eac40c3923e1dc"
+      ],
+      "code_hash": "699e940bd78138cfbe91d02c52d184a6515e2b3c35dbf060fcf92711425b8ce6",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/utils/flashinfer.py:648@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:2362@5df63a72"
+      ]
+    },
+    {
+      "primitive": "attention.prefill",
+      "library": "flashinfer",
+      "library_version": "0.6.13",
+      "variant": "trtllm_batch_context_with_kv_cache",
+      "target_arch": "sm_103a",
+      "hash_basis": "binary",
+      "hash_inputs": [
+        "TRTLLM_GEN_FMHA checksums.txt sha256:c2d9399b2537be785882354a4f9902ed6c03136c0ea341e201eac40c3923e1dc"
+      ],
+      "code_hash": "4e8ccbf5f09c674fa2e0cb8db8fa5d186018f9fc815441937130277331f0500e",
+      "toolkit": "13.0.3",
+      "selected_by": [
+        "vllm/platforms/cuda.py:161@5df63a72",
+        "vllm/utils/flashinfer.py:648@5df63a72",
+        "vllm/v1/attention/backends/flashinfer.py:2362@5df63a72"
       ]
     },
     {

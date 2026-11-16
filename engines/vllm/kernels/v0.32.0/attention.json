@@ -28,6 +28,12 @@
       "modules": [
         "flashinfer",
         "vllm.utils.flashinfer"
+      ],
+      "seen": [
+        {
+          "version": "0.6.13",
+          "seen_in": "the trtllm-gen prefill sweep's B300 run: ai-dynamo/aisimulate 2f0f4cd8606d580567b253d02f3d699fe36db865 python/aisimulate/src/aisimulate_core/systems/data/b300_sxm/attention/vllm/0.25.0/collection_meta.yaml names image vllm/vllm-openai@sha256:e1c1ff1af9a15921bfa11d1d95047258c1797392cdbfa296e7639da446b23f97, whose build sets FLASHINFER_VERSION=0.6.13"
+        }
       ]
     },
     "vllm-flash-attn": {
