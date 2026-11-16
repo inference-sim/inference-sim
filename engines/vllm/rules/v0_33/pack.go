@@ -28,8 +28,8 @@
 //     all-reduce, as v0.32.0 did in the model; the sequence-parallel rule data is unchanged.
 //
 // Everything else source_test.go checks is unchanged from v0.32.0 and passes against the
-// v0.33.0 tree as transcribed there. Comments citing @5df63a72 describe v0.32.0 code that the
-// citation script (tools/citations) verified unchanged or left for a person to re-read.
+// v0.33.0 tree as transcribed there. Comments citing @5df63a72 still describe v0.32.0's code;
+// the citation pass (tools/citations) moves each one it verifies at v0.33.0.
 //
 // Each rule states, in its Because field, what breaks without it. That is not
 // decoration: a reader deciding whether to waive a rule needs to know what the rule
