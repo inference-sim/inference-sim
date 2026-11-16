@@ -30,6 +30,7 @@ canonical bytes, and an engine repository checks its committed file by comparing
 | `kind` | string | yes | Always `KernelImplTable`. |
 | `engine` | mapping | yes | The engine release whose kernels the table lists, below. |
 | `primitives` | list of strings | yes | The lowered primitives whose implementations the table lists, sorted, each once: every kernel the release can emit for one of them is a row, except where `gaps` names a selection not yet listed. A primitive not named here is not covered, and a missing row for it says nothing. |
+| `archs` | list of strings | yes | The device architectures the table lists builds for, as the compiler names them (`sm_90a`, `sm_100a`), sorted, each once. A build for another architecture is not covered, and a missing row for it says nothing. |
 | `gaps` | list | no | The upstream selections under a covered primitive whose kernels the table does not yet list, below. |
 | `libraries` | list | yes | Each kernel library at each version the table covers, below. |
 | `implementations` | list | yes | One row per primitive, library, library version, variant and target architecture, below. |
@@ -85,7 +86,7 @@ scoring harness can map the version a run recorded to a hash.
 | `library` | string | yes | With `library_version`, a row of `libraries`. |
 | `library_version` | string | yes | The library's version. |
 | `variant` | string | yes | The library's own exported kernel name. |
-| `target_arch` | string | yes | The GPU architecture the build targets, as the compiler names it: `sm_90a`, `sm_100a`. |
+| `target_arch` | string | yes | The architecture of the device the build runs on, one of `archs`. A lowering finds it from the chip's compute capability. |
 | `hash_basis` | string | yes | What the hash covers, below. |
 | `hash_inputs` | list of strings | yes | The content identities the hash covers, sorted, each once, none with a line break: for a source build, each source path with its git object id; for a binary, each shipped file or manifest with its SHA-256. |
 | `code_hash` | string | yes | `kernelimpls.CodeHash` of the row, 64 lower-case hexadecimal digits. The validator recomputes it. |

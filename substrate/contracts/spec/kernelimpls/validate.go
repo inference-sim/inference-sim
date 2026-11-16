@@ -67,8 +67,9 @@ func (t *Table) Validate() error {
 	t.validateEngine(&p)
 	covered := t.validatePrimitives(&p)
 	t.validateGaps(&p, covered)
+	archs := t.validateArchs(&p)
 	libs := t.validateLibraries(&p)
-	t.validateImplementations(&p, covered, libs)
+	t.validateImplementations(&p, covered, libs, archs)
 	if !p.OK() {
 		return errors.New(p.Error())
 	}
@@ -106,6 +107,24 @@ func (t *Table) validatePrimitives(p *check.Problems) map[string]bool {
 		covered[w] = true
 	}
 	return covered
+}
+
+func (t *Table) validateArchs(p *check.Problems) map[string]bool {
+	archs := map[string]bool{}
+	if len(t.Archs) == 0 {
+		p.Field("archs", "required: the device architectures the table lists builds for")
+	}
+	for i, a := range t.Archs {
+		at := fmt.Sprintf("archs[%d]", i)
+		if !archRE.MatchString(a) {
+			p.Field(at, "%q is not a GPU architecture as the compiler names it (sm_90a, sm_100a)", a)
+		}
+		if i > 0 && t.Archs[i-1] >= a {
+			p.Field(at, "%q is out of order or repeated: archs are sorted, each once", a)
+		}
+		archs[a] = true
+	}
+	return archs
 }
 
 func (t *Table) validateGaps(p *check.Problems, covered map[string]bool) {
@@ -182,7 +201,7 @@ func (k rowKey) less(o rowKey) bool {
 
 type buildKey struct{ library, version, variant, arch string }
 
-func (t *Table) validateImplementations(p *check.Problems, covered map[string]bool, libs map[libKey]bool) {
+func (t *Table) validateImplementations(p *check.Problems, covered map[string]bool, libs map[libKey]bool, archs map[string]bool) {
 	seen := map[rowKey]bool{}
 	hashOfBuild := map[buildKey]string{}
 	for i, r := range t.Implementations {
@@ -200,8 +219,8 @@ func (t *Table) validateImplementations(p *check.Problems, covered map[string]bo
 		if strings.TrimSpace(r.Variant) == "" {
 			p.Field(at+".variant", "required: the library's own exported kernel name")
 		}
-		if !archRE.MatchString(r.TargetArch) {
-			p.Field(at+".target_arch", "%q is not a GPU architecture as the compiler names it (sm_90a, sm_100a)", r.TargetArch)
+		if !archs[r.TargetArch] {
+			p.Field(at+".target_arch", "%q is not one of the table's archs", r.TargetArch)
 		}
 		if r.HashBasis != HashSource && r.HashBasis != HashBinary {
 			p.Field(at+".hash_basis", "must be %q or %q, got %q", HashSource, HashBinary, r.HashBasis)

@@ -20,6 +20,7 @@ func valid() *Table {
 		Kind:       Kind,
 		Engine:     Engine{Kind: "an-engine", Version: "1.2.3", Commit: strings.Repeat("ab", 20)},
 		Primitives: []string{"attention.decode", "attention.prefill"},
+		Archs:      []string{"sm_100a", "sm_90a"},
 		Gaps: []Gap{
 			{Primitive: "attention.decode", Selection: "backend A", Issue: "org/repo#1"},
 			{Primitive: "attention.decode", Selection: "backend B", Issue: "org/repo#2"},
@@ -96,8 +97,11 @@ func TestEachWayATableCanBeWrongIsRefused(t *testing.T) {
 		{"row with no variant", "implementations[2].variant", func(t *Table) {
 			t.Implementations[2] = row("attention.decode", "engine-kernels", strings.Repeat("ab", 20), "", "sm_90a", HashSource, "csrc tree "+strings.Repeat("c", 40))
 		}},
-		{"architecture not as the compiler names it", "implementations[2].target_arch", func(t *Table) {
-			t.Implementations[2] = row("attention.decode", "engine-kernels", strings.Repeat("ab", 20), "paged_attention", "hopper", HashSource, "csrc tree "+strings.Repeat("c", 40))
+		{"no archs", "archs", func(t *Table) { t.Archs = nil }},
+		{"an arch not as the compiler names it", "archs[1]", func(t *Table) { t.Archs[1] = "hopper" }},
+		{"archs out of order", "archs[1]", func(t *Table) { t.Archs = []string{"sm_90a", "sm_100a"} }},
+		{"row of an arch the table does not cover", "implementations[2].target_arch", func(t *Table) {
+			t.Implementations[2] = row("attention.decode", "engine-kernels", strings.Repeat("ab", 20), "paged_attention", "sm_80", HashSource, "csrc tree "+strings.Repeat("c", 40))
 		}},
 		{"unknown hash basis", "implementations[2].hash_basis", func(t *Table) {
 			t.Implementations[2] = row("attention.decode", "engine-kernels", strings.Repeat("ab", 20), "paged_attention", "sm_90a", "version", "csrc tree "+strings.Repeat("c", 40))

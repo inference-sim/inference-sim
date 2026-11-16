@@ -9,6 +9,9 @@
     "attention.decode",
     "attention.prefill"
   ],
+  "archs": [
+    "sm_100a"
+  ],
   "libraries": [
     {
       "name": "flashinfer",

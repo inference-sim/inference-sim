@@ -23,6 +23,7 @@ func writeTable(t *testing.T, dir string) string {
 	tab := &kernelimpls.Table{Kind: kernelimpls.Kind,
 		Engine:          kernelimpls.Engine{Kind: "an-engine", Version: "1.0.0", Commit: strings.Repeat("ab", 20)},
 		Primitives:      []string{"attention.prefill"},
+		Archs:           []string{"sm_100a"},
 		Libraries:       []kernelimpls.Library{{Name: "attnlib", Version: "0.7.0", Pinned: true, Pin: "req.txt:1@0123abcd", Origin: "pypi attnlib==0.7.0"}},
 		Implementations: []kernelimpls.Implementation{prefillRow()}}
 	b, err := tab.Marshal()

@@ -36,6 +36,10 @@ type Table struct {
 	// names a selection the table does not yet list. A primitive not named here is not covered,
 	// and a reader learns nothing from a missing row for it. Sorted, each once.
 	Primitives []string `json:"primitives" yaml:"primitives"`
+	// Archs are the device architectures the table lists builds for, as the compiler names them
+	// (sm_90a, sm_100a), sorted, each once. A build for a device of another architecture is not
+	// covered, and a missing row for it says nothing.
+	Archs []string `json:"archs" yaml:"archs"`
 	// Gaps are the upstream selections, under a covered primitive, whose kernels the table does
 	// not yet list, each with the issue that adds them. A reader that finds no row for a build
 	// of such a selection learns nothing from it. Sorted by primitive and then selection.
@@ -96,8 +100,9 @@ type Implementation struct {
 	LibraryVersion string `json:"library_version" yaml:"library_version"`
 	// Variant is the library's own exported kernel name.
 	Variant string `json:"variant" yaml:"variant"`
-	// TargetArch is the GPU architecture the build targets, as the compiler names it: sm_90a,
-	// sm_100a.
+	// TargetArch is the architecture of the device the build runs on, as the compiler names it
+	// (sm_90a, sm_100a), one of Table.Archs. A lowering finds it from the chip's compute
+	// capability.
 	TargetArch string `json:"target_arch" yaml:"target_arch"`
 	// HashBasis says what the code hash covers.
 	HashBasis HashBasis `json:"hash_basis" yaml:"hash_basis"`
