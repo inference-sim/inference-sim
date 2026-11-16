@@ -67,6 +67,12 @@ func (pr Profile) validate(p *validate.Problems, at string) {
 	if pr.Drafter != "" && (strings.ContainsAny(pr.Drafter, "+ /\t") || pr.Drafter == pr.Model) {
 		p.Field(at+".drafter", "%q must be a catalog model name other than the target's, with no '+', '/' or space; leave it out for the model's own speculator", pr.Drafter)
 	}
+	if !pr.DraftSampler.Valid() {
+		p.Field(at+".draft_sampler", "%q is not one of %v; leave it out for the engine's default", pr.DraftSampler, AllDraftSamplers())
+	}
+	if !pr.Verifier.Valid() {
+		p.Field(at+".verifier", "%q is not one of %v; leave it out for the engine's default", pr.Verifier, AllVerifiers())
+	}
 	if pr.Provenance != nil && pr.Provenance.Date != "" {
 		if _, err := time.Parse("2006-01-02", pr.Provenance.Date); err != nil {
 			p.Field(at+".provenance.date", "%q is not a date YYYY-MM-DD", pr.Provenance.Date)

@@ -177,12 +177,48 @@ def test_two_drafters_of_one_target_are_two_profiles(tmp_path):
     assert by == stated
 
 
-def test_curves_that_claim_one_key_are_both_refused():
-    """The two GQA curves differ only in the verifier, which a key cannot state (D8)."""
-    carried = {stem_of(p) for p in SET["profiles"]}
-    assert GQA not in carried and GQA_BLOCK not in carried
-    caveat = next(c for c in SET["caveats"] if c.startswith(f"Not carried: {GQA}.yaml"))
-    assert f"{GQA_BLOCK}.yaml" in caveat
+def test_curves_that_differ_in_sampler_or_verifier_are_carried_with_them():
+    """The GQA drafter's two curves differ only in the verifier, and Kimi-K3's three DSpark
+    curves in the sampler and verifier (inference-sim/blis-substrate#174): each is carried under
+    the key that states what it was measured with, the engine's default left out."""
+    got = {}
+    for p in SET["profiles"]:
+        got.setdefault(stem_of(p), set()).add((p.get("draft_sampler", ""), p.get("verifier", "")))
+    assert got[GQA] == {("", "")} and got[GQA_BLOCK] == {("", "block")}
+    kimi = "kimi-k3__dspark__kimi-k3-dspark__"
+    assert got[kimi + "default-default"] == {("", "")}
+    assert got[kimi + "probabilistic-block"] == {("probabilistic", "block")}
+    assert got[kimi + "probabilistic-default"] == {("probabilistic", "")}
+
+
+def test_a_curve_with_its_methods_only_curve_states_neither():
+    """DeepSeek-V4.1-Flash was measured with probabilistic drafting and block verification, but it
+    is its target's only DSpark curve, so its key states neither and every run's lookup finds it."""
+    p = next(p for p in SET["profiles"] if stem_of(p).startswith("deepseek-v4.1-flash__"))
+    assert "draft_sampler" not in p and "verifier" not in p
+    assert p["provenance"]["settings"]["verify"] == "block"
+
+
+def test_curves_that_claim_one_key_are_both_refused(tmp_path):
+    """Two curves of one target, drafter, method, sampler and verifier: nothing tells them apart."""
+    golden = copy_golden(tmp_path)
+    new = "glm-5.2-fp8__mtp__native__default-relaxed"
+    (golden / f"{new}.yaml").write_text((golden / f"{GLM52}.yaml").read_text())
+    ids = yaml.safe_load((golden / emit.IDENTITIES).read_text())
+    add_identity(golden, new, ids[GLM52])
+    out = generated(golden)
+    carried = {stem_of(p) for p in out["profiles"]}
+    assert GLM52 not in carried and new not in carried
+    assert any(c.startswith(f"Not carried: {new}.yaml") and f"{GLM52}.yaml" in c for c in out["caveats"])
+
+
+def test_a_verifier_the_key_has_no_word_for_fails(tmp_path):
+    golden = copy_golden(tmp_path)
+    ids = yaml.safe_load((golden / emit.IDENTITIES).read_text())
+    ids[GQA_BLOCK]["collection"]["verify"] = {"value": "typical", "source": "explicit"}
+    (golden / emit.IDENTITIES).write_text(yaml.safe_dump(ids, sort_keys=False))
+    with pytest.raises(SystemExit, match="typical"):
+        emit.collect(golden, CATALOG)
 
 
 def test_a_drafter_the_catalog_lacks_is_refused_and_named(tmp_path):

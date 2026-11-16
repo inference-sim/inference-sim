@@ -11,8 +11,8 @@ caveats:
   no other category has a value. A consumer must refuse other traffic, or fall back to coding
   with the substitution recorded; it must not substitute silently.
 - 'Measured on b300: deepseek-v4-pro, deepseek-v4-pro-0813, glm-5.2-fp8, glm-5.3, glm-5.3-flash,
-  kimi-k3.1, minimax-m3. Acceptance depends mostly on the model, drafter and workload rather
-  than the chip; a resolution on another part records the reuse.'
+  kimi-k3, kimi-k3.1, minimax-m3. Acceptance depends mostly on the model, drafter and workload
+  rather than the chip; a resolution on another part records the reuse.'
 - 'Measured on b200: deepseek-v4.1-flash, minimax-m3.1-flash. Acceptance depends mostly on
   the model, drafter and workload rather than the chip; a resolution on another part records
   the reuse.'
@@ -25,36 +25,23 @@ caveats:
   no value.
 - glm-5.3 mtp is transferred from glm-5.3-nvfp4__mtp__native__default-default.yaml, measured
   on glm-5.3-nvfp4, not on glm-5.3.
-- 'Drafter revision unstated: minimax-m3+minimax-m3-eagle3 (minimax-m3__eagle3__minimax-m3-eagle3__default-default.yaml),
-  minimax-m3.1-flash+minimax-m3.1-flash-dspark (minimax-m3.1-flash__dspark__native__probabilistic-block.yaml).
-  The source names the drafter but not the revision it was measured at, so the profile may
-  describe a revision other than the catalog entry''s.'
+- 'Drafter revision unstated: kimi-k3+kimi-k3-dspark (kimi-k3__dspark__kimi-k3-dspark__default-default.yaml),
+  kimi-k3+kimi-k3-dspark (kimi-k3__dspark__kimi-k3-dspark__probabilistic-block.yaml), kimi-k3+kimi-k3-dspark
+  (kimi-k3__dspark__kimi-k3-dspark__probabilistic-default.yaml), minimax-m3+minimax-m3-eagle3
+  (minimax-m3__eagle3__minimax-m3-eagle3__default-default.yaml), minimax-m3+minimax-m3-eagle3-gqa
+  (minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-block.yaml), minimax-m3+minimax-m3-eagle3-gqa
+  (minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-default.yaml), minimax-m3.1-flash+minimax-m3.1-flash-dspark
+  (minimax-m3.1-flash__dspark__native__probabilistic-block.yaml). The source names the drafter
+  but not the revision it was measured at, so the profile may describe a revision other than
+  the catalog entry''s.'
 - Collection settings are transcribed from identities.yaml at e63beeeee981, SHA-256 447547adf1b3f73a3d03482dea2d031fc4755cc4f0f91eba4a308ca2fd5ef039
   (https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/identities.yaml).
 - 'The source files for deepseek-v4-pro, deepseek-v4-pro-0813, glm-5.2-fp8, glm-5.3, glm-5.3-flash,
-  kimi-k3.1, minimax-m3, minimax-m3.1-flash name no engine image, so their engine_image reads
-  "unrecorded: the source file names no engine image".'
+  kimi-k3, kimi-k3.1, minimax-m3, minimax-m3.1-flash name no engine image, so their engine_image
+  reads "unrecorded: the source file names no engine image".'
 - 'Not carried: kimi-k3.1-pro__dflash__kimi-k3.1-dflash2-preview__default-block.yaml (kimi-k3.1-pro),
   because its drafter RadixArk/Kimi-K3.1-Dflash2-Preview is not in the catalog as a drafter
   of kimi-k3.1.'
-- 'Not carried: kimi-k3__dspark__kimi-k3-dspark__default-default.yaml (kimi-k3), because its
-  profile keys are also claimed by kimi-k3__dspark__kimi-k3-dspark__probabilistic-block.yaml,
-  kimi-k3__dspark__kimi-k3-dspark__probabilistic-default.yaml, which a profile''s key cannot
-  tell apart (inference-sim/blis-substrate#174).'
-- 'Not carried: kimi-k3__dspark__kimi-k3-dspark__probabilistic-block.yaml (kimi-k3), because
-  its profile keys are also claimed by kimi-k3__dspark__kimi-k3-dspark__default-default.yaml,
-  kimi-k3__dspark__kimi-k3-dspark__probabilistic-default.yaml, which a profile''s key cannot
-  tell apart (inference-sim/blis-substrate#174).'
-- 'Not carried: kimi-k3__dspark__kimi-k3-dspark__probabilistic-default.yaml (kimi-k3), because
-  its profile keys are also claimed by kimi-k3__dspark__kimi-k3-dspark__default-default.yaml,
-  kimi-k3__dspark__kimi-k3-dspark__probabilistic-block.yaml, which a profile''s key cannot
-  tell apart (inference-sim/blis-substrate#174).'
-- 'Not carried: minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-block.yaml (minimax-m3),
-  because its profile keys are also claimed by minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-default.yaml,
-  which a profile''s key cannot tell apart (inference-sim/blis-substrate#174).'
-- 'Not carried: minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-default.yaml (minimax-m3),
-  because its profile keys are also claimed by minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-block.yaml,
-  which a profile''s key cannot tell apart (inference-sim/blis-substrate#174).'
 - 'Not carried: muse-spark-open-816b-a42b-nvfp4__dflash__muse-spark-open-dflash2__default-default.yaml
   (muse-spark-open-816b-a42b-nvfp4), because its drafter RadixArk/Muse-Spark-Open-DFlash2
   is not in the catalog as a drafter of muse-spark-open-816b-a42b-nvfp4.'
@@ -180,6 +167,7 @@ shapes:
   method: calibrated
 profiles:
 - model: deepseek-v4-pro
+  verifier: standard
   architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 1
@@ -205,6 +193,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
+  verifier: standard
   architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 2
@@ -230,6 +219,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
+  verifier: standard
   architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 3
@@ -255,6 +245,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
+  verifier: standard
   architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 4
@@ -280,6 +271,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
+  verifier: standard
   architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 5
@@ -305,6 +297,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
+  verifier: standard
   architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 6
@@ -330,6 +323,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
+  verifier: standard
   architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 7
@@ -355,6 +349,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
+  verifier: standard
   architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 8
@@ -380,6 +375,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
+  verifier: standard
   architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 1
@@ -406,6 +402,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
+  verifier: standard
   architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 2
@@ -432,6 +429,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
+  verifier: standard
   architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 3
@@ -458,6 +456,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
+  verifier: standard
   architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 4
@@ -484,6 +483,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
+  verifier: standard
   architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 5
@@ -510,6 +510,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
+  verifier: standard
   architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 6
@@ -536,6 +537,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
+  verifier: standard
   architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 7
@@ -562,6 +564,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
+  verifier: standard
   architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 8
@@ -588,6 +591,8 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro-0813
+  draft_sampler: probabilistic
+  verifier: standard
   architecture: DeepseekV4ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 1
@@ -615,6 +620,8 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro-0813
+  draft_sampler: probabilistic
+  verifier: standard
   architecture: DeepseekV4ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 2
@@ -642,6 +649,8 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro-0813
+  draft_sampler: probabilistic
+  verifier: standard
   architecture: DeepseekV4ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 3
@@ -669,6 +678,8 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro-0813
+  draft_sampler: probabilistic
+  verifier: standard
   architecture: DeepseekV4ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 4
@@ -696,6 +707,8 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro-0813
+  draft_sampler: probabilistic
+  verifier: standard
   architecture: DeepseekV4ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 5
@@ -723,6 +736,8 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro-0813
+  draft_sampler: probabilistic
+  verifier: standard
   architecture: DeepseekV4ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 6
@@ -750,6 +765,8 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro-0813
+  draft_sampler: probabilistic
+  verifier: standard
   architecture: DeepseekV4ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 7
@@ -777,6 +794,8 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro-0813
+  draft_sampler: probabilistic
+  verifier: standard
   architecture: DeepseekV4ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 8
@@ -804,6 +823,8 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4.1-flash
+  draft_sampler: probabilistic
+  verifier: block
   architecture: DeepseekV41ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 1
@@ -834,6 +855,8 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4.1-flash
+  draft_sampler: probabilistic
+  verifier: block
   architecture: DeepseekV41ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 2
@@ -864,6 +887,8 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4.1-flash
+  draft_sampler: probabilistic
+  verifier: block
   architecture: DeepseekV41ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 3
@@ -894,6 +919,8 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4.1-flash
+  draft_sampler: probabilistic
+  verifier: block
   architecture: DeepseekV41ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 4
@@ -924,6 +951,8 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4.1-flash
+  draft_sampler: probabilistic
+  verifier: block
   architecture: DeepseekV41ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 5
@@ -954,6 +983,8 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4.1-flash
+  draft_sampler: probabilistic
+  verifier: block
   architecture: DeepseekV41ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 1
@@ -984,6 +1015,8 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4.1-flash
+  draft_sampler: probabilistic
+  verifier: block
   architecture: DeepseekV41ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 2
@@ -1014,6 +1047,8 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4.1-flash
+  draft_sampler: probabilistic
+  verifier: block
   architecture: DeepseekV41ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 3
@@ -1044,6 +1079,8 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4.1-flash
+  draft_sampler: probabilistic
+  verifier: block
   architecture: DeepseekV41ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 4
@@ -1074,6 +1111,8 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4.1-flash
+  draft_sampler: probabilistic
+  verifier: block
   architecture: DeepseekV41ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 5
@@ -1104,6 +1143,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: glm-5.2-fp8
+  verifier: standard
   architecture: GlmMoeDsaForCausalLM
   speculative_method: mtp
   num_spec_tokens: 1
@@ -1131,6 +1171,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.2-fp8
+  verifier: standard
   architecture: GlmMoeDsaForCausalLM
   speculative_method: mtp
   num_spec_tokens: 2
@@ -1158,6 +1199,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.2-fp8
+  verifier: standard
   architecture: GlmMoeDsaForCausalLM
   speculative_method: mtp
   num_spec_tokens: 3
@@ -1185,6 +1227,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.2-fp8
+  verifier: standard
   architecture: GlmMoeDsaForCausalLM
   speculative_method: mtp
   num_spec_tokens: 4
@@ -1212,6 +1255,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.2-fp8
+  verifier: standard
   architecture: GlmMoeDsaForCausalLM
   speculative_method: mtp
   num_spec_tokens: 5
@@ -1239,6 +1283,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.2-fp8
+  verifier: standard
   architecture: GlmMoeDsaForCausalLM
   speculative_method: mtp
   num_spec_tokens: 6
@@ -1266,6 +1311,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.2-fp8
+  verifier: standard
   architecture: GlmMoeDsaForCausalLM
   speculative_method: mtp
   num_spec_tokens: 7
@@ -1293,6 +1339,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.2-fp8
+  verifier: standard
   architecture: GlmMoeDsaForCausalLM
   speculative_method: mtp
   num_spec_tokens: 8
@@ -1320,6 +1367,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3
+  verifier: standard
   architecture: GlmMoeDsaForCausalLM
   speculative_method: mtp
   num_spec_tokens: 1
@@ -1351,6 +1399,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3
+  verifier: standard
   architecture: GlmMoeDsaForCausalLM
   speculative_method: mtp
   num_spec_tokens: 2
@@ -1382,6 +1431,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3
+  verifier: standard
   architecture: GlmMoeDsaForCausalLM
   speculative_method: mtp
   num_spec_tokens: 3
@@ -1413,6 +1463,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3
+  verifier: standard
   architecture: GlmMoeDsaForCausalLM
   speculative_method: mtp
   num_spec_tokens: 4
@@ -1444,6 +1495,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3
+  verifier: standard
   architecture: GlmMoeDsaForCausalLM
   speculative_method: mtp
   num_spec_tokens: 5
@@ -1475,6 +1527,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3
+  verifier: standard
   architecture: GlmMoeDsaForCausalLM
   speculative_method: mtp
   num_spec_tokens: 6
@@ -1506,6 +1559,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3
+  verifier: standard
   architecture: GlmMoeDsaForCausalLM
   speculative_method: mtp
   num_spec_tokens: 7
@@ -1537,6 +1591,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3
+  verifier: standard
   architecture: GlmMoeDsaForCausalLM
   speculative_method: mtp
   num_spec_tokens: 8
@@ -1568,6 +1623,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3-flash
+  verifier: standard
   architecture: Glm5NextForConditionalGeneration
   speculative_method: mtp
   num_spec_tokens: 1
@@ -1596,6 +1652,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3-flash
+  verifier: standard
   architecture: Glm5NextForConditionalGeneration
   speculative_method: mtp
   num_spec_tokens: 2
@@ -1624,6 +1681,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3-flash
+  verifier: standard
   architecture: Glm5NextForConditionalGeneration
   speculative_method: mtp
   num_spec_tokens: 3
@@ -1652,6 +1710,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3-flash
+  verifier: standard
   architecture: Glm5NextForConditionalGeneration
   speculative_method: mtp
   num_spec_tokens: 4
@@ -1680,6 +1739,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3-flash
+  verifier: standard
   architecture: Glm5NextForConditionalGeneration
   speculative_method: mtp
   num_spec_tokens: 5
@@ -1708,6 +1768,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3-flash
+  verifier: standard
   architecture: Glm5NextForConditionalGeneration
   speculative_method: mtp
   num_spec_tokens: 6
@@ -1736,6 +1797,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3-flash
+  verifier: standard
   architecture: Glm5NextForConditionalGeneration
   speculative_method: mtp
   num_spec_tokens: 7
@@ -1764,6 +1826,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3-flash
+  verifier: standard
   architecture: Glm5NextForConditionalGeneration
   speculative_method: mtp
   num_spec_tokens: 8
@@ -1791,8 +1854,1018 @@ profiles:
       temperature: 1.0
       top_p: 0.95
       max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  verifier: standard
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 1
+  thinking: 'on'
+  category: coding
+  acceptance_length: 1.84
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__default-default.yaml
+    sha256: f713d34e0fa710ebfced32e7881936ab54f0b6565df4855e2c4762b7d7996145
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/30304797750
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": true}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  verifier: standard
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 2
+  thinking: 'on'
+  category: coding
+  acceptance_length: 2.45
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__default-default.yaml
+    sha256: f713d34e0fa710ebfced32e7881936ab54f0b6565df4855e2c4762b7d7996145
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/30304797750
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": true}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  verifier: standard
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 3
+  thinking: 'on'
+  category: coding
+  acceptance_length: 2.87
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__default-default.yaml
+    sha256: f713d34e0fa710ebfced32e7881936ab54f0b6565df4855e2c4762b7d7996145
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/30304797750
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": true}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  verifier: standard
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 4
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.22
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__default-default.yaml
+    sha256: f713d34e0fa710ebfced32e7881936ab54f0b6565df4855e2c4762b7d7996145
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/30304797750
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": true}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  verifier: standard
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 5
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.44
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__default-default.yaml
+    sha256: f713d34e0fa710ebfced32e7881936ab54f0b6565df4855e2c4762b7d7996145
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/30304797750
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": true}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  verifier: standard
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 6
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.54
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__default-default.yaml
+    sha256: f713d34e0fa710ebfced32e7881936ab54f0b6565df4855e2c4762b7d7996145
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/30304797750
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": true}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  verifier: standard
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 7
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.78
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__default-default.yaml
+    sha256: f713d34e0fa710ebfced32e7881936ab54f0b6565df4855e2c4762b7d7996145
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/30304797750
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": true}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  verifier: standard
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 8
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.88
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__default-default.yaml
+    sha256: f713d34e0fa710ebfced32e7881936ab54f0b6565df4855e2c4762b7d7996145
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/30304797750
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": true}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  draft_sampler: probabilistic
+  verifier: block
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 1
+  thinking: 'on'
+  category: coding
+  acceptance_length: 1.85
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-block.yaml
+    sha256: 7a71bc4546a8fa03230b75ad54a9485f142aaad61da69ee5bcb5b4518bd8eefe
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/30316471205
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      draft_sample: probabilistic
+      verify: block
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": true}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  draft_sampler: probabilistic
+  verifier: block
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 2
+  thinking: 'on'
+  category: coding
+  acceptance_length: 2.51
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-block.yaml
+    sha256: 7a71bc4546a8fa03230b75ad54a9485f142aaad61da69ee5bcb5b4518bd8eefe
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/30316471205
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      draft_sample: probabilistic
+      verify: block
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": true}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  draft_sampler: probabilistic
+  verifier: block
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 3
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.0
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-block.yaml
+    sha256: 7a71bc4546a8fa03230b75ad54a9485f142aaad61da69ee5bcb5b4518bd8eefe
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/30316471205
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      draft_sample: probabilistic
+      verify: block
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": true}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  draft_sampler: probabilistic
+  verifier: block
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 4
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.36
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-block.yaml
+    sha256: 7a71bc4546a8fa03230b75ad54a9485f142aaad61da69ee5bcb5b4518bd8eefe
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/30316471205
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      draft_sample: probabilistic
+      verify: block
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": true}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  draft_sampler: probabilistic
+  verifier: block
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 5
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.62
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-block.yaml
+    sha256: 7a71bc4546a8fa03230b75ad54a9485f142aaad61da69ee5bcb5b4518bd8eefe
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/30316471205
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      draft_sample: probabilistic
+      verify: block
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": true}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  draft_sampler: probabilistic
+  verifier: block
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 6
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.75
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-block.yaml
+    sha256: 7a71bc4546a8fa03230b75ad54a9485f142aaad61da69ee5bcb5b4518bd8eefe
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/30316471205
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      draft_sample: probabilistic
+      verify: block
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": true}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  draft_sampler: probabilistic
+  verifier: block
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 7
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.84
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-block.yaml
+    sha256: 7a71bc4546a8fa03230b75ad54a9485f142aaad61da69ee5bcb5b4518bd8eefe
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/30316471205
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      draft_sample: probabilistic
+      verify: block
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": true}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  draft_sampler: probabilistic
+  verifier: block
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 8
+  thinking: 'on'
+  category: coding
+  acceptance_length: 4.0
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-block.yaml
+    sha256: 7a71bc4546a8fa03230b75ad54a9485f142aaad61da69ee5bcb5b4518bd8eefe
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/30316471205
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      draft_sample: probabilistic
+      verify: block
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": true}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  draft_sampler: probabilistic
+  verifier: standard
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 1
+  thinking: 'off'
+  category: coding
+  acceptance_length: 1.89
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-default.yaml
+    sha256: 7c6826e034df543c2e1d29ae5c74e82d1b9a1abd3b36af78aaa5b2ee0e8c96d1
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121033716
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      draft_sample: probabilistic
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": false}'
+    sampling:
+      temperature: 0.6
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  draft_sampler: probabilistic
+  verifier: standard
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 2
+  thinking: 'off'
+  category: coding
+  acceptance_length: 2.62
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-default.yaml
+    sha256: 7c6826e034df543c2e1d29ae5c74e82d1b9a1abd3b36af78aaa5b2ee0e8c96d1
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121033716
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      draft_sample: probabilistic
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": false}'
+    sampling:
+      temperature: 0.6
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  draft_sampler: probabilistic
+  verifier: standard
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 3
+  thinking: 'off'
+  category: coding
+  acceptance_length: 3.1
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-default.yaml
+    sha256: 7c6826e034df543c2e1d29ae5c74e82d1b9a1abd3b36af78aaa5b2ee0e8c96d1
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121033716
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      draft_sample: probabilistic
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": false}'
+    sampling:
+      temperature: 0.6
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  draft_sampler: probabilistic
+  verifier: standard
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 4
+  thinking: 'off'
+  category: coding
+  acceptance_length: 3.41
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-default.yaml
+    sha256: 7c6826e034df543c2e1d29ae5c74e82d1b9a1abd3b36af78aaa5b2ee0e8c96d1
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121033716
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      draft_sample: probabilistic
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": false}'
+    sampling:
+      temperature: 0.6
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  draft_sampler: probabilistic
+  verifier: standard
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 5
+  thinking: 'off'
+  category: coding
+  acceptance_length: 3.92
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-default.yaml
+    sha256: 7c6826e034df543c2e1d29ae5c74e82d1b9a1abd3b36af78aaa5b2ee0e8c96d1
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121033716
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      draft_sample: probabilistic
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": false}'
+    sampling:
+      temperature: 0.6
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  draft_sampler: probabilistic
+  verifier: standard
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 6
+  thinking: 'off'
+  category: coding
+  acceptance_length: 4.07
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-default.yaml
+    sha256: 7c6826e034df543c2e1d29ae5c74e82d1b9a1abd3b36af78aaa5b2ee0e8c96d1
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121033716
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      draft_sample: probabilistic
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": false}'
+    sampling:
+      temperature: 0.6
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  draft_sampler: probabilistic
+  verifier: standard
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 7
+  thinking: 'off'
+  category: coding
+  acceptance_length: 4.22
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-default.yaml
+    sha256: 7c6826e034df543c2e1d29ae5c74e82d1b9a1abd3b36af78aaa5b2ee0e8c96d1
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121033716
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      draft_sample: probabilistic
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": false}'
+    sampling:
+      temperature: 0.6
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  draft_sampler: probabilistic
+  verifier: standard
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 8
+  thinking: 'off'
+  category: coding
+  acceptance_length: 4.62
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-default.yaml
+    sha256: 7c6826e034df543c2e1d29ae5c74e82d1b9a1abd3b36af78aaa5b2ee0e8c96d1
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121033716
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      draft_sample: probabilistic
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": false}'
+    sampling:
+      temperature: 0.6
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  draft_sampler: probabilistic
+  verifier: standard
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 1
+  thinking: 'on'
+  category: coding
+  acceptance_length: 1.86
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-default.yaml
+    sha256: 7c6826e034df543c2e1d29ae5c74e82d1b9a1abd3b36af78aaa5b2ee0e8c96d1
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121033716
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      draft_sample: probabilistic
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": true}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  draft_sampler: probabilistic
+  verifier: standard
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 2
+  thinking: 'on'
+  category: coding
+  acceptance_length: 2.48
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-default.yaml
+    sha256: 7c6826e034df543c2e1d29ae5c74e82d1b9a1abd3b36af78aaa5b2ee0e8c96d1
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121033716
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      draft_sample: probabilistic
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": true}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  draft_sampler: probabilistic
+  verifier: standard
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 3
+  thinking: 'on'
+  category: coding
+  acceptance_length: 2.96
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-default.yaml
+    sha256: 7c6826e034df543c2e1d29ae5c74e82d1b9a1abd3b36af78aaa5b2ee0e8c96d1
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121033716
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      draft_sample: probabilistic
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": true}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  draft_sampler: probabilistic
+  verifier: standard
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 4
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.24
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-default.yaml
+    sha256: 7c6826e034df543c2e1d29ae5c74e82d1b9a1abd3b36af78aaa5b2ee0e8c96d1
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121033716
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      draft_sample: probabilistic
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": true}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  draft_sampler: probabilistic
+  verifier: standard
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 5
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.53
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-default.yaml
+    sha256: 7c6826e034df543c2e1d29ae5c74e82d1b9a1abd3b36af78aaa5b2ee0e8c96d1
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121033716
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      draft_sample: probabilistic
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": true}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  draft_sampler: probabilistic
+  verifier: standard
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 6
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.69
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-default.yaml
+    sha256: 7c6826e034df543c2e1d29ae5c74e82d1b9a1abd3b36af78aaa5b2ee0e8c96d1
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121033716
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      draft_sample: probabilistic
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": true}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  draft_sampler: probabilistic
+  verifier: standard
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 7
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.84
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-default.yaml
+    sha256: 7c6826e034df543c2e1d29ae5c74e82d1b9a1abd3b36af78aaa5b2ee0e8c96d1
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121033716
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      draft_sample: probabilistic
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": true}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: kimi-k3
+  drafter: kimi-k3-dspark
+  draft_sampler: probabilistic
+  verifier: standard
+  architecture: KimiK3ForConditionalGeneration
+  speculative_method: dspark
+  num_spec_tokens: 8
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.98
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/kimi-k3__dspark__kimi-k3-dspark__probabilistic-default.yaml
+    sha256: 7c6826e034df543c2e1d29ae5c74e82d1b9a1abd3b36af78aaa5b2ee0e8c96d1
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121033716
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/Kimi-K3-DSpark
+      draft_sample: probabilistic
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking": true}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
 - model: kimi-k3.1
   drafter: kimi-k3.1-dspark
+  draft_sampler: probabilistic
+  verifier: block
   architecture: KimiK31ForConditionalGeneration
   speculative_method: dspark
   num_spec_tokens: 1
@@ -1824,6 +2897,8 @@ profiles:
       max_tokens: 4096
 - model: kimi-k3.1
   drafter: kimi-k3.1-dspark
+  draft_sampler: probabilistic
+  verifier: block
   architecture: KimiK31ForConditionalGeneration
   speculative_method: dspark
   num_spec_tokens: 2
@@ -1855,6 +2930,8 @@ profiles:
       max_tokens: 4096
 - model: kimi-k3.1
   drafter: kimi-k3.1-dspark
+  draft_sampler: probabilistic
+  verifier: block
   architecture: KimiK31ForConditionalGeneration
   speculative_method: dspark
   num_spec_tokens: 3
@@ -1886,6 +2963,8 @@ profiles:
       max_tokens: 4096
 - model: kimi-k3.1
   drafter: kimi-k3.1-dspark
+  draft_sampler: probabilistic
+  verifier: block
   architecture: KimiK31ForConditionalGeneration
   speculative_method: dspark
   num_spec_tokens: 4
@@ -1917,6 +2996,8 @@ profiles:
       max_tokens: 4096
 - model: kimi-k3.1
   drafter: kimi-k3.1-dspark
+  draft_sampler: probabilistic
+  verifier: block
   architecture: KimiK31ForConditionalGeneration
   speculative_method: dspark
   num_spec_tokens: 5
@@ -1948,6 +3029,8 @@ profiles:
       max_tokens: 4096
 - model: kimi-k3.1
   drafter: kimi-k3.1-dspark
+  draft_sampler: probabilistic
+  verifier: block
   architecture: KimiK31ForConditionalGeneration
   speculative_method: dspark
   num_spec_tokens: 6
@@ -1979,6 +3062,8 @@ profiles:
       max_tokens: 4096
 - model: kimi-k3.1
   drafter: kimi-k3.1-dspark
+  draft_sampler: probabilistic
+  verifier: block
   architecture: KimiK31ForConditionalGeneration
   speculative_method: dspark
   num_spec_tokens: 7
@@ -2010,6 +3095,8 @@ profiles:
       max_tokens: 4096
 - model: kimi-k3.1
   drafter: kimi-k3.1-dspark
+  draft_sampler: probabilistic
+  verifier: block
   architecture: KimiK31ForConditionalGeneration
   speculative_method: dspark
   num_spec_tokens: 8
@@ -2041,6 +3128,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
+  verifier: standard
   architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 1
@@ -2070,6 +3158,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
+  verifier: standard
   architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 2
@@ -2099,6 +3188,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
+  verifier: standard
   architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 3
@@ -2128,6 +3218,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
+  verifier: standard
   architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 4
@@ -2157,6 +3248,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
+  verifier: standard
   architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 5
@@ -2186,6 +3278,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
+  verifier: standard
   architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 6
@@ -2215,6 +3308,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
+  verifier: standard
   architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 7
@@ -2244,6 +3338,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
+  verifier: standard
   architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 8
@@ -2273,6 +3368,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
+  verifier: standard
   architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 1
@@ -2302,6 +3398,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
+  verifier: standard
   architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 2
@@ -2331,6 +3428,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
+  verifier: standard
   architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 3
@@ -2360,6 +3458,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
+  verifier: standard
   architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 4
@@ -2389,6 +3488,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
+  verifier: standard
   architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 5
@@ -2418,6 +3518,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
+  verifier: standard
   architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 6
@@ -2447,6 +3548,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
+  verifier: standard
   architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 7
@@ -2476,6 +3578,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
+  verifier: standard
   architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 8
@@ -2503,8 +3606,970 @@ profiles:
       top_p: 0.95
       top_k: 40
       max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: block
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 1
+  thinking: 'off'
+  category: coding
+  acceptance_length: 1.83
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-block.yaml
+    sha256: 61f69a335125dfc10604c57ec2cd07bdf0f0589e8885baac33888ef258aedb97
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121037354
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: block
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "disabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: block
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 2
+  thinking: 'off'
+  category: coding
+  acceptance_length: 2.44
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-block.yaml
+    sha256: 61f69a335125dfc10604c57ec2cd07bdf0f0589e8885baac33888ef258aedb97
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121037354
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: block
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "disabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: block
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 3
+  thinking: 'off'
+  category: coding
+  acceptance_length: 2.93
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-block.yaml
+    sha256: 61f69a335125dfc10604c57ec2cd07bdf0f0589e8885baac33888ef258aedb97
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121037354
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: block
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "disabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: block
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 4
+  thinking: 'off'
+  category: coding
+  acceptance_length: 3.25
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-block.yaml
+    sha256: 61f69a335125dfc10604c57ec2cd07bdf0f0589e8885baac33888ef258aedb97
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121037354
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: block
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "disabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: block
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 5
+  thinking: 'off'
+  category: coding
+  acceptance_length: 3.55
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-block.yaml
+    sha256: 61f69a335125dfc10604c57ec2cd07bdf0f0589e8885baac33888ef258aedb97
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121037354
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: block
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "disabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: block
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 6
+  thinking: 'off'
+  category: coding
+  acceptance_length: 3.66
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-block.yaml
+    sha256: 61f69a335125dfc10604c57ec2cd07bdf0f0589e8885baac33888ef258aedb97
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121037354
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: block
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "disabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: block
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 7
+  thinking: 'off'
+  category: coding
+  acceptance_length: 3.78
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-block.yaml
+    sha256: 61f69a335125dfc10604c57ec2cd07bdf0f0589e8885baac33888ef258aedb97
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121037354
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: block
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "disabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: block
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 8
+  thinking: 'off'
+  category: coding
+  acceptance_length: 3.89
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-block.yaml
+    sha256: 61f69a335125dfc10604c57ec2cd07bdf0f0589e8885baac33888ef258aedb97
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121037354
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: block
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "disabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: block
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 1
+  thinking: 'on'
+  category: coding
+  acceptance_length: 1.79
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-block.yaml
+    sha256: 61f69a335125dfc10604c57ec2cd07bdf0f0589e8885baac33888ef258aedb97
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121037354
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: block
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "enabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: block
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 2
+  thinking: 'on'
+  category: coding
+  acceptance_length: 2.37
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-block.yaml
+    sha256: 61f69a335125dfc10604c57ec2cd07bdf0f0589e8885baac33888ef258aedb97
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121037354
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: block
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "enabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: block
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 3
+  thinking: 'on'
+  category: coding
+  acceptance_length: 2.76
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-block.yaml
+    sha256: 61f69a335125dfc10604c57ec2cd07bdf0f0589e8885baac33888ef258aedb97
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121037354
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: block
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "enabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: block
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 4
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.01
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-block.yaml
+    sha256: 61f69a335125dfc10604c57ec2cd07bdf0f0589e8885baac33888ef258aedb97
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121037354
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: block
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "enabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: block
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 5
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.2
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-block.yaml
+    sha256: 61f69a335125dfc10604c57ec2cd07bdf0f0589e8885baac33888ef258aedb97
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121037354
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: block
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "enabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: block
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 6
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.36
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-block.yaml
+    sha256: 61f69a335125dfc10604c57ec2cd07bdf0f0589e8885baac33888ef258aedb97
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121037354
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: block
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "enabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: block
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 7
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.52
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-block.yaml
+    sha256: 61f69a335125dfc10604c57ec2cd07bdf0f0589e8885baac33888ef258aedb97
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121037354
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: block
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "enabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: block
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 8
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.51
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-block.yaml
+    sha256: 61f69a335125dfc10604c57ec2cd07bdf0f0589e8885baac33888ef258aedb97
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41121037354
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: block
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "enabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: standard
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 1
+  thinking: 'off'
+  category: coding
+  acceptance_length: 1.83
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-default.yaml
+    sha256: 11530156af304ef7836c672f7cfd8ab5f7dd1766c6be5b6903807de2125efee3
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/29784780049
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "disabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: standard
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 2
+  thinking: 'off'
+  category: coding
+  acceptance_length: 2.46
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-default.yaml
+    sha256: 11530156af304ef7836c672f7cfd8ab5f7dd1766c6be5b6903807de2125efee3
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/29784780049
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "disabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: standard
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 3
+  thinking: 'off'
+  category: coding
+  acceptance_length: 2.97
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-default.yaml
+    sha256: 11530156af304ef7836c672f7cfd8ab5f7dd1766c6be5b6903807de2125efee3
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/29784780049
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "disabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: standard
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 4
+  thinking: 'off'
+  category: coding
+  acceptance_length: 3.29
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-default.yaml
+    sha256: 11530156af304ef7836c672f7cfd8ab5f7dd1766c6be5b6903807de2125efee3
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/29784780049
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "disabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: standard
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 5
+  thinking: 'off'
+  category: coding
+  acceptance_length: 3.72
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-default.yaml
+    sha256: 11530156af304ef7836c672f7cfd8ab5f7dd1766c6be5b6903807de2125efee3
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/29784780049
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "disabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: standard
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 6
+  thinking: 'off'
+  category: coding
+  acceptance_length: 3.76
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-default.yaml
+    sha256: 11530156af304ef7836c672f7cfd8ab5f7dd1766c6be5b6903807de2125efee3
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/29784780049
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "disabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: standard
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 7
+  thinking: 'off'
+  category: coding
+  acceptance_length: 3.75
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-default.yaml
+    sha256: 11530156af304ef7836c672f7cfd8ab5f7dd1766c6be5b6903807de2125efee3
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/29784780049
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "disabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: standard
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 8
+  thinking: 'off'
+  category: coding
+  acceptance_length: 3.93
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-default.yaml
+    sha256: 11530156af304ef7836c672f7cfd8ab5f7dd1766c6be5b6903807de2125efee3
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/29784780049
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "disabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: standard
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 1
+  thinking: 'on'
+  category: coding
+  acceptance_length: 1.79
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-default.yaml
+    sha256: 11530156af304ef7836c672f7cfd8ab5f7dd1766c6be5b6903807de2125efee3
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/29784780049
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "enabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: standard
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 2
+  thinking: 'on'
+  category: coding
+  acceptance_length: 2.39
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-default.yaml
+    sha256: 11530156af304ef7836c672f7cfd8ab5f7dd1766c6be5b6903807de2125efee3
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/29784780049
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "enabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: standard
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 3
+  thinking: 'on'
+  category: coding
+  acceptance_length: 2.78
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-default.yaml
+    sha256: 11530156af304ef7836c672f7cfd8ab5f7dd1766c6be5b6903807de2125efee3
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/29784780049
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "enabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: standard
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 4
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.02
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-default.yaml
+    sha256: 11530156af304ef7836c672f7cfd8ab5f7dd1766c6be5b6903807de2125efee3
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/29784780049
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "enabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: standard
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 5
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.21
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-default.yaml
+    sha256: 11530156af304ef7836c672f7cfd8ab5f7dd1766c6be5b6903807de2125efee3
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/29784780049
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "enabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: standard
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 6
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.3
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-default.yaml
+    sha256: 11530156af304ef7836c672f7cfd8ab5f7dd1766c6be5b6903807de2125efee3
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/29784780049
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "enabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: standard
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 7
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.52
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-default.yaml
+    sha256: 11530156af304ef7836c672f7cfd8ab5f7dd1766c6be5b6903807de2125efee3
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/29784780049
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "enabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
+- model: minimax-m3
+  drafter: minimax-m3-eagle3-gqa
+  verifier: standard
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  speculative_method: eagle3
+  num_spec_tokens: 8
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.51
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-default.yaml
+    sha256: 11530156af304ef7836c672f7cfd8ab5f7dd1766c6be5b6903807de2125efee3
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/29784780049
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      draft_model: Inferact/MiniMax-M3-EAGLE3-GQA
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"thinking_mode": "enabled"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 4096
 - model: minimax-m3.1-flash
   drafter: minimax-m3.1-flash-dspark
+  draft_sampler: probabilistic
+  verifier: block
   architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: dspark
   num_spec_tokens: 1
@@ -2535,6 +4600,8 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3.1-flash
   drafter: minimax-m3.1-flash-dspark
+  draft_sampler: probabilistic
+  verifier: block
   architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: dspark
   num_spec_tokens: 2
@@ -2565,6 +4632,8 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3.1-flash
   drafter: minimax-m3.1-flash-dspark
+  draft_sampler: probabilistic
+  verifier: block
   architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: dspark
   num_spec_tokens: 3
@@ -2595,6 +4664,8 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3.1-flash
   drafter: minimax-m3.1-flash-dspark
+  draft_sampler: probabilistic
+  verifier: block
   architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: dspark
   num_spec_tokens: 4
@@ -2625,6 +4696,8 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3.1-flash
   drafter: minimax-m3.1-flash-dspark
+  draft_sampler: probabilistic
+  verifier: block
   architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: dspark
   num_spec_tokens: 5
@@ -2655,6 +4728,8 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3.1-flash
   drafter: minimax-m3.1-flash-dspark
+  draft_sampler: probabilistic
+  verifier: block
   architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: dspark
   num_spec_tokens: 6
@@ -2685,6 +4760,8 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3.1-flash
   drafter: minimax-m3.1-flash-dspark
+  draft_sampler: probabilistic
+  verifier: block
   architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: dspark
   num_spec_tokens: 7

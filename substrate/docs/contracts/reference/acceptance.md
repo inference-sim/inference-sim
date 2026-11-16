@@ -94,10 +94,14 @@ none of its own takes. Two shapes for one method are an error.
 
 ### Profiles
 
-A profile is keyed by model, drafter, speculative method, K, thinking mode and workload
-category. Two profiles with one key are an error. The drafter is the model's own in-graph
-speculator when it is left out, or the catalog name of a separate drafter checkpoint; the
-same target with two drafters has two profiles.
+A profile is keyed by model, drafter, speculative method, K, thinking mode, workload
+category, draft sampler and verifier. Two profiles with one key are an error. The drafter is
+the model's own in-graph speculator when it is left out, or the catalog name of a separate
+drafter checkpoint; the same target with two drafters has two profiles. The draft sampler and
+the verifier are stated where they tell one measurement from another of the same target,
+drafter and method, such as Kimi-K3's DSpark curves under greedy and probabilistic drafting;
+left out, they are the engine's default. A key that states them renders them after the
+category, as `.../coding/draft-probabilistic/verify-block`.
 
 <!-- fields: acceptance.Profile -->
 
@@ -105,6 +109,8 @@ same target with two drafters has two profiles.
 |---|---|---|---|
 | `model` | string | yes | The catalog model name, not the source's spelling of it. |
 | `drafter` | string | no | The catalog name of the separate drafter checkpoint the value was measured with. Left out for the model's own speculator, such as its MTP layers. No `+`, `/` or space, and not the target's own name. |
+| `draft_sampler` | string | no | How the drafter sampled its drafts: `greedy` or `probabilistic`. Left out for the engine's default. |
+| `verifier` | string | no | How the target verified drafts: `standard`, `block` or `relaxed`. Left out for the engine's default. |
 | `architecture` | string | no | The target's architecture as its graph records it (`global.architecture`). A lookup that borrows from another target reads it; a profile that states none is never borrowed across targets. It must equal the graph's. |
 | `speculative_method` | string | yes | The engine's method name, as a deployment's `engine.speculative.method` states it. |
 | `num_spec_tokens` | integer | yes | K. At least 1. |
@@ -220,16 +226,20 @@ one, in this order (design D8), and records that it did:
    that states none gives 1 + K(AL − 1)/K₀, where K₀ is its K. That figure cannot exceed what
    the profile's own rates would give, so it does not overstate drafting's gain. The lookup
    never extrapolates.
-2. **Another drafter of the same target**, preferring the same method and then the lowest
+2. **The same target, drafter and method under another draft sampler or verifier**
+   (`same_drafter_other_settings`). It takes the profiles that differ in the fewest of the
+   two, then the lowest value at the run's K by the first step's rules, so that a borrowed
+   setting does not overstate drafting's gain.
+3. **Another drafter of the same target**, preferring the same method and then the lowest
    value at the run's K, found by the first step's rules, so that drafting's gain is not
    overstated. The drafter must differ from the run's: the same drafter under another
    method is not another drafter, no step takes it, and the lookup refuses it.
-3. **The same method on another target** whose graph records the same architecture. The
+4. **The same method on another target** whose graph records the same architecture. The
    profile must state its architecture, and the run's must be known.
 
 Every step keeps the category and the thinking mode, apart from a fallback category the user
 requested. The fallback category stands in only when the workload's own category supplies
-nothing: the lookup tries the exact key and all three steps in the workload's category first,
+nothing: the lookup tries the exact key and every step in the workload's category first,
 and only then repeats them in the fallback category. Any remaining tie breaks in this order: the profile measured on the run's
 hardware, then the newest source (`provenance.date`), then the set name, then the key, so the
 choice is deterministic whatever order the sets are listed in. Two profiles that share a key
@@ -237,8 +247,8 @@ but record different sampling or settings are not interchangeable, and an exact 
 two sets is ambiguous; the lookup refuses both. A scenario's `exact_only`, or the request's,
 limits the lookup to exact matches.
 
-The resolution records `step` (`exact`, `same_drafter_other_k`, `other_drafter` or
-`other_target`), the key fields that `differed`, how K was brought to the run's (`k_rule`),
+The resolution records `step` (`exact`, `same_drafter_other_k`,
+`same_drafter_other_settings`, `other_drafter` or `other_target`), the key fields that `differed`, how K was brought to the run's (`k_rule`),
 and every profile read. The Result carries the same record on its `speculative_acceptance`
 property.
 

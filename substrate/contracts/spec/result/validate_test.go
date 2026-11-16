@@ -677,3 +677,20 @@ func TestAPropertyOfARatesDerivedResolutionWithNoScheduleIsRefused(t *testing.T)
 	AcceptanceProperty(acceptance.Resolution{AcceptanceLength: 2, PerPositionRates: []float64{1, 0}, RatesDerived: true,
 		Layer: acceptance.LayerCLI})
 }
+
+// A value borrowed across a draft sampler or verifier records the step and names the field that
+// differed (inference-sim/blis-substrate#174).
+func TestAPropertyBorrowedAcrossSettingsValidates(t *testing.T) {
+	for _, differed := range [][]string{{"verifier"}, {"draft_sampler"}, {"draft_sampler", "verifier"}} {
+		r := valid()
+		r.Input.WorkloadProperties = []WorkloadProperty{borrowed("same_drafter_other_settings", differed, "", "s a")}
+		if p := r.Validate(); !p.OK() {
+			t.Errorf("differed %v was refused:\n%s", differed, p.Error())
+		}
+	}
+	r := valid()
+	r.Input.WorkloadProperties = []WorkloadProperty{borrowed("same_drafter_other_settings", []string{"rejection"}, "", "s a")}
+	if p := r.Validate(); p.OK() || !strings.Contains(p.Error(), "differed[0]") {
+		t.Errorf("an unknown differed field was accepted: %v", p.Error())
+	}
+}
