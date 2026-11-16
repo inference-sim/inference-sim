@@ -24,3 +24,6 @@ __pycache__/
 /.venv/
 /.pytest_cache/
 
+
+# InferenceX curves fetched at the pinned commit (scripts/fetch_inferencex_curves.py); never committed (X12)
+/validator/testdata/inferencex/cache/

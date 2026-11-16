@@ -3,6 +3,7 @@ package acceptance
 import (
 	"fmt"
 	"math"
+	"regexp"
 	"strings"
 	"time"
 
@@ -143,9 +144,15 @@ func (pr Profile) validateEvidence(p *validate.Problems, at string) {
 	pr.Provenance.validate(p, at+".provenance", pr.Method == vocab.MethodMeasured)
 }
 
+// sha256Pattern is a SHA-256 digest as hex.
+var sha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
 func (v Provenance) validate(p *validate.Problems, at string, measured bool) {
 	if v.Source == "" {
 		p.Field(at+".source", "required: the document the value was read from")
+	}
+	if v.SHA256 != "" && !sha256Pattern.MatchString(v.SHA256) {
+		p.Field(at+".sha256", "%q is not a SHA-256: 64 lower-case hex digits", v.SHA256)
 	}
 	if v.Prompts < 0 {
 		p.Field(at+".prompts", "must not be negative")

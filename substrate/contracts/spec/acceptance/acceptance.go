@@ -175,6 +175,9 @@ func (p Profile) Rates() ([]float64, bool, error) {
 type Provenance struct {
 	// Source is the document the value was read from, such as the golden-curve file's URL.
 	Source string `yaml:"source"`
+	// SHA256 is the hex SHA-256 of the source file's bytes, so a reader can check that the
+	// file Source names is the one the value was read from. Empty means unrecorded.
+	SHA256 string `yaml:"sha256,omitempty"`
 	// Run is the job that measured it, such as a GitHub Actions run URL.
 	Run string `yaml:"run,omitempty"`
 	// Benchmark names the prompt set, such as "SPEED-Bench Qualitative".
