@@ -54,5 +54,3 @@
 
 priority:
   policy: constant
-
-scheduler: fcfs

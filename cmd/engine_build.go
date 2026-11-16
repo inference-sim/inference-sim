@@ -44,15 +44,14 @@ import (
 )
 
 // The one place inference-sim builds blis-vllm (#2021 B2). The engine's configuration -- the
-// scenario's engine-side blocks and the command line's restatements of them -- is decoded and
-// resolved by blis-vllm's compat/build, which cmd calls only from here, handing the inputs over
-// unread. A refusal comes back as an error; the CLI boundary turns it into the fatal exit.
+// scenario's engine-side blocks -- is decoded and resolved by blis-vllm's compat/build, which cmd
+// calls only from here, handing the inputs over unread. A refusal comes back as an error; the CLI boundary turns it into the fatal exit.
 
-// resolveKVOffloadConfig resolves the run's KV offload: the scenario's offload block (#1910)
-// and the --kv-offload-config file, which may only restate it (build.ResolveKVOffloadConfig).
+// resolveKVOffloadConfig resolves the run's KV offload from the scenario's offload block
+// (#1910), the only source (#2037): build.ResolveKVOffloadConfig is given no file.
 // Single construction site (R4), shared by run and replay for INV-13 parity.
-func resolveKVOffloadConfig(cmd *cobra.Command) kvOffloadConfig {
-	cfg, err := build.ResolveKVOffloadConfig(kernelScenario, scenarioOffload, kvOffloadConfigPath,
+func resolveKVOffloadConfig() kvOffloadConfig {
+	cfg, err := build.ResolveKVOffloadConfig(kernelScenario, scenarioOffload, "",
 		blockSizeTokens, mustRunData())
 	if err != nil {
 		logrus.Fatalf("%v", err)
@@ -87,13 +86,12 @@ const (
 // for diagnostics that name it.
 const catalogStorageDevicesRelPath = build.CatalogStorageDevicesRelPath
 
-// engineKnobFlags gathers the command line's restatements of the scenario's per-pool engine
-// knobs, unread, for the engine to check against the scenario.
+// engineKnobFlags are the command line's restatements of the scenario's per-pool engine knobs:
+// none (#2021 B6, #2037). Every pool runs the long_prefill_token_threshold and
+// data_parallel_load_balancing it states; the zero value tells the engine no flag was given,
+// so a pool that states no mode runs vLLM's default.
 func engineKnobFlags() build.EngineKnobFlags {
-	return build.EngineKnobFlags{
-		// long_prefill_token_threshold has no flag (#2021 B6): every pool runs what it states.
-		DPLoadBalancing: dpLoadBalancing, DPLoadBalancingFromFlag: dpLoadBalancingFromFlag,
-	}
+	return build.EngineKnobFlags{DPLoadBalancing: defaultDPLoadBalancing}
 }
 
 // runEngineKnobs is the run-wide long-prefill threshold and DP load-balancing mode
@@ -370,18 +368,10 @@ func (p *kernelPools) environmentOf(c sim.InstanceConfig, colocated *kernelmodel
 // Environment and through nothing else.
 var wrapEnvironment = func(e env.Environment) env.Environment { return e }
 
-// defaultDPLoadBalancing is vLLM's default DP load-balancing mode, the --dp-load-balancing
-// flag's default (sim.DPLoadBalancingInternal, from blis-vllm compat/dplb).
+// defaultDPLoadBalancing is vLLM's default DP load-balancing mode, which a pool that states no
+// parallel.data_parallel_load_balancing runs (sim.DPLoadBalancingInternal, from blis-vllm
+// compat/dplb).
 const defaultDPLoadBalancing = sim.DPLoadBalancingInternal
-
-// requireDPLoadBalancingMode refuses a --dp-load-balancing value that names no vLLM mode
-// (sim.ValidDPLoadBalancing).
-func requireDPLoadBalancingMode(mode string) {
-	if !sim.ValidDPLoadBalancing(mode) {
-		logrus.Fatalf("--dp-load-balancing must be %s, %s or %s, got %q", sim.DPLoadBalancingInternal,
-			sim.DPLoadBalancingHybrid, sim.DPLoadBalancingExternal, mode)
-	}
-}
 
 // adoptFirstPoolEngine takes the run's engine from the first pool's kernel
 // (build.FirstPoolSettingsOf): the caps, pages and pool the kernel priced, so the simulated
@@ -431,11 +421,11 @@ func applyKernelLoRAReservation() {
 	totalKVBlocks = blocks
 }
 
-// prefixHitOf is how the pool's KV cache groups cut a prefix hit (build.PrefixHitOf), with the
-// run's --swa-bounded-replay override. It records the resolution for the results file and logs
-// when the model's layout is not one BLIS maps.
+// prefixHitOf is how the pool's KV cache groups cut a prefix hit (build.PrefixHitOf), from the
+// pool's engine.swa_bounded_replay or its resolution; no flag overrides it (#2037). It records
+// the resolution for the results file and logs when the model's layout is not one BLIS maps.
 func prefixHitOf(what string, m *engineModel) kvPrefixHit {
-	r, warning := build.PrefixHitOf(what, m, swaBoundedReplay.v)
+	r, warning := build.PrefixHitOf(what, m, nil)
 	if warning != "" {
 		logrus.Warnf("%s", warning)
 	}
@@ -457,8 +447,7 @@ func (p *kernelPools) overrides() (prefill, decode poolOverrides) {
 
 // poolOverridesOf is a P/D pool's engine as the cluster takes it: the settings blis-vllm
 // resolves for the pool (build.PoolSettingsOf), copied into the cluster's per-pool overrides.
-// The pool runs its own engine's scheduling policy unless a flag or policy bundle chose one for
-// the run, which then applies to every pool and is recorded where it departs.
+// The pool runs its own engine's scheduling policy.
 func poolOverridesOf(m *engineModel) poolOverrides {
 	hit := prefixHitOf(string(m.Role())+" pool", m)
 	ps, err := build.PoolSettingsOf(kernelScenario, m, loraReservedBytesForKV, hit, engineKnobFlags())
@@ -473,16 +462,7 @@ func poolOverridesOf(m *engineModel) poolOverrides {
 		MaxNumSeqs: &ps.MaxNumSeqs, MaxNumBatchedTokens: &ps.MaxNumBatchedTokens,
 		PrefixCachingDisabled: &ps.PrefixCachingDisabled, SequenceState: &ps.SequenceState, PrefixHit: &ps.PrefixHit,
 		LongPrefillTokenThreshold: &ps.LongPrefillTokenThreshold, DPLoadBalancing: ps.DPLoadBalancing,
-	}
-	if schedulerSource != "" {
-		recordPolicyOverride("scheduler", string(m.Role()), ps.Policy.Scheduler, scheduler, schedulerSource)
-	} else {
-		o.Scheduler = ps.Policy.Scheduler
-	}
-	if preemptionSource != "" {
-		recordPolicyOverride("preemption_policy", string(m.Role()), ps.Policy.Preemption, preemptionPolicy, preemptionSource)
-	} else {
-		o.PreemptionPolicy = ps.Policy.Preemption
+		Scheduler: ps.Policy.Scheduler, PreemptionPolicy: ps.Policy.Preemption,
 	}
 	return o
 }
@@ -502,8 +482,7 @@ func requireKernelCapacity(p *kernelPools) {
 
 // offloadPricing is what the engine's offload pricing reads from the run.
 func offloadPricing() build.OffloadPricing {
-	return build.OffloadPricing{BlockSizeTokens: blockSizeTokens, KVCPUBlocks: kvCPUBlocks,
-		MaxNumBatchedTokens: maxNumBatchedTokens}
+	return build.OffloadPricing{BlockSizeTokens: blockSizeTokens, MaxNumBatchedTokens: maxNumBatchedTokens}
 }
 
 // sizeOffloadBlocks records the kernel's per-rank bytes of one GPU block on an enabled offload
@@ -516,14 +495,12 @@ func sizeOffloadBlocks(cfg *kvOffloadConfig, keepStated bool) {
 }
 
 // applyKernelOffloadPricing has the kernel price every KV-offload transfer of a colocated
-// run (build.PriceColocatedOffload). It returns the legacy per-block charge. Shared by run and
-// replay.
-func applyKernelOffloadPricing(cfg *kvOffloadConfig) int64 {
-	ticks, err := build.PriceColocatedOffload(kernelOpened, cfg, offloadPricing(), fatalf)
-	if err != nil {
+// run (build.PriceColocatedOffload). Shared by run and replay. The run has no legacy CPU tier
+// (the scenario's offload block states the tiers), so there is no per-block charge to keep.
+func applyKernelOffloadPricing(cfg *kvOffloadConfig) {
+	if _, err := build.PriceColocatedOffload(kernelOpened, cfg, offloadPricing(), fatalf); err != nil {
 		logrus.Fatalf("%v", err)
 	}
-	return ticks
 }
 
 // applyOffload prices the run's KV offload once per pool, each by that pool's own kernel
@@ -537,8 +514,7 @@ func (p *kernelPools) applyOffload(cfg kvOffloadConfig, prefill, decode *poolOve
 	if !ok {
 		return
 	}
-	prefill.KVOffload, prefill.KVTransferTicksPerBlock = &pre.Config, &pre.TicksPerBlock
-	decode.KVOffload, decode.KVTransferTicksPerBlock = &dec.Config, &dec.TicksPerBlock
+	prefill.KVOffload, decode.KVOffload = &pre.Config, &dec.Config
 }
 
 // adoptInputs are the scenario and roots the command line names, handed over unread, with the
@@ -649,14 +625,6 @@ func acceptanceOverridesOf(fl *pflag.FlagSet, k int) kernelmodel.AcceptanceOverr
 // currentRoutingOverridesOf is the routing layer the pools will open with.
 func currentRoutingOverridesOf() routingOverrides { return kernelmodel.CurrentRoutingOverrides() }
 
-// checkPolicyNames refuses a scheduler or preemption policy the engine does not run
-// (build.CheckPolicyNames), at the CLI boundary.
-func checkPolicyNames(scheduler, preemption string) {
-	if err := build.CheckPolicyNames(scheduler, preemption); err != nil {
-		logrus.Fatalf("%v", err)
-	}
-}
-
 // resolveLoRAConfig assembles the run's LoRA configuration (build.ResolveLoRAConfig) from
 // defaults.yaml's cost coefficients, the optional --lora-config file and the scalar --lora-*
 // flags (each only when Changed, R18), and validates it. The single LoRAConfig construction site
@@ -692,8 +660,7 @@ func resolveLoRAConfig(cmd *cobra.Command) loraConfig {
 // batchConfigFromCLI is the run's batch configuration, the part of engineConfigFor's the
 // prefix-caching toggle reaches (build.BatchConfigOf).
 func batchConfigFromCLI() batchConfig {
-	return build.BatchConfigOf(engineSettings(modelConfig{}, 1, kvOffloadConfig{}, 0, loraConfig{},
-		speculativeConfig{}))
+	return build.BatchConfigOf(engineSettings(modelConfig{}, 1, kvOffloadConfig{}, loraConfig{}, speculativeConfig{}))
 }
 
 // engineConfigFor is the engine's configuration for this run or replay (build.EngineConfigOf),
@@ -701,8 +668,8 @@ func batchConfigFromCLI() batchConfig {
 // commands assemble it (INV-13). dp is the scenario's data parallelism.
 // It resolves the speculative configuration, which records the acceptance for the results file.
 func engineConfigFor(cmd *cobra.Command, m modelConfig, dp int, offload kvOffloadConfig,
-	cpuTierTicks int64, lora loraConfig) build.EngineConfig {
-	return build.EngineConfigOf(engineSettings(m, dp, offload, cpuTierTicks, lora, resolveSpeculativeConfig(cmd)))
+	lora loraConfig) build.EngineConfig {
+	return build.EngineConfigOf(engineSettings(m, dp, offload, lora, resolveSpeculativeConfig(cmd)))
 }
 
 // engineConfigOfRun is the run's engine configuration both commands build every instance's
@@ -846,12 +813,11 @@ func rolesOf(global engineConfig, prefill, decode poolOverrides) cluster.PoolRol
 }
 
 // engineSettings gathers the run's resolved engine settings, unread, for build.EngineConfigOf.
-func engineSettings(m modelConfig, perRankDP int, offload kvOffloadConfig, cpuTierTicks int64,
+func engineSettings(m modelConfig, perRankDP int, offload kvOffloadConfig,
 	lora loraConfig, spec speculativeConfig) build.EngineSettings {
 	return build.EngineSettings{
-		TotalKVBlocks: totalKVBlocks, BlockSizeTokens: blockSizeTokens, KVCPUBlocks: kvCPUBlocks,
-		KVOffloadThreshold: kvOffloadThreshold, KVTransferBandwidth: kvTransferBandwidth,
-		KVTransferBaseLatency: kvTransferBaseLatency, KVOffload: offload, KVTransferTicksPerBlock: cpuTierTicks,
+		TotalKVBlocks: totalKVBlocks, BlockSizeTokens: blockSizeTokens,
+		KVOffload:     offload,
 		SequenceState: sequenceState, PrefixHit: prefixHit,
 		MaxNumSeqs: maxNumSeqs, MaxNumBatchedTokens: maxNumBatchedTokens,
 		LongPrefillTokenThreshold: longPrefillTokenThreshold, PrefixCachingDisabled: noEnablePrefixCaching,
@@ -915,20 +881,20 @@ type (
 func kvOffloadOfRecord(r *offloadRecord) kvOffloadConfig { return build.KVOffloadOfRecord(r) }
 
 // reconcileReplayKVOffload is replay's KV-offload config: the trace header's, authoritative
-// (BC-G6), reconciled with the scenario's offload block and --kv-offload-config, which may
-// only restate it (build.ReconcileReplayKVOffload); fatal on a conflict or an unreproducible
-// record. allowFlagAdd is for a converted trace or an agentic replay, which record no BLIS
-// deployment (replayRecordsDeployment).
-func reconcileReplayKVOffload(cmd *cobra.Command, headerBlock *workload.TraceKVOffloadConfig, allowFlagAdd bool) kvOffloadConfig {
-	// The scenario's offload block is a source on replay as on run: it and the flag resolve
-	// together (resolveKVOffloadConfig), and the result must match the header.
-	flagChanged := cmd.Flags().Changed("kv-offload-config") || scenarioOffload != nil
-	var flagCfg kvOffloadConfig
-	if flagChanged {
-		// resolveKVOffloadConfig itself logrus.Fatalf's on a malformed flag file.
-		flagCfg = resolveKVOffloadConfig(cmd)
+// (BC-G6), reconciled with the scenario's offload block, which may only restate it
+// (build.ReconcileReplayKVOffload); fatal on a conflict or an unreproducible record.
+// allowScenarioAdd is for a converted trace or an agentic replay, which record no BLIS
+// deployment (replayRecordsDeployment), so the scenario's block states their tiers.
+func reconcileReplayKVOffload(headerBlock *workload.TraceKVOffloadConfig, allowScenarioAdd bool) kvOffloadConfig {
+	// The scenario's offload block is a source on replay as on run (resolveKVOffloadConfig),
+	// and the result must match the header.
+	stated := scenarioOffload != nil
+	var scenarioCfg kvOffloadConfig
+	if stated {
+		// resolveKVOffloadConfig itself logrus.Fatalf's on a block the engine refuses.
+		scenarioCfg = resolveKVOffloadConfig()
 	}
-	cfg, err := resolveReplayKVOffload(headerBlock, flagChanged, flagCfg, allowFlagAdd)
+	cfg, err := resolveReplayKVOffload(headerBlock, stated, scenarioCfg, allowScenarioAdd)
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
@@ -937,16 +903,8 @@ func reconcileReplayKVOffload(cmd *cobra.Command, headerBlock *workload.TraceKVO
 
 // resolveReplayKVOffload is reconcileReplayKVOffload's error-returning core, over the trace
 // header's record (build.ReconcileReplayKVOffload).
-func resolveReplayKVOffload(headerBlock *workload.TraceKVOffloadConfig, flagChanged bool, flagCfg kvOffloadConfig, allowFlagAdd bool) (kvOffloadConfig, error) {
-	return build.ReconcileReplayKVOffload(headerToSimOffload(headerBlock), flagChanged, flagCfg, allowFlagAdd)
-}
-
-// requireOneOffloadModel refuses the offload chain together with --kv-cpu-blocks (#1590 H1;
-// build.RequireOneOffloadModel), fatal at the CLI boundary.
-func requireOneOffloadModel(offloadEnabled bool, onReplay bool) {
-	if err := build.RequireOneOffloadModel(offloadEnabled, kvCPUBlocks, onReplay); err != nil {
-		logrus.Fatalf("%v", err)
-	}
+func resolveReplayKVOffload(headerBlock *workload.TraceKVOffloadConfig, stated bool, scenarioCfg kvOffloadConfig, allowScenarioAdd bool) (kvOffloadConfig, error) {
+	return build.ReconcileReplayKVOffload(headerToSimOffload(headerBlock), stated, scenarioCfg, allowScenarioAdd)
 }
 
 // frontendConfigFromCLI is the engine's front-end config from --renderer-num-workers and
@@ -961,7 +919,7 @@ func frontendConfigFromCLI() cengine.FrontendConfig {
 }
 
 // registerContractEngines registers the engine kind a contract-built release is built by:
-// blis-vllm's translated v0.32.0 engine, with the latency kernel's step pricing and KV sizing
+// blis-vllm's translated v0.33.0 engine, with the latency kernel's step pricing and KV sizing
 // (its Register). It is the one place this binary links an engine the contract reaches;
 // later calls are no-ops.
 func registerContractEngines() { coreengine.Register() }
@@ -1001,13 +959,13 @@ func engineFieldList(scenarioPath string, data *load.Data, seed int64) (fields.F
 	}
 	registerContractEngines()
 	eng, err := newContractEngine(engine.Spec{
-		Kind:            sel.Ref.Kind,
-		UpstreamVersion: sel.Ref.Version,
+		Kind:            sel.Kind,
+		UpstreamVersion: sel.Version,
 		Roots:           contractRoots(scenarioPath),
 		Seed:            seed,
 	}, data)
 	if err != nil {
-		return fields.FieldList{}, fmt.Errorf("scenario %s: engine %s: %w", scenarioPath, sel.Ref, err)
+		return fields.FieldList{}, fmt.Errorf("scenario %s: engine %s: %w", scenarioPath, sel, err)
 	}
 	return eng.Fields(), nil
 }
@@ -1043,11 +1001,10 @@ type poolOverrides struct {
 	MaxNumBatchedTokens   *int64
 	PrefixCachingDisabled *bool
 
-	// KVOffload and KVTransferTicksPerBlock are the pool's own KV offload (nil = use global):
-	// the run's one tier description, sized by the pool's bytes per block and priced by its
-	// own kernel, since pools of different widths hold different bytes per block.
-	KVOffload               *kvOffloadConfig
-	KVTransferTicksPerBlock *int64
+	// KVOffload is the pool's own KV offload (nil = use global): the run's one tier
+	// description, sized by the pool's bytes per block and priced by its own kernel, since
+	// pools of different widths hold different bytes per block.
+	KVOffload *kvOffloadConfig
 	// SequenceState is the pool's bounded per-sequence state (nil = use global): pools of
 	// different widths hold different state per sequence and per block (#1941).
 	SequenceState *kvSequenceState
@@ -1087,9 +1044,6 @@ func (o poolOverrides) Validate(name string) error {
 	if o.MaxNumBatchedTokens != nil && *o.MaxNumBatchedTokens <= 0 {
 		return fmt.Errorf("%s: poolOverrides.MaxNumBatchedTokens must be > 0 when set, got %d", name, *o.MaxNumBatchedTokens)
 	}
-	if o.KVTransferTicksPerBlock != nil && *o.KVTransferTicksPerBlock < 0 {
-		return fmt.Errorf("%s: poolOverrides.KVTransferTicksPerBlock must be >= 0 when set, got %d", name, *o.KVTransferTicksPerBlock)
-	}
 	if o.SequenceState != nil && (o.SequenceState.Hold == nil) != (o.SequenceState.Gate == nil) {
 		return fmt.Errorf("%s: poolOverrides.SequenceState needs both Hold and Gate, or neither", name)
 	}
@@ -1110,7 +1064,7 @@ func (o poolOverrides) IsEmpty() bool {
 	return o.TP == nil && o.GPU == "" &&
 		o.MaxModelLen == nil && o.TotalKVBlocks == nil &&
 		o.LatencyModel == nil && o.MaxNumSeqs == nil && o.MaxNumBatchedTokens == nil &&
-		o.PrefixCachingDisabled == nil && o.KVOffload == nil && o.KVTransferTicksPerBlock == nil &&
+		o.PrefixCachingDisabled == nil && o.KVOffload == nil &&
 		o.SequenceState == nil && o.PrefixHit == nil && o.Scheduler == "" && o.PreemptionPolicy == "" &&
 		o.LongPrefillTokenThreshold == nil && o.DPLoadBalancing == ""
 }
@@ -1151,9 +1105,6 @@ func resolvePoolConfig(global engineConfig, overrides poolOverrides) engineConfi
 	}
 	if overrides.KVOffload != nil {
 		resolved.Offload = *overrides.KVOffload
-	}
-	if overrides.KVTransferTicksPerBlock != nil {
-		resolved.KVTransferTicksPerBlock = *overrides.KVTransferTicksPerBlock
 	}
 	if overrides.SequenceState != nil {
 		resolved.SequenceState = *overrides.SequenceState

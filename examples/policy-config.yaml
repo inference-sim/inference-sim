@@ -14,7 +14,9 @@
 #
 # Available policies:
 #   priority:  constant (default), slo-based, inverted-slo
-#   scheduler: fcfs (default), priority-fcfs, sjf, reverse-priority
+#
+# The scheduler and preemption policy are not bundle keys: each pool's
+# engine.scheduling_policy in the scenario states them (fcfs or priority, vLLM's).
 
 priority:
   policy: constant
@@ -27,9 +29,3 @@ priority:
   #   sheddable: -2
   #   background: -3
 
-scheduler: fcfs
-# WARNING: Do not combine inverted-slo priority with reverse-priority scheduler.
-# The two inversions cancel out, producing scheduling identical to normal.
-# For pathological scheduling, use one inversion only:
-#   inverted-slo + priority-fcfs (inverted priority, correct scheduler)
-#   slo-based + reverse-priority (correct priority, inverted scheduler)

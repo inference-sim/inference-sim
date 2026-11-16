@@ -4,12 +4,6 @@ import (
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
-// kvOffloadConfigPath backs the single new --kv-offload-config flag (H5, #1587).
-// Absent ("") ⇒ the offload subsystem is inert and output is byte-identical to a
-// build without the feature (BC-G5). Registered on run and replay via the shared
-// registerSimConfigFlags (INV-13 parity).
-var kvOffloadConfigPath string
-
 // simToHeaderOffload converts a resolved kvOffloadConfig into its trace-header
 // serialization (H5, #1587). Returns nil when inert, so a disabled run omits the
 // kv_offload header key entirely (BC-G5). Lossless inverse of headerToSimOffload.
@@ -53,10 +47,10 @@ func simToHeaderOffload(c kvOffloadConfig) *workload.TraceKVOffloadConfig {
 
 // replayRecordsDeployment reports whether a replay's trace records the deployment BLIS ran.
 // A trace blis run or blis replay wrote does, and INV-13 keeps its header authoritative, so
-// neither the scenario's offload block nor --kv-offload-config may add tiers it did not run.
-// A trace blis convert wrote (mode "converted") records external traffic and no deployment
-// (#2067), and an agentic replay (#1937) has no trace at all -- its header is synthesized --
-// so for both the scenario and an agreeing flag supply the tiers.
+// the scenario's offload block may not add tiers it did not run. A trace blis convert wrote
+// (mode "converted") records external traffic and no deployment (#2067), and an agentic
+// replay (#1937) has no trace at all -- its header is synthesized -- so for both the
+// scenario supplies the tiers.
 func replayRecordsDeployment(h workload.TraceHeader, agentic bool) bool {
 	return !agentic && h.RecordsDeployment()
 }

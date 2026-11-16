@@ -31,7 +31,7 @@ To read a checkout instead, pass `--catalog` or set `BLIS_CATALOG`:
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout v0.14.0
+git -C blis-substrate checkout 39e7839a62bf710fb744efdff317557409a5c720
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
@@ -64,7 +64,7 @@ A scenario is a blis-schemas file of two YAML documents, a `Scenario` and a `Dep
 ```yaml
 kind: Scenario
 name: llama-3.1-70b-instruct-h200-fp8-vllm-tp4
-engine_version: "0.32.0"
+engine: {kind: vllm, version: "0.33.0"}
 model: llama-3.1-70b-instruct
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads,
                cost-model-attention, cost-model-recurrent, cost-model-memory]
@@ -99,7 +99,7 @@ pools:
 
 The scenario and the kernel supply, with no flag to restate them: the model, the hardware,
 TP/DP/EP, the KV block budget (from the kernel's memory methods, per data-parallel rank),
-block size, `max_num_seqs`, `max_num_batched_tokens`, `max_model_len` (must be stated as an explicit count on 0.32.0; unstated or `auto` is refused,
+block size, `max_num_seqs`, `max_num_batched_tokens`, `max_model_len` (must be stated as an explicit count on 0.33.0; unstated or `auto` is refused,
 as is a window one rank's KV cache cannot hold), prefix caching, the KV cache dtype, and the speculative draft length and
 method. The flags that used to state these (`--model`, `--hardware`, `--tp`, `--dp`,
 `--total-kv-blocks`, `--max-num-seqs`, `--max-model-len`, `--kv-cache-dtype`,
@@ -139,8 +139,10 @@ A scenario that cannot be resolved -- absent file, unreadable coefficient set, u
 engine version, a deployment that does not fit -- aborts the run naming what failed. There
 is no fallback.
 
-The scenario's `engine_version` must be `"0.32.0"`, and a scenario that states none is refused.
-It runs blis-vllm's translated vLLM v0.32.0 engine, priced with the kernel's 0.31.0 tuning (the
+The scenario's `engine` must be `{kind: vllm, version: "0.33.0"}`, and a scenario that states none
+is refused. A scenario that states the removed `engine_version` is refused with a message naming
+`engine: {kind, version}`.
+It runs blis-vllm's translated vLLM v0.33.0 engine, priced with the kernel's 0.31.0 tuning (the
 run says so on stderr), and refuses priority scheduling for now. The engine block must state
 `max_model_len` as an explicit number (unstated or `auto` is refused), plus `max_num_seqs` and
 `max_num_batched_tokens`. Any other release is refused, naming it.
@@ -162,7 +164,7 @@ nominal line rate, which makes the handoff about 23% fast on `ib-400g`, and reco
 the Result as an `assumed` `fabric_bandwidth_efficiency` under `reports.kernel.<pool>.assumptions`.
 Every disaggregated scenario this repository ships lists it, and a test requires that.
 
-At `engine_version: "0.32.0"` each pool's engine is blis-vllm's v0.32.0 engine, which runs vLLM's
+At `engine: {kind: vllm, version: "0.33.0"}` each pool's engine is blis-vllm's v0.33.0 engine, which runs vLLM's
 NIXL scheduler as the pool's `kv_role`: `kv_producer` for the prefill pool and `kv_consumer` for the
 decode pool. The prefill leg samples one token and holds its blocks for the pull. The decode leg waits
 in `WAITING_FOR_REMOTE_KVS` until the pull lands. Under PP the engine refuses what vLLM's NIXL worker
@@ -206,7 +208,7 @@ one; any other connector is refused. Three further rules follow from vLLM:
   max-min fairly and re-divided as handoffs start and finish. The floor is never shared. A
   handoff alone takes exactly its demand's `AloneTime`. With contention off, every handoff is
   priced as if alone.
-- **Offload tiers (#1940).** The scenario's `offload` block (or `--kv-offload-config`, see
+- **Offload tiers (#1940).** The scenario's `offload` block (see
   [KV offload](#kv-offload)) gives every pool its own tier of that size: llm-d's
   MultiConnector of NIXL and the OffloadingConnector. A pool's tier stores
   what its engine computes. The prefill pool's tier serves prefix hits before compute. The
@@ -311,7 +313,7 @@ the ranks. BLIS therefore steps the group's ranks together:
   request. Dummy steps are not work: a rank's clock, and so `SimEndedTime` and the rates
   divided by it, stop at its last real event.
 
-**How requests reach ranks: `parallel.data_parallel_load_balancing` (or `--dp-load-balancing`, deprecated in v0.16.0 and removed in v0.19.0, which may only restate a mode the scenario states).** vLLM v0.31.0's serve flags choose
+**How requests reach ranks: `parallel.data_parallel_load_balancing`, in each pool of the scenario.** vLLM v0.31.0's serve flags choose
 (`vllm/engine/arg_utils.py:536-538, 1225-1242`; `EngineCoreClient.make_async_mp_client`,
 `vllm/v1/engine/core_client.py:155-166`), and lockstep is the same in every mode:
 
@@ -394,7 +396,7 @@ minimum-variance schedule when the source states none). A run that does not spec
 none.
 
 - **Method: the engine release's list.** `method` is checked against the rules pack of the
-  scenario's `engine_version` (blis-vllm's packs, read through blis-schemas `rules.EngineRules`), not a list in
+  scenario's `engine.version` (blis-vllm's packs, read through blis-schemas `rules.EngineRules`), not a list in
   BLIS, so vLLM 0.31.0 accepts `dspark` (DeepSeek-V4.1's DSpark), `dflash`, `eagle3`,
   `suffix` and the rest of that release's methods. A method the model graph's speculator
   does not describe, or one vLLM refuses for the model (MTP on DeepSeek-V4.1), is refused
@@ -462,31 +464,28 @@ and gated as before (BLIS does not apply vLLM's full-prompt gate to it).
 The scenario's `offload` block is the run's KV offload configuration (#1910). It maps onto
 vLLM's OffloadingConnector:
 
-- **Tiers.** A `cpu_dram` tier of `bytes` is the CPU tier (`cpu_bytes_to_use`). vLLM's
-  defaults apply to everything the schema does not state: block size, `offload_prompt_only`,
-  `tokens_per_hash`.
-- **Accepted settings.** `connector` may be `OffloadingConnector` or left out; `spec` may be
+- **Tiers.** A `cpu_dram` tier of `bytes` is the CPU tier (`cpu_bytes_to_use`), and it must be
+  the first tier. A tier naming another catalog storage device class is a secondary tier,
+  which the v0.33.0 engine refuses (blis-vllm#63). vLLM's defaults apply to everything the schema does not state:
+  block size, `offload_prompt_only`, `tokens_per_hash`.
+- **Accepted settings.** `connector` may be `OffloadingConnector`, `SimpleCPUOffloadConnector`
+  (one `cpu_dram` tier) or left out; `spec` may be
   `CPUOffloadingSpec`, `TieringOffloadingSpec`, or left out; `eviction_policy` may be `lru`.
 - **Refused by name:**
   - another connector or spec;
   - `prefetch_depth`;
   - `arc`;
-  - a secondary tier (blis-schemas does not state the fs tier's `root_dir`, `direct_io` and
-    thread counts; describe those with `--kv-offload-config` instead);
+  - an object-store tier (`s3`), which vLLM reaches through its `obj` tier;
   - an offload block with no `cpu_dram` tier.
 - **0 bytes.** blis-schemas refuses a 0-byte tier, as vLLM refuses `cpu_bytes_to_use: 0`.
 - **Per engine.** The block is deployment-level and the schema has no per-pool form, while
   `cpu_bytes_to_use` belongs to one engine's connector. So every engine gets its own tier of
   the stated bytes: the colocated pool, and each prefill and each decode engine.
-- **The flag only restates.** `--kv-offload-config` may restate the scenario's block; it must
-  then resolve identically, or the run is refused naming the fields that differ. With no
-  scenario block, the flag alone configures the offload.
+- **The only source.** No flag configures offload. On replay the trace header is
+  authoritative, and the scenario's block may only restate it.
 
-`--kv-offload-config` tiers must each name a catalog `device_class`; the kernel prices every
-transfer with `TierTime` for that device at the tier's in-service queue depth. Explicit
-`read_bandwidth`, `write_bandwidth` and `base_latency` in the tier config are refused.
-The legacy `--kv-cpu-blocks` tier is priced by the kernel from the catalog `cpu_dram`
-device. See [KV Cache & Memory](kv-cache.md).
+The kernel prices every tier transfer with `TierTime` for the tier's catalog device at the
+tier's in-service queue depth. See [KV Cache & Memory](kv-cache.md).
 
 ## LoRA
 

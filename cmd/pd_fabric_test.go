@@ -86,10 +86,12 @@ func TestShippedPDScenariosStateTheFabricSet(t *testing.T) {
 				"--speculative-thinking", "on", "--speculative-category", "coding"}, pdFlags(f)...)
 			stdout, stderr, err := runKernelCLI(t, args...)
 			if err != nil && (strings.Contains(stderr, "not modelled") || strings.Contains(stderr, "blis-substrate#48") ||
-				strings.Contains(stderr, "is not diff-tested")) {
+				strings.Contains(stderr, "is not diff-tested") || strings.Contains(stderr, "blis-vllm/issues/146")) {
 				// The engine does not build this deployment at this pin: a prefill data-parallel group that spans
-				// nodes, or an offload connector beside a KV cache group that holds a drafter's layers (the DeepSeek
-				// V4.1 + DSpark + CPU tier fixture). The file's set list, checked above, is all there is.
+				// nodes, or the DeepSeek V4.1 + DSpark + CPU tier fixture, whose KV cache group's block is smaller
+				// than the hash block, an offload layout the engine refuses until blis-vllm#146 (at vLLM 0.32.0 the
+				// same fixture stopped earlier, at the offload connector beside a drafter's group: DSpark's group is
+				// no longer one at 0.33.0, needs_eagle_block_drop). The file's set list, checked above, is all there is.
 				t.Skipf("%s is not built by the pinned engine: %s", f, lastLines(stderr, 1))
 			}
 			if err != nil {

@@ -426,7 +426,7 @@ func TestTheBinaryReachesBlisVLLMOnlyThroughTheBuildSite(t *testing.T) {
 	}
 }
 
-// inference-sim reaches blis-vllm's v0.32.0 engine only through blis-schemas' engine.Engine
+// inference-sim reaches blis-vllm's v0.33.0 engine only through blis-schemas' engine.Engine
 // contract (GOAL.md): no inference-sim package imports blis-vllm/core/... directly, the
 // build site's registration package included only through its facade, and the host's driver
 // (sim/engine_driver.go) imports the contract's engine package and no engine implementation.
@@ -444,7 +444,7 @@ func TestTheHostReachesTheV032EngineOnlyThroughTheContract(t *testing.T) {
 		checked++
 		for _, imp := range strings.Split(imports, ",") {
 			if strings.HasPrefix(imp, "github.com/inference-sim/blis-vllm/core") {
-				t.Errorf("%s imports %s; inference-sim reaches the v0.32.0 engine only through engine.Engine", pkg, imp)
+				t.Errorf("%s imports %s; inference-sim reaches the v0.33.0 engine only through engine.Engine", pkg, imp)
 			}
 		}
 	}

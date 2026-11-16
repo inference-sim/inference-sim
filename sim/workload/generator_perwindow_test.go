@@ -409,7 +409,7 @@ func TestGenerateRequests_TimeVaryingWorkload(t *testing.T) {
 			},
 		}
 
-		requests, err := GenerateRequests(spec, 10000000, 0)
+		requests, err := generateRequests(spec, 10000000, 0)
 		require.NoError(t, err)
 
 		// Should generate requests
@@ -453,7 +453,7 @@ func TestGenerateRequests_TimeVaryingWorkload(t *testing.T) {
 			},
 		}
 
-		requests, err := GenerateRequests(spec, 10000000, 0)
+		requests, err := generateRequests(spec, 10000000, 0)
 		require.NoError(t, err)
 
 		// Should generate requests using existing static generator
@@ -487,10 +487,10 @@ func TestGenerateRequests_TimeVaryingWorkload(t *testing.T) {
 			}
 		}
 
-		reqs1, err1 := GenerateRequests(makeSpec(), 5000000, 0)
+		reqs1, err1 := generateRequests(makeSpec(), 5000000, 0)
 		require.NoError(t, err1)
 
-		reqs2, err2 := GenerateRequests(makeSpec(), 5000000, 0)
+		reqs2, err2 := generateRequests(makeSpec(), 5000000, 0)
 		require.NoError(t, err2)
 
 		require.Equal(t, len(reqs1), len(reqs2), "same seed must produce same count")
@@ -526,7 +526,7 @@ func TestGenerateRequests_TimeVaryingWorkload(t *testing.T) {
 			},
 		}
 
-		requests, err := GenerateRequests(spec, 10000000, 50)
+		requests, err := generateRequests(spec, 10000000, 50)
 		require.NoError(t, err)
 		assert.LessOrEqual(t, len(requests), 50, "maxRequests cap must be respected")
 	})
@@ -562,7 +562,7 @@ func TestGenerateRequests_TimeVaryingWorkload(t *testing.T) {
 			},
 		}
 
-		requests, err := GenerateRequests(spec, 20000000, 0)
+		requests, err := generateRequests(spec, 20000000, 0)
 		require.NoError(t, err)
 		require.Greater(t, len(requests), 0)
 

@@ -4,18 +4,18 @@
   "name": "glm-5-h200-3p1d-ib.r4-s2-obf0dc613",
   "engine": {
     "kind": "vllm",
-    "version": "0.32.0"
+    "version": "0.33.0"
   },
   "data": {
     "catalog": {
       "source": "path",
-      "hash": "db74e4bb49f75d658e5d0850934da60daf513274b937a03b7ab994760bd6d21f",
-      "combined_hash": "db74e4bb49f75d658e5d0850934da60daf513274b937a03b7ab994760bd6d21f"
+      "hash": "77898711fca5254bf3047f951ab1ce6a3a3dd03cb9e29da11db7a39f42527a2c",
+      "combined_hash": "77898711fca5254bf3047f951ab1ce6a3a3dd03cb9e29da11db7a39f42527a2c"
     },
     "registry": {
       "source": "path",
-      "hash": "8dbcf3b85eed842f2bc798b34d2b95716fc58117750f4164d869b26770353fe0",
-      "combined_hash": "8dbcf3b85eed842f2bc798b34d2b95716fc58117750f4164d869b26770353fe0"
+      "hash": "a6436069c59ef8f02b3c8f4a4594eae056d9ab4b6528247cd32ee0401d2fe49b",
+      "combined_hash": "a6436069c59ef8f02b3c8f4a4594eae056d9ab4b6528247cd32ee0401d2fe49b"
     },
     "released_data": false,
     "build": "unreleased"
@@ -712,7 +712,10 @@
         "cost-model-recurrent",
         "cost-model-memory"
       ],
-      "engine_version": "0.32.0",
+      "engine": {
+        "kind": "vllm",
+        "version": "0.33.0"
+      },
       "cluster": {
         "hardware": "h200",
         "fabric": "ib-400g",
@@ -883,9 +886,9 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.14.0",
+    "substrate": "v0.14.2-0.20261116205042-39e7839a62bf",
     "router": "v1.0.0-blis.4",
-    "engine_module": "v0.32.0-blis.3"
+    "engine_module": "v0.32.1-0.20261116205246-a20a1dd4a5e3"
   },
   "window": {
     "start_us": 250000,
@@ -1694,6 +1697,15 @@
           {
             "KernelMatch": "",
             "Method": "assumed",
+            "Name": "max_cudagraph_capture_size",
+            "Primitive": "",
+            "Running": "",
+            "Scope": "512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph",
+            "Set": "blis-latency-kernel"
+          },
+          {
+            "KernelMatch": "",
+            "Method": "assumed",
             "Name": "fabric_bandwidth_efficiency",
             "Primitive": "",
             "Running": "",
@@ -1707,15 +1719,6 @@
             "Primitive": "",
             "Running": "",
             "Scope": "absent: not in the scenario's coefficient sets: no per-kind decode rate for sparse_mla attention, so it is priced with the part-wide attention pair and any per-kind floor is not used",
-            "Set": "blis-latency-kernel"
-          },
-          {
-            "KernelMatch": "",
-            "Method": "assumed",
-            "Name": "max_cudagraph_capture_size",
-            "Primitive": "",
-            "Running": "",
-            "Scope": "512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph",
             "Set": "blis-latency-kernel"
           },
           {
@@ -1751,7 +1754,7 @@
             "Name": "engine_version",
             "Primitive": "",
             "Running": "",
-            "Scope": "0.31.0: the scenario declares vLLM 0.32.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
+            "Scope": "0.31.0: the scenario declares vLLM 0.33.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
             "Set": "blis-latency-kernel"
           }
         ],
@@ -2163,6 +2166,15 @@
           {
             "KernelMatch": "",
             "Method": "assumed",
+            "Name": "max_cudagraph_capture_size",
+            "Primitive": "",
+            "Running": "",
+            "Scope": "512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph",
+            "Set": "blis-latency-kernel"
+          },
+          {
+            "KernelMatch": "",
+            "Method": "assumed",
             "Name": "fabric_bandwidth_efficiency",
             "Primitive": "",
             "Running": "",
@@ -2176,15 +2188,6 @@
             "Primitive": "",
             "Running": "",
             "Scope": "absent: not in the scenario's coefficient sets: no per-kind decode rate for sparse_mla attention, so it is priced with the part-wide attention pair and any per-kind floor is not used",
-            "Set": "blis-latency-kernel"
-          },
-          {
-            "KernelMatch": "",
-            "Method": "assumed",
-            "Name": "max_cudagraph_capture_size",
-            "Primitive": "",
-            "Running": "",
-            "Scope": "512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph",
             "Set": "blis-latency-kernel"
           },
           {
@@ -2220,7 +2223,7 @@
             "Name": "engine_version",
             "Primitive": "",
             "Running": "",
-            "Scope": "0.31.0: the scenario declares vLLM 0.32.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
+            "Scope": "0.31.0: the scenario declares vLLM 0.33.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
             "Set": "blis-latency-kernel"
           }
         ],

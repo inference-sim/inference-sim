@@ -25,7 +25,7 @@ jq '.metrics.ttft_p99_ms.value' result.json
 
 | Section | What it holds |
 |---|---|
-| `engine` | The engine the scenario names: `kind` (`vllm`) and the upstream `version` it runs (`0.32.0`). |
+| `engine` | The engine the scenario names: `kind` (`vllm`) and the upstream `version` it runs (`0.33.0`). |
 | `data` | The catalog and registry the run read (design §3.3, SIM-6): for each, `source` (`embedded`, the copy compiled into the pinned blis-substrate, or `path` with `--catalog`/`--registry`), its content `hash`, the `overlays` applied with their hashes, and the `combined_hash`; `released_data` (true only for a tagged build reading both embedded copies with no overlay); and `build`, the release tag or `unreleased`. |
 | `selected_entries` | The catalog and registry entries the run read, each by identity and hash, and the `unread_files` the loader opened but no reader used (VAL-6). |
 | `input` | The resolved `scenario` and `deployment`, and a `--policy-config` bundle verbatim under `policy`. |
@@ -40,7 +40,7 @@ jq '.metrics.ttft_p99_ms.value' result.json
 | `reports.router` | The embedded router's requirements (`embed.Requirements`), sheds by SLO class, and the priority-inversion and head-of-line counters; with `--fitness-weights`, the score under `fitness`; with `--summarize-trace`, the decision-trace summary under `trace_summary`. |
 | `reports.kernel` | The cost model's coefficient provenance per pool role. |
 | `reports.saturation` | The detectors' final labels under `final`, when `--detectors` ran. |
-| `overrides` | Every setting the run simulated differently from its scenario, and what chose it: a `--scheduler` or `--preemption-policy` against the scenario's stated policy, and every other command-line flag that changes what is simulated and was given a value other than its default (`--timeout`, `--num-instances`, `--prefix-tokens`, the token-length flags, the router timing flags, the speculative-decoding flags, ...), as `setting` (the flag), `run` (its value; a file flag by `sha256:<digest>`) and `source`. A workload spec run without `--seed` adds `workload_seed` (the spec's own request seed). Flags that select or tune a reported section without changing what is simulated (`--detectors`, `--saturation-config`, `--saturation-final-window`, `--server-series-interval-s`, `--fitness-weights`, `--trace-level`, `--summarize-trace`) are recorded the same way, because they change bytes of the document (SIM-10, #2062). Flags that change no byte of it (`--output`, `--format`, `--view`, `--log`, output paths, `--counterfactual-k`, `--lazy-generation`) are not recorded; `cmd/result_flags.go` lists each with the reason, and a test fails for a new flag listed in neither place. The run's `name` carries a digest of the overrides, so two runs that differ only in a flag get different names. |
+| `overrides` | Every setting the run simulated differently from its scenario, and what chose it: every command-line flag that changes what is simulated and was given a value other than its default (`--timeout`, `--num-instances`, `--prefix-tokens`, the token-length flags, the router timing flags, the speculative-decoding flags, ...), as `setting` (the flag), `run` (its value; a file flag by `sha256:<digest>`) and `source`. A workload spec run without `--seed` adds `workload_seed` (the spec's own request seed). Flags that select or tune a reported section without changing what is simulated (`--detectors`, `--saturation-config`, `--saturation-final-window`, `--server-series-interval-s`, `--fitness-weights`, `--trace-level`, `--summarize-trace`) are recorded the same way, because they change bytes of the document (SIM-10, #2062). Flags that change no byte of it (`--output`, `--format`, `--view`, `--log`, output paths, `--counterfactual-k`) are not recorded; `cmd/result_flags.go` lists each with the reason, and a test fails for a new flag listed in neither place. The run's `name` carries a digest of the overrides, so two runs that differ only in a flag get different names. |
 | `artifacts` | Files the run wrote, by sha256 and by path relative to `--output`'s directory (as given, with no `--output`): `trace_header`/`trace_data` (`--trace-output` on run). |
 | `runtime` | Wall-clock seconds, start time and host. The only block that depends on the host or the clock. |
 
@@ -305,28 +305,14 @@ Scheduling delay isolates the WaitQ wait time from compute time. High scheduling
 
 ### Scenario Overrides
 
-A run reproduces its scenario unless a flag or a policy bundle chooses another value for a
-setting the scenario states. Today those are the two settings vLLM's
-`engine.scheduling_policy` decides: the waiting queue's order and the preemption victim
-(vLLM `fcfs` is BLIS `--scheduler fcfs` with `--preemption-policy fcfs`; vLLM `priority` is
-`--scheduler priority-fcfs` with `--preemption-policy priority`). An explicit `--scheduler` or
-`--preemption-policy`, or a `--policy-config` bundle's `scheduler` or `preemption.policy`, that
-differs from the scenario is kept, since exploring a policy against a fixed deployment is the
-point, and the Result says so:
-
-```json
-{
-  "overrides": [
-    {"setting": "scheduler", "input": "priority-fcfs", "run": "sjf", "source": "--scheduler"}
-  ]
-}
-```
-
-In a prefill/decode deployment each pool runs its own engine's policy, so a run-level choice
-is recorded once per pool whose engine stated otherwise, as `"scheduler (prefill pool)"` or
-`"preemption_policy (decode pool)"`.
-
-A warning on stderr says the same.
+A run reproduces its scenario's engine settings. No flag or policy bundle sets one: the waiting
+queue's order and the preemption victim are the pool's `engine.scheduling_policy`, as in vLLM
+(vLLM `fcfs` is BLIS `fcfs` queueing and `fcfs` preemption; vLLM `priority` is BLIS
+`priority-fcfs` queueing and `priority` preemption). In a prefill/decode deployment each pool
+runs its own engine's policy. `--scheduler` and `--preemption-policy` were removed in v0.18.0,
+and a `--policy-config` bundle that states `scheduler` or `preemption` is refused
+([#2037](https://github.com/inference-sim/inference-sim/issues/2037)). The `overrides` list
+records the command-line flags that change what is simulated (see the table above).
 
 ### Closeness Data
 
@@ -415,7 +401,7 @@ When anomalies are detected, `--view summary` prints `=== Anomaly Counters ===`:
 
 | Counter | What It Means | Action |
 |---------|--------------|--------|
-| **Priority Inversions** | A lower-priority request was scheduled before a higher-priority one | Check scheduler choice — use `priority-fcfs` for SLO workloads |
+| **Priority Inversions** | A lower-priority request was scheduled before a higher-priority one | Check the scheduling policy — use `engine.scheduling_policy: priority` for SLO workloads |
 | **HOL Blocking Events** | A long prefill blocked shorter requests | Enable chunked prefill: state `long_prefill_token_threshold: 256` in the scenario's pool `engine` block |
 | **Rejected Requests (Admission)** | The llm-d router denied admission: an admitter plugin, or the legacy admission controller shedding a sheddable request (priority < 0) from a saturated pool | Check the `InferenceObjective` priorities and the saturation detector's parameters; see [Admission Control](admission.md) |
 | **Shed (tier)** | Per-SLO-class count of requests the router shed (admission denials and flow-control TTL expiries) — printed as indented sub-items beneath Rejected Requests (Admission) | Raise the class's `InferenceObjective` priority, or the detector's thresholds |

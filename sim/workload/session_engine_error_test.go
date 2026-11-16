@@ -10,7 +10,7 @@ import (
 )
 
 // failsAfterAdmit is a FIFO that admits request "s0" and runs the first chunk of its prefill,
-// then ends it in Batch.Finished as an error before any token is out, as blis-vllm's v0.32.0 engine ends a running
+// then ends it in Batch.Finished as an error before any token is out, as blis-vllm's v0.33.0 engine ends a running
 // request whose KV load failed under kv_load_failure_policy "fail"
 // (vllm/v1/core/sched/scheduler.py:2306-2325@5df63a72). By then the driver has marked it running.
 type failsAfterAdmit struct {

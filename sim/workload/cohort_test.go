@@ -486,7 +486,7 @@ func TestGenerateRequests_WithCohorts_MergesWithExplicitClients(t *testing.T) {
 	}
 
 	// WHEN generating requests over a short horizon
-	requests, err := GenerateRequests(spec, 10_000_000, 50)
+	requests, err := generateRequests(spec, 10_000_000, 50)
 	if err != nil {
 		t.Fatalf("GenerateRequests failed: %v", err)
 	}
@@ -749,7 +749,7 @@ func TestGenerateRequests_CohortPerMember_EachMemberHasDistinctPrefixTokens(t *t
 	}
 
 	// WHEN requests are generated
-	requests, err := GenerateRequests(spec, 5_000_000, 50)
+	requests, err := generateRequests(spec, 5_000_000, 50)
 	if err != nil {
 		t.Fatalf("GenerateRequests failed: %v", err)
 	}
@@ -1137,15 +1137,18 @@ func TestCohortClientSpecFieldParity(t *testing.T) {
 
 // TestGenerateRequests_CohortWithMultiTurn_ProducesMultiRoundRequests verifies
 // the core purpose of this PR: a cohort with reasoning.multi_turn set produces
-// requests with RoundIndex > 0 through the full GenerateRequests pipeline.
+// requests with RoundIndex > 0 through the full generation pipeline. The cohort
+// is open-loop, so the generator emits every round itself (a closed-loop session's
+// later rounds are the session manager's).
 func TestGenerateRequests_CohortWithMultiTurn_ProducesMultiRoundRequests(t *testing.T) {
+	openLoop := false
 	spec := &WorkloadSpec{
 		Version:       "2",
 		Seed:          42,
 		AggregateRate: 1.0,
 		Cohorts: []CohortSpec{
 			{
-				ID: "agents", Population: 1, RateFraction: 1.0,
+				ID: "agents", Population: 1, RateFraction: 1.0, ClosedLoop: &openLoop,
 				Arrival:    ArrivalSpec{Process: "constant"},
 				InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
 				OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
@@ -1158,7 +1161,7 @@ func TestGenerateRequests_CohortWithMultiTurn_ProducesMultiRoundRequests(t *test
 	}
 
 	// Use a long enough horizon to fit 3 rounds (3 × 100ms think time + generation time).
-	requests, err := GenerateRequests(spec, 10_000_000_000, 0) // 10 seconds
+	requests, err := generateRequests(spec, 10_000_000_000, 0) // 10 seconds
 	if err != nil {
 		t.Fatalf("GenerateRequests failed: %v", err)
 	}

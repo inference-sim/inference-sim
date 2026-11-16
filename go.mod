@@ -4,8 +4,8 @@ go 1.27.2
 
 require (
 	github.com/go-logr/logr v1.4.4
-	github.com/inference-sim/blis-substrate v0.14.0
-	github.com/inference-sim/blis-vllm v0.32.0-blis.3
+	github.com/inference-sim/blis-substrate v0.14.2-0.20261116205042-39e7839a62bf // TEMPORARY: blis-substrate m3/integration (39e7839a62bf710fb744efdff317557409a5c720), until its layers are released
+	github.com/inference-sim/blis-vllm v0.32.1-0.20261116205246-a20a1dd4a5e3 // TEMPORARY: blis-vllm m3/integration (a20a1dd4a5e3f743130c291f4be6345792144ab1), vLLM v0.33.0, until v0.33.0-blis.1 is tagged
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2

@@ -4,7 +4,7 @@
 # Run it with --num-instances 2 or more: the nodes hold two replicas.
 kind: Scenario
 name: muse-h100-roce-armC-routed
-engine_version: "0.32.0"
+engine: {kind: vllm, version: "0.33.0"}
 model: muse-spark-open-816b-a42b-nvfp4
 acceptance:
   value:
