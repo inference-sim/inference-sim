@@ -50,3 +50,38 @@ is refused by name. When a store package enters the lock, it runs as code under 
 `go run github.com/inference-sim/blis-substrate/contracts/harness/cmd/harnessfiles`. Never edit
 them. `harness.json` configures them for this repository: SGLang's decision modules, the harness
 files `check_mocks.py` reads, and the golden directories.
+
+## Tier 2: the scheduler
+
+```sh
+ORACLE_MODEL=<config files of Qwen/Qwen2.5-0.5B-Instruct@7ae55760> \
+ORACLE_MODEL_REVISION=7ae557604adf67be50417f59c2c2f167def9a775 ORACLE_LOCKFILE=<pip freeze> HF_HUB_OFFLINE=1 \
+  python -I oracle/run_scheduler.py <sglang checkout> oracle/scenarios/<scenario>.json [out.json]
+```
+
+`run_scheduler.py` calls SGLang's own entry point, `run_scheduler_process`, in a child process,
+as SGLang's launcher does. That entry point publishes the runtime context, builds
+`Scheduler(server_args, port_args)` through `Scheduler.__init__`, and runs the event loop that
+ServerArgs selects. `harness.py` makes the replacements `mocks.json` lists before SGLang's
+scheduler module is imported. These are the model runner's forward pass, sampling, weight loading,
+attention backends and CUDA graphs (GPU); the device memory query (platform); the scheduler's ZMQ
+sockets (transport); and the scheduler module's clock.
+
+The event loops run unmodified. The socket the scheduler reads from the tokenizer starts a step
+on its first receive in each loop iteration and yields that step's arrivals. Once every request
+has finished, it yields a `ShutdownReq`. SGLang's own `Scheduler.handle_shutdown` then sets
+`gracefully_exit`, and the loop returns. The harness writes no scheduler state and copies no loop
+body. Every recorded forward pass names the loop on its call stack, and the runner fails unless
+that loop is SGLang's own code object, `Scheduler.event_loop_normal` or `event_loop_overlap`.
+
+A trace records, for each loop iteration:
+
+- the requests that arrived;
+- each forward pass: its mode, batch size, sequence, extend and prefix lengths, and the allocator's free tokens;
+- each output the scheduler sent.
+
+The committed goldens are under `testdata/golden/`. CI runs every scenario and checks
+that each golden equals the fresh trace outside its provenance (`compare_goldens.py`). A runner
+refuses to write into `testdata/golden*` unless `BLIS_SGLANG_ALLOW_GOLDEN_UPDATE=1`. A commit that
+changes a golden's decisions carries a `golden-reviewed: <trace>: <reason>` trailer
+(`check_goldens.py`).

@@ -1,6 +1,6 @@
 {
-  "version": "gpu-mock/1+3a6ee6547d10",
-  "description": "Every replacement the oracle harness makes in SGLang's code, by kind (gpu, clock, transport, environment, platform, external-service, transcription), with the sites oracle/check_mocks.py finds.",
+  "version": "gpu-mock/2+5e73a68f1479",
+  "description": "Every replacement the oracle harness makes in SGLang's code, by kind (gpu, clock, transport, environment, platform, external-service, transcription), with the sites oracle/check_mocks.py finds. No entry is a transcription: the event loops run as released.",
   "mocks": [
     {
       "symbol": "oracle/stubs.py STUBBED",
@@ -14,6 +14,108 @@
       "symbol": "the CUDA-only packages the lock leaves out",
       "kind": "environment",
       "how": "cuda-python, flash-attn-4, flashinfer_python, humming-kernels, nvidia-cutlass-dsl, nvidia-mathdx, nvshmem4py-cu13, quack-kernels, sgl-deep-ep, sgl-deep-gemm, sgl-flash-mla, sglang-kernel, tilelang and torch_memory_saver are not installed (oracle/requirements.txt). SGLang reads their absence: is_flashinfer_available uses find_spec(\"flashinfer\") (python/sglang/srt/utils/common.py:388-395@297e54fd) and _is_intel_amx_backend_available try-imports sgl_kernel (:353-360). On the CUDA platform FID-1 restores, both would differ; restoring them is listed with that work.",
+      "sites": []
+    },
+    {
+      "symbol": "sglang.srt.model_executor.model_runner.ModelRunner.load_model",
+      "kind": "gpu",
+      "how": "builds no weights: an empty torch module stands for the model, its dtype is the model config's, its sliding window is SGLang's own resolve_sliding_window_size, and its loader reports no preloaded weights, as SGLang's in-tree simulator does (tools/sglang-simulator/src/sglang_simulator/simulation/sglang/model_runner.py:44-59@297e54fd)",
+      "sites": [
+        "harness.py:runner.load_model",
+        "harness.py:mr.model",
+        "harness.py:mr.dtype",
+        "harness.py:mr.sliding_window_size",
+        "harness.py:mr.prefill_aware_swa",
+        "harness.py:mr.weight_load_mem_usage",
+        "harness.py:mr.load_config",
+        "harness.py:mr.loader"
+      ]
+    },
+    {
+      "symbol": "sglang.srt.model_executor.model_runner.ModelRunner.forward",
+      "kind": "gpu",
+      "how": "runs no kernel: returns empty logits of the batch's size and the model's vocabulary, and records the batch the scheduler launched (forward mode, batch size, sequence, extend and prefix lengths, the allocator's free tokens, and the event loop on the call stack)",
+      "sites": [
+        "harness.py:runner.forward"
+      ]
+    },
+    {
+      "symbol": "sglang.srt.model_executor.model_runner.ModelRunner.sample",
+      "kind": "gpu",
+      "how": "every sampled token is the scenario's sampled_token; requests set ignore_eos and finish by length",
+      "sites": [
+        "harness.py:runner.sample"
+      ]
+    },
+    {
+      "symbol": "sglang.srt.model_executor.model_runner.ModelRunner.init_attention_backends",
+      "kind": "gpu",
+      "how": "the backend names are SGLang's own resolution (resolve_attention_backend_strs); the backend objects, which build GPU kernels, are not made",
+      "sites": [
+        "harness.py:runner.init_attention_backends",
+        "harness.py:mr.prefill_attention_backend_str",
+        "harness.py:mr.decode_attention_backend_str",
+        "harness.py:mr.attn_backend",
+        "harness.py:mr.decode_attn_backend",
+        "harness.py:mr.decode_attn_backend_group"
+      ]
+    },
+    {
+      "symbol": "sglang.srt.model_executor.model_runner.ModelRunner.init_cuda_graphs",
+      "kind": "gpu",
+      "how": "no CUDA graph is captured (the scenario disables them, and the torch_native backend does too)",
+      "sites": [
+        "harness.py:runner.init_cuda_graphs",
+        "harness.py:mr.graph_mem_usage",
+        "harness.py:mr.cuda_graph_runner",
+        "harness.py:mr.eager_runner",
+        "harness.py:mr.prefill_cuda_graph_runner",
+        "harness.py:mr.decode_cuda_graph_runner"
+      ]
+    },
+    {
+      "symbol": "sglang.srt.utils.common.get_available_gpu_memory",
+      "kind": "platform",
+      "how": "the device's free memory is the scenario's device_memory_gib, not the host's, so KVCacheConfigurator._profile_available_bytes sizes the pool from the scenario by SGLang's own arithmetic, capped by max_total_tokens; replaced in sglang.srt.utils.common and its re-export in sglang.srt.utils before any module that imports it is loaded",
+      "sites": [
+        "harness.py:utils_common.get_available_gpu_memory",
+        "harness.py:srt_utils.get_available_gpu_memory"
+      ]
+    },
+    {
+      "symbol": "sglang.srt.managers.scheduler_components.ipc_channels.get_zmq_socket",
+      "kind": "transport",
+      "how": "the scheduler's ZMQ sockets (SchedulerIpcChannels.create): the PULL socket from the tokenizer yields, on its first receive of each loop iteration, that iteration's scenario arrivals (TokenizedGenerateReqInput, through SGLang's msgpack codec), then zmq.Again; once every request has finished it yields a ShutdownReq, which SGLang's own Scheduler.handle_shutdown turns into gracefully_exit, ending the loop. The DEALER RPC socket yields nothing. The PUSH sockets record what the scheduler sends.",
+      "sites": [
+        "harness.py:ipc_channels.get_zmq_socket"
+      ]
+    },
+    {
+      "symbol": "sglang.srt.managers.scheduler.time",
+      "kind": "clock",
+      "how": "the scheduler module's time: monotonic, perf_counter and time read 1e6 s plus step_seconds per loop iteration; every other attribute is the real module's",
+      "sites": [
+        "harness.py:scheduler_module.time"
+      ]
+    },
+    {
+      "symbol": "SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND",
+      "kind": "environment",
+      "how": "set to python in the scheduler process, so the unified radix cache runs its Python tree core (SGL-1); SGLang's default is the Rust core (python/sglang/srt/environ.py:741@297e54fd)",
+      "sites": [
+        "run_scheduler.py:os.environ[]"
+      ]
+    },
+    {
+      "symbol": "the base platform",
+      "kind": "platform",
+      "how": "the oracle runs SGLang's base SRTPlatform: no CUDA device, SGLANG_USE_CPU_ENGINE unset, ServerArgs device cpu, attention_backend torch_native, sampling_backend pytorch, CUDA graphs disabled, as SGLang's own CPU simulator CI runs it. Restoring what the CUDA platform would resolve for the scenario's chip is FID-1 work not done in this spike; the trace's resolved block records the values this run used.",
+      "sites": []
+    },
+    {
+      "symbol": "run_scheduler_process pipe_writer",
+      "kind": "transport",
+      "how": "the pipe on which run_scheduler_process reports its start-up to the launcher is an object of the runner's that keeps what is sent",
       "sites": []
     }
   ]

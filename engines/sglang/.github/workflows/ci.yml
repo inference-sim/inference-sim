@@ -1,8 +1,8 @@
 name: ci
 
 # The repository's own checks. Every pull request runs them, whatever its base, so each layer of a
-# stack is judged on its own head. The checks branch protection requires are `go`, `lint` and
-# `oracle-checks` and `oracle`.
+# stack is judged on its own head. The checks branch protection requires are `go`, `lint`,
+# `oracle-checks`, `oracle` and `goldens-reviewed`.
 
 on:
   push:
@@ -139,3 +139,45 @@ jobs:
         run: python -I oracle/check_peers.py
       - name: the scheduler imports from the pinned checkout in the locked environment
         run: python -I oracle/run_import.py sglang-source
+      # Tier 2: every scenario through SGLang's own Scheduler (run_scheduler_process), its event loop
+      # unmodified. The runner fails unless every request finishes, the loop ends on the harness's
+      # ShutdownReq, and every forward pass was launched from SGLang's own event loop.
+      - name: run every scenario through SGLang's scheduler
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          export ORACLE_MODEL="$PWD/oracle-model" ORACLE_MODEL_REVISION=7ae557604adf67be50417f59c2c2f167def9a775
+          mkdir -p oracle-traces
+          for s in oracle/scenarios/*.json; do
+            name="$(basename "$s" .json)"
+            python -I oracle/run_scheduler.py sglang-source "$s" "oracle-traces/$name.trace.json"
+          done
+      - name: upload the traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: oracle-traces
+          path: oracle-traces/
+      - name: every golden trace is SGLang's own output
+        run: python -I oracle/compare_goldens.py oracle-traces "$(git -C sglang-source rev-parse HEAD)"
+
+  # FID-3: a golden trace's decisions change only in a commit with a golden-reviewed trailer, and a
+  # new golden was recorded on CI's platform from the committed lock.
+  goldens-reviewed:
+    name: goldens-reviewed
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - name: every commit changing a golden trace has a golden-reviewed trailer
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BASE" ]; then BASE="$(python3 -I oracle/check_goldens.py --stack-base "$HEAD")"; fi
+          python3 -I oracle/check_goldens.py "$BASE" "$HEAD"
