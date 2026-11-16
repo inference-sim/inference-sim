@@ -14,8 +14,8 @@
     },
     "registry": {
       "source": "path",
-      "hash": "8dbcf3b85eed842f2bc798b34d2b95716fc58117750f4164d869b26770353fe0",
-      "combined_hash": "8dbcf3b85eed842f2bc798b34d2b95716fc58117750f4164d869b26770353fe0"
+      "hash": "6653c168444c75242cc611b920fd7009ec9ec903c46f7dd86d10ad8924d2d19e",
+      "combined_hash": "6653c168444c75242cc611b920fd7009ec9ec903c46f7dd86d10ad8924d2d19e"
     },
     "released_data": false,
     "build": "unreleased"
@@ -718,6 +718,7 @@
       }
     ],
     "unread_files": [
+      "acceptance/glm53-h200-agentic.yaml",
       "acceptance/inferencex-golden-al.yaml",
       "coefficients/cost-model-collectives-inferencex.yaml",
       "coefficients/cost-model-fabric.yaml",
@@ -864,7 +865,7 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.14.0",
+    "substrate": "v0.14.1-0.20261116164539-714116f4fcbd",
     "router": "v1.0.0-blis.4",
     "engine_module": "v0.32.0-blis.3"
   },
