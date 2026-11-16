@@ -131,7 +131,7 @@ type ClientSpec struct {
 	// This ensures input/output token distributions remain stable regardless of request count.
 	//
 	// When CustomSamplerFactory is set, Arrival.Process validation is skipped.
-	// The factory is called once per GenerateRequests invocation, ensuring workload reusability.
+	// The factory is called once per generation run, ensuring workload reusability.
 	// Callers MUST handle zero-IAT as exhaustion signal if the sampler is stateful.
 	// Not exposed in YAML (yaml:"-" tag).
 	CustomSamplerFactory func(*rand.Rand) ArrivalSampler `yaml:"-"`
@@ -501,11 +501,10 @@ func validateClient(c *ClientSpec, idx int) error {
 			// Validate per-window distribution overrides up front (#1460). These
 			// are consumed by generateRequestsForWindow only when a window is built,
 			// so an invalid override would otherwise surface as a generation-time
-			// error — and under the lazy generator with a binding maxRequests cap a
-			// late malformed window may never be built, so eager (which builds every
-			// window) would abort while lazy silently completed. Validating here
-			// closes that parity gap: both paths reject a malformed spec at the same
-			// point, independent of cap or horizon.
+			// error — and with a binding maxRequests cap the streaming source may
+			// never build a late malformed window, so the run would silently
+			// complete on an invalid spec. Validating here rejects a malformed
+			// spec at the same point, independent of cap or horizon.
 			//
 			// We attempt NewLengthSampler (the exact constructor
 			// generateRequestsForWindow calls) rather than the weaker

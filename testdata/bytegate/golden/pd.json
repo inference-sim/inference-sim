@@ -712,7 +712,10 @@
         "cost-model-recurrent",
         "cost-model-memory"
       ],
-      "engine_version": "0.32.0",
+      "engine": {
+        "kind": "vllm",
+        "version": "0.32.0"
+      },
       "cluster": {
         "hardware": "h200",
         "fabric": "ib-400g",

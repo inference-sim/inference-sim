@@ -762,7 +762,7 @@ func TestGenerateRequests_InferencePerfSpec_ProducesRequests(t *testing.T) {
 		InferencePerf: ipSpec,
 	}
 	horizon := int64(10_000_000) // 10 seconds
-	requests, err := GenerateRequests(spec, horizon, 0)
+	requests, err := generateRequests(spec, horizon, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -793,7 +793,7 @@ func TestGenerateRequests_InferencePerfSpec_Deterministic(t *testing.T) {
 		AggregateRate: 10.0,
 		InferencePerf: ipSpec,
 	}
-	r1, err1 := GenerateRequests(spec1, horizon, 0)
+	r1, err1 := generateRequests(spec1, horizon, 0)
 
 	// Second run with fresh spec (expansion mutates spec.Clients)
 	spec2 := &WorkloadSpec{
@@ -802,7 +802,7 @@ func TestGenerateRequests_InferencePerfSpec_Deterministic(t *testing.T) {
 		AggregateRate: 10.0,
 		InferencePerf: ipSpec,
 	}
-	r2, err2 := GenerateRequests(spec2, horizon, 0)
+	r2, err2 := generateRequests(spec2, horizon, 0)
 	if err1 != nil || err2 != nil {
 		t.Fatalf("errors: %v, %v", err1, err2)
 	}
@@ -870,7 +870,7 @@ func TestInferencePerfExpansion_EquivalentToManual(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expansion error: %v", err)
 	}
-	r1, err1 := GenerateRequests(expanded1, horizon, 0)
+	r1, err1 := generateRequests(expanded1, horizon, 0)
 	if err1 != nil {
 		t.Fatalf("generation error: %v", err1)
 	}
@@ -880,7 +880,7 @@ func TestInferencePerfExpansion_EquivalentToManual(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expansion error: %v", err)
 	}
-	r2, err2 := GenerateRequests(expanded2, horizon, 0)
+	r2, err2 := generateRequests(expanded2, horizon, 0)
 	if err2 != nil {
 		t.Fatalf("generation error: %v", err2)
 	}
@@ -922,7 +922,7 @@ func TestInferencePerfExpansion_SharedPrefixTokensIdentical(t *testing.T) {
 		t.Fatalf("expansion error: %v", err)
 	}
 	horizon := int64(5_000_000) // 5 seconds
-	requests, err := GenerateRequests(expanded, horizon, 100)
+	requests, err := generateRequests(expanded, horizon, 100)
 	if err != nil {
 		t.Fatalf("generation error: %v", err)
 	}
@@ -1001,7 +1001,7 @@ inference_perf:
 	}
 
 	horizon := int64(10_000_000) // 10 seconds
-	requests, err := GenerateRequests(spec, horizon, 50)
+	requests, err := generateRequests(spec, horizon, 50)
 	if err != nil {
 		t.Fatalf("generation error: %v", err)
 	}
@@ -1037,7 +1037,7 @@ func TestGenerateRequests_InferencePerfSpec_AggregateRateOverridden(t *testing.T
 		InferencePerf: ipSpec,
 	}
 	horizon := int64(10_000_000) // 10 seconds
-	_, err := GenerateRequests(spec, horizon, 0)
+	_, err := generateRequests(spec, horizon, 0)
 	if err != nil {
 		t.Fatalf("generation error: %v", err)
 	}
@@ -1070,7 +1070,7 @@ func TestInferencePerf_Determinism_SameSeedIdenticalOutput(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expansion error: %v", err)
 		}
-		reqs, err := GenerateRequests(expanded, 20_000_000, 100)
+		reqs, err := generateRequests(expanded, 20_000_000, 100)
 		if err != nil {
 			t.Fatalf("generation error: %v", err)
 		}
@@ -1131,7 +1131,7 @@ func TestInferencePerf_TwoStages_PerStageRateFidelity(t *testing.T) {
 	}
 
 	horizon := int64(1_200_000_000) // 1200 seconds in µs
-	requests, err := GenerateRequests(expanded, horizon, 0)
+	requests, err := generateRequests(expanded, horizon, 0)
 	if err != nil {
 		t.Fatalf("generation error: %v", err)
 	}
@@ -1234,7 +1234,7 @@ func TestInferencePerf_Causality_ArrivalTimesMonotonic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expansion error: %v", err)
 	}
-	requests, err := GenerateRequests(expanded, 5_000_000, 0)
+	requests, err := generateRequests(expanded, 5_000_000, 0)
 	if err != nil {
 		t.Fatalf("generation error: %v", err)
 	}
@@ -1265,7 +1265,7 @@ func TestInferencePerf_AllRequestsHaveValidTokens(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expansion error: %v", err)
 	}
-	requests, err := GenerateRequests(expanded, 5_000_000, 50)
+	requests, err := generateRequests(expanded, 5_000_000, 50)
 	if err != nil {
 		t.Fatalf("generation error: %v", err)
 	}
@@ -1307,8 +1307,14 @@ func TestGenerateRequests_InferencePerfSpec_MultiTurnMultiStage_Integration(t *t
 		t.Fatalf("expand error: %v", err)
 	}
 
+	// Open-loop, so the generator emits every round itself and the count covers them all (a
+	// closed-loop session's later rounds are the session manager's).
+	openLoop := false
+	for i := range expanded.Clients {
+		expanded.Clients[i].ClosedLoop = &openLoop
+	}
 	horizon := int64(20_000_000) // 20 seconds in µs
-	requests, err := GenerateRequests(expanded, horizon, 0)
+	requests, err := generateRequests(expanded, horizon, 0)
 	if err != nil {
 		t.Fatalf("generation error: %v", err)
 	}
@@ -1369,7 +1375,7 @@ func TestExpandInferencePerfSpec_SingleStage_NormalizedExponential(t *testing.T)
 	// 3*2 = 6 clients, each should get floor(600/6) = 100 requests (evenly divisible)
 	// Horizon = 2× duration: ensures sampler exhaustion (not horizon) stops generation.
 	horizon := int64(120_000_000) // 120 seconds in µs (2× stage duration)
-	requests, err := GenerateRequests(expanded, horizon, 0)
+	requests, err := generateRequests(expanded, horizon, 0)
 	if err != nil {
 		t.Fatalf("generation error: %v", err)
 	}
@@ -1409,7 +1415,7 @@ func TestExpandInferencePerfSpec_SingleStage_ExactCountWithLargeHorizon(t *testi
 
 	// Set horizon to 2x the stage duration to ensure sampler exhaustion, not horizon, limits requests
 	horizon := int64(120_000_000) // 120 seconds (2x the 60s stage duration)
-	requests, err := GenerateRequests(expanded, horizon, 0)
+	requests, err := generateRequests(expanded, horizon, 0)
 	if err != nil {
 		t.Fatalf("generation error: %v", err)
 	}
@@ -1449,7 +1455,7 @@ func TestExpandInferencePerfSpec_SingleStage_NormalizedDeterministic(t *testing.
 	if err != nil {
 		t.Fatalf("expansion error: %v", err)
 	}
-	r1, err := GenerateRequests(expanded1, horizon, 0)
+	r1, err := generateRequests(expanded1, horizon, 0)
 	if err != nil {
 		t.Fatalf("generation error: %v", err)
 	}
@@ -1459,7 +1465,7 @@ func TestExpandInferencePerfSpec_SingleStage_NormalizedDeterministic(t *testing.
 	if err != nil {
 		t.Fatalf("expansion error: %v", err)
 	}
-	r2, err := GenerateRequests(expanded2, horizon, 0)
+	r2, err := generateRequests(expanded2, horizon, 0)
 	if err != nil {
 		t.Fatalf("generation error: %v", err)
 	}
@@ -1567,7 +1573,7 @@ func TestExpandInferencePerfSpec_SingleStage_ConservationInvariant(t *testing.T)
 			// Horizon = 2x duration: ensures sampler exhaustion (not horizon) stops generation.
 			// With horizon == duration, sampler and horizon guard race, creating test fragility.
 			horizon := tc.duration * 2_000_000
-			requests, err := GenerateRequests(expanded, horizon, 0)
+			requests, err := generateRequests(expanded, horizon, 0)
 			if err != nil {
 				t.Fatalf("generation error: %v", err)
 			}
@@ -1628,12 +1634,12 @@ func TestExpandInferencePerfSpec_WorkloadReusability(t *testing.T) {
 	horizon := int64(60_000_000) // 60s (2× duration)
 
 	// WHEN GenerateRequests is called twice with the same WorkloadSpec
-	requests1, err := GenerateRequests(expanded, horizon, 0)
+	requests1, err := generateRequests(expanded, horizon, 0)
 	if err != nil {
 		t.Fatalf("first generation error: %v", err)
 	}
 
-	requests2, err := GenerateRequests(expanded, horizon, 0)
+	requests2, err := generateRequests(expanded, horizon, 0)
 	if err != nil {
 		t.Fatalf("second generation error: %v", err)
 	}
@@ -1878,7 +1884,7 @@ func TestExpandInferencePerfSpec_SingleStageNonMultiTurn_ExactRequestCount(t *te
 			t.Fatalf("expansion error: %v", err)
 		}
 		horizon := tt.duration * 2_000_000 // 2× duration (sampler-limited)
-		requests, err := GenerateRequests(expanded, horizon, 0)
+		requests, err := generateRequests(expanded, horizon, 0)
 		if err != nil {
 			t.Fatalf("generation error: %v", err)
 		}
@@ -1971,10 +1977,16 @@ func TestExpandInferencePerfSpec_SingleStageMultiTurn_ExactRequestCount(t *testi
 	if err != nil {
 		t.Fatalf("expansion error: %v", err)
 	}
+	// Open-loop, so the generator emits every round itself and the count covers them all (a
+	// closed-loop session's later rounds are the session manager's).
+	openLoop := false
+	for i := range expanded.Clients {
+		expanded.Clients[i].ClosedLoop = &openLoop
+	}
 	// Use 2x duration as horizon so all sessions complete their rounds
 	// (same pattern as non-multi-turn tests).
 	horizon := int64(1_200_000_000) // 1200 seconds = 2 × 600
-	requests, err := GenerateRequests(expanded, horizon, 0)
+	requests, err := generateRequests(expanded, horizon, 0)
 	if err != nil {
 		t.Fatalf("generation error: %v", err)
 	}
@@ -2092,7 +2104,7 @@ func TestExpandInferencePerfSpec_SingleStageNonMultiTurn_FairDistribution(t *tes
 		t.Fatalf("expansion error: %v", err)
 	}
 	horizon := int64(120_000_000) // 120 seconds
-	requests, err := GenerateRequests(expanded, horizon, 0)
+	requests, err := generateRequests(expanded, horizon, 0)
 	if err != nil {
 		t.Fatalf("generation error: %v", err)
 	}
@@ -2147,7 +2159,7 @@ func TestExpandInferencePerfSpec_ExactDistribution_PreservesDeterminism(t *testi
 	if err != nil {
 		t.Fatalf("expansion1 error: %v", err)
 	}
-	r1, err := GenerateRequests(expanded1, horizon, 0)
+	r1, err := generateRequests(expanded1, horizon, 0)
 	if err != nil {
 		t.Fatalf("generation1 error: %v", err)
 	}
@@ -2156,7 +2168,7 @@ func TestExpandInferencePerfSpec_ExactDistribution_PreservesDeterminism(t *testi
 	if err != nil {
 		t.Fatalf("expansion2 error: %v", err)
 	}
-	r2, err := GenerateRequests(expanded2, horizon, 0)
+	r2, err := generateRequests(expanded2, horizon, 0)
 	if err != nil {
 		t.Fatalf("generation2 error: %v", err)
 	}

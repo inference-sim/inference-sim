@@ -46,7 +46,7 @@ func ExpandCohorts(cohorts []CohortSpec) []ClientSpec {
 				Streaming:    cohort.Streaming,
 				PrefixLength: cohort.PrefixLength,
 				// Pointer fields shared across all expanded clients.
-				// Safe: GenerateRequests reads but never mutates these fields.
+				// Safe: workload generation reads but never mutates these fields.
 				Reasoning:   cohort.Reasoning,
 				ClosedLoop:  cohort.ClosedLoop,
 				Timeout:     cohort.Timeout,

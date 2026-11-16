@@ -260,7 +260,6 @@ func TestResultFlags_ReportOnlyFlagsAreRecordedAndExemptFlagsChangeNothing(t *te
 		flags []string
 	}{
 		{decisions, []string{"--trace-level", "decisions", "--summarize-trace", "--counterfactual-k", "2"}},
-		{base, []string{"--lazy-generation"}},
 		{base, []string{"--log", "info"}},
 		{base, []string{"--view", "summary"}},
 	} {
