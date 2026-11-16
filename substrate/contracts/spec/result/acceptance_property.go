@@ -1,8 +1,6 @@
 package result
 
 import (
-	"fmt"
-
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 )
 
@@ -39,12 +37,15 @@ func AcceptanceProperty(r acceptance.Resolution) WorkloadProperty {
 		w.Source = PropertyProfile
 	}
 	if r.RatesDerived {
-		w.RatesSchedule = string(r.Schedule)
 		if r.Schedule == "" {
-			w.RatesSchedule = string(acceptance.ScheduleMinimumVariance)
+			// Every resolution that derives rates names its schedule (acceptance.Resolve); one
+			// that does not is a programming error, never recorded as either schedule.
+			panic("result.AcceptanceProperty: a resolution derived its rates and names no schedule")
 		}
+		w.RatesSchedule = string(r.Schedule)
 		if r.Shape != nil {
-			w.RatesShape = fmt.Sprintf("%s %q decay_exponent %v", r.ShapeSet, r.Shape.SpeculativeMethod, r.Shape.DecayExponent)
+			w.RatesShape = &RatesShape{Set: r.ShapeSet, SpeculativeMethod: r.Shape.SpeculativeMethod,
+				DecayExponent: r.Shape.DecayExponent, Method: r.Shape.Method}
 		}
 	}
 	if r.Profile == nil {

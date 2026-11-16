@@ -4,6 +4,8 @@ import (
 	"math"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/blis-substrate/contracts/vocab"
 )
 
 func TestNaturalRatesKeepTheLengthAndDecay(t *testing.T) {
@@ -78,8 +80,9 @@ func TestNaturalRatesAtTheBounds(t *testing.T) {
 func shaped() *ProfileSet {
 	s := validProfileSet()
 	s.Shapes = []Shape{
-		{SpeculativeMethod: "dspark", DecayExponent: 1.17, FittedFrom: []string{"a.yaml"}, Rule: "fit"},
-		{DecayExponent: 1.27, FittedFrom: []string{"a.yaml", "b.yaml"}, Rule: "fit"},
+		{SpeculativeMethod: "dspark", DecayExponent: 1.17, FittedFrom: []string{"a.yaml"}, Rule: "fit",
+			Method: vocab.MethodCalibrated},
+		{DecayExponent: 1.27, FittedFrom: []string{"a.yaml", "b.yaml"}, Rule: "fit", Method: vocab.MethodAssumed},
 	}
 	return s
 }
@@ -180,6 +183,8 @@ func TestShapesAreValidated(t *testing.T) {
 		{"empty source", "shapes[0].fitted_from[0]", func(s *ProfileSet) { s.Shapes[0].FittedFrom = []string{""} }},
 		{"no rule", "shapes[0].rule", func(s *ProfileSet) { s.Shapes[0].Rule = "" }},
 		{"two for one method", "shapes[1].speculative_method", func(s *ProfileSet) { s.Shapes[1].SpeculativeMethod = "dspark" }},
+		{"no method", "shapes[0].method", func(s *ProfileSet) { s.Shapes[0].Method = "" }},
+		{"called measured", "shapes[0].method", func(s *ProfileSet) { s.Shapes[0].Method = vocab.MethodMeasured }},
 	}
 	if p := shaped().Validate(); !p.OK() {
 		t.Fatalf("a valid shaped set was rejected:\n%s", p.Error())

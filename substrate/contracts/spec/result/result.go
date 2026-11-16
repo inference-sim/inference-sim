@@ -337,12 +337,21 @@ type WorkloadProperty struct {
 	Profiles []string `yaml:"profiles,omitempty"`
 	// RatesSchedule says how per-position rates the source did not state were derived:
 	// "minimum_variance" (the engine's synthetic schedule) or "natural_decay" (a profile
-	// set's measured decay, named by RatesShape). It is an estimate the run assumed, so it is
+	// set's fitted decay, named by RatesShape). It is an estimate the run assumed, so it is
 	// recorded; empty when the rates were stated.
 	RatesSchedule string `yaml:"rates_schedule,omitempty"`
-	// RatesShape names the shape a natural_decay schedule used, as set, method ("" for the
-	// shape fitted to every method) and decay exponent.
-	RatesShape string `yaml:"rates_shape,omitempty"`
+	// RatesShape is the fitted shape a natural_decay schedule used; nil otherwise.
+	RatesShape *RatesShape `yaml:"rates_shape,omitempty"`
+}
+
+// RatesShape names a fitted decay shape (acceptance.Shape): the set that holds it, the method it
+// was fitted to ("" for every method's), its exponent, and how the exponent was obtained, so a
+// point can name the estimate as a substitution.
+type RatesShape struct {
+	Set               string       `yaml:"set"`
+	SpeculativeMethod string       `yaml:"speculative_method,omitempty"`
+	DecayExponent     float64      `yaml:"decay_exponent"`
+	Method            vocab.Method `yaml:"method"`
 }
 
 // PropertySource is what supplied a workload property, highest precedence first (D8).
