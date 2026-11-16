@@ -16,13 +16,13 @@ The oracle is vLLM itself, at the pinned release, running on CPU with no GPU. Th
 - it calls `schedule()` and `update_from_output()` as `EngineCore` does, one step at a time.
 
 **Patch the environment, never the decisions.** The oracle may replace only the GPU, the clock,
-transports and external services. Every replacement is listed in `oracle/mocks.json` with its
+transports, the environment, the platform and external services, and copy upstream code only in
+a declared transcription. Every replacement is listed in `oracle/mocks.json` with its
 kind and how it is made, and `oracle/check_mocks.py` (run in CI) checks four things:
 - each entry's kind is `gpu`, `clock`, `transport`, `environment`, `platform`,
   `external-service` or `transcription`, and no entry whose symbol is a dotted path under vLLM's
-  decision modules (the `decision_prefixes` of `oracle/harness.json`: `vllm.v1.core.`,
-  `vllm.v1.engine.core`, `vllm.distributed.kv_transfer.kv_connector.v1.`,
-  `vllm.v1.kv_offload.`) is anything but a clock or a declared transcription;
+  decision modules (the `decision_prefixes` of `oracle/harness.json`) is anything but a clock or a
+  declared transcription, and a transcription's sites install only its declared copy;
 - every place an `oracle/run_*.py` (the `harness_files` of `oracle/harness.json`) writes into an
   object it did not build (attribute and item stores, `setattr`, `del`, `object.__new__`) is a
   listed site of some entry, and every listed site is one a runner makes;
