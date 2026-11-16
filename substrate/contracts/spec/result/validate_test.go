@@ -1,17 +1,19 @@
 package result
 
 import (
-	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/metrics"
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
 	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
+	"github.com/inference-sim/blis-substrate/contracts/vocab"
 )
 
 func ptr[T any](v T) *T { return &v }
@@ -599,35 +601,37 @@ func TestAcceptancePropertyRecordsEveryResolution(t *testing.T) {
 }
 
 // A run whose rates were derived records the schedule it assumed, and for a natural decay the
-// shape it took (inference-sim/blis-substrate#103); stated rates record none.
+// fitted shape it took, with the shape's method, so the point can name an estimate
+// (inference-sim/blis-substrate#103); stated rates record none.
 func TestAcceptancePropertyRecordsADerivedSchedule(t *testing.T) {
 	rate := 0.3
 	shaped := &acceptance.ProfileSet{Kind: acceptance.Kind, Name: "s", Shapes: []acceptance.Shape{
-		{SpeculativeMethod: "dspark", DecayExponent: 1.17, FittedFrom: []string{"a.yaml"}, Rule: "fit"}}}
+		{SpeculativeMethod: "dspark", DecayExponent: 1.17, FittedFrom: []string{"a.yaml"}, Rule: "fit",
+			Method: vocab.MethodCalibrated}}}
 	req := func(v *acceptance.Value) acceptance.Request {
-		return acceptance.Request{Model: "m", SpeculativeMethod: "dspark", NumSpecTokens: 7,
+		return acceptance.Request{Model: "m", SpeculativeMethod: "dspark", NumSpecTokens: v.NumSpecTokens,
 			Registry: []*acceptance.ProfileSet{shaped}, CLI: v}
 	}
+	fitted := &RatesShape{Set: "s", SpeculativeMethod: "dspark", DecayExponent: 1.17, Method: vocab.MethodCalibrated}
 	for _, c := range []struct {
-		name, schedule, shape string
-		v                     *acceptance.Value
+		name, schedule string
+		shape          *RatesShape
+		v              *acceptance.Value
 	}{
-		{"natural", "natural_decay", `s "dspark" decay_exponent 1.17`,
+		{"natural", "natural_decay", fitted,
 			&acceptance.Value{NumSpecTokens: 7, AcceptanceRate: &rate, Realisation: acceptance.RealisationNatural}},
-		{"synthetic", "minimum_variance", "",
+		{"synthetic", "minimum_variance", nil,
 			&acceptance.Value{NumSpecTokens: 7, AcceptanceRate: &rate, Realisation: acceptance.RealisationSynthetic}},
-		{"stated rates", "", "",
+		{"stated rates", "", nil,
 			&acceptance.Value{NumSpecTokens: 2, PerPositionRates: []float64{0.5, 0.2}}},
 	} {
-		r := req(c.v)
-		r.NumSpecTokens = c.v.NumSpecTokens
-		res, err := acceptance.Resolve(r)
+		res, err := acceptance.Resolve(req(c.v))
 		if err != nil {
 			t.Fatalf("%s: %v", c.name, err)
 		}
 		w := AcceptanceProperty(res)
-		if w.RatesSchedule != c.schedule || w.RatesShape != c.shape {
-			t.Errorf("%s: rates_schedule %q, rates_shape %q", c.name, w.RatesSchedule, w.RatesShape)
+		if w.RatesSchedule != c.schedule || !reflect.DeepEqual(w.RatesShape, c.shape) {
+			t.Errorf("%s: rates_schedule %q, rates_shape %+v", c.name, w.RatesSchedule, w.RatesShape)
 		}
 		out := valid()
 		out.Input.WorkloadProperties = []WorkloadProperty{w}
@@ -635,10 +639,23 @@ func TestAcceptancePropertyRecordsADerivedSchedule(t *testing.T) {
 			t.Errorf("%s builds a property the schema refuses:\n%s", c.name, p.Error())
 		}
 	}
-	for _, c := range []struct{ name, schedule, shape, field string }{
-		{"an unknown schedule", "step", "", "rates_schedule"},
-		{"a decay with no shape", "natural_decay", "", "rates_shape"},
-		{"a shape with no decay", "minimum_variance", "s", "rates_shape"},
+	measured := *fitted
+	measured.Method = vocab.MethodMeasured
+	steep := *fitted
+	steep.DecayExponent = 3
+	noSet := *fitted
+	noSet.Set = ""
+	for _, c := range []struct {
+		name, schedule string
+		shape          *RatesShape
+		field          string
+	}{
+		{"an unknown schedule", "step", nil, "rates_schedule"},
+		{"a decay with no shape", "natural_decay", nil, "rates_shape"},
+		{"a shape with no decay", "minimum_variance", fitted, "rates_shape"},
+		{"a shape called measured", "natural_decay", &measured, "rates_shape.method"},
+		{"an exponent out of range", "natural_decay", &steep, "rates_shape.decay_exponent"},
+		{"a shape with no set", "natural_decay", &noSet, "rates_shape.set"},
 	} {
 		out := valid()
 		out.Input.WorkloadProperties = []WorkloadProperty{{Name: SpeculativeAcceptance, Source: PropertyCommandLine,
@@ -647,4 +664,16 @@ func TestAcceptancePropertyRecordsADerivedSchedule(t *testing.T) {
 			t.Errorf("%s: want a problem at %s, got %v", c.name, c.field, p.Error())
 		}
 	}
+}
+
+// A resolution that derived its rates without naming a schedule is a programming error: it is
+// never recorded as either schedule.
+func TestAPropertyOfARatesDerivedResolutionWithNoScheduleIsRefused(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("a derived resolution with no schedule was recorded")
+		}
+	}()
+	AcceptanceProperty(acceptance.Resolution{AcceptanceLength: 2, PerPositionRates: []float64{1, 0}, RatesDerived: true,
+		Layer: acceptance.LayerCLI})
 }

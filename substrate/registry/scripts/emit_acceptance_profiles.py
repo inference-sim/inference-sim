@@ -706,8 +706,10 @@ SHAPE_RULE = (
     "AL-1, and 1 + p_1 + ... + p_k is compared with the curve's measured acceptance length at "
     "every k <= K0. b is the exponent on the grid 0.50, 0.51, ..., 2.00 that minimises the sum, "
     "over the tests, of the squared worst error of each; the smallest such b on a tie. Curves "
-    "are taken from every vendored file InferenceX does not mark provisional, carried as a "
-    "profile or not, since a curve shows how acceptance decays whatever its model resolves to.")
+    "are taken from every pinned file InferenceX does not mark provisional, carried as a "
+    "profile or not, since a curve shows how acceptance decays whatever its model resolves to. "
+    "Curves measured under different draft samplers and verifiers are pooled within a method; "
+    "the exponent is an estimate, not a measurement.")
 
 
 def natural_rates(al: float, k: int, b: float) -> list[float]:
@@ -762,6 +764,8 @@ def shapes(golden: Path = GOLDEN) -> list[dict]:
         s["decay_exponent"] = fit_exponent([c for _, c in ts])
         s["fitted_from"] = sorted({src for src, _ in ts})
         s["rule"] = SHAPE_RULE
+        # A one-parameter form fitted to measured curves: an estimate, never a measurement.
+        s["method"] = "calibrated"
         out.append(s)
     return out
 

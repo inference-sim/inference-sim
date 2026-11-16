@@ -178,7 +178,7 @@ func fromValue(layer Layer, v *Value, req Request) (Resolution, error) {
 	shape, set := ShapeFor(sets, req.SpeculativeMethod)
 	if shape == nil {
 		return Resolution{}, fmt.Errorf("%s acceptance: a natural value that states no per_position_rates is spread with "+
-			"a measured shape, and %s states none for %q or for every method; state the rates, or the realisation "+
+			"a fitted shape, and %s states none for %q or for every method; state the rates, or the realisation "+
 			"synthetic if the run forced its acceptance", layer, setNames(sets), req.SpeculativeMethod)
 	}
 	rates, err := NaturalRates(r.AcceptanceLength, req.NumSpecTokens, shape.DecayExponent)

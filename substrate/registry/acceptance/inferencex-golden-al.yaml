@@ -73,9 +73,11 @@ shapes:
     sum to AL-1, and 1 + p_1 + ... + p_k is compared with the curve''s measured acceptance
     length at every k <= K0. b is the exponent on the grid 0.50, 0.51, ..., 2.00 that minimises
     the sum, over the tests, of the squared worst error of each; the smallest such b on a
-    tie. Curves are taken from every vendored file InferenceX does not mark provisional, carried
+    tie. Curves are taken from every pinned file InferenceX does not mark provisional, carried
     as a profile or not, since a curve shows how acceptance decays whatever its model resolves
-    to.'
+    to. Curves measured under different draft samplers and verifiers are pooled within a method;
+    the exponent is an estimate, not a measurement.'
+  method: calibrated
 - speculative_method: dspark
   decay_exponent: 1.17
   fitted_from:
@@ -91,9 +93,11 @@ shapes:
     sum to AL-1, and 1 + p_1 + ... + p_k is compared with the curve''s measured acceptance
     length at every k <= K0. b is the exponent on the grid 0.50, 0.51, ..., 2.00 that minimises
     the sum, over the tests, of the squared worst error of each; the smallest such b on a
-    tie. Curves are taken from every vendored file InferenceX does not mark provisional, carried
+    tie. Curves are taken from every pinned file InferenceX does not mark provisional, carried
     as a profile or not, since a curve shows how acceptance decays whatever its model resolves
-    to.'
+    to. Curves measured under different draft samplers and verifiers are pooled within a method;
+    the exponent is an estimate, not a measurement.'
+  method: calibrated
 - speculative_method: eagle3
   decay_exponent: 1.19
   fitted_from:
@@ -105,9 +109,11 @@ shapes:
     sum to AL-1, and 1 + p_1 + ... + p_k is compared with the curve''s measured acceptance
     length at every k <= K0. b is the exponent on the grid 0.50, 0.51, ..., 2.00 that minimises
     the sum, over the tests, of the squared worst error of each; the smallest such b on a
-    tie. Curves are taken from every vendored file InferenceX does not mark provisional, carried
+    tie. Curves are taken from every pinned file InferenceX does not mark provisional, carried
     as a profile or not, since a curve shows how acceptance decays whatever its model resolves
-    to.'
+    to. Curves measured under different draft samplers and verifiers are pooled within a method;
+    the exponent is an estimate, not a measurement.'
+  method: calibrated
 - speculative_method: mtp
   decay_exponent: 1.44
   fitted_from:
@@ -122,9 +128,11 @@ shapes:
     sum to AL-1, and 1 + p_1 + ... + p_k is compared with the curve''s measured acceptance
     length at every k <= K0. b is the exponent on the grid 0.50, 0.51, ..., 2.00 that minimises
     the sum, over the tests, of the squared worst error of each; the smallest such b on a
-    tie. Curves are taken from every vendored file InferenceX does not mark provisional, carried
+    tie. Curves are taken from every pinned file InferenceX does not mark provisional, carried
     as a profile or not, since a curve shows how acceptance decays whatever its model resolves
-    to.'
+    to. Curves measured under different draft samplers and verifiers are pooled within a method;
+    the exponent is an estimate, not a measurement.'
+  method: calibrated
 - decay_exponent: 1.27
   fitted_from:
   - https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/deepseek-v4-pro-0813__dspark__native__probabilistic-default.yaml
@@ -150,9 +158,11 @@ shapes:
     sum to AL-1, and 1 + p_1 + ... + p_k is compared with the curve''s measured acceptance
     length at every k <= K0. b is the exponent on the grid 0.50, 0.51, ..., 2.00 that minimises
     the sum, over the tests, of the squared worst error of each; the smallest such b on a
-    tie. Curves are taken from every vendored file InferenceX does not mark provisional, carried
+    tie. Curves are taken from every pinned file InferenceX does not mark provisional, carried
     as a profile or not, since a curve shows how acceptance decays whatever its model resolves
-    to.'
+    to. Curves measured under different draft samplers and verifiers are pooled within a method;
+    the exponent is an estimate, not a measurement.'
+  method: calibrated
 profiles:
 - model: deepseek-v4-pro
   architecture: DeepseekV4ForCausalLM

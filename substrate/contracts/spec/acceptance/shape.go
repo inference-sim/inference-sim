@@ -39,7 +39,8 @@ const (
 	// ScheduleMinimumVariance: derived with MinimumVarianceRates, the engine's synthetic
 	// schedule.
 	ScheduleMinimumVariance Schedule = "minimum_variance"
-	// ScheduleNaturalDecay: derived with NaturalRates from a profile set's measured shape.
+	// ScheduleNaturalDecay: derived with NaturalRates from a profile set's fitted shape, an
+	// estimate.
 	ScheduleNaturalDecay Schedule = "natural_decay"
 )
 
@@ -60,6 +61,10 @@ type Shape struct {
 	FittedFrom []string `yaml:"fitted_from"`
 	// Rule states how the exponent was fitted.
 	Rule string `yaml:"rule"`
+	// Method is how the exponent was obtained, in the registry's evidence vocabulary. A shape is
+	// fitted to measured curves, so it is never measured itself: calibrated (a one-parameter
+	// form fitted to measurements) or assumed.
+	Method vocab.Method `yaml:"method"`
 }
 
 // DecayExponent bounds: outside them the family no longer looks like any measured curve.
@@ -84,6 +89,13 @@ func (s Shape) validate(p *validate.Problems, at string) {
 	}
 	if s.Rule == "" {
 		p.Field(at+".rule", "required: how the exponent was fitted")
+	}
+	switch {
+	case s.Method == "":
+		p.Field(at+".method", "required: calibrated or assumed; a fitted shape is an estimate")
+	case !ShapeMethod(s.Method):
+		p.Field(at+".method", "%q is not calibrated or assumed: a shape fitted to curves is an estimate, never %q",
+			s.Method, s.Method)
 	}
 }
 
@@ -141,6 +153,12 @@ func ShapeFor(sets []*ProfileSet, method string) (*Shape, string) {
 		}
 	}
 	return nil, ""
+}
+
+// ShapeMethod reports whether m is a method a shape may state: calibrated or assumed. A shape is
+// fitted to measured curves; it is never itself a measurement.
+func ShapeMethod(m vocab.Method) bool {
+	return m == vocab.MethodCalibrated || m == vocab.MethodAssumed
 }
 
 func validateShapes(p *validate.Problems, shapes []Shape) {

@@ -87,6 +87,7 @@ none of its own takes. Two shapes for one method are an error.
 | `decay_exponent` | number | yes | The exponent of the decay above, in [0.5, 2]. |
 | `fitted_from` | list of strings | yes | The source of every curve it was fitted to. No entry may be empty. |
 | `rule` | string | yes | How the exponent was fitted. |
+| `method` | string | yes | How the exponent was obtained: `calibrated` (a one-parameter form fitted to measured curves) or `assumed`. A shape is an estimate, so `measured` is refused. |
 
 ### Profiles
 

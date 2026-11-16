@@ -476,13 +476,20 @@ def test_a_natural_shape_predicts_a_held_out_curve_better_than_the_step():
 
 
 def test_a_rate_only_pin_at_k7_recovers_the_measured_per_position_profile():
-    """Muse-Spark-Open with DFlash2, measured at K 1-7: the rates its acceptance length at K 7
-    alone derives are within 0.05, at every position, of the per-position rates its curve
-    measures (AL(k) - AL(k-1)), and sum to the pinned length."""
-    [cells] = [c for src, c in emit.shape_tests()["dflash"] if MUSE in src]
-    [shape] = [s for s in SET["shapes"] if s.get("speculative_method") == "dflash"]
-    r = emit.natural_rates(cells[7], 7, shape["decay_exponent"])
+    """Muse-Spark-Open with DFlash2, measured at K 1-7, held out of the fit: with the dflash
+    exponent fitted to the method's other curves, the rates its acceptance length at K 7 alone
+    derives are within 0.05, at every position, of the per-position rates its curve measures
+    (AL(k) - AL(k-1)), and sum to the pinned length. The step misses by far more."""
+    tests = emit.shape_tests()["dflash"]
+    [cells] = [c for src, c in tests if MUSE in src]
+    others = [c for src, c in tests if MUSE not in src]
+    assert others, "the dflash family has no other curve to fit on"
+    r = emit.natural_rates(cells[7], 7, emit.fit_exponent(others))
     measured = [cells[k] - cells.get(k - 1, 1.0) for k in range(1, 8)]
     assert max(abs(a - b) for a, b in zip(r, measured)) <= 0.05
     assert abs(1 + sum(r) - cells[7]) < 1e-9
     assert max(abs(a - b) for a, b in zip(step_rates(cells[7], 7), measured)) > 0.05
+
+
+def test_every_shape_is_an_estimate():
+    assert SET["shapes"] and all(s["method"] in ("calibrated", "assumed") for s in SET["shapes"])

@@ -1533,8 +1533,10 @@ is not in the catalog. The rule is in each shape's `rule`.
 
 `validator/test_acceptance_profiles.py` checks the fit out of sample: with each curve left
 out of its method's fit, the decay predicts that curve's smaller-K lengths better than the
-step on every curve. For Muse-Spark-Open with DFlash2 at K 7, the rates its length alone
-derives are within 0.05 of the per-position rates its curve measures at every position.
+step on every curve. For Muse-Spark-Open with DFlash2 at K 7, held out of the `dflash` fit, the
+rates its length alone derives are within 0.05 of the per-position rates its curve measures at
+every position. A shape is an estimate, so it states `method: calibrated`, and a run that uses
+one records it as such.
 
 ### 12.6 Gates
 
