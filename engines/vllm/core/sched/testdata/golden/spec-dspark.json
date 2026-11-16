@@ -8,18 +8,18 @@
   "d2": {
    "output_tokens": 9,
    "reason": "stop",
-   "step": 5
+   "step": 4
   },
   "d3": {
    "output_tokens": 6,
    "reason": "stop",
-   "step": 8
+   "step": 7
   }
  },
  "provenance": {
-  "blis_vllm_commit": "d855ac9d0501427f819cda43a5fbcde33966b640",
-  "lockfile_sha256": "8baca0cbd0f28f5455c4d2c1b39a81ac3c424089e4c875e93614794c77932167",
-  "mock_version": "gpu-mock/5+af60be80e293",
+  "blis_vllm_commit": "74a07eccbdafffe39f57b9738e49bee225f4bece",
+  "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
+  "mock_version": "gpu-mock/7+f4274aa648c4",
   "mocks": [
    "vllm.v1.outputs.ModelRunnerOutput",
    "tests.v1.core.utils.create_scheduler",
@@ -53,20 +53,20 @@
   "model": "facebook/opt-125m",
   "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
   "oracle_inputs": {
-   "oracle/mocks.json": "29fec19aa8b5bd75e12b37893eea761684d4399a7e3bee1066cb749eac58769c",
-   "oracle/requirements.lock": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
-   "oracle/run_scheduler.py": "dd0cbc255201f6d63588c720f4e687276f4b73fec0f490e997afdaacc2a5a127",
+   "oracle/mocks.json": "afd576782c5322ce4c6aa4cdb72fb513e3e78cd8ea54dd6043af0cdf5680a658",
+   "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+   "oracle/run_scheduler.py": "1239a1d64f057fcb543789762859ea33211627e3f2b66b46087ed9ee936222f6",
    "oracle/scenarios/spec-dspark.json": "a327c27651b7403101f8fc465c398c6183cf4f4a96af7875b20f0be135984440"
   },
   "platform": "linux-x86_64",
   "python": "3.12.16",
-  "requirements_lock_sha256": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
+  "requirements_lock_sha256": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
   "scenario_sha256": "a327c27651b7403101f8fc465c398c6183cf4f4a96af7875b20f0be135984440",
   "seed": null,
   "tier": 2,
-  "vllm_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
-  "vllm_distribution": "0.32.0+cpu",
-  "vllm_version": "0.32.0"
+  "vllm_commit": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "vllm_distribution": "0.33.0+cpu",
+  "vllm_version": "0.33.0"
  },
  "steps": [
   {
@@ -128,7 +128,7 @@
    ],
    "scheduled": {
     "d1": 18,
-    "d2": 10
+    "d2": 11
    },
    "step": 0
   },
@@ -152,7 +152,7 @@
       1
      ],
      [
-      null,
+      "6b858e60d8f16d9dd32c3a3999ac20a4b8a8ff84b142d3f40d079dbf889770fe00000000",
       1
      ],
      [
@@ -174,6 +174,10 @@
       1
      ],
      [
+      "fbf92568210717306f062e528b386dae1ab6431aa2fab62fd5968b0481a4aba200000000",
+      1
+     ],
+     [
       null,
       1
      ],
@@ -184,8 +188,8 @@
     ]
    },
    "finished": [],
-   "free_blocks": 48,
-   "kv_usage": 0.18644067796610164,
+   "free_blocks": 47,
+   "kv_usage": 0.2033898305084746,
    "num_running": 2,
    "num_waiting": 0,
    "preempted": [],
@@ -195,10 +199,11 @@
    ],
    "scheduled": {
     "d1": 4,
-    "d2": 1
+    "d2": 4
    },
    "spec_scheduled": {
-    "d1": 3
+    "d1": 3,
+    "d2": 3
    },
    "step": 1
   },
@@ -226,7 +231,7 @@
       1
      ],
      [
-      null,
+      "ad415126efcd705914f45429b86edb6c01f5c3644a8d67e11029820634e66b0e00000000",
       1
      ],
      [
@@ -309,7 +314,7 @@
       1
      ],
      [
-      null,
+      "4eabafb301c7e4f28cf24ff83e4efc091d8bb4c4376b153c34e9abe1d6a168c200000000",
       1
      ],
      [
@@ -335,6 +340,10 @@
       1
      ],
      [
+      "013187b69aeb2a1f174680f160a36dd94153ad58d47da0dc1c7c67be341420c500000000",
+      1
+     ],
+     [
       null,
       1
      ],
@@ -345,8 +354,8 @@
     ]
    },
    "finished": [],
-   "free_blocks": 45,
-   "kv_usage": 0.23728813559322037,
+   "free_blocks": 44,
+   "kv_usage": 0.2542372881355932,
    "num_running": 2,
    "num_waiting": 0,
    "preempted": [],
@@ -403,43 +412,18 @@
       null,
       1
      ]
-    ],
-    "d2": [
-     [
-      "9233f0afa80683f4cd0fc96b990ac6764b3787e1b0dce161ff4d4a98f62cf3b300000000",
-      1
-     ],
-     [
-      "6943a48bde8050237247280bf2789851731a11e25831a103239622998a43e06b00000000",
-      1
-     ],
-     [
-      "fbf92568210717306f062e528b386dae1ab6431aa2fab62fd5968b0481a4aba200000000",
-      1
-     ],
-     [
-      null,
-      1
-     ],
-     [
-      null,
-      1
-     ],
-     [
-      null,
-      1
-     ]
     ]
    },
-   "finished": [],
-   "free_blocks": 44,
-   "kv_usage": 0.2542372881355932,
-   "num_running": 2,
+   "finished": [
+    "d2"
+   ],
+   "free_blocks": 50,
+   "kv_usage": 0.15254237288135597,
+   "num_running": 1,
    "num_waiting": 0,
    "preempted": [],
    "running": [
-    "d1",
-    "d2"
+    "d1"
    ],
    "scheduled": {
     "d1": 4,
@@ -471,6 +455,14 @@
       1
      ],
      [
+      "df2cfb360c8e164ce894e7d7a9065b5650c2f3a2289f8d7220da03e62fa8ff2f00000000",
+      1
+     ],
+     [
+      "80e1023e25edccfff8f9950481fb66f7aaa2620fb7f7723ae2beff0cbf40802000000000",
+      1
+     ],
+     [
       null,
       1
      ],
@@ -481,11 +473,10 @@
     ]
    },
    "finished": [
-    "d1",
-    "d2"
+    "d1"
    ],
-   "free_blocks": 53,
-   "kv_usage": 0.10169491525423724,
+   "free_blocks": 51,
+   "kv_usage": 0.13559322033898302,
    "num_running": 1,
    "num_waiting": 0,
    "preempted": [],
@@ -494,12 +485,10 @@
    ],
    "scheduled": {
     "d1": 4,
-    "d2": 4,
-    "d3": 18
+    "d3": 26
    },
    "spec_scheduled": {
-    "d1": 3,
-    "d2": 3
+    "d1": 3
    },
    "step": 5
   },
@@ -531,58 +520,7 @@
       1
      ],
      [
-      null,
-      1
-     ],
-     [
-      null,
-      1
-     ]
-    ]
-   },
-   "finished": [],
-   "free_blocks": 51,
-   "kv_usage": 0.13559322033898302,
-   "num_running": 1,
-   "num_waiting": 0,
-   "preempted": [],
-   "running": [
-    "d3"
-   ],
-   "scheduled": {
-    "d3": 8
-   },
-   "step": 6
-  },
-  {
-   "blocks": {
-    "d3": [
-     [
-      "1b3b7491b55deb460d8d2f20da759bf0c0a31aa4220f0d0efa2b81dc6876aecb00000000",
-      1
-     ],
-     [
-      "805b4b54145b938739ee6afae9bd4f5aab977dd719a66f9b99876c98540ca1ba00000000",
-      1
-     ],
-     [
-      "fff36c043cc8a57e81b21573d2d6eb4c9ee24395040399d7e786ef6d2dcb33cc00000000",
-      1
-     ],
-     [
-      "e868126176ee775c4f1e5a022d61b92aee881470b3db800f930497060812eb5d00000000",
-      1
-     ],
-     [
-      "df2cfb360c8e164ce894e7d7a9065b5650c2f3a2289f8d7220da03e62fa8ff2f00000000",
-      1
-     ],
-     [
-      "80e1023e25edccfff8f9950481fb66f7aaa2620fb7f7723ae2beff0cbf40802000000000",
-      1
-     ],
-     [
-      null,
+      "2b78c2afa0cfd5989438fc83cf63a4fe54078cf7c9ba7f9ebd2cdf7485dea52200000000",
       1
      ],
      [
@@ -610,7 +548,7 @@
    "spec_scheduled": {
     "d3": 3
    },
-   "step": 7
+   "step": 6
   },
   {
    "blocks": {},
@@ -629,7 +567,7 @@
    "spec_scheduled": {
     "d3": 3
    },
-   "step": 8
+   "step": 7
   }
  ]
 }

@@ -1061,7 +1061,7 @@ func (m *Manager) Free(id string) {
 			g.align.free(id)
 			continue
 		}
-		bs := g.reqBlocks[id]
+		bs := trimNullHead(g.reqBlocks[id])
 		rev := make([]*Block, len(bs))
 		for i, b := range bs {
 			rev[len(bs)-1-i] = b
@@ -1070,6 +1070,18 @@ func (m *Manager) Free(id string) {
 		delete(g.reqBlocks, id)
 		delete(g.numCached, id)
 	}
+}
+
+// trimNullHead is trim_null_head (vllm/v1/core/kv_cache_utils.py:227-250@4ba787ec): a
+// request's blocks without their leading null blocks (a sliding-window table's skipped prefix),
+// which pop_blocks_for_free drops at v0.33.0 (single_type_kv_cache_manager.py:571-589), so
+// freeing a table never touches the null block.
+func trimNullHead(bs []*Block) []*Block {
+	n := 0
+	for n < len(bs) && bs[n].Null {
+		n++
+	}
+	return bs[n:]
 }
 
 // PopBlocks is pop_blocks_for_free (kv_cache_coordinator.py:410-427@5df63a72): it drops the
@@ -1082,7 +1094,7 @@ func (m *Manager) PopBlocks(id string) []*Block {
 			out = append(out, g.align.popBlocksForFree(id)...)
 			continue
 		}
-		out = append(out, g.reqBlocks[id]...)
+		out = append(out, trimNullHead(g.reqBlocks[id])...)
 		delete(g.reqBlocks, id)
 		delete(g.numCached, id)
 	}

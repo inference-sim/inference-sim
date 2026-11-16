@@ -186,6 +186,9 @@ func newEngine(st settings, pricer Pricer) (*Engine, error) {
 	if pricer == nil {
 		return nil, fmt.Errorf("vllm: a pricer is required: the latency kernel's, or fixed durations")
 	}
+	// A P/D connector or a KV offload is the engine's kv_transfer_config, which keeps the legacy
+	// block hashes (vllm/config/vllm.py:688-690@4ba787ec).
+	st.sched.KVTransfer = st.connector != nil || st.offload != nil
 	s, err := sched.New(st.sched)
 	if err != nil {
 		return nil, fmt.Errorf("vllm: %w", err)

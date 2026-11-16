@@ -3,7 +3,7 @@
   "q00": {
    "output_tokens": 22,
    "reason": "stop",
-   "step": 32
+   "step": 31
   },
   "q01": {
    "output_tokens": 6,
@@ -46,9 +46,9 @@
   "scheduler_block_size": 16
  },
  "provenance": {
-  "blis_vllm_commit": "d855ac9d0501427f819cda43a5fbcde33966b640",
-  "lockfile_sha256": "8baca0cbd0f28f5455c4d2c1b39a81ac3c424089e4c875e93614794c77932167",
-  "mock_version": "gpu-mock/5+af60be80e293",
+  "blis_vllm_commit": "74a07eccbdafffe39f57b9738e49bee225f4bece",
+  "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
+  "mock_version": "gpu-mock/7+f4274aa648c4",
   "mocks": [
    "vllm.v1.outputs.ModelRunnerOutput",
    "tests.v1.core.utils.create_scheduler",
@@ -82,20 +82,20 @@
   "model": "facebook/opt-125m",
   "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
   "oracle_inputs": {
-   "oracle/mocks.json": "29fec19aa8b5bd75e12b37893eea761684d4399a7e3bee1066cb749eac58769c",
-   "oracle/requirements.lock": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
-   "oracle/run_scheduler.py": "dd0cbc255201f6d63588c720f4e687276f4b73fec0f490e997afdaacc2a5a127",
+   "oracle/mocks.json": "afd576782c5322ce4c6aa4cdb72fb513e3e78cd8ea54dd6043af0cdf5680a658",
+   "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+   "oracle/run_scheduler.py": "1239a1d64f057fcb543789762859ea33211627e3f2b66b46087ed9ee936222f6",
    "oracle/scenarios/mamba-fuzz-33.json": "00b300c991c080f2fee5d69a6449aadd9b0f8c3fe2e84479b1f6b27e3ba59968"
   },
   "platform": "linux-x86_64",
   "python": "3.12.16",
-  "requirements_lock_sha256": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
+  "requirements_lock_sha256": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
   "scenario_sha256": "00b300c991c080f2fee5d69a6449aadd9b0f8c3fe2e84479b1f6b27e3ba59968",
   "seed": 33,
   "tier": 2,
-  "vllm_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
-  "vllm_distribution": "0.32.0+cpu",
-  "vllm_version": "0.32.0"
+  "vllm_commit": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "vllm_distribution": "0.33.0+cpu",
+  "vllm_version": "0.33.0"
  },
  "steps": [
   {
@@ -1509,11 +1509,11 @@
    "free_blocks": 12,
    "kv_usage": 0.33333333333333337,
    "num_computed": {
-    "q00": 78
+    "q00": 79
    },
    "num_running": 1,
    "num_tokens": {
-    "q00": 79
+    "q00": 80
    },
    "num_waiting": 1,
    "preempted": [
@@ -1524,6 +1524,7 @@
     "q00"
    ],
    "scheduled": {
+    "q00": 1,
     "q02": 1,
     "q03": 1
    },
@@ -1550,7 +1551,7 @@
        2
       ],
       [
-       null,
+       "d8a478a58df46ecd9c56110989fabb0ee377859fb20d3fb508bd42be9a8484b900000000",
        1
       ]
      ],
@@ -1628,12 +1629,12 @@
    "free_blocks": 9,
    "kv_usage": 0.5,
    "num_computed": {
-    "q00": 79,
+    "q00": 80,
     "q01": 80
    },
    "num_running": 2,
    "num_tokens": {
-    "q00": 80,
+    "q00": 81,
     "q01": 81
    },
    "num_waiting": 0,
@@ -1672,6 +1673,10 @@
       [
        "d8a478a58df46ecd9c56110989fabb0ee377859fb20d3fb508bd42be9a8484b900000000",
        1
+      ],
+      [
+       null,
+       1
       ]
      ],
      [
@@ -1690,6 +1695,10 @@
       [
        "null",
        0
+      ],
+      [
+       null,
+       1
       ],
       [
        null,
@@ -1701,85 +1710,6 @@
    "finished": [
     "q01"
    ],
-   "free_blocks": 12,
-   "kv_usage": 0.33333333333333337,
-   "num_computed": {
-    "q00": 80
-   },
-   "num_running": 1,
-   "num_tokens": {
-    "q00": 81
-   },
-   "num_waiting": 0,
-   "preempted": [],
-   "prefix_hit": {},
-   "running": [
-    "q00"
-   ],
-   "scheduled": {
-    "q00": 1,
-    "q01": 1
-   },
-   "step": 15
-  },
-  {
-   "blocks": {
-    "q00": [
-     [
-      [
-       "58264986ead4c2b53893408b379073010b45add2e570a615bf50cc837f92547e00000000",
-       1
-      ],
-      [
-       "f9113743a8fa29943eafeccefcadaa11334df88c21bc440c7b4a1300888b98c100000000",
-       1
-      ],
-      [
-       "63f2f8d7670c980a08edebed07bfe97b8a774ca62607b43ad77222aa71bb57d500000000",
-       1
-      ],
-      [
-       "f8a6092312c33ea2dc052d6477aacb6aaa338e4ddda654f328482b20f63a900100000000",
-       1
-      ],
-      [
-       "d8a478a58df46ecd9c56110989fabb0ee377859fb20d3fb508bd42be9a8484b900000000",
-       1
-      ],
-      [
-       null,
-       1
-      ]
-     ],
-     [
-      [
-       "null",
-       0
-      ],
-      [
-       "null",
-       0
-      ],
-      [
-       "null",
-       0
-      ],
-      [
-       "null",
-       0
-      ],
-      [
-       null,
-       1
-      ],
-      [
-       null,
-       1
-      ]
-     ]
-    ]
-   },
-   "finished": [],
    "free_blocks": 10,
    "kv_usage": 0.4444444444444444,
    "num_computed": {
@@ -1796,9 +1726,10 @@
     "q00"
    ],
    "scheduled": {
-    "q00": 1
+    "q00": 1,
+    "q01": 1
    },
-   "step": 16
+   "step": 15
   },
   {
    "blocks": {
@@ -1876,7 +1807,7 @@
    "scheduled": {
     "q00": 1
    },
-   "step": 17
+   "step": 16
   },
   {
    "blocks": {
@@ -1954,7 +1885,7 @@
    "scheduled": {
     "q00": 1
    },
-   "step": 18
+   "step": 17
   },
   {
    "blocks": {
@@ -2032,7 +1963,7 @@
    "scheduled": {
     "q00": 1
    },
-   "step": 19
+   "step": 18
   },
   {
    "blocks": {
@@ -2110,7 +2041,7 @@
    "scheduled": {
     "q00": 1
    },
-   "step": 20
+   "step": 19
   },
   {
    "blocks": {
@@ -2188,7 +2119,7 @@
    "scheduled": {
     "q00": 1
    },
-   "step": 21
+   "step": 20
   },
   {
    "blocks": {
@@ -2266,7 +2197,7 @@
    "scheduled": {
     "q00": 1
    },
-   "step": 22
+   "step": 21
   },
   {
    "blocks": {
@@ -2344,7 +2275,7 @@
    "scheduled": {
     "q00": 1
    },
-   "step": 23
+   "step": 22
   },
   {
    "blocks": {
@@ -2422,7 +2353,7 @@
    "scheduled": {
     "q00": 1
    },
-   "step": 24
+   "step": 23
   },
   {
    "blocks": {
@@ -2500,7 +2431,7 @@
    "scheduled": {
     "q00": 1
    },
-   "step": 25
+   "step": 24
   },
   {
    "blocks": {
@@ -2578,7 +2509,7 @@
    "scheduled": {
     "q00": 1
    },
-   "step": 26
+   "step": 25
   },
   {
    "blocks": {
@@ -2656,7 +2587,7 @@
    "scheduled": {
     "q00": 1
    },
-   "step": 27
+   "step": 26
   },
   {
    "blocks": {
@@ -2734,7 +2665,7 @@
    "scheduled": {
     "q00": 1
    },
-   "step": 28
+   "step": 27
   },
   {
    "blocks": {
@@ -2812,7 +2743,7 @@
    "scheduled": {
     "q00": 1
    },
-   "step": 29
+   "step": 28
   },
   {
    "blocks": {
@@ -2890,7 +2821,7 @@
    "scheduled": {
     "q00": 1
    },
-   "step": 30
+   "step": 29
   },
   {
    "blocks": {
@@ -2968,7 +2899,7 @@
    "scheduled": {
     "q00": 1
    },
-   "step": 31
+   "step": 30
   },
   {
    "blocks": {},
@@ -2987,7 +2918,7 @@
    "scheduled": {
     "q00": 1
    },
-   "step": 32
+   "step": 31
   }
  ]
 }
