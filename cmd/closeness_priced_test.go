@@ -14,7 +14,6 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/vocab"
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 	vllmrules "github.com/inference-sim/blis-vllm/rules"
 )
 
@@ -40,7 +39,7 @@ func asEntryImpl(i plan.KernelImpl) coefficient.KernelImpl {
 func poolInputs(t *testing.T, scenario string) latencykernel.Inputs {
 	t.Helper()
 	repos := kernelmodel.Repos{Scenarios: testScenariosDir(t), Data: testData(), Rules: latencykernel.RulesFrom(vllmrules.Lookup),
-		RulesVersions: vllmrules.Versions, RulesKind: "vllm", EngineSettings: vllmsettings.OfPool}
+		RulesVersions: vllmrules.Versions, RulesKind: "vllm", DraftModel: kernelmodel.DraftModelOf, Lower: kernelmodel.LowerPool}
 	in, err := latencykernel.OpenInputs(scenario, repos, 0)
 	if err != nil {
 		t.Fatalf("%s: %v", scenario, err)

@@ -886,9 +886,9 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.14.0",
+    "substrate": "v0.14.1-0.20261116200733-2ce0e12e1b81",
     "router": "v1.0.0-blis.4",
-    "engine_module": "v0.32.0-blis.3"
+    "engine_module": "v0.32.1-0.20261116201259-1902e25acc48"
   },
   "window": {
     "start_us": 250000,
@@ -1697,6 +1697,15 @@
           {
             "KernelMatch": "",
             "Method": "assumed",
+            "Name": "max_cudagraph_capture_size",
+            "Primitive": "",
+            "Running": "",
+            "Scope": "512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph",
+            "Set": "blis-latency-kernel"
+          },
+          {
+            "KernelMatch": "",
+            "Method": "assumed",
             "Name": "fabric_bandwidth_efficiency",
             "Primitive": "",
             "Running": "",
@@ -1710,15 +1719,6 @@
             "Primitive": "",
             "Running": "",
             "Scope": "absent: not in the scenario's coefficient sets: no per-kind decode rate for sparse_mla attention, so it is priced with the part-wide attention pair and any per-kind floor is not used",
-            "Set": "blis-latency-kernel"
-          },
-          {
-            "KernelMatch": "",
-            "Method": "assumed",
-            "Name": "max_cudagraph_capture_size",
-            "Primitive": "",
-            "Running": "",
-            "Scope": "512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph",
             "Set": "blis-latency-kernel"
           },
           {
@@ -2166,6 +2166,15 @@
           {
             "KernelMatch": "",
             "Method": "assumed",
+            "Name": "max_cudagraph_capture_size",
+            "Primitive": "",
+            "Running": "",
+            "Scope": "512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph",
+            "Set": "blis-latency-kernel"
+          },
+          {
+            "KernelMatch": "",
+            "Method": "assumed",
             "Name": "fabric_bandwidth_efficiency",
             "Primitive": "",
             "Running": "",
@@ -2179,15 +2188,6 @@
             "Primitive": "",
             "Running": "",
             "Scope": "absent: not in the scenario's coefficient sets: no per-kind decode rate for sparse_mla attention, so it is priced with the part-wide attention pair and any per-kind floor is not used",
-            "Set": "blis-latency-kernel"
-          },
-          {
-            "KernelMatch": "",
-            "Method": "assumed",
-            "Name": "max_cudagraph_capture_size",
-            "Primitive": "",
-            "Running": "",
-            "Scope": "512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph",
             "Set": "blis-latency-kernel"
           },
           {
