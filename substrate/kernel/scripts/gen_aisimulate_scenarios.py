@@ -79,6 +79,10 @@ import re
 import sys
 from pathlib import Path
 
+# The catalog's shared drafter rule (also the acceptance emitter's).
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "catalog" / "scripts"))
+import drafter_links  # noqa: E402
+
 COEFFICIENTS = (
     "[cost-model-primitives, cost-model-collectives, cost-model-host-overheads, "
     "cost-model-attention, cost-model-recurrent, cost-model-memory]"
@@ -180,71 +184,29 @@ def context_length(workloads: set[str]) -> int:
     return window
 
 
-def _entry(catalog: Path, name: str) -> tuple[str, str]:
-    """(model.yaml, graph.yaml) text of a catalog model, each "" when absent."""
-    d = catalog / "models" / name
-    read = lambda f: (d / f).read_text() if (d / f).is_file() else ""  # noqa: E731
-    return read("model.yaml"), read("graph.yaml")
-
-
-def _listed(text: str, key: str) -> list[str]:
-    """A top-level `key: [a, b]` flow list of a model.yaml, which is how the catalog writes
-    drafters and targets; read as text, so the script needs no YAML library."""
-    m = re.search(rf"^{key}:\s*\[([^\]]*)\]\s*$", text, re.M)
-    return [x.strip() for x in m.group(1).split(",") if x.strip()] if m else []
-
-
-def _repo(text: str) -> str | None:
-    """The Hugging Face repository a model.yaml's top-level `source:` block names: its direct
-    two-space `repo:` key, and no other block's (a base model's or a quantisation's)."""
-    m = re.search(r"^source:[ \t]*\n(?:[ \t]+.*\n|[ \t]*\n)*?  repo:[ \t]*(\S+)[ \t]*$", text, re.M)
-    return m.group(1) if m else None
-
-
-def _speculator(graph: str) -> str | None:
-    """The method a graph's speculator states, as a deployment states it: every model-specific
-    MTP name is mtp (the catalog's derive_graph.vllm_speculative_method)."""
-    # The speculator block's own two-space `method:`, never one nested under another of its keys.
-    m = re.search(r"^speculator:[ \t]*\n(?:[ \t]+.*\n|[ \t]*\n)*?  method:[ \t]*(\S+)", graph, re.M)
-    if not m:
-        return None
-    return "mtp" if m.group(1).endswith("_mtp") else m.group(1)
-
-
 def speculative_drafter(dep: dict, catalog: Path = DEFAULT_CATALOG) -> tuple[str | None, str | None]:
     """(the catalog drafter dep's speculative block names as draft_model, the reason it cannot be
     written), at most one of them set.
 
-    The run's draft checkpoint (stated_config draft_model) must be a Hugging Face repository that
-    a catalog drafter entry has as its source, that names the model among its targets, that the
-    model lists among its drafters, and whose graph speculates by the run's method. With no draft
-    checkpoint, or the served model named as its own draft (MTP), the model's own graph must
-    speculate by the run's method. Anything else cannot be priced: the kernel refuses a
-    deployment that drafts with a method other than its graph's speculator (liftDraft, draft.go)."""
+    The run's draft checkpoint (stated_config draft_model) is resolved by the catalog's shared
+    drafter rule (catalog/scripts/drafter_links.py, which the acceptance emitter also uses): a
+    Hugging Face repository is the drafter entry with that repository that names the model, is
+    listed by it and speculates by the run's method; none stated, or the target's own repository,
+    is the model's own speculator when its graph speculates by the run's method, else the one
+    drafter entry shipped in the model's own repository (a DSpark head). Anything else cannot be
+    priced: the kernel refuses a deployment that drafts with a method other than its graph's
+    speculator (liftDraft, draft.go). The corpus records no draft revision."""
     stated = dep.get("stated_config", {})
     spec = stated.get("speculative_method")
     if not spec:
         return None, None
-    model = dep["model"]
-    model_yaml, graph = _entry(catalog, model)
-    own = _speculator(graph) == spec
-    draft = stated.get("draft_model")
     k = stated.get("num_speculative_tokens")
-    if not draft or draft.casefold() == (_repo(model_yaml) or "").casefold():
-        if own:
-            return None, None
-        return None, (f"{model} drafts with {spec} x{k} and names no draft checkpoint, and its "
-                      "catalog graph does not speculate by it, so the kernel cannot price it")
-    if not re.fullmatch(r"[\w.-]+/[\w.-]+", draft):
-        return None, (f"{model} drafts with {spec} x{k} from {draft}, which names no repository, "
-                      "so no catalog drafter can be matched to it")
-    for name in sorted(p.parent.name for p in (catalog / "models").glob("*/model.yaml")):
-        text, dgraph = _entry(catalog, name)
-        if ((_repo(text) or "").casefold() == draft.casefold() and model in _listed(text, "targets")
-                and name in _listed(model_yaml, "drafters") and _speculator(dgraph) == spec):
-            return name, None
-    return None, (f"{model} drafts with {spec} x{k} from {draft}, which is no catalog drafter of "
-                  f"{model}, so the kernel cannot price it")
+    try:
+        name = drafter_links.resolve(drafter_links.Catalog(catalog), dep["model"],
+                                     stated.get("draft_model"), spec)
+    except drafter_links.Unresolved as e:
+        return None, f"{dep['model']} drafts with {spec} x{k}: {e}, so the kernel cannot price it"
+    return (name or None), None
 
 
 def unpriced_speculator(dep: dict, catalog: Path = DEFAULT_CATALOG) -> str | None:

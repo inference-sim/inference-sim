@@ -166,6 +166,15 @@ def main() -> int:
         ck("a method only nested inside the speculator block does not make the run priced",
            emit(nested, {"1024:1024"}, {"1k1k"}, cat) is None)
 
+    # A DSpark head shipped in the target's own repository resolves to its catalog entry, whether
+    # the run names the target's repository or nothing (vLLM loads it from there).
+    for draft in ("MiniMaxAI/MiniMax-M3.1-Flash", None):
+        stated = {"speculative_method": "dspark", "num_speculative_tokens": 3}
+        if draft:
+            stated["draft_model"] = draft
+        shipped = sweep(model="minimax-m3.1-flash", stated=stated)
+        ck(f"a DSpark head in the target's repository resolves (draft {draft})",
+           engine(shipped, "draft_model") == "minimax-m3.1-flash-dspark")
     priced = sweep(model="minimax-m3", stated={"speculative_method": "mtp",
                                                "num_speculative_tokens": 3})
     ck("a speculator the graph describes still emits, with its block",
