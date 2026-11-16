@@ -6,7 +6,6 @@ import (
 	"math"
 	"os"
 	"sort"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -19,8 +18,6 @@ import (
 // configured by the deployment's router inputs (see sim/llmd).
 type PolicyBundle struct {
 	Priority          PriorityConfig                `yaml:"priority"`
-	Scheduler         string                        `yaml:"scheduler"`
-	Preemption        PreemptionConfig              `yaml:"preemption"`
 	NodePools         []NodePoolBundleConfig        `yaml:"node_pools"`         // nil = no node pools
 	Autoscaler        AutoscalerBundleConfig        `yaml:"autoscaler"`         // IntervalUs=0 = disabled
 	InstanceLifecycle InstanceLifecycleBundleConfig `yaml:"instance_lifecycle"` // zero = instant loading
@@ -33,11 +30,6 @@ type PriorityConfig struct {
 	// scheduling and preemption. nil = defaults (critical=4, standard=3, batch=-1,
 	// sheddable=-2, background=-3).
 	SLOPriorities map[string]int `yaml:"slo_priorities,omitempty"`
-}
-
-// PreemptionConfig holds preemption policy configuration.
-type PreemptionConfig struct {
-	Policy string `yaml:"policy"`
 }
 
 // NodePoolBundleConfig mirrors cluster.NodePoolConfig for YAML loading in PolicyBundle.
@@ -91,12 +83,35 @@ type AutoscalerBundleConfig struct {
 	Analyzer                       AnalyzerBundleConfig `yaml:"analyzer"`
 }
 
+// removedBundleKeys are the top-level keys a bundle no longer takes, each with what states its
+// setting now: the scheduler and preemption policy are the engine's, stated in the scenario
+// (inference-sim #2037, #1602).
+var removedBundleKeys = map[string]string{
+	"scheduler":  "state engine.scheduling_policy (fcfs or priority, vLLM's) in each pool's engine block of the scenario",
+	"preemption": "state engine.scheduling_policy (fcfs or priority, vLLM's) in each pool's engine block of the scenario; it sets the preemption victim too",
+}
+
 // LoadPolicyBundle reads and parses a YAML policy configuration file.
-// Uses strict parsing: unrecognized keys (typos) are rejected.
+// Uses strict parsing: unrecognized keys (typos) are rejected, and a removed key is refused
+// with what replaces it.
 func LoadPolicyBundle(path string) (*PolicyBundle, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading policy config: %w", err)
+	}
+	var top map[string]yaml.Node
+	if err := yaml.Unmarshal(data, &top); err == nil {
+		var removed []string
+		for k := range top {
+			if _, ok := removedBundleKeys[k]; ok {
+				removed = append(removed, k)
+			}
+		}
+		sort.Strings(removed)
+		if len(removed) > 0 {
+			k := removed[0]
+			return nil, fmt.Errorf("parsing policy config: %s was removed from the policy bundle: %s", k, removedBundleKeys[k])
+		}
 	}
 	var bundle PolicyBundle
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
@@ -107,44 +122,8 @@ func LoadPolicyBundle(path string) (*PolicyBundle, error) {
 	return &bundle, nil
 }
 
-// The engine's scheduler and preemption policy names (validSchedulers,
-// validPreemptionPolicies) are declared with the engine (scheduler.go); the bundle validates
-// against them.
-
-// ValidSchedulerNames returns sorted valid scheduler names (excluding empty).
-func ValidSchedulerNames() []string { return validNamesList(SchedulerNameTable()) }
-
-// IsValidPreemptionPolicy returns true if name is a recognized preemption policy.
-func IsValidPreemptionPolicy(name string) bool { return PreemptionPolicyNameTable()[name] }
-
-// ValidPreemptionPolicyNames returns sorted valid preemption policy names (excluding empty).
-func ValidPreemptionPolicyNames() []string { return validNamesList(PreemptionPolicyNameTable()) }
-
-// validNamesList returns sorted non-empty keys from a validity map.
-func validNamesList(m map[string]bool) []string {
-	names := make([]string, 0, len(m))
-	for k := range m {
-		if k != "" {
-			names = append(names, k)
-		}
-	}
-	sort.Strings(names)
-	return names
-}
-
-// validNames returns a sorted comma-separated list of valid names (excluding empty string).
-func validNames(m map[string]bool) string {
-	return strings.Join(validNamesList(m), ", ")
-}
-
-// Validate checks that all policy names and parameter ranges in the bundle are valid.
+// Validate checks that the parameter ranges in the bundle are valid.
 func (b *PolicyBundle) Validate() error {
-	if !IsValidScheduler(b.Scheduler) {
-		return fmt.Errorf("unknown scheduler %q; valid options: %s", b.Scheduler, validNames(SchedulerNameTable()))
-	}
-	if !IsValidPreemptionPolicy(b.Preemption.Policy) {
-		return fmt.Errorf("unknown preemption policy %q; valid options: %s", b.Preemption.Policy, validNames(PreemptionPolicyNameTable()))
-	}
 	// Validate autoscaler config.
 	if math.IsNaN(b.Autoscaler.IntervalUs) || math.IsInf(b.Autoscaler.IntervalUs, 0) {
 		return fmt.Errorf("autoscaler.interval_us must be a finite number")

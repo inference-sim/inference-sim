@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -463,34 +462,6 @@ func TestRankInPool_IsABijectionOntoEachPoolsRanks(t *testing.T) {
 	})
 }
 
-// writeKernelOffloadConfig writes a --kv-offload-config whose one secondary tier is the named
-// catalog device, with a CPU tier small enough that the secondary tier is exercised.
-func writeKernelOffloadConfig(t *testing.T, tierExtra string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "offload.yaml")
-	body := "kv_offload:\n" +
-		"  cpu_bytes_to_use: 4294967296\n" +
-		"  secondary_tiers:\n" +
-		"    - type: fs\n" +
-		"      root_dir: /mnt/kv\n" +
-		"      direct_io: true\n" +
-		"      device_class: nvme_gen4\n" + tierExtra
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
-// writeOffloadYAML writes body as a --kv-offload-config file and returns its path.
-func writeOffloadYAML(t *testing.T, body string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "offload.yaml")
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
 // scenarioWithOffloadSet returns a directory holding the scenario of dir with the registry set
 // cost-model-offload-tiers added to its coefficients: a storage tier's read rate, write rate and
 // base latency are registry entries, so a run that offloads to a tier needs the set.
@@ -534,17 +505,18 @@ func readFile(t *testing.T, path string) string {
 	return string(b)
 }
 
-// KV offload on the kernel: a tier named by its catalog device is priced by the kernel, a run
-// with it completes and its trace replays byte-identically, and a tier stating its own physics
-// -- or a legacy-tier flag restating the kernel's price -- is refused.
+// KV offload on the kernel: a run whose scenario states a CPU tier completes, its trace replays
+// byte-identically, and an eviction policy the offload cache does not simulate is refused at
+// config time, never by a panic.
 func TestRunCmd_KernelBackend_KVOffload(t *testing.T) {
 	const scenario = "llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml"
-	common := []string{"--scenarios", scenarioWithOffloadSet(t, testScenarios, scenario), "--scenario", scenario, "--seed", "4", "--horizon", "600000000"}
+	block := "offload:\n  connector: OffloadingConnector\n  spec: CPUOffloadingSpec\n  tiers:\n    - tier: cpu_dram\n      bytes: 4294967296\n"
+	scenarios := writeOffloadScenario(t, testScenarios, scenario, "", block)
+	common := []string{"--scenarios", scenarios, "--scenario", scenario, "--seed", "4", "--horizon", "600000000"}
 	base := append([]string{"--num-requests", "30", "--rate", "10"}, common...)
 
 	prefix := filepath.Join(t.TempDir(), "trace")
-	runOut, stderr, err := runKernelCLI(t, append([]string{"run", "--kv-offload-config",
-		writeKernelOffloadConfig(t, ""), "--trace-output", prefix}, base...)...)
+	runOut, stderr, err := runKernelCLI(t, append([]string{"run", "--trace-output", prefix}, base...)...)
 	if err != nil {
 		t.Fatalf("offload run: %v\n%s", err, stderr)
 	}
@@ -560,43 +532,15 @@ func TestRunCmd_KernelBackend_KVOffload(t *testing.T) {
 		t.Errorf("the offload run's replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, repOut)
 	}
 
-	legacy, stderr, err := runKernelCLI(t, append([]string{"run", "--kv-cpu-blocks", "2000"}, base...)...)
-	if err != nil || !completedIs(legacy, 30) {
-		t.Errorf("legacy CPU tier run: %v\n%s\n%s", err, legacy, stderr)
+	// The offload cache simulates LRU only: arc is refused at config time, never a panic.
+	arc := writeOffloadScenario(t, testScenarios, scenario, "", strings.Replace(block, "  tiers:\n", "  eviction_policy: arc\n  tiers:\n", 1))
+	_, stderr, err = runKernelCLI(t, "run", "--num-requests", "30", "--rate", "10",
+		"--scenarios", arc, "--scenario", scenario, "--seed", "4", "--horizon", "600000000")
+	if err == nil || !strings.Contains(stderr, `eviction_policy \"arc\" is not simulated`) {
+		t.Errorf("an arc eviction policy: want a refusal naming it, got err=%v\n%s", err, lastLines(stderr, 3))
 	}
-
-	for _, tt := range []struct {
-		name, want string
-		args       []string
-	}{
-		{"a tier stating its own bandwidth", "states read_bandwidth",
-			[]string{"run", "--kv-offload-config", writeKernelOffloadConfig(t, "      read_bandwidth: 7000.0\n")}},
-		{"a legacy-tier bandwidth flag", "unknown flag: --kv-transfer-bandwidth",
-			[]string{"run", "--kv-cpu-blocks", "2000", "--kv-transfer-bandwidth", "5"}},
-		{"a tier naming an unknown device", `device_class=\"floppy\" is not defined`,
-			[]string{"run", "--kv-offload-config", writeOffloadYAML(t, strings.Replace(
-				readFile(t, writeKernelOffloadConfig(t, "")), "device_class: nvme_gen4", "device_class: floppy", 1))}},
-		{"a tier naming an empty device", `device_class=\"\" is not defined`,
-			[]string{"run", "--kv-offload-config", writeOffloadYAML(t, strings.Replace(
-				readFile(t, writeKernelOffloadConfig(t, "")), "device_class: nvme_gen4", `device_class: ""`, 1))}},
-		// A catalog device states O_DIRECT rates only; buffered I/O is not priced as them.
-		{"a buffered-I/O tier", "uses buffered I/O (direct_io: false)",
-			[]string{"run", "--kv-offload-config", writeOffloadYAML(t, strings.Replace(
-				readFile(t, writeKernelOffloadConfig(t, "")), "direct_io: true", "direct_io: false", 1))}},
-		// The offload cache simulates LRU only: arc is refused at config time, never a panic.
-		{"an arc eviction policy", `eviction_policy \"arc\" is not simulated`,
-			[]string{"run", "--kv-offload-config", writeOffloadYAML(t, strings.Replace(
-				readFile(t, writeKernelOffloadConfig(t, "")), "kv_offload:\n", "kv_offload:\n  eviction_policy: arc\n", 1))}},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			_, stderr, err := runKernelCLI(t, append(tt.args, base...)...)
-			if err == nil || !strings.Contains(stderr, tt.want) {
-				t.Errorf("want a refusal naming %q, got err=%v\n%s", tt.want, err, stderr)
-			}
-			if strings.Contains(stderr, "panic:") {
-				t.Errorf("refused by a panic rather than an error:\n%s", lastLines(stderr, 10))
-			}
-		})
+	if strings.Contains(stderr, "panic:") {
+		t.Errorf("refused by a panic rather than an error:\n%s", lastLines(stderr, 10))
 	}
 }
 
@@ -608,15 +552,14 @@ func isWholeTicksRoundedUp(ticks, ns int64) bool {
 	return ticks >= 1 && ticks*1000 >= ns && (ticks == 1 || (ticks-1)*1000 < ns)
 }
 
-// The offload prices are the kernel's: the attached tier pricer and the legacy per-block
-// charge are TierTime in whole ticks rounded up (isWholeTicksRoundedUp), and moving more bytes
-// never costs less.
+// The offload prices are the kernel's: the attached tier pricer is TierTime in whole ticks
+// rounded up (isWholeTicksRoundedUp), and moving more bytes never costs less.
 func TestApplyKernelOffloadPricing_IsTheKernelsTierTime(t *testing.T) {
 	scenarios, catalog, registry := kernelRepos(t)
-	saved := []any{kernelOpened, kvCPUBlocks, blockSizeTokens}
+	saved := []any{kernelOpened, blockSizeTokens}
 	defer func() {
 		kernelOpened, _ = saved[0].(*kernelmodel.Model)
-		kvCPUBlocks, blockSizeTokens = saved[1].(int64), saved[2].(int64)
+		blockSizeTokens = saved[1].(int64)
 	}()
 	const pricedScenario = "gpt-oss-120b-h200-fp4-vllm-tp4.yaml"
 	m, err := kernelmodel.Open(pricedScenario,
@@ -624,15 +567,12 @@ func TestApplyKernelOffloadPricing_IsTheKernelsTierTime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	kernelOpened, kvCPUBlocks, blockSizeTokens = m, 100, 16
+	kernelOpened, blockSizeTokens = m, 16
 	cfg := kvOffloadConfig{Enabled: true, Tiers: []kvOffloadTier{{DeviceClass: "nvme_gen4", DirectIO: true}}}
-	legacy := applyKernelOffloadPricing(&cfg)
+	applyKernelOffloadPricing(&cfg)
 
 	ns := func(tier string, dir kernel.Direction, bytes int64, q int) int64 {
 		return m.Kernel().TierTime(tier, dir, bytes, q).Nanoseconds()
-	}
-	if d := ns("cpu_dram", kernel.DirectionFromTier, m.Kernel().SequenceVariableBytes(16), 1); !isWholeTicksRoundedUp(legacy, d) {
-		t.Errorf("legacy per-block charge %d ticks is not the kernel's %d ns reload in whole ticks rounded up", legacy, d)
 	}
 	price := cfg.Tiers[0].ServiceTime
 	if price == nil {
@@ -744,7 +684,7 @@ func e2eMean(t *testing.T, stdout string) float64 {
 
 // Speculation comes from the scenario: a scenario that drafts tokens needs an acceptance (a
 // property of the workload, not the deployment) and, with no layer stating one -- the vendored
-// registry has no acceptance profiles -- is refused naming the scenario's draft (#1939); with it, accepting more of each draft never makes requests slower -- every step
+// registry has no acceptance profiles -- is refused naming the scenario's draft; with it, accepting more of each draft never makes requests slower -- every step
 // pays the same verify width and advances further.
 func TestRunCmd_KernelBackend_SpeculationFromTheScenario(t *testing.T) {
 	base := []string{"run", "--scenarios", pdScenarios, "--scenario", "glm-5-h200-tp8-mtp3.yaml",
@@ -956,8 +896,7 @@ func TestRunCmd_KernelBackend_DisaggregatedSpeculation(t *testing.T) {
 // own kernel. The fixture's decode pool caches in bf16 and its prefill pool in fp8, so their
 // blocks hold different bytes, and a pool priced by the other's kernel cannot pass:
 //
-//   - per-block bytes, every tier's service time and the legacy reload charge are each the
-//     pool's own kernel's answer;
+//   - per-block bytes and every tier's service time are each the pool's own kernel's answer;
 //   - the run's description is not mutated, and the pools share no tier slice.
 func TestKernelPools_ApplyOffload_EachPoolByItsOwnKernel(t *testing.T) {
 	_, catalog, registry := kernelRepos(t)
@@ -976,9 +915,9 @@ func TestKernelPools_ApplyOffload_EachPoolByItsOwnKernel(t *testing.T) {
 		}
 		*c.dst = m
 	}
-	saved := []int64{kvCPUBlocks, blockSizeTokens}
-	defer func() { kvCPUBlocks, blockSizeTokens = saved[0], saved[1] }()
-	kvCPUBlocks, blockSizeTokens = 100, 64
+	saved := blockSizeTokens
+	defer func() { blockSizeTokens = saved }()
+	blockSizeTokens = 64
 
 	run := kvOffloadConfig{Enabled: true, CPUBytesToUse: 1 << 32, PerBlockBytes: 1,
 		Tiers: []kvOffloadTier{{DeviceClass: "nvme_gen4", DirectIO: true}}}
@@ -997,16 +936,13 @@ func TestKernelPools_ApplyOffload_EachPoolByItsOwnKernel(t *testing.T) {
 		m    *kernelmodel.Model
 		o    poolOverrides
 	}{{"prefill", pools.prefill, pre}, {"decode", pools.decode, dec}} {
-		if c.o.KVOffload == nil || c.o.KVTransferTicksPerBlock == nil {
+		if c.o.KVOffload == nil {
 			t.Fatalf("%s pool: no offload override", c.name)
 		}
 		want := c.m.Kernel().SequenceVariableBytes(64)
 		bytesOf[c.name] = want
 		if got := c.o.KVOffload.PerBlockBytes; got != want {
 			t.Errorf("%s pool: %d bytes per block, its kernel says %d", c.name, got, want)
-		}
-		if got, d := *c.o.KVTransferTicksPerBlock, ns(c.m, "cpu_dram", kernel.DirectionFromTier, want); !isWholeTicksRoundedUp(got, d) {
-			t.Errorf("%s pool: legacy reload %d ticks, not its kernel's %d ns rounded up", c.name, got, d)
 		}
 		for _, b := range []int64{want, 1 << 20, 1 << 28} {
 			if got, d := c.o.KVOffload.Tiers[0].ServiceTime(false, b, 1), ns(c.m, "nvme_gen4", kernel.DirectionFromTier, b); !isWholeTicksRoundedUp(got, d) {
@@ -1027,22 +963,23 @@ func TestKernelPools_ApplyOffload_EachPoolByItsOwnKernel(t *testing.T) {
 
 // The first pool's adoption (adoptFirstPoolEngine) takes the rest of its engine from the kernel
 // too: the bounded per-sequence state the KV store charges, the prefix-hit layout under the
-// run's --swa-bounded-replay, and the startup note that reports the sequence charge.
+// pool's engine.swa_bounded_replay, and the startup note that reports the sequence charge.
 // DeepSeek-V4.1-Flash holds a bounded sequence state and its bounded replay changes the layout,
-// so neither check is vacuous.
+// so neither check is vacuous. The scenario is the only source of swa_bounded_replay (#2037): a
+// pool stating false cuts prefix hits as the model does with the replay off, which is what the
+// removed --swa-bounded-replay false did.
 func TestAdoptKernelDeployment_TakesTheSequenceStateAndPrefixHitFromTheKernel(t *testing.T) {
 	_, catalog, registry := kernelRepos(t)
 	orig := captureCmdLevelVars()
 	saved := []any{kernelScenario, kernelScenarioDir, registryPath, catalogPath, kernelOpened,
-		sequenceState, prefixHit, swaBoundedReplay.v, prefixCacheRecords}
+		sequenceState, prefixHit, prefixCacheRecords}
 	t.Cleanup(func() {
 		orig.restore()
 		kernelScenario, kernelScenarioDir, registryPath = saved[0].(string), saved[1].(string), saved[2].(string)
 		catalogPath = saved[3].(string)
 		kernelOpened, _ = saved[4].(*kernelmodel.Model)
 		sequenceState, prefixHit = saved[5].(kvSequenceState), saved[6].(kvPrefixHit)
-		swaBoundedReplay.v, _ = saved[7].(*bool)
-		prefixCacheRecords, _ = saved[8].(map[string]sim.PrefixCacheRecord)
+		prefixCacheRecords, _ = saved[7].(map[string]sim.PrefixCacheRecord)
 	})
 	m, err := kernelmodel.Open(dsparkScenario, reposOf(pdScenarios, catalog, registry))
 	if err != nil {
@@ -1055,19 +992,19 @@ func TestAdoptKernelDeployment_TakesTheSequenceStateAndPrefixHitFromTheKernel(t 
 	if st.SequenceState.Hold == nil {
 		t.Fatal("non-vacuity: the DeepSeek-V4.1 fixture holds no bounded sequence state")
 	}
+	offDir := dsparkScenariosWithoutBoundedReplay(t)
 	off := false
-	for _, override := range []*bool{nil, &off} {
+	for _, c := range []struct {
+		name, dir string
+		replay    *bool
+	}{{"the scenario as stated", pdScenarios, nil}, {"swa_bounded_replay: false", offDir, &off}} {
 		var logBuf bytes.Buffer
 		logrus.SetOutput(&logBuf)
 		origLevel := logrus.GetLevel()
 		logrus.SetLevel(logrus.InfoLevel)
 		cmd := &cobra.Command{}
 		registerSimConfigFlags(cmd)
-		flags := []string{"--scenario", dsparkScenario, "--scenarios", pdScenarios, "--registry", registry, "--catalog", catalog}
-		if override != nil {
-			flags = append(flags, "--swa-bounded-replay", strconv.FormatBool(*override))
-		}
-		if err := cmd.ParseFlags(flags); err != nil {
+		if err := cmd.ParseFlags([]string{"--scenario", dsparkScenario, "--scenarios", c.dir, "--registry", registry, "--catalog", catalog}); err != nil {
 			t.Fatal(err)
 		}
 		adoptKernelDeployment(cmd)
@@ -1075,15 +1012,15 @@ func TestAdoptKernelDeployment_TakesTheSequenceStateAndPrefixHitFromTheKernel(t 
 		logrus.SetLevel(origLevel)
 
 		if sequenceState.Hold == nil || sequenceState.Gate == nil {
-			t.Errorf("override %v: the run holds no sequence state; the kernel states one", override)
+			t.Errorf("%s: the run holds no sequence state; the kernel states one", c.name)
 		} else if got, want := sequenceState.Hold(4096, 0), st.SequenceState.Hold(4096, 0); got != want {
-			t.Errorf("override %v: the run's sequence state holds %d blocks at 4096 tokens, the kernel's %d", override, got, want)
+			t.Errorf("%s: the run's sequence state holds %d blocks at 4096 tokens, the kernel's %d", c.name, got, want)
 		}
-		if want := m.PrefixHit(override).Hit; prefixHit != want {
-			t.Errorf("override %v: the run cuts prefix hits as %+v, the model as %+v", override, prefixHit, want)
+		if want := m.PrefixHit(c.replay).Hit; prefixHit != want {
+			t.Errorf("%s: the run cuts prefix hits as %+v, the model as %+v", c.name, prefixHit, want)
 		}
 		if note := build.SequenceFixedCharge("first pool", st); !strings.Contains(logBuf.String(), note) {
-			t.Errorf("override %v: the startup log lacks the sequence charge note %q", override, note)
+			t.Errorf("%s: the startup log lacks the sequence charge note %q", c.name, note)
 		}
 	}
 	if m.PrefixHit(nil).Hit == m.PrefixHit(&off).Hit {

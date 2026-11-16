@@ -187,7 +187,7 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 					}
 
 					// Create factory closure that captures requestsPerClient and durationUs.
-					// Each GenerateRequests call will invoke this factory with a sub-RNG,
+					// Each generation run invokes this factory with a sub-RNG,
 					// producing a fresh sampler instance (workload reusability).
 					factory := func(rng *rand.Rand) ArrivalSampler {
 						return NewNormalizedExponentialSampler(rng, requestsPerClient, durationUs)

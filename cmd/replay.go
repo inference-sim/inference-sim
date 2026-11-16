@@ -106,7 +106,7 @@ Example:
 			logrus.Infof("Loaded trace: %d records (mode=%s)", len(traceData.Records), traceData.Header.Mode)
 		}
 
-		// #1530: refuse a trace whose source run had a multi-node fleet. Cross-node
+		// #2146: refuse a trace whose source run had a multi-node fleet. Cross-node
 		// collective traffic is charged to step time, but replay cannot reconstruct a
 		// multi-node fleet — node pools are `blis run`-only and rejected below — so
 		// replaying such a trace would silently reproduce the workload at single-node
@@ -358,22 +358,17 @@ Example:
 		// config, Fatalf if this binary cannot reproduce it, and Fatalf on a genuine
 		// flag/header conflict. Inert when the trace carries no offload config (BC-G5).
 		// A converted trace (mode "converted", #2067) records no deployment, so the
-		// scenario's offload block or --kv-offload-config states its tiers; a trace blis
-		// run or blis replay wrote stays header-authoritative (INV-13). An agentic replay
-		// has no trace, so no recorded deployment: the scenario's offload block is its tiers.
-		kvOffloadCfg := reconcileReplayKVOffload(cmd, traceData.Header.KVOffload,
+		// scenario's offload block states its tiers; a trace blis run or blis replay wrote
+		// stays header-authoritative (INV-13). An agentic replay has no trace, so no recorded
+		// deployment: the scenario's offload block is its tiers.
+		kvOffloadCfg := reconcileReplayKVOffload(traceData.Header.KVOffload,
 			!replayRecordsDeployment(traceData.Header, agx != nil))
-		// #1590 (H1): parity with run — the multi-tier offload chain (from the trace
-		// header or --kv-offload-config) and the legacy --kv-cpu-blocks single CPU tier
-		// are distinct offload models; refuse both with a clean CLI error rather than
-		// the library-level panic in NewKVStore.
-		requireOneOffloadModel(kvOffloadCfg.IsEnabled(), true)
 
 		// Resolve the latency model (single code path shared with runCmd).
 		lr := resolveLatencyConfig(cmd)
 
-		// #1583: derive PerBlockBytes for an offload config the scenario or
-		// --kv-offload-config supplies (a converted trace or an agentic replay). A trace
+		// #1583: derive PerBlockBytes for an offload config the scenario supplies (a
+		// converted trace or an agentic replay). A trace
 		// header blis run or blis replay wrote already
 		// carries the run-computed value (>0), so this is skipped for run/replay parity;
 		// a flag-supplied config has PerBlockBytes==0 until the model resolves. Mirrors
@@ -383,7 +378,7 @@ Example:
 		// The kernel prices every offload transfer: the secondary tiers through TierTime and
 		// the legacy CPU tier as one whole per-block reload charge, through the SAME helper
 		// runCmd uses (INV-13).
-		kernelCPUTierTicks := applyKernelOffloadPricing(&kvOffloadCfg)
+		applyKernelOffloadPricing(&kvOffloadCfg)
 
 		// Numeric flag validation (same as runCmd)
 		if numInstances < 1 {
@@ -393,7 +388,7 @@ Example:
 			logrus.Fatalf("--horizon must be > 0, got %d", replayHorizon)
 		}
 
-		// E/P/D topology (GAP-4, issue #1264), validated as runCmd does (INV-13).
+		// E/P/D topology, validated as runCmd does (INV-13).
 		if encodeInstances < 0 {
 			logrus.Fatalf("--encode-instances must be >= 0, got %d", encodeInstances)
 		}
@@ -464,7 +459,7 @@ Example:
 		if topologyErr != nil {
 			logrus.Fatalf("scenario endpoint placement: %v", topologyErr)
 		}
-		ec := engineConfigFor(cmd, lr.ModelConfig, dataParallelism, kvOffloadCfg, kernelCPUTierTicks, loraCfg)
+		ec := engineConfigFor(cmd, lr.ModelConfig, dataParallelism, kvOffloadCfg, loraCfg)
 		runEngine := engineConfigOfRun(ec, replayHorizon, seed, lr.KernelModel, sloPriorityOverrides)
 		config := cluster.DeploymentConfig{
 			InstanceConfig:             instanceConfigOf(runEngine),
@@ -700,13 +695,7 @@ func init() {
 	replayCmd.Flags().StringVar(&goodputSLOTTFT, "slo-ttft", "", "Per-class TTFT goodput thresholds (e.g. \"critical=100ms,standard=500ms\"). Precedence: CLI > trace header > workload spec.")
 	replayCmd.Flags().StringVar(&goodputSLOITL, "slo-itl", "", "Per-class mean ITL goodput thresholds (e.g. \"critical=50ms,standard=150ms\").")
 	replayCmd.Flags().StringVar(&goodputSLOE2E, "slo-e2e", "", "Per-class E2E goodput thresholds (e.g. \"critical=5s,standard=30s\").")
-	// --lazy-generation: accepted for CLI symmetry with `blis run` (#1441),
-	// but ignored — replay reads requests from a captured trace and never
-	// invokes the workload generator. The flag binds to a throwaway local
-	// so no global state is mutated. BC-9.
-	var replayLazyGenerationIgnored bool
-	replayCmd.Flags().BoolVar(&replayLazyGenerationIgnored, "lazy-generation", false, "Accepted for symmetry with 'blis run' (#1441); has no effect on replay.")
-	markDeprecatedFlags(replayCmd, replayDeprecatedFlags)
+	refuseRemovedFlags(replayCmd)
 	rootCmd.AddCommand(replayCmd)
 }
 
@@ -725,7 +714,7 @@ func replayCancelledSessions(sessionMgr *workload.SessionManager, poolDriver *wo
 }
 
 // applyReplayTimeout sets a single client deadline for every replayed round (#2064),
-// the replay counterpart of runCmd's applyTimeoutToRequests. timeoutSecs>0 sets each
+// the replay counterpart of runCmd's applyTimeoutToSessions. timeoutSecs>0 sets each
 // request's Deadline to ArrivalTime+timeout and each session blueprint's Timeout to the
 // µs value (so follow-ups pick it up via followUpDeadline's explicit-Timeout tier);
 // timeoutSecs<0 disables deadlines (Deadline=0, blueprint Timeout=&0, an explicit

@@ -2,6 +2,7 @@ package sim
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
@@ -85,8 +86,22 @@ func TestEngineDriver_StreamIntervalMovesClientITLAndLeavesTheRestAlone(t *testi
 		if gd.stepIdx != bd.stepIdx {
 			t.Errorf("interval %d: %d engine steps, %d at the default: scheduling changed", s, gd.stepIdx, bd.stepIdx)
 		}
-		if !reflect.DeepEqual(gd.Metrics.AllITLs, bd.Metrics.AllITLs) || !reflect.DeepEqual(gd.Metrics.StepOwners, bd.Metrics.StepOwners) {
+		// The owners' per-step and per-token counts stay; their chunk-gap counts are the
+		// client's grouping, one gap per group (icl_*).
+		stepOwners := func(owners []StepOwner) []StepOwner {
+			out := slices.Clone(owners)
+			for i := range out {
+				out[i].ClientChunkGaps = 0
+			}
+			return out
+		}
+		if !reflect.DeepEqual(gd.Metrics.AllITLs, bd.Metrics.AllITLs) ||
+			!reflect.DeepEqual(stepOwners(gd.Metrics.StepOwners), stepOwners(bd.Metrics.StepOwners)) {
 			t.Errorf("interval %d: the per-step interval series moved", s)
+		}
+		if len(gd.Metrics.ClientChunkGaps) >= len(bd.Metrics.ClientChunkGaps) {
+			t.Errorf("interval %d: %d client chunk gaps, want fewer than the default's %d: one per group",
+				s, len(gd.Metrics.ClientChunkGaps), len(bd.Metrics.ClientChunkGaps))
 		}
 		var clients, steps int
 		for i := range base {

@@ -186,7 +186,7 @@ func (req Request) String() string {
 // and synthesis). Using a derived method instead of a new boolean field keeps
 // a single source of truth and avoids a TraceV2 schema change.
 //
-// GAP-4 (issue #1264): consumed by MultimodalEncodeDecider.ShouldEncode.
+// E/P/D disaggregation: consumed by MultimodalEncodeDecider.ShouldEncode.
 func (req *Request) IsMultimodal() bool {
 	return req.ImageTokenCount > 0 || req.AudioTokenCount > 0 || req.VideoTokenCount > 0
 }

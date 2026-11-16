@@ -267,7 +267,7 @@ func TestConvertWekaSession_NoSessionIDErrors(t *testing.T) {
 }
 
 // A session with sub-agent groups is refused unless the caller asks to drop them: their
-// nested, concurrent requests are not modelled (#1477), and dropping them silently would let a
+// nested, concurrent requests are not modelled (#1928 item 12), and dropping them silently would let a
 // replay succeed while offering the engine none of their load. The refusal names the session
 // and the dropped work, is distinguishable from a parse failure, and a session without
 // sub-agents converts identically either way.

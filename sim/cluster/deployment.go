@@ -16,7 +16,7 @@ type DeploymentConfig struct {
 	NumInstances int
 
 	// NewEngine builds an instance's engine through blis-schemas' engine.Engine contract, for a
-	// release the compatibility engine does not model (engine_version 0.32.0, GOAL.md); nil
+	// release the compatibility engine does not model (engine_version 0.33.0, GOAL.md); nil
 	// builds the compatibility engine (sim.NewEngine). It receives the instance's index in the
 	// cluster and its configuration, resolved for its pool role as the compatibility engine's is.
 	// The build site (cmd/engine_build.go) supplies it, so this package names no engine
@@ -67,7 +67,7 @@ type DeploymentConfig struct {
 	// and the pipeline is unchanged (BC-PD-1).
 	PrefillInstances int // Number of instances dedicated to prefill (0 = disabled)
 	DecodeInstances  int // Number of instances dedicated to decode (0 = disabled)
-	// SharedInstances (issue #1276, GAP-5) — number of instances serving both
+	// SharedInstances — number of instances serving both
 	// prefill and decode (shared-role pods, llm-d "prefill-decode" / legacy "both"
 	// role labels). When > 0, ValidatePoolTopology accepts
 	// prefill+decode+shared <= total, and BuildPoolMembershipFromIndices
@@ -75,7 +75,7 @@ type DeploymentConfig struct {
 	// the prefill-only and decode-only ranges.
 	SharedInstances int
 
-	// E/P/D disaggregation configuration (GAP-4, issue #1264).
+	// E/P/D disaggregation configuration.
 	// When EncodeInstances == 0 (default), the encode stage is disabled and the
 	// pipeline is byte-identical to the pre-PR simulator (BC-EPD-1).
 	EncodeInstances int // Number of instances dedicated to encoding multimodal input (0 = disabled)
@@ -110,7 +110,7 @@ type DeploymentConfig struct {
 	PDPrefillKVHold bool
 	// PDPrefillSamplesFirstToken gives a P/D prefill sub-request the request's first output token
 	// and max_tokens 1, as the P/D proxy sends the prefill leg (vLLM's toy_proxy_server.py:167-169;
-	// llm-d's CapSingleToken), for an engine that samples it (blis-vllm's v0.32.0 engine). The
+	// llm-d's CapSingleToken), for an engine that samples it (blis-vllm's v0.33.0 engine). The
 	// compatibility engines model the leg without output.
 	PDPrefillSamplesFirstToken bool
 	// PDKVLeaseUs is the handoff's kv_lease_duration in microseconds: how long a prefill

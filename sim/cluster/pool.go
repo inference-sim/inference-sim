@@ -15,7 +15,7 @@ const (
 	PoolRoleDecode
 	// PoolRoleEncode indicates the instance handles encoding of multimodal
 	// input (image/video/audio) into token embeddings. E/P/D disaggregation
-	// parity with llm-d (GAP-4, issue #1264). Only active when
+	// parity with llm-d. Only active when
 	// --encode-instances > 0.
 	PoolRoleEncode
 	// PoolRolePrefillDecode is the shared-role marker for pods serving both
@@ -58,7 +58,7 @@ func (r PoolRole) String() string {
 //   - prefill + decode + shared + encode exceeds total instances
 //   - encode > 0 without any decode-capable pool (prefill+decode+shared == 0):
 //     encode requires a decode-capable pool because encode is an optional stage
-//     that precedes decode (GAP-4, issue #1264).
+//     that precedes decode.
 //
 // When shared > 0, a pure-shared cluster (prefill=0, decode=0, shared>0) is
 // legitimate, and a cluster with only prefill-only + shared or only decode-only

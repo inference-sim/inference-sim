@@ -120,7 +120,7 @@ func runConvertWeka(inputPath, outPrefix string, opts workload.WekaConvertOption
 
 	if droppedGroups > 0 {
 		logrus.Warnf("--drop-subagents: dropped %d sub-agent group(s) carrying %d nested request(s); "+
-			"the replay offers none of their load, overlap or KV state (#1477)", droppedGroups, droppedNested)
+			"the replay offers none of their load, overlap or KV state (#1928 item 12)", droppedGroups, droppedNested)
 	}
 	if len(allRecords) == 0 {
 		return fmt.Errorf("no usable sessions found in %q (skipped %d)", inputPath, skipped)
@@ -150,7 +150,7 @@ func init() {
 	convertWekaCmd.Flags().StringVar(&wekaContextGrowth, "context-growth", "accumulate", "Prefix model: \"accumulate\" (strict growing shared prefix) or \"independent\"")
 	convertWekaCmd.Flags().DurationVar(&wekaMaxThinkTime, "max-think-time", 0, "Cap on the recomputed per-round think gap; 0 = no cap (Weka gaps are genuine away-from-keyboard times)")
 	convertWekaCmd.Flags().IntVar(&wekaMinRounds, "min-rounds", 1, "Skip sessions with fewer than N usable main-agent turns")
-	convertWekaCmd.Flags().BoolVar(&wekaDropSubagents, "drop-subagents", false, "Convert sessions with sub-agent groups by dropping the groups (their nested requests then offer no load); by default such a session is refused, since sub-agent fan-out is not modelled (#1477)")
+	convertWekaCmd.Flags().BoolVar(&wekaDropSubagents, "drop-subagents", false, "Convert sessions with sub-agent groups by dropping the groups (their nested requests then offer no load); by default such a session is refused, since sub-agent fan-out is not modelled (#1928 item 12)")
 	_ = convertWekaCmd.MarkFlagRequired("input")
 	_ = convertWekaCmd.MarkFlagRequired("trace-output")
 

@@ -13,7 +13,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 BLIS (Blackbox Inference Simulator) is a discrete-event simulator for LLM inference serving systems. It models multi-instance clusters with configurable admission control, request routing, KV-cache dynamics (including tiered GPU+CPU offloading), scheduling policies, and token generation. Every step time and memory figure is priced by blis-substrate's cost model (`kernel/`, the only latency backend; adapter blis-vllm `compat/kernelmodel`).
 
-This repo holds no vLLM code: it keeps the clock, event loop, cluster, router, workloads and reports, and drives every engine through blis-substrate's `contracts/engine.Engine` interface (`sim.EngineDriver`, `sim/engine_driver.go`). The engine is **blis-vllm** (`github.com/inference-sim/blis-vllm`), which non-test code under `sim/` and `cmd/` imports at one build site, `cmd/engine_build.go`. Dependencies run one way: blis-substrate ← blis-vllm and the router fork ← inference-sim; the exact versions are in `stack.json`. Every scenario states `engine_version: "0.32.0"` (no default), which runs blis-vllm's translated vLLM v0.32.0 engine.
+This repo holds no vLLM code: it keeps the clock, event loop, cluster, router, workloads and reports, and drives every engine through blis-substrate's `contracts/engine.Engine` interface (`sim.EngineDriver`, `sim/engine_driver.go`). The engine is **blis-vllm** (`github.com/inference-sim/blis-vllm`), which non-test code under `sim/` and `cmd/` imports at one build site, `cmd/engine_build.go`. Dependencies run one way: blis-substrate ← blis-vllm and the router fork ← inference-sim; the exact versions are in `stack.json`. Every scenario states `engine: {kind: vllm, version: "0.33.0"}` (no default), which runs blis-vllm's translated vLLM v0.33.0 engine.
 
 The simulator is CPU-only, deterministic, and designed for capacity planning, policy optimization research, and performance prediction across deployments without requiring real GPUs.
 
@@ -26,7 +26,7 @@ Every `blis run` / `blis replay` obeys these; see `docs/getting-started/` and `d
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout v0.14.0
+git -C blis-substrate checkout 01cbd6dbe0fbaa9bdf9361fe3267a17e7078f624
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
@@ -40,7 +40,7 @@ One canonical form per command. `--help` and the guides carry the full flag surf
 
 - routing, admission, flow control: the embedded llm-d router (the scenario's `router:` block) → `docs/guide/routing.md`, `docs/guide/admission.md`; the router fork → `docs/contributing/llm-d-router-fork.md`
 - the latency kernel, scenarios, P/D, DP/EP, speculative decoding → `docs/guide/latency-models.md` (+ `docs/reference/models.md`)
-- KV-offload (`--kv-offload-config`) → `docs/guide/kv-cache.md`
+- KV-offload (the scenario's `offload` block) → `docs/guide/kv-cache.md`
 - `replay`, trace header modes, closed-loop/corpus sessions → `docs/guide/replay.md`
 - workloads & `convert` → `docs/guide/workloads.md`
 - saturation detectors → `docs/contributing/saturation-analyzer-extension.md`
