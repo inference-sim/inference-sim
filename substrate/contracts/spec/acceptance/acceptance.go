@@ -103,9 +103,9 @@ type Profile struct {
 	// states none is a measurement with the model's own speculator.
 	Drafter string `yaml:"drafter,omitempty"`
 	// DraftSampler and Verifier name how the drafter sampled its drafts and how the target
-	// verified them, where they distinguish this measurement from another of the same target,
-	// drafter and method (inference-sim/blis-substrate#174). Empty is the engine's default,
-	// or, for a profile whose source publishes one curve, not distinguished.
+	// verified them, as the source records them (inference-sim/blis-substrate#174). Empty is
+	// unstated, never a default: a lookup matches it only against an unstated request field,
+	// and borrows across any other difference, naming the field (design D8).
 	DraftSampler DraftSampler `yaml:"draft_sampler,omitempty"`
 	Verifier     Verifier     `yaml:"verifier,omitempty"`
 	// Architecture is the architecture of the target model, as its graph records it

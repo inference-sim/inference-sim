@@ -96,9 +96,14 @@ category, draft sampler and verifier. Two profiles with one key are an error. Th
 the model's own in-graph speculator when it is left out, or the catalog name of a separate
 drafter checkpoint; the same target with two drafters has two profiles. The draft sampler and
 the verifier are stated where they tell one measurement from another of the same target,
-drafter and method, such as Kimi-K3's DSpark curves under greedy and probabilistic drafting;
-left out, they are the engine's default. A key that states them renders them after the
-category, as `.../coding/draft-probabilistic/verify-block`.
+drafter and method, such as Kimi-K3's DSpark curves under greedy and probabilistic drafting.
+A profile states the values its source records; a value the source leaves unset is left out,
+which means unstated, never the engine's default. A request states the run's values as its
+engine resolves them. The exact key matches a field only when both sides state the same value
+or both leave it unstated; any other difference, an unstated side included, is borrowed by
+`same_drafter_other_settings` and named in `differed`. A key that states them renders them
+after the category, as `.../coding/draft-probabilistic/verify-block`. The design states this in
+D8 (inference-sim/blis-design#13).
 
 <!-- fields: acceptance.Profile -->
 
@@ -106,8 +111,8 @@ category, as `.../coding/draft-probabilistic/verify-block`.
 |---|---|---|---|
 | `model` | string | yes | The catalog model name, not the source's spelling of it. |
 | `drafter` | string | no | The catalog name of the separate drafter checkpoint the value was measured with. Left out for the model's own speculator, such as its MTP layers. No `+`, `/` or space, and not the target's own name. |
-| `draft_sampler` | string | no | How the drafter sampled its drafts: `greedy` or `probabilistic`. Left out for the engine's default. |
-| `verifier` | string | no | How the target verified drafts: `standard`, `block` or `relaxed`. Left out for the engine's default. |
+| `draft_sampler` | string | no | How the drafter sampled its drafts: `greedy` or `probabilistic`. Left out when the source does not state it (unstated). |
+| `verifier` | string | no | How the target verified drafts: `standard`, `block` or `relaxed`. Left out when the source does not state it (unstated). |
 | `architecture` | string | no | The target's architecture as its graph records it (`global.architecture`). A lookup that borrows from another target reads it; a profile that states none is never borrowed across targets. It must equal the graph's. |
 | `speculative_method` | string | yes | The engine's method name, as a deployment's `engine.speculative.method` states it. |
 | `num_spec_tokens` | integer | yes | K. At least 1. |
