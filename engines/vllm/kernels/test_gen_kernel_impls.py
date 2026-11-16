@@ -45,15 +45,18 @@ VLLM = {
                     return prefill_kernel(q)
                 return decode_kernel(q) + tri_attention(q)
     """,
-    "vllm/v1/attention/ops/tri.py": "def tri_attention(q):\n    return q\n",
+    "vllm/v1/attention/ops/tri.py": "from vllm.v1.attention.ops.tri_helpers import tile\n\n\ndef tri_attention(q):\n    return tile(q)\n",
+    "vllm/v1/attention/ops/tri_helpers.py": "def tile(q):\n    return q\n",
     "vllm/utils/gate.py": "def supports_fast(cap):\n    return cap >= 100\n",
-    "requirements/cuda.txt": "torch==2.0\nfastlib-python==1.2.3\n",
+    "requirements/cuda.txt": "torch==2.0\nfastlib-python[cu13]==1.2.3\n",
     "cmake/external_projects/other.cmake": "FetchContent_Declare(\n    other\n    GIT_TAG {other_commit}\n)\n",
     "docker/Dockerfile": "ARG CUDA_VERSION=13.0.3\n",
 }
 FASTLIB = {
     "version.txt": "1.2.3\n",
-    "csrc/prefill.cu": "// prefill\n",
+    "csrc/prefill.cu": '#include "fastlib/tile.cuh"\n#include <cuda_runtime.h>\n// prefill\n',
+    "include/fastlib/tile.cuh": "// tile\n",
+    "csrc/decode.cu": "// decode\n",
     "fastlib/artifacts.py": """
         class CheckSumHash:
             FMHA: str = (
@@ -64,7 +67,18 @@ FASTLIB = {
 OTHER = {"kernels/k.cu": "// other\n"}
 
 
-def git_tree(root, files):
+GIT_ENV = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t",
+               GIT_COMMITTER_EMAIL="t@t", GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+
+
+def commit_all(root, tag=None):
+    for cmd in (["add", "-A"], ["commit", "-q", "-m", "y", "--no-gpg-sign"]):
+        subprocess.run(["git", "-C", root, *cmd], check=True, env=GIT_ENV)
+    if tag:
+        subprocess.run(["git", "-C", root, "tag", "-f", tag], check=True, env=GIT_ENV, capture_output=True)
+
+
+def git_tree(root, files, tag=None):
     for rel, body in files.items():
         p = os.path.join(root, rel)
         os.makedirs(os.path.dirname(p), exist_ok=True)
@@ -74,6 +88,8 @@ def git_tree(root, files):
                GIT_COMMITTER_EMAIL="t@t", GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
     for cmd in (["init", "-q"], ["add", "-A"], ["commit", "-q", "-m", "x", "--no-gpg-sign"]):
         subprocess.run(["git", "-C", root, *cmd], check=True, env=env)
+    if tag:
+        subprocess.run(["git", "-C", root, "tag", tag], check=True, env=env)
     return subprocess.run(["git", "-C", root, "rev-parse", "HEAD"], check=True, capture_output=True,
                           text=True).stdout.strip()
 
@@ -84,9 +100,11 @@ def classification(commit):
         "archs": {"sm_100a": {}, "sm_90a": {}},
         "libraries": {
             "fastlib": {"pip": "fastlib-python", "requirements": "requirements/cuda.txt", "repo": "https://example.org/fastlib",
-                        "version_file": "version.txt", "checksums": "fastlib/artifacts.py", "modules": ["fastlib"]},
+                        "version_file": "version.txt", "checksums": "fastlib/artifacts.py", "modules": ["fastlib"],
+                        "include_search": ["include"], "unhashed_includes": {}},
             "otherlib": {"cmake": "cmake/external_projects/other.cmake", "repo": "https://example.org/other", "modules": ["otherlib"]},
-            "vllm-csrc": {"engine": True, "repo": "https://example.org/vllm", "modules": ["vllm.v1.attention.ops"]},
+            "vllm-csrc": {"engine": True, "repo": "https://example.org/vllm", "modules": ["vllm.v1.attention.ops"],
+                          "python_closure": ["vllm/v1/attention/ops/"]},
         },
         "backends": {
             "FAST": {"status": "listed", "not_kernels": {"plan_helper": "plans"}},
@@ -97,11 +115,13 @@ def classification(commit):
         "kernels": [
             {"backend": "FAST", "library": "fastlib", "variant": "prefill_kernel", "call": "prefill_kernel",
              "primitives": ["attention.prefill"], "archs": ["sm_100a"], "gates": ["vllm/utils/gate.py:supports_fast"],
-             "hash": {"artifact": "FMHA"}},
+             "compiler": "nvcc+prebuilt", "hash": {"artifact": "FMHA", "source": ["csrc/prefill.cu"]}},
             {"backend": "FAST", "library": "fastlib", "variant": "decode_kernel", "call": "decode_kernel",
-             "primitives": ["attention.decode"], "archs": ["sm_100a", "sm_90a"], "hash": {"source": ["csrc"]}},
+             "primitives": ["attention.decode"], "archs": ["sm_100a", "sm_90a"], "compiler": "nvcc",
+             "hash": {"source": ["csrc"]}},
             {"backend": "FAST", "library": "vllm-csrc", "variant": "tri_attention", "call": "tri_attention",
-             "primitives": ["attention.decode"], "archs": ["sm_90a"], "hash": {"source": ["vllm/v1/attention/ops/tri.py"]}},
+             "primitives": ["attention.decode"], "archs": ["sm_90a"], "compiler": "triton",
+             "hash": {"source": ["vllm/v1/attention/ops/tri.py"]}},
         ],
     }
 
@@ -115,7 +135,7 @@ class GenKernelImplsTest(unittest.TestCase):
         self.vllm = os.path.join(base, "vllm")
         for d in (self.fastlib, self.other, self.vllm):
             os.makedirs(d)
-        git_tree(self.fastlib, FASTLIB)
+        git_tree(self.fastlib, FASTLIB, tag="v1.2.3")
         self.other_commit = git_tree(self.other, OTHER)
         files = dict(VLLM)
         files["cmake/external_projects/other.cmake"] = files["cmake/external_projects/other.cmake"].format(
@@ -169,13 +189,15 @@ class GenKernelImplsTest(unittest.TestCase):
     def test_a_binary_kernel_hashes_the_checksum_its_library_records(self):
         r = self.row(self.generate(), "attention.prefill", "prefill_kernel", "sm_100a")
         self.assertEqual(r["hash_basis"], "binary")
-        self.assertEqual(r["hash_inputs"], ["FMHA checksums.txt sha256:" + "1" * 64])
+        self.assertIn("FMHA checksums.txt sha256:" + "1" * 64, r["hash_inputs"])
+        self.assertTrue(any(i.startswith("csrc/prefill.cu blob ") for i in r["hash_inputs"]),
+                        "the launcher a precompiled kernel is loaded by is part of its build")
 
     def test_a_change_to_a_kernels_source_changes_only_its_hash(self):
         before = self.generate()
-        with open(os.path.join(self.fastlib, "csrc", "prefill.cu"), "a") as f:
+        with open(os.path.join(self.fastlib, "csrc", "decode.cu"), "a") as f:
             f.write("// changed\n")
-        self.git(self.fastlib, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-am", "y", "--no-gpg-sign")
+        commit_all(self.fastlib, tag="v1.2.3")
         after = self.generate()
         for prim, variant, arch, changed in (("attention.decode", "decode_kernel", "sm_100a", True),
                                              ("attention.prefill", "prefill_kernel", "sm_100a", False),
@@ -195,7 +217,7 @@ class GenKernelImplsTest(unittest.TestCase):
         c = self.commit[:8]
         self.assertEqual(r["selected_by"], sorted([f"vllm/platforms/cuda.py:3@{c}", f"vllm/utils/gate.py:1@{c}",
                                                    f"vllm/v1/attention/backends/fast.py:9@{c}"]))
-        self.assertEqual(r["toolkit"], "13.0.3")
+        self.assertEqual(r["toolkit"], "cuda 13.0.3 launcher, precompiled kernels")
 
     def test_a_gap_backend_is_a_gap_under_each_primitive(self):
         gaps = self.generate()["gaps"]
@@ -253,7 +275,19 @@ class GenKernelImplsTest(unittest.TestCase):
     def test_a_checkout_at_another_version_than_the_pin_is_refused(self):
         with open(os.path.join(self.fastlib, "version.txt"), "w") as f:
             f.write("1.2.4\n")
+        commit_all(self.fastlib, tag="v1.2.3")
         self.assertIn("1.2.4", self.refused(self.cls))
+
+    def test_a_pip_library_at_a_commit_after_its_tag_is_refused(self):
+        with open(os.path.join(self.fastlib, "csrc", "decode.cu"), "a") as f:
+            f.write("// later\n")
+        commit_all(self.fastlib)
+        self.assertIn("not tag v1.2.3", self.refused(self.cls))
+
+    def test_a_checkout_with_changes_is_refused(self):
+        with open(os.path.join(self.fastlib, "csrc", "decode.cu"), "a") as f:
+            f.write("// uncommitted\n")
+        self.assertIn("has changes", self.refused(self.cls))
 
     def test_a_built_library_checked_out_at_another_commit_is_refused(self):
         cls = copy.deepcopy(self.cls)
@@ -294,13 +328,13 @@ class GenKernelImplsTest(unittest.TestCase):
         self.assertEqual(pins["otherlib"][2:], ("https://example.org/other", self.other_commit))
         self.assertIsNone(pins["vllm-csrc"][2], "the engine's own kernels are read from vLLM itself")
 
-    def seen_checkout(self, version, checksum):
+    def seen_checkout(self, version, checksum, tag=None):
         files = dict(FASTLIB)
         files["version.txt"] = version + "\n"
         files["fastlib/artifacts.py"] = FASTLIB["fastlib/artifacts.py"].replace("1" * 64, checksum)
         root = os.path.join(self.tmp.name, "fastlib-" + version)
         os.makedirs(root)
-        git_tree(root, files)
+        git_tree(root, files, tag=tag or "v" + version)
         return root
 
     def with_seen(self, version="1.1.0", seen_in="run r1 recorded fastlib 1.1.0"):
@@ -316,7 +350,7 @@ class GenKernelImplsTest(unittest.TestCase):
         self.assertEqual(libs[("fastlib", "1.1.0")]["pin"], "run r1 recorded fastlib 1.1.0")
         self.assertTrue(libs[("fastlib", "1.2.3")]["pinned"])
         rows = {r["library_version"]: r for r in t["implementations"] if r["variant"] == "prefill_kernel"}
-        self.assertEqual(rows["1.1.0"]["hash_inputs"], ["FMHA checksums.txt sha256:" + "2" * 64])
+        self.assertIn("FMHA checksums.txt sha256:" + "2" * 64, rows["1.1.0"]["hash_inputs"])
         self.assertNotEqual(rows["1.1.0"]["code_hash"], rows["1.2.3"]["code_hash"])
 
     def test_an_unchanged_kernel_keeps_its_hash_in_a_seen_version(self):
@@ -330,11 +364,103 @@ class GenKernelImplsTest(unittest.TestCase):
         self.assertIn("seen_in", self.refused(self.with_seen(seen_in="")))
 
     def test_a_seen_version_checked_out_at_another_version_is_refused(self):
-        self.sources["fastlib@1.1.0"] = self.seen_checkout("1.0.9", "2" * 64)
+        self.sources["fastlib@1.1.0"] = self.seen_checkout("1.0.9", "2" * 64, tag="v1.1.0")
         self.assertIn("is not fastlib 1.1.0", self.refused(self.with_seen()))
 
     def test_the_pin_is_not_listed_again_as_seen(self):
         self.assertIn("is the pin", self.refused(self.with_seen(version="1.2.3")))
+
+    def edit(self, root, rel, text, tag=None):
+        with open(os.path.join(root, rel), "a") as f:
+            f.write(text)
+        commit_all(root, tag=tag)
+        if root == self.vllm:
+            self.cls["upstream"]["commit"] = self.git(self.vllm, "rev-parse", "HEAD")
+
+    def hash_of(self, variant, arch):
+        return next(r["code_hash"] for r in self.generate()["implementations"]
+                    if r["variant"] == variant and r["target_arch"] == arch)
+
+    def test_a_header_the_kernel_includes_moves_its_hash(self):
+        before = self.hash_of("prefill_kernel", "sm_100a")
+        self.edit(self.fastlib, "include/fastlib/tile.cuh", "// changed\n", tag="v1.2.3")
+        self.assertNotEqual(self.hash_of("prefill_kernel", "sm_100a"), before)
+
+    def test_a_triton_helper_the_kernel_imports_moves_its_hash(self):
+        before = self.hash_of("tri_attention", "sm_90a")
+        self.edit(self.vllm, "vllm/v1/attention/ops/tri_helpers.py", "# changed\n")
+        self.assertNotEqual(self.hash_of("tri_attention", "sm_90a"), before)
+
+    def test_an_include_the_tree_does_not_hold_is_refused_unless_named(self):
+        self.edit(self.fastlib, "csrc/prefill.cu", '#include "gen/config.inc"\n', tag="v1.2.3")
+        self.assertIn("gen/config.inc", self.refused(self.cls))
+        self.cls["libraries"]["fastlib"]["unhashed_includes"] = {"gen/": "generated by the JIT spec"}
+        self.generate()
+
+    def test_each_kernel_records_its_own_compiler(self):
+        tk = {r["variant"]: r["toolkit"] for r in self.generate()["implementations"]}
+        self.assertEqual(tk["tri_attention"], "triton (torch==2.0)")
+        self.assertEqual(tk["decode_kernel"], "cuda 13.0.3")
+
+    def test_an_unclassified_jit_function_is_refused(self):
+        self.edit(self.vllm, "vllm/v1/attention/backends/fast.py",
+                  "\n\n@triton.jit\ndef _dequant(x):\n    pass\n")
+        self.assertIn("_dequant", self.refused(self.cls))
+        self.cls["backends"]["FAST"]["jit"] = {"_dequant": {"not_attention": "a test"}}
+        self.generate()
+
+    def test_a_jit_function_compiled_into_a_kernel_must_be_in_its_hash(self):
+        self.edit(self.vllm, "vllm/v1/attention/backends/fast.py", "\n\n@cute.jit\ndef _mask(x):\n    pass\n")
+        self.cls["backends"]["FAST"]["jit"] = {"_mask": {"part_of": "tri_attention"}}
+        self.assertIn("hash.engine_source", self.refused(self.cls))
+        self.cls["kernels"][2]["hash"]["engine_source"] = ["vllm/v1/attention/backends/fast.py"]
+        r = next(r for r in self.generate()["implementations"] if r["variant"] == "tri_attention")
+        self.assertTrue(any("vllm/v1/attention/backends/fast.py" in i for i in r["hash_inputs"]))
+
+    def test_an_unclassified_registered_op_is_refused(self):
+        self.edit(self.vllm, "vllm/v1/attention/backends/fast.py", "\n\ndef f(x):\n    torch.ops._C.paged_attention(x)\n")
+        self.assertIn("torch.ops._C.paged_attention", self.refused(self.cls))
+
+    def test_a_kernel_classified_under_another_library_is_refused(self):
+        self.cls["kernels"][1]["library"] = "vllm-csrc"
+        self.assertIn("a module of fastlib", self.refused(self.cls))
+
+    def test_two_gaps_of_one_kernel_with_different_issues_are_refused(self):
+        self.edit(self.vllm, "vllm/v1/attention/backends/fast.py", "\nfrom fastlib import sink_kernel\n")
+        self.cls["backends"]["FAST"]["gaps"] = [
+            {"call": "sink_kernel", "primitives": ["attention.decode"], "issue": "org/repo#1"},
+            {"call": "sink_kernel", "primitives": ["attention.decode"], "issue": "org/repo#2"}]
+        self.assertIn("named twice", self.refused(self.cls))
+
+    def test_a_gap_inside_a_listed_backend_names_its_kernel(self):
+        self.edit(self.vllm, "vllm/v1/attention/backends/fast.py", "\nfrom fastlib import sink_kernel\n")
+        self.cls["backends"]["FAST"]["gaps"] = [{"call": "sink_kernel", "primitives": ["attention.decode"], "issue": "org/repo#1"}]
+        g = [g for g in self.generate()["gaps"] if g.get("variant")]
+        self.assertEqual(g, [{"primitive": "attention.decode", "selection": "attention backend FAST",
+                              "library": "fastlib", "variant": "sink_kernel", "issue": "org/repo#1"}])
+
+    def test_a_build_entry_a_seen_version_lacks_is_hashed_as_absent(self):
+        files = dict(FASTLIB)
+        files["version.txt"] = "1.1.0\n"
+        del files["csrc/decode.cu"]
+        files["csrc/other.cu"] = "// keeps csrc a tree\n"
+        root = os.path.join(self.tmp.name, "fastlib-old")
+        os.makedirs(root)
+        git_tree(root, files, tag="v1.1.0")
+        self.sources["fastlib@1.1.0"] = root
+        self.cls["kernels"][1]["hash"]["source"] = ["csrc/decode.cu"]
+        r = next(r for r in self.generate(self.with_seen())["implementations"]
+                 if r["variant"] == "decode_kernel" and r["library_version"] == "1.1.0")
+        self.assertIn("csrc/decode.cu absent", r["hash_inputs"])
+
+    def test_regen_refuses_a_keep_directory_that_is_not_empty(self):
+        import regen
+        keep = os.path.join(self.tmp.name, "keep")
+        os.makedirs(keep)
+        open(os.path.join(keep, "x"), "w").close()
+        with redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(regen.main(["v0.32.0", "--keep", keep, "--out", os.path.join(self.tmp.name, "o.json")]), 1)
+        self.assertIn("not empty", err.getvalue())
 
     def test_check_fails_on_a_table_that_is_not_current(self):
         path = os.path.join(self.tmp.name, "cls.json")
