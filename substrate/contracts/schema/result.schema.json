@@ -36,6 +36,13 @@
           },
           "type": "array"
         },
+        "realisation": {
+          "enum": [
+            "natural",
+            "synthetic"
+          ],
+          "type": "string"
+        },
         "source": {
           "type": "string"
         }
@@ -1111,6 +1118,39 @@
       ],
       "type": "object"
     },
+    "result.RatesShape": {
+      "additionalProperties": false,
+      "properties": {
+        "decay_exponent": {
+          "type": "number"
+        },
+        "method": {
+          "enum": [
+            "measured",
+            "calibrated",
+            "transferred",
+            "literature",
+            "vendor_spec",
+            "roofline",
+            "assumed",
+            "not_charged"
+          ],
+          "type": "string"
+        },
+        "set": {
+          "type": "string"
+        },
+        "speculative_method": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "decay_exponent",
+        "method",
+        "set"
+      ],
+      "type": "object"
+    },
     "result.Reference": {
       "additionalProperties": false,
       "properties": {
@@ -1795,6 +1835,12 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "rates_schedule": {
+          "type": "string"
+        },
+        "rates_shape": {
+          "$ref": "#/$defs/result.RatesShape"
         },
         "source": {
           "enum": [

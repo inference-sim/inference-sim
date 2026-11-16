@@ -11,11 +11,12 @@ caveats:
   no other category has a value. A consumer must refuse other traffic, or fall back to coding
   with the substitution recorded; it must not substitute silently.
 - 'Measured on b300: deepseek-v4-pro, deepseek-v4-pro-0813, glm-5.2-fp8, glm-5.3, glm-5.3-flash,
-  kimi-k3, kimi-k3.1, minimax-m3. Acceptance depends mostly on the model, drafter and workload
-  rather than the chip; a resolution on another part records the reuse.'
-- 'Measured on b200: deepseek-v4.1-flash, minimax-m3.1-flash. Acceptance depends mostly on
-  the model, drafter and workload rather than the chip; a resolution on another part records
-  the reuse.'
+  glm-5.3-nvfp4, kimi-k3, kimi-k3.1, minimax-m3, qwen3.5-397b-a17b-nvfp4. Acceptance depends
+  mostly on the model, drafter and workload rather than the chip; a resolution on another
+  part records the reuse.'
+- 'Measured on b200: deepseek-v4.1-flash, minimax-m3.1-flash, muse-spark-open-816b-a42b-nvfp4.
+  Acceptance depends mostly on the model, drafter and workload rather than the chip; a resolution
+  on another part records the reuse.'
 - Natural acceptance. Every curve was collected with real verification (InferenceX README,
   How a golden AL curve is collected), so each value is a natural acceptance length; InferenceX's
   AgentX runs then force it with the engine's synthetic rejection sampler. The set's shapes,
@@ -31,9 +32,10 @@ caveats:
   (minimax-m3__eagle3__minimax-m3-eagle3__default-default.yaml), minimax-m3+minimax-m3-eagle3-gqa
   (minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-block.yaml), minimax-m3+minimax-m3-eagle3-gqa
   (minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-default.yaml), minimax-m3.1-flash+minimax-m3.1-flash-dspark
-  (minimax-m3.1-flash__dspark__native__probabilistic-block.yaml). The source names the drafter
-  but not the revision it was measured at, so the profile may describe a revision other than
-  the catalog entry''s.'
+  (minimax-m3.1-flash__dspark__native__probabilistic-block.yaml), muse-spark-open-816b-a42b-nvfp4+muse-spark-open-dflash2
+  (muse-spark-open-816b-a42b-nvfp4__dflash__muse-spark-open-dflash2__default-default.yaml).
+  The source names the drafter but not the revision it was measured at, so the profile may
+  describe a revision other than the catalog entry''s.'
 - Collection settings are transcribed from identities.yaml at e63beeeee981, SHA-256 447547adf1b3f73a3d03482dea2d031fc4755cc4f0f91eba4a308ca2fd5ef039
   (https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/identities.yaml).
 - Collection settings. Each profile states the engine, draft sampler and verifier as its source
@@ -41,16 +43,12 @@ caveats:
   compares with the default the requesting engine states for its release. A setting the source
   does not state is unstated.
 - 'The source files for deepseek-v4-pro, deepseek-v4-pro-0813, glm-5.2-fp8, glm-5.3, glm-5.3-flash,
-  kimi-k3, kimi-k3.1, minimax-m3, minimax-m3.1-flash name no engine image, so their engine_image
-  reads "unrecorded: the source file names no engine image".'
+  glm-5.3-nvfp4, kimi-k3, kimi-k3.1, minimax-m3, minimax-m3.1-flash, muse-spark-open-816b-a42b-nvfp4,
+  qwen3.5-397b-a17b-nvfp4 name no engine image, so their engine_image reads "unrecorded: the
+  source file names no engine image".'
 - 'Not carried: kimi-k3.1-pro__dflash__kimi-k3.1-dflash2-preview__default-block.yaml (kimi-k3.1-pro),
   because its drafter RadixArk/Kimi-K3.1-Dflash2-Preview is not in the catalog as a drafter
   of kimi-k3.1.'
-- 'Not carried: muse-spark-open-816b-a42b-nvfp4__dflash__muse-spark-open-dflash2__default-default.yaml
-  (muse-spark-open-816b-a42b-nvfp4), because its drafter RadixArk/Muse-Spark-Open-DFlash2
-  is not in the catalog as a drafter of muse-spark-open-816b-a42b-nvfp4.'
-- 'Not carried: qwen3.5-397b-a17b-nvfp4__mtp__native__default-default.yaml (qwen3.5-397b-a17b-nvfp4),
-  because its model qwen3.5-397b-a17b-nvfp4 is no catalog model''s repository.'
 - 'Not carried: qwen3.8-flash-next-fp8__mtp__native__default-default.yaml (qwen3.8-flash-next-fp8),
   because its model qwen3.8-flash-next-fp8 is no catalog model''s repository.'
 shapes:
@@ -1952,6 +1950,222 @@ profiles:
       kv_cache_dtype: fp8
       repetition_penalty: '1.0'
       chat_template_kwargs: '{"reasoning_effort": "max"}'
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: glm-5.3-nvfp4
+  draft_sampler: default
+  verifier: standard
+  engine: sglang
+  architecture: GlmMoeDsaForCausalLM
+  speculative_method: mtp
+  num_spec_tokens: 1
+  thinking: 'on'
+  category: coding
+  acceptance_length: 1.84
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-nvfp4__mtp__native__default-default.yaml
+    sha256: e88c647568007d864627ed5ff4000deb5479c216ba15a6350f2047802d888d3a
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41127067850
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: sglang
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: glm-5.3-nvfp4
+  draft_sampler: default
+  verifier: standard
+  engine: sglang
+  architecture: GlmMoeDsaForCausalLM
+  speculative_method: mtp
+  num_spec_tokens: 2
+  thinking: 'on'
+  category: coding
+  acceptance_length: 2.49
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-nvfp4__mtp__native__default-default.yaml
+    sha256: e88c647568007d864627ed5ff4000deb5479c216ba15a6350f2047802d888d3a
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41127067850
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: sglang
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: glm-5.3-nvfp4
+  draft_sampler: default
+  verifier: standard
+  engine: sglang
+  architecture: GlmMoeDsaForCausalLM
+  speculative_method: mtp
+  num_spec_tokens: 3
+  thinking: 'on'
+  category: coding
+  acceptance_length: 2.94
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-nvfp4__mtp__native__default-default.yaml
+    sha256: e88c647568007d864627ed5ff4000deb5479c216ba15a6350f2047802d888d3a
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41127067850
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: sglang
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: glm-5.3-nvfp4
+  draft_sampler: default
+  verifier: standard
+  engine: sglang
+  architecture: GlmMoeDsaForCausalLM
+  speculative_method: mtp
+  num_spec_tokens: 4
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.28
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-nvfp4__mtp__native__default-default.yaml
+    sha256: e88c647568007d864627ed5ff4000deb5479c216ba15a6350f2047802d888d3a
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41127067850
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: sglang
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: glm-5.3-nvfp4
+  draft_sampler: default
+  verifier: standard
+  engine: sglang
+  architecture: GlmMoeDsaForCausalLM
+  speculative_method: mtp
+  num_spec_tokens: 5
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.48
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-nvfp4__mtp__native__default-default.yaml
+    sha256: e88c647568007d864627ed5ff4000deb5479c216ba15a6350f2047802d888d3a
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41127067850
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: sglang
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: glm-5.3-nvfp4
+  draft_sampler: default
+  verifier: standard
+  engine: sglang
+  architecture: GlmMoeDsaForCausalLM
+  speculative_method: mtp
+  num_spec_tokens: 6
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.7
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-nvfp4__mtp__native__default-default.yaml
+    sha256: e88c647568007d864627ed5ff4000deb5479c216ba15a6350f2047802d888d3a
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41127067850
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: sglang
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: glm-5.3-nvfp4
+  draft_sampler: default
+  verifier: standard
+  engine: sglang
+  architecture: GlmMoeDsaForCausalLM
+  speculative_method: mtp
+  num_spec_tokens: 7
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.74
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-nvfp4__mtp__native__default-default.yaml
+    sha256: e88c647568007d864627ed5ff4000deb5479c216ba15a6350f2047802d888d3a
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41127067850
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: sglang
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: glm-5.3-nvfp4
+  draft_sampler: default
+  verifier: standard
+  engine: sglang
+  architecture: GlmMoeDsaForCausalLM
+  speculative_method: mtp
+  num_spec_tokens: 8
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.87
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/glm-5.3-nvfp4__mtp__native__default-default.yaml
+    sha256: e88c647568007d864627ed5ff4000deb5479c216ba15a6350f2047802d888d3a
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/41127067850
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: sglang
+      verify: standard
+      adaptive: 'false'
+      topology: chain
     sampling:
       temperature: 1.0
       top_p: 0.95
@@ -5042,4 +5256,726 @@ profiles:
     sampling:
       temperature: 1.0
       top_p: 0.95
+      max_tokens: 4096
+- model: muse-spark-open-816b-a42b-nvfp4
+  drafter: muse-spark-open-dflash2
+  draft_sampler: default
+  verifier: standard
+  engine: sglang
+  architecture: MuseSparkForConditionalGeneration
+  speculative_method: dflash
+  num_spec_tokens: 1
+  thinking: 'on'
+  category: coding
+  acceptance_length: 1.85
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/muse-spark-open-816b-a42b-nvfp4__dflash__muse-spark-open-dflash2__default-default.yaml
+    sha256: e3b612484d29bca2c8ac02ab2f5db7a125bec199f75e7c2d06a849846dfceeae
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/38808046215
+    benchmark: SPEED-Bench
+    hardware: b200
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: sglang
+      draft_model: RadixArk/Muse-Spark-Open-DFlash2
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: muse-spark-open-816b-a42b-nvfp4
+  drafter: muse-spark-open-dflash2
+  draft_sampler: default
+  verifier: standard
+  engine: sglang
+  architecture: MuseSparkForConditionalGeneration
+  speculative_method: dflash
+  num_spec_tokens: 2
+  thinking: 'on'
+  category: coding
+  acceptance_length: 2.54
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/muse-spark-open-816b-a42b-nvfp4__dflash__muse-spark-open-dflash2__default-default.yaml
+    sha256: e3b612484d29bca2c8ac02ab2f5db7a125bec199f75e7c2d06a849846dfceeae
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/38808046215
+    benchmark: SPEED-Bench
+    hardware: b200
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: sglang
+      draft_model: RadixArk/Muse-Spark-Open-DFlash2
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: muse-spark-open-816b-a42b-nvfp4
+  drafter: muse-spark-open-dflash2
+  draft_sampler: default
+  verifier: standard
+  engine: sglang
+  architecture: MuseSparkForConditionalGeneration
+  speculative_method: dflash
+  num_spec_tokens: 3
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.06
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/muse-spark-open-816b-a42b-nvfp4__dflash__muse-spark-open-dflash2__default-default.yaml
+    sha256: e3b612484d29bca2c8ac02ab2f5db7a125bec199f75e7c2d06a849846dfceeae
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/38808046215
+    benchmark: SPEED-Bench
+    hardware: b200
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: sglang
+      draft_model: RadixArk/Muse-Spark-Open-DFlash2
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: muse-spark-open-816b-a42b-nvfp4
+  drafter: muse-spark-open-dflash2
+  draft_sampler: default
+  verifier: standard
+  engine: sglang
+  architecture: MuseSparkForConditionalGeneration
+  speculative_method: dflash
+  num_spec_tokens: 4
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.44
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/muse-spark-open-816b-a42b-nvfp4__dflash__muse-spark-open-dflash2__default-default.yaml
+    sha256: e3b612484d29bca2c8ac02ab2f5db7a125bec199f75e7c2d06a849846dfceeae
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/38808046215
+    benchmark: SPEED-Bench
+    hardware: b200
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: sglang
+      draft_model: RadixArk/Muse-Spark-Open-DFlash2
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: muse-spark-open-816b-a42b-nvfp4
+  drafter: muse-spark-open-dflash2
+  draft_sampler: default
+  verifier: standard
+  engine: sglang
+  architecture: MuseSparkForConditionalGeneration
+  speculative_method: dflash
+  num_spec_tokens: 5
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.7
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/muse-spark-open-816b-a42b-nvfp4__dflash__muse-spark-open-dflash2__default-default.yaml
+    sha256: e3b612484d29bca2c8ac02ab2f5db7a125bec199f75e7c2d06a849846dfceeae
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/38808046215
+    benchmark: SPEED-Bench
+    hardware: b200
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: sglang
+      draft_model: RadixArk/Muse-Spark-Open-DFlash2
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: muse-spark-open-816b-a42b-nvfp4
+  drafter: muse-spark-open-dflash2
+  draft_sampler: default
+  verifier: standard
+  engine: sglang
+  architecture: MuseSparkForConditionalGeneration
+  speculative_method: dflash
+  num_spec_tokens: 6
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.93
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/muse-spark-open-816b-a42b-nvfp4__dflash__muse-spark-open-dflash2__default-default.yaml
+    sha256: e3b612484d29bca2c8ac02ab2f5db7a125bec199f75e7c2d06a849846dfceeae
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/38808046215
+    benchmark: SPEED-Bench
+    hardware: b200
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: sglang
+      draft_model: RadixArk/Muse-Spark-Open-DFlash2
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: muse-spark-open-816b-a42b-nvfp4
+  drafter: muse-spark-open-dflash2
+  draft_sampler: default
+  verifier: standard
+  engine: sglang
+  architecture: MuseSparkForConditionalGeneration
+  speculative_method: dflash
+  num_spec_tokens: 7
+  thinking: 'on'
+  category: coding
+  acceptance_length: 4.05
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/muse-spark-open-816b-a42b-nvfp4__dflash__muse-spark-open-dflash2__default-default.yaml
+    sha256: e3b612484d29bca2c8ac02ab2f5db7a125bec199f75e7c2d06a849846dfceeae
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/38808046215
+    benchmark: SPEED-Bench
+    hardware: b200
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: sglang
+      draft_model: RadixArk/Muse-Spark-Open-DFlash2
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+    sampling:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 4096
+- model: qwen3.5-397b-a17b-nvfp4
+  draft_sampler: default
+  verifier: standard
+  engine: vllm
+  architecture: Qwen3_5MoeForConditionalGeneration
+  speculative_method: mtp
+  num_spec_tokens: 1
+  thinking: 'off'
+  category: coding
+  acceptance_length: 1.92
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/qwen3.5-397b-a17b-nvfp4__mtp__native__default-default.yaml
+    sha256: d348ecfced935b3491b8982c4446672e7bfcb1e8114dbe868aace72e5ea4fbde
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/27317114007
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      presence_penalty: '1.5'
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"enable_thinking": false}'
+    sampling:
+      temperature: 0.7
+      top_p: 0.8
+      top_k: 20
+      max_tokens: 4096
+- model: qwen3.5-397b-a17b-nvfp4
+  draft_sampler: default
+  verifier: standard
+  engine: vllm
+  architecture: Qwen3_5MoeForConditionalGeneration
+  speculative_method: mtp
+  num_spec_tokens: 2
+  thinking: 'off'
+  category: coding
+  acceptance_length: 2.7
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/qwen3.5-397b-a17b-nvfp4__mtp__native__default-default.yaml
+    sha256: d348ecfced935b3491b8982c4446672e7bfcb1e8114dbe868aace72e5ea4fbde
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/27317114007
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      presence_penalty: '1.5'
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"enable_thinking": false}'
+    sampling:
+      temperature: 0.7
+      top_p: 0.8
+      top_k: 20
+      max_tokens: 4096
+- model: qwen3.5-397b-a17b-nvfp4
+  draft_sampler: default
+  verifier: standard
+  engine: vllm
+  architecture: Qwen3_5MoeForConditionalGeneration
+  speculative_method: mtp
+  num_spec_tokens: 3
+  thinking: 'off'
+  category: coding
+  acceptance_length: 3.33
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/qwen3.5-397b-a17b-nvfp4__mtp__native__default-default.yaml
+    sha256: d348ecfced935b3491b8982c4446672e7bfcb1e8114dbe868aace72e5ea4fbde
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/27317114007
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      presence_penalty: '1.5'
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"enable_thinking": false}'
+    sampling:
+      temperature: 0.7
+      top_p: 0.8
+      top_k: 20
+      max_tokens: 4096
+- model: qwen3.5-397b-a17b-nvfp4
+  draft_sampler: default
+  verifier: standard
+  engine: vllm
+  architecture: Qwen3_5MoeForConditionalGeneration
+  speculative_method: mtp
+  num_spec_tokens: 4
+  thinking: 'off'
+  category: coding
+  acceptance_length: 3.83
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/qwen3.5-397b-a17b-nvfp4__mtp__native__default-default.yaml
+    sha256: d348ecfced935b3491b8982c4446672e7bfcb1e8114dbe868aace72e5ea4fbde
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/27317114007
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      presence_penalty: '1.5'
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"enable_thinking": false}'
+    sampling:
+      temperature: 0.7
+      top_p: 0.8
+      top_k: 20
+      max_tokens: 4096
+- model: qwen3.5-397b-a17b-nvfp4
+  draft_sampler: default
+  verifier: standard
+  engine: vllm
+  architecture: Qwen3_5MoeForConditionalGeneration
+  speculative_method: mtp
+  num_spec_tokens: 5
+  thinking: 'off'
+  category: coding
+  acceptance_length: 4.2
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/qwen3.5-397b-a17b-nvfp4__mtp__native__default-default.yaml
+    sha256: d348ecfced935b3491b8982c4446672e7bfcb1e8114dbe868aace72e5ea4fbde
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/27317114007
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      presence_penalty: '1.5'
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"enable_thinking": false}'
+    sampling:
+      temperature: 0.7
+      top_p: 0.8
+      top_k: 20
+      max_tokens: 4096
+- model: qwen3.5-397b-a17b-nvfp4
+  draft_sampler: default
+  verifier: standard
+  engine: vllm
+  architecture: Qwen3_5MoeForConditionalGeneration
+  speculative_method: mtp
+  num_spec_tokens: 6
+  thinking: 'off'
+  category: coding
+  acceptance_length: 4.48
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/qwen3.5-397b-a17b-nvfp4__mtp__native__default-default.yaml
+    sha256: d348ecfced935b3491b8982c4446672e7bfcb1e8114dbe868aace72e5ea4fbde
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/27317114007
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      presence_penalty: '1.5'
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"enable_thinking": false}'
+    sampling:
+      temperature: 0.7
+      top_p: 0.8
+      top_k: 20
+      max_tokens: 4096
+- model: qwen3.5-397b-a17b-nvfp4
+  draft_sampler: default
+  verifier: standard
+  engine: vllm
+  architecture: Qwen3_5MoeForConditionalGeneration
+  speculative_method: mtp
+  num_spec_tokens: 7
+  thinking: 'off'
+  category: coding
+  acceptance_length: 4.73
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/qwen3.5-397b-a17b-nvfp4__mtp__native__default-default.yaml
+    sha256: d348ecfced935b3491b8982c4446672e7bfcb1e8114dbe868aace72e5ea4fbde
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/27317114007
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      presence_penalty: '1.5'
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"enable_thinking": false}'
+    sampling:
+      temperature: 0.7
+      top_p: 0.8
+      top_k: 20
+      max_tokens: 4096
+- model: qwen3.5-397b-a17b-nvfp4
+  draft_sampler: default
+  verifier: standard
+  engine: vllm
+  architecture: Qwen3_5MoeForConditionalGeneration
+  speculative_method: mtp
+  num_spec_tokens: 8
+  thinking: 'off'
+  category: coding
+  acceptance_length: 4.71
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/qwen3.5-397b-a17b-nvfp4__mtp__native__default-default.yaml
+    sha256: d348ecfced935b3491b8982c4446672e7bfcb1e8114dbe868aace72e5ea4fbde
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/27317114007
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      presence_penalty: '1.5'
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"enable_thinking": false}'
+    sampling:
+      temperature: 0.7
+      top_p: 0.8
+      top_k: 20
+      max_tokens: 4096
+- model: qwen3.5-397b-a17b-nvfp4
+  draft_sampler: default
+  verifier: standard
+  engine: vllm
+  architecture: Qwen3_5MoeForConditionalGeneration
+  speculative_method: mtp
+  num_spec_tokens: 1
+  thinking: 'on'
+  category: coding
+  acceptance_length: 1.93
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/qwen3.5-397b-a17b-nvfp4__mtp__native__default-default.yaml
+    sha256: d348ecfced935b3491b8982c4446672e7bfcb1e8114dbe868aace72e5ea4fbde
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/27317114007
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      presence_penalty: '0.0'
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"enable_thinking": true}'
+    sampling:
+      temperature: 0.6
+      top_p: 0.95
+      top_k: 20
+      max_tokens: 4096
+- model: qwen3.5-397b-a17b-nvfp4
+  draft_sampler: default
+  verifier: standard
+  engine: vllm
+  architecture: Qwen3_5MoeForConditionalGeneration
+  speculative_method: mtp
+  num_spec_tokens: 2
+  thinking: 'on'
+  category: coding
+  acceptance_length: 2.73
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/qwen3.5-397b-a17b-nvfp4__mtp__native__default-default.yaml
+    sha256: d348ecfced935b3491b8982c4446672e7bfcb1e8114dbe868aace72e5ea4fbde
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/27317114007
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      presence_penalty: '0.0'
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"enable_thinking": true}'
+    sampling:
+      temperature: 0.6
+      top_p: 0.95
+      top_k: 20
+      max_tokens: 4096
+- model: qwen3.5-397b-a17b-nvfp4
+  draft_sampler: default
+  verifier: standard
+  engine: vllm
+  architecture: Qwen3_5MoeForConditionalGeneration
+  speculative_method: mtp
+  num_spec_tokens: 3
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.39
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/qwen3.5-397b-a17b-nvfp4__mtp__native__default-default.yaml
+    sha256: d348ecfced935b3491b8982c4446672e7bfcb1e8114dbe868aace72e5ea4fbde
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/27317114007
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      presence_penalty: '0.0'
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"enable_thinking": true}'
+    sampling:
+      temperature: 0.6
+      top_p: 0.95
+      top_k: 20
+      max_tokens: 4096
+- model: qwen3.5-397b-a17b-nvfp4
+  draft_sampler: default
+  verifier: standard
+  engine: vllm
+  architecture: Qwen3_5MoeForConditionalGeneration
+  speculative_method: mtp
+  num_spec_tokens: 4
+  thinking: 'on'
+  category: coding
+  acceptance_length: 3.97
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/qwen3.5-397b-a17b-nvfp4__mtp__native__default-default.yaml
+    sha256: d348ecfced935b3491b8982c4446672e7bfcb1e8114dbe868aace72e5ea4fbde
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/27317114007
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      presence_penalty: '0.0'
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"enable_thinking": true}'
+    sampling:
+      temperature: 0.6
+      top_p: 0.95
+      top_k: 20
+      max_tokens: 4096
+- model: qwen3.5-397b-a17b-nvfp4
+  draft_sampler: default
+  verifier: standard
+  engine: vllm
+  architecture: Qwen3_5MoeForConditionalGeneration
+  speculative_method: mtp
+  num_spec_tokens: 5
+  thinking: 'on'
+  category: coding
+  acceptance_length: 4.41
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/qwen3.5-397b-a17b-nvfp4__mtp__native__default-default.yaml
+    sha256: d348ecfced935b3491b8982c4446672e7bfcb1e8114dbe868aace72e5ea4fbde
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/27317114007
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      presence_penalty: '0.0'
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"enable_thinking": true}'
+    sampling:
+      temperature: 0.6
+      top_p: 0.95
+      top_k: 20
+      max_tokens: 4096
+- model: qwen3.5-397b-a17b-nvfp4
+  draft_sampler: default
+  verifier: standard
+  engine: vllm
+  architecture: Qwen3_5MoeForConditionalGeneration
+  speculative_method: mtp
+  num_spec_tokens: 6
+  thinking: 'on'
+  category: coding
+  acceptance_length: 4.8
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/qwen3.5-397b-a17b-nvfp4__mtp__native__default-default.yaml
+    sha256: d348ecfced935b3491b8982c4446672e7bfcb1e8114dbe868aace72e5ea4fbde
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/27317114007
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      presence_penalty: '0.0'
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"enable_thinking": true}'
+    sampling:
+      temperature: 0.6
+      top_p: 0.95
+      top_k: 20
+      max_tokens: 4096
+- model: qwen3.5-397b-a17b-nvfp4
+  draft_sampler: default
+  verifier: standard
+  engine: vllm
+  architecture: Qwen3_5MoeForConditionalGeneration
+  speculative_method: mtp
+  num_spec_tokens: 7
+  thinking: 'on'
+  category: coding
+  acceptance_length: 5.04
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/qwen3.5-397b-a17b-nvfp4__mtp__native__default-default.yaml
+    sha256: d348ecfced935b3491b8982c4446672e7bfcb1e8114dbe868aace72e5ea4fbde
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/27317114007
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      presence_penalty: '0.0'
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"enable_thinking": true}'
+    sampling:
+      temperature: 0.6
+      top_p: 0.95
+      top_k: 20
+      max_tokens: 4096
+- model: qwen3.5-397b-a17b-nvfp4
+  draft_sampler: default
+  verifier: standard
+  engine: vllm
+  architecture: Qwen3_5MoeForConditionalGeneration
+  speculative_method: mtp
+  num_spec_tokens: 8
+  thinking: 'on'
+  category: coding
+  acceptance_length: 5.21
+  method: measured
+  provenance:
+    source: https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/qwen3.5-397b-a17b-nvfp4__mtp__native__default-default.yaml
+    sha256: d348ecfced935b3491b8982c4446672e7bfcb1e8114dbe868aace72e5ea4fbde
+    run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/27317114007
+    benchmark: SPEED-Bench
+    hardware: b300
+    engine_image: 'unrecorded: the source file names no engine image'
+    settings:
+      engine: vllm
+      verify: standard
+      adaptive: 'false'
+      topology: chain
+      kv_cache_dtype: fp8
+      presence_penalty: '0.0'
+      repetition_penalty: '1.0'
+      chat_template_kwargs: '{"enable_thinking": true}'
+    sampling:
+      temperature: 0.6
+      top_p: 0.95
+      top_k: 20
       max_tokens: 4096
