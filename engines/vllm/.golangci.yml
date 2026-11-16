@@ -1,1 +1,2 @@
+# Generated from blis-substrate contracts/harness/golangci.yml by `go run github.com/inference-sim/blis-substrate/contracts/harness/cmd/harnessfiles`; do not edit.
 version: "2"
