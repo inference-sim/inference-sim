@@ -11,6 +11,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/contracts/units"
+	"github.com/inference-sim/blis-substrate/contracts/vocab"
 	"github.com/inference-sim/blis-substrate/load"
 )
 
@@ -79,7 +80,9 @@ func keyLaneEntries(in Inputs, byDType map[string]plan.KernelImpl) Inputs {
 		for j := range c.Coefficients {
 			e := &c.Coefficients[j]
 			for dtype, impl := range byDType {
-				if slices.Contains(laneNames(dtype), e.Name) {
+				// The transferred entries; a measured one stays keyed to the build its run used,
+				// which no fixture runs, and may state no measured_on (D5).
+				if slices.Contains(laneNames(dtype), e.Name) && e.Method == vocab.MethodTransferred {
 					e.KernelImpls = []coefficient.KernelImpl{asKey(impl)}
 					e.MeasuredOn = []coefficient.KernelImpl{laneSource}
 				}
