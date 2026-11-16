@@ -1,0 +1,112 @@
+{
+  "description": "oracle/value_coverage.py's configuration (FID-10): the maps whose keys are ids, and each compared field of the goldens that takes one value in the scenario set, with why.",
+  "maps": [
+    "finished"
+  ],
+  "held": {
+    "classes.allocator": {
+      "kind": "gap",
+      "reason": "One allocator in the scenario set; a paged scenario (page size above 1) moves it (inference-sim/blis-sglang#32)."
+    },
+    "classes.tree_cache": {
+      "kind": "gap",
+      "reason": "One tree cache in the scenario set; disable_radix_cache and further tree caches move it (inference-sim/blis-sglang#32)."
+    },
+    "classes.tree_core": {
+      "kind": "fixed",
+      "reason": "SGL-1: the oracle selects the Python tree core, and run_scheduler.py fails on any other."
+    },
+    "finished.*.reason.type": {
+      "kind": "gap",
+      "reason": "Every request ends on its length; a request ending on EOS or a stop token moves it (inference-sim/blis-sglang#32)."
+    },
+    "harness_problems": {
+      "kind": "fixed",
+      "reason": "A run with a harness problem writes no trace, so a golden always records none."
+    },
+    "receive.max_recv_per_poll": {
+      "kind": "fixed",
+      "reason": "The oracle counts a step per loop iteration and needs the default receive settings; the runner fails otherwise."
+    },
+    "receive.scheduler_recv_interval": {
+      "kind": "fixed",
+      "reason": "The oracle counts a step per loop iteration and needs the default receive settings; the runner fails otherwise."
+    },
+    "resolved.attention_backend": {
+      "kind": "fixed",
+      "reason": "The oracle's base platform runs torch_native attention (oracle/mocks.json, \"the base platform\")."
+    },
+    "resolved.device": {
+      "kind": "fixed",
+      "reason": "The oracle's base platform is the CPU device (oracle/mocks.json, \"the base platform\")."
+    },
+    "resolved.max_running_requests": {
+      "kind": "gap",
+      "reason": "Every scenario runs 8 (inference-sim/blis-sglang#32)."
+    },
+    "resolved.page_size": {
+      "kind": "gap",
+      "reason": "Every scenario runs page size 1 (inference-sim/blis-sglang#32)."
+    },
+    "resolved.schedule_policy": {
+      "kind": "gap",
+      "reason": "Every scenario runs fcfs (inference-sim/blis-sglang#32)."
+    },
+    "sglang_env.SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND": {
+      "kind": "fixed",
+      "reason": "SGL-1: the one SGLANG_* variable the runner sets (KEPT_SGLANG_ENV), selecting the Python tree core."
+    },
+    "shutdown_sent": {
+      "kind": "fixed",
+      "reason": "A run whose loop returned before the harness's ShutdownReq writes no trace."
+    },
+    "steps": {
+      "kind": "fixed",
+      "reason": "A run with no step writes no trace (no forward pass ran)."
+    },
+    "steps[].forwards[].extend_prefix_lens": {
+      "kind": "no_neutral",
+      "reason": "A forward pass has at least one request, so its per-request list is never empty."
+    },
+    "steps[].forwards[].extend_seq_lens": {
+      "kind": "no_neutral",
+      "reason": "A forward pass has at least one request, so its per-request list is never empty."
+    },
+    "steps[].forwards[].loop.file": {
+      "kind": "fixed",
+      "reason": "Every forward pass must come from SGLang's managers/scheduler.py; the runner fails otherwise."
+    },
+    "steps[].forwards[].loop.upstream_code": {
+      "kind": "fixed",
+      "reason": "Every forward pass must come from SGLang's own loop at the checkout; the runner fails otherwise."
+    },
+    "steps[].forwards[].seq_lens": {
+      "kind": "no_neutral",
+      "reason": "A forward pass has at least one request, so its per-request list is never empty."
+    },
+    "steps[].outputs[].finished": {
+      "kind": "gap",
+      "reason": "Every output finishes a request; a streamed request's earlier outputs move it (inference-sim/blis-sglang#32)."
+    },
+    "steps[].outputs[].output_lens": {
+      "kind": "no_neutral",
+      "reason": "An output names at least one request, with its length."
+    },
+    "steps[].outputs[].rids": {
+      "kind": "no_neutral",
+      "reason": "An output names at least one request."
+    },
+    "steps[].outputs[].type": {
+      "kind": "fixed",
+      "reason": "The oracle skips tokenizer init (oracle/mocks.json), so every output is a BatchTokenIDOutput."
+    },
+    "steps[].shutdown": {
+      "kind": "fixed",
+      "reason": "Recorded only on the step that sent the ShutdownReq, as true."
+    },
+    "truncated": {
+      "kind": "fixed",
+      "reason": "A run that did not finish within max_steps writes no trace."
+    }
+  }
+}
