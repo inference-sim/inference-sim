@@ -1,10 +1,10 @@
 {
-  "description": "As tiny.json, with no max_total_tokens and a 2 GiB device: the scenario's device memory, through SGLang's own resolution (mem_fraction_static from the capacity) and profiling arithmetic, sizes the KV pool. Three short requests: two arrive at step 0, the third, sharing a prefix with the first, at step 3.",
+  "description": "As tiny.json, with no max_total_tokens and a 5 GiB device: the scenario's device memory, through SGLang's own resolution (mem_fraction_static from the capacity) and profiling arithmetic, sizes the KV pool. Three short requests: two arrive at step 0, the third, sharing a prefix with the first, at step 3.",
   "model": "Qwen/Qwen2.5-0.5B-Instruct",
   "seed": 0,
   "vocab_size": 151936,
   "sampled_token": 13,
-  "device_memory_gib": 2,
+  "device_memory_gib": 5,
   "step_seconds": 0.01,
   "page_size": 1,
   "max_total_tokens": null,
