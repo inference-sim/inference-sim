@@ -43,8 +43,8 @@ func (sim *EngineCore) AdmitRemoteKV(waiting []*Request) []RemoteKVAdmission {
 // reached it, under every scheduling policy. That is how inference-sim's engine admitted them,
 // and the compatibility engine keeps it (#2021 D7). vLLM's own waiting queue orders them by its
 // scheduling_policy: under priority, by (priority, arrival, request id)
-// (vllm/v1/core/sched/request_queue.py:202-205@5df63a72, Request.__lt__ in
-// vllm/v1/request.py:357-367@5df63a72), so a priority decode pool admits pulls in another order.
+// (vllm/v1/core/sched/request_queue.py:202-205@4ba787ec, Request.__lt__ in
+// vllm/v1/request.py:357-367@4ba787ec), so a priority decode pool admits pulls in another order.
 // The divergence ends when compat/ is removed: https://github.com/inference-sim/inference-sim/issues/2027.
 func (sim *EngineCore) remoteKVOrder(waiting []*Request) []*Request { return waiting }
 
@@ -60,7 +60,7 @@ func (sim *EngineCore) notePullInFlight(req *Request) {
 
 // RemoteKVLanded ends an admitted pull's in-flight reservation: its KV has landed (or the pull
 // was dropped), so its first-step blocks no longer count against new pulls
-// (_inflight_prefills.discard, sched/scheduler.py:1638-1642,2721@5df63a72). A request with no
+// (_inflight_prefills.discard, sched/scheduler.py:1867-1871, 3038@4ba787ec). A request with no
 // pull in flight is ignored.
 func (sim *EngineCore) RemoteKVLanded(req *Request) {
 	n, ok := sim.inflightPulls[req.ID]

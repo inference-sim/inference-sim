@@ -66,7 +66,7 @@ import (
 
 // ArchGlmMoeDsa is the architecture name of GLM-5, 5.2, 5.2-fp8 and 5.3, the architectures[0] of
 // their configuration: the key the cache-dtype hook is registered under
-// (vllm/model_executor/models/config.py:1078@5df63a72).
+// (vllm/model_executor/models/config.py:1230@4ba787ec).
 const ArchGlmMoeDsa = "GlmMoeDsaForCausalLM"
 
 // Version is the engine release this pack describes.
@@ -91,18 +91,18 @@ var mtpMethods = []string{"deepseek_mtp", "dots3_note_mtp", "mimo_mtp", "mimo_v2
 	"gemma4_mtp", "inkling_mtp", "glm5_next_mtp"}
 
 // mlaPrefillBackends are the in-tree members of the engine's MLAPrefillBackendEnum
-// (vllm/v1/attention/backends/mla/prefill/registry.py:37-65@5df63a72). attention_config parses
+// (vllm/v1/attention/backends/mla/prefill/registry.py:37-65@4ba787ec). attention_config parses
 // mla_prefill_backend by looking the upper-cased name up in it and refuses one it lacks
-// (vllm/config/attention.py:195-201@5df63a72). A plugin can add a member under a new name
+// (vllm/config/attention.py:232-238@4ba787ec). A plugin can add a member under a new name
 // (registry.py:190), and vllm serve loads plugins while it builds its parser, before it parses
-// the flag (vllm/engine/arg_utils.py:3202-3204@5df63a72), so a name outside this set may be a
+// the flag (vllm/engine/arg_utils.py:3256-3258@4ba787ec), so a name outside this set may be a
 // plugin's. CUSTOM is the member an out-of-tree backend can take instead.
 var mlaPrefillBackends = []string{"FLASH_ATTN", "FLASHINFER", "TRTLLM_RAGGED", "TOKENSPEED_MLA",
 	"ROCM_AITER_FA", "CPU", "ZEN_CPU", "CUSTOM"}
 
 // pythonIdentifier reports whether name could be a Python identifier, which
 // MLAPrefillBackendEnum.register requires of a backend a plugin adds
-// (vllm/v1/attention/backends/mla/prefill/registry.py:85-86@5df63a72). It is str.isidentifier for
+// (vllm/v1/attention/backends/mla/prefill/registry.py:85-86@4ba787ec). It is str.isidentifier for
 // ASCII: a letter or an underscore, then letters, digits or underscores. A name with any non-ASCII
 // character is taken to be one, since Python admits Unicode letters this check does not classify;
 // that errs toward the warning, never refusing a name vLLM could serve.
@@ -207,8 +207,8 @@ func Pack() *pack.Pack {
 				{CapabilityFamily: 9, Requested: []string{"auto", "fp8"}, ResolvesTo: "fp8_ds_mla"},
 			},
 			// GlmMoeDsaForCausalLM.verify_and_update_config changes an unstated (auto) cache dtype to
-			// fp8_e4m3 on CUDA capability family 100, SM10x (vllm/model_executor/models/config.py:43-55
-			// @5df63a72; the hook is registered at :1078). v0.31.0 has no such branch. A stated dtype,
+			// fp8_e4m3 on CUDA capability family 100, SM10x (vllm/model_executor/models/config.py:89-101
+			// @4ba787ec; the hook is registered at :1230). v0.31.0 has no such branch. A stated dtype,
 			// fp8 included, is not "auto" and runs as stated. GLM-5, 5.2, 5.2-fp8 and 5.3 are this class.
 			ArchGlmMoeDsa: {
 				{CapabilityFamily: 10, Requested: []string{"auto"}, ResolvesTo: "fp8_e4m3"},
@@ -284,8 +284,8 @@ func Pack() *pack.Pack {
 		TritonFetchSMs:       12,
 
 		// CascadeAttnOptIn stays false: v0.32.0 removed cascade attention. disable_cascade_attn is
-		// a deprecated no-op (vllm/config/model.py:312-314@5df63a72) and the runner hard-sets it off
-		// (vllm/v1/worker/gpu_model_runner.py:531-533).
+		// a deprecated no-op (vllm/config/model.py:316-318@4ba787ec) and the runner hard-sets it off
+		// (vllm/v1/worker/gpu_model_runner.py:539-541).
 
 		// all2all_backend: All2AllBackend = "allgather_reducescatter" (vllm/config/parallel.py),
 		// and the two accepted names it replaces with that one ("has been removed. Falling
@@ -367,7 +367,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 							at, field, value, p.Version)
 					}
 					// CompilationConfig upper-cases a string before it parses the mode
-					// (vllm/config/compilation.py:873-879@5df63a72), so "full" is FULL.
+					// (vllm/config/compilation.py:873-879@4ba787ec), so "full" is FULL.
 					check("cudagraph_mode", strings.ToUpper(e.CUDAGraphMode), p.CUDAGraphModes)
 					check("cache_dtype", e.CacheDType, p.CacheDTypes)
 					check("mamba_cache_dtype", e.MambaCacheDType, p.MambaDTypes)
@@ -417,10 +417,10 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		{
 			Name: "mla-prefill-backend-known",
 			Because: "attention_config parses mla_prefill_backend by looking the upper-cased name up in " +
-				"MLAPrefillBackendEnum and refuses one it lacks at startup (vllm/config/attention.py:195-201@5df63a72); " +
+				"MLAPrefillBackendEnum and refuses one it lacks at startup (vllm/config/attention.py:232-238@4ba787ec); " +
 				"a name a plugin could register, which vllm serve does before it parses the flag, is a warning, and " +
 				"one no plugin can register, because MLAPrefillBackendEnum.register refuses a name that is not a " +
-				"Python identifier (vllm/v1/attention/backends/mla/prefill/registry.py:85-86@5df63a72), is an error",
+				"Python identifier (vllm/v1/attention/backends/mla/prefill/registry.py:85-86@4ba787ec), is an error",
 			Check: func(in rules.Input, out *rules.Problems) {
 				known := set(mlaPrefillBackends...)
 				forEachEngine(in, func(at string, e engineconfig.Engine) {
@@ -445,7 +445,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 			Name: "dcp-divides-tp",
 			Because: "decode-context parallelism reuses the tensor-parallel ranks when prefill-context parallelism is off, " +
 				"so the engine refuses a dcp that does not divide tp at startup; with prefill-context parallelism on, dcp " +
-				"must be off, span the pcp axis, or span the whole tp x pcp block (vllm/config/parallel.py:590-599@5df63a72)",
+				"must be off, span the pcp axis, or span the whole tp x pcp block (vllm/config/parallel.py:594-603@4ba787ec)",
 			Check: func(in rules.Input, out *rules.Problems) {
 				forEachPool(in, func(at string, pool engineconfig.Pool) {
 					pl := pool.Parallel
@@ -968,13 +968,13 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		},
 		{
 			Name:    "moe-ep-backend-binds-passthrough",
-			Because: "this release binds all2all_backend passthrough (no framework all-to-all) to the MoE backends that dispatch and combine themselves, the FlashInfer MoE-EP megakernels, and refuses at startup any other explicit all2all_backend beside one and passthrough beside any other MoE backend (vllm/config/kernel.py:194-227@5df63a72), so such a pool does not run; left at the default, the backend is rebound to passthrough, which prices no all-to-all",
+			Because: "this release binds all2all_backend passthrough (no framework all-to-all) to the MoE backends that dispatch and combine themselves, the FlashInfer MoE-EP megakernels, and refuses at startup any other explicit all2all_backend beside one and passthrough beside any other MoE backend (vllm/config/kernel.py:195-228@4ba787ec), so such a pool does not run; left at the default, the backend is rebound to passthrough, which prices no all-to-all",
 			Check: func(in rules.Input, out *rules.Problems) {
 				forEachEngine(in, func(at string, e engineconfig.Engine) {
 					moe := pack.NormalizeMoEBackend(e.MoEBackend)
 					selfCommunicating := moe == "flashinfer_moe_ep_cutedsl" || moe == "flashinfer_moe_ep_mega_deep_gemm"
 					// The binding reads the backend after ParallelConfig has renamed the removed
-					// pplx and naive to allgather_reducescatter (vllm/config/parallel.py:533-538@5df63a72),
+					// pplx and naive to allgather_reducescatter (vllm/config/parallel.py:537-542@4ba787ec),
 					// so those start beside an EP megakernel, as the default does.
 					a2a := p.EffectiveAll2AllBackend(e.All2AllBackend)
 					switch {
@@ -992,13 +992,13 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		},
 		{
 			Name:    "flashinfer-mega-deep-gemm-model",
-			Because: "this release refuses moe_backend flashinfer_moe_ep_mega_deep_gemm at startup for a model that is not DeepSeek-V4 or DeepSeek-V4.1 (validate_flashinfer_moe_ep_model, vllm/config/kernel.py:230-241@5df63a72, called from set_platform_defaults, :443-446), so such a pool does not run; a graph that names no architecture draws a warning, since the refusal turns on the architecture",
+			Because: "this release refuses moe_backend flashinfer_moe_ep_mega_deep_gemm at startup for a model that is not DeepSeek-V4 or DeepSeek-V4.1 (validate_flashinfer_moe_ep_model, vllm/config/kernel.py:231-242@4ba787ec, called from set_platform_defaults, :456-459), so such a pool does not run; a graph that names no architecture draws a warning, since the refusal turns on the architecture",
 			Check: func(in rules.Input, out *rules.Problems) {
 				if in.Model == nil {
 					return
 				}
 				arch := in.Model.Global.Architecture
-				// FLASHINFER_MOE_EP_ARCHITECTURES (kernel.py:182-188@5df63a72).
+				// FLASHINFER_MOE_EP_ARCHITECTURES (kernel.py:183-189@4ba787ec).
 				if arch == "DeepseekV4ForCausalLM" || arch == "DeepSeekV4MTPModel" || arch == rules.ArchDeepseekV41 {
 					return
 				}
@@ -1020,7 +1020,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 		},
 		{
 			Name:    "eplb-needs-expert-parallelism",
-			Because: "this release refuses expert-parallel load balancing at startup without enable_expert_parallel, and with tensor, prefill-context and data parallelism all 1, because the expert-parallel group spans their product (vllm/config/parallel.py:559-581@5df63a72), so such a pool does not run; it also refuses num_redundant_experts without EPLB (:583-589)",
+			Because: "this release refuses expert-parallel load balancing at startup without enable_expert_parallel, and with tensor, prefill-context and data parallelism all 1, because the expert-parallel group spans their product (vllm/config/parallel.py:563-585@4ba787ec), so such a pool does not run; it also refuses num_redundant_experts without EPLB (:587-593)",
 			Check: func(in rules.Input, out *rules.Problems) {
 				forEachPool(in, func(at string, pool engineconfig.Pool) {
 					e, pl := pool.Engine, pool.Parallel

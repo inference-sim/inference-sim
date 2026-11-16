@@ -26,12 +26,12 @@ type ExtraKey []string
 type BlockKeys struct {
 	// Seed is the PYTHONHASHSEED the engine process was started with; nil is unset. NONE_HASH, the
 	// parent of every prefix's first block, is derived from it when it is set
-	// (resolve_none_hash_seed, kv_cache_utils.py:131-146@5df63a72), an empty string included: an
+	// (resolve_none_hash_seed, kv_cache_utils.py:117-132@4ba787ec), an empty string included: an
 	// empty variable is set. Nil is DEFAULT_NONE_HASH_SEED.
 	Seed *string
 	// Extra applies to every block (the LoRA key).
 	Extra []ExtraKey
-	// CacheSalt applies to the first block only (kv_cache_utils.py:647-651).
+	// CacheSalt applies to the first block only (kv_cache_utils.py:659-663).
 	CacheSalt string
 }
 

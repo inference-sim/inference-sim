@@ -34,21 +34,21 @@ type Connector interface {
 }
 
 // SupportsHMA is a connector that supports the hybrid memory allocator (SupportsHMA,
-// vllm/distributed/kv_transfer/kv_connector/v1/base.py:100-125@5df63a72): the scheduler hands it
+// vllm/distributed/kv_transfer/kv_connector/v1/base.py:101-126@4ba787ec): the scheduler hands it
 // the finished request's block ids of every KV cache group (request_finished_all_groups,
-// scheduler.py:3045-3058), so it may run beside several KV cache groups. A connector without
-// it is called with group 0's ids through Finished, and only with one group (:3046-3053).
+// scheduler.py:3389-3402), so it may run beside several KV cache groups. A connector without
+// it is called with group 0's ids through Finished, and only with one group (:3390-3397).
 type SupportsHMA interface {
 	// FinishedAllGroups is request_finished_all_groups: blockIDs are the request's block ids
 	// covering its computed tokens, one list per KV cache group in group order
-	// (get_block_ids_for_computed_tokens, vllm/v1/core/kv_cache_manager.py:731-749@5df63a72), a
+	// (get_block_ids_for_computed_tokens, vllm/v1/core/kv_cache_manager.py:740-758@4ba787ec), a
 	// sliding window's freed slots as the null block's id.
 	FinishedAllGroups(r *Request, blockIDs [][]int) (delayFree bool)
 }
 
 // TransferParams are a request's kv_transfer_params (Request.kv_transfer_params) as the
 // scheduler and the NIXL connector read and update them: what a P/D proxy hands each side
-// (vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_scheduler.py@5df63a72).
+// (vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_scheduler.py@4ba787ec).
 type TransferParams struct {
 	// DoRemotePrefill is do_remote_prefill: this engine decodes, and pulls the prompt's KV
 	// from a remote prefiller. The connector clears it once the pull is planned.
@@ -66,13 +66,13 @@ type TransferParams struct {
 	// RemoteBlocksProcessed is _remote_blocks_processed.
 	RemoteBlocksProcessed bool
 	// PSideTruncated is _p_side_truncated: the prefiller has dropped the prompt's trailing
-	// prefill-backoff tokens (nixl/base_scheduler.py:405-438@5df63a72).
+	// prefill-backoff tokens (nixl/base_scheduler.py:411-444@4ba787ec).
 	PSideTruncated bool
 }
 
 // GroupLoader is a connector that states which KV cache groups its load for a request restores
-// (get_loaded_kv_cache_group_ids, vllm/distributed/kv_transfer/kv_connector/v1/base.py:490-500
-// @5df63a72), called after MatchedTokens returned a positive count. all is every group's index. A
+// (get_loaded_kv_cache_group_ids, vllm/distributed/kv_transfer/kv_connector/v1/base.py:505-515
+// @4ba787ec), called after MatchedTokens returned a positive count. all is every group's index. A
 // connector that does not state it restores the prefix-cacheable groups, which no bounded-replay
 // group is.
 type GroupLoader interface {
@@ -119,7 +119,7 @@ type AllocatedBlocks struct {
 }
 
 // TransferOutcome is the worker side's report for one step (KVConnectorOutput,
-// vllm/v1/outputs.py:215-233@5df63a72).
+// vllm/v1/outputs.py:215-233@4ba787ec).
 type TransferOutcome struct {
 	// FinishedRecving are requests whose asynchronous KV load completed.
 	FinishedRecving []string
@@ -129,7 +129,7 @@ type TransferOutcome struct {
 	FailedRecving []string
 	// InvalidBlocks are block IDs whose externally computed KV failed to load.
 	InvalidBlocks []int
-	// WorkerMeta is kv_connector_worker_meta (vllm/v1/outputs.py:221@5df63a72): what the worker
+	// WorkerMeta is kv_connector_worker_meta (vllm/v1/outputs.py:221@4ba787ec): what the worker
 	// side reports to the connector's scheduler side (update_connector_output), nil for none.
 	WorkerMeta any
 }
@@ -152,15 +152,15 @@ const (
 // ConnectorConfig is the scheduler's slice of KVTransferConfig.
 type ConnectorConfig struct {
 	// RecomputeLoadFailures is kv_load_failure_policy == "recompute"
-	// (vllm/config/kv_transfer.py:88@5df63a72; scheduler.py:181-182).
+	// (vllm/config/kv_transfer.py:88@4ba787ec; scheduler.py:184-185).
 	RecomputeLoadFailures bool
 	// Consumer and Producer are is_kv_consumer and is_kv_producer
-	// (vllm/config/kv_transfer.py:130-136@5df63a72): kv_consumer, kv_producer, or both for kv_both.
+	// (vllm/config/kv_transfer.py:130-136@4ba787ec): kv_consumer, kv_producer, or both for kv_both.
 	Consumer, Producer bool
 }
 
 // KVDelivery is a connector that states requires_kv_delivery
-// (vllm/distributed/kv_transfer/kv_connector/v1/base.py:196-206@5df63a72); one that does not has
+// (vllm/distributed/kv_transfer/kv_connector/v1/base.py:197-207@4ba787ec); one that does not has
 // the base class's default, the producer role (ConnectorConfig.Producer).
 type KVDelivery interface {
 	RequiresKVDelivery() bool

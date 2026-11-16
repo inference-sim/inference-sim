@@ -139,7 +139,7 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
             scheduling_policy=cfg.get("scheduling_policy", "fcfs"),
         )
     # A fresh registry view per scenario: the logger unregisters earlier vllm:* collectors
-    # itself (unregister_vllm_metrics, vllm/v1/metrics/prometheus.py:56-69@5df63a72).
+    # itself (unregister_vllm_metrics, vllm/v1/metrics/prometheus.py:56-69@4ba787ec).
     logger = PrometheusStatLogger(scheduler.vllm_config, [0])
     frontend = OutputProcessor(None, log_stats=True)
 

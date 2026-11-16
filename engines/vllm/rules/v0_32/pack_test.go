@@ -421,7 +421,7 @@ func TestDCPCommBackendKnown(t *testing.T) {
 
 // TestMLAPrefillBackendKnown: vLLM v0.32.0 looks attention_config.mla_prefill_backend up in
 // MLAPrefillBackendEnum after upper-casing it, and refuses a name that is not a member
-// (vllm/config/attention.py:195-201, vllm/v1/attention/backends/mla/prefill/registry.py:22-34@5df63a72).
+// (vllm/config/attention.py:232-238, vllm/v1/attention/backends/mla/prefill/registry.py:22-34@4ba787ec).
 // A plugin can make a new name a member before the flag is parsed, so a name outside the in-tree
 // members warns rather than refuses.
 func TestMLAPrefillBackendKnown(t *testing.T) {
@@ -430,7 +430,7 @@ func TestMLAPrefillBackendKnown(t *testing.T) {
 		want    bool
 		// severity is the finding's, when it fires: a warning for a name a plugin could register,
 		// an error for one no plugin can, since MLAPrefillBackendEnum.register refuses a name that
-		// is not a Python identifier (vllm/v1/attention/backends/mla/prefill/registry.py:85-86@5df63a72).
+		// is not a Python identifier (vllm/v1/attention/backends/mla/prefill/registry.py:85-86@4ba787ec).
 		severity rules.Severity
 	}{
 		{"", false, ""}, {"TRTLLM_RAGGED", false, ""}, {"FLASHINFER", false, ""}, {"ROCM_AITER_FA", false, ""},
@@ -1165,7 +1165,7 @@ func TestResolveCacheDType(t *testing.T) {
 		{v41, 9, 8, "fp8", "fp8_ds_mla"},
 		{"DeepseekV3ForCausalLM", 10, 8, "auto", "auto"},
 		// GlmMoeDsaForCausalLM: an unstated (auto) dtype becomes fp8_e4m3 on SM10x
-		// (vllm/model_executor/models/config.py:43-55@5df63a72); a stated one stands, and SM9x is unchanged.
+		// (vllm/model_executor/models/config.py:89-101@4ba787ec); a stated one stands, and SM9x is unchanged.
 		{ArchGlmMoeDsa, 10, 8, "", "fp8_e4m3"},
 		{ArchGlmMoeDsa, 10, 1, "auto", "fp8_e4m3"},
 		{ArchGlmMoeDsa, 10, 8, "fp8", "fp8"},
@@ -1300,7 +1300,7 @@ func TestDataParallelLoadBalancing(t *testing.T) {
 
 // The FlashInfer MoE-EP backends dispatch and combine themselves, so v0.32.0 binds
 // all2all_backend passthrough to them: it refuses any other explicit backend beside one,
-// and refuses passthrough beside any other MoE backend (vllm/config/kernel.py:194-227@5df63a72).
+// and refuses passthrough beside any other MoE backend (vllm/config/kernel.py:195-228@4ba787ec).
 // The default backend is rebound, not refused.
 func TestMoEEPBackendBindsPassthrough(t *testing.T) {
 	ep := deployment.Parallelism{TP: 8, DP: 1, EnableExpertParallel: true}
@@ -1313,12 +1313,12 @@ func TestMoEEPBackendBindsPassthrough(t *testing.T) {
 		{"an EP megakernel at allgather_reducescatter", "flashinfer_moe_ep_mega_deep_gemm", "allgather_reducescatter", false},
 		{"an EP megakernel stating passthrough", "flashinfer_moe_ep_cutedsl", "passthrough", false},
 		{"an EP megakernel beside another backend", "flashinfer_moe_ep_cutedsl", "deepep_low_latency", true},
-		// Both members of FLASHINFER_MOE_EP_BACKENDS (vllm/config/kernel.py:148-157@5df63a72) bind.
+		// Both members of FLASHINFER_MOE_EP_BACKENDS (vllm/config/kernel.py:149-158@4ba787ec) bind.
 		{"the DeepGEMM EP megakernel stating passthrough", "flashinfer_moe_ep_mega_deep_gemm", "passthrough", false},
 		{"the DeepGEMM EP megakernel beside another backend", "flashinfer_moe_ep_mega_deep_gemm", "deepep_low_latency", true},
 		// ParallelConfig renames the removed pplx and naive to allgather_reducescatter
-		// (vllm/config/parallel.py:532-538@5df63a72) before the binding runs, from
-		// VllmConfig's post-init (vllm/config/vllm.py:1777), so both start.
+		// (vllm/config/parallel.py:536-542@4ba787ec) before the binding runs, from
+		// VllmConfig's post-init (vllm/config/vllm.py:1852), so both start.
 		{"an EP megakernel beside the removed pplx", "flashinfer_moe_ep_cutedsl", "pplx", false},
 		{"an EP megakernel beside the removed naive", "flashinfer_moe_ep_mega_deep_gemm", "naive", false},
 		{"passthrough beside another MoE backend", "deep_gemm_mega_moe", "passthrough", true},
@@ -1337,7 +1337,7 @@ func TestMoEEPBackendBindsPassthrough(t *testing.T) {
 // Decode-context parallelism reuses the tensor-parallel ranks when prefill-context
 // parallelism is off, so the engine refuses a dcp that does not divide tp at startup; with
 // prefill-context parallelism on, dcp must be off, span the pcp axis, or span tp x pcp
-// (vllm/config/parallel.py:590-599@5df63a72).
+// (vllm/config/parallel.py:594-603@4ba787ec).
 func TestDCPDividesTP(t *testing.T) {
 	pool := func(tp, pcp, dcp int) deployment.Pool {
 		return colocated(deployment.Parallelism{TP: tp, PP: 1, DP: 1, PCP: pcp, DCP: dcp}, engineconfig.Engine{})
@@ -1380,7 +1380,7 @@ func ruleErrors(p *rules.Problems, rule string) int {
 }
 
 // vLLM refuses moe_backend flashinfer_moe_ep_mega_deep_gemm for a model that is not DeepSeek-V4
-// or V4.1 (validate_flashinfer_moe_ep_model, vllm/config/kernel.py:230-241@5df63a72).
+// or V4.1 (validate_flashinfer_moe_ep_model, vllm/config/kernel.py:231-242@4ba787ec).
 func TestFlashinferMegaDeepGemmNeedsDeepSeekV4(t *testing.T) {
 	pl := deployment.Parallelism{TP: 8, PP: 1, DP: 1, EnableExpertParallel: true}
 	d := dep(colocated(pl, engineconfig.Engine{MoEBackend: "flashinfer_moe_ep_mega_deep_gemm"}))
@@ -1412,7 +1412,7 @@ func TestFlashinferMegaDeepGemmNeedsDeepSeekV4(t *testing.T) {
 }
 
 // vLLM refuses EPLB without expert parallelism or with tp, pcp and dp all 1
-// (vllm/config/parallel.py:559-581@5df63a72), and num_redundant_experts without EPLB (:583-589).
+// (vllm/config/parallel.py:563-585@4ba787ec), and num_redundant_experts without EPLB (:587-593).
 func TestEPLBNeedsExpertParallelism(t *testing.T) {
 	on := &engineconfig.EPLB{Enabled: true}
 	for _, c := range []struct {
@@ -1439,7 +1439,7 @@ func TestEPLBNeedsExpertParallelism(t *testing.T) {
 }
 
 // CompilationConfig upper-cases a string before it parses cudagraph_mode
-// (vllm/config/compilation.py:873-879@5df63a72), so a lowercase mode is the same mode, and one
+// (vllm/config/compilation.py:873-879@4ba787ec), so a lowercase mode is the same mode, and one
 // that is no mode is still refused.
 func TestCUDAGraphModeIsCaseInsensitive(t *testing.T) {
 	pl := deployment.Parallelism{TP: 8, PP: 1, DP: 1}

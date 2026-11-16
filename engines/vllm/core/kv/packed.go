@@ -10,15 +10,15 @@ package kv
 import "errors"
 
 // pageBytes is a layer's page_size_bytes: heads x states per block x bytes per state, padded up
-// to the spec's alignment (AttentionSpec.page_size_bytes, kv_cache_interface.py:546-563;
-// _apply_alignment_padding, :670-676@5df63a72). A state covers TokensPerState tokens
-// (get_num_kernel_states, :231-234). StateBytes is the state's content (state_content_bytes),
+// to the spec's alignment (AttentionSpec.page_size_bytes, kv_cache_interface.py:587-604;
+// _apply_alignment_padding, :713-719@4ba787ec). A state covers TokensPerState tokens
+// (get_num_kernel_states, :272-275). StateBytes is the state's content (state_content_bytes),
 // or keys and values of HeadSize elements of ElemBytes each, keys only for MLA, an indexer and
-// a ring (head_size_v 0, :700, :1003).
+// a ring (head_size_v 0, :745, :1062).
 func pageBytes(l Layer) int {
 	if l.Spec == LayerMamba {
 		// MambaSpec.page_size_bytes: the states' bytes, or page_size_padded when set
-		// (kv_cache_interface.py:1067-1075@5df63a72).
+		// (kv_cache_interface.py:1126-1134@4ba787ec).
 		return max(l.StateBytes, l.PageSizePadded)
 	}
 	states := l.BlockSize / max(l.TokensPerState, 1)
@@ -98,7 +98,7 @@ func (t specType) group() Group {
 		MambaCheckpointBlocks: t.mamba.ckpt, MambaCheckpointAlignment: t.mamba.align}
 }
 
-// approximateGCD is _approximate_gcd (kv_cache_utils.py:1825-1857@5df63a72): the d in
+// approximateGCD is _approximate_gcd (kv_cache_planning.py:879-911@4ba787ec): the d in
 // [lowerBound, max(values)] that pads the values up to multiples of d the least, the larger d
 // on a tie.
 func approximateGCD(values []int, lowerBound int) int {
@@ -140,7 +140,7 @@ func (b packedBucket) maxLayersPerPage() int {
 	return most
 }
 
-// isState is is_state_bucket (kv_cache_utils.py:1941-1946@5df63a72): a Mamba layer or a circular
+// isState is is_state_bucket (kv_cache_planning.py:995-1000@4ba787ec): a Mamba layer or a circular
 // buffer always, a sliding window when nothing repeats.
 func (b packedBucket) isState(repeating bool) bool {
 	if b.typ.kind == CircularBuffer || b.typ.kind == Mamba {

@@ -113,7 +113,7 @@ func validateEngine(p *rules.Problems, at string, e Engine) {
 		}
 		if l := sp.SyntheticAcceptanceLength; l != nil {
 			// SpeculativeConfig._resolve_synthetic_acceptance_rates and the check that follows it
-			// (vllm/config/speculative.py:566-598, 1832-1847@5df63a72).
+			// (vllm/config/speculative.py:600-632, 1973-1988@4ba787ec).
 			switch {
 			case sp.RejectionSampleMethod != "synthetic":
 				p.Field(at+".engine.speculative.synthetic_acceptance_length",
@@ -132,8 +132,8 @@ func validateEngine(p *rules.Problems, at string, e Engine) {
 // launch is refused here. A zero integer means unset and takes the engine's default.
 func validateSchedulerKnobs(p *rules.Problems, at string, e Engine) {
 	for field, v := range map[string]int{
-		// Field(ge=1) in vllm/config/scheduler.py:55, 69, 203, 213 and vllm/config/lora.py:35;
-		// gt=0 in vllm/config/cache.py:90. Zero is unset here.
+		// Field(ge=1) in vllm/config/scheduler.py:55, 69, 203, 216 and vllm/config/lora.py:36;
+		// gt=0 in vllm/config/cache.py:203. Zero is unset here.
 		"max_num_scheduled_tokens":  e.MaxNumScheduledTokens,
 		"max_num_active_seqs":       e.MaxNumActiveSeqs,
 		"prefill_schedule_interval": e.PrefillScheduleInterval,
@@ -147,18 +147,18 @@ func validateSchedulerKnobs(p *rules.Problems, at string, e Engine) {
 			p.Field(at+".engine."+field, "must not be negative; omit it, or 0, for the engine default")
 		}
 	}
-	// vllm/config/scheduler.py:336-343@5df63a72 refuses max_num_active_seqs above max_num_seqs.
+	// vllm/config/scheduler.py:339-346@4ba787ec refuses max_num_active_seqs above max_num_seqs.
 	if e.MaxNumActiveSeqs > 0 && e.MaxNumSeqs > 0 && e.MaxNumActiveSeqs > e.MaxNumSeqs {
 		p.Field(at+".engine.max_num_active_seqs", "%d exceeds max_num_seqs %d, which the engine refuses",
 			e.MaxNumActiveSeqs, e.MaxNumSeqs)
 	}
-	// vllm/config/lora.py:120-126@5df63a72 refuses max_cpu_loras below max_loras; unset
+	// vllm/config/lora.py:121-127@4ba787ec refuses max_cpu_loras below max_loras; unset
 	// max_loras is the default, 1.
 	if e.MaxCPULoRAs > 0 && e.MaxCPULoRAs < max(e.MaxLoRAs, 1) {
 		p.Field(at+".engine.max_cpu_loras", "%d is below max_loras %d, which the engine refuses",
 			e.MaxCPULoRAs, max(e.MaxLoRAs, 1))
 	}
-	// Field(ge=0.0, lt=1.0), vllm/config/scheduler.py:196@5df63a72. FiniteField first, as for
+	// Field(ge=0.0, lt=1.0), vllm/config/scheduler.py:196@4ba787ec. FiniteField first, as for
 	// gpu_memory_utilization: a NaN passes both comparisons.
 	if w := e.Watermark; w != nil && p.FiniteField(at+".engine.watermark", *w) && (*w < 0 || *w >= 1) {
 		p.Field(at+".engine.watermark", "must lie in [0, 1), got %v", *w)
@@ -166,7 +166,7 @@ func validateSchedulerKnobs(p *rules.Problems, at string, e Engine) {
 	if b := e.KVCacheMemoryBytes; b != nil && *b < 1 {
 		p.Field(at+".engine.kv_cache_memory_bytes", "must be positive, got %d; omit it to size the cache from gpu_memory_utilization", *b)
 	}
-	// Field(ge=0), vllm/config/cache.py:159@5df63a72.
+	// Field(ge=0), vllm/config/cache.py:275@4ba787ec.
 	if r := e.PrefixCacheRetentionInterval; r != nil && *r < 0 {
 		p.Field(at+".engine.prefix_cache_retention_interval", "must not be negative, got %d", *r)
 	}

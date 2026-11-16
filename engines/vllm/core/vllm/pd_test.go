@@ -133,7 +133,7 @@ func TestPDThroughTheEngine(t *testing.T) {
 	}
 }
 
-// kv_both is both a producer and a consumer (vllm/config/kv_transfer.py:129-135@5df63a72), and
+// kv_both is both a producer and a consumer (vllm/config/kv_transfer.py:129-135@4ba787ec), and
 // which side a request is comes from its own kv_transfer_params. One kv_both engine therefore
 // serves a prefill leg as a kv_producer does (one token, blocks held as a handoff) and a decode
 // leg as a kv_consumer does (a load of the prompt's KV, then every token), and the legs behave as
@@ -332,7 +332,7 @@ func TestPDRefusals(t *testing.T) {
 			t.Errorf("%s: built, want refused", c.name)
 		}
 	}
-	// vLLM refuses a decoder at pp 2 by testing kv_role == "kv_consumer" alone (base_worker.py:775@5df63a72),
+	// vLLM refuses a decoder at pp 2 by testing kv_role == "kv_consumer" alone (base_worker.py:886@4ba787ec),
 	// so a kv_both pool at pp 2 starts.
 	if _, err := build(t, both+"pipeline_parallel_size: 2\nasync_scheduling: true\nuse_v2_model_runner: true\n")(); err != nil {
 		t.Errorf("kv_both at pp 2 refused, which vLLM starts: %v", err)

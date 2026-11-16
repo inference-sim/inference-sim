@@ -6,7 +6,7 @@
 
 // Package nixl is the scheduler side of vLLM's NIXL connector in its pull mode
 // (NixlConnector = NixlPullConnector, vllm/distributed/kv_transfer/kv_connector/factory.py:
-// 177-189@5df63a72): what the engine decides about a P/D request. On the decoder
+// 177-189@4ba787ec): what the engine decides about a P/D request. On the decoder
 // (kv_consumer) a request with do_remote_prefill waits in WAITING_FOR_REMOTE_KVS while its
 // prompt's KV is pulled; on the prefiller (kv_producer) a request with do_remote_decode keeps
 // its blocks after it finishes until the decoder has read them. The worker side, which moves
@@ -89,11 +89,11 @@ func (c Config) ClipBlocks(ids [][]int) [][]int {
 }
 
 // CheckWorker refuses what vLLM's NIXL worker refuses at start-up for the parallel layout
-// (NixlBaseConnectorWorker.__init__, nixl/base_worker.py:757-779@5df63a72): with
+// (NixlBaseConnectorWorker.__init__, nixl/base_worker.py:868-890@4ba787ec): with
 // pipeline_parallel_size > 1, the pull worker refuses a hybrid KV cache layout that needs the
-// hybrid memory allocator (_is_hma_required, :560-566: some layer is not full attention and
-// disable_hybrid_kv_cache_manager is off; _supports_pp_hma is False for the pull worker, :132,
-// :761-765) and any decoder (kv_consumer, :775-779). The scheduler side never sees PP, so these
+// hybrid memory allocator (_is_hma_required, :659-665: some layer is not full attention and
+// disable_hybrid_kv_cache_manager is off; _supports_pp_hma is False for the pull worker, :138,
+// :872-876) and any decoder (kv_consumer, :886-890). The scheduler side never sees PP, so these
 // are the only parallel refusals.
 func CheckWorker(pp int, hmaRequired, kvConsumer bool) error {
 	if pp <= 1 {
@@ -102,11 +102,11 @@ func CheckWorker(pp int, hmaRequired, kvConsumer bool) error {
 	if hmaRequired {
 		return fmt.Errorf("nixl: NixlConnector (pull) does not support pipeline_parallel_size %d with a hybrid "+
 			"KV cache layout (HMA); vLLM's worker refuses it (vllm/distributed/kv_transfer/kv_connector/v1/nixl/"+
-			"base_worker.py:760-765@5df63a72)", pp)
+			"base_worker.py:871-876@4ba787ec)", pp)
 	}
 	if kvConsumer {
 		return fmt.Errorf("nixl: a NIXL decoder (kv_consumer) does not support pipeline_parallel_size %d; vLLM's "+
-			"worker refuses it (vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:775-779@5df63a72)", pp)
+			"worker refuses it (vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:886-890@4ba787ec)", pp)
 	}
 	return nil
 }
@@ -155,10 +155,10 @@ func (s *Scheduler) OnNewRequest(r *sched.Request) {
 	}
 }
 
-// truncateForPrefill is _truncate_request_for_prefill (base_scheduler.py:405-438): the
+// truncateForPrefill is _truncate_request_for_prefill (base_scheduler.py:411-444): the
 // prefiller drops the trailing backoff prompt tokens, which the decoder recomputes, and samples
 // one token, once per request. The request's block hashes were computed when it was built
-// (Request.__init__, vllm/v1/request.py:225-230@5df63a72) and are not recomputed, as in vLLM.
+// (Request.__init__, vllm/v1/request.py:225-230@4ba787ec) and are not recomputed, as in vLLM.
 func (s *Scheduler) truncateForPrefill(r *sched.Request) {
 	b := s.cfg.PrefillBackoff
 	if b == 0 || r.Transfer.PSideTruncated || len(r.Prompt) <= b {

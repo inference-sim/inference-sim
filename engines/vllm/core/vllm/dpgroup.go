@@ -135,7 +135,7 @@ func newDPGroup(st settings, pricer Pricer) (*DPGroup, error) {
 		e.queued = func(id string) bool { return g.inFlight(rank, id) }
 		if e.pd != nil {
 			// Each rank is its own engine core with its own connector (vLLM gives each its own
-			// engine_id and side-channel port, nixl/base_scheduler.py:76-80@5df63a72), so each states
+			// engine_id and side-channel port, nixl/base_scheduler.py:76-80@4ba787ec), so each states
 			// its own transfers. The group tells them apart by ID alone (TransferDone).
 			e.pd.stride, e.pd.lane = n, i
 		}
@@ -149,7 +149,7 @@ func newDPGroup(st settings, pricer Pricer) (*DPGroup, error) {
 
 // publish is the coordinator's stats update at now: the balancer's counts become the ranks'
 // [waiting, running, kv_cache_usage] at the first routing of each publication interval
-// (coordinator.py:154-162, 267-269; core_client.py:1562-1575@5df63a72).
+// (coordinator.py:152-160, 265-267; core_client.py:1587-1600@4ba787ec).
 func (g *DPGroup) publish(now engine.Time) {
 	epoch := int64(now) / g.statsIntervalUs
 	if epoch == g.epoch {
@@ -190,7 +190,7 @@ func (g *DPGroup) Add(r engine.Request, now engine.Time) error {
 // tokens applies it at once: it has no forward pass to wait for. A rank whose step blocks on a
 // batch that runs tokens waits for it: with one batch in flight (step()) that is the batch it
 // just scheduled, with a batch queue (step_with_batch_queue) the one it queued the iteration
-// before (vllm/v1/engine/core.py:754-766@5df63a72). The iteration ends, with its dummy batches
+// before (vllm/v1/engine/core.py:764-776@4ba787ec). The iteration ends, with its dummy batches
 // and the wave's all-reduce, when no rank waits any longer.
 //
 // No iteration starts while one is under way, while an iteration of dummy batches is still

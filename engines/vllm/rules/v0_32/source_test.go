@@ -596,7 +596,7 @@ func TestMoEBackendsMatchSource(t *testing.T) {
 	src := readSource(t, root, "vllm", "config", "kernel.py")
 	assertSameSet(t, "MoEBackends", Pack().MoEBackends, literalMembers(t, src, "MoEBackend"))
 	// MEGA_MOE_BACKENDS = NATIVE_MEGA_MOE_BACKENDS | FLASHINFER_MOE_EP_BACKENDS
-	// (vllm/config/kernel.py:148-169@5df63a72). FLASHINFER_MOE_EP_BACKENDS names its members
+	// (vllm/config/kernel.py:149-170@4ba787ec). FLASHINFER_MOE_EP_BACKENDS names its members
 	// through two module constants, which are resolved here, so a renamed or added member
 	// changes the comparison rather than slipping past it.
 	if !strings.Contains(src, "\nMEGA_MOE_BACKENDS = NATIVE_MEGA_MOE_BACKENDS | FLASHINFER_MOE_EP_BACKENDS\n") {
@@ -698,8 +698,8 @@ func spCondition(t *testing.T, src string) pack.SequenceParallelCondition {
 	// v0.32.0 names the mega-MoE test moe_needs_token_sharded_input. DeepSeek-V4.1 keeps
 	// "(moe_needs_token_sharded_input or parallel_config.data_parallel_size > 1)" in the
 	// return; DeepSeek-V4 folds "or parallel_config.data_parallel_size > 1" into the
-	// variable (vllm/models/deepseek_v41/nvidia/model.py:246-256@5df63a72,
-	// vllm/models/deepseek_v4/nvidia/model.py:1047-1059@5df63a72). Either spelling is the
+	// variable (vllm/models/deepseek_v41/nvidia/model.py:261-271@4ba787ec,
+	// vllm/models/deepseek_v4/nvidia/model.py:571-583@4ba787ec). Either spelling is the
 	// same condition; the variable's definition is checked, not assumed.
 	shardedVar := regexp.MustCompile(`(?s)moe_needs_token_sharded_input = \(\s*(.*?)\s*\)\n`).FindStringSubmatch(prelude)
 	if shardedVar == nil {
@@ -815,7 +815,7 @@ func TestModelSequenceParallelCollectivesMatchSource(t *testing.T) {
 	// and the shared expert, unfused there, all-reduces its own hidden-width output.
 	for _, c := range []struct{ what, text string }{
 		{"mega-MoE requiring expert parallelism", "MegaMoE currently requires expert parallel."},
-		// v0.32.0 spells it use_native_mega_moe (deepseek_v4/nvidia/model.py:683,787@5df63a72),
+		// v0.32.0 spells it use_native_mega_moe (deepseek_v4/nvidia/model.py:227, 331@4ba787ec),
 		// moe_backend in NATIVE_MEGA_MOE_BACKENDS, the one-member set {deep_gemm_mega_moe}
 		// that TestMoEBackendsMatchSource checks.
 		{"the shared expert reducing itself under native mega-MoE", "reduce_results=self.use_native_mega_moe,"},
@@ -1070,7 +1070,7 @@ func TestKVCachePackingMatchSource(t *testing.T) {
 		}
 	}
 	// v0.32.0's _get_kv_cache_bytes_per_block takes the resolved layout
-	// (vllm/v1/core/kv_cache_utils.py:1520-1551@5df63a72). Under a layer-outermost layout each
+	// (vllm/v1/core/kv_cache_planning.py:574-605@4ba787ec). Under a layer-outermost layout each
 	// layer's page rounds to its own block-stride alignment and the widest group's sum is the
 	// block; under a block-outermost one the widest group's sum rounds to the lcm of every
 	// alignment, which is v0.31.0's form and the one Pack.KVCacheGroups applies. With no
@@ -1093,9 +1093,9 @@ func TestKVCachePackingMatchSource(t *testing.T) {
 	}
 	// Packing a model's mixed page sizes into shared blocks happens only under a
 	// block-outermost layout (_get_packed_kv_cache_groups returns None otherwise,
-	// kv_cache_utils.py:1875-1878@5df63a72), and the DeepSeek-V4 family's indexer, which
+	// kv_cache_planning.py:929-932@4ba787ec), and the DeepSeek-V4 family's indexer, which
 	// shares a block with the MLA latent pages, supports only block-outermost layouts
-	// (vllm/v1/attention/backends/mla/indexer.py:347-351@5df63a72). So the models whose
+	// (vllm/v1/attention/backends/mla/indexer.py:348-352@4ba787ec). So the models whose
 	// caches these packs group run the block-outermost branch: v0.31.0's form, which
 	// KVCacheGroups transcribes. v0.32.0's own functions return the v0.31.0 goldens for every
 	// golden case under that layout (checked by running them, rules/testdata/kvgroups/golden.py

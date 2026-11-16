@@ -70,8 +70,8 @@ func TestUntrimmedVerificationIsUnchanged(t *testing.T) {
 // Under adaptive verification no request is credited more accepted drafts than the verifier ran
 // for it: the rejection sampler sees only the compacted logits, each request's cu_num_logits span
 // holding the drafts the budget admitted (reallocate_drafts,
-// vllm/v1/worker/gpu/spec_decode/adaptive_verification.py:430-435; rejection_sampler_utils.py:
-// 343-351@5df63a72). The simulator offers every scheduled draft as accepted, so each verifying
+// vllm/v1/worker/gpu/spec_decode/adaptive_verification.py:456-461; rejection_sampler_utils.py:
+// 366-374@4ba787ec). The simulator offers every scheduled draft as accepted, so each verifying
 // request emits exactly one sampled token plus its verified width while output remains, and every
 // contract law holds.
 func TestAdaptiveVerificationCapsAcceptedAtTheVerifiedWidth(t *testing.T) {

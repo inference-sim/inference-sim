@@ -2,11 +2,11 @@
 """Tier-3 oracle: vLLM's EngineCore batch queue driven through a scenario, on CPU.
 
 Each engine step is vLLM's own EngineCore.step_with_batch_queue
-(vllm/v1/engine/core.py:698-810@5df63a72), called unmodified on an EngineCore that holds vLLM's
+(vllm/v1/engine/core.py:708-820@4ba787ec), called unmodified on an EngineCore that holds vLLM's
 real scheduler: the AsyncScheduler when the scenario turns async scheduling on, the
 Scheduler otherwise, built by vLLM's own CPU test helper (tests/v1/core/utils.py
 create_scheduler) with pipeline_parallel_size from the scenario. The batch queue's size is
-vLLM's own VllmConfig.max_concurrent_batches (vllm/config/vllm.py:577-588@5df63a72) for the
+vLLM's own VllmConfig.max_concurrent_batches (vllm/config/vllm.py:588-599@4ba787ec) for the
 scenario's async, PP and model-runner settings.
 
 What is replaced, all listed in oracle/mocks.json:
@@ -39,7 +39,7 @@ step_with_batch_queue itself run as released.
 
 The GPU mock decides nothing: which requests of a batch sample is read from the scheduler's
 own state when the batch executes (is_prefill_chunk, which _update_after_schedule sets for
-exactly that batch, core/sched/scheduler.py:1634@5df63a72), as tier 2 reads it, and what they
+exactly that batch, core/sched/scheduler.py:1863@4ba787ec), as tier 2 reads it, and what they
 sample is the scenario's assigned output, the last token as EOS, consumed in completion
 order. A request scheduled one step ahead of its sampled tokens (async scheduling's
 placeholder step) samples once per step like any decode.
@@ -104,7 +104,7 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     pp = int(cfg.get("pipeline_parallel_size", 1))
     v2 = bool(cfg.get("use_v2_model_runner", False))
     if pp > 1 and async_sched and not v2:
-        # vLLM refuses to start this (vllm/config/vllm.py:2970-2974@5df63a72).
+        # vLLM refuses to start this (vllm/config/vllm.py:3104-3108@4ba787ec).
         sys.exit(f"{scenario_path}: the V1 model runner does not support PP with async scheduling")
 
     spec = cfg.get("speculative")

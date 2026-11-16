@@ -66,7 +66,7 @@ func startupLayers(mode string) []Layer {
 	return ls
 }
 
-// MambaSpec.max_memory_usage_bytes over its page (kv_cache_interface.py:1077-1083@5df63a72): in
+// MambaSpec.max_memory_usage_bytes over its page (kv_cache_interface.py:1136-1142@4ba787ec): in
 // none mode 1 + num_speculative_blocks pages, in align mode 2 + num_speculative_blocks +
 // num_prefill_checkpoint_blocks. Three Mamba groups and the attention group, max_model_len 1000
 // at 16-token blocks (cdiv(1000, 16) = 63): none 63 + 3 x 2 = 69; align 63 + 3 x 4 = 75.
@@ -104,7 +104,7 @@ func TestEstimateMaxModelLenWithMambaStates(t *testing.T) {
 	}
 }
 
-// MambaSpec.max_num_blocks_per_req (kv_cache_interface.py:1085-1092@5df63a72): none mode holds
+// MambaSpec.max_num_blocks_per_req (kv_cache_interface.py:1144-1151@4ba787ec): none mode holds
 // 1 + num_speculative_blocks pages; align mode's row is position-indexed over the sequence,
 // cdiv(1000, 16) + num_speculative_blocks = 63 + 2.
 func TestMaxNumBlocksPerReq(t *testing.T) {

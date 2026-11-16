@@ -81,7 +81,7 @@ func TestGroupsOfLayersRefusesWhatItDoesNotModel(t *testing.T) {
 }
 
 // With the hybrid manager disabled, windows beside full attention are promoted to it: one
-// group (unify_hybrid_kv_cache_specs, kv_cache_utils.py:1799-1822@5df63a72).
+// group (unify_hybrid_kv_cache_specs, kv_cache_planning.py:853-876@4ba787ec).
 func TestGroupsOfLayersDisableHybrid(t *testing.T) {
 	full := Layer{Spec: LayerFull, KVHeads: 8, HeadSize: 64}
 	win := Layer{Spec: LayerSlidingWindow, Window: 128, KVHeads: 8, HeadSize: 64}
@@ -92,7 +92,7 @@ func TestGroupsOfLayersDisableHybrid(t *testing.T) {
 }
 
 // A MambaSpec's page is its states' bytes, or page_size_padded when the hybrid block-size
-// alignment pads it (vllm/v1/kv_cache_interface.py:1067-1075@5df63a72), whatever the block size:
+// alignment pads it (vllm/v1/kv_cache_interface.py:1126-1134@4ba787ec), whatever the block size:
 // the pool bytes of a model of nothing but Mamba layers are that page for each layer.
 func TestMambaLayerPageIsStateBytesPaddedNotPerToken(t *testing.T) {
 	spec, err := ParseLayerSpec("mamba")
