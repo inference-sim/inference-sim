@@ -1,86 +1,12 @@
 package resolve
 
 import (
-	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
-	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
-	"github.com/inference-sim/blis-substrate/contracts/rules"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 )
-
-// A stub rules pack. The tests below are about the resolver's behaviour, so the engine
-// facts are stated here rather than read from a real pack: a test that failed because a
-// pack changed would not be testing the resolver.
-type stubRules struct {
-	spBackends   map[string]bool
-	customWidths map[int]bool
-}
-
-func newStubRules() stubRules {
-	return stubRules{
-		spBackends:   map[string]bool{"allgather_reducescatter": true, "deepep_low_latency": true},
-		customWidths: map[int]bool{2: true, 4: true, 6: true, 8: true, 16: true},
-	}
-}
-
-func (r stubRules) SequenceParallelMoE(backend string, ep bool, tp, dp int) bool {
-	return ep && tp > 1 && dp > 1 && r.spBackends[backend]
-}
-func (r stubRules) ModelSequenceParallel(string, deployment.Parallelism, string) bool {
-	return false
-}
-func (r stubRules) EffectiveAll2AllBackend(b string) string { return b }
-func (r stubRules) ResolveCacheDType(_ string, _, _ int, requested string) string {
-	return requested
-}
-func (r stubRules) WindowPagesPerRequest(model.Cache, int, int, int, int) int       { return 0 }
-func (r stubRules) CheckEngineBlock(string, deployment.EngineBlock) *rules.Problems { return nil }
-func (r stubRules) DraftTokens(deployment.EngineBlock) int                          { return 0 }
-func (r stubRules) CheckConnectorOptions(string, deployment.EngineBlock) *rules.Problems {
-	return nil
-}
-func (r stubRules) CUDAGraphCaptureSizes(rules.CUDAGraphCaptureInput) (rules.CUDAGraphCapture, bool, error) {
-	return rules.CUDAGraphCapture{}, false, nil
-}
-func (r stubRules) KVCacheGroups(rules.KVCacheGroupsInput) (rules.KVCacheGrouping, error) {
-	return rules.KVCacheGrouping{}, nil
-}
-func (r stubRules) CustomAllReduceSupportsWidth(tp int) bool { return r.customWidths[tp] }
-func (r stubRules) TritonFetchWithholdsSMs(pageBytes int) int {
-	if pageBytes > 0 && pageBytes < 28*1024 {
-		return 12
-	}
-	return 0
-}
-func (r stubRules) DBOEngages(enabled bool, tokens int, uniform bool) bool {
-	if !enabled {
-		return false
-	}
-	if uniform {
-		return tokens >= 32
-	}
-	return tokens >= 512
-}
-
-// The rest of rules.EngineRules: facts the resolver does not read, answered inertly so a
-// test here cannot pass by reading one.
-func (r stubRules) EngineVersion() string                          { return "stub" }
-func (r stubRules) Check(rules.Input) *rules.Problems              { return &rules.Problems{} }
-func (r stubRules) RuleNames() []string                            { return nil }
-func (r stubRules) SpeculativeMethodAccepted(string) bool          { return false }
-func (r stubRules) SpeculativeMethodNames() []string               { return nil }
-func (r stubRules) AsyncCompatibleSpeculative(string) (bool, bool) { return false, false }
-func (r stubRules) EngramOnHostByDefault() bool                    { return true }
-func (r stubRules) DCPCommBackendNames() map[string]bool           { return nil }
-func (r stubRules) MegaMoEBackend(string) bool                     { return false }
-func (r stubRules) ResolveDPLoadBalancing(deployment.Parallelism) deployment.DPLoadBalancing {
-	return deployment.DPLBInternal
-}
 
 // scenarioWith builds the pair a resolver needs: the immutable problem and the
 // deployment applied to it. They are two documents in the schema, so a helper that
@@ -106,7 +32,7 @@ func packagingOf(s *scenario.Scenario) scenario.Packaging {
 }
 
 // pool is a colocated pool with the parallel block pl. Its engine block is unstated: resolve
-// takes the engine settings it reads separately (enginesettings.Settings).
+// reads no engine setting.
 func pool(pl deployment.Parallelism) deployment.Pool {
 	return deployment.Pool{Role: deployment.RoleColocated, Nodes: 1, Parallel: pl}
 }
@@ -294,60 +220,12 @@ func TestNodesSpannedFollowsTheWidestGroup(t *testing.T) {
 		t.Run(c.what, func(t *testing.T) {
 			s, d := scenarioWith(1, c.gpusPerNode, pool(c.pl))
 			s.Cluster.GPUsPerRack = c.rack
-			l, err := ResolveLayout(packagingOf(s), d.Pools[0], enginesettings.Settings{},
-				Fabric{RackIsOneDomain: c.rackDomain}, newStubRules())
+			l, err := ResolveGeometry(packagingOf(s), d.Pools[0], Fabric{RackIsOneDomain: c.rackDomain})
 			if err != nil {
-				t.Fatalf("ResolveLayout: %v", err)
+				t.Fatalf("ResolveGeometry: %v", err)
 			}
 			if l.NodesSpanned != c.want {
 				t.Errorf("NodesSpanned = %d, want %d", l.NodesSpanned, c.want)
-			}
-		})
-	}
-}
-
-// TestCustomAllReduceRequestIsResolvedNotObeyed: the scenario states a request, and the
-// layout may decline it. A prediction that assumed the request was honoured would charge
-// SM occupancy that does not occur and omit NIC traffic that does.
-func TestCustomAllReduceRequestIsResolvedNotObeyed(t *testing.T) {
-	no := false
-	cases := []struct {
-		what        string
-		gpusPerNode int
-		tp          int
-		rackDomain  bool
-		wantCustom  bool
-		wantReason  string
-	}{
-		{"tp 8 within a node: honoured", 8, 8, false, true, ""},
-		{"tp 3 is an unsupported width: declined", 8, 3, false, false, "rank counts"},
-		{"tp 16 spans nodes without multi-node NVLink: declined", 8, 16, false, false,
-			"spans more than"},
-		{"tp 16 spans nodes with multi-node NVLink: honoured", 8, 16, true, true, ""},
-	}
-	for _, c := range cases {
-		t.Run(c.what, func(t *testing.T) {
-			s, d := scenarioWith(1, c.gpusPerNode, pool(
-				deployment.Parallelism{TP: c.tp, PP: 1, DP: 1}))
-			l, err := ResolveLayout(packagingOf(s), d.Pools[0], enginesettings.Settings{DisableCustomAllReduce: &no},
-				Fabric{RackIsOneDomain: c.rackDomain}, newStubRules())
-			if err != nil {
-				t.Fatalf("ResolveLayout: %v", err)
-			}
-			if l.CustomAllReduce != c.wantCustom {
-				t.Fatalf("CustomAllReduce = %v, want %v", l.CustomAllReduce, c.wantCustom)
-			}
-			if c.wantReason == "" {
-				if len(l.Overrides) != 0 {
-					t.Errorf("an honoured request should record no override, got %+v", l.Overrides)
-				}
-				return
-			}
-			if len(l.Overrides) == 0 {
-				t.Fatal("a declined request must record why")
-			}
-			if !strings.Contains(l.Overrides[0].Reason, c.wantReason) {
-				t.Errorf("reason %q does not mention %q", l.Overrides[0].Reason, c.wantReason)
 			}
 		})
 	}
@@ -368,25 +246,5 @@ func TestFabricRatio(t *testing.T) {
 		if got := f.Ratio(); got != c.want {
 			t.Errorf("Ratio(%v, %v) = %v, want %v", c.intra, c.inter, got, c.want)
 		}
-	}
-}
-
-// A declined all-reduce request reaches the Result on the all_reduce_backend row, whatever field
-// name the resolver gives it: the conversion in package result is checked against the resolver.
-func TestADeclinedAllReduceRequestReachesOneRowOfTheResult(t *testing.T) {
-	ok, overrides := CustomAllReduce(enginesettings.Settings{}, Layout{TP: 3}, Fabric{}, newStubRules())
-	if ok || len(overrides) != 1 {
-		t.Fatalf("tp 3 should decline the custom all-reduce: %v %v", ok, overrides)
-	}
-	o := overrides[0]
-	var rows []result.Resolution
-	for _, x := range result.ResolutionsOf(kernel.Resolution{AllReduceBackend: "nccl",
-		Overrides: []kernel.Override{{Field: o.Field, Requested: o.Requested, Resolved: o.Resolved, Reason: o.Reason}}}) {
-		if strings.Contains(x.Setting, "reduce") {
-			rows = append(rows, x)
-		}
-	}
-	if len(rows) != 1 || rows[0].Setting != "all_reduce_backend" || rows[0].Host != "custom" || rows[0].Reason == "" {
-		t.Errorf("rows %+v, want one all_reduce_backend row with the host value and the reason", rows)
 	}
 }

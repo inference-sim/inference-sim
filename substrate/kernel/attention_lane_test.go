@@ -8,7 +8,6 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/contracts/units"
@@ -134,11 +133,17 @@ func prefillAndDecode(k *Kernel) (prefill, decode string) {
 		price(kernel.ReqShape{Scheduled: 1, Computed: 4095, PromptLen: 4096})
 }
 
-func withEngine(in Inputs, f func(*enginesettings.Settings)) Inputs {
-	e := in.Engine.Clone()
-	f(&e)
-	in.Engine = &e
+// withPlan is in with a copy of its lowered plan edited by f.
+func withPlan(in Inputs, f func(*plan.Lowered)) Inputs {
+	l := cloneLowered(*in.Lowered)
+	f(&l)
+	in.Lowered = &l
 	return in
+}
+
+// drafting is in with a plan that drafts n tokens a step.
+func drafting(in Inputs, n int) Inputs {
+	return withPlan(in, func(l *plan.Lowered) { l.Plan.Drafts.Chain = n })
 }
 
 func mustKernel(t *testing.T, in Inputs) *Kernel {
@@ -175,11 +180,16 @@ func laneNames(dtype string) []string {
 	return []string{trtllmGenPrefillFloor + dtype, trtllmGenPrefillScale + dtype}
 }
 
+// withCache is in with the KV cache stored under the record dtype ("" the model's own, at two
+// bytes an element; "fp8" at one), and pages of block tokens where block is positive.
 func withCache(in Inputs, dtype string, block int) Inputs {
-	return withEngine(in, func(e *enginesettings.Settings) {
-		e.CacheDType = dtype
+	return withPlan(in, func(l *plan.Lowered) {
+		l.Plan.Cache.Record, l.Plan.Cache.ElementBytes = dtype, 2
+		if dtype == "fp8" {
+			l.Plan.Cache.ElementBytes = 1
+		}
 		if block > 0 {
-			e.BlockSize = block
+			l.Plan.PageTokens = units.Tokens(block)
 		}
 	})
 }

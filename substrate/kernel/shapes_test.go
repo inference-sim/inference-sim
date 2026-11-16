@@ -6,9 +6,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/conformance/shapetest"
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/rules"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/load"
 )
@@ -47,9 +45,7 @@ func priceShape(t *testing.T, d *load.Data, s shapetest.Shape, chip string) shap
 	body := fmt.Sprintf("kind: Scenario\nname: p\nmodel: qwen3-14b\ncoefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]\nengine_version: \"0.32.0\"\ncluster:\n  hardware: %s\n  fabric: ib-400g\n  nodes: 1\n%s---\nkind: Deployment\nname: d\npools:\n  - role: colocated\n    nodes: 1\n    parallel: {tp: 8, pp: 1, dp: 1}\n", chip, packaging)
 	r, name := openRepos(t, d, body)
 	r.Rules = func(string) rules.EngineRules { return windowedRules{} }
-	r.EngineSettings = func(*deployment.Deployment, int) (enginesettings.Settings, error) {
-		return enginesettings.Settings{BlockSize: 16, MaxNumSeqs: 64, MaxNumBatchedTokens: 8192, MaxModelLen: 8192}, nil
-	}
+	r.DraftModel, r.Lower = noDrafter, lowerTo(8192, 16, 0)
 	in, err := OpenInputs(name, r, 0)
 	if err != nil {
 		t.Fatal(err)

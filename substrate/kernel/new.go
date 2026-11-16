@@ -12,7 +12,6 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts"
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/rules"
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
@@ -54,14 +53,10 @@ type Inputs struct {
 	// Lowered is the pool's plan as the engine's lowering resolved it: every engine setting
 	// the kernel prices, in the plan's neutral words, with the record of how each was resolved
 	// (plan.Lowered). The kernel applies no default to any of it and reads no engine setting
-	// (SUB-6). One of Lowered and Engine is required; Lowered wins when both are given.
+	// (SUB-6). Required.
 	Lowered *plan.Lowered
-	// Engine is the typed engine-settings carrier, the transitional input the kernel resolved
-	// itself before engine lowering took the resolution over (blis-substrate#58). It is read
-	// only when Lowered is nil, through legacyLower, and is deleted with the carrier.
-	Engine *enginesettings.Settings
-	// Draft is the graph of the catalog model the deployment names as its drafter
-	// (speculative.draft_model), a checkpoint of its own; nil when the deployment names none.
+	// Draft is the graph of the catalog model the plan names as its drafter
+	// (plan.Lowered.Drafter), a checkpoint of its own; nil when it names none.
 	// It states itself as a speculator and is priced as the target's (withDrafter).
 	Draft *model.Graph
 	// Routing is the run's resolved expert-parallel routing imbalance (blis-schemas
@@ -100,7 +95,7 @@ type Inputs struct {
 	DraftPassRequests  plan.PassRequests
 	// Acceptance is the run's resolved speculative acceptance (blis-schemas acceptance.Resolve),
 	// resolved by the caller as Routing is. It is read only when the engine enables adaptive
-	// verification (enginesettings.Speculative.EnableAdaptiveVerification), where it is
+	// verification (plan.DraftPolicy.Adaptive), where it is
 	// required: the verify budget the engine chooses depends on it (adaptive.go).
 	Acceptance *acceptance.Resolution
 	// PoolFirstNode is the cluster node the pool's first rank sits on, when it is not where the
@@ -138,13 +133,9 @@ func New(in Inputs) (*Kernel, error) {
 		return nil, fmt.Errorf("a kernel needs engine rules for version %q",
 			in.Scenario.EngineRelease())
 	}
-	if in.Lowered == nil && in.Engine == nil {
+	if in.Lowered == nil {
 		return nil, fmt.Errorf("a kernel needs the pool's lowered plan, the settings the " +
 			"engine's lowering resolved (Inputs.Lowered)")
-	}
-	if in.Lowered != nil && in.Engine != nil {
-		return nil, fmt.Errorf("a kernel is given both the lowered plan (Inputs.Lowered) and the " +
-			"engine-settings carrier (Inputs.Engine); give the plan alone")
 	}
 	if err := rulesAnswer(in.Rules); err != nil {
 		return nil, fmt.Errorf("the engine rules for version %q cannot answer: %w",
@@ -201,10 +192,6 @@ func construct(in Inputs) (*Kernel, error) {
 	// edited a deployment it had already priced -- the config-search shape Inputs exists
 	// for. The kernel's purity is a promise about its own state, so it owns that state.
 	pool := clonePool(in.Deployment.Pools[in.PoolIndex])
-	var eng enginesettings.Settings
-	if in.Lowered == nil {
-		eng = in.Engine.Clone()
-	}
 
 	fab := resolve.Fabric{IntraNodeBwGBps: in.Chip.IntraNodeBwGBps}
 	fabricName := ""
@@ -242,14 +229,9 @@ func construct(in Inputs) (*Kernel, error) {
 	// is the target's, and the drafter's layers (its own checkpoint, at its own widths) are not
 	// part of it.
 	targetGraph := g
-	// A drafter named by the deployment, a checkpoint of its own, joins the target graph as
-	// its speculator; one named without its graph is refused rather than priced as free.
-	// With a lowered plan, the drafter is the graph the caller gives; from the carrier, the one
-	// it names must be the one given.
-	drafter := draftModelName(eng)
-	if in.Lowered != nil {
-		drafter = in.Lowered.Drafter
-	}
+	// A drafter that is a checkpoint of its own joins the target graph as its speculator: the
+	// one the plan names (plan.Lowered.Drafter), which must be the graph given (Inputs.Draft).
+	drafter := in.Lowered.Drafter
 	if name := drafter; name != "" || in.Draft != nil {
 		switch {
 		case in.Draft == nil:
@@ -301,22 +283,15 @@ func construct(in Inputs) (*Kernel, error) {
 	}
 	fab.InterNodeEfficiency = fabricEfficiency
 
-	k := &Kernel{layout: layout, fabric: fab, pool: pool, engine: eng, chip: *in.Chip, rules: in.Rules,
+	k := &Kernel{layout: layout, fabric: fab, pool: pool, chip: *in.Chip, rules: in.Rules,
 		family: family, architecture: g.Global.Architecture, graph: g,
 		switching: sw, drafterName: drafter,
 		statedFirstPassRows: in.DraftFirstPassRows, statedPassRequests: in.DraftPassRequests}
-	// The engine's resolved settings: the plan its lowering handed over, or, from the carrier,
-	// the resolution the kernel ran before lowering took it over (legacyLower).
-	low := in.Lowered
-	if low == nil {
-		if low, err = k.legacyLower(in, eng, g); err != nil {
-			return nil, err
-		}
-	}
-	if err := k.adoptLowered(cloneLowered(*low)); err != nil {
+	// The engine's resolved settings, the plan its lowering handed over.
+	if err := k.adoptLowered(cloneLowered(*in.Lowered)); err != nil {
 		return nil, err
 	}
-	if err := checkServedWeights(targetGraph, low.ServedLayout); err != nil {
+	if err := checkServedWeights(targetGraph, in.Lowered.ServedLayout); err != nil {
 		return nil, err
 	}
 	if err := k.checkCollectivesStayInAGroup(poolFirstNode(in)); err != nil {
@@ -514,10 +489,9 @@ func (k *Kernel) resolveContextParallel(in Inputs) error {
 	}
 
 	// How the decode-context group combines and stripes, as the engine resolved it.
-	k.decodeContext = resolve.DecodeContext{CommBackend: resolve.DCPAllGatherReduceScatter,
-		Interleave: max(int(k.low.DecodeContext.Interleave), 1)}
-	if k.low.DecodeContext.Combine == plan.CombineAllToAll {
-		k.decodeContext.CommBackend = resolve.DCPAllToAll
+	k.decodeContext = k.low.DecodeContext
+	if k.decodeContext.Interleave < 1 {
+		k.decodeContext.Interleave = 1
 	}
 	return nil
 }
@@ -542,18 +516,6 @@ func refuseUnsplittableKVHeads(g *model.Graph, tp int) error {
 		}
 	})
 	return err
-}
-
-// graphHasEngram reports whether a graph runs an Engram lookup.
-func graphHasEngram(g *model.Graph) bool {
-	for _, lk := range g.LayerKinds {
-		for _, n := range lk.Nodes {
-			if n.Op == model.OpGather && n.ResidencyControl == model.ResidencyEngramCPUOffload {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // weightBytesPerParam is the resident bytes of one parameter of a GEMM or GroupedGEMM
@@ -618,29 +580,6 @@ func weightFormat(g *model.Graph, n model.Node, served model.DType) price.Format
 // aliasTarget resolves "<layer kind id>.<role>", "head.<role>" or "embedding.<role>" to the
 // node it names, with the resolver validation uses.
 func aliasTarget(g *model.Graph, ref string) (model.Node, bool) { return g.AliasTarget(ref) }
-
-// attentionKinds is every attention kind a layer of the target stack reads the engine's
-// cache with. A speculator's layers are not the target's, and a kind declared but not
-// stacked runs nowhere.
-func attentionKinds(g *model.Graph) map[model.AttentionKind]bool {
-	byID := map[string]model.LayerKind{}
-	for _, lk := range g.LayerKinds {
-		byID[lk.ID] = lk
-	}
-	kinds := map[model.AttentionKind]bool{}
-	for _, id := range g.Stack.Expand() {
-		for _, n := range byID[id].Nodes {
-			if n.ReadsEngineKV() {
-				kinds[n.AttentionKind] = true
-			}
-		}
-	}
-	return kinds
-}
-
-// dsMLAStateBytes is the packed page cell, in bytes per token per layer, of the cache
-// layouts that state their own size.
-var dsMLAStateBytes = map[string]float64{"fp8_ds_mla": 656, "nvfp4_ds_mla": 352}
 
 // latentAttention reports whether an attention kind keeps a latent (MLA) cache, which is
 // what the engine's MLA attention implementations serve.
@@ -969,10 +908,8 @@ func (k *Kernel) lift(c *resolve.Coefficients, g *model.Graph, cacheBytes float6
 	//	FULL_DECODE_ONLY    full for a uniform decode batch, NO graph otherwise
 	//	NONE                no graph
 	//
-	// FULL_AND_PIECEWISE is v0.31.0's default ("(v1 default)", compilation.py:614), so
-	// that is what an unstated mode resolves to, and the kernel says so in Provenance:
-	// the engine downgrades it where an attention backend cannot capture a full graph,
-	// which the kernel cannot see.
+	// The plan states the launch the engine resolved for each kind of step
+	// (Plan.Graphs.Decode and Other); the kernel prices it and resolves no mode.
 	k.graphDecode = graphModeOfLaunch(k.low.Graphs.Decode)
 	k.graphOther = graphModeOfLaunch(k.low.Graphs.Other)
 	// The capture's memory is keyed by the set of graphs the two launches capture: the sets
@@ -1016,7 +953,7 @@ func (k *Kernel) lift(c *resolve.Coefficients, g *model.Graph, cacheBytes float6
 	// :2319).
 	align := max(k.blockSize, 1)
 	if k.layout.DCP > 1 {
-		align = lcm(align, k.layout.DCP*max(k.decodeContext.Interleave, 1))
+		align = lcm(align, k.layout.DCP*int(k.decodeContext.Interleave))
 	}
 	chunk = (max(chunk, align) + align - 1) / align * align
 	k.mlaContextChunk = max(chunk, 1)
@@ -1097,9 +1034,9 @@ func (k *Kernel) lift(c *resolve.Coefficients, g *model.Graph, cacheBytes float6
 	// latent with its scales into 656 bytes a token and nvfp4_ds_mla into 352, against 576
 	// elements by the per-element formula (state_content_bytes,
 	// vllm/model_executor/layers/attention/mla_attention.py:1361-1363 at v0.31.0). On a DSA
-	// model the layout is the one its backend allocates, which can differ from the stated
-	// dtype, and a layout no backend serves is refused (sparseMLABackend). Elsewhere it is
-	// taken where the deployment states one.
+	// model the layout is the one its backend allocates. The plan states the cell
+	// (Plan.Cache.LatentCellBytes) as the engine's backend packs it, or none where the
+	// per-element width applies.
 	cell := k.low.Cache.LatentCellBytes
 	inferred := func(l price.PlannedLayer) float64 {
 		latent := latentAttention(l.AttnKind)
@@ -1379,42 +1316,6 @@ func lcm(a, b int) int {
 	return a / x * b
 }
 
-// a100Parts are the catalog's A100 parts, by catalog key. vLLM v0.31.0's batch defaults
-// exclude an A100 by its device name (EngineArgs.get_batch_defaults, vllm/engine/arg_utils.py:
-// 2858-2887: the 70 GiB tier applies to a device not named A100), an identity the compute
-// capability does not carry -- SM80 is every A100, and SM89 parts such as the L40S are not
-// A100s but are not SM80 either -- so the parts are named exactly rather than matched by a
-// substring of the name.
-var a100Parts = map[string]bool{"a100-80": true, "a100-sxm": true}
-
-// isA100 reports whether the chip is one of the catalog's A100 parts.
-func isA100(chip hardware.Chip) bool { return a100Parts[chip.Name] }
-
-// defaultMaxNumSeqs is vLLM v0.31.0's default sequence cap for a part in the
-// OpenAI-API-server context (EngineArgs.get_batch_defaults, vllm/engine/arg_utils.py:
-// 2858-2887): 1,024 on a part with at least 70 GiB that is not an A100, 256 otherwise.
-func defaultMaxNumSeqs(chip hardware.Chip) int {
-	if chip.MemoryGiB >= 70 && !isA100(chip) {
-		return 1024
-	}
-	return 256
-}
-
-// defaultMaxNumBatchedTokens is vLLM v0.31.0's default token budget for a part, in the
-// OpenAI-API-server usage context an llm-d deployment serves through
-// (EngineArgs.get_batch_defaults, vllm/engine/arg_utils.py:2858-2887): 16,384 on a part
-// with at least 160 GiB, 8,192 on one with at least 70 GiB that is not an A100, 2,048
-// otherwise.
-func defaultMaxNumBatchedTokens(chip hardware.Chip) int {
-	switch {
-	case chip.MemoryGiB >= 160:
-		return 16384
-	case chip.MemoryGiB >= 70 && !isA100(chip):
-		return 8192
-	}
-	return 2048
-}
-
 // liftCollectiveFloors resolves one floor and one rate per collective operation.
 //
 // The entry names carry operation, dtype and rank count because the coefficient
@@ -1466,7 +1367,7 @@ func (k *Kernel) liftCollectiveFloors(c *resolve.Coefficients) error {
 		// missing an unused op is not refused.
 		combine := model.OpReduceScatter
 		switch {
-		case k.decodeContext.CommBackend == resolve.DCPAllToAll:
+		case k.decodeContext.Combine == plan.CombineAllToAll:
 			combine = model.OpAll2All
 		case k.layout.PCP > 1:
 			combine = model.OpAllReduce
@@ -1914,166 +1815,6 @@ func validateDocuments(in Inputs) error {
 	return nil
 }
 
-// servedDType resolves the format the linear layers are served in.
-//
-// A quantization the kernel does not recognize is an error rather than a fallback to the
-// checkpoint's width: silently serving a request for, say, awq at bf16 would report weight
-// bytes and a compute peak that are both wrong, with nothing saying so.
-func servedDType(checkpoint model.DType, quantization string) (model.DType, error) {
-	switch quantization {
-	case "":
-		return checkpoint, nil
-	case "fp8", "ptpc_fp8", "fbgemm_fp8", "modelopt":
-		return model.DTypeFP8, nil
-	case "modelopt_fp4", "nvfp4":
-		return model.DTypeNVFP4, nil
-	case "mxfp4":
-		return model.DTypeMXFP4, nil
-	case "bitsandbytes", "awq", "awq_marlin", "gptq", "gptq_marlin", "compressed-tensors":
-		// These are weight-only integer formats whose packed width depends on a
-		// per-checkpoint bit count the flag does not carry. A checkpoint serving one of
-		// them records the width in its own quantization_config, which the graph already
-		// read, so the flag adds nothing and the graph governs.
-		return checkpoint, nil
-	}
-	return "", fmt.Errorf(
-		"quantization %q is not one this kernel prices; add it to servedDType with its "+
-			"weight width rather than letting it fall through to %s",
-		quantization, checkpoint)
-}
-
-// cacheDTypeBytes resolves the KV or state cache width.
-//
-// "auto" follows the model's COMPUTE dtype: vLLM sizes an auto cache at
-// model_config.dtype (vllm/platforms/interface.py:861-862, vllm/utils/torch_utils.py:527-529
-// at v0.31.0), which is bf16 or fp16 whatever the weights are stored in. That is not the
-// weight storage width on a quantized checkpoint, and the difference is not cosmetic. A
-// W4A16 checkpoint -- Kimi-K2.5 is compressed-tensors int4 at group_size 32 -- stores
-// weights at four bits and computes in bf16, so following the weight width gave a
-// half-byte KV element and, once paged, a per-block figure of zero. An fp8-served model is
-// the same case: its linears return out_dtype=x.dtype, so its activations and an auto
-// cache stay bf16, and an earlier form that sized it at one byte halved its cache.
-//
-// WHAT THIS CANNOT SEE. "auto" is resolved against the checkpoint before it reaches the
-// cache: a quantization config declaring a KV algorithm (a ModelOpt checkpoint with
-// kv_cache_quant_algo) turns it into that dtype (resolve_kv_cache_dtype_string,
-// vllm/utils/torch_utils.py:503-518), and DeepSeek-V4 turns it into fp8_ds_mla when its
-// backend uses that layout (vllm/models/deepseek_v4/attention.py:107-120). (DeepSeek-V3.2
-// keeps "auto" at the model dtype, vllm/model_executor/models/config.py:37-39, whatever the
-// cache.py:127 docstring says.) The graph carries neither, so such a deployment should
-// state its cache dtype; "auto" here is the model dtype.
-func cacheDTypeBytes(declared string, fallback model.DType) float64 {
-	switch declared {
-	case "", "auto":
-		// A weight format narrower than 16 bits is a storage width, not a compute width:
-		// the model computes in bf16 (or fp16) and the cache follows that. A 16- or 32-bit
-		// format is its own compute width and passes through.
-		if fallback.Bytes() < 2 {
-			return model.DTypeBF16.Bytes()
-		}
-		return fallback.Bytes()
-	case "fp8", "fp8_e4m3", "fp8_e5m2", "fp8_inc", "fp8_ds_mla":
-		return 1
-	case "bfloat16", "float16":
-		return 2
-	case "nvfp4", "nvfp4_4over6":
-		// Four-bit data plus an fp8 scale per 16 elements: head_size/2 + head_size/16
-		// bytes a head (nvfp4_kv_cache_full_dim, vllm/utils/torch_utils.py:543-545).
-		return 0.5 + 1.0/16
-	case "nvfp4_ds_mla":
-		// Its 352-byte cell is applied where it is served (dsMLAStateBytes); this is only
-		// the per-element width a latent model never prices with.
-		return 0.5
-	case "float32":
-		return 4
-	}
-	// checkCacheDTypes has refused every other name, so this is unreachable from New.
-	return fallback.Bytes()
-}
-
-// The KV cache dtypes vLLM v0.31.0 accepts (CacheDType, vllm/config/cache.py:39-58), split by
-// whether this kernel prices them. The turboquant and per-token-head formats are real but
-// carry per-token scales or packings whose page size this kernel does not compute
-// (MLACommonBackend.customize_spec, mla_attention.py:1580-1593, for the per-token-head
-// ones), so they are refused rather than priced at a width they do not have. Some of the
-// priced ones are refused for a model as well (checkCacheDTypes).
-var (
-	pricedCacheDTypes = map[string]bool{
-		"": true, "auto": true, "float16": true, "bfloat16": true, "fp8": true,
-		"fp8_e4m3": true, "fp8_e5m2": true, "fp8_inc": true, "fp8_ds_mla": true,
-		"nvfp4_ds_mla": true, "nvfp4": true, "nvfp4_4over6": true,
-	}
-	unpricedCacheDTypes = map[string]bool{
-		"turboquant_k8v4": true, "turboquant_4bit_nc": true, "turboquant_k3v4_nc": true,
-		"turboquant_3bit_nc": true, "int4_per_token_head": true,
-		"int8_per_token_head": true, "fp8_per_token_head": true,
-	}
-	// The recurrent state dtypes (MambaDType, vllm/config/cache.py:61).
-	mambaCacheDTypes = map[string]bool{
-		"": true, "auto": true, "float32": true, "float16": true, "bfloat16": true,
-	}
-)
-
-// checkCacheDTypes refuses a cache dtype the engine does not accept, one it accepts that
-// this kernel does not price, and one no backend serves for this model's attention kind:
-//
-//   - fp8_inc is listed by no CUDA attention backend (it appears only in
-//     vllm/config/cache.py:46 and vllm/utils/torch_utils.py:46);
-//   - fp8_ds_mla and nvfp4_ds_mla are listed only by the sparse-MLA backends;
-//   - plain nvfp4 on a latent model is refused outright (validate_nvfp4_kv_cache_with_mla,
-//     vllm/config/vllm.py:3414-3430).
-//
-// An unchecked name used to fall through to the weight width, which on an nvfp4-served
-// model charged an unknown cache at half a byte.
-//
-// The question is asked of every kind the target stack holds, not of one kind standing for
-// the model: a dtype must be served for each of them. An earlier form took the kind from
-// the LAST-declared layer kind, so DeepSeek-V4.1-Flash, whose last declaration is a DSpark
-// draft layer outside the target stack, was refused fp8_ds_mla as if it were plain MLA.
-func checkCacheDTypes(cache, mamba string, kinds map[model.AttentionKind]bool) error {
-	latent := false
-	var notSparse model.AttentionKind
-	for _, kind := range sortedKinds(kinds) {
-		latent = latent || latentAttention(kind)
-		if kind != model.AttentionSparseMLA && notSparse == "" {
-			notSparse = kind
-		}
-	}
-	switch {
-	case cache == "fp8_inc":
-		return fmt.Errorf("cache_dtype fp8_inc is served by no CUDA attention backend in " +
-			"vLLM v0.31.0")
-	case strings.HasSuffix(cache, "_ds_mla") && (len(kinds) == 0 || notSparse != ""):
-		return fmt.Errorf("cache_dtype %q is served only by the sparse-MLA backends, and "+
-			"this model's attention includes %s", cache, notSparse)
-	case strings.HasPrefix(cache, "nvfp4") && !strings.HasSuffix(cache, "_ds_mla") &&
-		latent:
-		return fmt.Errorf("cache_dtype %q on a latent-attention model: vLLM v0.31.0 "+
-			"refuses plain nvfp4 with MLA (vllm/config/vllm.py:3414-3430)", cache)
-	case unpricedCacheDTypes[cache]:
-		return fmt.Errorf("cache_dtype %q is a vLLM v0.31.0 format this kernel does not "+
-			"price: its page carries scales or a packing the kernel does not size", cache)
-	case !pricedCacheDTypes[cache]:
-		return fmt.Errorf("cache_dtype %q is not a vLLM v0.31.0 cache dtype "+
-			"(vllm/config/cache.py:39-58); the engine refuses it", cache)
-	case !mambaCacheDTypes[mamba]:
-		return fmt.Errorf("mamba_cache_dtype %q is not a vLLM v0.31.0 recurrent state "+
-			"dtype (vllm/config/cache.py:61); the engine refuses it", mamba)
-	}
-	return nil
-}
-
-// sortedKinds returns a set's kinds in a fixed order, so a refusal names the same kind
-// every time.
-func sortedKinds(kinds map[model.AttentionKind]bool) []model.AttentionKind {
-	out := make([]model.AttentionKind, 0, len(kinds))
-	for kind := range kinds {
-		out = append(out, kind)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
-	return out
-}
-
 // computeFixedBytes sums occupancy independent of the request set.
 //
 // COVERAGE LIMIT: on DeepSeek-V4.1-Flash with expert parallelism, vLLM v0.31.0's
@@ -2513,7 +2254,7 @@ func (k *Kernel) buildProvenance(c *resolve.Coefficients) {
 	}
 	k.origins = append(k.origins, k.assumptions...)
 	var overrides []kernel.Override
-	for _, o := range k.layout.Overrides {
+	for _, o := range k.overrides {
 		overrides = append(overrides, kernel.Override{
 			Field: o.Field, Requested: o.Requested, Resolved: o.Resolved, Reason: o.Reason,
 		})

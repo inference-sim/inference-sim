@@ -6,9 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/rules"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
 	"github.com/inference-sim/blis-substrate/load"
 )
@@ -45,10 +43,8 @@ func openRepos(t *testing.T, d *load.Data, body string) (Repos, string) {
 	}
 	return Repos{
 		Scenarios: dir, Data: d,
-		Rules: func(string) rules.EngineRules { return openRules{} },
-		EngineSettings: func(*deployment.Deployment, int) (enginesettings.Settings, error) {
-			return enginesettings.Settings{}, nil
-		},
+		Rules:      func(string) rules.EngineRules { return openRules{} },
+		DraftModel: noDrafter, Lower: lowerTo(0, 16, 0),
 	}, "s.yaml"
 }
 

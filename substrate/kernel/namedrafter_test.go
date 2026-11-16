@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/load"
 )
@@ -16,8 +15,8 @@ import (
 // memory, and what is refused must still be refused.
 
 // withNamedDrafter is the case with the deployment speculating through the drafter the catalog
-// names, at the given method and draft length.
-func withNamedDrafter(t *testing.T, d *load.Data, target, drafter, chip, method string, n int) Inputs {
+// names, at the given draft length.
+func withNamedDrafter(t *testing.T, d *load.Data, target, drafter, chip string, n int) Inputs {
 	t.Helper()
 	in := quantCase(t, d, target, chip)
 	dr, err := d.Model(drafter)
@@ -25,9 +24,8 @@ func withNamedDrafter(t *testing.T, d *load.Data, target, drafter, chip, method 
 		t.Fatal(err)
 	}
 	in.Draft = dr
-	in = withEngine(in, func(e *enginesettings.Settings) {
-		e.Speculative = &enginesettings.Speculative{Method: method, NumSpecTokens: n, DraftModel: drafter}
-	})
+	in = withPlan(in, func(l *plan.Lowered) { l.Drafter = drafter })
+	in = drafting(in, n)
 	// How the passes run is the pool plan's statement, not an engine setting.
 	return passesOf(in, plan.FirstPassScheduled, plan.PassRequestsAll)
 }
@@ -54,7 +52,7 @@ func TestANamedDrafterPricesInPlaceOfTheTargetsOwnSpeculator(t *testing.T) {
 		for _, chip := range []string{"h200", "b200"} {
 			name := c.target + "+" + c.drafter + "/" + chip
 			t.Run(name, func(t *testing.T) {
-				in := withNamedDrafter(t, d, c.target, c.drafter, chip, "eagle3", 3)
+				in := withNamedDrafter(t, d, c.target, c.drafter, chip, 3)
 				if in.Model.Speculator == nil || in.Model.Speculator.Method != "minimax_m3_mtp" {
 					t.Fatalf("the target graph does not state the in-graph speculator this test replaces: %+v", in.Model.Speculator)
 				}
@@ -75,9 +73,8 @@ func TestANamedDrafterPricesInPlaceOfTheTargetsOwnSpeculator(t *testing.T) {
 				// layers (method mtp, no drafter named) prices differently.
 				own := in
 				own.Draft = nil
-				own = passesOf(withEngine(own, func(e *enginesettings.Settings) {
-					e.Speculative = &enginesettings.Speculative{Method: "mtp", NumSpecTokens: 3}
-				}), plan.FirstPassScheduled, plan.PassRequestsAll)
+				own = withPlan(own, func(l *plan.Lowered) { l.Drafter = "" })
+				own = passesOf(drafting(own, 3), plan.FirstPassScheduled, plan.PassRequestsAll)
 				if pricesOf(mustKernel(t, own)) == pricesOf(k) {
 					t.Error("a named EAGLE3 drafter prices exactly as the target's own MTP")
 				}
@@ -99,9 +96,7 @@ func TestWithNoNamedDrafterTheTargetsOwnSpeculatorIsStillPriced(t *testing.T) {
 		t.Fatal(err)
 	}
 	in := quantCase(t, d, "minimax-m3-mxfp8", "b200")
-	in = passesOf(withEngine(in, func(e *enginesettings.Settings) {
-		e.Speculative = &enginesettings.Speculative{Method: "mtp", NumSpecTokens: 1}
-	}), plan.FirstPassScheduled, plan.PassRequestsAll)
+	in = passesOf(drafting(in, 1), plan.FirstPassScheduled, plan.PassRequestsAll)
 	k := mustKernel(t, in)
 	if k.plan.Draft == nil || k.plan.Draft.Method != "minimax_m3_mtp" || !k.speculating {
 		t.Fatalf("the target's own MTP is not priced: %+v", k.plan.Draft)
@@ -118,16 +113,13 @@ func TestANamedDrafterStillRefusedWhereNoOneAnswerRemains(t *testing.T) {
 		t.Fatal(err)
 	}
 	pair := func() Inputs {
-		return withNamedDrafter(t, d, "minimax-m3-mxfp8", "minimax-m3-eagle3", "b200", "eagle3", 3)
+		return withNamedDrafter(t, d, "minimax-m3-mxfp8", "minimax-m3-eagle3", "b200", 3)
 	}
 	for _, c := range []struct {
 		name string
 		in   func() Inputs
 		want string
 	}{
-		{"a deployment method that is not the drafter's", func() Inputs {
-			return withEngine(pair(), func(e *enginesettings.Settings) { e.Speculative.Method = "mtp" })
-		}, "a mtp drafter is not described"},
 		{"a drafter that states no speculator", func() Inputs {
 			in := pair()
 			g := *in.Draft
@@ -135,13 +127,6 @@ func TestANamedDrafterStillRefusedWhereNoOneAnswerRemains(t *testing.T) {
 			in.Draft = &g
 			return in
 		}, "states no speculator"},
-		{"a drafter of another hidden size", func() Inputs {
-			in := pair()
-			g := *in.Draft
-			g.Global.HiddenSize = 4096
-			in.Draft = &g
-			return in
-		}, "hidden size"},
 		{"a drafter graph not given", func() Inputs {
 			in := pair()
 			in.Draft = nil
@@ -154,6 +139,13 @@ func TestANamedDrafterStillRefusedWhereNoOneAnswerRemains(t *testing.T) {
 			in.Draft = &g
 			return in
 		}, "drafter graph given is"},
+		{"a drafter of another hidden size", func() Inputs {
+			in := pair()
+			g := *in.Draft
+			g.Global.HiddenSize = 4096
+			in.Draft = &g
+			return in
+		}, "hidden size"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if _, err := New(c.in()); err == nil || !strings.Contains(err.Error(), c.want) {
@@ -248,8 +240,8 @@ func TestTheMixedPrecisionTargetPricesWithEitherEagle3HeadAndItsOwnQuantization(
 	}
 	for _, drafter := range []string{"minimax-m3-eagle3", "minimax-m3-eagle3-gqa"} {
 		for _, chip := range []string{"b200", "b300"} {
-			in := withNamedDrafter(t, d, "minimax-m3-nvfp4", drafter, chip, "eagle3", 3)
-			stated := withEngine(in, func(e *enginesettings.Settings) { e.ServedWeights = &mixedPrecisionServed })
+			in := withNamedDrafter(t, d, "minimax-m3-nvfp4", drafter, chip, 3)
+			stated := withPlan(in, func(l *plan.Lowered) { l.ServedLayout = &mixedPrecisionServed })
 			k := mustKernel(t, stated)
 			if k.plan.Draft == nil || k.plan.Draft.Method != "eagle3" || !k.speculating {
 				t.Fatalf("%s on %s: the named head is not the priced speculator", drafter, chip)
@@ -258,7 +250,7 @@ func TestTheMixedPrecisionTargetPricesWithEitherEagle3HeadAndItsOwnQuantization(
 				t.Errorf("%s on %s: a stated served layout moves the price", drafter, chip)
 			}
 			// The same head on the MXFP8 target prices differently: the experts are the NVFP4 ones.
-			if pricesOf(k) == pricesOf(mustKernel(t, withNamedDrafter(t, d, "minimax-m3-mxfp8", drafter, chip, "eagle3", 3))) {
+			if pricesOf(k) == pricesOf(mustKernel(t, withNamedDrafter(t, d, "minimax-m3-mxfp8", drafter, chip, 3))) {
 				t.Errorf("%s on %s: the NVFP4 target prices as the MXFP8 one", drafter, chip)
 			}
 		}

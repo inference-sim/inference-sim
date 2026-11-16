@@ -6,9 +6,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/rules"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/load"
 )
@@ -278,10 +276,7 @@ pools:
 `
 	r, name := openRepos(t, d, body)
 	r.Rules = func(string) rules.EngineRules { return inertRules{} }
-	r.EngineSettings = func(*deployment.Deployment, int) (enginesettings.Settings, error) {
-		return enginesettings.Settings{BlockSize: 16, MaxNumSeqs: 64, MaxNumBatchedTokens: 8192,
-			MaxModelLen: 8192, GPUMemoryUtilization: 0.92}, nil
-	}
+	r.DraftModel, r.Lower = noDrafter, lowerTo(8192, 16, 0.92)
 	in, err := OpenInputs(name, r, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -303,23 +298,18 @@ pools:
 	}
 }
 
-// sizedRules resolves a release's capture sizes to a fixed ladder, as a release's rules do.
-type sizedRules struct{ windowedRules }
-
-func (sizedRules) CUDAGraphCaptureSizes(rules.CUDAGraphCaptureInput) (rules.CUDAGraphCapture, bool, error) {
-	return rules.CUDAGraphCapture{Sizes: []int{1, 2, 4, 8, 256, 272, 512}, Max: 512}, true, nil
-}
-
 // The capture sizes the kernel prices from are readable by the engine that states a step's rows:
-// ascending, the largest being the ceiling past which a step runs eager.
+// the plan's, ascending, the largest being the ceiling past which a step runs eager.
 func TestTheCaptureSizesEndAtTheCeilingAStepRunsEagerPast(t *testing.T) {
 	_, in, _ := v41TailCase(t)
-	in.Rules = sizedRules{}
+	in = withPlan(in, func(l *plan.Lowered) {
+		l.Plan.Graphs.Buckets, l.Plan.Graphs.Ceiling = []int{1, 2, 4, 8, 256, 272, 512}, 512
+	})
 	k := mustKernel(t, in)
 	sizes := k.CaptureSizes()
 	want := []int{1, 2, 4, 8, 256, 272, 512}
 	if len(sizes) != len(want) || sizes[len(sizes)-1] != k.CaptureTokens() {
-		t.Fatalf("sizes %v with ceiling %d; the rules resolved %v", sizes, k.CaptureTokens(), want)
+		t.Fatalf("sizes %v with ceiling %d; the plan states %v", sizes, k.CaptureTokens(), want)
 	}
 	sizes[0] = -1
 	if k.CaptureSizes()[0] == -1 {

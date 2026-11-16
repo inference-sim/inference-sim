@@ -5,7 +5,6 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 )
@@ -54,9 +53,6 @@ type Layout struct {
 	// the rank count is one the kernel does not support — in which case the cost moves
 	// from SMs to the NIC.
 	CustomAllReduce bool
-
-	// Overrides records each request the layout could not honour.
-	Overrides []Override
 }
 
 // MoEGroup is the width an MoE layer's dispatch spans: MoEGroupWidth, which is never
@@ -91,14 +87,6 @@ func (l Layout) MoEDispatches() bool {
 		return l.ExpertWidth > max(l.TP, 1) || l.SequenceParallelMoE || l.ModelSequenceParallel
 	}
 	return l.MoEGroupWidth > 1
-}
-
-// Override is one declined request, with the reason.
-type Override struct {
-	Field     string
-	Requested string
-	Resolved  string
-	Reason    string
 }
 
 // Fabric is the hardware facts a layout needs. They come from the catalog rather than from
@@ -138,35 +126,6 @@ func (f Fabric) Ratio() float64 {
 		return 1
 	}
 	return f.IntraNodeBwGBps / inter
-}
-
-// ResolveLayout derives a pool's layout from the cluster's resolved packaging
-// (scenario.Cluster.Packaging), the fabric it runs on, and the engine rules for its
-// declared version. It takes the packaging, not the scenario, so the node and rack sizes
-// it prices are the ones the scenario and the chip's catalog entry resolve to, never a
-// field the scenario left to the catalog.
-func ResolveLayout(pk scenario.Packaging, pool deployment.Pool, eng enginesettings.Settings, fab Fabric,
-	rules EngineRules) (Layout, error) {
-	return ResolveLayoutFor(pk, pool, eng, fab, rules, "")
-}
-
-// ResolveLayoutFor is ResolveLayout for a model whose graph names its architecture, which
-// decides whether the model's own sequence parallelism is on.
-func ResolveLayoutFor(pk scenario.Packaging, pool deployment.Pool, eng enginesettings.Settings, fab Fabric,
-	rules EngineRules, architecture string) (Layout, error) {
-	l, err := ResolveGeometry(pk, pool, fab)
-	if err != nil {
-		return Layout{}, err
-	}
-	pl := pool.Parallel
-	l.SequenceParallelMoE = rules.SequenceParallelMoE(
-		eng.All2AllBackend, pl.EnableExpertParallel, pl.TP, pl.DP)
-	if architecture != "" {
-		l.ModelSequenceParallel = rules.ModelSequenceParallel(architecture, pl,
-			eng.MoEBackend)
-	}
-	l.CustomAllReduce, l.Overrides = CustomAllReduce(eng, l, fab, rules)
-	return l, nil
 }
 
 // ResolveGeometry is the part of a pool's layout that follows from its parallel widths, the
@@ -211,44 +170,6 @@ func ResolveGeometry(pk scenario.Packaging, pool deployment.Pool, fab Fabric) (L
 		l.NodesSpanned = 1
 	}
 	return l, nil
-}
-
-// CustomAllReduce decides whether the SM-consuming reduction kernel runs, and records why when a
-// request for it is declined.
-func CustomAllReduce(e enginesettings.Settings, l Layout, fab Fabric,
-	rules EngineRules) (bool, []Override) {
-	requested := true
-	if e.DisableCustomAllReduce != nil {
-		requested = !*e.DisableCustomAllReduce
-	}
-	if e.AllReduceBackend == "nccl" {
-		requested = false
-	}
-	if !requested {
-		return false, nil
-	}
-
-	var overrides []Override
-	if !rules.CustomAllReduceSupportsWidth(l.TP) {
-		return false, append(overrides, Override{
-			Field: "allreduce_backend", Requested: "custom", Resolved: "nccl",
-			Reason: fmt.Sprintf(
-				"the kernel supports only certain rank counts and %d is not one, so the "+
-					"reduction moves from SMs to the NIC", l.TP),
-		})
-	}
-	// Crossing a node boundary disqualifies the kernel unless every rank has multi-node
-	// NVLink. The catalog records whether a part does, through the rack tier.
-	if l.GPUsPerNode > 0 && l.TP > l.GPUsPerNode && !fab.RackIsOneDomain {
-		return false, append(overrides, Override{
-			Field: "allreduce_backend", Requested: "custom", Resolved: "nccl",
-			Reason: fmt.Sprintf(
-				"a tensor-parallel width of %d spans more than the %d GPUs in a node and "+
-					"the part has no multi-node NVLink, so the reduction moves from SMs to the NIC",
-				l.TP, l.GPUsPerNode),
-		})
-	}
-	return true, overrides
 }
 
 // Emits reports whether a conditional node is part of the graph under this layout.
