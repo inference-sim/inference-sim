@@ -691,7 +691,7 @@ def kv_cache_config(cfg: dict, vllm_config):
         # (get_kv_cache_groups, kv_cache_utils.py:2173-2174, unify_hybrid_kv_cache_specs,
         # :1799-1822@5df63a72), so the layers form one uniform group (:2185-2189); both calls are
         # vLLM's own, as run_scheduler.py build_scheduler makes them.
-        from vllm.v1.core.kv_cache_utils import (  # noqa: E402
+        from vllm.v1.core.kv_cache_planning import (  # noqa: E402
             _get_kv_cache_groups_uniform_spec,
             is_kv_cache_spec_uniform,
             unify_hybrid_kv_cache_specs,

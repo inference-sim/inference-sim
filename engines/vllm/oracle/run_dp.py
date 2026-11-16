@@ -233,6 +233,9 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     client = object.__new__(DPLBAsyncMPClient)
     client.client_count = 1
     client.reqs_in_flight = {}
+    # The open streaming-input sessions, empty as DPLBAsyncMPClient.__init__ makes it
+    # (vllm/v1/engine/core_client.py:1728-1729@4ba787ec); no request here opens one.
+    client.streaming_reqs = set()
     client.engine_inflight = Counter()
     client.core_engines = [bytes([i, 0]) for i in range(dp)]
     client.lb_engines = [[0, 0, 0.0] for _ in range(dp)]
@@ -381,8 +384,12 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
                           priority=r.get("priority", 0), block_hasher=hasher)
             if connector:
                 add_kv_params(req, r, block_size)
+            # The routing reads only these fields of an EngineCoreRequest; resumable is its
+            # default, False (vllm/v1/engine/__init__.py:147@4ba787ec), as for every request
+            # that is not a streaming-input session (core_client.py:1751-1759).
             engine = client.get_core_engine_for_request(SimpleNamespace(
-                request_id=r["id"], data_parallel_rank=r.get("rank") if connector else None, pooling_params=None))
+                request_id=r["id"], data_parallel_rank=r.get("rank") if connector else None, pooling_params=None,
+                resumable=False))
             rank = client.core_engines.index(engine)
             routed[r["id"]] = rank
             arrivals.append([r["id"], rank])
