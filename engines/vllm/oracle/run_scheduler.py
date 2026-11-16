@@ -296,7 +296,11 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     # Request block hashes are computed at the scheduler's hash_block_size, as the engine core
     # builds the hasher (vllm/v1/engine/core.py:233-240@5df63a72): the block size, or for groups
     # of several block sizes the one vLLM resolved for them.
-    hasher = get_request_block_hasher(scheduler.hash_block_size, sha256)
+    # The engine core builds the hasher with vllm_config.num_hash_lookahead_tokens
+    # (vllm/v1/engine/core.py:220-230@4ba787ec), so an EAGLE-family drafter with prefix caching
+    # and no KV connector hashes the tokens past each block; the harness does the same.
+    hasher = get_request_block_hasher(scheduler.hash_block_size, sha256,
+                                      scheduler.vllm_config.num_hash_lookahead_tokens)
     pending = sorted(sc["requests"], key=lambda r: (r["arrival_step"], r["id"]))
     # LoRA adapter ids, numbered from 1 in name order (vllm/lora/request.py:37-39 refuses 0).
     lora_ids = {n: i + 1 for i, n in enumerate(sorted({r["lora"] for r in sc["requests"] if r.get("lora")}))}

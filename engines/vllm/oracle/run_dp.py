@@ -189,7 +189,10 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         cores.append(core)
 
     init_none_hash(sha256)
-    hasher = get_request_block_hasher(block_size, sha256)
+    # The engine core builds the hasher with vllm_config.num_hash_lookahead_tokens
+    # (vllm/v1/engine/core.py:220-230@4ba787ec), so an EAGLE-family drafter with prefix caching
+    # and no KV connector hashes the tokens past each block; the harness does the same.
+    hasher = get_request_block_hasher(block_size, sha256, ranks[0].vllm_config.num_hash_lookahead_tokens)
     by_id = {r["id"]: r for r in sc["requests"]}
     pending = sorted(sc["requests"], key=lambda r: (r["arrival_step"], r["id"]))
     sampled = {r["id"]: 0 for r in sc["requests"]}
