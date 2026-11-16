@@ -5,7 +5,7 @@ go 1.27.2
 require (
 	github.com/go-logr/logr v1.4.4
 	github.com/inference-sim/blis-substrate v0.14.1-0.20261116192929-44e2b751f0c1 // TEMPORARY: the pushed head of inference-sim/blis-substrate#175 (realisation and rate schedule, #103), until it is released
-	github.com/inference-sim/blis-vllm v0.32.0-blis.3
+	github.com/inference-sim/blis-vllm v0.32.1-0.20261116194440-292517bff10f // TEMPORARY: the pushed head of blis-vllm m3/acceptance-realisation (the realisation in AcceptanceFlags), until it is released
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2

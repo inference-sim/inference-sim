@@ -143,6 +143,7 @@ func resolveAcceptance(cmd *cobra.Command, k int, method string) (build.Acceptan
 			Thinking: speculativeThinking, Category: speculativeCategory, FallbackCategory: speculativeFallbackCategory,
 			ThinkingSet: fl.Changed(build.AcceptanceThinkingFlag), CategorySet: fl.Changed(build.AcceptanceCategoryFlag),
 			FallbackSet: fl.Changed(build.AcceptanceFallbackFlag),
+			Realisation: acceptance.Realisation(speculativeRealisation),
 		},
 	}, k, method)
 	if err != nil {
