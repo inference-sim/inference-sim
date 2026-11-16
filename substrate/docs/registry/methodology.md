@@ -1506,7 +1506,8 @@ A profile is keyed by model, drafter, method, K, thinking mode and category; it 
 the draft sampler or the verifier. Where InferenceX publishes two curves that differ only in
 those, the emitter carries neither, as D8 refuses two profiles that share a key under
 different settings rather than choose one. The three Kimi-K3 DSpark curves and the two
-MiniMax-M3 GQA-drafter curves are left out for that reason.
+MiniMax-M3 GQA-drafter curves are left out for that reason, until the key states both
+(inference-sim/blis-substrate#174).
 
 ### 12.4 Hardware: stated, or read from the run
 

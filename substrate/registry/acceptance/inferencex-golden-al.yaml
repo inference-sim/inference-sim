@@ -34,25 +34,25 @@ caveats:
   profile keys are also claimed by kimi-k3__dspark__kimi-k3-dspark__probabilistic-block.yaml,
   kimi-k3__dspark__kimi-k3-dspark__probabilistic-default.yaml, measured with the same target,
   drafter and method under another draft sampler or verifier, which a profile''s key cannot
-  state.'
+  state yet (inference-sim/blis-substrate#174).'
 - 'Not carried: kimi-k3__dspark__kimi-k3-dspark__probabilistic-block.yaml (kimi-k3), because
   its profile keys are also claimed by kimi-k3__dspark__kimi-k3-dspark__default-default.yaml,
   kimi-k3__dspark__kimi-k3-dspark__probabilistic-default.yaml, measured with the same target,
   drafter and method under another draft sampler or verifier, which a profile''s key cannot
-  state.'
+  state yet (inference-sim/blis-substrate#174).'
 - 'Not carried: kimi-k3__dspark__kimi-k3-dspark__probabilistic-default.yaml (kimi-k3), because
   its profile keys are also claimed by kimi-k3__dspark__kimi-k3-dspark__default-default.yaml,
   kimi-k3__dspark__kimi-k3-dspark__probabilistic-block.yaml, measured with the same target,
   drafter and method under another draft sampler or verifier, which a profile''s key cannot
-  state.'
+  state yet (inference-sim/blis-substrate#174).'
 - 'Not carried: minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-block.yaml (minimax-m3),
   because its profile keys are also claimed by minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-default.yaml,
   measured with the same target, drafter and method under another draft sampler or verifier,
-  which a profile''s key cannot state.'
+  which a profile''s key cannot state yet (inference-sim/blis-substrate#174).'
 - 'Not carried: minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-default.yaml (minimax-m3),
   because its profile keys are also claimed by minimax-m3__eagle3__minimax-m3-eagle3-gqa__default-block.yaml,
   measured with the same target, drafter and method under another draft sampler or verifier,
-  which a profile''s key cannot state.'
+  which a profile''s key cannot state yet (inference-sim/blis-substrate#174).'
 - 'Not carried: muse-spark-open-816b-a42b-nvfp4__dflash__muse-spark-open-dflash2__default-default.yaml
   (muse-spark-open-816b-a42b-nvfp4), because its drafter RadixArk/Muse-Spark-Open-DFlash2
   is not in the catalog as a drafter of muse-spark-open-816b-a42b-nvfp4.'

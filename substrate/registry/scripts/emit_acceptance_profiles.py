@@ -528,7 +528,8 @@ def collect(golden: Path = GOLDEN, catalog: Path = CATALOG):
             skipped.append((k.curve.stem, k.curve.model_key,
                             f"its profile keys are also claimed by {others}, measured with the "
                             "same target, drafter and method under another draft sampler or "
-                            "verifier, which a profile's key cannot state"))
+                            "verifier, which a profile's key cannot state yet "
+                            "(inference-sim/blis-substrate#174)"))
         else:
             kept.append(k)
     skipped.sort()
