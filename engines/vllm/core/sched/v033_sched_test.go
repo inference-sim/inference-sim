@@ -80,3 +80,79 @@ func TestABudgetNoLargerThanTheLookaheadIsRefused(t *testing.T) {
 		t.Fatalf("eagle3 K=3 with max_num_batched_tokens 4: %v, want it to start", err)
 	}
 }
+
+// skip_drafts (Scheduler._drafts_unused, vllm/v1/core/sched/scheduler.py:502-544, 731-734,
+// 1005-1007, 1575-1577 and 1748@4ba787ec): on the V2 runner, a drafter with its own forward pass
+// proposes nothing after a step in which no scheduled request can use the drafts. A non-final
+// prefill chunk samples nothing; a step that samples a request's last output token ends it.
+// v0.32.0 had no such field, and its runner always drafted.
+func TestSkipDraftsWhenNoScheduledRequestCanUseThem(t *testing.T) {
+	newSched := func(t *testing.T, method string, v2 bool) *Scheduler {
+		t.Helper()
+		s, err := New(Config{MaxNumSeqs: 4, MaxNumBatchedTokens: 8, BlockSize: 4, NumBlocks: 64,
+			MaxModelLen: 64, EnableChunkedPrefill: true, UseV2ModelRunner: v2, Spec: ResolveSpec(SpecOptions{Method: method, NumTokens: 2})})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	prompt := func(n int) []int64 {
+		p := make([]int64, n)
+		for i := range p {
+			p[i] = int64(100 + i)
+		}
+		return p
+	}
+
+	t.Run("a non-final chunk, then the final one", func(t *testing.T) {
+		s := newSched(t, "eagle3", true)
+		if err := s.Add(&Request{ID: "a", Prompt: prompt(12), MaxTokens: 4, EOS: eosToken}); err != nil {
+			t.Fatal(err)
+		}
+		if out := s.Schedule(); out.Scheduled["a"] != 8 || !out.SkipDrafts {
+			t.Fatalf("step 1 scheduled %v with skip_drafts %t; want a's first 8-token chunk, drafts skipped",
+				out.Scheduled, out.SkipDrafts)
+		}
+		if out := s.Schedule(); out.Scheduled["a"] != 4 || out.SkipDrafts {
+			t.Fatalf("step 2 scheduled %v with skip_drafts %t; want a's final 4 tokens, which sample, so drafts kept",
+				out.Scheduled, out.SkipDrafts)
+		}
+	})
+	t.Run("a request whose one output token this step samples", func(t *testing.T) {
+		s := newSched(t, "eagle3", true)
+		if err := s.Add(&Request{ID: "a", Prompt: prompt(4), MaxTokens: 1, EOS: eosToken}); err != nil {
+			t.Fatal(err)
+		}
+		if out := s.Schedule(); !out.SkipDrafts {
+			t.Fatal("max_tokens 1: the prefill samples the last token, yet skip_drafts is false")
+		}
+	})
+	t.Run("one request that can use them keeps them for the step", func(t *testing.T) {
+		s := newSched(t, "eagle3", true)
+		for id, mt := range map[string]int{"a": 1, "b": 4} {
+			if err := s.Add(&Request{ID: id, Prompt: prompt(4), MaxTokens: mt, EOS: eosToken}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if out := s.Schedule(); len(out.Scheduled) != 2 || out.SkipDrafts {
+			t.Fatalf("scheduled %v with skip_drafts %t; want both, drafts kept for b", out.Scheduled, out.SkipDrafts)
+		}
+	})
+	for _, c := range []struct {
+		name, method string
+		v2           bool
+	}{
+		{"the V1 runner", "eagle3", false},
+		{"a drafter without its own pass (ngram)", "ngram", true},
+	} {
+		t.Run(c.name+" never skips", func(t *testing.T) {
+			s := newSched(t, c.method, c.v2)
+			if err := s.Add(&Request{ID: "a", Prompt: prompt(12), MaxTokens: 4, EOS: eosToken}); err != nil {
+				t.Fatal(err)
+			}
+			if out := s.Schedule(); out.SkipDrafts {
+				t.Fatalf("%s set skip_drafts on a non-final chunk; can_skip_drafts is false", c.name)
+			}
+		})
+	}
+}

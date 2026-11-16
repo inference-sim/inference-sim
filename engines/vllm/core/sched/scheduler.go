@@ -222,6 +222,15 @@ type Output struct {
 	// KVConnectorMetadata is kv_connector_metadata: what a MetaBuilder connector's
 	// build_connector_meta returned for the step (scheduler.py:1527-1530), nil otherwise.
 	KVConnectorMetadata any
+	// SkipDrafts is skip_drafts (vllm/v1/core/sched/output.py:334@4ba787ec): no request this
+	// step schedules can use the drafts proposed after it, so the V2 model runner proposes none
+	// (K=0, vllm/v1/worker/gpu/model_runner.py:2117-2135@4ba787ec), on every DP rank only when
+	// all ranks allow it (vllm/v1/worker/gpu/dp_utils.py:75-88). It is set only for a drafter
+	// with its own forward pass (num_lookahead_tokens > 0) on the V2 runner. GAP: the step
+	// contract has no field for a step without a draft pass, and the DP agreement does not AND
+	// the flag across ranks yet, so the cost model still prices the draft pass
+	// (https://github.com/inference-sim/blis-vllm/issues/174).
+	SkipDrafts bool
 }
 
 // Finished is one request update_from_output finished.
@@ -597,6 +606,10 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 	draftSlots := s.cfg.Spec.DraftSlots
 	k := s.cfg.Spec.NumTokens
 	prefillScheduled := false
+	// drafts_needed (scheduler.py:731-734@4ba787ec): whether a request this step schedules can
+	// use the drafts proposed after it. It stays set if that request is preempted later in the
+	// step.
+	draftsNeeded := !(s.cfg.Spec.Lookahead > 0 && s.cfg.UseV2ModelRunner)
 
 	// The long-prefill cap is waived when one request is all there is (:640-655).
 	nr, nw := s.Counts()
@@ -710,6 +723,7 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 		tokenBudget -= numNew
 		inputBudget -= numNew + draftSlots
 		reqIndex++
+		draftsNeeded = draftsNeeded || !draftsUnused(r, r.NumComputed, numNew) // :1005-1007
 		// Speculative decode (:860-876): the drafts this step verifies are those beyond the
 		// request's known tokens; the rest wait for update_draft_token_ids.
 		if len(r.SpecTokens) > 0 {
@@ -910,6 +924,7 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 			inputBudget -= numNew + draftSlots
 			r.Status = Running
 			r.NumComputed = numComputed
+			draftsNeeded = draftsNeeded || !draftsUnused(r, numComputed, numNew) // :1575-1577
 			s.setFetchStage(r, fetchNone)
 			if pad {
 				drafts := make([]int64, k)
@@ -951,6 +966,7 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 	if s.connector != nil {
 		s.buildConnectorMeta(&out, scheduledRunning, admitted)
 	}
+	out.SkipDrafts = !draftsNeeded // skip_drafts=not drafts_needed (:1748)
 	// The fence advances only for steps that write KV (:1549-1552).
 	if s.deferBlockFree && len(out.Scheduled) > 0 {
 		s.schedSeq++
@@ -988,6 +1004,24 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 		}
 	}
 	return out
+}
+
+// draftsUnused is Scheduler._drafts_unused (vllm/v1/core/sched/scheduler.py:502-544@4ba787ec):
+// whether the drafts proposed for r after a step that runs numNew tokens from computed are sure
+// to go unused. They are when the step is a non-final prefill chunk, which samples nothing, or
+// when it samples r's last output token: drafts may all be rejected, so only the output tokens
+// r is sure to have count, and reaching max_tokens finishes r before any step verifies them.
+// Stop tokens also end requests but cannot be known in advance.
+func draftsUnused(r *Request, computed, numNew int) bool {
+	if computed+numNew < r.NumTokens() {
+		return true
+	}
+	minOutput := len(r.Output) + 1
+	if r.Placeholders > 0 {
+		// Async scheduling: a step that samples is still in flight and adds one more.
+		minOutput++
+	}
+	return minOutput >= r.MaxTokens
 }
 
 // inflightReserved is _inflight_prefill_reserved_blocks plus _spec_decode_step_blocks
