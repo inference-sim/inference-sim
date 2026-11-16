@@ -16,6 +16,11 @@ const (
 	StepExact Step = "exact"
 	// StepOtherK: the same target and drafter, measured at another K.
 	StepOtherK Step = "same_drafter_other_k"
+	// StepOtherSettings: the same target, drafter and method under another draft sampler or
+	// verifier (inference-sim/blis-substrate#174). It is tried after StepOtherK. It takes the
+	// profiles that differ in the fewest of the two, then the lowest value, so a borrowed
+	// setting does not overstate drafting's gain.
+	StepOtherSettings Step = "same_drafter_other_settings"
 	// StepOtherDrafter: another drafter of the same target.
 	StepOtherDrafter Step = "other_drafter"
 	// StepOtherTarget: the same method on another target of the same architecture.
@@ -49,6 +54,8 @@ type Used struct {
 // across the measured values of K and across the sets that hold them.
 type group struct {
 	model, drafter, method string
+	sampler                DraftSampler
+	verifier               Verifier
 	byK                    map[int]*held
 }
 
@@ -73,8 +80,11 @@ func borrow(sets []*ProfileSet, req Request, key Key) (Resolution, bool, error) 
 	if err != nil {
 		return Resolution{}, false, err
 	}
-	same := func(g *group) bool {
+	sameDrafter := func(g *group) bool {
 		return g.model == key.Model && g.drafter == key.Drafter && g.method == key.SpeculativeMethod
+	}
+	same := func(g *group) bool {
+		return sameDrafter(g) && g.sampler == key.DraftSampler && g.verifier == key.Verifier
 	}
 	// Step 1: the same target and drafter at another K.
 	for _, g := range groups {
@@ -85,6 +95,33 @@ func borrow(sets []*ProfileSet, req Request, key Key) (Resolution, bool, error) 
 			}
 			return build(StepOtherK, key, g, v, req), true, nil
 		}
+	}
+	// Step 1b: the same target, drafter and method under another sampler or verifier: those that
+	// differ in the fewest of the two, then the lowest value.
+	var settings []*group
+	fewest := 3
+	for _, g := range groups {
+		if !sameDrafter(g) || same(g) {
+			continue
+		}
+		n := 0
+		if g.sampler != key.DraftSampler {
+			n++
+		}
+		if g.verifier != key.Verifier {
+			n++
+		}
+		if n < fewest {
+			fewest, settings = n, nil
+		}
+		if n == fewest {
+			settings = append(settings, g)
+		}
+	}
+	if best, v, err := pick(settings, key, req, true); err != nil {
+		return Resolution{}, false, err
+	} else if best != nil {
+		return build(StepOtherSettings, key, best, v, req), true, nil
 	}
 	// Step 2: another drafter of the same target. Prefer the same method, then the lowest
 	// value at the run's K. The same drafter under another method is not another drafter, and
@@ -123,7 +160,7 @@ func borrow(sets []*ProfileSet, req Request, key Key) (Resolution, bool, error) 
 // measured under the same sampling and settings, or the lookup refuses: they share a key and
 // are not interchangeable.
 func gatherGroups(sets []*ProfileSet, key Key) ([]*group, error) {
-	idx := map[[3]string]*group{}
+	idx := map[[5]string]*group{}
 	var out []*group
 	for _, s := range sets {
 		if s == nil {
@@ -134,10 +171,11 @@ func gatherGroups(sets []*ProfileSet, key Key) ([]*group, error) {
 			if p.Thinking != key.Thinking || p.Category != key.Category {
 				continue
 			}
-			gk := [3]string{p.Model, p.Drafter, p.SpeculativeMethod}
+			gk := [5]string{p.Model, p.Drafter, p.SpeculativeMethod, string(p.DraftSampler), string(p.Verifier)}
 			g := idx[gk]
 			if g == nil {
-				g = &group{model: p.Model, drafter: p.Drafter, method: p.SpeculativeMethod, byK: map[int]*held{}}
+				g = &group{model: p.Model, drafter: p.Drafter, method: p.SpeculativeMethod,
+					sampler: p.DraftSampler, verifier: p.Verifier, byK: map[int]*held{}}
 				idx[gk] = g
 				out = append(out, g)
 			}
@@ -157,7 +195,9 @@ func gatherGroups(sets []*ProfileSet, key Key) ([]*group, error) {
 	}
 	sort.Slice(out, func(i, j int) bool {
 		a, b := out[i], out[j]
-		return a.model+"\x00"+a.drafter+"\x00"+a.method < b.model+"\x00"+b.drafter+"\x00"+b.method
+		ka := a.model + "\x00" + a.drafter + "\x00" + a.method + "\x00" + string(a.sampler) + "\x00" + string(a.verifier)
+		kb := b.model + "\x00" + b.drafter + "\x00" + b.method + "\x00" + string(b.sampler) + "\x00" + string(b.verifier)
+		return ka < kb
 	})
 	return out, nil
 }
@@ -341,6 +381,12 @@ func build(step Step, key Key, g *group, v value, req Request) Resolution {
 	}
 	if g.method != key.SpeculativeMethod {
 		differed = append(differed, "speculative_method")
+	}
+	if g.sampler != key.DraftSampler {
+		differed = append(differed, "draft_sampler")
+	}
+	if g.verifier != key.Verifier {
+		differed = append(differed, "verifier")
 	}
 	if v.rule != "" {
 		differed = append(differed, "num_spec_tokens")
