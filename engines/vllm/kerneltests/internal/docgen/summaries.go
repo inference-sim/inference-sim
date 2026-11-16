@@ -124,11 +124,4 @@ var summaries = map[string]struct{ title, summary string }{
 			"tp). Dividing by pcp as well would leave out a reduction the kernel does not price, " +
 			"and make the experts cheaper than the engine runs them.",
 	},
-	"sparse_mla.go|sparseMLABackend|Coverage limit": {
-		"Choosing the sparse attention backend",
-		"For DeepSeek sparse attention, which backend vLLM chooses depends on facts the model " +
-			"graph does not state: whether the checkpoint quantizes its KV cache, the installed " +
-			"FlashInfer version, and one head dimension. The kernel assumes the common case for " +
-			"each, and the catalog has no chip of the SM120 generation, whose backend differs.",
-	},
 }

@@ -9,8 +9,6 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	latencykernel "github.com/inference-sim/blis-substrate/kernel"
-
 	"github.com/inference-sim/blis-substrate/contracts/engine"
 )
 
@@ -82,15 +80,11 @@ func TestAnEngineBuildsFromAnUnstatedDeploymentWithOneSetOfValues(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	k, ok := p.model.Kernel().(*latencykernel.Kernel)
-	if !ok {
-		t.Fatalf("the kernel is a %T", p.model.Kernel())
-	}
 	for _, c := range []struct {
 		key           string
 		model, kernel int
 	}{
-		{"block_size", e.BlockSize, k.Engine().BlockSize},
+		{"block_size", e.BlockSize, int(p.model.Lowered().Plan.PageTokens)},
 		{"max_num_seqs", e.MaxNumSeqs, p.resolved.MaxNumSeqs},
 		{"max_num_batched_tokens", e.MaxNumBatchedTokens, p.resolved.MaxNumBatchedTokens},
 	} {
