@@ -20,6 +20,7 @@ import (
 	"github.com/inference-sim/blis-vllm/rules/pack"
 
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
+	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 )
 
@@ -65,8 +66,11 @@ func WithVLLMRules(r Repos) Repos {
 		r.RulesVersions = vllmrules.Versions
 		r.RulesKind = "vllm"
 	}
-	if r.EngineSettings == nil {
-		r.EngineSettings = vllmsettings.OfPool
+	if r.DraftModel == nil {
+		r.DraftModel = kernelmodel.DraftModelOf
+	}
+	if r.Lower == nil {
+		r.Lower = kernelmodel.LowerPool
 	}
 	return r
 }

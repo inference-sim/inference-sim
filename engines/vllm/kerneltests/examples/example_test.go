@@ -18,19 +18,22 @@ import (
 	vllmrules "github.com/inference-sim/blis-vllm/rules"
 
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
+	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
+	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 // --8<-- [start:repos]
 // The roots a scenario's names resolve against (its model, chip, fabric and coefficient
 // sets), and the engine rules its engine_version selects: vLLM's, from the engine model.
 var repos = latencykernel.Repos{
-	Scenarios:      "../testdata",
-	Data:           exampleData(), // the pinned blis-substrate's embedded catalog and registry
-	Rules:          latencykernel.RulesFrom(vllmrules.Lookup),
-	RulesVersions:  vllmrules.Versions,
-	RulesKind:      "vllm",
-	EngineSettings: vllmsettings.OfPool,
+	Scenarios:     "../testdata",
+	Data:          exampleData(), // the pinned blis-substrate's embedded catalog and registry
+	Rules:         latencykernel.RulesFrom(vllmrules.Lookup),
+	RulesVersions: vllmrules.Versions,
+	RulesKind:     "vllm",
+	DraftModel:    kernelmodel.DraftModelOf, // the drafter the pool's engine block names
+	Lower:         kernelmodel.LowerPool,    // the pool's settings, resolved into its plan
 }
 
 // exampleData is the catalog and registry the pinned blis-substrate release embeds, opened and
@@ -168,10 +171,21 @@ func ExampleNew() {
 		panic(err)
 	}
 
-	// The same deployment with a 16-bit KV cache instead of fp8. The engine settings are the
-	// caller's decoding of the pool's engine block (Inputs.Engine), and New copied what it
-	// needed, so changing them now leaves base as it was.
-	in.Engine.CacheDType = "bfloat16"
+	// The same deployment with a 16-bit KV cache instead of fp8. The kernel prices the plan
+	// the engine's lowering resolved from the pool's engine block (Inputs.Lowered), and New
+	// copied what it needed, so lowering an edited block now leaves base as it was.
+	pool := &in.Deployment.Pools[in.PoolIndex]
+	e, err := vllmsettings.Decode(*pool)
+	if err != nil {
+		panic(err)
+	}
+	e.CacheDType = "bfloat16"
+	if pool.Engine, err = engineconfig.Encode(e); err != nil {
+		panic(err)
+	}
+	if in.Lowered, err = kernelmodel.LowerPool(in); err != nil {
+		panic(err)
+	}
 	wide, err := latencykernel.New(in)
 	if err != nil {
 		panic(err)

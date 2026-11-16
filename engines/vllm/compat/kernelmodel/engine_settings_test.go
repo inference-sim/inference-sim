@@ -211,9 +211,7 @@ func TestEngineResolvesAnUnstatedBlockSizeAt032(t *testing.T) {
 				t.Errorf("block_size source %q: names the FA3 assumption: %t", src, assumed)
 			}
 			// The kernel prices the size Engine reports.
-			if k, ok := m.Kernel().(*latencykernel.Kernel); !ok {
-				t.Errorf("the kernel is a %T, not the cost model", m.Kernel())
-			} else if got := k.Engine().BlockSize; got != c.size {
+			if got := m.Lowered().Plan.PageTokens; int(got) != c.size {
 				t.Errorf("the kernel prices block_size %d, Engine reports %d", got, c.size)
 			}
 		})
@@ -288,7 +286,7 @@ func TestEngineResolvesAnUnstatedMemoryUtilization(t *testing.T) {
 			if src := m.EngineSources()["gpu_memory_utilization"]; !strings.Contains(src, c.source) {
 				t.Errorf("source %q, want it to cite %s", src, c.source)
 			}
-			if k, ok := m.Kernel().(*latencykernel.Kernel); !ok || k.Engine().GPUMemoryUtilization != 0.92 {
+			if m.Lowered().Plan.MemoryFraction != 0.92 {
 				t.Errorf("the kernel does not price the resolved 0.92")
 			}
 			// The KV budget is sized from it: a stated 0.92 gives the same budget.
@@ -418,15 +416,11 @@ func TestKernelPricesTheEngineSettingsEngineReportsInBatchedDP(t *testing.T) {
 	if e.MaxNumSeqs != 256 || e.MaxNumBatchedTokens != 256 {
 		t.Fatalf("Engine: max_num_seqs %d, max_num_batched_tokens %d; want the batched-DP 256 and 256", e.MaxNumSeqs, e.MaxNumBatchedTokens)
 	}
-	k, ok := m.Kernel().(*latencykernel.Kernel)
-	if !ok {
-		t.Fatalf("the kernel is a %T, not the cost model", m.Kernel())
-	}
-	got := k.Engine()
-	if got.BlockSize != e.BlockSize || got.GPUMemoryUtilization != e.GPUMemoryUtilization ||
-		got.MaxNumSeqs != e.MaxNumSeqs || got.MaxNumBatchedTokens != e.MaxNumBatchedTokens {
+	got := m.Lowered().Plan
+	if int(got.PageTokens) != e.BlockSize || got.MemoryFraction != e.GPUMemoryUtilization ||
+		got.Batch.Requests != e.MaxNumSeqs || int(got.Batch.Tokens) != e.MaxNumBatchedTokens {
 		t.Errorf("the kernel prices block_size %d, gpu_memory_utilization %v, max_num_seqs %d, max_num_batched_tokens %d; "+
-			"Engine reports %d, %v, %d, %d", got.BlockSize, got.GPUMemoryUtilization, got.MaxNumSeqs, got.MaxNumBatchedTokens,
+			"Engine reports %d, %v, %d, %d", got.PageTokens, got.MemoryFraction, got.Batch.Requests, got.Batch.Tokens,
 			e.BlockSize, e.GPUMemoryUtilization, e.MaxNumSeqs, e.MaxNumBatchedTokens)
 	}
 }

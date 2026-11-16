@@ -164,8 +164,8 @@ var noDefaultValue = map[string]string{
 	"prefix_match_unit":                     "vllm/config/cache.py:90@5df63a72",
 }
 
-// pricedByTheKernel is the allow-list: keys the latency kernel reads and prices from blis-substrate's
-// enginesettings.Settings, so the engine must accept them. Their status is not_modelled because the
+// pricedByTheKernel is the allow-list: keys the latency kernel prices through the lowering of the
+// settings (vllmsettings.Settings, package lowering), so the engine must accept them. Their status is not_modelled because the
 // kernel prices them with vLLM v0.31.0's policy, not v0.32.0's; the issue is the open one fields.json
 // cites for each. VLM-3 and design 11.2 say a field the engine reads and prices when stated is a
 // status to correct, to modelled with evidence or to refused when stated; neither is possible while

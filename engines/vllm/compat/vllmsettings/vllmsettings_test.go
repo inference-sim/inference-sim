@@ -12,8 +12,6 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
-
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 )
 
 // populate sets every settable field of v, recursively, to a non-zero value, so a conversion that
@@ -79,7 +77,7 @@ func zeroes(v reflect.Value, path string, out *[]string) {
 }
 
 // Every setting the kernel prices is filled from the vLLM engine block: Of over an
-// engineconfig.Engine with every field stated leaves no field of enginesettings.Settings at its zero value. A field added to the
+// engineconfig.Engine with every field stated leaves no field of Settings at its zero value. A field added to the
 // kernel's settings and not to the conversion fails here rather than pricing as unstated.
 func TestOfFillsEverySetting(t *testing.T) {
 	var e engineconfig.Engine
@@ -189,7 +187,7 @@ func TestOfPoolDecodesThePoolsBlock(t *testing.T) {
 	if !reflect.DeepEqual(got, Of(want)) || !reflect.DeepEqual(want, e) {
 		t.Errorf("OfPool = %+v, want Of of the pool's decoded block %+v", got, Of(e))
 	}
-	if empty, err := OfPool(dep, 0); err != nil || !reflect.DeepEqual(empty, enginesettings.Settings{}) {
+	if empty, err := OfPool(dep, 0); err != nil || !reflect.DeepEqual(empty, Settings{}) {
 		t.Errorf("an unstated block: OfPool = %+v, %v; want no settings and no error", empty, err)
 	}
 }

@@ -109,7 +109,7 @@ func TestDefaultScenariosAreThisRepositorysFixtures(t *testing.T) {
 // own, opened for that call.
 func TestDefaultReposMatchesTheDefaults(t *testing.T) {
 	r := DefaultRepos()
-	if r.Scenarios != DefaultScenarios() || r.Data == nil || r.Rules == nil || r.EngineSettings == nil {
-		t.Errorf("DefaultRepos() = %+v, want the default scenarios, data, rules and engine settings", r)
+	if r.Scenarios != DefaultScenarios() || r.Data == nil || r.Rules == nil || r.DraftModel == nil {
+		t.Errorf("DefaultRepos() = %+v, want the default scenarios, data, rules and drafter", r)
 	}
 }
