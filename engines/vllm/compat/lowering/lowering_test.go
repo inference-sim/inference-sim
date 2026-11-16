@@ -466,6 +466,18 @@ func TestTheLoweringResolvesEverySettingTheKernelPrices(t *testing.T) {
 					t.Error("no allreduce_backend override")
 				}
 			}},
+		{"the record an unstated cache runs under is the release's default", v41, vllmsettings.Settings{CacheDType: "fp8"},
+			func(t *testing.T, l *plan.Lowered) {
+				if !strings.HasSuffix(l.DefaultCacheRecord, "_ds_mla") {
+					t.Errorf("DefaultCacheRecord %q, want DeepSeek-V4.1's packed record", l.DefaultCacheRecord)
+				}
+			}},
+		{"a dense model's unstated cache runs under its own format", dense, vllmsettings.Settings{},
+			func(t *testing.T, l *plan.Lowered) {
+				if l.DefaultCacheRecord != "" && l.DefaultCacheRecord != "auto" {
+					t.Errorf("DefaultCacheRecord %q, want the model's own", l.DefaultCacheRecord)
+				}
+			}},
 		{"a latent model's MTP drafter keeps its chain", latent,
 			vllmsettings.Settings{Speculative: &vllmsettings.Speculative{Method: "deepseek_mtp", NumSpecTokens: 1}},
 			func(t *testing.T, l *plan.Lowered) {
@@ -490,6 +502,8 @@ func TestTheLoweringRefusesWhatTheEngineRefuses(t *testing.T) {
 		{"a cache dtype the release does not have", "cache_dtype", dense, vllmsettings.Settings{CacheDType: "fp7"}},
 		{"a quantization the cost model does not price", "quantization", dense, vllmsettings.Settings{Quantization: "nf3"}},
 		{"DeepSeek-V4.1 with a bf16 cache", "cache_dtype", v41, vllmsettings.Settings{CacheDType: "bfloat16"}},
+		{"a recurrent cache mode the cost model does not price", "mamba_cache_mode", hybrid,
+			vllmsettings.Settings{MambaCacheMode: "sometimes"}},
 		{"a replicated query projection on a latent model", "dcp_q_replicate", dsaDCP,
 			vllmsettings.Settings{CacheDType: "fp8", DCPQReplicate: ptr(true)}},
 	} {
