@@ -31,8 +31,11 @@ func forbidden(path string) string {
 	switch {
 	case path == "github.com/inference-sim/blis-vllm" || strings.HasPrefix(path, "github.com/inference-sim/blis-vllm/"):
 		return "an engine repository imports no other engine repository"
-	case strings.HasPrefix(path, "github.com/inference-sim/blis-substrate/") && !isContracts(path):
+	case path == "github.com/inference-sim/blis-substrate" ||
+		strings.HasPrefix(path, "github.com/inference-sim/blis-substrate/") && !isContracts(path):
 		return "blis-substrate is imported only through contracts/"
+	case path == "github.com/inference-sim/inference-sim" || strings.HasPrefix(path, "github.com/inference-sim/inference-sim/"):
+		return "an engine repository imports nothing from the simulator above it"
 	}
 	return ""
 }
@@ -87,6 +90,8 @@ func TestAForbiddenImportIsFound(t *testing.T) {
 		"e/e.go":      "package e\nimport _ \"github.com/inference-sim/blis-substrate/kernel/contracts\"\n",
 		"f/f.go":      "package f\nimport _ \"github.com/inference-sim/blis-vllm\"\n",
 		"g/g.go":      "package g\nimport _ \"github.com/inference-sim/blis-vllmx\"\n",
+		"h/h.go":      "package h\nimport _ \"github.com/inference-sim/blis-substrate\"\n",
+		"i/i.go":      "package i\nimport _ \"github.com/inference-sim/inference-sim/sim\"\n",
 	} {
 		p := filepath.Join(dir, rel)
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -102,6 +107,8 @@ func TestAForbiddenImportIsFound(t *testing.T) {
 		"c/c_test.go: github.com/inference-sim/blis-vllm/core/sched: an engine repository imports no other engine repository",
 		"e/e.go: github.com/inference-sim/blis-substrate/kernel/contracts: blis-substrate is imported only through contracts/",
 		"f/f.go: github.com/inference-sim/blis-vllm: an engine repository imports no other engine repository",
+		"h/h.go: github.com/inference-sim/blis-substrate: blis-substrate is imported only through contracts/",
+		"i/i.go: github.com/inference-sim/inference-sim/sim: an engine repository imports nothing from the simulator above it",
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("found\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))

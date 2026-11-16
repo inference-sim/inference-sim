@@ -6,8 +6,9 @@ name: blis
 # AGENTS.md section and pull-request template, the selected-version lint), and the
 # nightly checks (cited issues stay open, X28).
 #
-# The commit is blis-substrate's main at its v0.14.0 tags-lock merge. It moves to a release tag's commit when the
-# substrate is tagged with contracts/harness.
+# The commit is blis-substrate's main at its v0.14.0 tags-lock merge. go.mod selects another substrate commit (the
+# TEMPORARY contracts/harness pin); the two move together to one release tag's commit when the substrate is tagged
+# with contracts/harness.
 
 on:
   pull_request:

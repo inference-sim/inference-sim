@@ -7,7 +7,7 @@ same rules; they are written here so an agent reads them first.
 
 blis-sglang sits between blis-substrate and inference-sim. A change that touches more than one
 repository follows
-[Changes across the repositories](https://github.com/inference-sim/blis-substrate/blob/main/docs/contracts/contributing/cross-repo-changes.md).
+[Changes across the repositories](https://github.com/inference-sim/blis-substrate/blob/main/docs/contributing/changes.md#across-blis-repositories).
 In short:
 
 1. **Public artifacts.** Never write internal project, customer or colleague names in a commit,
@@ -45,7 +45,10 @@ In short:
   regenerate with
   `go run github.com/inference-sim/blis-substrate/contracts/harness/cmd/harnessfiles`.
   `TestHarnessCopiesAreCurrent` fails when one differs. `oracle/harness.json` is this
-  repository's configuration of the oracle checks.
+  repository's configuration of the oracle checks. Its `upstream_names` are matched by function
+  name alone, whatever class or module defines the function. Its `decision_prefixes`, with
+  `oracle/modules.json`, must classify every sglang module the scheduler's files import;
+  `oracle/check_modules.py` fails on one that is not.
 - **The oracle decides.** Behaviour is checked against SGLang's own classes (`oracle/`). The
   oracle may replace only the GPU, the clock, transports, the environment, the platform and
   outside services, never a decision; every replacement is listed in `oracle/mocks.json`, and

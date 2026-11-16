@@ -48,8 +48,8 @@ runs:
       with:
         path: ~/go/pkg/mod
         key: ${{ steps.keys.outputs.mod }}
-    # Every module in the build list is in the module cache from here on, whatever the cache held: steps
-    # that ask where blis-substrate lives (go list -m -f '{{.Dir}}', kerneltests/scripts/run-inpackage.sh) read it.
+    # Every module in the build list is in the module cache from here on, whatever the cache held: a step
+    # that asks where blis-substrate lives (go list -m -f '{{.Dir}}') reads it.
     # With the cache restored this downloads nothing.
     - shell: bash
       run: go mod download

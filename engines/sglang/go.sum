@@ -1,6 +1,2 @@
-github.com/inference-sim/blis-substrate v0.14.1-0.20261116164559-d39f2e1e0e6f h1:HBHd/DAe4MrPwtJu52gk3KQHWUFF/TYIQqmEafvWmtU=
-github.com/inference-sim/blis-substrate v0.14.1-0.20261116164559-d39f2e1e0e6f/go.mod h1:vZYEOia6TQOW+HZYbvJXCMDXus85dBj6vAyPr9rJF3A=
-github.com/inference-sim/blis-substrate v0.14.1-0.20261116184559-c4016f8c271f h1:DslTNBDufV2HuFjrkm3P8lLiI9t54nz+5rP46vazQXU=
-github.com/inference-sim/blis-substrate v0.14.1-0.20261116184559-c4016f8c271f/go.mod h1:vZYEOia6TQOW+HZYbvJXCMDXus85dBj6vAyPr9rJF3A=
-github.com/inference-sim/blis-substrate v0.14.1-0.20261116190852-da0d5ae7f8d1 h1:/Ar2qrv0fXhPcSYyG9Agg2esLGrAPJL2nWKY/Qtzo5s=
-github.com/inference-sim/blis-substrate v0.14.1-0.20261116190852-da0d5ae7f8d1/go.mod h1:vZYEOia6TQOW+HZYbvJXCMDXus85dBj6vAyPr9rJF3A=
+github.com/inference-sim/blis-substrate v0.14.1-0.20261116203115-5c16d8682c35 h1:Jbt+iHNcQ3QrXhLHKpOOC2JYRJjz7eWFLLYdRCTpkJ8=
+github.com/inference-sim/blis-substrate v0.14.1-0.20261116203115-5c16d8682c35/go.mod h1:vZYEOia6TQOW+HZYbvJXCMDXus85dBj6vAyPr9rJF3A=

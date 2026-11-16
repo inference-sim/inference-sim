@@ -1,13 +1,15 @@
 name: ci
 
 # The repository's own checks. Every pull request runs them, whatever its base, so each layer of a
-# stack is judged on its own head. The checks branch protection requires are `go` and `lint`.
+# stack is judged on its own head. The checks branch protection requires are `go`, `lint` and
+# `oracle-checks`.
 
 on:
   push:
     branches: [main]
   pull_request:
-    types: [opened, synchronize, reopened, edited, ready_for_review]
+    # Not `edited`: no job here reads the pull request's text (blis.yml and private-names.yml do).
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:
@@ -41,6 +43,8 @@ jobs:
           if [ -n "$unformatted" ]; then echo "not gofmt-formatted:"; echo "$unformatted"; exit 1; fi
       - name: no replace directive
         run: '! grep -n "^replace" go.mod'
+      - name: go.mod and go.sum are tidy
+        run: go mod tidy -diff
       - name: go vet
         run: go vet ./...
       - name: go build
@@ -80,3 +84,40 @@ jobs:
         with:
           path: ~/.cache/go-build
           key: ${{ steps.go.outputs.build-key }}
+
+  # The oracle's guards over this repository's files (X18): every sglang module the scheduler's files
+  # import is classified as a decision module or listed with a reason (check_modules.py, FID-1), and
+  # oracle/test_checks.py runs each guard on what it guards. SGLang's source is read at the commit
+  # provenance.go pins; nothing is installed.
+  oracle-checks:
+    name: oracle-checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - id: pin
+        name: the SGLang commit provenance.go pins
+        run: |
+          set -euo pipefail
+          commit="$(sed -n 's/^\tCommit: *"\([0-9a-f]\{40\}\)",$/\1/p' provenance.go)"
+          test -n "$commit"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+      - name: check out SGLang at that commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: sgl-project/sglang
+          ref: ${{ steps.pin.outputs.commit }}
+          path: sglang-source
+          fetch-depth: 1
+          persist-credentials: false
+      - name: the checkout is that commit
+        run: test "$(git -C sglang-source rev-parse HEAD)" = "${{ steps.pin.outputs.commit }}"
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: every module the scheduler imports is classified
+        run: python -I oracle/check_modules.py sglang-source
+      - name: the guards fail on what they guard
+        run: python -I oracle/test_checks.py sglang-source

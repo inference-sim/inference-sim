@@ -14,7 +14,7 @@ import (
 // else says it is original. SGLang's files carry "Copyright 2023-2024 SGLang Team" under the
 // Apache License 2.0 (python/sglang/srt/managers/scheduler.py:1-2@297e54fd).
 var provenanceRules = harness.ProvenanceRules{
-	Derived: regexp.MustCompile(`^// Derived from python/sglang/\S+ at SGLang v\d+\.\d+\.\d+ \([0-9a-f]{40}\)`),
+	Derived: regexp.MustCompile(`^// Derived from python/sglang/\S+ at SGLang v\d+\.\d+\.\d+(\.post\d+)? \([0-9a-f]{40}\)`),
 	Licence: []string{
 		"// SPDX-License-Identifier: Apache-2.0",
 		"// SPDX-FileCopyrightText: Copyright 2023-2024 SGLang Team",
