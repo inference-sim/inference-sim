@@ -38,8 +38,8 @@ type Request struct {
 	Drafter           string
 	SpeculativeMethod string
 	NumSpecTokens     int
-	// DraftSampler and Verifier are the run's, as its engine resolves them; empty is the
-	// engine's default. A lookup matches them exactly, and borrows across them only by
+	// DraftSampler and Verifier are the run's, as its engine resolves them; empty is unstated,
+	// never a default. A lookup matches them exactly, and borrows across them only by
 	// StepOtherSettings, which names them as differing.
 	DraftSampler DraftSampler
 	Verifier     Verifier

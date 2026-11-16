@@ -180,23 +180,23 @@ def test_two_drafters_of_one_target_are_two_profiles(tmp_path):
 def test_curves_that_differ_in_sampler_or_verifier_are_carried_with_them():
     """The GQA drafter's two curves differ only in the verifier, and Kimi-K3's three DSpark
     curves in the sampler and verifier (inference-sim/blis-substrate#174): each is carried under
-    the key that states what it was measured with, the engine's default left out."""
+    the key that states what it was measured with; a sampler the source leaves unset is unstated."""
     got = {}
     for p in SET["profiles"]:
         got.setdefault(stem_of(p), set()).add((p.get("draft_sampler", ""), p.get("verifier", "")))
-    assert got[GQA] == {("", "")} and got[GQA_BLOCK] == {("", "block")}
+    assert got[GQA] == {("", "standard")} and got[GQA_BLOCK] == {("", "block")}
     kimi = "kimi-k3__dspark__kimi-k3-dspark__"
-    assert got[kimi + "default-default"] == {("", "")}
+    assert got[kimi + "default-default"] == {("", "standard")}
     assert got[kimi + "probabilistic-block"] == {("probabilistic", "block")}
-    assert got[kimi + "probabilistic-default"] == {("probabilistic", "")}
+    assert got[kimi + "probabilistic-default"] == {("probabilistic", "standard")}
 
 
-def test_a_curve_with_its_methods_only_curve_states_neither():
-    """DeepSeek-V4.1-Flash was measured with probabilistic drafting and block verification, but it
-    is its target's only DSpark curve, so its key states neither and every run's lookup finds it."""
+def test_a_methods_only_curve_states_what_its_source_records():
+    """DeepSeek-V4.1-Flash is its target's only DSpark curve, measured with probabilistic
+    drafting and block verification; its key says so, so its meaning does not change the day a
+    second curve arrives."""
     p = next(p for p in SET["profiles"] if stem_of(p).startswith("deepseek-v4.1-flash__"))
-    assert "draft_sampler" not in p and "verifier" not in p
-    assert p["provenance"]["settings"]["verify"] == "block"
+    assert (p["draft_sampler"], p["verifier"]) == ("probabilistic", "block")
 
 
 def test_curves_that_claim_one_key_are_both_refused(tmp_path):

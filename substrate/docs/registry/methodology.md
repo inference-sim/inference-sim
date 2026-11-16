@@ -1506,10 +1506,11 @@ InferenceX measures only on the NVFP4 quantization of `zai-org/GLM-5.3`.
 
 A profile is keyed by model, drafter, method, K, thinking mode, category, draft sampler and
 verifier (inference-sim/blis-substrate#174). Where InferenceX publishes several curves for one
-target, drafter and method, each states its sampler and verifier from `identities.yaml`, the
-engine's default left out: the three Kimi-K3 DSpark curves and the two MiniMax-M3 GQA-drafter
-curves are carried that way. A curve that is its method's only one states neither, so a run
-that states neither still finds it. Two curves that agree on every key field are both
+target, drafter and method, each states its sampler and verifier from `identities.yaml`: the
+three Kimi-K3 DSpark curves and the two MiniMax-M3 GQA-drafter curves are carried that way.
+Every curve states what its source records, its method's only one included, and a sampler the
+source leaves unset is unstated, so a profile's key does not change when a second curve
+arrives. Two curves that agree on every key field are both
 refused, as D8 refuses two profiles that share a key rather than choose one.
 
 ### 12.4 Hardware: stated, or read from the run
