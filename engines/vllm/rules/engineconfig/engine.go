@@ -353,7 +353,7 @@ type KVEvents struct {
 	Topic string `yaml:"topic,omitempty"`
 }
 
-// kvEventPublishers are the publishers vLLM v0.32.0 accepts (vllm/config/kv_events.py:18@5df63a72).
+// kvEventPublishers are the publishers vLLM v0.32.0 accepts (vllm/config/kv_events.py:18@4ba787ec).
 var kvEventPublishers = map[string]bool{"null": true, "zmq": true}
 
 // Speculative is the draft configuration. The method name is engine-version data,

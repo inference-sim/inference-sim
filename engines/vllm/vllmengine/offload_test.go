@@ -57,7 +57,7 @@ func TestMuseSparkArmDOffload(t *testing.T) {
 			"32768 bytes a block", o)
 	}
 	// A worker's bytes a block are its KV tensor over its blocks (worker_kv_bytes_per_block,
-	// offloading/config.py:136-145@5df63a72): vLLM groups Muse's layers so each worker's block is 8
+	// offloading/config.py:174-183@4ba787ec): vLLM groups Muse's layers so each worker's block is 8
 	// layer pages at PP2 (16 at PP1), each 16 tokens x 2 KV heads a rank at TP8 x 64 x K,V x 1 byte
 	// of fp8 = 4096 bytes.
 	twinO, _ := preparedOffload(t, engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0",
@@ -304,8 +304,8 @@ func TestAPipelinedCPUTierIsSizedFromRankZero(t *testing.T) {
 
 // An offload job moves, on each worker, its blocks' pages of each group's layers on that worker:
 // vLLM's CPU offload worker copies one (block, layer) page at a time over the group's layers
-// (_fill_direct_ops, vllm/v1/kv_offload/cpu/gpu_worker.py:395-416; group_data_refs,
-// offloading/worker.py:202-207@5df63a72), and the job ends with the slowest worker. Arm D's
+// (_fill_direct_ops, vllm/v1/kv_offload/cpu/gpu_worker.py:424-445; group_data_refs,
+// offloading/worker.py:202-207@4ba787ec), and the job ends with the slowest worker. Arm D's
 // groups are four window groups of 13, 13, 13 and 12 layers and one of 16 full layers, 4096 bytes
 // a page: rank 0 holds window layers 0-22 (6, 6, 6, 5 of the groups) and 8 full layers, rank 1
 // window layers 23-50 (7 of each) and 8 full layers. A job of n blocks in every group moves

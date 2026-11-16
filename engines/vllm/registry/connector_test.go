@@ -205,7 +205,7 @@ func TestAnUnregisteredConnectorIsNotServed(t *testing.T) {
 // No Mooncake connector is served, for any role: the inertness proofs of the MC_ variables
 // (oracle/inertness/MC_*.json) rest on the engine never loading the Mooncake transfer-engine
 // library, which vLLM reaches only through these connectors
-// (vllm/distributed/kv_transfer/kv_connector/factory.py:225-234@5df63a72).
+// (vllm/distributed/kv_transfer/kv_connector/factory.py:225-234@4ba787ec).
 func TestNoMooncakeConnectorIsServed(t *testing.T) {
 	r, err := Load()
 	if err != nil {

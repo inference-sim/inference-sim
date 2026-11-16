@@ -117,7 +117,7 @@ func newMambaAlign(pool *Pool, g *group, cfg mambaAlignConfig) (*mambaAlign, err
 	}
 	if g.blockSize > cfg.HashBlockSize {
 		return nil, fmt.Errorf("kv: enable_partial_hash_hits is not modelled: the mamba block size %d exceeds the hash block size %d "+
-			"(kv_cache_coordinator.py:684-706@5df63a72)", g.blockSize, cfg.HashBlockSize)
+			"(kv_cache_coordinator.py:694-716@4ba787ec)", g.blockSize, cfg.HashBlockSize)
 	}
 	if g.blockSize != cfg.HashBlockSize || cfg.SchedulerBlockSize%g.blockSize != 0 {
 		return nil, fmt.Errorf("kv: mamba block size %d must equal the hash block size %d and divide the scheduler block size %d",
@@ -125,7 +125,7 @@ func newMambaAlign(pool *Pool, g *group, cfg mambaAlignConfig) (*mambaAlign, err
 	}
 	if r := cfg.RetentionInterval; r != nil && (*r < 0 || *r%cfg.SchedulerBlockSize != 0) {
 		return nil, fmt.Errorf("kv: prefix_cache_retention_interval (%d) must be non-negative and a multiple of scheduler_block_size (%d) "+
-			"(kv_cache_coordinator.py:57-62@5df63a72)", *r, cfg.SchedulerBlockSize)
+			"(kv_cache_coordinator.py:57-62@4ba787ec)", *r, cfg.SchedulerBlockSize)
 	}
 	if cfg.NumSpeculativeBlocks < 0 || cfg.NumPrefillCheckpointBlocks < 0 || cfg.PrefillCheckpointAlignment < 0 {
 		return nil, fmt.Errorf("kv: mamba align counts must not be negative: %+v", cfg)
@@ -155,7 +155,7 @@ func mambaPrefillCheckpointPosition(numTokens, hashBlockSize int, dropEagleBlock
 }
 
 // mambaPrefillCheckpointValid is is_mamba_prefill_checkpoint_valid
-// (kv_cache_interface.py:1124-1148@5df63a72): whether a backend can export the checkpoint in
+// (kv_cache_interface.py:1188-1212@4ba787ec): whether a backend can export the checkpoint in
 // the query [queryStart, queryEnd). An alignment of 0 is None.
 func mambaPrefillCheckpointValid(queryStart, queryEnd, checkpointPosition, hashBlockSize, mambaBlockSize,
 	checkpointAlignment int) bool {

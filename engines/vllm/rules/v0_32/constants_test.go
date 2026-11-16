@@ -56,7 +56,7 @@ func TestSmallVocabularies(t *testing.T) {
 	assertSet(t, "CUDAGraphModes", p.CUDAGraphModes,
 		[]string{"FULL", "FULL_AND_PIECEWISE", "FULL_DECODE_ONLY", "NONE",
 			"PIECEWISE"})
-	// v0.32.0 dropped "all" (vllm/config/cache.py:63@5df63a72).
+	// v0.32.0 dropped "all" (vllm/config/cache.py:176@4ba787ec).
 	assertSet(t, "MambaCacheModes", p.MambaCacheModes,
 		[]string{"align", "none"})
 	assertSet(t, "DCPCommBackends", p.DCPCommBackends,

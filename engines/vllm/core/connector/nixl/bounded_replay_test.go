@@ -19,7 +19,7 @@ const flashBlock = 128
 
 // storeLoad is a connector that moves blocks as a prefix-cache store does: it restores no
 // bounded-replay window, which vLLM's default get_loaded_kv_cache_group_ids states
-// (kv_connector/v1/base.py:490-500@5df63a72).
+// (kv_connector/v1/base.py:505-515@4ba787ec).
 type storeLoad struct{ *Scheduler }
 
 func (storeLoad) LoadedGroups(_ *sched.Request, _ []int) []int { return nil }
@@ -102,7 +102,7 @@ func pullThrough(t *testing.T, s *sched.Scheduler, conn *Scheduler, prompt int) 
 // NIXL restores every group's blocks of the request's own prompt, the bounded-replay windows
 // included, so the decoder replays nothing: it loads all the prompt but the one token the
 // prefiller's backoff left (the prefiller does not compute the last token of a prompt under
-// bounded replay, nixl/base_scheduler.py:379-394@5df63a72), and computes that token alone.
+// bounded replay, nixl/base_scheduler.py:385-400@4ba787ec), and computes that token alone.
 func TestDecoderBesideBoundedReplayLoadsThePromptAndReplaysNothing(t *testing.T) {
 	for _, prompt := range []int{456, 300, 100} {
 		s, conn := flashSched(t, true, nil)

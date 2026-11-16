@@ -9,30 +9,30 @@ package sched
 import "github.com/inference-sim/blis-vllm/core/kv"
 
 // MambaSplitConfig is what Scheduler.__init__ reads to set up the Mamba block-aligned split
-// (vllm/v1/core/sched/scheduler.py:375-410@5df63a72), as plain inputs.
+// (vllm/v1/core/sched/scheduler.py:430-465@4ba787ec), as plain inputs.
 type MambaSplitConfig struct {
 	// Groups are the KV cache groups (kv_cache_config.kv_cache_groups); the Mamba ones have
 	// Kind kv.Mamba and carry MambaCacheMode, MambaCheckpointBlocks, MambaCheckpointAlignment.
 	Groups []kv.Group
-	// BlockSize is cache_config.block_size, the engine's block size (:451).
+	// BlockSize is cache_config.block_size, the engine's block size (:554).
 	BlockSize int
-	// SchedulerBlockSize is the Scheduler's self.block_size (:209), which differs from BlockSize
+	// SchedulerBlockSize is the Scheduler's self.block_size (:218), which differs from BlockSize
 	// only under context parallelism; 0 means BlockSize.
 	SchedulerBlockSize int
-	// HashBlockSize is hash_block_size (:325-327).
+	// HashBlockSize is hash_block_size (:348-350).
 	HashBlockSize int
-	// MaxNumScheduledTokens is max_num_scheduled_tokens, the per-step token budget (:137, :508).
+	// MaxNumScheduledTokens is max_num_scheduled_tokens, the per-step token budget (:139, :613).
 	MaxNumScheduledTokens int
 	// LongPrefillTokenThreshold is scheduler_config.long_prefill_token_threshold as configured
-	// (:509), not the per-step threshold schedule() derives.
+	// (:614), not the per-step threshold schedule() derives.
 	LongPrefillTokenThreshold int
-	// EagleBlockDrop is use_eagle_block_drop (:316).
+	// EagleBlockDrop is use_eagle_block_drop (:331).
 	EagleBlockDrop bool
 	// PartialHashHits is kv_cache_manager.coordinator.enable_partial_hash_hits
-	// (kv_cache_coordinator.py:684-692@5df63a72), which the KV manager decides.
+	// (kv_cache_coordinator.py:694-702@4ba787ec), which the KV manager decides.
 	PartialHashHits bool
 	// SharedPrefixCheckpoint is kv_cache_manager.mamba_shared_prefix_checkpoint
-	// (kv_cache_manager.py:186-191@5df63a72): enable_mamba_shared_prefix_checkpoint, and an
+	// (kv_cache_manager.py:188-193@4ba787ec): enable_mamba_shared_prefix_checkpoint, and an
 	// eagle group, partial hash hits, and no re-prefillable tail. It is false by default.
 	SharedPrefixCheckpoint bool
 }
@@ -203,7 +203,7 @@ func mambaPrefillCheckpointPosition(numTokens, hashBlockSize int, dropEagleBlock
 }
 
 // mambaPrefillCheckpointValid is is_mamba_prefill_checkpoint_valid
-// (vllm/v1/kv_cache_interface.py:1125-1148@5df63a72): whether a backend can export the
+// (vllm/v1/kv_cache_interface.py:1189-1212@4ba787ec): whether a backend can export the
 // checkpoint in this query. alignment 0 stands for None. Unexported and local to this file.
 func mambaPrefillCheckpointValid(queryStart, queryEnd, checkpointPosition, hashBlockSize, mambaBlockSize, alignment int) bool {
 	if alignment <= 0 {

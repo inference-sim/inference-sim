@@ -17,9 +17,9 @@ import (
 )
 
 // The engine records its metrics in two halves, as vLLM does: a batch's admissions are its
-// schedule's PrefillStats (scheduler.py:1074-1080, 1314-1317@5df63a72), and its outputs,
+// schedule's PrefillStats (scheduler.py:1251-1257, 1508-1511@4ba787ec), and its outputs,
 // finishes and the scheduler gauges are what update_from_output reports for it
-// (:2395-2422@5df63a72). core/metrics takes both in one Step; the admissions wait here until
+// (:2647-2674@4ba787ec). core/metrics takes both in one Step; the admissions wait here until
 // their batch completes.
 
 // scheduled is what a schedule decided that its batch's metrics step reports.

@@ -7,7 +7,7 @@ import (
 )
 
 // max_concurrent_batches for every configuration vLLM v0.32.0 starts with
-// (vllm/config/vllm.py:577-588@5df63a72).
+// (vllm/config/vllm.py:588-599@4ba787ec).
 func TestMaxConcurrentBatches(t *testing.T) {
 	for _, c := range []struct {
 		pp        int
@@ -79,10 +79,10 @@ func (recvConnector) Finished(*sched.Request, []int) bool { return false }
 func (recvConnector) AfterOutput(sched.TransferOutcome)   {}
 
 // A GPU that is a TransferGPU hands the worker's finished transfers to update_from_output with
-// the batch's output (ModelRunnerOutput.kv_connector_output, vllm/v1/outputs.py:215-233@5df63a72),
+// the batch's output (ModelRunnerOutput.kv_connector_output, vllm/v1/outputs.py:215-233@4ba787ec),
 // and Core.Abort's ids are finished before that output is applied, as EngineCore drains its
-// aborts queue after the output and before update_from_output (vllm/v1/engine/core.py:780-783,
-// 814-822@5df63a72).
+// aborts queue after the output and before update_from_output (vllm/v1/engine/core.py:790-793,
+// 824-832@4ba787ec).
 func TestCoreAppliesTransfersAndQueuedAborts(t *testing.T) {
 	s, err := sched.New(sched.Config{MaxNumSeqs: 4, MaxNumBatchedTokens: 64, BlockSize: 4, NumBlocks: 40,
 		MaxModelLen: 128, EnableChunkedPrefill: true, Policy: sched.FCFS, EnablePrefixCaching: true,

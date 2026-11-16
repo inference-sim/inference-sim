@@ -8,14 +8,14 @@ package engine
 
 import "math"
 
-// Wave is one DP rank's wave state in DPEngineCoreProc (core.py:2160-2176): the step counter
+// Wave is one DP rank's wave state in DPEngineCoreProc (core.py:2298-2314): the step counter
 // the sync cadence and the prefill throttle read, the wave number, and whether the rank's
 // busy loop is stepping.
 type Wave struct {
 	// PrefillScheduleInterval is scheduler_config.prefill_schedule_interval
-	// (vllm/config/scheduler.py:203@5df63a72); 1 never throttles.
+	// (vllm/config/scheduler.py:203@4ba787ec); 1 never throttles.
 	PrefillScheduleInterval int
-	// SyncInterval is parallel_config.dp_sync_interval (vllm/config/parallel.py:162, default 16).
+	// SyncInterval is parallel_config.dp_sync_interval (vllm/config/parallel.py:163, default 16).
 	SyncInterval int
 
 	StepCounter int

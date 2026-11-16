@@ -244,13 +244,13 @@ const cpuTier = "cpu_dram"
 // offloadOf maps a deployment's offload block onto the engine block's kv_offload, or refuses what
 // the engine does not model. The OffloadingConnector's kv_connector_extra_config is its CPU tier:
 // cpu_bytes_to_use is the tier's bytes, the engine's, which vLLM divides among its workers'
-// copies (vllm/v1/kv_offload/cpu/spec.py:103-121@5df63a72), as the compatibility engine reads the
+// copies (vllm/v1/kv_offload/cpu/spec.py:107-125@4ba787ec), as the compatibility engine reads the
 // same tier (compat/build KVOffloadBlockFromDeployment), so one deployment's 0.31.0 and 0.32.0
 // runs hold one CPU tier. eviction_policy and spec_name pass through, and blocks_per_chunk comes from the connector options. What vLLM derives at start-up
 // the kernel states: one worker's KV bytes for one GPU block over the offloaded groups
-// (worker_kv_bytes_per_block, offloading/config.py:136-151), the engine's world size (num_workers,
-// offloading/scheduler.py:335) and how many workers' copies of a block the tier holds
-// (OffloadCopies: one for the replicated latent layout, offloading/config.py:158-171).
+// (worker_kv_bytes_per_block, offloading/config.py:174-189), the engine's world size (num_workers,
+// offloading/scheduler.py:313) and how many workers' copies of a block the tier holds
+// (OffloadCopies: one for the replicated latent layout, offloading/config.py:196-209).
 func offloadOf(m *kernelmodel.Model, o *deployment.Offload) (*yaml.Node, error) {
 	if o == nil {
 		return nil, nil
@@ -273,7 +273,7 @@ func offloadOf(m *kernelmodel.Model, o *deployment.Offload) (*yaml.Node, error) 
 	}
 	if cpu <= 0 {
 		return nil, fmt.Errorf("offload states no %s tier: the OffloadingConnector's tier is host DRAM "+
-			"(cpu_bytes_to_use, required by vLLM, cpu/spec.py:97-101@5df63a72)", cpuTier)
+			"(cpu_bytes_to_use, required by vLLM, cpu/spec.py:101-105@4ba787ec)", cpuTier)
 	}
 	opts, err := engineconfig.DecodeConnectorOptions(o.ConnectorOptions)
 	if err != nil {
@@ -325,8 +325,8 @@ func offloadOf(m *kernelmodel.Model, o *deployment.Offload) (*yaml.Node, error) 
 // pipeline rank 0's, not the binding stage's: the scheduler's KV cache config, which its
 // OffloadingConnector sizes the CPU tier from (worker_kv_bytes_per_block, offloading/config.py:
 // 137-147), is a copy of worker 0's (generate_scheduler_kv_cache_config, vllm/v1/core/
-// kv_cache_utils.py:2289; vllm/v1/engine/core.py:339@5df63a72), whose KV tensor is the shared
-// block count times rank 0's own bytes a block (get_kv_cache_configs step 5, :2664-2675).
+// kv_cache_utils.py:1109; vllm/v1/engine/core.py:334@4ba787ec), whose KV tensor is the shared
+// block count times rank 0's own bytes a block (get_kv_cache_configs step 5, :2807-2818).
 func offloadBytesPerBlock(m *kernelmodel.Model) (int64, error) {
 	runs, err := m.KVLayers()
 	if err != nil {
@@ -342,7 +342,7 @@ func offloadBytesPerBlock(m *kernelmodel.Model) (int64, error) {
 	}
 	if p.perBlock[0] <= 0 {
 		return 0, fmt.Errorf("vllmengine: pipeline rank 0 holds no KV layer, so vLLM's scheduler sizes no CPU tier " +
-			"(worker_kv_bytes_per_block 0, offloading/config.py:137-152@5df63a72)")
+			"(worker_kv_bytes_per_block 0, offloading/config.py:175-190@4ba787ec)")
 	}
 	return p.perBlock[0], nil
 }
@@ -465,7 +465,7 @@ func stagePoolsOf(m *kernelmodel.Model, runs []kernelmodel.KVLayerRun) (stagePoo
 
 // poolBlocks is the KV pool's block count. vLLM sizes the pool over its KV cache groups: the
 // memory left for KV over the widest group's bytes per block (get_kv_cache_config_from_groups,
-// vllm/v1/core/kv_cache_utils.py:1622-1628@5df63a72), because every group draws its blocks from
+// vllm/v1/core/kv_cache_planning.py:676-682@4ba787ec), because every group draws its blocks from
 // one shared pool. A model of one full-attention group is the compatibility engine's count, the
 // kernel's allocatable bytes over its bytes for one block of every layer; a hybrid model's
 // groups each hold a share of the layers, so its pool holds more blocks than that
@@ -563,7 +563,7 @@ func (p pool) complete(given yaml.Node) yaml.Node {
 	if p.model.HasRecurrentLayers() {
 		// A hybrid model's block size is vLLM's aligned one even over a stated size: the platform
 		// raises the attention block until its page covers the recurrent state's
-		// (update_block_size_for_backend, vllm/platforms/interface.py:759-800@5df63a72), which
+		// (update_block_size_for_backend, vllm/platforms/interface.py:759-800@4ba787ec), which
 		// resolved.BlockSize holds as the larger of that and the stated size.
 		deleteKey(&block, "block_size")
 	}
@@ -588,7 +588,7 @@ func (p pool) complete(given yaml.Node) yaml.Node {
 	setIfAbsent(&block, "use_v2_model_runner", fmt.Sprint(runner == "v2"))
 	if n := p.model.MTPDraftLayers(); n > 0 {
 		// An MTP drafter's prefill lookahead turns on its checkpoint's layer count
-		// (vllm/config/vllm.py:644-664@5df63a72), which the catalog's model graph holds.
+		// (vllm/config/vllm.py:655-675@4ba787ec), which the catalog's model graph holds.
 		setIfAbsent(&block, "mtp_nextn_predict_layers", fmt.Sprint(n))
 	}
 	if role := kvRoleOf(p.role); role != "" && p.connector != "" {
@@ -623,7 +623,7 @@ func (p pool) complete(given yaml.Node) yaml.Node {
 	}
 	if runs, err := p.model.KVLayers(); err == nil && len(runs) > 0 {
 		// The model's attention layers by the KV cache spec vLLM builds for each, which the
-		// factory groups as get_kv_cache_groups does (vllm/v1/core/kv_cache_utils.py:2159@5df63a72).
+		// factory groups as get_kv_cache_groups does (vllm/v1/core/kv_cache_planning.py:1113@4ba787ec).
 		setNodeIfAbsent(&block, "kv_layers", kvLayersNode(runs))
 	}
 	return block
@@ -723,7 +723,7 @@ func (k kernelPricer) TransferTime(t engine.Transfer) engine.Duration {
 // GroupTransferTime implements core/vllm.GroupTransferPricer: an offload job of groupBlocks[g]
 // GPU blocks of each KV cache group moves, on each worker, those blocks' pages of the group's
 // layers on that worker (vLLM's CPU offload worker copies one (block, layer) page at a time,
-// _fill_direct_ops, vllm/v1/kv_offload/cpu/gpu_worker.py:395-416@5df63a72), and the job ends
+// _fill_direct_ops, vllm/v1/kv_offload/cpu/gpu_worker.py:424-445@4ba787ec), and the job ends
 // when the worker moving the most bytes does. A group of fewer layers than the widest moves
 // fewer bytes a block than the pool's stride.
 func (k kernelPricer) GroupTransferTime(t engine.Transfer, groupBlocks []int) engine.Duration {
@@ -860,7 +860,7 @@ const (
 // states pd_transfer.connector: MultiConnector and an offload block: a NIXL child in the pool's
 // kv_role, then the OffloadingConnector as kv_both. The schema does not state the children or their
 // order (the startup warning says so), so llm-d's composition is assumed, NIXL first, the first
-// connector that reports tokens loading them (multi_connector.py:434-456@5df63a72). A pool that
+// connector that reports tokens loading them (multi_connector.py:451-473@4ba787ec). A pool that
 // states its own kv_transfer in its engine block states the order itself.
 func multiChildren(role string) *yaml.Node {
 	var n yaml.Node

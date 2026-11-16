@@ -40,13 +40,13 @@ make; this runner adds none of its own to vLLM's objects):
 - the OffloadingConnector's worker, as oracle/run_offloading.py (Worker): it runs on the
   offloading child's slice of the step's MultiKVConnectorMetadata, and its completions reach the
   scheduler as vLLM's own OffloadingWorkerMetadata inside a MultiKVConnectorWorkerMetadata that
-  holds None for the other child (build_connector_worker_meta, :409-419);
+  holds None for the other child (build_connector_worker_meta, :426-436);
 - the NIXL worker, as oracle/run_connector.py (transport_report): a pull lands recv_delay steps
   after it started, a hold ends send_delay steps after the finish. A pull is the NIXL child's
   only when the real MultiConnector chose it for the request (_requests_to_connector): a request
   that carries remote-prefill parameters but whose load the offloading child won is not pulled
   (NIXL's worker only notifies the remote side then and reports nothing, nixl/pull_worker.py:
-  444-464@5df63a72), so the mock reports nothing for it. The two workers' reports reach the
+  461-481@4ba787ec), so the mock reports nothing for it. The two workers' reports reach the
   scheduler as one KVConnectorOutput, as the engine's KVOutputAggregator hands it;
 - the iteration order of finished_req_ids, as oracle/run_offloading.py (order_finished).
 
@@ -181,7 +181,7 @@ class Harness:
     def note_pulls(self, step: int) -> None:
         """A request the scheduler has just parked for remote KV starts a pull (NIXL's) only if
         the real MultiConnector assigned it to the NIXL child: the child that returned tokens
-        for it, multi_connector.py:448-452@5df63a72. One the offloading child won is parked for
+        for it, multi_connector.py:465-469@4ba787ec. One the offloading child won is parked for
         its CPU load and the NIXL worker, told 0 external tokens, only notifies the prefiller."""
         from vllm.v1.request import RequestStatus  # noqa: E402
 
@@ -286,12 +286,12 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     groups = cfg.get("kv_groups")
     if groups and len(groups) > 1 and any(r.get("invalid_blocks") for r in sc["requests"]):
         sys.exit(f"{scenario_path}: invalid_blocks beside several KV cache groups: NIXL's worker reports no "
-                 "block-level failure under HMA (nixl/base_worker.py:2910-2914@5df63a72)")
+                 "block-level failure under HMA (nixl/base_worker.py:3248-3252@4ba787ec)")
     spec = cfg.get("speculative")
     async_sched = bool(cfg.get("async_scheduling", False))
     if int(cfg.get("pipeline_parallel_size", 1)) > 1:
         sys.exit(f"{scenario_path}: pipeline_parallel_size > 1 is not run beside the NIXL child "
-                 "(nixl/base_worker.py:757-779@5df63a72)")
+                 "(nixl/base_worker.py:868-890@4ba787ec)")
     v2 = bool(cfg.get("use_v2_model_runner", False)) or (bool(spec) and spec["method"] == "dspark")
     from run_enginecore import set_async  # noqa: E402
 

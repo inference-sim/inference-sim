@@ -23,7 +23,7 @@ func (c *loadingConnector) Finished(r *Request, _ []int) bool {
 func (c *loadingConnector) AfterOutput(TransferOutcome) {}
 
 // An abort that names a request twice finishes it once, as vLLM's finish_requests takes the
-// ids as a set (vllm/v1/core/sched/scheduler.py:2667-2668@5df63a72). Counted twice, the second
+// ids as a set (vllm/v1/core/sched/scheduler.py:2982-2983@4ba787ec). Counted twice, the second
 // copy would see the first's FINISHED_ABORTED status and free blocks the in-flight load is
 // still writing, report the request finished twice and tell the connector twice.
 func TestAbortNamingARequestTwiceFinishesItOnce(t *testing.T) {
@@ -111,7 +111,7 @@ func (loadingHMA) LoadedGroups(_ *Request, all []int) []int { return all }
 // A connector is refused where it is not modelled for it, each refusal naming the issue that
 // brings it, and installed where its Capabilities state it is diff-tested: several KV cache
 // groups only for a SupportsHMA connector (vLLM turns the hybrid manager off for any other,
-// vllm/config/vllm.py:2170-2192@5df63a72), drafters and the batch queue only where stated, and
+// vllm/config/vllm.py:2257-2279@4ba787ec), drafters and the batch queue only where stated, and
 // never beside a group kind the connector oracle has not run (a bounded-replay window, a ring,
 // a group of its own block size) unless the connector states PackedGroups and the groups its load
 // restores (GroupLoader).
@@ -192,7 +192,7 @@ func TestSetConnectorRefusesWhatItDoesNotModel(t *testing.T) {
 // With several KV cache groups the connector sees every group's block ids: at admission
 // (update_state_after_alloc's KVCacheBlocks, AllocatedBlocks.Groups), and at finish through
 // request_finished_all_groups, after each sliding window freed its blocks below the window
-// (_connector_finished, vllm/v1/core/sched/scheduler.py:3024-3058@5df63a72), each group clipped
+// (_connector_finished, vllm/v1/core/sched/scheduler.py:3368-3402@4ba787ec), each group clipped
 // to the blocks covering the computed tokens, a freed slot as the null block's id (0).
 func TestAnHMAConnectorSeesEveryGroupsBlocks(t *testing.T) {
 	s, err := New(Config{MaxNumSeqs: 4, MaxNumBatchedTokens: 64, BlockSize: 4, NumBlocks: 40, MaxModelLen: 128,

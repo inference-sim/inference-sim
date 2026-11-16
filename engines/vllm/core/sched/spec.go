@@ -32,12 +32,12 @@ type SpecOptions struct {
 	// NumTokens is num_speculative_tokens.
 	NumTokens int
 	// ParallelDrafting is parallel_drafting (P-EAGLE, PARD); dflash and dspark always draft
-	// in parallel (vllm/config/speculative.py:1468-1469@5df63a72).
+	// in parallel (vllm/config/speculative.py:1581-1582@4ba787ec).
 	ParallelDrafting bool
 	// NextnPredictLayers is an MTP drafter's num_nextn_predict_layers; 0 means 1.
 	NextnPredictLayers int
 	// SampleFromAnchor is a DSpark drafter's sample_from_anchor; nil means true, vLLM's
-	// default (vllm/config/vllm.py:628-630@5df63a72).
+	// default (vllm/config/vllm.py:639-641@4ba787ec).
 	SampleFromAnchor *bool
 	// DisableEagleBlockDrop is disable_eagle_block_drop.
 	DisableEagleBlockDrop bool

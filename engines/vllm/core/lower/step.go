@@ -159,7 +159,7 @@ func GraphContextTokens(steps, maxNumTokens, reqs int) int {
 	return min(reqs*(steps+1), maxNumTokens)
 }
 
-// MaxDecodeQueryLen is max_decode_query_len (vllm/v1/attention/backend.py:569-586@5df63a72): the
+// MaxDecodeQueryLen is max_decode_query_len (vllm/v1/attention/backend.py:572-589@4ba787ec): the
 // widest request a spec-as-decode attention builder treats as a decode, and so the threshold
 // above which a request launches the prefill kernels. It is 1 + num_speculative_tokens, and
 // model runner V1's parallel drafter appends that many mask slots again.

@@ -115,7 +115,7 @@ def base_scenario(seed: int) -> dict:
     policy = rng.choice(["fcfs", "priority"])
     caching = rng.random() < 0.6
     # vLLM refuses a threshold above max_model_len and a budget below max_num_seqs
-    # (SchedulerConfig.verify_max_model_len, vllm/config/scheduler.py:314-357@5df63a72).
+    # (SchedulerConfig.verify_max_model_len, vllm/config/scheduler.py:317-360@4ba787ec).
     threshold = rng.choice([0, 0, 0, rng.randint(1, min(budget, max_len))])
     seqs = min(seqs, budget)
     n = rng.randint(1, 12)

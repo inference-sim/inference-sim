@@ -8,7 +8,7 @@
 // scheduler alone decides (class "exact" in docs/metrics-manifest.json): request counts, KV
 // usage, prefix-cache queries and hits, preemptions, prompt and generation tokens, finished
 // requests by reason, and tokens per step. It reads what one engine step decided and keeps
-// each series as vLLM's PrometheusStatLogger.record does (loggers.py:1138-1330@5df63a72).
+// each series as vLLM's PrometheusStatLogger.record does (loggers.py:1138-1330@4ba787ec).
 //
 // Families that need time (latencies) or supplied inputs (spec-decode acceptance, transfer
 // durations) are not here: they are "derived" in the manifest and reported on the
@@ -32,8 +32,8 @@ type Admission struct {
 	// Preempted is whether the request was preempted before (num_preemptions > 0).
 	Preempted bool
 	// CacheLookup is whether a local prefix-cache lookup ran: prefix caching is on
-	// (prefix_cache_lookup_enabled, kv_cache_manager.py:249-251@5df63a72). Only a lookup that
-	// ran is counted (record_prefix_cache_stats, :253-262), though the prompt is counted
+	// (prefix_cache_lookup_enabled, kv_cache_manager.py:251-253@4ba787ec). Only a lookup that
+	// ran is counted (record_prefix_cache_stats, :255-264), though the prompt is counted
 	// either way.
 	CacheLookup bool
 }
@@ -48,10 +48,10 @@ type Finish struct {
 	// Preemptions is how many times the request was preempted.
 	Preemptions int
 	// MaxTokens is the request's max_tokens as the engine received it (SamplingParams
-	// .max_tokens, observed when non-zero, loggers.py:1325-1328@5df63a72).
+	// .max_tokens, observed when non-zero, loggers.py:1325-1328@4ba787ec).
 	MaxTokens int
 	// CachedTokens is the request's cached prompt tokens as its first output reported them
-	// (RequestState.num_cached_tokens, output_processor.py:733-737@5df63a72); Model fills it.
+	// (RequestState.num_cached_tokens, output_processor.py:790-794@4ba787ec); Model fills it.
 	CachedTokens int
 }
 
@@ -93,7 +93,7 @@ type Step struct {
 
 // Draft is one request's verify step: the drafts it was scheduled and the drafts the target
 // accepted. A grammar-invalidated draft is not counted as proposed (make_spec_decoding_stats,
-// scheduler.py:2961-2978@5df63a72); the caller passes the count net of those.
+// scheduler.py:3305-3322@4ba787ec); the caller passes the count net of those.
 type Draft struct {
 	Proposed, Accepted int
 }
@@ -113,10 +113,10 @@ type Model struct {
 	counters   map[string]float64
 	hists      map[string]*histogram
 	// pending is each admitted request's PrefillStats, set at its first admission and
-	// emitted with its first output token (scheduler.py:1074-1080, 2208-2212@5df63a72).
+	// emitted with its first output token (scheduler.py:1251-1257, 2454-2458@4ba787ec).
 	pending map[string]prefill
 	// preemptions are the PREEMPTED events each request holds until its next output takes
-	// them (scheduler.py:1609-1610, 2274@5df63a72).
+	// them (scheduler.py:1838-1839, 2522@4ba787ec).
 	preemptions map[string]int
 	// cached is each request's cached prompt tokens from its first output, until it finishes.
 	cached map[string]int
@@ -132,11 +132,11 @@ type histogram struct {
 }
 
 // finishReasons are FinishReason's strings, every one of which vLLM pre-registers at zero
-// (loggers.py:819-826@5df63a72; vllm/v1/engine/__init__.py:48-70@5df63a72).
+// (loggers.py:819-826@4ba787ec; vllm/v1/engine/__init__.py:49-71@4ba787ec).
 var finishReasons = []string{"stop", "length", "abort", "error", "repetition"}
 
 // promptSources and hitSources are PromptTokenStats.ALL_SOURCES and CacheHitSource
-// (vllm/v1/metrics/stats.py; vllm/v1/metrics/cache_hit_source.py:18-24@5df63a72).
+// (vllm/v1/metrics/stats.py; vllm/v1/metrics/cache_hit_source.py:18-24@4ba787ec).
 var (
 	promptSources = []string{"local_compute", "local_cache_hit", "external_kv_transfer"}
 	hitSources    = []string{"device", "host", "p2p", "disk", "external_unspecified"}
@@ -174,7 +174,7 @@ func New(hists []Bucketed) *Model {
 
 // WithSpeculation registers the speculative-decoding counters, at zero, for a pool that drafts
 // numSpecTokens tokens a step: the three totals and one accepted-tokens counter for each draft
-// position (SpecDecodingProm.__init__, vllm/v1/spec_decode/metrics.py:200-258@5df63a72). A pool
+// position (SpecDecodingProm.__init__, vllm/v1/spec_decode/metrics.py:200-258@4ba787ec). A pool
 // without speculation registers none of them.
 func (m *Model) WithSpeculation(numSpecTokens int) *Model {
 	m.specTokens = numSpecTokens
@@ -191,16 +191,16 @@ func (m *Model) WithSpeculation(numSpecTokens int) *Model {
 // Step records one engine step: its scheduler stats, then the iteration stats its outputs
 // carry, in the order PrometheusStatLogger.record applies them.
 func (m *Model) Step(s Step) {
-	// SchedulerStats (loggers.py:1146-1177@5df63a72).
+	// SchedulerStats (loggers.py:1146-1177@4ba787ec).
 	m.gauges["vllm:num_requests_running"] = float64(s.Running)
 	m.gauges["vllm:num_requests_waiting"] = float64(s.Waiting)
 	m.gauges["vllm:num_requests_waiting_by_reason{reason=capacity}"] = float64(s.Waiting - s.Deferred)
 	m.gauges["vllm:num_requests_waiting_by_reason{reason=deferred}"] = float64(s.Deferred)
 	m.gauges["vllm:kv_cache_usage_perc"] = s.KVUsage
 	for _, a := range s.Admitted {
-		// record_prefix_cache_stats at admission (scheduler.py:1314-1317): a preempted
+		// record_prefix_cache_stats at admission (scheduler.py:1508-1511): a preempted
 		// request's lookup goes to preempted_*, which no vllm:* family exports
-		// (PrefixCacheStats.record, stats.py:136-145@5df63a72).
+		// (PrefixCacheStats.record, stats.py:136-145@4ba787ec).
 		if a.Preempted {
 			continue
 		}
@@ -209,13 +209,13 @@ func (m *Model) Step(s Step) {
 			m.counters["vllm:prefix_cache_hits_total"] += float64(a.LocalHit)
 			m.counters["vllm:prompt_tokens_cached_by_source_total{source=device}"] += float64(a.LocalHit)
 		}
-		// PrefillStats.set at the first admission (scheduler.py:1074-1080@5df63a72): a request
+		// PrefillStats.set at the first admission (scheduler.py:1251-1257@4ba787ec): a request
 		// not preempted before is being admitted for the first time.
 		m.pending[a.ID] = prefill{prompt: a.PromptTokens, localHit: a.LocalHit}
 	}
-	// IterationStats (loggers.py:1259-1330@5df63a72), built from the step's outputs. A
+	// IterationStats (loggers.py:1259-1330@4ba787ec), built from the step's outputs. A
 	// preemption is an event on the request, which the request's next emitted output carries
-	// to the frontend; IterationStats counts it there (stats.py:574-577@5df63a72).
+	// to the frontend; IterationStats counts it there (stats.py:578-581@4ba787ec).
 	for _, id := range s.Preempted {
 		m.preemptions[id]++
 	}
@@ -285,7 +285,7 @@ func (m *Model) Step(s Step) {
 		delete(m.cached, f.ID)
 		m.counters["vllm:request_success_total{finished_reason="+f.Reason+"}"]++
 		m.observe("vllm:request_prompt_tokens", float64(f.PromptTokens))
-		// The prompt tokens computed rather than cached (loggers.py:1312-1318@5df63a72): the
+		// The prompt tokens computed rather than cached (loggers.py:1312-1318@4ba787ec): the
 		// first-admission cache hit the request's PrefillStats recorded.
 		m.observe("vllm:request_prefill_kv_computed_tokens", float64(f.PromptTokens-max(f.CachedTokens, 0)))
 		m.observe("vllm:request_generation_tokens", float64(f.GenerationTokens))

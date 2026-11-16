@@ -15,7 +15,7 @@ import (
 	"github.com/inference-sim/blis-vllm/core/sched"
 )
 
-// eosToken is tests/v1/core/utils.py:43@5df63a72, which the GPU mock samples last.
+// eosToken is tests/v1/core/utils.py:49@4ba787ec, which the GPU mock samples last.
 const eosToken = 50256
 
 type scenario struct {
@@ -124,7 +124,7 @@ func histogramBounds(t *testing.T, maxModelLen int) []Bucketed {
 		out = append(out, Bucketed{Family: name, Bounds: b[name]})
 	}
 	// request_tokens: a 1-2-5 series capped at max_model_len (vllm/v1/metrics/buckets.py:172-203,
-	// 223-228@5df63a72).
+	// 223-228@4ba787ec).
 	tokens := build125(maxModelLen)
 	for _, name := range []string{"vllm:request_prompt_tokens", "vllm:request_generation_tokens",
 		"vllm:request_max_num_generation_tokens", "vllm:request_params_max_tokens",

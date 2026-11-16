@@ -70,7 +70,7 @@ func KVGroupsWith(runs []KVLayerRun, o kv.GroupOptions) ([]kv.Group, error) {
 }
 
 // KVPoolBlocks is the KV pool's block count over the layers' KV cache groups, as
-// get_kv_cache_config_from_groups sizes it (vllm/v1/core/kv_cache_utils.py:1622-1628@5df63a72):
+// get_kv_cache_config_from_groups sizes it (vllm/v1/core/kv_cache_planning.py:676-682@4ba787ec):
 // availableBytes, the memory the KV cache may take, over the widest group's bytes per block
 // (kv.PoolBytesPerBlock).
 //
@@ -79,7 +79,7 @@ func KVGroupsWith(runs []KVLayerRun, o kv.GroupOptions) ([]kv.Group, error) {
 // every layer's page, block_size x the layers' elements a token x each layer's dtype bytes. A
 // layer that states its element size keeps it -- MiniMax-M3's indexer key cache, whose dtype is
 // attention_config.indexer_kv_dtype rather than the cache dtype (bf16 unless stated,
-// vllm/models/minimax_m3/nvidia/model.py:505-509@5df63a72) -- and the others share what remains
+// vllm/models/minimax_m3/nvidia/model.py:505-509@4ba787ec) -- and the others share what remains
 // of kernelPerBlock. One group of every layer is then kernelPerBlock exactly, so it keeps the
 // memory model's count. A remainder that is not a whole number of bytes for each of the other
 // layers' elements is refused, naming both, rather than sized from a guessed dtype. Layers that
@@ -96,7 +96,7 @@ func KVPoolBlocks(runs []KVLayerRun, disableHybrid bool, blockSize int, kernelPe
 // KV cache group's (kv.PoolBytesPerBlock), with the layers' element sizes resolved from
 // kernelPerBlock as KVPoolBlocks resolves them. It is the worker_kv_bytes_per_block an
 // OffloadingConnector sizes its CPU tier from (the KV tensor's bytes over its blocks,
-// vllm/distributed/kv_transfer/kv_connector/v1/offloading/config.py:136-147@5df63a72).
+// vllm/distributed/kv_transfer/kv_connector/v1/offloading/config.py:174-185@4ba787ec).
 func KVPoolBytesPerBlock(runs []KVLayerRun, disableHybrid bool, blockSize int, kernelPerBlock int64) (int64, error) {
 	layers, err := KVLayers(runs)
 	if err != nil {
