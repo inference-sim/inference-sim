@@ -3,11 +3,9 @@ package harness
 import (
 	"math"
 	"testing"
-
-	"github.com/inference-sim/inference-sim/tools/harness/internal/artifacts"
 )
 
-func absolutesPath(t testing.TB) string { return artifacts.Measurement(t, "inferencex_absolutes.json") }
+func absolutesPath(t testing.TB) string { return measurementPath(t, "inferencex_absolutes.json") }
 
 // The measured absolute curves must reproduce the artifact's own measured RELATIVES. This is the
 // check that the InferenceX rows loaded here are the same rows NVIDIA scored AISimulate against.
@@ -19,7 +17,7 @@ func TestAbsolutesReproduceTheArtifactsOwnRelatives(t *testing.T) {
 		t.Fatalf("measured absolutes: %v", err)
 	}
 	c, err := LoadCorpus(
-		artifacts.Measurement(t, "aisimulate_e2e.json"))
+		measurementPath(t, "aisimulate_e2e.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

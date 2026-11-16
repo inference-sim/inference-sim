@@ -6,8 +6,6 @@ import (
 	"os"
 	"sort"
 	"testing"
-
-	"github.com/inference-sim/inference-sim/tools/harness/internal/artifacts"
 )
 
 // This file is the apples-to-apples guarantee, expressed as checks that fail when the
@@ -67,7 +65,7 @@ type errStat struct {
 }
 
 // snapshotPath is the full published snapshot, beside the extracted corpus.
-func snapshotPath(t testing.TB) string { return artifacts.Measurement(t, "aisimulate_summary.json") }
+func snapshotPath(t testing.TB) string { return measurementPath(t, "aisimulate_summary.json") }
 
 // loadSnapshot reads the nested published summary and its whole-snapshot shape error.
 func loadSnapshot(path string) (*snapshot, float64, error) {

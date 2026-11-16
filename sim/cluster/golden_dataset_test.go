@@ -1,25 +1,16 @@
-// Package testutil provides shared test infrastructure for the BLIS simulator.
-// It consolidates golden dataset types and assertion helpers used across
-// sim/ and sim/cluster/ test packages.
-package testutil
+package cluster
+
+// The golden dataset's types and loader, and a float assertion, which only this package's tests
+// use (moved from sim/internal/testutil, design LIF-7).
 
 import (
 	"encoding/json"
-	"flag"
 	"math"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
 )
-
-// UpdateGolden, when set via -update-golden, causes golden dataset tests to
-// rewrite their JSON files with current simulation output instead of asserting.
-// Structural invariants still run in update mode; only stored-value comparisons
-// are skipped.
-//
-//	go test ./sim/... -update-golden
-var UpdateGolden = flag.Bool("update-golden", false, "rewrite golden dataset JSON files with current simulation output")
 
 // GoldenDataset represents the structure of testdata/goldendataset.json.
 type GoldenDataset struct {
@@ -96,7 +87,7 @@ type GoldenMetrics struct {
 }
 
 // LoadGoldenDataset loads the golden dataset from the testdata directory.
-// The path is resolved relative to this source file: sim/internal/testutil/ → testdata/.
+// The path is resolved relative to this source file: sim/cluster/ → testdata/.
 func LoadGoldenDataset(t *testing.T) *GoldenDataset {
 	t.Helper()
 
@@ -104,8 +95,8 @@ func LoadGoldenDataset(t *testing.T) *GoldenDataset {
 	if !ok {
 		t.Fatal("Failed to get current file path")
 	}
-	// Navigate from sim/internal/testutil/ to repo root testdata/
-	path := filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "testdata", "goldendataset.json")
+	// Navigate from sim/cluster/ to repo root testdata/
+	path := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "goldendataset.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("Failed to read golden dataset: %v", err)
@@ -117,40 +108,6 @@ func LoadGoldenDataset(t *testing.T) *GoldenDataset {
 	}
 
 	return &dataset
-}
-
-// SaveGoldenDataset writes the dataset back to testdata/goldendataset.json.
-// The path is resolved relative to this source file, matching LoadGoldenDataset.
-func SaveGoldenDataset(t *testing.T, ds *GoldenDataset) {
-	t.Helper()
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("Failed to get current file path")
-	}
-	path := filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "testdata", "goldendataset.json")
-	data, err := json.MarshalIndent(ds, "", "    ")
-	if err != nil {
-		t.Fatalf("Failed to marshal golden dataset: %v", err)
-	}
-	if err := os.WriteFile(path, append(data, '\n'), 0644); err != nil {
-		t.Fatalf("Failed to write golden dataset: %v", err)
-	}
-	t.Logf("updated %s (%d tests)", path, len(ds.Tests))
-}
-
-// GoldenDatasetPath returns the absolute path to testdata/goldendataset.json.
-func GoldenDatasetPath(t *testing.T) string {
-	t.Helper()
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("Failed to get current file path")
-	}
-	return filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "testdata", "goldendataset.json")
-}
-
-// MarshalGoldenDataset serializes a GoldenDataset to indented JSON.
-func MarshalGoldenDataset(dataset *GoldenDataset) ([]byte, error) {
-	return json.MarshalIndent(dataset, "", "    ")
 }
 
 // AssertFloat64Equal compares two float64 values with relative tolerance.

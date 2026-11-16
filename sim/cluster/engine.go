@@ -47,55 +47,6 @@ func (e *UnlimitedEngine) Optimize(results []AnalyzerResult, _ GPUInventory) []S
 	return decisions
 }
 
-// GreedyEngine converts analyzer signals into scale decisions while respecting GPU inventory.
-// Scale-up targets cheapest variant with sufficient free slots; scale-down targets most expensive.
-// At most one decision per model per call.
-type GreedyEngine struct{}
-
-// Optimize produces scale decisions for all models, respecting GPU inventory for scale-up.
-func (e *GreedyEngine) Optimize(results []AnalyzerResult, inventory GPUInventory) []ScaleDecision {
-	var decisions []ScaleDecision
-
-	for _, r := range results {
-		if r.RequiredCapacity > 0 {
-			// Scale up: pick cheapest variant that has enough free GPU slots.
-			// n is computed per-variant using that variant's own per-replica capacity
-			// so that a more capable fallback variant does not get overscaled.
-			vcs := sortedByAscCost(r.VariantCapacities)
-			for _, vc := range vcs {
-				n := scaleUpN(r.RequiredCapacity, []VariantCapacity{vc})
-				needed := n * vc.Variant.TPDegree
-				if needed < 1 {
-					needed = 1
-				}
-				if inventory.FreeSlots(vc.Variant) >= needed {
-					decisions = append(decisions, ScaleDecision{
-						ModelID: r.ModelID,
-						Variant: vc.Variant,
-						Delta:   n,
-					})
-					break
-				}
-			}
-			continue
-		}
-		if r.SpareCapacity > 0 {
-			// Scale down: pick most expensive variant with active replicas, exact-N replicas
-			vcs := sortedByDescCost(r.VariantCapacities)
-			for _, vc := range vcs {
-				if vc.ReplicaCount > 0 {
-					// A zero count means the check proved no removal safe: emit nothing (INV-19).
-					if n := scaleDownN(r.SpareCapacity, vc, r.SafeRemovals); n > 0 {
-						decisions = append(decisions, ScaleDecision{ModelID: r.ModelID, Variant: vc.Variant, Delta: -n})
-					}
-					break
-				}
-			}
-		}
-	}
-	return decisions
-}
-
 // scaleUpN returns exact replicas to add for the selected variant (vcs[0]).
 // Uses Supply/ReplicaCount from the first active variant in vcs as perReplicaCapacity.
 // Falls back to 1 when no active variant exists (perReplicaCapacity == 0).

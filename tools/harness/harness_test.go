@@ -3,17 +3,14 @@ package harness
 import (
 	"math"
 	"testing"
-
-	"github.com/inference-sim/inference-sim/tools/harness/corpora"
-	"github.com/inference-sim/inference-sim/tools/harness/internal/artifacts"
 )
 
 // corpusPath is the AISimulate end-to-end corpus, under BLIS_MEASUREMENTS.
-func corpusPath(t testing.TB) string { return artifacts.Measurement(t, "aisimulate_e2e.json") }
+func corpusPath(t testing.TB) string { return measurementPath(t, "aisimulate_e2e.json") }
 
 func cfg(t testing.TB) Config {
 	return Config{
-		Repos: corpora.DefaultRepos(),
+		Repos: defaultRepos(),
 		Blis:  testBlis(t),
 		Seed:  42,
 	}
@@ -149,12 +146,9 @@ func TestEverySweepStatesAParsableWorkload(t *testing.T) {
 	}
 }
 
-// MAPE and Median must behave as their names claim. Cheap to check and load-bearing: the
+// MAPE2 and Median must behave as their names claim. Cheap to check and load-bearing: the
 // headline figures are these two functions applied to per-point errors.
 func TestTheErrorStatisticsAreWhatTheyClaim(t *testing.T) {
-	if got := MAPE([]float64{110, 90}, []float64{100, 100}); math.Abs(got-10) > 1e-9 {
-		t.Errorf("MAPE of +10%% and -10%% is %v, expected 10", got)
-	}
 	if got := MAPE2([]float64{10, 20, 30}); math.Abs(got-20) > 1e-9 {
 		t.Errorf("MAPE2 of 10,20,30 is %v, expected 20", got)
 	}

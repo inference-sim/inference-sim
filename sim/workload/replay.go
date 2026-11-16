@@ -8,28 +8,6 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
-// MaxNormalizedInjectionTimeUs returns the largest arrival time among the records
-// closed-loop replay injects initially: session round-0 records and all non-session records.
-// A request is injected at its arrival_time_us, on the origin its deadline_us is written on,
-// so the value is on the clock of the requests LoadTraceV2SessionBlueprints builds (and of
-// computeReplayHorizon). cmd uses it to size the preliminary blueprint horizon in O(n)
-// without building requests first. Returns 0 for a nil/empty trace.
-func MaxNormalizedInjectionTimeUs(trace *TraceV2) int64 {
-	if trace == nil || len(trace.Records) == 0 {
-		return 0
-	}
-	var max int64
-	for _, rec := range trace.Records {
-		if rec.SessionID != "" && rec.RoundIndex != 0 {
-			continue // skip follow-up session rounds (not injected initially)
-		}
-		if inj := rec.ArrivalTimeUs; inj > max {
-			max = inj
-		}
-	}
-	return max
-}
-
 // LoadTraceV2Requests converts trace v2 records into sim.Request objects
 // with synthetic token IDs for simulation replay. Requests in the same
 // prefix_group share identical prefix token sequences.

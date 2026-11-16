@@ -291,6 +291,23 @@ only the committed fixture catalog is loaded on every PR (by `go test ./cmd/...`
 and, if the check should block merges, marking it required in branch protection — is a merge
 precondition for #1750, not something this script can enforce from inside the repository.
 
+## deadcode-check.sh — no code that no shipped binary reaches (LIF-7)
+
+Runs Go's whole-program dead-code analysis (`golang.org/x/tools/cmd/deadcode`, at the version
+pinned in the script) over every package of the module, rooted at every main package, with test
+files not counted as reaching code. The `deadcode` job of `.github/workflows/ci.yml` calls it.
+
+```bash
+scripts/deadcode-check.sh scripts/deadcode-allow.list
+```
+
+It fails on an unreachable function that `deadcode-allow.list` does not list with a reason, on an
+entry without a reason, and on an entry whose function is no longer unreachable. Packages under
+`contracts/` are exempt. When it fails, delete the code, move a helper only its own package's
+tests use into a `_test.go` file of that package, or, when neither is possible (an interface
+method a type must have, a function reached only through reflection, a helper another package's
+tests call), add an entry with the reason. `scripts/deadcode_check_test.go` drives it.
+
 ## archon-plan-resolve.sh — find and extract a declared archon plan
 
 Finds the first `archon-plan: <path>` line in the declaration text and extracts that file

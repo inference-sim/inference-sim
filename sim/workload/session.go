@@ -101,11 +101,6 @@ type SessionStates struct {
 	BudgetExhausted    int
 }
 
-// Terminal is the number of sessions in a terminal state.
-func (s SessionStates) Terminal() int {
-	return s.Completed + s.Cancelled + s.HorizonInterrupted + s.BudgetExhausted
-}
-
 // States tallies the sessions by state. INV-11: when a run has ended and every session's rounds
 // have been settled, Active is zero and Total equals Terminal().
 func (sm *SessionManager) States() SessionStates {

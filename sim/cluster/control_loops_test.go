@@ -34,7 +34,7 @@ func TestControlLoops_EveryConfigurablePolicyIsListedOrDeclaredNotALoop(t *testi
 		case listed && declared:
 			t.Errorf("PolicyBundle.%s is both a listed control loop and declared not to be one", name)
 		case !listed && !declared:
-			t.Errorf("PolicyBundle.%s is neither in the list of control loops (control_loops.go) nor declared not to be one: "+
+			t.Errorf("PolicyBundle.%s is neither in the list of control loops (control_loops_list_test.go) nor declared not to be one: "+
 				"a policy that acts on the cluster beside the router is a control loop (SIM-14)", name)
 		}
 	}
@@ -58,7 +58,7 @@ func TestControlLoops_EveryConfigurablePolicyIsListedOrDeclaredNotALoop(t *testi
 
 const (
 	controlLoopsPage  = "../../docs/reference/control-loops.md"
-	controlLoopsBegin = "<!-- BEGIN GENERATED from sim/cluster/control_loops.go -->"
+	controlLoopsBegin = "<!-- BEGIN GENERATED from sim/cluster/control_loops_list_test.go -->"
 	controlLoopsEnd   = "<!-- END GENERATED -->"
 )
 
@@ -96,5 +96,5 @@ func TestControlLoopsPage(t *testing.T) {
 		}
 		return
 	}
-	t.Errorf("%s is out of date with sim/cluster/control_loops.go; run BLIS_UPDATE_CONTROL_LOOPS=1 go test ./sim/cluster -run TestControlLoopsPage", controlLoopsPage)
+	t.Errorf("%s is out of date with sim/cluster/control_loops_list_test.go; run BLIS_UPDATE_CONTROL_LOOPS=1 go test ./sim/cluster -run TestControlLoopsPage", controlLoopsPage)
 }

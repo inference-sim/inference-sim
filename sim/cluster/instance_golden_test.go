@@ -5,8 +5,6 @@ import (
 	"testing"
 
 	cengine "github.com/inference-sim/blis-vllm/compat/engine"
-
-	"github.com/inference-sim/inference-sim/sim/internal/testutil"
 )
 
 // One instance, its engine behind the contract as `blis run` builds it, runs every golden
@@ -17,7 +15,7 @@ import (
 // GoldenDataset_Equivalence when that loop was deleted: the laws are the instance's, whatever
 // drives its engine.
 func TestInstance_GoldenDataset_KeepsTheInstanceLaws(t *testing.T) {
-	dataset := testutil.LoadGoldenDataset(t)
+	dataset := LoadGoldenDataset(t)
 	if len(dataset.Tests) == 0 {
 		t.Fatal("Golden dataset contains no test cases")
 	}

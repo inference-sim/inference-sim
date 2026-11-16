@@ -1,5 +1,5 @@
 //go:build !scoring
 
-package artifacts
+package harness
 
 const scoring = false

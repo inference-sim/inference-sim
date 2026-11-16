@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/internal/testutil"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
@@ -98,7 +97,7 @@ func TestDeploymentConfig_NoFieldShadowing(t *testing.T) {
 // WHEN Run() called
 // THEN CompletedRequests, TotalInputTokens, TotalOutputTokens match golden values exactly.
 func TestClusterSimulator_SingleInstance_GoldenEquivalence(t *testing.T) {
-	dataset := testutil.LoadGoldenDataset(t)
+	dataset := LoadGoldenDataset(t)
 
 	if len(dataset.Tests) == 0 {
 		t.Fatal("Golden dataset contains no test cases")
@@ -142,7 +141,7 @@ func TestClusterSimulator_SingleInstance_GoldenEquivalence(t *testing.T) {
 			}
 			// Verify timing: SimEndedTime must match golden vllm_estimated_duration_s
 			vllmRuntime := float64(m.SimEndedTime) / 1e6
-			testutil.AssertFloat64Equal(t, "vllm_estimated_duration_s",
+			AssertFloat64Equal(t, "vllm_estimated_duration_s",
 				tc.Metrics.VllmEstimatedDurationS, vllmRuntime, 1e-9)
 		})
 	}
@@ -153,7 +152,7 @@ func TestClusterSimulator_SingleInstance_GoldenEquivalence(t *testing.T) {
 // WHEN Run() completes
 // THEN INV-1 (conservation), INV-5 (causality) hold for every test case.
 func TestClusterSimulator_SingleInstance_GoldenInvariants(t *testing.T) {
-	dataset := testutil.LoadGoldenDataset(t)
+	dataset := LoadGoldenDataset(t)
 
 	for _, tc := range dataset.Tests {
 		t.Run(tc.Model+"_invariants", func(t *testing.T) {

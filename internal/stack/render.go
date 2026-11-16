@@ -147,7 +147,3 @@ func RenderDocs(root string, s *Stack, write bool) ([]string, error) {
 	}
 	return stale, nil
 }
-
-// OutsideBlocks returns src with every generated block removed, for the check that no version
-// is stated outside one.
-func OutsideBlocks(src []byte) []byte { return blockRE.ReplaceAll(src, nil) }

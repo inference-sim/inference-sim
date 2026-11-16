@@ -51,16 +51,6 @@ var fateOrder = []Fate{FateCompleted, FateDropped, FateTimedOut, FateInFlightAtH
 // Fates returns every fate, in report order.
 func Fates() []Fate { return append([]Fate(nil), fateOrder...) }
 
-// IsValidFate reports whether f is one of the fates of §8.7.
-func IsValidFate(f Fate) bool {
-	for _, g := range fateOrder {
-		if f == g {
-			return true
-		}
-	}
-	return false
-}
-
 // The reasons a request is dropped, named as blis-substrate contracts/spec/result's
 // DropReason names them. Each comment names the INV-1 bucket the request lands in.
 const (

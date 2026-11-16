@@ -495,27 +495,6 @@ func TestLoadTraceV2Requests_GeneratedTraceInjectionUnchanged(t *testing.T) {
 	}
 }
 
-// TestMaxNormalizedInjectionTimeUs verifies BC-6: the preliminary closed-loop horizon basis
-// is the latest arrival among the records injected initially (round-0 and non-session).
-func TestMaxNormalizedInjectionTimeUs(t *testing.T) {
-	trace := &TraceV2{
-		Records: []TraceRecord{
-			// Session round-0 (injected initially).
-			{RequestID: 0, SessionID: "A", RoundIndex: 0, ArrivalTimeUs: 0},
-			// Session follow-up (NOT injected initially — must be skipped).
-			{RequestID: 1, SessionID: "A", RoundIndex: 1, ArrivalTimeUs: 900_000},
-			// Non-session (injected initially); latest arrival → sets the max.
-			{RequestID: 2, ArrivalTimeUs: 700_000},
-		},
-	}
-	if got := MaxNormalizedInjectionTimeUs(trace); got != 700_000 {
-		t.Errorf("MaxNormalizedInjectionTimeUs = %d, want 700000 (max arrival over injected records)", got)
-	}
-	if got := MaxNormalizedInjectionTimeUs(nil); got != 0 {
-		t.Errorf("MaxNormalizedInjectionTimeUs(nil) = %d, want 0", got)
-	}
-}
-
 // TestLoadTraceV2SessionBlueprints_ConcurrencyModeInjection verifies that the round-0 and
 // non-session requests are injected at their arrival_time_us, and that think time comes from
 // arrival deltas.

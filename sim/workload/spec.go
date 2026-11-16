@@ -647,12 +647,6 @@ func validateCohort(c *CohortSpec, idx int) error {
 	return nil
 }
 
-// IsValidSLOClass reports whether name is a valid v2 SLO class.
-// Valid classes: "", "critical", "standard", "sheddable", "batch", "background".
-func IsValidSLOClass(name string) bool {
-	return validSLOClasses[name]
-}
-
 // validateFinitePositive is the one validator for a positive rate or parameter (check.PositiveFinite),
 // which --rate meets too (SIM-11).
 func validateFinitePositive(name string, val float64) error {

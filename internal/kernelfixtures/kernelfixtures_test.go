@@ -9,7 +9,7 @@ import (
 // Each directory exists and holds fixtures; a wrong root would otherwise surface far away, as a
 // kernel that cannot open its scenario.
 func TestTheFixtureDirectoriesHoldScenarios(t *testing.T) {
-	for _, dir := range []string{AISimulate(), Direct()} {
+	for _, dir := range []string{AISimulate()} {
 		m, err := filepath.Glob(filepath.Join(dir, "*.yaml"))
 		if err != nil {
 			t.Fatal(err)

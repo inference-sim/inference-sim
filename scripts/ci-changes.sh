@@ -25,10 +25,10 @@
 # workflow files are read, by the scripts tests and actionlint.
 #
 # Groups: build lint core cluster kernel workload cmd root scripts llmd bytegate other stack
-#         selected actionlint claudemd
+#         selected actionlint claudemd deadcode
 set -euo pipefail
 
-groups="build lint core cluster kernel workload cmd root scripts llmd bytegate other stack selected actionlint claudemd"
+groups="build lint core cluster kernel workload cmd root scripts llmd bytegate other stack selected actionlint claudemd deadcode"
 
 all=0
 if [ "${1:-}" = "--all" ]; then all=1; shift; fi
@@ -59,7 +59,7 @@ classify() {
   any_of own sim sim/trace                  && mark core
   any_of dep internal/invariantscan         && mark core cluster
   any_of own sim/cluster                    && mark cluster
-  any_of own tools/harness tools/harness/corpora tools/harness/internal/artifacts \
+  any_of own tools/harness tools/harness/corpora \
          tools/kernelscore tools/metricscore tools/sensitivity tools/signedprobe && mark kernel
   any_of own sim/workload                   && mark workload
   any_of own cmd                            && mark cmd
@@ -97,9 +97,10 @@ classify() {
   esac
 
   # -- Any Go file: build and lint see it; cmd's repository guards scan every Go source. ----------
+  # The dead-code check (LIF-7) reads every non-test Go file; a _test.go file reaches nothing.
   case "$p" in
     *_test.go) mark lint cmd ;;
-    *.go)      mark lint cmd build ;;
+    *.go)      mark lint cmd build deadcode ;;
   esac
 
   # -- Modules and the stack record. -----------------------------------------------------------
@@ -129,6 +130,7 @@ classify() {
     scripts/ci-*.sh|.github/workflows/ci.yml) for g in $groups; do mark "$g"; done ;;
     scripts/test-selected-deps.sh)        mark selected scripts ;;
     scripts/claude-md-size.sh)            mark claudemd scripts ;;
+    scripts/deadcode-check.sh|scripts/deadcode-allow.list) mark deadcode scripts ;;
     scripts/*)                            mark scripts ;;
     tools/validation/*)                   mark cmd ;;
     tools/*)                              mark kernel ;;

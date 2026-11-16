@@ -66,6 +66,7 @@ jobs:
       selected: ${{ steps.groups.outputs.selected }}
       actionlint: ${{ steps.groups.outputs.actionlint }}
       claudemd: ${{ steps.groups.outputs.claudemd }}
+      deadcode: ${{ steps.groups.outputs.deadcode }}
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -741,6 +742,39 @@ jobs:
       - name: Enforce the CLAUDE.md size ceiling
         run: scripts/claude-md-size.sh CLAUDE.md 40000
 
+  # No code that none of the binaries this repository ships can reach (design LIF-7): Go's
+  # whole-program dead-code analysis, rooted at every main package, with test files not counted
+  # as reaching code. It fails on an unreachable function that scripts/deadcode-allow.list does not
+  # list with a reason, and on an entry that is no longer unreachable. The deadcode version is
+  # pinned in scripts/deadcode-check.sh, its one place.
+  deadcode:
+    needs: changes
+    if: ${{ needs.changes.outputs.deadcode == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Restore the Go build cache
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/.cache/go-build
+          key: go-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-
+            go-build-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Every function is reached by a shipped binary or allow-listed
+        run: scripts/deadcode-check.sh scripts/deadcode-allow.list
+
   # Saves the Go build cache the other jobs restore. It runs on a push to main (every merge) and,
   # on request, on a dispatch (save_cache), so a branch can warm its own cache. Pull requests
   # never save: they would fill the repository's 10 GB cache quota with one entry per push.
@@ -798,7 +832,7 @@ jobs:
   # succeeds when none failed or was cancelled and the change filter itself ran, so a skipped job
   # (its group off) is a success and a job skipped because the filter broke is not.
   required:
-    needs: [changes, build, test, test-shards, test-workload-cmd, test-llmd-shards, test-llmd, lint, stack, selected-deps-shards, selected-deps, actionlint, claude-md-size]
+    needs: [changes, build, test, test-shards, test-workload-cmd, test-llmd-shards, test-llmd, lint, stack, selected-deps-shards, selected-deps, actionlint, claude-md-size, deadcode]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5

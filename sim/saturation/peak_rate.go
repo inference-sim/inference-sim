@@ -136,18 +136,6 @@ const (
 	defaultPeakRateWarmupUs int64 = 0
 )
 
-// NewPeakRateDetector creates a peak-rate detector with the campaign-validated
-// defaults.
-func NewPeakRateDetector() Detector {
-	return newPeakRateDetector(peakRateConfig{
-		Threshold:        defaultPeakRateThreshold,
-		MinObservations:  defaultPeakRateMinObservations,
-		ConsecutiveK:     defaultPeakRateConsecutiveK,
-		OverloadMultiple: defaultPeakRateOverloadMultiple,
-		WarmupUs:         defaultPeakRateWarmupUs,
-	})
-}
-
 // newPeakRateDetector is the canonical constructor (R4): every construction path
 // routes through it. Values are validated by resolvePeakRateConfig before arriving
 // here; the clamps below are the in-process safety net for direct callers, so the

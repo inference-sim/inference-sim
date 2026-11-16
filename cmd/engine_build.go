@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -59,24 +58,14 @@ func resolveKVOffloadConfig() kvOffloadConfig {
 	return cfg
 }
 
-// loadCatalogStorageDevices is the run's storage-device table, read by the engine from the
-// catalog in use (build.StorageDevices).
 // openEngineData opens the catalog and registry the options name: a fresh load.Data with an
 // empty selected-entry report (kernelmodel.OpenData keeps no cache). runData calls it once for
 // a run and hands that Data to the simulator and to every engine (newContractEngine). It is the
 // build site's, as every use of blis-vllm is.
 var openEngineData = func(o load.Options) (*load.Data, error) { return kernelmodel.OpenData(o) }
 
-func loadCatalogStorageDevices(data *load.Data) (map[string]build.KVOffloadDevice, error) {
-	return build.StorageDevices(data)
-}
-
-// catalogStorageDevicesPath, catalogDevicesSubdir and catalogStorageDevicesFile locate the
-// storage-device table inside a catalog directory, for the catalog-load gate's diagnostics.
-func catalogStorageDevicesPath(catalog string) string {
-	return filepath.Join(catalog, build.CatalogDevicesSubdir, build.CatalogStorageDevicesFile)
-}
-
+// catalogDevicesSubdir and catalogStorageDevicesFile locate the storage-device table inside a
+// catalog directory.
 const (
 	catalogDevicesSubdir      = build.CatalogDevicesSubdir
 	catalogStorageDevicesFile = build.CatalogStorageDevicesFile
@@ -467,11 +456,6 @@ func poolOverridesOf(m *engineModel) poolOverrides {
 	return o
 }
 
-// rankInPool is an instance's rank within its pool (build.RankInPool).
-func rankInPool(id cluster.InstanceID, firstDecode int) int {
-	return build.RankInPool(string(id), firstDecode)
-}
-
 // requireKernelCapacity refuses a run whose instances do not fit the scenario's pools
 // (build.RequireGroupCapacity). Called once the instance counts are final.
 func requireKernelCapacity(p *kernelPools) {
@@ -622,9 +606,6 @@ func acceptanceOverridesOf(fl *pflag.FlagSet, k int) kernelmodel.AcceptanceOverr
 	return kernelmodel.AcceptanceOverrides{CLI: cli, Workload: terms, FallbackCategory: speculativeFallbackCategory}
 }
 
-// currentRoutingOverridesOf is the routing layer the pools will open with.
-func currentRoutingOverridesOf() routingOverrides { return kernelmodel.CurrentRoutingOverrides() }
-
 // resolveLoRAConfig assembles the run's LoRA configuration (build.ResolveLoRAConfig) from
 // defaults.yaml's cost coefficients, the optional --lora-config file and the scalar --lora-*
 // flags (each only when Changed, R18), and validates it. The single LoRAConfig construction site
@@ -655,12 +636,6 @@ func resolveLoRAConfig(cmd *cobra.Command) loraConfig {
 		logrus.Fatalf("%v", err)
 	}
 	return cfg
-}
-
-// batchConfigFromCLI is the run's batch configuration, the part of engineConfigFor's the
-// prefix-caching toggle reaches (build.BatchConfigOf).
-func batchConfigFromCLI() batchConfig {
-	return build.BatchConfigOf(engineSettings(modelConfig{}, 1, kvOffloadConfig{}, loraConfig{}, speculativeConfig{}))
 }
 
 // engineConfigFor is the engine's configuration for this run or replay (build.EngineConfigOf),

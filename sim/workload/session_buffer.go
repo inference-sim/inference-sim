@@ -125,10 +125,3 @@ func (s *sessionTokenBuffer) ResetWithCapacity(toks []sim.TokenID, capacity int6
 func (s *sessionTokenBuffer) Len() int64 {
 	return int64(len(s.b))
 }
-
-// bufCap returns the capacity of the underlying array as int64 (matching the
-// type signature of Len/Slice/Append). Unexported: same-package memory tests
-// access it via white-box; production code has no need.
-func (s *sessionTokenBuffer) bufCap() int64 {
-	return int64(cap(s.b))
-}

@@ -240,16 +240,3 @@ func (d *SessionPoolDriver) ArrivedSessions(fates *sim.FateLedger) int {
 	}
 	return n
 }
-
-// hasUniqueSessionIDs is a test helper: true iff all pooled round-0 requests
-// carry distinct SessionIDs.
-func (d *SessionPoolDriver) hasUniqueSessionIDs() bool {
-	seen := make(map[string]struct{}, len(d.queued))
-	for _, r := range d.queued {
-		if _, dup := seen[r.SessionID]; dup {
-			return false
-		}
-		seen[r.SessionID] = struct{}{}
-	}
-	return true
-}

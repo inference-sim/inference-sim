@@ -244,18 +244,3 @@ func TestWarmUpTTFTFactor_AppliedInAggregateMetrics(t *testing.T) {
 		}
 	})
 }
-
-// TestEvaluationResult_WithPerModelMetrics verifies Gap 2 fix: fluent builder.
-func TestEvaluationResult_WithPerModelMetrics(t *testing.T) {
-	perModel := map[string]*ModelMetrics{
-		"test-model": {Model: "test-model", TotalRequests: 10},
-	}
-	result := NewEvaluationResult(nil, nil, nil, nil, 0, 0).WithPerModelMetrics(perModel)
-
-	if result.PerModelMetrics == nil {
-		t.Fatal("PerModelMetrics should not be nil after WithPerModelMetrics")
-	}
-	if mm, ok := result.PerModelMetrics["test-model"]; !ok || mm.TotalRequests != 10 {
-		t.Errorf("PerModelMetrics[test-model].TotalRequests = %v, want 10", result.PerModelMetrics["test-model"])
-	}
-}

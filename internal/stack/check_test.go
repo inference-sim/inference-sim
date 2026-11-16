@@ -1,5 +1,9 @@
 package stack
 
+// The go.mod and go-directive checks of the stack job and the stack.json comparison. They run as
+// this package's tests (the stack job runs go test ./internal/stack/...), and no binary calls them,
+// so they live in a test file (design LIF-7).
+
 import (
 	"fmt"
 	"os"

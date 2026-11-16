@@ -32,7 +32,3 @@ func applyRoutingOverrides(cmd *cobra.Command) {
 	}
 	setRoutingOverrides(o)
 }
-
-func currentRoutingOverrides() routingOverrides {
-	return currentRoutingOverridesOf()
-}

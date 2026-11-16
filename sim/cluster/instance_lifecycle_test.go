@@ -256,32 +256,6 @@ func TestInstanceStateMachine_ValidTransitions(t *testing.T) {
 	}
 }
 
-// ─── sim.InstanceState enums ─────────────────────────────────────────────────────
-
-func TestInstanceState_IsValidInstanceState(t *testing.T) {
-	valid := []string{"Scheduling", "Loading", "WarmingUp", "Active", "Draining", "Terminated"}
-	for _, s := range valid {
-		if !sim.IsValidInstanceState(s) {
-			t.Errorf("sim.IsValidInstanceState(%q) = false, want true", s)
-		}
-	}
-	if sim.IsValidInstanceState("unknown") {
-		t.Error("sim.IsValidInstanceState(unknown) = true, want false")
-	}
-}
-
-func TestNodeState_IsValidNodeState(t *testing.T) {
-	valid := []string{"Provisioning", "Ready", "Draining", "Terminated"}
-	for _, s := range valid {
-		if !IsValidNodeState(s) {
-			t.Errorf("IsValidNodeState(%q) = false, want true", s)
-		}
-	}
-	if IsValidNodeState("unknown") {
-		t.Error("IsValidNodeState(unknown) = true, want false")
-	}
-}
-
 // ─── State transition monotonicity invariant ─────────────────────────────────
 
 // TestInstanceStateMachine_NoBackwardTransitions verifies the monotonicity law:
