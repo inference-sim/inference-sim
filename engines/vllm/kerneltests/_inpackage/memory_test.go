@@ -22,7 +22,7 @@ import (
 )
 
 // Fixed memory occupancy is the registry's magnitudes in NVIDIA's composition, with nothing
-// the kernel hardcodes and nothing Provenance cannot see (inference-sim/blis-latency-kernel#22).
+// the kernel hardcodes and nothing Provenance cannot see (https://github.com/inference-sim/blis-latency-kernel/issues/22).
 // liftMemory states the form and its sources.
 
 // memoryFixture is the deployment #22 measured: deepseek-v3, tp=8, fp8 on h200, 8,192
@@ -414,7 +414,7 @@ func TestV41EngineBuffersAreChargedAtTheEnginesFigures(t *testing.T) {
 	}
 }
 
-// A STATED CAPTURE SIZE IS THE CEILING (inference-sim/blis-latency-kernel#54). vLLM v0.31.0
+// A STATED CAPTURE SIZE IS THE CEILING (https://github.com/inference-sim/blis-latency-kernel/issues/54). vLLM v0.31.0
 // captures up to max_cudagraph_capture_size and runs a larger step with no graph
 // (vllm/v1/worker/gpu/cudagraph_utils.py:499-529). Stated at 64 with DSpark's K = 5, a
 // uniform decode of n requests verifies 6n tokens, so ten requests replay a graph and eleven

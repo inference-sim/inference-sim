@@ -10,7 +10,7 @@ import (
 )
 
 // The speculative knobs a launch states beside method and K: an external drafter by catalog
-// name (blis-schemas#97), the drafter's KV dtype, and the sampling knobs. Acceptance is
+// name (https://github.com/inference-sim/blis-schemas/issues/97), the drafter's KV dtype, and the sampling knobs. Acceptance is
 // supplied (inference-sim#2021 B3), so the sampling knobs are recorded, not acted on; their
 // closed vocabularies are still checked, since a misspelled one is a launch vLLM refuses.
 func TestSpeculativeKnobs(t *testing.T) {

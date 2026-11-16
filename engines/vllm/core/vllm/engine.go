@@ -225,7 +225,7 @@ func newEngine(st settings, pricer Pricer) (*Engine, error) {
 // Plan implements engine.Planned: the PoolPlan the engine's transfers are priced against, the same on
 // every call. It states the pool's placement and its KV tiers (cpu_dram when kv_offload is configured);
 // the lowered layers, KV groups, graphs and memory breakdown are the cost model's resolution, which is not
-// built here (blis-latency-kernel#84), so a pool that states no placement has the empty plan and starts
+// built here (https://github.com/inference-sim/blis-latency-kernel/issues/84), so a pool that states no placement has the empty plan and starts
 // no transfer.
 func (e *Engine) Plan() plan.PoolPlan {
 	p := e.plan

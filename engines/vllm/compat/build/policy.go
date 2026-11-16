@@ -52,7 +52,7 @@ type EngineKnobFlags struct {
 }
 
 // RunEngineKnobs makes the scenario the source of each pool's
-// engine.long_prefill_token_threshold (blis-schemas#75) and
+// engine.long_prefill_token_threshold (https://github.com/inference-sim/blis-schemas/issues/75) and
 // parallel.data_parallel_load_balancing (#76), as #1910 made it the source of the offload
 // tiers. vLLM sets both per engine, so each pool runs its own value. The balancing flag is a
 // run-wide override: given, it applies to every pool and must agree with every mode a pool
