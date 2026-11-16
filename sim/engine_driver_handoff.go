@@ -30,7 +30,7 @@ func (d *EngineDriver) AddRemote(req *Request, peer plan.Endpoint, now int64) {
 	er.RemotePrefill = true
 	er.Peer = &peer
 	// Whether the engine had other work is read before the handoff reaches it: an engine that
-	// queues the handoff as a waiting request (blis-vllm's v0.32.0 engine) would otherwise count
+	// queues the handoff as a waiting request (blis-vllm's v0.33.0 engine) would otherwise count
 	// it as that work, and an idle engine would never be stepped to start the pull.
 	before := d.eng.Snapshot()
 	if err := d.eng.Add(er, now); err != nil {
