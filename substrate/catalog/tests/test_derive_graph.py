@@ -8323,3 +8323,13 @@ def test_modelopt_mixed_precision_refuses_what_vllm_refuses_or_this_deriver_cann
     import derive_graph  # noqa: E402
     with pytest.raises(derive_graph.DeriveError, match=why):
         _derive_raw(_mixed(layers, packed), tmp_path, "glm-mixed-test")
+def test_qwen35_nvfp4_refuses_a_quantized_deltanet_input_projection(tmp_path):
+    """The DeltaNet input projections are priced inside the recurrent update at the base width;
+    a list that leaves them quantized is refused rather than priced at a width they do not store."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    raw = config_of(QWEN35_NVFP4)
+    q = raw["quantization_config"]
+    q["ignore"] = [p for p in q["ignore"] if p != "model.language_model.layers.0.linear_attn*"]
+    with pytest.raises(derive_graph.DeriveError, match="in_proj_qkvz"):
+        _derive_raw(raw, tmp_path, "qwen-nvfp4-test")

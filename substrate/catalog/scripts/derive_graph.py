@@ -571,6 +571,10 @@ MODELOPT_MODULES: dict[str, dict[str, Any]] = {
             "experts": "mlp.experts",
         },
         "shared": ("mlp.shared_expert.gate_up_proj", "mlp.shared_expert.down_proj"),
+        # Linears a kind runs that no GEMM node prices: the DeltaNet input projections ride in the
+        # RecurrentUpdate node at the base width, so a checkpoint that quantizes either is refused
+        # rather than priced at a width it does not store (qwen3_next.py in_proj_qkvz, in_proj_ba).
+        "unpriced": {"gdn_moe": ("linear_attn.in_proj_qkvz", "linear_attn.in_proj_ba")},
         "prefix": {"model.language_model.": "language_model.model.",
                    "lm_head.": "language_model.lm_head.", "model.visual.": "visual."},
         "stacked": {".q_proj": ".qkv_proj", ".k_proj": ".qkv_proj", ".v_proj": ".qkv_proj",
@@ -779,6 +783,13 @@ def modelopt_place_widths(kinds: list[dict[str, Any]], stack: dict[str, Any],
                 f"one node cannot price both")
         return flat.pop()
 
+    for kid, paths in spec.get("unpriced", {}).items():
+        for fmt, i in layers_of.get(kid, []):
+            for path in paths:
+                if width_of(fmt.format(i=i) + path):
+                    raise DeriveError(f"{model}: the ModelOpt list quantizes {fmt.format(i=i) + path}, "
+                                      f"which no node of {kid!r} prices at its own width; it is "
+                                      f"priced at the base width inside the recurrent update")
     out = []
     for kind in kinds:
         idx = layers_of.get(kind["id"], [])
