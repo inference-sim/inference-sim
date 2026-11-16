@@ -117,6 +117,27 @@ class CheckGoldens(unittest.TestCase):
                 self.assertEqual(r.returncode, 1, r.stdout)
                 self.assertIn("records no engine_commit (commit_field)", r.stdout)
 
+    def test_without_config_the_configuration_is_heads(self):
+        # The working tree's harness.json guards nothing; head's guards every directory.
+        shutil.copy(self.config, os.path.join(self.repo, "oracle/harness.json"))
+        self.commit("commit the configuration")
+        self.base = git(self.repo, "rev-parse", "HEAD")
+        with open(self.config) as f:
+            cfg = json.load(f)
+        with open(os.path.join(self.repo, "oracle/harness.json"), "w") as f:
+            json.dump({**cfg, "golden_dirs": ["elsewhere/testdata/golden/"]}, f)
+        self.write(self.GOLDEN, {"provenance": {"v": 1}, "steps": [{"a": 9}], "finished": {}})
+        git(self.repo, "add", self.GOLDEN)
+        git(self.repo, "commit", "-qm", "change a decision")
+        r = run([sys.executable, "-I", CHECK_GOLDENS, self.base, "HEAD"], self.repo)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("decisions changed without a golden-reviewed: trailer", r.stdout)
+
+    def test_an_unknown_option_is_refused(self):
+        r = self.goldens("--confg", "x", self.base, "HEAD")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("unknown option --confg", r.stderr)
+
     def test_a_named_golden_file_head_lacks_fails(self):
         os.remove(os.path.join(self.repo, "core/kv/testdata/block_hashes.json"))
         self.commit("drop the golden file")
@@ -555,6 +576,26 @@ class CheckMocks(unittest.TestCase):
         self.mocks.append({"symbol": "upstream.cache.hash_page", "kind": "environment", "how": "x",
                            "sites": ["harness.py:c.hash_page"]})
         self.assertEqual(self.check().returncode, 0)
+
+    def test_an_import_hook_is_a_site(self):
+        self.plant("import sys\nsys.meta_path.insert(0, object())")
+        self.assertFails(self.check(), "writes sys.meta_path, which is not listed")
+        self.mocks.append({"symbol": "a stub finder", "kind": "environment", "how": "x", "sites": ["run_x.py:sys.meta_path"]})
+        self.assertEqual(self.check().returncode, 0)
+
+    def test_config_after_the_manifest_is_read(self):
+        for name in ("run_x.py",):
+            with open(os.path.join(self.dir, name), "w") as f:
+                f.write(self.files[name])
+        version = f"gpu-mock/1+{digest(self.mocks)}"
+        with open(os.path.join(self.dir, "mocks.json"), "w") as f:
+            json.dump({"version": version, "mocks": self.mocks}, f)
+        broken = os.path.join(self.dir, "broken.json")
+        with open(broken, "w") as f:
+            json.dump({}, f)
+        r = run([sys.executable, "-I", CHECK_MOCKS, os.path.join(self.dir, "mocks.json"), "--config", broken], self.dir)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("decision_prefixes: missing", r.stderr)
 
     def test_a_file_the_configuration_does_not_name_is_not_read(self):
         self.files["gen_fuzz.py"] = "import upstream.cache as c\nc.hash_page = None\n"

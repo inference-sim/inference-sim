@@ -108,6 +108,8 @@ func TestAFileThatStatesNoProvenanceOrDropsTheLicenceFails(t *testing.T) {
 			"\n// Derived from upstream/sched.py at Upstream v1.2.3 (0a0a0a0).\npackage x\n",
 		"derived from another release": rules.Licence[0] + "\n" + rules.Licence[1] +
 			"\n// Derived from upstream/sched.py at Upstream v1.2.2 (" + strings.Repeat("0b", 20) + ").\npackage x\n",
+		"a second line naming another release": rules.Licence[0] + "\n" + rules.Licence[1] +
+			"\n// Derived from upstream/sched.py at Upstream v1.2.3 (" + commit + ").\n// Derived from upstream/kv.py at Upstream v1.1.0 (" + strings.Repeat("0c", 20) + ").\npackage x\n",
 		"another tag, this commit": rules.Licence[0] + "\n" + rules.Licence[1] +
 			"\n// Derived from upstream/sched.py at Upstream v1.2.34 (" + commit + ").\npackage x\n",
 	} {

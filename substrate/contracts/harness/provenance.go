@@ -60,10 +60,10 @@ func ProvenanceProblems(root string, files []string, r ProvenanceRules) ([]strin
 		}
 		h := header(string(raw))
 		var derived, moved, orig bool
-		var derivedLine string
+		var derivedLines []string
 		for _, l := range h {
-			if r.Derived.MatchString(l) && !derived {
-				derivedLine = l
+			if r.Derived.MatchString(l) {
+				derivedLines = append(derivedLines, l)
 			}
 			derived = derived || r.Derived.MatchString(l)
 			moved = moved || (r.Moved != nil && r.Moved.MatchString(l))
@@ -74,8 +74,11 @@ func ProvenanceProblems(root string, files []string, r ProvenanceRules) ([]strin
 			if len(h) < len(r.Licence) || strings.Join(h[:len(r.Licence)], "\n") != strings.Join(r.Licence, "\n") {
 				bad = append(bad, fmt.Sprintf("%s is derived from the upstream but does not start with the upstream's licence lines %q", p, r.Licence))
 			}
-			if !containsWord(derivedLine, r.Release.Tag) || !strings.Contains(derivedLine, r.Release.Commit) {
-				bad = append(bad, fmt.Sprintf("%s is derived from a release other than the one this repository models (%s, %s): %q", p, r.Release.Tag, r.Release.Commit, derivedLine))
+			// Every Derived from line, not only the first, names the modelled release.
+			for _, l := range derivedLines {
+				if !containsWord(l, r.Release.Tag) || !strings.Contains(l, r.Release.Commit) {
+					bad = append(bad, fmt.Sprintf("%s is derived from a release other than the one this repository models (%s, %s): %q", p, r.Release.Tag, r.Release.Commit, l))
+				}
 			}
 		case moved, orig:
 		default:

@@ -25,7 +25,8 @@ requirements_lock_sha256 is the hash of oracle/requirements.lock at head), so a 
 elsewhere cannot enter unnoticed; the goldens already committed before this check existed are
 not held to it.
 
-oracle/harness.json is read from the directory of this script unless --config names another file.
+oracle/harness.json is read from <head> (git show <head>:oracle/harness.json), the tree the goldens
+are read from, unless --config names a file.
 
 Usage: python3 -I oracle/check_goldens.py [--config <harness.json>] <base> <head>
        python3 -I oracle/check_goldens.py [--config <harness.json>] --stack-base <head>
@@ -99,9 +100,20 @@ COMMIT_FIELD = ""
 CI_PLATFORM = ""
 
 
-def load_config(path: str) -> None:
+def load_config(path: str = None, head: str = None) -> None:
+    """Read the configuration from path, or, with no path, from oracle/harness.json at head: the
+    same tree the goldens are read from."""
     global GOLDEN_DIRS, GOLDEN_FILES, COMMIT_FIELD, CI_PLATFORM
-    cfg = read_config(path)
+    if path is None:
+        r = subprocess.run(["git", "show", f"{head}:oracle/harness.json"], capture_output=True, text=True)
+        if r.returncode:
+            raise SystemExit(f"{head} has no oracle/harness.json: {r.stderr.strip()}")
+        cfg = json.loads(r.stdout)
+        bad = config_problems(cfg)
+        if bad:
+            raise SystemExit(f"{head}:oracle/harness.json: " + "; ".join(bad))
+    else:
+        cfg = read_config(path)
     GOLDEN_DIRS, GOLDEN_FILES = tuple(cfg["golden_dirs"]), tuple(cfg["golden_files"])
     COMMIT_FIELD, CI_PLATFORM = cfg["commit_field"], cfg["ci_platform"]
 
@@ -301,15 +313,29 @@ def main(base: str, head: str) -> int:
     return bad
 
 
+def split_config(args: list) -> tuple:
+    """(the --config path or None, the other arguments). --config may stand anywhere; any other
+    option is refused, so a mistyped flag cannot fall through to a default."""
+    config, rest, i = None, [], 0
+    while i < len(args):
+        if args[i] == "--config":
+            if i + 1 >= len(args):
+                sys.exit("--config needs a path")
+            config, i = args[i + 1], i + 2
+            continue
+        if args[i].startswith("--") and args[i] != "--stack-base" and args[i] != "--hashed":
+            sys.exit(f"unknown option {args[i]}")
+        rest.append(args[i])
+        i += 1
+    return config, rest
+
+
 if __name__ == "__main__":
-    args = sys.argv[1:]
-    config = os.path.join(os.path.dirname(os.path.abspath(__file__)), "harness.json")
-    if args[:1] == ["--config"]:
-        if len(args) < 2:
-            sys.exit("--config needs a path")
-        config, args = args[1], args[2:]
-    load_config(config)
-    if len(args) == 2 and args[0] == "--stack-base":
+    config, args = split_config(sys.argv[1:])
+    if len(args) != 2:
+        sys.exit(__doc__.split("Usage:", 1)[1].split("\n\n", 1)[0].strip())
+    load_config(config, args[1])
+    if args[0] == "--stack-base":
         print(stack_base(args[1]))
         sys.exit(0)
     if len(args) != 2:
