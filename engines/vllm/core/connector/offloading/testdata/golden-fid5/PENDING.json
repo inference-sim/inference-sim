@@ -1,0 +1,5 @@
+{
+ "release": "v0.32.0",
+ "waits_for": "https://github.com/inference-sim/blis-vllm/issues/160",
+ "why": "The traces are recorded once the oracle is relocked at vLLM v0.33.0, the release M3 models; traces recorded at v0.32.0 would be replaced by that port. While this file names the release the build models, fid5_test.go reports the traces as pending; once the build models another release, or a trace is committed beside it, the tests fail until it is removed."
+}
