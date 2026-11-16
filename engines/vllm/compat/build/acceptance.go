@@ -36,6 +36,9 @@ type AcceptanceFlags struct {
 	ThinkingSet, CategorySet             bool
 	// FallbackSet records that --speculative-fallback-category was given.
 	FallbackSet bool
+	// Realisation is how the run the rate or length describes realised its acceptance
+	// (natural or synthetic); empty leaves it unstated, which keeps the engine's schedule.
+	Realisation acceptance.Realisation
 }
 
 // AcceptanceInputs are the resolution's inputs: the scenario (its name, shape and pin), the
@@ -52,6 +55,11 @@ type AcceptanceInputs struct {
 	// (speculative.draft_model), or "" for the model's own in-graph speculator. A profile measured
 	// with a drafter matches only a run that names the same one.
 	Drafter string
+	// DraftSampler and Verifier are the run's draft sampler and verifier as its deployment
+	// states them (speculative.draft_sample_method and rejection_sample_method), or "" when it
+	// states none, which the lookup treats as unstated (design D8, inference-sim/blis-substrate#174).
+	DraftSampler acceptance.DraftSampler
+	Verifier     acceptance.Verifier
 }
 
 // Acceptance is a run's resolved acceptance.
@@ -92,6 +100,8 @@ func ResolveAcceptance(in AcceptanceInputs, k int, method string) (Acceptance, b
 		NumSpecTokens:     k,
 		Hardware:          in.Hardware,
 		Drafter:           in.Drafter,
+		DraftSampler:      in.DraftSampler,
+		Verifier:          in.Verifier,
 		Architecture:      targetArchitecture(in.Data, in.Shape.Model),
 		Workload:          acceptanceWorkloadTerms(in),
 		Scenario:          in.Shape.Acceptance,
@@ -106,6 +116,9 @@ func ResolveAcceptance(in AcceptanceInputs, k int, method string) (Acceptance, b
 	case f.LengthSet:
 		l := f.Length
 		req.CLI = &acceptance.Value{NumSpecTokens: k, AcceptanceLength: &l, Source: "--" + AcceptanceLengthFlag}
+	}
+	if req.CLI != nil {
+		req.CLI.Realisation = f.Realisation
 	}
 	if in.Data == nil {
 		return Acceptance{}, false, fmt.Errorf("scenario %q drafts %d %q tokens: no catalog and registry to "+
