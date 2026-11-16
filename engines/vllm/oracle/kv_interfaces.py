@@ -61,7 +61,7 @@ class Monitor:
             f = cls.__dict__.get("get_manager")
             if f is not None:
                 self.codes[f.__code__] = ("spec", "get_manager")
-        self.ctx = {}  # id(ReqContext) -> name
+        self.ctx = {}  # id(ReqContext) -> (name, the context, kept alive)
         self.stack = []  # (code, record or None) of the interface calls in progress
         self.gens = {}  # generator frame -> its record
         self.tool = None
@@ -75,8 +75,10 @@ class Monitor:
         return [self.key(k) for k in ks]
 
     def context(self, c) -> dict:
-        n = self.ctx.setdefault(id(c), "c%d" % (len(self.ctx) + 1))
-        return {"ctx": n, "req": c.req_id}
+        # Each context is held for the whole trace, so a freed one's id() is never reused for another.
+        if id(c) not in self.ctx:
+            self.ctx[id(c)] = ("c%d" % (len(self.ctx) + 1), c)
+        return {"ctx": self.ctx[id(c)][0], "req": c.req_id}
 
     def positions(self, c, ks) -> dict:
         return {self.key(k): c.get_offload_key_position(k) for k in ks if c.get_offload_key_position(k) is not None}
