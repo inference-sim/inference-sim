@@ -646,12 +646,18 @@ func refuseUnmodelled(e engineconfig.Engine, dataParallel bool) error {
 		// CacheConfig.prefix_cache_retention_interval: 0 (vllm/config/cache.py:159@5df63a72); a stated 0
 		// is the default and keeps only the semantic checkpoints, which this engine builds.
 		return fmt.Errorf("vllm: prefix_cache_retention_interval is not modelled (https://github.com/inference-sim/blis-vllm/issues/109)")
+	case e.PrefillScheduleInterval < 0:
+		// SchedulerConfig.prefill_schedule_interval: Field(default=1, ge=1)
+		// (vllm/config/scheduler.py:203@4ba787ec); 0 is the block's unstated.
+		return fmt.Errorf("vllm: prefill_schedule_interval %d is below 1, which vLLM refuses "+
+			"(vllm/config/scheduler.py:203@4ba787ec)", e.PrefillScheduleInterval)
 	case e.PrefillScheduleInterval > 1 && !dataParallel:
-		// _should_throttle_prefills is the DP engine core's (vllm/v1/engine/core.py:2318-2325@5df63a72):
-		// EngineCore's never throttles (:652-655), so on one engine the setting has no effect vLLM
-		// would show, and stating it is refused rather than dropped.
-		return fmt.Errorf("vllm: prefill_schedule_interval throttles a data-parallel group's ranks; this engine " +
-			"has data_parallel_size 1")
+		// Without a data-parallel group the Scheduler applies the interval itself: it holds prefill
+		// until the interval has passed since the last prefill-carrying step, with a capacity escape
+		// (local_prefill_interval, vllm/v1/core/sched/scheduler.py:395-425, 770-790, 1612-1629
+		// @4ba787ec). That cadence is not ported, so stating it is refused rather than dropped.
+		return fmt.Errorf("vllm: prefill_schedule_interval %d without a data-parallel group is the scheduler's local "+
+			"prefill cadence, which is not modelled (%s172)", e.PrefillScheduleInterval, issueBase)
 	case e.MaxCPULoRAs != 0 && e.MaxCPULoRAs != max(e.MaxLoRAs, 1):
 		// LoRAConfig.max_cpu_loras: None, which becomes max_loras (vllm/config/lora.py:42, 120-121@5df63a72),
 		// and max_loras defaults to 1 (:35); a stated value equal to that is the default.
