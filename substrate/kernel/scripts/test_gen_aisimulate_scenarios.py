@@ -111,6 +111,23 @@ def main() -> int:
                                               "num_speculative_tokens": 3})
     ck("an unpriced speculator (minimax-m3 eagle3) emits no scenario",
        emit(eagle, {"1024:1024"}, {"1k1k"}) is None)
+    # inference-sim/blis-substrate#124: a run that names its EAGLE3 checkpoint drafts with the
+    # catalog's drafter entry for it, which the kernel prices; one the catalog lacks is skipped.
+    for repo, entry in (("Inferact/MiniMax-M3-EAGLE3", "minimax-m3-eagle3"),
+                        ("Inferact/MiniMax-M3-EAGLE3-GQA", "minimax-m3-eagle3-gqa")):
+        named = sweep(model="minimax-m3", stated={"speculative_method": "eagle3",
+                                                  "num_speculative_tokens": 3, "draft_model": repo})
+        ck(f"an EAGLE3 run that names {repo} drafts with {entry}",
+           (engine(named, "method"), engine(named, "draft_model")) == ("eagle3", entry))
+    for draft in ("/data/models/MiniMax-M3-EAGLE3", "Org/Not-A-Drafter"):
+        unknown = sweep(model="minimax-m3", stated={"speculative_method": "eagle3",
+                                                    "num_speculative_tokens": 3, "draft_model": draft})
+        ck(f"an EAGLE3 run whose draft {draft} is no catalog drafter emits no scenario",
+           emit(unknown, {"1024:1024"}, {"1k1k"}) is None)
+    own = sweep(model="deepseek-v4-pro", stated={"speculative_method": "mtp", "num_speculative_tokens": 2,
+                                                 "draft_model": "deepseek-ai/DeepSeek-V4-Pro"})
+    ck("an MTP run that names the served model as its draft drafts with its own speculator",
+       engine(own, "method") == "mtp" and engine(own, "draft_model") is None)
     priced = sweep(model="minimax-m3", stated={"speculative_method": "mtp",
                                                "num_speculative_tokens": 3})
     ck("a speculator the graph describes still emits, with its block",
