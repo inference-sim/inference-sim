@@ -1,13 +1,21 @@
 {
- "description": "CPUOffloadingSpec sizes its tier from cpu_bytes_to_use, the worker bytes a block, the world size and blocks_per_chunk, each chunk rounded up to the alignment.",
+ "description": "CPUOffloadingSpec sizes its tier from cpu_bytes_to_use, the worker bytes a block, the world size and blocks_per_chunk, each chunk rounded up to the alignment. From v0.33.0 config_info reports the sizing (vllm/v1/kv_offload/cpu/common.py:34-72@4ba787ec), its tokens at max_model_len counting a full group's chunks and a sliding-window group's chunks capped at its window.",
  "spec": {
   "name": "CPUOffloadingSpec",
   "cpu_bytes_to_use": 65536,
   "worker_kv_bytes_per_block": 4096,
   "world_size": 1,
-  "blocks_per_chunk": 2
+  "blocks_per_chunk": 2,
+  "max_model_len": 1000,
+  "window_chunks": [
+   null,
+   3
+  ]
  },
  "calls": [
+  {
+   "m": "config_info"
+  },
   {
    "m": "get_stats"
   }

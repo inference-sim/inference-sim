@@ -1,11 +1,12 @@
 {
- "description": "TieringOffloadingSpec with no secondary tiers, whose manager forwards to its CPU primary tier: Two requests read the same chunk at once; while it is pinned a store that needs both slots fails, after one load completes it still fails, and after both it evicts.",
+ "description": "TieringOffloadingSpec with no secondary tiers, whose manager forwards to its CPU primary tier: Two requests read the same chunk at once; while it is pinned a store that needs both slots fails, after one load completes it still fails, and after both it evicts. From v0.33.0 config_info reports the CPU primary tier's sizing with its tier label (vllm/v1/kv_offload/tiering/manager.py:1231-1248@4ba787ec).",
  "spec": {
   "name": "TieringOffloadingSpec",
   "cpu_bytes_to_use": 32768,
   "worker_kv_bytes_per_block": 16384,
   "world_size": 1,
-  "blocks_per_chunk": 1
+  "blocks_per_chunk": 1,
+  "max_model_len": 64
  },
  "calls": [
   {
@@ -62,6 +63,9 @@
     "d1",
     "d2"
    ]
+  },
+  {
+   "m": "config_info"
   },
   {
    "m": "get_stats"

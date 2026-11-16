@@ -13,7 +13,8 @@ fid5_test.go replays them against the port.
 A sequence:
     {"description": "...",
      "spec": {"name": "CPUOffloadingSpec", "cpu_bytes_to_use": n, "worker_kv_bytes_per_block": n,
-              "world_size": n, "blocks_per_chunk": n, "extra": {...}},   (or "policy": {"capacity": n})
+              "world_size": n, "blocks_per_chunk": n, "extra": {...},
+              "max_model_len": n, "window_chunks": [n or null, ...]},   (or "policy": {"capacity": n})
      "calls": [{"m": "<method>", "ctx": "<request>", "key": "<label>", "keys": [...], ...}, ...]}
 A key label "name" or "name/<group>" is the OffloadKey sha256(name) + the group as 4 big-endian
 bytes (make_offload_key, vllm/v1/kv_offload/base.py:30-32@4ba787ec). Besides the interface methods a
@@ -51,13 +52,17 @@ def offloading_config(spec: dict, name: str):
     extra["spec_name"] = spec["name"]
     extra["cpu_bytes_to_use"] = spec["cpu_bytes_to_use"]
     world = spec.get("world_size", 1)
+    # One full-attention group unless the sequence states its groups (a window in chunks, or null).
+    groups = tuple(OffloadingGroupConfig(tokens_per_block=16, layer_names=("layer.%d" % i,), group_id=i,
+                                         sliding_window_size_in_chunks=w)
+                   for i, w in enumerate(spec.get("window_chunks", [None])))
     return OffloadingConfig(
-        groups=(OffloadingGroupConfig(tokens_per_block=16, layer_names=("layer.0",), group_id=0),),
+        groups=groups,
         worker_kv_bytes_per_block=spec["worker_kv_bytes_per_block"],
         enable_kv_cache_events=bool(spec.get("enable_kv_cache_events", False)),
         extra_config=extra,
         engine_id="blis-fid5-" + name,
-        model=OffloadingModelConfig(name="blis-fid5", dtype="float16"),
+        model=OffloadingModelConfig(name="blis-fid5", dtype="float16", max_model_len=spec.get("max_model_len", 0)),
         cache=OffloadingCacheConfig(tokens_per_hash=16, blocks_per_chunk=spec.get("blocks_per_chunk", 1)),
         parallel=OffloadingParallelConfig(rank=0, world_size=world, tp_size=world, pp_size=1, pcp_size=1, dcp_size=1,
                                           data_parallel_index=0, data_parallel_size=1, data_parallel_rank_local=None,
@@ -127,7 +132,7 @@ def call_manager(mgr, m: str, c: dict, ctx, ks, ScheduleEndContext) -> None:
         mgr.on_schedule_end(ScheduleEndContext(new_req_ids=c.get("new", []), preempted_req_ids=c.get("preempted", [])))
     elif m == "take_events":
         list(mgr.take_events())
-    elif m in ("has_pending_work", "reset_cache", "on_reset_flushed", "get_stats"):
+    elif m in ("has_pending_work", "reset_cache", "on_reset_flushed", "get_stats", "config_info"):
         getattr(mgr, m)()
     else:
         raise SystemExit("unknown manager call %r" % m)
