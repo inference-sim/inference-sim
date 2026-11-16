@@ -100,12 +100,14 @@ the model's own in-graph speculator when it is left out, or the catalog name of 
 drafter checkpoint; the same target with two drafters has two profiles. The draft sampler and
 the verifier are stated where they tell one measurement from another of the same target,
 drafter and method, such as Kimi-K3's DSpark curves under greedy and probabilistic drafting.
-A profile states the values its source records; a value the source leaves unset is left out,
-which means unstated, never the engine's default. A request states the run's values as its
-engine resolves them. The exact key matches a field only when both sides state the same value
-or both leave it unstated; any other difference, an unstated side included, is borrowed by
-`same_drafter_other_settings` and named in `differed`. A key that states them renders them
-after the category, as `.../coding/draft-probabilistic/verify-block`. The design states this in
+The engine that measured the value is a key field too. Both sides state resolved values: a
+profile states what its source's run resolved to, a setting the source leaves at its default
+resolving to the engine's default at the source's release (cited in the set's caveats), and a
+request states the run's values as its engine resolves them. A field neither side can resolve
+is left out, meaning unstated. The exact key matches a field only when both sides state the same
+value or both leave it unstated; any other difference, an unstated side included, is borrowed
+by `same_drafter_other_settings` and named in `differed`. A key that states them renders them
+after the category, as `.../coding/draft-probabilistic/verify-block/engine-vllm`. The design states this in
 D8 (inference-sim/blis-design#13).
 
 <!-- fields: acceptance.Profile -->
@@ -114,8 +116,9 @@ D8 (inference-sim/blis-design#13).
 |---|---|---|---|
 | `model` | string | yes | The catalog model name, not the source's spelling of it. |
 | `drafter` | string | no | The catalog name of the separate drafter checkpoint the value was measured with. Left out for the model's own speculator, such as its MTP layers. No `+`, `/` or space, and not the target's own name. |
-| `draft_sampler` | string | no | How the drafter sampled its drafts: `greedy` or `probabilistic`. Left out when the source does not state it (unstated). |
-| `verifier` | string | no | How the target verified drafts: `standard`, `block` or `relaxed`. Left out when the source does not state it (unstated). |
+| `draft_sampler` | string | no | How the drafter sampled its drafts: `greedy` or `probabilistic`. Left out when the source states none and no engine default resolves it (unstated). |
+| `verifier` | string | no | How the target verified drafts, in vLLM v0.33.0's vocabulary: `standard`, `block` or `fly`. Left out when the source states none and no engine default resolves it (unstated). |
+| `engine` | string | no | The serving engine that measured the value, lower case. Left out when unstated. |
 | `architecture` | string | no | The target's architecture as its graph records it (`global.architecture`). A lookup that borrows from another target reads it; a profile that states none is never borrowed across targets. It must equal the graph's. |
 | `speculative_method` | string | yes | The engine's method name, as a deployment's `engine.speculative.method` states it. |
 | `num_spec_tokens` | integer | yes | K. At least 1. |

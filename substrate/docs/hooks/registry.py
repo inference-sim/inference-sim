@@ -620,7 +620,8 @@ def acceptance_grid(a: AcceptanceSet) -> dict[tuple, dict]:
     grid: dict = {}
     for line, p in a.profiles:
         cell = grid.setdefault((p["model"], p.get("drafter", ""), p["speculative_method"],
-                                p["category"], p.get("draft_sampler", ""), p.get("verifier", "")), {})
+                                p["category"], p.get("draft_sampler", ""), p.get("verifier", ""),
+                                p.get("engine", "")), {})
         slot = cell.setdefault(p["thinking"], {})
         if p["num_spec_tokens"] in slot:
             raise PluginError(f"registry hook: {a.path}:{line} repeats a profile key")
@@ -630,7 +631,7 @@ def acceptance_grid(a: AcceptanceSet) -> dict[tuple, dict]:
 
 def _acceptance_values(a: AcceptanceSet) -> str:
     out = [_legend({p["method"] for _, p in a.profiles})]
-    for (model, drafter, method, category, sampler, verifier), modes in acceptance_grid(a).items():
+    for (model, drafter, method, category, sampler, verifier, engine), modes in acceptance_grid(a).items():
         kmax = max(k for m in modes.values() for k in m)
         rows = []
         for thinking in sorted(modes):
@@ -648,7 +649,8 @@ def _acceptance_values(a: AcceptanceSet) -> str:
                            f'{_fmt_al(p["acceptance_length"])}</a></span></span>')
             rows.append(row)
         who = f"`{model}` with drafter `{drafter}`" if drafter else f"`{model}`"
-        how = "".join(f" · {n} `{v}`" for n, v in (("draft sampler", sampler), ("verifier", verifier)) if v)
+        how = "".join(f" · {n} `{v}`" for n, v in (("draft sampler", sampler), ("verifier", verifier),
+                                                    ("engine", engine)) if v)
         out.append(f"### {who} · `{method}` · `{category}`{how}\n\n"
                    + _table(["thinking"] + [f"K={k}" for k in range(1, kmax + 1)], rows,
                             numeric_from=1))

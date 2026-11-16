@@ -70,6 +70,9 @@ func (pr Profile) validate(p *validate.Problems, at string) {
 	if !pr.DraftSampler.Valid() {
 		p.Field(at+".draft_sampler", "%q is not one of %v; leave it out for the engine's default", pr.DraftSampler, AllDraftSamplers())
 	}
+	if !ValidEngine(pr.Engine) {
+		p.Field(at+".engine", "%q is not an engine name: lower-case letters, digits, '_' and '-'", pr.Engine)
+	}
 	if !pr.Verifier.Valid() {
 		p.Field(at+".verifier", "%q is not one of %v; leave it out for the engine's default", pr.Verifier, AllVerifiers())
 	}

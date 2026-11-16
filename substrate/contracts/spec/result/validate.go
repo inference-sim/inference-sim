@@ -929,7 +929,7 @@ func (w WorkloadProperty) validateBorrowing(p *validate.Problems, at string) {
 	}
 }
 
-var profileKeyFields = []string{"model", "drafter", "speculative_method", "num_spec_tokens", "draft_sampler", "verifier"}
+var profileKeyFields = []string{"model", "drafter", "speculative_method", "num_spec_tokens", "draft_sampler", "verifier", "engine"}
 
 // ProfileKeyFields returns the key fields in which a borrowed acceptance profile can differ
 // from the run's (design D8): the target model, the drafter, the speculative method, the

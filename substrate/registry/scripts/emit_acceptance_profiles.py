@@ -157,6 +157,7 @@ class Carried:
     rejected: tuple[int, int, str] | None = None
     draft_sampler: str = ""
     verifier: str = ""
+    engine: str = ""
 
 
 def read_curve(path: Path, identities: dict) -> Curve:
@@ -587,19 +588,29 @@ def collect(golden: Path = GOLDEN, catalog: Path = CATALOG):
             if k.transfer is None and k.model == model and k.curve.method == \
                     next(c.method for c in curves if c.stem == stem):
                 raise SystemExit(f"TRANSFERS {stem} is stale: {k.curve.stem} measures {model}")
-    # Every profile states the draft sampler and the verifier its source records
-    # (inference-sim/blis-substrate#174), so an unstated field means unstated, never a default.
+    # Every profile states the collection settings its source's run resolved to (design D8): the
+    # engine, and the draft sampler and verifier, a default or documented one resolved to the
+    # engine's default at the source's release (ENGINE_DEFAULTS). A value the source cannot
+    # resolve is unstated, never a guess.
+    resolved = []
     for k in carried:
         facts = k.curve.identity.get("collection") or {}
-        k.draft_sampler = key_value(facts, "draft_sample", k.curve.stem)
-        k.verifier = key_value(facts, "verify", k.curve.stem)
+        k.engine = str(facts.get("engine") or "")
+        try:
+            k.draft_sampler = key_value(facts, "draft_sample", k.engine)
+            k.verifier = key_value(facts, "verify", k.engine)
+        except Refused as e:
+            skipped.append((k.curve.stem, k.curve.model_key, str(e)))
+            continue
+        resolved.append(k)
+    carried = resolved
     # A key two curves still claim is refused for both (D8): the key cannot state what differs.
     claims: dict[tuple, list[Carried]] = {}
     for k in carried:
         for thinking, cells in k.curve.values.items():
             for n in cells:
                 claims.setdefault((k.model, k.drafter, k.curve.method, n, thinking, category,
-                                   k.draft_sampler, k.verifier), []).append(k)
+                                   k.draft_sampler, k.verifier, k.engine), []).append(k)
     clash: dict[str, set[str]] = {}
     for owners in claims.values():
         if len({o.curve.stem for o in owners}) > 1:
@@ -613,7 +624,8 @@ def collect(golden: Path = GOLDEN, catalog: Path = CATALOG):
             skipped.append((k.curve.stem, k.curve.model_key,
                             f"its profile keys are also claimed by {others}, measured with the "
                             "same target, drafter, method, draft sampler and verifier, so "
-                            "nothing a profile's key states tells them apart"))
+                            "nothing a profile's key states tells them apart "
+                            "(inference-sim/blis-substrate#207)"))
         else:
             kept.append(k)
     skipped.sort()
@@ -621,20 +633,37 @@ def collect(golden: Path = GOLDEN, catalog: Path = CATALOG):
 
 
 # The values a profile key takes for a sampler and a verifier (acceptance.DraftSampler,
-# acceptance.Verifier).
+# acceptance.Verifier; the verifier in vLLM v0.33.0's vocabulary).
 DRAFT_SAMPLERS = ("greedy", "probabilistic")
-VERIFIERS = ("standard", "block", "relaxed")
+VERIFIERS = ("standard", "block", "fly")
+# The engine's default for a setting a source leaves at its default, at the sources' releases,
+# with its citation: what a run that leaves the setting unset resolves to (design D8). A setting
+# not listed for an engine resolves to unstated.
+ENGINE_DEFAULTS = {
+    ("vllm", "draft_sample"): ("greedy", "vLLM SpeculativeConfig.draft_sample_method defaults to "
+                               "greedy (vllm/config/speculative.py:85@5df63a72)"),
+    ("vllm", "verify"): ("standard", "vLLM SpeculativeConfig.rejection_sample_method defaults to "
+                         "standard (vllm/config/speculative.py:84@5df63a72)"),
+    ("sglang", "verify"): ("standard", "InferenceX's identities: block, relaxed and adaptive "
+                           "verification are opt-in, so unset means standard (golden_al_distribution/"
+                           "README.md, Curve identities and names)"),
+}
 
 
-def key_value(facts: dict, name: str, stem: str) -> str:
-    """The key value of identities.yaml fact `name`: "" when the source leaves it unset
-    (unstated), its value otherwise; a value the key has no word for fails the run."""
-    value = (facts.get(name) or {}).get("value")
+def key_value(facts: dict, name: str, engine: str) -> str:
+    """The resolved key value of identities.yaml fact `name` for a curve served by `engine`: an
+    explicit or documented value as stated; a default one as ENGINE_DEFAULTS resolves it; else
+    "" (unstated). A value the key has no word for refuses the curve."""
+    fact = facts.get(name) or {}
+    value, source = fact.get("value"), fact.get("source")
+    if value is None and source == "default" and (engine, name) in ENGINE_DEFAULTS:
+        value = ENGINE_DEFAULTS[(engine, name)][0]
     if value is None:
         return ""
     allowed = DRAFT_SAMPLERS if name == "draft_sample" else VERIFIERS
     if value not in allowed:
-        raise SystemExit(f"{stem}: {name} {value!r} is not one of {allowed}, which a profile key states")
+        raise Refused(f"its {name} {value!r} is not one of {allowed}, which a profile key states "
+                      "(inference-sim/blis-substrate#207)")
     return str(value)
 
 
@@ -656,6 +685,8 @@ def profiles(carried: list[Carried], category: str, cat: Catalog) -> list[dict]:
                     p["draft_sampler"] = c.draft_sampler
                 if c.verifier:
                     p["verifier"] = c.verifier
+                if c.engine:
+                    p["engine"] = c.engine
                 p.update({"architecture": cat.architectures[c.model],
                           "speculative_method": c.curve.method, "num_spec_tokens": k,
                           "thinking": thinking, "category": category, "acceptance_length": al})
@@ -676,7 +707,7 @@ def profiles(carried: list[Carried], category: str, cat: Catalog) -> list[dict]:
                 p["provenance"] = prov
                 out.append(p)
     out.sort(key=lambda p: (p["model"], p.get("drafter", ""), p["speculative_method"],
-                            p.get("draft_sampler", ""), p.get("verifier", ""),
+                            p.get("draft_sampler", ""), p.get("verifier", ""), p.get("engine", ""),
                             p["thinking"], p["num_spec_tokens"]))
     return out
 
@@ -715,6 +746,11 @@ def caveats(carried: list[Carried], skipped, category: str) -> list[str]:
     out.append(f"Collection settings are transcribed from {IDENTITIES} at {INFERENCEX_SHA[:12]}, "
                f"SHA-256 {_LOCK['files'][IDENTITIES]} ({INFERENCEX_URL}/blob/{INFERENCEX_SHA}/"
                f"{GOLDEN_PATH}/{IDENTITIES}).")
+    out.append("Resolved collection settings. Each profile states the engine, draft sampler and "
+               "verifier its source's run resolved to; a setting the source leaves at its default "
+               "resolves to the engine's default: " + "; ".join(
+                   f"{e} {n} {v} ({why})" for (e, n), (v, why) in sorted(ENGINE_DEFAULTS.items()))
+               + ". A setting no default resolves is unstated.")
     unimaged = sorted({c.model for c in carried if c.provenance["engine_image"] == IMAGE_UNRECORDED})
     if unimaged:
         out.append(f"The source files for {', '.join(unimaged)} name no engine image, so "

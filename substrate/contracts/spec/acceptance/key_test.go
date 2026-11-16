@@ -65,21 +65,21 @@ func TestALookupMatchesTheRunsSamplerAndVerifier(t *testing.T) {
 // A run under a verifier no profile measured borrows the same drafter's other settings, takes the
 // lowest value, and names what differed; it never silently takes another verifier's curve.
 func TestARunUnderAnotherVerifierBorrowsAndSaysSo(t *testing.T) {
-	r, err := Resolve(kimiRequest(DraftProbabilistic, VerifierRelaxed))
+	r, err := Resolve(kimiRequest(DraftProbabilistic, VerifierFly))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if r.Step != StepOtherSettings || r.AcceptanceLength != 2.8 || strings.Join(r.Differed, ",") != "verifier" {
 		t.Fatalf("step %s AL %v differed %v", r.Step, r.AcceptanceLength, r.Differed)
 	}
-	r, err = Resolve(kimiRequest(DraftGreedy, VerifierRelaxed))
+	r, err = Resolve(kimiRequest(DraftGreedy, VerifierFly))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if r.Step != StepOtherSettings || r.AcceptanceLength != 2.6 || strings.Join(r.Differed, ",") != "draft_sampler,verifier" {
 		t.Fatalf("step %s AL %v differed %v", r.Step, r.AcceptanceLength, r.Differed)
 	}
-	req := kimiRequest(DraftGreedy, VerifierRelaxed)
+	req := kimiRequest(DraftGreedy, VerifierFly)
 	req.ExactOnly = true
 	if _, err := Resolve(req); err == nil {
 		t.Error("an exact-only lookup borrowed another verifier's curve")
@@ -94,6 +94,8 @@ func TestAnUnknownSamplerOrVerifierIsRefused(t *testing.T) {
 		{"profiles[0].draft_sampler", func(p *Profile) { p.DraftSampler = "beam" }},
 		{"profiles[0].verifier", func(p *Profile) { p.Verifier = "typical" }},
 		{"profiles[0].draft_sampler", func(p *Profile) { p.DraftSampler = "Greedy" }},
+		{"profiles[0].verifier", func(p *Profile) { p.Verifier = "relaxed" }},
+		{"profiles[0].engine", func(p *Profile) { p.Engine = "vLLM" }},
 	} {
 		s := kimi()
 		c.mutate(&s.Profiles[0])
@@ -120,51 +122,65 @@ func committedSet(t *testing.T) *ProfileSet {
 	return &s
 }
 
-// DeepSeek-V4.1-Flash was measured with probabilistic drafting and block verification. A run at
-// those settings matches its profile exactly; a run that states neither is not taken for one at
-// them: it borrows, and names both fields.
-func TestARunAtADraftersOwnMeasuredSettingsMatchesExactly(t *testing.T) {
+// A run identical to its curve's collection matches exactly, both sides stating resolved
+// values: DeepSeek-V4.1-Flash was measured on vLLM with probabilistic drafting and block
+// verification, and DeepSeek-V4-Pro's MTP curve left the sampler at its default and verified
+// by the standard rule, which on vLLM resolve to greedy and standard. A run that states none of
+// the settings is not taken for one at them: it borrows, and names each.
+func TestARunIdenticalToItsCollectionMatchesExactly(t *testing.T) {
 	set := committedSet(t)
-	req := func(s DraftSampler, v Verifier) Request {
-		return Request{Model: "deepseek-v4.1-flash", SpeculativeMethod: "dspark", NumSpecTokens: 3,
-			DraftSampler: s, Verifier: v, Registry: []*ProfileSet{set},
+	req := func(model, method string, s DraftSampler, v Verifier, e string) Request {
+		return Request{Model: model, SpeculativeMethod: method, NumSpecTokens: 3,
+			DraftSampler: s, Verifier: v, Engine: e, Registry: []*ProfileSet{set},
 			Workload: Workload{Category: "coding", Thinking: ThinkingOn}}
 	}
-	r, err := Resolve(req(DraftProbabilistic, VerifierBlock))
+	for _, c := range []Request{
+		req("deepseek-v4.1-flash", "dspark", DraftProbabilistic, VerifierBlock, "vllm"),
+		req("deepseek-v4-pro", "mtp", DraftGreedy, VerifierStandard, "vllm"),
+	} {
+		r, err := Resolve(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.Step != StepExact || r.Borrowed() {
+			t.Fatalf("%s at its own settings: step %s differed %v", c.Model, r.Step, r.Differed)
+		}
+	}
+	r, err := Resolve(req("deepseek-v4.1-flash", "dspark", "", "", ""))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Step != StepExact || r.Borrowed() {
-		t.Fatalf("at its own settings: step %s differed %v", r.Step, r.Differed)
+	if r.Step != StepOtherSettings || strings.Join(r.Differed, ",") != "draft_sampler,verifier,engine" {
+		t.Fatalf("with none stated: step %s differed %v", r.Step, r.Differed)
 	}
-	r, err = Resolve(req("", ""))
+	r, err = Resolve(req("deepseek-v4-pro", "mtp", DraftGreedy, VerifierStandard, "sglang"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Step != StepOtherSettings || strings.Join(r.Differed, ",") != "draft_sampler,verifier" {
-		t.Fatalf("with neither stated: step %s differed %v", r.Step, r.Differed)
+	if r.Step != StepOtherSettings || strings.Join(r.Differed, ",") != "engine" {
+		t.Fatalf("another engine: step %s differed %v", r.Step, r.Differed)
 	}
 }
 
-func TestARelaxedRunMatchesARelaxedProfileAndBorrowsOtherwise(t *testing.T) {
+func TestAFlyRunMatchesAFlyProfileAndBorrowsOtherwise(t *testing.T) {
 	s := kimi()
-	relaxed := s.Profiles[0]
-	relaxed.DraftSampler, relaxed.Verifier, relaxed.AcceptanceLength = DraftProbabilistic, VerifierRelaxed, 3.1
-	s.Profiles = append(s.Profiles, relaxed)
-	req := kimiRequest(DraftProbabilistic, VerifierRelaxed)
+	fly := s.Profiles[0]
+	fly.DraftSampler, fly.Verifier, fly.AcceptanceLength = DraftProbabilistic, VerifierFly, 3.1
+	s.Profiles = append(s.Profiles, fly)
+	req := kimiRequest(DraftProbabilistic, VerifierFly)
 	req.Registry = []*ProfileSet{s}
 	r, err := Resolve(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if r.Step != StepExact || r.AcceptanceLength != 3.1 {
-		t.Fatalf("relaxed: step %s AL %v", r.Step, r.AcceptanceLength)
+		t.Fatalf("fly: step %s AL %v", r.Step, r.AcceptanceLength)
 	}
-	r, err = Resolve(kimiRequest(DraftProbabilistic, VerifierRelaxed))
+	r, err = Resolve(kimiRequest(DraftProbabilistic, VerifierFly))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if r.Step != StepOtherSettings || strings.Join(r.Differed, ",") != "verifier" {
-		t.Fatalf("relaxed with no relaxed profile: step %s differed %v", r.Step, r.Differed)
+		t.Fatalf("fly with no fly profile: step %s differed %v", r.Step, r.Differed)
 	}
 }

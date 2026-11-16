@@ -180,13 +180,14 @@ def test_two_drafters_of_one_target_are_two_profiles(tmp_path):
 def test_curves_that_differ_in_sampler_or_verifier_are_carried_with_them():
     """The GQA drafter's two curves differ only in the verifier, and Kimi-K3's three DSpark
     curves in the sampler and verifier (inference-sim/blis-substrate#174): each is carried under
-    the key that states what it was measured with; a sampler the source leaves unset is unstated."""
+    the key that states what it was measured with, a default resolved to the engine's (greedy
+    drafting, standard verification on vLLM)."""
     got = {}
     for p in SET["profiles"]:
         got.setdefault(stem_of(p), set()).add((p.get("draft_sampler", ""), p.get("verifier", "")))
-    assert got[GQA] == {("", "standard")} and got[GQA_BLOCK] == {("", "block")}
+    assert got[GQA] == {("greedy", "standard")} and got[GQA_BLOCK] == {("greedy", "block")}
     kimi = "kimi-k3__dspark__kimi-k3-dspark__"
-    assert got[kimi + "default-default"] == {("", "standard")}
+    assert got[kimi + "default-default"] == {("greedy", "standard")}
     assert got[kimi + "probabilistic-block"] == {("probabilistic", "block")}
     assert got[kimi + "probabilistic-default"] == {("probabilistic", "standard")}
 
@@ -212,13 +213,27 @@ def test_curves_that_claim_one_key_are_both_refused(tmp_path):
     assert any(c.startswith(f"Not carried: {new}.yaml") and f"{GLM52}.yaml" in c for c in out["caveats"])
 
 
-def test_a_verifier_the_key_has_no_word_for_fails(tmp_path):
+def test_a_verifier_the_key_has_no_word_for_refuses_the_curve(tmp_path):
+    """InferenceX's `relaxed` is no verifier the key states (vLLM v0.33.0 has standard, block and
+    fly): the curve is refused, naming the issue that would carry it."""
     golden = copy_golden(tmp_path)
     ids = yaml.safe_load((golden / emit.IDENTITIES).read_text())
-    ids[GQA_BLOCK]["collection"]["verify"] = {"value": "typical", "source": "explicit"}
+    ids[GQA_BLOCK]["collection"]["verify"] = {"value": "relaxed", "source": "explicit"}
     (golden / emit.IDENTITIES).write_text(yaml.safe_dump(ids, sort_keys=False))
-    with pytest.raises(SystemExit, match="typical"):
-        emit.collect(golden, CATALOG)
+    out = generated(golden)
+    assert GQA_BLOCK not in {stem_of(p) for p in out["profiles"]}
+    assert any(c.startswith(f"Not carried: {GQA_BLOCK}.yaml") and "relaxed" in c
+               and "inference-sim/blis-substrate#207" in c for c in out["caveats"])
+
+
+def test_a_default_setting_resolves_to_the_engines_default_and_the_engine_is_stated():
+    """DeepSeek-V4-Pro's MTP curve leaves the draft sampler at its default and documents standard
+    verification under vLLM: its key states greedy, standard and vllm, what a run that leaves
+    them unset resolves to. GLM-5.3's curve is SGLang's, and says so."""
+    p = next(p for p in SET["profiles"] if stem_of(p).startswith("deepseek-v4-pro__mtp__"))
+    assert (p["draft_sampler"], p["verifier"], p["engine"]) == ("greedy", "standard", "vllm")
+    g = next(p for p in SET["profiles"] if stem_of(p).startswith("glm-5.3-nvfp4__"))
+    assert g["engine"] == "sglang" and "draft_sampler" not in g
 
 
 def test_a_drafter_the_catalog_lacks_is_refused_and_named(tmp_path):

@@ -108,6 +108,10 @@ type Profile struct {
 	// and borrows across any other difference, naming the field (design D8).
 	DraftSampler DraftSampler `yaml:"draft_sampler,omitempty"`
 	Verifier     Verifier     `yaml:"verifier,omitempty"`
+	// Engine is the serving engine that measured the value, a lower-case name such as the
+	// one a deployment's engine block states; empty is unstated. It is a collection setting
+	// like the sampler and verifier (design D8).
+	Engine string `yaml:"engine,omitempty"`
 	// Architecture is the architecture of the target model, as its graph records it
 	// (global.architecture, the configuration's architectures[0]). A lookup that borrows
 	// across targets reads it to find another target of the same architecture; a profile that
@@ -142,15 +146,16 @@ type Key struct {
 	Category          string
 	DraftSampler      DraftSampler
 	Verifier          Verifier
+	Engine            string
 }
 
 // KeyFields are the fields of a Key, as a point record's profile substitution names a field in
 // which a profile differs from the run's (design D8, §11.3): model, drafter, speculative_method,
-// num_spec_tokens, thinking, category, draft_sampler and verifier. A test holds the list equal to
+// num_spec_tokens, thinking, category, draft_sampler, verifier and engine. A test holds the list equal to
 // the struct.
 func KeyFields() []string {
 	return []string{"model", "drafter", "speculative_method", "num_spec_tokens", "thinking", "category",
-		"draft_sampler", "verifier"}
+		"draft_sampler", "verifier", "engine"}
 }
 
 // String renders a key as model/method/k<K>/thinking-<mode>/category, the form
@@ -174,6 +179,9 @@ func (k Key) String() string {
 	if k.Verifier != "" {
 		s += "/verify-" + string(k.Verifier)
 	}
+	if k.Engine != "" {
+		s += "/engine-" + k.Engine
+	}
 	return s
 }
 
@@ -181,7 +189,7 @@ func (k Key) String() string {
 func (p Profile) Key() Key {
 	return Key{Model: p.Model, Drafter: p.Drafter, SpeculativeMethod: p.SpeculativeMethod,
 		NumSpecTokens: p.NumSpecTokens, Thinking: p.Thinking, Category: p.Category,
-		DraftSampler: p.DraftSampler, Verifier: p.Verifier}
+		DraftSampler: p.DraftSampler, Verifier: p.Verifier, Engine: p.Engine}
 }
 
 // Rates returns the stated per-position rates, or the minimum-variance schedule for the
