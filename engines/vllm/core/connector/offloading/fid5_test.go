@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	blisvllm "github.com/inference-sim/blis-vllm"
 )
 
 // FID-5 (design §7.6): the offload framework's interfaces, OffloadingManager, OffloadingSpec and the
@@ -34,11 +36,36 @@ type fid5Trace struct {
 	Policy     []fid5Call     `json:"policy"`
 }
 
+// pendingFID5 is testdata/golden-fid5/golden-fid5.pending.json: the traces wait for a named issue, for the
+// release the build models now only.
+type pendingFID5 struct {
+	Release  string `json:"release"`
+	WaitsFor string `json:"waits_for"`
+	Why      string `json:"why"`
+}
+
 func loadFID5(t *testing.T) map[string]fid5Trace {
 	t.Helper()
 	paths, err := filepath.Glob(filepath.Join("testdata", "golden-fid5", "*.fid5.json"))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if raw, err := os.ReadFile(filepath.Join("testdata", "golden-fid5.pending.json")); err == nil {
+		var p pendingFID5
+		if err := json.Unmarshal(raw, &p); err != nil {
+			t.Fatalf("golden-fid5.pending.json: %v", err)
+		}
+		switch {
+		case len(paths) > 0:
+			t.Fatalf("testdata/golden-fid5 holds %d trace(s) and golden-fid5.pending.json: remove golden-fid5.pending.json", len(paths))
+		case p.Release != blisvllm.Upstream.Tag:
+			t.Fatalf("golden-fid5.pending.json defers the traces for %s, and the build models %s: record them (%s)",
+				p.Release, blisvllm.Upstream.Tag, p.WaitsFor)
+		case !strings.HasPrefix(p.WaitsFor, "https://github.com/inference-sim/blis-vllm/issues/"):
+			t.Fatalf("golden-fid5.pending.json waits for %q, not a blis-vllm issue", p.WaitsFor)
+		}
+		// Reported, not passed: the FID-5 traces of this release are not committed (X16).
+		t.Skipf("FID-5 offload interface traces pending for %s until %s: %s", p.Release, p.WaitsFor, p.Why)
 	}
 	out := map[string]fid5Trace{}
 	for _, p := range paths {
