@@ -20,6 +20,7 @@ var provenanceRules = harness.ProvenanceRules{
 		"// SPDX-FileCopyrightText: Copyright 2023-2024 SGLang Team",
 	},
 	Original: "// Original to blis-sglang.",
+	Release:  Upstream,
 }
 
 // TestEveryFileStatesItsProvenance: each Go file says where its logic comes from in its first

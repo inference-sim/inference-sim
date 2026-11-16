@@ -1,7 +1,9 @@
 {
   "commit_field": "blis_sglang_commit",
   "ci_platform": "linux-x86_64",
-  "golden_dirs": [],
+  "golden_dirs": [
+    "oracle/testdata/golden/"
+  ],
   "golden_files": [],
   "harness_files": [
     "run_*.py",
@@ -27,5 +29,21 @@
     "sglang.srt.arg_groups.",
     "sglang.srt.server_args."
   ],
-  "upstream_names": []
+  "upstream_names": [
+    "run_scheduler_process",
+    "run_event_loop",
+    "dispatch_event_loop",
+    "event_loop_normal",
+    "event_loop_overlap",
+    "ingest_requests",
+    "process_input_requests",
+    "recv_requests",
+    "get_next_batch_to_run",
+    "get_new_batch_prefill",
+    "update_running_batch",
+    "run_batch",
+    "process_batch_result",
+    "handle_shutdown",
+    "on_idle"
+  ]
 }
