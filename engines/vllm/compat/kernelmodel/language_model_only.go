@@ -31,6 +31,7 @@ import (
 var towerlessMultimodalConfigs = map[string]string{
 	"8be45ce0476004a3f529fd896115a4a2e800a129ad2d3ec05b16050f52e21879": "deepseek-v4.1-flash",
 	"bb8f01c42cb92a52ca72e65afb4d5bd8d11aef083cd210e8de25dfb904f23e9f": "glm-5.3-flash",
+	"41db2811023b40ba4c8f8bbba88bce7dff377af51ecd18b32469a2a07064ebaf": "glm-5.3-flash-nvfp4",
 	"58720f145bcecef9a7ab2b419ab346e7c634af8d2f3e7362e900d00f789ea46c": "inkling",
 	"acd5bb01a16f64b309599cd6ed196be056f613c99d6bc9300692b82cd10882f6": "kimi-k2.5",
 	"85825ca6e18cbe539eb83ee09eedfb3f4222265929f06e9f535a6d9364f55899": "kimi-k2.6",
