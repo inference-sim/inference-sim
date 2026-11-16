@@ -36,14 +36,10 @@ caveats:
   the catalog entry''s.'
 - Collection settings are transcribed from identities.yaml at e63beeeee981, SHA-256 447547adf1b3f73a3d03482dea2d031fc4755cc4f0f91eba4a308ca2fd5ef039
   (https://github.com/SemiAnalysisAI/InferenceX/blob/e63beeeee981b5f7bd055685a32cc38ad30c7fdb/inferencex-e2e/infx/golden_al_distribution/identities.yaml).
-- 'Resolved collection settings. Each profile states the engine, draft sampler and verifier
-  its source''s run resolved to; a setting the source leaves at its default resolves to the
-  engine''s default: sglang verify standard (InferenceX''s identities: block, relaxed and
-  adaptive verification are opt-in, so unset means standard (golden_al_distribution/README.md,
-  Curve identities and names)); vllm draft_sample greedy (vLLM SpeculativeConfig.draft_sample_method
-  defaults to greedy (vllm/config/speculative.py:85@5df63a72)); vllm verify standard (vLLM
-  SpeculativeConfig.rejection_sample_method defaults to standard (vllm/config/speculative.py:84@5df63a72)).
-  A setting no default resolves is unstated.'
+- Collection settings. Each profile states the engine, draft sampler and verifier as its source
+  states them; a setting the source left at its engine's default is "default", which a lookup
+  compares with the default the requesting engine states for its release. A setting the source
+  does not state is unstated.
 - 'The source files for deepseek-v4-pro, deepseek-v4-pro-0813, glm-5.2-fp8, glm-5.3, glm-5.3-flash,
   kimi-k3, kimi-k3.1, minimax-m3, minimax-m3.1-flash name no engine image, so their engine_image
   reads "unrecorded: the source file names no engine image".'
@@ -175,7 +171,7 @@ shapes:
   method: calibrated
 profiles:
 - model: deepseek-v4-pro
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: DeepseekV4ForCausalLM
@@ -203,7 +199,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: DeepseekV4ForCausalLM
@@ -231,7 +227,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: DeepseekV4ForCausalLM
@@ -259,7 +255,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: DeepseekV4ForCausalLM
@@ -287,7 +283,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: DeepseekV4ForCausalLM
@@ -315,7 +311,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: DeepseekV4ForCausalLM
@@ -343,7 +339,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: DeepseekV4ForCausalLM
@@ -371,7 +367,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: DeepseekV4ForCausalLM
@@ -399,7 +395,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: DeepseekV4ForCausalLM
@@ -428,7 +424,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: DeepseekV4ForCausalLM
@@ -457,7 +453,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: DeepseekV4ForCausalLM
@@ -486,7 +482,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: DeepseekV4ForCausalLM
@@ -515,7 +511,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: DeepseekV4ForCausalLM
@@ -544,7 +540,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: DeepseekV4ForCausalLM
@@ -573,7 +569,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: DeepseekV4ForCausalLM
@@ -602,7 +598,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: deepseek-v4-pro
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: DeepseekV4ForCausalLM
@@ -1201,7 +1197,7 @@ profiles:
       temperature: 1.0
       max_tokens: 4096
 - model: glm-5.2-fp8
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: GlmMoeDsaForCausalLM
@@ -1231,7 +1227,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.2-fp8
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: GlmMoeDsaForCausalLM
@@ -1261,7 +1257,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.2-fp8
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: GlmMoeDsaForCausalLM
@@ -1291,7 +1287,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.2-fp8
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: GlmMoeDsaForCausalLM
@@ -1321,7 +1317,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.2-fp8
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: GlmMoeDsaForCausalLM
@@ -1351,7 +1347,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.2-fp8
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: GlmMoeDsaForCausalLM
@@ -1381,7 +1377,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.2-fp8
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: GlmMoeDsaForCausalLM
@@ -1411,7 +1407,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.2-fp8
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: GlmMoeDsaForCausalLM
@@ -1441,6 +1437,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3
+  draft_sampler: default
   verifier: standard
   engine: sglang
   architecture: GlmMoeDsaForCausalLM
@@ -1474,6 +1471,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3
+  draft_sampler: default
   verifier: standard
   engine: sglang
   architecture: GlmMoeDsaForCausalLM
@@ -1507,6 +1505,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3
+  draft_sampler: default
   verifier: standard
   engine: sglang
   architecture: GlmMoeDsaForCausalLM
@@ -1540,6 +1539,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3
+  draft_sampler: default
   verifier: standard
   engine: sglang
   architecture: GlmMoeDsaForCausalLM
@@ -1573,6 +1573,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3
+  draft_sampler: default
   verifier: standard
   engine: sglang
   architecture: GlmMoeDsaForCausalLM
@@ -1606,6 +1607,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3
+  draft_sampler: default
   verifier: standard
   engine: sglang
   architecture: GlmMoeDsaForCausalLM
@@ -1639,6 +1641,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3
+  draft_sampler: default
   verifier: standard
   engine: sglang
   architecture: GlmMoeDsaForCausalLM
@@ -1672,6 +1675,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3
+  draft_sampler: default
   verifier: standard
   engine: sglang
   architecture: GlmMoeDsaForCausalLM
@@ -1705,7 +1709,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3-flash
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: Glm5NextForConditionalGeneration
@@ -1736,7 +1740,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3-flash
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: Glm5NextForConditionalGeneration
@@ -1767,7 +1771,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3-flash
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: Glm5NextForConditionalGeneration
@@ -1798,7 +1802,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3-flash
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: Glm5NextForConditionalGeneration
@@ -1829,7 +1833,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3-flash
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: Glm5NextForConditionalGeneration
@@ -1860,7 +1864,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3-flash
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: Glm5NextForConditionalGeneration
@@ -1891,7 +1895,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3-flash
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: Glm5NextForConditionalGeneration
@@ -1922,7 +1926,7 @@ profiles:
       top_p: 0.95
       max_tokens: 4096
 - model: glm-5.3-flash
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: Glm5NextForConditionalGeneration
@@ -1954,7 +1958,7 @@ profiles:
       max_tokens: 4096
 - model: kimi-k3
   drafter: kimi-k3-dspark
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: KimiK3ForConditionalGeneration
@@ -1986,7 +1990,7 @@ profiles:
       max_tokens: 4096
 - model: kimi-k3
   drafter: kimi-k3-dspark
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: KimiK3ForConditionalGeneration
@@ -2018,7 +2022,7 @@ profiles:
       max_tokens: 4096
 - model: kimi-k3
   drafter: kimi-k3-dspark
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: KimiK3ForConditionalGeneration
@@ -2050,7 +2054,7 @@ profiles:
       max_tokens: 4096
 - model: kimi-k3
   drafter: kimi-k3-dspark
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: KimiK3ForConditionalGeneration
@@ -2082,7 +2086,7 @@ profiles:
       max_tokens: 4096
 - model: kimi-k3
   drafter: kimi-k3-dspark
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: KimiK3ForConditionalGeneration
@@ -2114,7 +2118,7 @@ profiles:
       max_tokens: 4096
 - model: kimi-k3
   drafter: kimi-k3-dspark
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: KimiK3ForConditionalGeneration
@@ -2146,7 +2150,7 @@ profiles:
       max_tokens: 4096
 - model: kimi-k3
   drafter: kimi-k3-dspark
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: KimiK3ForConditionalGeneration
@@ -2178,7 +2182,7 @@ profiles:
       max_tokens: 4096
 - model: kimi-k3
   drafter: kimi-k3-dspark
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: KimiK3ForConditionalGeneration
@@ -3274,7 +3278,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -3306,7 +3310,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -3338,7 +3342,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -3370,7 +3374,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -3402,7 +3406,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -3434,7 +3438,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -3466,7 +3470,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -3498,7 +3502,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -3530,7 +3534,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -3562,7 +3566,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -3594,7 +3598,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -3626,7 +3630,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -3658,7 +3662,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -3690,7 +3694,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -3722,7 +3726,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -3754,7 +3758,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -3786,7 +3790,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: block
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -3818,7 +3822,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: block
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -3850,7 +3854,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: block
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -3882,7 +3886,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: block
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -3914,7 +3918,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: block
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -3946,7 +3950,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: block
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -3978,7 +3982,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: block
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -4010,7 +4014,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: block
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -4042,7 +4046,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: block
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -4074,7 +4078,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: block
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -4106,7 +4110,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: block
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -4138,7 +4142,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: block
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -4170,7 +4174,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: block
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -4202,7 +4206,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: block
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -4234,7 +4238,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: block
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -4266,7 +4270,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: block
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -4298,7 +4302,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -4330,7 +4334,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -4362,7 +4366,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -4394,7 +4398,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -4426,7 +4430,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -4458,7 +4462,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -4490,7 +4494,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -4522,7 +4526,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -4554,7 +4558,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -4586,7 +4590,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -4618,7 +4622,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -4650,7 +4654,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -4682,7 +4686,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -4714,7 +4718,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -4746,7 +4750,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration
@@ -4778,7 +4782,7 @@ profiles:
       max_tokens: 4096
 - model: minimax-m3
   drafter: minimax-m3-eagle3-gqa
-  draft_sampler: greedy
+  draft_sampler: default
   verifier: standard
   engine: vllm
   architecture: MiniMaxM3SparseForConditionalGeneration

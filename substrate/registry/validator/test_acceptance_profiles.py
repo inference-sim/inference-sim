@@ -180,14 +180,14 @@ def test_two_drafters_of_one_target_are_two_profiles(tmp_path):
 def test_curves_that_differ_in_sampler_or_verifier_are_carried_with_them():
     """The GQA drafter's two curves differ only in the verifier, and Kimi-K3's three DSpark
     curves in the sampler and verifier (inference-sim/blis-substrate#174): each is carried under
-    the key that states what it was measured with, a default resolved to the engine's (greedy
-    drafting, standard verification on vLLM)."""
+    the key that states what it was measured with, a sampler left at its engine's default as the
+    marker "default"."""
     got = {}
     for p in SET["profiles"]:
         got.setdefault(stem_of(p), set()).add((p.get("draft_sampler", ""), p.get("verifier", "")))
-    assert got[GQA] == {("greedy", "standard")} and got[GQA_BLOCK] == {("greedy", "block")}
+    assert got[GQA] == {("default", "standard")} and got[GQA_BLOCK] == {("default", "block")}
     kimi = "kimi-k3__dspark__kimi-k3-dspark__"
-    assert got[kimi + "default-default"] == {("greedy", "standard")}
+    assert got[kimi + "default-default"] == {("default", "standard")}
     assert got[kimi + "probabilistic-block"] == {("probabilistic", "block")}
     assert got[kimi + "probabilistic-default"] == {("probabilistic", "standard")}
 
@@ -226,14 +226,15 @@ def test_a_verifier_the_key_has_no_word_for_refuses_the_curve(tmp_path):
                and "inference-sim/blis-substrate#207" in c for c in out["caveats"])
 
 
-def test_a_default_setting_resolves_to_the_engines_default_and_the_engine_is_stated():
-    """DeepSeek-V4-Pro's MTP curve leaves the draft sampler at its default and documents standard
-    verification under vLLM: its key states greedy, standard and vllm, what a run that leaves
-    them unset resolves to. GLM-5.3's curve is SGLang's, and says so."""
+def test_a_default_setting_is_stated_as_the_marker_and_the_engine_is_stated():
+    """DeepSeek-V4-Pro's MTP curve leaves the draft sampler at its engine's default and documents
+    standard verification under vLLM: its key states the marker, standard and vllm. No engine
+    default is written by the emitter; the engine supplies it at lookup. GLM-5.3's curve is
+    SGLang's, and says so."""
     p = next(p for p in SET["profiles"] if stem_of(p).startswith("deepseek-v4-pro__mtp__"))
-    assert (p["draft_sampler"], p["verifier"], p["engine"]) == ("greedy", "standard", "vllm")
+    assert (p["draft_sampler"], p["verifier"], p["engine"]) == ("default", "standard", "vllm")
     g = next(p for p in SET["profiles"] if stem_of(p).startswith("glm-5.3-nvfp4__"))
-    assert g["engine"] == "sglang" and "draft_sampler" not in g
+    assert g["engine"] == "sglang" and g["draft_sampler"] == "default"
 
 
 def test_a_drafter_the_catalog_lacks_is_refused_and_named(tmp_path):

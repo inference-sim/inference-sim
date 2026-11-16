@@ -588,17 +588,16 @@ def collect(golden: Path = GOLDEN, catalog: Path = CATALOG):
             if k.transfer is None and k.model == model and k.curve.method == \
                     next(c.method for c in curves if c.stem == stem):
                 raise SystemExit(f"TRANSFERS {stem} is stale: {k.curve.stem} measures {model}")
-    # Every profile states the collection settings its source's run resolved to (design D8): the
-    # engine, and the draft sampler and verifier, a default or documented one resolved to the
-    # engine's default at the source's release (ENGINE_DEFAULTS). A value the source cannot
-    # resolve is unstated, never a guess.
+    # Every profile states the collection settings as its source states them (design D8): the
+    # engine, and the draft sampler and verifier, a value left at the engine's default as the
+    # marker "default", which the lookup compares with the requesting engine's own default.
     resolved = []
     for k in carried:
         facts = k.curve.identity.get("collection") or {}
         k.engine = str(facts.get("engine") or "")
         try:
-            k.draft_sampler = key_value(facts, "draft_sample", k.engine)
-            k.verifier = key_value(facts, "verify", k.engine)
+            k.draft_sampler = key_value(facts, "draft_sample")
+            k.verifier = key_value(facts, "verify")
         except Refused as e:
             skipped.append((k.curve.stem, k.curve.model_key, str(e)))
             continue
@@ -636,30 +635,20 @@ def collect(golden: Path = GOLDEN, catalog: Path = CATALOG):
 # acceptance.Verifier; the verifier in vLLM v0.33.0's vocabulary).
 DRAFT_SAMPLERS = ("greedy", "probabilistic")
 VERIFIERS = ("standard", "block", "fly")
-# The engine's default for a setting a source leaves at its default, at the sources' releases,
-# with its citation: what a run that leaves the setting unset resolves to (design D8). A setting
-# not listed for an engine resolves to unstated.
-ENGINE_DEFAULTS = {
-    ("vllm", "draft_sample"): ("greedy", "vLLM SpeculativeConfig.draft_sample_method defaults to "
-                               "greedy (vllm/config/speculative.py:85@5df63a72)"),
-    ("vllm", "verify"): ("standard", "vLLM SpeculativeConfig.rejection_sample_method defaults to "
-                         "standard (vllm/config/speculative.py:84@5df63a72)"),
-    ("sglang", "verify"): ("standard", "InferenceX's identities: block, relaxed and adaptive "
-                           "verification are opt-in, so unset means standard (golden_al_distribution/"
-                           "README.md, Curve identities and names)"),
-}
+# The marker a profile states for a setting its source left at the engine's default. The lookup
+# compares it with the default the requesting engine states (acceptance.Request.Default*): the
+# engine resolves its own defaults, so none is written here (X2, X19).
+ENGINE_DEFAULT = "default"
 
 
-def key_value(facts: dict, name: str, engine: str) -> str:
-    """The resolved key value of identities.yaml fact `name` for a curve served by `engine`: an
-    explicit or documented value as stated; a default one as ENGINE_DEFAULTS resolves it; else
-    "" (unstated). A value the key has no word for refuses the curve."""
+def key_value(facts: dict, name: str) -> str:
+    """The key value of identities.yaml fact `name`, as the source states it: an explicit or
+    documented value as stated; a value left at the engine's default as the marker "default";
+    else "" (unstated). A value the key has no word for refuses the curve."""
     fact = facts.get(name) or {}
     value, source = fact.get("value"), fact.get("source")
-    if value is None and source == "default" and (engine, name) in ENGINE_DEFAULTS:
-        value = ENGINE_DEFAULTS[(engine, name)][0]
     if value is None:
-        return ""
+        return ENGINE_DEFAULT if source == "default" else ""
     allowed = DRAFT_SAMPLERS if name == "draft_sample" else VERIFIERS
     if value not in allowed:
         raise Refused(f"its {name} {value!r} is not one of {allowed}, which a profile key states "
@@ -746,11 +735,10 @@ def caveats(carried: list[Carried], skipped, category: str) -> list[str]:
     out.append(f"Collection settings are transcribed from {IDENTITIES} at {INFERENCEX_SHA[:12]}, "
                f"SHA-256 {_LOCK['files'][IDENTITIES]} ({INFERENCEX_URL}/blob/{INFERENCEX_SHA}/"
                f"{GOLDEN_PATH}/{IDENTITIES}).")
-    out.append("Resolved collection settings. Each profile states the engine, draft sampler and "
-               "verifier its source's run resolved to; a setting the source leaves at its default "
-               "resolves to the engine's default: " + "; ".join(
-                   f"{e} {n} {v} ({why})" for (e, n), (v, why) in sorted(ENGINE_DEFAULTS.items()))
-               + ". A setting no default resolves is unstated.")
+    out.append("Collection settings. Each profile states the engine, draft sampler and verifier "
+               "as its source states them; a setting the source left at its engine's default is "
+               "\"default\", which a lookup compares with the default the requesting engine "
+               "states for its release. A setting the source does not state is unstated.")
     unimaged = sorted({c.model for c in carried if c.provenance["engine_image"] == IMAGE_UNRECORDED})
     if unimaged:
         out.append(f"The source files for {', '.join(unimaged)} name no engine image, so "

@@ -122,16 +122,19 @@ func committedSet(t *testing.T) *ProfileSet {
 	return &s
 }
 
-// A run identical to its curve's collection matches exactly, both sides stating resolved
-// values: DeepSeek-V4.1-Flash was measured on vLLM with probabilistic drafting and block
-// verification, and DeepSeek-V4-Pro's MTP curve left the sampler at its default and verified
-// by the standard rule, which on vLLM resolve to greedy and standard. A run that states none of
-// the settings is not taken for one at them: it borrows, and names each.
+// A run identical to its curve's collection matches exactly: DeepSeek-V4.1-Flash was measured on
+// vLLM with probabilistic drafting and block verification, and DeepSeek-V4-Pro's MTP curve left
+// the sampler at its engine's default (the marker), which the requesting vLLM states as greedy.
+// A run that states none of the settings is not taken for one at them: it borrows, and names
+// each. Another engine's default does not stand for vLLM's.
 func TestARunIdenticalToItsCollectionMatchesExactly(t *testing.T) {
 	set := committedSet(t)
+	// The engine states its resolved values and its own defaults (here vLLM's, greedy and
+	// standard, as blis-vllm states them from its field list).
 	req := func(model, method string, s DraftSampler, v Verifier, e string) Request {
 		return Request{Model: model, SpeculativeMethod: method, NumSpecTokens: 3,
 			DraftSampler: s, Verifier: v, Engine: e, Registry: []*ProfileSet{set},
+			DefaultDraftSampler: DraftGreedy, DefaultVerifier: VerifierStandard,
 			Workload: Workload{Category: "coding", Thinking: ThinkingOn}}
 	}
 	for _, c := range []Request{
@@ -157,7 +160,7 @@ func TestARunIdenticalToItsCollectionMatchesExactly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Step != StepOtherSettings || strings.Join(r.Differed, ",") != "engine" {
+	if r.Step != StepOtherSettings || strings.Join(r.Differed, ",") != "draft_sampler,engine" {
 		t.Fatalf("another engine: step %s differed %v", r.Step, r.Differed)
 	}
 }
@@ -182,5 +185,35 @@ func TestAFlyRunMatchesAFlyProfileAndBorrowsOtherwise(t *testing.T) {
 	}
 	if r.Step != StepOtherSettings || strings.Join(r.Differed, ",") != "verifier" {
 		t.Fatalf("fly with no fly profile: step %s differed %v", r.Step, r.Differed)
+	}
+}
+
+func TestTheEngineDefaultMarkerMatchesOnlyTheRequestingEnginesDefault(t *testing.T) {
+	s := kimi()
+	s.Profiles = s.Profiles[:1]
+	s.Profiles[0].DraftSampler, s.Profiles[0].Verifier, s.Profiles[0].Engine = DraftEngineDefault, VerifierStandard, "vllm"
+	req := kimiRequest(DraftGreedy, VerifierStandard)
+	req.Registry, req.Engine = []*ProfileSet{s}, "vllm"
+	if r, err := Resolve(req); err != nil || r.Step != StepOtherSettings {
+		t.Fatalf("with no default stated: %v %+v", err, r.Step)
+	}
+	req.DefaultDraftSampler = DraftGreedy
+	if r, err := Resolve(req); err != nil || r.Step != StepExact {
+		t.Fatalf("at the engine's stated default: %v %+v", err, r.Step)
+	}
+	if s.Profiles[0].DraftSampler != DraftEngineDefault {
+		t.Fatal("the lookup changed the set")
+	}
+	req.DefaultDraftSampler = DraftProbabilistic
+	if r, err := Resolve(req); err != nil || r.Step != StepOtherSettings {
+		t.Fatalf("the engine's default is not the run's sampler: %v %+v", err, r.Step)
+	}
+	req.DefaultDraftSampler, req.Engine = DraftGreedy, "sglang"
+	if r, err := Resolve(req); err != nil || r.Step == StepExact {
+		t.Fatalf("another engine's default stood for vllm's: %v %+v", err, r.Step)
+	}
+	req = kimiRequest(DraftEngineDefault, "")
+	if _, err := Resolve(req); err == nil || !strings.Contains(err.Error(), "resolved values") {
+		t.Fatalf("a request stating the marker: %v", err)
 	}
 }

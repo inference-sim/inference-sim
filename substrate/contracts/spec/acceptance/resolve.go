@@ -44,8 +44,13 @@ type Request struct {
 	DraftSampler DraftSampler
 	Verifier     Verifier
 	// Engine is the engine serving the run, as its deployment names it; empty is unstated.
-	Engine   string
-	Hardware string
+	Engine string
+	// DefaultDraftSampler and DefaultVerifier are the engine's own defaults for those settings at
+	// its release, which it states from its configuration. A profile of the same engine whose
+	// source left a setting at its default (the "default" marker) is compared as that value.
+	DefaultDraftSampler DraftSampler
+	DefaultVerifier     Verifier
+	Hardware            string
 	// Architecture is the architecture of the target model as its graph records it
 	// (global.architecture). Borrowing from another target needs it; without it that step is
 	// skipped.
@@ -215,10 +220,14 @@ func lookup(layer Layer, sets []*ProfileSet, req Request, fallback string, fallb
 	if !req.Workload.Thinking.Valid() {
 		return Resolution{}, fmt.Errorf("%s acceptance: thinking %q is not one of %v", layer, req.Workload.Thinking, AllThinkingModes())
 	}
-	if !req.DraftSampler.Valid() || !req.Verifier.Valid() || !ValidEngine(req.Engine) {
-		return Resolution{}, fmt.Errorf("%s acceptance: draft sampler %q, verifier %q or engine %q is not one of %v, %v or an engine name",
-			layer, req.DraftSampler, req.Verifier, req.Engine, AllDraftSamplers(), AllVerifiers())
+	if !req.DraftSampler.Resolved() || !req.Verifier.Resolved() || !ValidEngine(req.Engine) ||
+		!req.DefaultDraftSampler.Resolved() || !req.DefaultVerifier.Resolved() {
+		return Resolution{}, fmt.Errorf("%s acceptance: draft sampler %q, verifier %q, their defaults %q and %q, or engine %q "+
+			"is not one of %v, %v or an engine name; a request states resolved values",
+			layer, req.DraftSampler, req.Verifier, req.DefaultDraftSampler, req.DefaultVerifier, req.Engine,
+			AllDraftSamplers(), AllVerifiers())
 	}
+	sets = withEngineDefaults(sets, req)
 	key := Key{Model: req.Model, Drafter: req.Drafter, SpeculativeMethod: req.SpeculativeMethod,
 		NumSpecTokens: req.NumSpecTokens, Thinking: req.Workload.Thinking,
 		Category: req.Workload.Category, DraftSampler: req.DraftSampler, Verifier: req.Verifier,
