@@ -1,0 +1,6 @@
+# Written by the release job (design §10.2). Do not edit.
+kind: PublishedUnits
+role: report
+partition_version: 1
+seed_sha256: 0c741364a9f124cb87d0364c3de4682bd45cb20707ba19dbce704bb1795fb839
+units: []
