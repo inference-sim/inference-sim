@@ -245,6 +245,33 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
 - `TestTheFieldListLoadsAndNamesThisRelease` loads the file with the substrate's strict loader,
   checks it names this release, is in canonical form, and that every cited trace exists.
 
+## The surface list (surface.json)
+
+`surface.json` lists every feature vLLM v0.32.0 registers, each with one status (design X9, §7.5,
+VLM-4): connectors, offload specs, secondary tiers, cache policies, backpressure classes, offload
+media and backends, KV-event publishers, types and sources, KV-cache spec types with their
+managers, speculative methods, scheduler policies, the places vLLM loads a class from a path a
+setting names, the parts of the shared KV frameworks (§7.6), and metric families. Configuration
+fields and environment variables are the field list's, above.
+
+- **Items** come from vLLM's own registration tables at the pinned commit, read by
+  `tools/surface/gen_surface.py` (its docstring names the table each category is read from). A
+  name whose class is another registered name's is recorded with `alias_of`.
+- **Statuses** are in `tools/surface/status.json`, edited by hand: `modelled`, naming evidence that
+  includes an oracle scenario or a golden trace; `refused`, naming the blis-vllm issue; or
+  `out_of_scope`, for one of §7.5's three reasons, with a citation of the upstream code. A
+  framework part is `modelled` only with recorded and direct traces at its interface (FID-5).
+- **Checked in CI** by the `metrics-manifest` job:
+  `python3 -I tools/surface/gen_surface.py vllm-source tools/surface/status.json --check surface.json`
+  fails when the regenerated list differs from the committed one, when an item has no status, when a
+  status names an item vLLM does not register, when a status lacks what X9 asks of it, or when a KV
+  file loads a module by a name no `path_loader` item accounts for.
+- **The release** is the one `provenance.go`'s `Upstream` record names; the generator reads it
+  from there, refuses a vLLM checkout at another commit, and holds no version of its own
+  (`--upstream-tag` and `--upstream-commit` name another release). Moving to a new release
+  changes `provenance.go` and the status file, and the list is regenerated with the same command:
+  `python3 -I tools/surface/gen_surface.py <vllm-source> tools/surface/status.json > surface.json`.
+
 ## Licence
 
 Apache-2.0. Files translated from vLLM keep vLLM's licence and name the upstream file and commit
