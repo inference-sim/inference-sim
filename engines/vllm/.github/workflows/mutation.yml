@@ -22,15 +22,15 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: oracle/requirements-hashed.txt
-      - name: check out vLLM v0.32.0 at its pinned commit
+      - name: check out vLLM v0.33.0 at its pinned commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: vllm-project/vllm
-          ref: 5df63a7203cdb9328d824a27b682e77c7b9928be
+          ref: 4ba787ec9959e566d3b587a796dff07673324da5
           path: vllm-source
           fetch-depth: 1
       - name: the checked-out vLLM is the pinned commit
-        run: test "$(git -C vllm-source rev-parse HEAD)" = 5df63a7203cdb9328d824a27b682e77c7b9928be
+        run: test "$(git -C vllm-source rev-parse HEAD)" = 4ba787ec9959e566d3b587a796dff07673324da5
       - name: install the oracle environment
         run: |
           python -I oracle/check_lock.py --hashed oracle/requirements.lock oracle/requirements-hashed.txt
