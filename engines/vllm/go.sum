@@ -4,6 +4,8 @@ github.com/inference-sim/blis-substrate v0.14.1-0.20261116164559-d39f2e1e0e6f h1
 github.com/inference-sim/blis-substrate v0.14.1-0.20261116164559-d39f2e1e0e6f/go.mod h1:vZYEOia6TQOW+HZYbvJXCMDXus85dBj6vAyPr9rJF3A=
 github.com/inference-sim/blis-substrate v0.14.1-0.20261116184559-c4016f8c271f h1:DslTNBDufV2HuFjrkm3P8lLiI9t54nz+5rP46vazQXU=
 github.com/inference-sim/blis-substrate v0.14.1-0.20261116184559-c4016f8c271f/go.mod h1:vZYEOia6TQOW+HZYbvJXCMDXus85dBj6vAyPr9rJF3A=
+github.com/inference-sim/blis-substrate v0.14.1-0.20261116190852-da0d5ae7f8d1 h1:/Ar2qrv0fXhPcSYyG9Agg2esLGrAPJL2nWKY/Qtzo5s=
+github.com/inference-sim/blis-substrate v0.14.1-0.20261116190852-da0d5ae7f8d1/go.mod h1:vZYEOia6TQOW+HZYbvJXCMDXus85dBj6vAyPr9rJF3A=
 github.com/sirupsen/logrus v1.9.4 h1:TsZE7l11zFCLZnZ+teH4Umoq5BhEIfIzfRDZ1Uzql2w=
 github.com/sirupsen/logrus v1.9.4/go.mod h1:ftWc9WdOfJ0a92nsE2jF5u5ZwH8Bv2zdeOC42RjbV2g=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=

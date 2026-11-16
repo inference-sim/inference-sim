@@ -3,7 +3,7 @@ module github.com/inference-sim/blis-vllm
 go 1.27.2
 
 require (
-	github.com/inference-sim/blis-substrate v0.14.1-0.20261116184559-c4016f8c271f
+	github.com/inference-sim/blis-substrate v0.14.1-0.20261116190852-da0d5ae7f8d1
 	github.com/sirupsen/logrus v1.9.4
 	github.com/stretchr/testify v1.12.1
 	gopkg.in/yaml.v3 v3.0.1
