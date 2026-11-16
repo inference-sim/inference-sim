@@ -569,7 +569,7 @@ func TestCatalogStrictLoad_DevicesNamespaceWithNothingReadableIsReported(t *test
 
 	// The negative control that keeps the rule from becoming "devices/ is mandatory": an
 	// EMPTY namespace (or an absent one) stays silent, because nothing reads the table until a
-	// --kv-offload-config tier names a device_class.
+	// scenario's offload tier names a storage device.
 	t.Run("empty namespace stays silent", func(t *testing.T) {
 		root := newCompleteCatalog(t)
 		if err := os.Remove(catalogStorageDevicesPath(root)); err != nil {

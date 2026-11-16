@@ -131,6 +131,9 @@ func applyFromResult(command string, cmd *cobra.Command) func() {
 	// supplied it again. A file option is checked by digest.
 	for _, o := range doc.Input.Options {
 		f := cmd.Flags().Lookup(o.Name)
+		if _, removed := removedFlags[o.Name]; removed && f == nil {
+			logrus.Fatalf("--from-result: the Result records the option --%s: %v", o.Name, removedFlagError(o.Name))
+		}
 		if f == nil {
 			logrus.Fatalf("--from-result: the Result records the option --%s, which `blis %s` of this build does not have", o.Name, command)
 		}

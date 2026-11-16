@@ -1,16 +1,13 @@
 package workload
 
 import (
-	"bytes"
 	"fmt"
 	"math"
 	"math/rand"
-	"os"
 	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 )
 
@@ -32,7 +29,7 @@ func TestGenerateRequests_SingleClient_ProducesRequests(t *testing.T) {
 	}
 	horizon := int64(1e6) // 1 second
 
-	requests, err := GenerateRequests(spec, horizon, 0)
+	requests, err := generateRequests(spec, horizon, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -84,8 +81,8 @@ func TestGenerateRequests_Deterministic_SameSeedSameOutput(t *testing.T) {
 	}
 	horizon := int64(1e6)
 
-	r1, _ := GenerateRequests(spec, horizon, 0)
-	r2, _ := GenerateRequests(spec, horizon, 0)
+	r1, _ := generateRequests(spec, horizon, 0)
+	r2, _ := generateRequests(spec, horizon, 0)
 
 	if len(r1) != len(r2) {
 		t.Fatalf("different counts: %d vs %d", len(r1), len(r2))
@@ -119,11 +116,11 @@ func TestGenerateRequests_Deterministic_WithMaxRequests(t *testing.T) {
 		},
 	}
 	maxReqs := int64(150)
-	r1, err := GenerateRequests(spec, 100e6, maxReqs)
+	r1, err := generateRequests(spec, 100e6, maxReqs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r2, err := GenerateRequests(spec, 100e6, maxReqs)
+	r2, err := generateRequests(spec, 100e6, maxReqs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +155,7 @@ func TestGenerateRequests_TwoClients_RateProportional(t *testing.T) {
 				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}}},
 		},
 	}
-	requests, err := GenerateRequests(spec, 10e6, 0) // 10 seconds
+	requests, err := generateRequests(spec, 10e6, 0) // 10 seconds
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +186,7 @@ func TestGenerateRequests_RateFractionNormalization(t *testing.T) {
 				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}}},
 		},
 	}
-	requests, err := GenerateRequests(spec, 10e6, 0)
+	requests, err := generateRequests(spec, 10e6, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +213,7 @@ func TestGenerateRequests_ZeroHorizon_ReturnsEmpty(t *testing.T) {
 			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
 		}},
 	}
-	requests, err := GenerateRequests(spec, 0, 0)
+	requests, err := generateRequests(spec, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +236,7 @@ func TestGenerateRequests_PrefixGroup_SharedPrefix(t *testing.T) {
 				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}}},
 		},
 	}
-	requests, err := GenerateRequests(spec, 1e6, 0)
+	requests, err := generateRequests(spec, 1e6, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +277,7 @@ func TestGenerateRequests_MaxRequests_CapsOutput(t *testing.T) {
 	horizon := int64(100e6) // 100 seconds — would produce ~10000 requests
 	maxReqs := int64(50)
 
-	requests, err := GenerateRequests(spec, horizon, maxReqs)
+	requests, err := generateRequests(spec, horizon, maxReqs)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -305,7 +302,7 @@ func TestGenerateRequests_ZeroMaxRequests_UsesHorizonOnly(t *testing.T) {
 	}
 	horizon := int64(1e6) // 1 second
 
-	requests, err := GenerateRequests(spec, horizon, 0) // 0 = unlimited
+	requests, err := generateRequests(spec, horizon, 0) // 0 = unlimited
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -331,7 +328,7 @@ func TestGenerateRequests_MaxRequests_PreservesClientProportions(t *testing.T) {
 		},
 	}
 	maxReqs := int64(200)
-	requests, err := GenerateRequests(spec, 100e6, maxReqs) // long horizon, capped by maxReqs
+	requests, err := generateRequests(spec, 100e6, maxReqs) // long horizon, capped by maxReqs
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -385,7 +382,7 @@ func TestGenerateRequests_MaxRequests_ReasoningClientNotStarved(t *testing.T) {
 		},
 	}
 	maxReqs := int64(100)
-	requests, err := GenerateRequests(spec, 100e6, maxReqs)
+	requests, err := generateRequests(spec, 100e6, maxReqs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -430,7 +427,7 @@ func TestGenerateRequests_SameSeed_ProducesIdenticalRequests(t *testing.T) {
 		}},
 	}
 
-	reqs1, err := GenerateRequests(spec1, 1_000_000, 10)
+	reqs1, err := generateRequests(spec1, 1_000_000, 10)
 	if err != nil {
 		t.Fatalf("first generation: %v", err)
 	}
@@ -445,7 +442,7 @@ func TestGenerateRequests_SameSeed_ProducesIdenticalRequests(t *testing.T) {
 		}},
 	}
 
-	reqs2, err := GenerateRequests(spec2, 1_000_000, 10)
+	reqs2, err := generateRequests(spec2, 1_000_000, 10)
 	if err != nil {
 		t.Fatalf("second generation: %v", err)
 	}
@@ -479,7 +476,7 @@ func TestGenerateRequests_ConstantArrival_EvenSpacing(t *testing.T) {
 		}},
 	}
 
-	reqs, err := GenerateRequests(spec, 1_000_000, 5) // 1 second, 5 requests max
+	reqs, err := generateRequests(spec, 1_000_000, 5) // 1 second, 5 requests max
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -510,7 +507,7 @@ func TestGenerateRequests_V2NewSLOTiers_Generate(t *testing.T) {
 				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
 			}},
 		}
-		reqs, err := GenerateRequests(spec, 1_000_000, 5)
+		reqs, err := generateRequests(spec, 1_000_000, 5)
 		if err != nil {
 			t.Errorf("SLO tier %q: unexpected error: %v", tier, err)
 			continue
@@ -534,7 +531,7 @@ func TestGenerateRequests_ModelFieldPropagated(t *testing.T) {
 			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
 		}},
 	}
-	reqs, err := GenerateRequests(spec, 1_000_000, 5)
+	reqs, err := generateRequests(spec, 1_000_000, 5)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -559,7 +556,7 @@ func TestGenerateRequests_EmptyModel_DefaultsToEmpty(t *testing.T) {
 			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
 		}},
 	}
-	reqs, err := GenerateRequests(spec, 1_000_000, 5)
+	reqs, err := generateRequests(spec, 1_000_000, 5)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -581,7 +578,7 @@ func TestGenerateRequests_ZeroAggregateRate_ReturnsError(t *testing.T) {
 			OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
 		}},
 	}
-	_, err := GenerateRequests(spec, math.MaxInt64, 0)
+	_, err := generateRequests(spec, math.MaxInt64, 0)
 	if err == nil {
 		t.Fatal("expected error for zero aggregate_rate")
 	}
@@ -598,7 +595,7 @@ func TestGenerateRequests_NaNAggregateRate_ReturnsError(t *testing.T) {
 			OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
 		}},
 	}
-	_, err := GenerateRequests(spec, math.MaxInt64, 0)
+	_, err := generateRequests(spec, math.MaxInt64, 0)
 	if err == nil {
 		t.Fatal("expected error for NaN aggregate_rate")
 	}
@@ -631,7 +628,7 @@ func TestGenerateRequests_SingleSession_OneSessionPerClient(t *testing.T) {
 		Clients: clients,
 	}
 	horizon := int64(2_000_000) // 2 seconds
-	requests, err := GenerateRequests(spec, horizon, 0)
+	requests, err := generateRequests(spec, horizon, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -672,7 +669,7 @@ func TestGenerateRequests_SingleSession_HorizonTruncation(t *testing.T) {
 		}},
 	}
 	horizon := int64(1_000_000) // 1 second — should truncate the 10s session
-	requests, err := GenerateRequests(spec, horizon, 0)
+	requests, err := generateRequests(spec, horizon, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -723,8 +720,8 @@ func TestGenerateRequests_SingleSession_Deterministic(t *testing.T) {
 		}
 	}
 	horizon := int64(2_000_000)
-	r1, err1 := GenerateRequests(makeSpec(), horizon, 0)
-	r2, err2 := GenerateRequests(makeSpec(), horizon, 0)
+	r1, err1 := generateRequests(makeSpec(), horizon, 0)
+	r2, err2 := generateRequests(makeSpec(), horizon, 0)
 	if err1 != nil || err2 != nil {
 		t.Fatalf("errors: %v, %v", err1, err2)
 	}
@@ -744,6 +741,7 @@ func TestGenerateRequests_SingleSession_Deterministic(t *testing.T) {
 }
 
 func TestGenerateRequests_SingleSession_LifecycleWindowRoundSuppression(t *testing.T) {
+	openLoop := false
 	// BC-6: SingleSession rounds that cross the lifecycle window boundary must be suppressed.
 	// Session has MaxRounds=50 at ThinkTimeUs=100_000 (5s span), but window is only 1s wide.
 	// Only rounds within the window should appear in output.
@@ -754,6 +752,7 @@ func TestGenerateRequests_SingleSession_LifecycleWindowRoundSuppression(t *testi
 			Arrival:    ArrivalSpec{Process: "constant"},
 			InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
 			OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+			ClosedLoop: &openLoop, // the generator emits every round
 			Reasoning: &ReasoningSpec{
 				ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
 				MultiTurn: &MultiTurnSpec{
@@ -769,7 +768,7 @@ func TestGenerateRequests_SingleSession_LifecycleWindowRoundSuppression(t *testi
 		}},
 	}
 	horizon := int64(10_000_000) // 10s
-	requests, err := GenerateRequests(spec, horizon, 0)
+	requests, err := generateRequests(spec, horizon, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -813,7 +812,7 @@ func TestGenerateRequests_ReasoningClient_RespectsLifecycleWindows(t *testing.T)
 		}},
 	}
 	horizon := int64(2_000_000) // 2 seconds
-	requests, err := GenerateRequests(spec, horizon, 0)
+	requests, err := generateRequests(spec, horizon, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -829,6 +828,7 @@ func TestGenerateRequests_ReasoningClient_RespectsLifecycleWindows(t *testing.T)
 }
 
 func TestGenerateRequests_ReasoningClient_PrependsPrefixTokens(t *testing.T) {
+	openLoop := false
 	// BC-1/BC-2: Reasoning paths must prepend shared prefix tokens, just like
 	// the standard request path. Both SingleSession and multi-session must work.
 	for _, singleSession := range []bool{true, false} {
@@ -846,6 +846,7 @@ func TestGenerateRequests_ReasoningClient_PrependsPrefixTokens(t *testing.T) {
 					Arrival:      ArrivalSpec{Process: "constant"},
 					InputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
 					OutputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+					ClosedLoop:   &openLoop, // the generator emits every round
 					Reasoning: &ReasoningSpec{
 						ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
 						MultiTurn: &MultiTurnSpec{
@@ -858,7 +859,7 @@ func TestGenerateRequests_ReasoningClient_PrependsPrefixTokens(t *testing.T) {
 				}},
 			}
 			horizon := int64(2_000_000)
-			requests, err := GenerateRequests(spec, horizon, 0)
+			requests, err := generateRequests(spec, horizon, 0)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -892,6 +893,7 @@ func TestGenerateRequests_ReasoningClient_PrependsPrefixTokens(t *testing.T) {
 }
 
 func TestGenerateRequests_ReasoningClient_PrefixWithAccumulation(t *testing.T) {
+	openLoop := false
 	// BC-8: With prefix + context accumulation, the token layout per round is:
 	//   Round 0: [prefix | newInput_r0]
 	//   Round 1: [prefix | newInput_r0 + output_r0 | newInput_r1]
@@ -905,6 +907,7 @@ func TestGenerateRequests_ReasoningClient_PrefixWithAccumulation(t *testing.T) {
 			Arrival:      ArrivalSpec{Process: "constant"},
 			InputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
 			OutputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 15}},
+			ClosedLoop:   &openLoop, // the generator emits every round
 			Reasoning: &ReasoningSpec{
 				ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
 				MultiTurn: &MultiTurnSpec{
@@ -917,7 +920,7 @@ func TestGenerateRequests_ReasoningClient_PrefixWithAccumulation(t *testing.T) {
 		}},
 	}
 	horizon := int64(5_000_000)
-	requests, err := GenerateRequests(spec, horizon, 0)
+	requests, err := generateRequests(spec, horizon, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -993,7 +996,7 @@ func TestGenerateRequests_MultiSession_PerRoundLifecycleFiltering(t *testing.T) 
 		}},
 	}
 	horizon := int64(10_000_000)
-	requests, err := GenerateRequests(spec, horizon, 0)
+	requests, err := generateRequests(spec, horizon, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1034,7 +1037,7 @@ func TestGenerateRequests_MultiSession_PerRoundHorizonFiltering(t *testing.T) {
 		}},
 	}
 	horizon := int64(3_000_000) // 3s — session at 1s, rounds at 1.0s, 1.5s, 2.0s, 2.5s, 3.0s...
-	requests, err := GenerateRequests(spec, horizon, 0)
+	requests, err := generateRequests(spec, horizon, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1075,7 +1078,7 @@ func TestGenerateRequests_ReasoningClient_NoPrefixGroup_Unchanged(t *testing.T) 
 		}},
 	}
 	horizon := int64(2_000_000)
-	requests, err := GenerateRequests(spec, horizon, 0)
+	requests, err := generateRequests(spec, horizon, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1106,7 +1109,7 @@ func TestGenerateRequests_SetsMaxOutputLen(t *testing.T) {
 		}},
 	}
 
-	requests, err := GenerateRequests(spec, 1_000_000, 42)
+	requests, err := generateRequests(spec, 1_000_000, 42)
 	if err != nil {
 		t.Fatalf("GenerateRequests: %v", err)
 	}
@@ -1142,7 +1145,7 @@ func TestGenerateWorkload_ClosedLoop_OnlyRound0(t *testing.T) {
 		},
 	}
 
-	wl, err := GenerateWorkload(spec, 10_000_000, 50)
+	wl, err := generateWorkload(spec, 10_000_000, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1188,7 +1191,7 @@ func TestGenerateWorkload_OpenLoop_AllRounds(t *testing.T) {
 		},
 	}
 
-	wl, err := GenerateWorkload(spec, 10_000_000, 50)
+	wl, err := generateWorkload(spec, 10_000_000, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1253,7 +1256,7 @@ clients:
 	if err := dec.Decode(&spec); err != nil {
 		t.Fatalf("yaml decode: %v", err)
 	}
-	wl, err := GenerateWorkload(&spec, 10_000_000, 50)
+	wl, err := generateWorkload(&spec, 10_000_000, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1289,7 +1292,7 @@ func TestGenerateWorkload_NonSessionWorkload_NoBlueprints(t *testing.T) {
 		},
 	}
 
-	wl, err := GenerateWorkload(spec, 10_000_000, 50)
+	wl, err := generateWorkload(spec, 10_000_000, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1317,7 +1320,7 @@ func TestGenerateWorkload_Deadline_NonSessionNoTimeout(t *testing.T) {
 		},
 	}
 
-	wl, err := GenerateWorkload(spec, 10_000_000, 10)
+	wl, err := generateWorkload(spec, 10_000_000, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1348,7 +1351,7 @@ func TestGenerateWorkload_Deadline_SessionDefaultTimeout(t *testing.T) {
 		},
 	}
 
-	wl, err := GenerateWorkload(spec, 10_000_000, 10)
+	wl, err := generateWorkload(spec, 10_000_000, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1388,7 +1391,7 @@ func TestGenerateWorkload_Deadline_SessionExplicitZeroNoTimeout(t *testing.T) {
 		},
 	}
 
-	wl, err := GenerateWorkload(spec, 10_000_000, 10)
+	wl, err := generateWorkload(spec, 10_000_000, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1421,7 +1424,7 @@ func TestGenerateWorkload_SessionManager_Integration(t *testing.T) {
 		},
 	}
 
-	wl, err := GenerateWorkload(spec, 10_000_000, 20)
+	wl, err := generateWorkload(spec, 10_000_000, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1481,7 +1484,7 @@ func TestGenerateRequests_MutualExclusion_ClientsAndServeGen_ReturnsError(t *tes
 		}},
 		ServeGenData: &ServeGenDataSpec{Path: "data/"},
 	}
-	_, err := GenerateRequests(spec, 1_000_000, 100)
+	_, err := generateRequests(spec, 1_000_000, 100)
 	if err == nil {
 		t.Fatal("expected error for Clients + ServeGenData, got nil")
 	}
@@ -1508,7 +1511,7 @@ func TestGenerateRequests_MutualExclusion_ClientsAndInferencePerf_ReturnsError(t
 			},
 		},
 	}
-	_, err := GenerateRequests(spec, 1_000_000, 100)
+	_, err := generateRequests(spec, 1_000_000, 100)
 	if err == nil {
 		t.Fatal("expected error for Clients + InferencePerf, got nil")
 	}
@@ -1530,7 +1533,7 @@ func TestGenerateRequests_MutualExclusion_ServeGenAndInferencePerf_ReturnsError(
 			},
 		},
 	}
-	_, err := GenerateRequests(spec, 1_000_000, 100)
+	_, err := generateRequests(spec, 1_000_000, 100)
 	if err == nil {
 		t.Fatal("expected error for ServeGenData + InferencePerf, got nil")
 	}
@@ -1558,7 +1561,7 @@ func TestGenerateRequests_MutualExclusion_AllThreeSources_ReturnsError(t *testin
 			},
 		},
 	}
-	_, err := GenerateRequests(spec, 1_000_000, 100)
+	_, err := generateRequests(spec, 1_000_000, 100)
 	if err == nil {
 		t.Fatal("expected error for all three sources, got nil")
 	}
@@ -1584,7 +1587,7 @@ func TestGenerateRequests_MutualExclusion_CohortsWithClients_Allowed(t *testing.
 			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
 		}},
 	}
-	reqs, err := GenerateRequests(spec, 1_000_000, 10)
+	reqs, err := generateRequests(spec, 1_000_000, 10)
 	if err != nil {
 		t.Fatalf("unexpected error for Clients + Cohorts: %v", err)
 	}
@@ -1612,7 +1615,7 @@ func TestGenerateRequests_MutualExclusion_CohortsWithInferencePerf_Allowed(t *te
 			},
 		},
 	}
-	reqs, err := GenerateRequests(spec, 1_000_000, 10)
+	reqs, err := generateRequests(spec, 1_000_000, 10)
 	if err != nil {
 		t.Fatalf("unexpected error for Cohorts + InferencePerf: %v", err)
 	}
@@ -1635,7 +1638,7 @@ func TestGenerateWorkload_ConcurrencyClient_ProducesSeedsAndBlueprints(t *testin
 			OutputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
 		}},
 	}
-	wl, err := GenerateWorkload(spec, 10_000_000, 100)
+	wl, err := generateWorkload(spec, 10_000_000, 100)
 	if err != nil {
 		t.Fatalf("GenerateWorkload failed: %v", err)
 	}
@@ -1664,7 +1667,7 @@ func TestGenerateWorkload_ConcurrencyClient_StaggeredArrivals(t *testing.T) {
 			OutputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
 		}},
 	}
-	wl, err := GenerateWorkload(spec, 10_000_000, 0)
+	wl, err := generateWorkload(spec, 10_000_000, 0)
 	if err != nil {
 		t.Fatalf("GenerateWorkload failed: %v", err)
 	}
@@ -1693,7 +1696,7 @@ func TestGenerateWorkload_ConcurrencyClient_ZeroThinkTime_AllAtZero(t *testing.T
 			OutputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
 		}},
 	}
-	wl, err := GenerateWorkload(spec, 10_000_000, 0)
+	wl, err := generateWorkload(spec, 10_000_000, 0)
 	if err != nil {
 		t.Fatalf("GenerateWorkload failed: %v", err)
 	}
@@ -1718,8 +1721,8 @@ func TestGenerateWorkload_ConcurrencyClient_Deterministic(t *testing.T) {
 			OutputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
 		}},
 	}
-	wl1, _ := GenerateWorkload(spec, 10_000_000, 100)
-	wl2, _ := GenerateWorkload(spec, 10_000_000, 100)
+	wl1, _ := generateWorkload(spec, 10_000_000, 100)
+	wl2, _ := generateWorkload(spec, 10_000_000, 100)
 	if len(wl1.Requests) != len(wl2.Requests) {
 		t.Fatalf("different seed counts: %d vs %d", len(wl1.Requests), len(wl2.Requests))
 	}
@@ -1752,7 +1755,7 @@ func TestGenerateWorkload_ConcurrencyClient_SessionMetadata(t *testing.T) {
 			OutputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
 		}},
 	}
-	wl, err := GenerateWorkload(spec, 10_000_000, 0)
+	wl, err := generateWorkload(spec, 10_000_000, 0)
 	if err != nil {
 		t.Fatalf("GenerateWorkload failed: %v", err)
 	}
@@ -1794,7 +1797,7 @@ func TestGenerateWorkload_ConcurrencyClient_BlueprintProperties(t *testing.T) {
 			OutputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
 		}},
 	}
-	wl, err := GenerateWorkload(spec, 10_000_000, 0)
+	wl, err := generateWorkload(spec, 10_000_000, 0)
 	if err != nil {
 		t.Fatalf("GenerateWorkload failed: %v", err)
 	}
@@ -1829,7 +1832,7 @@ func TestGenerateWorkload_ConcurrencyClient_SeedsCappedByMaxRequests(t *testing.
 		}},
 	}
 	// maxRequests=100, but Concurrency=200 → seeds must be capped at 100
-	wl, err := GenerateWorkload(spec, 10_000_000, 100)
+	wl, err := generateWorkload(spec, 10_000_000, 100)
 	if err != nil {
 		t.Fatalf("GenerateWorkload failed: %v", err)
 	}
@@ -1856,7 +1859,7 @@ func TestGenerateWorkload_ConcurrencyClient_ZeroBudgetMeansNoFollowUps(t *testin
 		}},
 	}
 	// 50 seeds, 50 max → budget=0
-	wl, err := GenerateWorkload(spec, 10_000_000, 50)
+	wl, err := generateWorkload(spec, 10_000_000, 50)
 	if err != nil {
 		t.Fatalf("GenerateWorkload failed: %v", err)
 	}
@@ -1894,15 +1897,15 @@ func TestGenerateWorkload_NonConcurrencySpec_Unchanged(t *testing.T) {
 			OutputDist:   DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
 		}},
 	}
-	wl, err := GenerateWorkload(spec, 1_000_000, 50)
+	wl, err := generateWorkload(spec, 1_000_000, 50)
 	if err != nil {
 		t.Fatalf("GenerateWorkload failed: %v", err)
 	}
 	if len(wl.Sessions) != 0 {
 		t.Errorf("BC-11: non-concurrency spec has %d sessions, want 0", len(wl.Sessions))
 	}
-	if wl.FollowUpBudget != 0 {
-		t.Errorf("BC-11: non-concurrency spec has FollowUpBudget = %d, want 0 (no sessions)", wl.FollowUpBudget)
+	if wl.FollowUpBudget != -1 {
+		t.Errorf("BC-11: non-concurrency spec has FollowUpBudget = %d, want -1 (no concurrency users, so no cap)", wl.FollowUpBudget)
 	}
 }
 
@@ -1921,7 +1924,7 @@ func TestConcurrencyMode_EndToEnd_SessionFollowUps(t *testing.T) {
 		}},
 	}
 
-	wl, err := GenerateWorkload(spec, 1_000_000, 6)
+	wl, err := generateWorkload(spec, 1_000_000, 6)
 	if err != nil {
 		t.Fatalf("GenerateWorkload failed: %v", err)
 	}
@@ -2008,7 +2011,7 @@ func TestConcurrencyMode_TimeoutCancelsSession(t *testing.T) {
 		}},
 	}
 
-	wl, err := GenerateWorkload(spec, 1_000_000, 0)
+	wl, err := generateWorkload(spec, 1_000_000, 0)
 	if err != nil {
 		t.Fatalf("GenerateWorkload failed: %v", err)
 	}
@@ -2069,7 +2072,7 @@ func TestClientSpec_CustomSampler(t *testing.T) {
 	}
 	horizon := int64(1e9) // 1000 seconds (large enough for all 3 requests)
 
-	requests, err := GenerateRequests(spec, horizon, 0)
+	requests, err := generateRequests(spec, horizon, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2123,7 +2126,7 @@ func TestCustomSampler_ZeroIATExhaustion(t *testing.T) {
 		horizon := int64(3600_000_000) // 1 hour
 
 		// WHEN requests are generated
-		requests, err := GenerateRequests(spec, horizon, 0)
+		requests, err := generateRequests(spec, horizon, 0)
 
 		// THEN no error, and zero requests generated (sampler exhausted before first arrival)
 		if err != nil {
@@ -2135,6 +2138,7 @@ func TestCustomSampler_ZeroIATExhaustion(t *testing.T) {
 	})
 
 	t.Run("MultiSessionReasoning", func(t *testing.T) {
+		openLoop := false
 		// GIVEN a client with CustomSamplerFactory that returns 2 IATs then exhausts
 		factory := func(_ *rand.Rand) ArrivalSampler {
 			return &mockSampler{intervals: []int64{100_000, 200_000, 0}}
@@ -2153,6 +2157,7 @@ func TestCustomSampler_ZeroIATExhaustion(t *testing.T) {
 					CustomSamplerFactory: factory,
 					InputDist:            DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
 					OutputDist:           DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+					ClosedLoop:           &openLoop, // the generator emits every round
 					Reasoning: &ReasoningSpec{
 						MultiTurn: &MultiTurnSpec{
 							MaxRounds:     3,
@@ -2166,7 +2171,7 @@ func TestCustomSampler_ZeroIATExhaustion(t *testing.T) {
 		horizon := int64(3600_000_000) // 1 hour
 
 		// WHEN requests are generated
-		requests, err := GenerateRequests(spec, horizon, 0)
+		requests, err := generateRequests(spec, horizon, 0)
 
 		// THEN no error, and exactly 2 sessions generated (3 rounds each = 6 requests)
 		if err != nil {
@@ -2181,6 +2186,7 @@ func TestCustomSampler_ZeroIATExhaustion(t *testing.T) {
 
 // TestCustomSampler_ReasoningIntegration tests CustomSamplerFactory with reasoning clients.
 func TestCustomSampler_ReasoningIntegration(t *testing.T) {
+	openLoop := false
 	// GIVEN a client with CustomSamplerFactory and reasoning enabled
 	factory := func(_ *rand.Rand) ArrivalSampler {
 		return &mockSampler{intervals: []int64{100_000, 200_000, 300_000}}
@@ -2199,6 +2205,7 @@ func TestCustomSampler_ReasoningIntegration(t *testing.T) {
 				CustomSamplerFactory: factory,
 				InputDist:            DistSpec{Type: "constant", Params: map[string]float64{"value": 128}},
 				OutputDist:           DistSpec{Type: "constant", Params: map[string]float64{"value": 64}},
+				ClosedLoop:           &openLoop, // the generator emits every round
 				Reasoning: &ReasoningSpec{
 					MultiTurn: &MultiTurnSpec{
 						MaxRounds:     2,
@@ -2212,7 +2219,7 @@ func TestCustomSampler_ReasoningIntegration(t *testing.T) {
 	horizon := int64(3600_000_000)
 
 	// WHEN requests are generated
-	requests, err := GenerateRequests(spec, horizon, 0)
+	requests, err := generateRequests(spec, horizon, 0)
 
 	// THEN no error, and 3 sessions * 2 rounds = 6 requests
 	if err != nil {
@@ -2269,7 +2276,7 @@ func TestGenerateWorkload_MultiStageMultiTurn_OneSessionPerClient(t *testing.T) 
 	ws.Version = "2"
 
 	horizon := int64(120_000_000) // 120 seconds in µs
-	gw, err := GenerateWorkload(ws, horizon, 0)
+	gw, err := generateWorkload(ws, horizon, 0)
 	if err != nil {
 		t.Fatalf("GenerateWorkload: %v", err)
 	}
@@ -2322,7 +2329,7 @@ func TestGenerateWorkload_SingleStageMultiUserMultiTurn_OneSessionPerClient(t *t
 	ws.Version = "2"
 
 	horizon := int64(60_000_000) // 60 seconds in µs
-	gw, err := GenerateWorkload(ws, horizon, 0)
+	gw, err := generateWorkload(ws, horizon, 0)
 	if err != nil {
 		t.Fatalf("GenerateWorkload: %v", err)
 	}
@@ -2347,72 +2354,6 @@ func TestGenerateWorkload_SingleStageMultiUserMultiTurn_OneSessionPerClient(t *t
 	}
 }
 
-// TestGenerateWorkload_ZeroSessionClosedLoopClient_EmitsWarning verifies BC-1:
-// when a closed-loop client produces no SessionBlueprints (because its round-0
-// requests are absent from the generated set), GenerateWorkload emits a logrus
-// warning and returns successfully with zero sessions for that client.
-//
-// Trigger: a reasoning client with a Lifecycle window that starts after the
-// horizon forces GenerateRequests to generate no requests for it. The session-
-// matching loop then finds no requests with that client's ClientID, firing the
-// warning. Execution continues — the empty blueprint loop is a no-op.
-func TestGenerateWorkload_ZeroSessionClosedLoopClient_EmitsWarning(t *testing.T) {
-	// Do not call t.Parallel() — this test redirects global logrus output.
-
-	const horizon = int64(1_000_000) // 1 second
-
-	// Lifecycle window starts well past the horizon, so GenerateRequests
-	// generates zero round-0 requests for this client.
-	spec := &WorkloadSpec{
-		Version: "2", Seed: 42, Category: "reasoning", AggregateRate: 1.0,
-		Clients: []ClientSpec{{
-			ID: "lonely-client", SLOClass: "standard", RateFraction: 1.0,
-			Arrival:    ArrivalSpec{Process: "poisson"},
-			InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
-			OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 5}},
-			Lifecycle: &LifecycleSpec{
-				Windows: []ActiveWindow{{
-					StartUs: horizon + 1_000_000,
-					EndUs:   horizon + 2_000_000,
-				}},
-			},
-			Reasoning: &ReasoningSpec{
-				ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
-				MultiTurn: &MultiTurnSpec{
-					MaxRounds: 3, ThinkTimeUs: 100_000, SingleSession: true,
-				},
-			},
-		}},
-	}
-
-	// Redirect logrus to capture the warning.
-	var logBuf bytes.Buffer
-	logrus.SetOutput(&logBuf)
-	defer logrus.SetOutput(os.Stderr)
-	origLevel := logrus.GetLevel()
-	logrus.SetLevel(logrus.WarnLevel)
-	defer logrus.SetLevel(origLevel)
-
-	gw, err := GenerateWorkload(spec, horizon, 0)
-	if err != nil {
-		t.Fatalf("GenerateWorkload returned error: %v", err)
-	}
-
-	// BC-1: warning must be emitted containing the client ID.
-	logged := logBuf.String()
-	if !strings.Contains(logged, "produced no sessions") {
-		t.Errorf("expected warning containing 'produced no sessions', got: %q", logged)
-	}
-	if !strings.Contains(logged, "lonely-client") {
-		t.Errorf("expected warning to name the client %q, got: %q", "lonely-client", logged)
-	}
-
-	// Execution continues safely: zero sessions returned (blueprint loop is a no-op).
-	if len(gw.Sessions) != 0 {
-		t.Errorf("expected 0 sessions (no requests generated), got %d", len(gw.Sessions))
-	}
-}
-
 func TestGenerateRequests_ReasoningMultiSession_LifecycleNoHang(t *testing.T) {
 	// BC-1131-2: Multi-session reasoning path must also exit when past all windows.
 	spec := &WorkloadSpec{
@@ -2431,7 +2372,7 @@ func TestGenerateRequests_ReasoningMultiSession_LifecycleNoHang(t *testing.T) {
 			},
 		}},
 	}
-	requests, err := GenerateRequests(spec, math.MaxInt64, 0)
+	requests, err := generateRequests(spec, math.MaxInt64, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2463,13 +2404,13 @@ func TestGenerateRequests_LifecycleWindow_EquivalentWithExplicitHorizon(t *testi
 	}
 
 	// Run with MaxInt64 (the fix path)
-	r1, err := GenerateRequests(spec, math.MaxInt64, 0)
+	r1, err := generateRequests(spec, math.MaxInt64, 0)
 	if err != nil {
 		t.Fatalf("MaxInt64 horizon: %v", err)
 	}
 
 	// Run with explicit horizon well beyond the window (10s > 5s window)
-	r2, err := GenerateRequests(spec, 10_000_000, 0)
+	r2, err := generateRequests(spec, 10_000_000, 0)
 	if err != nil {
 		t.Fatalf("explicit horizon: %v", err)
 	}
@@ -2504,7 +2445,7 @@ func TestGenerateRequests_LifecycleWindow_MultipleWindows(t *testing.T) {
 			},
 		}},
 	}
-	requests, err := GenerateRequests(spec, math.MaxInt64, 0)
+	requests, err := generateRequests(spec, math.MaxInt64, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2550,7 +2491,7 @@ func TestGenerateRequests_LifecycleWindow_NoHang(t *testing.T) {
 			},
 		}},
 	}
-	requests, err := GenerateRequests(spec, math.MaxInt64, 0)
+	requests, err := generateRequests(spec, math.MaxInt64, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2602,7 +2543,7 @@ func TestGenerateRequests_PhasedWorkload_CorrectRatePerPhase(t *testing.T) {
 		},
 	}
 
-	requests, err := GenerateRequests(spec, math.MaxInt64, 0)
+	requests, err := generateRequests(spec, math.MaxInt64, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2657,7 +2598,7 @@ func TestGenerateRequests_InferencePerfMultiStage_CorrectRatePerStage(t *testing
 		t.Fatalf("expansion error: %v", err)
 	}
 
-	requests, err := GenerateRequests(expanded, math.MaxInt64, 0)
+	requests, err := generateRequests(expanded, math.MaxInt64, 0)
 	if err != nil {
 		t.Fatalf("generation error: %v", err)
 	}
@@ -2716,7 +2657,7 @@ func TestGenerateRequests_CohortAbsoluteMode_UsesTraceRate(t *testing.T) {
 	// Generate requests for the first client
 	spec.Cohorts = nil // Clear to avoid double-expansion in GenerateRequests
 	spec.Clients = []ClientSpec{expanded[0]}
-	requests, err := GenerateRequests(spec, 10000000, 67890) // 10 second horizon
+	requests, err := generateRequests(spec, 10000000, 67890) // 10 second horizon
 	if err != nil {
 		t.Fatalf("GenerateRequests failed: %v", err)
 	}
@@ -2753,7 +2694,7 @@ func TestGenerateRequests_CohortProportionalMode_BackwardCompatible(t *testing.T
 	// Generate requests for the first client
 	spec.Cohorts = nil // Clear to avoid double-expansion in GenerateRequests
 	spec.Clients = []ClientSpec{expanded[0]}
-	requests, err := GenerateRequests(spec, 10000000, 67890)
+	requests, err := generateRequests(spec, 10000000, 67890)
 	if err != nil {
 		t.Fatalf("GenerateRequests failed: %v", err)
 	}
@@ -2795,7 +2736,7 @@ func TestGenerateRequests_MultiCohortAbsoluteMode_NonOverlappingSpikes(t *testin
 	}
 
 	horizon := int64(10000000) // 10 seconds
-	requests, err := GenerateRequests(spec, horizon, 54321)
+	requests, err := generateRequests(spec, horizon, 54321)
 	if err != nil {
 		t.Fatalf("GenerateRequests failed: %v", err)
 	}
@@ -3351,7 +3292,7 @@ func TestGenerateWorkload_TimeVaryingClosedLoopReasoning(t *testing.T) {
 	}
 
 	// First run
-	wl1, err := GenerateWorkload(spec, spec.Horizon, 0)
+	wl1, err := generateWorkload(spec, spec.Horizon, 0)
 	if err != nil {
 		t.Fatalf("GenerateWorkload run 1 failed: %v", err)
 	}
@@ -3397,7 +3338,7 @@ func TestGenerateWorkload_TimeVaryingClosedLoopReasoning(t *testing.T) {
 	}
 
 	// BC-8: Determinism — second run with same seed should produce identical output
-	wl2, err := GenerateWorkload(spec, spec.Horizon, 0)
+	wl2, err := generateWorkload(spec, spec.Horizon, 0)
 	if err != nil {
 		t.Fatalf("GenerateWorkload run 2 failed: %v", err)
 	}

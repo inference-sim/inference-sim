@@ -4,7 +4,7 @@
 # The internal data-parallel balancer: the v0.32.0 engine runs the DP group behind one endpoint.
 kind: Scenario
 name: deepseek-v4.1-flash-h100-2n-dep8-dspark5
-engine_version: "0.32.0"
+engine: {kind: vllm, version: "0.32.0"}
 
 model: deepseek-v4.1-flash
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
