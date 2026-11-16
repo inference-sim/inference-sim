@@ -111,7 +111,7 @@ func TestSettingsProvenanceAndPassedSettingsAreGaps(t *testing.T) {
 	set := &EngineSettingSet{Settings: []SweepSettings{{Scenario: sw.Scenario, Label: sw.Label,
 		ByConcurrency: map[string]*PointSettings{"4": &ps}}}}
 	gaps = gapsFor(t, sw, Config{Repos: testRepos(), EngineSettings: set})
-	// blis-schemas#72 states the capture size, so the passed value is carried into the variant.
+	// https://github.com/inference-sim/blis-schemas/issues/72 states the capture size, so the passed value is carried into the variant.
 	for _, g := range gaps {
 		if g.Concurrency == 4 && strings.Contains(g.Cause, "max_cudagraph_capture_size") {
 			t.Errorf("a passed max_cudagraph_capture_size is reported as a gap: %+v", g)

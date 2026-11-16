@@ -20,7 +20,7 @@ import (
 // rules.EngineRules (#2021 B4; PR BC-3). The test type-checks the pinned module's own source --
 // the versions go.mod names, not a copy -- so the claim is checked rather than taken on trust.
 //
-// The concrete pack type (blis-vllm's rules/pack.Pack since blis-schemas#102 2c38342) and
+// The concrete pack type (blis-vllm's rules/pack.Pack since https://github.com/inference-sim/blis-schemas/issues/102 2c38342) and
 // blis-vllm's pack registry may appear in exactly one place: the adaptation that hands
 // blis-vllm/rules' lookup to the kernel's RulesFrom, which turns it into a function returning
 // rules.EngineRules, with the list of releases it answers for (allowedPackUses). Anywhere else,

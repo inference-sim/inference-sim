@@ -25,7 +25,7 @@ import (
 
 // `blis replay --agentic-scenario inferencex-agentx-mvp` (#1937): replay aiperf 0.12.0's
 // AgentX scenario from the raw Weka v7 corpus instead of a TraceV2 file. The workload is
-// described by blis-schemas' Replay descriptor (blis-schemas#71), given whole with
+// described by blis-schemas' Replay descriptor (https://github.com/inference-sim/blis-schemas/issues/71), given whole with
 // --workload-spec or assembled from the flags below; the flags override the file.
 
 var (

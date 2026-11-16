@@ -731,7 +731,7 @@ phase starts (the warm-up's last return); profiling requests are sent only in
 
 #### INV-K5: The Recorded Acceptance Is the Simulated One
 
-**Statement:** A speculating run's acceptance is exactly one `acceptance.Resolve` resolution (blis-schemas#65) from the registry profile, the workload, the scenario pin and the CLI, highest layer winning, with AL in `[1, K+1]` for the deployment's K and no silent fallback; the results file's `acceptance.length` and `rate` are the `SpeculativeConfig` the simulator advanced requests by (`length = 1 + rate·K`), and `source_layer`/`entry` name where it came from. A run that does not speculate records none. Run and replay under the same flags resolve the same acceptance (INV-13).
+**Statement:** A speculating run's acceptance is exactly one `acceptance.Resolve` resolution (https://github.com/inference-sim/blis-schemas/issues/65) from the registry profile, the workload, the scenario pin and the CLI, highest layer winning, with AL in `[1, K+1]` for the deployment's K and no silent fallback; the results file's `acceptance.length` and `rate` are the `SpeculativeConfig` the simulator advanced requests by (`length = 1 + rate·K`), and `source_layer`/`entry` name where it came from. A run that does not speculate records none. Run and replay under the same flags resolve the same acceptance (INV-13).
 
 **Enforced:** blis-vllm `compat/build` `ResolveAcceptance` (called by `resolveAcceptance` in `cmd/engine_build.go`), `cmd/speculative_acceptance.go` `acceptanceRecordOf`, `cmd/root.go` `resolveSpeculativeConfig`.
 

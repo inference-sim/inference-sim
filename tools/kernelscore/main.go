@@ -264,7 +264,7 @@ func main() {
 		"points. A non-vLLM sweep is in no tier: it appears only below, as context. A prefix-caching\n" +
 		"point is scored on the main phase after the warm-up's state (request 0's prompt cached);\n" +
 		"'warm' counts the tier's such points and dTPOT is |scored-cold|/cold, information only.\n" +
-		"Exact two-phase replay: blis-schemas#56, inference-sim#1926.\n\n")
+		"Exact two-phase replay: inference-sim/blis-substrate#156, inference-sim#1926.\n\n")
 	fmt.Printf("%-22s %-30s %5s %8s %8s %8s %6s %17s\n", "tier", "model", "n", "MAPE", "median", "worst",
 		"warm", "dTPOT med/max")
 	for _, t := range harness.AllTiers {

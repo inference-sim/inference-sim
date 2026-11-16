@@ -43,7 +43,7 @@ CLI flags only override YAML values when explicitly set. BLIS checks whether eac
 
 **Routing, admission and flow control** are the embedded llm-d router's, configured by the scenario's `router:` block and pool labels ([Router](#router)). See [Routing](../guide/routing.md).
 
-**Batch formation** — `max_num_seqs` and `max_num_batched_tokens` come from the scenario's pool `engine` block. `long_prefill_token_threshold` comes from the same block, per pool (blis-schemas#75): each P/D pool runs its own. It has no flag: an engine setting is the scenario's (inference-sim#2021 B6). `--preemption-policy` remains on the CLI.
+**Batch formation** — `max_num_seqs` and `max_num_batched_tokens` come from the scenario's pool `engine` block. `long_prefill_token_threshold` comes from the same block, per pool (https://github.com/inference-sim/blis-schemas/issues/75): each P/D pool runs its own. It has no flag: an engine setting is the scenario's (inference-sim#2021 B6). `--preemption-policy` remains on the CLI.
 
 ### Known Unit Gotchas
 
