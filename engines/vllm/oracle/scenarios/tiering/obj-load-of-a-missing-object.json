@@ -1,0 +1,162 @@
+{
+ "description": "Two chunks found in the bucket are promoted in one READ, but another process deletes the second object before the READ runs: NIXL fails the transfer as a whole, so unlike the fs tier neither chunk is kept, both slots are freed and both cached verdicts become misses. The verdict is per key, shared by every request holding it: a second request also gets MISS while the first holds it. Once both finish, a third request probes the bucket again and finds the first chunk.",
+ "spec": {
+  "name": "TieringOffloadingSpec",
+  "cpu_bytes_to_use": 32768,
+  "worker_kv_bytes_per_block": 16384,
+  "world_size": 1,
+  "blocks_per_chunk": 1,
+  "extra": {
+   "secondary_tiers": [
+    {
+     "type": "obj",
+     "store_config": {
+      "bucket": "kv",
+      "endpoint_override": "http://127.0.0.1:9000"
+     },
+     "io_threads": 1
+    }
+   ]
+  }
+ },
+ "calls": [
+  {
+   "m": "on_new_request",
+   "ctx": "a"
+  },
+  {
+   "m": "put",
+   "tier": 0,
+   "key": "k1"
+  },
+  {
+   "m": "put",
+   "tier": 0,
+   "key": "k2"
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k1"
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k2"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": [
+    "a"
+   ]
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k1"
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k2"
+  },
+  {
+   "m": "rm",
+   "tier": 0,
+   "key": "k2"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": []
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k1"
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k2"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": []
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k1"
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k2"
+  },
+  {
+   "m": "has_pending_work"
+  },
+  {
+   "m": "on_new_request",
+   "ctx": "b"
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k1"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": [
+    "b"
+   ]
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k1"
+  },
+  {
+   "m": "on_request_finished",
+   "ctx": "a"
+  },
+  {
+   "m": "on_request_finished",
+   "ctx": "b"
+  },
+  {
+   "m": "on_new_request",
+   "ctx": "c"
+  },
+  {
+   "m": "lookup",
+   "ctx": "c",
+   "key": "k1"
+  },
+  {
+   "m": "lookup",
+   "ctx": "c",
+   "key": "k2"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": [
+    "c"
+   ]
+  },
+  {
+   "m": "lookup",
+   "ctx": "c",
+   "key": "k1"
+  },
+  {
+   "m": "lookup",
+   "ctx": "c",
+   "key": "k2"
+  },
+  {
+   "m": "on_request_finished",
+   "ctx": "c"
+  }
+ ]
+}

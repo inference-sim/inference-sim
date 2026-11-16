@@ -1,5 +1,5 @@
 {
-  "version": "gpu-mock/7+f4274aa648c4",
+  "version": "gpu-mock/8+e1ab1ffd0154",
   "description": "Everything the oracle replaces. Only the GPU, the clock, transports and external services may be replaced; check_mocks.py fails if an entry names decision code.",
   "mocks": [
     {
@@ -237,6 +237,12 @@
       "sites": [
         "run_offloading.py:scheduler.finished_req_ids"
       ]
+    },
+    {
+      "symbol": "nixl._api.nixl_agent (OBJ backend)",
+      "kind": "transport",
+      "how": "oracle/run_tiering.py only: oracle/fake_nixl is NIXL's agent with an in-memory OBJ backend, imported by vllm.distributed.nixl_utils as nixl._api (nixl_utils.py:40-78@4ba787ec), because neither NIXL nor an S3 bucket is in the CPU environment. It stores and reads each block's bytes in a bucket shared by name, answers query_memory with None for a missing object, fails a READ of a missing object as a whole (state ERR), and finishes the transfers in flight in submission order after each driver call or inside the tier's drain_jobs, which blocks until NIXL finishes. The driver may hold an agent's transfers in flight across calls (a slow transfer), make a bucket refuse writes, or make an agent's next transfer() fail at submission, through the package's own functions. ObjectStoreSecondaryTierManager (vllm/v1/kv_offload/tiering/obj/manager.py@4ba787ec) runs unmodified. The Go side (core/connector/tiering ObjTier, MemBucket) follows the same rule",
+      "sites": []
     }
   ]
 }

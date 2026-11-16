@@ -184,6 +184,8 @@ type traceTier struct {
 	Rank       int            `json:"rank"`
 	Locality   *string        `json:"locality"`
 	Events     bool           `json:"events"`
+	// Bucket is an obj tier's store_config bucket; obj tiers naming one bucket share it.
+	Bucket string `json:"bucket"`
 }
 
 type trace struct {
@@ -283,13 +285,26 @@ func replay(t *testing.T, scenarioPath, tracePath string) {
 	files := tiering.MemFiles{}
 	var fsTiers []*tiering.FSTier
 	var tiers []tiering.Tier
+	// Each tier's built value by trace index: an fs tier's at fsAt, an obj tier's at objAt.
+	fsAt, objAt := map[int]*tiering.FSTier{}, map[int]*tiering.ObjTier{}
+	var objTiers []*tiering.ObjTier
+	buckets := map[string]*tiering.MemBucket{}
+	// held are the obj tiers whose transfers the driver holds in flight across calls.
+	held := map[*tiering.ObjTier]bool{}
 	for i, tt := range tr.Tiers {
-		if tt.Type != "fs" {
-			t.Fatalf("tier %d is %q; this replay builds fs tiers only", i, tt.Type)
-		}
 		loc := tiering.LocalityNone
 		if tt.Locality != nil {
 			loc = tiering.Locality(*tt.Locality)
+		}
+		if tt.Type == "obj" {
+			ot := buildObj(t, i, tt, loc, tr.Files, buckets)
+			objAt[i] = ot
+			objTiers = append(objTiers, ot)
+			tiers = append(tiers, &recTier{Tier: ot, idx: i, log: &tierLog})
+			continue
+		}
+		if tt.Type != "fs" {
+			t.Fatalf("tier %d is %q; this replay builds fs and obj tiers only", i, tt.Type)
 		}
 		// The recorded file names are relative to the sequence's directory, under which each tier's
 		// root_dir sits: the tier's root is what precedes its model-named directory.
@@ -304,11 +319,17 @@ func replay(t *testing.T, scenarioPath, tracePath string) {
 		ft := tiering.NewFSTier(tiering.FSConfig{RootDir: root, Locality: loc, Events: tt.Events, BlockBytes: tt.BlockBytes,
 			Namespace: namespace(tt)}, files)
 		fsTiers = append(fsTiers, ft)
+		fsAt[i] = ft
 		tiers = append(tiers, &recTier{Tier: ft, idx: i, log: &tierLog})
 	}
 	mgr := tiering.New(tiering.CPU(offloading.NewCPUPrimary(tr.Spec[0].Ret.NumChunks)), tiers, nil)
 	for label, want := range tr.Files {
-		for i, ft := range fsTiers {
+		for i, ot := range objAt {
+			if got := ot.ObjectName(keyOf(label)); got != want[i] {
+				t.Errorf("tier %d's object key of %s is %q, vLLM's %q", i, label, got, want[i])
+			}
+		}
+		for i, ft := range fsAt {
 			got := strings.TrimPrefix(ft.FileName(keyOf(label)), "/")
 			if got != want[i] {
 				t.Errorf("tier %d's block file of %s is %q, vLLM's %q", i, label, got, want[i])
@@ -336,12 +357,15 @@ func replay(t *testing.T, scenarioPath, tracePath string) {
 		var ret any
 		recorded := true
 		switch c.M {
-		case "rm":
-			files.Remove(fsTiers[c.Tier].FileName(keyOf(c.Key)))
+		case "rm", "put", "deny", "allow", "refuse_next", "hold", "release":
 			recorded = false
-		case "put":
-			files.Publish(fsTiers[c.Tier].FileName(keyOf(c.Key)))
-			recorded = false
+			if ot := objAt[c.Tier]; ot != nil {
+				objCall(c, ot, buckets[tr.Tiers[c.Tier].Bucket], held)
+			} else if c.M == "rm" {
+				files.Remove(fsAt[c.Tier].FileName(keyOf(c.Key)))
+			} else {
+				files.Publish(fsAt[c.Tier].FileName(keyOf(c.Key)))
+			}
 		case "on_reset_flushed":
 			mgr.OnResetFlushed()
 		case "on_new_request":
@@ -387,6 +411,14 @@ func replay(t *testing.T, scenarioPath, tracePath string) {
 		for _, ft := range fsTiers {
 			ft.RunAll()
 			ft.ResolveLookups()
+		}
+		// The obj tiers' transport rule: every transfer in flight ends, in submission order, unless
+		// the driver holds the tier's transfers.
+		for _, ot := range objTiers {
+			if !held[ot] {
+				ot.RunAll()
+			}
+			ot.ResolveLookups()
 		}
 	}
 	// The driver's shutdown is the trace's last manager call; the port holds nothing to release.
@@ -463,5 +495,45 @@ func compare(t *testing.T, iface string, got, want []record, args bool) {
 	}
 	if len(got) != len(want) {
 		t.Fatalf("%s: %d calls, vLLM made %d", iface, len(got), len(want))
+	}
+}
+
+// buildObj builds trace tier i, an obj tier, over the bucket its header names. Its prefix is what
+// precedes "/<model>_" in a recorded object key (FileMapper's base path is "<prefix>/" + "/" + ...).
+func buildObj(t *testing.T, i int, tt traceTier, loc tiering.Locality, files map[string][]string,
+	buckets map[string]*tiering.MemBucket) *tiering.ObjTier {
+	t.Helper()
+	if tt.Bucket == "" {
+		t.Fatalf("obj tier %d names no bucket", i)
+	}
+	if buckets[tt.Bucket] == nil {
+		buckets[tt.Bucket] = tiering.NewMemBucket()
+	}
+	prefix := ""
+	safe := "/" + strings.ReplaceAll(tt.RunConfig["model_name"].(string), "/", "_") + "_"
+	for _, fs := range files {
+		if at := strings.Index(fs[i], safe); at > 0 {
+			prefix = strings.TrimSuffix(fs[i][:at], "/")
+		}
+		break
+	}
+	return tiering.NewObjTier(tiering.ObjConfig{Prefix: prefix, Locality: loc, Events: tt.Events,
+		BlockBytes: tt.BlockBytes, Namespace: namespace(tt)}, buckets[tt.Bucket])
+}
+
+// objCall is a driver call on an obj tier's bucket or transport, as run_tiering.py makes it on the
+// in-memory NIXL agent.
+func objCall(c call, ot *tiering.ObjTier, b *tiering.MemBucket, held map[*tiering.ObjTier]bool) {
+	switch c.M {
+	case "rm":
+		b.Remove(ot.ObjectName(keyOf(c.Key)))
+	case "put":
+		b.Put(ot.ObjectName(keyOf(c.Key)))
+	case "deny", "allow":
+		b.Denied = c.M == "deny"
+	case "refuse_next":
+		ot.RefuseNextSubmission()
+	case "hold", "release":
+		held[ot] = c.M == "hold"
 	}
 }

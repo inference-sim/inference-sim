@@ -1,0 +1,191 @@
+{
+ "description": "Two obj tiers share one bucket under different prefixes, one with no prefix. A promotion refused at submission (transfer() fails) is reported at the next poll before a cascade WRITE that was submitted earlier and finished: the tier queues submission failures as they happen and appends polled completions after them. The refused promotion's verdict becomes a miss. Then both tiers' transfers are held in flight across steps (a slow WRITE) and reset_cache drains them: drain_jobs blocks until the WRITEs finish, and their results reach the manager at the next poll; until the reset is flushed, every lookup misses (promotions are held, manager.py:590-640@4ba787ec).",
+ "spec": {
+  "name": "TieringOffloadingSpec",
+  "cpu_bytes_to_use": 65536,
+  "worker_kv_bytes_per_block": 16384,
+  "world_size": 1,
+  "blocks_per_chunk": 1,
+  "extra": {
+   "secondary_tiers": [
+    {
+     "type": "obj",
+     "store_config": {
+      "bucket": "kv",
+      "endpoint_override": "http://127.0.0.1:9000"
+     },
+     "io_threads": 1,
+     "prefix": "p"
+    },
+    {
+     "type": "obj",
+     "store_config": {
+      "bucket": "kv",
+      "endpoint_override": "http://127.0.0.1:9000"
+     },
+     "io_threads": 1
+    }
+   ]
+  }
+ },
+ "calls": [
+  {
+   "m": "on_new_request",
+   "ctx": "a"
+  },
+  {
+   "m": "put",
+   "tier": 0,
+   "key": "k9"
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k9"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": [
+    "a"
+   ]
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k9"
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "a",
+   "keys": [
+    "k1",
+    "k2"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "ctx": "a",
+   "keys": [
+    "k1",
+    "k2"
+   ]
+  },
+  {
+   "m": "refuse_next",
+   "tier": 0
+  },
+  {
+   "m": "on_schedule_end",
+   "new": []
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k9"
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k1"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": []
+  },
+  {
+   "m": "hold",
+   "tier": 1
+  },
+  {
+   "m": "hold",
+   "tier": 0
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "a",
+   "keys": [
+    "k3"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "ctx": "a",
+   "keys": [
+    "k3"
+   ]
+  },
+  {
+   "m": "refuse_next",
+   "tier": 0
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "a",
+   "keys": [
+    "k4"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "ctx": "a",
+   "keys": [
+    "k4"
+   ]
+  },
+  {
+   "m": "has_pending_work"
+  },
+  {
+   "m": "reset_cache"
+  },
+  {
+   "m": "release",
+   "tier": 0
+  },
+  {
+   "m": "release",
+   "tier": 1
+  },
+  {
+   "m": "has_pending_work"
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k1"
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k3"
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k4"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": []
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k1"
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k3"
+  },
+  {
+   "m": "lookup",
+   "ctx": "a",
+   "key": "k4"
+  },
+  {
+   "m": "on_request_finished",
+   "ctx": "a"
+  }
+ ]
+}
