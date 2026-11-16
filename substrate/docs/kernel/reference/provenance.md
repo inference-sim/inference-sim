@@ -80,6 +80,10 @@ reason. They are of two kinds.
 
 ### Engine settings the kernel filled in
 
+Where a caller hands the kernel the engine's lowered plan (`Inputs.Lowered`), the engine's
+lowering fills these in and records them (`plan.Lowered.Notes`); the kernel reports them first,
+as it received them, then its own.
+
 <!-- assumptions -->
 
 | Name | Recorded when |

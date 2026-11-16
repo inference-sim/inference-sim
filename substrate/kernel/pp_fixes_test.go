@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
@@ -54,7 +54,7 @@ func TestAPiecewiseStageReplaysItsOwnSegments(t *testing.T) {
 func TestTheBindingStageIsOneWorkersPool(t *testing.T) {
 	const gb = 1e9
 	k := &Kernel{chip: hardware.Chip{MemoryGiB: 80}, graph: &model.Graph{}, blockSize: 16,
-		engine: enginesettings.Settings{GPUMemoryUtilization: 0.92},
+		low: plan.PoolPlan{MemoryFraction: 0.92},
 		stages: []pipelineStage{
 			{memory: stageMemory{weights: 60 * gb, kvPerToken: 1000}},
 			{memory: stageMemory{weights: 40 * gb, kvPerToken: 3000}},
@@ -130,7 +130,7 @@ func TestTheBindingStageIsReadAtTheDeploymentsUtilization(t *testing.T) {
 		want int
 	}{{0.92, 0}, {0.99, 1}} {
 		k.stages = stages()
-		k.engine.GPUMemoryUtilization = c.util
+		k.low.MemoryFraction = c.util
 		if err := k.bindStage(); err != nil {
 			t.Fatal(err)
 		}
@@ -154,7 +154,7 @@ func TestAZeroMemoryUtilizationIsRefusedNotDefaulted(t *testing.T) {
 		{memory: stageMemory{weights: 20 * gb, kvPerToken: 3000}},
 	}
 	for _, util := range []float64{0, -0.1} {
-		k.stages, k.engine.GPUMemoryUtilization = stages, util
+		k.stages, k.low.MemoryFraction = stages, util
 		err := k.bindStage()
 		if err == nil {
 			t.Fatalf("gpu_memory_utilization %v: priced; want a refusal", util)
@@ -171,7 +171,7 @@ func TestAZeroMemoryUtilizationIsRefusedNotDefaulted(t *testing.T) {
 		}
 	}
 	for _, util := range []float64{0.92, 0.01} {
-		k.stages, k.engine.GPUMemoryUtilization = stages, util
+		k.stages, k.low.MemoryFraction = stages, util
 		if err := k.bindStage(); err != nil {
 			t.Errorf("gpu_memory_utilization %v: %v", util, err)
 		}
