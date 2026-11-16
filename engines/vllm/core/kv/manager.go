@@ -151,6 +151,10 @@ type Options struct {
 	EagleBlockDrop bool
 	// PrefillLookahead is num_prefill_lookahead_tokens (vllm/config/vllm.py:644-665@5df63a72).
 	PrefillLookahead int
+	// HashLookahead is the block pool's num_hash_lookahead_tokens (block_pool.py, set from
+	// Scheduler.__init__, vllm/v1/core/sched/scheduler.py:342-358@4ba787ec): the tokens past each
+	// block its hash covers. A Mamba align group's prompt checkpoint leaves them uncomputed.
+	HashLookahead int
 	// Groups are the KV cache groups; none means one full-attention group.
 	Groups []Group
 	// MaxInFlightTokens is max_in_flight_tokens (vllm/config/vllm.py:589-598@5df63a72):
@@ -209,6 +213,7 @@ func NewManagerWith(numBlocks, blockSize, maxModelLen int, enableCaching bool, w
 				SchedulerBlockSize: m.blockSize, NumSpeculativeBlocks: g.spec.MambaSpeculativeBlocks,
 				NumPrefillCheckpointBlocks: g.spec.MambaCheckpointBlocks,
 				PrefillCheckpointAlignment: g.spec.MambaCheckpointAlignment, DropEagleCheckpointBlock: m.eagle,
+				HashLookahead:     o.HashLookahead,
 				RetentionInterval: o.RetentionInterval, ReplayEagle: m.eagle || anyFlagged(specs)})
 			if err != nil {
 				panic(err)

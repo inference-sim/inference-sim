@@ -315,7 +315,7 @@ func New(cfg Config) (*Scheduler, error) {
 	s := &Scheduler{
 		cfg: cfg, hashLookahead: lookahead,
 		KV: kv.NewManagerWith(cfg.NumBlocks, cfg.BlockSize, cfg.MaxModelLen, cfg.EnablePrefixCaching, wm,
-			kv.Options{RetentionInterval: cfg.RetentionInterval, PrefixMatchUnit: cfg.PrefixMatchUnit, EagleBlockDrop: drop, PrefillLookahead: cfg.Spec.PrefillLookahead,
+			kv.Options{RetentionInterval: cfg.RetentionInterval, PrefixMatchUnit: cfg.PrefixMatchUnit, EagleBlockDrop: drop, PrefillLookahead: cfg.Spec.PrefillLookahead, HashLookahead: lookahead,
 				Groups: cfg.KVGroups, MaxInFlightTokens: max(cfg.MaxConcurrentBatches, 1) * cfg.MaxNumBatchedTokens}),
 		requests: map[string]*Request{},
 		waiting:  queue{priority: cfg.Policy == Priority},
@@ -325,7 +325,7 @@ func New(cfg Config) (*Scheduler, error) {
 	}
 	s.mamba = NewMambaSplit(MambaSplitConfig{Groups: cfg.KVGroups, BlockSize: cfg.BlockSize,
 		HashBlockSize: s.KV.HashBlockSize(), MaxNumScheduledTokens: s.maxScheduled(),
-		LongPrefillTokenThreshold: cfg.LongPrefillTokenThreshold, EagleBlockDrop: drop,
+		LongPrefillTokenThreshold: cfg.LongPrefillTokenThreshold, EagleBlockDrop: drop, HashLookahead: lookahead,
 		PartialHashHits: s.KV.EnablePartialHashHits()})
 	if cfg.KVEvents {
 		s.KV.Pool.EnableEvents()
