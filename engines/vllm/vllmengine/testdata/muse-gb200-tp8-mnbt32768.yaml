@@ -1,0 +1,27 @@
+# Synthetic: Muse Spark Open's KV layout on GB200 (blis-vllm#158). The engine settings are stated
+# so the pool's start-up figure can be set beside vLLM's own (core/kv/testdata/vllm_kv_capacity.json).
+kind: Scenario
+name: muse-gb200-tp8-mnbt32768
+engine_version: "0.33.0"
+model: muse-spark-open-816b-a42b-nvfp4
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]
+cluster:
+  hardware: gb200-nvl72
+  fabric: ib-400g
+  nodes: 2
+---
+kind: Deployment
+name: muse-gb200-tp8-mnbt32768
+pools:
+  - role: colocated
+    nodes: 2
+    parallel: {tp: 8, pp: 1, dp: 1, enable_expert_parallel: true}
+    engine:
+      block_size: 16
+      kv_cache_dtype: auto
+      max_num_seqs: 256
+      max_num_batched_tokens: 32768
+      max_model_len: 1048576
+      enable_prefix_caching: true
+      async_scheduling: true
+      gpu_memory_utilization: 0.90

@@ -1,0 +1,475 @@
+{
+ "cases": [
+  {
+   "available_bytes": [
+    96636764160
+   ],
+   "block_size": 16,
+   "dtype": "bf16",
+   "head_size": 64,
+   "layers": "SFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSF",
+   "max_concurrent_batches": 2,
+   "max_model_len": 1048576,
+   "max_num_batched_tokens": 16384,
+   "name": "tp8-bf16",
+   "num_kv_heads": 2,
+   "num_prefill_lookahead_tokens": 0,
+   "sliding_window": 2048,
+   "stages": [
+    [
+     0,
+     62
+    ]
+   ],
+   "vllm": {
+    "blocks_per_request": 72067,
+    "groups": [
+     {
+      "kind": "sliding_window",
+      "layers": 16
+     },
+     {
+      "kind": "sliding_window",
+      "layers": 15
+     },
+     {
+      "kind": "sliding_window",
+      "layers": 15
+     },
+     {
+      "kind": "full",
+      "layers": 16
+     }
+    ],
+    "kv_cache_size_tokens": 10727435,
+    "max_concurrency": 10.23047997002789,
+    "num_blocks": 737280,
+    "padding_layers": 2
+   }
+  },
+  {
+   "available_bytes": [
+    96636764160
+   ],
+   "block_size": 16,
+   "dtype": "bf16",
+   "head_size": 64,
+   "layers": "SFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSF",
+   "max_concurrent_batches": 1,
+   "max_model_len": 1048576,
+   "max_num_batched_tokens": 16384,
+   "name": "tp8-bf16-sync",
+   "num_kv_heads": 2,
+   "num_prefill_lookahead_tokens": 0,
+   "sliding_window": 2048,
+   "stages": [
+    [
+     0,
+     62
+    ]
+   ],
+   "vllm": {
+    "blocks_per_request": 68995,
+    "groups": [
+     {
+      "kind": "sliding_window",
+      "layers": 16
+     },
+     {
+      "kind": "sliding_window",
+      "layers": 15
+     },
+     {
+      "kind": "sliding_window",
+      "layers": 15
+     },
+     {
+      "kind": "full",
+      "layers": 16
+     }
+    ],
+    "kv_cache_size_tokens": 11205074,
+    "max_concurrency": 10.685991738531778,
+    "num_blocks": 737280,
+    "padding_layers": 2
+   }
+  },
+  {
+   "available_bytes": [
+    94489280512
+   ],
+   "block_size": 16,
+   "dtype": "bf16",
+   "head_size": 64,
+   "layers": "SFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSF",
+   "max_concurrent_batches": 2,
+   "max_model_len": 1048576,
+   "max_num_batched_tokens": 32768,
+   "name": "tp8-bf16-mnbt32768",
+   "num_kv_heads": 2,
+   "num_prefill_lookahead_tokens": 0,
+   "sliding_window": 2048,
+   "stages": [
+    [
+     0,
+     62
+    ]
+   ],
+   "vllm": {
+    "blocks_per_request": 78211,
+    "groups": [
+     {
+      "kind": "sliding_window",
+      "layers": 16
+     },
+     {
+      "kind": "sliding_window",
+      "layers": 15
+     },
+     {
+      "kind": "sliding_window",
+      "layers": 15
+     },
+     {
+      "kind": "full",
+      "layers": 16
+     }
+    ],
+    "kv_cache_size_tokens": 9665063,
+    "max_concurrency": 9.217322371533417,
+    "num_blocks": 720896,
+    "padding_layers": 2
+   }
+  },
+  {
+   "available_bytes": [
+    139586437120,
+    137438953472,
+    137438953472,
+    140660178944
+   ],
+   "block_size": 16,
+   "dtype": "bf16",
+   "head_size": 64,
+   "layers": "SFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSF",
+   "max_concurrent_batches": 4,
+   "max_model_len": 1048576,
+   "max_num_batched_tokens": 8192,
+   "name": "tp4-pp4-bf16",
+   "num_kv_heads": 4,
+   "num_prefill_lookahead_tokens": 0,
+   "sliding_window": 2048,
+   "stages": [
+    [
+     0,
+     15
+    ],
+    [
+     15,
+     31
+    ],
+    [
+     31,
+     47
+    ],
+    [
+     47,
+     62
+    ]
+   ],
+   "vllm": {
+    "blocks_per_request": 72067,
+    "groups": [
+     {
+      "kind": "sliding_window",
+      "layers": 16
+     },
+     {
+      "kind": "sliding_window",
+      "layers": 15
+     },
+     {
+      "kind": "sliding_window",
+      "layers": 15
+     },
+     {
+      "kind": "full",
+      "layers": 16
+     }
+    ],
+    "kv_cache_size_tokens": 30513595,
+    "max_concurrency": 29.100031914746,
+    "num_blocks": 2097152,
+    "padding_layers": 2
+   }
+  },
+  {
+   "available_bytes": [
+    139586437120,
+    137438953472,
+    137438953472,
+    140660178944
+   ],
+   "block_size": 16,
+   "dtype": "bf16",
+   "head_size": 64,
+   "layers": "SFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSF",
+   "max_concurrent_batches": 5,
+   "max_model_len": 1048576,
+   "max_num_batched_tokens": 8192,
+   "name": "tp4-pp4-bf16-async-v2",
+   "num_kv_heads": 4,
+   "num_prefill_lookahead_tokens": 0,
+   "sliding_window": 2048,
+   "stages": [
+    [
+     0,
+     15
+    ],
+    [
+     15,
+     31
+    ],
+    [
+     31,
+     47
+    ],
+    [
+     47,
+     62
+    ]
+   ],
+   "vllm": {
+    "blocks_per_request": 73603,
+    "groups": [
+     {
+      "kind": "sliding_window",
+      "layers": 16
+     },
+     {
+      "kind": "sliding_window",
+      "layers": 15
+     },
+     {
+      "kind": "sliding_window",
+      "layers": 15
+     },
+     {
+      "kind": "full",
+      "layers": 16
+     }
+    ],
+    "kv_cache_size_tokens": 29876815,
+    "max_concurrency": 28.49275165414453,
+    "num_blocks": 2097152,
+    "padding_layers": 2
+   }
+  },
+  {
+   "available_bytes": [
+    26843545600
+   ],
+   "block_size": 16,
+   "dtype": "fp8",
+   "head_size": 64,
+   "layers": "SFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSF",
+   "max_concurrent_batches": 2,
+   "max_model_len": 1048576,
+   "max_num_batched_tokens": 16384,
+   "name": "tp4-fp8",
+   "num_kv_heads": 4,
+   "num_prefill_lookahead_tokens": 0,
+   "sliding_window": 2048,
+   "stages": [
+    [
+     0,
+     62
+    ]
+   ],
+   "vllm": {
+    "blocks_per_request": 72067,
+    "groups": [
+     {
+      "kind": "sliding_window",
+      "layers": 16
+     },
+     {
+      "kind": "sliding_window",
+      "layers": 15
+     },
+     {
+      "kind": "sliding_window",
+      "layers": 15
+     },
+     {
+      "kind": "full",
+      "layers": 16
+     }
+    ],
+    "kv_cache_size_tokens": 2979843,
+    "max_concurrency": 2.841799991674414,
+    "num_blocks": 204800,
+    "padding_layers": 2
+   }
+  },
+  {
+   "available_bytes": [
+    26843545600
+   ],
+   "block_size": 16,
+   "dtype": "fp8",
+   "head_size": 64,
+   "layers": "SFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSSS",
+   "max_concurrent_batches": 2,
+   "max_model_len": 1048576,
+   "max_num_batched_tokens": 16384,
+   "name": "tp4-fp8-dspark",
+   "num_kv_heads": 4,
+   "num_prefill_lookahead_tokens": 1,
+   "sliding_window": 2048,
+   "stages": [
+    [
+     0,
+     67
+    ]
+   ],
+   "vllm": {
+    "blocks_per_request": 74244,
+    "groups": [
+     {
+      "kind": "sliding_window",
+      "layers": 13
+     },
+     {
+      "kind": "sliding_window",
+      "layers": 13
+     },
+     {
+      "kind": "sliding_window",
+      "layers": 13
+     },
+     {
+      "kind": "sliding_window",
+      "layers": 12
+     },
+     {
+      "kind": "full",
+      "layers": 16
+     }
+    ],
+    "kv_cache_size_tokens": 2892467,
+    "max_concurrency": 2.7584720650827004,
+    "num_blocks": 204800,
+    "padding_layers": 13
+   }
+  },
+  {
+   "available_bytes": [
+    36507222016
+   ],
+   "block_size": 16,
+   "dtype": "fp8",
+   "head_size": 64,
+   "layers": "SFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSSS",
+   "max_concurrent_batches": 2,
+   "max_model_len": 1048576,
+   "max_num_batched_tokens": 8192,
+   "name": "tp4-fp8-dspark-mnbt8192",
+   "num_kv_heads": 4,
+   "num_prefill_lookahead_tokens": 1,
+   "sliding_window": 2048,
+   "stages": [
+    [
+     0,
+     67
+    ]
+   ],
+   "vllm": {
+    "blocks_per_request": 70148,
+    "groups": [
+     {
+      "kind": "sliding_window",
+      "layers": 13
+     },
+     {
+      "kind": "sliding_window",
+      "layers": 13
+     },
+     {
+      "kind": "sliding_window",
+      "layers": 13
+     },
+     {
+      "kind": "sliding_window",
+      "layers": 12
+     },
+     {
+      "kind": "full",
+      "layers": 16
+     }
+    ],
+    "kv_cache_size_tokens": 4163451,
+    "max_concurrency": 3.970576495409705,
+    "num_blocks": 278528,
+    "padding_layers": 13
+   }
+  },
+  {
+   "available_bytes": [
+    64424509440,
+    62277025792
+   ],
+   "block_size": 16,
+   "dtype": "fp8",
+   "head_size": 64,
+   "layers": "SFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSSS",
+   "max_concurrent_batches": 2,
+   "max_model_len": 1048576,
+   "max_num_batched_tokens": 8192,
+   "name": "tp4-pp2-fp8-dspark",
+   "num_kv_heads": 4,
+   "num_prefill_lookahead_tokens": 1,
+   "sliding_window": 2048,
+   "stages": [
+    [
+     0,
+     31
+    ],
+    [
+     31,
+     67
+    ]
+   ],
+   "vllm": {
+    "blocks_per_request": 70148,
+    "groups": [
+     {
+      "kind": "sliding_window",
+      "layers": 13
+     },
+     {
+      "kind": "sliding_window",
+      "layers": 13
+     },
+     {
+      "kind": "sliding_window",
+      "layers": 13
+     },
+     {
+      "kind": "sliding_window",
+      "layers": 12
+     },
+     {
+      "kind": "full",
+      "layers": 16
+     }
+    ],
+    "kv_cache_size_tokens": 14204715,
+    "max_concurrency": 13.546672749044877,
+    "num_blocks": 950272,
+    "padding_layers": 13
+   }
+  }
+ ],
+ "commit": "4ba787ec9959e566d3b587a796dff07673324da5"
+}

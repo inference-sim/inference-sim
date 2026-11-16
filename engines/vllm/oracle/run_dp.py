@@ -179,6 +179,9 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     for i in range(dp):
         core = object.__new__(DPEngineCoreProc)
         core.dp_group = object()
+        # v0.33.0 reads the DP state through the core's own config
+        # (_has_global_unfinished_reqs, vllm/v1/engine/core.py:2560@4ba787ec): the rank's real one.
+        core.vllm_config = ranks[i].vllm_config
         core.dp_sync_interval = sync_interval
         core.prefill_schedule_interval = interval
         core.step_counter = 0
@@ -189,7 +192,10 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         cores.append(core)
 
     init_none_hash(sha256)
-    hasher = get_request_block_hasher(block_size, sha256)
+    # The engine core builds the hasher with vllm_config.num_hash_lookahead_tokens
+    # (vllm/v1/engine/core.py:220-230@4ba787ec), so an EAGLE-family drafter with prefix caching
+    # and no KV connector hashes the tokens past each block; the harness does the same.
+    hasher = get_request_block_hasher(block_size, sha256, ranks[0].vllm_config.num_hash_lookahead_tokens)
     by_id = {r["id"]: r for r in sc["requests"]}
     pending = sorted(sc["requests"], key=lambda r: (r["arrival_step"], r["id"]))
     sampled = {r["id"]: 0 for r in sc["requests"]}
@@ -233,6 +239,9 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     client = object.__new__(DPLBAsyncMPClient)
     client.client_count = 1
     client.reqs_in_flight = {}
+    # The open streaming-input sessions, empty as DPLBAsyncMPClient.__init__ makes it
+    # (vllm/v1/engine/core_client.py:1728-1729@4ba787ec); no request here opens one.
+    client.streaming_reqs = set()
     client.engine_inflight = Counter()
     client.core_engines = [bytes([i, 0]) for i in range(dp)]
     client.lb_engines = [[0, 0, 0.0] for _ in range(dp)]
@@ -381,8 +390,12 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
                           priority=r.get("priority", 0), block_hasher=hasher)
             if connector:
                 add_kv_params(req, r, block_size)
+            # The routing reads only these fields of an EngineCoreRequest; resumable is its
+            # default, False (vllm/v1/engine/__init__.py:147@4ba787ec), as for every request
+            # that is not a streaming-input session (core_client.py:1751-1759).
             engine = client.get_core_engine_for_request(SimpleNamespace(
-                request_id=r["id"], data_parallel_rank=r.get("rank") if connector else None, pooling_params=None))
+                request_id=r["id"], data_parallel_rank=r.get("rank") if connector else None, pooling_params=None,
+                resumable=False))
             rank = client.core_engines.index(engine)
             routed[r["id"]] = rank
             arrivals.append([r["id"], rank])

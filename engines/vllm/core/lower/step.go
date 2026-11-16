@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/worker/gpu/dp_utils.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be):
+// Derived from vllm/v1/worker/gpu/dp_utils.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5):
 // sync_cudagraph_and_dp_padding (:44-210) and dispatch_cg_and_sync_dp (:213-325). Also
 // vllm/v1/worker/gpu/model_runner.py (gather_batch_req_state, :1270-1355; _dummy_run, :815-905),
 // vllm/v1/worker/utils.py (get_uniform_decode_token_count, :967-975),

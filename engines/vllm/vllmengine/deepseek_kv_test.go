@@ -202,7 +202,7 @@ func TestDashboardDeepSeekDeploymentsBuildAndRun(t *testing.T) {
 	} {
 		t.Run(c.scenario, func(t *testing.T) {
 			t.Parallel()
-			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, c.scenario)}
+			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: roots(t, c.scenario)}
 			done, err := prepare(spec, nil)
 			if err != nil {
 				t.Fatal(err)
