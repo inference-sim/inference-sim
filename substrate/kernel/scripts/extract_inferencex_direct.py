@@ -70,7 +70,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from extract_aisimulate_e2e import CHIPS, MODELS  # noqa: E402
+from inferencex_slugs import CHIPS, MODELS  # noqa: E402
 from extract_inferencex_engine_settings import parse_args_line  # noqa: E402
 
 PSQL = "psql"

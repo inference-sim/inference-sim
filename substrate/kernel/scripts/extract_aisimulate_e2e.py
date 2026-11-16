@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """Extract the scoreable per-point corpus from NVIDIA AISimulate's e2e accuracy artifact.
 
-The artifact is published by the `E2E Accuracy Matrix` workflow in ai-dynamo/aisimulate as
-`e2e-accuracy-web`, and carries a nested summary:
+The artifact is published by the `E2E Accuracy Matrix` workflow in ai-dynamo/aisim (the
+repository was ai-dynamo/aisimulate until it was renamed) as `e2e-accuracy-web`, and carries a
+nested summary:
 
     models -> workloads -> gpus -> topologies -> points
 
-Each point holds `measured`, `aic` and `aisimulate` blocks of TTFT/TPOT relatives. A topology
-is one deployment at one workload; its points are a concurrency sweep.
+Each point holds `measured`, `aic` and `aisim` blocks of TTFT/TPOT relatives. A topology
+is one deployment at one workload; its points are a concurrency sweep. The simulator's block
+was named `aisimulate` before the rename and is `aisim` now; the corpus this writes keeps the
+`aisimulate_*` field names its readers use, because the estimator is the same one. A summary
+whose totals have no `aisim` block is refused rather than read as an estimator with no figures.
 
 # Provenance, stated because it is mixed
 
@@ -28,9 +32,17 @@ fixed deployment is a pure function of the kernel -- and also why it measures sh
 
 A topology is emitted when it has at least three successful points. Two points carry a single
 ratio, which pins a level rather than a curvature -- scoring a shape against it measures almost
-nothing and dilutes the reported figure with sweeps that cannot disagree. Aggregated serving with no speculation is the whole of the reachable set
-here; both are asserted rather than assumed, so a future artifact that adds disaggregated or
-speculative arms fails loudly instead of being scored under the wrong deployment.
+nothing and dilutes the reported figure with sweeps that cannot disagree. Aggregated serving
+with no speculation and one pipeline stage is the whole of the reachable set here: a step-time
+ratio at one deployment cannot price a prefill pool and a decode pool, or a drafter. The
+artifact carries disaggregated and speculative topologies; each is counted under its reason in
+`selection.skipped`, never scored under a deployment it is not.
+
+A model is selected by its checkpoint. The artifact names each by its Hugging Face path, and a
+topology is kept only when exactly one catalog model's `source.repo` is that path, read from
+catalog/models at run time rather than copied here. A checkpoint the catalog does not carry,
+such as an NVFP4 export whose base model it does, is skipped: pricing it on the base graph would
+score another checkpoint's weights.
 
 # The input is pinned (D3)
 
@@ -60,52 +72,38 @@ UNPINNED = {"latest", "main", "unknown", ""}
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
-# Artifact model slug -> blis-catalog model name. A slug absent here is skipped: the catalog
-# has no graph for it, so it cannot be priced.
-MODELS = {
-    "gptoss120b": "gpt-oss-120b",
-    "minimaxm2.5": "minimax-m2.5",
-    "qwen3.5": "qwen3.5-397b-a17b",
-    "glm5": "glm-5",
-    # The snapshot measures meta-llama/Meta-Llama-3.1-70B; the catalog carries the Instruct
-    # variant. The mapping is VERIFIED rather than assumed on the grounds that instruction
-    # tuning changes no shape: the base config is gated on HuggingFace, so it was read from
-    # two independent mirrors (unsloth/Meta-Llama-3.1-70B and
-    # NousResearch/Meta-Llama-3.1-70B) and compared field by field against the committed
-    # Instruct config. All thirteen shape fields agree -- 80 layers, 8192 hidden, 28672
-    # intermediate, 64 q heads over 8 kv, 128256 vocab, bfloat16, rope_theta 500000,
-    # 131072 positions, silu, rms_norm_eps 1e-05, tie_word_embeddings false,
-    # LlamaForCausalLM, no head_dim -- with zero differences.
-    #
-    # It is the corpus's largest model at 408 points and its only DENSE one; the other four
-    # are all MoE, so without it the comparison says nothing about dense architectures.
-    "llama70b": "llama-3.1-70b-instruct",
-    # Added to blis-catalog this cycle, each with its graph DERIVED by the catalog's own
-    # scripts/derive_graph.py rather than written: deepseek-v3 prices as MLA plus routed
-    # experts with a three-layer dense prologue, and kimi-k2.5 as the same family -- vLLM
-    # instantiates its text decoder as DeepseekV2ForCausalLM over config.text_config, and the
-    # text_config names DeepseekV3ForCausalLM itself.
-    #
-    # DeepSeek-V4-Pro and MiniMax-M3 are deliberately absent. Both carry a learned
-    # block-sparse indexer (index_n_heads / sparse_attention_config), which the schema names
-    # as sparse_mla but blis-registry has no coefficients for; the kernel would fall back to
-    # the generic attention rate and misprice them silently.
-    "dsr1": "deepseek-v3",
-    "kimik2.5": "kimi-k2.5",
-    # MiniMax-M3 is MiniMaxM3SparseForConditionalGeneration, a vision-language checkpoint
-    # whose text decoder the artifact measures. Its attention is block-sparse: the read is
-    # bounded by sparse_topk_blocks * sparse_block_size and a separate indexer scores which
-    # blocks to read. The catalog derives it from the published config at revision
-    # f0e1c1e0, with every shape cross-checked against the safetensors headers.
-    "minimaxm3": "minimax-m3",
-    # DeepSeek-V4-Pro: compressed sparse attention at two ratios with a top-k indexer.
-    # The catalog derives it from the published config at revision b5968e91, with every
-    # bound read from vLLM's own compressor and sparse_mla rather than from field names.
-    "dsv4": "deepseek-v4-pro",
-}
+CATALOG_MODELS = Path(__file__).resolve().parents[2] / "catalog" / "models"
+REPO_LINE = re.compile(r"^\s+repo:\s*(\S+)\s*$")
+
+
+def catalog_models(root: Path = CATALOG_MODELS) -> dict:
+    """Hugging Face path -> the catalog models whose model.yaml names it as source.repo.
+
+    Read line by line rather than with a YAML parser, so the extractor needs only the standard
+    library: `repo:` appears once in a model.yaml, under `source:`. A path can name more than
+    one catalog model (a speculator shipped inside its target's checkpoint has its own entry);
+    extract refuses such a path when the artifact selects it.
+    """
+    out: dict = {}
+    for f in sorted(root.glob("*/model.yaml")):
+        lines = f.read_text().splitlines()
+        try:
+            src = lines.index("source:")
+        except ValueError:
+            continue
+        for line in lines[src + 1:]:
+            if line and not line.startswith(" "):
+                break
+            m = REPO_LINE.match(line)
+            if m:
+                out.setdefault(m.group(1), []).append(f.parent.name)
+                break
+    return out
+
 
 # Artifact GPU slug -> blis-catalog hardware name.
-CHIPS = {"h100": "h100", "h200": "h200", "b200": "b200", "b300": "b300"}
+CHIPS = {"h100": "h100", "h200": "h200", "b200": "b200", "b300": "b300",
+         "gb200": "gb200-nvl72", "gb300": "gb300"}
 
 MIN_POINTS = 3
 
@@ -127,36 +125,56 @@ def scenario_name(model: str, gpu: str, precision: str, framework: str, par: dic
     return "-".join(parts) + ".yaml"
 
 
-def extract(summary: dict) -> dict:
+def count_points(node: dict) -> int:
+    """How many points lie under one models, workloads or gpus record."""
+    if "points" in node:
+        return len(node["points"])
+    for child in ("workloads", "gpus", "topologies"):
+        if child in node:
+            return sum(count_points(c) for c in node[child])
+    return 0
+
+
+def extract(summary: dict, models: dict) -> dict:
+    """The reachable sweeps. `selection.skipped` counts POINTS per reason, every point of the
+    artifact landing in a sweep or under exactly one reason."""
     sweeps = []
     skipped = collections.Counter()
     for model in summary["models"]:
-        name = MODELS.get(model["model"])
+        names = models.get(model["model"], [])
+        if len(names) > 1:
+            raise SystemExit(f"error: the artifact's checkpoint {model['model']} is the source of "
+                             f"{len(names)} catalog models ({', '.join(names)}); which one it "
+                             "measured is not stated")
+        name = names[0] if names else None
         if name is None:
-            skipped["model not in catalog"] += 1
+            skipped["checkpoint not in catalog"] += count_points(model)
             continue
         for workload in model["workloads"]:
             for gpu in workload["gpus"]:
                 chip = CHIPS.get(gpu["gpu"])
                 if chip is None:
-                    skipped["gpu not in catalog"] += 1
+                    skipped["gpu not in catalog"] += count_points(gpu)
                     continue
                 for topology in gpu["topologies"]:
                     serving = topology["serving"]
                     spec = topology.get("spec_method") or "none"
                     if serving != "aggregated" or spec != "none":
                         # Not reachable by a step-time ratio at one deployment.
-                        skipped[f"serving={serving} spec={spec}"] += 1
+                        skipped[f"serving={serving} spec={spec}"] += len(topology["points"])
                         continue
                     par = topology["parallelism"]
                     if par["pp_size"] != 1:
-                        skipped["pp_size>1"] += 1
+                        skipped["pp_size>1"] += len(topology["points"])
                         continue
                     points = [point_record(p) for p in topology["points"]
                               if p.get("status") == "success"]
                     if len(points) < MIN_POINTS:
-                        skipped["fewer than three successful points"] += 1
+                        skipped["fewer than three successful points"] += len(topology["points"])
                         continue
+                    if len(points) < len(topology["points"]):
+                        skipped["failed point in a kept sweep"] += (
+                            len(topology["points"]) - len(points))
                     points.sort(key=lambda p: p["concurrency"])
                     sweeps.append(
                         {
@@ -173,6 +191,9 @@ def extract(summary: dict) -> dict:
                             "serving": serving,
                             "spec_method": spec,
                             "parallelism": par,
+                            # Stated by the topology; neither is a node size.
+                            "total_gpus": topology.get("total_gpus"),
+                            "is_multinode": topology.get("is_multinode"),
                             "topology_id": topology["id"],
                             "points": points,
                         }
@@ -187,10 +208,10 @@ def extract(summary: dict) -> dict:
         # Carries all four published figures per estimator. The *_shape_error_pct ones are
         # comparable to a normalised-curve score; the *_mape_pct ones are absolute and cannot be
         # recomputed from this corpus, which ships no absolute latencies.
-        "aisimulate_totals": summary["totals"].get("aisimulate", {}),
+        "aisimulate_totals": summary["totals"][ESTIMATOR_BLOCK],
         "aic_totals": summary["totals"].get("aic", {}),
         "selection": {
-            "models": sorted(set(MODELS.values())),
+            "models": sorted({s["model"] for s in sweeps}),
             "min_points_per_sweep": MIN_POINTS,
             "serving": "aggregated",
             "spec_method": "none",
@@ -217,7 +238,12 @@ def extract(summary: dict) -> dict:
 # against this corpus at all; the mape figures the snapshot publishes come from rows it does not
 # ship. Shape error is the only per-point metric this file can support, which is a property of
 # the data rather than a choice.
-ESTIMATORS = ("aisimulate", "aic")
+#
+# The artifact's block for the simulator is `aisim`; the corpus field it becomes keeps the
+# `aisimulate_` prefix the corpus readers use (OUTPUT_PREFIX).
+ESTIMATOR_BLOCK = "aisim"
+ESTIMATORS = (ESTIMATOR_BLOCK, "aic")
+OUTPUT_PREFIX = {ESTIMATOR_BLOCK: "aisimulate", "aic": "aic"}
 METRICS = ("tpot", "ttft")
 
 
@@ -234,10 +260,11 @@ def point_record(p: dict) -> dict:
             rel = block.get(f"{metric}_relative")
             if rel is None:
                 continue
-            rec[f"{est}_{metric}_relative"] = rel
+            out = OUTPUT_PREFIX[est]
+            rec[f"{out}_{metric}_relative"] = rel
             err = block.get(f"{metric}_error_pct")
             if err is not None:
-                rec[f"{est}_{metric}_error_pct"] = err
+                rec[f"{out}_{metric}_error_pct"] = err
     return rec
 
 
@@ -299,6 +326,10 @@ def check_input(raw: bytes, summary: dict, pin: dict) -> list:
         errs.append(f"release_tag {tag!r}, the pin is {pin['release_tag']!r}")
     if camp.get("status") != "complete":
         errs.append(f"campaign status {camp.get('status')!r}, want 'complete'")
+    totals = summary.get("totals")
+    if not (isinstance(totals, dict) and isinstance(totals.get(ESTIMATOR_BLOCK), dict)):
+        errs.append(f"totals has no {ESTIMATOR_BLOCK!r} block: the simulator's figures are "
+                    "missing or under another name")
     return errs
 
 
@@ -309,6 +340,8 @@ def main() -> int:
     ap.add_argument("-o", "--out", required=True)
     ap.add_argument("--pin", default=str(PIN_PATH),
                     help="the pinned artifact run (default: aisimulate_e2e.pin.json beside this file)")
+    ap.add_argument("--catalog", default=str(CATALOG_MODELS),
+                    help="the catalog's models/ directory (default: this repository's)")
     args = ap.parse_args()
 
     pin = load_pin(args.pin)
@@ -326,15 +359,15 @@ def main() -> int:
         for e in errs:
             print(f"  {e}", file=sys.stderr)
         return 1
-    corpus = extract(summary)
+    corpus = extract(summary, catalog_models(Path(args.catalog)))
 
     scenarios = {s["scenario"] for s in corpus["sweeps"]}
     points = sum(len(s["points"]) for s in corpus["sweeps"])
     if points == 0:
         # A corpus of nothing is not a corpus (X22). The artifact's schema drifts: an extractor
         # whose slug maps no longer match reads 0 points and must say so, not exit cleanly.
-        print(f"error: 0 sweeps, 0 points from {args.summary}; the artifact's model or chip "
-              "slugs no longer match MODELS and CHIPS", file=sys.stderr)
+        print(f"error: 0 sweeps, 0 points from {args.summary}; the artifact's checkpoints or "
+              "chip slugs no longer match the catalog and CHIPS", file=sys.stderr)
         for reason, n in sorted(corpus["selection"]["skipped"].items()):
             print(f"  skipped {n:4d}  {reason}", file=sys.stderr)
         return 1

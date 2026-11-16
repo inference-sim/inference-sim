@@ -57,10 +57,10 @@ import sys
 PSQL = "psql"
 DB = "inferencex"
 
-# Artifact model slug -> blis-catalog model name, as scripts/extract_aisimulate_e2e.py defines it.
+# InferenceX model slug -> blis-catalog model name, as scripts/inferencex_slugs.py defines it.
 # Imported rather than restated so one re-map cannot diverge from the other.
 sys.path.insert(0, str(__file__.rsplit("/", 1)[0]))
-from extract_aisimulate_e2e import MODELS  # noqa: E402
+from inferencex_slugs import MODELS  # noqa: E402
 
 TO_SLUG = {catalog: slug for slug, catalog in MODELS.items()}
 
