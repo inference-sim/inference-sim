@@ -72,7 +72,8 @@ STEM = re.compile(r"(?P<model>[a-z0-9.-]+)__(?P<method>[a-z0-9]+)__(?P<draft>[a-
 SKIP: dict[str, str] = {}
 
 # Curves carried to a catalog model they were not measured on, with the rule and its
-# evidence. Each is a profile of method transferred.
+# evidence. Each is a profile of method transferred. A transfer applies only while the curve's
+# own model is not in the catalog; once it is, the curve is carried as measured on that model.
 TRANSFERS: dict[str, tuple[str, str, str]] = {
     "glm-5.3-nvfp4__mtp__native__default-default": (
         "glm-5.3",
@@ -538,19 +539,17 @@ def collect(golden: Path = GOLDEN, catalog: Path = CATALOG):
             if c.stem in SKIP:
                 raise Refused(SKIP[c.stem])
             transfer = None
-            if c.stem in TRANSFERS:
+            try:
+                model = catalog_name(c.model_key, targets)
+            except Refused:
+                # A transfer applies only while the curve's own model is not in the catalog;
+                # once it is, the curve is carried as measured on it.
+                if c.stem not in TRANSFERS:
+                    raise
                 model, rule, why = TRANSFERS[c.stem]
                 if model not in targets:
                     raise SystemExit(f"TRANSFERS {c.stem}: {model} is not a catalog model")
                 transfer = (rule, why)
-                try:
-                    catalog_name(c.model_key, targets)
-                    raise SystemExit(f"TRANSFERS {c.stem}: {c.model_key} resolves in the "
-                                     "catalog, so the curve needs no transfer")
-                except Refused:
-                    pass
-            else:
-                model = catalog_name(c.model_key, targets)
             drafter = catalog_drafter(model, str((c.identity.get("collection") or {})
                                                  .get("draft")), cat)
             prov, mode_sampling, mode_settings, rationale, category = provenance(c, catalog)

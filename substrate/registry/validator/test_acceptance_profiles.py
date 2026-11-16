@@ -185,11 +185,17 @@ def test_curves_that_claim_one_key_are_both_refused():
     assert f"{GQA_BLOCK}.yaml" in caveat
 
 
-def test_a_drafter_the_catalog_lacks_is_refused_and_named():
-    carried = {stem_of(p) for p in SET["profiles"]}
-    assert MUSE not in carried
-    caveat = next(c for c in SET["caveats"] if c.startswith(f"Not carried: {MUSE}.yaml"))
-    assert "RadixArk/Muse-Spark-Open-DFlash2 is not in the catalog" in caveat
+def test_a_drafter_the_catalog_lacks_is_refused_and_named(tmp_path):
+    """A curve measured with a drafter no catalog entry has (a fixture's) is not carried, and
+    the caveat names the drafter; onboarding a real drafter cannot break this."""
+    golden = copy_golden(tmp_path)
+    ids = yaml.safe_load((golden / emit.IDENTITIES).read_text())
+    ids[EAGLE]["collection"]["draft"] = "Org/Minimax-M3-Eagle3"
+    (golden / emit.IDENTITIES).write_text(yaml.safe_dump(ids, sort_keys=False))
+    out = generated(golden)
+    assert EAGLE not in {stem_of(p) for p in out["profiles"]}
+    caveat = next(c for c in out["caveats"] if c.startswith(f"Not carried: {EAGLE}.yaml"))
+    assert "Org/Minimax-M3-Eagle3 is not in the catalog" in caveat
 
 
 def test_a_drafter_measured_at_another_revision_is_refused(tmp_path):
@@ -261,8 +267,14 @@ def test_identity_facts_and_per_mode_sampling_are_transcribed():
     assert p["provenance"]["sampling"]["temperature"] == 1.0
 
 
-def test_a_transferred_profile_cites_its_measured_source():
-    moved = [p for p in SET["profiles"] if p["method"] == "transferred"]
+def test_a_transferred_profile_cites_its_measured_source(tmp_path):
+    """With a catalog that lacks glm-5.3-nvfp4 (a fixture, so the real entry cannot change it),
+    GLM-5.3's curve is transferred, and each transferred profile names its rule and source."""
+    catalog = tmp_path / "catalog"
+    shutil.copytree(CATALOG, catalog)
+    shutil.rmtree(catalog / "models" / "glm-5.3-nvfp4", ignore_errors=True)
+    out = yaml.safe_load(emit.generate(GOLDEN, catalog))
+    moved = [p for p in out["profiles"] if p["method"] == "transferred"]
     assert moved
     for p in moved:
         assert p["transfer_rule"] and p["rationale"]
@@ -285,8 +297,8 @@ def test_a_model_key_resolves_by_repository_basename_or_is_refused():
     assert emit.catalog_name("glm-5.2-fp8", targets) == "glm-5.2-fp8"
     assert emit.catalog_name("kimi-k3.1-pro", targets) == "kimi-k3.1"
     with pytest.raises(emit.Refused):
-        # The catalog holds Qwen/Qwen3.5-397B-A17B, not the NVFP4 checkpoint InferenceX ran.
-        emit.catalog_name("qwen3.5-397b-a17b-nvfp4", targets)
+        # A key no catalog repository's basename is (a near name is not a match).
+        emit.catalog_name("glm-5.2-fp8-not-in-any-catalog", targets)
 
 
 def test_a_native_drafter_in_the_targets_own_repository_is_that_entry():
@@ -396,3 +408,29 @@ def test_a_stated_drafter_revision_is_recorded_and_an_unstated_one_is_named():
 def test_the_identities_file_is_cited_with_its_hash():
     lock = json.loads(emit.LOCK.read_text())
     assert any(lock["files"]["identities.yaml"] in c and "identities.yaml" in c for c in SET["caveats"])
+
+
+def test_a_transfer_lapses_once_its_curves_own_model_is_in_the_catalog(tmp_path):
+    """While the catalog lacks glm-5.3-nvfp4 its curve is transferred to glm-5.3; once the
+    catalog has it, the curve is carried as measured on it and no transfer is written. Both
+    catalogs are fixtures, so the test holds with or without the real entry."""
+    without = tmp_path / "without"
+    shutil.copytree(CATALOG, without)
+    shutil.rmtree(without / "models" / "glm-5.3-nvfp4", ignore_errors=True)
+    out = yaml.safe_load(emit.generate(GOLDEN, without))
+    mine = [p for p in out["profiles"] if stem_of(p) == GLM53]
+    assert mine and {(p["model"], p["method"]) for p in mine} == {("glm-5.3", "transferred")}
+    with_ = tmp_path / "with"
+    shutil.copytree(without, with_)
+    d = with_ / "models" / "glm-5.3-nvfp4"
+    shutil.copytree(with_ / "models" / "glm-5.3", d)
+    doc = yaml.safe_load((d / "model.yaml").read_text())
+    doc["name"] = "glm-5.3-nvfp4"
+    doc["source"]["repo"] = "nvidia/GLM-5.3-NVFP4"
+    (d / "model.yaml").write_text(yaml.safe_dump(doc, sort_keys=False))
+    g = yaml.safe_load((d / "graph.yaml").read_text())
+    g["name"] = "glm-5.3-nvfp4"
+    (d / "graph.yaml").write_text(yaml.safe_dump(g, sort_keys=False))
+    out = yaml.safe_load(emit.generate(GOLDEN, with_))
+    mine = [p for p in out["profiles"] if stem_of(p) == GLM53]
+    assert mine and {(p["model"], p["method"]) for p in mine} == {("glm-5.3-nvfp4", "measured")}
