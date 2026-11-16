@@ -106,14 +106,25 @@ func TestThePortAnswersEveryOffloadInterfaceCallAsVLLMDoes(t *testing.T) {
 			if v, _ := tr.Provenance["mock_version"].(string); v == "" {
 				t.Error("the trace records no mock version")
 			}
-			numChunks := replaySpec(t, tr.Spec)
-			if len(tr.Manager) > 0 {
-				if numChunks < 0 {
-					t.Fatal("manager calls with no spec that built the manager")
-				}
-				replayManager(t, numChunks, tr.Manager)
+			tiering := false
+			for _, c := range tr.Spec {
+				tiering = tiering || arg[string](t, c, "spec") == "TieringOffloadingSpec"
 			}
+			built := replaySpec(t, tr.Spec)
 			replayPolicy(t, tr.Policy)
+			if len(tr.Manager) == 0 {
+				return
+			}
+			if built == nil {
+				t.Fatal("manager calls with no spec that built the manager")
+			}
+			if tiering {
+				// From v0.33.0 a TieringOffloadingManager's get_stats adds its own tracker's series
+				// (vllm/v1/kv_offload/tiering/manager.py:1205-1229@4ba787ec), and its config_info a tier
+				// label, so its manager calls are the tiering layer's to answer, not the CPU tier's.
+				t.Skip("TieringOffloadingManager calls: replayed by core/connector/tiering against its manager with no secondary tiers over the CPU primary tier")
+			}
+			replayManager(t, *built, tr.Manager)
 		})
 	}
 }
@@ -184,11 +195,18 @@ func args(c fid5Call) string {
 	return strings.Join(parts, ", ")
 }
 
-// replaySpec checks each get_manager: the chunk count the port sizes the CPU tier with
-// (NumChunks), and that the manager is the CPU tier the port runs. It returns the last count, or
-// -1 with no spec call.
-func replaySpec(t *testing.T, calls []fid5Call) int {
-	n := -1
+// builtTier is what the last get_manager built, as the port sizes it.
+type builtTier struct {
+	numChunks int
+	// info is the manager's config_info answer.
+	info []map[string]any
+}
+
+// replaySpec checks each get_manager: the chunk count and chunk bytes the port sizes the CPU tier
+// with (NumChunks, ChunkBytes), and that the manager is the CPU tier the port runs. It returns the
+// last tier built, or nil with no spec call.
+func replaySpec(t *testing.T, calls []fid5Call) *builtTier {
+	var built *builtTier
 	for i, c := range calls {
 		spec := arg[string](t, c, "spec")
 		copies := arg[int](t, c, "world_size")
@@ -198,8 +216,9 @@ func replaySpec(t *testing.T, calls []fid5Call) int {
 		got := NumChunks(arg[int64](t, c, "cpu_bytes_to_use"), arg[int64](t, c, "worker_kv_bytes_per_block"), copies,
 			arg[int](t, c, "blocks_per_chunk"), arg[int64](t, c, "alignment"))
 		var ret struct {
-			Manager   string `json:"manager"`
-			NumChunks int    `json:"num_chunks"`
+			Manager         string `json:"manager"`
+			NumChunks       int    `json:"num_chunks"`
+			KVBytesPerChunk int64  `json:"kv_bytes_per_chunk"`
 		}
 		if err := json.Unmarshal(c.Ret, &ret); err != nil {
 			t.Fatal(err)
@@ -207,6 +226,13 @@ func replaySpec(t *testing.T, calls []fid5Call) int {
 		if got != ret.NumChunks {
 			t.Fatalf("spec call %d (%s): the port sizes %d chunks, vLLM %d", i, args(c), got, ret.NumChunks)
 		}
+		bytes := ChunkBytes(arg[int64](t, c, "worker_kv_bytes_per_block"), copies, arg[int](t, c, "blocks_per_chunk"),
+			arg[int64](t, c, "alignment"))
+		if bytes != ret.KVBytesPerChunk {
+			t.Fatalf("spec call %d (%s): the port gives a chunk %d bytes, vLLM %d", i, args(c), bytes, ret.KVBytesPerChunk)
+		}
+		info := ConfigInfo(got, arg[int](t, c, "blocks_per_chunk"), bytes, arg[int](t, c, "max_model_len"),
+			arg[[]OffloadGroup](t, c, "groups"))
 		// The port runs both registered specs as its CPU tier (Check), TieringOffloadingSpec only with
 		// no secondary tiers, over the LRU policy.
 		if err := Check(Options{SpecName: spec, SecondaryTiers: arg[int](t, c, "secondary_tiers"),
@@ -217,9 +243,9 @@ func replaySpec(t *testing.T, calls []fid5Call) int {
 		if ret.Manager != want {
 			t.Fatalf("spec call %d: %s built a %s, want %s", i, spec, ret.Manager, want)
 		}
-		n = got
+		built = &builtTier{numChunks: got, info: []map[string]any{info}}
 	}
-	return n
+	return built
 }
 
 // cpuStatNames are the CPU tier's get_stats metrics (vllm/v1/kv_offload/cpu/common.py:14-17@4ba787ec).
@@ -230,8 +256,8 @@ const (
 	statAlloc = "vllm:kv_offload_cpu_allocation_size"
 )
 
-func replayManager(t *testing.T, numChunks int, calls []fid5Call) {
-	m := newCPUManager(numChunks)
+func replayManager(t *testing.T, built builtTier, calls []fid5Call) {
+	m := newCPUManager(built.numChunks)
 	acc := map[string]*reqAccess{}
 	access := func(c fid5Call) *reqAccess {
 		name := arg[string](t, c, "ctx")
@@ -299,6 +325,8 @@ func replayManager(t *testing.T, numChunks int, calls []fid5Call) {
 			same(t, i, c, nil)
 		case "get_stats":
 			compareStats(t, i, c, m.stats())
+		case "config_info":
+			same(t, i, c, built.info)
 		default:
 			t.Fatalf("call %d: OffloadingManager.%s is not replayed", i, c.M)
 		}
