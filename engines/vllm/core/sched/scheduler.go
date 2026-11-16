@@ -296,10 +296,24 @@ func New(cfg Config) (*Scheduler, error) {
 	if cfg.Policy != FCFS && cfg.Policy != Priority {
 		return nil, fmt.Errorf("sched: unknown policy %q; vLLM accepts fcfs and priority", cfg.Policy)
 	}
-	// vllm/config/vllm.py:2285-2290@5df63a72 refuses a budget no larger than the draft slots.
-	if cfg.MaxNumBatchedTokens <= cfg.Spec.DraftSlots {
-		return nil, fmt.Errorf("sched: max_num_batched_tokens %d leaves no room beside %d draft slots",
-			cfg.MaxNumBatchedTokens, cfg.Spec.DraftSlots)
+	// VllmConfig._set_max_num_scheduled_tokens (vllm/config/vllm.py:2368-2396@4ba787ec) refuses a
+	// budget no larger than num_lookahead_tokens, which is at least every method's draft slots
+	// and covers the DFlash/DSpark draft pass's query rows. v0.32.0 compared the draft slots
+	// (vllm/config/vllm.py:2285-2290@5df63a72).
+	if cfg.Spec.NumTokens > 0 && cfg.MaxNumBatchedTokens <= cfg.Spec.Lookahead {
+		return nil, fmt.Errorf("sched: max_num_batched_tokens %d leaves no room beside %d lookahead tokens "+
+			"(vllm/config/vllm.py:2370-2376@4ba787ec)", cfg.MaxNumBatchedTokens, cfg.Spec.Lookahead)
+	}
+	// Then DFlash and DSpark lower max_num_active_seqs to the requests whose draft pass fits in
+	// max_num_batched_tokens, num_lookahead_tokens query rows each (:2377-2396).
+	if cfg.Spec.DraftQueryPass && cfg.Spec.Lookahead > 0 {
+		active := cfg.MaxNumActiveSeqs
+		if active == 0 {
+			active = cfg.MaxNumSeqs
+		}
+		if d := cfg.MaxNumBatchedTokens / cfg.Spec.Lookahead; d < active {
+			cfg.MaxNumActiveSeqs = d
+		}
 	}
 	wm := int(cfg.Watermark * float64(cfg.NumBlocks))
 	// num_hash_lookahead_tokens (vllm/config/vllm.py:678-692@4ba787ec): with the EAGLE block drop
