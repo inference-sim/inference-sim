@@ -106,7 +106,7 @@ Example:
 			logrus.Infof("Loaded trace: %d records (mode=%s)", len(traceData.Records), traceData.Header.Mode)
 		}
 
-		// #1530: refuse a trace whose source run had a multi-node fleet. Cross-node
+		// #2146: refuse a trace whose source run had a multi-node fleet. Cross-node
 		// collective traffic is charged to step time, but replay cannot reconstruct a
 		// multi-node fleet — node pools are `blis run`-only and rejected below — so
 		// replaying such a trace would silently reproduce the workload at single-node
@@ -393,7 +393,7 @@ Example:
 			logrus.Fatalf("--horizon must be > 0, got %d", replayHorizon)
 		}
 
-		// E/P/D topology (GAP-4, issue #1264), validated as runCmd does (INV-13).
+		// E/P/D topology, validated as runCmd does (INV-13).
 		if encodeInstances < 0 {
 			logrus.Fatalf("--encode-instances must be >= 0, got %d", encodeInstances)
 		}

@@ -941,8 +941,8 @@ func resolveReplayKVOffload(headerBlock *workload.TraceKVOffloadConfig, flagChan
 	return build.ReconcileReplayKVOffload(headerToSimOffload(headerBlock), flagChanged, flagCfg, allowFlagAdd)
 }
 
-// requireOneOffloadModel refuses the offload chain together with --kv-cpu-blocks (#1590 H1;
-// build.RequireOneOffloadModel), fatal at the CLI boundary.
+// requireOneOffloadModel refuses the offload chain together with --kv-cpu-blocks
+// (build.RequireOneOffloadModel), fatal at the CLI boundary.
 func requireOneOffloadModel(offloadEnabled bool, onReplay bool) {
 	if err := build.RequireOneOffloadModel(offloadEnabled, kvCPUBlocks, onReplay); err != nil {
 		logrus.Fatalf("%v", err)

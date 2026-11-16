@@ -85,7 +85,7 @@ type DecodeRoutingRecord struct {
 	Regret     float64            // max(alternative scores) - score(chosen); 0 if chosen is best; always >= 0
 }
 
-// EncodeRoutingRecord captures an encode pool routing decision (GAP-4, issue #1264).
+// EncodeRoutingRecord captures an encode pool routing decision.
 // Emitted once per encoder the router chose for a request (recordRouting,
 // sim/cluster/gateway.go). Under option A (zero-duration encode), the record
 // reflects a routing decision only — no encode sub-request is injected.

@@ -367,7 +367,7 @@ func TestQAWiringUsesTheCommittedToolingAndConfiguredModels(t *testing.T) {
 	for _, script := range []string{"questioner.py", "answerer.py", "render_report.py"} {
 		if !strings.Contains(run, "scripts/qa-review/"+script) {
 			t.Errorf("the %q step never runs scripts/qa-review/%s. The committed tooling is the point "+
-				"of #1714; a re-implementation here would diverge from the prototype it vendors",
+				"of vendoring it; a re-implementation here would diverge from the prototype it vendors",
 				qaRunStep, script)
 		}
 		// The script it names must exist, or the step fails at run time on the one self-hosted

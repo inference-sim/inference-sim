@@ -97,7 +97,7 @@ same rule the verify and correct phases already apply to PR comments.
 
 ## Rejected alternative: keep the body authoritative and warn on a newer comment
 
-#1782's second option — refuse or warn when the newest design-relevant comment is newer than the last
+The issue's second option — refuse or warn when the newest design-relevant comment is newer than the last
 body edit, prompting the human to fold the change into the body first. Rejected for three reasons:
 
 1. **It pushes the work back to the human at the moment they have least patience for it.** The

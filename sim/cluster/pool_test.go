@@ -296,7 +296,7 @@ func TestBuildPoolMembershipFromIndices_WithShared(t *testing.T) {
 
 // TestPoolRoleEncode_BitmaskIdentity verifies that PoolRoleEncode does not
 // overlap with PoolRolePrefill / PoolRoleDecode / PoolRolePrefillDecode — a
-// prerequisite for E/P/D set-membership filtering (GAP-4, issue #1264).
+// prerequisite for E/P/D set-membership filtering.
 func TestPoolRoleEncode_BitmaskIdentity(t *testing.T) {
 	if PoolRoleEncode == 0 {
 		t.Fatal("PoolRoleEncode must be non-zero")

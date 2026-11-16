@@ -241,7 +241,7 @@ them (a round longer than it is length-capped).
 
 The reader converts each session's **linear main-agent stream**. Sub-agent fan-out —
 `type:"subagent"` groups, whose nested requests run concurrently with the main agent — is
-**not modelled yet** ([#1477](https://github.com/inference-sim/inference-sim/issues/1477)), so a
+**not modelled yet** ([#1928](https://github.com/inference-sim/inference-sim/issues/1928), item 12), so a
 session containing one is **refused** by default, naming the session and the work it carries.
 `--drop-subagents` converts such sessions anyway: the groups are dropped and their wall-clock is
 absorbed into the following main turn's think gap, which keeps the main agent's pacing but

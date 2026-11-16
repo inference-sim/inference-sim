@@ -254,7 +254,7 @@ func TestBacklogDriftDetector_Detect_Backlogged(t *testing.T) {
 
 // TestBacklogDriftDetector_Observe_ForwardFillEmptyBuckets verifies that skipped
 // (empty) buckets are forward-filled with the last in-flight value so the OLS
-// x-axis stays evenly spaced (#1515). A plateau held flat across a gap must
+// x-axis stays evenly spaced. A plateau held flat across a gap must
 // produce a ~zero slope (STABLE), not a spuriously large slope from compressing
 // the gap. Regression guard for the forward-fill loop.
 func TestBacklogDriftDetector_Observe_ForwardFillEmptyBuckets(t *testing.T) {

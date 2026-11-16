@@ -433,7 +433,7 @@ def _stderr_reason(pdir: Path) -> str:
 
 def agentic_workload(fl: dict, hf: str, csha: str, rev: str = "unknown") -> str:
     assert fl.get("scenario") == "inferencex-agentx-mvp", fl.get("scenario")
-    # The replay states both fork knobs (#1971 shipped them): the per-trace idle-gap cap and a
+    # The replay states both fork knobs: the per-trace idle-gap cap and a
     # request-bounded cache-pressure warm-up. A run whose command line carries neither keeps the
     # synthesized warm-up and no cap.
     idle_cap = f"    trace_idle_gap_cap_s: {fl['trace-idle-gap-cap-seconds']}\n" if "trace-idle-gap-cap-seconds" in fl else ""

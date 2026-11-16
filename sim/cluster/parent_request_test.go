@@ -98,7 +98,7 @@ func TestNewParentRequest_PanicOnNegativeBlockSize(t *testing.T) {
 
 // TestNewParentRequest_NoEncoders verifies that the canonical
 // constructor initializes EncodeInstanceID to the zero value (empty InstanceID),
-// indicating "encode did not fire for this parent" (GAP-4, issue #1264).
+// indicating "encode did not fire for this parent".
 func TestNewParentRequest_NoEncoders(t *testing.T) {
 	req := &sim.Request{ID: "req-enc-init", InputTokens: make([]sim.TokenID, 16)}
 	pr := NewParentRequest(req, 16)

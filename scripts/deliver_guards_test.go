@@ -662,7 +662,7 @@ func TestDeliverVerifyHandsOffOnTheDeliveryBranchNotTheEventRef(t *testing.T) {
 // PR review comments as evidence — and, since #1806, it must get them through the trusted-comment
 // filter rather than a raw endpoint fetch.
 //
-// #1801 first closed the gap that inline comments (GET /repos/{owner}/{repo}/pulls/{n}/comments — a
+// The verify step first closed the gap that inline comments (GET /repos/{owner}/{repo}/pulls/{n}/comments — a
 // DIFFERENT endpoint from the conversation comments `gh pr view --comments` returns) never reached
 // the verdict reasoning, by having the prompt fetch them directly. #1806 then moved that fetch
 // behind scripts/deliver-trusted-comments.sh, which returns conversation + review + inline comments

@@ -524,7 +524,7 @@ func TestProperty_EagerEqualsLazy_RequestStreams(t *testing.T) {
 		src, lazySessions, lazyBudget, err := GenerateWorkloadLazy(lazySpec, horizon, maxReq)
 		if err != nil {
 			t.Fatalf("draw %d [base=%#x] lazy GenerateWorkloadLazy failed: %v\n  spec: %s\n  "+
-				"(as of #1460 there are no unsupported-shape sentinels — an error here is a "+
+				"(there are no unsupported-shape sentinels — an error here is a "+
 				"real generation bug, since eager accepted the same spec above)",
 				i, propertyBaseSeed, err, label)
 		}

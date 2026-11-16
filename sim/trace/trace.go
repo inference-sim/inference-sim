@@ -36,7 +36,7 @@ type SimulationTrace struct {
 	Disaggregations []DisaggregationRecord
 	PrefillRoutings []PrefillRoutingRecord
 	DecodeRoutings  []DecodeRoutingRecord
-	EncodeRoutings  []EncodeRoutingRecord // GAP-4 (issue #1264)
+	EncodeRoutings  []EncodeRoutingRecord // E/P/D encode routing
 	KVTransfers     []KVTransferRecord
 }
 
@@ -84,7 +84,7 @@ func (st *SimulationTrace) RecordKVTransfer(record KVTransferRecord) {
 	st.KVTransfers = append(st.KVTransfers, record)
 }
 
-// RecordEncodeRouting appends an encode pool routing decision record (GAP-4, #1264).
+// RecordEncodeRouting appends an encode pool routing decision record.
 func (st *SimulationTrace) RecordEncodeRouting(record EncodeRoutingRecord) {
 	st.EncodeRoutings = append(st.EncodeRoutings, record)
 }

@@ -67,7 +67,7 @@ type DeploymentConfig struct {
 	// and the pipeline is unchanged (BC-PD-1).
 	PrefillInstances int // Number of instances dedicated to prefill (0 = disabled)
 	DecodeInstances  int // Number of instances dedicated to decode (0 = disabled)
-	// SharedInstances (issue #1276, GAP-5) — number of instances serving both
+	// SharedInstances — number of instances serving both
 	// prefill and decode (shared-role pods, llm-d "prefill-decode" / legacy "both"
 	// role labels). When > 0, ValidatePoolTopology accepts
 	// prefill+decode+shared <= total, and BuildPoolMembershipFromIndices
@@ -75,7 +75,7 @@ type DeploymentConfig struct {
 	// the prefill-only and decode-only ranges.
 	SharedInstances int
 
-	// E/P/D disaggregation configuration (GAP-4, issue #1264).
+	// E/P/D disaggregation configuration.
 	// When EncodeInstances == 0 (default), the encode stage is disabled and the
 	// pipeline is byte-identical to the pre-PR simulator (BC-EPD-1).
 	EncodeInstances int // Number of instances dedicated to encoding multimodal input (0 = disabled)
