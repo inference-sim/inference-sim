@@ -326,7 +326,7 @@
       "name": "flashinfer",
       "version": "0.6.13",
       "pinned": false,
-      "pin": "the trtllm-gen prefill sweep's B300 run: ai-dynamo/aisimulate 2f0f4cd8606d580567b253d02f3d699fe36db865 python/aisimulate/src/aisimulate_core/systems/data/b300_sxm/attention/vllm/0.25.0/collection_meta.yaml names image vllm/vllm-openai@sha256:e1c1ff1af9a15921bfa11d1d95047258c1797392cdbfa296e7639da446b23f97, whose build sets FLASHINFER_VERSION=0.6.13",
+      "pin": "the trtllm-gen prefill sweep's B300, GB200 and GB300 runs (ai-dynamo/aisimulate 2f0f4cd8606d580567b253d02f3d699fe36db865, systems/data/{b300_sxm,gb200,gb300}/attention/vllm/0.25.0/collection_meta.yaml): images vllm/vllm-openai@sha256:e1c1ff1af9a15921bfa11d1d95047258c1797392cdbfa296e7639da446b23f97 and @sha256:2f726db9babd627fb59addaed2038577fc767108680901271b069d91759d1286, whose build configs set FLASHINFER_VERSION=0.6.13",
       "origin": "https://github.com/flashinfer-ai/flashinfer 57ba7eeb7ea3003a2d6ad5d9a057c4f952709bac"
     },
     {
