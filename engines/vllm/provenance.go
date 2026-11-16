@@ -18,6 +18,8 @@ import (
 	_ "embed"
 	"fmt"
 	"runtime/debug"
+
+	"github.com/inference-sim/blis-substrate/contracts/harness"
 )
 
 // Kind is the engine kind this module registers with the contracts' engine factory.
@@ -30,12 +32,9 @@ var Upstream = UpstreamRelease{
 	Commit:  "5df63a7203cdb9328d824a27b682e77c7b9928be",
 }
 
-// UpstreamRelease is one vLLM release.
-type UpstreamRelease struct {
-	Version string
-	Tag     string
-	Commit  string
-}
+// UpstreamRelease is one vLLM release: blis-substrate's harness.Upstream, the record every engine
+// repository uses (design §14.3).
+type UpstreamRelease = harness.Upstream
 
 // Provenance is what a run must record to be reproduced: the engine kind, the upstream
 // release it models and this module's own revision. A simulator writes it into its results
