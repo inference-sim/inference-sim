@@ -11,8 +11,9 @@
 // selected_entries names the entries its lookups returned. Each -kernel-impls file is the
 // kernel_impls.json of an engine release that some supported simulator release pins. Both
 // flags repeat. The command writes one line per entry it lists to stdout and a summary to
-// stderr. It exits 0 when it lists none, 1 when it lists some, and 2 on misuse or a file that
-// does not load.
+// stderr. It exits 0 when it lists none, 1 when it lists some, and 2 on misuse, a file that
+// does not load, a Result whose selected entries carry no closeness data (they cannot show a
+// keyed entry selected), no input at all, or two sets with one stem.
 package main
 
 import (
@@ -52,6 +53,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, "usage: unselected-entries [-selected RESULT]... [-kernel-impls TABLE]... <registry root>")
 		return 2
 	}
+	if len(selected) == 0 && len(tables) == 0 {
+		_, _ = fmt.Fprintln(stderr, "unselected-entries: no -selected Result and no -kernel-impls table given; with no "+
+			"inputs every entry would be listed, which says nothing (VAL-8)")
+		return 2
+	}
 	root := fs.Arg(0)
 	paths, err := registry.SetPaths(root)
 	if err != nil {
@@ -63,19 +69,29 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	sets := map[string]*coefficient.Set{}
+	from := map[string]string{}
 	for _, p := range paths {
 		s, err := contracts.LoadCoefficientSet(p)
 		if err != nil {
 			_, _ = fmt.Fprintln(stderr, err)
 			return 2
 		}
-		sets[dataset.Stem(p)] = s
+		stem := dataset.Stem(p)
+		if prev, ok := from[stem]; ok {
+			_, _ = fmt.Fprintf(stderr, "%s and %s are both set %q; a scenario names a set by its stem, so one would hide the other\n", prev, p, stem)
+			return 2
+		}
+		sets[stem], from[stem] = s, p
 	}
 	var reports []result.SelectedEntries
 	for _, p := range selected {
 		r, err := contracts.LoadResult(p)
 		if err != nil {
 			_, _ = fmt.Fprintln(stderr, err)
+			return 2
+		}
+		if err := dataset.CheckSelectionReport(r.SelectedEntries); err != nil {
+			_, _ = fmt.Fprintf(stderr, "%s: %v\n", p, err)
 			return 2
 		}
 		reports = append(reports, r.SelectedEntries)
@@ -89,7 +105,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 		tabs = append(tabs, t)
 	}
-	found := dataset.FindUnselected(sets, reports, tabs)
+	found, err := dataset.FindUnselected(sets, reports, tabs)
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, err)
+		return 2
+	}
 	for _, u := range found {
 		_, _ = fmt.Fprintln(stdout, u)
 	}

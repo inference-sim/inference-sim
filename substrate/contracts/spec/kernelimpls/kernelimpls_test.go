@@ -10,9 +10,9 @@ import (
 // row builds an implementation whose code hash is the rule's, so a test changes one field and
 // sees what the validator says about it.
 func row(prim, lib, ver, variant, arch string, basis HashBasis, inputs ...string) Implementation {
-	return Implementation{Primitive: prim, Library: lib, LibraryVersion: ver, Variant: variant, TargetArch: arch,
-		HashBasis: basis, HashInputs: inputs, CodeHash: CodeHash(basis, lib, variant, arch, inputs),
-		Toolkit: "12.9", SelectedBy: []string{"upstream/selector.py:10@0123abcd"}}
+	return Implementation{Primitive: prim, Selection: "backend A", Library: lib, LibraryVersion: ver, Variant: variant,
+		TargetArch: arch, HashBasis: basis, HashInputs: inputs, CodeHash: CodeHash(basis, lib, variant, arch, inputs),
+		Toolkit: "12.9", SelectedBy: []string{"upstream/selector.py:10@abababab"}}
 }
 
 func valid() *Table {
@@ -22,12 +22,12 @@ func valid() *Table {
 		Primitives: []string{"attention.decode", "attention.prefill"},
 		Archs:      []string{"sm_100a", "sm_90a"},
 		Gaps: []Gap{
-			{Primitive: "attention.decode", Selection: "backend A", Issue: "org/repo#1"},
+			{Primitive: "attention.decode", Selection: "backend A", Library: "attnlib", Variant: "sink_kernel", Issue: "org/repo#1"},
 			{Primitive: "attention.decode", Selection: "backend B", Issue: "org/repo#2"},
 		},
 		Libraries: []Library{
 			{Name: "attnlib", Version: "0.6.0", Pin: "seen in runs r1", Origin: "pypi attnlib==0.6.0"},
-			{Name: "attnlib", Version: "0.7.0", Pinned: true, Pin: "requirements.txt:12@0123abcd", Origin: "pypi attnlib==0.7.0"},
+			{Name: "attnlib", Version: "0.7.0", Pinned: true, Pin: "requirements.txt:12@abababab", Origin: "pypi attnlib==0.7.0"},
 			{Name: "engine-kernels", Version: strings.Repeat("ab", 20), Pinned: true, Pin: "CMakeLists.txt:40@0123abcd", Origin: "git https://example.org/e " + strings.Repeat("ab", 20)},
 		},
 		Implementations: []Implementation{
@@ -73,6 +73,27 @@ func TestEachWayATableCanBeWrongIsRefused(t *testing.T) {
 		{"a primitive that is not lowered", "primitives[1]", func(t *Table) { t.Primitives[1] = "attention" }},
 		{"primitives out of order", "primitives[1]", func(t *Table) { t.Primitives = []string{"attention.prefill", "attention.decode"} }},
 		{"a primitive twice", "primitives[1]", func(t *Table) { t.Primitives = []string{"attention.decode", "attention.decode"} }},
+		{"gap naming a library but no variant", "gaps[0]", func(t *Table) { t.Gaps[0].Variant = "" }},
+		{"gap selection with a line break", "gaps[1].selection", func(t *Table) { t.Gaps[1].Selection = "backend B\nx" }},
+		{"no libraries", "libraries", func(t *Table) { t.Libraries = nil }},
+		{"a library no row names", "libraries[0]", func(t *Table) {
+			t.Implementations = t.Implementations[1:]
+		}},
+		{"a library name with a line break", "libraries[0].name", func(t *Table) { t.Libraries[0].Name = "attn\nlib" }},
+		{"a pinned pin that is not path:line@commit8", "libraries[1].pin", func(t *Table) { t.Libraries[1].Pin = "requirements.txt" }},
+		{"a pinned pin at another commit", "libraries[1].pin", func(t *Table) { t.Libraries[1].Pin = "requirements.txt:12@0123abcd" }},
+		{"no rows for covered primitives", "implementations", func(t *Table) { t.Implementations = nil }},
+		{"row with no selection", "implementations[2].selection", func(t *Table) { t.Implementations[2].Selection = "" }},
+		{"a selection with a line break", "implementations[2].selection", func(t *Table) { t.Implementations[2].Selection = "a\nb" }},
+		{"a variant with a line break", "implementations[2].variant", func(t *Table) {
+			t.Implementations[2] = row("attention.decode", "engine-kernels", strings.Repeat("ab", 20), "paged\ninput x", "sm_90a", HashSource, "csrc tree "+strings.Repeat("c", 40))
+		}},
+		{"a selection citation that is not path:line@commit8", "implementations[0].selected_by[0]", func(t *Table) {
+			t.Implementations[0].SelectedBy = []string{"upstream/selector.py"}
+		}},
+		{"a selection citation at another commit", "implementations[0].selected_by[0]", func(t *Table) {
+			t.Implementations[0].SelectedBy = []string{"upstream/selector.py:10@0123abcd"}
+		}},
 		{"gap of an uncovered primitive", "gaps[0].primitive", func(t *Table) { t.Gaps[0].Primitive = "gemm" }},
 		{"gap with no selection", "gaps[0].selection", func(t *Table) { t.Gaps[0].Selection = "" }},
 		{"gap with no issue", "gaps[1].issue", func(t *Table) { t.Gaps[1].Issue = "" }},
@@ -205,6 +226,25 @@ func TestTheLookupsFindTheRowsOfABuild(t *testing.T) {
 	sibling.CodeHash = strings.Repeat("0", 64)
 	if tab.Lists(sibling) {
 		t.Errorf("Lists matched a different build of the same kernel (VAL-8)")
+	}
+	for name, c := range map[string]struct {
+		prim, sel, lib, ver, variant, arch string
+		want                               Resolution
+	}{
+		"a listed build":                                     {"attention.prefill", "backend A", "attnlib", "0.7.0", "prefill_kernel", "sm_100a", Found},
+		"a listed kernel on an arch it lacks":                {"attention.prefill", "backend A", "attnlib", "0.7.0", "prefill_kernel", "sm_90a", CannotEmit},
+		"a misspelt library":                                 {"attention.prefill", "backend A", "atnlib", "0.7.0", "prefill_kernel", "sm_100a", CannotEmit},
+		"a kernel a gap of its selection names":              {"attention.decode", "backend A", "attnlib", "0.7.0", "sink_kernel", "sm_100a", Unknown},
+		"the same kernel under another selection":            {"attention.decode", "backend C", "attnlib", "0.7.0", "sink_kernel", "sm_100a", CannotEmit},
+		"another kernel of a selection a kernel gap narrows": {"attention.decode", "backend A", "attnlib", "0.7.0", "other_kernel", "sm_100a", CannotEmit},
+		"any kernel of a gap selection":                      {"attention.decode", "backend B", "otherlib", "1", "k", "sm_90a", Unknown},
+		"an arch the table does not cover":                   {"attention.prefill", "backend A", "attnlib", "0.7.0", "prefill_kernel", "sm_120a", Unknown},
+		"a primitive the table does not cover":               {"gemm", "backend A", "attnlib", "0.7.0", "prefill_kernel", "sm_100a", Unknown},
+	} {
+		got, res := tab.Resolve(c.prim, c.sel, c.lib, c.ver, c.variant, c.arch)
+		if res != c.want || (res == Found) != (got.CodeHash != "") {
+			t.Errorf("%s: Resolve = %s (hash %q), want %s", name, res, got.CodeHash, c.want)
+		}
 	}
 	if gs := tab.GapsFor("attention.decode"); len(gs) != 2 || len(tab.GapsFor("attention.prefill")) != 0 {
 		t.Errorf("GapsFor reports the wrong gaps: %+v", gs)

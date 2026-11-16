@@ -56,7 +56,26 @@ var (
 	commitRE = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	issueRE  = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[1-9][0-9]*$`)
 	archRE   = regexp.MustCompile(`^sm_[0-9]{2,3}[af]?$`)
+	citeRE   = regexp.MustCompile(`^[^\s:@]+:[1-9][0-9]*@([0-9a-f]{8})$`)
 )
+
+// checkCite records a problem unless s cites path:line@commit8 at the release's commit.
+func (t *Table) checkCite(p *check.Problems, at, s string) {
+	m := citeRE.FindStringSubmatch(s)
+	switch {
+	case m == nil:
+		p.Field(at, "%q must cite path:line@commit8", s)
+	case len(t.Engine.Commit) >= 8 && m[1] != t.Engine.Commit[:8]:
+		p.Field(at, "%q cites commit %s, not the release's %s", s, m[1], t.Engine.Commit[:8])
+	}
+}
+
+// oneLine records a problem when a value that CodeHash or a key writes holds a line break.
+func oneLine(p *check.Problems, at, s string) {
+	if strings.ContainsAny(s, "\n\r") {
+		p.Field(at, "holds a line break")
+	}
+}
 
 // Validate checks the table and returns every problem found, or nil.
 func (t *Table) Validate() error {
@@ -70,6 +89,18 @@ func (t *Table) Validate() error {
 	archs := t.validateArchs(&p)
 	libs := t.validateLibraries(&p)
 	t.validateImplementations(&p, covered, libs, archs)
+	if len(t.Primitives) > 0 && len(t.Implementations) == 0 {
+		p.Field("implementations", "required: a table that covers primitives lists their builds")
+	}
+	used := map[libKey]bool{}
+	for _, r := range t.Implementations {
+		used[libKey{r.Library, r.LibraryVersion}] = true
+	}
+	for i, l := range t.Libraries {
+		if !used[libKey{l.Name, l.Version}] {
+			p.Field(fmt.Sprintf("libraries[%d]", i), "library %s %s is named by no row", l.Name, l.Version)
+		}
+	}
 	if !p.OK() {
 		return errors.New(p.Error())
 	}
@@ -139,10 +170,15 @@ func (t *Table) validateGaps(p *check.Problems, covered map[string]bool) {
 		if !issueRE.MatchString(g.Issue) {
 			p.Field(at+".issue", "must name the issue as <owner>/<repo>#<n>, got %q", g.Issue)
 		}
+		if (g.Library == "") != (g.Variant == "") {
+			p.Field(at, "a gap names both the library and the variant of the one kernel it covers, or neither")
+		}
+		oneLine(p, at+".selection", g.Selection)
 		if i > 0 {
 			prev := t.Gaps[i-1]
-			if prev.Primitive > g.Primitive || (prev.Primitive == g.Primitive && prev.Selection >= g.Selection) {
-				p.Field(at, "gap %s %q is out of order or repeated: gaps are sorted by primitive, then selection", g.Primitive, g.Selection)
+			if slices.Compare([]string{prev.Primitive, prev.Selection, prev.Library, prev.Variant},
+				[]string{g.Primitive, g.Selection, g.Library, g.Variant}) >= 0 {
+				p.Field(at, "gap %s %q is out of order or repeated: gaps are sorted by primitive, selection, library and variant", g.Primitive, g.Selection)
 			}
 		}
 	}
@@ -153,7 +189,14 @@ type libKey struct{ name, version string }
 func (t *Table) validateLibraries(p *check.Problems) map[libKey]bool {
 	libs := map[libKey]bool{}
 	pinned := map[string]int{}
+	if len(t.Libraries) == 0 {
+		p.Field("libraries", "required: the libraries the rows name")
+	}
 	for i, l := range t.Libraries {
+		oneLine(p, fmt.Sprintf("libraries[%d].name", i), l.Name)
+		if l.Pinned && l.Version != t.Engine.Commit && strings.TrimSpace(l.Pin) != "" {
+			t.checkCite(p, fmt.Sprintf("libraries[%d].pin", i), l.Pin)
+		}
 		at := fmt.Sprintf("libraries[%d]", i)
 		if strings.TrimSpace(l.Name) == "" {
 			p.Field(at+".name", "required")
@@ -192,11 +235,15 @@ func (t *Table) validateLibraries(p *check.Problems) map[libKey]bool {
 	return libs
 }
 
-type rowKey struct{ primitive, library, version, variant, arch string }
+type rowKey struct{ primitive, selection, library, version, variant, arch string }
+
+func keyOf(r Implementation) rowKey {
+	return rowKey{r.Primitive, r.Selection, r.Library, r.LibraryVersion, r.Variant, r.TargetArch}
+}
 
 func (k rowKey) less(o rowKey) bool {
-	return slices.Compare([]string{k.primitive, k.library, k.version, k.variant, k.arch},
-		[]string{o.primitive, o.library, o.version, o.variant, o.arch}) < 0
+	return slices.Compare([]string{k.primitive, k.selection, k.library, k.version, k.variant, k.arch},
+		[]string{o.primitive, o.selection, o.library, o.version, o.variant, o.arch}) < 0
 }
 
 type buildKey struct{ library, version, variant, arch string }
@@ -206,7 +253,13 @@ func (t *Table) validateImplementations(p *check.Problems, covered map[string]bo
 	hashOfBuild := map[buildKey]string{}
 	for i, r := range t.Implementations {
 		at := fmt.Sprintf("implementations[%d]", i)
-		k := rowKey{r.Primitive, r.Library, r.LibraryVersion, r.Variant, r.TargetArch}
+		k := keyOf(r)
+		if strings.TrimSpace(r.Selection) == "" {
+			p.Field(at+".selection", "required: the upstream choice that runs the kernel")
+		}
+		oneLine(p, at+".selection", r.Selection)
+		oneLine(p, at+".library", r.Library)
+		oneLine(p, at+".variant", r.Variant)
 		if r.Primitive != "" && !covered[r.Primitive] {
 			p.Field(at+".primitive", "%q is not one of the table's primitives", r.Primitive)
 		}
@@ -227,9 +280,12 @@ func (t *Table) validateImplementations(p *check.Problems, covered map[string]bo
 		}
 		validateSortedUnique(p, at+".hash_inputs", r.HashInputs, "the content identities the hash covers")
 		if strings.TrimSpace(r.Toolkit) == "" {
-			p.Field(at+".toolkit", "required: the CUDA toolkit version of the release's build")
+			p.Field(at+".toolkit", "required: the compiler or CUDA toolkit version that builds the kernel")
 		}
 		validateSortedUnique(p, at+".selected_by", r.SelectedBy, "the upstream code that can select the kernel")
+		for j, c := range r.SelectedBy {
+			t.checkCite(p, fmt.Sprintf("%s.selected_by[%d]", at, j), c)
+		}
 		// The hash is recomputed from the row, so a hash copied onto another kernel, library or
 		// architecture is refused: one hash identifies one kernel build.
 		if !check.IsSHA256(r.CodeHash) {
@@ -238,12 +294,11 @@ func (t *Table) validateImplementations(p *check.Problems, covered map[string]bo
 			p.Field(at+".code_hash", "is not the hash of the row's basis, library, variant, architecture and inputs (CodeHash gives %s)", want)
 		}
 		if seen[k] {
-			p.Field(at, "row %s %s %s %s %s is listed twice", r.Primitive, r.Library, r.LibraryVersion, r.Variant, r.TargetArch)
+			p.Field(at, "row %s %q %s %s %s %s is listed twice", r.Primitive, r.Selection, r.Library, r.LibraryVersion, r.Variant, r.TargetArch)
 		}
 		if i > 0 {
-			prev := t.Implementations[i-1]
-			if k.less(rowKey{prev.Primitive, prev.Library, prev.LibraryVersion, prev.Variant, prev.TargetArch}) {
-				p.Field(at, "row is out of order: rows are sorted by primitive, library, library version, variant and target architecture")
+			if k.less(keyOf(t.Implementations[i-1])) {
+				p.Field(at, "row is out of order: rows are sorted by primitive, selection, library, library version, variant and target architecture")
 			}
 		}
 		seen[k] = true

@@ -41,7 +41,16 @@ func (u Unselected) String() string {
 // simulator release pins; an entry's kernel hash appears in one when a table lists one of the
 // implementations the entry is valid for, by library, variant and code hash together. An entry
 // that states none has no hash to appear, so only a selection accounts for it.
-func FindUnselected(sets map[string]*coefficient.Set, selected []result.SelectedEntries, tables []*kernelimpls.Table) []Unselected {
+//
+// A report that names coefficients without its closeness data (closeness_version 0) is refused:
+// it names each entry without the kernel implementations that are part of its identity, so a
+// keyed entry it selected would read as unselected and be removed on missing input (X16).
+func FindUnselected(sets map[string]*coefficient.Set, selected []result.SelectedEntries, tables []*kernelimpls.Table) ([]Unselected, error) {
+	for i, s := range selected {
+		if err := CheckSelectionReport(s); err != nil {
+			return nil, fmt.Errorf("selected-entry report %d: %w", i, err)
+		}
+	}
 	picked := map[string]bool{}
 	for _, s := range selected {
 		for _, c := range s.Coefficients {
@@ -81,5 +90,17 @@ func FindUnselected(sets map[string]*coefficient.Set, selected []result.Selected
 			out = append(out, Unselected{Set: stem, Entry: e, Unpublished: append([]coefficient.KernelImpl(nil), e.KernelImpls...)})
 		}
 	}
-	return out
+	return out, nil
+}
+
+// CheckSelectionReport refuses a selected-entry report that cannot say which entries it
+// selected: one that names coefficients but carries no closeness data, so its entries come
+// without their kernel implementations.
+func CheckSelectionReport(s result.SelectedEntries) error {
+	if len(s.Coefficients) > 0 && s.ClosenessVersion == 0 {
+		return fmt.Errorf("it names %d coefficients without their closeness data (closeness_version 0), so a "+
+			"keyed entry it selected cannot be told from one it did not; rerun with a recorder that records each "+
+			"coefficient whole", len(s.Coefficients))
+	}
+	return nil
 }

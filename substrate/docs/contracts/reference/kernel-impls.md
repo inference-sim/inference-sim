@@ -43,12 +43,14 @@ canonical bytes, and an engine repository checks its committed file by comparing
 |---|---|---|---|
 | `primitive` | string | yes | One of `primitives`. |
 | `selection` | string | yes | The upstream choice, in the upstream's own words: a backend, a kernel path or a setting's value. |
+| `library` | string | with `variant` | With `variant`, narrows the gap to one kernel the selection runs and the table does not list. Neither means every kernel of the selection. |
+| `variant` | string | with `library` | The kernel's name, as a row's `variant`. |
 | `issue` | string | yes | The issue that lists its kernels, as `<owner>/<repo>#<n>`. |
 
-Sorted by primitive and then selection, each once. A gap is how a table says what it does not
-know, as a field list's `not_modelled` does: a reader that finds no row for a build of a gap's
-selection learns nothing from the missing row, and an engine's lowering reports such a build with
-no code hash, which matches no keyed entry.
+Sorted by primitive, selection, library and variant, each once. A gap is how a table says what it
+does not know, as a field list's `not_modelled` does: a reader that finds no row for a build a gap
+covers learns nothing from the missing row, and an engine's lowering reports such a build with no
+code hash, which matches no keyed entry.
 
 ### `engine`
 
@@ -69,10 +71,11 @@ no code hash, which matches no keyed entry.
 | `name` | string | yes | The library's name, as the registry's `kernel_impls` name it. |
 | `version` | string | yes | The library's own version, or the commit the engine builds it from. |
 | `pinned` | boolean | yes | `true` for the version the release pins. Each library has exactly one pinned version. |
-| `pin` | string | yes | Where the version is stated: the release's lock or build file, as `path:line@commit8`, for a pinned version; the runs it was seen in otherwise. |
+| `pin` | string | yes | Where the version is stated. For a pinned version, the release's lock or build file as `path:line@commit8`, where `commit8` is the release's commit. For the engine's own kernels, whose version is the release's commit, any statement. For a version seen in runs, the run record that shows it. |
 | `origin` | string | yes | The immutable identity of what was hashed: a repository URL and commit, or a distribution file and its SHA-256. |
 
-The list is sorted by name and then version, and a version appears once. Beside the pinned
+The list is sorted by name and then version, a version appears once, and every library is named by
+a row. Beside the pinned
 version, a table lists any version that runs of the release were seen with (design §6.2), so a
 scoring harness can map the version a run recorded to a hash.
 
@@ -83,6 +86,7 @@ scoring harness can map the version a run recorded to a hash.
 | Key | Type | Required | Meaning |
 |---|---|---|---|
 | `primitive` | string | yes | The lowered primitive the kernel executes, one of `primitives`. |
+| `selection` | string | yes | The upstream choice that runs the kernel, in the upstream's own words, as a gap's `selection`: a backend, a kernel path or a setting's value. |
 | `library` | string | yes | With `library_version`, a row of `libraries`. |
 | `library_version` | string | yes | The library's version. |
 | `variant` | string | yes | The library's own exported kernel name. |
@@ -90,8 +94,8 @@ scoring harness can map the version a run recorded to a hash.
 | `hash_basis` | string | yes | What the hash covers, below. |
 | `hash_inputs` | list of strings | yes | The content identities the hash covers, sorted, each once, none with a line break: for a source build, each source path with its git object id; for a binary, each shipped file or manifest with its SHA-256. |
 | `code_hash` | string | yes | `kernelimpls.CodeHash` of the row, 64 lower-case hexadecimal digits. The validator recomputes it. |
-| `toolkit` | string | yes | The CUDA toolkit version of the release's build. |
-| `selected_by` | list of strings | yes | The upstream code that can select the kernel, as `path:line@commit8`, sorted, each once. |
+| `toolkit` | string | yes | The compiler or CUDA toolkit version that builds the kernel, as a plan's `KernelImpl.Toolkit`: nvcc's for CUDA source, the Triton or CuTe DSL compiler's for a kernel those compile. |
+| `selected_by` | list of strings | yes | The upstream code that can select the kernel, as `path:line@commit8` at the release's commit, sorted, each once. |
 
 Hash bases:
 
@@ -102,9 +106,21 @@ Hash bases:
 `binary`
 :   The kernel ships only as a binary; the hash covers the shipped file's SHA-256 and the target architecture.
 
-Rows are sorted by primitive, library, library version, variant and target architecture, and
-each appears once. One build of a kernel has one hash whichever primitive it serves, so two rows
+Rows are sorted by primitive, selection, library, library version, variant and target
+architecture, and each appears once. No `selection`, `library` or `variant` holds a line break. A
+table that covers a primitive lists at least one row. One build of a kernel has one hash whichever primitive it serves, so two rows
 that differ only in their primitive must agree on it.
+
+## Resolving a build
+
+`Table.Resolve(primitive, selection, library, version, variant, arch)` is how a lowering states the
+build an operation runs. It returns the row and `found` when the table lists the build. Otherwise
+it returns one of two answers:
+
+- `unknown` when the table does not cover the primitive or the architecture, or a gap covers the
+  selection or the kernel. The lowering reports the implementation with no code hash.
+- `cannot_emit` when the table covers all of them and lists no such build. The release cannot run
+  it, and a lowering that asks for it is wrong.
 
 ## The code hash
 

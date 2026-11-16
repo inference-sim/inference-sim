@@ -1,6 +1,10 @@
 package kernelimpls
 
-import "github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
+import (
+	"slices"
+
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
+)
 
 // Covers reports whether the table lists every implementation of the primitive.
 func (t *Table) Covers(primitive string) bool {
@@ -34,11 +38,49 @@ func (t *Table) PinnedVersion(library string) (string, bool) {
 	return "", false
 }
 
+// Resolution says what a table knows about a build a lowering asks for.
+type Resolution string
+
+const (
+	// Found: the table lists the build.
+	Found Resolution = "found"
+	// CannotEmit: the table covers the primitive, the architecture and the selection, names no
+	// gap that covers the kernel, and lists no such build, so the release cannot run it. A lowering
+	// that asks for it is wrong.
+	CannotEmit Resolution = "cannot_emit"
+	// Unknown: the table does not cover the primitive or the architecture, or a gap covers the
+	// selection or the kernel, so a missing row says nothing.
+	Unknown Resolution = "unknown"
+)
+
+// Resolve finds the build a lowering states: the kernel (library and variant at a library
+// version) that the upstream selection runs for the primitive on a device of the architecture.
+// It returns the row when the table lists it, and otherwise says whether the table knows the
+// release cannot run it (CannotEmit) or does not know (Unknown).
+func (t *Table) Resolve(primitive, selection, library, version, variant, arch string) (Implementation, Resolution) {
+	for _, r := range t.Implementations {
+		if r.Primitive == primitive && r.Selection == selection && r.Library == library &&
+			r.LibraryVersion == version && r.Variant == variant && r.TargetArch == arch {
+			return r, Found
+		}
+	}
+	if !t.Covers(primitive) || !slices.Contains(t.Archs, arch) {
+		return Implementation{}, Unknown
+	}
+	for _, g := range t.Gaps {
+		if g.Primitive == primitive && g.Selection == selection &&
+			(g.Library == "" || (g.Library == library && g.Variant == variant)) {
+			return Implementation{}, Unknown
+		}
+	}
+	return Implementation{}, CannotEmit
+}
+
 // Find returns the row of a kernel build: the primitive it executes, its library at a version,
 // its variant and its target architecture. An engine's lowering calls it with the pinned
 // version (PinnedVersion) to state the implementation of a lowered operation; a scoring
-// harness calls it with the version a run recorded. It returns false when the table has no
-// such row, which for a covered primitive means the release cannot emit that build.
+// harness calls it with the version a run recorded, under any selection. It returns false when
+// the table has no such row; Resolve says whether that means the release cannot emit it.
 func (t *Table) Find(primitive, library, version, variant, arch string) (Implementation, bool) {
 	for _, r := range t.Implementations {
 		if r.Primitive == primitive && r.Library == library && r.LibraryVersion == version &&

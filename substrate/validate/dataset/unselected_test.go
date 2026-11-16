@@ -46,10 +46,10 @@ func TestAnEntryNeitherSelectedNorPublishedIsListed(t *testing.T) {
 			keyedEntry("attention_prefill_work_scale_trtllm_gen_kv_bf16", vocab.MethodTransferred, unpub), // neither
 		}},
 	}
-	selected := []result.SelectedEntries{{Coefficients: []result.SelectedCoefficient{
+	selected := []result.SelectedEntries{{ClosenessVersion: result.ClosenessVersion, Coefficients: []result.SelectedCoefficient{
 		{Set: "attention", Name: "attention_prefill_floor", Method: vocab.MethodMeasured, Scope: coefficient.Scope{Hardware: []string{"b200"}}},
 	}}}
-	got := FindUnselected(sets, selected, []*kernelimpls.Table{tableListing(pub)})
+	got, _ := FindUnselected(sets, selected, []*kernelimpls.Table{tableListing(pub)})
 	want := []string{"attention/attention_decode_floor", "attention/attention_prefill_work_scale_trtllm_gen_kv_bf16"}
 	if strings.Join(names(got), " ") != strings.Join(want, " ") {
 		t.Fatalf("unselected = %v, want %v", names(got), want)
@@ -69,10 +69,10 @@ func TestASelectionOfAnotherEntryOfTheNameDoesNotCount(t *testing.T) {
 	e := keyedEntry("attention_prefill_floor", vocab.MethodMeasured, k)
 	sets := map[string]*coefficient.Set{"attention": {Name: "attention", Coefficients: []coefficient.Entry{e}}}
 	sel := func(c result.SelectedCoefficient) []result.SelectedEntries {
-		return []result.SelectedEntries{{Coefficients: []result.SelectedCoefficient{c}}}
+		return []result.SelectedEntries{{ClosenessVersion: result.ClosenessVersion, Coefficients: []result.SelectedCoefficient{c}}}
 	}
 	base := result.SelectedCoefficient{Set: "attention", Name: e.Name, Method: e.Method, Scope: e.Scope, KernelImpls: e.KernelImpls}
-	if got := FindUnselected(sets, sel(base), nil); len(got) != 0 {
+	if got, _ := FindUnselected(sets, sel(base), nil); len(got) != 0 {
 		t.Fatalf("the entry's own selection did not account for it: %v", names(got))
 	}
 	other := k
@@ -83,7 +83,7 @@ func TestASelectionOfAnotherEntryOfTheNameDoesNotCount(t *testing.T) {
 		"another set":    {Set: "other", Name: base.Name, Method: base.Method, Scope: base.Scope, KernelImpls: base.KernelImpls},
 		"another build":  {Set: base.Set, Name: base.Name, Method: base.Method, Scope: base.Scope, KernelImpls: []coefficient.KernelImpl{other}},
 	} {
-		if got := FindUnselected(sets, sel(c), nil); len(got) != 1 {
+		if got, _ := FindUnselected(sets, sel(c), nil); len(got) != 1 {
 			t.Errorf("%s: a selection of a different entry accounted for this one", name)
 		}
 	}
@@ -97,7 +97,21 @@ func TestATableListingASiblingBuildDoesNotPublishTheEntry(t *testing.T) {
 	sibling.CodeHash = strings.Repeat("0", 64)
 	sets := map[string]*coefficient.Set{"attention": {Name: "attention", Coefficients: []coefficient.Entry{
 		keyedEntry("attention_prefill_floor", vocab.MethodMeasured, sibling)}}}
-	if got := FindUnselected(sets, nil, []*kernelimpls.Table{tableListing(row)}); len(got) != 1 {
+	if got, _ := FindUnselected(sets, nil, []*kernelimpls.Table{tableListing(row)}); len(got) != 1 {
 		t.Errorf("a sibling build accounted for the entry: %v", names(got))
+	}
+}
+
+// A report without closeness data names a keyed entry without its kernel implementations, so
+// it cannot show the entry selected; it is refused rather than letting the entry read as
+// unselected (X16).
+func TestAReportWithoutClosenessDataIsRefused(t *testing.T) {
+	k := implRow("prefill_kernel", "sm_100a").Impl()
+	e := keyedEntry("attention_prefill_floor", vocab.MethodMeasured, k)
+	sets := map[string]*coefficient.Set{"attention": {Name: "attention", Coefficients: []coefficient.Entry{e}}}
+	bare := []result.SelectedEntries{{Coefficients: []result.SelectedCoefficient{
+		{Set: "attention", Name: e.Name, Method: e.Method, Scope: e.Scope}}}}
+	if got, err := FindUnselected(sets, bare, nil); err == nil {
+		t.Fatalf("a report without closeness data was read; it listed %v", names(got))
 	}
 }

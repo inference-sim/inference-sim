@@ -40,9 +40,10 @@ type Table struct {
 	// (sm_90a, sm_100a), sorted, each once. A build for a device of another architecture is not
 	// covered, and a missing row for it says nothing.
 	Archs []string `json:"archs" yaml:"archs"`
-	// Gaps are the upstream selections, under a covered primitive, whose kernels the table does
-	// not yet list, each with the issue that adds them. A reader that finds no row for a build
-	// of such a selection learns nothing from it. Sorted by primitive and then selection.
+	// Gaps are the upstream selections, or single kernels inside a selection, under a covered
+	// primitive, that the table does not yet list, each with the issue that adds them. A reader
+	// that finds no row for a build a gap covers learns nothing from it (Resolve). Sorted by
+	// primitive, selection, library and variant.
 	Gaps []Gap `json:"gaps,omitempty" yaml:"gaps,omitempty"`
 	// Libraries are the kernel libraries the rows name, at each version the table covers: the
 	// release's pinned version, and any other version runs of the release were seen with.
@@ -60,6 +61,10 @@ type Gap struct {
 	// Selection names the upstream choice, in the upstream's own words: a backend, a kernel
 	// path or a setting's value.
 	Selection string `json:"selection" yaml:"selection"`
+	// Library and Variant, when stated, narrow the gap to one kernel the selection runs and the
+	// table does not list; both or neither. Neither means every kernel of the selection.
+	Library string `json:"library,omitempty" yaml:"library,omitempty"`
+	Variant string `json:"variant,omitempty" yaml:"variant,omitempty"`
 	// Issue tracks the work that lists its kernels, as <owner>/<repo>#<n>.
 	Issue string `json:"issue" yaml:"issue"`
 }
@@ -83,8 +88,10 @@ type Library struct {
 	// Pinned is true for the version the engine release pins. Each library has exactly one
 	// pinned version.
 	Pinned bool `json:"pinned" yaml:"pinned"`
-	// Pin cites where the version is stated: the engine release's lock or build file, as
-	// path:line@commit8, for a pinned version; the runs it was seen in otherwise.
+	// Pin cites where the version is stated: for a pinned version, the engine release's lock or
+	// build file as path:line@commit8, where commit8 is the release's commit; for the engine's own
+	// kernels, whose version is the release's commit, any statement; for a version seen in runs,
+	// the run record that shows it.
 	Pin string `json:"pin" yaml:"pin"`
 	// Origin is the immutable identity of what was hashed: a repository URL and commit, or a
 	// distribution file and its SHA-256.
@@ -95,6 +102,10 @@ type Library struct {
 type Implementation struct {
 	// Primitive is the lowered primitive the kernel executes, one of Table.Primitives.
 	Primitive string `json:"primitive" yaml:"primitive"`
+	// Selection names the upstream choice that runs the kernel, in the upstream's own words, as
+	// a gap's Selection does: a backend, a kernel path or a setting's value. A lowering knows the
+	// choice it made, and Resolve reads it.
+	Selection string `json:"selection" yaml:"selection"`
 	// Library and LibraryVersion name a row of Table.Libraries.
 	Library        string `json:"library" yaml:"library"`
 	LibraryVersion string `json:"library_version" yaml:"library_version"`
@@ -112,10 +123,12 @@ type Implementation struct {
 	HashInputs []string `json:"hash_inputs" yaml:"hash_inputs"`
 	// CodeHash is CodeHash(HashBasis, Library, Variant, TargetArch, HashInputs).
 	CodeHash string `json:"code_hash" yaml:"code_hash"`
-	// Toolkit is the CUDA toolkit version of the release's build.
+	// Toolkit is the compiler or CUDA toolkit version that builds the kernel, as
+	// plan.KernelImpl.Toolkit is: nvcc's for CUDA source, the Triton or CuTe DSL compiler's for a
+	// kernel those compile.
 	Toolkit string `json:"toolkit" yaml:"toolkit"`
-	// SelectedBy cites the upstream code that can select the kernel, as path:line@commit8,
-	// sorted, each once.
+	// SelectedBy cites the upstream code that can select the kernel, as path:line@commit8 with
+	// the release's commit, sorted, each once.
 	SelectedBy []string `json:"selected_by" yaml:"selected_by"`
 }
 
@@ -145,7 +158,8 @@ const hashVersion = "blis kernel hash v1"
 //	arch <target arch>
 //	input <input>        (one line per input, in byte order)
 //
-// each ending in a newline. The library's version is not hashed: a version bump that leaves a
+// each ending in a newline. No value may hold a line break, which would make two rows hash the
+// same text; the validator refuses one. The library's version is not hashed: a version bump that leaves a
 // kernel's inputs unchanged leaves its hash unchanged, so a coefficient keyed by it stays valid
 // with no registry change (design §6.2). Inputs are sorted here, so their order does not
 // matter to the caller.
