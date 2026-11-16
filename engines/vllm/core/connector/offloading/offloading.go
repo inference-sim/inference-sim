@@ -38,6 +38,8 @@ import (
 const (
 	Issue      = "https://github.com/inference-sim/blis-vllm/issues/4"
 	GroupIssue = "https://github.com/inference-sim/blis-vllm/issues/7"
+	// BlockSizeIssue tracks a KV cache group whose block is not a multiple of the hash block.
+	BlockSizeIssue = "https://github.com/inference-sim/blis-vllm/issues/146"
 )
 
 // Group is one KV cache group as the connector sees it (GroupOffloadConfig,
@@ -194,7 +196,10 @@ func New(cfg Config) (*Scheduler, error) {
 			return nil, fmt.Errorf("offloading: KV cache groups of several block sizes are not modelled (%s)", GroupIssue)
 		}
 		if g.BlockSize%cfg.TokensPerHash != 0 {
-			return nil, fmt.Errorf("offloading: block size %d is not a multiple of the hash block size %d", g.BlockSize, cfg.TokensPerHash)
+			// Whether vLLM accepts a group whose block is smaller than the hash block, and how it sizes
+			// its offload block then, is https://github.com/inference-sim/blis-vllm/issues/146.
+			return nil, fmt.Errorf("offloading: block size %d is not a multiple of the hash block size %d (%s)", g.BlockSize,
+				cfg.TokensPerHash, BlockSizeIssue)
 		}
 		gc := groupCfg{Group: g, tokensPerChunk: g.BlockSize * cfg.BlocksPerChunk}
 		gc.eagle = len(s.groups) < len(cfg.EagleGroups) && cfg.EagleGroups[len(s.groups)]
@@ -786,7 +791,7 @@ func (s *Scheduler) buildStores(step sched.StepOutput) []Job {
 			s.advanceStored(st, tokens)
 			continue
 		}
-		stored, chunkIDs, ok := s.manager.prepareStore(newKeys, st.access)
+		stored, chunkIDs, _, ok := s.manager.prepareStore(newKeys, st.access)
 		if !ok {
 			// "cannot store chunks" (:1735-1740): nothing advances; the chunks are offered again.
 			continue
@@ -921,7 +926,7 @@ func (s *Scheduler) Completed(done []Completion) {
 		}
 		st := s.reqs[js.req]
 		if js.store {
-			s.manager.completeStore(js.keys)
+			s.manager.completeStore(js.keys, true)
 		} else {
 			s.manager.completeLoad(js.keys)
 			for _, k := range js.keys {
