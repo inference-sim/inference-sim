@@ -85,7 +85,7 @@ All internal timestamps in the DES (arrival time, schedule time, completion time
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout v0.14.0
+git -C blis-substrate checkout v0.14.1
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
