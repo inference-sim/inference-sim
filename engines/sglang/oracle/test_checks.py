@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -32,6 +33,15 @@ def harness_config():
 def digest(mocks):
     canonical = json.dumps(mocks, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(canonical.encode()).hexdigest()[:12]
+
+
+# A provenance block of the trace format (oracle/traces.py), for scratch traces.
+PROVENANCE = {
+    "tier": 2, "sglang_commit": "297e54fd105e974cdf401e5b4d20253a22c16f90", "requirements_lock_sha256": "1" * 64,
+    "lockfile_sha256": "2" * 64, "scenario_sha256": "3" * 64, "seed": 0, "mock_version": "gpu-mock/1+x",
+    "model": "m", "model_revision": "r", "python": "3.12.0", "platform": "linux-x86_64",
+    "blis_sglang_commit": "4" * 40, "oracle_inputs": {"oracle/scenarios/a.json": "3" * 64},
+}
 
 
 class CheckModules(unittest.TestCase):
@@ -236,8 +246,7 @@ class CopiesOfTheLoopAreRefused(unittest.TestCase):
 class CompareGoldens(unittest.TestCase):
     """oracle/compare_goldens.py over scratch scenario, golden and fresh directories."""
 
-    TRACE = {"provenance": {"sglang_commit": "c" * 40, "mock_version": "gpu-mock/1+x", "model": "m",
-                            "model_revision": "r", "requirements_lock_sha256": "l", "scenario_sha256": "s"},
+    TRACE = {"provenance": {**PROVENANCE, "sglang_commit": "c" * 40},
              "steps": [{"forwards": [{"extend_prefix_lens": [6]}]}]}
 
     def dirs(self, scenarios=("a",), goldens=("a",), fresh=None):
@@ -287,6 +296,252 @@ class CompareGoldens(unittest.TestCase):
         r = self.compare(self.dirs(fresh=fresh))
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn("mock_version", r.stdout)
+
+    def test_a_provenance_key_one_side_lacks_fails(self):
+        for key in ("seed", "mock_version", "tier"):
+            with self.subTest(key):
+                fresh = json.loads(json.dumps(self.TRACE))
+                del fresh["provenance"][key]
+                r = self.compare(self.dirs(fresh=fresh))
+                self.assertEqual(r.returncode, 1, r.stdout)
+                self.assertIn(f"this run's trace: provenance.{key}: missing", r.stdout)
+
+    def test_another_seed_fails(self):
+        fresh = json.loads(json.dumps(self.TRACE))
+        fresh["provenance"]["seed"] = 7
+        r = self.compare(self.dirs(fresh=fresh))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("seed", r.stdout)
+
+
+class Traces(unittest.TestCase):
+    """oracle/traces.py: the trace format, and the update flag on every write into a golden."""
+
+    def setUp(self):
+        self.t = import_oracle("traces")
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.root)
+        os.makedirs(os.path.join(self.root, "oracle"))
+        with open(os.path.join(self.root, "oracle", "harness.json"), "w") as f:
+            json.dump({"golden_dirs": ["core/cache/goldens/"], "golden_files": ["oracle/cases.json"]}, f)
+        self.env = mock.patch.dict(os.environ, {}, clear=False)
+        self.env.start()
+        self.addCleanup(self.env.stop)
+        os.environ.pop(self.t.UPDATE_FLAG, None)
+
+    def test_a_complete_provenance_is_of_the_format(self):
+        self.assertEqual(self.t.trace_problems({"provenance": dict(PROVENANCE), "steps": []}), [])
+
+    def test_each_missing_malformed_or_unknown_key_fails(self):
+        cases = [(k, None, f"provenance.{k}: missing") for k in PROVENANCE]
+        cases += [("sglang_commit", "297e54fd", "not a full SGLang commit id"),
+                  ("requirements_lock_sha256", "l", "oracle/requirements.lock"),
+                  ("scenario_sha256", "s", "the scenario file"),
+                  ("seed", "0", "the scenario's seed"), ("seed", True, "the scenario's seed"),
+                  ("mock_version", "", "mocks.json's version"),
+                  ("blis_sglang_commit", "unknown", "full commit id"),
+                  ("oracle_inputs", {}, "each oracle/ file"),
+                  ("oracle_inputs", {"/etc/x": "3" * 64}, "each oracle/ file"),
+                  ("extra", 1, "provenance.extra: not a key of the trace format")]
+        for key, value, text in cases:
+            with self.subTest(key=key, value=value):
+                prov = dict(PROVENANCE)
+                if value is None:
+                    del prov[key]
+                else:
+                    prov[key] = value
+                got = self.t.trace_problems({"provenance": prov, "steps": []})
+                self.assertTrue(any(text in p for p in got), got)
+        self.assertIn("the trace has no provenance block", self.t.trace_problems({"steps": []}))
+        self.assertIn("the trace records nothing beside its provenance",
+                      self.t.trace_problems({"provenance": dict(PROVENANCE)}))
+
+    def test_a_write_into_any_golden_needs_the_update_flag(self):
+        trace = {"provenance": dict(PROVENANCE), "steps": []}
+        for rel in ("core/cache/goldens/a.json", "core/cache/goldens/sub/a.json", "oracle/cases.json",
+                    "core/sched/testdata/golden-t3/a.json"):
+            with self.subTest(rel):
+                path = os.path.join(self.root, rel)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with self.assertRaises(SystemExit) as e:
+                    self.t.write(path, trace, self.root)
+                self.assertIn("refusing to write a golden trace", str(e.exception))
+                self.assertFalse(os.path.exists(path))
+                os.environ[self.t.UPDATE_FLAG] = "1"
+                self.t.write(path, trace, self.root)
+                del os.environ[self.t.UPDATE_FLAG]
+                with open(path) as f:
+                    self.assertEqual(json.load(f), trace)
+
+    def test_a_write_elsewhere_needs_no_flag_and_a_malformed_trace_is_never_written(self):
+        path = os.path.join(self.root, "out.trace.json")
+        self.t.write(path, {"provenance": dict(PROVENANCE), "steps": []}, self.root)
+        self.assertTrue(os.path.exists(path))
+        bad = os.path.join(self.root, "bad.trace.json")
+        with self.assertRaises(SystemExit) as e:
+            self.t.write(bad, {"provenance": {**PROVENANCE, "seed": None}, "steps": []}, self.root)
+        self.assertIn("provenance.seed", str(e.exception))
+        self.assertFalse(os.path.exists(bad))
+
+
+class CheckProvenance(unittest.TestCase):
+    """oracle/check_provenance.py, the trace provenance check (FID-2), on this tree and on scratch trees."""
+
+    SCENARIO = {"model": "m", "seed": 5, "requests": []}
+
+    def check(self, root):
+        return run([sys.executable, "-I", os.path.join(HERE, "check_provenance.py"), root], ROOT)
+
+    def test_the_committed_goldens_pass(self):
+        r = self.check(ROOT)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def tree(self):
+        """A scratch tree whose one golden records exactly the tree's environment."""
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root)
+        os.makedirs(os.path.join(root, "oracle", "scenarios"))
+        os.makedirs(os.path.join(root, "oracle", "testdata", "golden"))
+        shutil.copy(os.path.join(ROOT, "provenance.go"), root)
+        with open(os.path.join(root, "oracle", "harness.json"), "w") as f:
+            json.dump({"golden_dirs": ["oracle/testdata/golden/"], "golden_files": []}, f)
+        self.put(root, "oracle/mocks.json", {"version": "gpu-mock/9+abc"})
+        with open(os.path.join(root, "oracle", "requirements.lock"), "w") as f:
+            f.write("torch==2.14.1\n")
+        self.put(root, "oracle/scenarios/a.json", self.SCENARIO)
+        prov = {**PROVENANCE, "sglang_commit": "297e54fd105e974cdf401e5b4d20253a22c16f90",
+                "requirements_lock_sha256": self.sha(root, "oracle/requirements.lock"),
+                "scenario_sha256": self.sha(root, "oracle/scenarios/a.json"), "seed": 5,
+                "mock_version": "gpu-mock/9+abc",
+                "oracle_inputs": {"oracle/scenarios/a.json": self.sha(root, "oracle/scenarios/a.json"),
+                                  "oracle/mocks.json": self.sha(root, "oracle/mocks.json")}}
+        self.put(root, "oracle/testdata/golden/a.trace.json", {"provenance": prov, "steps": [1]})
+        return root
+
+    @staticmethod
+    def put(root, rel, doc):
+        with open(os.path.join(root, rel), "w") as f:
+            json.dump(doc, f)
+
+    @staticmethod
+    def sha(root, rel):
+        with open(os.path.join(root, rel), "rb") as f:
+            return hashlib.sha256(f.read()).hexdigest()
+
+    def edit_golden(self, root, **prov):
+        path = os.path.join(root, "oracle/testdata/golden/a.trace.json")
+        with open(path) as f:
+            g = json.load(f)
+        g["provenance"].update(prov)
+        with open(path, "w") as f:
+            json.dump(g, f)
+
+    def test_a_golden_of_this_tree_passes(self):
+        r = self.check(self.tree())
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_each_stale_record_fails(self):
+        def other_pin(root):
+            self.edit_golden(root, sglang_commit="c" * 40)
+
+        def new_lock(root):
+            with open(os.path.join(root, "oracle", "requirements.lock"), "a") as f:
+                f.write("numpy==2.3.0\n")
+
+        def new_mocks(root):
+            self.put(root, "oracle/mocks.json", {"version": "gpu-mock/10+def"})
+
+        def edited_scenario(root):
+            self.put(root, "oracle/scenarios/a.json", {**self.SCENARIO, "requests": [{"rid": "r0"}]})
+
+        def removed_scenario(root):
+            os.remove(os.path.join(root, "oracle/scenarios/a.json"))
+
+        def other_seed(root):
+            self.edit_golden(root, seed=6)
+
+        def scenario_not_an_input(root):
+            self.edit_golden(root, oracle_inputs={"oracle/mocks.json": self.sha(root, "oracle/mocks.json")})
+
+        def malformed(root):
+            self.edit_golden(root, requirements_lock_sha256="l")
+
+        def no_golden(root):
+            os.remove(os.path.join(root, "oracle/testdata/golden/a.trace.json"))
+
+        for edit, text in [(other_pin, "records sglang_commit"), (new_lock, "records requirements_lock_sha256"),
+                           (new_mocks, "records mock_version"), (edited_scenario, "has changed since it was recorded"),
+                           (removed_scenario, "the file is gone"), (other_seed, "has seed 5"),
+                           (scenario_not_an_input, "not a file of this tree"),
+                           (malformed, "provenance.requirements_lock_sha256"), (no_golden, "no golden trace")]:
+            with self.subTest(edit.__name__):
+                root = self.tree()
+                edit(root)
+                r = self.check(root)
+                self.assertEqual(r.returncode, 1, r.stdout)
+                self.assertIn(text, r.stdout)
+
+
+class RefreshProvenance(unittest.TestCase):
+    """oracle/refresh_provenance.py copies provenance only, and only with the update flag."""
+
+    GOLDEN = {"provenance": dict(PROVENANCE), "steps": [{"forwards": [{"extend_prefix_lens": [6]}]}]}
+
+    def dirs(self, fresh):
+        top = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, top)
+        g, f = os.path.join(top, "golden"), os.path.join(top, "fresh")
+        os.makedirs(g)
+        os.makedirs(f)
+        with open(os.path.join(g, "a.trace.json"), "w") as h:
+            json.dump(self.GOLDEN, h)
+        with open(os.path.join(f, "a.trace.json"), "w") as h:
+            json.dump(fresh, h)
+        return g, f
+
+    def refresh(self, g, f, flag=True):
+        env = {k: v for k, v in os.environ.items() if k != "BLIS_SGLANG_ALLOW_GOLDEN_UPDATE"}
+        if flag:
+            env["BLIS_SGLANG_ALLOW_GOLDEN_UPDATE"] = "1"
+        return subprocess.run([sys.executable, "-I", os.path.join(HERE, "refresh_provenance.py"), g, f],
+                              cwd=HERE, env=env, capture_output=True, text=True)
+
+    def golden(self, g):
+        with open(os.path.join(g, "a.trace.json")) as h:
+            return json.load(h)
+
+    def fresh(self, **prov):
+        fresh = json.loads(json.dumps(self.GOLDEN))
+        fresh["provenance"].update(prov)
+        return fresh
+
+    def test_a_new_environment_is_copied_into_the_golden(self):
+        g, f = self.dirs(self.fresh(mock_version="gpu-mock/2+y", requirements_lock_sha256="9" * 64))
+        r = self.refresh(g, f)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.golden(g)["provenance"]["mock_version"], "gpu-mock/2+y")
+        self.assertEqual(self.golden(g)["steps"], self.GOLDEN["steps"])
+
+    def test_it_refuses_without_the_flag(self):
+        g, f = self.dirs(self.fresh(mock_version="gpu-mock/2+y"))
+        r = self.refresh(g, f, flag=False)
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("refusing to write a golden trace", r.stderr)
+        self.assertEqual(self.golden(g), self.GOLDEN)
+
+    def test_it_refuses_changed_decisions_another_scenario_and_a_malformed_trace(self):
+        changed = self.fresh(mock_version="gpu-mock/2+y")
+        changed["steps"][0]["forwards"][0]["extend_prefix_lens"] = [0]
+        for name, fresh, text in [("decisions", changed, "decisions differ (steps)"),
+                                  ("scenario", self.fresh(scenario_sha256="8" * 64), "ran another scenario"),
+                                  ("seed", self.fresh(seed=3), "ran another scenario"),
+                                  ("format", self.fresh(seed="0"), "the fresh trace: provenance.seed")]:
+            with self.subTest(name):
+                g, f = self.dirs(fresh)
+                r = self.refresh(g, f)
+                self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+                self.assertIn(text, r.stdout)
+                self.assertEqual(self.golden(g), self.GOLDEN)
 
 
 class Runner(unittest.TestCase):

@@ -87,8 +87,51 @@ A trace records, for each loop iteration:
 and, once, the pool size SGLang reported at start-up, the tree-cache, tree-core and allocator
 classes, the receive settings and the `SGLANG_*` variables the scheduler ran with.
 
-The committed goldens are under `testdata/golden/`. CI runs every scenario and checks
-that each golden equals the fresh trace outside its provenance (`compare_goldens.py`). A runner
-refuses to write into `testdata/golden*` unless `BLIS_SGLANG_ALLOW_GOLDEN_UPDATE=1`. A commit that
-changes a golden's decisions carries a `golden-reviewed: <trace>: <reason>` trailer
-(`check_goldens.py`).
+## Traces and goldens
+
+Every runner writes its trace through `traces.py`, which defines the format. A trace is one JSON
+object. Its `provenance` block says where the trace came from (FID-2). Every other key is what
+SGLang decided, and that is what the Go port is compared on. The block holds these keys and no
+others:
+
+| Key | Value |
+|---|---|
+| `tier` | the oracle tier |
+| `sglang_commit` | the checkout's commit, the one `provenance.go` pins |
+| `requirements_lock_sha256` | sha256 of `oracle/requirements.lock` |
+| `lockfile_sha256` | sha256 of the environment's `pip freeze` |
+| `scenario_sha256`, `seed` | the scenario file's sha256, and its seed |
+| `mock_version` | `oracle/mocks.json`'s version |
+| `model`, `model_revision` | the scenario's model and the revision of its configuration files |
+| `python`, `platform` | the interpreter and `<system>-<machine>` |
+| `blis_sglang_commit` | this repository's commit, marked `+dirty` if a file the run read differs from it |
+| `oracle_inputs` | each `oracle/` file the run read, the scenario included, with its sha256 |
+
+A run that cannot fill a key fails, and writes nothing.
+
+The committed goldens are under `testdata/golden/`. These rules hold them:
+
+- **compare_goldens.py**, in the `oracle` job, runs every scenario. Each golden must equal the fresh
+  trace outside its provenance and record the same tier, manifest version, model, lock, scenario
+  and seed. A key that one side lacks fails.
+- **check_provenance.py**, in `oracle-checks`, is the trace provenance check. It reads files only.
+  Every golden must record the commit `provenance.go` pins, the sha256 of the committed lock, the
+  current manifest version, and a scenario of this tree, unchanged, with that scenario's seed.
+- **check_goldens.py**, in `goldens-reviewed`, fails a commit that changes a golden's decisions
+  unless the commit carries a `golden-reviewed: <trace>: <reason>` trailer (FID-3).
+- **The runners refuse** to write into a golden directory or golden file of `harness.json`, or under
+  any `testdata/golden*`, unless `BLIS_SGLANG_ALLOW_GOLDEN_UPDATE=1`.
+- **refresh_provenance.py** needs that flag too.
+
+When the environment changes (a new manifest version, a new lock), `check_provenance.py` fails until
+the goldens record it. Push the change, download the `oracle-traces` artifact of its `oracle` job,
+then run:
+
+```sh
+BLIS_SGLANG_ALLOW_GOLDEN_UPDATE=1 python3 -I oracle/refresh_provenance.py oracle/testdata/golden <artifact dir>
+```
+
+That copies each fresh trace's provenance into its golden, and only that. It refuses a golden whose
+decisions differ from the fresh trace, or that ran another scenario or seed. Commit the result. A
+change that alters decisions instead re-records the golden with the runner, and the commit carries
+the trailer.
