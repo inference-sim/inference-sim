@@ -8217,24 +8217,41 @@ def test_minimax_m31_flash_states_the_same_embedding(tmp_path):
 
 # --- DFlash2 drafter (RadixArk/Muse-Spark-Open-DFlash2) ---------------------------------
 
-# The keys of RadixArk/Muse-Spark-Open-DFlash2's config.json at 46c90f412549 that the handler
-# reads. The file is not committed (the repository states no licence); its safetensors header
-# lists q_proj 8192 x 8192, k_proj and v_proj 1024 x 8192, gate_proj and up_proj 28672 x 8192,
-# down_proj 8192 x 28672 and two kernel_projection 2048 x 8192 a layer, fc 8192 x 40960,
-# hidden_projection 256 x 8192 and two codebooks 202048 x 256, and no embed_tokens or lm_head.
-DFLASH2_CFG = {
-    "architectures": ["DFlash2DraftModel"], "model_type": "qwen3", "dtype": "bfloat16",
-    "hidden_size": 8192, "intermediate_size": 28672, "num_hidden_layers": 5,
-    "num_attention_heads": 64, "num_key_value_heads": 8, "head_dim": 128,
-    "vocab_size": 202048, "draft_vocab_size": 202048, "attention_bias": False,
-    "is_causal": False, "sliding_window": 2048, "num_target_layers": 62,
-    "layer_types": ["sliding_attention"] * 5, "tie_word_embeddings": False,
-    "dflash_config": {"attention_mode": "gqa", "block_size": 8, "conv_group_size": 16,
-                      "conv_kernel_size": 2, "final_logit_softcapping": 20,
-                      "mask_token_id": 200002, "output_multiplier": 0.1767766952966369,
-                      "selector_rank": 256, "selector_top_k": 16,
-                      "target_layer_ids": [1, 16, 30, 44, 59]},
-}
+# A DFlash2 configuration rebuilt from what the committed muse-spark-open-dflash2 graph states,
+# not copied from the checkpoint's config.json, whose repository states no licence (X12). Every
+# shape below is a value the derived graph carries: its global hidden and vocabulary sizes, the
+# attention node's heads, head width and window, the MLP and selector widths, and the capture
+# layers (the graph's aux_hidden_state_layers, less one, as the configuration states them). Three
+# splits the graph states only as a product are the test's own choice of factors: the attention
+# window as sliding window plus block (2048 + 8), the convolution projection as
+# 2 x taps x hidden / group (2 x 2 x 8192 / 16), and the mask token, any id in the vocabulary.
+def _dflash2_cfg() -> dict:
+    g = graph_of(MODELS / "muse-spark-open-dflash2")
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    layer = kinds["dflash_layer"]["nodes"]
+    attn = [n for n in layer if n["op"] == "Attention"][0]
+    roles = {n.get("role"): n for n in layer}
+    head = {n.get("role"): n for n in g["speculator"]["head"]}
+    hidden, vocab, layers = g["global"]["hidden_size"], g["global"]["vocab_size"], g["speculator"]["stack"]["repeat"]
+    block, taps = 8, 2
+    group = 2 * taps * hidden // roles["attention_conv_kernel_projection"]["n"]
+    return {
+        "architectures": ["DFlash2DraftModel"], "model_type": "qwen3", "dtype": "bfloat16",
+        "hidden_size": hidden, "intermediate_size": roles["mlp_down"]["k"], "num_hidden_layers": layers,
+        "num_attention_heads": attn["n_q"], "num_key_value_heads": attn["n_kv"], "head_dim": attn["d_h"],
+        "vocab_size": vocab, "attention_bias": False, "is_causal": False,
+        "sliding_window": attn["window"] - block,
+        "num_target_layers": len(layer_sequence(graph_of(MUSE_NVFP4)["stack"])),
+        "layer_types": ["sliding_attention"] * layers,
+        "dflash_config": {"attention_mode": "gqa", "block_size": block, "conv_group_size": group,
+                          "conv_kernel_size": taps, "mask_token_id": 0,
+                          "selector_rank": head["selector_codebooks"]["row_bytes"] // 2,
+                          "selector_top_k": head["selector_codebooks"]["rows_per_token"] // 2,
+                          "target_layer_ids": [i - 1 for i in g["speculator"]["aux_hidden_state_layers"]]},
+    }
+
+
+DFLASH2_CFG = _dflash2_cfg()
 
 
 def _dflash2_nodes(g: dict) -> list[dict]:

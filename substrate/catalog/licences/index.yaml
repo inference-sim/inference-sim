@@ -203,12 +203,14 @@ models:
       - file: LicenseRef-muse-model-license.txt
         source: https://huggingface.co/unsloth/Muse-Spark-Open-816B-A42B/raw/49cade7b0c6ed297f0434229ac67eea5f9ae1220/LICENSE.md
         sha256: 458a5c57d8e622e395eb0e59799ba5bba1ea7524ffd120ee6e3018688d7d6ace
+    note: "The licence text is read from the public unsloth mirror, because the gated source repository serves no file without access. The mirror and the source list the same git blob ids at the two revisions: LICENSE.md 425b4e8b, config.json e6df3a84."
   - model: muse-spark-open-816b-a42b-nvfp4
     licence: LicenseRef-muse-model-license
     texts:
       - file: LicenseRef-muse-model-license.txt
         source: https://huggingface.co/unsloth/Muse-Spark-Open-816B-A42B-NVFP4/raw/fc6908f53c6882d4ec48fca5ba144e41d21e1f92/LICENSE.md
         sha256: 458a5c57d8e622e395eb0e59799ba5bba1ea7524ffd120ee6e3018688d7d6ace
+    note: "The licence text is read from the public unsloth mirror, because the gated source repository serves no file without access. The mirror and the source list the same git blob ids at the two revisions: LICENSE.md 425b4e8b, config.json d2cd088c, hf_quant_config.json ce1d779c."
   - model: muse-spark-open-dspark
     licence: LicenseRef-muse-spark-open
     texts:

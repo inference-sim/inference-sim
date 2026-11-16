@@ -5882,10 +5882,12 @@ EAGLE3_TARGETS = {
 
 
 # The dflash_config keys a DFlash2 drafter's configuration may state, each read by the engine's
-# DFlash2 model (vLLM v0.33.0 model_executor/models/qwen3_dflash2.py and the qwen3_dflash.py it
-# extends) and by this handler, or read by the engine and not changing what is priced
-# (final_logit_softcapping and output_multiplier scale the candidate logits;
-# input_embedding_scale scales the embedding output). Any other key changes the draft: causal,
+# DFlash2 model (vLLM v0.33.0 model_executor/models/qwen3_dflash2.py@4ba787ec and the
+# qwen3_dflash.py it extends) and by this handler, or read by the engine and not changing what is
+# priced (final_logit_softcapping and output_multiplier scale the candidate logits;
+# input_embedding_scale scales the embedding output). attention_mode is the exception: vLLM
+# v0.33.0 does not read it and builds GQA attention whatever it says; the handler reads it only to
+# refuse an MLA drafter, whose weights that GQA attention could not load. Any other key changes the draft: causal,
 # use_swa, swa_window_size, attention_sink_bias and attention_value_scale change the attention
 # (_resolve_layer_attention and DFlashQwen3DecoderLayer, qwen3_dflash.py:96-156, 316-345), and
 # a key the engine does not know may be one a later release reads. Each is refused.
@@ -5923,7 +5925,10 @@ def handler_dflash2(cfg, raw, model):
     the block (parallel drafting, config/speculative.py:1581-1582). Every layer is
     sliding-window attention over sliding_window tokens; a configuration whose is_causal is
     false makes it non-causal (_dflash_layer_causal, qwen3_dflash.py:62-73), so each query
-    reads its window plus the block.
+    reads its window plus the whole query block: the bonus token and the deployment's
+    num_speculative_tokens mask tokens (DFlash2's convolution block, qwen3_dflash2.py:250-256).
+    The graph states that span at the checkpoint's dflash_config.block_size, the block it was
+    trained on; a deployment drafting another count reads a span that differs by the difference.
 
     Before the pass, the context stack runs over the target's scheduled tokens: the fc
     projection of one captured state per target_layer_ids entry (a replicated linear,
@@ -5963,8 +5968,9 @@ def handler_dflash2(cfg, raw, model):
     if mode != "gqa":
         raise DeriveError(f"{model}: dflash_config.attention_mode is {mode!r}, an MLA DFlash "
                           f"drafter, which neither pinned engine supports: vLLM v0.33.0's DFlash "
-                          f"attention is GQA only (qwen3_dflash.py:159-296), and SGLang v0.5.23's "
-                          f"is too; SGLang serves MLA drafts only after that release "
+                          f"attention is GQA only (qwen3_dflash.py:159-296@4ba787ec), and SGLang "
+                          f"v0.5.23's is too (srt/models/dflash.py DFlashAttention@297e54fd); SGLang "
+                          f"serves MLA drafts only after that release "
                           f"(inference-sim/blis-sglang#21, inference-sim/blis-substrate#179)")
     unread = sorted(set(draft) - DFLASH2_KEYS)
     if unread:
