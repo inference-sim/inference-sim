@@ -158,7 +158,7 @@
 - [x] T048 [US5] Filter `buildRouterState()` by `req.Model` — set `RoutingSnapshot.Model` from `inst.Model`; include snapshot only when `snapshot.Model == req.Model` (or both empty for backward-compat) in `sim/cluster/cluster_event.go`
 - [x] T049 [US5] Create `ModelMetrics` struct (TTFT Distribution, E2E Distribution, ThroughputRPS, ThroughputTokensPerSec, TotalRequests) in `sim/cluster/metrics.go`
 - [x] T050 [US5] Implement per-model request partitioning in `CollectRawMetrics()` — group completed requests by `req.Model`, compute `ModelMetrics` per group, collect into `map[string]*ModelMetrics` in `sim/cluster/metrics.go`
-- [x] T051 [US5] Add `PerModelMetrics map[string]*ModelMetrics` to `EvaluationResult` in `sim/cluster/evaluation.go`; update JSON serialization to include `"per_model"` key in output
+- [x] T051 [US5] Add `PerModelMetrics map[string]*ModelMetrics` to `EvaluationResult` in sim/cluster (since deleted as code no binary reaches, LIF-7); update JSON serialization to include `"per_model"` key in output
 
 **Checkpoint**: Run `go test ./sim/cluster/... -run TestMultiModel` — all US5 tests pass. Full test suite: `go test ./...` green.
 
