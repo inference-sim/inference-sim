@@ -97,6 +97,10 @@ WRITERS = [
     # (validator/testdata/anchors/v41_h200_tp8_capture_startups.json); emit_memory.py keeps
     # these entries and does not write them.
     ("fit_deepseek_v41_capture.py", "the DeepSeek-V4.1 CUDA-graph capture form"),
+    # The GLM-5.3 family's sparse-MLA prefill form on h200, fitted on aisim's GLM-5.3 attention
+    # module ($AISIM_GLM53_DATA, a second pin, rederive.yml) net of the generated rest-of-module
+    # file, whose own staleness check is kernel/glm53_attention_rest_test.go.
+    ("fit_glm53_attention.py", "the GLM-5.3 family's h200 sparse-MLA prefill entries"),
 ]
 
 # relane_attention_mla.py is DELIBERATELY ABSENT from both lists, and this records why so

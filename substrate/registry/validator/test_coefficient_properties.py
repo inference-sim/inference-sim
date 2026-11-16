@@ -121,8 +121,12 @@ HBM_RATE_FAMILY = re.compile(r"(attention_|mhc_)\w*rate")
 # The work rates committed with rate_basis: work. A work rate may exceed the memory peak, so
 # marking an entry "work" would otherwise be a way around SUB-5. The count may only go down:
 # lower it when an entry is refitted as a memory rate, never raise it to admit a new one.
-# (Four entries: the sparse-MLA and block-index prefill rates on h100 and on h200.)
-MAX_WORK_RATES = 4
+# (Five entries: the sparse-MLA and block-index prefill rates on h100 and on h200, and one
+# reviewed exception, raised from four with the coordinator's approval: the GLM-5.3 family's
+# sparse-MLA prefill rate on h200, scripts/fit_glm53_attention.py. Its W counts each query's
+# read of its own top-k records, and the queries of one prefill read overlapping keys that the
+# kernel serves from shared memory and L2, so W is not HBM traffic.)
+MAX_WORK_RATES = 5
 
 
 def memory_rate_problems(entries, facts_of):
