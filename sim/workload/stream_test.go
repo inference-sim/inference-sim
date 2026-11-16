@@ -678,4 +678,3 @@ func TestGenerateWorkloadLazy_InferencePerf_TimeoutAppliedAfterPreExpand(t *test
 			r.Deadline, wantDeadline, r.ArrivalTime, wantTimeoutUs)
 	}
 }
-
