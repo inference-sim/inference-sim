@@ -210,7 +210,8 @@
    "site": "vllm/v1/kv_offload/tiering/factory.py:146",
    "class": "vllm.v1.kv_offload.tiering.example.manager.ExampleSecondaryTierManager",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63",
+   "why": "refused by type, as every secondary tier is; an in-memory reference tier"
   },
   {
    "id": "secondary_tier:fs",
@@ -246,7 +247,8 @@
    "site": "vllm/v1/kv_offload/tiering/factory.py:170",
    "class": "vllm.v1.kv_offload.tiering.kvcr.manager.KVCRSecondaryTierManager",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63",
+   "why": "refused by type, as every secondary tier is; its store is the external kvcr package"
   },
   {
    "id": "cache_policy:lru",
@@ -620,7 +622,8 @@
    "name": "custom_class",
    "site": "vllm/config/speculative.py:73",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/140",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/66",
+   "refusal": "code_not_visible",
    "why": "loads the proposer from the module path speculative_config.model names"
   },
   {
@@ -1007,7 +1010,9 @@
    "name": "kv_transfer_config.kv_connector_module_path",
    "site": "vllm/distributed/kv_transfer/kv_connector/factory.py:108",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/66",
+   "refusal": "code_not_visible",
+   "why": "vLLM loads code from outside the release here; the engine refuses it at start-up by the setting that names it"
   },
   {
    "id": "path_loader:kv_connector_extra_config.spec_module_path",
@@ -1015,7 +1020,9 @@
    "name": "kv_connector_extra_config.spec_module_path",
    "site": "vllm/v1/kv_offload/factory.py:48",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/66",
+   "refusal": "code_not_visible",
+   "why": "vLLM loads code from outside the release here; the engine refuses it at start-up by the setting that names it"
   },
   {
    "id": "path_loader:kv_connector_extra_config.secondary_tiers[].module_path",
@@ -1023,7 +1030,9 @@
    "name": "kv_connector_extra_config.secondary_tiers[].module_path",
    "site": "vllm/v1/kv_offload/tiering/factory.py:140",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/66",
+   "refusal": "code_not_visible",
+   "why": "vLLM loads code from outside the release here; the engine refuses it at start-up by the setting that names it"
   },
   {
    "id": "path_loader:kv_connector_extra_config.cache_policy_module_path",
@@ -1031,7 +1040,9 @@
    "name": "kv_connector_extra_config.cache_policy_module_path",
    "site": "vllm/v1/kv_offload/cpu/policies/factory.py:79",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/66",
+   "refusal": "code_not_visible",
+   "why": "vLLM loads code from outside the release here; the engine refuses it at start-up by the setting that names it"
   },
   {
    "id": "path_loader:kv_connector_extra_config.secondary_tiers[].backpressure (dotted backpressure_cls or policy_cls)",
@@ -1039,7 +1050,9 @@
    "name": "kv_connector_extra_config.secondary_tiers[].backpressure (dotted backpressure_cls or policy_cls)",
    "site": "vllm/v1/kv_offload/tiering/factory.py:34",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/66",
+   "refusal": "code_not_visible",
+   "why": "vLLM loads code from outside the release here; the engine refuses it at start-up by the setting that names it"
   },
   {
    "id": "path_loader:kv_events_config.publisher (EventPublisherFactory.register_publisher)",
@@ -1047,7 +1060,9 @@
    "name": "kv_events_config.publisher (EventPublisherFactory.register_publisher)",
    "site": "vllm/distributed/kv_events.py:576",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/66",
+   "refusal": "code_not_visible",
+   "why": "vLLM loads code from outside the release here; the engine refuses it at start-up by the setting that names it"
   },
   {
    "id": "path_loader:kv_connector_extra_config.secondary_tiers[] kvcr policy (dotted name)",
@@ -1055,7 +1070,9 @@
    "name": "kv_connector_extra_config.secondary_tiers[] kvcr policy (dotted name)",
    "site": "vllm/v1/kv_offload/tiering/kvcr/manager.py:111",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/66",
+   "refusal": "code_not_visible",
+   "why": "vLLM loads code from outside the release here; the engine refuses it at start-up by the setting that names it"
   },
   {
    "id": "path_loader:scheduler_config.scheduler_cls",
@@ -1063,7 +1080,9 @@
    "name": "scheduler_config.scheduler_cls",
    "site": "vllm/config/scheduler.py:253",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/66",
+   "refusal": "code_not_visible",
+   "why": "vLLM loads code from outside the release here; the engine refuses it at start-up by the setting that names it"
   },
   {
    "id": "path_loader:speculative_config.method custom_class (speculative_config.model as a module path)",
@@ -1071,7 +1090,9 @@
    "name": "speculative_config.method custom_class (speculative_config.model as a module path)",
    "site": "vllm/v1/spec_decode/custom_class_proposer.py:36",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/66",
+   "refusal": "code_not_visible",
+   "why": "vLLM loads code from outside the release here; the engine refuses it at start-up by the setting that names it"
   },
   {
    "id": "framework:SupportsHMA",
@@ -1188,7 +1209,7 @@
    "site": "vllm/v1/kv_offload/tiering/kvcr/manager.py:125",
    "manifest_class": "unavailable",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
   },
   {
    "id": "metric_family:vllm:<kvcr STATE_METRIC>",
@@ -1197,7 +1218,7 @@
    "site": "vllm/v1/kv_offload/tiering/kvcr/manager.py:137",
    "manifest_class": "unavailable",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
   },
   {
    "id": "metric_family:vllm:<kvcr TRANSFER_BLOCKS_METRIC>",
@@ -1206,7 +1227,7 @@
    "site": "vllm/v1/kv_offload/tiering/kvcr/manager.py:133",
    "manifest_class": "unavailable",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
   },
   {
    "id": "metric_family:vllm:<kvcr TRANSFER_BYTES_METRIC>",
@@ -1215,7 +1236,7 @@
    "site": "vllm/v1/kv_offload/tiering/kvcr/manager.py:129",
    "manifest_class": "unavailable",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/140"
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
   },
   {
    "id": "metric_family:vllm:admission_rejections",
