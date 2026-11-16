@@ -294,6 +294,48 @@ class GenKernelImplsTest(unittest.TestCase):
         self.assertEqual(pins["otherlib"][2:], ("https://example.org/other", self.other_commit))
         self.assertIsNone(pins["vllm-csrc"][2], "the engine's own kernels are read from vLLM itself")
 
+    def seen_checkout(self, version, checksum):
+        files = dict(FASTLIB)
+        files["version.txt"] = version + "\n"
+        files["fastlib/artifacts.py"] = FASTLIB["fastlib/artifacts.py"].replace("1" * 64, checksum)
+        root = os.path.join(self.tmp.name, "fastlib-" + version)
+        os.makedirs(root)
+        git_tree(root, files)
+        return root
+
+    def with_seen(self, version="1.1.0", seen_in="run r1 recorded fastlib 1.1.0"):
+        cls = copy.deepcopy(self.cls)
+        cls["libraries"]["fastlib"]["seen"] = [{"version": version, "seen_in": seen_in}]
+        return cls
+
+    def test_a_version_seen_in_runs_is_listed_unpinned_with_its_own_build(self):
+        self.sources["fastlib@1.1.0"] = self.seen_checkout("1.1.0", "2" * 64)
+        t = self.generate(self.with_seen())
+        libs = {(l["name"], l["version"]): l for l in t["libraries"]}
+        self.assertFalse(libs[("fastlib", "1.1.0")]["pinned"])
+        self.assertEqual(libs[("fastlib", "1.1.0")]["pin"], "run r1 recorded fastlib 1.1.0")
+        self.assertTrue(libs[("fastlib", "1.2.3")]["pinned"])
+        rows = {r["library_version"]: r for r in t["implementations"] if r["variant"] == "prefill_kernel"}
+        self.assertEqual(rows["1.1.0"]["hash_inputs"], ["FMHA checksums.txt sha256:" + "2" * 64])
+        self.assertNotEqual(rows["1.1.0"]["code_hash"], rows["1.2.3"]["code_hash"])
+
+    def test_an_unchanged_kernel_keeps_its_hash_in_a_seen_version(self):
+        self.sources["fastlib@1.1.0"] = self.seen_checkout("1.1.0", "1" * 64)
+        rows = {r["library_version"]: r for r in self.generate(self.with_seen())["implementations"]
+                if r["variant"] == "prefill_kernel"}
+        self.assertEqual(rows["1.1.0"]["code_hash"], rows["1.2.3"]["code_hash"])
+
+    def test_a_seen_version_without_its_run_record_is_refused(self):
+        self.sources["fastlib@1.1.0"] = self.seen_checkout("1.1.0", "2" * 64)
+        self.assertIn("seen_in", self.refused(self.with_seen(seen_in="")))
+
+    def test_a_seen_version_checked_out_at_another_version_is_refused(self):
+        self.sources["fastlib@1.1.0"] = self.seen_checkout("1.0.9", "2" * 64)
+        self.assertIn("is not fastlib 1.1.0", self.refused(self.with_seen()))
+
+    def test_the_pin_is_not_listed_again_as_seen(self):
+        self.assertIn("is the pin", self.refused(self.with_seen(version="1.2.3")))
+
     def test_check_fails_on_a_table_that_is_not_current(self):
         path = os.path.join(self.tmp.name, "cls.json")
         with open(path, "w") as f:

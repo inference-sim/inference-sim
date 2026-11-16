@@ -25,6 +25,9 @@ WHAT COMES FROM vLLM, AND WHAT FROM kernels/<tag>/attention.json.
     - the git object id of every source path a kernel's hash covers;
     - the SHA-256 the library records for a precompiled kernel package (FlashInfer's
       flashinfer/artifacts.py, CheckSumHash), for a kernel that ships only as a binary.
+  From kernels/<tag>/attention.json, which people edit, also the library versions runs of the release
+  were seen with (a library's "seen" list, each citing the run record that shows the version); each
+  is listed unpinned, with its kernels hashed from that version's own source (design 6.2).
   From kernels/<tag>/attention.json, which people edit: the status of each backend, and for each kernel
   of a listed backend its library, variant, primitives, architectures, gate and hash inputs.
 
@@ -264,6 +267,9 @@ def library_pins(vllm, cls):
         else:
             raise Refused(f"library {name}: no pip, cmake or engine pin")
         out[name] = (version, pin, None if lib.get("engine") else lib["repo"], ref)
+        for v in lib.get("seen", []):
+            out[f"{name}@{v['version']}"] = (v["version"], v.get("seen_in", ""), lib["repo"],
+                                             lib.get("tag_format", "v{version}").format(version=v["version"]))
     return out
 
 
@@ -277,7 +283,7 @@ def generate(vllm, cls, sources):
     libs = {}
     pins = library_pins(vllm, cls)
     for name, lib in sorted(cls["libraries"].items()):
-        version, pin = pins[name][0], pins[name][1]
+        version, pin = pins[name][0], pins[name][1]  # pins also holds "<name>@<version>" for versions seen in runs
         root = vllm if lib.get("engine") else sources.get(name)
         if root is None:
             raise Refused(f"library {name}: no checkout given (--source {name}=<dir>)")
@@ -291,6 +297,20 @@ def generate(vllm, cls, sources):
         libs[name] = {"version": version, "pin": pin, "root": root,
                       "origin": f"{lib['repo']} {head}" if "repo" in lib else f"vLLM {head}",
                       "modules": lib["modules"]}
+        seen = []
+        for v in lib.get("seen", []):
+            if not v.get("seen_in"):
+                raise Refused(f"library {name} {v.get('version')}: a version seen in runs cites the run record (seen_in)")
+            if v["version"] == version:
+                raise Refused(f"library {name} {version} is the pin; it is not listed again as seen in runs")
+            sroot = sources.get(f"{name}@{v['version']}")
+            if sroot is None:
+                raise Refused(f"library {name} {v['version']}: no checkout given (--source {name}@{v['version']}=<dir>)")
+            if "version_file" in lib and read(sroot, lib["version_file"]).strip() != v["version"]:
+                raise Refused(f"{sroot} is not {name} {v['version']}")
+            seen.append({"version": v["version"], "root": sroot, "pin": v["seen_in"],
+                         "origin": f"{lib['repo']} {git(sroot, 'rev-parse', 'HEAD')}"})
+        libs[name]["seen"] = seen
 
     enum = backend_enum(vllm)
     prio = cuda_priorities(vllm, commit)
@@ -351,33 +371,36 @@ def generate(vllm, cls, sources):
             for g in k.get("gates", []):
                 grel, func = g.split(":")
                 selected.add(cite(grel, def_line(vllm, grel, func), commit))
-            if "artifact" in k["hash"]:
-                if "checksums" not in cls["libraries"][k["library"]]:
-                    raise Refused(f"{b}: kernel {k['variant']} is a binary artifact, and library {k['library']} "
-                                  f"names no checksum list")
-                basis, inputs = "binary", [artifact_checksum(lib["root"], cls["libraries"][k["library"]]["checksums"],
-                                                             k["hash"]["artifact"])]
-            else:
-                basis, inputs = "source", [object_id(lib["root"], p) for p in k["hash"]["source"]]
-            for prim in k["primitives"]:
-                if prim not in PRIMITIVES:
-                    raise Refused(f"{b}: kernel {k['variant']} names primitive {prim!r}, which the table does not cover")
-                for arch in k["archs"]:
-                    if arch not in archs:
-                        raise Refused(f"{b}: kernel {k['variant']} names arch {arch}, which the table does not cover")
-                    rows.append({
-                        "primitive": prim, "library": k["library"], "library_version": lib["version"],
-                        "variant": k["variant"], "target_arch": arch, "hash_basis": basis,
-                        "hash_inputs": sorted(inputs),
-                        "code_hash": code_hash(basis, k["library"], k["variant"], arch, inputs),
-                        "toolkit": toolkit(vllm, commit), "selected_by": sorted(selected)})
+            # The pinned build, and the build of each version runs were seen with, from that
+            # version's own source.
+            for version, root in [(lib["version"], lib["root"])] + [(v["version"], v["root"]) for v in lib["seen"]]:
+                if "artifact" in k["hash"]:
+                    if "checksums" not in cls["libraries"][k["library"]]:
+                        raise Refused(f"{b}: kernel {k['variant']} is a binary artifact, and library {k['library']} "
+                                      f"names no checksum list")
+                    basis, inputs = "binary", [artifact_checksum(root, cls["libraries"][k["library"]]["checksums"],
+                                                                 k["hash"]["artifact"])]
+                else:
+                    basis, inputs = "source", [object_id(root, p) for p in k["hash"]["source"]]
+                for prim in k["primitives"]:
+                    if prim not in PRIMITIVES:
+                        raise Refused(f"{b}: kernel {k['variant']} names primitive {prim!r}, which the table does not cover")
+                    for arch in k["archs"]:
+                        if arch not in archs:
+                            raise Refused(f"{b}: kernel {k['variant']} names arch {arch}, which the table does not cover")
+                        rows.append({
+                            "primitive": prim, "library": k["library"], "library_version": version,
+                            "variant": k["variant"], "target_arch": arch, "hash_basis": basis,
+                            "hash_inputs": sorted(inputs),
+                            "code_hash": code_hash(basis, k["library"], k["variant"], arch, inputs),
+                            "toolkit": toolkit(vllm, commit), "selected_by": sorted(selected)})
     for b in sorted(set(kernels_by_backend) - set(backends)):
         raise Refused(f"the classification lists kernels for {b}, which has no status")
 
     rows.sort(key=lambda r: (r["primitive"], r["library"], r["library_version"], r["variant"], r["target_arch"]))
     for a, b in zip(rows, rows[1:]):
-        if (a["primitive"], a["library"], a["variant"], a["target_arch"]) == (
-                b["primitive"], b["library"], b["variant"], b["target_arch"]):
+        if (a["primitive"], a["library"], a["library_version"], a["variant"], a["target_arch"]) == (
+                b["primitive"], b["library"], b["library_version"], b["variant"], b["target_arch"]):
             raise Refused(f"two kernels of the classification are {b['library']} {b['variant']} for {b['primitive']} "
                           f"on {b['target_arch']}")
     gaps = sorted({(g["primitive"], g["selection"]): g for g in gaps}.values(),
@@ -388,8 +411,11 @@ def generate(vllm, cls, sources):
         "primitives": sorted(PRIMITIVES),
         "archs": sorted(archs),
         "gaps": gaps,
-        "libraries": [{"name": n, "version": libs[n]["version"], "pinned": True, "pin": libs[n]["pin"],
-                       "origin": libs[n]["origin"]} for n in sorted(used)],
+        "libraries": sorted([{"name": n, "version": libs[n]["version"], "pinned": True, "pin": libs[n]["pin"],
+                              "origin": libs[n]["origin"]} for n in used] +
+                            [{"name": n, "version": v["version"], "pinned": False, "pin": v["pin"], "origin": v["origin"]}
+                             for n in used for v in libs[n]["seen"]],
+                            key=lambda l: (l["name"], l["version"])),
         "implementations": rows,
     }
 
