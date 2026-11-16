@@ -1,0 +1,4 @@
+{
+    "description": "Differences between SGLang's Rust and Python tree cores on the cache sequences that oracle/run_treecore_diff.py finds, each with the open issue that records it (X28). None is known.",
+    "divergences": []
+}
