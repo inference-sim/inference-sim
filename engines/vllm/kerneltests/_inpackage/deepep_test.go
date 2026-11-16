@@ -77,7 +77,7 @@ func priced(variant string, floorUS, rate float64) map[string]float64 {
 }
 
 // A measured DeepEP backend prices each MoE layer's dispatch and combine as its own floor
-// plus bytes over its own rate, not as NCCL's all-to-all (blis-latency-kernel#57): raising
+// plus bytes over its own rate, not as NCCL's all-to-all (https://github.com/inference-sim/blis-latency-kernel/issues/57): raising
 // the floor by 100 us raises a decode step by 100 us per MoE layer.
 func TestDeepEPDispatchIsPricedFromItsOwnMeasurement(t *testing.T) {
 	b := decodeBatch(32, 1, 20000)

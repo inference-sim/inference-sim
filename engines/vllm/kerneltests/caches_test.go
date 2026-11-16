@@ -352,7 +352,7 @@ const v41PoolBlock = 116928
 // The stated caches are sized in whole blocks of the engine's shared pool, group by group: a
 // sequence grows one block per 64 tokens of context, and holds in steady decode six pages in
 // each of the eight window groups and one in the compressor-ring group, 49 blocks
-// (inference-sim/blis-latency-kernel#46). At admission each window group holds its cap,
+// (https://github.com/inference-sim/blis-latency-kernel/issues/46). At admission each window group holds its cap,
 // cdiv(127 + 2 x 8,192, 32) + 1 = 517 pages, the two batches asynchronous scheduling keeps in
 // flight (vllm/config/vllm.py:592-613; vllm/v1/kv_cache_interface.py:840-866).
 func TestStatedCachesAreSizedInWholePoolBlocks(t *testing.T) {

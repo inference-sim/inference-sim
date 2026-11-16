@@ -229,7 +229,7 @@ func TestAdopt_033LeavesItsSettingsToTheV033Engine(t *testing.T) {
 
 // A 0.29/0.31 scenario that states an engine setting the compatibility engine does not model is
 // refused, naming the setting and the pool, rather than run with the setting silently dropped:
-// the setting came with the v0.32.0 engine (blis-schemas#102), which this simulator does not build
+// the setting came with the v0.32.0 engine (https://github.com/inference-sim/blis-schemas/issues/102), which this simulator does not build
 // yet (inference-sim#2027). The same scenario without the
 // setting adopts, and so does one stating prefix_cache_retention_interval at vLLM's default 0,
 // which is what the compatibility engine models.

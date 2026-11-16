@@ -8118,7 +8118,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-registry#75"
+        "issue": "inference-sim/blis-substrate#150"
       },
       "estimation": {
         "rule": "none"
@@ -9346,7 +9346,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-registry#75"
+        "issue": "inference-sim/blis-substrate#150"
       },
       "estimation": {
         "rule": "none"

@@ -367,7 +367,7 @@ type Speculative struct {
 	NumSpecTokens int    `yaml:"num_spec_tokens"`
 	// DraftModel names the catalog model whose graph is the drafter, where the drafter is a
 	// separate checkpoint, as an EAGLE3 head is: vLLM's speculative_config.model
-	// (vllm/config/speculative.py:396@5df63a72; blis-schemas#97). Empty means the target
+	// (vllm/config/speculative.py:396@5df63a72; https://github.com/inference-sim/blis-schemas/issues/97). Empty means the target
 	// graph's own speculator.
 	DraftModel string `yaml:"draft_model,omitempty"`
 	// KVCacheDType is the drafter's KV cache format where it differs from the target's,

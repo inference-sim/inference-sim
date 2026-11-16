@@ -141,7 +141,7 @@ func (e *Engine) SetPlacement(p placement.Placement) error {
 // Plan implements engine.Planned: the pool's placement, which is what a P/D pull is priced against. The
 // compatibility engine offloads to no tier it reports as a transfer, so the plan lists none; the lowered
 // layers, KV groups and graphs are the cost model's resolution, which is not built here
-// (blis-latency-kernel#84).
+// (https://github.com/inference-sim/blis-latency-kernel/issues/84).
 func (e *Engine) Plan() plan.PoolPlan {
 	p := e.pl.Plan(nil)
 	p.Host.Admission = e.admission
