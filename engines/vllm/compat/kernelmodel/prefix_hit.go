@@ -14,9 +14,11 @@ import (
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
-// eagleMethods are vLLM v0.31.0's use_eagle() methods, whose prefix hits drop the trailing
-// block of an EAGLE group unless disable_eagle_block_drop (config/speculative.py:1938-1946).
-var eagleMethods = []string{"eagle", "eagle3", "mtp", "dflash", "dspark"}
+// eagleDropMethods are vLLM v0.33.0's needs_eagle_block_drop methods: an EAGLE-style drafter
+// builds a position's draft KV from the next token, so its groups drop the trailing block of a
+// prefix hit (vllm/config/speculative.py:2122-2129@4ba787ec). DFlash and DSpark build it from the
+// target's hidden state alone and drop nothing, which v0.31.0 and v0.32.0 did not distinguish.
+var eagleDropMethods = []string{"eagle", "eagle3", "mtp"}
 
 // prefixLayout is what of the model's KV cache groups decides how a prefix hit is cut.
 type prefixLayout struct {
@@ -28,17 +30,28 @@ type prefixLayout struct {
 	// at the engine block), sliding-window groups and compressor rings.
 	v41                 bool
 	window, windowBlock int
-	// eagle: the pool speculates with a use_eagle() method. lastDraftKind is the kind of the
-	// last cache of the draft's last layer, the group vLLM flags as the EAGLE group.
-	eagle         bool
-	lastDraftKind model.CacheKind
-	pcp           int
+	// eagle: the coordinator drops the EAGLE block (drop_eagle_group_ids is not empty): the pool
+	// speculates with an eagleDropMethods method and keeps the legacy block hashes, which it does
+	// only beside a KV connector (num_hash_lookahead_tokens, vllm/config/vllm.py:677-692@4ba787ec;
+	// Scheduler.__init__, vllm/v1/core/sched/scheduler.py:342-345). Without one each block's hash
+	// covers the tokens the drafter reads past it, and no block is dropped.
+	eagle bool
+	// draftWindow and draftFull are whether the drafter's layers own a window cache and a full
+	// (kv or index) cache: the groups holding them are the ones vLLM tags is_eagle_group
+	// (get_global_kv_cache_groups, vllm/v1/core/kv_cache_planning.py:1650-1656@4ba787ec). With
+	// none tagged the coordinator tags every group (kv_cache_coordinator.py:129-135).
+	draftWindow, draftFull bool
+	pcp                    int
 }
 
-func prefixLayoutOf(g *model.Graph, pool deployment.Pool, engine engineconfig.Engine) prefixLayout {
+func prefixLayoutOf(g *model.Graph, dep *deployment.Deployment, pool deployment.Pool, engine engineconfig.Engine) prefixLayout {
 	l := prefixLayout{pcp: max(pool.Parallel.PCP, 1)}
 	sp := engine.Speculative
-	l.eagle = sp != nil && sp.NumSpecTokens > 0 && slices.Contains(eagleMethods, sp.Method)
+	drafting := sp != nil && sp.NumSpecTokens > 0
+	// kv_transfer_config: the deployment's offload connector, or its P/D connector on a pool of
+	// either role (vllmengine sets both from the deployment).
+	connector := dep != nil && (dep.Offload != nil || (dep.PDTransfer != nil && pool.Role != deployment.RoleColocated))
+	l.eagle = drafting && slices.Contains(eagleDropMethods, sp.Method) && connector
 	kinds := map[string]model.LayerKind{}
 	for _, k := range g.LayerKinds {
 		kinds[k.ID] = k
@@ -57,14 +70,18 @@ func prefixLayoutOf(g *model.Graph, pool deployment.Pool, engine engineconfig.En
 		return out
 	}
 	caches := owned(g.Stack.Expand())
-	if l.eagle && g.Speculator != nil {
-		layers := g.Speculator.Stack.Expand()
-		if len(layers) > 0 {
-			if last := owned(layers[len(layers)-1:]); len(last) > 0 {
-				l.lastDraftKind = last[len(last)-1].Kind
-			}
-			caches = append(caches, owned(layers)...)
+	if drafting && g.Speculator != nil {
+		// The drafter's layers register their caches beside the target's, in groups of their own
+		// specs, whether or not any group drops a block.
+		draft := owned(g.Speculator.Stack.Expand())
+		for _, c := range draft {
+			l.draftWindow = l.draftWindow || c.Kind == model.CacheWindow
+			l.draftFull = l.draftFull || c.Kind == model.CacheKV || c.Kind == model.CacheIndex
 		}
+		caches = append(caches, draft...)
+	}
+	if !l.draftWindow && !l.draftFull {
+		l.draftWindow, l.draftFull = true, true
 	}
 	var windows, states []model.Cache
 	for _, c := range caches {
@@ -184,11 +201,11 @@ func (m *Model) PrefixHit(override *bool) PrefixHitResolution {
 		bounded, from = false, "prefill context parallelism (attention.py:528-537)"
 	}
 	r.BoundedReplay, r.BoundedReplayFrom = &bounded, from
-	// DeepSeek-V4/V4.1 flag the group of the last registered layer, the draft's last
-	// (kv_cache_utils.py:2138-2226); every window group shares one spec, so the coordinator
-	// decides the EAGLE drop for all of them (kv_cache_coordinator.py:735-780).
-	windowEagle := l.eagle && l.lastDraftKind == model.CacheWindow
-	fullEagle := l.eagle && (l.lastDraftKind == model.CacheKV || l.lastDraftKind == model.CacheIndex)
+	// The groups holding the drafter's caches drop the EAGLE block; every window group shares one
+	// spec, so the coordinator decides the drop for all of them (kv_cache_coordinator.py:725-780
+	// @4ba787ec).
+	windowEagle := l.eagle && l.draftWindow
+	fullEagle := l.eagle && l.draftFull
 	if bounded {
 		// The window groups are not prefix-cacheable (kv_cache_interface.py:930-955) and drop
 		// out of the lookup (kv_cache_coordinator.py:745-752).
