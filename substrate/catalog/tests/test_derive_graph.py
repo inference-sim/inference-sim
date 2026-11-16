@@ -8401,6 +8401,8 @@ def _glm5_headers(edit=None) -> dict:
                   "indexer.wq_b", "indexer.wk", "indexer.weights_proj"):
             bf16(p + "self_attn." + a)
         quant = bf16 if i == n else nvfp4
+        if i == n:
+            bf16(p + "eh_proj")
         if i < dense:
             for a in ("gate_proj", "up_proj", "down_proj"):
                 quant(p + "mlp." + a)
@@ -8474,3 +8476,20 @@ def test_qwen35_nvfp4_refuses_a_quantized_deltanet_input_projection(tmp_path):
     q["ignore"] = [p for p in q["ignore"] if p != "model.language_model.layers.0.linear_attn*"]
     with pytest.raises(derive_graph.DeriveError, match="in_proj_qkvz"):
         _derive_raw(raw, tmp_path, "qwen-nvfp4-test")
+
+
+# --- The DeepSeek-family MTP input stage (blis-substrate#200) ----------------------------
+
+@pytest.mark.parametrize("name", ["glm-5", "glm-5.2", "deepseek-v3"])
+def test_deepseek_family_mtp_layer_runs_its_eh_proj(name):
+    """The MTP layer normalises the embedding and the previous hidden state and projects the two
+    through eh_proj, a BF16 nn.Linear(2 x hidden -> hidden) on every rank, before its decoder
+    block, so the draft kind leads with enorm, hnorm and that GEMM whatever the checkpoint's
+    width."""
+    g = graph_of(MODELS / name)
+    hidden = g["global"]["hidden_size"]
+    assert g["speculator"]["stack"]["pattern"] == ["mtp_moe"]
+    draft = {k["id"]: k for k in g["layer_kinds"]}["mtp_moe"]["nodes"]
+    assert [n.get("role") for n in draft[:3]] == ["mtp_enorm", "mtp_hnorm", "mtp_eh_proj"]
+    eh = draft[2]
+    assert (eh["n"], eh["k"], eh["weight_dtype"], eh["tp"]) == (hidden, 2 * hidden, "bf16", "replicated")

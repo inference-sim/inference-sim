@@ -505,6 +505,7 @@ MODELOPT_MODULES: dict[str, dict[str, Any]] = {
     "GlmMoeDsaForCausalLM": {
         "layer": "model.layers.{i}.",
         "draft_layer": "model.layers.{i}.",
+        "draft_roles": {"mtp_eh_proj": "model.layers.{i}.eh_proj"},
         "head": "lm_head",
         "roles": {
             "qkv_a_proj": "self_attn.fused_qkv_a_proj",
@@ -1560,6 +1561,10 @@ def collective(op: str, role: str, emit: str) -> dict[str, Any]:
 # defines it is stating that no target layer has the draft module's structure.
 DRAFT_KIND_ID = "mtp_moe"
 
+# The architectures whose MTP layer is DeepSeekMultiTokenPredictorLayer's, with an enorm, an hnorm
+# and an eh_proj ahead of its decoder block (see handler_moe's declare_draft).
+DEEPSEEK_MTP_ARCHS = frozenset({"DeepseekV3ForCausalLM", "GlmMoeDsaForCausalLM"})
+
 
 # Architectures whose head width this deriver reads from the fp8 exclusion list. Keyed
 # by architecture so adding a family is a deliberate act: five other fp8 configs exclude
@@ -2310,12 +2315,27 @@ def handler_moe(cfg, raw, model):
     # Without a declared draft kind, derive()'s fallback mirrors the last DECLARED kind,
     # which on these configs is the unindexed one -- underpricing the draft indexer on
     # every speculative step.
+    #
+    # The DeepSeek family's MTP layer also runs its own input stage before the decoder block,
+    # once a draft token: enorm over the token embedding, hnorm over the previous hidden state,
+    # and eh_proj, an nn.Linear(2 x hidden -> hidden) over the two concatenated
+    # (DeepSeekMultiTokenPredictorLayer, model_executor/models/deepseek_mtp.py:85-130@4ba787ec;
+    # GLM-5's in vllm/models/deepseek_v32/nvidia/mtp.py:72-75). It is a plain nn.Linear, built
+    # with no quant config and no tensor-parallel split, so it is BF16 on every rank whatever the
+    # checkpoint's quantization. A mirror of a decoder kind has none of it, so these families
+    # always declare their draft kind.
     def declare_draft(kinds: list[dict[str, Any]]) -> None:
-        if not split_index:
-            return
         if not int(pick(cfg, "num_spec_tokens") or 0):
             return
-        nodes = sparse_nodes(window, True)
+        eh = architecture_of(raw, model) in DEEPSEEK_MTP_ARCHS
+        if not split_index and not eh:
+            return
+        nodes = sparse_nodes(window, True if split_index else None)
+        if eh:
+            base = base_dtype(cfg, raw, model)
+            nodes = [norm("mtp_enorm"), norm("mtp_hnorm"),
+                     dict(gemm("mtp_eh_proj", hidden, 2 * hidden), weight_dtype=base, tp="replicated"),
+                     *nodes]
         kinds.append({"id": DRAFT_KIND_ID, "nodes": nodes, "edges": chain(nodes)})
 
 
@@ -2432,11 +2452,13 @@ def handler_moe(cfg, raw, model):
     if first_dense:
         dense = dense_nodes(window)
         kinds.insert(0, {"id": "attn_dense", "nodes": dense, "edges": chain(dense)})
+        declare_draft(kinds)
         return kinds, {
             "prologue": ["attn_dense"] * first_dense,
             "pattern": ["attn_moe"],
             "repeat": layers - first_dense,
         }
+    declare_draft(kinds)
     return kinds, {"pattern": ["attn_moe"], "repeat": layers}
 
 
