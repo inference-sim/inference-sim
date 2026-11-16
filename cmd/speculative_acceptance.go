@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
@@ -56,7 +57,7 @@ func registerAcceptanceFlags(cmd *cobra.Command) {
 	cmd.MarkFlagsMutuallyExclusive(acceptanceRateFlag, acceptanceLengthFlag)
 	cmd.Flags().StringVar(&speculativeThinking, "speculative-thinking", "", "Speculative decoding: whether the target runs with thinking on ("+strings.Join(acceptance.AllThinkingModes(), "|")+"); with --"+acceptanceCategoryFlag+" it selects the registry's acceptance profile, overriding the workload's own selectors.")
 	cmd.Flags().StringVar(&speculativeCategory, "speculative-category", "", "Speculative decoding: the workload category (e.g. coding) that selects the registry's acceptance profile, overriding the workload's own.")
-	cmd.Flags().StringVar(&speculativeRealisation, "speculative-acceptance-realisation", "", "Speculative decoding: how the run whose rate or length --"+acceptanceRateFlag+" or --"+acceptanceLengthFlag+" states realised its acceptance ("+strings.Join(acceptance.AllRealisations(), "|")+"). natural spreads it over the draft positions with the decay the registry measures for the speculative method; synthetic, or leaving it out, with the engine's minimum-variance schedule for forced acceptance. Only with one of those two flags.")
+	cmd.Flags().StringVar(&speculativeRealisation, "speculative-acceptance-realisation", "", "Speculative decoding: how the acceptance that --"+acceptanceRateFlag+" or --"+acceptanceLengthFlag+" states was realised ("+strings.Join(acceptance.AllRealisations(), "|")+"). natural: the rate was measured with real verification, so it is spread over the draft positions with the registry's fitted decay for the speculative method (an estimate). synthetic, or unset: the engine forced the acceptance, so it is spread with the engine's minimum-variance schedule. Only with --"+acceptanceRateFlag+" or --"+acceptanceLengthFlag+".")
 	cmd.Flags().StringVar(&speculativeFallbackCategory, "speculative-fallback-category", "", "Speculative decoding: a category whose profile to use, recorded as a fallback, when the workload's category has none. Without it an unmatched category is refused. Unlike the acceptance value, where the CLI is highest, a scenario pin's own fallback_category wins over this flag, as blis-schemas' acceptance.Resolve applies them.")
 }
 
@@ -76,14 +77,14 @@ func acceptanceRecordOf(r acceptance.Resolution, c speculativeConfig) *sim.Accep
 			RatesDerived:     r.RatesDerived,
 		},
 	}
-	if r.RatesDerived {
-		rec.Entry.RatesSchedule = string(r.Schedule)
-		if rec.Entry.RatesSchedule == "" {
-			rec.Entry.RatesSchedule = string(acceptance.ScheduleMinimumVariance)
-		}
-		if s := r.Shape; s != nil {
-			rec.Entry.RatesShape = fmt.Sprintf("%s %q decay_exponent %v method %s", r.ShapeSet, s.SpeculativeMethod, s.DecayExponent, s.Method)
-		}
+	// The provenance the substrate records in the Result (result.AcceptanceProperty), so the
+	// two files agree on the step, what differed, the K rule, the profiles read and the schedule.
+	prop := result.AcceptanceProperty(r)
+	rec.Entry.Step, rec.Entry.Differed, rec.Entry.KRule, rec.Entry.Profiles = prop.Step, prop.Differed, prop.KRule, prop.Profiles
+	rec.Entry.RatesSchedule = prop.RatesSchedule
+	if s := prop.RatesShape; s != nil {
+		rec.Entry.RatesShape = &sim.AcceptanceRatesShape{Set: s.Set, SpeculativeMethod: s.SpeculativeMethod,
+			DecayExponent: s.DecayExponent, Method: string(s.Method)}
 	}
 	if p := r.Profile; p != nil {
 		rec.Entry.Key = p.Key().String()
@@ -118,7 +119,10 @@ func logAcceptance(r *sim.AcceptanceRecord, k int) {
 	if r.Entry.RatesDerived {
 		how := "the engine's minimum-variance schedule, which forced acceptance follows; a rate measured from natural acceptance decays instead (--speculative-acceptance-realisation natural)"
 		if r.Entry.RatesSchedule == string(acceptance.ScheduleNaturalDecay) {
-			how = "the fitted natural decay (an estimate) of shape " + r.Entry.RatesShape
+			if sh := r.Entry.RatesShape; sh != nil {
+				how = fmt.Sprintf("the fitted natural decay (an estimate) of shape %s %q decay_exponent %v method %s",
+					sh.Set, sh.SpeculativeMethod, sh.DecayExponent, sh.Method)
+			}
 		}
 		logrus.Warnf("speculative acceptance: no per-position rates were stated, so they were derived with %s; recorded in the results file as rates_schedule %s",
 			how, r.Entry.RatesSchedule)

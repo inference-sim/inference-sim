@@ -225,11 +225,35 @@ type AcceptanceEntry struct {
 	// whether they were derived from AL by vLLM's minimum-variance schedule rather than stated.
 	PerPositionRates []float64 `json:"per_position_rates"`
 	RatesDerived     bool      `json:"rates_derived"`
+	// The fields below are blis-substrate's record of the resolution
+	// (result.AcceptanceProperty), carried field for field so the results file and the Result
+	// agree.
+	//
+	// Step is how a profile lookup found its value: "exact", or the borrowing step that supplied
+	// it (design D8). Differed names each key field in which a borrowed profile differs from the
+	// run's, KRule how a borrowed value was brought to the run's K, and Profiles every profile the
+	// value was read from, as set and key. All are empty for a stated value; Differed and KRule
+	// are empty for an exact match.
+	Step     string   `json:"step,omitempty"`
+	Differed []string `json:"differed,omitempty"`
+	KRule    string   `json:"k_rule,omitempty"`
+	Profiles []string `json:"profiles,omitempty"`
 	// RatesSchedule names how derived rates were derived, an estimate the run assumed:
 	// "minimum_variance" (the engine's schedule for forced acceptance) or "natural_decay" (the
 	// registry's measured decay for the method, named by RatesShape). Empty when stated.
 	RatesSchedule string `json:"rates_schedule,omitempty"`
-	RatesShape    string `json:"rates_shape,omitempty"`
+	// RatesShape is the fitted shape a natural_decay schedule used; nil otherwise.
+	RatesShape *AcceptanceRatesShape `json:"rates_shape,omitempty"`
+}
+
+// AcceptanceRatesShape is a fitted decay shape (blis-substrate's result.RatesShape): the profile
+// set that holds it, the speculative method it was fitted to ("" for every method's), its decay
+// exponent, and how the exponent was obtained.
+type AcceptanceRatesShape struct {
+	Set               string  `json:"set"`
+	SpeculativeMethod string  `json:"speculative_method,omitempty"`
+	DecayExponent     float64 `json:"decay_exponent"`
+	Method            string  `json:"method"`
 }
 
 // ScenarioOverride is one setting a run took from somewhere other than its scenario.
