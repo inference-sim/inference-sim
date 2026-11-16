@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -152,25 +153,24 @@ func compare(old, new io.Reader, orderOnly map[string]bool) (diffReport, error) 
 // runCompare is the -compare mode: it prints the report and exits 1 when anything but an
 // allowed reordering differs.
 func runCompare(oldPath, newPath, orderOnly string) int {
-	o, err := os.Open(oldPath)
+	// Each output is read whole, so no file is left open and a read error is a failure.
+	o, err := os.ReadFile(oldPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "equalityprobe:", err)
 		return 2
 	}
-	defer o.Close()
-	n, err := os.Open(newPath)
+	n, err := os.ReadFile(newPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "equalityprobe:", err)
 		return 2
 	}
-	defer n.Close()
 	allowed := map[string]bool{}
 	for _, f := range strings.Split(orderOnly, ",") {
 		if f = strings.TrimSpace(f); f != "" {
 			allowed[f] = true
 		}
 	}
-	r, err := compare(o, n, allowed)
+	r, err := compare(bytes.NewReader(o), bytes.NewReader(n), allowed)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "equalityprobe:", err)
 		return 2
