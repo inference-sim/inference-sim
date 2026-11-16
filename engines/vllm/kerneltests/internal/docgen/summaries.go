@@ -13,8 +13,8 @@ package main
 var summaries = map[string]struct{ title, summary string }{
 	"internal/price/memory.go|KVBytesPerToken|Coverage limit": {
 		"KV cache layouts not sized",
-		"The kernel does not size every KV cache layout vLLM has. It refuses the per-token-head " +
-			"quantized formats rather than size them. Padded pages and a cache that compresses " +
+		"The kernel does not size every KV cache layout vLLM has. The engine's lowering refuses " +
+			"the per-token-head quantized formats rather than hand the kernel a width for them. Padded pages and a cache that compresses " +
 			"several tokens into one stored state are sized only where the model graph states " +
 			"its caches; a graph that does not is sized as one full-length cache per layer.",
 	},
