@@ -39,10 +39,11 @@ are then written as stated. gpu_memory_utilization not stated is vLLM v0.31.0's 
 0.92 (vllm/config/cache.py:103) for a vLLM deployment, and is left out for any other framework,
 whose default this generator does not know (X19: a default is never written for an engine it
 does not belong to); prefix caching and speculation not stated are left out, so
-v0.31.0's defaults apply (caching on, no drafting). A stated drafter the catalog graph does
-not describe is not written at all (see UNPRICED_SPECULATORS): a file without its
-speculative block would load as a target-only deployment and be priced as one, so the
-generator skips the scenario and reports it (blis-latency-kernel#74).
+v0.31.0's defaults apply (caching on, no drafting). A run that drafts with a separate draft
+checkpoint names the catalog's drafter entry as `draft_model` (see speculative_drafter); a
+run whose drafter the catalog lacks is not written at all: a file without its speculative
+block would load as a target-only deployment and be priced as one, so the generator skips the
+scenario and reports it (inference-sim/blis-substrate#124).
 The rest are NOT vLLM's defaults, and the written header says how each differs: block_size
 16 is only the nominal default, which a backend may raise (vllm/platforms/interface.py),
 and a DSA sparse-MLA model is stated at 64, the size vLLM picks for it and a multiple of the
@@ -115,12 +116,6 @@ def v4_block_size(gpu: str) -> int:
 # TensorRT-LLM have their own memory settings, which this generator does not model.
 GPU_MEMORY_UTILIZATION_DEFAULT = {"vllm": (0.92, "vLLM v0.31.0's default (vllm/config/cache.py:103)")}
 
-# Stated drafters the catalog graph does not describe: the kernel refuses a deployment that
-# drafts with a method other than its graph's speculator (liftDraft, draft.go). MiniMax-M3's
-# graph states its own MTP head; EAGLE3 runs a separate draft checkpoint. A scenario with one
-# of these is not emitted: dropping the block would leave a loadable non-speculative file for
-# a measured speculative run. Remove an entry when its drafter graph lands in the catalog.
-UNPRICED_SPECULATORS = {("minimax-m3", "eagle3")}
 
 # A KV cache dtype is not stated by the corpus. fp8 KV is the default for the fp8 and fp4
 # arms in these frameworks; bf16 serving keeps an unquantised cache.
@@ -185,20 +180,83 @@ def context_length(workloads: set[str]) -> int:
     return window
 
 
-def unpriced_speculator(dep: dict) -> str | None:
-    """The reason the kernel cannot price dep's stated speculator, or None if it can."""
+def _entry(catalog: Path, name: str) -> tuple[str, str]:
+    """(model.yaml, graph.yaml) text of a catalog model, each "" when absent."""
+    d = catalog / "models" / name
+    read = lambda f: (d / f).read_text() if (d / f).is_file() else ""  # noqa: E731
+    return read("model.yaml"), read("graph.yaml")
+
+
+def _listed(text: str, key: str) -> list[str]:
+    """A top-level `key: [a, b]` flow list of a model.yaml, which is how the catalog writes
+    drafters and targets; read as text, so the script needs no YAML library."""
+    m = re.search(rf"^{key}:\s*\[([^\]]*)\]\s*$", text, re.M)
+    return [x.strip() for x in m.group(1).split(",") if x.strip()] if m else []
+
+
+def _repo(text: str) -> str | None:
+    """The Hugging Face repository a model.yaml's top-level `source:` block names: its direct
+    two-space `repo:` key, and no other block's (a base model's or a quantisation's)."""
+    m = re.search(r"^source:[ \t]*\n(?:[ \t]+.*\n|[ \t]*\n)*?  repo:[ \t]*(\S+)[ \t]*$", text, re.M)
+    return m.group(1) if m else None
+
+
+def _speculator(graph: str) -> str | None:
+    """The method a graph's speculator states, as a deployment states it: every model-specific
+    MTP name is mtp (the catalog's derive_graph.vllm_speculative_method)."""
+    # The speculator block's own two-space `method:`, never one nested under another of its keys.
+    m = re.search(r"^speculator:[ \t]*\n(?:[ \t]+.*\n|[ \t]*\n)*?  method:[ \t]*(\S+)", graph, re.M)
+    if not m:
+        return None
+    return "mtp" if m.group(1).endswith("_mtp") else m.group(1)
+
+
+def speculative_drafter(dep: dict, catalog: Path = DEFAULT_CATALOG) -> tuple[str | None, str | None]:
+    """(the catalog drafter dep's speculative block names as draft_model, the reason it cannot be
+    written), at most one of them set.
+
+    The run's draft checkpoint (stated_config draft_model) must be a Hugging Face repository that
+    a catalog drafter entry has as its source, that names the model among its targets, that the
+    model lists among its drafters, and whose graph speculates by the run's method. With no draft
+    checkpoint, or the served model named as its own draft (MTP), the model's own graph must
+    speculate by the run's method. Anything else cannot be priced: the kernel refuses a
+    deployment that drafts with a method other than its graph's speculator (liftDraft, draft.go)."""
     stated = dep.get("stated_config", {})
     spec = stated.get("speculative_method")
-    if (dep["model"], spec) not in UNPRICED_SPECULATORS:
-        return None
-    return (f"{dep['model']} drafts with {spec} x{stated.get('num_speculative_tokens')}, which "
-            f"the catalog graph does not describe, so the kernel cannot price the deployment")
+    if not spec:
+        return None, None
+    model = dep["model"]
+    model_yaml, graph = _entry(catalog, model)
+    own = _speculator(graph) == spec
+    draft = stated.get("draft_model")
+    k = stated.get("num_speculative_tokens")
+    if not draft or draft.casefold() == (_repo(model_yaml) or "").casefold():
+        if own:
+            return None, None
+        return None, (f"{model} drafts with {spec} x{k} and names no draft checkpoint, and its "
+                      "catalog graph does not speculate by it, so the kernel cannot price it")
+    if not re.fullmatch(r"[\w.-]+/[\w.-]+", draft):
+        return None, (f"{model} drafts with {spec} x{k} from {draft}, which names no repository, "
+                      "so no catalog drafter can be matched to it")
+    for name in sorted(p.parent.name for p in (catalog / "models").glob("*/model.yaml")):
+        text, dgraph = _entry(catalog, name)
+        if ((_repo(text) or "").casefold() == draft.casefold() and model in _listed(text, "targets")
+                and name in _listed(model_yaml, "drafters") and _speculator(dgraph) == spec):
+            return name, None
+    return None, (f"{model} drafts with {spec} x{k} from {draft}, which is no catalog drafter of "
+                  f"{model}, so the kernel cannot price it")
+
+
+def unpriced_speculator(dep: dict, catalog: Path = DEFAULT_CATALOG) -> str | None:
+    """The reason the kernel cannot price dep's stated speculator, or None if it can."""
+    return speculative_drafter(dep, catalog)[1]
 
 
 def emit(dep: dict, workloads: set[str], labels: set[str],
          catalog: Path = DEFAULT_CATALOG) -> str | None:
     """The scenario file for dep, or None when it cannot be written truthfully."""
-    if unpriced_speculator(dep) is not None:
+    drafter, why = speculative_drafter(dep, catalog)
+    if why is not None:
         return None
     par = dep["parallelism"]
     tp, ep, dp = par["tp_size"], par["moe_ep_size"], par["attention_dp_size"]
@@ -246,7 +304,12 @@ def emit(dep: dict, workloads: set[str], labels: set[str],
     ]
     if "enable_prefix_caching" in stated:
         lines.append("# enable_prefix_caching: stated by the run.")
-    if spec:
+    if spec and drafter:
+        # The corpus's stated_config records the draft checkpoint's repository but no revision
+        # (extract_inferencex_direct.DEPLOYMENT_FIELDS), so the drafter's revision is unchecked.
+        lines.append(f"# speculative: stated by the run, drafting with the catalog's {drafter}; "
+                     "the run records no draft revision.")
+    elif spec:
         lines.append("# speculative: stated by the run.")
     lines += [
         "#",
@@ -340,6 +403,8 @@ def emit(dep: dict, workloads: set[str], labels: set[str],
             f"        method: {stated['speculative_method']}",
             f"        num_spec_tokens: {stated['num_speculative_tokens']}",
         ]
+        if drafter:
+            lines.append(f"        draft_model: {drafter}")
     return "\n".join(lines) + "\n"
 
 
@@ -395,7 +460,7 @@ def main() -> int:
         path = os.path.join(args.out, name)
         if text is None:
             # Nothing is written; a file left from before is stale.
-            skipped.append(f"{name}: {unpriced_speculator(dep)}")
+            skipped.append(f"{name}: {unpriced_speculator(dep, args.catalog)}")
             if args.check and os.path.exists(path):
                 stale.append(f"{name} (present, but the scenario is not emitted)")
             continue
