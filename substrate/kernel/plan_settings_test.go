@@ -338,3 +338,44 @@ func TestNewRefusesBothThePlanAndTheCarrier(t *testing.T) {
 		t.Errorf("err %v, want a refusal naming both inputs", err)
 	}
 }
+
+// A stated cache the graph lists no record for, under the record the deployment runs, is sized
+// at its base description, and the kernel says so in Provenance only when that record is not the
+// one the engine stores an unstated cache in (plan.Lowered.DefaultCacheRecord): an engine whose
+// own default is the record assumes nothing the base description does not, and "" is the model's
+// own format.
+func TestTheCacheRecordAssumptionFollowsTheEnginesDefaultRecord(t *testing.T) {
+	d, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assumed := func(record, def string) bool {
+		t.Helper()
+		k, err := New(planCase(t, d, "deepseek-v4.1-flash", "b200", 1, "tp: 4, pp: 1, dp: 1",
+			func(l *plan.Lowered) { l.Plan.Cache.Record, l.DefaultCacheRecord = record, def }))
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		for _, o := range k.Provenance() {
+			if o.Name == "cache_record" {
+				return true
+			}
+		}
+		return false
+	}
+	for _, c := range []struct {
+		record, def string
+		want        bool
+	}{
+		{"nvfp4_ds_mla", "", true},
+		{"nvfp4_ds_mla", "nvfp4_ds_mla", false},
+		{"nvfp4_ds_mla", "fp8_ds_mla", true},
+		{"", "", false},
+		{"", "nvfp4_ds_mla", true},
+	} {
+		if got := assumed(c.record, c.def); got != c.want {
+			t.Errorf("record %q, engine default %q: cache_record assumed %v, want %v",
+				c.record, c.def, got, c.want)
+		}
+	}
+}

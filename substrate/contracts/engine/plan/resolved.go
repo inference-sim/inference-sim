@@ -210,8 +210,10 @@ type Lowered struct {
 	// graph it is given is this one, and prices that graph.
 	Drafter string
 	// DefaultCacheRecord is the record the engine stores a cache in when the deployment states
-	// no cache format. The cost model reports a stated cache sized at its base record only when
-	// the cache runs under another record; it prices nothing from it.
+	// no cache format; "" is the model's own format (an unstated cache, "auto"), the record the
+	// graph's base description of each cache assumes. The cost model reports a stated cache sized
+	// at its base record only when the cache runs under a record other than this one; it prices
+	// nothing from it.
 	DefaultCacheRecord string
 }
 
