@@ -1,0 +1,124 @@
+{
+ "description": "Page size 4: an insert of eight tokens holds two whole pages; a match of a key that ends inside a page stops at the page boundary; a second insert sharing one page frees its own copy of that page; the paged allocator hands out whole pages; a reset clears everything.",
+ "model": "none: the driver builds SGLang's pools and cache from the sequence's cache block",
+ "seed": 0,
+ "cache": {
+  "page_size": 4,
+  "kv_size": 64,
+  "max_num_reqs": 4,
+  "max_context_len": 64,
+  "layer_num": 2,
+  "head_num": 2,
+  "head_dim": 16,
+  "kv_cache_events": true
+ },
+ "calls": [
+  {
+   "on": "allocator",
+   "m": "alloc",
+   "n": 12,
+   "as": "a"
+  },
+  {
+   "on": "cache",
+   "m": "insert",
+   "tokens": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+   ],
+   "value": [
+    "a",
+    0,
+    8
+   ]
+  },
+  {
+   "on": "cache",
+   "m": "match_prefix",
+   "tokens": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ]
+  },
+  {
+   "on": "cache",
+   "m": "match_prefix",
+   "tokens": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+   ]
+  },
+  {
+   "on": "allocator",
+   "m": "alloc",
+   "n": 8,
+   "as": "b"
+  },
+  {
+   "on": "cache",
+   "m": "insert",
+   "tokens": [
+    1,
+    2,
+    3,
+    4,
+    30,
+    31,
+    32,
+    33
+   ],
+   "value": "b"
+  },
+  {
+   "on": "cache",
+   "m": "evictable_size"
+  },
+  {
+   "on": "allocator",
+   "m": "available_size"
+  },
+  {
+   "on": "cache",
+   "m": "evict",
+   "num_tokens": 1
+  },
+  {
+   "on": "cache",
+   "m": "evictable_size"
+  },
+  {
+   "on": "cache",
+   "m": "take_events"
+  },
+  {
+   "on": "cache",
+   "m": "reset"
+  },
+  {
+   "on": "cache",
+   "m": "evictable_size"
+  },
+  {
+   "on": "cache",
+   "m": "take_events"
+  }
+ ]
+}

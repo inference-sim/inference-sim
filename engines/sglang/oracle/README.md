@@ -135,3 +135,19 @@ That copies each fresh trace's provenance into its golden, and only that. It ref
 decisions differ from the fresh trace, or that ran another scenario or seed. Commit the result. A
 change that alters decisions instead re-records the golden with the runner, and the commit carries
 the trailer.
+
+## Traces at the cache framework's interfaces (FID-5)
+
+The cache framework is six abstract classes of SGLang's `mem_cache/`: `BasePrefixCache`,
+`UnifiedTreeCoreInterface`, `TreeComponent`, `BaseTokenToKVPoolAllocator`, `ReqToTokenPool` and
+`KVCache` (design §7.6). `cache_interfaces.py` observes every call made into one of them from
+outside it, with sys.monitoring, and writes nothing into SGLang; a call made from inside another
+interface names that call in `in`. `run_cache_iface.py` writes two kinds of trace:
+
+- **recorded**: each tier-2 scenario of `scenarios/`, run through the scheduler exactly as
+  `run_scheduler.py` runs it;
+- **direct**: each sequence of `scenarios-cache-iface/`, calls the runner makes itself on SGLang's
+  own pools, allocator and radix cache, in orderings the scheduler does not make.
+
+The goldens are `core/cache/testdata/golden-fid5/{recorded,direct}/<name>.trace.json`, compared in
+the `oracle` job. `core/cache` reads them.

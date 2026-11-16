@@ -2,7 +2,8 @@
   "commit_field": "blis_sglang_commit",
   "ci_platform": "linux-x86_64",
   "golden_dirs": [
-    "oracle/testdata/golden/"
+    "oracle/testdata/golden/",
+    "core/cache/testdata/golden-fid5/"
   ],
   "golden_files": [],
   "harness_files": [
