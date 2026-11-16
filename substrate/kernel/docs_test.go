@@ -136,7 +136,7 @@ func sameSet(t *testing.T, what string, page, code []string) {
 // passes to assume, so the page can neither miss one nor list one that no longer exists.
 func TestDocAssumptionsMatchTheCode(t *testing.T) {
 	page := tableCodes(t, filepath.Join("..", "docs", "kernel", "reference", "provenance.md"), "<!-- assumptions -->")
-	sameSet(t, "the assumption", page, sourceNames(t, `k\.assume\(`))
+	sameSet(t, "the assumption", page, sourceNames(t, `(?:k\.assume\(|note\()`))
 }
 
 // TestDocOptionalCoefficientsMatchTheCode does the same for the optional coefficients, the

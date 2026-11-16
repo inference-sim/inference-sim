@@ -6,6 +6,7 @@ import (
 	"reflect"
 
 	"github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/rules"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
@@ -46,9 +47,18 @@ type Repos struct {
 	// RulesVersions lists the releases Rules answers for, for the error a scenario naming
 	// another one gets. Optional.
 	RulesVersions func() []string
-	// EngineSettings decodes a pool's engine block into the settings the kernel prices, the
-	// engine model's reading of a block the kernel does not open itself (for vLLM,
-	// blis-latency-kernel/vllmsettings.OfPool). Required, as Rules is.
+	// DraftModel names the catalog model a pool's engine block names as its drafter, "" for
+	// none: the engine model's reading of a block the kernel does not open itself. Open loads
+	// that model's graph as Inputs.Draft. Required unless EngineSettings is given.
+	DraftModel func(dep *deployment.Deployment, pool int) (string, error)
+	// Lower is the engine's lowering of one pool: from the loaded documents, the pool's plan
+	// with every setting the engine resolved (Inputs.Lowered). Open sets Inputs.Lowered from
+	// it; a caller of OpenInputs that lowers the pool itself leaves it nil.
+	Lower func(in Inputs) (*plan.Lowered, error)
+	// EngineSettings decodes a pool's engine block into the typed engine-settings carrier
+	// (Inputs.Engine), the transitional input the kernel resolved itself before engine
+	// lowering took the resolution over (blis-substrate#58). It is read only when DraftModel
+	// is nil, and is deleted with the carrier.
 	EngineSettings func(dep *deployment.Deployment, pool int) (enginesettings.Settings, error)
 }
 
@@ -266,26 +276,41 @@ func OpenInputs(scenario string, r Repos, poolIndex int) (Inputs, error) {
 				"and a nearby version would misprice whatever changed between the two",
 			sc.EngineRelease(), known)
 	}
-	if r.EngineSettings == nil {
-		return Inputs{}, fmt.Errorf("%s: no engine settings source: Repos.EngineSettings is unset, "+
-			"and the kernel opens no engine block itself. Pass the engine model's decoding (for "+
-			"vLLM, blis-latency-kernel/vllmsettings.OfPool)", scenario)
-	}
-	eng, err := r.EngineSettings(dep, poolIndex)
-	if err != nil {
-		return Inputs{}, fmt.Errorf("%s: pool %d's engine block: %w", scenario, poolIndex, err)
+	var name string
+	var eng *enginesettings.Settings
+	switch {
+	case r.DraftModel != nil:
+		if name, err = r.DraftModel(dep, poolIndex); err != nil {
+			return Inputs{}, fmt.Errorf("%s: pool %d's engine block: %w", scenario, poolIndex, err)
+		}
+	case r.EngineSettings != nil:
+		e, err := r.EngineSettings(dep, poolIndex)
+		if err != nil {
+			return Inputs{}, fmt.Errorf("%s: pool %d's engine block: %w", scenario, poolIndex, err)
+		}
+		eng, name = &e, draftModelName(e)
+	default:
+		return Inputs{}, fmt.Errorf("%s: no engine model: Repos.DraftModel is unset, and the kernel "+
+			"opens no engine block itself. Pass the engine model's reading of the block (for "+
+			"vLLM, github.com/inference-sim/blis-vllm/compat/kernelmodel)", scenario)
 	}
 	var draft *model.Graph
-	if name := draftModelName(eng); name != "" {
+	if name != "" {
 		if draft, err = r.Data.Model(name); err != nil {
 			return Inputs{}, fmt.Errorf("draft model: %w", err)
 		}
 	}
-	return Inputs{
+	in := Inputs{
 		Scenario: sc, Deployment: dep, PoolIndex: poolIndex,
 		Model: graph, Draft: draft, Chip: chip, Fabric: fabric,
-		Devices: devices, Coefficients: sets, Rules: er, Engine: &eng,
-	}, nil
+		Devices: devices, Coefficients: sets, Rules: er, Engine: eng,
+	}
+	if r.Lower != nil {
+		if in.Lowered, err = r.Lower(in); err != nil {
+			return Inputs{}, fmt.Errorf("%s: pool %d: %w", scenario, poolIndex, err)
+		}
+	}
+	return in, nil
 }
 
 // LoadBundle reads a scenario and the deployment applied to it from one file, as two YAML

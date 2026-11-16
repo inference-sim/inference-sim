@@ -374,7 +374,7 @@ func TestFabricRatio(t *testing.T) {
 // A declined all-reduce request reaches the Result on the all_reduce_backend row, whatever field
 // name the resolver gives it: the conversion in package result is checked against the resolver.
 func TestADeclinedAllReduceRequestReachesOneRowOfTheResult(t *testing.T) {
-	ok, overrides := resolveCustomAllReduce(enginesettings.Settings{}, Layout{TP: 3}, Fabric{}, newStubRules())
+	ok, overrides := CustomAllReduce(enginesettings.Settings{}, Layout{TP: 3}, Fabric{}, newStubRules())
 	if ok || len(overrides) != 1 {
 		t.Fatalf("tp 3 should decline the custom all-reduce: %v %v", ok, overrides)
 	}

@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
 	"github.com/inference-sim/blis-substrate/kernel/internal/price"
@@ -67,7 +67,7 @@ func TestAnMHCNodeRunsOnItsSequenceParallelShard(t *testing.T) {
 func TestTheDrafterCeilingCountsPrefillRows(t *testing.T) {
 	const kSpec = 3
 	k := &Kernel{
-		engine:      enginesettings.Settings{Speculative: &enginesettings.Speculative{Method: "dspark", NumSpecTokens: kSpec}},
+		low:         plan.PoolPlan{Drafts: plan.DraftPolicy{Chain: kSpec, OwnWorkspace: true}},
 		plan:        &price.Plan{Draft: &price.DraftPlan{ContextKernels: 2, Drafting: model.DraftingParallelBlock}},
 		graphDecode: graphModeFull, draftCaptureTokens: 2 * kSpec,
 		launchEager: time.Microsecond, replayPerStep: 5 * time.Microsecond,
