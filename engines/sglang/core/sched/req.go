@@ -2,10 +2,10 @@
 // SPDX-FileCopyrightText: Copyright 2023-2024 SGLang Team
 // Derived from python/sglang/srt/managers/schedule_batch.py at SGLang v0.5.23 (297e54fd105e974cdf401e5b4d20253a22c16f90).
 
-// Package sched is SGLang v0.5.23's normal scheduling loop (managers/scheduler.py,
+// Package sched is SGLang v0.5.23's scheduling loops, normal and overlap (managers/scheduler.py,
 // schedule_policy.py, schedule_batch.py, scheduler_components/batch_result_processor.py at
 // 297e54fd) over the cache framework of core/cache. A step is one iteration of
-// Scheduler.event_loop_normal. Nothing here reads a clock or starts a goroutine: the loop's time
+// Scheduler.event_loop_normal or Scheduler.event_loop_overlap. Nothing here reads a clock or starts a goroutine: the loop's time
 // is the step count.
 package sched
 

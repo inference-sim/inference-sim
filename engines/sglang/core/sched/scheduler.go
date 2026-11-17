@@ -56,6 +56,9 @@ type Config struct {
 	TreeCache                          string `json:"tree_cache"`
 	DisaggregationMode                 string `json:"disaggregation_mode"`
 	EnableOverlap                      bool   `json:"enable_overlap"`
+	// DisableConsecutivePrefillOverlap is SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP
+	// (environ.py:693@297e54fd, default off): two extend batches in a row do not overlap.
+	DisableConsecutivePrefillOverlap bool `json:"disable_consecutive_prefill_overlap"`
 	// RadixEvictionPolicy is the tree's eviction policy; empty is lru, SGLang's default.
 	RadixEvictionPolicy string `json:"radix_eviction_policy"`
 	// RetractionPolicy is --retraction-policy; empty is "length", the default the port models.
@@ -121,6 +124,10 @@ type Scheduler struct {
 
 	waitingPrefixRefreshCalls int
 
+	// resultQueue is Scheduler.result_queue (scheduler.py:2064@297e54fd): the launched batches
+	// whose results the overlap loop has not processed. At scheduling time it holds at most one.
+	resultQueue []*Batch
+
 	processedTokens  int
 	forwardCt        int
 	step             int
@@ -135,8 +142,6 @@ func New(cfg Config, tree cache.PrefixCache, alloc cache.Allocator, pool cache.R
 	switch {
 	case cfg.RetractionPolicy != "" && cfg.RetractionPolicy != "length":
 		return nil, fmt.Errorf("sched: the %s retraction policy is not modelled (%s)", cfg.RetractionPolicy, RetractionRefusal)
-	case cfg.EnableOverlap:
-		return nil, fmt.Errorf("sched: the overlap loop is S14 and is not in the normal loop (%s)", Refusal)
 	case cfg.DisaggregationMode != "null" && cfg.DisaggregationMode != "":
 		return nil, fmt.Errorf("sched: disaggregation mode %q belongs to S25 (%s)", cfg.DisaggregationMode, Refusal)
 	case cfg.PPSize > 1:
@@ -301,9 +306,10 @@ func (s *Scheduler) addRequestToQueue(r *Req) {
 	r.ArrivalProcessedTokens = s.processedTokens
 }
 
-// isFullyIdle is is_fully_idle (:5337-5365) outside overlap, pipeline parallelism and disaggregation.
+// isFullyIdle is is_fully_idle (:5337-5365) outside pipeline parallelism and disaggregation.
 func (s *Scheduler) isFullyIdle() bool {
-	return s.running.IsEmpty() && s.chunkedReq == nil && (s.last == nil || s.last.IsEmpty()) && len(s.waiting) == 0
+	return s.running.IsEmpty() && s.chunkedReq == nil && (s.last == nil || s.last.IsEmpty()) &&
+		(!s.cfg.EnableOverlap || len(s.resultQueue) == 0) && len(s.waiting) == 0
 }
 
 // getNextBatchToRun is get_next_batch_to_run (:3894-4050).
@@ -474,7 +480,11 @@ func (s *Scheduler) getNewBatchPrefill(running *Batch) (*Batch, *Batch) {
 
 	// Mixed-style chunked prefill.
 	if s.cfg.IsMixedChunk && !running.IsEmpty() {
-		running.FilterBatch(nil)
+		finishing := s.reqsFinishingInflight(running)
+		running.FilterBatch(finishing)
+		if len(finishing) > 0 {
+			running.BatchIsFull = false
+		}
 		// The prefill admitted above may leave no KV room for the decode rows. They then sit out
 		// this step and decode on the next decode step, which fits them.
 		if !running.IsEmpty() && running.CheckDecodeMem(s, nil) {
@@ -491,12 +501,20 @@ func (s *Scheduler) getNewBatchPrefill(running *Batch) (*Batch, *Batch) {
 // fit, then prepare it.
 func (s *Scheduler) updateRunningBatch(b *Batch) *Batch {
 	initial := b.Size()
-	b.FilterBatch(nil)
+	finishing := s.reqsFinishingInflight(b)
+	b.FilterBatch(finishing)
 	if b.IsEmpty() {
 		b.BatchIsFull = false
 		return b
 	}
-	if !b.CheckDecodeMem(s, nil) {
+	retract := !b.CheckDecodeMem(s, nil)
+	if retract && len(finishing) > 0 {
+		// The queued result frees the finishing requests' KV at the end of this step; decode the
+		// rest next step instead of retracting them (:4472-4477).
+		b.BatchIsFull = false
+		return nil
+	}
+	if retract {
 		retracted, ratio := b.RetractDecode(s)
 		s.newTokenRatio.current = ratio
 		for _, r := range retracted {
@@ -632,6 +650,11 @@ func (s *Scheduler) processPrefill(b *Batch) {
 func (s *Scheduler) processDecode(b *Batch) {
 	s.alloc.FreeGroupBegin()
 	for _, r := range b.Reqs {
+		if s.cfg.EnableOverlap && (r.Finished() || r.IsRetracted) {
+			// A row that finished (or was retracted) while this pass ran reappears for one tick;
+			// release_kv_cache already freed its over-allocated tokens (:1022-1027).
+			continue
+		}
 		r.C.OutputIDs = append(r.C.OutputIDs, s.sampledToken)
 		r.UpdateFinishState(s.cfg.EOSTokenIDs)
 		if r.Finished() {
@@ -642,7 +665,8 @@ func (s *Scheduler) processDecode(b *Batch) {
 	s.alloc.FreeGroupEnd()
 }
 
-// Step runs one iteration of event_loop_normal (scheduler.py:2026-2059) with the given arrivals.
+// Step runs one iteration of event_loop_normal (scheduler.py:2026-2059), or of event_loop_overlap
+// (:2061-2134) when overlap scheduling is on, with the given arrivals.
 // A refused feature is returned as an error wrapping ErrRefused.
 func (s *Scheduler) Step(arrivals []Arrival) (rec StepRecord, err error) {
 	defer func() {
@@ -658,13 +682,18 @@ func (s *Scheduler) Step(arrivals []Arrival) (rec StepRecord, err error) {
 	for _, a := range arrivals {
 		s.handleGenerateRequest(a)
 	}
-	batch := s.getNextBatchToRun()
-	if batch != nil {
-		rec.Forwards = append(rec.Forwards, s.runBatch(batch))
-		s.processBatchResult(batch)
-	} else if s.isFullyIdle() {
-		// On idle: new_token_ratio resets (:5318).
-		s.newTokenRatio.current = s.cfg.NewTokenRatio.Init
+	var batch *Batch
+	if s.cfg.EnableOverlap {
+		batch = s.overlapIteration(&rec)
+	} else {
+		batch = s.getNextBatchToRun()
+		if batch != nil {
+			rec.Forwards = append(rec.Forwards, s.runBatch(batch))
+			s.processBatchResult(batch)
+		} else if s.isFullyIdle() {
+			// On idle: new_token_ratio resets (:5318).
+			s.newTokenRatio.current = s.cfg.NewTokenRatio.Init
+		}
 	}
 	s.last = batch
 	rec.Finished = s.finishedThisStep

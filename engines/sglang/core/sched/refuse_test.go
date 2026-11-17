@@ -24,7 +24,6 @@ func TestUnmodelledSettingsAreRefusedByName(t *testing.T) {
 		edit func(*Config)
 		want string
 	}{
-		{"overlap", func(c *Config) { c.EnableOverlap = true }, "overlap"},
 		{"disagg", func(c *Config) { c.DisaggregationMode = "prefill" }, "disaggregation"},
 		{"interval", func(c *Config) { c.PrefillDecodeInterval = 4 }, "prefill-decode interval"},
 		{"pp", func(c *Config) { c.PPSize = 2 }, "pipeline parallelism"},

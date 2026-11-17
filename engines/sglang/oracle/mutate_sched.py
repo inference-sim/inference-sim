@@ -56,6 +56,20 @@ M=[
 ("policy.go","\t\t\tcopy(queue, sorted)\n","","dfs order ignored"),
 ("adder.go","len(a.canRunList) >= *x {","len(a.canRunList) > *x {","prefill max requests"),
 ("adder.go","\t\t\treturn NoToken\n\t\t}\n\t\tfreed += float64(st.occupied)","\t\t}\n\t\tfreed += float64(st.occupied)","ignore_eos ledger never refuses"),
+("overlap.go","(b.Mode == Extend || b.Mode == Mixed)","b.Mode == Extend","mixed batch is not an extend for overlap"),
+("overlap.go","isExtend(batch) && isExtend(last)","isExtend(batch)","consecutive prefill needs only the batch"),
+("overlap.go","\tif disable {\n\t\ts.popAndProcess()\n\t}","\tif false {\n\t\ts.popAndProcess()\n\t}","disabled overlap still defers the result"),
+("overlap.go","} else if batch == nil && s.isFullyIdle() {","} else if false {","overlap idle never resets the ratio"),
+("overlap.go","if queued[r] && r.NextOutputFinishesByLength() {","if r.NextOutputFinishesByLength() {","finishing check ignores the queued result"),
+("overlap.go","if queued[r] && r.NextOutputFinishesByLength() {","if queued[r] {","finishing check ignores the length"),
+("overlap.go","\tif !s.cfg.EnableOverlap || len(s.resultQueue) == 0 {\n\t\treturn nil","\tif true {\n\t\treturn nil","skip-finishing off"),
+("req.go","return len(r.C.OutputIDs)+1 >= r.MaxNewTokens","return len(r.C.OutputIDs)+1 > r.MaxNewTokens","next output finishes boundary"),
+("scheduler.go","running.FilterBatch(finishing)\n\t\tif len(finishing) > 0 {\n\t\t\trunning.BatchIsFull = false","running.FilterBatch(nil)\n\t\tif len(finishing) > 0 {\n\t\t\trunning.BatchIsFull = false","mixed batch decodes a finishing request"),
+("scheduler.go","running.FilterBatch(finishing)\n\t\tif len(finishing) > 0 {\n\t\t\trunning.BatchIsFull = false","running.FilterBatch(finishing)\n\t\tif len(finishing) > 0 {\n\t\t\t_ = 0","mixed batch stays full after a finishing request"),
+("scheduler.go","if retract && len(finishing) > 0 {","if false {","retract despite finishing requests"),
+("scheduler.go","s.cfg.EnableOverlap && (r.Finished() || r.IsRetracted)","s.cfg.EnableOverlap && r.IsRetracted","finished row decoded again"),
+("scheduler.go","s.cfg.EnableOverlap && (r.Finished() || r.IsRetracted)","s.cfg.EnableOverlap && r.Finished()","retracted row decoded again"),
+("scheduler.go","(!s.cfg.EnableOverlap || len(s.resultQueue) == 0) &&","true &&","idle ignores the unprocessed result"),
 ]
 only=sys.argv[1:]
 res=[]
