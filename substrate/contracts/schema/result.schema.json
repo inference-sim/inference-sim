@@ -1241,6 +1241,9 @@
           ],
           "type": "string"
         },
+        "first_token_us": {
+          "type": "integer"
+        },
         "gateway_queue_delay_us": {
           "type": "integer"
         },
@@ -1268,6 +1271,9 @@
           "type": "string"
         },
         "prompt_tokens": {
+          "type": "integer"
+        },
+        "queue_entry_us": {
           "type": "integer"
         },
         "round_index": {
@@ -1336,6 +1342,9 @@
           "type": "integer"
         },
         "not_started": {
+          "type": "integer"
+        },
+        "planned_not_issued": {
           "type": "integer"
         },
         "queued_at_horizon": {
