@@ -339,6 +339,23 @@ Example:
 			}
 		}
 
+		// Drain-gated phases (#1926, blis-substrate#156): the first phase is sent now, each later
+		// one when the one before it drains. allRequests is every request the trace holds, for the
+		// run controls and the re-export; requests is what is sent first.
+		allRequests := requests
+		var phaseGate *workload.PhaseGate
+		if len(traceData.Header.Phases) > 0 {
+			if agx != nil || (replaySessionMode != "fixed" && replaySessionMode != "fixed-accumulate") {
+				logrus.Fatalf("a trace with phases replays with --session-mode fixed or fixed-accumulate; closed-loop, pooled and agentic replays do not run drain-gated phases yet (inference-sim#1926)")
+			}
+			g, initial, gErr := workload.NewPhaseGate(traceData.Header.Phases, requests)
+			if gErr != nil {
+				logrus.Fatalf("trace phases: %v", gErr)
+			}
+			phaseGate, requests = g, initial
+			logrus.Infof("Phased replay: %d phases, %d of %d requests sent at the start", len(traceData.Header.Phases), len(initial), len(allRequests))
+		}
+
 		// Compute horizon (BC-3)
 		// #1615 (INV-13): with no --horizon the replay runs until the requests drain, as a run
 		// with no horizon does; the former twice-the-last-arrival default truncated the tail.
@@ -545,6 +562,9 @@ Example:
 		if csErr != nil {
 			logrus.Fatalf("%v", csErr)
 		}
+		if phaseGate != nil {
+			cs.SetGate(phaseGate)
+		}
 		// INV-13: the router the trace was recorded with, unless the command line names one.
 		router := reconcileReplayRouter(cmd, traceData.Header.Router)
 		gw := newGateway(router, model, adapterIDsOf(loraCfg)...)
@@ -613,14 +633,14 @@ Example:
 		// document is computed from it.
 		agx.setMeasuredWindow(cs.AggregatedMetrics())
 		emitRunResult(postRun{
-			cs: cs, gateway: gw, run: replayRunControls(agx, traceData, requests, cs.Horizon()), goodputTargets: goodputTargets,
+			cs: cs, gateway: gw, run: replayRunControls(agx, traceData, allRequests, cs.Horizon()), goodputTargets: goodputTargets,
 			satTracer: satTracer, agentic: agx.resultSummary(), started: startTime,
 			frame: replayFrameGenerator(agx),
 			// A replay stops when its requests are exhausted or its horizon is reached: the
 			// frame's stop rule states the count it replays (the trace's records, or the
 			// agentic scenario's requests), which is what a pooled replay without a horizon
 			// stops on.
-			numRequestsCap: len(requests),
+			numRequestsCap: len(allRequests),
 		})
 
 		// Export trace if requested (runs LAST, after all primary metrics are emitted —
@@ -653,7 +673,7 @@ Example:
 					logrus.Infof("--trace-output in pool mode: re-exported %d captured records as a complete closed-loop session corpus; replay with --session-mode closed-loop (not re-cloned).", len(records))
 				}
 			} else {
-				records = workload.RequestsToTraceRecords(requests)
+				records = workload.RequestsToTraceRecords(allRequests)
 			}
 			header := &workload.TraceHeader{
 				Version:              workload.TraceVersion,
@@ -663,6 +683,7 @@ Example:
 				GoodputSLOTargets:    goodputTargets,                   // #1413, BC-7
 				KVOffload:            simToHeaderOffload(kvOffloadCfg), // #1587, BC-G6: carry the offload config forward
 				Router:               router.header(gw.Seed()),
+				Phases:               traceData.Header.Phases, // #1926: the stages the run ran in
 			}
 			if err := workload.ExportTraceV2(header, records, replayTraceOutput+".yaml", replayTraceOutput+".csv"); err != nil {
 				logrus.Fatalf("Trace export failed: %v", err)

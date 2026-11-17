@@ -151,6 +151,10 @@ type ClusterSimulator struct {
 	sessionCallback func(*sim.Request, int64) []*sim.Request
 	// plannedRounds names the session rounds planned and never issued (SetPlannedRounds).
 	plannedRounds func() []sim.PlannedRound
+	// gate sends the later phases of a phased workload (SetGate).
+	gate RequestGate
+	// horizonReached is set when the horizon ends the requests still held.
+	horizonReached bool
 
 	// Data-parallel lockstep replicas (#1909). replicaOf maps each rank's instance ID to
 	// its replica; both nil when every instance is an independent engine.
