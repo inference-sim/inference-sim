@@ -21,7 +21,7 @@ import (
 )
 
 // Fixed memory occupancy is the registry's magnitudes in NVIDIA's composition, with nothing
-// the kernel hardcodes and nothing Provenance cannot see (inference-sim/blis-latency-kernel#22).
+// the kernel hardcodes and nothing Provenance cannot see (https://github.com/inference-sim/blis-latency-kernel/issues/22).
 // liftMemory states the form and its sources.
 
 // memoryFixture is the deployment #22 measured: deepseek-v3, tp=8, fp8 on h200, 8,192
@@ -117,7 +117,7 @@ func TestMemoryMagnitudesMoveOccupancyAndNoStepTime(t *testing.T) {
 }
 
 // ACTIVATION SCRATCH DOES NOT FOLLOW THE SERVED WEIGHT FORMAT. #22 proposed sizing it at the
-// served width, which would halve it for fp8. blis-registry#33 established the opposite and
+// served width, which would halve it for fp8. https://github.com/inference-sim/blis-registry/issues/33 established the opposite and
 // this kernel follows it: vLLM's fp8 linears return out_dtype=x.dtype
 // (vllm/model_executor/kernels/linear/scaled_mm/cutlass.py at v0.31.0), so the residual
 // stream and the inter-layer buffers stay bf16 under fp8 weights.

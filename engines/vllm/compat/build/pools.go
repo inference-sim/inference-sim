@@ -623,10 +623,10 @@ func priceOffload(m *kernelmodel.Model, cfg *engine.KVOffloadConfig, in OffloadP
 			}
 			// A catalog device's rates are O_DIRECT rates; buffered (page-cache) I/O, vLLM's
 			// fallback where O_DIRECT is unsupported, is another regime the kernel does not
-			// price yet (blis-latency-kernel#41), so it is refused rather than priced as O_DIRECT.
+			// price yet (inference-sim/blis-substrate#110), so it is refused rather than priced as O_DIRECT.
 			if !cfg.Tiers[i].DirectIO {
 				return 0, fmt.Errorf("kv_offload secondary_tiers[%d] (%s) uses buffered I/O (direct_io: "+
-					"false), which the kernel does not price (blis-latency-kernel#41); only "+
+					"false), which the kernel does not price (inference-sim/blis-substrate#110); only "+
 					"direct_io: true tiers can be simulated", i, class)
 			}
 			// Price one real block each way up front, so an unknown device or one with no

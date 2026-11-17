@@ -17,7 +17,7 @@ import (
 // profile for (model, method, K, thinking, category), the workload's own value, the
 // scenario's pin, the command line -- and recorded in the results file. This file only
 // gathers the layers; precedence, the K check, AL in [1, K+1] and the refusal of an unmatched
-// lookup are the resolver's (blis-schemas#65).
+// lookup are the resolver's (https://github.com/inference-sim/blis-schemas/issues/65).
 
 // The acceptance flags, named here so the refusals name them.
 const (

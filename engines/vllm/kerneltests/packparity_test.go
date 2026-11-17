@@ -28,7 +28,7 @@ const (
 // blis-schemas' internal validate package as the exported rules.Problems alias. One later
 // rewrite is undone too, exactly once per pack: the capture-size check passes the engine-neutral
 // rules.CUDAGraphCaptureInput built from the four fields CUDAGraphCaptureSizes reads, where it
-// passed the whole engine block (blis-vllm 480d434, with blis-schemas#102 ddfd45b). Any other
+// passed the whole engine block (blis-vllm 480d434, with https://github.com/inference-sim/blis-schemas/issues/102 ddfd45b). Any other
 // difference, one byte, fails, however the kernel's tests price.
 func TestTheMovedPacksAreTheOnesThisKernelReadBefore(t *testing.T) {
 	out, err := exec.Command("go", "mod", "download", "-json", formerRulesPin).Output()
@@ -72,7 +72,7 @@ func TestTheMovedPacksAreTheOnesThisKernelReadBefore(t *testing.T) {
 				"undoes has changed, so re-verify the pack before extending it", pack, n)
 		}
 		now = bytes.Replace(now, []byte(captureInput), []byte("p.CUDAGraphCaptureSizes(e)"), 1)
-		// Undo the engine-block rewrite (blis-vllm 0f892e3, with blis-schemas#102 2c38342): the
+		// Undo the engine-block rewrite (blis-vllm 0f892e3, with https://github.com/inference-sim/blis-schemas/issues/102 2c38342): the
 		// packs read a pool's block through engineconfig, decoding it in forEachPool and skipping
 		// one that does not decode, which the field layer refuses (CheckEngineBlock), and the pack
 		// type and its helpers moved from blis-schemas' rules to blis-vllm's pack. Every rewrite
