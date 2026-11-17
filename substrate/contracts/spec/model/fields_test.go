@@ -209,6 +209,9 @@ func TestV41FieldRejects(t *testing.T) {
 		{"scale on an attention node", "only a GEMM or GroupedGEMM", func(g *Graph) {
 			source(g)[1].WeightScale = &WeightScale{Elements: 32, Bytes: 1}
 		}},
+		// Biases.
+		{"bias on an attention node", "only a GEMM or GroupedGEMM", func(g *Graph) { source(g)[1].BiasDType = DTypeBF16 }},
+		{"bias of an unknown dtype", "bias_dtype: \"nope\" is not a recognized dtype", func(g *Graph) { source(g)[0].BiasDType = "nope" }},
 		{"zero scale group", "global.weight_scale.elements: must be positive", func(g *Graph) { g.Global.WeightScale.Elements = 0 }},
 		// Aliases.
 		{"alias on an attention node", "only a GEMM or Gather", func(g *Graph) { source(g)[1].Aliases = "head.lm_head" }},

@@ -20,6 +20,7 @@ layer_kinds:
     role: qkv_proj
     n: 5120
     k: 2880
+    bias_dtype: bf16
     weight_dtype: bf16
   - op: Attention
     holds_engine_kv: true
@@ -32,6 +33,7 @@ layer_kinds:
     role: o_proj
     n: 2880
     k: 4096
+    bias_dtype: bf16
     weight_dtype: bf16
   - op: AllReduce
     role: attn_out
@@ -44,6 +46,7 @@ layer_kinds:
     k: 2880
     tp: replicated
     weight_dtype: bf16
+    bias_dtype: bf16
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -52,6 +55,7 @@ layer_kinds:
     experts: 128
     top_k: 4
     weight_dtype: mxfp4
+    bias_dtype: bf16
   - op: All2All
     role: moe_dispatch_combine
     emit: expert_parallel
@@ -85,6 +89,7 @@ layer_kinds:
     role: qkv_proj
     n: 5120
     k: 2880
+    bias_dtype: bf16
     weight_dtype: bf16
   - op: Attention
     holds_engine_kv: true
@@ -96,6 +101,7 @@ layer_kinds:
     role: o_proj
     n: 2880
     k: 4096
+    bias_dtype: bf16
     weight_dtype: bf16
   - op: AllReduce
     role: attn_out
@@ -108,6 +114,7 @@ layer_kinds:
     k: 2880
     tp: replicated
     weight_dtype: bf16
+    bias_dtype: bf16
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -116,6 +123,7 @@ layer_kinds:
     experts: 128
     top_k: 4
     weight_dtype: mxfp4
+    bias_dtype: bf16
   - op: All2All
     role: moe_dispatch_combine
     emit: expert_parallel

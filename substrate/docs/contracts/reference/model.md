@@ -258,6 +258,7 @@ Common to every node:
 | `n` | integer | yes | Output dimension. |
 | `k` | integer | yes | Input dimension. |
 | `weight_dtype` | string | no | Overrides `global.weight_dtype` for this node's weights. |
+| `bias_dtype` | string | no | The dtype of the bias the checkpoint stores beside this node's weights; omitted means no bias. A `GEMM`'s bias has `n` elements; a `GroupedGEMM`'s has, for each expert, `n` for each of the gate and up projections and `k` for the down. The bias is resident with the weights. An engine's conversion or padding of it is the engine's lowering. |
 | `weight_scale` | mapping | no | The resident scale layout of this node's weights, [below](#weight-scales). |
 
 `GroupedGEMM` only, for MoE experts:
@@ -672,6 +673,7 @@ A node is invalid if
   negative;
 - an attention `kind` or `recurrent_kind` is not recognized, `n_kv` exceeds `n_q`, or `n_kv`
   is not 1 for `mla` or `sparse_mla`;
+- `bias_dtype` is not a recognized dtype, or is set on anything other than a `GEMM` or `GroupedGEMM`;
 - `weight_dtype` or `weight_scale` is set on anything other than a `GEMM` or
   `GroupedGEMM`, `weight_dtype` or `state_dtype` is not a recognized dtype, or a
   `weight_scale` count is not positive;

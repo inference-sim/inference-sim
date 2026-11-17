@@ -18,9 +18,8 @@ import (
 // which it splits over the tensor-parallel ranks and which it replicates.
 //
 // Left out on both sides, each named: the MoE router (a node of its own with #228, removed from
-// the graph here so the comparison does not depend on that change); the multimodal tower, which
-// these graphs do not hold (#107 item 2); the expert biases gpt-oss stores, which the schema has
-// no field for (0.074 GiB). The MXFP4 experts are allocated at
+// the graph here so the comparison does not depend on that change, and its 36 x 128 bias
+// elements); the multimodal tower, which these graphs do not hold (#107 item 2). The MXFP4 experts are allocated at
 // vLLM's padded shapes (#273): hidden up to a multiple of 256 and each rank's intermediate up to
 // 128 (fused_moe/oracle/mxfp4.py:837-879@v0.33.0), on Hopper and Blackwell alike.
 
@@ -69,6 +68,11 @@ func gptOSS120B(tp int) []ckptModule {
 		{L * float64(H*(q+2*kv)+q*H), bf16, false}, // qkv_proj and o_proj
 		{L * expertParams, mxfp4, false},           // experts gate_up and down
 		{V * H, bf16, false}, {V * H, bf16, false}, // lm_head, embed_tokens (vocab-parallel)
+		// The biases the checkpoint stores (#281), at the unpadded shapes it stores them in: the
+		// attention projections' (qkv split; o_proj row-parallel, whole on every rank, kept
+		// split by the graph for its 0.2 MB), the experts' gate_up (split) and down (whole).
+		{L * float64(q+2*kv), bf16, false}, {L * float64(H), bf16, false},
+		{L * float64(E*2*I), bf16, false}, {L * float64(E*H), bf16, true},
 	}
 }
 
@@ -208,5 +212,55 @@ func TestFP8GlmHeadIsPlannedAtTheCheckpointsBF16Width(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// A checkpoint's bias is resident beside its weights. gpt-oss-120b stores a bias on the attention
+// projections, the router and every routed expert's gate_up and down projections (bf16); a rank
+// holds them, so the planned weights are the same graph without the biases plus their bytes.
+func TestGptOssBiasesAreResidentWithTheWeights(t *testing.T) {
+	d, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tp := range []int{1, 2, 4, 8} {
+		t.Run(fmt.Sprintf("tp%d", tp), func(t *testing.T) {
+			in := planCase(t, d, "gpt-oss-120b", "b200", 1, fmt.Sprintf("tp: %d, pp: 1, dp: 1", tp),
+				func(l *plan.Lowered) { l.Plan.WeightFormat = string(model.DTypeMXFP4) })
+			withBias := float64(mustKernel(t, in).FixedBytes().Weights)
+			g := *in.Model
+			g.LayerKinds = append([]model.LayerKind(nil), in.Model.LayerKinds...)
+			var want float64
+			count := map[string]int{}
+			for _, id := range in.Model.Stack.Expand() {
+				count[id]++
+			}
+			for i, k := range g.LayerKinds {
+				g.LayerKinds[i].Nodes = append([]model.Node(nil), k.Nodes...)
+				for j, n := range g.LayerKinds[i].Nodes {
+					if n.BiasDType == "" {
+						continue
+					}
+					elems := float64(n.N)
+					if n.Op == model.OpGroupedGEMM {
+						// gate and up split over the ranks; the down projection's bias is whole on each.
+						elems = float64(n.Experts) * (float64(2*n.N)/float64(tp) + float64(n.K))
+					} else if n.Role != "router" && n.TP != model.TPRow {
+						elems /= float64(tp)
+					}
+					want += float64(count[k.ID]) * elems * 2 // bf16
+					g.LayerKinds[i].Nodes[j].BiasDType = ""
+				}
+			}
+			if want == 0 {
+				t.Fatal("the graph states no bias")
+			}
+			noBias := in
+			noBias.Model = &g
+			without := float64(mustKernel(t, noBias).FixedBytes().Weights)
+			if got := withBias - without; math.Abs(got-want) > 0.02*want {
+				t.Errorf("biases add %.4f GiB a rank; the checkpoint's are %.4f GiB", got/gib, want/gib)
+			}
+		})
 	}
 }
