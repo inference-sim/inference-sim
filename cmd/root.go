@@ -731,6 +731,14 @@ var runCmd = &cobra.Command{
 			maxRequests = int64(numRequests)
 		}
 
+		// A phased workload is the sum of its phases' requests (#1926).
+		if len(spec.Phases) > 0 {
+			maxRequests = 0
+			for _, ph := range spec.Phases {
+				maxRequests += ph.NumRequests
+			}
+		}
+
 		// Guard against unbounded generation
 		if maxRequests <= 0 && simulationHorizon == math.MaxInt64 {
 			logrus.Fatalf("Workload requires either num_requests or --horizon to bound generation")
@@ -740,9 +748,38 @@ var runCmd = &cobra.Command{
 		// including multi-session reasoning (#1458), concurrency clients (#1459) and
 		// time-varying / per-window workloads (#1460). The source's Err surfaces a terminal
 		// sampler or generator error recorded during the run (PR #1453 review round 3).
-		requestSource, sessions, followUpBudget, err := workload.GenerateWorkloadLazy(spec, simulationHorizon, maxRequests)
-		if err != nil {
-			logrus.Fatalf("Failed to build the workload: %v", err)
+		var (
+			requestSource  requestStream
+			sessions       []workload.SessionBlueprint
+			followUpBudget int64 = -1
+			phaseGate      *workload.PhaseGate
+		)
+		if len(spec.Phases) > 0 {
+			// Drain-gated phases (#1926): the first phase is sent now, each later one when the
+			// one before it drains. The count is the phases' own.
+			if cmd.Flags().Changed("num-requests") {
+				logrus.Fatalf("--num-requests cannot be used with a phased workload: each phase states its num_requests")
+			}
+			phased, gErr := workload.GeneratePhased(spec)
+			if gErr != nil {
+				logrus.Fatalf("Failed to build the phased workload: %v", gErr)
+			}
+			var initial []*sim.Request
+			phaseGate, initial, gErr = workload.NewPhaseGate(spec.TracePhases(), phased)
+			if gErr != nil {
+				logrus.Fatalf("Failed to build the phased workload: %v", gErr)
+			}
+			maxRequests = int64(len(phased))
+			requestSource = phasedSource{cluster.NewSliceRequestSource(initial)}
+			logrus.Infof("Phased workload: %d phases, %d of %d requests sent at the start", len(spec.Phases), len(initial), len(phased))
+		} else {
+			var lazy requestStream
+			var gErr error
+			lazy, sessions, followUpBudget, gErr = workload.GenerateWorkloadLazy(spec, simulationHorizon, maxRequests)
+			if gErr != nil {
+				logrus.Fatalf("Failed to build the workload: %v", gErr)
+			}
+			requestSource = lazy
 		}
 		wl := &workload.GeneratedWorkload{Sessions: sessions, FollowUpBudget: followUpBudget}
 		// Apply the timeout to the session blueprints, which expansion inside the generator may
@@ -995,6 +1032,9 @@ var runCmd = &cobra.Command{
 		if sessionMgr != nil {
 			cs.SetPlannedRounds(sessionMgr.PlannedUnissued)
 		}
+		if phaseGate != nil {
+			cs.SetGate(phaseGate)
+		}
 		router := resolveRouterInputs()
 		gw := newGateway(router, model, adapterIDsOf(loraCfg)...)
 		cs.SetGateway(gw)
@@ -1112,6 +1152,8 @@ var runCmd = &cobra.Command{
 				MaxNodesSpanned: crossNodeSpanForTrace(cs.MaxNodesSpanned()),
 				// INV-13: the router the run routed with, so a replay rebuilds it.
 				Router: router.header(gw.Seed()),
+				// #1926: the stages the run ran in, so a replay sends them drain-gated too.
+				Phases: spec.TracePhases(),
 			}
 			if err := workload.ExportTraceV2(header, records, traceOutput+".yaml", traceOutput+".csv"); err != nil {
 				logrus.Fatalf("Trace export failed: %v", err)
@@ -1456,3 +1498,15 @@ func allSessionsAccumulate(wl *workload.GeneratedWorkload) bool {
 	}
 	return true
 }
+
+// requestStream is a request source that reports a terminal generator error after the run.
+type requestStream interface {
+	cluster.RequestSource
+	Err() error
+}
+
+// phasedSource is the first requests of a phased workload; the drain gate sends the rest.
+type phasedSource struct{ *cluster.SliceRequestSource }
+
+// Err is nil: a phased workload is generated whole before the run.
+func (phasedSource) Err() error { return nil }

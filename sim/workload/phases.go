@@ -2,6 +2,7 @@ package workload
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 
@@ -73,6 +74,8 @@ func NewPhaseGate(phases []trace.Phase, requests []*sim.Request) (*PhaseGate, []
 			initial = append(initial, g.begin(0, p.base+p.spec.OffsetUs)...)
 		}
 	}
+	// A phase that starts at a clock of its own can start before the first phase's last request.
+	sort.SliceStable(initial, func(i, j int) bool { return initial[i].ArrivalTime < initial[j].ArrivalTime })
 	return g, initial, nil
 }
 
