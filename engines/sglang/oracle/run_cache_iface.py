@@ -29,7 +29,9 @@ slice of it), "node" (a name bound to a match or insert result, whose last devic
 
 Usage:
     python -I oracle/run_cache_iface.py recorded <sglang checkout> <scenario.json> <out.json>
-    python -I oracle/run_cache_iface.py direct <sglang checkout> <sequence.json> <out.json>
+    python -I oracle/run_cache_iface.py direct <sglang checkout> <sequence.json> <out.json> [--tree-core=rust]
+--tree-core=rust drives the sequence through SGLang's Rust tree core instead of the Python one
+(SGL-1 pins the Python core for every golden; oracle/run_treecore_diff.py compares the two).
 Environment as for oracle/run_scheduler.py (ORACLE_LOCKFILE, ORACLE_MODEL_REVISION; ORACLE_MODEL
 for recorded). BLIS_SGLANG_ALLOW_GOLDEN_UPDATE=1 lets it write a golden.
 """
@@ -91,7 +93,7 @@ def record_scenario(sglang_root: str, path: str) -> dict:
             "kind": "recorded", "classes": got["result"]["classes"], "calls": got["calls"]}
 
 
-def build_cache(cfg: dict):
+def build_cache(cfg: dict, tree_core: str = "python"):
     """SGLang's own pools, allocator and radix cache for a sequence's cache block, built by their
     constructors with the arguments Scheduler.__init__ passes for a full-attention MHA model
     (python/sglang/srt/mem_cache/kv_cache_builder.py, registry.py)."""
@@ -119,11 +121,16 @@ def build_cache(cfg: dict):
                              page_size=page, tree_components=(ComponentType.FULL,),
                              enable_kv_cache_events=bool(cfg.get("kv_cache_events", False)),
                              dynamo_kv_event_format=bool(cfg.get("dynamo_kv_event_format", False)),
-                             eviction_policy=cfg.get("eviction_policy", "lru"))
-    return UnifiedRadixCache(params=params), alloc, req_to_token
+                             eviction_policy=cfg.get("eviction_policy", "lru"), tree_core_backend=tree_core)
+    cache = UnifiedRadixCache(params=params)
+    if cache._tree_core_backend != tree_core:
+        # select_tree_core_backend falls back to the Python core where the Rust one cannot run
+        # (tree_core_registry.py:44-120); a comparison of the two must not compare one with itself.
+        raise SystemExit(f"the {tree_core} tree core was asked for and SGLang built {cache._tree_core_backend}")
+    return cache, alloc, req_to_token
 
 
-def drive_sequence(sglang_root: str, path: str) -> dict:
+def drive_sequence(sglang_root: str, path: str, tree_core: str = "python") -> dict:
     import run_scheduler
 
     for name in [n for n in os.environ if n.startswith("SGLANG_")]:
@@ -154,7 +161,7 @@ def drive_sequence(sglang_root: str, path: str) -> dict:
         return RadixKey(array("q", c["tokens"]), c.get("extra_key"), cache_salt=c.get("cache_salt"))
 
     with mon:
-        cache, alloc, req_to_token = build_cache(sq["cache"])
+        cache, alloc, req_to_token = build_cache(sq["cache"], tree_core)
         targets = {"cache": cache, "allocator": alloc, "req_to_token": req_to_token}
         for c in sq["calls"]:
             t, m = targets[c["on"]], c["m"]
@@ -184,6 +191,9 @@ def drive_sequence(sglang_root: str, path: str) -> dict:
 
 
 def main(argv) -> int:
+    tree_core = "python"
+    if len(argv) == 5 and argv[0] == "direct" and argv[4] in ("--tree-core=python", "--tree-core=rust"):
+        tree_core = argv.pop().split("=", 1)[1]
     if len(argv) != 4 or argv[0] not in ("recorded", "direct"):
         print(__doc__.split("Usage:", 1)[1].split("Environment", 1)[0].strip(), file=sys.stderr)
         return 2
@@ -192,7 +202,7 @@ def main(argv) -> int:
         print(traces.REFUSAL, file=sys.stderr)
         return 2
     sys.path.insert(0, os.path.join(os.path.abspath(root), "python"))
-    trace = record_scenario(root, path) if kind == "recorded" else drive_sequence(root, path)
+    trace = record_scenario(root, path) if kind == "recorded" else drive_sequence(root, path, tree_core)
     if not any(c["i"] == "prefix_cache" for c in trace["calls"]):
         print(f"{path}: no call at the prefix cache was recorded", file=sys.stderr)
         return 1
