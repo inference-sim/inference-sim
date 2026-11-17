@@ -177,12 +177,64 @@ def test_two_drafters_of_one_target_are_two_profiles(tmp_path):
     assert by == stated
 
 
-def test_curves_that_claim_one_key_are_both_refused():
-    """The two GQA curves differ only in the verifier, which a key cannot state (D8)."""
-    carried = {stem_of(p) for p in SET["profiles"]}
-    assert GQA not in carried and GQA_BLOCK not in carried
-    caveat = next(c for c in SET["caveats"] if c.startswith(f"Not carried: {GQA}.yaml"))
-    assert f"{GQA_BLOCK}.yaml" in caveat
+def test_curves_that_differ_in_sampler_or_verifier_are_carried_with_them():
+    """The GQA drafter's two curves differ only in the verifier, and Kimi-K3's three DSpark
+    curves in the sampler and verifier (inference-sim/blis-substrate#174): each is carried under
+    the key that states what it was measured with, a sampler left at its engine's default as the
+    marker "default"."""
+    got = {}
+    for p in SET["profiles"]:
+        got.setdefault(stem_of(p), set()).add((p.get("draft_sampler", ""), p.get("verifier", "")))
+    assert got[GQA] == {("default", "standard")} and got[GQA_BLOCK] == {("default", "block")}
+    kimi = "kimi-k3__dspark__kimi-k3-dspark__"
+    assert got[kimi + "default-default"] == {("default", "standard")}
+    assert got[kimi + "probabilistic-block"] == {("probabilistic", "block")}
+    assert got[kimi + "probabilistic-default"] == {("probabilistic", "standard")}
+
+
+def test_a_methods_only_curve_states_what_its_source_records():
+    """DeepSeek-V4.1-Flash is its target's only DSpark curve, measured with probabilistic
+    drafting and block verification; its key says so, so its meaning does not change the day a
+    second curve arrives."""
+    p = next(p for p in SET["profiles"] if stem_of(p).startswith("deepseek-v4.1-flash__"))
+    assert (p["draft_sampler"], p["verifier"]) == ("probabilistic", "block")
+
+
+def test_curves_that_claim_one_key_are_both_refused(tmp_path):
+    """Two curves of one target, drafter, method, sampler and verifier: nothing tells them apart."""
+    golden = copy_golden(tmp_path)
+    new = "glm-5.2-fp8__mtp__native__default-relaxed"
+    (golden / f"{new}.yaml").write_text((golden / f"{GLM52}.yaml").read_text())
+    ids = yaml.safe_load((golden / emit.IDENTITIES).read_text())
+    add_identity(golden, new, ids[GLM52])
+    out = generated(golden)
+    carried = {stem_of(p) for p in out["profiles"]}
+    assert GLM52 not in carried and new not in carried
+    assert any(c.startswith(f"Not carried: {new}.yaml") and f"{GLM52}.yaml" in c for c in out["caveats"])
+
+
+def test_a_verifier_the_key_has_no_word_for_refuses_the_curve(tmp_path):
+    """InferenceX's `relaxed` is no verifier the key states (vLLM v0.33.0 has standard, block and
+    fly): the curve is refused, naming the issue that would carry it."""
+    golden = copy_golden(tmp_path)
+    ids = yaml.safe_load((golden / emit.IDENTITIES).read_text())
+    ids[GQA_BLOCK]["collection"]["verify"] = {"value": "relaxed", "source": "explicit"}
+    (golden / emit.IDENTITIES).write_text(yaml.safe_dump(ids, sort_keys=False))
+    out = generated(golden)
+    assert GQA_BLOCK not in {stem_of(p) for p in out["profiles"]}
+    assert any(c.startswith(f"Not carried: {GQA_BLOCK}.yaml") and "relaxed" in c
+               and "inference-sim/blis-substrate#207" in c for c in out["caveats"])
+
+
+def test_a_default_setting_is_stated_as_the_marker_and_the_engine_is_stated():
+    """DeepSeek-V4-Pro's MTP curve leaves the draft sampler at its engine's default and documents
+    standard verification under vLLM: its key states the marker, standard and vllm. No engine
+    default is written by the emitter; the engine supplies it at lookup. GLM-5.3's curve is
+    SGLang's, and says so."""
+    p = next(p for p in SET["profiles"] if stem_of(p).startswith("deepseek-v4-pro__mtp__"))
+    assert (p["draft_sampler"], p["verifier"], p["engine"]) == ("default", "standard", "vllm")
+    g = next(p for p in SET["profiles"] if stem_of(p).startswith("glm-5.3-nvfp4__"))
+    assert g["engine"] == "sglang" and g["draft_sampler"] == "default"
 
 
 def test_a_drafter_the_catalog_lacks_is_refused_and_named(tmp_path):
