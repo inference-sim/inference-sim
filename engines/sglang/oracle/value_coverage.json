@@ -1,0 +1,272 @@
+{
+ "description": "oracle/value_coverage.py's configuration (FID-10): the maps whose keys are ids, and each compared field of the goldens that takes one value in the scenario set, with why.",
+ "maps": [
+  "finished"
+ ],
+ "held": {
+  "bodies_run[]": {
+   "kind": "gap",
+   "reason": "The HiCache controller goldens run one flow of each queue; a scenario that leaves the queue empty or moves the layer counter moves it (inference-sim/blis-sglang#37)."
+  },
+  "boundary_at": {
+   "kind": "gap",
+   "reason": "The HiCache controller goldens run one flow of each queue; a scenario that leaves the queue empty or moves the layer counter moves it (inference-sim/blis-sglang#37)."
+  },
+  "calls**": {
+   "kind": "gap",
+   "reason": "The recorded interface calls of the cache and HiCache goldens (FID-5) are heterogeneous records; the scenarios that record them do not yet move each argument and answer to a second value, which the cache stages' own scenarios add (inference-sim/blis-sglang#33)."
+  },
+  "classes.tree_cache": {
+   "kind": "gap",
+   "reason": "One tree cache in the scenario set; disable_radix_cache and further tree caches move it (inference-sim/blis-sglang#32)."
+  },
+  "classes.tree_core": {
+   "kind": "fixed",
+   "reason": "SGL-1: the oracle selects the Python tree core, and run_scheduler.py fails on any other."
+  },
+  "config.clip_max_new_tokens": {
+   "kind": "gap",
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+  },
+  "config.context_len": {
+   "kind": "gap",
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+  },
+  "config.disaggregation_mode": {
+   "kind": "gap",
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+  },
+  "config.eos_token_ids": {
+   "kind": "gap",
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+  },
+  "config.in_batch_prefix_check_threshold": {
+   "kind": "gap",
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+  },
+  "config.in_batch_prefix_deprioritize_threshold": {
+   "kind": "gap",
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+  },
+  "config.kv_events_dynamo": {
+   "kind": "gap",
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+  },
+  "config.max_context_len": {
+   "kind": "gap",
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+  },
+  "config.max_prefill_tokens": {
+   "kind": "gap",
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+  },
+  "config.need_sort": {
+   "kind": "gap",
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+  },
+  "config.new_token_ratio.decay": {
+   "kind": "gap",
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+  },
+  "config.new_token_ratio.init": {
+   "kind": "gap",
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+  },
+  "config.new_token_ratio.min": {
+   "kind": "gap",
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+  },
+  "config.pp_size": {
+   "kind": "gap",
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+  },
+  "config.prefill_decode_interval": {
+   "kind": "gap",
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+  },
+  "config.radix_eviction_policy": {
+   "kind": "gap",
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+  },
+  "config.retract_decode_steps": {
+   "kind": "gap",
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+  },
+  "config.tree_cache": {
+   "kind": "gap",
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+  },
+  "config.vocab_size": {
+   "kind": "gap",
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+  },
+  "finished.*.reason.err_type": {
+   "kind": "gap",
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+  },
+  "finished.*.reason.matched": {
+   "kind": "gap",
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+  },
+  "harness_problems": {
+   "kind": "fixed",
+   "reason": "A run with a harness problem writes no trace, so a golden always records none."
+  },
+  "receive.max_recv_per_poll": {
+   "kind": "fixed",
+   "reason": "The oracle counts a step per loop iteration and needs the default receive settings; the runner fails otherwise."
+  },
+  "receive.scheduler_recv_interval": {
+   "kind": "fixed",
+   "reason": "The oracle counts a step per loop iteration and needs the default receive settings; the runner fails otherwise."
+  },
+  "resolved.attention_backend": {
+   "kind": "fixed",
+   "reason": "The oracle's base platform runs torch_native attention (oracle/mocks.json, \"the base platform\")."
+  },
+  "resolved.device": {
+   "kind": "fixed",
+   "reason": "The oracle's base platform is the CPU device (oracle/mocks.json, \"the base platform\")."
+  },
+  "sglang_env.SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP": {
+   "kind": "gap",
+   "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/blis-sglang#32)."
+  },
+  "sglang_env.SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND": {
+   "kind": "fixed",
+   "reason": "SGL-1: the one SGLANG_* variable the runner sets (KEPT_SGLANG_ENV), selecting the Python tree core."
+  },
+  "shutdown_sent": {
+   "kind": "fixed",
+   "reason": "A run whose loop returned before the harness's ShutdownReq writes no trace."
+  },
+  "sizing": {
+   "kind": "gap",
+   "reason": "The pool sizing goldens hold one non-empty sizing; a pool of another kind or size moves it (inference-sim/blis-sglang#35)."
+  },
+  "states": {
+   "kind": "gap",
+   "reason": "The HiCache controller goldens run one flow of each queue; a scenario that leaves the queue empty or moves the layer counter moves it (inference-sim/blis-sglang#37)."
+  },
+  "states[].controller.ack_load_queue[].node_ids": {
+   "kind": "gap",
+   "reason": "The HiCache controller goldens run one flow of each queue; a scenario that leaves the queue empty or moves the layer counter moves it (inference-sim/blis-sglang#37)."
+  },
+  "states[].controller.ack_write_queue[].node_ids": {
+   "kind": "gap",
+   "reason": "The HiCache controller goldens run one flow of each queue; a scenario that leaves the queue empty or moves the layer counter moves it (inference-sim/blis-sglang#37)."
+  },
+  "states[].controller.layer_counter.consumer_index": {
+   "kind": "gap",
+   "reason": "The HiCache controller goldens run one flow of each queue; a scenario that leaves the queue empty or moves the layer counter moves it (inference-sim/blis-sglang#37)."
+  },
+  "states[].controller.layer_counter.finished": {
+   "kind": "gap",
+   "reason": "The HiCache controller goldens run one flow of each queue; a scenario that leaves the queue empty or moves the layer counter moves it (inference-sim/blis-sglang#37)."
+  },
+  "states[].controller.load_queue[].node_ids": {
+   "kind": "gap",
+   "reason": "The HiCache controller goldens run one flow of each queue; a scenario that leaves the queue empty or moves the layer counter moves it (inference-sim/blis-sglang#37)."
+  },
+  "states[].controller.write_queue[].device_indices": {
+   "kind": "gap",
+   "reason": "The HiCache controller goldens run one flow of each queue; a scenario that leaves the queue empty or moves the layer counter moves it (inference-sim/blis-sglang#37)."
+  },
+  "states[].controller.write_queue[].host_indices": {
+   "kind": "gap",
+   "reason": "The HiCache controller goldens run one flow of each queue; a scenario that leaves the queue empty or moves the layer counter moves it (inference-sim/blis-sglang#37)."
+  },
+  "states[].controller.write_queue[].node_ids": {
+   "kind": "gap",
+   "reason": "The HiCache controller goldens run one flow of each queue; a scenario that leaves the queue empty or moves the layer counter moves it (inference-sim/blis-sglang#37)."
+  },
+  "steps": {
+   "kind": "fixed",
+   "reason": "A run with no step writes no trace (no forward pass ran)."
+  },
+  "steps[].forwards[].extend_prefix_lens": {
+   "kind": "no_neutral",
+   "reason": "A forward pass has at least one request, so its per-request list is never empty."
+  },
+  "steps[].forwards[].extend_seq_lens": {
+   "kind": "no_neutral",
+   "reason": "A forward pass has at least one request, so its per-request list is never empty."
+  },
+  "steps[].forwards[].loop.file": {
+   "kind": "fixed",
+   "reason": "Every forward pass must come from SGLang's managers/scheduler.py; the runner fails otherwise."
+  },
+  "steps[].forwards[].loop.upstream_code": {
+   "kind": "fixed",
+   "reason": "Every forward pass must come from SGLang's own loop at the checkout; the runner fails otherwise."
+  },
+  "steps[].forwards[].req_pool_indices": {
+   "kind": "no_neutral",
+   "reason": "A forward pass has at least one request, so its per-request list is never empty."
+  },
+  "steps[].forwards[].rids": {
+   "kind": "no_neutral",
+   "reason": "A forward pass has at least one request, so its per-request list is never empty."
+  },
+  "steps[].forwards[].seq_lens": {
+   "kind": "no_neutral",
+   "reason": "A forward pass has at least one request, so its per-request list is never empty."
+  },
+  "steps[].kv_events": {
+   "kind": "gap",
+   "reason": "The metric and KV-event goldens run one cache, one engine and one rank layout; a scenario with another moves it, and a step that emits none gives the empty list (inference-sim/blis-sglang#60)."
+  },
+  "steps[].metrics": {
+   "kind": "gap",
+   "reason": "The metric and KV-event goldens run one cache, one engine and one rank layout; a scenario with another moves it, and a step that emits none gives the empty list (inference-sim/blis-sglang#60)."
+  },
+  "steps[].metrics[]": {
+   "kind": "gap",
+   "reason": "The metric and KV-event goldens run one cache, one engine and one rank layout; a scenario with another moves it, and a step that emits none gives the empty list (inference-sim/blis-sglang#60)."
+  },
+  "steps[].metrics[][].cache_type": {
+   "kind": "gap",
+   "reason": "The metric and KV-event goldens run one cache, one engine and one rank layout; a scenario with another moves it, and a step that emits none gives the empty list (inference-sim/blis-sglang#60)."
+  },
+  "steps[].metrics[][].dp_rank": {
+   "kind": "gap",
+   "reason": "The metric and KV-event goldens run one cache, one engine and one rank layout; a scenario with another moves it, and a step that emits none gives the empty list (inference-sim/blis-sglang#60)."
+  },
+  "steps[].metrics[][].engine_type": {
+   "kind": "gap",
+   "reason": "The metric and KV-event goldens run one cache, one engine and one rank layout; a scenario with another moves it, and a step that emits none gives the empty list (inference-sim/blis-sglang#60)."
+  },
+  "steps[].metrics[][].forward_overlap": {
+   "kind": "gap",
+   "reason": "The metric and KV-event goldens run one cache, one engine and one rank layout; a scenario with another moves it, and a step that emits none gives the empty list (inference-sim/blis-sglang#60)."
+  },
+  "steps[].metrics[][].moe_ep_rank": {
+   "kind": "gap",
+   "reason": "The metric and KV-event goldens run one cache, one engine and one rank layout; a scenario with another moves it, and a step that emits none gives the empty list (inference-sim/blis-sglang#60)."
+  },
+  "steps[].metrics[][].pp_rank": {
+   "kind": "gap",
+   "reason": "The metric and KV-event goldens run one cache, one engine and one rank layout; a scenario with another moves it, and a step that emits none gives the empty list (inference-sim/blis-sglang#60)."
+  },
+  "steps[].metrics[][].tp_rank": {
+   "kind": "gap",
+   "reason": "The metric and KV-event goldens run one cache, one engine and one rank layout; a scenario with another moves it, and a step that emits none gives the empty list (inference-sim/blis-sglang#60)."
+  },
+  "steps[].outputs[].output_lens": {
+   "kind": "no_neutral",
+   "reason": "An output names at least one request, with its length."
+  },
+  "steps[].outputs[].rids": {
+   "kind": "no_neutral",
+   "reason": "An output names at least one request."
+  },
+  "steps[].shutdown": {
+   "kind": "fixed",
+   "reason": "Recorded only on the step that sent the ShutdownReq, as true."
+  },
+  "truncated": {
+   "kind": "fixed",
+   "reason": "A run that did not finish within max_steps writes no trace."
+  }
+ }
+}
