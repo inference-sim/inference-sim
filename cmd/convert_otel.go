@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,12 +17,13 @@ import (
 )
 
 var (
-	otelInputPath     string
-	otelTraceOutput   string
-	otelContextGrowth string
-	otelMaxThinkTime  time.Duration
-	otelIncludeErrors bool
-	otelMinRounds     int
+	otelInputPath         string
+	otelTraceOutput       string
+	otelContextGrowth     string
+	otelMaxThinkTime      time.Duration
+	otelIncludeErrors     bool
+	otelMinRounds         int
+	otelThinkFromSpanEnds bool
 )
 
 var convertOtelCmd = &cobra.Command{
@@ -53,6 +55,8 @@ token counts) rather than 'blis run' (distribution sampling).`,
 			MaxThinkTimeUs: otelMaxThinkTime.Microseconds(),
 			IncludeErrors:  otelIncludeErrors,
 			MinRounds:      otelMinRounds,
+
+			ThinkFromSpanEnds: otelThinkFromSpanEnds,
 		}
 		if err := runConvertOtel(otelInputPath, otelTraceOutput, opts); err != nil {
 			logrus.Fatalf("OTel conversion failed: %v", err)
@@ -116,6 +120,48 @@ func collectTraceInputs(path string) ([]traceInput, error) {
 	return []traceInput{{name: path, raw: b}}, nil
 }
 
+// sharePrefix gives the sessions that opened with the same system message a shared prefix group on
+// round 0 (#2130), so a replay finds that message cached for every session after the first, as the
+// recorded server did. A span states its input tokens for the whole call, not per message, so the
+// prefix length is an estimate: the system message's share of the call's characters times the
+// call's tokens, the least over the group. It is a named substitution, logged.
+func sharePrefix(sessions []*workload.OTelSession) {
+	groups := map[string][]*workload.OTelSession{}
+	for _, s := range sessions {
+		if s.SystemText != "" && s.SystemShare > 0 {
+			groups[s.SystemText] = append(groups[s.SystemText], s)
+		}
+	}
+	keys := make([]string, 0, len(groups))
+	for k, g := range groups {
+		if len(g) > 1 {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		g := groups[k]
+		length := -1
+		for _, s := range g {
+			n := int(s.SystemShare * float64(s.Records[0].InputTokens))
+			if length < 0 || n < length {
+				length = n
+			}
+		}
+		if length < 1 {
+			continue
+		}
+		sum := sha256.Sum256([]byte(k))
+		name := fmt.Sprintf("system-%x", sum[:4])
+		for _, s := range g {
+			r := &s.Records[0]
+			r.PrefixGroup, r.PrefixLength = name, length
+			r.InputTokens -= length
+		}
+		logrus.Infof("substitution: %d sessions share a system message; prefix group %s is estimated at %d tokens (the message's share of the first call's characters times its tokens)", len(g), name, length)
+	}
+}
+
 // runConvertOtel reads all traces at inputPath, converts each to session
 // records, assigns global request IDs, and writes a TraceV2 pair to
 // <outPrefix>.yaml / <outPrefix>.csv.
@@ -135,21 +181,30 @@ func runConvertOtel(inputPath, outPrefix string, opts workload.OTelConvertOption
 		return err
 	}
 
-	var allRecords []workload.TraceRecord
-	nextID := 0
+	var sessions []*workload.OTelSession
 	skipped := 0
 	for _, in := range inputs {
-		recs, err := workload.ConvertOTelTrace(in.raw, opts)
+		sess, err := workload.ConvertOTelSession(in.raw, opts)
 		if err != nil {
 			logrus.Warnf("skipping unparseable trace %s: %v", in.name, err)
 			skipped++
 			continue
 		}
-		if recs == nil {
+		if sess == nil {
 			logrus.Debugf("skipping trace %s: below --min-rounds", in.name)
 			skipped++
 			continue // below MinRounds
 		}
+		sessions = append(sessions, sess)
+	}
+	// Sessions are written in the order the client started them (#2130), not the order the
+	// traces are stored in, so a pool replays them in the run's order. Ties keep input order.
+	sort.SliceStable(sessions, func(i, j int) bool { return sessions[i].StartUs < sessions[j].StartUs })
+	sharePrefix(sessions)
+	var allRecords []workload.TraceRecord
+	nextID := 0
+	for _, sess := range sessions {
+		recs := sess.Records
 		for i := range recs {
 			recs[i].RequestID = nextID
 			nextID++
@@ -185,6 +240,7 @@ func init() {
 	convertOtelCmd.Flags().StringVar(&otelContextGrowth, "context-growth", "accumulate", "Prefix model: \"accumulate\" (strict growing shared prefix) or \"independent\"")
 	convertOtelCmd.Flags().DurationVar(&otelMaxThinkTime, "max-think-time", 15*time.Second, "Cap on per-round inter-call gap (think time); 0 = no cap")
 	convertOtelCmd.Flags().BoolVar(&otelIncludeErrors, "include-errors", false, "Include spans with error status (status.code == 2)")
+	convertOtelCmd.Flags().BoolVar(&otelThinkFromSpanEnds, "think-from-span-ends", false, "Record each follow-up round's think time as the gap from the previous span's end to this span's start (use when the spans carry real end times)")
 	convertOtelCmd.Flags().IntVar(&otelMinRounds, "min-rounds", 1, "Skip sessions with fewer than N usable LLM calls")
 	_ = convertOtelCmd.MarkFlagRequired("input")
 	_ = convertOtelCmd.MarkFlagRequired("trace-output")

@@ -330,3 +330,33 @@ func TestConvertOTelTrace_ZeroMaxThinkTimeUncapped(t *testing.T) {
 		t.Errorf("uncapped arrival = %d, want 100e6 (no cap applied when MaxThinkTimeUs == 0)", recs[1].ArrivalTimeUs)
 	}
 }
+
+// A follow-up round's think time is the gap from the previous span's end to its start when the
+// converter is told the spans carry real end times (#2130), and is not stated otherwise.
+func TestConvertOTelTrace_ThinkTimeFromSpanEnds(t *testing.T) {
+	j := `{"spans":[
+	  {"span_id":"a","name":"chat m","start_time":"2026-01-01T00:00:00.000000","end_time":"2026-01-01T00:00:03.000000","status":{"code":1},"attributes":{"gen_ai.usage.input_tokens":100,"gen_ai.usage.output_tokens":10,"gen_ai.input.messages":"[]"},"trace_id":"s"},
+	  {"span_id":"b","name":"chat m","start_time":"2026-01-01T00:00:05.000000","end_time":"2026-01-01T00:00:08.500000","status":{"code":1},"attributes":{"gen_ai.usage.input_tokens":150,"gen_ai.usage.output_tokens":10,"gen_ai.input.messages":"[]"},"trace_id":"s"},
+	  {"span_id":"c","name":"chat m","start_time":"2026-01-01T00:00:10.500000","status":{"code":1},"attributes":{"gen_ai.usage.input_tokens":200,"gen_ai.usage.output_tokens":10,"gen_ai.input.messages":"[]"},"trace_id":"s"}
+	]}`
+	recs, err := ConvertOTelTrace([]byte(j), OTelConvertOptions{ThinkFromSpanEnds: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recs[0].ThinkTimeUs != nil {
+		t.Errorf("round 0 states a think time")
+	}
+	if recs[1].ThinkTimeUs == nil || *recs[1].ThinkTimeUs != 2_000_000 {
+		t.Errorf("round 1 think = %v, want 2000000 (start 5 s less the previous end 3 s)", recs[1].ThinkTimeUs)
+	}
+	if recs[2].ThinkTimeUs == nil || *recs[2].ThinkTimeUs != 2_000_000 {
+		t.Errorf("round 2 think = %v, want 2000000", recs[2].ThinkTimeUs)
+	}
+	plain, err := ConvertOTelTrace([]byte(j), OTelConvertOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain[1].ThinkTimeUs != nil {
+		t.Errorf("without the option round 1 states think %d", *plain[1].ThinkTimeUs)
+	}
+}
