@@ -92,8 +92,6 @@ func servedDType(checkpoint model.DType, quantization string) (model.DType, erro
 		return model.DTypeFP8, nil
 	case "modelopt_fp4", "nvfp4":
 		return model.DTypeNVFP4, nil
-	case "mxfp4":
-		return model.DTypeMXFP4, nil
 	case "bitsandbytes", "awq", "awq_marlin", "gptq", "gptq_marlin", "compressed-tensors":
 		// These are weight-only integer formats whose packed width depends on a
 		// per-checkpoint bit count the flag does not carry. A checkpoint serving one of
@@ -105,6 +103,58 @@ func servedDType(checkpoint model.DType, quantization string) (model.DType, erro
 		"quantization %q is not one this kernel prices; add it to servedDType with its "+
 			"weight width rather than letting it fall through to %s",
 		quantization, checkpoint)
+}
+
+// mxfp4ExpertsOnly reports whether a stated quantization is one of vLLM's MXFP4 methods, which
+// quantize the routed experts and nothing else, on a checkpoint whose routed experts are stored in
+// MXFP4. It returns vLLM's refusal for a stated MXFP4 method the checkpoint cannot be served with.
+//
+// In v0.33.0 both methods leave every linear layer unquantized: Mxfp4Config.get_quant_method returns
+// UnquantizedLinearMethod for a LinearBase ("MXFP4 linear layer is not implemented",
+// vllm/model_executor/layers/quantization/mxfp4.py:91-107@4ba787ec) and an MXFP4 MoE method for the
+// routed experts; GptOssMxfp4Config is that config with the GPT-OSS MoE method (:116-149). So the
+// linear layers run at the checkpoint's own width, and the experts at the width the graph states for
+// them. "gpt_oss_mxfp4" is the method GptOssMxfp4Config.override_quantization_method names for a
+// GPT-OSS checkpoint whose quant_method is mxfp4 (:128-146), and the name vLLM logs as the engine's
+// quantization; it is the checkpoint's own method only for model_type gpt_oss.
+func mxfp4ExpertsOnly(g *model.Graph, quantization string) (bool, error) {
+	if quantization != "mxfp4" && quantization != "gpt_oss_mxfp4" {
+		return false, nil
+	}
+	if !routedExpertsIn(g, model.DTypeMXFP4) {
+		return false, fmt.Errorf("quantization %q quantizes the routed experts as MXFP4, and %s stores no "+
+			"routed experts in MXFP4, so vLLM cannot load it with this method "+
+			"(vllm/model_executor/layers/quantization/mxfp4.py:91-149@4ba787ec)", quantization, g.Name)
+	}
+	if quantization == "gpt_oss_mxfp4" && g.Global.Architecture != "GptOssForCausalLM" {
+		return false, fmt.Errorf("quantization %q is the GPT-OSS checkpoints' method, and %s is a %s: vLLM "+
+			"accepts it only for model_type gpt_oss (GptOssMxfp4Config.override_quantization_method, "+
+			"vllm/model_executor/layers/quantization/mxfp4.py:128-146@4ba787ec)",
+			quantization, g.Name, g.Global.Architecture)
+	}
+	return true, nil
+}
+
+// routedExpertsIn reports whether every routed-expert GroupedGEMM of the graph stores its weights
+// in d, and the graph has at least one.
+func routedExpertsIn(g *model.Graph, d model.DType) bool {
+	found := false
+	for _, lk := range g.LayerKinds {
+		for _, n := range lk.Nodes {
+			if n.Op != model.OpGroupedGEMM || n.IsSharedExpert() {
+				continue
+			}
+			w := n.WeightDType
+			if w == "" {
+				w = g.Global.WeightDType
+			}
+			if w != d {
+				return false
+			}
+			found = true
+		}
+	}
+	return found
 }
 
 // cacheDTypeBytes resolves the KV or state cache width.

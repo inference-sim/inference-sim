@@ -266,7 +266,7 @@ func TestADeclinedAllReduceRequestReachesOneRowOfTheResult(t *testing.T) {
 // ModelOpt or microscaling spelling is resolved by the checkpoint's recipe (package
 // quantization) before the lowering, and reaches it empty.
 func TestAQuantizationSpellingTheCostModelDoesNotPriceIsRefused(t *testing.T) {
-	for _, spelling := range []string{"modelopt_mixed", "mxfp8", "modelopt_mxfp8", "gpt_oss_mxfp4"} {
+	for _, spelling := range []string{"modelopt_mixed", "mxfp8", "modelopt_mxfp8"} {
 		_, err := tryLower(t, where{"minimax-m3-nvfp4", "b200", "tp: 4, pp: 1, dp: 1"},
 			vllmsettings.Settings{Quantization: spelling})
 		if err == nil || !strings.Contains(err.Error(), "not one this kernel prices") {
