@@ -44,8 +44,11 @@ CLOCKED_EXTRA = ("sglang.srt.observability.",)
 class Run:
     """One scenario's run: what the replaced sockets deliver, and what the scheduler did."""
 
-    def __init__(self, scenario: dict, sglang_root: str):
+    def __init__(self, scenario: dict, sglang_root: str, on_step=None):
         self.scenario = scenario
+        # Called at the start of every loop iteration, before its arrivals are delivered: the
+        # step boundary of oracle/step_runner.py when a HiCache scenario runs (run_hicache.py).
+        self.on_step = on_step
         self.sglang_root = os.path.realpath(sglang_root)
         self.problems: list[str] = []
         self.classes: dict = {}
@@ -64,6 +67,8 @@ class Run:
         """The first receive of a loop iteration: start the iteration's record, and return what
         arrives in it."""
         self.step += 1
+        if self.on_step is not None:
+            self.on_step()
         if self.step == 0 and self.clock is not None:
             # Scheduler.__init__ has imported what it imports: replace their clocks too.
             install_clock(self.clock)

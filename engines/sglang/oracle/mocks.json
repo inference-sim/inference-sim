@@ -1,161 +1,646 @@
 {
- "version": "gpu-mock/7+d4066f5141b6",
- "description": "Every replacement the oracle harness makes in SGLang's code, by kind (gpu, clock, transport, environment, platform, external-service, transcription), with the sites oracle/check_mocks.py finds. No entry is a transcription: the event loops run as released.",
- "mocks": [
-  {
-   "symbol": "oracle/stubs.py STUBBED",
-   "kind": "environment",
-   "how": "an import hook that makes each module named in stubs.STUBBED, and its submodules, import as a module whose every attribute is a MagicMock, as SGLang's own CPU tests stub sgl_kernel (python/sglang/test/test_utils.py:2042-2077@297e54fd). STUBBED is empty: the scheduler imports and starts with nothing stubbed. oracle/run_import.py fails unless each stubbed name is also the symbol of an environment entry here.",
-   "sites": [
-    "stubs.py:sys.meta_path"
-   ]
-  },
-  {
-   "symbol": "the CUDA-only packages the lock leaves out",
-   "kind": "environment",
-   "how": "cuda-python, flash-attn-4, flashinfer_python, humming-kernels, nvidia-cutlass-dsl, nvidia-mathdx, nvshmem4py-cu13, quack-kernels, sgl-deep-ep, sgl-deep-gemm, sgl-flash-mla, sglang-kernel, tilelang and torch_memory_saver are not installed (oracle/requirements.txt). SGLang reads their absence: is_flashinfer_available uses find_spec(\"flashinfer\") (python/sglang/srt/utils/common.py:388-395@297e54fd) and _is_intel_amx_backend_available try-imports sgl_kernel (:353-360). On the CUDA platform FID-1 restores, both would differ; restoring them is listed with that work.",
-   "sites": []
-  },
-  {
-   "symbol": "sglang.srt.model_executor.model_runner.ModelRunner.load_model",
-   "kind": "gpu",
-   "how": "builds no weights: an empty torch module stands for the model, its dtype is the model config's, its sliding window is SGLang's own resolve_sliding_window_size, and its loader reports no preloaded weights, as SGLang's in-tree simulator does (tools/sglang-simulator/src/sglang_simulator/simulation/sglang/model_runner.py:44-59@297e54fd); a model class that defines get_attention_sliding_window_size or is_prefill_aware_swa is refused by name, since the empty model cannot report them",
-   "sites": [
-    "harness.py:runner.load_model",
-    "harness.py:mr.model",
-    "harness.py:mr.dtype",
-    "harness.py:mr.sliding_window_size",
-    "harness.py:mr.prefill_aware_swa",
-    "harness.py:mr.weight_load_mem_usage",
-    "harness.py:mr.load_config",
-    "harness.py:mr.loader"
-   ]
-  },
-  {
-   "symbol": "sglang.srt.model_executor.model_runner.ModelRunner.forward",
-   "kind": "gpu",
-   "how": "runs no kernel: returns empty logits of the batch's size and the model's vocabulary, and records the batch the scheduler launched (forward mode, batch size, sequence, extend and prefix lengths, the allocator's free tokens, and the event loop on the call stack)",
-   "sites": [
-    "harness.py:runner.forward"
-   ]
-  },
-  {
-   "symbol": "sglang.srt.model_executor.model_runner.ModelRunner.sample",
-   "kind": "gpu",
-   "how": "every sampled token is the scenario's sampled_token; requests set ignore_eos and finish by length",
-   "sites": [
-    "harness.py:runner.sample"
-   ]
-  },
-  {
-   "symbol": "sglang.srt.model_executor.model_runner.ModelRunner.init_attention_backends",
-   "kind": "gpu",
-   "how": "the backend names are SGLang's own resolution (resolve_attention_backend_strs); the backend objects, which build GPU kernels, are not made",
-   "sites": [
-    "harness.py:runner.init_attention_backends",
-    "harness.py:mr.prefill_attention_backend_str",
-    "harness.py:mr.decode_attention_backend_str",
-    "harness.py:mr.attn_backend",
-    "harness.py:mr.decode_attn_backend",
-    "harness.py:mr.decode_attn_backend_group"
-   ]
-  },
-  {
-   "symbol": "sglang.srt.model_executor.model_runner.ModelRunner.init_cuda_graphs",
-   "kind": "gpu",
-   "how": "no CUDA graph is captured (the scenario disables them, and the torch_native backend does too)",
-   "sites": [
-    "harness.py:runner.init_cuda_graphs",
-    "harness.py:mr.graph_mem_usage",
-    "harness.py:mr.cuda_graph_runner",
-    "harness.py:mr.eager_runner",
-    "harness.py:mr.prefill_cuda_graph_runner",
-    "harness.py:mr.decode_cuda_graph_runner"
-   ]
-  },
-  {
-   "symbol": "sglang.srt.utils.common.get_available_gpu_memory and get_device_memory_capacity",
-   "kind": "platform",
-   "how": "the device's free memory and its capacity are the scenario's device_memory_gib, not the host's: ServerArgs resolution (arg_groups/memory_hook.py:78@297e54fd reads the capacity) and KVCacheConfigurator._profile_available_bytes size from the scenario by SGLang's own arithmetic. Replaced in sglang.srt.utils.common and its re-export in sglang.srt.utils before any module that imports them is loaded. tiny-memory.json sets no max_total_tokens, so the profiled memory sizes its pool",
-   "sites": [
-    "harness.py:utils_common.get_available_gpu_memory",
-    "harness.py:srt_utils.get_available_gpu_memory",
-    "harness.py:utils_common.get_device_memory_capacity",
-    "harness.py:srt_utils.get_device_memory_capacity"
-   ]
-  },
-  {
-   "symbol": "sglang.srt.managers.scheduler_components.ipc_channels.get_zmq_socket",
-   "kind": "external-service",
-   "how": "the tokenizer, an outside service (design \u00a77.3): the PULL socket SchedulerIpcChannels.create makes yields, on its first receive of each loop iteration, that iteration's scenario arrivals (TokenizedGenerateReqInput, through SGLang's msgpack codec), then zmq.Again; once every request has finished it yields a ShutdownReq, which SGLang's own Scheduler.handle_shutdown turns into gracefully_exit, ending the loop. A receive that ends an iteration with arrivals undelivered fails the run. oracle/run_sched.py sets each arrival's ignore_eos, priority and routing_key from its scenario request, as a client would. The same factory makes the transport sockets of the next entry; any other socket type raises.",
-   "sites": [
-    "harness.py:ipc_channels.get_zmq_socket",
-    "run_sched.py:req.sampling_params.ignore_eos",
-    "run_sched.py:req.priority",
-    "run_sched.py:req.routing_key"
-   ]
-  },
-  {
-   "symbol": "the scheduler's RPC and output sockets",
-   "kind": "transport",
-   "how": "made by the factory of the entry above: the DEALER RPC socket yields nothing, and its receive marks the end of an iteration's receives; each PUSH socket records what the scheduler sends",
-   "sites": []
-  },
-  {
-   "symbol": "time in every clocked module",
-   "kind": "clock",
-   "how": "every loaded module under a decision prefix of oracle/harness.json, and every sglang.srt.observability module, binds a virtual clock in place of the time module, and of time.monotonic, perf_counter, time and their _ns forms where it bound them by name: 1e6 s plus step_seconds per loop iteration. Installed before Scheduler.__init__ and again at the first step, for modules it imported; the runner fails if one still binds the real clock after the run.",
-   "sites": [
-    "harness.py:mod.?"
-   ]
-  },
-  {
-   "symbol": "the scheduler's watchdog threads",
-   "kind": "environment",
-   "how": "Scheduler.__init__ starts SGLang's watchdog (managers/scheduler.py:1476-1486, create_scheduler_watchdog in managers/scheduler_components/invariant_checker.py:494@297e54fd), which runs as released. It reads the clock and forward_ct and can only end the process after watchdog_timeout without progress; it decides nothing the trace records, and a run that it ended fails",
-   "sites": []
-  },
-  {
-   "symbol": "SGLANG_* in the scheduler process",
-   "kind": "environment",
-   "how": "every SGLANG_* variable of the caller's environment is removed; SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python is set, so the unified radix cache runs its Python tree core (SGL-1; SGLang's default is Rust, python/sglang/srt/environ.py:741@297e54fd). The trace records the variables and the tree-core class, and the runner fails on any other core",
-   "sites": [
-    "run_scheduler.py:os.environ[]",
-    "run_sched.py:os.environ[]"
-   ]
-  },
-  {
-   "symbol": "ServerArgs load_format=dummy",
-   "kind": "environment",
-   "how": "the runner's ServerArgs: no weight files are read (the GPU replacement loads none)",
-   "sites": []
-  },
-  {
-   "symbol": "ServerArgs skip_tokenizer_init=True",
-   "kind": "environment",
-   "how": "the runner's ServerArgs: requests arrive as token ids and outputs leave as token ids; the tokenizer is the outside service above",
-   "sites": []
-  },
-  {
-   "symbol": "the base platform",
-   "kind": "platform",
-   "how": "the oracle runs SGLang's base SRTPlatform: no CUDA device, SGLANG_USE_CPU_ENGINE unset, and the runner's ServerArgs device=cpu, attention_backend=torch_native, sampling_backend=pytorch and disable_cuda_graph=True, as SGLang's own CPU simulator CI runs it. Restoring what the CUDA platform would resolve for the scenario's chip is FID-1 work not done here; each trace's resolved block records the values the run used.",
-   "sites": []
-  },
-  {
-   "symbol": "run_scheduler_process pipe_writer",
-   "kind": "transport",
-   "how": "the pipe on which run_scheduler_process reports its start-up to the launcher is an object of the runner's that keeps what is sent; the trace records its pool sizes",
-   "sites": []
-  },
-  {
-   "symbol": "EventPublisherFactory publisher \"recording\"",
-   "kind": "transport",
-   "how": "the ZMQ PUB socket and its thread are replaced by a publisher of the runner's, registered with EventPublisherFactory under the name \"recording\": publish() sets the batch's timestamp to 0.0 (the wall clock otherwise) and encodes it with the same msgspec.msgpack.Encoder().encode call the ZMQ publisher's thread makes, and keeps the bytes; oracle/run_metrics.py records them",
-   "sites": [
-    "run_metrics.py:events.ts",
-    "run_metrics.py:events.attn_dp_rank"
-   ]
-  }
- ]
+  "version": "gpu-mock/9+f7e50518d4b2",
+  "description": "Every replacement the oracle harness makes in SGLang's code, by kind (gpu, clock, transport, environment, platform, external-service, transcription), with the sites oracle/check_mocks.py finds, and in `covers` the platform reads, clock reads and thread starts each accounts for (oracle/gen_platform_reads.py lists them, FID-1). No entry is a transcription: the event loops run as released.",
+  "mocks": [
+    {
+      "symbol": "oracle/stubs.py STUBBED",
+      "kind": "environment",
+      "how": "an import hook that makes each module named in stubs.STUBBED, and its submodules, import as a module whose every attribute is a MagicMock, as SGLang's own CPU tests stub sgl_kernel (python/sglang/test/test_utils.py:2042-2077@297e54fd). STUBBED is empty: the scheduler imports and starts with nothing stubbed. oracle/run_import.py fails unless each stubbed name is also the symbol of an environment entry here.",
+      "sites": [
+        "stubs.py:sys.meta_path"
+      ]
+    },
+    {
+      "symbol": "the CUDA-only packages the lock leaves out",
+      "kind": "environment",
+      "how": "cuda-python, flash-attn-4, flashinfer_python, humming-kernels, nvidia-cutlass-dsl, nvidia-mathdx, nvshmem4py-cu13, quack-kernels, sgl-deep-ep, sgl-deep-gemm, sgl-flash-mla, sglang-kernel, tilelang and torch_memory_saver are not installed (oracle/requirements.txt). SGLang reads their absence: is_flashinfer_available uses find_spec(\"flashinfer\") (python/sglang/srt/utils/common.py:388-395@297e54fd) and _is_intel_amx_backend_available try-imports sgl_kernel (:353-360). On the CUDA platform FID-1 restores, both would differ; restoring them is listed with that work.",
+      "sites": [],
+      "covers": [
+        "platform:sglang.srt.utils.common.is_flashinfer_available"
+      ]
+    },
+    {
+      "symbol": "sglang.srt.model_executor.model_runner.ModelRunner.load_model",
+      "kind": "gpu",
+      "how": "builds no weights: an empty torch module stands for the model, its dtype is the model config's, its sliding window is SGLang's own resolve_sliding_window_size, and its loader reports no preloaded weights, as SGLang's in-tree simulator does (tools/sglang-simulator/src/sglang_simulator/simulation/sglang/model_runner.py:44-59@297e54fd); a model class that defines get_attention_sliding_window_size or is_prefill_aware_swa is refused by name, since the empty model cannot report them",
+      "sites": [
+        "harness.py:runner.load_model",
+        "harness.py:mr.model",
+        "harness.py:mr.dtype",
+        "harness.py:mr.sliding_window_size",
+        "harness.py:mr.prefill_aware_swa",
+        "harness.py:mr.weight_load_mem_usage",
+        "harness.py:mr.load_config",
+        "harness.py:mr.loader"
+      ]
+    },
+    {
+      "symbol": "sglang.srt.model_executor.model_runner.ModelRunner.forward",
+      "kind": "gpu",
+      "how": "runs no kernel: returns empty logits of the batch's size and the model's vocabulary, and records the batch the scheduler launched (forward mode, batch size, sequence, extend and prefix lengths, the allocator's free tokens, and the event loop on the call stack)",
+      "sites": [
+        "harness.py:runner.forward"
+      ]
+    },
+    {
+      "symbol": "sglang.srt.model_executor.model_runner.ModelRunner.sample",
+      "kind": "gpu",
+      "how": "every sampled token is the scenario's sampled_token; requests set ignore_eos and finish by length",
+      "sites": [
+        "harness.py:runner.sample"
+      ]
+    },
+    {
+      "symbol": "sglang.srt.model_executor.model_runner.ModelRunner.init_attention_backends",
+      "kind": "gpu",
+      "how": "the backend names are SGLang's own resolution (resolve_attention_backend_strs); the backend objects, which build GPU kernels, are not made",
+      "sites": [
+        "harness.py:runner.init_attention_backends",
+        "harness.py:mr.prefill_attention_backend_str",
+        "harness.py:mr.decode_attention_backend_str",
+        "harness.py:mr.attn_backend",
+        "harness.py:mr.decode_attn_backend",
+        "harness.py:mr.decode_attn_backend_group"
+      ]
+    },
+    {
+      "symbol": "sglang.srt.model_executor.model_runner.ModelRunner.init_cuda_graphs",
+      "kind": "gpu",
+      "how": "no CUDA graph is captured (the scenario disables them, and the torch_native backend does too)",
+      "sites": [
+        "harness.py:runner.init_cuda_graphs",
+        "harness.py:mr.graph_mem_usage",
+        "harness.py:mr.cuda_graph_runner",
+        "harness.py:mr.eager_runner",
+        "harness.py:mr.prefill_cuda_graph_runner",
+        "harness.py:mr.decode_cuda_graph_runner"
+      ]
+    },
+    {
+      "symbol": "sglang.srt.utils.common.get_available_gpu_memory and get_device_memory_capacity",
+      "kind": "platform",
+      "how": "the device's free memory and its capacity are the scenario's device_memory_gib, not the host's: ServerArgs resolution (arg_groups/memory_hook.py:78@297e54fd reads the capacity) and KVCacheConfigurator._profile_available_bytes size from the scenario by SGLang's own arithmetic. Replaced in sglang.srt.utils.common and its re-export in sglang.srt.utils before any module that imports them is loaded. tiny-memory.json sets no max_total_tokens, so the profiled memory sizes its pool",
+      "sites": [
+        "harness.py:utils_common.get_available_gpu_memory",
+        "harness.py:srt_utils.get_available_gpu_memory",
+        "harness.py:utils_common.get_device_memory_capacity",
+        "harness.py:srt_utils.get_device_memory_capacity"
+      ],
+      "covers": [
+        "platform:sglang.srt.utils.common.get_available_gpu_memory",
+        "platform:sglang.srt.utils.common.get_device_memory_capacity"
+      ]
+    },
+    {
+      "symbol": "sglang.srt.managers.scheduler_components.ipc_channels.get_zmq_socket",
+      "kind": "external-service",
+      "how": "the tokenizer, an outside service (design §7.3): the PULL socket SchedulerIpcChannels.create makes yields, on its first receive of each loop iteration, that iteration's scenario arrivals (TokenizedGenerateReqInput, through SGLang's msgpack codec), then zmq.Again; once every request has finished it yields a ShutdownReq, which SGLang's own Scheduler.handle_shutdown turns into gracefully_exit, ending the loop. A receive that ends an iteration with arrivals undelivered fails the run. oracle/run_sched.py sets each arrival's ignore_eos, priority and routing_key from its scenario request, as a client would. The same factory makes the transport sockets of the next entry; any other socket type raises.",
+      "sites": [
+        "harness.py:ipc_channels.get_zmq_socket",
+        "run_sched.py:req.sampling_params.ignore_eos",
+        "run_sched.py:req.priority",
+        "run_sched.py:req.routing_key"
+      ]
+    },
+    {
+      "symbol": "the scheduler's RPC and output sockets",
+      "kind": "transport",
+      "how": "made by the factory of the entry above: the DEALER RPC socket yields nothing, and its receive marks the end of an iteration's receives; each PUSH socket records what the scheduler sends",
+      "sites": []
+    },
+    {
+      "symbol": "time in every clocked module",
+      "kind": "clock",
+      "how": "every loaded module under a decision prefix of oracle/harness.json, and every sglang.srt.observability module, binds a virtual clock in place of the time module, and of time.monotonic, perf_counter, time and their _ns forms where it bound them by name: 1e6 s plus step_seconds per loop iteration. Installed before Scheduler.__init__ and again at the first step, for modules it imported; the runner fails if one still binds the real clock after the run.",
+      "sites": [
+        "harness.py:mod.?"
+      ],
+      "covers": [
+        "clock:sglang.srt.observability.mooncake_trace.mooncake_trace_func",
+        "clock:sglang.srt.observability.trace.process_tracing_init",
+        "clock:sglang.srt.observability.trace_async.TraceReqContextAsync",
+        "clock:time.monotonic",
+        "clock:time.monotonic_ns",
+        "clock:time.perf_counter",
+        "clock:time.time"
+      ]
+    },
+    {
+      "symbol": "the scheduler's watchdog threads",
+      "kind": "environment",
+      "how": "Scheduler.__init__ starts SGLang's watchdog (managers/scheduler.py:1476-1486, create_scheduler_watchdog in managers/scheduler_components/invariant_checker.py:494@297e54fd), which runs as released. It reads the clock and forward_ct and can only end the process after watchdog_timeout without progress; it decides nothing the trace records, and a run that it ended fails",
+      "sites": [],
+      "covers": [
+        "thread:sglang.srt.managers.scheduler_components.invariant_checker.create_scheduler_watchdog"
+      ]
+    },
+    {
+      "symbol": "SGLANG_* in the scheduler process",
+      "kind": "environment",
+      "how": "every SGLANG_* variable of the caller's environment is removed; SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python is set, so the unified radix cache runs its Python tree core (SGL-1; SGLang's default is Rust, python/sglang/srt/environ.py:741@297e54fd). The trace records the variables and the tree-core class, and the runner fails on any other core",
+      "sites": [
+        "run_scheduler.py:os.environ[]",
+        "run_sched.py:os.environ[]"
+      ]
+    },
+    {
+      "symbol": "ServerArgs load_format=dummy",
+      "kind": "environment",
+      "how": "the runner's ServerArgs: no weight files are read (the GPU replacement loads none)",
+      "sites": []
+    },
+    {
+      "symbol": "ServerArgs skip_tokenizer_init=True",
+      "kind": "environment",
+      "how": "the runner's ServerArgs: requests arrive as token ids and outputs leave as token ids; the tokenizer is the outside service above",
+      "sites": []
+    },
+    {
+      "symbol": "the base platform",
+      "kind": "platform",
+      "how": "the oracle runs SGLang's base SRTPlatform: no CUDA device, SGLANG_USE_CPU_ENGINE unset, and the runner's ServerArgs device=cpu, attention_backend=torch_native, sampling_backend=pytorch and disable_cuda_graph=True, as SGLang's own CPU simulator CI runs it. Restoring what the CUDA platform would resolve for the scenario's chip is FID-1 work not done here; each trace's resolved block records the values the run used.",
+      "sites": [],
+      "covers": [
+        "platform:platform.machine",
+        "platform:sglang.srt.hardware_backend.mlx.runtime.use_mlx",
+        "platform:sglang.srt.hardware_backend.mps.runtime.validate_mps_runtime",
+        "platform:sglang.srt.hardware_backend.npu.attention.ascend_backend.AscendAttnBackend",
+        "platform:sglang.srt.hardware_backend.npu.attention.ascend_backend.AscendAttnMultiStepDraftBackend",
+        "platform:sglang.srt.hardware_backend.npu.dsv4.dsv4_common_hooks.dsv4_state_payloads",
+        "platform:sglang.srt.hardware_backend.npu.graph_runner.npu_graph_runner.NPUGraphRunner",
+        "platform:sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.config.get_sparsity_driven_kv_offload_cell_size",
+        "platform:sglang.srt.hardware_backend.npu.utils.is_npu_arch35",
+        "platform:sglang.srt.hardware_backend.npu.utils.set_default_server_args",
+        "platform:sglang.srt.platforms.current_platform",
+        "platform:sglang.srt.platforms.current_platform.apply_server_args_defaults",
+        "platform:sglang.srt.platforms.current_platform.capabilities.graph_capture",
+        "platform:sglang.srt.platforms.current_platform.capabilities.hicache_device_kernels",
+        "platform:sglang.srt.platforms.current_platform.capabilities.supports_triton",
+        "platform:sglang.srt.platforms.current_platform.device_name",
+        "platform:sglang.srt.platforms.current_platform.empty_cache",
+        "platform:sglang.srt.platforms.current_platform.get_default_attention_backend",
+        "platform:sglang.srt.platforms.current_platform.get_default_speculative_draft_attention_backend",
+        "platform:sglang.srt.platforms.current_platform.get_graph_runner_cls",
+        "platform:sglang.srt.platforms.current_platform.get_kv_pool_cls",
+        "platform:sglang.srt.platforms.current_platform.get_paged_allocator_cls",
+        "platform:sglang.srt.platforms.current_platform.get_speculative_graph_runner_cls",
+        "platform:sglang.srt.platforms.current_platform.get_speculative_worker_cls",
+        "platform:sglang.srt.platforms.current_platform.is_cpu",
+        "platform:sglang.srt.platforms.current_platform.is_cuda",
+        "platform:sglang.srt.platforms.current_platform.is_cuda_alike",
+        "platform:sglang.srt.platforms.current_platform.is_out_of_tree",
+        "platform:sglang.srt.platforms.current_platform.support_mamba_cache_extra_buffer",
+        "platform:sglang.srt.platforms.current_platform.supports_speculative_algorithm",
+        "platform:sglang.srt.platforms.current_platform.supports_speculative_draft_attention_backend",
+        "platform:sglang.srt.platforms.current_platform.synchronize",
+        "platform:sglang.srt.platforms.interface.reject_out_of_tree_path",
+        "platform:sglang.srt.utils.common._check_cuda_device_version",
+        "platform:sglang.srt.utils.common.async_d2h",
+        "platform:sglang.srt.utils.common.async_h2d",
+        "platform:sglang.srt.utils.common.async_h2d_stack",
+        "platform:sglang.srt.utils.common.broadcast_pyobj",
+        "platform:sglang.srt.utils.common.configure_logger",
+        "platform:sglang.srt.utils.common.cpu_has_amx_support",
+        "platform:sglang.srt.utils.common.get_compiler_backend",
+        "platform:sglang.srt.utils.common.get_cuda_graph_max_batch_size",
+        "platform:sglang.srt.utils.common.get_device",
+        "platform:sglang.srt.utils.common.get_device_module",
+        "platform:sglang.srt.utils.common.get_device_name",
+        "platform:sglang.srt.utils.common.get_device_sm",
+        "platform:sglang.srt.utils.common.is_confidential_compute",
+        "platform:sglang.srt.utils.common.is_cpu",
+        "platform:sglang.srt.utils.common.is_cuda",
+        "platform:sglang.srt.utils.common.is_cuda_alike",
+        "platform:sglang.srt.utils.common.is_fi_a2a_supported",
+        "platform:sglang.srt.utils.common.is_float4_e2m1fn_x2",
+        "platform:sglang.srt.utils.common.is_gfx1250_supported",
+        "platform:sglang.srt.utils.common.is_gfx95_supported",
+        "platform:sglang.srt.utils.common.is_hip",
+        "platform:sglang.srt.utils.common.is_host_cpu_arm64",
+        "platform:sglang.srt.utils.common.is_mnnvl_fabric_device",
+        "platform:sglang.srt.utils.common.is_mps",
+        "platform:sglang.srt.utils.common.is_musa",
+        "platform:sglang.srt.utils.common.is_npu",
+        "platform:sglang.srt.utils.common.is_pin_memory_available",
+        "platform:sglang.srt.utils.common.is_xpu",
+        "platform:sglang.srt.utils.common.set_random_seed",
+        "platform:sglang.srt.utils.common.support_triton",
+        "platform:sglang.srt.utils.common.xpu_has_xmx_support",
+        "platform:sglang.srt.utils.cpp_extension_loader.load_extension_with_recovery",
+        "platform:sglang.srt.utils.cuda_vmm_utils.BumpArenaStub",
+        "platform:sglang.srt.utils.cuda_vmm_utils.get_device_granularity",
+        "platform:sglang.srt.utils.cuda_vmm_utils.make_device_allocation_prop",
+        "platform:sglang.srt.utils.numa_utils.get_numa_node_if_available",
+        "platform:sglang.srt.utils.patch_torch.monkey_patch_torch_reductions",
+        "platform:sglang.srt.utils.rank_consensus_checker.configure",
+        "platform:sglang.srt.utils.triton_load_watch.install",
+        "platform:torch.cuda.CUDAGraph",
+        "platform:torch.cuda.Event",
+        "platform:torch.cuda.MemPool",
+        "platform:torch.cuda.Stream",
+        "platform:torch.cuda._sleep",
+        "platform:torch.cuda.cudart",
+        "platform:torch.cuda.current_device",
+        "platform:torch.cuda.current_stream",
+        "platform:torch.cuda.device",
+        "platform:torch.cuda.empty_cache",
+        "platform:torch.cuda.get_device_capability",
+        "platform:torch.cuda.get_device_properties",
+        "platform:torch.cuda.graph",
+        "platform:torch.cuda.graph_pool_handle",
+        "platform:torch.cuda.is_available",
+        "platform:torch.cuda.is_current_stream_capturing",
+        "platform:torch.cuda.mem_get_info",
+        "platform:torch.cuda.memory_reserved",
+        "platform:torch.cuda.memory_stats",
+        "platform:torch.cuda.reset_peak_memory_stats",
+        "platform:torch.cuda.stream",
+        "platform:torch.cuda.synchronize",
+        "platform:torch.cuda.use_mem_pool",
+        "platform:torch.npu.Event",
+        "platform:torch.npu.current_device",
+        "platform:torch.npu.current_stream",
+        "platform:torch.version.cuda",
+        "platform:torch.version.hip",
+        "platform:torch.xpu.is_current_stream_capturing",
+        "platform:torch_npu.npu_scatter_nd_update_",
+        "platform:torch_npu.npu_top_k_top_p"
+      ]
+    },
+    {
+      "symbol": "run_scheduler_process pipe_writer",
+      "kind": "transport",
+      "how": "the pipe on which run_scheduler_process reports its start-up to the launcher is an object of the runner's that keeps what is sent; the trace records its pool sizes",
+      "sites": []
+    },
+    {
+      "symbol": "oracle/run_serverargs.py CUDA_STUBBED (sgl_kernel, flashinfer)",
+      "kind": "environment",
+      "how": "ServerArgs resolution on the restored CUDA platform imports sgl_kernel and flashinfer, the CUDA kernel packages SGLang's CUDA image installs and the CPU runner does not (oracle/requirements.txt). run_serverargs.py adds both to stubs.STUBBED in each case's process before SGLang is imported, so each imports as the MagicMock module of oracle/stubs.py, as SGLang's own CPU tests stub sgl_kernel (python/sglang/test/test_utils.py:2042-2077@297e54fd). Resolution imports them for kernels it does not call and reads none of their values.",
+      "sites": [
+        "run_serverargs.py:stubs.STUBBED"
+      ]
+    },
+    {
+      "symbol": "the CUDA platform of a ServerArgs case",
+      "kind": "platform",
+      "how": "Tier 1 (oracle/run_serverargs.py) resolves each case of oracle/serverargs/cases.json as SGLang resolves it on the case's chip, so the oracle restores that chip's CUDA platform before SGLang reads it: SGLang's own seam runtime_context.override_platform(...).install() (python/sglang/srt/runtime_context.py:1950@297e54fd) states CUDA, the chip's compute capability and SM, and flashinfer installed; sglang.srt.platforms._current_platform is SGLang's CudaSRTPlatform; torch.cuda.get_device_capability and get_device_name report the chip's; torch.version.cuda is 13.0, the CUDA toolkit of SGLang's image (docker/Dockerfile:1@297e54fd). Each value is the chip's entry in cases.json, with its source.",
+      "sites": [
+        "run_serverargs.py:platforms._current_platform",
+        "run_serverargs.py:torch.cuda.get_device_capability",
+        "run_serverargs.py:torch.cuda.get_device_name",
+        "run_serverargs.py:torch.version.cuda"
+      ]
+    },
+    {
+      "symbol": "sglang.srt.utils.common device probes in a ServerArgs case",
+      "kind": "platform",
+      "how": "the probes ServerArgs resolution calls report the case's chip, in utils.common and where sglang.srt.utils re-exports them: get_device is cuda, is_cuda is true, is_sm90_supported and is_sm100_supported, get_device_capability and get_device_sm the chip's; get_device_memory_capacity and get_nvgpu_memory_capacity the MiB nvidia-smi reports as memory.total (what get_nvgpu_memory_capacity reads on a GPU, utils/common.py@297e54fd), handle_gpu_memory_settings's input (arg_groups/memory_hook.py:78@297e54fd); is_flashinfer_available is true, as on SGLang's CUDA image, which installs flashinfer (utils/common.py:388-395@297e54fd).",
+      "sites": [
+        "run_serverargs.py:common.get_device",
+        "run_serverargs.py:common.get_device_capability",
+        "run_serverargs.py:common.get_device_memory_capacity",
+        "run_serverargs.py:common.get_device_sm",
+        "run_serverargs.py:common.get_nvgpu_memory_capacity",
+        "run_serverargs.py:common.is_cuda",
+        "run_serverargs.py:common.is_flashinfer_available",
+        "run_serverargs.py:common.is_sm100_supported",
+        "run_serverargs.py:common.is_sm90_supported",
+        "run_serverargs.py:srt_utils.get_device",
+        "run_serverargs.py:srt_utils.get_device_capability",
+        "run_serverargs.py:srt_utils.get_device_memory_capacity",
+        "run_serverargs.py:srt_utils.get_device_sm",
+        "run_serverargs.py:srt_utils.get_nvgpu_memory_capacity",
+        "run_serverargs.py:srt_utils.is_cuda",
+        "run_serverargs.py:srt_utils.is_flashinfer_available",
+        "run_serverargs.py:srt_utils.is_sm100_supported",
+        "run_serverargs.py:srt_utils.is_sm90_supported"
+      ]
+    },
+    {
+      "symbol": "SGLANG_* in a ServerArgs case",
+      "kind": "environment",
+      "how": "every SGLANG_* and SGL_* variable of the caller's environment is removed before the cases run: no case states one, so SGLang's own defaults (python/sglang/srt/environ.py@297e54fd) apply, as config/ assumes.",
+      "sites": [
+        "run_serverargs.py:os.environ[]"
+      ]
+    },
+    {
+      "symbol": "SGLang device code outside the decision modules",
+      "kind": "platform",
+      "how": "SGLang's kernels, layers, attention and graph runners, collectives and model code that decision code calls or constructs, each of whose module-level function bodies or __init__ reads the device (torch.cuda streams, events, graphs, the current device, the platform predicates). None is replaced: on the base platform a call takes its CPU path, or raises, or is not reached by the scenarios; oracle/gen_platform_reads.py lists each call site (FID-1). Which of them a scenario reaches, and what CUDA would do there instead, is the FID-1 restoration the base-platform entry names.",
+      "sites": [],
+      "covers": [
+        "platform:sglang.kernels.ops.attention.dsv4.attn.fused_store_cache",
+        "platform:sglang.kernels.ops.attention.dsv4.norm_rope.fused_k_norm_rope_flashmla",
+        "platform:sglang.kernels.ops.attention.dsv4.norm_rope.fused_norm_rope_inplace",
+        "platform:sglang.kernels.ops.grammar.bitmask_ops.apply_token_bitmask_inplace_triton",
+        "platform:sglang.kernels.ops.grammar.token_filter_ops.set_token_filter_triton",
+        "platform:sglang.kernels.ops.kvcache.cache_move.copy_all_layer_kv_cache_func",
+        "platform:sglang.kernels.ops.kvcache.hicache.can_use_hicache_jit_kernel",
+        "platform:sglang.kernels.ops.kvcache.hicache.can_use_write_back_jit_kernel",
+        "platform:sglang.kernels.ops.kvcache.hicache.transfer_hicache_all_layer",
+        "platform:sglang.kernels.ops.kvcache.hicache.transfer_hicache_all_layer_mla",
+        "platform:sglang.kernels.ops.kvcache.hicache.transfer_hicache_all_layer_mla_staged_lf_pf",
+        "platform:sglang.kernels.ops.kvcache.hicache.transfer_hicache_all_layer_staged_lf_pf",
+        "platform:sglang.kernels.ops.kvcache.hicache.transfer_hicache_one_layer",
+        "platform:sglang.kernels.ops.kvcache.hicache.transfer_hicache_one_layer_mla",
+        "platform:sglang.kernels.ops.kvcache.hisparse.copy_cache_planned_mla",
+        "platform:sglang.kernels.ops.kvcache.hisparse.load_blocks_to_device_buffer_mha",
+        "platform:sglang.kernels.ops.kvcache.hisparse.load_cache_to_device_buffer_spec_mla",
+        "platform:sglang.kernels.ops.kvcache.hisparse.transfer_cache_dsv4_mla",
+        "platform:sglang.kernels.ops.kvcache.kvcache.can_use_store_cache",
+        "platform:sglang.kernels.ops.kvcache.kvcache.store_cache",
+        "platform:sglang.kernels.ops.kvcache.minimax_store_kv_index.store_kv_index",
+        "platform:sglang.kernels.ops.kvcache.mla_buffer.set_mla_kv_buffer_dcp_sharded_triton",
+        "platform:sglang.kernels.ops.kvcache.mla_buffer.set_mla_kv_buffer_triton",
+        "platform:sglang.kernels.ops.kvcache.mla_buffer.set_mla_kv_buffer_triton_fp8_quant",
+        "platform:sglang.kernels.ops.kvcache.nvfp4_hicache.transfer_page_rows",
+        "platform:sglang.kernels.ops.kvcache.nvfp4_hicache.warmup_page_row_transfer",
+        "platform:sglang.kernels.ops.kvcache.nvfp4_store_kv_index.nvfp4_store_kv_index",
+        "platform:sglang.kernels.ops.lora.common.lora_b.slice_geometry",
+        "platform:sglang.kernels.ops.lora.common.routing.build_route",
+        "platform:sglang.kernels.ops.lora.dense.chunked_sgmv_expand.chunked_sgmv_lora_expand_forward",
+        "platform:sglang.kernels.ops.lora.dense.chunked_sgmv_shrink.chunked_sgmv_lora_shrink_forward",
+        "platform:sglang.kernels.ops.lora.dense.trtllm_lora_temp.gate_up_lora_b.gate_up_lora_b_fwd",
+        "platform:sglang.kernels.ops.lora.dense.trtllm_lora_temp.qkv_lora_b.qkv_lora_b_fwd",
+        "platform:sglang.kernels.ops.lora.dense.trtllm_lora_temp.sgemm_lora_a.sgemm_lora_a_fwd",
+        "platform:sglang.kernels.ops.lora.dense.trtllm_lora_temp.sgemm_lora_b.sgemm_lora_b_fwd",
+        "platform:sglang.kernels.ops.lora.moe.activation_delta.act_delta",
+        "platform:sglang.kernels.ops.lora.moe.cutedsl.api.prepare_contiguous_bf16",
+        "platform:sglang.kernels.ops.lora.moe.cutedsl.api.prepare_contiguous_fp8",
+        "platform:sglang.kernels.ops.lora.moe.cutedsl.api.prepare_masked_bf16",
+        "platform:sglang.kernels.ops.lora.moe.cutedsl.api.prepare_masked_fp8",
+        "platform:sglang.kernels.ops.lora.moe.dispatch_contiguous.dispatch_fill_rows_contiguous_fp8",
+        "platform:sglang.kernels.ops.lora.moe.dispatch_masked.dispatch_fill_masked_fp8",
+        "platform:sglang.kernels.ops.lora.moe.fused_moe_lora_kernel._fused_moe_lora",
+        "platform:sglang.kernels.ops.lora.moe.lora_b.grouped_lora_b",
+        "platform:sglang.kernels.ops.lora.moe.lora_b.run_lora_b",
+        "platform:sglang.kernels.ops.lora.moe.moe_lora_align.moe_lora_align_block_size",
+        "platform:sglang.kernels.ops.lora.moe.trtllm_lora_temp.virtual_experts._prewarm_per_expert_lora_routes",
+        "platform:sglang.kernels.ops.lora.moe.trtllm_lora_temp.virtual_experts.merged_experts_fused_moe_lora_add",
+        "platform:sglang.kernels.ops.lora.moe.virtual_experts._align_block_size_jit",
+        "platform:sglang.kernels.ops.lora.moe.virtual_experts.merged_experts_fused_moe_lora_add",
+        "platform:sglang.kernels.ops.mamba.transfer_mamba.transfer_kv_mamba_lf_pf",
+        "platform:sglang.kernels.ops.mamba.transfer_mamba.transfer_kv_mamba_pf_lf",
+        "platform:sglang.kernels.ops.mamba.triton_ops.ssu_dispatch.initialize_mamba_selective_state_update_backend",
+        "platform:sglang.kernels.ops.memory.adler32.adler32_strided_checksum",
+        "platform:sglang.kernels.ops.moe.ep_moe_kernels.post_reorder_deepgemm",
+        "platform:sglang.kernels.ops.moe.fused_moe_triton_kernels.invoke_fused_moe_kernel",
+        "platform:sglang.kernels.ops.moe.fused_moe_triton_kernels.moe_sum_reduce_triton",
+        "platform:sglang.kernels.ops.moe.moe_wna16_marlin.moe_wna16_marlin_gemm",
+        "platform:sglang.kernels.ops.quantization.fp8_kernel._per_token_group_quant_8bit_raw",
+        "platform:sglang.kernels.ops.quantization.fp8_kernel.is_fp8_fnuz",
+        "platform:sglang.kernels.ops.quantization.fp8_kernel.sglang_per_token_group_quant_fp8",
+        "platform:sglang.kernels.ops.quantization.per_tensor_quant_fp8.per_tensor_quant_fp8",
+        "platform:sglang.kernels.ops.sampling.softmax",
+        "platform:sglang.kernels.ops.speculative.cache_locs.assign_draft_cache_locs_contiguous_func",
+        "platform:sglang.kernels.ops.speculative.cache_locs.assign_extend_cache_locs_func",
+        "platform:sglang.kernels.ops.speculative.cache_locs.assign_extend_cache_locs_uniform_func",
+        "platform:sglang.kernels.ops.speculative.cache_locs.fill_front_out_cache_loc_func",
+        "platform:sglang.kernels.ops.speculative.dspark.dspark_accept.accept_sampling",
+        "platform:sglang.kernels.ops.speculative.eagle.fill_accept_out_cache_loc_func",
+        "platform:sglang.kernels.ops.speculative.eagle.fill_bonus_tokens_func",
+        "platform:sglang.kernels.ops.speculative.multi_layer_eagle.rotate_input_ids",
+        "platform:sglang.kernels.ops.speculative.ngram_corpus.get_ngram_corpus_cls",
+        "platform:sglang.kernels.ops.speculative.reconstruct_tree.reconstruct_indices_from_tree_mask_func",
+        "platform:sglang.kernels.ops.speculative.spec_tree.build_tree_kernel_efficient_func",
+        "platform:sglang.kernels.ops.speculative.spec_tree.verify_tree_greedy_func",
+        "platform:sglang.srt.distributed.bootstrap.init_parallel_runtime",
+        "platform:sglang.srt.distributed.communication_op.attn_cp_tp_broadcast_pyobj",
+        "platform:sglang.srt.distributed.device_communicators.custom_all_reduce_v2.CustomAllReduceV2",
+        "platform:sglang.srt.distributed.device_communicators.pynccl.PyNcclCommunicator",
+        "platform:sglang.srt.distributed.device_communicators.pynccl_allocator.allocate_symmetric_buffer",
+        "platform:sglang.srt.distributed.device_communicators.pynccl_allocator.use_symmetric_memory",
+        "platform:sglang.srt.distributed.device_communicators.pynccl_wrapper.NCCLLibrary",
+        "platform:sglang.srt.distributed.parallel_state.create_custom_parallel_group",
+        "platform:sglang.srt.kernel_plugins.amd.binding.handle_amd_monokernel",
+        "platform:sglang.srt.kernel_plugins.nvidia.binding.handle_nvidia_megakernel",
+        "platform:sglang.srt.layers.attention.aiter_backend.AiterAttnBackend",
+        "platform:sglang.srt.layers.attention.aiter_backend.AiterMultiStepDraftBackend",
+        "platform:sglang.srt.layers.attention.attention_registry.attn_backend_wrapper_for_draft_extend",
+        "platform:sglang.srt.layers.attention.deepseek_v4_backend.DeepseekV4AttnBackend",
+        "platform:sglang.srt.layers.attention.deepseek_v4_backend_hip_radix.DeepseekV4HipRadixBackend",
+        "platform:sglang.srt.layers.attention.deepseek_v4_backend_hip_radix.DeepseekV4MultiStepBackend",
+        "platform:sglang.srt.layers.attention.deepseek_v4_trtllm_backend.create_deepseek_v4_attn_backend",
+        "platform:sglang.srt.layers.attention.dsa.kpool_fp8_index.kpool_decode_update_and_maybe_write_cache",
+        "platform:sglang.srt.layers.attention.dsa.utils.aiter_can_use_preshuffle_paged_mqa",
+        "platform:sglang.srt.layers.attention.dsa.utils.dsa_use_prefill_cp",
+        "platform:sglang.srt.layers.attention.dsa.utils.is_dsa_enable_prefill_cp",
+        "platform:sglang.srt.layers.attention.dsa.utils.should_remap_pd_dsa_seed_to_local_slots",
+        "platform:sglang.srt.layers.attention.dsa_backend.DeepseekSparseAttnBackend",
+        "platform:sglang.srt.layers.attention.dsa_backend.DeepseekSparseAttnMultiStepBackend",
+        "platform:sglang.srt.layers.attention.dsv4.unified_kv_gate.is_unified_kv_fp8",
+        "platform:sglang.srt.layers.attention.dsv4.unified_kv_gate.is_unified_kv_triton",
+        "platform:sglang.srt.layers.attention.flashattention_backend.FlashAttentionBackend",
+        "platform:sglang.srt.layers.attention.flashattention_backend.FlashAttentionMultiStepBackend",
+        "platform:sglang.srt.layers.attention.flashinfer_backend.FlashInferAttnBackend",
+        "platform:sglang.srt.layers.attention.flashinfer_backend.FlashInferMultiStepDraftBackend",
+        "platform:sglang.srt.layers.attention.flashinfer_mla_backend.FlashInferMLAAttnBackend",
+        "platform:sglang.srt.layers.attention.flashinfer_mla_backend.FlashInferMLAMultiStepDraftBackend",
+        "platform:sglang.srt.layers.attention.hip_flash_mla.resolve_hip_flashmla_backend",
+        "platform:sglang.srt.layers.attention.mamba.mamba.MambaMixer2",
+        "platform:sglang.srt.layers.attention.triton_backend.TritonAttnBackend",
+        "platform:sglang.srt.layers.attention.triton_backend.TritonMultiStepDraftBackend",
+        "platform:sglang.srt.layers.attention.trtllm_mla_backend.TRTLLMMLABackend",
+        "platform:sglang.srt.layers.attention.trtllm_mla_backend.TRTLLMMLAMultiStepDraftBackend",
+        "platform:sglang.srt.layers.deep_gemm_wrapper.configurer._compute_enable_deep_gemm",
+        "platform:sglang.srt.layers.deep_gemm_wrapper.configurer._supports_paged_sparse_mqa_logits",
+        "platform:sglang.srt.layers.deep_gemm_wrapper.entrypoint.configure_deep_gemm_num_sms",
+        "platform:sglang.srt.layers.layer_boundary.layout.batch_gathers_over_moe_cp",
+        "platform:sglang.srt.layers.linear.LinearBase",
+        "platform:sglang.srt.layers.linear.QKVParallelLinear",
+        "platform:sglang.srt.layers.linear.RowParallelLinear",
+        "platform:sglang.srt.layers.logprob_processor.compute_spec_logprobs",
+        "platform:sglang.srt.layers.moe.fused_moe_triton.layer.FusedMoE",
+        "platform:sglang.srt.layers.moe.moe_runner.flashinfer_trtllm.fused_experts_none_to_flashinfer_trtllm_bf16",
+        "platform:sglang.srt.layers.moe.moe_runner.flashinfer_trtllm.fused_experts_none_to_flashinfer_trtllm_fp4",
+        "platform:sglang.srt.layers.moe.moe_runner.runner.MoeRunner",
+        "platform:sglang.srt.layers.moe.moe_runner.triton_utils.fused_moe_triton_config.try_get_optimal_moe_config",
+        "platform:sglang.srt.layers.moe.moe_runner.triton_utils.moe_align_block_size.moe_align_block_size",
+        "platform:sglang.srt.layers.moe.token_dispatcher.deepep.DeepEPDispatcher",
+        "platform:sglang.srt.layers.moe.token_dispatcher.moriep.MoriEPDispatcher",
+        "platform:sglang.srt.layers.moe.utils.initialize_moe_config",
+        "platform:sglang.srt.layers.quantization.fp4_utils.initialize_fp4_gemm_config",
+        "platform:sglang.srt.layers.quantization.fp8.Fp8MoEMethod",
+        "platform:sglang.srt.layers.quantization.marlin_utils.marlin_make_workspace",
+        "platform:sglang.srt.layers.quantization.modelopt_quant.ModelOptNvFp4FusedMoEMethod",
+        "platform:sglang.srt.layers.quantization.unquant.initialize_bf16_gemm_config",
+        "platform:sglang.srt.layers.vocab_parallel_embedding.ParallelLMHead",
+        "platform:sglang.srt.managers.multimodal_processor.import_processors",
+        "platform:sglang.srt.model_executor.encoder_swa_replay.drop_folded_rows",
+        "platform:sglang.srt.model_executor.encoder_swa_replay.fold_encoder_swa_replay",
+        "platform:sglang.srt.model_executor.encoder_swa_replay.run_encoder_swa_replay",
+        "platform:sglang.srt.model_executor.model_runner.ModelRunner",
+        "platform:sglang.srt.model_executor.model_runner_components.cuda_graph_setup.refresh_deep_gemm_layout_memory_budget",
+        "platform:sglang.srt.model_executor.runner.base_cuda_graph_runner.get_batch_sizes_to_capture",
+        "platform:sglang.srt.model_executor.runner.decode_cuda_graph_runner.DecodeCudaGraphRunner",
+        "platform:sglang.srt.model_executor.runner.flashinfer_autotune.maybe_flashinfer_autotune_speculative_draft",
+        "platform:sglang.srt.model_executor.runner.prefill_cuda_graph_runner.PrefillCudaGraphRunner",
+        "platform:sglang.srt.model_executor.runner_backend.utils.resolve_decode_backend",
+        "platform:sglang.srt.model_executor.runner_utils.pool.borrow_graph_pool",
+        "platform:sglang.srt.model_executor.runner_utils.pool.disable_graph_pool_borrow",
+        "platform:sglang.srt.model_executor.runner_utils.pool.graph_pool_borrow_enabled",
+        "platform:sglang.srt.model_executor.runner_utils.pool.prewarm_graph_pool_borrow",
+        "platform:sglang.srt.models.deepseek_v4.DeepseekV4DecoderLayerBase",
+        "platform:sglang.srt.models.inkling_common.dense_mlp.InklingBatchDenseMLP",
+        "platform:sglang.srt.multimodal.cache.identity.resolve_multimodal_item_hash",
+        "platform:sglang.srt.rust_extensions.torch_build.torch_build_configuration"
+      ]
+    },
+    {
+      "symbol": "the real clock where the virtual clock does not reach",
+      "kind": "clock",
+      "how": "the virtual clock replaces only time.monotonic, perf_counter, time and their _ns forms, and only in the clocked modules. time.sleep (it really sleeps), time.process_time_ns (process CPU time), and the shared helpers outside the clocked modules that read the time module (configure_gc_logger in sglang.srt.utils.common, wait_port_available in sglang.srt.utils.network) read the host's real clock. A recorded decision that one of them changed would differ from run to run, which oracle/compare_goldens.py fails on.",
+      "sites": [],
+      "covers": [
+        "clock:sglang.srt.utils.common.configure_gc_logger",
+        "clock:sglang.srt.utils.network.wait_port_available",
+        "clock:time.process_time_ns",
+        "clock:time.sleep"
+      ]
+    },
+    {
+      "symbol": "the threads and executors SGLang starts",
+      "kind": "environment",
+      "how": "every thread, timer and executor that decision code starts, or that a helper it calls starts (run_with_deadline, kill_itself_when_parent_died, AsyncD2HCopyWorker, the forward-pass metrics publisher, the scripted-runtime hook), runs as released; none is replaced. A thread the scenarios reach reads the same virtual clock as the loop in a clocked module, and the runner fails unless every request finishes and the loop ends on the harness's ShutdownReq; oracle/gen_platform_reads.py lists each start (FID-1).",
+      "sites": [],
+      "covers": [
+        "thread:concurrent.futures.ThreadPoolExecutor",
+        "thread:sglang.srt.managers.async_d2h_copy_worker.AsyncD2HCopyWorker",
+        "thread:sglang.srt.observability.forward_pass_metrics._FpmPublisherThread",
+        "thread:sglang.srt.utils.common.kill_itself_when_parent_died",
+        "thread:sglang.srt.utils.common.run_with_deadline",
+        "thread:sglang.test.scripted_runtime.scheduler_hook.ScriptedSchedulerHook",
+        "thread:threading.Thread"
+      ]
+    },
+    {
+      "symbol": "threading.Thread.start at python/sglang/srt/managers/cache_controller.py:478@297e54fd (prefetch_thread_func, in HiCacheController._start_storage_threads)",
+      "kind": "environment",
+      "how": "thread body run synchronously at step k: prefetch_thread_func, unmodified, one loop iteration at every step boundary k after the start, by the step-driven runner's rule (oracle/step_runner.py RULE, design FID-1): no thread starts; the start registers the target with the runner. Boundary k is the first receive of event-loop iteration k in a scheduler scenario (oracle/harness.py begin_step), and each {\"boundary\": true} entry of a direct sequence (oracle/run_hicache.py).",
+      "sites": [
+        "step_runner.py:mod.threading"
+      ]
+    },
+    {
+      "symbol": "threading.Thread.start at python/sglang/srt/managers/cache_controller.py:479@297e54fd (prefetch_io_aux_func, in HiCacheController._start_storage_threads)",
+      "kind": "environment",
+      "how": "thread body run synchronously at step k: prefetch_io_aux_func, unmodified, one loop iteration at every step boundary k after the start. By the step-driven runner's rule (oracle/step_runner.py RULE).",
+      "sites": []
+    },
+    {
+      "symbol": "threading.Thread.start at python/sglang/srt/managers/cache_controller.py:480@297e54fd (prefetch_sync_thread_func, in HiCacheController._start_storage_threads)",
+      "kind": "environment",
+      "how": "thread body run synchronously at step k: prefetch_sync_thread_func, unmodified, one loop iteration at every step boundary k after the start. By the step-driven runner's rule (oracle/step_runner.py RULE).",
+      "sites": []
+    },
+    {
+      "symbol": "threading.Thread.start at python/sglang/srt/managers/cache_controller.py:481@297e54fd (backup_thread_func, in HiCacheController._start_storage_threads)",
+      "kind": "environment",
+      "how": "thread body run synchronously at step k: backup_thread_func, unmodified, one loop iteration at every step boundary k after the start. By the step-driven runner's rule (oracle/step_runner.py RULE).",
+      "sites": []
+    },
+    {
+      "symbol": "threading.Thread.start at python/sglang/srt/managers/cache_controller.py:850@297e54fd (prefetch_thread_func, in HiCacheController.reset)",
+      "kind": "environment",
+      "how": "thread body run synchronously at step k: prefetch_thread_func, unmodified, one loop iteration at every step boundary k after the start. By the step-driven runner's rule (oracle/step_runner.py RULE).",
+      "sites": []
+    },
+    {
+      "symbol": "threading.Thread.start at python/sglang/srt/managers/cache_controller.py:851@297e54fd (prefetch_io_aux_func, in HiCacheController.reset)",
+      "kind": "environment",
+      "how": "thread body run synchronously at step k: prefetch_io_aux_func, unmodified, one loop iteration at every step boundary k after the start. By the step-driven runner's rule (oracle/step_runner.py RULE).",
+      "sites": []
+    },
+    {
+      "symbol": "threading.Thread.start at python/sglang/srt/managers/cache_controller.py:852@297e54fd (prefetch_sync_thread_func, in HiCacheController.reset)",
+      "kind": "environment",
+      "how": "thread body run synchronously at step k: prefetch_sync_thread_func, unmodified, one loop iteration at every step boundary k after the start. By the step-driven runner's rule (oracle/step_runner.py RULE).",
+      "sites": []
+    },
+    {
+      "symbol": "threading.Thread.start at python/sglang/srt/managers/cache_controller.py:853@297e54fd (backup_thread_func, in HiCacheController.reset)",
+      "kind": "environment",
+      "how": "thread body run synchronously at step k: backup_thread_func, unmodified, one loop iteration at every step boundary k after the start. By the step-driven runner's rule (oracle/step_runner.py RULE).",
+      "sites": []
+    },
+    {
+      "symbol": "threading.Thread.start at python/sglang/srt/mem_cache/hybrid_cache/hybrid_cache_controller.py:285@297e54fd (pp_prefetch_command_thread_func)",
+      "kind": "environment",
+      "how": "thread body run synchronously at step k, by the step-driven runner's rule (oracle/step_runner.py RULE); the PP prefetch ticket thread starts only with buffer_only host memory and more than one pipeline stage, and the runner refuses its start by name (pipeline parallelism, inference-sim/blis-sglang#8)",
+      "sites": []
+    },
+    {
+      "symbol": "threading.Thread.start at python/sglang/srt/mem_cache/hybrid_cache/hybrid_cache_controller.py:509@297e54fd (pp_prefetch_command_thread_func)",
+      "kind": "environment",
+      "how": "thread body run synchronously at step k, by the step-driven runner's rule (oracle/step_runner.py RULE); the PP prefetch ticket thread starts only with buffer_only host memory and more than one pipeline stage, and the runner refuses its start by name (pipeline parallelism, inference-sim/blis-sglang#8)",
+      "sites": []
+    },
+    {
+      "symbol": "queue.Queue in the HiCache controllers (managers/cache_controller.py:21, mem_cache/hybrid_cache/hybrid_cache_controller.py:11@297e54fd)",
+      "kind": "transport",
+      "how": "the queues between the scheduler and the controller's thread bodies are step_runner.StepQueue, a queue.Queue whose get never waits (oracle/step_runner.py RULE). Nothing else of the queue changes",
+      "sites": [
+        "step_runner.py:mod.Queue"
+      ]
+    },
+    {
+      "symbol": "device_module.Event in managers/cache_controller.py:51 and mem_cache/l2_transfer.py:15@297e54fd",
+      "kind": "gpu",
+      "how": "the events that mark a host<->device copy done (LayerLoadingEvent, cache_controller.py:65-80; the L2 transfer's ack events, l2_transfer.py:31-34 and :186-189) are step_runner.StepDeviceEvent, which completes and times as oracle/step_runner.py RULE says. It takes torch.cuda.Event's keyword arguments, so the L2 transfer's timing probe (l2_transfer.py:18-28) finds timing supported and every ack records timing_enabled true, as on CUDA. The device module's streams are the platform's own (torch.cpu's, which do nothing)",
+      "sites": [
+        "step_runner.py:mod.device_module"
+      ]
+    },
+    {
+      "symbol": "cudaHostRegister in mem_cache/pool_host/common.py:147@297e54fd (_cuda_host_register)",
+      "kind": "gpu",
+      "how": "the host pool page-locks its buffer for DMA with torch.cuda.cudart().cudaHostRegister; the oracle has no CUDA device, so the registration does nothing. Page-locking changes how fast a copy runs, never what is copied or decided",
+      "sites": [
+        "run_hicache.py:host_common._cuda_host_register"
+      ]
+    },
+    {
+      "symbol": "sgl_kernel.kvcacheio.transfer_kv_direct, as mem_cache/pool_host/mha.py:60-88@297e54fd imports it",
+      "kind": "gpu",
+      "how": "the kernel that copies KV between the host pool and the device pool for io backend direct on the layer_first layout (pool_host/mha.py:513, :677); mha.py imports it only on CUDA and ROCm. In the oracle it copies nothing: no forward pass runs, so no KV value is compared, and the traces record a KV tensor by its shape and dtype only (oracle/hicache_interfaces.py). The driver refuses any other io backend or layout",
+      "sites": [
+        "run_hicache.py:host_mha.transfer_kv_direct"
+      ]
+    },
+    {
+      "symbol": "SGLANG_HICACHE_FILE_BACKEND_STORAGE_DIR in a direct HiCache sequence",
+      "kind": "environment",
+      "how": "the file storage backend (HiCacheFile, mem_cache/hicache_storage.py:728@297e54fd) writes under a fresh temporary directory per sequence, which the driver names in this variable, so no sequence reads pages another run stored",
+      "sites": []
+    },
+    {
+      "symbol": "the file storage backend's directory in a recorded HiCache scenario (HiCacheFile, mem_cache/hicache_storage.py:728-736@297e54fd)",
+      "kind": "environment",
+      "how": "the scheduler process keeps no SGLANG_* variable, so oracle/run_hicache.py record_scenario makes a fresh directory for each run (tempfile.mkdtemp), hands it to SGLang as the file_storage_path of --hicache-storage-backend-extra-config (oracle/run_scheduler.py server_args), and removes it with shutil.rmtree when the run ends; no two runs share a directory and none reads pages another stored. The trace records the directory as the placeholder <file_storage_path> wherever a string holds it (oracle/hicache_interfaces.py), so it names no run's own path",
+      "sites": []
+    },
+    {
+      "symbol": "atexit.register(self.shutdown) in UnifiedRadixCache.init_hicache (mem_cache/unified_radix_cache.py:580@297e54fd), in a direct HiCache sequence",
+      "kind": "environment",
+      "how": "oracle/run_hicache.py drive_sequence unregisters the cache's exit hook (atexit.unregister(cache.shutdown)) once the cache is built. The hook detaches the storage backend when the process exits, after the sequence and its trace are done and its temporary storage directory is removed; it makes no call the sequence records and no decision",
+      "sites": []
+    },
+    {
+      "symbol": "set_global_server_args_for_scheduler and get_parallel().override in the direct drivers",
+      "kind": "environment",
+      "how": "oracle/run_cache_iface.py build_cache and oracle/run_hicache.py build_hicache set SGLang's process-global ServerArgs with sglang.srt.server_args.set_global_server_args_for_scheduler before they build the pools and the cache, as Scheduler.__init__ does for its own ServerArgs; run_hicache.py also publishes a one-rank parallel topology (tp, pp of size 1, rank 0) with sglang.srt.runtime_context.get_parallel().override, which a scheduler process would publish at start-up. Both are SGLang's own setters, called with the sequence's settings; they write nothing a harness file names, so they list no site",
+      "sites": []
+    },
+    {
+      "symbol": "EventPublisherFactory publisher \"recording\"",
+      "kind": "transport",
+      "how": "the ZMQ PUB socket and its thread are replaced by a publisher of the runner's, registered with EventPublisherFactory under the name \"recording\": publish() sets the batch's timestamp to 0.0 (the wall clock otherwise) and encodes it with the same msgspec.msgpack.Encoder().encode call the ZMQ publisher's thread makes, and keeps the bytes; oracle/run_metrics.py records them",
+      "sites": [
+        "run_metrics.py:events.ts",
+        "run_metrics.py:events.attn_dp_rank"
+      ]
+    }
+  ]
 }

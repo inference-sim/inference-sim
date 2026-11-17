@@ -38,6 +38,19 @@ lock fails. `python -I oracle/run_import.py <sglang checkout>` imports the sched
 runners drive. CI runs it, together with the manifest check
 `python -I oracle/check_mocks.py oracle/mocks.json`.
 
+`oracle/gen_platform_reads.py` lists every platform read, clock read and thread start reachable
+from the decision modules the scheduler's files import, in `oracle/platform_reads.json`, and each
+`mocks.json` entry names in `covers` the reads it accounts for (FID-1, FID-8; the site reading is
+blis-design#15). A read of a module constant computed from the platform counts again at each read,
+covered by the reads that compute it. CI, in `oracle-checks`, regenerates the list at the pinned
+checkout and fails on a site the list lacks or no longer has, and on a site no entry covers. After
+an SGLang pin change, regenerate the list and name each new read in `mocks.json`:
+
+```sh
+python -I oracle/gen_platform_reads.py --write <sglang checkout>
+python -I oracle/gen_platform_reads.py <sglang checkout>
+```
+
 `oracle/peers.json` pins the KV-transfer and KV-store clients SGLang drives (Mooncake, NIXL,
 LMCache) and gives the source of each pin. None is in the lock yet, so a scenario that selects one
 is refused by name. When a store package enters the lock, it runs as code under test at its pin
@@ -136,6 +149,41 @@ decisions differ from the fresh trace, or that ran another scenario or seed. Com
 change that alters decisions instead re-records the golden with the runner, and the commit carries
 the trailer.
 
+## Value coverage and the mutation sweep
+
+`value_coverage.py`, in `oracle-checks`, is the value-coverage report (FID-10). It reads every
+key of every golden outside its provenance block. A field is named by its path, with `[]` for a list
+element and `*` for a key of a map that `value_coverage.json` lists in `maps`. Each field must take
+two distinct values somewhere in the scenario set, so that a comparison of it can fail. For a list,
+the two values are empty and not empty. A field that takes one value is listed in `held` in
+`value_coverage.json`, with one of three kinds:
+
+- `fixed`: the oracle holds it by construction;
+- `no_neutral`: its neutral value cannot occur;
+- `gap`: no scenario moves it yet. The entry cites the open issue that adds the scenario (X28).
+
+The report fails on a held field that is now covered, and on one that no golden has.
+`--report` prints every field with its values.
+
+`mutate.py` is the mutation sweep (T7), run by `.github/workflows/mutation.yml`. It applies one
+one-line break at a time to a scratch copy of the tree and runs the suite that must catch it. There
+are two kinds of mutant:
+
+- **Listed mutants** are in `mutants.json`. They cover the oracle's own checks (X18). A lane that
+  ports a row adds that row's mutants there.
+- **Generated mutants.** Every Go file ported from SGLang gets its relational, equality and logical
+  operators flipped one at a time. Its package tests must catch each flip.
+
+A survivor fails the sweep, unless `mutants.json` lists it in `known_gaps`, citing the issue, or in
+`equivalent`, saying why. A pull request sweeps what it changed: the listed mutants of each changed
+file and of each changed test file, and the generated mutants of each changed ported function. The
+full sweep runs nightly, on release tags and on demand. CI shares the selected mutants over six
+shards (`--shard I/N`), which start once the cheap checks have passed; the check named `mutation`
+passes only if every shard did.
+
+```sh
+python3 -I oracle/mutate.py [--changed <base>] [--list] [--shard I/N] <sglang checkout> <scratch dir>
+```
 ## Traces at the cache framework's interfaces (FID-5)
 
 The cache framework is six abstract classes of SGLang's `mem_cache/`: `BasePrefixCache`,

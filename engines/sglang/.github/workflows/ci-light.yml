@@ -1,0 +1,432 @@
+name: ci-light
+
+# What keeps a stacked layer buildable and its goldens true. A pull request whose base is main runs the full
+# set, ci.yml (go, lint, oracle-checks, oracle, goldens-reviewed, fields, treecore-diff) and mutation.yml (the
+# mutation shards); a pull request on any other base, a layer of a stack, runs this instead. The full set stays
+# available on any branch by workflow_dispatch (gh workflow run ci.yml --ref <branch>), and it judges the pull
+# request that merges to main: retargeting a layer to main starts it (`edited` is a type of ci.yml and
+# mutation.yml for that reason).
+#
+# Nothing here weakens main: no rule requires a check on a layer, and the job names below (all `light - ...`)
+# differ from every required name, so a layer's check list is not read as the required set and no required name
+# is left waiting on a layer. The description and commit checks (blis.yml, `pr`) and the private-name scan
+# (private-names.yml) run on every pull request, whatever its base.
+#
+# What a layer gets, always: gofmt, no replace directive, a tidy go.mod, go vet, go build, the tests of the root
+# package and of each Go package the layer changes (against the layer's own base, not main), golangci-lint on
+# what the layer touches, and the golden checks (oracle/check_goldens.py against the layer's own base, and the
+# guards' own tests).
+#
+# What it gets only when it changes what they read (.github/scripts/ci-light-select.sh decides, and has the
+# patterns): the field list's generated-file checks, the oracle's guards over this repository's files, and the
+# oracle groups. A group runs SGLang's own code for the scenarios of that group (the same steps as the shard of
+# the same name in ci.yml) and compares every trace with the committed golden, so a layer that changes a
+# scenario, a runner, a golden or a recorded answer is judged against SGLang. Groups: resolve (ServerArgs),
+# lower (lowering and tier 2), sched, cache, hicache-metrics. A change to Go code alone reaches no group: its
+# package's tests judge it against the committed goldens. Each group uploads its traces, so a golden can be
+# recorded from a layer's run as from the full set's.
+#
+# What a layer does not get: the full test suite, the mutation sweep, the tree-core comparison against SGLang's
+# Rust core. A defect that a layer introduces and a later layer repairs is seen by those only on the pull
+# request into main; run ci.yml by hand on a layer before approving it. Running a group the layer does not reach
+# is also by hand.
+
+on:
+  pull_request:
+    branches-ignore: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-light-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  # What this layer changes, against its own base, and what that reaches.
+  select:
+    name: light - select
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      packages: ${{ steps.sel.outputs.packages }}
+      groups: ${{ steps.sel.outputs.groups }}
+      fields: ${{ steps.sel.outputs.fields }}
+      oracle-checks: ${{ steps.sel.outputs.oracle-checks }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - id: sel
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          mb="$(git merge-base "$BASE" "$HEAD")"
+          git diff --name-only --diff-filter=d "$mb" "$HEAD" > changed.txt
+          echo "changed files:"; cat changed.txt
+          echo "packages=$(.github/scripts/ci-light-select.sh packages < changed.txt)" >> "$GITHUB_OUTPUT"
+          echo "groups=$(.github/scripts/ci-light-select.sh groups < changed.txt)" >> "$GITHUB_OUTPUT"
+          .github/scripts/ci-light-select.sh checks < changed.txt >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+
+  light-go:
+    name: light - format, vet, build and changed packages
+    needs: select
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/go-setup
+        with:
+          build-cache: build
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then echo "not gofmt-formatted:"; echo "$unformatted"; exit 1; fi
+      - name: no replace directive
+        run: '! grep -n "^replace" go.mod'
+      - name: go.mod and go.sum are tidy
+        run: go mod tidy -diff
+      - run: go vet ./...
+      - run: go build ./...
+      - name: tests of the root package and of the packages this layer changes
+        env:
+          PACKAGES: ${{ needs.select.outputs.packages }}
+        run: |
+          echo "testing: $PACKAGES"
+          # shellcheck disable=SC2086
+          go test -count=1 $PACKAGES
+
+  light-lint:
+    name: light - golangci-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/go-setup
+        with:
+          build-cache: lint
+      # Settings are .golangci.yml, the harness copy, as in ci.yml; only what the layer touches is judged.
+      - name: Lint what the layer touches
+        uses: golangci/golangci-lint-action@9fae48acfc02a90574d7c304a1758ef9895495fa # v7.0.1
+        with:
+          version: v2.14.0
+          install-mode: goinstall
+          args: --new-from-merge-base=${{ github.event.pull_request.base.sha }} ./...
+
+  light-goldens:
+    name: light - golden provenance and reviewers
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: every commit this layer adds that changes a golden trace has a golden-reviewed trailer, and a new golden was recorded on CI's platform
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: python3 -I oracle/check_goldens.py "$BASE" "$HEAD"
+
+  light-fields:
+    name: light - field list is generated from the release
+    needs: select
+    if: ${{ needs.select.outputs.fields == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - id: pin
+        name: the SGLang commit provenance.go pins
+        run: |
+          set -euo pipefail
+          commit="$(sed -n 's/^\tCommit: *"\([0-9a-f]\{40\}\)",$/\1/p' provenance.go)"
+          test -n "$commit"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+      - name: check out SGLang at that commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: sgl-project/sglang
+          ref: ${{ steps.pin.outputs.commit }}
+          path: sglang-source
+          fetch-depth: 1
+          persist-credentials: false
+      - name: the checkout is that commit
+        run: test "$(git -C sglang-source rev-parse HEAD)" = "${{ steps.pin.outputs.commit }}"
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: fields.json is what the generator writes
+        run: python -W ignore::SyntaxWarning -I fields/gen_fields.py sglang-source fields/status.json --value-classes fields/value_classes.json --check fields.json
+      - name: fields/declarations.json is what the generator writes
+        run: python -W ignore::SyntaxWarning -I fields/gen_fields.py sglang-source --declarations --check fields/declarations.json
+      - name: config/serverargs_gen.go is what the generator writes
+        run: python -I config/gen_serverargs.py fields/declarations.json --check config/serverargs_gen.go
+      - name: fields/value_classes.json is what the generator writes
+        run: python -W ignore::SyntaxWarning -I fields/gen_classes.py sglang-source fields.json fields/declarations.json --check fields/value_classes.json
+      - name: the generators' tests
+        run: |
+          set -euo pipefail
+          python -I fields/test_gen_fields.py
+          python -I fields/test_classes.py
+
+  light-oracle-checks:
+    name: light - oracle guards over this repository's files
+    needs: select
+    if: ${{ needs.select.outputs.oracle-checks == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - id: pin
+        name: the SGLang commit provenance.go pins
+        run: |
+          set -euo pipefail
+          commit="$(sed -n 's/^\tCommit: *"\([0-9a-f]\{40\}\)",$/\1/p' provenance.go)"
+          test -n "$commit"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+      - name: check out SGLang at that commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: sgl-project/sglang
+          ref: ${{ steps.pin.outputs.commit }}
+          path: sglang-source
+          fetch-depth: 1
+          persist-credentials: false
+      - name: the checkout is that commit
+        run: test "$(git -C sglang-source rev-parse HEAD)" = "${{ steps.pin.outputs.commit }}"
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - run: python -I oracle/check_modules.py sglang-source
+      - run: python -I oracle/gen_platform_reads.py sglang-source
+      - run: python -I oracle/check_provenance.py
+      - run: python -I oracle/value_coverage.py
+      - run: python -I oracle/check_pool_classes.py sglang-source
+      - run: python -I oracle/test_checks.py sglang-source
+      - run: python -I oracle/test_step_runner.py
+      - run: python -I tools/surface/gen_surface.py sglang-source tools/surface/status.json --check surface.json
+      - run: python -I tools/surface/test_gen_surface.py
+      - run: python -I oracle/lower/test_check_replacements.py
+      - run: python -I oracle/test_treecore_diff.py
+      - uses: ./.github/actions/go-setup
+        with:
+          build-cache: build
+      - run: go run ./cmd/metricsmanifest -sglang sglang-source -check
+
+  # The oracle groups the layer reaches. Each runs the steps of the same-named shard of ci.yml and compares its
+  # traces with the committed goldens. Run after the cheap checks, as the shards of ci.yml do.
+  light-oracle:
+    name: light - oracle (${{ matrix.group }})
+    needs: [select, light-go, light-lint, light-goldens]
+    if: ${{ needs.select.outputs.groups != '[]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        group: ${{ fromJSON(needs.select.outputs.groups) }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - id: env
+        uses: ./.github/actions/oracle-env
+      - id: pin
+        name: the SGLang commit provenance.go pins
+        run: |
+          set -euo pipefail
+          commit="$(sed -n 's/^\tCommit: *"\([0-9a-f]\{40\}\)",$/\1/p' provenance.go)"
+          test -n "$commit"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+      # resolve
+      - name: every replacement the harness makes is listed, and none is decision code
+        if: matrix.group == 'resolve'
+        run: python -I oracle/check_mocks.py oracle/mocks.json
+      - name: a KV-transfer or KV-store client in the lock is at its peers.json pin
+        if: matrix.group == 'resolve'
+        run: python -I oracle/check_peers.py
+      - name: the scheduler imports from the pinned checkout in the locked environment
+        if: matrix.group == 'resolve'
+        run: python -I oracle/run_import.py sglang-source
+      - name: fetch the ServerArgs cases' model configurations at their pinned revisions
+        if: matrix.group == 'resolve' || matrix.group == 'lower'
+        run: python -I oracle/serverargs/fetch_models.py oracle/serverargs/cases.json serverargs-models
+      - name: resolve every ServerArgs case through SGLang's own pipeline
+        if: matrix.group == 'resolve'
+        env:
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          mkdir -p shard-out/oracle-traces
+          python -I oracle/run_serverargs.py sglang-source oracle/serverargs/cases.json serverargs-models > shard-out/oracle-traces/serverargs.json
+      - name: the committed ServerArgs answers are SGLang's own
+        if: matrix.group == 'resolve'
+        run: python -I oracle/compare_serverargs.py config/testdata/serverargs.json shard-out/oracle-traces/serverargs.json
+      # lower: the lowering answers, then every tier-2 scenario
+      - name: every replacement the lowering oracle makes is listed
+        if: matrix.group == 'lower'
+        run: python -I oracle/lower/check_replacements.py oracle/lower/extract.py oracle/lower/replacements.json
+      - name: lower every accepted case through SGLang's own functions
+        if: matrix.group == 'lower'
+        env:
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          mkdir -p shard-out/oracle-traces
+          python -I oracle/lower/extract.py sglang-source oracle/serverargs/cases.json serverargs-models oracle/lower/cases.json > shard-out/oracle-traces/lower.json
+      - name: the committed lowering answers are SGLang's own
+        if: matrix.group == 'lower'
+        run: diff -u lower/testdata/sglang_lower.json shard-out/oracle-traces/lower.json
+      - name: run every scenario through SGLang's scheduler
+        if: matrix.group == 'lower'
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          export ORACLE_MODEL="$PWD/oracle-model"
+          mkdir -p shard-out/oracle-traces
+          for s in oracle/scenarios/*.json; do
+            name="$(basename "$s" .json)"
+            python -I oracle/run_scheduler.py sglang-source "$s" "shard-out/oracle-traces/$name.trace.json"
+          done
+      - name: every golden trace is SGLang's own output
+        if: matrix.group == 'lower'
+        run: python -I oracle/compare_goldens.py shard-out/oracle-traces "${{ steps.pin.outputs.commit }}"
+      # cache
+      - name: trace the cache framework's interfaces
+        if: matrix.group == 'cache'
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          export ORACLE_MODEL="$PWD/oracle-model"
+          o=shard-out/oracle-traces-fid5
+          mkdir -p $o/recorded $o/t2 $o/direct $o/dfs
+          for s in oracle/scenarios/*.json; do
+            python -I oracle/run_cache_iface.py recorded sglang-source "$s" "$o/recorded/$(basename "$s" .json).trace.json"
+          done
+          for s in oracle/scenarios/cache/*.json; do
+            python -I oracle/run_cache_iface.py recorded sglang-source "$s" "$o/t2/$(basename "$s" .json).trace.json"
+          done
+          for s in oracle/scenarios-dfs-order/*.json; do
+            python -I oracle/run_dfs_order.py sglang-source "$s" "$o/dfs/$(basename "$s" .json).trace.json"
+          done
+          for s in oracle/scenarios-cache-iface/*.json; do
+            python -I oracle/run_cache_iface.py direct sglang-source "$s" "$o/direct/$(basename "$s" .json).trace.json"
+          done
+      - name: trace the allocators and pools
+        if: matrix.group == 'cache'
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          mkdir -p shard-out/oracle-traces-pools/direct
+          for s in oracle/scenarios-pools/*.json; do
+            python -I oracle/run_pools.py direct sglang-source "$s" "shard-out/oracle-traces-pools/direct/$(basename "$s" .json).trace.json"
+          done
+      - name: every cache interface and pool golden is SGLang's own output
+        if: matrix.group == 'cache'
+        run: |
+          set -euo pipefail
+          commit="${{ steps.pin.outputs.commit }}"
+          t=shard-out/oracle-traces-fid5
+          python -I oracle/compare_goldens.py $t/recorded "$commit" oracle/scenarios core/cache/testdata/golden-fid5/recorded
+          python -I oracle/compare_goldens.py $t/t2 "$commit" oracle/scenarios/cache core/cache/testdata/golden-fid5/t2
+          python -I oracle/compare_goldens.py $t/dfs "$commit" oracle/scenarios-dfs-order core/cache/testdata/golden-fid5/dfs
+          python -I oracle/compare_goldens.py $t/direct "$commit" oracle/scenarios-cache-iface core/cache/testdata/golden-fid5/direct
+          python -I oracle/compare_goldens.py shard-out/oracle-traces-pools/direct "$commit" oracle/scenarios-pools core/cache/testdata/golden-pools/direct
+      # hicache-metrics
+      - name: trace the HiCache framework's interfaces
+        if: matrix.group == 'hicache-metrics'
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          export ORACLE_MODEL="$PWD/oracle-model"
+          o=shard-out/oracle-traces-hicache
+          mkdir -p $o/recorded $o/direct
+          for s in oracle/scenarios/hicache/recorded/*.json; do
+            python -I oracle/run_hicache.py recorded sglang-source "$s" "$o/recorded/$(basename "$s" .json).trace.json"
+          done
+          for s in oracle/scenarios/hicache/direct/*.json; do
+            python -I oracle/run_hicache.py direct sglang-source "$s" "$o/direct/$(basename "$s" .json).trace.json"
+          done
+      - name: trace the metrics and KV events
+        if: matrix.group == 'hicache-metrics'
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          export ORACLE_MODEL="$PWD/oracle-model"
+          mkdir -p shard-out/oracle-traces-metrics
+          for s in oracle/scenarios-metrics/*.json; do
+            python -I oracle/run_metrics.py sglang-source "$s" "shard-out/oracle-traces-metrics/$(basename "$s" .json).trace.json"
+          done
+      - name: every HiCache interface and metrics golden is SGLang's own output
+        if: matrix.group == 'hicache-metrics'
+        run: |
+          set -euo pipefail
+          commit="${{ steps.pin.outputs.commit }}"
+          t=shard-out/oracle-traces-hicache
+          python -I oracle/compare_goldens.py $t/recorded "$commit" oracle/scenarios/hicache/recorded core/hicache/testdata/golden-fid5/recorded
+          python -I oracle/compare_goldens.py $t/direct "$commit" oracle/scenarios/hicache/direct core/hicache/testdata/golden-fid5/direct
+          python -I oracle/compare_goldens.py shard-out/oracle-traces-metrics "$commit" oracle/scenarios-metrics core/metrics/testdata/golden-metrics
+      # sched: the scheduling loop, every scenario
+      - name: trace the scheduling loop
+        if: matrix.group == 'sched'
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          export ORACLE_MODEL="$PWD/oracle-model"
+          mkdir -p shard-out/oracle-traces-sched
+          for s in $(ls oracle/scenarios-sched/*.json | LC_ALL=C sort); do
+            python -I oracle/run_sched.py sglang-source "$s" "shard-out/oracle-traces-sched/$(basename "$s" .json).trace.json"
+          done
+      - name: every scheduling golden is SGLang's own output
+        if: matrix.group == 'sched'
+        run: python -I oracle/compare_goldens.py shard-out/oracle-traces-sched "${{ steps.pin.outputs.commit }}" oracle/scenarios-sched core/sched/testdata/golden-sched
+      - name: upload the group's traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: light-oracle-${{ matrix.group }}
+          path: shard-out/
+          if-no-files-found: ignore

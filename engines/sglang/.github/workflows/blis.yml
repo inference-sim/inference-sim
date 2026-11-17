@@ -6,9 +6,8 @@ name: blis
 # AGENTS.md section and pull-request template, the selected-version lint), and the
 # nightly checks (cited issues stay open, X28).
 #
-# The commit is blis-substrate's main at its v0.14.0 tags-lock merge. go.mod selects another substrate commit (the
-# TEMPORARY contracts/harness pin); the two move together to one release tag's commit when the substrate is tagged
-# with contracts/harness.
+# The commit is blis-substrate's v0.15.0 tag (883a2709c250e4724ce11d1d6ba2cc12662b01e7). go.mod selects the same
+# release; the two move together to the next tagged substrate.
 
 on:
   pull_request:
@@ -29,25 +28,25 @@ concurrency:
 jobs:
   pr:
     if: github.event_name == 'pull_request'
-    uses: inference-sim/blis-substrate/.github/workflows/shared-pr-checks.yml@00817b10798cbc00f560e51921c30c7084fa5e0c
+    uses: inference-sim/blis-substrate/.github/workflows/shared-pr-checks.yml@883a2709c250e4724ce11d1d6ba2cc12662b01e7
     permissions:
       contents: read
       pull-requests: write
       checks: write
     with:
       repo: blis-sglang
-      substrate-ref: 00817b10798cbc00f560e51921c30c7084fa5e0c
+      substrate-ref: 883a2709c250e4724ce11d1d6ba2cc12662b01e7
 
   # No BLIS repository uses a merge queue (design X22), so there is no merge job here.
   # shared-merge-check.yml stays available in blis-substrate if a queue is ever enabled.
 
   nightly:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    uses: inference-sim/blis-substrate/.github/workflows/shared-nightly.yml@00817b10798cbc00f560e51921c30c7084fa5e0c
+    uses: inference-sim/blis-substrate/.github/workflows/shared-nightly.yml@883a2709c250e4724ce11d1d6ba2cc12662b01e7
     permissions:
       contents: read
       issues: read
     with:
-      substrate-ref: 00817b10798cbc00f560e51921c30c7084fa5e0c
+      substrate-ref: 883a2709c250e4724ce11d1d6ba2cc12662b01e7
     secrets:
       INTERNAL_NAME_PATTERNS: ${{ secrets.INTERNAL_NAME_PATTERNS }}

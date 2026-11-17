@@ -41,6 +41,7 @@ msgspec struct its fields, an enum its name. Each request is also encoded on ret
 import dataclasses
 import enum
 import inspect
+import re
 import sys
 
 # (interface, module, abstract class, extra methods)
@@ -62,6 +63,8 @@ IMPLEMENTATIONS = (
     "sglang.srt.mem_cache.allocator.paged",
 )
 CO_GENERATOR = 0x20
+# A field holding memory addresses, by its name (k_data_ptrs, data_ptr).
+POINTER_FIELD = re.compile(r"(^|_)ptrs?$")
 MAX_DEPTH = 8
 
 # What a pool or allocator is, once built: the attributes its sizing sets.
@@ -100,13 +103,16 @@ def code_of(value):
 class Monitor:
     """Records the calls at the six interfaces while it is entered."""
 
-    def __init__(self):
+    # The attributes a constructed object of an interface is recorded by (its sizing).
+    sizing_names = SIZING
+
+    def __init__(self, interfaces=INTERFACES, implementations=IMPLEMENTATIONS):
         import importlib
 
-        for mod in IMPLEMENTATIONS:
+        for mod in implementations:
             importlib.import_module(mod)
         self.codes = {}  # code object -> (interface, method)
-        for iface, mod, cls_name, extra in INTERFACES:
+        for iface, mod, cls_name, extra in interfaces:
             base = getattr(importlib.import_module(mod), cls_name)
             methods = interface_methods(base) | set(extra)
             for cls in subclasses(base):
@@ -151,11 +157,11 @@ class Monitor:
         if tname == "Req" and hasattr(x, "rid"):
             return self.req(x, depth)
         if dataclasses.is_dataclass(x) and not isinstance(x, type):
-            return {"_t": tname, **{f.name: self.enc(getattr(x, f.name), depth + 1) for f in dataclasses.fields(x)}}
+            return {"_t": tname, **{f.name: self.field(f.name, getattr(x, f.name), depth) for f in dataclasses.fields(x)}}
         if isinstance(x, tuple) and hasattr(x, "_fields"):
-            return {"_t": tname, **{f: self.enc(getattr(x, f), depth + 1) for f in x._fields}}
+            return {"_t": tname, **{f: self.field(f, getattr(x, f), depth) for f in x._fields}}
         if hasattr(type(x), "__struct_fields__"):
-            return {"_t": tname, **{f: self.enc(getattr(x, f), depth + 1) for f in type(x).__struct_fields__}}
+            return {"_t": tname, **{f: self.field(f, getattr(x, f), depth) for f in type(x).__struct_fields__}}
         if isinstance(x, dict):
             return {str(self.enc(k, depth + 1)): self.enc(v, depth + 1) for k, v in x.items()}
         if isinstance(x, (list, tuple, set, frozenset)):
@@ -164,6 +170,17 @@ class Monitor:
         if callable(x):
             return {"_t": "callable"}
         return {"_t": tname}
+
+    def field(self, name, value, depth):
+        """A field of a dataclass, named tuple or struct. One that holds memory addresses (a
+        buffer's data pointers: k_data_ptrs, v_data_ptrs) is recorded as how many it holds, never
+        its values, which name memory and change from run to run."""
+        if POINTER_FIELD.search(name):
+            n = None
+            if value is not None:
+                n = len(value) if hasattr(value, "__len__") else 1
+            return {"_t": "addresses", "n": n}
+        return self.enc(value, depth + 1)
 
     def req(self, r, depth):
         if not any(r is q for q in self.reqs):
@@ -205,7 +222,7 @@ class Monitor:
         return {k: self.enc(loc[k]) for k in names if k not in ("self", "cls") and k in loc}
 
     def sizing(self, obj):
-        return {k: self.enc(getattr(obj, k)) for k in SIZING if hasattr(obj, k)
+        return {k: self.enc(getattr(obj, k)) for k in self.sizing_names if hasattr(obj, k)
                 and not callable(getattr(type(obj), k, None))}
 
     # --- events ---
@@ -223,9 +240,10 @@ class Monitor:
                 return rec["seq"]
         return None
 
-    def _start(self, code, offset):
+    def _start(self, code, offset, f=None):
         iface, m = self.codes[code]
-        f = sys._getframe(2)
+        if f is None:
+            f = sys._getframe(2)
         rec = None
         if self._top(iface):
             rec = {"seq": len(self.calls), "i": iface, "m": m}

@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -542,6 +543,471 @@ class RefreshProvenance(unittest.TestCase):
                 self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
                 self.assertIn(text, r.stdout)
                 self.assertEqual(self.golden(g), self.GOLDEN)
+
+
+
+class ValueCoverage(unittest.TestCase):
+    """oracle/value_coverage.py, the value-coverage report (FID-10)."""
+
+    def check(self, root):
+        return run([sys.executable, "-I", os.path.join(HERE, "value_coverage.py"), root], ROOT)
+
+    def test_the_committed_goldens_are_covered_or_held(self):
+        r = self.check(ROOT)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def tree(self, goldens, held=None, maps=("finished",)):
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root)
+        os.makedirs(os.path.join(root, "oracle", "testdata", "golden"))
+        with open(os.path.join(root, "oracle", "harness.json"), "w") as f:
+            json.dump({"golden_dirs": ["oracle/testdata/golden/"], "golden_files": []}, f)
+        with open(os.path.join(root, "oracle", "value_coverage.json"), "w") as f:
+            json.dump({"description": "x", "maps": list(maps), "held": held or {}}, f)
+        for i, g in enumerate(goldens):
+            with open(os.path.join(root, "oracle", "testdata", "golden", f"g{i}.trace.json"), "w") as f:
+                json.dump({"provenance": {"seed": i}, **g}, f)
+        return root
+
+    def test_a_field_at_one_value_fails_and_two_values_pass(self):
+        held = {"steps": {"kind": "fixed", "reason": "r"}}
+        r = self.check(self.tree([{"steps": [{"batch_size": 2}]}, {"steps": [{"batch_size": 2}]}], held))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("steps[].batch_size: takes only 2", r.stdout)
+        r = self.check(self.tree([{"steps": [{"batch_size": 2}, {"batch_size": 0}]}], held))
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_a_list_is_covered_only_when_both_empty_and_not(self):
+        r = self.check(self.tree([{"arrivals": ["r0"]}, {"arrivals": ["r1"]}]))
+        self.assertIn("arrivals: takes only [...]", r.stdout)
+        r = self.check(self.tree([{"arrivals": ["r0"]}, {"arrivals": []}], held={"arrivals[]": {"kind": "fixed", "reason": "x"}}))
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_a_map_keyed_by_request_is_one_field(self):
+        goldens = [{"finished": {"r0": {"step": 2}}}, {"finished": {"r1": {"step": 2}}}]
+        held = {"finished.*.step": {"kind": "gap", "reason": "no scenario moves it (#32)"}}
+        r = self.check(self.tree(goldens, held))
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_a_subtree_is_held_by_one_entry_that_must_match_a_path(self):
+        goldens = [{"calls": [{"fn": "a", "args": {"x": 1}}]}, {"calls": [{"fn": "a", "args": {"x": 1}}]}]
+        held = {"calls**": {"kind": "gap", "reason": "the calls are records (#33)"}}
+        r = self.check(self.tree(goldens, held))
+        self.assertEqual(r.returncode, 0, r.stdout)
+        r = self.check(self.tree(goldens, {"calls": held["calls**"]}))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("calls[].args.x: takes only 1", r.stdout)
+        r = self.check(self.tree(goldens, {"other**": held["calls**"], **held}))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("other**: is held, but no golden has it", r.stdout)
+        r = self.check(self.tree(goldens, {"calls**": {"kind": "gap", "reason": "later"}}))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("cites the open issue", r.stdout)
+
+    def test_the_held_list_stays_true(self):
+        two = [{"x": 1}, {"x": 0}]
+        for name, goldens, held, text in [
+                ("now covered", two, {"x": {"kind": "fixed", "reason": "r"}}, "x: is held as fixed but is now covered"),
+                ("no such field", two, {"y": {"kind": "fixed", "reason": "r"}}, "y: is held, but no golden has it"),
+                ("a gap without its issue", [{"x": 1}], {"x": {"kind": "gap", "reason": "later"}}, "cites the open issue"),
+                ("no reason", [{"x": 1}], {"x": {"kind": "fixed", "reason": ""}}, "x: no reason"),
+                ("no kind", [{"x": 1}], {"x": {"reason": "r"}}, "kind must be one of")]:
+            with self.subTest(name):
+                r = self.check(self.tree(goldens, held))
+                self.assertEqual(r.returncode, 1, r.stdout)
+                self.assertIn(text, r.stdout)
+
+    def test_no_golden_fails(self):
+        r = self.check(self.tree([]))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("no golden trace", r.stdout)
+
+
+class PlatformReads(unittest.TestCase):
+    """oracle/gen_platform_reads.py: every platform read, clock read and thread start reachable from
+    the decision modules is listed, and covered by the manifest (FID-1, FID-8). CI runs the
+    generator itself on the pinned checkout; these cases run it on scratch checkouts."""
+
+    # A scratch SGLang: the scheduler imports a decision module that reads the platform through a
+    # predicate and through a constant computed from it, reads the clock, starts a thread directly
+    # and through a helper of a non-decision module, and imports for type checking only a module
+    # whose read is not reachable.
+    FILES = {
+        "python/sglang/srt/managers/scheduler.py": "from sglang.srt.mem_cache import pool\n",
+        "python/sglang/srt/utils/__init__.py": "from sglang.srt.utils.common import *\n",
+        "python/sglang/srt/utils/common.py": (
+            "import threading\nimport torch\n\n\ndef is_cuda():\n    return torch.cuda.is_available()\n\n\n"
+            "def start_helper():\n    threading.Thread(target=print).start()\n"),
+        "python/sglang/srt/mem_cache/pool.py": (
+            "import threading\nimport time\nfrom typing import TYPE_CHECKING\n\n"
+            "from sglang.srt.utils import is_cuda, start_helper\n\nif TYPE_CHECKING:\n"
+            "    from sglang.srt.mem_cache import typed\n\n_is_cuda = is_cuda()\n\n\n"
+            "def step():\n    if _is_cuda:\n        return time.monotonic()\n    start_helper()\n"
+            "    threading.Thread(target=step).start()\n"),
+        "python/sglang/srt/mem_cache/typed.py": "import time\nNOW = time.time()\n",
+    }
+    PREFIXES = ["sglang.srt.managers.scheduler.", "sglang.srt.mem_cache."]
+    COVERS = {
+        "platform": ["platform:sglang.srt.utils.common.is_cuda"],
+        "clock": ["clock:time.monotonic"],
+        "thread": ["thread:threading.Thread", "thread:sglang.srt.utils.common.start_helper"],
+    }
+
+    def checkout(self, files=None):
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root)
+        for rel, text in (files or self.FILES).items():
+            path = os.path.join(root, rel)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as f:
+                f.write(text)
+        with open(os.path.join(root, "harness.json"), "w") as f:
+            json.dump({"decision_prefixes": self.PREFIXES}, f)
+        self.manifest(root, self.COVERS)
+        self.commit(root)
+        return root
+
+    @staticmethod
+    def commit(root):
+        # The listing records the checkout's commit; the files may change after it.
+        for cmd in (["init", "-q"], ["-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false", "-c",
+                                     "core.hooksPath=/dev/null", "commit", "-q", "--allow-empty", "-m", "x"]):
+            subprocess.run(["git", "-C", root, *cmd], check=True, capture_output=True)
+
+    @staticmethod
+    def manifest(root, covers):
+        mocks = [{"symbol": kind, "kind": "environment", "how": "h", "sites": [], "covers": items}
+                 for kind, items in covers.items()]
+        with open(os.path.join(root, "mocks.json"), "w") as f:
+            json.dump({"version": "gpu-mock/1+" + digest(mocks), "mocks": mocks}, f)
+
+    def gen(self, root, *flags):
+        return run([sys.executable, "-I", os.path.join(HERE, "gen_platform_reads.py"), *flags, root,
+                    os.path.join(root, "harness.json"), os.path.join(root, "mocks.json"),
+                    os.path.join(root, "platform_reads.json")], root)
+
+    def listed(self, root):
+        r = self.gen(root, "--write")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        with open(os.path.join(root, "platform_reads.json")) as f:
+            return json.load(f)["sites"]
+
+    def edit(self, root, rel, text):
+        with open(os.path.join(root, rel), "a") as f:
+            f.write(text)
+
+    def test_each_kind_of_read_is_a_site(self):
+        root = self.checkout()
+        sites = self.listed(root)
+        m = "sglang.srt.mem_cache.pool"
+        self.assertEqual(sorted(sites), sorted([
+            f"platform:{m}:<module>:sglang.srt.utils.common.is_cuda#1",  # the constant's definition
+            f"platform:{m}:step:{m}._is_cuda#1",  # and its read
+            f"clock:{m}:step:time.monotonic#1",
+            f"thread:{m}:step:sglang.srt.utils.common.start_helper#1",
+            f"thread:{m}:step:threading.Thread#1",
+        ]))
+        self.assertEqual(sites[f"platform:{m}:step:{m}._is_cuda#1"]["via"], ["sglang.srt.utils.common.is_cuda"])
+        r = self.gen(root)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_an_unlisted_platform_read_clock_read_and_thread_start_fail(self):
+        m = "sglang.srt.mem_cache.pool"
+        for name, text, site, cover in [
+                ("platform", "\n\ndef sync():\n    import torch\n    torch.cuda.synchronize()\n",
+                 f"platform:{m}:sync:torch.cuda.synchronize#1", "platform:torch.cuda.synchronize"),
+                ("constant", "\n\ndef again():\n    return _is_cuda\n",
+                 f"platform:{m}:again:{m}._is_cuda#1", None),
+                ("clock", "\n\ndef nap():\n    time.sleep(1)\n", f"clock:{m}:nap:time.sleep#1", "clock:time.sleep"),
+                ("thread", "\n\ndef pool():\n    import concurrent.futures\n"
+                           "    return concurrent.futures.ThreadPoolExecutor(1)\n",
+                 f"thread:{m}:pool:concurrent.futures.ThreadPoolExecutor#1",
+                 "thread:concurrent.futures.ThreadPoolExecutor")]:
+            with self.subTest(name):
+                root = self.checkout()
+                self.listed(root)
+                self.edit(root, "python/sglang/srt/mem_cache/pool.py", text)
+                r = self.gen(root)
+                self.assertEqual(r.returncode, 1, r.stdout)
+                self.assertIn(f"{site} (line", r.stdout)
+                self.assertIn("not in oracle/platform_reads.json", r.stdout)
+                # Listed, the read still needs the manifest to name it; a constant's read is
+                # covered by what computes it.
+                self.listed(root)
+                r = self.gen(root)
+                if cover is None:
+                    self.assertEqual(r.returncode, 0, r.stdout)
+                    continue
+                self.assertEqual(r.returncode, 1, r.stdout)
+                self.assertIn(f"{site} (line", r.stdout)
+                self.assertIn("no mocks.json entry covers", r.stdout)
+                covers = {k: list(v) for k, v in self.COVERS.items()}
+                covers[name].append(cover)
+                self.manifest(root, covers)
+                r = self.gen(root)
+                self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_a_read_behind_a_constant_needs_what_computes_it(self):
+        root = self.checkout()
+        self.listed(root)
+        covers = {k: list(v) for k, v in self.COVERS.items()}
+        covers["platform"] = []
+        self.manifest(root, covers)
+        r = self.gen(root)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("platform:sglang.srt.mem_cache.pool:step:sglang.srt.mem_cache.pool._is_cuda#1 (line 14): a read "
+                      "of a constant computed from platform:sglang.srt.utils.common.is_cuda", r.stdout)
+
+    def test_a_gone_site_a_moved_site_and_another_commit_fail(self):
+        root = self.checkout()
+        sites = self.listed(root)
+        path = os.path.join(root, "platform_reads.json")
+        with open(path) as f:
+            listing = json.load(f)
+        listing["sites"]["clock:sglang.srt.mem_cache.pool:gone:time.monotonic#1"] = {"line": 1}
+        listing["sites"]["clock:sglang.srt.mem_cache.pool:step:time.monotonic#1"] = {"line": 99}
+        listing["sglang_commit"] = "0" * 40
+        with open(path, "w") as f:
+            json.dump(listing, f)
+        r = self.gen(root)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("clock:sglang.srt.mem_cache.pool:gone:time.monotonic#1: listed in oracle/platform_reads.json, "
+                      "and no longer at the checkout", r.stdout)
+        self.assertIn("clock:sglang.srt.mem_cache.pool:step:time.monotonic#1: listed as {'line': 99}", r.stdout)
+        self.assertIn(f"lists the sites of {'0' * 40}", r.stdout)
+        self.assertEqual(len(sites), 5)
+
+    def test_a_stale_or_doubled_cover_fails(self):
+        root = self.checkout()
+        self.listed(root)
+        covers = {k: list(v) for k, v in self.COVERS.items()}
+        covers["clock"].append("clock:time.sleep")
+        covers["other"] = ["thread:threading.Thread"]
+        self.manifest(root, covers)
+        r = self.gen(root)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("clock: covers clock:time.sleep, which no reachable site reads", r.stdout)
+        self.assertIn("thread:threading.Thread: covered by both 'thread' and 'other'", r.stdout)
+
+
+class MutationSweep(unittest.TestCase):
+    """oracle/mutate.py, the mutation sweep (T7), on scratch repositories."""
+
+    LIB = "def positive(x):\n    return x > 0\n\n\ndef untested():\n    return 1\n"
+    TEST = "import lib\nassert lib.positive(1) and not lib.positive(0)\n"
+    GO = ("// SPDX-License-Identifier: Apache-2.0\n// Derived from python/sglang/srt/x.py at SGLang v0.5.23.\n\n"
+          "package core\n\n// Fits says a < b.\nfunc Fits(a, b int) bool {\n\treturn a < b && b != 0 // a > b\n}\n\n"
+          "func Name() string {\n\treturn \"a >= b\"\n}\n")
+
+    def repo(self, mutants, gaps=None, equivalent=None):
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root)
+        os.makedirs(os.path.join(root, "oracle"))
+        os.makedirs(os.path.join(root, "core"))
+        files = {"lib.py": self.LIB, "check.py": self.TEST, "other.py": "X = 1\n", "core/x.go": self.GO}
+        for rel, text in files.items():
+            with open(os.path.join(root, rel), "w") as f:
+                f.write(text)
+        cfg = {"description": "x", "mutants": mutants, "known_gaps": gaps or {}, "equivalent": equivalent or {},
+               "suites": {"unit": {"command": [sys.executable, "check.py"], "tests": ["check.py"]},
+                          "go": {"command": ["false"], "tests": []}}}
+        with open(os.path.join(root, "oracle", "mutants.json"), "w") as f:
+            json.dump(cfg, f)
+        for cmd in (["init", "-q"], ["add", "-A"], ["-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false",
+                                                     "commit", "-q", "-m", "base"]):
+            subprocess.run(["git", "-C", root, *cmd], check=True, capture_output=True)
+        return root
+
+    def sweep(self, root, *extra):
+        scratch = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, scratch, True)
+        return run([sys.executable, "-I", os.path.join(HERE, "mutate.py"), "--root", root, *extra, "nowhere",
+                    os.path.join(scratch, "tree")], root)
+
+    @staticmethod
+    def mutant(i, file="lib.py", old="return x > 0", new="return x >= 0"):
+        return {"id": i, "guards": "g", "file": file, "old": old, "new": new, "suite": "unit"}
+
+    def test_shards_partition_the_selection(self):
+        # CI runs the sweep as N shards side by side: every selected mutant runs in exactly one.
+        root = self.repo([self.mutant(f"M{i}") for i in range(7)])
+        whole = [ln for ln in self.sweep(root, "--list").stdout.splitlines() if ln.startswith("listed")]
+        self.assertEqual(len(whole), 7)
+        seen = []
+        for i in range(3):
+            r = self.sweep(root, "--list", "--shard", f"{i}/3")
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            seen += [ln for ln in r.stdout.splitlines() if ln.startswith("listed")]
+        self.assertEqual(sorted(seen), sorted(whole))
+
+    def test_a_shard_outside_the_count_is_refused(self):
+        r = self.sweep(self.repo([self.mutant("A")]), "--list", "--shard", "3/3")
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+
+    def test_a_caught_mutant_passes(self):
+        r = self.sweep(self.repo([self.mutant("A")]), "--only", "A")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("CAUGHT     A", r.stdout)
+
+    def test_a_mutant_that_never_terminates_is_caught_and_leaves_nothing_running(self):
+        # A mutant can make its suite loop forever. The sweep must give up on it within its limit, count it as
+        # caught, and kill everything the suite started: a grandchild that outlived the mutant held the runner
+        # until the job was killed (shard 3 of the CI sweep).
+        root = self.repo([dict(self.mutant("H"), suite="hang")])
+        marker = os.path.join(root, "grandchild-survived")
+        grandchild = ("import pathlib,sys,time; time.sleep(4); pathlib.Path(sys.argv[1]).write_text('alive')")
+        hang = ("import subprocess,sys,time; subprocess.Popen([sys.executable,'-c',sys.argv[1],sys.argv[2]]); "
+                "time.sleep(600)")
+        path = os.path.join(root, "oracle", "mutants.json")
+        with open(path) as f:
+            cfg = json.load(f)
+        cfg["suites"]["hang"] = {"command": [sys.executable, "-c", hang, grandchild, marker], "tests": []}
+        with open(path, "w") as f:
+            json.dump(cfg, f)
+        scratch = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, scratch, True)
+        t0 = time.monotonic()
+        r = subprocess.run([sys.executable, "-I", os.path.join(HERE, "mutate.py"), "--root", root, "--only", "H",
+                            "nowhere", os.path.join(scratch, "tree")], cwd=root, capture_output=True, text=True,
+                           timeout=60, env={**os.environ, "BLIS_MUTANT_TIMEOUT_S": "2"})
+        self.assertLess(time.monotonic() - t0, 30)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("CAUGHT     H", r.stdout)
+        time.sleep(5)
+        self.assertFalse(os.path.exists(marker), "the suite's grandchild outlived the killed mutant")
+
+    def test_a_mutant_whose_suite_allocates_without_bound_is_caught_in_seconds(self):
+        # A mutant can make a test binary grow by gigabytes a second (core/cache's matchAt with its comparison
+        # flipped did); on a runner that kills the job before any time limit fires. The sweep polls the suite's
+        # process group and kills it past BLIS_MUTANT_MAX_RSS_MB, and the mutant counts as caught. The suite here
+        # takes 400 MiB and then stalls: only the memory ceiling can end it quickly.
+        root = self.repo([dict(self.mutant("M"), suite="hog")])
+        hog = "x = bytearray(400 * 1024 * 1024); x[::4096] = b'1' * len(x[::4096]); import time; time.sleep(600)"
+        path = os.path.join(root, "oracle", "mutants.json")
+        with open(path) as f:
+            cfg = json.load(f)
+        cfg["suites"]["hog"] = {"command": [sys.executable, "-c", hog], "tests": []}
+        with open(path, "w") as f:
+            json.dump(cfg, f)
+        scratch = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, scratch, True)
+        t0 = time.monotonic()
+        r = subprocess.run([sys.executable, "-I", os.path.join(HERE, "mutate.py"), "--root", root, "--only", "M",
+                            "nowhere", os.path.join(scratch, "tree")], cwd=root, capture_output=True, text=True,
+                           timeout=60, env={**os.environ, "BLIS_MUTANT_MAX_RSS_MB": "200"})
+        self.assertLess(time.monotonic() - t0, 30)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("CAUGHT     M", r.stdout)
+
+    def test_a_listed_id_shared_by_a_caught_and_a_surviving_mutant_passes(self):
+        # The generator gives two methods of one name, with the same line, one id. Listing that id as a known gap
+        # covers the copy that survives; the copy that is caught must not turn the listing into a stale-gap finding.
+        go = ("// SPDX-License-Identifier: Apache-2.0\n// Derived from python/sglang/srt/y.py at SGLang v0.5.23.\n\n"
+              "package core\n\nfunc (a A) Nil(x *int) bool {\n\tif x == nil {\n\t\treturn true\n\t}\n\treturn false\n}\n\n"
+              "func (b B) Nil(x *int) bool {\n\tif x == nil {\n\t\treturn true\n\t}\n\treturn false\n}\n")
+        root = self.repo([])
+        with open(os.path.join(root, "core", "y.go"), "w") as f:
+            f.write(go)
+        for cmd in (["add", "core/y.go"], ["-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false",
+                                           "commit", "-q", "-m", "ported file"]):
+            subprocess.run(["git", "-C", root, *cmd], check=True, capture_output=True)
+        path = os.path.join(root, "oracle", "mutants.json")
+        with open(path) as f:
+            cfg = json.load(f)
+        # The suite passes (the mutant survives) only when the second method's copy was mutated.
+        check = "import sys; t = open('core/y.go').read(); sys.exit(0 if t.index('x != nil') > t.index('func (b B)') else 1)"
+        cfg["suites"]["go"] = {"command": [sys.executable, "-c", check], "tests": []}
+        with open(path, "w") as f:
+            json.dump(cfg, f)
+        mu = import_oracle("mutate")
+        ids = [m["id"] for m in mu.generated_mutants("core/y.go", go) if "==->!=" in m["id"]]
+        self.assertEqual(len(ids), 2, ids)
+        self.assertEqual(ids[0], ids[1], "the two copies must share one id for this test to mean anything")
+        cfg["known_gaps"] = {ids[0]: "no test kills this mutant yet (#32)"}
+        with open(path, "w") as f:
+            json.dump(cfg, f)
+        r = self.sweep(root, "--only", ids[0])
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("NOW CAUGHT", r.stdout)
+        self.assertIn("SURVIVED   " + ids[0] + " (listed", r.stdout)
+
+    def test_a_survivor_a_stale_gap_and_a_broken_mutant_fail(self):
+        survivor = self.mutant("B", old="return 1", new="return 2")
+        for name, mutants, gaps, text in [
+                ("survivor", [survivor], {}, "SURVIVED   B  guards g"),
+                ("gap now caught", [self.mutant("A")], {"A": "a gap (#32)"}, "NOW CAUGHT A"),
+                ("broken", [self.mutant("C", old="return y")], {}, "BROKEN     C"),
+                ("gap without its issue", [survivor], {"B": "later"}, "cites the open issue"),
+                ("stale gap", [], {"Z": "gone (#32)"}, "STALE      Z")]:
+            with self.subTest(name):
+                r = self.sweep(self.repo(mutants, gaps), "--only", ",".join(m["id"] for m in mutants) or "none") \
+                    if name != "stale gap" else self.sweep(self.repo(mutants, gaps), "--list")
+                self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+                self.assertIn(text, r.stdout)
+
+    def test_a_listed_survivor_with_its_issue_passes(self):
+        r = self.sweep(self.repo([self.mutant("B", old="return 1", new="return 2")], {"B": "no test yet (#32)"}), "--only", "B")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def package_list(self, root, entries, key="pending"):
+        os.makedirs(os.path.join(root, "core", "testdata"))
+        with open(os.path.join(root, "core", "testdata", "pending_mutants.json"), "w") as f:
+            json.dump({key: entries}, f)
+
+    def test_a_package_lists_its_pending_survivor(self):
+        survivor = self.mutant("B", old="return 1", new="return 2")
+        for name, key, entry, want in [
+                ("pending, with its issue", "pending", {"id": "B", "stage": "S17", "issue": "x/y#53"}, 0),
+                ("pending, without an issue", "pending", {"id": "B", "stage": "S17", "issue": "soon"}, 1),
+                ("equivalent, with a reason", "equivalent", {"id": "B", "why": "the value is unused"}, 0)]:
+            with self.subTest(name):
+                root = self.repo([survivor])
+                self.package_list(root, [entry], key)
+                r = self.sweep(root, "--only", "B")
+                self.assertEqual(r.returncode, want, r.stdout + r.stderr)
+
+    def test_a_package_entry_that_a_test_now_catches_fails(self):
+        root = self.repo([self.mutant("A")])
+        self.package_list(root, [{"id": "A", "stage": "S17", "issue": "x/y#53"}])
+        r = self.sweep(root, "--only", "A")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("NOW CAUGHT A", r.stdout)
+
+    def test_generated_mutants_flip_code_operators_only(self):
+        mu = import_oracle("mutate")
+        got = mu.generated_mutants("core/x.go", self.GO)
+        self.assertEqual(sorted(m["new"].strip() for m in got),
+                         ["return a < b && b == 0 // a > b", "return a < b || b != 0 // a > b",
+                          "return a <= b && b != 0 // a > b"])
+        self.assertEqual({m["function"] for m in got}, {"Fits"})
+        self.assertEqual({m["package"] for m in got}, {"./core"})
+
+    def changed_list(self, edit):
+        root = self.repo([self.mutant("A"), self.mutant("O", file="other.py", old="X = 1", new="X = 2")])
+        edit(root)
+        subprocess.run(["git", "-C", root, "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false",
+                        "commit", "-qam", "change"], check=True, capture_output=True)
+        r = self.sweep(root, "--changed", "HEAD~1", "--list")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        return {line.split()[1].split(":")[0] if line.startswith("generated") else line.split()[1]
+                for line in r.stdout.splitlines() if line.startswith(("listed", "generated"))}, r.stdout
+
+    def test_a_pull_request_sweeps_what_it_changed(self):
+        def edit(path, old, new):
+            def f(root):
+                with open(os.path.join(root, path)) as h:
+                    text = h.read()
+                with open(os.path.join(root, path), "w") as h:
+                    h.write(text.replace(old, new))
+            return f
+        for name, change, want in [
+                ("a changed file", edit("lib.py", "return 1", "return 3"), {"A"}),
+                ("a changed test", edit("check.py", "lib.positive(1)", "lib.positive(2)"), {"A", "O"}),
+                ("a changed ported function", edit("core/x.go", "b != 0 //", "b != 1 //"), {"core/x.go"}),
+                ("an unchanged ported function", edit("core/x.go", "\"a >= b\"", "\"a\""), set())]:
+            with self.subTest(name):
+                got, out = self.changed_list(change)
+                self.assertEqual(got, want, out)
 
 
 class Runner(unittest.TestCase):

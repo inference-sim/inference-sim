@@ -138,7 +138,7 @@ def status_for(src, dyn_names=None):
     envs = gen_fields.env_names(src, [], None)
     fields = {}
     for n in names:
-        fields["config:" + n] = {"status": "not_modelled", "evidence": {"issue": "inference-sim/blis-sglang#24"}, "estimation": {"rule": "none"}}
+        fields["config:" + n] = {"status": "not_modelled", "evidence": {"issue": "inference-sim/blis-sglang#49"}, "estimation": {"rule": "none"}}
     for n in envs + (dyn_names or []):
         fields["env:" + n] = {"status": "not_modelled", "evidence": {"issue": "inference-sim/blis-sglang#9"}, "estimation": {"rule": "none"}}
     return {"engine_version": "0.5.23", "extra_env": [], "dynamic_reads": {DYN: {"reason": "r", "names": dyn_names or []},
@@ -208,7 +208,7 @@ class GenFieldsTest(unittest.TestCase):
 
     def test_known_bad_a_status_for_a_field_sglang_does_not_declare(self):
         st = status_for(self.src)
-        st["fields"]["config:not_a_field"] = {"status": "not_modelled", "evidence": {"issue": "inference-sim/blis-sglang#24"},
+        st["fields"]["config:not_a_field"] = {"status": "not_modelled", "evidence": {"issue": "inference-sim/blis-sglang#49"},
                                               "estimation": {"rule": "none"}}
         with self.assertRaises(SystemExit) as e:
             gen_fields.build(self.src, st)

@@ -43,7 +43,19 @@ def server_args(scenario: dict):
     base platform's (mocks.json, "the base platform")."""
     from sglang.srt.server_args import ServerArgs
 
+    # HiCache, for oracle/run_hicache.py's recorded scenarios: SGLang's own fields, by name.
+    hicache = {}
+    if "hicache" in scenario:
+        h = scenario["hicache"]
+        hicache = {"enable_hierarchical_cache": True, "hicache_ratio": h["ratio"], "hicache_io_backend": h["io_backend"],
+                   "hicache_mem_layout": h["mem_layout"], "hicache_write_policy": h["write_policy"]}
+        if h.get("storage_backend"):
+            # file_storage_path is run_hicache.py's: a fresh directory per run (oracle/mocks.json).
+            hicache.update(hicache_storage_backend=h["storage_backend"],
+                           hicache_storage_prefetch_policy=h.get("prefetch_policy", "best_effort"),
+                           hicache_storage_backend_extra_config=json.dumps({"file_storage_path": h["file_storage_path"]}))
     return ServerArgs(
+        **hicache,
         model_path=os.environ["ORACLE_MODEL"],
         load_format="dummy",
         skip_tokenizer_init=True,
@@ -73,7 +85,10 @@ class InitInfo:
         self.sent.append(obj)
 
 
-def child(scenario: dict, sglang_root: str, out_path: str) -> None:
+def child(scenario: dict, sglang_root: str, out_path: str, on_step=None, setup=None) -> None:
+    """Run the scenario in this process. on_step is called at the start of every loop iteration,
+    and setup after the harness's replacements and before the scheduler is built (both for
+    oracle/run_hicache.py)."""
     for name in [n for n in os.environ if n.startswith("SGLANG_")]:
         del os.environ[name]
     os.environ.update(KEPT_SGLANG_ENV)
@@ -82,8 +97,10 @@ def child(scenario: dict, sglang_root: str, out_path: str) -> None:
     stubs.install()
     import harness
 
-    run = harness.Run(scenario, sglang_root)
+    run = harness.Run(scenario, sglang_root, on_step=on_step)
     harness.install(run)
+    if setup is not None:
+        setup()
     from sglang.srt.environ import envs
     from sglang.srt.managers.scheduler import run_scheduler_process
     from sglang.srt.server_args import PortArgs
