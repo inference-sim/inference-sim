@@ -34,7 +34,7 @@ func TestConvertOtel_SessionOrderSharedPrefixAndThink(t *testing.T) {
 		}
 	}
 	out := filepath.Join(dir, "out")
-	if err := runConvertOtel(in, out, workload.OTelConvertOptions{ContextGrowth: "accumulate", MinRounds: 1, ThinkFromSpanEnds: true}); err != nil {
+	if err := runConvertOtel(in, out, workload.OTelConvertOptions{ContextGrowth: "accumulate", MinRounds: 1}); err != nil {
 		t.Fatal(err)
 	}
 	tr, err := workload.LoadTraceV2(out+".yaml", out+".csv")

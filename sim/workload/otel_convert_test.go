@@ -9,9 +9,9 @@ import (
 // chat LLM call in status OK.
 const twoCallTrace = `{
   "spans": [
-    {"span_id":"a","name":"chat gpt","start_time":"2026-01-01T00:00:00.000000+00:00","end_time":"2026-01-01T00:00:00.001000+00:00","status":{"code":1},"attributes":{"gen_ai.request.model":"gpt","gen_ai.usage.input_tokens":100,"gen_ai.usage.output_tokens":10,"gen_ai.input.messages":"[]"}},
-    {"span_id":"b","name":"chat gpt","start_time":"2026-01-01T00:00:08.000000+00:00","end_time":"2026-01-01T00:00:08.001000+00:00","status":{"code":1},"attributes":{"gen_ai.request.model":"gpt","gen_ai.usage.input_tokens":150,"gen_ai.usage.output_tokens":20,"gen_ai.input.messages":"[]"}},
-    {"span_id":"c","name":"chat gpt","start_time":"2026-01-01T00:00:20.000000+00:00","end_time":"2026-01-01T00:00:20.001000+00:00","status":{"code":1},"attributes":{"gen_ai.request.model":"gpt","gen_ai.usage.input_tokens":215,"gen_ai.usage.output_tokens":5,"gen_ai.input.messages":"[]"},"trace_id":"sess-1"}
+    {"span_id":"a","name":"chat gpt","start_time":"2026-01-01T00:00:00.000000+00:00","end_time":"2026-01-01T00:00:02.000000+00:00","status":{"code":1},"attributes":{"gen_ai.request.model":"gpt","gen_ai.usage.input_tokens":100,"gen_ai.usage.output_tokens":10,"gen_ai.input.messages":"[]"}},
+    {"span_id":"b","name":"chat gpt","start_time":"2026-01-01T00:00:08.000000+00:00","end_time":"2026-01-01T00:00:10.000000+00:00","status":{"code":1},"attributes":{"gen_ai.request.model":"gpt","gen_ai.usage.input_tokens":150,"gen_ai.usage.output_tokens":20,"gen_ai.input.messages":"[]"}},
+    {"span_id":"c","name":"chat gpt","start_time":"2026-01-01T00:00:20.000000+00:00","end_time":"2026-01-01T00:00:21.000000+00:00","status":{"code":1},"attributes":{"gen_ai.request.model":"gpt","gen_ai.usage.input_tokens":215,"gen_ai.usage.output_tokens":5,"gen_ai.input.messages":"[]"},"trace_id":"sess-1"}
   ]
 }`
 
@@ -52,6 +52,10 @@ func TestConvertOTelTrace_DeltaReconstruction(t *testing.T) {
 	// Think time carried as arrival gaps (µs): 0, 8s, 20s.
 	if recs[0].ArrivalTimeUs != 0 || recs[1].ArrivalTimeUs != 8_000_000 || recs[2].ArrivalTimeUs != 20_000_000 {
 		t.Errorf("arrivals = %d/%d/%d, want 0/8e6/20e6", recs[0].ArrivalTimeUs, recs[1].ArrivalTimeUs, recs[2].ArrivalTimeUs)
+	}
+	// Think time is what the spans record: the previous call's end to this call's start.
+	if recs[1].ThinkTimeUs == nil || *recs[1].ThinkTimeUs != 6_000_000 || recs[2].ThinkTimeUs == nil || *recs[2].ThinkTimeUs != 10_000_000 {
+		t.Errorf("think times = %v / %v, want 6e6 / 10e6", recs[1].ThinkTimeUs, recs[2].ThinkTimeUs)
 	}
 	// SessionID from trace_id.
 	if recs[0].SessionID != "sess-1" {
@@ -339,7 +343,7 @@ func TestConvertOTelTrace_ThinkTimeFromSpanEnds(t *testing.T) {
 	  {"span_id":"b","name":"chat m","start_time":"2026-01-01T00:00:05.000000","end_time":"2026-01-01T00:00:08.500000","status":{"code":1},"attributes":{"gen_ai.usage.input_tokens":150,"gen_ai.usage.output_tokens":10,"gen_ai.input.messages":"[]"},"trace_id":"s"},
 	  {"span_id":"c","name":"chat m","start_time":"2026-01-01T00:00:10.500000","status":{"code":1},"attributes":{"gen_ai.usage.input_tokens":200,"gen_ai.usage.output_tokens":10,"gen_ai.input.messages":"[]"},"trace_id":"s"}
 	]}`
-	recs, err := ConvertOTelTrace([]byte(j), OTelConvertOptions{ThinkFromSpanEnds: true})
+	recs, err := ConvertOTelTrace([]byte(j), OTelConvertOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,11 +356,11 @@ func TestConvertOTelTrace_ThinkTimeFromSpanEnds(t *testing.T) {
 	if recs[2].ThinkTimeUs == nil || *recs[2].ThinkTimeUs != 2_000_000 {
 		t.Errorf("round 2 think = %v, want 2000000", recs[2].ThinkTimeUs)
 	}
-	plain, err := ConvertOTelTrace([]byte(j), OTelConvertOptions{})
+	plain, err := ConvertOTelTrace([]byte(j), OTelConvertOptions{ThinkFromArrivalGaps: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if plain[1].ThinkTimeUs != nil {
-		t.Errorf("without the option round 1 states think %d", *plain[1].ThinkTimeUs)
+		t.Errorf("with ThinkFromArrivalGaps round 1 states think %d", *plain[1].ThinkTimeUs)
 	}
 }
