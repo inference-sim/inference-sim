@@ -30,8 +30,8 @@ on:
     # workflow_dispatch. Retargeting a pull request to main is a change of its base branch, which
     # GitHub reports as the activity type `edited` (not a default type), so `edited` is listed:
     # without it the retarget starts no run. ready_for_review is listed so a draft marked ready is
-    # judged too. (Editing the title or body of a main-based pull request starts a run as well, and
-    # the newer run replaces the one in progress.)
+    # judged too. Editing the title or body of a main-based pull request starts a run as well; that run
+    # does nothing (see the concurrency block).
     branches: [main]
     types: [opened, synchronize, reopened, edited, ready_for_review]
   workflow_dispatch:
@@ -57,14 +57,21 @@ permissions:
 # on main are not touched; a run on main or by hand is never cancelled. Branch protection does not read the
 # cancelled run: the superseding push starts a fresh run of the same checks for the new head, and the `go`
 # job fails, not passes, if a job it needs was cancelled.
+# An edit to a pull request's title or body (not to its base) starts a run, because a retarget is an
+# edit. That run does nothing: it has its own concurrency group, so it cancels no run in progress and no
+# push cancels it, and every job is skipped. The required jobs carry " (edit)" in their names there, so
+# none of its check runs is named like a required check (a newer skipped `go` would otherwise stand in
+# for the run still in progress). The checks that read the text (blis.yml, private-names.yml) are separate
+# workflows and still run.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}${{ github.event.action == 'edited' && !github.event.changes.base && '-edit' || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Which jobs the change needs. On a pull request, from the files it changes against the base it merges
   # into; on a push or a manual run, all of them.
   changes:
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -119,6 +126,7 @@ jobs:
   # Cheap, and run on every change, because a new file read that the lists do not know would otherwise skip
   # a job that needs to run.
   ci-self-test:
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -129,8 +137,8 @@ jobs:
   # The one check branch protection requires is named `go`; it passes only if every job below
   # it passed (or was skipped by the selection), and fails if one failed or was cancelled.
   go:
-    name: go
-    if: always()
+    name: "go${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
+    if: ${{ always() && (github.event.action != 'edited' || github.event.changes.base) }}
     needs: [changes, ci-self-test, go-build, go-test-kerneltests, go-test-inpackage, go-test-rest, go-bench, go-race-guard, go-race]
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -432,6 +440,7 @@ jobs:
   # Always runs and reports under its name; the lint steps run when Go code, the module files or the lint
   # configuration changed.
   lint:
+    name: "lint${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -541,6 +550,7 @@ jobs:
   # kernels/, kernel_impls.json, the manifest, its generator, the connector registry, the surface list,
   # its generator or the evidence it names changed; always reports.
   metrics-manifest:
+    name: "metrics-manifest${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -638,6 +648,7 @@ jobs:
   # A golden trace is vLLM's own output; a commit that changes one must name its reviewer. Runs when a golden
   # directory or the oracle changed (the history it reads can name a golden only then); always reports.
   goldens-reviewed:
+    name: "goldens-reviewed${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -673,8 +684,8 @@ jobs:
   # The required check `oracle-tier2` is the aggregate of the oracle jobs below. It reports under the name
   # branch protection reads and passes only if every part that was selected passed.
   oracle-tier2:
-    name: oracle-tier2
-    if: always()
+    name: "oracle-tier2${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
+    if: ${{ always() && (github.event.action != 'edited' || github.event.changes.base) }}
     needs: [changes, oracle-scenarios, oracle-inertness, oracle-fuzz]
     runs-on: ubuntu-latest
     timeout-minutes: 5
