@@ -10002,3 +10002,17 @@ def test_qwen38_tower_is_omitted_by_name_because_the_pinned_release_lacks_its_cl
         assert o["modality"] == "image" and "v0.33.0" in o["reason"]
         assert o["issue"] == "inference-sim/blis-substrate#304"
         assert g["modality"] == "text_decoder_of_multimodal"
+
+
+def test_a_mixed_precision_config_that_lists_its_quantized_layers_states_the_tower_unquantized(tmp_path):
+    """modelopt_mixed's quantized_layers names every quantized module; a vision tower it does not name
+    is stored at the config's dtype, so the tower is priced without pinned headers."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    raw = config_of(MODELS / "qwen3.5-397b-a17b-fp8")
+    raw["quantization_config"] = {"quant_method": "modelopt_mixed", "quant_algo": "MIXED_PRECISION",
+                                  "quantized_layers": {"model.language_model.layers.0.self_attn.q_proj": {}}}
+    raw["vision_config"]["dtype"] = "bfloat16"
+    assert derive_graph.tower_dtype(raw, "t") == "bf16"
+    raw["quantization_config"]["quantized_layers"]["model.visual.blocks.0.attn.qkv"] = {}
+    assert derive_graph.tower_dtype(raw, "t") is None
