@@ -342,3 +342,29 @@ func TestLatePodIsChecked(t *testing.T) {
 		t.Fatalf("want a late sglang pod refused, got %v", err)
 	}
 }
+
+// TestUnreleasedRouterFeaturesAreRefusedByName: a feature that exists only in an open upstream pull request is not in
+// the router fork (v1.0.0 plus the BLIS patches), so a configuration naming it is refused at start-up with the
+// feature's name and the pull request (inference-sim#2206 moves to the release after next). Before this check the
+// router said only that the plugin type was not registered, or that a parameter was an unknown field.
+func TestUnreleasedRouterFeaturesAreRefusedByName(t *testing.T) {
+	const head = "apiVersion: llm-d.ai/v1\nkind: EndpointPickerConfig\nplugins:\n"
+	const tail = "- type: queue-scorer\n- type: max-score-picker\n- type: single-profile-handler\nschedulingProfiles:\n" +
+		"- name: default\n  plugins:\n  - pluginRef: queue-scorer\n  - pluginRef: max-score-picker\n"
+	cases := map[string]struct{ config, name, pr string }{
+		"the kv-events-source plugin": {head + "- type: kv-events-source\n" + tail, "kv-events-source", "llm-d/llm-d-router#3911"},
+		"the in-flight producer's prefillCompletionFromKVEvents": {head + "- type: inflight-load-producer\n  parameters:\n" +
+			"    prefillCompletionFromKVEvents: true\n" + tail, "prefillCompletionFromKVEvents", "llm-d/llm-d-router#3975"},
+	}
+	for name, c := range cases {
+		err := refusal(t, testDeployment(2), c.config, nil, "--allow-experimental-plugins")
+		if err == nil || !strings.Contains(err.Error(), c.name) || !strings.Contains(err.Error(), c.pr) ||
+			!strings.Contains(err.Error(), "no llm-d router release") {
+			t.Errorf("%s: want a refusal naming %s and %s, got %v", name, c.name, c.pr, err)
+		}
+	}
+	// A configuration that names neither still runs.
+	if err := refusal(t, testDeployment(2), head+tail, nil); err != nil {
+		t.Errorf("a configuration with neither feature must run: %v", err)
+	}
+}

@@ -327,6 +327,7 @@ only through a reference such as a flow-control `fairnessPolicyRef`.
 | What | Why |
 |---|---|
 | `burst-prefix-cache-producer` | It blocks a request on a sealing timer the hosting runtime does not model. |
+| `kv-events-source` and the `inflight-load-producer` parameter `prefillCompletionFromKVEvents` | They exist only in the open upstream pull requests llm-d/llm-d-router#3911 and #3975, in no router release; the fork stays on a release, so a configuration naming either is refused by name (post-M4). |
 | `predicted-latency-producer`, `latency-scorer`, `latency-slo-admitter`, `slo-headroom-tier-filter`, and `prefix-cache-affinity-filter` with `ttftSource: latencyPredictor` | They call or consume an external latency-predictor service. |
 | `latency-observer-producer-hub`, `latency-observation-scorer-hub`, `session-state-producer`, `program-aware-fairness`, `disaggregatedset-rollout-screener`, `utilization-filter`, `request-attribute-reporter` | Not yet audited for, or not yet moved onto, the hosting runtime. |
 | `session-affinity-*`, `session-id-producer`, `agent-identity`, `outlen-bucket`, `header-profile-handler`, `header-label-affinity-scorer`, `endpoint-pin-screener` | The simulated workload does not send the headers they read. |

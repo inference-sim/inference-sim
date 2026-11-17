@@ -221,6 +221,9 @@ func (g *Gateway) Start(host cluster.GatewayHost) (err error) {
 	if g.opts.Logger.GetSink() != nil {
 		logger = slog.New(logr.ToSlogHandler(g.opts.Logger))
 	}
+	if err := checkUnreleased(g.opts.EPPFlags); err != nil {
+		return err
+	}
 	router, err := newRouter(g.ctx, g.rt, embed.Config{
 		Flags:     g.opts.EPPFlags,
 		Manifests: g.opts.Manifests,
