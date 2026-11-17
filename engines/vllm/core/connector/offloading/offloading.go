@@ -333,6 +333,8 @@ func (s *Scheduler) MatchedTokensOrDefer(r *sched.Request, local int) (int, bool
 	st := s.reqs[r.ID]
 	for _, gs := range st.groups {
 		gs.blockIDs = gs.blockIDs[:0]
+		// Restarting at token 0: every chunk is offered again (:1243-1245@4ba787ec).
+		gs.nextStored = 0
 	}
 	if len(st.jobs) > 0 {
 		return 0, false, true
