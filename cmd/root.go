@@ -291,6 +291,11 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
+	if taken, err := takePDTopologyFromPools(cmd, a); err != nil {
+		logrus.Fatalf("%v", err)
+	} else if taken {
+		in.PDTopology = true
+	}
 	shape := a.Shape
 	// The scenario's offload block is the run's tier configuration (#1910).
 	scenarioOffload = shape.Offload
