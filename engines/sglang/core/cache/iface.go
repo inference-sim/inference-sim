@@ -210,6 +210,9 @@ type PrefixCache interface {
 	// TotalSize is the FULL device slots the tree holds, and those of its other components.
 	TotalSize() (int, int)
 	TakeEvents() []Event
+	// DFSWeightOrder is the indices of handles in the depth-first, heavier-subtree-first order
+	// the scheduler's dfs-weight policy sorts its queue by (base_prefix_cache.py:347-398@297e54fd).
+	DFSWeightOrder(handles []NodeID) []int
 	SupportsSWA() bool
 	SupportsMamba() bool
 	SupportsPrefixSharing() bool
@@ -250,6 +253,7 @@ type TreeCore interface {
 	Reset()
 	TakeEvents() []Event
 	RootNodeHandle(extraKey *string) NodeID
+	DFSWeightOrder(handles []NodeID) []int
 	MatchPrefix(p MatchPrefixParams) MatchResult
 	SupportsFastMatchPrefix() bool
 	CollectFullDeviceIndices(from, until NodeID) []int64

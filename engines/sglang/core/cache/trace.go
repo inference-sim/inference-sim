@@ -46,7 +46,8 @@ const GoldenDir = "testdata/golden-fid5"
 // traceDirs is each trace directory under GoldenDir and the kind of trace it holds: recorded
 // holds the tier-2 scenarios of oracle/scenarios, t2 the cache's own scheduler scenarios of
 // oracle/scenarios/cache, direct the driver's sequences of oracle/scenarios-cache-iface.
-var traceDirs = [][2]string{{"recorded", "recorded"}, {"t2", "recorded"}, {"direct", "direct"}}
+// dfs holds the depth-first weight order sequences of oracle/scenarios-dfs-order.
+var traceDirs = [][2]string{{"recorded", "recorded"}, {"t2", "recorded"}, {"direct", "direct"}, {"dfs", "direct"}}
 
 // LoadTraces reads every trace under dir's trace directories, keyed "<directory>/<name>".
 func LoadTraces(dir string) (map[string]Trace, error) {
@@ -195,7 +196,7 @@ func GoName(m string) string {
 	return b.String()
 }
 
-var initialisms = map[string]string{"kv": "KV", "swa": "SWA", "lru": "LRU", "id": "ID", "ids": "IDs", "kvcache": "KVCache"}
+var initialisms = map[string]string{"dfs": "DFS", "kv": "KV", "swa": "SWA", "lru": "LRU", "id": "ID", "ids": "IDs", "kvcache": "KVCache"}
 
 // RowWrite is a ReqToTokenPool.write call (memory_pool.py:414-415@297e54fd) as the positions it
 // sets: each (row, position) with its slot. SGLang indexes the pool two ways, (row, slice) for a

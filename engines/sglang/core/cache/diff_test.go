@@ -627,6 +627,22 @@ func (r *replay) answer(c Call) error {
 		if got != want {
 			return fmt.Errorf("%v, SGLang's %v", got, want)
 		}
+	case "dfs_weight_order":
+		var hs []NodeID
+		if err := c.Arg("node_handles", &hs); err != nil {
+			return err
+		}
+		var port []NodeID
+		for _, h := range hs {
+			port = append(port, r.port(h))
+		}
+		var want []int
+		if err := ret(&want); err != nil {
+			return err
+		}
+		if got := r.c.DFSWeightOrder(port); !slices.Equal(got, want) {
+			return fmt.Errorf("order %v, SGLang's %v", got, want)
+		}
 	case "take_events":
 		var want []Event
 		if err := ret(&want); err != nil {
@@ -721,6 +737,11 @@ type coreCall struct {
 
 func (l *loggingCore) add(c coreCall) { l.log = append(l.log, c) }
 
+func (l *loggingCore) DFSWeightOrder(h []NodeID) []int {
+	o := l.TreeCore.DFSWeightOrder(h)
+	l.add(coreCall{m: "dfs_weight_order", ints: o})
+	return o
+}
 func (l *loggingCore) Reset() { l.TreeCore.Reset(); l.add(coreCall{m: "reset"}) }
 func (l *loggingCore) TakeEvents() []Event {
 	e := l.TreeCore.TakeEvents()
@@ -822,6 +843,8 @@ func (r *replay) wantCore(seq int) ([]coreCall, error) {
 		cc := coreCall{m: x.Method}
 		var err error
 		switch x.Method {
+		case "dfs_weight_order":
+			err = x.Answer(&cc.ints)
 		case "take_events":
 			var e []json.RawMessage
 			err = x.Answer(&e)

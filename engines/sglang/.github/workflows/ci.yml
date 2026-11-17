@@ -188,6 +188,11 @@ jobs:
           for s in oracle/scenarios/cache/*.json; do
             python -I oracle/run_cache_iface.py recorded sglang-source "$s" "oracle-traces-fid5/t2/$(basename "$s" .json).trace.json"
           done
+          # The radix cache's depth-first weight order (oracle/scenarios-dfs-order).
+          mkdir -p oracle-traces-fid5/dfs
+          for s in oracle/scenarios-dfs-order/*.json; do
+            python -I oracle/run_dfs_order.py sglang-source "$s" "oracle-traces-fid5/dfs/$(basename "$s" .json).trace.json"
+          done
           for s in oracle/scenarios-cache-iface/*.json; do
             python -I oracle/run_cache_iface.py direct sglang-source "$s" "oracle-traces-fid5/direct/$(basename "$s" .json).trace.json"
           done
@@ -203,6 +208,7 @@ jobs:
           commit="$(git -C sglang-source rev-parse HEAD)"
           python -I oracle/compare_goldens.py oracle-traces-fid5/recorded "$commit" oracle/scenarios core/cache/testdata/golden-fid5/recorded
           python -I oracle/compare_goldens.py oracle-traces-fid5/t2 "$commit" oracle/scenarios/cache core/cache/testdata/golden-fid5/t2
+          python -I oracle/compare_goldens.py oracle-traces-fid5/dfs "$commit" oracle/scenarios-dfs-order core/cache/testdata/golden-fid5/dfs
           python -I oracle/compare_goldens.py oracle-traces-fid5/direct "$commit" oracle/scenarios-cache-iface core/cache/testdata/golden-fid5/direct
 
   # FID-3: a golden trace's decisions change only in a commit with a golden-reviewed trailer, and a
