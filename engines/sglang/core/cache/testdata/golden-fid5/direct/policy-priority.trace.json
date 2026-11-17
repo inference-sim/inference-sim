@@ -119,7 +119,7 @@
      "tree_components": [
       "FULL"
      ],
-     "tree_core_backend": null
+     "tree_core_backend": "python"
     }
    },
    "cls": "UnifiedRadixCache",
@@ -3542,7 +3542,7 @@
  ],
  "kind": "direct",
  "provenance": {
-  "blis_sglang_commit": "162548367baf2623fd41540b7b9ab731c4da8a1b",
+  "blis_sglang_commit": "6d3000617d82b6ea2b5958c1c0a3f2898e77fca2",
   "lockfile_sha256": "a3fb4e4773230faee4ffdd89437a96b2f3bfb3082e4be4cef4f44d44c66ed569",
   "mock_version": "gpu-mock/4+4be739f2a212",
   "model": "none: the driver builds SGLang's pools and cache from the sequence's cache block",
@@ -3553,7 +3553,7 @@
    "oracle/harness.py": "a1ab29f3421f2a5b504a0096f59cbe38055c8c2615a99d2d7c09bda96b0c5df6",
    "oracle/mocks.json": "8863c3c7c02de293b2ddbad2bb421b5741c95eef87019025d24835e44a84b1e7",
    "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
-   "oracle/run_cache_iface.py": "ea5de88355bb636c3c9f3dd4c59e5a601ce85d0d5bad8d5072c5fd4a16c9015c",
+   "oracle/run_cache_iface.py": "ad1a3711ff89b58da150089cc04eada656ce8c82f98c99cb17443bf80bc26664",
    "oracle/run_scheduler.py": "28ed3f13aa2d7502a317a0dd1974b7c67f7ee784761605acd54d57e26168f353",
    "oracle/scenarios-cache-iface/policy-priority.json": "f38a9f17ec364b2f7ac59c9bfe87e1dc52d90bf85b638932e5cdc23b05168375",
    "oracle/stubs.py": "e30a3a770e3a4f91008449145089328ba8fbb83b35bda7082e1c77e323eb1692",
