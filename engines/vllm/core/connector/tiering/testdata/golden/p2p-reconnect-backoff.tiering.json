@@ -1,0 +1,4860 @@
+{
+ "files": {},
+ "manager": [
+  {
+   "args": {
+    "ctx": "c1",
+    "req": "dz1"
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "key": "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000",
+    "req": "dz1"
+   },
+   "m": "lookup",
+   "ret": "HIT_PENDING"
+  },
+  {
+   "args": {
+    "new": [
+     "dz1"
+    ],
+    "preempted": []
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "req": "pz1"
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "REQUEST_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "keys": [
+     "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+    ],
+    "positions": {},
+    "req": "pz1"
+   },
+   "m": "prepare_store",
+   "ret": {
+    "evicted": [],
+    "ids": [
+     0
+    ],
+    "keys_to_store": [
+     "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+    ]
+   }
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "keys": [
+     "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+    ],
+    "req": "pz1",
+    "success": true
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "pz1"
+    ],
+    "preempted": []
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "keys": [
+     "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+    ],
+    "req": "pz1"
+   },
+   "m": "complete_load",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+    ],
+    "req": "dz1",
+    "success": false
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "positions": {},
+    "req": "pz1"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "positions": {},
+    "req": "dz1"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c3",
+    "req": "dz2"
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c3",
+    "key": "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000",
+    "req": "dz2"
+   },
+   "m": "lookup",
+   "ret": "HIT_PENDING"
+  },
+  {
+   "args": {
+    "new": [
+     "dz2"
+    ],
+    "preempted": []
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c4",
+    "req": "pz2"
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "REQUEST_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c4",
+    "keys": [
+     "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+    ],
+    "positions": {},
+    "req": "pz2"
+   },
+   "m": "prepare_store",
+   "ret": {
+    "evicted": [],
+    "ids": [
+     1
+    ],
+    "keys_to_store": [
+     "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+    ]
+   }
+  },
+  {
+   "args": {
+    "ctx": "c4",
+    "keys": [
+     "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+    ],
+    "req": "pz2",
+    "success": true
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "pz2"
+    ],
+    "preempted": []
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c4",
+    "keys": [
+     "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+    ],
+    "req": "pz2"
+   },
+   "m": "complete_load",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c3",
+    "keys": [
+     "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+    ],
+    "req": "dz2",
+    "success": false
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c4",
+    "positions": {},
+    "req": "pz2"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c3",
+    "positions": {},
+    "req": "dz2"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c5",
+    "req": "dz3"
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c5",
+    "key": "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000",
+    "req": "dz3"
+   },
+   "m": "lookup",
+   "ret": "HIT_PENDING"
+  },
+  {
+   "args": {
+    "new": [
+     "dz3"
+    ],
+    "preempted": []
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c6",
+    "req": "pz3"
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "REQUEST_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c6",
+    "keys": [
+     "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000"
+    ],
+    "positions": {},
+    "req": "pz3"
+   },
+   "m": "prepare_store",
+   "ret": {
+    "evicted": [],
+    "ids": [
+     2
+    ],
+    "keys_to_store": [
+     "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000"
+    ]
+   }
+  },
+  {
+   "args": {
+    "ctx": "c6",
+    "keys": [
+     "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000"
+    ],
+    "req": "pz3",
+    "success": true
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "pz3"
+    ],
+    "preempted": []
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c6",
+    "keys": [
+     "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000"
+    ],
+    "req": "pz3"
+   },
+   "m": "complete_load",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c5",
+    "keys": [
+     "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000"
+    ],
+    "req": "dz3",
+    "success": false
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c6",
+    "positions": {},
+    "req": "pz3"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c5",
+    "positions": {},
+    "req": "dz3"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c7",
+    "req": "dz4"
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c7",
+    "key": "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000",
+    "req": "dz4"
+   },
+   "m": "lookup",
+   "ret": "HIT_PENDING"
+  },
+  {
+   "args": {
+    "new": [
+     "dz4"
+    ],
+    "preempted": []
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "req": "pz4"
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "REQUEST_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "keys": [
+     "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000"
+    ],
+    "positions": {},
+    "req": "pz4"
+   },
+   "m": "prepare_store",
+   "ret": {
+    "evicted": [],
+    "ids": [
+     3
+    ],
+    "keys_to_store": [
+     "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000"
+    ]
+   }
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "keys": [
+     "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000"
+    ],
+    "req": "pz4",
+    "success": true
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "pz4"
+    ],
+    "preempted": []
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "keys": [
+     "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000"
+    ],
+    "req": "pz4"
+   },
+   "m": "complete_load",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c7",
+    "keys": [
+     "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000"
+    ],
+    "req": "dz4",
+    "success": false
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "positions": {},
+    "req": "pz4"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c7",
+    "positions": {},
+    "req": "dz4"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c9",
+    "req": "dz5"
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c9",
+    "key": "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000",
+    "req": "dz5"
+   },
+   "m": "lookup",
+   "ret": "HIT_PENDING"
+  },
+  {
+   "args": {
+    "new": [
+     "dz5"
+    ],
+    "preempted": []
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c10",
+    "req": "pz5"
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "REQUEST_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c10",
+    "keys": [
+     "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
+    ],
+    "positions": {},
+    "req": "pz5"
+   },
+   "m": "prepare_store",
+   "ret": {
+    "evicted": [
+     "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+    ],
+    "ids": [
+     0
+    ],
+    "keys_to_store": [
+     "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
+    ]
+   }
+  },
+  {
+   "args": {
+    "ctx": "c10",
+    "keys": [
+     "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
+    ],
+    "req": "pz5",
+    "success": true
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "pz5"
+    ],
+    "preempted": []
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c10",
+    "keys": [
+     "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
+    ],
+    "req": "pz5"
+   },
+   "m": "complete_load",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c9",
+    "keys": [
+     "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
+    ],
+    "req": "dz5",
+    "success": false
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c10",
+    "positions": {},
+    "req": "pz5"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c9",
+    "positions": {},
+    "req": "dz5"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c11",
+    "req": "dz6"
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c11",
+    "key": "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000",
+    "req": "dz6"
+   },
+   "m": "lookup",
+   "ret": "HIT_PENDING"
+  },
+  {
+   "args": {
+    "new": [
+     "dz6"
+    ],
+    "preempted": []
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c12",
+    "req": "pz6"
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "REQUEST_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c12",
+    "keys": [
+     "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
+    ],
+    "positions": {},
+    "req": "pz6"
+   },
+   "m": "prepare_store",
+   "ret": {
+    "evicted": [
+     "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+    ],
+    "ids": [
+     1
+    ],
+    "keys_to_store": [
+     "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
+    ]
+   }
+  },
+  {
+   "args": {
+    "ctx": "c12",
+    "keys": [
+     "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
+    ],
+    "req": "pz6",
+    "success": true
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "pz6"
+    ],
+    "preempted": []
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c12",
+    "keys": [
+     "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
+    ],
+    "req": "pz6"
+   },
+   "m": "complete_load",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c11",
+    "keys": [
+     "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
+    ],
+    "req": "dz6",
+    "success": false
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c12",
+    "positions": {},
+    "req": "pz6"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c11",
+    "positions": {},
+    "req": "dz6"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c13",
+    "req": "d7"
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c13",
+    "key": "fb848c99b9a43ec7866a23ea000c1939a168f5ff17314a0b88c7be711d7ef7d000000000",
+    "req": "d7"
+   },
+   "m": "lookup",
+   "ret": "HIT_PENDING"
+  },
+  {
+   "args": {
+    "new": [
+     "d7"
+    ],
+    "preempted": []
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c13",
+    "keys": [
+     "fb848c99b9a43ec7866a23ea000c1939a168f5ff17314a0b88c7be711d7ef7d000000000"
+    ],
+    "req": "d7",
+    "success": false
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c13",
+    "key": "fb848c99b9a43ec7866a23ea000c1939a168f5ff17314a0b88c7be711d7ef7d000000000",
+    "req": "d7"
+   },
+   "m": "lookup",
+   "ret": "MISS"
+  },
+  {
+   "args": {
+    "ctx": "c13",
+    "positions": {},
+    "req": "d7"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c14",
+    "req": "d8"
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c14",
+    "key": "5a3df89da7bf23d71ec63f111d9171c3f05047380a17812f20248e63cfded4fb00000000",
+    "req": "d8"
+   },
+   "m": "lookup",
+   "ret": "HIT_PENDING"
+  },
+  {
+   "args": {
+    "new": [
+     "d8"
+    ],
+    "preempted": []
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c14",
+    "key": "5a3df89da7bf23d71ec63f111d9171c3f05047380a17812f20248e63cfded4fb00000000",
+    "req": "d8"
+   },
+   "m": "lookup",
+   "ret": "HIT_PENDING"
+  },
+  {
+   "args": {
+    "ctx": "c14",
+    "positions": {},
+    "req": "d8"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c14",
+    "keys": [
+     "5a3df89da7bf23d71ec63f111d9171c3f05047380a17812f20248e63cfded4fb00000000"
+    ],
+    "req": "d8",
+    "success": false
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {},
+   "m": "shutdown",
+   "ret": null
+  },
+  {
+   "args": {},
+   "m": "shutdown",
+   "ret": null
+  }
+ ],
+ "policy": [
+  {
+   "args": {
+    "key": "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+    ],
+    "req": "dz1"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+    ],
+    "positions": {},
+    "req": "dz1"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 0,
+     "ref": -1
+    },
+    "ctx": "c1",
+    "key": "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000",
+    "positions": {},
+    "req": "dz1"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "keys": [
+     "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+    ],
+    "req": "pz1"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "keys": [
+     "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+    ],
+    "positions": {},
+    "req": "pz1"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 0,
+     "ref": -1
+    },
+    "ctx": "c2",
+    "key": "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000",
+    "positions": {},
+    "req": "pz1"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 0,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 0,
+    "ref": 0
+   }
+  },
+  {
+   "args": {
+    "key": "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+   },
+   "m": "mark_non_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 0,
+    "ref": 1
+   }
+  },
+  {
+   "args": {
+    "key": "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 0,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+   },
+   "m": "remove",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "groups": [
+     [
+      "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+     ]
+    ],
+    "positions": {},
+    "req": "pz1"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "groups": [
+     [
+      "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+     ]
+    ],
+    "positions": {},
+    "req": "dz1"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c3",
+    "keys": [
+     "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+    ],
+    "req": "dz2"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c3",
+    "keys": [
+     "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+    ],
+    "positions": {},
+    "req": "dz2"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 1,
+     "ref": -1
+    },
+    "ctx": "c3",
+    "key": "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000",
+    "positions": {},
+    "req": "dz2"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c4",
+    "keys": [
+     "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+    ],
+    "req": "pz2"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c4",
+    "keys": [
+     "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+    ],
+    "positions": {},
+    "req": "pz2"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 1,
+     "ref": -1
+    },
+    "ctx": "c4",
+    "key": "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000",
+    "positions": {},
+    "req": "pz2"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 1,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 1,
+    "ref": 0
+   }
+  },
+  {
+   "args": {
+    "key": "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+   },
+   "m": "mark_non_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 1,
+    "ref": 1
+   }
+  },
+  {
+   "args": {
+    "key": "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 1,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+   },
+   "m": "remove",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c4",
+    "groups": [
+     [
+      "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+     ]
+    ],
+    "positions": {},
+    "req": "pz2"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c3",
+    "groups": [
+     [
+      "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+     ]
+    ],
+    "positions": {},
+    "req": "dz2"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c5",
+    "keys": [
+     "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000"
+    ],
+    "req": "dz3"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c5",
+    "keys": [
+     "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000"
+    ],
+    "positions": {},
+    "req": "dz3"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 2,
+     "ref": -1
+    },
+    "ctx": "c5",
+    "key": "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000",
+    "positions": {},
+    "req": "dz3"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c6",
+    "keys": [
+     "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000"
+    ],
+    "req": "pz3"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c6",
+    "keys": [
+     "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000"
+    ],
+    "positions": {},
+    "req": "pz3"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 2,
+     "ref": -1
+    },
+    "ctx": "c6",
+    "key": "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000",
+    "positions": {},
+    "req": "pz3"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 2,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 2,
+    "ref": 0
+   }
+  },
+  {
+   "args": {
+    "key": "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000"
+   },
+   "m": "mark_non_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 2,
+    "ref": 1
+   }
+  },
+  {
+   "args": {
+    "key": "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 2,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000"
+   },
+   "m": "remove",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c6",
+    "groups": [
+     [
+      "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000"
+     ]
+    ],
+    "positions": {},
+    "req": "pz3"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c5",
+    "groups": [
+     [
+      "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000"
+     ]
+    ],
+    "positions": {},
+    "req": "dz3"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c7",
+    "keys": [
+     "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000"
+    ],
+    "req": "dz4"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c7",
+    "keys": [
+     "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000"
+    ],
+    "positions": {},
+    "req": "dz4"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 3,
+     "ref": -1
+    },
+    "ctx": "c7",
+    "key": "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000",
+    "positions": {},
+    "req": "dz4"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "keys": [
+     "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000"
+    ],
+    "req": "pz4"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "keys": [
+     "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000"
+    ],
+    "positions": {},
+    "req": "pz4"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 3,
+     "ref": -1
+    },
+    "ctx": "c8",
+    "key": "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000",
+    "positions": {},
+    "req": "pz4"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 3,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 3,
+    "ref": 0
+   }
+  },
+  {
+   "args": {
+    "key": "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000"
+   },
+   "m": "mark_non_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 3,
+    "ref": 1
+   }
+  },
+  {
+   "args": {
+    "key": "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 3,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000"
+   },
+   "m": "remove",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "groups": [
+     [
+      "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000"
+     ]
+    ],
+    "positions": {},
+    "req": "pz4"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c7",
+    "groups": [
+     [
+      "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000"
+     ]
+    ],
+    "positions": {},
+    "req": "dz4"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c9",
+    "keys": [
+     "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
+    ],
+    "req": "dz5"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c9",
+    "keys": [
+     "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
+    ],
+    "positions": {},
+    "req": "dz5"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 3,
+     "ref": -1
+    },
+    "ctx": "c9",
+    "key": "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000",
+    "positions": {},
+    "req": "dz5"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c10",
+    "keys": [
+     "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
+    ],
+    "req": "pz5"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c10",
+    "keys": [
+     "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
+    ],
+    "positions": {},
+    "req": "pz5"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "n": 1,
+    "protected": [
+     "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
+    ]
+   },
+   "m": "evict",
+   "ret": [
+    {
+     "id": 0,
+     "key": "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+    }
+   ]
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 0,
+     "ref": -1
+    },
+    "ctx": "c10",
+    "key": "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000",
+    "positions": {},
+    "req": "pz5"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 0,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 0,
+    "ref": 0
+   }
+  },
+  {
+   "args": {
+    "key": "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
+   },
+   "m": "mark_non_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 0,
+    "ref": 1
+   }
+  },
+  {
+   "args": {
+    "key": "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 3,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
+   },
+   "m": "remove",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c10",
+    "groups": [
+     [
+      "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
+     ]
+    ],
+    "positions": {},
+    "req": "pz5"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c9",
+    "groups": [
+     [
+      "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
+     ]
+    ],
+    "positions": {},
+    "req": "dz5"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c11",
+    "keys": [
+     "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
+    ],
+    "req": "dz6"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c11",
+    "keys": [
+     "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
+    ],
+    "positions": {},
+    "req": "dz6"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 3,
+     "ref": -1
+    },
+    "ctx": "c11",
+    "key": "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000",
+    "positions": {},
+    "req": "dz6"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c12",
+    "keys": [
+     "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
+    ],
+    "req": "pz6"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c12",
+    "keys": [
+     "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
+    ],
+    "positions": {},
+    "req": "pz6"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "n": 1,
+    "protected": [
+     "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
+    ]
+   },
+   "m": "evict",
+   "ret": [
+    {
+     "id": 1,
+     "key": "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+    }
+   ]
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 1,
+     "ref": -1
+    },
+    "ctx": "c12",
+    "key": "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000",
+    "positions": {},
+    "req": "pz6"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 1,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 1,
+    "ref": 0
+   }
+  },
+  {
+   "args": {
+    "key": "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
+   },
+   "m": "mark_non_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 1,
+    "ref": 1
+   }
+  },
+  {
+   "args": {
+    "key": "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 3,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
+   },
+   "m": "remove",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c12",
+    "groups": [
+     [
+      "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
+     ]
+    ],
+    "positions": {},
+    "req": "pz6"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c11",
+    "groups": [
+     [
+      "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
+     ]
+    ],
+    "positions": {},
+    "req": "dz6"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "fb848c99b9a43ec7866a23ea000c1939a168f5ff17314a0b88c7be711d7ef7d000000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "fb848c99b9a43ec7866a23ea000c1939a168f5ff17314a0b88c7be711d7ef7d000000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c13",
+    "keys": [
+     "fb848c99b9a43ec7866a23ea000c1939a168f5ff17314a0b88c7be711d7ef7d000000000"
+    ],
+    "req": "d7"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c13",
+    "keys": [
+     "fb848c99b9a43ec7866a23ea000c1939a168f5ff17314a0b88c7be711d7ef7d000000000"
+    ],
+    "positions": {},
+    "req": "d7"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 3,
+     "ref": -1
+    },
+    "ctx": "c13",
+    "key": "fb848c99b9a43ec7866a23ea000c1939a168f5ff17314a0b88c7be711d7ef7d000000000",
+    "positions": {},
+    "req": "d7"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "fb848c99b9a43ec7866a23ea000c1939a168f5ff17314a0b88c7be711d7ef7d000000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 3,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "fb848c99b9a43ec7866a23ea000c1939a168f5ff17314a0b88c7be711d7ef7d000000000"
+   },
+   "m": "remove",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "fb848c99b9a43ec7866a23ea000c1939a168f5ff17314a0b88c7be711d7ef7d000000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c13",
+    "groups": [
+     [
+      "fb848c99b9a43ec7866a23ea000c1939a168f5ff17314a0b88c7be711d7ef7d000000000"
+     ]
+    ],
+    "positions": {},
+    "req": "d7"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "5a3df89da7bf23d71ec63f111d9171c3f05047380a17812f20248e63cfded4fb00000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "5a3df89da7bf23d71ec63f111d9171c3f05047380a17812f20248e63cfded4fb00000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c14",
+    "keys": [
+     "5a3df89da7bf23d71ec63f111d9171c3f05047380a17812f20248e63cfded4fb00000000"
+    ],
+    "req": "d8"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c14",
+    "keys": [
+     "5a3df89da7bf23d71ec63f111d9171c3f05047380a17812f20248e63cfded4fb00000000"
+    ],
+    "positions": {},
+    "req": "d8"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 3,
+     "ref": -1
+    },
+    "ctx": "c14",
+    "key": "5a3df89da7bf23d71ec63f111d9171c3f05047380a17812f20248e63cfded4fb00000000",
+    "positions": {},
+    "req": "d8"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "5a3df89da7bf23d71ec63f111d9171c3f05047380a17812f20248e63cfded4fb00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 3,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "ctx": "c14",
+    "groups": [
+     [
+      "5a3df89da7bf23d71ec63f111d9171c3f05047380a17812f20248e63cfded4fb00000000"
+     ]
+    ],
+    "positions": {},
+    "req": "d8"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "5a3df89da7bf23d71ec63f111d9171c3f05047380a17812f20248e63cfded4fb00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 3,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "5a3df89da7bf23d71ec63f111d9171c3f05047380a17812f20248e63cfded4fb00000000"
+   },
+   "m": "remove",
+   "ret": null
+  }
+ ],
+ "provenance": {
+  "blis_vllm_commit": "a2de59211983db4f396355f2e9d33149b4876921",
+  "kind": "direct",
+  "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
+  "mock_version": "gpu-mock/9+2ee0b3b47a9c",
+  "mocks": [
+   "vllm.v1.outputs.ModelRunnerOutput",
+   "tests.v1.core.utils.create_scheduler",
+   "sampled token stream",
+   "vllm.v1.core.sched.scheduler.time",
+   "vllm.v1.metrics.stats.time",
+   "vllm.v1.engine.time",
+   "vllm.v1.outputs.DraftTokenIds",
+   "spec-decode acceptance",
+   "tests.v1.core.utils.VllmConfig",
+   "tests.v1.core.utils.SchedulerConfig",
+   "vllm.config.vllm.HAS_TRITON",
+   "KV event publisher",
+   "tests.v1.core.utils.KVCacheConfig",
+   "tests.v1.core.utils.CacheConfig",
+   "vllm.v1.executor.abstract.Executor",
+   "EngineCore construction",
+   "vllm.platforms.cpu async override",
+   "use_v2_model_runner (CPU wheel without Triton)",
+   "vllm.config.ParallelConfig.sync_dp_state",
+   "DP coordinator stats transport",
+   "DPLBAsyncMPClient construction",
+   "DPEngineCoreProc construction",
+   "DP wave loop (harness copy of DPEngineCoreProc.run_busy_loop)",
+   "NIXL connector scheduler config",
+   "KV-transfer parameters on a request",
+   "OffloadingConnector scheduler config",
+   "OffloadingConnector worker (OffloadingWorkerMetadata transport)",
+   "finished_req_ids iteration order (per-process hash seed)",
+   "nixl._api.nixl_agent (OBJ and UCX backends)",
+   "zmq (pyzmq, as tiering/p2p/control/zmq.py uses it)",
+   "time.monotonic",
+   "vLLM environment variables of a tiering sequence"
+  ],
+  "model": "facebook/opt-125m",
+  "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+  "oracle_inputs": {
+   "oracle/drive_kv_interfaces.py": "edb41c5303e50d8b3827ba87c3314e696d1984cf79a2830e3327cc0844a6a022",
+   "oracle/fake_nixl/nixl/__init__.py": "ca247dfae8186f95a1755b77cd056200ab911ca15256299f4bff38ed366cf85d",
+   "oracle/fake_nixl/nixl/_api.py": "7faa1f42756519afd3e941720ea5fa023bce86744c0fc665b6b7fb6590b06d3a",
+   "oracle/fake_zmq/__init__.py": "61ed6913d9232401428e2397815ab319f9b6724deb454ab6a8b456817b19126a",
+   "oracle/kv_interfaces.py": "4bcde8955836b6ef732f8c901fa94c89a5b7592dcf1db8f6322e3be451c81c10",
+   "oracle/mocks.json": "9521f9f69e212f249e79b33614003c43dea5642e45499afa48b893737fc49f9b",
+   "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+   "oracle/run_scheduler.py": "1239a1d64f057fcb543789762859ea33211627e3f2b66b46087ed9ee936222f6",
+   "oracle/run_tiering.py": "27ca9f6f4563d50b49b4bf801ee03da98ce00a049eead0ad4a2cfeb3783ef8b6",
+   "oracle/scenarios/tiering/p2p-reconnect-backoff.json": "98511c2b8130a939f4a481f63f4132aa3e839541ef1184eb9c84a715b9c39176"
+  },
+  "platform": "linux-x86_64",
+  "python": "3.12.16",
+  "requirements_lock_sha256": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+  "scenario_sha256": "98511c2b8130a939f4a481f63f4132aa3e839541ef1184eb9c84a715b9c39176",
+  "seed": null,
+  "tier": 2,
+  "vllm_commit": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "vllm_distribution": "0.33.0+cpu",
+  "vllm_version": "0.33.0"
+ },
+ "spec": [
+  {
+   "args": {
+    "alignment": 4096,
+    "blocks_per_chunk": 1,
+    "cpu_bytes_to_use": 65536,
+    "eviction_policy": "lru",
+    "groups": [
+     {
+      "tokens_per_block": 16,
+      "window_chunks": null
+     }
+    ],
+    "max_model_len": 0,
+    "offload_prompt_only": true,
+    "replicated_layout": false,
+    "secondary_tiers": 1,
+    "spec": "TieringOffloadingSpec",
+    "worker_kv_bytes_per_block": 16384,
+    "world_size": 1
+   },
+   "m": "get_manager",
+   "ret": {
+    "kv_bytes_per_chunk": 16384,
+    "manager": "TieringOffloadingManager",
+    "num_chunks": 4
+   }
+  },
+  {
+   "args": {
+    "alignment": 4096,
+    "blocks_per_chunk": 1,
+    "cpu_bytes_to_use": 65536,
+    "eviction_policy": "lru",
+    "groups": [
+     {
+      "tokens_per_block": 16,
+      "window_chunks": null
+     }
+    ],
+    "max_model_len": 0,
+    "offload_prompt_only": true,
+    "replicated_layout": false,
+    "secondary_tiers": 1,
+    "spec": "TieringOffloadingSpec",
+    "worker_kv_bytes_per_block": 16384,
+    "world_size": 1
+   },
+   "m": "get_manager",
+   "ret": {
+    "kv_bytes_per_chunk": 16384,
+    "manager": "TieringOffloadingManager",
+    "num_chunks": 4
+   }
+  }
+ ],
+ "tier": [
+  {
+   "args": {
+    "ctx": "c1",
+    "req": "dz1",
+    "tier": 1
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "key": "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000",
+    "req": "dz1",
+    "tier": 1
+   },
+   "m": "lookup",
+   "ret": "HIT"
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      0
+     ],
+     "ctx": "c1",
+     "id": 0,
+     "keys": [
+      "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+     ],
+     "promotion": true,
+     "req": "dz1"
+    },
+    "tier": 1
+   },
+   "m": "submit_load",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "dz1"
+    ],
+    "preempted": [],
+    "tier": 1
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "req": "pz1",
+    "tier": 0
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "REQUEST_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      0
+     ],
+     "ctx": "c2",
+     "id": 0,
+     "keys": [
+      "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+     ],
+     "promotion": false,
+     "req": "pz1"
+    },
+    "tier": 0
+   },
+   "m": "submit_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "pz1"
+    ],
+    "preempted": [],
+    "tier": 0
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": [
+    {
+     "id": 0,
+     "success": false,
+     "successful_keys": null,
+     "transfer_bytes": null
+    }
+   ]
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": [
+    {
+     "id": 0,
+     "success": false,
+     "successful_keys": null,
+     "transfer_bytes": null
+    }
+   ]
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "req": "pz1",
+    "tier": 0
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "req": "dz1",
+    "tier": 1
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c3",
+    "req": "dz2",
+    "tier": 1
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "ctx": "c3",
+    "key": "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000",
+    "req": "dz2",
+    "tier": 1
+   },
+   "m": "lookup",
+   "ret": "HIT"
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      1
+     ],
+     "ctx": "c3",
+     "id": 1,
+     "keys": [
+      "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+     ],
+     "promotion": true,
+     "req": "dz2"
+    },
+    "tier": 1
+   },
+   "m": "submit_load",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "dz2"
+    ],
+    "preempted": [],
+    "tier": 1
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c4",
+    "req": "pz2",
+    "tier": 0
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "REQUEST_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      1
+     ],
+     "ctx": "c4",
+     "id": 1,
+     "keys": [
+      "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+     ],
+     "promotion": false,
+     "req": "pz2"
+    },
+    "tier": 0
+   },
+   "m": "submit_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "pz2"
+    ],
+    "preempted": [],
+    "tier": 0
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": [
+    {
+     "id": 1,
+     "success": false,
+     "successful_keys": null,
+     "transfer_bytes": null
+    }
+   ]
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": [
+    {
+     "id": 1,
+     "success": false,
+     "successful_keys": null,
+     "transfer_bytes": null
+    }
+   ]
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c4",
+    "req": "pz2",
+    "tier": 0
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c3",
+    "req": "dz2",
+    "tier": 1
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c5",
+    "req": "dz3",
+    "tier": 1
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "ctx": "c5",
+    "key": "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000",
+    "req": "dz3",
+    "tier": 1
+   },
+   "m": "lookup",
+   "ret": "HIT"
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      2
+     ],
+     "ctx": "c5",
+     "id": 2,
+     "keys": [
+      "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000"
+     ],
+     "promotion": true,
+     "req": "dz3"
+    },
+    "tier": 1
+   },
+   "m": "submit_load",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "dz3"
+    ],
+    "preempted": [],
+    "tier": 1
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c6",
+    "req": "pz3",
+    "tier": 0
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "REQUEST_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      2
+     ],
+     "ctx": "c6",
+     "id": 2,
+     "keys": [
+      "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000"
+     ],
+     "promotion": false,
+     "req": "pz3"
+    },
+    "tier": 0
+   },
+   "m": "submit_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "pz3"
+    ],
+    "preempted": [],
+    "tier": 0
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": [
+    {
+     "id": 2,
+     "success": false,
+     "successful_keys": null,
+     "transfer_bytes": null
+    }
+   ]
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": [
+    {
+     "id": 2,
+     "success": false,
+     "successful_keys": null,
+     "transfer_bytes": null
+    }
+   ]
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c6",
+    "req": "pz3",
+    "tier": 0
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c5",
+    "req": "dz3",
+    "tier": 1
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c7",
+    "req": "dz4",
+    "tier": 1
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "ctx": "c7",
+    "key": "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000",
+    "req": "dz4",
+    "tier": 1
+   },
+   "m": "lookup",
+   "ret": "HIT"
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      3
+     ],
+     "ctx": "c7",
+     "id": 3,
+     "keys": [
+      "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000"
+     ],
+     "promotion": true,
+     "req": "dz4"
+    },
+    "tier": 1
+   },
+   "m": "submit_load",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "dz4"
+    ],
+    "preempted": [],
+    "tier": 1
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "req": "pz4",
+    "tier": 0
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "REQUEST_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      3
+     ],
+     "ctx": "c8",
+     "id": 3,
+     "keys": [
+      "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000"
+     ],
+     "promotion": false,
+     "req": "pz4"
+    },
+    "tier": 0
+   },
+   "m": "submit_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "pz4"
+    ],
+    "preempted": [],
+    "tier": 0
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": [
+    {
+     "id": 3,
+     "success": false,
+     "successful_keys": null,
+     "transfer_bytes": null
+    }
+   ]
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": [
+    {
+     "id": 3,
+     "success": false,
+     "successful_keys": null,
+     "transfer_bytes": null
+    }
+   ]
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "req": "pz4",
+    "tier": 0
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c7",
+    "req": "dz4",
+    "tier": 1
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c9",
+    "req": "dz5",
+    "tier": 1
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "ctx": "c9",
+    "key": "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000",
+    "req": "dz5",
+    "tier": 1
+   },
+   "m": "lookup",
+   "ret": "HIT"
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      3
+     ],
+     "ctx": "c9",
+     "id": 4,
+     "keys": [
+      "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
+     ],
+     "promotion": true,
+     "req": "dz5"
+    },
+    "tier": 1
+   },
+   "m": "submit_load",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "dz5"
+    ],
+    "preempted": [],
+    "tier": 1
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c10",
+    "req": "pz5",
+    "tier": 0
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "REQUEST_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      0
+     ],
+     "ctx": "c10",
+     "id": 4,
+     "keys": [
+      "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
+     ],
+     "promotion": false,
+     "req": "pz5"
+    },
+    "tier": 0
+   },
+   "m": "submit_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "pz5"
+    ],
+    "preempted": [],
+    "tier": 0
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": [
+    {
+     "id": 4,
+     "success": false,
+     "successful_keys": null,
+     "transfer_bytes": null
+    }
+   ]
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": [
+    {
+     "id": 4,
+     "success": false,
+     "successful_keys": null,
+     "transfer_bytes": null
+    }
+   ]
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c10",
+    "req": "pz5",
+    "tier": 0
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c9",
+    "req": "dz5",
+    "tier": 1
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c11",
+    "req": "dz6",
+    "tier": 1
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "ctx": "c11",
+    "key": "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000",
+    "req": "dz6",
+    "tier": 1
+   },
+   "m": "lookup",
+   "ret": "HIT"
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      3
+     ],
+     "ctx": "c11",
+     "id": 5,
+     "keys": [
+      "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
+     ],
+     "promotion": true,
+     "req": "dz6"
+    },
+    "tier": 1
+   },
+   "m": "submit_load",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "dz6"
+    ],
+    "preempted": [],
+    "tier": 1
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c12",
+    "req": "pz6",
+    "tier": 0
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "REQUEST_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      1
+     ],
+     "ctx": "c12",
+     "id": 5,
+     "keys": [
+      "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
+     ],
+     "promotion": false,
+     "req": "pz6"
+    },
+    "tier": 0
+   },
+   "m": "submit_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "pz6"
+    ],
+    "preempted": [],
+    "tier": 0
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": [
+    {
+     "id": 5,
+     "success": false,
+     "successful_keys": null,
+     "transfer_bytes": null
+    }
+   ]
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": [
+    {
+     "id": 5,
+     "success": false,
+     "successful_keys": null,
+     "transfer_bytes": null
+    }
+   ]
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c12",
+    "req": "pz6",
+    "tier": 0
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c11",
+    "req": "dz6",
+    "tier": 1
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c13",
+    "req": "d7",
+    "tier": 1
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "ctx": "c13",
+    "key": "fb848c99b9a43ec7866a23ea000c1939a168f5ff17314a0b88c7be711d7ef7d000000000",
+    "req": "d7",
+    "tier": 1
+   },
+   "m": "lookup",
+   "ret": "HIT"
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      3
+     ],
+     "ctx": "c13",
+     "id": 6,
+     "keys": [
+      "fb848c99b9a43ec7866a23ea000c1939a168f5ff17314a0b88c7be711d7ef7d000000000"
+     ],
+     "promotion": true,
+     "req": "d7"
+    },
+    "tier": 1
+   },
+   "m": "submit_load",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "d7"
+    ],
+    "preempted": [],
+    "tier": 1
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": [
+    {
+     "id": 6,
+     "success": false,
+     "successful_keys": null,
+     "transfer_bytes": null
+    }
+   ]
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "ctx": "c13",
+    "key": "fb848c99b9a43ec7866a23ea000c1939a168f5ff17314a0b88c7be711d7ef7d000000000",
+    "req": "d7",
+    "tier": 1
+   },
+   "m": "lookup",
+   "ret": "MISS"
+  },
+  {
+   "args": {
+    "ctx": "c13",
+    "req": "d7",
+    "tier": 1
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c14",
+    "req": "d8",
+    "tier": 1
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c14",
+    "key": "5a3df89da7bf23d71ec63f111d9171c3f05047380a17812f20248e63cfded4fb00000000",
+    "req": "d8",
+    "tier": 1
+   },
+   "m": "lookup",
+   "ret": "HIT"
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      3
+     ],
+     "ctx": "c14",
+     "id": 7,
+     "keys": [
+      "5a3df89da7bf23d71ec63f111d9171c3f05047380a17812f20248e63cfded4fb00000000"
+     ],
+     "promotion": true,
+     "req": "d8"
+    },
+    "tier": 1
+   },
+   "m": "submit_load",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "d8"
+    ],
+    "preempted": [],
+    "tier": 1
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "ctx": "c14",
+    "req": "d8",
+    "tier": 1
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": [
+    {
+     "id": 7,
+     "success": false,
+     "successful_keys": null,
+     "transfer_bytes": null
+    }
+   ]
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  }
+ ],
+ "tiers": [
+  {
+   "block_size_bytes": 16384,
+   "fingerprint": "4f261524c4e3275e",
+   "local_id": "127.0.0.1:5710",
+   "locality": null,
+   "num_blocks": 4,
+   "type": "p2p",
+   "unbound_store_timeout_s": 60.0
+  },
+  {
+   "block_size_bytes": 16384,
+   "fingerprint": "4f261524c4e3275e",
+   "local_id": "127.0.0.1:5711",
+   "locality": null,
+   "num_blocks": 4,
+   "type": "p2p",
+   "unbound_store_timeout_s": 60.0
+  }
+ ]
+}

@@ -242,7 +242,8 @@
    "site": "vllm/v1/kv_offload/tiering/factory.py:158",
    "class": "vllm.v1.kv_offload.tiering.p2p.manager.P2PSecondaryTierManager",
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/13"
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/204",
+   "why": "refused by type until the engine runs it: the tier is ported and diff-tested at the tiering interfaces (core/connector/tiering P2PTier), but its peer control messages, WRITEs between instances and tier polls are not yet carried by the simulator"
   },
   {
    "id": "secondary_tier:obj",

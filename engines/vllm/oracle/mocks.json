@@ -1,5 +1,5 @@
 {
-  "version": "gpu-mock/8+e1ab1ffd0154",
+  "version": "gpu-mock/9+2ee0b3b47a9c",
   "description": "Everything the oracle replaces. Only the GPU, the clock, transports and external services may be replaced; check_mocks.py fails if an entry names decision code.",
   "mocks": [
     {
@@ -239,10 +239,34 @@
       ]
     },
     {
-      "symbol": "nixl._api.nixl_agent (OBJ backend)",
+      "symbol": "nixl._api.nixl_agent (OBJ and UCX backends)",
       "kind": "transport",
-      "how": "oracle/run_tiering.py only: oracle/fake_nixl is NIXL's agent with an in-memory OBJ backend, imported by vllm.distributed.nixl_utils as nixl._api (nixl_utils.py:40-78@4ba787ec), because neither NIXL nor an S3 bucket is in the CPU environment. It stores and reads each block's bytes in a bucket shared by name, answers query_memory with None for a missing object, fails a READ of a missing object as a whole (state ERR), and finishes the transfers in flight in submission order after each driver call or inside the tier's drain_jobs, which blocks until NIXL finishes. The driver may hold an agent's transfers in flight across calls (a slow transfer), make a bucket refuse writes, or make an agent's next transfer() fail at submission, through the package's own functions. ObjectStoreSecondaryTierManager (vllm/v1/kv_offload/tiering/obj/manager.py@4ba787ec) runs unmodified. The Go side (core/connector/tiering ObjTier, MemBucket) follows the same rule",
+      "how": "oracle/run_tiering.py only: oracle/fake_nixl is NIXL's agent with an in-memory OBJ backend and UCX backend, imported by vllm.distributed.nixl_utils as nixl._api (nixl_utils.py:40-78@4ba787ec), because neither NIXL nor an S3 bucket is in the CPU environment. It stores and reads each block's bytes in a bucket shared by name, answers query_memory with None for a missing object, fails a READ of a missing object as a whole (state ERR), and finishes the transfers in flight in submission order after each driver call or inside the tier's drain_jobs, which blocks until NIXL finishes. The driver may hold an agent's transfers in flight across calls (a slow transfer), make a bucket refuse writes, or make an agent's next transfer() fail at submission, through the package's own functions. For the p2p tier's NixlTransport (tiering/p2p/data/nixl.py@4ba787ec) an agent's metadata is its name, add_remote_agent makes a peer's host blocks addressable, and a WRITE copies the local blocks into the peer's (both instances are in this process); a WRITE to an instance the driver took down ends ERR. A peer registration NixlTransport runs on its worker thread (add_remote_agent) waits until the driver's after-call transport rule, so it resolves between calls rather than when the thread scheduler lets it. ObjectStoreSecondaryTierManager and NixlTransport run unmodified. The Go side (core/connector/tiering ObjTier, MemBucket) follows the same rule",
       "sites": []
+    },
+    {
+      "symbol": "zmq (pyzmq, as tiering/p2p/control/zmq.py uses it)",
+      "kind": "transport",
+      "how": "oracle/run_tiering.py only: the p2p control module's zmq is oracle/fake_zmq, in-memory ROUTER, DEALER and monitor sockets, because real loopback sockets deliver on the operating system's schedule. Messages, their encoding and their order are vLLM's (ZmqTransport, ZmqConnection and msgspec run unmodified); after each driver call every message on the wire reaches the ROUTER bound at its address, in send order, unless the sequence holds the wire, and a sequence may take an instance down, which unbinds its ROUTER, drops what was sent to it and reports EVENT_DISCONNECTED on every DEALER connected to it",
+      "sites": [
+        "run_tiering.py:zmq_control.zmq"
+      ]
+    },
+    {
+      "symbol": "time.monotonic",
+      "kind": "clock",
+      "how": "oracle/run_tiering.py only: a virtual clock that stands still until the sequence advances it, installed before any vLLM module is imported so default_factory fields that captured time.monotonic read it too. The p2p tier's deadlines (handshake, load, abort, lookup, store and unbound-store timeouts, idle reaps, reconnect backoff) run on it (#13); the driver's own waits use time.perf_counter",
+      "sites": [
+        "run_tiering.py:time.monotonic"
+      ]
+    },
+    {
+      "symbol": "vLLM environment variables of a tiering sequence",
+      "kind": "environment",
+      "how": "oracle/run_tiering.py only: a sequence's \"env\" (such as VLLM_P2P_HANDSHAKE_TIMEOUT_S or VLLM_P2P_MAX_PEERS) is set in os.environ for that sequence and restored after it; vllm.envs reads each when used",
+      "sites": [
+        "run_tiering.py:os.environ[]"
+      ]
     }
   ]
 }

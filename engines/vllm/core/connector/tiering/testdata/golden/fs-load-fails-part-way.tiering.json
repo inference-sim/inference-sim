@@ -328,10 +328,10 @@
   }
  ],
  "provenance": {
-  "blis_vllm_commit": "2904a93495adb6efee1ddaefb980cbc1730211f9",
+  "blis_vllm_commit": "a2de59211983db4f396355f2e9d33149b4876921",
   "kind": "direct",
   "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
-  "mock_version": "gpu-mock/8+e1ab1ffd0154",
+  "mock_version": "gpu-mock/9+2ee0b3b47a9c",
   "mocks": [
    "vllm.v1.outputs.ModelRunnerOutput",
    "tests.v1.core.utils.create_scheduler",
@@ -361,19 +361,23 @@
    "OffloadingConnector scheduler config",
    "OffloadingConnector worker (OffloadingWorkerMetadata transport)",
    "finished_req_ids iteration order (per-process hash seed)",
-   "nixl._api.nixl_agent (OBJ backend)"
+   "nixl._api.nixl_agent (OBJ and UCX backends)",
+   "zmq (pyzmq, as tiering/p2p/control/zmq.py uses it)",
+   "time.monotonic",
+   "vLLM environment variables of a tiering sequence"
   ],
   "model": "facebook/opt-125m",
   "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
   "oracle_inputs": {
    "oracle/drive_kv_interfaces.py": "edb41c5303e50d8b3827ba87c3314e696d1984cf79a2830e3327cc0844a6a022",
    "oracle/fake_nixl/nixl/__init__.py": "ca247dfae8186f95a1755b77cd056200ab911ca15256299f4bff38ed366cf85d",
-   "oracle/fake_nixl/nixl/_api.py": "8f2e2fd752cb705ab69550dc8de68ee5c5e9f60d1697914d2cef7c0cd51e212a",
+   "oracle/fake_nixl/nixl/_api.py": "7faa1f42756519afd3e941720ea5fa023bce86744c0fc665b6b7fb6590b06d3a",
+   "oracle/fake_zmq/__init__.py": "61ed6913d9232401428e2397815ab319f9b6724deb454ab6a8b456817b19126a",
    "oracle/kv_interfaces.py": "4bcde8955836b6ef732f8c901fa94c89a5b7592dcf1db8f6322e3be451c81c10",
-   "oracle/mocks.json": "40d28be778dd8f35bbb978c4f2761f92f7c370998e773ae08400409bd15d723c",
+   "oracle/mocks.json": "9521f9f69e212f249e79b33614003c43dea5642e45499afa48b893737fc49f9b",
    "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
    "oracle/run_scheduler.py": "1239a1d64f057fcb543789762859ea33211627e3f2b66b46087ed9ee936222f6",
-   "oracle/run_tiering.py": "c76670c75dd755249f37267aaee269355317b72664fbee564d5cb890365184d1",
+   "oracle/run_tiering.py": "27ca9f6f4563d50b49b4bf801ee03da98ce00a049eead0ad4a2cfeb3783ef8b6",
    "oracle/scenarios/tiering/fs-load-fails-part-way.json": "8dc074696fa2f1beb570ae24ac28a0a4e5ed3c663e4c8ed6c188553e3861e750"
   },
   "platform": "linux-x86_64",

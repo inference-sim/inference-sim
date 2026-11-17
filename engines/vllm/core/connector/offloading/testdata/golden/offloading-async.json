@@ -27,7 +27,7 @@
   }
  },
  "provenance": {
-  "blis_vllm_commit": "2904a93495adb6efee1ddaefb980cbc1730211f9",
+  "blis_vllm_commit": "a2de59211983db4f396355f2e9d33149b4876921",
   "cpu_chunks": 24,
   "engine": {
    "async_scheduling": true,
@@ -35,7 +35,7 @@
    "scheduler_class": "AsyncScheduler"
   },
   "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
-  "mock_version": "gpu-mock/8+e1ab1ffd0154",
+  "mock_version": "gpu-mock/9+2ee0b3b47a9c",
   "mocks": [
    "vllm.v1.outputs.ModelRunnerOutput",
    "tests.v1.core.utils.create_scheduler",
@@ -65,12 +65,15 @@
    "OffloadingConnector scheduler config",
    "OffloadingConnector worker (OffloadingWorkerMetadata transport)",
    "finished_req_ids iteration order (per-process hash seed)",
-   "nixl._api.nixl_agent (OBJ backend)"
+   "nixl._api.nixl_agent (OBJ and UCX backends)",
+   "zmq (pyzmq, as tiering/p2p/control/zmq.py uses it)",
+   "time.monotonic",
+   "vLLM environment variables of a tiering sequence"
   ],
   "model": "facebook/opt-125m",
   "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
   "oracle_inputs": {
-   "oracle/mocks.json": "40d28be778dd8f35bbb978c4f2761f92f7c370998e773ae08400409bd15d723c",
+   "oracle/mocks.json": "9521f9f69e212f249e79b33614003c43dea5642e45499afa48b893737fc49f9b",
    "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
    "oracle/run_enginecore.py": "bb562e23d0ae394ca5d3a099a6083bec69ee7aff5915f35995277a07609a7c0f",
    "oracle/run_offloading.py": "5d9ce700b38d454a921f0ef248678157a2f8d2e80a5d7645d50c3fb04e74dcf4",

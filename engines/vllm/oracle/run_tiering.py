@@ -39,6 +39,7 @@ or store the key's object in the tier's bucket, and the sequence may also call
                {"m": "allow", "tier": 0}      ... and accepts them again
                {"m": "hold", "tier": 0}       the tier's transfers stay in flight across calls
                {"m": "release", "tier": 0}    ... and finish after each call again
+               {"m": "nixl_down", "tier": 0}  (p2p) WRITEs to the tier's instance fail; control stays up
                {"m": "refuse_next", "tier": 0}  the tier's next transfer fails at submission (transfer() "ERR")
 
 Usage:
@@ -53,6 +54,33 @@ import tempfile
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import fake_zmq  # noqa: E402
+
+
+class VirtualClock:
+    """The clock vLLM's tiering code reads (time.monotonic): it stands still until the sequence
+    advances it ({"m": "advance", "s": seconds}). It is installed before any vLLM module is
+    imported, so a default_factory that captured time.monotonic at import reads it too."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def reset(self) -> None:
+        self.now = 1000.0
+
+    def advance(self, s: float) -> None:
+        if s < 0:
+            raise ValueError("run_tiering: the clock does not run backwards")
+        self.now += float(s)
+
+    def monotonic(self) -> float:
+        return self.now
+
+
+CLOCK = VirtualClock()
+# Whether the driver holds control messages on the wire across calls (hold_net).
+NET = {"held": False}
 SUFFIX = ".tiering.json"
 WAIT_S = 30.0
 TIER_METHODS = ("lookup", "submit_store", "submit_load", "get_finished_jobs", "has_pending_work", "take_events",
@@ -72,8 +100,10 @@ def tier_monitor():
             from vllm.v1.kv_offload.tiering.base import SecondaryTierManager
             from vllm.v1.kv_offload.tiering.fs.manager import FileSystemTierManager
             from vllm.v1.kv_offload.tiering.obj.manager import ObjectStoreSecondaryTierManager
+            from vllm.v1.kv_offload.tiering.p2p.manager import P2PSecondaryTierManager
             self.trace["tier"] = []
-            for cls in (SecondaryTierManager, FileSystemTierManager, ObjectStoreSecondaryTierManager):
+            for cls in (SecondaryTierManager, FileSystemTierManager, ObjectStoreSecondaryTierManager,
+                        P2PSecondaryTierManager):
                 for name in TIER_METHODS:
                     f = cls.__dict__.get(name)
                     if callable(f) and hasattr(f, "__code__"):
@@ -141,18 +171,43 @@ def wait_transport(tier) -> None:
     """Read-only waits: the tier's I/O is done (fs: the pool is idle; obj: the fake NIXL agent
     finishes the transfers in flight), and its lookup worker posted what was flushed."""
     from vllm.v1.kv_offload.tiering.async_lookup import LookupPhase
+    if tier.tier_type == "p2p":
+        wait_p2p(tier)
+        return
     if tier.tier_type == "obj":
         import nixl._api as fake_nixl
         fake_nixl.complete_all()
     else:
         tier._pool.wait_idle()
     lm = tier._lookup_manager
-    deadline = time.monotonic() + WAIT_S
+    deadline = time.perf_counter() + WAIT_S
     while any(s.phase is LookupPhase.IN_FLIGHT for s in list(lm._lookup_state.values())) and \
             lm._pending_results.qsize() == 0:
-        if time.monotonic() > deadline:
+        if time.perf_counter() > deadline:
             raise RuntimeError("run_tiering: the lookup worker did not post within %.0fs" % WAIT_S)
         time.sleep(0.001)
+
+
+def wait_p2p(tier) -> None:
+    """A p2p tier's transport rule, after each call: every NIXL WRITE in flight ends (fake_nixl),
+    every control message on the wire reaches its ROUTER (fake_zmq, unless held), and every peer
+    registration a session started has resolved (NixlTransport registers on a worker thread;
+    this waits by reading the session's future)."""
+    import nixl._api as fake_nixl
+    fake_nixl.complete_all()
+    if not NET["held"]:
+        fake_zmq.deliver()
+    deadline = time.perf_counter() + WAIT_S
+    fake_nixl.REG_GATE.set()
+    try:
+        for s in list(tier._sessions.values()):
+            f = s._pending_registration
+            while f is not None and not f.done():
+                if time.perf_counter() > deadline:
+                    raise RuntimeError("run_tiering: a p2p peer registration did not resolve within %.0fs" % WAIT_S)
+                time.sleep(0.001)
+    finally:
+        fake_nixl.REG_GATE.clear()
 
 
 def run_sequence(vllm_root: str, path: str) -> dict:
@@ -163,43 +218,79 @@ def run_sequence(vllm_root: str, path: str) -> dict:
     os.environ.setdefault("VLLM_LOGGING_LEVEL", "ERROR")
     import nixl._api as fake_nixl  # noqa: E402
     fake_nixl.reset()
+    fake_zmq.reset()
+    CLOCK.reset()
     from drive_kv_interfaces import call_manager, key_of, offloading_config  # noqa: E402
     from run_scheduler import provenance  # noqa: E402
     from vllm.distributed.kv_transfer.kv_connector.v1.offloading.scheduler import _parse_tier_filter  # noqa: E402
     from vllm.v1.kv_offload.base import ReqContext, ScheduleEndContext  # noqa: E402
     from vllm.v1.kv_offload.factory import OffloadingSpecFactory  # noqa: E402
+    import vllm.v1.kv_offload.tiering.p2p.control.zmq as zmq_control  # noqa: E402
+    zmq_control.zmq = fake_zmq
 
     with open(path) as f:
         sq = json.load(f)
+    # A sequence may set vLLM's environment (VLLM_P2P_MAX_PEERS and the like, read when used).
+    saved_env = {k: os.environ.get(k) for k in sq.get("env", {})}
+    os.environ.update({k: str(v) for k, v in sq.get("env", {}).items()})
+    try:
+        return _run_sequence(sq, vllm_root, path, fake_nixl, call_manager, key_of, offloading_config, provenance,
+                             _parse_tier_filter, ReqContext, ScheduleEndContext, OffloadingSpecFactory)
+    finally:
+        for k, v in saved_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def _run_sequence(sq, vllm_root, path, fake_nixl, call_manager, key_of, offloading_config, provenance,
+                  _parse_tier_filter, ReqContext, ScheduleEndContext, OffloadingSpecFactory) -> dict:
     name = os.path.basename(path)[:-5]
     root = tempfile.mkdtemp(prefix="blis-tiering-")
-    spec_in = json.loads(json.dumps(sq["spec"]))
-    for t in spec_in.get("extra", {}).get("secondary_tiers", []):
-        if str(t.get("root_dir", "")).startswith("@root"):
-            t["root_dir"] = root + t["root_dir"][len("@root"):]
+    # A sequence drives one instance ("spec"), or several ("instances", each with its "spec"; a
+    # call names its instance with "inst", 0 by default).
+    specs = [i["spec"] for i in sq["instances"]] if "instances" in sq else [sq["spec"]]
+    specs_in = []
+    for sp in specs:
+        spec_in = json.loads(json.dumps(sp))
+        for t in spec_in.get("extra", {}).get("secondary_tiers", []):
+            if str(t.get("root_dir", "")).startswith("@root"):
+                t["root_dir"] = root + t["root_dir"][len("@root"):]
+        specs_in.append(spec_in)
     ctxs: dict = {}
 
-    def ctx(c: dict):
-        if c["ctx"] not in ctxs:
-            kw = {}
-            if "filter" in c:
-                kw["load_tier_filter"] = _parse_tier_filter(c["filter"])
-            ctxs[c["ctx"]] = ReqContext(req_id=c["ctx"], **kw)
-        return ctxs[c["ctx"]]
+    def ctx_of(inst: int):
+        def ctx(c: dict):
+            k = (inst, c["ctx"])
+            if k not in ctxs:
+                kw = {}
+                if "filter" in c:
+                    kw["load_tier_filter"] = _parse_tier_filter(c["filter"])
+                if "params" in c:
+                    kw["kv_transfer_params"] = json.loads(json.dumps(c["params"]))
+                ctxs[k] = ReqContext(req_id=c["ctx"], **kw)
+            return ctxs[k]
+        return ctx
 
     def ks(c: dict) -> list:
         return [key_of(k) for k in c["keys"]]
 
     mon = tier_monitor()
     files: dict = {}
+    mgrs: list = []
     try:
         with mon:
-            spec = OffloadingSpecFactory.create_spec(offloading_config(spec_in, name))
-            mgr = spec.get_manager()
-            mon.use_tiers(mgr.secondary_tiers)
+            for i, spec_in in enumerate(specs_in):
+                suffix = "" if len(specs_in) == 1 else "-%d" % i
+                spec = OffloadingSpecFactory.create_spec(offloading_config(spec_in, name + suffix))
+                mgrs.append(spec.get_manager())
+            mon.use_tiers([t for mg in mgrs for t in mg.secondary_tiers])
             try:
                 for c in sq["calls"]:
                     m = c["m"]
+                    inst = c.get("inst", 0)
+                    mgr = mgrs[inst]
                     if m in ("rm", "put") and mon.tiers[c["tier"]].tier_type == "obj":
                         tier = mon.tiers[c["tier"]]
                         p = tier._file_mapper.get_file_name(key_of(c["key"]))
@@ -208,7 +299,11 @@ def run_sequence(vllm_root: str, path: str) -> dict:
                         else:
                             fake_nixl.put(tier._agent, p, b"\0" * tier.block_size_bytes)
                     elif m in ("hold", "release"):
-                        fake_nixl.hold(mon.tiers[c["tier"]]._agent, m == "hold")
+                        t = mon.tiers[c["tier"]]
+                        fake_nixl.hold(t._data._agent if t.tier_type == "p2p" else t._agent, m == "hold")
+                    elif m == "nixl_down":
+                        # The instance's data plane is lost but its control socket stays up: WRITEs to it fail.
+                        fake_nixl.agent_down(mon.tiers[c["tier"]]._nixl_agent_name)
                     elif m in ("deny", "allow"):
                         fake_nixl.deny(mon.tiers[c["tier"]]._agent, m == "deny")
                     elif m == "refuse_next":
@@ -224,29 +319,54 @@ def run_sequence(vllm_root: str, path: str) -> dict:
                                 fh.write(b"\0" * tier.block_size_bytes)
                     elif m == "on_reset_flushed":
                         mgr.on_reset_flushed()
+                    elif m == "advance":
+                        CLOCK.advance(c["s"])
+                    elif m == "poll_tiers":
+                        with mgr.lock:
+                            mgr.poll_tiers()
+                    elif m == "down":
+                        # The instance dies: its control socket and NIXL agent go away. It is not driven again.
+                        tier = mon.tiers[c["tier"]]
+                        fake_zmq.down("tcp://" + tier._local_id)
+                        fake_nixl.agent_down(tier._nixl_agent_name)
+                    elif m in ("hold_net", "release_net"):
+                        NET["held"] = m == "hold_net"
                     else:
                         if m == "on_new_request":
-                            ctx(c)
-                        call_manager(mgr, m, c, ctx, ks, ScheduleEndContext)
+                            ctx_of(inst)(c)
+                        call_manager(mgr, m, c, ctx_of(inst), ks, ScheduleEndContext)
                     for tier in mon.tiers:
                         wait_transport(tier)
                     # Each key's block file in each tier, relative to the sequence's directory.
                     for k in c.get("keys", []) + ([c["key"]] if "key" in c else []):
-                        files.setdefault(k, [os.path.relpath(t.file_mapper.get_file_name(key_of(k)), root)
-                                             if t.tier_type == "fs" else t._file_mapper.get_file_name(key_of(k))
-                                             for t in mon.tiers])
+                        if any(t.tier_type in ("fs", "obj") for t in mon.tiers):
+                            files.setdefault(k, [os.path.relpath(t.file_mapper.get_file_name(key_of(k)), root)
+                                                 if t.tier_type == "fs" else
+                                                 t._file_mapper.get_file_name(key_of(k)) if t.tier_type == "obj"
+                                                 else None
+                                                 for t in mon.tiers])
             finally:
-                mgr.shutdown()
-        tiers = [{"type": t.tier_type, "block_size_bytes": int(t.block_size_bytes),
-                  "run_config": mapper(t).get_run_config(), "rank": int(mapper(t).rank),
-                  "locality": None if t.locality is None else t.locality.name,
-                  "events": t.events is not None,
-                  **({"bucket": t._agent.bucket_name} if t.tier_type == "obj" else {})} for t in mon.tiers]
+                for mg in mgrs:
+                    mg.shutdown()
+        tiers = [tier_header(t) for t in mon.tiers]
     finally:
         shutil.rmtree(root, ignore_errors=True)
     prov = provenance(vllm_root, path)
     prov["kind"] = "direct"
     return {"provenance": prov, "tiers": tiers, "files": files, **mon.trace}
+
+
+def tier_header(t) -> dict:
+    """What the replay needs to build the tier."""
+    if t.tier_type == "p2p":
+        return {"type": "p2p", "block_size_bytes": int(t.block_size_bytes), "local_id": t._local_id,
+                "num_blocks": int(t._data.num_blocks), "fingerprint": t._data.config_fingerprint,
+                "unbound_store_timeout_s": t._unbound_store_timeout_s, "locality": None}
+    return {"type": t.tier_type, "block_size_bytes": int(t.block_size_bytes),
+            "run_config": mapper(t).get_run_config(), "rank": int(mapper(t).rank),
+            "locality": None if t.locality is None else t.locality.name,
+            "events": t.events is not None,
+            **({"bucket": t._agent.bucket_name} if t.tier_type == "obj" else {})}
 
 
 def compare(out_dir: str, golden_dir: str, names: list) -> int:
@@ -270,6 +390,8 @@ def compare(out_dir: str, golden_dir: str, names: list) -> int:
 
 
 def main(argv) -> int:
+    # The clock is vLLM's environment (oracle/mocks.json): install it before vLLM is imported.
+    time.monotonic = CLOCK.monotonic
     check = None
     if "--check" in argv:
         i = argv.index("--check")

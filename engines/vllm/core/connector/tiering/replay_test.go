@@ -23,7 +23,9 @@ import (
 // ran it on vLLM v0.33.0, and every call at the OffloadingManager interface and at each tier's
 // SecondaryTierManager interface must give vLLM's recorded answer. The transport follows the
 // oracle's rule: after each call every submitted job runs (loads, then stores, each in submission
-// order) and every flushed lookup batch resolves.
+// order) and every flushed lookup batch resolves. A sequence of several instances (p2p) builds one
+// manager per instance over one P2PNetwork; after each call every WRITE ends, every control
+// message is delivered and every peer registration resolves, unless the sequence holds them.
 
 const (
 	scenarioDir = "../../../oracle/scenarios/tiering"
@@ -67,6 +69,8 @@ type recTier struct {
 	tiering.Tier
 	idx int
 	log *[]record
+	// poll, for a tier that serves peers, records its parent calls made inside poll_tiers.
+	poll *pollRec
 }
 
 func (t *recTier) add(m string, args map[string]any, ret any) {
@@ -134,6 +138,9 @@ func (t *recTier) OnRequestFinished(c *tiering.ReqContext) {
 	t.add("on_request_finished", nil, nil)
 }
 func (t *recTier) ServeExternal(p tiering.Parent) {
+	if t.poll != nil {
+		p = &recParent{Parent: p, poll: t.poll}
+	}
 	t.Tier.ServeExternal(p)
 	t.add("serve_external_requests", nil, nil)
 }
@@ -175,6 +182,11 @@ type call struct {
 	Preempted []string         `json:"preempted"`
 	Tier      int              `json:"tier"`
 	Filter    []map[string]any `json:"filter"`
+	// Inst is the instance a call drives (0 by default), Params a new request's
+	// kv_transfer_params, and S an advance's seconds.
+	Inst   int            `json:"inst"`
+	Params map[string]any `json:"params"`
+	S      float64        `json:"s"`
 }
 
 type traceTier struct {
@@ -186,6 +198,11 @@ type traceTier struct {
 	Events     bool           `json:"events"`
 	// Bucket is an obj tier's store_config bucket; obj tiers naming one bucket share it.
 	Bucket string `json:"bucket"`
+	// A p2p tier's control identity, primary region, config fingerprint and unbound-store timeout.
+	LocalID              string  `json:"local_id"`
+	NumBlocks            int     `json:"num_blocks"`
+	Fingerprint          string  `json:"fingerprint"`
+	UnboundStoreTimeoutS float64 `json:"unbound_store_timeout_s"`
 }
 
 type trace struct {
@@ -194,6 +211,7 @@ type trace struct {
 			BlocksPerChunk int                       `json:"blocks_per_chunk"`
 			MaxModelLen    int                       `json:"max_model_len"`
 			Groups         []offloading.OffloadGroup `json:"groups"`
+			SecondaryTiers int                       `json:"secondary_tiers"`
 		} `json:"args"`
 		Ret struct {
 			NumChunks       int   `json:"num_chunks"`
@@ -270,9 +288,147 @@ func TestTieringTracesReplayEqual(t *testing.T) {
 	}
 }
 
+// pollRec records the manager calls a poll_tiers round makes. poll_tiers is not a recorded call,
+// so the trace's monitor records each OffloadingManager call made inside it that is not nested in
+// another (kv_interfaces.py starts a record for every interface call outside one): the primary
+// tier's complete_load and complete_store as finished jobs end, and the manager's own
+// on_new_request, lookup and on_request_finished that a tier serving a peer makes through its
+// parent.
+type pollRec struct {
+	on    bool
+	depth int
+	log   *[]record
+}
+
+// enter starts a call; it is recorded when it is a top-level call inside a poll_tiers round.
+func (p *pollRec) enter() bool {
+	p.depth++
+	return p.on && p.depth == 1
+}
+
+func (p *pollRec) leave(top bool, m string, ret any) {
+	p.depth--
+	if top {
+		*p.log = append(*p.log, record{M: m, Ret: ret})
+	}
+}
+
+// recParent is a tier's parent handle as the monitor sees it during poll_tiers.
+type recParent struct {
+	tiering.Parent
+	poll *pollRec
+}
+
+func (p *recParent) OnNewRequest(c *tiering.ReqContext) tiering.Policy {
+	top := p.poll.enter()
+	r := p.Parent.OnNewRequest(c)
+	p.poll.leave(top, "on_new_request", map[string]any{"policy": r.String()})
+	return r
+}
+
+func (p *recParent) Lookup(k tiering.Key, c *tiering.ReqContext) tiering.Lookup {
+	top := p.poll.enter()
+	r := p.Parent.Lookup(k, c)
+	p.poll.leave(top, "lookup", r.String())
+	return r
+}
+
+// CreateStoreJob is no interface method; the primary tier's calls inside it are nested.
+func (p *recParent) CreateStoreJob(keys []tiering.Key, c *tiering.ReqContext) *tiering.TransferJob {
+	p.poll.depth++
+	defer func() { p.poll.depth-- }()
+	return p.Parent.CreateStoreJob(keys, c)
+}
+
+func (p *recParent) OnRequestFinished(c *tiering.ReqContext) {
+	top := p.poll.enter()
+	p.Parent.OnRequestFinished(c)
+	p.poll.leave(top, "on_request_finished", nil)
+}
+
+// recPrimary is the primary tier as the monitor sees it during poll_tiers: its interface calls
+// there are recorded (PrepareRead is _prepare_load, no interface method).
+type recPrimary struct {
+	tiering.Primary
+	poll *pollRec
+}
+
+func (p recPrimary) Lookup(k tiering.Key, c *tiering.ReqContext) tiering.Lookup {
+	top := p.poll.enter()
+	r := p.Primary.Lookup(k, c)
+	p.poll.leave(top, "lookup", r.String())
+	return r
+}
+
+func (p recPrimary) PrepareRead(ks []tiering.Key, c *tiering.ReqContext) []int {
+	p.poll.depth++
+	defer func() { p.poll.depth-- }()
+	return p.Primary.PrepareRead(ks, c)
+}
+
+func (p recPrimary) PrepareStore(ks []tiering.Key, c *tiering.ReqContext) ([]tiering.Key, []int, []tiering.Key, bool) {
+	top := p.poll.enter()
+	s, ids, ev, ok := p.Primary.PrepareStore(ks, c)
+	var ret any
+	if ok {
+		ret = map[string]any{"keys_to_store": hexKeys(s), "ids": ids, "evicted": hexKeys(ev)}
+	}
+	p.poll.leave(top, "prepare_store", ret)
+	return s, ids, ev, ok
+}
+
+func (p recPrimary) CompleteLoad(ks []tiering.Key, c *tiering.ReqContext) {
+	top := p.poll.enter()
+	p.Primary.CompleteLoad(ks, c)
+	p.poll.leave(top, "complete_load", nil)
+}
+
+func (p recPrimary) CompleteStore(ks []tiering.Key, c *tiering.ReqContext, ok bool) {
+	top := p.poll.enter()
+	p.Primary.CompleteStore(ks, c, ok)
+	p.poll.leave(top, "complete_store", nil)
+}
+
+func (p recPrimary) OnRequestFinished(c *tiering.ReqContext) {
+	top := p.poll.enter()
+	p.Primary.OnRequestFinished(c)
+	p.poll.leave(top, "on_request_finished", nil)
+}
+
+// p2pEnv is a sequence's VLLM_P2P_* environment, as P2PConfig takes it.
+func p2pEnv(cfg *tiering.P2PConfig, env map[string]any) {
+	num := func(k string) (int, bool) {
+		v, ok := env[k]
+		if !ok {
+			return 0, false
+		}
+		switch x := v.(type) {
+		case float64:
+			return int(x), true
+		case string:
+			n := 0
+			for _, ch := range x {
+				n = n*10 + int(ch-'0')
+			}
+			return n, true
+		}
+		return 0, false
+	}
+	if n, ok := num("VLLM_P2P_MAX_PEERS"); ok {
+		cfg.MaxPeers = n
+	}
+	if n, ok := num("VLLM_P2P_HANDSHAKE_TIMEOUT_S"); ok {
+		cfg.HandshakeTimeoutS = n
+	}
+	if n, ok := num("VLLM_P2P_IDLE_TIMEOUT_S"); ok {
+		cfg.IdleTimeoutS, cfg.IdleReapOff = n, n <= 0
+	}
+}
+
 func replay(t *testing.T, scenarioPath, tracePath string) {
 	var sq struct {
-		Calls []call `json:"calls"`
+		Calls []call         `json:"calls"`
+		Env   map[string]any `json:"env"`
 	}
 	var tr trace
 	for p, v := range map[string]any{scenarioPath: &sq, tracePath: &tr} {
@@ -284,15 +440,41 @@ func replay(t *testing.T, scenarioPath, tracePath string) {
 			t.Fatalf("%s: %v", p, err)
 		}
 	}
-	if len(tr.Spec) != 1 {
-		t.Fatalf("the trace records %d spec builds, want 1", len(tr.Spec))
+	if len(tr.Spec) == 0 {
+		t.Fatalf("the trace records no spec build")
 	}
+	// Each instance has its own manager; the trace's tier indices are global, instance 0's tiers
+	// first, as each spec build lists its tier count.
+	instOf := make([]int, len(tr.Tiers))
+	if len(tr.Spec) > 1 {
+		at := 0
+		for i, sp := range tr.Spec {
+			for j := 0; j < sp.Args.SecondaryTiers; j++ {
+				if at >= len(instOf) {
+					t.Fatalf("the spec builds name more tiers than the trace's %d", len(tr.Tiers))
+				}
+				instOf[at] = i
+				at++
+			}
+		}
+		if at != len(tr.Tiers) {
+			t.Fatalf("the spec builds name %d tiers, the trace %d", at, len(tr.Tiers))
+		}
+	}
+	// The virtual clock vLLM's time.monotonic read (run_tiering.py VirtualClock).
+	now := 1000.0
+	clock := func() float64 { return now }
+	net := tiering.NewP2PNetwork()
+	hasP2P := false
+	var manager []record
+	poll := &pollRec{log: &manager}
 	var tierLog []record
 	files := tiering.MemFiles{}
 	var fsTiers []*tiering.FSTier
-	var tiers []tiering.Tier
-	// Each tier's built value by trace index: an fs tier's at fsAt, an obj tier's at objAt.
-	fsAt, objAt := map[int]*tiering.FSTier{}, map[int]*tiering.ObjTier{}
+	tiers := make([][]tiering.Tier, len(tr.Spec))
+	// Each tier's built value by trace index: an fs tier's at fsAt, an obj tier's at objAt, a p2p
+	// tier's local id at p2pAt.
+	fsAt, objAt, p2pAt := map[int]*tiering.FSTier{}, map[int]*tiering.ObjTier{}, map[int]string{}
 	var objTiers []*tiering.ObjTier
 	buckets := map[string]*tiering.MemBucket{}
 	// held are the obj tiers whose transfers the driver holds in flight across calls.
@@ -302,15 +484,26 @@ func replay(t *testing.T, scenarioPath, tracePath string) {
 		if tt.Locality != nil {
 			loc = tiering.Locality(*tt.Locality)
 		}
-		if tt.Type == "obj" {
+		in := instOf[i]
+		switch tt.Type {
+		case "obj":
 			ot := buildObj(t, i, tt, loc, tr.Files, buckets)
 			objAt[i] = ot
 			objTiers = append(objTiers, ot)
-			tiers = append(tiers, &recTier{Tier: ot, idx: i, log: &tierLog})
+			tiers[in] = append(tiers[in], &recTier{Tier: ot, idx: i, log: &tierLog})
 			continue
-		}
-		if tt.Type != "fs" {
-			t.Fatalf("tier %d is %q; this replay builds fs and obj tiers only", i, tt.Type)
+		case "p2p":
+			hasP2P = true
+			cfg := tiering.P2PConfig{Now: clock, LocalID: tt.LocalID, BlockBytes: tt.BlockBytes,
+				UnboundStoreTimeoutS: tt.UnboundStoreTimeoutS}
+			p2pEnv(&cfg, sq.Env)
+			pt := tiering.NewP2PTier(cfg, net.Control(tt.LocalID), net.Data(tt.LocalID, tt.NumBlocks, tt.BlockBytes, tt.Fingerprint))
+			p2pAt[i] = tt.LocalID
+			tiers[in] = append(tiers[in], &recTier{Tier: pt, idx: i, log: &tierLog, poll: poll})
+			continue
+		case "fs":
+		default:
+			t.Fatalf("tier %d is %q; this replay builds fs, obj and p2p tiers only", i, tt.Type)
 		}
 		// The recorded file names are relative to the sequence's directory, under which each tier's
 		// root_dir sits: the tier's root is what precedes its model-named directory.
@@ -326,13 +519,20 @@ func replay(t *testing.T, scenarioPath, tracePath string) {
 			Namespace: namespace(tt)}, files)
 		fsTiers = append(fsTiers, ft)
 		fsAt[i] = ft
-		tiers = append(tiers, &recTier{Tier: ft, idx: i, log: &tierLog})
+		tiers[in] = append(tiers[in], &recTier{Tier: ft, idx: i, log: &tierLog})
 	}
-	spec := tr.Spec[0]
-	cpu := offloading.NewCPUPrimary(spec.Ret.NumChunks)
-	cpu.SetConfigInfo(offloading.ConfigInfo(spec.Ret.NumChunks, spec.Args.BlocksPerChunk, spec.Ret.KVBytesPerChunk,
-		spec.Args.MaxModelLen, spec.Args.Groups))
-	mgr := tiering.New(tiering.CPU(cpu), tiers, nil)
+	mgrs := make([]*tiering.Manager, len(tr.Spec))
+	for i, sp := range tr.Spec {
+		cpu := offloading.NewCPUPrimary(sp.Ret.NumChunks)
+		cpu.SetConfigInfo(offloading.ConfigInfo(sp.Ret.NumChunks, sp.Args.BlocksPerChunk, sp.Ret.KVBytesPerChunk,
+			sp.Args.MaxModelLen, sp.Args.Groups))
+		primary := tiering.CPU(cpu)
+		var mclock func() float64
+		if hasP2P {
+			primary, mclock = recPrimary{Primary: primary, poll: poll}, clock
+		}
+		mgrs[i] = tiering.New(primary, tiers[i], mclock)
+	}
 	for label, want := range tr.Files {
 		for i, ot := range objAt {
 			if got := ot.ObjectName(keyOf(label)); got != want[i] {
@@ -346,14 +546,21 @@ func replay(t *testing.T, scenarioPath, tracePath string) {
 			}
 		}
 	}
-	ctxs := map[string]*tiering.ReqContext{}
+	// A request's context is per instance and label; its kv_transfer_params are its first call's.
+	type ctxKey struct {
+		inst  int
+		label string
+	}
+	ctxs := map[ctxKey]*tiering.ReqContext{}
 	ctx := func(c call) *tiering.ReqContext {
-		if ctxs[c.Ctx] == nil {
+		k := ctxKey{c.Inst, c.Ctx}
+		if ctxs[k] == nil {
 			r := tiering.NewReqContext(c.Ctx)
 			r.Filter = filterOf(c.Filter)
-			ctxs[c.Ctx] = r
+			r.Params = c.Params
+			ctxs[k] = r
 		}
-		return ctxs[c.Ctx]
+		return ctxs[k]
 	}
 	keys := func(c call) []tiering.Key {
 		out := make([]tiering.Key, len(c.Keys))
@@ -362,20 +569,48 @@ func replay(t *testing.T, scenarioPath, tracePath string) {
 		}
 		return out
 	}
-	var manager []record
 	for _, c := range sq.Calls {
+		if c.Inst < 0 || c.Inst >= len(mgrs) {
+			t.Fatalf("a call names instance %d of %d", c.Inst, len(mgrs))
+		}
+		mgr := mgrs[c.Inst]
 		var ret any
 		recorded := true
 		switch c.M {
-		case "rm", "put", "deny", "allow", "refuse_next", "hold", "release":
+		case "rm", "put", "deny", "allow", "refuse_next", "hold", "release", "nixl_down", "down":
 			recorded = false
-			if ot := objAt[c.Tier]; ot != nil {
+			if id, ok := p2pAt[c.Tier]; ok {
+				switch c.M {
+				case "hold", "release":
+					net.HoldWrites(id, c.M == "hold")
+				case "nixl_down":
+					net.DataDown(id)
+				case "down":
+					net.Down(id)
+				default:
+					t.Fatalf("the replay does not drive %q on a p2p tier", c.M)
+				}
+			} else if ot := objAt[c.Tier]; ot != nil {
 				objCall(c, ot, buckets[tr.Tiers[c.Tier].Bucket], held)
 			} else if c.M == "rm" {
 				files.Remove(fsAt[c.Tier].FileName(keyOf(c.Key)))
 			} else {
 				files.Publish(fsAt[c.Tier].FileName(keyOf(c.Key)))
 			}
+		case "advance":
+			if c.S < 0 {
+				t.Fatalf("the clock does not run backwards")
+			}
+			now += c.S
+			recorded = false
+		case "poll_tiers":
+			poll.on = true
+			mgr.PollTiers()
+			poll.on = false
+			recorded = false
+		case "hold_net", "release_net":
+			net.Hold(c.M == "hold_net")
+			recorded = false
 		case "on_reset_flushed":
 			mgr.OnResetFlushed()
 		case "on_new_request":
@@ -437,11 +672,16 @@ func replay(t *testing.T, scenarioPath, tracePath string) {
 			}
 			ot.ResolveLookups()
 		}
+		// The p2p tiers' (run_tiering.py wait_p2p): every WRITE ends unless its agent is held, every
+		// control message is delivered unless the wire is held, and every registration resolves.
+		if hasP2P {
+			net.RunAll()
+		}
 	}
-	// The driver's shutdown is the trace's last manager call; the port holds nothing to release.
+	// The driver's shutdown of each instance ends the trace; the port holds nothing to release.
 	want := tr.Manager
-	if n := len(want); n > 0 && want[n-1].M == "shutdown" {
-		want = want[:n-1]
+	for n := len(tr.Spec); n > 0 && len(want) > 0 && want[len(want)-1].M == "shutdown"; n-- {
+		want = want[:len(want)-1]
 	}
 	for i := range want {
 		if want[i].M == "take_events" {

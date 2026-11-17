@@ -1299,7 +1299,8 @@
   },
   "secondary_tier:p2p": {
    "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/13"
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/204",
+   "why": "refused by type until the engine runs it: the tier is ported and diff-tested at the tiering interfaces (core/connector/tiering P2PTier), but its peer control messages, WRITEs between instances and tier polls are not yet carried by the simulator"
   },
   "speculative_method:bailing_hybrid_mtp": {
    "status": "out_of_scope",
