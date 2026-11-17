@@ -5097,21 +5097,7 @@ def handler_qwen3_5_moe(cfg, raw, model):
         collective("AllReduce", "mixer_out", EMIT_TENSOR_PARALLEL),
     ]
     gdn = with_moe(gdn_mixer)
-    # A full-attention layer's query projection also yields the output gate: vLLM v0.33.0 builds
-    # qkv_proj with num_heads * (1 + attn_output_gate) query heads (Qwen3NextAttention,
-    # qwen3_next.py:315-325), and the checkpoints store q_proj at twice num_heads x head_dim
-    # rows (Qwen3.5-397B-A17B-NVFP4-V2: [16384, 4096] for 32 heads of 256). The flag is read
-    # from the config, not defaulted.
-    if not isinstance(cfg.get("attn_output_gate"), bool):
-        raise DeriveError(f"{model}: attn_output_gate is not stated as true or false; it decides "
-                          f"whether qkv_proj carries the output gate")
-    attn_nodes = attention_block(cfg, model, hidden, raw=raw)
-    if cfg["attn_output_gate"]:
-        heads = int(require(cfg, "num_q_heads", model))
-        dh = next(n["d_h"] for n in attn_nodes if n["op"] == "Attention")
-        attn_nodes = [dict(n, n=n["n"] + heads * dh) if n.get("role") == "qkv_proj" else n
-                      for n in attn_nodes]
-    full = with_moe(attn_nodes)
+    full = with_moe(attention_block(cfg, model, hidden, raw=raw))
     kinds = [
         {"id": "gdn_moe", "nodes": gdn, "edges": chain(gdn)},
         {"id": "attn_moe", "nodes": full, "edges": chain(full)},
