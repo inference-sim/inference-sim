@@ -877,8 +877,8 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.14.2-0.20261117011026-7794a6c6277b",
-    "router": "v1.0.0-blis.4",
+    "substrate": "v0.14.2-0.20261117034650-8755014a9c75",
+    "router": "v1.0.0-blis.4.0.20261117035128-50b6402142f7",
     "engine_module": "v0.32.1-0.20261117012328-0e64151389b7"
   },
   "window": {
@@ -2185,6 +2185,7 @@
         "MetricFlags": null,
         "MetricsSources": null,
         "PrefixIndexes": null,
+        "SessionIdentities": null,
         "Topology": {
           "Extractors": null,
           "Requested": false

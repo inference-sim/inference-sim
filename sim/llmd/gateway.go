@@ -611,6 +611,7 @@ func (g *Gateway) routeRequest(f *flight) embed.Request {
 		Stream:     f.stream,
 		Objective:  f.req.SLOClass,
 		FairnessID: f.req.TenantID,
+		SessionID:  f.req.SessionID,
 	}
 	if f.req.SLOTargetUs > 0 {
 		r.TTFTSLO = time.Duration(f.req.SLOTargetUs) * time.Microsecond

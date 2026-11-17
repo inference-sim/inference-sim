@@ -58,6 +58,11 @@ var supported = map[string]bool{
 	// The engines publish vLLM's KV-cache events, ingested synchronously by the hosted producer
 	// (sim/llmd/kvevents.go); checkPrecisePrefix refuses the configurations it cannot host.
 	"precise-prefix-cache-producer": true,
+	// Session affinity: a multi-turn request sends its session in x-session-id (Request.SessionID);
+	// checkEngineSignals refuses a configuration that reads the identifier anywhere else.
+	"session-affinity-scorer": true,
+	"session-affinity-filter": true,
+	"session-id-producer":     true,
 	// admission
 	"probabilistic-admitter": true,
 	// saturation detectors
@@ -95,9 +100,6 @@ var supported = map[string]bool{
 // signalReasons give, for plugin types BLIS's signal policy refuses, why: a signal the simulated
 // engines or workload do not produce. The fork gives the reasons of the types it cannot host.
 var signalReasons = map[string]string{
-	"session-affinity-scorer":                   "the simulated workload sends no session header",
-	"session-affinity-filter":                   "the simulated workload sends no session header",
-	"session-id-producer":                       "the simulated workload sends no session header",
 	"mm-embeddings-cache-producer":              "the simulated workload carries no multimodal inputs",
 	"mm-embeddings-cache-scorer":                "the simulated workload carries no multimodal inputs",
 	"p2p-source-producer":                       "peer KV pulls are not modeled by the simulated engines",
@@ -211,6 +213,11 @@ func checkEngineSignals(req embed.Requirements, podLabels []map[string]string, e
 			return fmt.Errorf("plugin %q reads %s KV events; the simulated engines publish vLLM's", p.Name, p.EngineType)
 		}
 	}
+	for _, id := range req.SessionIdentities {
+		if err := checkSessionIdentity(id); err != nil {
+			return err
+		}
+	}
 	for _, m := range req.MetricsSources {
 		if m.Path != "" && m.Path != "/metrics" {
 			return fmt.Errorf("plugin %q scrapes %q; the simulated vLLM servers serve their metrics at /metrics", m.Name, m.Path)
@@ -220,6 +227,27 @@ func checkEngineSignals(req embed.Requirements, podLabels []map[string]string, e
 		if err := checkExtractor(x, podLabels); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// checkSessionIdentity refuses a session plugin that reads the session identifier from anywhere the
+// simulated client does not put it. A multi-turn request sends its session id in x-session-id and
+// nothing else: it keeps no cookies and does not echo the token the encoded_endpoint_header strategy
+// has the router write on a response, so under that strategy (the scorer's and filter's default) the
+// plugin would never see a session and silently pin nothing.
+func checkSessionIdentity(id embed.SessionIdentity) error {
+	switch {
+	case id.Strategy == embed.SessionStrategyEncodedEndpoint:
+		return fmt.Errorf("plugin %q uses the %s strategy, which needs the client to echo the endpoint token the router "+
+			"wrote on an earlier response (header %q); the simulated client sends only %s. Set strategy: %s",
+			id.Name, embed.SessionStrategyEncodedEndpoint, id.Header, embed.SessionIDHeader, embed.SessionStrategyID)
+	case id.Cookie != "":
+		return fmt.Errorf("plugin %q reads the session from cookie %q; the simulated client sends no cookies, only the %s header",
+			id.Name, id.Cookie, embed.SessionIDHeader)
+	case id.Header != "" && id.Header != embed.SessionIDHeader:
+		return fmt.Errorf("plugin %q reads the session from header %q; the simulated client sends it in %s",
+			id.Name, id.Header, embed.SessionIDHeader)
 	}
 	return nil
 }

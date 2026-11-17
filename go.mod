@@ -4,7 +4,7 @@ go 1.27.2
 
 require (
 	github.com/go-logr/logr v1.4.4
-	github.com/inference-sim/blis-substrate v0.14.2-0.20261117011026-7794a6c6277b // TEMPORARY: inference-sim/blis-substrate branch m3/integration, until it is released
+	github.com/inference-sim/blis-substrate v0.14.2-0.20261117034650-8755014a9c75 // TEMPORARY: inference-sim/blis-substrate branch m3/integration plus PR 284 (8755014a9c750ad7ba6f8e8beb8215f58ef08c16), until it is released
 	github.com/inference-sim/blis-vllm v0.32.1-0.20261117012328-0e64151389b7 // TEMPORARY: inference-sim/blis-vllm branch m3/integration (vLLM v0.33.0), until v0.33.0-blis.1 is tagged
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
@@ -128,8 +128,8 @@ require (
 
 // The one permitted replace (design X11): the llm-d router fork keeps upstream's module path, so
 // a replace is the only way to substitute it (docs/contributing/llm-d-router-fork.md). A release
-// names a -blis.N tag, and this one names v1.0.0-blis.4.
-replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0-blis.4
+// names a -blis.N tag; this one is TEMPORARY, inference-sim/llm-d-router PR 11 (50b6402142f7ac0ad09e02089b56c289e5ee2e70), until v1.0.0-blis.5 is tagged.
+replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0-blis.4.0.20261117035128-50b6402142f7
 
 // blis-vllm's plain tag v0.32.0 predates the -blis.N rule (design §14.1) and would outrank every
 // -blis.N tag in version selection; the main module's exclude keeps any requirement from
