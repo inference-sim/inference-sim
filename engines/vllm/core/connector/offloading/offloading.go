@@ -253,11 +253,13 @@ func (c cpuTier) HasPendingWork() bool                              { return c.m
 
 // Scheduler is OffloadingConnectorScheduler for one engine.
 type Scheduler struct {
-	cfg        Config
-	groups     []groupCfg
-	full, swa  []int // _full_attention_groups, _sliding_window_groups (largest window first)
-	alignment  int   // alignment_tokens
-	manager    Manager
+	cfg       Config
+	groups    []groupCfg
+	full, swa []int // _full_attention_groups, _sliding_window_groups (largest window first)
+	alignment int   // alignment_tokens
+	manager   Manager
+	// params are the kv_transfer_params of requests not yet started (SetRequestParams).
+	params     map[string]map[string]any
 	cpu        *cpuManager // the CPU tier, which manager is or fronts
 	reqs       map[string]*reqState
 	loadJobs   []Job
@@ -431,6 +433,16 @@ func (s *Scheduler) updateKeys(st *reqState) {
 	}
 }
 
+// SetRequestParams states a request's kv_transfer_params (Request.kv_transfer_params) before it is
+// added to the scheduler: the connector reads max_load_tokens and max_offload_tokens from them
+// (scheduler.py:383-410@4ba787ec) and hands them to the manager's tiers (ReqContext).
+func (s *Scheduler) SetRequestParams(id string, params map[string]any) {
+	if s.params == nil {
+		s.params = map[string]map[string]any{}
+	}
+	s.params[id] = params
+}
+
 // tokenLimit is a request's max_load_tokens or max_offload_tokens: the stated value when it is a
 // non-negative int, else -1 (a negative value, or one that is not an int, is ignored with a
 // warning, scheduler.py:385-410@4ba787ec). A JSON number is an int when it has no fraction or
@@ -457,9 +469,11 @@ func tokenLimit(params map[string]any, key string) int {
 // on_new_request, whose answer is the request's offload policy.
 func (s *Scheduler) OnNewRequest(r *sched.Request) {
 	a := newAccess(r.ID)
-	a.params = r.KVTransferParams
+	params := s.params[r.ID]
+	delete(s.params, r.ID)
+	a.params = params
 	st := &reqState{req: r, access: a, jobs: map[int]bool{}, policy: s.manager.OnNewRequest(a),
-		maxLoad: tokenLimit(r.KVTransferParams, "max_load_tokens"), maxOffload: tokenLimit(r.KVTransferParams, "max_offload_tokens")}
+		maxLoad: tokenLimit(params, "max_load_tokens"), maxOffload: tokenLimit(params, "max_offload_tokens")}
 	for range s.groups {
 		st.groups = append(st.groups, &groupState{})
 	}
@@ -741,7 +755,8 @@ func (s *Scheduler) finished(r *sched.Request) bool {
 	if st == nil {
 		// An untracked request (:2351-2359@4ba787ec): the manager sees it start and finish.
 		a := newAccess(r.ID)
-		a.params = r.KVTransferParams
+		a.params = s.params[r.ID]
+		delete(s.params, r.ID)
 		s.manager.OnNewRequest(a)
 		s.manager.OnRequestFinished(a)
 		return false

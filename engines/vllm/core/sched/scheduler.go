@@ -121,15 +121,11 @@ type Request struct {
 	SpecTokens []int64
 	// Transfer is the request's KV-transfer parameters, which a connector reads and updates
 	// (Request.kv_transfer_params); nil for a request no connector moves.
-	Transfer *TransferParams
-	// KVTransferParams is the request's kv_transfer_params as the client gave them (the keys no typed
-	// field of Transfer holds, such as an offload connector's kv_load_tiers), which the offloading
-	// connector hands its tiers; nil is none.
-	KVTransferParams map[string]any
-	fetchStage       FetchStage
-	hashes           []kv.BlockHash
-	root             kv.BlockHash // the chain's NONE_HASH under Keys.Seed, set with the first hash
-	numInFlight      int
+	Transfer    *TransferParams
+	fetchStage  FetchStage
+	hashes      []kv.BlockHash
+	root        kv.BlockHash // the chain's NONE_HASH under Keys.Seed, set with the first hash
+	numInFlight int
 	// sharedPrefixBoundary is request.shared_prefix_boundary (vllm/v1/request.py:206@5df63a72):
 	// where a Mamba group's cached prefix stops short of another group's, set by the prefix
 	// lookup of a fresh admission and read by the aligned split.
