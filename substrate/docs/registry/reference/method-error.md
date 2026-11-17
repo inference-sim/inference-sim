@@ -6,7 +6,7 @@ a measured value, the method estimates it as if the measurement did not exist, a
 with the measurement. The two parts of the A100 family carry the same measured values, so they are left out
 together; otherwise each would predict itself from its twin.
 
-The figures below cover 925 measured points of the committed coefficient registry. A ratio is
+The figures below cover 927 measured points of the committed coefficient registry. A ratio is
 `max(estimate/truth, truth/estimate)`: 1.00 is exact and 2.00 is a factor of two either way.
 
 - **Same generation** is the median of the same quantity on the other chips of the held-out chip's architecture
