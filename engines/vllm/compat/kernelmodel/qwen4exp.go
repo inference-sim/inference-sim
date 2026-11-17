@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/models/qwen4_exp/nvidia/qsa.py, vllm/models/qwen4_exp/nvidia/indexer_qsa.py and vllm/models/qwen4_exp/common/qsa_cache.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
+// Derived from vllm/models/qwen4_exp/nvidia/qsa.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
+// Also from vllm/models/qwen4_exp/nvidia/indexer_qsa.py and vllm/models/qwen4_exp/common/qsa_cache.py at the same commit.
 
 package kernelmodel
 
