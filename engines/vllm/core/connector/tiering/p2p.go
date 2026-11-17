@@ -5,6 +5,7 @@
 package tiering
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 )
@@ -78,6 +79,14 @@ func truthyStr(v any) string {
 			return ""
 		}
 		return strconv.Itoa(x)
+	case json.Number:
+		// The engine decodes a request's kv_transfer_params with UseNumber (requestParams), so a
+		// port or an id that is a number reaches here as its source text. Python's truthiness
+		// reads 0 as false, 0.0 included.
+		if f, err := x.Float64(); err != nil || f == 0 {
+			return ""
+		}
+		return x.String()
 	}
 	return ""
 }
