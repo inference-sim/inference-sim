@@ -473,6 +473,10 @@ func (i *InstanceSimulator) DrainWaitQueue() []*sim.Request {
 	return i.drv.DrainWaiting(i.drv.Clock)
 }
 
+// Abandon drops every request this instance holds, for an IMMEDIATE drain (sim.EngineDriver.Abandon),
+// and returns how many.
+func (i *InstanceSimulator) Abandon(now int64) int { return i.drv.Abandon(now) }
+
 // EvictRequest removes a request from this instance due to gateway-level eviction.
 // Searches WaitQ first, then RunningBatch. Frees KV blocks if allocated.
 // Sets req.State to StateCompleted to prevent dangling TimeoutEvents from double-counting.

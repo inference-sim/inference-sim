@@ -862,6 +862,10 @@ var runCmd = &cobra.Command{
 				},
 				WarmStartInitialInstances: bundle.InstanceLifecycle.WarmStartInitialInstances,
 				WeightSource:              bundle.InstanceLifecycle.WeightSource,
+				DrainPolicy:               bundle.InstanceLifecycle.DrainPolicy,
+			}
+			if p := bundle.InstanceLifecycle.DrainPolicy; p != "" && !cluster.IsValidDrainPolicy(p) {
+				logrus.Fatalf("policy bundle instance_lifecycle.drain_policy %q is not one of IMMEDIATE, WAIT, REDIRECT", p)
 			}
 			requireWeightSource(bundleInstanceLifecycle.WeightSource, kernelOpened, poolChips)
 		}

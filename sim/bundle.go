@@ -76,6 +76,8 @@ type InstanceLifecycleBundleConfig struct {
 	// remains (process start, CUDA context, graph capture). Empty keeps loading_delay as the
 	// whole loading time.
 	WeightSource string `yaml:"weight_source"`
+	// DrainPolicy is how a scale-down drains an instance (#910): IMMEDIATE, WAIT or REDIRECT. Empty is WAIT.
+	DrainPolicy string `yaml:"drain_policy"`
 }
 
 // AutoscalerBundleConfig holds autoscaler pipeline configuration.
