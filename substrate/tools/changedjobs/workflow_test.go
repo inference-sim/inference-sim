@@ -46,7 +46,7 @@ func selectedBy(t *testing.T, changed ...string) map[string]string {
 	cmd := exec.Command("bash", "-c", script)
 	cmd.Dir = root
 	// BASE is a commit that exists, so the step does not take its run-everything shortcut.
-	cmd.Env = append(os.Environ(), "BASE=HEAD", "GITHUB_OUTPUT="+out, "CHANGED_FILES="+strings.Join(changed, "\n"))
+	cmd.Env = append(os.Environ(), "GOFLAGS=", "GOWORK=off", "GOTOOLCHAIN=local", "BASE=HEAD", "GITHUB_OUTPUT="+out, "CHANGED_FILES="+strings.Join(changed, "\n"))
 	if b, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("the filter step failed: %v\n%s", err, b)
 	}
