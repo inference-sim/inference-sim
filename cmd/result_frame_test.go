@@ -1,7 +1,10 @@
 package cmd
 
 import (
+	"encoding/json"
 	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -102,6 +105,53 @@ func TestResultFrame_EveryResultRecordsItsFrame(t *testing.T) {
 	for _, k := range []string{"phases", "initial_state", "acceptance", "metrics", "kind"} {
 		if !jsonEqual(t, rf[k], pf[k]) {
 			t.Errorf("frame.%s: run %v, replay %v", k, rf[k], pf[k])
+		}
+	}
+}
+
+// DEV-7 (#2107): a replay reproduced from a Result whose recorded frame has been taken out or
+// altered would run without the frame it was measured under. It is refused, and the refusal
+// names the frame; the unaltered Result reproduces.
+func TestReplayFromResult_RefusesAResultWhoseFrameWasDropped(t *testing.T) {
+	dir := t.TempDir()
+	prefix := dir + "/trace"
+	if _, stderr, err := runKernelCLI(t, resultRunArgs("--trace-output", prefix)...); err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 3))
+	}
+	traceArgs := []string{"--trace-header", prefix + ".yaml", "--trace-data", prefix + ".csv"}
+	repOut, stderr, err := runKernelCLI(t, append([]string{"replay", "--scenario", kernelTestScenario, "--seed", "7",
+		"--horizon", "600000000"}, traceArgs...)...)
+	if err != nil {
+		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 3))
+	}
+	reproduce := func(name string, edit func(doc map[string]any)) (string, error) {
+		doc := resultDoc(t, repOut)
+		edit(doc)
+		raw, err := json.Marshal(doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		file := filepath.Join(dir, name+".json")
+		if err := os.WriteFile(file, raw, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, stderr, err := runKernelCLI(t, append([]string{"replay", "--from-result", file}, traceArgs...)...)
+		return stderr, err
+	}
+	if stderr, err := reproduce("intact", func(map[string]any) {}); err != nil {
+		t.Fatalf("the unaltered Result did not reproduce: %v\n%s", err, lastLines(stderr, 5))
+	}
+	for name, edit := range map[string]func(map[string]any){
+		"dropped": func(d map[string]any) { delete(d, "frame") },
+		"no-stop": func(d map[string]any) { delete(d["frame"].(map[string]any), "stop") },
+	} {
+		stderr, err := reproduce(name, edit)
+		if err == nil {
+			t.Errorf("%s: a replay of a Result with its frame altered ran", name)
+			continue
+		}
+		if !strings.Contains(stderr, "frame") {
+			t.Errorf("%s: refused, but not for the frame:\n%s", name, lastLines(stderr, 3))
 		}
 	}
 }
