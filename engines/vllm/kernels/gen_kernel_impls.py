@@ -1,5 +1,5 @@
 # Original to blis-vllm.
-"""Write kernel_impls.json: every attention kernel implementation vLLM can emit, with its code hash.
+"""Write kernel_impls.json: every attention and MoE kernel implementation vLLM can emit, with its code hash.
 
 The table is the one design section 6.2 asks each engine release to publish: for each lowered
 primitive it covers, every kernel the release can run, by library, the library's own kernel name,
@@ -40,6 +40,16 @@ module no longer imports; a kernel never called in its backend's module; a gate 
 not exist; a checkout at another commit or version than the pin. So the table is complete for the
 backends it lists by construction, and a backend it does not list is a gap with an issue.
 
+THE MoE ROWS (kernels/<tag>/moe.json, optional). The moe.grouped_gemm rows come from the same
+checks over vLLM's MoE oracle instead of the attention registry: every member of the oracle's
+backend Enum (Fp8MoeBackend for block FP8) has a status, a backend the oracle ranks on its own is
+not marked as off CUDA without the gate that keeps it there (cuda_gated), every name a listed
+backend's experts module imports from a kernel module (the libraries' modules and moe.json's
+engine_modules) is a kernel or classified as not one, and each kernel is called there. moe.json's
+"seen" lists the builds the kernels were measured on: a library version, or for vLLM's own kernels
+an earlier vLLM release by its tag, each hashed from its own source and, for a vLLM release, with
+that release's own dispatch files and compiler.
+
 ONE CLASSIFICATION PER RELEASE. kernels/<tag>/attention.json classifies the vLLM release <tag>
 (v0.32.0, v0.33.0); --upstream names the tag, and the generator refuses a classification of another
 tag or a source tree at another commit. A new release gets its own classification: copy the
@@ -63,6 +73,7 @@ import sys
 
 HASH_VERSION = "blis kernel hash v1"
 PRIMITIVES = {"attention.prefill", "attention.decode"}
+MOE_PRIMITIVE = "moe.grouped_gemm"
 STATUSES = {"listed", "gap", "not_cuda", "not_lowered"}
 
 
@@ -408,6 +419,15 @@ def library_pins(vllm, cls):
         for v in lib.get("seen", []):
             out[f"{name}@{v['version']}"] = (v["version"], v.get("seen_in", ""), lib["repo"],
                                              lib.get("tag_format", "v{version}").format(version=v["version"]))
+    # The builds the MoE kernels were measured on (kernels/<tag>/moe.json "seen"): a library
+    # version, or for the engine's own kernels an earlier vLLM release, fetched at its tag.
+    for name, vs in sorted((cls.get("moe") or {}).get("seen", {}).items()):
+        lib = cls["libraries"].get(name)
+        if lib is None:
+            raise Refused(f"moe.json lists builds seen for {name}, which the classification has no library for")
+        for v in vs:
+            ref = v.get("tag") or lib.get("tag_format", "v{version}").format(version=v["version"])
+            out[f"{name}@{v['version']}"] = (v["version"], v.get("seen_in", ""), lib["repo"], ref)
     return out
 
 
@@ -603,6 +623,12 @@ def generate(vllm, cls, sources):
     for b in sorted(set(kernels_by_backend) - set(backends)):
         raise Refused(f"the classification lists kernels for {b}, which has no status")
 
+    moe_seen = {}
+    if cls.get("moe"):
+        mrows, mgaps, mused, moe_seen = generate_moe(vllm, cls, libs, sources, commit, engine_lib)
+        rows += mrows
+        gaps += mgaps
+        used |= mused
     key = lambda r: (r["primitive"], r["selection"], r["library"], r["library_version"], r["variant"], r["target_arch"])
     rows.sort(key=key)
     for a, b in zip(rows, rows[1:]):
@@ -619,7 +645,7 @@ def generate(vllm, cls, sources):
     return {
         "kind": "KernelImplTable",
         "engine": {"kind": "vllm", "version": up["tag"].removeprefix("v"), "commit": commit},
-        "primitives": sorted(PRIMITIVES),
+        "primitives": sorted(PRIMITIVES | ({MOE_PRIMITIVE} if cls.get("moe") else set())),
         "archs": sorted(archs),
         "gaps": [{"primitive": g["primitive"], "selection": g["selection"],
                   **({"library": g["library"], "variant": g["variant"]} if g.get("variant") else {}),
@@ -627,10 +653,137 @@ def generate(vllm, cls, sources):
         "libraries": sorted([{"name": n, "version": libs[n]["version"], "pinned": True, "pin": libs[n]["pin"],
                               "origin": libs[n]["origin"]} for n in used] +
                             [{"name": n, "version": v["version"], "pinned": False, "pin": v["pin"], "origin": v["origin"]}
-                             for n in used for v in libs[n]["seen"]],
+                             for n in used for v in libs[n]["seen"]] +
+                            [{"name": n, "version": v["version"], "pinned": False, "pin": v["pin"], "origin": v["origin"]}
+                             for n, vs in sorted(moe_seen.items()) for v in vs],
                             key=lambda l: (l["name"], l["version"])),
         "implementations": rows,
     }
+
+
+def enum_members(vllm, rel, name):
+    """Every member of the Enum class name in rel, with its line."""
+    for node in ast.walk(ast.parse(read(vllm, rel))):
+        if isinstance(node, ast.ClassDef) and node.name == name:
+            return {st.targets[0].id: st.lineno for st in node.body
+                    if isinstance(st, ast.Assign) and len(st.targets) == 1 and isinstance(st.targets[0], ast.Name)}
+    raise Refused(f"{rel}: no class {name}")
+
+
+def named_in(vllm, rel, func, enum):
+    """The members of enum that function func of rel names, each with the first line it does."""
+    for node in ast.walk(ast.parse(read(vllm, rel))):
+        if isinstance(node, ast.FunctionDef) and node.name == func:
+            out = {}
+            for n in ast.walk(node):
+                if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name) and n.value.id == enum:
+                    out.setdefault(n.attr, n.lineno)
+            return out
+    raise Refused(f"{rel}: no function {func}")
+
+
+def generate_moe(vllm, cls, libs, sources, commit, engine_lib):
+    """The moe.grouped_gemm rows: every kernel the release runs routed experts with for the
+    weight formats kernels/<tag>/moe.json classifies, by MoE backend (an Enum of vLLM's MoE
+    oracle). The same checks as the attention table: every member has a status, a backend the
+    oracle ranks on its own is not marked as not running on CUDA, every name a listed backend's
+    experts module imports from a kernel module is classified, and each kernel is called there.
+    The builds the kernels were measured on ("seen", a library version or an earlier vLLM
+    release) are hashed from their own source."""
+    m = cls["moe"]
+    rows, gaps, used, seen_out = [], [], set(), {}
+    for fmt in m["formats"]:
+        sel = fmt["selector"]
+        members = enum_members(vllm, sel["file"], sel["enum"])
+        ranked = named_in(vllm, sel["file"], sel["priorities"], sel["enum"])
+        backends = fmt["backends"]
+        for b in sorted(set(members) - set(backends)):
+            raise Refused(f"{sel['enum']}.{b} has no status in moe.json")
+        for b in sorted(set(backends) - set(members)):
+            raise Refused(f"moe.json gives a status to {b}, which {sel['enum']} does not have")
+        kernels_by_backend = {}
+        for k in fmt["kernels"]:
+            kernels_by_backend.setdefault(k["backend"], []).append(k)
+        for b, st in sorted(backends.items()):
+            selection = sel["selection"].format(backend=b)
+            if st["status"] not in STATUSES:
+                raise Refused(f"{b}: status {st['status']!r} is not one of {sorted(STATUSES)}")
+            if st["status"] in ("not_cuda", "not_lowered") and not st.get("reason"):
+                raise Refused(f"{b}: a {st['status']} backend states its reason")
+            if st["status"] == "gap":
+                if not re.fullmatch(r"[\w.-]+/[\w.-]+#[1-9]\d*", st.get("issue", "")):
+                    raise Refused(f"{b}: a gap names its issue as <owner>/<repo>#<n>")
+                gaps.append({"primitive": MOE_PRIMITIVE, "selection": selection, "issue": st["issue"]})
+            if b in ranked and st["status"] == "not_cuda" and not st.get("cuda_gated"):
+                raise Refused(f"{b} is not_cuda, but {sel['file']}:{ranked[b]} ranks it; state the gate that keeps it off CUDA (cuda_gated)")
+            if st["status"] != "listed":
+                if b in kernels_by_backend:
+                    raise Refused(f"{b} is {st['status']} but moe.json lists kernels for it")
+                continue
+            rel = st["experts"]
+            tree = ast.parse(read(vllm, rel))
+            prefixes = sorted({p for lib in libs.values() for p in lib["modules"]} | set(m.get("engine_modules", [])))
+            imported = imports_from(tree, prefixes)
+            classified = {k["call"] for k in kernels_by_backend.get(b, [])} | set(st.get("not_kernels", {}))
+            for name in sorted(set(imported) - classified):
+                raise Refused(f"{rel}:{imported[name][1]} imports {name} from {imported[name][0]} ({b}); moe.json neither "
+                              f"lists it as a kernel nor as not one")
+            for name in sorted(classified - set(imported)):
+                raise Refused(f"{b}: moe.json names {name}, which {rel} does not import from a kernel module")
+            for k in kernels_by_backend.get(b, []):
+                line = first_call(tree, k["call"])
+                if line is None:
+                    raise Refused(f"{rel}: {b} never calls {k['call']}")
+                src_mod = imported[k["call"]][0]
+                mlib = library_of(src_mod, libs) or (engine_lib if any(
+                    src_mod == p or src_mod.startswith(p + ".") for p in m.get("engine_modules", [])) else None)
+                if mlib != k["library"]:
+                    raise Refused(f"{b}: kernel {k['variant']} is classified under {k['library']}, but {rel} imports "
+                                  f"{k['call']} from {src_mod}, a module of {mlib}")
+                lib = libs[k["library"]]
+                used.add(k["library"])
+                selected = {cite(rel, line, commit), cite(sel["file"], members[b], commit)}
+                if b in ranked:
+                    selected.add(cite(sel["file"], ranked[b], commit))
+                selected = sorted(selected)
+                tk = toolkit(vllm, commit, k.get("compiler", ""))
+                builds = [(lib["version"], lib["root"])]
+                for v in m.get("seen", {}).get(k["library"], []):
+                    if not v.get("seen_in"):
+                        raise Refused(f"moe.json: {k['library']} {v['version']} seen in runs cites the run record (seen_in)")
+                    sroot = sources.get(f"{k['library']}@{v['version']}")
+                    if sroot is None:
+                        raise Refused(f"{k['library']} {v['version']}: no checkout given (--source {k['library']}@{v['version']}=<dir>)")
+                    libdef = cls["libraries"][k["library"]]
+                    if libdef.get("engine"):
+                        head = at_pin(sroot, f"vLLM {v['tag']}", tag=v["tag"])
+                        if head != v["version"]:
+                            raise Refused(f"{sroot} is at {head}; moe.json names vLLM {v['tag']} as {v['version']}")
+                    else:
+                        if "version_file" in libdef and read(sroot, libdef["version_file"]).strip() != v["version"]:
+                            raise Refused(f"{sroot} is not {k['library']} {v['version']}")
+                        head = at_pin(sroot, f"{k['library']} {v['version']}",
+                                      tag=v.get("tag") or libdef.get("tag_format", "v{version}").format(version=v["version"]))
+                    rec = {"version": v["version"], "pin": v["seen_in"], "origin": f"{libdef['repo']} {head}"}
+                    if rec not in seen_out.setdefault(k["library"], []):
+                        seen_out[k["library"]].append(rec)
+                    builds.append((v["version"], sroot))
+                for version, root in builds:
+                    # A seen vLLM release's own dispatch files are its own: hash its tree, not the pin's.
+                    eroot = root if cls["libraries"][k["library"]].get("engine") else vllm
+                    basis, inputs = hash_inputs(eroot, cls, k, k["library"], root, engine_lib)
+                    # The compiler of a seen vLLM release is that release's own pin.
+                    btk = toolkit(eroot, git(eroot, "rev-parse", "HEAD"), k.get("compiler", "")) if eroot is not vllm else tk
+                    for arch in k["archs"]:
+                        if arch not in cls["archs"]:
+                            raise Refused(f"{b}: kernel {k['variant']} names arch {arch}, which the table does not cover")
+                        rows.append({
+                            "primitive": MOE_PRIMITIVE, "selection": selection, "library": k["library"],
+                            "library_version": version, "variant": k["variant"], "target_arch": arch,
+                            "hash_basis": basis, "hash_inputs": inputs,
+                            "code_hash": code_hash(basis, k["library"], k["variant"], arch, inputs),
+                            "toolkit": btk, "selected_by": selected})
+    return rows, gaps, used, seen_out
 
 
 def enum_line(vllm, member):
@@ -658,6 +811,13 @@ def load_classification(tag, path=None):
         cls = json.load(f)
     if cls["upstream"].get("tag") != tag:
         raise Refused(f"{path} classifies vLLM {cls['upstream'].get('tag')}, not {tag}")
+    mpath = os.path.join(os.path.dirname(path), "moe.json")
+    if os.path.exists(mpath):
+        with open(mpath, encoding="utf-8") as f:
+            moe = json.load(f)
+        if moe["upstream"] != cls["upstream"]:
+            raise Refused(f"{mpath} classifies {moe['upstream']}, and {path} {cls['upstream']}")
+        cls["moe"] = moe
     return cls
 
 

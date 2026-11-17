@@ -7,7 +7,8 @@
   },
   "primitives": [
     "attention.decode",
-    "attention.prefill"
+    "attention.prefill",
+    "moe.grouped_gemm"
   ],
   "archs": [
     "sm_100a",
@@ -346,6 +347,56 @@
       "primitive": "attention.prefill",
       "selection": "attention backend ULTRAQUANT",
       "issue": "inference-sim/blis-vllm#151"
+    },
+    {
+      "primitive": "moe.grouped_gemm",
+      "selection": "fp8 moe backend BATCHED_DEEPGEMM",
+      "issue": "inference-sim/blis-substrate#150"
+    },
+    {
+      "primitive": "moe.grouped_gemm",
+      "selection": "fp8 moe backend BATCHED_TRITON",
+      "issue": "inference-sim/blis-substrate#150"
+    },
+    {
+      "primitive": "moe.grouped_gemm",
+      "selection": "fp8 moe backend BATCHED_VLLM_CUTLASS",
+      "issue": "inference-sim/blis-substrate#150"
+    },
+    {
+      "primitive": "moe.grouped_gemm",
+      "selection": "fp8 moe backend DEEPGEMM",
+      "issue": "inference-sim/blis-substrate#150"
+    },
+    {
+      "primitive": "moe.grouped_gemm",
+      "selection": "fp8 moe backend EMULATION",
+      "issue": "inference-sim/blis-substrate#150"
+    },
+    {
+      "primitive": "moe.grouped_gemm",
+      "selection": "fp8 moe backend FLASHINFER_TRTLLM",
+      "issue": "inference-sim/blis-substrate#150"
+    },
+    {
+      "primitive": "moe.grouped_gemm",
+      "selection": "fp8 moe backend HPC",
+      "issue": "inference-sim/blis-substrate#150"
+    },
+    {
+      "primitive": "moe.grouped_gemm",
+      "selection": "fp8 moe backend HUMMING",
+      "issue": "inference-sim/blis-substrate#150"
+    },
+    {
+      "primitive": "moe.grouped_gemm",
+      "selection": "fp8 moe backend MARLIN",
+      "issue": "inference-sim/blis-substrate#150"
+    },
+    {
+      "primitive": "moe.grouped_gemm",
+      "selection": "fp8 moe backend VLLM_CUTLASS",
+      "issue": "inference-sim/blis-substrate#150"
     }
   ],
   "libraries": [
@@ -355,6 +406,13 @@
       "pinned": false,
       "pin": "the trtllm-gen prefill sweep's B300, GB200 and GB300 runs (ai-dynamo/aisimulate 2f0f4cd8606d580567b253d02f3d699fe36db865, systems/data/{b300_sxm,gb200,gb300}/attention/vllm/0.25.0/collection_meta.yaml): images vllm/vllm-openai@sha256:e1c1ff1af9a15921bfa11d1d95047258c1797392cdbfa296e7639da446b23f97 and @sha256:2f726db9babd627fb59addaed2038577fc767108680901271b069d91759d1286, whose build configs set FLASHINFER_VERSION=0.6.13",
       "origin": "https://github.com/flashinfer-ai/flashinfer 57ba7eeb7ea3003a2d6ad5d9a057c4f952709bac"
+    },
+    {
+      "name": "flashinfer",
+      "version": "0.6.18.post1",
+      "pinned": false,
+      "pin": "AISimulate's vLLM 0.30.0 MoE sweep on h100 and h200 (ai-dynamo/aisim 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18, systems/data/{h100_sxm,h200_sxm}/moe/vllm/0.30.0/collection_meta.yaml): image vllm/vllm-openai:v0.30.0@sha256:8a69ffad015f138d7170c4ddc429e230a3bc1c1719f67e14324749df200a4b90, whose vLLM pins flashinfer-python==0.6.18.post1 (requirements/cuda.txt:17@ced6857a)",
+      "origin": "https://github.com/flashinfer-ai/flashinfer 8bc3b578027791336c6ae87db5c9d76f82cef8bc"
     },
     {
       "name": "flashinfer",
@@ -376,6 +434,13 @@
       "pinned": true,
       "pin": "the engine release itself",
       "origin": "https://github.com/vllm-project/vllm 4ba787ec9959e566d3b587a796dff07673324da5"
+    },
+    {
+      "name": "vllm-csrc",
+      "version": "ced6857afa0ea7b2e3f0846a62e1394e90f15607",
+      "pinned": false,
+      "pin": "AISimulate's vLLM 0.30.0 MoE sweep on h100 and h200 (ai-dynamo/aisim 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18, systems/data/{h100_sxm,h200_sxm}/moe/vllm/0.30.0/collection_meta.yaml): image vllm/vllm-openai:v0.30.0@sha256:8a69ffad015f138d7170c4ddc429e230a3bc1c1719f67e14324749df200a4b90",
+      "origin": "https://github.com/vllm-project/vllm ced6857afa0ea7b2e3f0846a62e1394e90f15607"
     },
     {
       "name": "vllm-flash-attn",
@@ -4689,6 +4754,96 @@
       "selected_by": [
         "vllm/platforms/cuda.py:165@4ba787ec",
         "vllm/v1/attention/backends/triton_attn.py:697@4ba787ec"
+      ]
+    },
+    {
+      "primitive": "moe.grouped_gemm",
+      "selection": "fp8 moe backend FLASHINFER_CUTLASS",
+      "library": "flashinfer",
+      "library_version": "0.6.18.post1",
+      "variant": "cutlass_fused_moe",
+      "target_arch": "sm_90a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "3rdparty/cutlass commit b46b16d003484063bca4ed365e44095c4c6ed633",
+        "csrc/fused_moe/cutlass_backend tree 704c456bbdd10df8033ada02c3ddd9b7f1d289c8",
+        "csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels tree f9f55307814f15a9c755c74420d403afb839f690",
+        "flashinfer/fused_moe/core.py blob 6f9c42d106186011bb6df503df9edf4ba966d128",
+        "flashinfer/jit/fused_moe.py blob f20130b23727656ad940e458d130645f3c1d4d67",
+        "vllm:vllm/model_executor/layers/fused_moe/experts/flashinfer_cutlass_moe.py blob 718e018c47e60ba6a347a077ec28c341b65b0a43"
+      ],
+      "code_hash": "fed44bcc9d3a0553988ad4ac07dd3aca253f305356ef2f862a8ddce9aa2bcd6c",
+      "toolkit": "cuda 13.0.3",
+      "selected_by": [
+        "vllm/model_executor/layers/fused_moe/experts/flashinfer_cutlass_moe.py:365@4ba787ec",
+        "vllm/model_executor/layers/fused_moe/oracle/fp8.py:53@4ba787ec",
+        "vllm/model_executor/layers/fused_moe/oracle/fp8.py:91@4ba787ec"
+      ]
+    },
+    {
+      "primitive": "moe.grouped_gemm",
+      "selection": "fp8 moe backend FLASHINFER_CUTLASS",
+      "library": "flashinfer",
+      "library_version": "0.7.2.post1",
+      "variant": "cutlass_fused_moe",
+      "target_arch": "sm_90a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "3rdparty/cutlass commit b46b16d003484063bca4ed365e44095c4c6ed633",
+        "csrc/fused_moe/cutlass_backend tree 25de1aa1570b3cbe27e3cfcf613c3897f54cbefb",
+        "csrc/nv_internal/tensorrt_llm/kernels/cutlass_kernels tree 7ab10882767c25a726c7ec3737d0fb116fb44d3f",
+        "flashinfer/fused_moe/core.py blob 70e0fa9a3e25c61d9232cbc831efedb15b0be1e4",
+        "flashinfer/jit/fused_moe.py blob 7e160651b24c2bddd0a603d7da5e5f2c636a54b8",
+        "vllm:vllm/model_executor/layers/fused_moe/experts/flashinfer_cutlass_moe.py blob 718e018c47e60ba6a347a077ec28c341b65b0a43"
+      ],
+      "code_hash": "efc342d135206fd89a3b9f9d044e288bf65023c66d33963da10b30aa39ad45f3",
+      "toolkit": "cuda 13.0.3",
+      "selected_by": [
+        "vllm/model_executor/layers/fused_moe/experts/flashinfer_cutlass_moe.py:365@4ba787ec",
+        "vllm/model_executor/layers/fused_moe/oracle/fp8.py:53@4ba787ec",
+        "vllm/model_executor/layers/fused_moe/oracle/fp8.py:91@4ba787ec"
+      ]
+    },
+    {
+      "primitive": "moe.grouped_gemm",
+      "selection": "fp8 moe backend TRITON",
+      "library": "vllm-csrc",
+      "library_version": "4ba787ec9959e566d3b587a796dff07673324da5",
+      "variant": "fused_moe_kernel",
+      "target_arch": "sm_90a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "vllm/model_executor/layers/fused_moe/configs tree 0bdf3e5f86a51aadc2132f7f5993b08b76b316cd",
+        "vllm/model_executor/layers/fused_moe/experts/triton_moe.py blob 82f1af51778751244e53501282d128459847ab05",
+        "vllm/model_executor/layers/fused_moe/fused_moe.py blob 0fa47b89697e4749b25974812361d214bb35f63b"
+      ],
+      "code_hash": "32e168924521fcd75160d838f549837023e5f00fb60ce8ff0642cf6b5e5ad244",
+      "toolkit": "triton (torch==2.14.0)",
+      "selected_by": [
+        "vllm/model_executor/layers/fused_moe/experts/triton_moe.py:437@4ba787ec",
+        "vllm/model_executor/layers/fused_moe/oracle/fp8.py:58@4ba787ec",
+        "vllm/model_executor/layers/fused_moe/oracle/fp8.py:94@4ba787ec"
+      ]
+    },
+    {
+      "primitive": "moe.grouped_gemm",
+      "selection": "fp8 moe backend TRITON",
+      "library": "vllm-csrc",
+      "library_version": "ced6857afa0ea7b2e3f0846a62e1394e90f15607",
+      "variant": "fused_moe_kernel",
+      "target_arch": "sm_90a",
+      "hash_basis": "source",
+      "hash_inputs": [
+        "vllm/model_executor/layers/fused_moe/configs tree 572ff39d41bd8db5eb9682cda00a0f519a0fd683",
+        "vllm/model_executor/layers/fused_moe/experts/triton_moe.py blob 9f982644b5691f8bccde0aa5229c404d394882f9",
+        "vllm/model_executor/layers/fused_moe/fused_moe.py blob dc619b2b12d27d2955f38a656e7c524fd6042887"
+      ],
+      "code_hash": "017848ff74e19726827750a0da4c155925b699fdda56ac79066383f1ad9d2945",
+      "toolkit": "triton (torch==2.13.0)",
+      "selected_by": [
+        "vllm/model_executor/layers/fused_moe/experts/triton_moe.py:437@4ba787ec",
+        "vllm/model_executor/layers/fused_moe/oracle/fp8.py:58@4ba787ec",
+        "vllm/model_executor/layers/fused_moe/oracle/fp8.py:94@4ba787ec"
       ]
     }
   ]
