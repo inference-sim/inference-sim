@@ -202,7 +202,7 @@ func run(t *testing.T, sc scenario) trace {
 		MaxNumScheduledTokens: c.MaxNumScheduledTokens, LongPrefillAdaptive: c.LongPrefillAdaptive,
 		Spec: spec, MaxLoRAs: c.MaxLoRAs, KVEvents: c.KVEvents,
 		KVGroups: kvGroups(t, c.KVGroups, c.KVLayers, kv.GroupOptions{DisableHybrid: c.DisableHybridKVCacheManager,
-			TrailingDrafter: c.Speculative != nil && trailingDrafter(c.Speculative.Method, c.KVLayers)}),
+			TagDraftGroups: c.Speculative != nil && trailingDrafter(c.Speculative.Method)}),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -532,6 +532,8 @@ type kvLayerRun struct {
 	ElemBytes      int    `json:"elem_bytes"`
 	Alignment      int    `json:"alignment"`
 	BoundedReplay  bool   `json:"bounded_replay"`
+	// Draft marks the drafter's layers (layer_specs sets KVCacheSpec.is_draft).
+	Draft bool `json:"draft"`
 	// A "mamba" run is MambaSpec (layer_specs): StateBytes is its state's bytes, BlockSize its
 	// mamba_block_size, and the fields below the rest of the spec.
 	PageSizePadded             int    `json:"page_size_padded"`
@@ -552,22 +554,11 @@ func hasMambaRun(runs []kvLayerRun) bool {
 	return false
 }
 
-// trailingDrafter is _uses_trailing_mtp_layers (vllm/v1/core/kv_cache_utils.py:1997-2013@5df63a72)
-// for a scenario: an MTP drafter, or an EAGLE-family drafter of DeepSeek V4/V4.1 (a layer of its
-// MLA, sliding-window MLA or circular-buffer specs), as core/vllm's factory decides it.
-func trailingDrafter(method string, runs []kvLayerRun) bool {
-	switch method {
-	case "mtp":
-		return true
-	case "eagle", "eagle3", "dflash", "dspark":
-		for _, r := range runs {
-			switch r.Spec {
-			case "mla", "sliding_window_mla", "circular_buffer":
-				return true
-			}
-		}
-	}
-	return false
+// trailingDrafter is use_eagle_block_drop for a scenario's method, as core/vllm's factory
+// decides whether get_kv_cache_groups tags the groups holding draft layers
+// (vllm/v1/core/kv_cache_planning.py:1650-1656@4ba787ec).
+func trailingDrafter(method string) bool {
+	return method == "eagle" || method == "eagle3" || method == "mtp"
 }
 
 // kvGroups is the scenario's KV cache groups for the scheduler: its "kv_layers" through
@@ -839,7 +830,7 @@ func TestKVStartupCheckAgainstVLLM(t *testing.T) {
 			if c.Speculative != nil {
 				lookahead = ResolveSpec(SpecOptions{Method: c.Speculative.Method,
 					NumTokens: c.Speculative.NumTokens, NextnPredictLayers: draftNextnLayers(t, c.Speculative.Draft)}).PrefillLookahead
-				o.TrailingDrafter = c.Speculative.Method == "mtp"
+				o.TagDraftGroups = trailingDrafter(c.Speculative.Method)
 			}
 			limits := kv.RequestLimits{MaxModelLen: c.MaxModelLen,
 				MaxInFlightTokens: max(want.KVPool.Startup.MaxConcurrentBatches, 1) * c.MaxNumBatchedTokens,
@@ -887,7 +878,7 @@ func scenarioLayers(t *testing.T, runs []kvLayerRun) []kv.Layer {
 		for i := 0; i < r.Count; i++ {
 			layers = append(layers, kv.Layer{Spec: spec, Window: r.SlidingWindow, KVHeads: heads, HeadSize: r.HeadSize,
 				BlockSize: r.BlockSize, TokensPerState: r.TokensPerState, StateBytes: r.StateBytes,
-				ElemBytes: elem, Alignment: r.Alignment, BoundedReplay: r.BoundedReplay,
+				ElemBytes: elem, Alignment: r.Alignment, BoundedReplay: r.BoundedReplay, Draft: r.Draft,
 				PageSizePadded: r.PageSizePadded, MambaCacheMode: r.MambaCacheMode,
 				NumSpeculativeBlocks: r.NumSpeculativeBlocks, NumPrefillCheckpointBlocks: r.NumPrefillCheckpointBlocks,
 				PrefillCheckpointAlignment: r.PrefillCheckpointAlignment})
