@@ -14,8 +14,8 @@
     },
     "registry": {
       "source": "path",
-      "hash": "492a69677e79e88ddcc4445f83f195bfcc9da58d2480e5aff19ba11bc5265e74",
-      "combined_hash": "492a69677e79e88ddcc4445f83f195bfcc9da58d2480e5aff19ba11bc5265e74"
+      "hash": "93e0bb2ce83b462a31129198b1a0eb04d8bdc29c50437ef7b10c29c255416e2b",
+      "combined_hash": "93e0bb2ce83b462a31129198b1a0eb04d8bdc29c50437ef7b10c29c255416e2b"
     },
     "released_data": false,
     "build": "unreleased"
@@ -375,8 +375,6 @@
           "hardware": [
             "a100-80",
             "a100-sxm",
-            "b200",
-            "b300",
             "gb200-nvl72",
             "gb300",
             "h100",
@@ -888,9 +886,9 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.15.1-0.20261117213555-37cb6fb0737f",
-    "router": "v1.0.0-blis.5.0.20261117211829-b2c3d50478b8",
-    "engine_module": "v0.33.0-blis.1.0.20261117213603-6d9bebfee2ff"
+    "substrate": "v0.15.1-0.20261117220848-04ffd2b8d9a9",
+    "router": "v1.0.0-blis.5.0.20261117220222-6638ea3c77d9",
+    "engine_module": "v0.33.0-blis.1.0.20261117221457-264524be9a53"
   },
   "window": {
     "start_us": 0,
