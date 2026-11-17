@@ -131,18 +131,20 @@ func (k *Kernel) applyAttentionLane(c *resolve.Coefficients, used map[model.Atte
 	}
 	for _, dtype := range dtypes {
 		floor, scale := trtllmGenPrefillFloor+dtype, trtllmGenPrefillScale+dtype
+		// The rule the resolver uses to decide which operations read the part-wide pair: the
+		// whole family carried, each member shown valid for the implementation that runs. An
+		// entry of the pair keyed to another build is refused beside one keyed to the build that
+		// runs; the exact one prices, and the refusal of its sibling says nothing against it.
+		isExact := func(n string) bool { r, _ := c.Admitted(n); return r.Match == coefficient.KernelExact }
+		if c.Has(floor) && c.Has(scale) && coefficient.ClassUsable(laneRunningPrimitive, "kv_"+dtype, c.Has, isExact) {
+			exact = append(exact, dtype)
+			continue
+		}
 		if r := laneRefusedByImplementation(c, floor, scale); r != "" {
 			why = append(why, r)
 			continue
 		}
 		if !c.Has(floor) || !c.Has(scale) {
-			continue
-		}
-		// The rule the resolver uses to decide which operations read the part-wide pair: the
-		// whole family carried, each member shown valid for the implementation that runs.
-		isExact := func(n string) bool { r, _ := c.Admitted(n); return r.Match == coefficient.KernelExact }
-		if coefficient.ClassUsable(laneRunningPrimitive, "kv_"+dtype, c.Has, isExact) {
-			exact = append(exact, dtype)
 			continue
 		}
 		for _, name := range []string{floor, scale} {

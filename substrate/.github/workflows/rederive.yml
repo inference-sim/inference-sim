@@ -72,6 +72,10 @@ jobs:
       # The InferenceX commit validator/testdata/inferencex vendors the golden acceptance
       # curves from (VENDORED.md), and INFERENCEX_SHA in emit_acceptance_profiles.py.
       INFERENCEX_SHA: 9fa76586ed1ef66caadc6b95a9b1448acde94c6b
+      # The engine release's kernel-implementation table the trtllm-gen lane is keyed by
+      # (emit_attention_trtllm_gen.py). TEMPORARY: the pushed head of inference-sim/blis-vllm#154,
+      # until a blis-vllm release publishes the table.
+      BLIS_VLLM_SHA: e7855679267cac391618dc77a640e3c18b7a4e65
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -100,6 +104,17 @@ jobs:
           sparse-checkout: |
             python/aisimulate/src/aisimulate_core/systems/data/h100_sxm/comm
             python/aisimulate/src/aisimulate_core/systems/data/h200_sxm/comm
+
+      - name: Check out blis-vllm's kernel_impls.json (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: inference-sim/blis-vllm
+          ref: ${{ env.BLIS_VLLM_SHA }}
+          path: blis-vllm
+          fetch-depth: 1
+          sparse-checkout: |
+            kernel_impls.json
+          sparse-checkout-cone-mode: false
 
       - name: Check out InferenceX (pinned to the vendored commit)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -132,6 +147,7 @@ jobs:
         env:
           AISIMULATE_DATA: ${{ github.workspace }}/aisimulate/python/aisimulate/src/aisimulate_core/systems/data
           BLIS_CATALOG: ${{ github.workspace }}/catalog
+          BLIS_KERNEL_IMPLS: ${{ github.workspace }}/blis-vllm/kernel_impls.json
           AISIMULATE_ALLREDUCE_DATA: ${{ github.workspace }}/aisimulate-allreduce/python/aisimulate/src/aisimulate_core/systems/data
           INFERENCEX_GOLDEN: ${{ github.workspace }}/inferencex/inferencex-e2e/infx/golden_al_distribution
           COLLECTIVEX_DATA: ${{ runner.temp }}/collectivex

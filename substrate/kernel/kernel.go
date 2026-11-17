@@ -28,7 +28,6 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
@@ -54,9 +53,18 @@ type Kernel struct {
 	plan   *price.Plan
 	pool   deployment.Pool
 	chip   hardware.Chip
-	// engine is the pool's engine settings, the caller's decoding of its engine block
-	// (Inputs.Engine), a deep copy the kernel owns.
-	engine enginesettings.Settings
+	// low is the pool's plan as the engine's lowering resolved it (Inputs.Lowered): the engine
+	// settings the kernel prices from, in neutral words. Nothing else of the engine is read.
+	low plan.PoolPlan
+	// cascadeAttention is the engine's resolution of cascade attention, which the kernel reports
+	// and does not price (plan.Lowered.Reported).
+	cascadeAttention bool
+	// defaultCacheRecord is the record the engine stores an unstated cache in
+	// (plan.Lowered.DefaultCacheRecord), which the cache_record assumption is judged against.
+	defaultCacheRecord string
+	// drafterName is the catalog model grafted on as the drafter (Inputs.Draft), "" for the
+	// target graph's own speculator.
+	drafterName string
 
 	// servedDType is the weight format the linear layers actually run in, after the
 	// scenario's --quantization is applied over the checkpoint's own format.
@@ -259,12 +267,6 @@ type Kernel struct {
 	// KV geometry, derived once from the graph and the cache dtype.
 	kvBytesPerToken float64
 	blockSize       int
-	// blockSizeFinal is whether blockSize is the size the engine will run: stated by the
-	// deployment, or the block a DSA or DeepSeek-V4-family model always picks, on a model
-	// with no recurrent layer
-	// (whose block the platform may re-align even over a stated size). A check against the
-	// block size runs only when it is final.
-	blockSizeFinal bool
 	// dcpShardsAllKVLayers is whether every layer whose cache is inferred is a kind DCP
 	// shards (layers that state their caches are sized in caches.go), which
 	// is what lets a whole-model capacity figure carry the shard at all.
@@ -319,7 +321,10 @@ type Kernel struct {
 
 	// decodeContext is how the decode-context-parallel combine runs: its backend and the
 	// stripe each rank holds. Meaningful only when the layout's DCP exceeds one.
-	decodeContext resolve.DecodeContext
+	decodeContext plan.DecodeContextPlan
+	// overrides are the settings the engine's lowering resolved to other than stated
+	// (plan.Lowered.Overrides), reported in Resolved as received.
+	overrides []plan.Override
 
 	// Fixed occupancy, computed once.
 	fixed kernel.MemoryBreakdown
@@ -480,10 +485,7 @@ func (k *Kernel) sequenceBoundedBytes(caches float64) int64 {
 		if l.RecurrentStateBytes == 0 {
 			continue
 		}
-		spec := 0
-		if k.engine.Speculative != nil {
-			spec = k.engine.Speculative.NumSpecTokens
-		}
+		spec := k.numSpecTokens()
 		per := price.RecurrentStateBytes(k.recurrentRankBytes(l), mode,
 			k.maxModelLen, k.blockSize, spec, 0)
 		// The state is replicated across context-parallel ranks and sharded by tensor
@@ -575,10 +577,7 @@ func (k *Kernel) SequenceVariableBytes(tokens int) int64 {
 	// every position's recurrent state even while holding only its shard of the KV cache.
 	mode := k.recurrentCacheMode
 	if mode.ProportionalToContext() {
-		spec := 0
-		if k.engine.Speculative != nil {
-			spec = k.engine.Speculative.NumSpecTokens
-		}
+		spec := k.numSpecTokens()
 		for _, l := range k.rankMemory().layers {
 			if l.RecurrentStateBytes == 0 {
 				continue
@@ -824,14 +823,9 @@ func (k *Kernel) routedAll2All() bool {
 		// (vllm/model_executor/layers/fused_moe/config.py:1024-1027).
 		return false
 	}
-	// The backend that runs: the release's default for an unstated one, and the
-	// replacement for a renamed one -- pplx and naive both run as allgather_reducescatter
-	// in v0.31.0 (vllm/config/parallel.py; rules.Pack.EffectiveAll2AllBackend).
-	switch k.rules.EffectiveAll2AllBackend(k.engine.All2AllBackend) {
-	case "", "naive", "allgather_reducescatter":
-		return false
-	}
-	return true
+	// The dispatch kernel the engine runs, if any: none is the gather-and-scatter dispatch,
+	// which moves dense per-token bytes (Plan.MoE.Dispatch).
+	return k.low.MoE.Dispatch != (plan.KernelImpl{})
 }
 
 // chunk is one prefill request's shape within a step: `sched` new tokens resuming on a
@@ -1306,9 +1300,8 @@ func (k *Kernel) dcpDecodeTokens(l *price.PlannedLayer, kind model.AttentionKind
 	if !bounded && !shards {
 		return -1
 	}
-	// The stripe as resolved: stated, pinned to the block size under NIXL, or the
-	// engine's default of 1 (resolve.ResolveDecodeContext).
-	interleave := k.decodeContext.Interleave
+	// The stripe as the engine resolved it (Plan.DecodeContext.Interleave).
+	interleave := int(k.decodeContext.Interleave)
 	var total float64
 	for _, ctx := range contexts {
 		if ctx <= 0 {
@@ -1411,7 +1404,7 @@ func (k *Kernel) dcpDecodeCollectives(l *price.PlannedLayer,
 			r*attnHeads*queryWidth*activationBytes)
 	}
 
-	if k.decodeContext.CommBackend == resolve.DCPAllToAll {
+	if k.decodeContext.Combine == plan.CombineAllToAll {
 		const lsePack = 2 // an fp32 LSE in two 16-bit lanes
 		charge(collKey{Op: model.OpAll2All, Group: price.GroupDCP},
 			r*attnHeads*(outWidth+lsePack)*activationBytes)
@@ -1958,16 +1951,12 @@ func (k *Kernel) Resolved() kernel.Resolution { return k.resolution }
 // worth more than one a reader has to keep.
 func (k *Kernel) Deployment() deployment.Pool { return clonePool(k.pool) }
 
-// Engine returns the engine settings the kernel prices with: the caller's decoding of the
-// pool's engine block (Inputs.Engine), as a deep copy for the same reason Deployment is one.
 // Graph is the model graph this kernel priced: the scenario's graph as served on the chip
-// (its architecture overlay resolved), with a drafter named by speculative.draft_model grafted
+// (its architecture overlay resolved), with the drafter the plan names (Inputs.Draft) grafted
 // on as its speculator. An engine model sizing its KV cache groups reads the same layers, so it
 // does not rebuild a second answer to which layers run. A copy the caller may keep; its slices
 // are shared, so treat it as read-only.
 func (k *Kernel) Graph() model.Graph { return *k.graph }
-
-func (k *Kernel) Engine() enginesettings.Settings { return k.engine.Clone() }
 
 // DecodeContextParallelWidth returns how many ranks shard the decode KV cache.
 //

@@ -806,7 +806,7 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 				// can matter.
 				if k.layout.DCP > 1 && dcpShardsKV(a.Kind) {
 					tokens = dcpLocalTokens([]int{int(tokens + 0.5)}, k.layout.DCP,
-						k.decodeContext.Interleave)
+						int(k.decodeContext.Interleave))
 				}
 				charge(tokens * perToken)
 			}

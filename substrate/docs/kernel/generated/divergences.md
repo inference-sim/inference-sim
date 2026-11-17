@@ -11,7 +11,7 @@ Coverage limit
 
 ### Window admission under pipeline parallelism
 
-*Coverage limit, in `(*Kernel).maxInFlightTokens` in [`caches.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/caches.go).*
+*Coverage limit, in `(*Kernel).maxInFlightTokens` in [`kernel/caches.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/caches.go).*
 
 A window cache's admission reservation is sized for one more batch in flight than the pipeline-parallel width, as vLLM's default model runner holds under asynchronous scheduling. Its older runner holds one fewer with pipeline parallelism on, and the kernel cannot see which runs, so such a deployment's SequenceAdmissionBytes is up to one token budget a window group high.
 
@@ -20,22 +20,9 @@ A window cache's admission reservation is sized for one more batch in flight tha
     pipeline parallelism, one fewer than this; the kernel cannot see which runner the engine
     picks, and at pp 1 both hold two.
 
-### Draft passes not padded under data-parallel lockstep
-
-*Coverage limit, in `(*Kernel).priceDraft` in [`draft.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/draft.go).*
-
-A data-parallel rank's pad tokens run the target model's forward but not the drafter's passes. vLLM pads the draft passes across the group too, to a count set by every rank's draft batch, which one rank's batch does not state, so a padded rank's draft work is under-stated by its pad.
-
-??? quote "The note in the source"
-    COVERAGE LIMIT: the draft passes run at the requests' own draft rows, without the
-    data-parallel lockstep pad (Batch.PadTokens). vLLM's drafters coordinate their own
-    padded count across the data-parallel group (coordinate\_batch\_across\_dp, e.g.
-    vllm/v1/spec\_decode/dflash.py:230-261 at v0.31.0), which depends on every rank's draft
-    batch, and a batch states only this rank's pad for the target's forward.
-
 ### An autoregressive drafter's own graphs
 
-*Coverage limit, in `(*Kernel).draftHasOwnGraphs` in [`draft.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/draft.go).*
+*Coverage limit, in `(*Kernel).draftHasOwnGraphs` in [`kernel/draft.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/draft.go).*
 
 A parallel-block drafter such as DSpark is charged under its own CUDA graphs and capture ceiling. An autoregressive drafter (MTP, EAGLE) is still charged under the target's graph mode and ceiling; whether it captures graphs of its own is not modelled.
 
@@ -45,16 +32,17 @@ A parallel-block drafter such as DSpark is charged under its own CUDA graphs and
 
 ### KV cache layouts not sized
 
-*Coverage limit, in `KVBytesPerToken` in [`internal/price/memory.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/internal/price/memory.go).*
+*Coverage limit, in `KVBytesPerToken` in [`kernel/internal/price/memory.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/internal/price/memory.go).*
 
-The kernel does not size every KV cache layout vLLM has. It refuses the per-token-head quantized formats rather than size them. Padded pages and a cache that compresses several tokens into one stored state are sized only where the model graph states its caches; a graph that does not is sized as one full-length cache per layer.
+The kernel does not size every KV cache layout vLLM has. The engine's lowering refuses the per-token-head quantized formats rather than hand the kernel a width for them. Padded pages and a cache that compresses several tokens into one stored state are sized only where the model graph states its caches; a graph that does not is sized as one full-length cache per layer.
 
 ??? quote "The note in the source"
     The layouts that state their own size are applied by the kernel where a deployment names
-    them, or where its backend repacks the cache (the packed ds\_mla caches; see Kernel.lift and
-    sparseMLABackend in the root package). COVERAGE LIMIT: per-token-head quantization adds two
-    fp32 scales a token (vllm/model\_executor/layers/attention/mla\_attention.py:1580-1593), so
-    the kernel refuses those cache dtypes rather than size them here; padded pages are sized by
+    them, or where its backend repacks the cache (the packed ds\_mla caches, whose cell the plan
+    states; see Kernel.lift in the root package). COVERAGE LIMIT: per-token-head quantization adds
+    two fp32 scales a token (vllm/model\_executor/layers/attention/mla\_attention.py:1580-1593), so
+    the engine's lowering refuses those cache dtypes rather than hand the kernel a width it does
+    not describe (for vLLM, blis-vllm's compat/lowering); padded pages are sized by
     their own specs (vllm/v1/kv\_cache\_interface.py:527-536), and a compressed cache (a
     compress\_ratio layer) holds fewer states than tokens. Neither is modelled HERE: a graph
     that states its caches (blis-schemas model.Cache) is sized from them in the root package
@@ -62,7 +50,7 @@ The kernel does not size every KV cache layout vLLM has. It refuses the per-toke
 
 ### Expert dispatch priced at 16 bits
 
-*Coverage limit, in `ActivationBytes` in [`internal/price/plan.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/internal/price/plan.go).*
+*Coverage limit, in `ActivationBytes` in [`kernel/internal/price/plan.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/internal/price/plan.go).*
 
 The tokens sent to the experts are priced at 16 bits per element. On a quantized deployment some expert kernels receive them at 8 or 4 bits, and the kernel cannot tell which kernel serves a layer, so an fp8 deployment whose experts take quantized input has its dispatch charged about twice its bytes.
 
@@ -83,7 +71,7 @@ The tokens sent to the experts are priced at 16 bits per element. On a quantized
 
 ### Every expert priced as gated
 
-*Coverage limit, in `planNodes` in [`internal/price/plan.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/internal/price/plan.go).*
+*Coverage limit, in `planNodes` in [`kernel/internal/price/plan.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/internal/price/plan.go).*
 
 Each expert is priced as three matrices, a gated MLP. An expert with no gate, such as Nemotron-H's relu2 experts, holds two, and blis-schemas has no field saying which an expert is, so such a model's expert weights and arithmetic are over-stated by half.
 
@@ -95,7 +83,7 @@ Each expert is priced as three matrices, a gated MLP. An expert with no gate, su
 
 ### A young window ring's trailing page
 
-*Known over-charge, in `(*Kernel).SequenceBoundedBytesAt` in [`kernel.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/kernel.go).*
+*Known over-charge, in `(*Kernel).SequenceBoundedBytesAt` in [`kernel/kernel.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/kernel.go).*
 
 Before a request has computed a window's worth of tokens, its window ring is charged one page more than vLLM holds, as the window is sized as if it might start part-way through a page. At most one page a ring, and none once the request is past its window.
 
@@ -105,7 +93,7 @@ Before a request has computed a window's worth of tokens, its window ring is cha
 
 ### Mamba-2 groups widened past the tensor-parallel width
 
-*Coverage limit, in `(*Kernel).recurrentRankBytes` in [`kernel.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/kernel.go).*
+*Coverage limit, in `(*Kernel).recurrentRankBytes` in [`kernel/kernel.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/kernel.go).*
 
 A Mamba-2 layer's recurrent state is divided by the tensor-parallel width. Where that width exceeds the layer's group count, vLLM widens the groups so every head's shard has one, which holds a little more state than this charges.
 
@@ -116,7 +104,7 @@ A Mamba-2 layer's recurrent state is divided by the tensor-parallel width. Where
 
 ### Hybrid attention under decode-context parallelism
 
-*Coverage limit, in `(*Kernel).SequenceVariableBytes` in [`kernel.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/kernel.go).*
+*Coverage limit, in `(*Kernel).SequenceVariableBytes` in [`kernel/kernel.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/kernel.go).*
 
 For a model that mixes sliding-window and full-attention layers, decode-context parallelism does not shard the KV cache the kernel reports, which overstates it. vLLM refuses such a deployment under its default KV cache manager, so this matters only with that manager turned off.
 
@@ -137,7 +125,7 @@ For a model that mixes sliding-window and full-attention layers, decode-context 
 
 ### Expert tokens under prefill-context parallelism
 
-*Coverage limit, in `(*Kernel).moeDPFunnel` in [`kernel.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/kernel.go).*
+*Coverage limit, in `(*Kernel).moeDPFunnel` in [`kernel/kernel.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/kernel.go).*
 
 The tokens reaching a rank's experts are multiplied by the data-parallel width, because vLLM gathers every data-parallel rank's tokens to them, but not by the prefill-context width. How the experts gather a mix of split prefill tokens and replicated decode tokens is not modeled.
 
@@ -148,7 +136,7 @@ The tokens reaching a rank's experts are multiplied by the data-parallel width, 
 
 ### P/D handoffs between pools of different widths
 
-*Coverage limit, in `(*Kernel).pdTransferBytes` in [`kernel.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/kernel.go).*
+*Coverage limit, in `(*Kernel).pdTransferBytes` in [`kernel/kernel.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/kernel.go).*
 
 Each decode rank's pull is priced as one rank's transfer at one rank's link rate. That is exact when the prefill and decode pools have the same tensor-parallel width. Where the decode pool is wider, several decode ranks pull from one prefill rank, whose link then carries several payloads, and a placement that names a node rather than a rank cannot express that.
 
@@ -161,7 +149,7 @@ Each decode rank's pull is priced as one rank's transfer at one rank's link rate
 
 ### The engine workspace is all outside the memory budget
 
-*Known divergence, in `(*Kernel).PreSnapshotBytes` in [`kernel.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/kernel.go).*
+*Known divergence, in `(*Kernel).PreSnapshotBytes` in [`kernel/kernel.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/kernel.go).*
 
 The registry's engine workspace is one lumped allowance for the CUDA context, cuBLAS and allocator slack, and the kernel reports all of it outside the gpu_memory_utilization budget, with the communicator. vLLM charges the part that arises after its memory snapshot, library workspaces made at the first forward, against the KV cache, which the kernel leaves out.
 
@@ -173,7 +161,7 @@ The registry's engine workspace is one lumped allowance for the CUDA context, cu
 
 ### Expert weights under prefill-context parallelism
 
-*Coverage limit, in `(*Kernel).lift` in [`new.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/new.go).*
+*Coverage limit, in `(*Kernel).lift` in [`kernel/new.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/new.go).*
 
 With expert parallelism off and prefill-context parallelism on, each rank is charged for a 1/(dp × tp) slice of each expert, where vLLM gives it 1/(dp × pcp × tp). Dividing by pcp as well would leave out a reduction the kernel does not price, and make the experts cheaper than the engine runs them.
 
@@ -188,7 +176,7 @@ With expert parallelism off and prefill-context parallelism on, each rank is cha
 
 ### DeepSeek-V4.1 load-time memory under expert parallelism
 
-*Coverage limit, in `(*Kernel).computeFixedBytes` in [`new.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/new.go).*
+*Coverage limit, in `(*Kernel).computeFixedBytes` in [`kernel/new.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/new.go).*
 
 vLLM holds about 9 GiB a rank more than the kernel charges for DeepSeek-V4.1-Flash with expert parallelism, the same at TP 8 and TP 4, so it is not sharded weights, which agree. Its source is not yet localized, and capacity under expert parallelism is overstated by that much a rank until it is.
 
@@ -207,7 +195,7 @@ vLLM holds about 9 GiB a rank more than the kernel charges for DeepSeek-V4.1-Fla
 
 ### DeepSeek-V4.1's prefill workspace beside the activation scratch
 
-*Known over-charge, in `(*Kernel).engineBufferBytes` in [`new.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/new.go).*
+*Known over-charge, in `(*Kernel).engineBufferBytes` in [`kernel/new.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/new.go).*
 
 DeepSeek-V4.1's prefill gather workspace and its indexer's logits stand-in are charged in full beside the registry's activation scratch. vLLM holds the workspace in one shared scratch buffer that its MoE kernels also grow, and the stand-in is a transient at the profile peak, so the engine reserves the larger of each pair where the kernel charges their sum.
 
@@ -218,27 +206,24 @@ DeepSeek-V4.1's prefill gather workspace and its indexer's logits stand-in are c
     MoE intermediates; and the indexer's logits stand-in is a transient that this adds to the
     activation multiple's own transients rather than to their peak.
 
-### Choosing the sparse attention backend
+### Pipeline parallelism over stated caches
 
-*Coverage limit, in `sparseMLABackend` in [`sparse_mla.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/sparse_mla.go).*
+*Coverage limit, in `(*Kernel).liftPipeline` in [`kernel/pipeline.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/pipeline.go).*
 
-For DeepSeek sparse attention, which backend vLLM chooses depends on facts the model graph does not state: whether the checkpoint quantizes its KV cache, the installed FlashInfer version, and one head dimension. The kernel assumes the common case for each, and the catalog has no chip of the SM120 generation, whose backend differs.
+A model whose graph states its KV caches -- DeepSeek-V4 and V4.1, MiniMax-M3 -- is refused under pipeline parallelism, which vLLM does serve: the stated caches are sized and pooled over the whole stack, and the kernel does not yet split them by stage.
 
 ??? quote "The note in the source"
-    COVERAGE LIMITS: an "auto" cache is taken as 16-bit, which it is unless the checkpoint
-    states a KV quantization -- a ModelOpt checkpoint's kv\_cache\_quant\_algo turns "auto" into
-    fp8\_e4m3 or nvfp4 before any backend is chosen (MODELOPT\_TO\_VLLM\_KV\_CACHE\_DTYPE\_MAP and
-    resolve\_kv\_cache\_dtype\_string, vllm/utils/torch\_utils.py:67-70, :448-521, called from
-    vllm/engine/arg\_utils.py:2199-2202), and the graph does not record it; FlashInfer's SM90
-    backend needs FlashInfer 0.6.18 or later (flashinfer\_mla\_sparse\_sm90.py:194-199), which
-    this assumes is installed; FlashInfer (SM100) checks the model's qk\_nope\_head\_dim, which
-    the DSA family satisfies (128 and 192, within its \[128, 192\]) and
-    the graph does not state; and the SM120 parts' backend, which repacks "auto" too, has no
-    part in the catalog.
+    A cache a graph states -- the target's or its drafter's -- is sized per layer kind over
+    the whole stack (cacheTerms) and grouped into one pool over all of them, not per stage,
+    so a pipeline split of it would charge each rank every stage's cache. Refused rather
+    than overstated. COVERAGE LIMIT, not an engine refusal: vLLM serves DeepSeek-V4 and
+    V4.1, whose graphs state their caches, under PP (their make\_empty\_intermediate\_tensors,
+    vllm/models/deepseek\_v4/nvidia/model.py:1406-1424, deepseek\_v41/nvidia/model.py:
+    885-910@v0.32.0).
 
 ### Routed experts under tensor parallelism
 
-*Known over-charge, in `(*Kernel).priceLayers` in [`step.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/step.go).*
+*Known over-charge, in `(*Kernel).priceLayers` in [`kernel/step.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/step.go).*
 
 Under tensor parallelism each rank is charged the arithmetic of whole routed experts, where vLLM gives it a tp-th slice of each. Correcting this makes the measured accuracy worse, because the over-charge offsets a cost not yet identified, so it is kept until that cost is found.
 
@@ -253,4 +238,4 @@ Under tensor parallelism each rank is charged the arithmetic of whole routed exp
     that are pure TP. The BYTES do divide by it (routedWeightBytes, below), so the
     two terms disagree about the same experts.
 
-*17 notes: 1 known divergence, 3 known over-charges, 13 coverage limits.*
+*16 notes: 1 known divergence, 3 known over-charges, 12 coverage limits.*
