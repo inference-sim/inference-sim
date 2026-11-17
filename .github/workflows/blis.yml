@@ -6,9 +6,8 @@ name: blis
 # AGENTS.md section and pull-request template, the selected-version lint), and the nightly
 # checks (cited issues stay open, X28).
 #
-# The commit is blis-substrate's m3/integration head (inference-sim/blis-substrate#177), which carries the
-# generated invariant sections the check compares (SIM-16, SIM-17, SIM-18); it moves to a substrate release
-# tag's commit when that release is cut.
+# The commit is blis-substrate v0.15.0's (the merge commit of inference-sim/blis-substrate#177), which carries the
+# generated invariant sections the check compares (SIM-16, SIM-17, SIM-18).
 
 on:
   pull_request:
@@ -30,22 +29,22 @@ concurrency:
 jobs:
   pr:
     if: github.event_name == 'pull_request'
-    uses: inference-sim/blis-substrate/.github/workflows/shared-pr-checks.yml@c48aa81d029a5d2b696e5eb3dfe5f3986132b818
+    uses: inference-sim/blis-substrate/.github/workflows/shared-pr-checks.yml@883a2709c250e4724ce11d1d6ba2cc12662b01e7
     permissions:
       contents: read
       pull-requests: write
       checks: write
     with:
       repo: inference-sim
-      substrate-ref: c48aa81d029a5d2b696e5eb3dfe5f3986132b818
+      substrate-ref: 883a2709c250e4724ce11d1d6ba2cc12662b01e7
 
   nightly:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    uses: inference-sim/blis-substrate/.github/workflows/shared-nightly.yml@c48aa81d029a5d2b696e5eb3dfe5f3986132b818
+    uses: inference-sim/blis-substrate/.github/workflows/shared-nightly.yml@883a2709c250e4724ce11d1d6ba2cc12662b01e7
     permissions:
       contents: read
       issues: read
     with:
-      substrate-ref: c48aa81d029a5d2b696e5eb3dfe5f3986132b818
+      substrate-ref: 883a2709c250e4724ce11d1d6ba2cc12662b01e7
     secrets:
       INTERNAL_NAME_PATTERNS: ${{ secrets.INTERNAL_NAME_PATTERNS }}
