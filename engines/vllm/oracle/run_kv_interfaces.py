@@ -117,4 +117,8 @@ def main(argv) -> int:
 
 
 if __name__ == "__main__":
+    sys.path.insert(0, HERE)
+    from fixed_hash_seed import fix_hash_seed  # noqa: E402
+
+    fix_hash_seed(os.path.abspath(__file__), sys.argv[1:])
     sys.exit(main(sys.argv[1:]))
