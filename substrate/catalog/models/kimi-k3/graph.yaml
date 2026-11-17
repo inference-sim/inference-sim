@@ -172,7 +172,13 @@ layer_kinds:
     role: input_norm
   - op: GEMM
     role: qkv_a_proj
-    n: 14400
+    n: 2112
+    k: 7168
+    tp: replicated
+    weight_dtype: bf16
+  - op: GEMM
+    role: mla_g_proj
+    n: 12288
     k: 7168
     weight_dtype: bf16
   - op: Elementwise
@@ -293,6 +299,8 @@ layer_kinds:
     - 17
   - - 17
     - 18
+  - - 18
+    - 19
 - id: kda_dense
   nodes:
   - *id001

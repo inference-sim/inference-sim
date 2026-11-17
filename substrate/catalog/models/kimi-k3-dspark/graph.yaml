@@ -20,6 +20,7 @@ layer_kinds:
     role: qkv_a_proj
     n: 2112
     k: 7168
+    tp: replicated
   - op: Elementwise
     role: qkv_a_layernorm
     bytes_per_token: 8192
