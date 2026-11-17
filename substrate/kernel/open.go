@@ -12,7 +12,6 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
-	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 	"github.com/inference-sim/blis-substrate/load"
 )
 
@@ -207,7 +206,7 @@ func OpenInputs(scenario string, r Repos, poolIndex int) (Inputs, error) {
 		return Inputs{}, fmt.Errorf("%s: no data: Repos.Data is unset. Open the catalog and "+
 			"registry with load.Embedded or load.Open", scenario)
 	}
-	sc, dep, err := LoadBundle(filepath.Join(r.Scenarios, scenario))
+	sc, dep, err := contracts.LoadBundle(filepath.Join(r.Scenarios, scenario))
 	if err != nil {
 		return Inputs{}, err
 	}
@@ -296,13 +295,4 @@ func OpenInputs(scenario string, r Repos, poolIndex int) (Inputs, error) {
 		}
 	}
 	return in, nil
-}
-
-// LoadBundle reads a scenario and the deployment applied to it from one file, as two YAML
-// documents separated by `---`.
-//
-// Deprecated: use blis-schemas' LoadBundle, which this calls. It moved there because it is
-// format loading, not pricing (inference-sim#2060).
-func LoadBundle(path string) (*scenario.Scenario, *deployment.Deployment, error) {
-	return contracts.LoadBundle(path)
 }

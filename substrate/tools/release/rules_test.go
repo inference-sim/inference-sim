@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -25,6 +26,24 @@ func TestTheDeprecationScanDoesNotMatchItsOwnDefinition(t *testing.T) {
 	} {
 		if got := FindDeprecations("a.go", []byte(line)); len(got) != 1 {
 			t.Errorf("%s: a real marker %q gave %d findings, want 1", name, line, len(got))
+		}
+	}
+}
+
+// The kernel's exported API carries no deprecated feature, so a MINOR release at v0 is not
+// refused for it (LIF-7, blis-substrate#84).
+func TestTheKernelPackageCarriesNoDeprecation(t *testing.T) {
+	files, err := filepath.Glob("../../kernel/*.go")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no kernel sources found: %v", err)
+	}
+	for _, f := range files {
+		src, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := FindDeprecations(f, src); len(got) != 0 {
+			t.Errorf("%s: %v", f, got)
 		}
 	}
 }
