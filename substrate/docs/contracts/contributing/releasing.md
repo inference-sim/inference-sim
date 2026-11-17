@@ -110,15 +110,12 @@ does not.
    3. Create the tag the dry run named: `git tag -a <tag> -m <notes> <commit>`, where the notes are
       the dry run's, ending with a final line `Tagged by the manual procedure: <person>` (LIF-3).
       Signing the tag is encouraged and not required (X20).
-   4. Append `<tag> <commit>` to `.github/tags.lock` in the same pull request as the next
-      repository's pin, or in a follow-up pull request for the top repository (LIF-1).
-   5. Push the branch, then the tag: `git push origin <tag>`. Wait for the next layer's checks
+   4. Push the branch, then the tag: `git push origin <tag>`. Wait for the next layer's checks
       against the new tag to pass.
 4. Nobody moves or deletes a tag. A mistake gets a new tag (LIF-1).
 
 A nightly check confirms that every tag made by a person is annotated and listed in its release
-notes (LIF-3), and that every tag still resolves to the commit `.github/tags.lock` records
-(LIF-1).
+notes (LIF-3).
 
 ## What a person does, and when
 

@@ -539,16 +539,6 @@ func TestCommitsAgainstALocalRepository(t *testing.T) {
 	}
 }
 
-func TestTags(t *testing.T) {
-	a, b := strings.Repeat("a", 40), strings.Repeat("b", 40)
-	lock := "# recorded tags\nv0.11.0 " + a + "\n"
-	none(t, CheckTags(lock, map[string]string{"v0.11.0": a}))
-	has(t, CheckTags(lock, map[string]string{"v0.11.0": b}), "tags are never moved")
-	has(t, CheckTags(lock, map[string]string{}), "no longer exists")
-	has(t, CheckTags(lock, map[string]string{"v0.11.0": a, "v0.11.1": b}), "is not in tags.lock")
-	has(t, CheckTags("v0.11.0 abc\n", nil), "is not \"<tag> <40-hex commit>\"")
-}
-
 // X16: the status page shows a gate not run for seven days, or never run, as failing; and a
 // gate's declared paths must equal its workflow's triggers.
 func TestStatusPage(t *testing.T) {
