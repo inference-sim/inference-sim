@@ -336,32 +336,21 @@ func TestCapabilityMatrix_Policies(t *testing.T) {
 		}
 	})
 
-	t.Run("saturation detectors/each labels an overload and not a light load", func(t *testing.T) {
+	t.Run("saturation detector/labels an overload and not a light load", func(t *testing.T) {
 		t.Parallel()
-		label := func(rate string) map[string]string {
-			// Seed 13: composite also false-alarms on this light load at seed 11 (one of eight
-			// seeds checked, 1, 2, 3, 5, 11, 13, 17, 23), which DEV-10's stated false-alarm rate
-			// is to account for; this law checks the label, not that rate.
-			o := capRun(t, runArgs(colocated(1), "--seed", "13", "--num-requests", "600", "--rate", rate, "--prompt-tokens", "2000",
-				"--output-tokens", "200", "--detectors", "all")...)
-			o.conserves(t, 600)
-			labels := map[string]string{}
-			if r := parseResult(t, o.stdout); r.Reports.Saturation != nil {
-				for d, l := range r.Reports.Saturation["final"].(map[string]any) {
-					labels[d] = l.(string)
-				}
+		label := func(rate, n string) string {
+			o := capRun(t, runArgs(colocated(1), "--seed", "13", "--num-requests", n, "--rate", rate, "--prompt-tokens", "2000",
+				"--output-tokens", "200", "--detectors", "settle")...)
+			r := parseResult(t, o.stdout)
+			if r.Reports.Saturation == nil {
+				t.Fatalf("rate %s: no saturation block", rate)
 			}
-			return labels
+			return r.Reports.Saturation["final"].(map[string]any)["settle"].(string)
 		}
-		light, heavy := label("1"), label("60")
-		// backlog-drift is not held to this law, because it fails it: through this overload's
-		// whole arrival phase its in-flight count grows from 59 to 569 while its running slope
-		// stays 0 and every event reads STABLE, and a light 120-request run (1-5 in flight)
-		// reads OVERLOADED in two of three seeds -- a detector defect, recorded as a known gap.
-		for _, d := range []string{"composite", "threshold", "peak-rate"} {
-			if light[d] != "STABLE" || heavy[d] == "STABLE" || heavy[d] == "" {
-				t.Errorf("%s labels a light load %q and a 12x overload %q", d, light[d], heavy[d])
-			}
+		// The overload's backlog grows through its whole arrival phase (inference-sim#1927: the
+		// roster's backlog-drift read it STABLE); the light load's does not.
+		if light, heavy := label("1", "600"), label("60", "1200"); light != "SETTLED" || heavy != "OVERLOADED" {
+			t.Errorf("a light load reads %s and a 12x overload %s; want SETTLED and OVERLOADED", light, heavy)
 		}
 	})
 

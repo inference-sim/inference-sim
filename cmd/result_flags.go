@@ -95,7 +95,6 @@ var resultFlagsExempt = map[string]map[string]string{
 // file's sha256, never its path (a fact of the host).
 var resultFlagFiles = map[string]bool{
 	"workload-spec": true, "lora-config": true, "defaults-filepath": true,
-	"saturation-config": true,
 }
 
 // resultFlagOverrides are the overrides the command line made, recorded when the command starts,
@@ -185,7 +184,7 @@ var optionsExcluded = map[string]string{
 // from the command line and checks it against the digest.
 var optionFileFlags = map[string]bool{
 	"workload-spec": true, "lora-config": true, "defaults-filepath": true,
-	"saturation-config": true, "trace-header": true, "trace-data": true, "corpus": true,
+	"trace-header": true, "trace-data": true, "corpus": true,
 }
 
 // inputOptions is one option per flag the command line set that is not excluded, sorted by name

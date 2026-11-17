@@ -701,7 +701,7 @@ func init() {
 	replayCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "Path to TraceV2 data CSV file (required)")
 	replayCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "Export replay results as TraceV2 files (<prefix>.yaml + <prefix>.csv); header mode is \"replayed\". Under --session-mode fixed-accumulate the export records reconstructed ABSOLUTE per-round inputs (no session_context_growth header) — re-replay it with --session-mode fixed, not fixed-accumulate.")
 
-	// Saturation trace flags (#1516): --detectors + --saturation-config + --saturation-report.
+	// Saturation trace flags (#1516): --detectors + --saturation-report.
 	registerDetectorFlags(replayCmd)
 	registerAgentXReplayFlags(replayCmd)
 	// The Result document's encoding, file and summary view (#1871).

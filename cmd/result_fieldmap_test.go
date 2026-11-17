@@ -107,7 +107,7 @@ func TestResultFieldMap_EveryNamedHomeExistsInAnEmittedResult(t *testing.T) {
 		t.Fatalf("non-vacuity: found %d homes in the table", len(homes))
 	}
 	out, stderr, err := runKernelCLI(t, append([]string{"run", "--slo-ttft", "default=500ms",
-		"--detectors", "composite"}, pdBurst...)...)
+		"--detectors", "settle"}, pdBurst...)...)
 	if err != nil {
 		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
 	}

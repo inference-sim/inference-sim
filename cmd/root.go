@@ -163,7 +163,7 @@ var (
 	// output file paths
 	serverSeriesIntervalS float64 // --server-series-interval-s: bin width of the file-only server_series block; 0 = off
 	// saturationReport (--saturation-report): per-event verdict trace file (#1516).
-	// Declared in saturation.go alongside --detectors / --saturation-config.
+	// Declared in saturation.go alongside --detectors.
 
 	// trace export
 	traceOutput string // File prefix for TraceV2 export (<prefix>.yaml + <prefix>.csv)
@@ -1069,7 +1069,7 @@ var runCmd = &cobra.Command{
 			})
 		}
 
-		// Resolve the saturation tracer from --detectors / --saturation-config /
+		// Resolve the saturation tracer from --detectors /
 		// --saturation-report BEFORE the run so an unknown name, bad config, or
 		// unwritable report path fails fast (#1516 single detector, #1519 bank).
 		satTracer, satErr := resolveSaturation()
@@ -1467,7 +1467,7 @@ func init() {
 	// Run-specific export
 	runCmd.Flags().StringVar(&traceOutput, "trace-output", "", "Export workload as TraceV2 files (<prefix>.yaml + <prefix>.csv)")
 
-	// Saturation trace flags (#1516): --detectors + --saturation-config + --saturation-report.
+	// Saturation trace flags (#1516): --detectors + --saturation-report.
 	registerDetectorFlags(runCmd)
 	// The Result document's encoding, file and summary view (#1871).
 	registerResultFlags(runCmd)
