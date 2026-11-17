@@ -115,7 +115,7 @@ func TestAMeasuredSparseGQARateReplacesTheStandIn(t *testing.T) {
 		c := *s
 		c.Coefficients = slices.Clone(s.Coefficients)
 		for _, e := range s.Coefficients {
-			if e.Name == "no_such_entry" {
+			if e.Name == "attention_decode_rate_swa" {
 				e.Name, e.Value = "attention_decode_rate_sparse_gqa", e.Value*50
 				c.Coefficients = append(c.Coefficients, e)
 				found = true
