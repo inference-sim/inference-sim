@@ -139,6 +139,16 @@ func TestAStepThatNoEngineCanFormIsRefused(t *testing.T) {
 		{"too many drafter passes", func(s *StepShape) { s.Drafts.Passes = []DraftPass{{}, {}} }, "2 drafter passes for 1 ranks"},
 		{"a negative drafter width", func(s *StepShape) { s.Drafts.Passes = []DraftPass{{Padded: -3}} }, "drafter launches -3 tokens"},
 		{"an unknown drafter launch", func(s *StepShape) { s.Drafts.Passes = []DraftPass{{Padded: 4, Launch: "jit"}} }, `drafter launch "jit"`},
+		{"a skipped step that drafts", func(s *StepShape) { s.Drafts.Skip, s.Drafts.Drafted = true, 3 },
+			"3 drafted tokens in a step that skips its drafts"},
+		{"a skipped step with a proposing pass", func(s *StepShape) {
+			s.Drafts.Skip = true
+			s.Drafts.Passes = []DraftPass{{Padded: 8, Launch: LaunchGraph}}
+		}, "rank 0: drafter pass"},
+		{"a skipped step with a pass launch alone", func(s *StepShape) {
+			s.Drafts.Skip = true
+			s.Drafts.Passes = []DraftPass{{Launch: LaunchGraph}}
+		}, "launches no proposing pass"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -657,7 +657,7 @@ func (q Requests) validate(p *validate.Problems) {
 	for name, v := range map[string]int{
 		"generated": q.Generated, "completed": q.Completed, "timed_out": q.TimedOut,
 		"in_flight_at_horizon": q.InFlightAtHorizon, "queued_at_horizon": q.QueuedAtHorizon,
-		"not_started": q.NotStarted, "length_capped": q.LengthCapped,
+		"not_started": q.NotStarted, "length_capped": q.LengthCapped, "planned_not_issued": q.PlannedNotIssued,
 	} {
 		if v < 0 {
 			p.Field("requests."+name, "must not be negative")
@@ -688,8 +688,9 @@ func (r *Result) validateRows(p *validate.Problems) {
 	if len(rows) == 0 {
 		return
 	}
-	if len(rows) != r.Requests.Generated {
-		p.Field("request_rows", "has %d rows but requests.generated is %d: one row per generated request", len(rows), r.Requests.Generated)
+	if len(rows) != r.Requests.Generated+r.Requests.PlannedNotIssued {
+		p.Field("request_rows", "has %d rows but requests.generated is %d and requests.planned_not_issued %d: one row per generated request, and one per planned round never issued",
+			len(rows), r.Requests.Generated, r.Requests.PlannedNotIssued)
 	}
 	counts := map[Fate]int{}
 	dropped := map[DropReason]int{}
@@ -745,10 +746,25 @@ func (r *Result) validateRows(p *validate.Problems) {
 			p.Field(at+".tpot_us", "required for a completed request with at least two output tokens")
 		}
 		for f, v := range map[string]*int64{"ttft_us": row.TTFTUs, "e2e_us": row.E2EUs,
-			"scheduling_delay_us": row.SchedulingDelayUs, "gateway_queue_delay_us": row.GatewayQueueDelayUs} {
+			"scheduling_delay_us": row.SchedulingDelayUs, "gateway_queue_delay_us": row.GatewayQueueDelayUs,
+			"queue_entry_us": row.QueueEntryUs, "first_token_us": row.FirstTokenUs} {
 			if v != nil && *v < 0 {
 				p.Field(at+"."+f, "must not be negative")
 			}
+		}
+		// The event times lie on the one simulated clock, in the order a request lives them (#1973).
+		if row.QueueEntryUs != nil && *row.QueueEntryUs < row.ArrivalUs {
+			p.Field(at+".queue_entry_us", "is %d, before the request's arrival_us %d", *row.QueueEntryUs, row.ArrivalUs)
+		}
+		if row.FirstTokenUs != nil && row.OutputTokens < 1 {
+			p.Field(at+".first_token_us", "a request that emitted no token has no first-token time")
+		}
+		if row.FirstTokenUs != nil && row.QueueEntryUs != nil && *row.FirstTokenUs < *row.QueueEntryUs {
+			p.Field(at+".first_token_us", "is %d, before queue_entry_us %d", *row.FirstTokenUs, *row.QueueEntryUs)
+		}
+		if row.FirstTokenUs != nil && row.TTFTUs != nil && *row.FirstTokenUs-row.ArrivalUs != *row.TTFTUs {
+			p.Field(at+".first_token_us", "is %d: ttft_us %d must equal first_token_us - arrival_us (%d)",
+				*row.FirstTokenUs, *row.TTFTUs, *row.FirstTokenUs-row.ArrivalUs)
 		}
 		if row.TPOTUs != nil && (math.IsNaN(*row.TPOTUs) || math.IsInf(*row.TPOTUs, 0) || *row.TPOTUs < 0) {
 			p.Field(at+".tpot_us", "must be a finite number, not negative")
@@ -789,7 +805,7 @@ func (r *Result) validateRows(p *validate.Problems) {
 	}
 	q := r.Requests
 	for f, want := range map[Fate]int{FateCompleted: q.Completed, FateTimedOut: q.TimedOut,
-		FateInFlightAtHorizon: q.InFlightAtHorizon, FateQueuedAtHorizon: q.QueuedAtHorizon, FateNotStarted: q.NotStarted} {
+		FateInFlightAtHorizon: q.InFlightAtHorizon, FateQueuedAtHorizon: q.QueuedAtHorizon, FateNotStarted: q.NotStarted + q.PlannedNotIssued} {
 		if counts[f] != want {
 			p.Field("request_rows", "%d rows have fate %s but requests counts %d", counts[f], f, want)
 		}

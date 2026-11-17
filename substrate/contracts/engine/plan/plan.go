@@ -729,6 +729,13 @@ type DraftShape struct {
 	// the lockstep group, apart from the target's, so a rank's draft pass can be wider than its own
 	// draft rows, and the engine states how wide (the target's padding is PaddedShape).
 	Passes []DraftPass
+	// Skip says the drafter proposes no drafts in this step, because no request on any rank of
+	// the data-parallel group can use them; the engine decides it (vLLM v0.33.0's skip_drafts,
+	// vllm/v1/worker/gpu/model_runner.py:2117-2135@4ba787ec) and the cost model prices the step
+	// without the passes that propose (kernel.Batch.SkipDrafts). The drafter still keeps its KV in
+	// step with the target, which the cost model prices from the requests. A skipped step states
+	// no drafted tokens and no drafter pass (Validate). False is a step that proposes as before.
+	Skip bool
 }
 
 // DraftPass is one rank's drafter launch. The zero value is no drafter pass.
