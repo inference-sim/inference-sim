@@ -177,10 +177,16 @@ func (p *exprParser) unary() string {
 		return "pull_request"
 	case "always()":
 		return "true"
+	case "cancelled()":
+		return "false"
 	}
 	p.t.Fatalf("unknown name %q in %q", name, p.src)
 	return ""
 }
+
+// A condition that names a status function drops the implicit success() of a job, so the job
+// runs although a job it needs was skipped.
+var statusFunc = regexp.MustCompile(`\b(always|cancelled|failure|success)\(\)`)
 
 // jobsThatRun returns the jobs a run for the event starts: a job runs when its condition holds
 // and each job it needs ran, unless its condition names always().
@@ -200,7 +206,7 @@ func jobsThatRun(t *testing.T, w wfFile, ev ghEvent) map[string]bool {
 			}
 			j := w.Jobs[id]
 			cond := truthy(evalExpr(t, j.If, ev)) || j.If == ""
-			if !strings.Contains(j.If, "always()") {
+			if !statusFunc.MatchString(j.If) {
 				for _, n := range j.needs() {
 					cond = cond && ran[n]
 				}
