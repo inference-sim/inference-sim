@@ -19,6 +19,12 @@ test can tell it from the original). A listed gap or equivalent that is now caug
 longer exists, fails too, so the lists stay true; so does a listed mutant whose old text is not
 found exactly once.
 
+A package may also list mutants in <package>/testdata/pending_mutants.json, beside the tests whose
+inputs it describes: `pending` entries (id, needs, stage, issue) are known gaps whose reason is the
+stage and the issue that closes the gap, and `equivalent` entries (id, why) are equivalents. The
+package's own test fails a pending entry whose input has become accepted; this sweep fails one that
+a test now catches, so the lists only shrink.
+
 Modes:
   full (the default): every mutant. Nightly, on release tags and on demand.
   --changed <base>: on a pull request. The listed mutants of each changed file, and every listed
@@ -225,6 +231,20 @@ def config_problems(cfg: dict) -> list:
     return bad
 
 
+def package_lists(root: str, cfg: dict) -> None:
+    """Add to cfg the known gaps and equivalents the packages list in testdata/pending_mutants.json."""
+    for dirpath, dirs, files in os.walk(root):
+        dirs[:] = sorted(d for d in dirs if d not in (".git", "sglang-source", "oracle-model", "oracle-traces", "__pycache__"))
+        if os.path.basename(dirpath) != "testdata" or "pending_mutants.json" not in files:
+            continue
+        with open(os.path.join(dirpath, "pending_mutants.json")) as f:
+            doc = json.load(f)
+        for e in doc.get("pending", []):
+            cfg.setdefault("known_gaps", {})[e["id"]] = f"{e.get('stage', '')}: {e.get('issue', '')}"
+        for e in doc.get("equivalent", []):
+            cfg.setdefault("equivalent", {})[e["id"]] = e.get("why", "")
+
+
 def main(argv: list) -> int:
     global ROOT
     base = only = None
@@ -248,6 +268,7 @@ def main(argv: list) -> int:
     sglang, scratch = os.path.abspath(args[0]), os.path.abspath(args[1])
     with open(os.path.join(ROOT, "oracle", "mutants.json")) as f:
         cfg = json.load(f)
+    package_lists(ROOT, cfg)
     bad = config_problems(cfg)
     if bad:
         for b in bad:
