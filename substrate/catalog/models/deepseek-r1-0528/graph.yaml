@@ -11,6 +11,9 @@ global:
   tie_word_embeddings: false
   weight_dtype: fp8
   architecture: DeepseekV3ForCausalLM
+  weight_scale:
+    elements: 16384
+    bytes: 4
 layer_kinds:
 - id: attn_dense
   nodes:

@@ -1230,6 +1230,39 @@ def mxfp8_scale(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> dict[st
     return {"elements": 32, "bytes": 1}
 
 
+# Architectures whose block-FP8 scales are not the generic Fp8Config layout. DeepSeek-V4's own
+# quantization config resolves the linear scales' dtype per checkpoint (is_scale_e8m0, UE8M0 for
+# an FP4-expert checkpoint, float32 for an FP8-expert one, vllm/models/deepseek_v4/quant_config.py:
+# 111-115@v0.33.0), and the V4 handlers state their own layout.
+BLOCK_FP8_OWN_SCALE_ARCHS = frozenset({"DeepseekV4ForCausalLM", "DeepseekV41ForCausalLM"})
+
+
+def block_fp8_scale(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> dict[str, int] | None:
+    """The resident scale of a block-scaled FP8 checkpoint, or None.
+
+    `quant_method: fp8` with a `weight_block_size` is vLLM's Fp8Config block path: each linear
+    holds `weight_scale_inv`, one float32 per block, ceil(N / block_n) x ceil(K / block_k) of them
+    (create_fp8_scale_parameter, utils/fp8_utils.py:1396-1425@v0.33.0, dtype float32 unless the
+    config's is_scale_e8m0 says otherwise; fp8.py:322-339). With the 128 x 128 block that is
+    16384 elements to a 4-byte scale. The kernel reads the element count to tell this layout
+    from a per-tensor FP8 weight (inference-sim/blis-substrate#122). A block that is not square
+    128 has no kernel form, so it is refused rather than priced as 128 x 128."""
+    quant = raw.get("quantization_config") or cfg.get("quantization_config") or {}
+    if str(quant.get("quant_method", "")).lower() != "fp8" or not quant.get("weight_block_size"):
+        return None
+    if architecture_of(raw, model) in BLOCK_FP8_OWN_SCALE_ARCHS:
+        return None
+    if quant.get("scale_fmt"):
+        raise DeriveError(f"{model}: block-FP8 states scale_fmt {quant['scale_fmt']!r}; the "
+                          f"generic Fp8Config path reads float32 scales, so another format is "
+                          f"not priced here")
+    block = quant["weight_block_size"]
+    if block != [128, 128]:
+        raise DeriveError(f"{model}: block-FP8 weight_block_size {block!r}; only the 128 x 128 "
+                          f"block has a kernel form")
+    return {"elements": 128 * 128, "bytes": 4}
+
+
 def base_dtype(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> str:
     """The declared parameter dtype, ignoring any quantization block."""
     declared = pick(cfg, "dtype") or pick(raw, "dtype")
@@ -7399,6 +7432,15 @@ def _derive(config_path: Path, model: str) -> dict[str, Any]:
             raise DeriveError(f"{model}: the handler and the quantization config state "
                               f"different weight scales")
         graph["global"]["weight_scale"] = scale
+    bf = block_fp8_scale(cfg, raw, model)
+    if bf:
+        if graph["global"]["weight_dtype"] != "fp8":
+            raise DeriveError(f"{model}: a block-FP8 checkpoint with global width "
+                              f"{graph['global']['weight_dtype']}, not fp8")
+        if graph["global"].get("weight_scale") not in (None, bf):
+            raise DeriveError(f"{model}: the handler and the quantization config state "
+                              f"different weight scales")
+        graph["global"]["weight_scale"] = bf
     mx = mxfp8_scale(cfg, raw, model)
     if mx:
         if graph["global"]["weight_dtype"] != "fp8":

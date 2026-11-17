@@ -7128,14 +7128,23 @@ def test_mxfp8_refuses_a_block_it_does_not_price(tmp_path):
         _derive_raw(raw, tmp_path, "minimax-m3-mxfp8")
 
 
-def test_only_the_mxfp8_graph_gains_a_scale_and_the_other_fp8_blocks_stay_unscaled():
-    """The 128 x 128 fp32-scaled fp8 graphs carry 4 bytes in 16,384, 0.02%, and state none; the
-    layout belongs to the checkpoint, so a graph states one only where the config does."""
-    scaled = {d.name for d in sorted(MODELS.iterdir())
+def test_the_graphs_that_state_a_scale_are_the_block_scaled_ones():
+    """A graph states a weight scale where the checkpoint has one the cost model needs: the
+    MXFP8 and NVFP4-mixed MiniMax graphs (32 elements to one byte), DeepSeek-V4.1-Flash, and the
+    generic 128 x 128 block-FP8 graphs (16,384 elements to a float32). The kernel reads the 16384
+    to price a block-scaled GEMM on its block form rather than the per-tensor ramp
+    (inference-sim/blis-substrate#122). The DeepSeek-V4 handlers, whose scale dtype depends on the
+    checkpoint's experts, state their own layout and are not in the generic set."""
+    scaled = {d.name: graph_of(d)["global"]["weight_scale"] for d in sorted(MODELS.iterdir())
               if d.is_dir() and graph_of(d)["global"].get("weight_scale")
               and graph_of(d)["global"]["weight_dtype"] == "fp8"}
-    assert scaled == {"minimax-m3-mxfp8", "minimax-m3-nvfp4", "minimax-m3.1-flash", "minimax-m3.1-flash-dspark",
-                      "deepseek-v4.1-flash"}
+    block = {"elements": 16384, "bytes": 4}
+    assert {n for n, sc in scaled.items() if sc == block} == {
+        "deepseek-r1-0528", "deepseek-v3", "glm-5", "glm-5.2-fp8", "glm-5.3", "glm-5.3-flash",
+        "minimax-m2.5", "minimax-m2.7", "qwen3.5-397b-a17b-fp8"}
+    assert {n for n, sc in scaled.items() if sc != block} == {
+        "minimax-m3-mxfp8", "minimax-m3-nvfp4", "minimax-m3.1-flash", "minimax-m3.1-flash-dspark",
+        "deepseek-v4.1-flash"}
 
 
 # --- DSpark stages in a DeepSeek-V4 checkpoint (deepseek-ai/DeepSeek-V4-Pro-0813) ---------
@@ -9320,3 +9329,56 @@ def test_an_moe_family_with_no_recorded_layout_is_refused():
     with pytest.raises(deriver().DeriveError, match="no recorded router"):
         deriver().moe_block({"num_experts": 8, "top_k": 2, "intermediate_size": 64}, "x", 32,
                             {"architectures": ["SomeMoeForCausalLM"]}, family="SomeMoeForCausalLM")
+
+
+def _derive_cfg(tmp_path, raw, name="blockfp8-probe"):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps(raw))
+    return derive_graph.derive(p, name)
+
+
+def _r1_with(edit=None):
+    raw = config_of(MODELS / "deepseek-r1-0528")
+    if edit:
+        edit(raw)
+    return raw
+
+
+def test_block_fp8_checkpoints_state_their_resident_scale(tmp_path):
+    """A 128 x 128 block-FP8 checkpoint holds one float32 `weight_scale_inv` per block
+    (vLLM Fp8Config, create_fp8_scale_parameter): 16384 weight elements to a 4-byte scale. The
+    graph says so, so the kernel can tell it from a per-tensor FP8 weight, which has none."""
+    g = _derive_cfg(tmp_path, _r1_with())
+    assert g["global"]["weight_dtype"] == "fp8"
+    assert g["global"]["weight_scale"] == {"elements": 16384, "bytes": 4}
+
+    def per_tensor(raw):
+        raw["quantization_config"].pop("weight_block_size")
+    g = _derive_cfg(tmp_path, _r1_with(per_tensor))
+    assert g["global"]["weight_dtype"] == "fp8" and "weight_scale" not in g["global"]
+
+
+@pytest.mark.parametrize("name", ["deepseek-r1-0528", "deepseek-v3", "glm-5", "glm-5.2-fp8",
+                                  "glm-5.3", "glm-5.3-flash", "minimax-m2.5", "minimax-m2.7",
+                                  "qwen3.5-397b-a17b-fp8"])
+def test_every_block_fp8_graph_in_the_catalog_states_the_scale(name):
+    g = graph_of(MODELS / name)
+    assert g["global"]["weight_dtype"] == "fp8"
+    assert g["global"]["weight_scale"] == {"elements": 16384, "bytes": 4}
+
+
+@pytest.mark.parametrize("edit,why", [
+    (lambda raw: raw["quantization_config"].__setitem__("weight_block_size", [64, 64]),
+     "only the 128 x 128 block"),
+    (lambda raw: raw["quantization_config"].__setitem__("scale_fmt", "ue8m0"),
+     "reads float32 scales"),
+])
+def test_block_fp8_refuses_a_layout_it_cannot_price(tmp_path, edit, why):
+    """A block that is not 128 x 128 has no kernel form, and a non-float32 scale is not the
+    generic path's layout: both are refused rather than priced as 128 x 128 float32."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match=why):
+        _derive_cfg(tmp_path, _r1_with(edit))
