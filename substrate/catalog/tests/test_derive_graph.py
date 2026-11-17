@@ -8216,3 +8216,111 @@ def test_minimax_m31_flash_states_the_same_embedding(tmp_path):
     assert [n["role"] for n in g["embedding"]] == ["embed_tokens", "embed_out"]
     assert g["embedding"][0]["rows"] == 200064 and g["embedding"][0]["row_bytes"] == 12288
     assert graph_of(MODELS / "minimax-m3.1-flash")["embedding"] == g["embedding"]
+
+
+# --- DFlash2 drafter (RadixArk/Muse-Spark-Open-DFlash2) ---------------------------------
+
+# A DFlash2 configuration rebuilt from what the committed muse-spark-open-dflash2 graph states,
+# not copied from the checkpoint's config.json, whose repository states no licence (X12). Every
+# shape below is a value the derived graph carries: its global hidden and vocabulary sizes, the
+# attention node's heads, head width and window, the MLP and selector widths, and the capture
+# layers (the graph's aux_hidden_state_layers, less one, as the configuration states them). Three
+# splits the graph states only as a product are the test's own choice of factors: the attention
+# window as sliding window plus block (2048 + 8), the convolution projection as
+# 2 x taps x hidden / group (2 x 2 x 8192 / 16), and the mask token, any id in the vocabulary.
+def _dflash2_cfg() -> dict:
+    g = graph_of(MODELS / "muse-spark-open-dflash2")
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    layer = kinds["dflash_layer"]["nodes"]
+    attn = [n for n in layer if n["op"] == "Attention"][0]
+    roles = {n.get("role"): n for n in layer}
+    head = {n.get("role"): n for n in g["speculator"]["head"]}
+    hidden, vocab, layers = g["global"]["hidden_size"], g["global"]["vocab_size"], g["speculator"]["stack"]["repeat"]
+    block, taps = 8, 2
+    group = 2 * taps * hidden // roles["attention_conv_kernel_projection"]["n"]
+    return {
+        "architectures": ["DFlash2DraftModel"], "model_type": "qwen3", "dtype": "bfloat16",
+        "hidden_size": hidden, "intermediate_size": roles["mlp_down"]["k"], "num_hidden_layers": layers,
+        "num_attention_heads": attn["n_q"], "num_key_value_heads": attn["n_kv"], "head_dim": attn["d_h"],
+        "vocab_size": vocab, "attention_bias": False, "is_causal": False,
+        "sliding_window": attn["window"] - block,
+        "num_target_layers": len(layer_sequence(graph_of(MUSE_NVFP4)["stack"])),
+        "layer_types": ["sliding_attention"] * layers,
+        "dflash_config": {"attention_mode": "gqa", "block_size": block, "conv_group_size": group,
+                          "conv_kernel_size": taps, "mask_token_id": 0,
+                          "selector_rank": head["selector_codebooks"]["row_bytes"] // 2,
+                          "selector_top_k": head["selector_codebooks"]["rows_per_token"] // 2,
+                          "target_layer_ids": [i - 1 for i in g["speculator"]["aux_hidden_state_layers"]]},
+    }
+
+
+DFLASH2_CFG = _dflash2_cfg()
+
+
+def _dflash2_nodes(g: dict) -> list[dict]:
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    return kinds["dflash_layer"]["nodes"] * g["speculator"]["stack"]["repeat"] + \
+        kinds["dflash_context"]["nodes"] + g["speculator"]["head"]
+
+
+def test_dflash2_drafter_weights_equal_the_checkpoints_tensor_total(tmp_path):
+    """Every matrix of the checkpoint is a node, counted once: the safetensors header's
+    tensors other than its norm and convolution-kernel vectors hold 4,887,052,288 parameters.
+    The context K/V projection reads the layers' own K and V rows, a copy the engine makes,
+    and the lm_head is the target's, so neither is a checkpoint tensor."""
+    g = _derive_raw(DFLASH2_CFG, tmp_path, "muse-spark-open-dflash2")
+    params = 0
+    for n in _dflash2_nodes(g):
+        if n["op"] == "GEMM" and n["role"] not in ("dflash_context_kv", "dflash_lm_head"):
+            params += n["n"] * n["k"]
+        elif n["op"] == "Gather":
+            params += n["rows"] * n["row_bytes"] // 2
+    assert params == 4_887_052_288
+
+
+def test_dflash2_drafts_a_block_from_the_targets_captured_states(tmp_path):
+    g = _derive_raw(DFLASH2_CFG, tmp_path, "muse-spark-open-dflash2")
+    sp = g["speculator"]
+    assert (sp["method"], sp["drafting"], sp["shares_target_head"]) == ("dflash", "parallel_block", True)
+    # The engine captures each target_layer_ids entry plus one, and fc reads one state each.
+    assert sp["aux_hidden_state_layers"] == [2, 17, 31, 45, 60]
+    ctx = {k["id"]: k for k in g["layer_kinds"]}["dflash_context"]
+    fc = _node(ctx, "dflash_fc")
+    assert (fc["n"], fc["k"], fc["tp"]) == (8192, 5 * 8192, "replicated")
+    # Muse Spark captures its fp32 residual stream; another target's drafter states none.
+    assert sp["aux_hidden_state_bytes_per_token"] == 4 * 8192
+    other = _derive_raw(DFLASH2_CFG, tmp_path, "some-other-dflash2")
+    assert "aux_hidden_state_bytes_per_token" not in other["speculator"]
+    layer = {k["id"]: k for k in g["layer_kinds"]}["dflash_layer"]
+    attn = [n for n in layer["nodes"] if n["op"] == "Attention"][0]
+    # Non-causal: a query reads its window and the whole block.
+    assert (attn["kind"], attn["window"]) == ("swa", 2048 + 8)
+    conv = _node(layer, "attention_conv_kernel_projection")
+    assert (conv["n"], conv["k"]) == (2 * 2 * 8192 // 16, 8192)
+
+
+@pytest.mark.parametrize("edit,why", [
+    ({"dflash_config": {**DFLASH2_CFG["dflash_config"], "attention_mode": "mla"}}, "neither pinned engine supports.*blis-sglang#21"),
+    ({"dflash_config": {**DFLASH2_CFG["dflash_config"], "causal": True}}, "does not read"),
+    ({"is_causal": True}, "non-causal"),
+    ({"draft_vocab_size": 32000}, "draft_vocab_size differs"),
+    ({"layer_types": ["full_attention"] * 5}, "sliding-window"),
+    ({"dflash_config": {**DFLASH2_CFG["dflash_config"], "conv_group_size": 24}}, "does not divide"),
+])
+def test_dflash2_refuses_what_it_does_not_price(tmp_path, edit, why):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match=why):
+        _derive_raw({**DFLASH2_CFG, **edit}, tmp_path, "muse-spark-open-dflash2")
+
+
+def test_dflash2_drafter_and_its_target_name_each_other():
+    """The drafter's recorded target width is its target's hidden size, and the target lists it."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    drafter = yaml.safe_load((MODELS / "muse-spark-open-dflash2" / "model.yaml").read_text())
+    assert drafter["targets"] == ["muse-spark-open-816b-a42b-nvfp4"]
+    target = yaml.safe_load((MUSE_NVFP4 / "model.yaml").read_text())
+    assert "muse-spark-open-dflash2" in target["drafters"]
+    cfg = text_config(config_of(MUSE_NVFP4))
+    assert derive_graph.DFLASH2_TARGET_STATE_BYTES["muse-spark-open-dflash2"][1] == cfg["hidden_size"]
