@@ -115,24 +115,44 @@ func TestInstanceCostPerHour_EmptySetLogsAndReturnsZero(t *testing.T) {
 	}
 }
 
-// TestNewPlacementManager_RejectsDuplicateGPUType (round-5 IMP-2): two pools sharing a
-// gpu_type make cost/capacity resolution ambiguous (cost is looked up by first-match on
-// gpu_type), which the nodes-spanned × cost_per_hour multiplier would then mis-bill.
-// NewPlacementManager must reject the ambiguity at construction.
-func TestNewPlacementManager_RejectsDuplicateGPUType(t *testing.T) {
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Fatal("expected panic on two pools sharing a gpu_type, got none")
-		}
-		if !strings.Contains(fmt.Sprint(r), "gpu_type") {
-			t.Errorf("panic message should mention gpu_type, got: %v", r)
-		}
-	}()
-	newTestPM([]NodePoolConfig{
-		{Name: "h100-8g", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 1, MinNodes: 0, MaxNodes: 1, GPUMemoryGiB: 80, CostPerHour: 10},
-		{Name: "h100-4g", GPUType: "H100", GPUsPerNode: 4, InitialNodes: 1, MinNodes: 0, MaxNodes: 1, GPUMemoryGiB: 80, CostPerHour: 5},
+// TestSharedGPUType_EachInstanceBilledAtItsOwnPool (#1549): two pools may share a gpu_type
+// and differ in price (a spot and an on-demand H100 pool). An instance placed in each is
+// billed at its own pool's cost_per_hour, whichever pool it lands in, at startup.
+func TestSharedGPUType_EachInstanceBilledAtItsOwnPool(t *testing.T) {
+	pools := []NodePoolConfig{
+		{Name: "h100-spot", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 1, MinNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80, CostPerHour: 3},
+		{Name: "h100-ondemand", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 1, MinNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80, CostPerHour: 10},
+	}
+	// TP=8 fills one node per instance: instance_0 takes the first pool, instance_1 the second.
+	cfg := deploymentForPlacement(2, pools, 9999)
+	cfg.TP = 8
+	cs := newTestCluster(cfg, NewSliceRequestSource(nil), nil)
+	if len(cs.instances) != 2 {
+		t.Fatalf("expected 2 placed instances, got %d", len(cs.instances))
+	}
+	if got := cs.instances[0].CostPerHour; got != 3 {
+		t.Errorf("instance in the spot pool CostPerHour = %v, want 3", got)
+	}
+	if got := cs.instances[1].CostPerHour; got != 10 {
+		t.Errorf("instance in the on-demand pool CostPerHour = %v, want 10", got)
+	}
+}
+
+// TestSharedGPUType_SpanBilledAtOwnPool (#1549): a node-spanning instance in the second of
+// two same-chip pools is billed nodes-spanned x that pool's price.
+func TestSharedGPUType_SpanBilledAtOwnPool(t *testing.T) {
+	pm := newTestPM([]NodePoolConfig{
+		{Name: "h100-spot", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 1, MinNodes: 0, MaxNodes: 1, GPUMemoryGiB: 80, CostPerHour: 3},
+		{Name: "h100-ondemand", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 2, MinNodes: 0, MaxNodes: 2, GPUMemoryGiB: 80, CostPerHour: 10},
 	})
+	// Only the second pool holds two whole free nodes, so TP=16 spans there.
+	_, gpus, _, err := pm.PlaceInstance("inst", "m", "H100", 16)
+	if err != nil {
+		t.Fatalf("PlaceInstance: %v", err)
+	}
+	if got := pm.PlacedInstanceCostPerHour(gpus); got != 20 {
+		t.Errorf("cost = %v, want 20 (2 nodes x the on-demand pool's 10)", got)
+	}
 }
 
 // TestNewClusterSimulator_RejectsPerRoleTPWithNodePools (round-5 IMP-1): a per-role TP
@@ -938,5 +958,33 @@ func TestVerifyConservation_FollowsGPUsAFreedNodeReturns(t *testing.T) {
 	}
 	if err := pm.VerifyConservation(); err != nil {
 		t.Errorf("after the instance's release: %v", err)
+	}
+}
+
+// TestSharedGPUType_AutoscalerPricesVariantAtPoolMean (#1549): two pools sharing a chip
+// make one variant {GPUType, TP}. The autoscaler's view of it is the mean of the prices its
+// replicas were actually placed at, not the price of whichever pool came first.
+func TestSharedGPUType_AutoscalerPricesVariantAtPoolMean(t *testing.T) {
+	pools := []NodePoolConfig{
+		{Name: "h100-spot", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 1, MinNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80, CostPerHour: 3},
+		{Name: "h100-ondemand", GPUType: "H100", GPUsPerNode: 8, InitialNodes: 1, MinNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80, CostPerHour: 10},
+	}
+	cfg := deploymentForPlacement(2, pools, 9999)
+	cfg.TP = 8
+	cs := newTestCluster(cfg, NewSliceRequestSource(nil), nil)
+	for _, inst := range cs.instances {
+		inst.Model = "m"
+	}
+	signals := (&DefaultCollector{}).Collect(buildClusterState(cs, nil))
+	if len(signals) != 1 {
+		t.Fatalf("want signals for one model, got %d", len(signals))
+	}
+	res := NewV2SaturationAnalyzer(V2SaturationAnalyzerConfig{KvCacheThreshold: 0.8, ScaleUpThreshold: 0.8,
+		ScaleDownBoundary: 0.4, AvgInputTokens: 512, MinReplicas: 1}).Analyze(signals[0])
+	if len(res.VariantCapacities) != 1 {
+		t.Fatalf("two same-chip pools should be one variant, got %d", len(res.VariantCapacities))
+	}
+	if got := res.VariantCapacities[0].CostPerReplica; got != 6.5 {
+		t.Errorf("CostPerReplica = %v, want 6.5 (mean of the spot 3 and on-demand 10)", got)
 	}
 }

@@ -423,14 +423,6 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 			}
 			// Placement succeeded: use pool's GPU type (SC-004: pool-authoritative, not CLI flag).
 			simCfg.GPU = matchedGPUType
-			// Phase 1C: look up CostPerHour for this matched GPU type (issue #692).
-			var poolCostPerHour float64
-			for i := range config.NodePools {
-				if config.NodePools[i].GPUType == matchedGPUType {
-					poolCostPerHour = config.NodePools[i].CostPerHour
-					break
-				}
-			}
 			// Record how many nodes this instance spans, for the trace header (#1530).
 			cs.recordNodeSpan(gpuIDs)
 			inst, err := cs.buildInstance(idx, id, simCfg)
@@ -446,7 +438,7 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 			inst.TPDegree = tpDegree
 			// #1529: cost = distinct-nodes-spanned × pool cost_per_hour. Single-node
 			// instances are 1× (unchanged); a multi-node TP instance is billed per node.
-			inst.CostPerHour = cs.placement.InstanceCostPerHour(gpuIDs, poolCostPerHour)
+			inst.CostPerHour = cs.placement.PlacedInstanceCostPerHour(gpuIDs)
 			inst.warmUpRemaining = config.InstanceLifecycle.WarmUpRequestCount
 			if config.InstanceLifecycle.WarmStartInitialInstances {
 				// Pre-deployed cluster: startup instances skip loading delay and start Active.

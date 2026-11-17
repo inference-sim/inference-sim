@@ -81,20 +81,12 @@ func (a *DirectActuator) scaleUp(d ScaleDecision) error {
 		simCfg := a.cluster.config.resolveConfigForRole(PoolRole(0))
 		simCfg.GPU = matchedGPU
 
-		// Look up CostPerHour for this GPU type (mirrors NodeReadyEvent and startup path).
-		var costPerHour float64
-		for i := range a.cluster.config.NodePools {
-			if a.cluster.config.NodePools[i].GPUType == matchedGPU {
-				costPerHour = a.cluster.config.NodePools[i].CostPerHour
-				break
-			}
-		}
 		// Record the instance's node span (mirrors the startup + deferred paths).
 		a.cluster.recordNodeSpan(gpuIDs)
 
 		// #1529: cost = distinct-nodes-spanned × pool cost_per_hour (mirrors startup +
 		// deferred paths). Single-node instances are unchanged (1×).
-		instCost := a.cluster.placement.InstanceCostPerHour(gpuIDs, costPerHour)
+		instCost := a.cluster.placement.PlacedInstanceCostPerHour(gpuIDs)
 
 		// Construct, register, and activate the instance; the gateway sees its pod when it
 		// becomes ready.
