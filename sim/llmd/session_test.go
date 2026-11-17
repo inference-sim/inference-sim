@@ -148,3 +148,50 @@ func TestSessionAffinity_RefusesIdentitiesTheClientDoesNotSend(t *testing.T) {
 		}
 	}
 }
+
+// TestSessionAffinity_RebindsAfterItsEndpointIsRemoved: when the endpoint a session is pinned to
+// terminates, the session's later turns go to a surviving endpoint and stay there; no turn is sent to
+// the removed one.
+func TestSessionAffinity_RebindsAfterItsEndpointIsRemoved(t *testing.T) {
+	reqs := sessionRequests(4, 8, 100_000, true)
+	cs := newCluster(testDeployment(4), cluster.NewSliceRequestSource(reqs), nil)
+	seed := int64(5)
+	gw := New(Options{Model: "test-model", Seed: &seed, EPPFlags: append(DefaultEPPFlags(), "--allow-experimental-plugins", "--config-text="+sessionConfig(sessionIDScorer))})
+	var victim string
+	removedAt := 0
+	gw.observe = func(kind, detail string) {
+		if kind == "request" && detail == "s1_t3" && victim == "" { // session 0 has been served three turns by now
+			victim = reqs[0].AssignedInstance
+			for _, inst := range cs.Instances() {
+				if string(inst.ID()) == victim {
+					inst.TransitionTo(sim.InstanceStateTerminated)
+				}
+			}
+			removedAt = 3
+		}
+	}
+	cs.SetGateway(gw)
+	if err := cs.Run(); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if victim == "" || reqs[0].AssignedInstance == "" {
+		t.Fatalf("the endpoint was never removed (victim %q)", victim)
+	}
+	after := map[string]bool{}
+	for _, r := range reqs {
+		if !strings.HasPrefix(r.ID, "s0_") || r.AssignedInstance == "" {
+			continue
+		}
+		var turn int
+		fmt.Sscanf(r.ID, "s0_t%d", &turn)
+		if turn > removedAt {
+			after[r.AssignedInstance] = true
+			if r.AssignedInstance == victim {
+				t.Errorf("%s was sent to the removed endpoint %s", r.ID, victim)
+			}
+		}
+	}
+	if len(after) != 1 {
+		t.Errorf("session 0 used %d endpoints after the removal, want one new binding: %v", len(after), after)
+	}
+}
