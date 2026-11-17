@@ -154,6 +154,10 @@ type EngineDriver struct {
 	// OnRequestDone and OnFirstToken are the cluster's callbacks, as on Simulator.
 	OnRequestDone func(req *Request, tick int64) []*Request
 	OnFirstToken  func(req *Request, at int64)
+	// OnRunState tells the cluster each time the engine starts running a request (running true)
+	// or preempts it back to its queue (running false), the transitions of SIM-8's machine that
+	// only the engine sees. Nil for a driver used without a cluster.
+	OnRunState func(req *Request, running bool)
 
 	stepIdx int
 	// preEventClock is the clock before the event running now (a group's dummy-only step restores
@@ -891,6 +895,9 @@ func (d *EngineDriver) admit(b engine.Batch, now, start int64) {
 				r.lastEnd = start
 			}
 			r.req.State = StateRunning
+			if d.OnRunState != nil {
+				d.OnRunState(r.req, true)
+			}
 			r.scheduledIdx = d.stepIdx
 			d.Metrics.RequestSchedulingDelays[s.ID] = now - r.req.ArrivalTime
 			if s.PrefixLookup && !r.lookedUp {
@@ -918,6 +925,9 @@ func (d *EngineDriver) notePreempted(b engine.Batch) {
 		d.Metrics.PreemptionCount++
 		if r := d.reqs[id]; r != nil {
 			r.req.State = StateQueued
+			if d.OnRunState != nil {
+				d.OnRunState(r.req, false)
+			}
 			r.resumed = r.emitted > 0
 		}
 	}

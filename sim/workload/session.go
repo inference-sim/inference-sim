@@ -6,6 +6,7 @@ package workload
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/sirupsen/logrus"
 
@@ -453,4 +454,30 @@ func (sm *SessionManager) CancelledSessions() int {
 		}
 	}
 	return n
+}
+
+// PlannedUnissued returns the rounds the sessions planned and never issued: for each session
+// with a fixed round count, the rounds after the last one generated. Every one of them ends not
+// started (SIM-8). A session with unlimited rounds planned none beyond those it generated. The
+// order is by session, then round, so a run's rows do not depend on map order (INV-6).
+func (sm *SessionManager) PlannedUnissued() []sim.PlannedRound {
+	ids := make([]string, 0, len(sm.sessions))
+	for id := range sm.sessions {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	var out []sim.PlannedRound
+	for _, id := range ids {
+		sess := sm.sessions[id]
+		bp := sess.blueprint
+		if bp.UnlimitedRounds {
+			continue
+		}
+		for r := sess.currentRound + 1; r < bp.MaxRounds; r++ {
+			out = append(out, sim.PlannedRound{ID: fmt.Sprintf("session_%s_round_%d_unissued", bp.SessionID, r),
+				SessionID: bp.SessionID, RoundIndex: r, Model: bp.Model, Adapter: bp.Adapter,
+				SLOClass: bp.SLOClass, TenantID: bp.TenantID})
+		}
+	}
+	return out
 }

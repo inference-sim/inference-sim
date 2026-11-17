@@ -1094,6 +1094,7 @@
       "scheduling_delay_us": 40237,
       "completion_index": 22,
       "prompt_tokens": 679,
+      "computed_tokens": 679,
       "output_tokens": 851,
       "instance": "instance_0"
     },
@@ -1107,6 +1108,7 @@
       "scheduling_delay_us": 41946,
       "completion_index": 1,
       "prompt_tokens": 199,
+      "computed_tokens": 199,
       "output_tokens": 102,
       "instance": "instance_0"
     },
@@ -1120,6 +1122,7 @@
       "scheduling_delay_us": 42594,
       "completion_index": 12,
       "prompt_tokens": 641,
+      "computed_tokens": 641,
       "output_tokens": 563,
       "instance": "instance_0"
     },
@@ -1133,6 +1136,7 @@
       "scheduling_delay_us": 43811,
       "completion_index": 9,
       "prompt_tokens": 952,
+      "computed_tokens": 952,
       "output_tokens": 537,
       "instance": "instance_0"
     },
@@ -1146,6 +1150,7 @@
       "scheduling_delay_us": 41038,
       "completion_index": 11,
       "prompt_tokens": 392,
+      "computed_tokens": 392,
       "output_tokens": 518,
       "instance": "instance_0"
     },
@@ -1159,6 +1164,7 @@
       "scheduling_delay_us": 41859,
       "completion_index": 3,
       "prompt_tokens": 443,
+      "computed_tokens": 443,
       "output_tokens": 260,
       "instance": "instance_0"
     },
@@ -1172,6 +1178,7 @@
       "scheduling_delay_us": 41166,
       "completion_index": 8,
       "prompt_tokens": 376,
+      "computed_tokens": 376,
       "output_tokens": 474,
       "instance": "instance_0"
     },
@@ -1185,6 +1192,7 @@
       "scheduling_delay_us": 43769,
       "completion_index": 7,
       "prompt_tokens": 596,
+      "computed_tokens": 596,
       "output_tokens": 453,
       "instance": "instance_0"
     },
@@ -1198,6 +1206,7 @@
       "scheduling_delay_us": 43130,
       "completion_index": 25,
       "prompt_tokens": 445,
+      "computed_tokens": 445,
       "output_tokens": 758,
       "instance": "instance_0"
     },
@@ -1211,6 +1220,7 @@
       "scheduling_delay_us": 42542,
       "completion_index": 13,
       "prompt_tokens": 529,
+      "computed_tokens": 529,
       "output_tokens": 421,
       "instance": "instance_0"
     },
@@ -1224,6 +1234,7 @@
       "scheduling_delay_us": 45458,
       "completion_index": 4,
       "prompt_tokens": 643,
+      "computed_tokens": 643,
       "output_tokens": 173,
       "instance": "instance_0"
     },
@@ -1237,6 +1248,7 @@
       "scheduling_delay_us": 42315,
       "completion_index": 21,
       "prompt_tokens": 611,
+      "computed_tokens": 611,
       "output_tokens": 595,
       "instance": "instance_0"
     },
@@ -1250,6 +1262,7 @@
       "scheduling_delay_us": 42830,
       "completion_index": 26,
       "prompt_tokens": 498,
+      "computed_tokens": 498,
       "output_tokens": 702,
       "instance": "instance_0"
     },
@@ -1263,6 +1276,7 @@
       "scheduling_delay_us": 42609,
       "completion_index": 5,
       "prompt_tokens": 339,
+      "computed_tokens": 339,
       "output_tokens": 234,
       "instance": "instance_0"
     },
@@ -1276,6 +1290,7 @@
       "scheduling_delay_us": 43464,
       "completion_index": 2,
       "prompt_tokens": 1044,
+      "computed_tokens": 1044,
       "output_tokens": 2,
       "instance": "instance_0"
     },
@@ -1289,6 +1304,7 @@
       "scheduling_delay_us": 45789,
       "completion_index": 17,
       "prompt_tokens": 222,
+      "computed_tokens": 222,
       "output_tokens": 449,
       "instance": "instance_0"
     },
@@ -1302,6 +1318,7 @@
       "scheduling_delay_us": 40653,
       "completion_index": 27,
       "prompt_tokens": 13,
+      "computed_tokens": 13,
       "output_tokens": 653,
       "instance": "instance_0"
     },
@@ -1315,6 +1332,7 @@
       "scheduling_delay_us": 46021,
       "completion_index": 6,
       "prompt_tokens": 332,
+      "computed_tokens": 332,
       "output_tokens": 290,
       "instance": "instance_0"
     },
@@ -1328,6 +1346,7 @@
       "scheduling_delay_us": 41541,
       "completion_index": 29,
       "prompt_tokens": 439,
+      "computed_tokens": 439,
       "output_tokens": 709,
       "instance": "instance_0"
     },
@@ -1341,6 +1360,7 @@
       "scheduling_delay_us": 42089,
       "completion_index": 23,
       "prompt_tokens": 391,
+      "computed_tokens": 391,
       "output_tokens": 564,
       "instance": "instance_0"
     },
@@ -1354,6 +1374,7 @@
       "scheduling_delay_us": 44733,
       "completion_index": 24,
       "prompt_tokens": 539,
+      "computed_tokens": 539,
       "output_tokens": 563,
       "instance": "instance_0"
     },
@@ -1367,6 +1388,7 @@
       "scheduling_delay_us": 46789,
       "completion_index": 14,
       "prompt_tokens": 736,
+      "computed_tokens": 736,
       "output_tokens": 282,
       "instance": "instance_0"
     },
@@ -1380,6 +1402,7 @@
       "scheduling_delay_us": 45850,
       "completion_index": 38,
       "prompt_tokens": 762,
+      "computed_tokens": 762,
       "output_tokens": 930,
       "instance": "instance_0"
     },
@@ -1393,6 +1416,7 @@
       "scheduling_delay_us": 45172,
       "completion_index": 16,
       "prompt_tokens": 385,
+      "computed_tokens": 385,
       "output_tokens": 342,
       "instance": "instance_0"
     },
@@ -1406,6 +1430,7 @@
       "scheduling_delay_us": 44225,
       "completion_index": 37,
       "prompt_tokens": 592,
+      "computed_tokens": 592,
       "output_tokens": 866,
       "instance": "instance_0"
     },
@@ -1419,6 +1444,7 @@
       "scheduling_delay_us": 42934,
       "completion_index": 28,
       "prompt_tokens": 169,
+      "computed_tokens": 169,
       "output_tokens": 557,
       "instance": "instance_0"
     },
@@ -1432,6 +1458,7 @@
       "scheduling_delay_us": 42956,
       "completion_index": 32,
       "prompt_tokens": 703,
+      "computed_tokens": 703,
       "output_tokens": 742,
       "instance": "instance_0"
     },
@@ -1445,6 +1472,7 @@
       "scheduling_delay_us": 48096,
       "completion_index": 31,
       "prompt_tokens": 366,
+      "computed_tokens": 366,
       "output_tokens": 695,
       "instance": "instance_0"
     },
@@ -1458,6 +1486,7 @@
       "scheduling_delay_us": 46364,
       "completion_index": 18,
       "prompt_tokens": 328,
+      "computed_tokens": 328,
       "output_tokens": 315,
       "instance": "instance_0"
     },
@@ -1471,6 +1500,7 @@
       "scheduling_delay_us": 45979,
       "completion_index": 40,
       "prompt_tokens": 709,
+      "computed_tokens": 709,
       "output_tokens": 903,
       "instance": "instance_0"
     },
@@ -1484,6 +1514,7 @@
       "scheduling_delay_us": 46894,
       "completion_index": 20,
       "prompt_tokens": 613,
+      "computed_tokens": 613,
       "output_tokens": 357,
       "instance": "instance_0"
     },
@@ -1497,6 +1528,7 @@
       "scheduling_delay_us": 47793,
       "completion_index": 30,
       "prompt_tokens": 604,
+      "computed_tokens": 604,
       "output_tokens": 648,
       "instance": "instance_0"
     },
@@ -1510,6 +1542,7 @@
       "scheduling_delay_us": 50235,
       "completion_index": 33,
       "prompt_tokens": 349,
+      "computed_tokens": 349,
       "output_tokens": 723,
       "instance": "instance_0"
     },
@@ -1523,6 +1556,7 @@
       "scheduling_delay_us": 46146,
       "completion_index": 34,
       "prompt_tokens": 525,
+      "computed_tokens": 525,
       "output_tokens": 714,
       "instance": "instance_0"
     },
@@ -1536,6 +1570,7 @@
       "scheduling_delay_us": 48796,
       "completion_index": 19,
       "prompt_tokens": 634,
+      "computed_tokens": 634,
       "output_tokens": 295,
       "instance": "instance_0"
     },
@@ -1549,6 +1584,7 @@
       "scheduling_delay_us": 43850,
       "completion_index": 10,
       "prompt_tokens": 219,
+      "computed_tokens": 219,
       "output_tokens": 99,
       "instance": "instance_0"
     },
@@ -1562,6 +1598,7 @@
       "scheduling_delay_us": 41286,
       "completion_index": 39,
       "prompt_tokens": 536,
+      "computed_tokens": 536,
       "output_tokens": 818,
       "instance": "instance_0"
     },
@@ -1575,6 +1612,7 @@
       "scheduling_delay_us": 48854,
       "completion_index": 35,
       "prompt_tokens": 467,
+      "computed_tokens": 467,
       "output_tokens": 684,
       "instance": "instance_0"
     },
@@ -1588,6 +1626,7 @@
       "scheduling_delay_us": 42144,
       "completion_index": 36,
       "prompt_tokens": 169,
+      "computed_tokens": 169,
       "output_tokens": 677,
       "instance": "instance_0"
     },
@@ -1601,6 +1640,7 @@
       "scheduling_delay_us": 43115,
       "completion_index": 15,
       "prompt_tokens": 792,
+      "computed_tokens": 792,
       "output_tokens": 148,
       "instance": "instance_0"
     }

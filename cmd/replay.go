@@ -556,6 +556,9 @@ Example:
 		} else if unservedHook != nil {
 			cs.SetUnservedHook(unservedHook)
 		}
+		if sessionMgr != nil {
+			cs.SetPlannedRounds(sessionMgr.PlannedUnissued)
+		}
 
 		// Resolve the saturation tracer BEFORE the run so a bad flag / config /
 		// report path fails fast (#1516 single detector, #1519 bank).
