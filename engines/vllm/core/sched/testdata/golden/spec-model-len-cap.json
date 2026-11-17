@@ -17,9 +17,9 @@
   }
  },
  "provenance": {
-  "blis_vllm_commit": "d855ac9d0501427f819cda43a5fbcde33966b640",
-  "lockfile_sha256": "8baca0cbd0f28f5455c4d2c1b39a81ac3c424089e4c875e93614794c77932167",
-  "mock_version": "gpu-mock/5+af60be80e293",
+  "blis_vllm_commit": "74a07eccbdafffe39f57b9738e49bee225f4bece",
+  "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
+  "mock_version": "gpu-mock/7+f4274aa648c4",
   "mocks": [
    "vllm.v1.outputs.ModelRunnerOutput",
    "tests.v1.core.utils.create_scheduler",
@@ -53,35 +53,35 @@
   "model": "facebook/opt-125m",
   "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
   "oracle_inputs": {
-   "oracle/mocks.json": "29fec19aa8b5bd75e12b37893eea761684d4399a7e3bee1066cb749eac58769c",
-   "oracle/requirements.lock": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
-   "oracle/run_scheduler.py": "dd0cbc255201f6d63588c720f4e687276f4b73fec0f490e997afdaacc2a5a127",
+   "oracle/mocks.json": "afd576782c5322ce4c6aa4cdb72fb513e3e78cd8ea54dd6043af0cdf5680a658",
+   "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+   "oracle/run_scheduler.py": "1239a1d64f057fcb543789762859ea33211627e3f2b66b46087ed9ee936222f6",
    "oracle/scenarios/spec-model-len-cap.json": "5f3de6b00441390b02ceee602b0af67cd019f46e00e2b24c0f95bebd7bbc5c9d"
   },
   "platform": "linux-x86_64",
   "python": "3.12.16",
-  "requirements_lock_sha256": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
+  "requirements_lock_sha256": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
   "scenario_sha256": "5f3de6b00441390b02ceee602b0af67cd019f46e00e2b24c0f95bebd7bbc5c9d",
   "seed": null,
   "tier": 2,
-  "vllm_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
-  "vllm_distribution": "0.32.0+cpu",
-  "vllm_version": "0.32.0"
+  "vllm_commit": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "vllm_distribution": "0.33.0+cpu",
+  "vllm_version": "0.33.0"
  },
  "steps": [
   {
    "blocks": {
     "e1": [
      [
-      "d730bb584dffd2695e020d18ed56c37445e947c43d127237c81c579509bf089700000000",
+      "11247e6cd2eb1684e00c67bea544d966a27066cadc0f226f5c832c5f9d3b077a00000000",
       1
      ],
      [
-      "6d26925deab8934b0fdd7d5e6f76d45e083bd75cfa3acc94ab05a7c504c6cdd700000000",
+      "7e22cb6e1cc68e9271dd5544fc6fd660bd679d1ca5c816e99bbb1600c50e383100000000",
       1
      ],
      [
-      "4d6e0f75f1e8e068d76bfac4747c51259c04add51bd42d1666f181abf695c75100000000",
+      "dd48cbc4e839f5e028d34ccb4547999b4c805127a91abcf44d2df5c8aa0078de00000000",
       1
      ],
      [
@@ -95,11 +95,11 @@
     ],
     "e2": [
      [
-      "c48506ab95d5c96cd3310d3a61016d5ddd11aeb30dfc36a8bfb3c4b3e8918d3b00000000",
+      "7bd735cc1e3c31ee6a6a3690718debc46558602aed31bc14f5b69c0952a18ba800000000",
       1
      ],
      [
-      "8948966d004363fdcc86c36d23d972819a9d974390189923884fd2b5e406c00d00000000",
+      "a108f47986bd196c1f49ed25b9234f94a401e4208c06556928825a352d0f00a000000000",
       1
      ],
      [
@@ -128,19 +128,19 @@
    "blocks": {
     "e1": [
      [
-      "d730bb584dffd2695e020d18ed56c37445e947c43d127237c81c579509bf089700000000",
+      "11247e6cd2eb1684e00c67bea544d966a27066cadc0f226f5c832c5f9d3b077a00000000",
       1
      ],
      [
-      "6d26925deab8934b0fdd7d5e6f76d45e083bd75cfa3acc94ab05a7c504c6cdd700000000",
+      "7e22cb6e1cc68e9271dd5544fc6fd660bd679d1ca5c816e99bbb1600c50e383100000000",
       1
      ],
      [
-      "4d6e0f75f1e8e068d76bfac4747c51259c04add51bd42d1666f181abf695c75100000000",
+      "dd48cbc4e839f5e028d34ccb4547999b4c805127a91abcf44d2df5c8aa0078de00000000",
       1
      ],
      [
-      null,
+      "6545fd1704720aed8e72f7da080f87351d37018f7a7bd911120d6aaf79e4297000000000",
       1
      ],
      [
@@ -154,15 +154,15 @@
     ],
     "e2": [
      [
-      "c48506ab95d5c96cd3310d3a61016d5ddd11aeb30dfc36a8bfb3c4b3e8918d3b00000000",
+      "7bd735cc1e3c31ee6a6a3690718debc46558602aed31bc14f5b69c0952a18ba800000000",
       1
      ],
      [
-      "8948966d004363fdcc86c36d23d972819a9d974390189923884fd2b5e406c00d00000000",
+      "a108f47986bd196c1f49ed25b9234f94a401e4208c06556928825a352d0f00a000000000",
       1
      ],
      [
-      null,
+      "c82d6c8991e2463b6ab1d07beafad790836163dbc5ad2245c345096f68abe7a100000000",
       1
      ],
      [
@@ -172,7 +172,7 @@
     ],
     "e3": [
      [
-      "bd23c437b2fa500a6b284320a15b052f92d0dfe42bd63ad0dcdabb23b73fa6c700000000",
+      "d6aeea4fce911806b114c516814c8ea5581cc0e5e2bd372411fd495b371c96d700000000",
       1
      ],
      [
@@ -207,23 +207,23 @@
    "blocks": {
     "e1": [
      [
-      "d730bb584dffd2695e020d18ed56c37445e947c43d127237c81c579509bf089700000000",
+      "11247e6cd2eb1684e00c67bea544d966a27066cadc0f226f5c832c5f9d3b077a00000000",
       1
      ],
      [
-      "6d26925deab8934b0fdd7d5e6f76d45e083bd75cfa3acc94ab05a7c504c6cdd700000000",
+      "7e22cb6e1cc68e9271dd5544fc6fd660bd679d1ca5c816e99bbb1600c50e383100000000",
       1
      ],
      [
-      "4d6e0f75f1e8e068d76bfac4747c51259c04add51bd42d1666f181abf695c75100000000",
+      "dd48cbc4e839f5e028d34ccb4547999b4c805127a91abcf44d2df5c8aa0078de00000000",
       1
      ],
      [
-      "18dadae5daf76ae9ef6d6f54834a8f2ae55cab3de1ca68b2fa690ee8a55dc16d00000000",
+      "6545fd1704720aed8e72f7da080f87351d37018f7a7bd911120d6aaf79e4297000000000",
       1
      ],
      [
-      null,
+      "2042afc6b373f5531e196be2b92f77f5e775278666a08702ac57d7cbcdb6321900000000",
       1
      ],
      [
@@ -233,19 +233,19 @@
     ],
     "e2": [
      [
-      "c48506ab95d5c96cd3310d3a61016d5ddd11aeb30dfc36a8bfb3c4b3e8918d3b00000000",
+      "7bd735cc1e3c31ee6a6a3690718debc46558602aed31bc14f5b69c0952a18ba800000000",
       1
      ],
      [
-      "8948966d004363fdcc86c36d23d972819a9d974390189923884fd2b5e406c00d00000000",
+      "a108f47986bd196c1f49ed25b9234f94a401e4208c06556928825a352d0f00a000000000",
       1
      ],
      [
-      "1f815c78590b366e666d088846720b8d78fd56bd149436bd037d0cea02805a8200000000",
+      "c82d6c8991e2463b6ab1d07beafad790836163dbc5ad2245c345096f68abe7a100000000",
       1
      ],
      [
-      null,
+      "7445e1c58850be127a3b2ea0c20adde541ba0cf24b3cdec4550a50304e3a239200000000",
       1
      ],
      [
@@ -255,11 +255,11 @@
     ],
     "e3": [
      [
-      "bd23c437b2fa500a6b284320a15b052f92d0dfe42bd63ad0dcdabb23b73fa6c700000000",
+      "d6aeea4fce911806b114c516814c8ea5581cc0e5e2bd372411fd495b371c96d700000000",
       1
      ],
      [
-      null,
+      "2002e7d4c3604252533a27344196a621273e34e2e7868b1b39a0a374a2dcab1300000000",
       1
      ],
      [
@@ -295,23 +295,23 @@
    "blocks": {
     "e2": [
      [
-      "c48506ab95d5c96cd3310d3a61016d5ddd11aeb30dfc36a8bfb3c4b3e8918d3b00000000",
+      "7bd735cc1e3c31ee6a6a3690718debc46558602aed31bc14f5b69c0952a18ba800000000",
       1
      ],
      [
-      "8948966d004363fdcc86c36d23d972819a9d974390189923884fd2b5e406c00d00000000",
+      "a108f47986bd196c1f49ed25b9234f94a401e4208c06556928825a352d0f00a000000000",
       1
      ],
      [
-      "1f815c78590b366e666d088846720b8d78fd56bd149436bd037d0cea02805a8200000000",
+      "c82d6c8991e2463b6ab1d07beafad790836163dbc5ad2245c345096f68abe7a100000000",
       1
      ],
      [
-      "ba3b7bce6dad076a62df25b4ae86e24170117586d7f261faa484f2c9fb0b553d00000000",
+      "7445e1c58850be127a3b2ea0c20adde541ba0cf24b3cdec4550a50304e3a239200000000",
       1
      ],
      [
-      null,
+      "c5f9246def10d968e53e2358ecd0f62a72980baa7734a7e1bd34a4f8f6dec46100000000",
       1
      ],
      [
