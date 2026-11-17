@@ -6,10 +6,7 @@
 
 package cache
 
-import (
-	"errors"
-	"fmt"
-)
+import "fmt"
 
 // Profile is what _profile_available_bytes reads (kv_cache_configurator.py:2990-3060@297e54fd):
 // the device's free memory after the weights are loaded and its free memory before, both in GiB
@@ -38,18 +35,26 @@ func KVBudgetBytes(p Profile) (int64, error) {
 
 // TokenCapacity is config_from_budget (kv_cache_configurator.py:3194-3229@297e54fd) for the
 // default pool configurator: the budget over the per-token cell, in whole pages, capped by
-// --max-total-tokens (_apply_token_constraints, :3090-3117) and floored to a page again. The
-// fixed overhead of page-interleave sharding is zero: that sharding is refused. Pipeline
-// parallelism, whose ranks agree on the minimum, is the caller's.
-func TokenCapacity(budgetBytes, cellBytes int64, pageSize int, maxTotalTokens *int) (int, error) {
-	if cellBytes <= 0 {
-		return 0, errors.New("a pool with no KV per token (every attention layer on another pipeline stage) is not modelled")
-	}
-	if pageSize < 1 {
-		return 0, fmt.Errorf("page size %d", pageSize)
+// --max-total-tokens (_apply_token_constraints, :3090-3117) and floored to a page again. A pool
+// with no KV per token gets --max-total-tokens, or the context length when it is unset
+// (_zero_kv_max_tokens, pool_configurator.py:240-250; the unbounded case, a hybrid model whose
+// attention layers sit on another pipeline stage, is refused with its pools). The fixed overhead
+// of page-interleave sharding is zero: that sharding is refused. Pipeline parallelism, whose
+// ranks agree on the minimum, is the caller's.
+func TokenCapacity(budgetBytes, cellBytes int64, pageSize int, maxTotalTokens *int, contextLen int) (int, error) {
+	if pageSize < 1 || cellBytes < 0 {
+		return 0, fmt.Errorf("page size %d, cell %d bytes", pageSize, cellBytes)
 	}
 	// calculate_pool_sizes (pool_configurator.py:637-647@297e54fd).
-	tokens := int(max(budgetBytes, 0) / cellBytes)
+	var tokens int
+	switch {
+	case cellBytes > 0:
+		tokens = int(max(budgetBytes, 0) / cellBytes)
+	case maxTotalTokens != nil && *maxTotalTokens != 0:
+		tokens = *maxTotalTokens
+	default:
+		tokens = contextLen
+	}
 	tokens = tokens / pageSize * pageSize
 	capped := tokens
 	if maxTotalTokens != nil {

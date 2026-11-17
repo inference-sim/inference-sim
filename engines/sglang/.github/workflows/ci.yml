@@ -122,6 +122,8 @@ jobs:
         run: python -I oracle/check_modules.py sglang-source
       - name: every golden trace records this tree's SGLang commit, lock, manifest version, scenario and seed
         run: python -I oracle/check_provenance.py
+      - name: every allocator and pool class SGLang defines is modelled or refused (SGL-6)
+        run: python -I oracle/check_pool_classes.py sglang-source
       - name: the guards fail on what they guard
         run: python -I oracle/test_checks.py sglang-source
   # The oracle's environment (SGL-1, FID-2): SGLang checked out at the commit provenance.go pins, the

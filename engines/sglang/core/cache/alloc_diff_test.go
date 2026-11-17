@@ -292,6 +292,7 @@ func (r *replay) execAllocator(c Call, tree *scriptedTree) {
 	case "create_prefill_budget":
 		var n int
 		r.arg(c, "num_mixed_decode_tokens", &n)
+		// The budget's own methods are not a traced interface; see TestPrefillBudgetDrawsDownReservations.
 		if b := a.CreatePrefillBudget(tree, n); b == nil {
 			r.t.Errorf("seq %d: create_prefill_budget gave no budget; SGLang gave %s", c.Seq, c.Ret)
 		}

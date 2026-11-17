@@ -17,6 +17,9 @@ func (b budgetTree) SupportsMamba() bool    { return b.mamba }
 
 // A prefill budget (prefill_budget.py:62-168@297e54fd) reads what is free and evictable live, and
 // draws down a reservation of the extend in whole pages, one page and the expected decode tokens.
+// PrefillBudget is not one of the framework's traced interfaces, so the trace replay checks only
+// that create_prefill_budget gives a budget; these figures are worked from SGLang's code by hand,
+// not recorded from it.
 func TestPrefillBudgetDrawsDownReservations(t *testing.T) {
 	a := NewPagedAllocator(64, 4, nil, false)
 	b := a.CreatePrefillBudget(budgetTree{evictable: 8, fullEvictable: 100}, 2)
