@@ -358,6 +358,14 @@ func tierTransferTime(p Pricer, t engine.Transfer, bytes int64) (engine.Duration
 // offload connector does not read is ignored, as vLLM ignores it.
 const TagKVTransferParams = "kv_transfer_params"
 
+// setParams states the request's kv_transfer_params to the connector before the scheduler adds the
+// request; nil clears them.
+func (o *offload) setParams(id string, params map[string]any) {
+	if o != nil {
+		o.conn.SetRequestParams(id, params)
+	}
+}
+
 // requestParams is the request's kv_transfer_params for the scheduler's request; nil with none, or
 // with no offload.
 func (o *offload) requestParams(r engine.Request) (map[string]any, error) {

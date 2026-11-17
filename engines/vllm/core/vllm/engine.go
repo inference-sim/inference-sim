@@ -368,7 +368,8 @@ func (e *Engine) Add(r engine.Request, now engine.Time) error {
 		return err
 	}
 	sr.Transfer = tp
-	if sr.KVTransferParams, err = e.off.requestParams(r); err != nil {
+	params, err := e.off.requestParams(r)
+	if err != nil {
 		return err
 	}
 	if r.Adapter != "" {
@@ -382,7 +383,9 @@ func (e *Engine) Add(r engine.Request, now engine.Time) error {
 		sr.LoRAName = r.Adapter
 		sr.Keys.Extra = loraExtraKey(r.Adapter, r.AdapterPath)
 	}
+	e.off.setParams(r.ID, params)
 	if err := e.s.Add(sr); err != nil {
+		e.off.setParams(r.ID, nil)
 		return fmt.Errorf("vllm: %w", err)
 	}
 	e.reqs[r.ID] = &reqState{req: r, maxTokens: maxTokens}
