@@ -128,7 +128,7 @@
   status: partial
   target:
     status: ci
-    milestone: 4
+    milestone: 3
   note: >-
     the engine-setting flags that restate scenario fields are removed only in M4; the router fork
     parses router inputs with llm-d's own strict code; its inert-flag and audited-plugin lists are
@@ -196,15 +196,18 @@
   status: new
   target:
     status: ci
-    milestone: 4
+    milestone: 3
 - id: X3
   section: §4
   title: Engine behaviour lives only in its engine repository.
   statement: >-
-    Scheduling, KV management, KV connectors and tiering decisions, default resolution, and lowering
-    a model to kernel implementations belong to blis-vllm or blis-sglang. Each engine repository models
-    one upstream release at a time (LIF-5).
+    Scheduling, KV management, KV connectors and tiering decisions, default resolution, and lowering a
+    model to kernel implementations belong to blis-vllm or blis-sglang. Each engine repository models
+    one upstream release at a time (LIF-5). The decisions of a KV store package belong to blis-kvstore.
+    The cut between them is the store's storage API (§6.5): the connector and its adapter, which decide
+    which tokens a request saves and loads, are engine behaviour and stay in the engine repository.
   scope:
+  - blis-kvstore
   - blis-sglang
   - blis-substrate
   - blis-vllm
@@ -243,6 +246,22 @@
       cross-domain traffic of step collectives that overlap in time (SIM-13) (§6.2)
     runs: pull_request
     status: new
+  - repo: blis-kvstore
+    check: >-
+      The repository imports only packages under contracts/, and every kvstore.Store that
+      inference-sim builds comes from it (KVS-2)
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      No engine-repository file is derived from a path in a store package other than the adapter the
+      connector imports, and no blis-kvstore file is derived from an engine's tree (the provenance test)
+    runs: pull_request
+    status: new
+  - repo: blis-kvstore
+    check: No blis-kvstore file is derived from an engine's tree (the provenance test)
+    runs: pull_request
+    status: new
   - repo: blis-vllm
     check: Every ported file names the release that the repository's Upstream record names
     runs: pull_request
@@ -252,6 +271,20 @@
     runs: pull_request
     status: new
   review:
+  - question: >-
+      Does this file, though marked original, decide what a store holds, where an object lives or what
+      it evicts, which belongs to a blis-kvstore package?
+    expertise: engine repository expertise
+    when: a change to an engine's connector or storage-backend code
+    applies_when:
+      repos:
+      - blis-vllm
+      - blis-sglang
+      paths:
+      - core/connector/**
+      - '**/connector/**'
+      exclude:
+      - '**/*_test.go'
   - question: >-
       Is engine behaviour, such as scheduling, admission or KV accounting, being added to the simulator
       instead of an engine repository?
@@ -273,7 +306,7 @@
   status: partial
   target:
     status: ci
-    milestone: 4
+    milestone: 3
 - id: X4
   section: §4
   title: The router is llm-d's own router code, unchanged.
@@ -638,7 +671,7 @@
   status: partial
   target:
     status: ci
-    milestone: 4
+    milestone: 3
   note: compat/kernelmodel imports the cost model until M4 (§3.3)
 - id: X8
   section: §4
@@ -745,7 +778,7 @@
   status: new
   target:
     status: ci
-    milestone: 2
+    milestone: 3
 - id: X9
   section: §4
   title: The upstream feature surface is fully accounted for.
@@ -1826,7 +1859,7 @@
   status: partial
   target:
     status: ci
-    milestone: 4
+    milestone: 3
   note: >-
     some jobs fail on zero items; no verdict names its tree; the pull-request check no longer
     records review answers, since a review question is guidance for the review agent (design
@@ -1979,7 +2012,7 @@
   status: new
   target:
     status: ci
-    milestone: 4
+    milestone: 3
   note: >-
     the pull-request step lists open threads and never fails, by the maintainer's order that no
     check waits on a person; branch protection, which blocks the merge until every conversation is

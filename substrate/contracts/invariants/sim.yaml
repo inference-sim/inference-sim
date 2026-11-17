@@ -25,7 +25,7 @@
   status: new
   target:
     status: ci
-    milestone: 4
+    milestone: 3
   note: >-
     engine: {kind, version} in M1; engine_version refused in M4. Today the build requires exactly
     one kind (cmd/engine_driver_build.go:101).
@@ -189,7 +189,7 @@
   status: new
   target:
     status: ci
-    milestone: 2
+    milestone: 3
 - id: SIM-9
   section: §5
   statement: >-
@@ -252,11 +252,11 @@
 - id: SIM-11
   section: §5
   statement: >-
-    Every field the simulator itself reads (scenario keys outside the engine and router blocks, trace
-    headers, replay descriptors) is consumed, refused or inert, and says which. Engine and router
-    blocks are classified only by their owners (X1). A consumed field changes some byte of the Result
-    when it changes. One validator exists per kind of value (X15), and every input that carries that
-    kind calls it, so a value refused on the command line is refused in a trace header too.
+    Every field the simulator itself reads (scenario keys outside the engine, router and stores blocks,
+    trace headers, replay descriptors) is consumed, refused or inert, and says which. Engine, router and
+    stores blocks are classified only by their owners (X1, KVS-7). A consumed field changes some byte of
+    the Result when it changes. One validator exists per kind of value (X15), and every input that
+    carries that kind calls it, so a value refused on the command line is refused in a trace header too.
   scope:
   - inference-sim
   checks:
@@ -348,3 +348,114 @@
   target:
     status: ci
     milestone: 2
+- id: SIM-15
+  section: §5
+  statement: >-
+    For each part of a layered transfer (§6.2), the simulator sends the engine one transfer-complete
+    message, timestamped when the part's last byte arrives under the link sharing of SIM-13. It computes
+    no step time from them.
+  scope:
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: >-
+      A test that each part of a layered transfer produces exactly one message at its arrival time, and
+      that a step's end is taken only from the engine's own time advance
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      The coupled replay test (FID-9)
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 3
+- id: SIM-16
+  section: §5
+  statement: >-
+    A scenario may state several deployments, each with its own model and pools. A request goes to the
+    deployment whose model it names, chosen by the model alone, and each deployment has its own hosted
+    router (one per InferencePool) with its own state and its own named random streams (DEV-6), so a
+    draw in one router never moves another. An endpoint's lifecycle events reach only the router of its
+    pool. A request that names no deployed model is refused by name, with the models the scenario
+    deploys. The Result reports figures per model, and a scenario with one deployment runs and reports
+    exactly as it did before.
+  scope:
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: >-
+      A test with two models in two pools: each request reaches its own pool; changing the second router's
+      configuration leaves the first model's routing byte-identical; an endpoint removed from one pool is
+      unknown to the other router; a request for an undeployed model is refused with its message; a run
+      and its replay agree
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      The two tests of SIM-9 for the refusal of a request that names no deployed model
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 3
+- id: SIM-17
+  section: §5
+  statement: >-
+    A cluster may hold node pools of different chips. An instance is priced and sized by the variant of
+    the pool it is placed in: its PoolPlan, KV budget, step limits and hourly cost all come from that
+    pool's chip, never from another pool's. A variant is a scenario for that chip (the same model, the
+    pool's cluster.hardware), opened once per pool; a node pool whose chip has no variant is refused by
+    name. Two pools may share a chip and differ in price; each instance is billed at the price of the
+    pool it sits in.
+  scope:
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: >-
+      A test with an H100 pool and an A100 pool under one workload: an instance in each reports its own
+      pool's KV budget, step time and price, and a pool with no variant is refused with its name
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 3
+- id: SIM-18
+  section: §5
+  statement: >-
+    Engines that run a file-system secondary tier (fs) and name one root_dir for the same model read and
+    write one file system, as vLLM instances over one shared file system do: a block file one engine
+    publishes is a hit for every other engine of that model on that root_dir. A different root_dir, or a
+    different model, is a different file system, since block files of two models are not
+    interchangeable. inference-sim builds one store for each (model, root_dir) pair of a run and hands
+    it to every engine of the model through the engine's ShareTierStorage; an engine never makes a store
+    of its own for a root_dir it shares. The tier has no capacity and evicts nothing, as vLLM's fs tier
+    has none (fs/manager.py).
+  scope:
+  - blis-vllm
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: >-
+      A test with engines of two models and two root_dir values: a block file published by one engine is
+      found by the engines of its model on its root_dir and by no other
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      A test in which a prompt one engine cascaded to the shared storage is promoted and loaded by a
+      second engine, which computes only the tokens past the shared prefix
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 3
