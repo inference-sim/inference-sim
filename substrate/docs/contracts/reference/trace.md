@@ -38,6 +38,7 @@ columns `vllm_priority`, `x_request_id`, `server_input_tokens`, `send_time_us`,
 | `kv_offload` | mapping | no | The resolved KV-cache offload configuration of the run that wrote the trace, below. |
 | `max_nodes_spanned` | integer | no | The most nodes one instance occupied, when more than one. A replay refuses a trace it cannot reproduce. |
 | `router` | mapping | no | The llm-d router inputs the run routed with, below. |
+| `acceptance` | mapping | no | What the workload stated about speculative acceptance: `category`, `thinking` (`on` or `off`) and `value`, as in the [acceptance reference](acceptance.md#workload-terms). A replay resolves the profile from it as the run did; a selector on the command line overrides it. Omitted when the workload stated none. |
 
 A `generated` or `replayed` trace records a BLIS deployment, and a replay keeps its header
 authoritative: it does not add offload tiers or other deployment options the run did not

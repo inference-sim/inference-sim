@@ -23,9 +23,9 @@ const (
 // Workload is what a workload says about acceptance: the category and thinking mode that
 // select a profile, and optionally a value of its own.
 type Workload struct {
-	Category string
-	Thinking Thinking
-	Value    *Value
+	Category string   `yaml:"category,omitempty"`
+	Thinking Thinking `yaml:"thinking,omitempty"`
+	Value    *Value   `yaml:"value,omitempty"`
 }
 
 // Request is everything that bears on a run's acceptance. Model, SpeculativeMethod and

@@ -180,6 +180,23 @@ speculates another K it is refused rather than rescaled.
 | `source` | string | no | Where the value came from, recorded with the resolution. |
 | `realisation` | string | no | How the run realised its acceptance: `natural` (real verification) or `synthetic` (the engine's forced acceptance). A natural value with no rates is spread with its method's shape, and refused when no set states one; a synthetic or unstated one with `MinimumVarianceRates`. |
 
+## Workload terms
+
+What a workload says about acceptance, in a workload shape's `acceptance` key and in a trace
+header's `acceptance` key (the terms the run that wrote the trace was given, so that a replay
+resolves the same profile, DEV-7). It is the workload layer of the resolution: a selector or
+value given on the command line overrides it.
+
+<!-- fields: acceptance.Workload -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `category` | string | no | The workload category that selects a registry profile. |
+| `thinking` | string | no | Whether the target runs with thinking on: `on` or `off`. Selects the profile with the category. |
+| `value` | mapping | no | An acceptance value of the workload's own, as in Inline values above. |
+
+At least one of the three is stated.
+
 ## Scenario pin
 
 The value of a scenario's `acceptance` key.

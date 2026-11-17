@@ -52,6 +52,25 @@
       ],
       "type": "object"
     },
+    "acceptance.Workload": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "type": "string"
+        },
+        "thinking": {
+          "enum": [
+            "on",
+            "off"
+          ],
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/acceptance.Value"
+        }
+      },
+      "type": "object"
+    },
     "routing.Pin": {
       "additionalProperties": false,
       "properties": {
@@ -193,6 +212,9 @@
     "trace.Header": {
       "additionalProperties": false,
       "properties": {
+        "acceptance": {
+          "$ref": "#/$defs/acceptance.Workload"
+        },
         "goodput_slo_targets": {
           "additionalProperties": {
             "$ref": "#/$defs/trace.SLODimTargets"
