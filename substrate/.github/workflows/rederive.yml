@@ -64,7 +64,15 @@ jobs:
       # The AISimulate commit the committed values re-derive at. Pinned by SHA because the
       # repository's history moves; bump it deliberately, together with the diff the
       # writers produce at the new commit (docs/reproducing-coefficients.md).
-      AISIMULATE_SHA: 2f0f4cd8606d580567b253d02f3d699fe36db865
+      # The repository is ai-dynamo/aisim since its rename (f85518b3); the package moved from
+      # python/aisimulate/src/aisimulate_core to python/aisim/src/aisim_core with it.
+      AISIMULATE_SHA: 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18
+      # A third AISimulate commit, for one table: dsv4_hca_attn_module_perf, the FlashMLA sparse
+      # decode kernel measured alone, which AISimulate retired at e8cbe2dc. Its successor times
+      # the whole attention module, a different boundary (VAL-9), so the DeepSeek-V4.1 writers
+      # read the kernel rows here (fit_deepseek_v41_h200.py KERNEL_DATA_SHA) and every other
+      # table at AISIMULATE_SHA.
+      AISIMULATE_DSV4_KERNEL_SHA: 2f0f4cd8606d580567b253d02f3d699fe36db865
       # A second AISimulate commit, for one family: the h100/h200 fp16 all-reduce triples on
       # vLLM 0.31.0's custom all-reduce (scripts/relane_allreduce_vllm.py), a sweep the main
       # pin predates. Moving AISIMULATE_SHA itself would refit every family at once.
@@ -80,24 +88,36 @@ jobs:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # The whole aisimulate_core package (~135 MB): the sweeps under systems/, the model
+      # The whole aisim_core package (~250 MB): the sweeps under systems/, the model
       # configs fit_deepseek_v41_h200.py asserts geometry from, and the sdk/ source
       # emit_memory.py reads NVIDIA's activation table out of. A narrower checkout once
       # left sdk/ out and failed the memory writer.
-      - name: Check out AISimulate (pinned, the aisimulate_core package only)
+      - name: Check out AISimulate (pinned, the aisim_core package only)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ai-dynamo/aisimulate
+          repository: ai-dynamo/aisim
           ref: ${{ env.AISIMULATE_SHA }}
           path: aisimulate
           fetch-depth: 1
           sparse-checkout: |
-            python/aisimulate/src/aisimulate_core
+            python/aisim/src/aisim_core
+
+      # Before the rename, so the old package path.
+      - name: Check out AISimulate at the DeepSeek-V4 kernel pin (the FlashMLA sparse table only)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ai-dynamo/aisim
+          ref: ${{ env.AISIMULATE_DSV4_KERNEL_SHA }}
+          path: aisimulate-dsv4-kernel
+          fetch-depth: 1
+          sparse-checkout: |
+            python/aisimulate/src/aisimulate_core/systems/data/h100_sxm/sparse_attention/vllm/0.25.0
+            python/aisimulate/src/aisimulate_core/systems/data/h200_sxm/sparse_attention/vllm/0.25.0
 
       - name: Check out AISimulate at the all-reduce pin (h100/h200 comm only)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ai-dynamo/aisimulate
+          repository: ai-dynamo/aisim
           ref: ${{ env.AISIMULATE_ALLREDUCE_SHA }}
           path: aisimulate-allreduce
           fetch-depth: 1
@@ -145,7 +165,8 @@ jobs:
 
       - name: Run every gate with the data present
         env:
-          AISIMULATE_DATA: ${{ github.workspace }}/aisimulate/python/aisimulate/src/aisimulate_core/systems/data
+          AISIMULATE_DATA: ${{ github.workspace }}/aisimulate/python/aisim/src/aisim_core/systems/data
+          AISIMULATE_DSV4_KERNEL_DATA: ${{ github.workspace }}/aisimulate-dsv4-kernel/python/aisimulate/src/aisimulate_core/systems/data
           BLIS_CATALOG: ${{ github.workspace }}/catalog
           BLIS_KERNEL_IMPLS: ${{ github.workspace }}/blis-vllm/kernel_impls.json
           AISIMULATE_ALLREDUCE_DATA: ${{ github.workspace }}/aisimulate-allreduce/python/aisimulate/src/aisimulate_core/systems/data

@@ -33,6 +33,6 @@ those methods and says so rather than reusing the figures above for them. The wh
 | `collective_transition_rate_all_reduce` | 40 | 1.04 | 2.07 | 1.84 | 290.88 |
 | `collective_transition_rate_alltoall` | 34 | 1.03 | 1.08 | 1.82 | 233.40 |
 | `collective_transition_rate_reduce_scatter` | 34 | 1.01 | 1.16 | 1.97 | 230.33 |
-| `gemm_eps_max` | 29 | 1.05 | 1.39 | 1.07 | 2.40 |
-| `gemm_m_half` | 29 | 1.14 | 2.54 | 1.18 | 3.63 |
+| `gemm_eps_max` | 29 | 1.03 | 1.33 | 1.07 | 2.40 |
+| `gemm_m_half` | 29 | 1.16 | 2.54 | 1.26 | 4.12 |
 | `other` | 158 | 1.05 | 2.95 | 1.14 | 61.42 |
