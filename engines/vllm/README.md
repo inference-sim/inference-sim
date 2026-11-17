@@ -141,10 +141,6 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
     `attention_config.backend` (blis-vllm#80), `attention_config.indexer_sparse_logits` (#84),
     `kv_offloading_backend` (#87) and the
     environment variable `VLLM_USE_SIMPLE_KV_OFFLOAD` (#87, refused by the block's `env`);
-  - a deployment field, not a key of the engine block, that the engine reads from the deployment:
-    `data_parallel_external_lb` (#86) and `data_parallel_hybrid_lb` (#64), both stated as the pool's
-    `parallel.data_parallel_load_balancing`, and `data_parallel_size_local` (#55), stated as
-    `parallel.dp_local` and refused when its packing differs from the engine's;
   - environment variables that change what a run does but not what the cost model prices, where an unset
     variable gives the same engine path for the values recorded runs state (the harness that writes the
     stand-in checks that, and names the field and the recorded value on the point): `VLLM_FLASHINFER_ALLREDUCE_BACKEND`
@@ -238,6 +234,19 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   the citations they had (the fields.json entry and its status are unchanged here):
   `default_chat_template_kwargs` and thinking mode (#107), `enable_eplb` (#108), and decode context
   parallelism and `prefix_match_unit` (#109).
+- **The data-parallel load-balancing flags are `modelled` (#86, #64).** `data_parallel_external_lb`,
+  `data_parallel_multi_port_external_lb`, `data_parallel_hybrid_lb` and `data_parallel_size_local` are keys of the
+  engine block, which a host restates from the pool's `parallel.data_parallel_load_balancing` and `parallel.dp_local` as it restates
+  `parallel.dp`. The engine resolves them as `EngineArgs.create_engine_config` does (`vllm/engine/arg_utils.py:2383-2538@4ba787ec`):
+  external, or the multi-port launcher that starts one external rank server per local rank, runs one rank per endpoint, each
+  endpoint's client a `DPAsyncMPClient` that balances nothing; hybrid with `data_parallel_size_local` ranks per node runs one
+  endpoint per node whose `DPLBAsyncMPClient` balances only that node's ranks, on the coordinator's counts sliced to them
+  (`core_client.py:740-746,1580-1600@4ba787ec`); hybrid with one rank per node is external, and hybrid with every rank local
+  is internal. Under either mode the router outside the engine picks the endpoint (`DPGroup.AddToEndpoint`; `Add` is refused),
+  and the engine does not rebalance what the router sent. The ranks still step in lockstep and share the wave's all-reduce. Evidence
+  is `oracle/scenarios-dp-modes` (vLLM's `DPLBAsyncMPClient` objects, one per node over that node's ranks and, for external, one per rank over that one rank, compared with the Go routing by
+  `TestDPModesAgainstVLLM` in CI; vLLM's trace for them is produced by CI and not committed). The per-process
+  `--data-parallel-rank` and `--data-parallel-start-rank` only say which pod runs which rank and stay #55's.
 - **`api_server_count` is `modelled` (#105).** It is the number of load-balancing clients of a data-parallel
   group: each API server holds its own `DPLBAsyncMPClient`, which scales its in-flight count and its optimistic
   waiting bump by the client count and starts its scan at `n * client_index / client_count`

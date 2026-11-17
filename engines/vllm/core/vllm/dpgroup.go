@@ -63,6 +63,9 @@ type DPGroup struct {
 	// wave all-reduce (core.DP.EndStep) runs once every such rank has its output.
 	open      *dpOpen
 	queueSize int
+	// balancing is dpHybrid or dpExternal when the ranks are exposed as endpoints a router chooses
+	// between (dp.Fronts), and empty under the internal balancer.
+	balancing string
 	nextID    engine.BatchID
 	// statsIntervalUs is the coordinator's publication interval; epoch is the interval the
 	// balancer's counts were last published in, -1 before the first.
@@ -112,6 +115,10 @@ func newDPGroup(st settings, pricer Pricer) (*DPGroup, error) {
 	n := st.dp.ranks
 	g := &DPGroup{dp: &core.DP{LB: core.NewLoadBalancers(n, st.dp.clients)}, pricer: pricer, servesRender: st.servesRender, rankOf: map[string]int{}, abortedOn: map[string]int{},
 		queueSize: max(st.queueSize, 1), statsIntervalUs: max(st.dp.statsIntervalUs, 1), epoch: -1}
+	if st.dp.balancing != dpInternal {
+		g.dp.Fronts = core.NewFronts(n, st.dp.local, st.dp.clients)
+		g.balancing = st.dp.balancing
+	}
 	if st.placement != nil {
 		pl := *st.placement
 		pl.NodeRacks = append([]int(nil), pl.NodeRacks...)
@@ -163,12 +170,60 @@ func (g *DPGroup) publish(now engine.Time) {
 		nr, nw := r.e.s.Counts()
 		counts[i] = [3]float64{float64(nw), float64(nr), r.e.s.KV.Pool.Usage()}
 	}
+	if len(g.dp.Fronts) > 0 {
+		g.dp.PublishFronts(counts)
+		return
+	}
 	g.dp.LB.Publish(counts)
 }
 
 // Add routes the request with the internal load balancer and hands it to that rank; a request
-// arriving at an idle wave starts the next wave on every rank (core.DP.Add).
+// arriving at an idle wave starts the next wave on every rank (core.DP.Add). Under hybrid or
+// external balancing the group has several endpoints and the router outside the engine picks
+// one, so a request that names none is refused (AddToEndpoint).
 func (g *DPGroup) Add(r engine.Request, now engine.Time) error {
+	if g.balancing != "" {
+		return fmt.Errorf("vllm: request %s names no endpoint: under %s data-parallel load balancing the group has %d "+
+			"endpoints and the router outside the engine picks one (AddToEndpoint)", r.ID, g.balancing, g.Endpoints())
+	}
+	return g.add(r, now, func() (int, error) { return g.dp.Add(r.ID), nil })
+}
+
+// AddToEndpoint hands a request the router sent to endpoint e: under external balancing the one
+// rank that endpoint serves, under hybrid the rank its node's front end balances the request to.
+// It is the host's call for a router that chooses the rank or the node (llm-d's router with
+// --data-parallel-rank pods, or per-node hybrid pods); the engine does not choose between
+// endpoints. It is refused under the internal balancer, whose one endpoint is Add's.
+func (g *DPGroup) AddToEndpoint(e int, r engine.Request, now engine.Time) error {
+	if g.balancing == "" {
+		return fmt.Errorf("vllm: request %s names endpoint %d, but the internal data-parallel balancer has one endpoint and "+
+			"picks the rank itself (Add)", r.ID, e)
+	}
+	return g.add(r, now, func() (int, error) { return g.dp.AddFront(e, r.ID) })
+}
+
+// Endpoints is how many endpoints a router chooses between: one under the internal balancer, one
+// per node under hybrid, one per rank under external.
+func (g *DPGroup) Endpoints() int {
+	if g.balancing == "" {
+		return 1
+	}
+	return len(g.dp.Fronts)
+}
+
+// EndpointRanks is the first rank and the number of ranks endpoint e serves.
+func (g *DPGroup) EndpointRanks(e int) (first, n int) {
+	if g.balancing == "" {
+		return 0, len(g.ranks)
+	}
+	if e < 0 || e >= len(g.dp.Fronts) {
+		return 0, 0
+	}
+	fr := g.dp.Fronts[e]
+	return fr.First, len(fr.LB.Counts)
+}
+
+func (g *DPGroup) add(r engine.Request, now engine.Time, route func() (int, error)) error {
 	// A request that cannot exist is refused before the balancer sees it, so it takes no slot.
 	if err := r.Validate(); err != nil {
 		return err
@@ -177,9 +232,12 @@ func (g *DPGroup) Add(r engine.Request, now engine.Time) error {
 		return fmt.Errorf("vllm: request %s added twice", r.ID)
 	}
 	g.publish(now)
-	rank := g.dp.Add(r.ID)
+	rank, err := route()
+	if err != nil {
+		return err
+	}
 	if err := g.ranks[rank].e.Add(r, now); err != nil {
-		g.dp.LB.Finished(r.ID)
+		g.dp.FinishedFront(rank, r.ID)
 		return err
 	}
 	g.rankOf[r.ID] = rank
@@ -441,7 +499,7 @@ func (g *DPGroup) Complete(id engine.BatchID, outcome engine.Outcome, end engine
 // completes, as an aborted request's does.
 func (g *DPGroup) retire(fins []engine.Finished) {
 	for _, f := range fins {
-		g.dp.LB.Finished(f.ID)
+		g.dp.FinishedFront(g.rankOf[f.ID], f.ID)
 		if r := g.rankOf[f.ID]; g.inFlight(r, f.ID) {
 			g.abortedOn[f.ID] = r
 		} else {
@@ -466,7 +524,7 @@ func (g *DPGroup) Finish(id string, why engine.FinishReason, now engine.Time) er
 	if !ok {
 		return nil
 	}
-	g.dp.LB.Finished(id)
+	g.dp.FinishedFront(r, id)
 	err := g.ranks[r].e.Finish(id, why, now)
 	if !g.inFlight(r, id) {
 		// No iteration in flight names it any more; one that does still maps it to its rank
