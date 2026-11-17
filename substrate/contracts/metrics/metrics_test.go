@@ -518,7 +518,7 @@ func TestThroughputAndInteractivityFormsAreNotComparable(t *testing.T) {
 // share of the engine's time is not comparable to another metric's fraction (a hit rate, an
 // attainment) nor are the prefill and decode parts comparable to the whole (inference-sim#2081).
 func TestBusyShareDefinitions(t *testing.T) {
-	ids := []string{"busy_share", "prefill_busy_share", "decode_busy_share"}
+	ids := []string{"busy_share", "prefill_busy_share", "decode_busy_share", "mfu"}
 	for _, id := range ids {
 		d, ok := Lookup(id)
 		if !ok {

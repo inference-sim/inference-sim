@@ -126,6 +126,9 @@ const (
 	FormulaPrefillBusyShare Formula = "prefill_busy_share"
 	// FormulaDecodeBusyShare is the part of the busy time charged to decode tokens.
 	FormulaDecodeBusyShare Formula = "decode_busy_share"
+	// FormulaMFU is the model FLOPs the engine ran over the most it could have run in the window
+	// at the GPUs' datasheet dense peak.
+	FormulaMFU Formula = "mfu"
 )
 
 // Statistic summarises a population.
@@ -524,6 +527,8 @@ func build() map[string]Definition {
 		"The part of busy_share charged to prefill: each step's time is split by the step's scheduled tokens, those of requests still computing their prompt against those past it (decode tokens, speculative drafts included).")
 	busy("decode_busy_share", FormulaDecodeBusyShare,
 		"The part of busy_share charged to decode: each step's time is split by the step's scheduled tokens (see prefill_busy_share). prefill_busy_share and decode_busy_share add up to busy_share.")
+	busy("mfu", FormulaMFU,
+		"Estimated model-FLOPs utilization: the model FLOPs of the steps run in the measured window (each step clipped to it, FLOPs in proportion), counted from the model graph as the kernel prices it (dense and expert GEMMs per token, the head over the sampling rows, attention over the keys each query reads; the elementwise work, recurrent mixers, sparse index scoring and drafter passes are not counted), over the window's length times the scope's GPUs times one GPU's datasheet dense peak at the format the linear layers run in. A model that is mostly recurrent therefore reads low.")
 	add(Definition{ID: "interactivity_mean", Formula: FormulaUserTPS, Statistic: StatMean,
 		Population: PopulationRequestsTwoTokens, Window: WindowMeasured, Unit: UnitTokensPerSUser,
 		Unfinished: UnfinishedExcluded, Follows: aiperfTPS,
