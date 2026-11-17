@@ -6,6 +6,10 @@ package tiering
 
 import "fmt"
 
+// p2pPeerFaultDrainS is _PEER_FAULT_DRAIN_S (session.py:68@4ba787ec): how long a data-plane fault
+// waits for in-flight WRITEs before it disconnects.
+const p2pPeerFaultDrainS = 10.0
+
 // sessionPoll is SessionPollResult (session.py:71-84).
 type sessionPoll struct {
 	loads    []loadResult
@@ -28,6 +32,8 @@ type p2pSession struct {
 	queued    []P2PMsg
 	// deathReason is the first cause _mark_dead recorded; "" is none.
 	deathReason    string
+	peerFaultAt    float64
+	peerFaultSeen  bool
 	connectedAt    float64
 	connected      bool
 	lastActivityAt float64
@@ -96,7 +102,7 @@ func (s *p2pSession) serveExternal(p Parent)                { s.server.serveExte
 // registration lands, then run the handshake, load, store, peer-fault and lookup deadlines.
 func (s *p2pSession) poll() sessionPoll {
 	if s.conn == nil {
-		return sessionPoll{}
+		return sessionPoll{stores: s.server.timeoutPendingStoreJobs()}
 	}
 	msgs := s.conn.Recv()
 	if len(msgs) > 0 {
@@ -106,9 +112,16 @@ func (s *p2pSession) poll() sessionPoll {
 		s.onMessage(m)
 	}
 	s.pollRegistration()
+	if !s.sendReady && s.conn.Alive() && s.connected && s.now()-s.connectedAt > s.handshakeS {
+		s.markDead("handshake timed out")
+	}
 	loads := s.client.collectResults()
 	stores := s.server.collectResults()
 	s.server.drainPendingAborts()
+	s.escalatePeerFault()
+	if _, ok := s.client.expiredLookup(); ok {
+		s.disconnect("lookup response timed out")
+	}
 	ids := s.newFetchIDs
 	s.newFetchIDs = nil
 	return sessionPoll{loads: loads, stores: stores, fetchIDs: ids}
@@ -138,6 +151,22 @@ func (s *p2pSession) onMessage(m P2PMsg) {
 	if err := s.dispatch(m); err != nil {
 		s.disconnect(fmt.Sprintf("protocol error: malformed %q: %v", m.Type, err))
 	}
+}
+
+// escalatePeerFault is _escalate_peer_fault (session.py:462-485).
+func (s *p2pSession) escalatePeerFault() {
+	fault := s.server.peerFault
+	if fault == "" || s.conn == nil || !s.conn.Alive() {
+		return
+	}
+	now := s.now()
+	if !s.peerFaultSeen {
+		s.peerFaultSeen, s.peerFaultAt = true, now
+	}
+	if s.server.hasInflight() && now-s.peerFaultAt < p2pPeerFaultDrainS {
+		return
+	}
+	s.disconnect("data plane: " + fault)
 }
 
 // disconnect is _disconnect (session.py:487-492): a best-effort DisconnectMsg, then dead.

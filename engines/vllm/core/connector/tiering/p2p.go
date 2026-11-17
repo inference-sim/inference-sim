@@ -12,6 +12,10 @@ import (
 // The tier's own deadlines (p2p/manager.py:49-85@4ba787ec), in seconds.
 const (
 	p2pUnboundStoreTimeoutS = 60.0
+	p2pReapedIDRetentionS   = 60.0
+	p2pIdleReapHeadroom     = 8
+	p2pReconnectMinBackoffS = 1.0
+	p2pReconnectMaxBackoffS = 60.0
 	// p2pDrainRounds bounds DrainJobs. vLLM's drain_jobs polls until no session has work, which
 	// waits forever on work only a peer can end (its messages are delivered between calls).
 	p2pDrainRounds = 10000
@@ -116,6 +120,8 @@ type unboundBatch struct {
 	submittedAt float64
 }
 
+type backoff struct{ wait, retryAt float64 }
+
 // P2PTier is P2PSecondaryTierManager (p2p/manager.py:212-1127): KV shared between instances. Each
 // remote peer has one session carrying both directions. A P/D decoder's lookups HIT at once and
 // its promotion fetches from the prefiller, whose stores are parked until that fetch binds them; a
@@ -134,12 +140,15 @@ type P2PTier struct {
 	data    P2PData
 	control P2PControl
 
-	sessions        omap[string, *p2pSession]
-	kvToSession     omap[string, *p2pSession]
-	unboundStores   omap[string, []unboundBatch]
-	finished        []JobResult
-	failedReqIDs    map[string]bool
-	failedServeCtxs []*ReqContext
+	sessions         omap[string, *p2pSession]
+	reconnectBackoff omap[string, backoff]
+	dataPlaneFaults  map[string]int
+	kvToSession      omap[string, *p2pSession]
+	unboundStores    omap[string, []unboundBatch]
+	reapedStores     omap[string, float64]
+	finished         []JobResult
+	failedReqIDs     map[string]bool
+	failedServeCtxs  []*ReqContext
 }
 
 // NewP2PTier builds a p2p tier over the host's control and data transports.
@@ -162,7 +171,8 @@ func NewP2PTier(cfg P2PConfig, control P2PControl, data P2PData) *P2PTier {
 	if cfg.Now == nil {
 		panic("tiering: a p2p tier needs the virtual clock (P2PConfig.Now)")
 	}
-	return &P2PTier{cfg: cfg, now: cfg.Now, data: data, control: control, failedReqIDs: map[string]bool{}}
+	return &P2PTier{cfg: cfg, now: cfg.Now, data: data, control: control, dataPlaneFaults: map[string]int{},
+		failedReqIDs: map[string]bool{}}
 }
 
 func (t *P2PTier) Type() string           { return "p2p" }
@@ -254,6 +264,9 @@ func (t *P2PTier) SubmitStore(j *TransferJob) {
 	case dst.kvID == "":
 		t.finished = append(t.finished, JobResult{ID: j.ID})
 		return
+	case t.reapedStores.has(dst.kvID):
+		t.finished = append(t.finished, JobResult{ID: j.ID})
+		return
 	}
 	keys, ids := append([]Key(nil), j.Keys...), append([]int(nil), j.ChunkIDs...)
 	if s, ok := t.kvToSession.get(dst.kvID); ok {
@@ -343,6 +356,9 @@ func (t *P2PTier) getOrCreateSession(peer string) *p2pSession {
 	if s, ok := t.sessions.get(peer); ok {
 		return s
 	}
+	if t.reconnectWait(peer) > 0 {
+		return nil
+	}
 	if t.sessions.len() >= t.cfg.MaxPeers {
 		return nil
 	}
@@ -359,6 +375,12 @@ func (t *P2PTier) getOrCreateSession(peer string) *p2pSession {
 func (t *P2PTier) acceptNewPeers(conns []P2PConn) {
 	for _, conn := range conns {
 		if t.sessions.len() >= t.cfg.MaxPeers {
+			conn.Close()
+			continue
+		}
+		if t.reconnectWait(conn.PeerID()) > 0 {
+			// Inside a reconnect backoff the peer is told at once (:800-805).
+			_ = conn.Send(P2PMsg{Type: p2pDisconnect})
 			conn.Close()
 			continue
 		}
@@ -393,7 +415,8 @@ func (t *P2PTier) teardown(peer string) *p2pSession {
 	return s
 }
 
-// reapDeadSessions is _reap_dead_sessions (:827-878).
+// reapDeadSessions is _reap_dead_sessions (:827-878): a data-plane fault also schedules a
+// reconnect backoff.
 func (t *P2PTier) reapDeadSessions() {
 	var dead []string
 	for _, p := range t.sessions.keys() {
@@ -402,6 +425,93 @@ func (t *P2PTier) reapDeadSessions() {
 		}
 	}
 	for _, p := range dead {
+		fault := ""
+		if s, _ := t.sessions.get(p); s != nil {
+			fault = s.server.peerFault
+		}
+		t.teardown(p)
+		if fault != "" {
+			t.dataPlaneFaults[p]++
+			t.scheduleReconnectBackoff(p)
+		}
+	}
+}
+
+// scheduleReconnectBackoff is _schedule_reconnect_backoff (:880-898): 0 for a first fault, then
+// doubling from 1 s to 60 s while each fault follows the previous wait's end by at most 60 s.
+func (t *P2PTier) scheduleReconnectBackoff(peer string) float64 {
+	now := t.now()
+	for _, p := range t.reconnectBackoff.keys() {
+		if b, _ := t.reconnectBackoff.get(p); now-b.retryAt > p2pReconnectMaxBackoffS {
+			t.reconnectBackoff.pop(p)
+		}
+	}
+	wait := 0.0
+	if prev, ok := t.reconnectBackoff.get(peer); ok {
+		wait = min(max(2*prev.wait, p2pReconnectMinBackoffS), p2pReconnectMaxBackoffS)
+	}
+	t.reconnectBackoff.set(peer, backoff{wait: wait, retryAt: now + wait})
+	return wait
+}
+
+// reconnectWait is _reconnect_wait (:900-902).
+func (t *P2PTier) reconnectWait(peer string) float64 {
+	b, ok := t.reconnectBackoff.get(peer)
+	if !ok {
+		return 0
+	}
+	return b.retryAt - t.now()
+}
+
+// reapUnboundStores is _reap_unbound_stores (:904-952): parked stores no fetch bound within the
+// timeout fail, and their id is remembered as reaped for the retention.
+func (t *P2PTier) reapUnboundStores() {
+	now := t.now()
+	if t.reapedStores.len() > 0 {
+		keep := now - p2pReapedIDRetentionS
+		for _, id := range t.reapedStores.keys() {
+			if at, _ := t.reapedStores.get(id); at <= keep {
+				t.reapedStores.pop(id)
+			}
+		}
+	}
+	if t.unboundStores.len() == 0 {
+		return
+	}
+	deadline := now - t.cfg.UnboundStoreTimeoutS
+	var expired []string
+	for _, id := range t.unboundStores.keys() {
+		if b, _ := t.unboundStores.get(id); len(b) > 0 && b[0].submittedAt <= deadline {
+			expired = append(expired, id)
+		}
+	}
+	for _, id := range expired {
+		b, _ := t.unboundStores.pop(id)
+		t.reapedStores.set(id, now)
+		for _, x := range b {
+			t.finished = append(t.finished, JobResult{ID: x.job})
+		}
+	}
+}
+
+// reapIdleSessions is _reap_idle_sessions (:954-999): idle sessions are evicted only once the
+// free peer slots are down to the headroom.
+func (t *P2PTier) reapIdleSessions() {
+	if t.cfg.IdleReapOff || t.cfg.IdleTimeoutS <= 0 {
+		return
+	}
+	headroom := min(p2pIdleReapHeadroom, max(0, t.cfg.MaxPeers-1))
+	if t.sessions.len() < t.cfg.MaxPeers-headroom {
+		return
+	}
+	deadline := t.now() - float64(t.cfg.IdleTimeoutS)
+	var idle []string
+	for _, p := range t.sessions.keys() {
+		if s, _ := t.sessions.get(p); !s.hasPendingWork() && s.lastActivityAt <= deadline {
+			idle = append(idle, p)
+		}
+	}
+	for _, p := range idle {
 		t.teardown(p)
 	}
 }
@@ -422,6 +532,16 @@ func (t *P2PTier) pollOnce() {
 			t.finished = append(t.finished, JobResult{ID: x.jobID, Success: x.ok})
 		}
 		for _, id := range r.fetchIDs {
+			if t.reapedStores.has(id) {
+				// A fetch for a reaped id is answered at once with a failure, and the id stays
+				// unbound (:1042-1059).
+				s.finishRequest(id)
+				b, _ := t.unboundStores.pop(id)
+				for _, x := range b {
+					t.finished = append(t.finished, JobResult{ID: x.job})
+				}
+				continue
+			}
 			t.kvToSession.set(id, s)
 			b, _ := t.unboundStores.pop(id)
 			for _, x := range b {
@@ -430,4 +550,6 @@ func (t *P2PTier) pollOnce() {
 		}
 	}
 	t.reapDeadSessions()
+	t.reapUnboundStores()
+	t.reapIdleSessions()
 }

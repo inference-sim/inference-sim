@@ -6,6 +6,13 @@ package tiering
 
 import "fmt"
 
+// The client role's deadlines (client.py:33-35@4ba787ec), in seconds.
+const (
+	p2pLoadTimeoutS     = 30.0
+	p2pAbortAckTimeoutS = 10.0
+	p2pLookupTimeoutS   = 30.0
+)
+
 // probe is a symmetric lookup's outcome for one key: pending (None), hit (True) or miss (False).
 type probe int
 
@@ -49,9 +56,10 @@ type p2pClient struct {
 
 	requests omap[string, *clientReq]
 	// flushPending and activeLoads are sets of ids (client.py:131-136), iterated in insertion order.
-	flushPending   strSet
-	activeLoads    strSet
-	completedLoads []loadResult
+	flushPending    strSet
+	activeLoads     strSet
+	completedLoads  []loadResult
+	lookupDeadlines omap[string, float64]
 }
 
 func (c *p2pClient) getOrCreate(id string) *clientReq {
@@ -81,6 +89,17 @@ func (c *p2pClient) onLoadTerminal(id string, st *clientReq) {
 
 func (c *p2pClient) hasActiveLoads() bool { return c.activeLoads.len() > 0 }
 
+// expiredLookup is get_expired_lookup (client.py:177-183).
+func (c *p2pClient) expiredLookup() (string, bool) {
+	now := c.now()
+	for _, id := range c.lookupDeadlines.keys() {
+		if d, _ := c.lookupDeadlines.get(id); now >= d {
+			return id, true
+		}
+	}
+	return "", false
+}
+
 // requestBlocks is request_blocks (client.py:189-241): the FetchMsg that closes the current round.
 func (c *p2pClient) requestBlocks(jobID int, id string, keys []Key, blockIDs []int) {
 	st := c.getOrCreate(id)
@@ -103,6 +122,7 @@ func (c *p2pClient) requestBlocks(jobID int, id string, keys []Key, blockIDs []i
 		}
 	}
 	st.probes.clear()
+	c.lookupDeadlines.pop(id)
 }
 
 // finish is finish (client.py:243-288).
@@ -125,6 +145,7 @@ func (c *p2pClient) finish(id string) {
 	}
 	st.probes.clear()
 	st.unsent = nil
+	c.lookupDeadlines.pop(id)
 	c.flushPending.pop(id)
 	c.maybePrune(id)
 }
@@ -170,6 +191,7 @@ func (c *p2pClient) flushPendingLookups(ready bool) {
 			continue
 		}
 		st.peerLookupOpen = true
+		c.lookupDeadlines.setDefault(id, c.now()+p2pLookupTimeoutS)
 		c.send(P2PMsg{Type: p2pLookup, KVRequestID: id, Keys: st.unsent, RoundSeq: st.roundSeq})
 		st.unsent = nil
 	}
@@ -182,8 +204,10 @@ func (c *p2pClient) onLookupResp(id string, keys []Key, hits []bool) {
 	if !ok {
 		return
 	}
+	progressed := false
 	for i := 0; i < len(keys) && i < len(hits); i++ {
-		if _, ok := st.probes.get(keys[i]); ok {
+		if p, ok := st.probes.get(keys[i]); ok {
+			progressed = progressed || p == probePending
 			if hits[i] {
 				st.probes.set(keys[i], probeHit)
 			} else {
@@ -191,10 +215,52 @@ func (c *p2pClient) onLookupResp(id string, keys []Key, hits []bool) {
 			}
 		}
 	}
+	all := true
+	for _, p := range st.probes.values() {
+		if p == probePending {
+			all = false
+		}
+	}
+	switch {
+	case all:
+		c.lookupDeadlines.pop(id)
+	case progressed:
+		c.lookupDeadlines.set(id, c.now()+p2pLookupTimeoutS)
+	}
 }
 
-// collectResults is collect_results (client.py:473-526): the loads that ended.
+// collectResults is collect_results (client.py:473-526): a load past the load timeout sends
+// AbortFetch, and an abort unanswered past the abort-ack timeout fails its load.
 func (c *p2pClient) collectResults() []loadResult {
+	now := c.now()
+	type rm struct {
+		id    string
+		round int
+	}
+	var remove []rm
+	for _, id := range c.activeLoads.keys() {
+		st, _ := c.requests.get(id)
+		if st.loads.len() == 0 {
+			panic("tiering: an active p2p load id holds no load")
+		}
+		for _, round := range st.loads.keys() {
+			ld, _ := st.loads.get(round)
+			if !ld.aborted {
+				if now-ld.submittedAt >= p2pLoadTimeoutS {
+					ld.aborted, ld.abortedAt = true, now
+					c.send(P2PMsg{Type: p2pAbortFetch, KVRequestID: id, RoundSeq: round})
+				}
+			} else if now-ld.abortedAt >= p2pAbortAckTimeoutS {
+				remove = append(remove, rm{id, round})
+				c.completedLoads = append(c.completedLoads, loadResult{jobID: ld.jobID, kvID: id})
+			}
+		}
+	}
+	for _, r := range remove {
+		st, _ := c.requests.get(r.id)
+		st.loads.pop(r.round)
+		c.onLoadTerminal(r.id, st)
+	}
 	out := c.completedLoads
 	c.completedLoads = nil
 	return out
@@ -222,5 +288,6 @@ func (c *p2pClient) close() (failedJobs []int, failedIDs []string) {
 	c.flushPending.clear()
 	c.activeLoads.clear()
 	c.completedLoads = nil
+	c.lookupDeadlines.clear()
 	return failedJobs, failedIDs
 }

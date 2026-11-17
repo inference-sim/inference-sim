@@ -322,16 +322,21 @@ type memData struct {
 	remote      map[string]string // peer → its agent's name (the remote dlist)
 	inflight    omap[int, *memInflight]
 	nextID      int
+	strikes     map[string]int
+	faults      map[string]string
 	peerGen     map[string]int
 	// started is whether the registration worker thread has started.
 	started bool
 }
 
+// p2pMaxTransferFailures is _MAX_CONSECUTIVE_TRANSFER_FAILURES (data/nixl.py:64).
+const p2pMaxTransferFailures = 3
+
 // Data is the data transport of the instance at local, over a primary region of numBlocks blocks
 // of blockLen bytes. fingerprint is the config fingerprint its handshake advertises.
 func (n *P2PNetwork) Data(local string, numBlocks int, blockLen int64, fingerprint string) P2PData {
 	return &memData{net: n, local: local, numBlocks: numBlocks, blockLen: blockLen, fingerprint: fingerprint,
-		remote: map[string]string{}, peerGen: map[string]int{}}
+		remote: map[string]string{}, strikes: map[string]int{}, faults: map[string]string{}, peerGen: map[string]int{}}
 }
 
 func (d *memData) AgentMetadata() []byte { return []byte(agentName(d.local)) }
@@ -372,6 +377,8 @@ func (d *memData) AddRemotePeerAsync(peer string, metadata []byte, _ int64, _ in
 func (d *memData) RemoveRemotePeer(peer string) {
 	d.peerGen[peer]++
 	delete(d.remote, peer)
+	delete(d.strikes, peer)
+	delete(d.faults, peer)
 }
 
 // WriteBlocks is write_blocks (data/nixl.py:372-423).
@@ -410,27 +417,47 @@ func (d *memData) release(x *memXfer) {
 // Poll is poll (data/nixl.py:425-501), scoped to one peer.
 func (d *memData) Poll(peer string) P2PPollResult {
 	if d.inflight.len() == 0 {
-		return P2PPollResult{}
+		return P2PPollResult{PeerFault: d.faults[peer]}
 	}
 	var done, failed []int
+	succeeded := map[string]bool{}
+	type failure struct{ peer, cause string }
+	var failures []failure
 	for _, tid := range d.inflight.keys() {
 		e, _ := d.inflight.get(tid)
 		if e.peer != peer {
 			continue
 		}
-		switch d.state(e.x) {
+		switch st := d.state(e.x); st {
 		case "DONE":
 			done = append(done, tid)
+			succeeded[e.peer] = true
 		case "PROC", "PEND":
 		default:
 			failed = append(failed, tid)
+			failures = append(failures, failure{e.peer, "state " + st})
+		}
+	}
+	for p := range succeeded {
+		delete(d.strikes, p)
+	}
+	for _, f := range failures {
+		d.strikes[f.peer]++
+		if d.strikes[f.peer] >= p2pMaxTransferFailures {
+			d.setFault(f.peer, fmt.Sprintf("%d consecutive transfer failures (last: %s)", d.strikes[f.peer], f.cause))
 		}
 	}
 	for _, tid := range append(append([]int(nil), done...), failed...) {
 		e, _ := d.inflight.pop(tid)
 		d.release(e.x)
 	}
-	return P2PPollResult{Done: done, Failed: failed}
+	return P2PPollResult{Done: done, Failed: failed, PeerFault: d.faults[peer]}
+}
+
+func (d *memData) setFault(peer, cause string) {
+	if _, ok := d.faults[peer]; !ok {
+		d.faults[peer] = cause
+	}
 }
 
 // Cancel is cancel (data/nixl.py:518-583).

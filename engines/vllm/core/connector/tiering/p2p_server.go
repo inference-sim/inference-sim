@@ -6,6 +6,14 @@ package tiering
 
 import "fmt"
 
+// The server role's deadlines (server.py:40-50@4ba787ec), in seconds.
+const (
+	p2pStoreTimeoutS         = 30.0
+	p2pCancelDrainTimeoutS   = 10.0
+	p2pCancelRetryIntervalS  = 0.1
+	p2pLookupPendingTimeoutS = 5.0
+)
+
 // storeResult is StoreResult (server.py:53-57).
 type storeResult struct {
 	jobID int
@@ -29,6 +37,8 @@ type outRound struct {
 	finishing                      bool
 	inflight                       int
 	cancelled                      bool
+	cancelTried                    bool
+	lastCancelAt                   float64
 	pendingJobs                    intSet
 }
 
@@ -89,6 +99,7 @@ type activeLookup struct {
 	keys     []Key
 	resolved map[Key]bool
 	pending  omap[Key, struct{}]
+	deadline float64
 }
 
 // pendingLookup is _PendingLookup (server.py:203-213).
@@ -126,6 +137,7 @@ type p2pServer struct {
 	finishedLookupCtxs  []*ReqContext
 	lookupIDCounter     int
 	pendingAborts       omap[abortKey, float64]
+	slowAborts          map[abortKey]bool
 	// peerFault is PollResult.peer_fault once reported; "" is None.
 	peerFault string
 }
@@ -291,7 +303,7 @@ func (s *p2pServer) processInboundLookup(id string, pl pendingLookup, p Parent) 
 	s.lookupIDCounter++
 	n := s.lookupIDCounter
 	lu := &activeLookup{id: n, kvID: id, ctx: NewReqContext(fmt.Sprintf("p2p:%s:%s:lu%d", s.peer, id, n)),
-		round: pl.round, keys: pl.keys, resolved: map[Key]bool{}}
+		round: pl.round, keys: pl.keys, resolved: map[Key]bool{}, deadline: pl.enqueuedAt + p2pLookupPendingTimeoutS}
 	p.OnNewRequest(lu.ctx)
 	// dict.fromkeys: each key once, in wire order.
 	seen := map[Key]bool{}
@@ -316,10 +328,17 @@ func (s *p2pServer) resolvePendingLookups(id string, p Parent) {
 	if !ok || st.lookups.len() == 0 {
 		return
 	}
+	now := s.now()
 	var done []int
 	for _, n := range st.lookups.keys() {
 		lu, _ := st.lookups.get(n)
 		s.pollLookupKeys(lu, lu.pending.keys(), p)
+		if lu.pending.len() > 0 && now >= lu.deadline {
+			for _, k := range lu.pending.keys() {
+				lu.resolved[k] = false
+			}
+			lu.pending.clear()
+		}
 		if lu.pending.len() == 0 {
 			done = append(done, n)
 		}
@@ -376,7 +395,7 @@ func (s *p2pServer) finish(id string) {
 
 // collectResults is collect_results (server.py:757-847).
 func (s *p2pServer) collectResults() []storeResult {
-	var results []storeResult
+	results := s.timeoutPendingStoreJobs()
 	pr := s.data.Poll(s.peer)
 	if pr.PeerFault != "" {
 		s.peerFault = pr.PeerFault
@@ -464,6 +483,7 @@ func (s *p2pServer) close() (failedStores []int, failedServes []*ReqContext) {
 	s.requests.clear()
 	s.servePending.clear()
 	s.pendingAborts.clear()
+	s.slowAborts = nil
 	s.finishedLookupCtxs = nil
 	return failedStores, failedServes
 }
@@ -619,6 +639,19 @@ func (s *p2pServer) drainAbort(id string, round int) {
 		finish()
 		return
 	}
+	now := s.now()
+	key := abortKey{id, round}
+	if at, _ := s.pendingAborts.get(key); now-at >= p2pCancelDrainTimeoutS && !s.slowAborts[key] {
+		// Past the drain timeout vLLM only warns (:1093-1107); the pins and the ack still wait.
+		if s.slowAborts == nil {
+			s.slowAborts = map[abortKey]bool{}
+		}
+		s.slowAborts[key] = true
+	}
+	first, _ := s.inflight.get(ids[0])
+	if !cancelDue(first.round, now) {
+		return
+	}
 	still := map[int]bool{}
 	for _, tid := range s.data.Cancel(ids, true) {
 		still[tid] = true
@@ -633,10 +666,20 @@ func (s *p2pServer) drainAbort(id string, round int) {
 	}
 }
 
+// cancelDue is _cancel_due (server.py:1128-1141).
+func cancelDue(r *outRound, now float64) bool {
+	if r.cancelTried && now-r.lastCancelAt < p2pCancelRetryIntervalS {
+		return false
+	}
+	r.cancelTried, r.lastCancelAt = true, now
+	return true
+}
+
 // finalizeAbort is _finalize_abort (server.py:1143-1153).
 func (s *p2pServer) finalizeAbort(id string, round int) {
 	k := abortKey{id, round}
 	s.pendingAborts.pop(k)
+	delete(s.slowAborts, k)
 	s.send(P2PMsg{Type: p2pAbortAck, KVRequestID: id, RoundSeq: round})
 	s.maybePrune(id)
 }
@@ -659,4 +702,101 @@ func (s *p2pServer) submitTransfer(id string, m match, rnd *outRound, round int)
 			s.finalizeOutbound(id, round, &f, true)
 		}
 	}
+}
+
+// timeoutPendingStoreJobs is _timeout_pending_store_jobs (server.py:1227-1292): a store job past
+// the store timeout cancels its rounds in wait mode, and fails once no transfer reads its blocks.
+func (s *p2pServer) timeoutPendingStoreJobs() []storeResult {
+	if s.storeJobs.len() == 0 {
+		return nil
+	}
+	now := s.now()
+	deadline := now - p2pStoreTimeoutS
+	var timedOut []int
+	for _, j := range s.storeJobs.keys() {
+		if at, _ := s.storeJobs.get(j); at <= deadline {
+			timedOut = append(timedOut, j)
+		}
+	}
+	if timedOut == nil {
+		anyCancelled := false
+		for _, x := range s.inflight.values() {
+			anyCancelled = anyCancelled || x.round.cancelled
+		}
+		if !anyCancelled {
+			return nil
+		}
+	}
+	expired := intSet{}
+	for _, j := range timedOut {
+		expired[j] = true
+	}
+	var results []storeResult
+	var rounds omap[abortKey, *outRound]
+	for _, x := range s.inflight.values() {
+		hit := x.round.cancelled
+		for j := range x.jobs {
+			hit = hit || expired[j]
+		}
+		if hit {
+			rounds.set(abortKey{x.kvID, x.key}, x.round)
+		}
+	}
+	for _, k := range rounds.keys() {
+		rnd, _ := rounds.get(k)
+		rnd.cancelled = true
+		if !cancelDue(rnd, now) {
+			continue
+		}
+		var tids []int
+		for _, tid := range s.inflight.keys() {
+			if x, _ := s.inflight.get(tid); x.round == rnd {
+				tids = append(tids, tid)
+			}
+		}
+		still := map[int]bool{}
+		for _, tid := range s.data.Cancel(tids, true) {
+			still[tid] = true
+		}
+		for _, tid := range tids {
+			if still[tid] {
+				continue
+			}
+			results = append(results, s.settleXferJobs(s.inflightPop(tid), false)...)
+		}
+		if st, ok := s.requests.get(k.kvID); ok && rnd.inflight == 0 {
+			if cur, _ := st.outbound.get(k.round); cur == rnd {
+				s.finalizeCancelled(k.kvID, k.round)
+			}
+		}
+	}
+	reading := s.readJobIDs(nil)
+	for _, j := range timedOut {
+		if reading[j] {
+			continue
+		}
+		if _, had := s.storeJobs.pop(j); had {
+			results = append(results, storeResult{j, false})
+		}
+	}
+	for _, st := range s.requests.values() {
+		for _, rnd := range st.outbound.values() {
+			hit := false
+			for j := range rnd.pendingJobs {
+				hit = hit || expired[j]
+			}
+			if !hit {
+				continue
+			}
+			for j := range expired {
+				delete(rnd.pendingJobs, j)
+			}
+			for _, k := range rnd.available.keys() {
+				if a, _ := rnd.available.get(k); expired[a.job] {
+					rnd.available.pop(k)
+				}
+			}
+		}
+	}
+	return results
 }
