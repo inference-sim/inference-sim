@@ -129,6 +129,9 @@ func (f Filter) allows(med Medium, loc Locality) bool {
 type ReqContext struct {
 	ReqID  string
 	Filter Filter
+	// Params is kv_transfer_params (base.py:94): the request's KV-transfer parameters as the
+	// proxy set them; nil is none. A tier parses what it needs from it in OnNewRequest.
+	Params map[string]any
 	// Primary is the primary tier's own per-request state.
 	Primary any
 }
