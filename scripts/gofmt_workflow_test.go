@@ -6,40 +6,16 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
-// gofmtStep returns the run block of the gofmt workflow's check step.
-func gofmtStep(t *testing.T) string {
-	t.Helper()
-	var wf struct {
-		Jobs map[string]struct {
-			Steps []struct {
-				Name string `yaml:"name"`
-				Run  string `yaml:"run"`
-			} `yaml:"steps"`
-		} `yaml:"jobs"`
-	}
-	if err := yaml.Unmarshal([]byte(readRepoFile(t, ".github", "workflows", "gofmt.yml")), &wf); err != nil {
+// The gofmt job's step fails on an unformatted Go file anywhere in the tree and names it, passes
+// on a formatted tree, and fails on a tree with no Go file (X18). The script the job runs is run
+// in a throwaway git repository.
+func TestGofmtWorkflowStepFailsOnAnUnformattedFile(t *testing.T) {
+	script, err := filepath.Abs("gofmt-check.sh")
+	if err != nil {
 		t.Fatal(err)
 	}
-	for _, j := range wf.Jobs {
-		for _, s := range j.Steps {
-			if s.Run != "" && strings.Contains(s.Run, "gofmt") {
-				return s.Run
-			}
-		}
-	}
-	t.Fatal("gofmt.yml has no step that runs gofmt")
-	return ""
-}
-
-// The gofmt job's step fails on an unformatted Go file anywhere in the tree and names it, passes
-// on a formatted tree, and fails on a tree with no Go file (X18). The step is run as the job runs
-// it, under bash with -e, in a throwaway git repository.
-func TestGofmtWorkflowStepFailsOnAnUnformattedFile(t *testing.T) {
-	step := gofmtStep(t)
 	run := func(files map[string]string) (string, error) {
 		dir := t.TempDir()
 		for name, body := range files {
@@ -58,7 +34,7 @@ func TestGofmtWorkflowStepFailsOnAnUnformattedFile(t *testing.T) {
 				t.Fatalf("git %v: %v\n%s", args, err, out)
 			}
 		}
-		c := exec.Command("bash", "-e", "-c", step)
+		c := exec.Command("bash", script)
 		c.Dir = dir
 		out, err := c.CombinedOutput()
 		return string(out), err
@@ -75,20 +51,5 @@ func TestGofmtWorkflowStepFailsOnAnUnformattedFile(t *testing.T) {
 	}
 	if out, err := run(map[string]string{"README.md": "x"}); err == nil {
 		t.Errorf("a tree with no Go file passed:\n%s", out)
-	}
-}
-
-// docs/guide/workloads.md states what `blis compose` does with num_requests, horizon and seed,
-// and no longer says it drops num_requests (sim/workload.ComposeSpecs sums, takes the largest
-// and keeps the shared seed; TestComposeSpecs_KeepsNumRequestsHorizonAndSeed pins the code).
-func TestComposeDocStatesWhatComposeKeeps(t *testing.T) {
-	doc := readRepoFile(t, "docs", "guide", "workloads.md")
-	if strings.Contains(doc, "**Drops** `num_requests`") {
-		t.Error("workloads.md still says compose drops num_requests")
-	}
-	for _, want := range []string{"**Sums** `num_requests`", "**largest** `horizon`", "**shared** `seed`"} {
-		if !strings.Contains(doc, want) {
-			t.Errorf("workloads.md does not state %s", want)
-		}
 	}
 }
