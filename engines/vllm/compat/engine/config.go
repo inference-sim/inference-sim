@@ -356,7 +356,7 @@ func (c SpeculativeConfig) IsEnabled() bool { return c.K > 0 }
 // EffectiveTokensPerStep is the mean accepted tokens per decode step: 1 + α·K.
 // Returns 1.0 when off (K=0), so the fractional carry advances exactly one token.
 func (c SpeculativeConfig) EffectiveTokensPerStep() float64 {
-	return 1.0 + c.Acceptance*float64(c.K)
+	return 1.0 + float64(c.Acceptance*float64(c.K))
 }
 
 // VerifyWidth is the number of token positions the target processes per decode
