@@ -713,9 +713,15 @@ class KVEventTap:
             for ev in batch.events:
                 name = type(ev).__name__
                 if name == "BlockStored":
-                    out.append(["stored", [h(x) for x in ev.block_hashes],
-                                h(ev.parent_block_hash) if ev.parent_block_hash is not None else None,
-                                list(ev.token_ids), ev.block_size, ev.lora_name])
+                    row = ["stored", [h(x) for x in ev.block_hashes],
+                           h(ev.parent_block_hash) if ev.parent_block_hash is not None else None,
+                           list(ev.token_ids), ev.block_size, ev.lora_name]
+                    # v0.33.0's lookahead_token_ids (vllm/distributed/kv_events.py:95-98), one list
+                    # per stored block, is None unless the pool hashes lookahead tokens; only then
+                    # does the row carry it, so no other scenario's trace gains a field.
+                    if ev.lookahead_token_ids is not None:
+                        row.append([list(t) for t in ev.lookahead_token_ids])
+                    out.append(row)
                 elif name == "BlockRemoved":
                     out.append(["removed", [h(x) for x in ev.block_hashes]])
                 else:

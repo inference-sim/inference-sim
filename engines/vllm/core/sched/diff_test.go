@@ -115,7 +115,8 @@ type step struct {
 	// SpecScheduled is the drafts each request verified this step, when any did.
 	SpecScheduled map[string]int `json:"spec_scheduled,omitempty"`
 	// KVEvents are the step's KV cache events, by content, when the scenario turns them on:
-	// ["stored", hashes, parent, tokens, block_size, lora_name] or ["removed", hashes].
+	// ["stored", hashes, parent, tokens, block_size, lora_name] or ["removed", hashes]. A stored
+	// event of a pool that hashes lookahead tokens ends with its lookahead_token_ids.
 	KVEvents []any `json:"kv_events,omitempty"`
 	// The fields below are recorded only for a hybrid Mamba model (oracle/README.md, "Trace"):
 	// per running request after the step, num_computed_tokens and num_tokens; and, for each
@@ -400,7 +401,19 @@ func eventsJSON(evs []kv.Event) []any {
 		if e.LoRA != "" {
 			lora = e.LoRA
 		}
-		out = append(out, []any{"stored", hs(e.Hashes), h(e.Parent), toks, float64(e.BlockSize), lora})
+		row := []any{"stored", hs(e.Hashes), h(e.Parent), toks, float64(e.BlockSize), lora}
+		if e.Lookahead != nil {
+			la := []any{}
+			for _, blk := range e.Lookahead {
+				ts := []any{}
+				for _, t := range blk {
+					ts = append(ts, float64(t))
+				}
+				la = append(la, ts)
+			}
+			row = append(row, la)
+		}
+		out = append(out, row)
 	}
 	return out
 }

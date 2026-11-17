@@ -190,6 +190,7 @@ func NewManagerWith(numBlocks, blockSize, maxModelLen int, enableCaching bool, w
 		caching: enableCaching, watermark: watermarkBlocks, eagle: o.EagleBlockDrop,
 		retention: o.RetentionInterval, reprefillable: max(0, o.PrefillLookahead-1), maxInFlight: o.MaxInFlightTokens,
 	}
+	m.Pool.SetHashLookahead(o.HashLookahead)
 	for i, g := range specs {
 		bs := g.BlockSize
 		if bs == 0 {
