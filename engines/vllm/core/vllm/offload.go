@@ -58,6 +58,10 @@ type offloadConfig struct {
 	// BlockSize is block_size, the CPU chunk's tokens, a multiple of the GPU block size; 0 is one
 	// GPU block a chunk (config.py:98-134).
 	BlockSize int `yaml:"block_size,omitempty"`
+	// BlocksPerChunk is blocks_per_chunk, the chunk size in GPU blocks; vLLM refuses it beside
+	// block_size and refuses a value of 0 or less (offloading/config.py:121-135@4ba787ec). Nil is
+	// unstated, which is one block a chunk unless block_size says otherwise.
+	BlocksPerChunk *int `yaml:"blocks_per_chunk,omitempty"`
 	// EvictionPolicy is eviction_policy, lru unstated (cpu/spec.py:131).
 	EvictionPolicy string `yaml:"eviction_policy,omitempty"`
 	// OffloadPromptOnly is offload_prompt_only, true unstated (vllm/v1/kv_offload/base.py:617-623).
@@ -161,7 +165,17 @@ func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method 
 	}
 	bs := s.BlockSize()
 	bpc := 1
-	if c.BlockSize != 0 {
+	if c.BlocksPerChunk != nil && c.BlockSize != 0 {
+		return nil, fmt.Errorf("vllm: kv_offload states both block_size and blocks_per_chunk: vLLM accepts only " +
+			"one of them (vllm/distributed/kv_transfer/kv_connector/v1/offloading/config.py:125-129@4ba787ec)")
+	}
+	if c.BlocksPerChunk != nil {
+		if *c.BlocksPerChunk <= 0 {
+			return nil, fmt.Errorf("vllm: kv_offload.blocks_per_chunk %d must be greater than 0, which vLLM requires "+
+				"(vllm/distributed/kv_transfer/kv_connector/v1/offloading/config.py:131-135@4ba787ec)", *c.BlocksPerChunk)
+		}
+		bpc = *c.BlocksPerChunk
+	} else if c.BlockSize != 0 {
 		if c.BlockSize < 0 || c.BlockSize%bs != 0 {
 			return nil, fmt.Errorf("vllm: kv_offload.block_size %d must be a multiple of the GPU block size %d "+
 				"(offloading/config.py:121-134@5df63a72)", c.BlockSize, bs)
