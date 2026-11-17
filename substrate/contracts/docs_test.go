@@ -328,6 +328,7 @@ var documented = map[string]struct {
 	"acceptance.Shape":            {typ: reflect.TypeOf(acceptance.Shape{})},
 	"acceptance.Value":            {typ: reflect.TypeOf(acceptance.Value{})},
 	"acceptance.Pin":              {typ: reflect.TypeOf(acceptance.Pin{})},
+	"acceptance.Workload":         {typ: reflect.TypeOf(acceptance.Workload{})},
 	"routing.ProfileSet":          {typ: reflect.TypeOf(routing.ProfileSet{})},
 	"routing.Profile":             {typ: reflect.TypeOf(routing.Profile{})},
 	"routing.Point":               {typ: reflect.TypeOf(routing.Point{})},
