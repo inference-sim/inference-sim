@@ -79,6 +79,48 @@ func (c L2Config) Check() error {
 	return nil
 }
 
+// Substitution names a setting the host tier accepts although its oracle runs trace only the
+// direct IO backend with the layer_first layout (the CPU oracle has no CUDA kernels): the
+// decisions are traced with those two, and the setting changes only what a copy costs. Reason
+// says why it changes no decision, with the SGLang source (python/sglang/srt/..., v0.5.23)
+// that shows it (X19).
+type Substitution struct {
+	Setting string
+	Traced  string
+	Reason  string
+}
+
+// transportReason is why the IO backend and the host layout cannot change a cache decision: they
+// appear only where a copy is issued, and the queues, acks, host free list and tree never read
+// them.
+//   - managers/cache_controller.py:946-966 (move_indices) moves or sorts the index pairs for the
+//     backend and layout; the pairs and their count are the same.
+//   - mem_cache/l2_transfer.py:132-183 issues the same per-layer loop and acks whatever the backend.
+//   - mem_cache/pool_host/base.py:543-563 (alloc, free) allocate whole pages from one free list
+//     for every layout, so host indices are page-aligned under every layout, not only page_first.
+//   - mem_cache/unified_radix_cache.py never reads the layout or the backend.
+const transportReason = "the backend and the layout are read only where a copy is issued " +
+	"(managers/cache_controller.py:946-966, mem_cache/l2_transfer.py:132-183); host indices are whole pages " +
+	"under every layout (mem_cache/pool_host/base.py:543-563) and mem_cache/unified_radix_cache.py never reads either, " +
+	"so they change a copy's price (HostShape.Backup, LoadLayer) and no decision"
+
+// Substitutions lists, for a resolved config that passed Check, each setting that is accepted
+// but not traced, so a result can name it. The direct backend with layer_first has none.
+func (c L2Config) Substitutions() []Substitution {
+	var out []Substitution
+	if c.IOBackend == "kernel" {
+		reason := transportReason + "; the kernel's write-back with page_first stages device memory before KV sizing " +
+			"(mem_cache/kv_cache_builder.py:71-110, mem_cache/pool_host/mha.py:96-132), which lowers the device pool's " +
+			"token capacity, and the port takes that capacity as an input from the run, not from a memory profile"
+		out = append(out, Substitution{Setting: "--hicache-io-backend kernel", Traced: "direct", Reason: reason})
+	}
+	switch c.Layout {
+	case "page_first", "page_head", "page_unified":
+		out = append(out, Substitution{Setting: "--hicache-mem-layout " + c.Layout, Traced: "layer_first", Reason: transportReason})
+	}
+	return out
+}
+
 // ongoingWriteThrough is _OngoingWriteThrough: the node a backup's ack is keyed on, the lock it
 // holds while the copy is in flight (none under write-back), and the nodes the ack publishes.
 type ongoingWriteThrough struct {

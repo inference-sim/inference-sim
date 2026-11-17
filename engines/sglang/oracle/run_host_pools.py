@@ -63,7 +63,6 @@ def drive(sglang_root: str, path: str) -> dict:
         os.environ.pop(name)
     os.environ.update(run_scheduler.KEPT_SGLANG_ENV)
     import run_hicache
-    from hicache_interfaces import HiCacheMonitor
     from sglang.srt.mem_cache import memory_pool
     from sglang.srt.mem_cache.hybrid_cache.hybrid_pool_assembler import _build_mha_mla_host_pool
     from sglang.srt.mem_cache.pool_host.dsa import DSAIndexerPoolHost, make_dsa_indexer_pool_decl
@@ -73,37 +72,35 @@ def drive(sglang_root: str, path: str) -> dict:
     with open(path) as f:
         sq = json.load(f)
     set_global_server_args_for_scheduler(ServerArgs(model_path="dummy"))
-    mon = HiCacheMonitor()
     pools, hosts, summary = {}, {}, []
-    with mon:
-        for p in sq["pools"]:
-            if p["class"] not in DEVICE_POOLS:
-                raise SystemExit(f"{path}: no device pool {p['class']}")
-            pools[p["as"]] = getattr(memory_pool, p["class"])(device="cpu", **{k: decode(v) for k, v in p["args"].items()})
-        def build(entry, make):
-            try:
-                host = make()
-            except Exception as e:  # a layout the sequence expects SGLang to refuse
-                if type(e).__name__ != entry.get("raises"):
-                    raise
-                summary.append({"as": entry["as"], "raises": type(e).__name__, "message": str(e)})
-                return
-            if "raises" in entry:
-                raise SystemExit(f"{path}: {entry['as']} did not raise {entry['raises']}")
-            hosts[entry["as"]] = host
-            summary.append(host_summary(entry["as"], host))
+    for p in sq["pools"]:
+        if p["class"] not in DEVICE_POOLS:
+            raise SystemExit(f"{path}: no device pool {p['class']}")
+        pools[p["as"]] = getattr(memory_pool, p["class"])(device="cpu", **{k: decode(v) for k, v in p["args"].items()})
+    def build(entry, make):
+        try:
+            host = make()
+        except Exception as e:  # a layout the sequence expects SGLang to refuse
+            if type(e).__name__ != entry.get("raises"):
+                raise
+            summary.append({"as": entry["as"], "raises": type(e).__name__, "message": str(e)})
+            return
+        if "raises" in entry:
+            raise SystemExit(f"{path}: {entry['as']} did not raise {entry['raises']}")
+        hosts[entry["as"]] = host
+        summary.append(host_summary(entry["as"], host))
 
-        for h in sq["hosts"]:
-            build(h, lambda h=h: _build_mha_mla_host_pool(pool=pools[h["pool"]], host_to_device_ratio=h["ratio"],
-                                                          page_size=h["page_size"], layout=h["layout"],
-                                                          allocator_type="default", pool_label="kv"))
-        for x in sq.get("indexers", []):
-            build(x, lambda x=x: DSAIndexerPoolHost(decl=make_dsa_indexer_pool_decl(pools[x["pool"]]),
-                                                    anchor_host=hosts[x["anchor"]], allocator_type="default"))
+    for h in sq["hosts"]:
+        build(h, lambda h=h: _build_mha_mla_host_pool(pool=pools[h["pool"]], host_to_device_ratio=h["ratio"],
+                                                      page_size=h["page_size"], layout=h["layout"],
+                                                      allocator_type="default", pool_label="kv"))
+    for x in sq.get("indexers", []):
+        build(x, lambda x=x: DSAIndexerPoolHost(decl=make_dsa_indexer_pool_decl(pools[x["pool"]]),
+                                                anchor_host=hosts[x["anchor"]], allocator_type="default"))
     for h in hosts.values():
         h.destroy()
     return {"provenance": traces.provenance(TIER, sglang_root, path, sq, INPUTS), "kind": "direct",
-            "calls": mon.calls, "hosts": summary}
+            "hosts": summary}
 
 
 def main(argv) -> int:
