@@ -167,3 +167,46 @@ func TestPlannedResidentWeightsPerRankAreTheCheckpointsBytes(t *testing.T) {
 		}
 	}
 }
+
+// vLLM builds ParallelLMHead unquantized for an fp8 checkpoint (Fp8Config.get_quant_method
+// returns None for it, quantization/fp8.py:177-209@4ba787ec), and the GLM DSA checkpoints'
+// headers hold lm_head.weight BF16. A rank must therefore hold the head at two bytes a
+// weight, one byte more than the same head at the global fp8 width would be.
+func TestFP8GlmHeadIsPlannedAtTheCheckpointsBF16Width(t *testing.T) {
+	d, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"glm-5", "glm-5.1-fp8", "glm-5.2-fp8", "glm-5.3"} {
+		for _, tp := range []int{4, 8} {
+			t.Run(fmt.Sprintf("%s/tp%d", name, tp), func(t *testing.T) {
+				in := planCase(t, d, name, "b200", 1, fmt.Sprintf("tp: %d, pp: 1, dp: 1", tp),
+					func(l *plan.Lowered) { l.Plan.WeightFormat = string(model.DTypeFP8) })
+				asPlanned := float64(mustKernel(t, in).FixedBytes().Weights)
+				at := -1
+				for i, n := range in.Model.Head {
+					if n.Role == "lm_head" {
+						at = i
+					}
+				}
+				if at < 0 {
+					t.Fatal("the graph states no lm_head")
+				}
+				h := in.Model.Head[at]
+				// The same graph with the head at the global fp8 width.
+				g := *in.Model
+				g.Head = append([]model.Node(nil), in.Model.Head...)
+				g.Head[at].WeightDType = model.DTypeFP8
+				atFP8 := in
+				atFP8.Model = &g
+				fp8Planned := float64(mustKernel(t, atFP8).FixedBytes().Weights)
+				// One extra byte per head weight, split over the tensor-parallel group.
+				want := float64(h.N) * float64(h.K) / float64(tp)
+				if got := asPlanned - fp8Planned; math.Abs(got-want) > 1e-3*want {
+					t.Errorf("the head holds %+.4f GiB a rank beyond its fp8 width; BF16 is %+.4f GiB",
+						got/gib, want/gib)
+				}
+			})
+		}
+	}
+}
