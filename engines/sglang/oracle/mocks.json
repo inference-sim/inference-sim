@@ -1,5 +1,5 @@
 {
-  "version": "gpu-mock/5+d5d3547330a5",
+  "version": "gpu-mock/6+8ad86b1ba5aa",
   "description": "Every replacement the oracle harness makes in SGLang's code, by kind (gpu, clock, transport, environment, platform, external-service, transcription), with the sites oracle/check_mocks.py finds, and in `covers` the platform reads, clock reads and thread starts each accounts for (oracle/gen_platform_reads.py lists them, FID-1). No entry is a transcription: the event loops run as released.",
   "mocks": [
     {
@@ -94,7 +94,7 @@
     {
       "symbol": "sglang.srt.managers.scheduler_components.ipc_channels.get_zmq_socket",
       "kind": "external-service",
-      "how": "the tokenizer, an outside service (design \u00a77.3): the PULL socket SchedulerIpcChannels.create makes yields, on its first receive of each loop iteration, that iteration's scenario arrivals (TokenizedGenerateReqInput, through SGLang's msgpack codec), then zmq.Again; once every request has finished it yields a ShutdownReq, which SGLang's own Scheduler.handle_shutdown turns into gracefully_exit, ending the loop. A receive that ends an iteration with arrivals undelivered fails the run. The same factory makes the transport sockets of the next entry; any other socket type raises.",
+      "how": "the tokenizer, an outside service (design §7.3): the PULL socket SchedulerIpcChannels.create makes yields, on its first receive of each loop iteration, that iteration's scenario arrivals (TokenizedGenerateReqInput, through SGLang's msgpack codec), then zmq.Again; once every request has finished it yields a ShutdownReq, which SGLang's own Scheduler.handle_shutdown turns into gracefully_exit, ending the loop. A receive that ends an iteration with arrivals undelivered fails the run. The same factory makes the transport sockets of the next entry; any other socket type raises.",
       "sites": [
         "harness.py:ipc_channels.get_zmq_socket"
       ]
@@ -268,6 +268,58 @@
       "kind": "transport",
       "how": "the pipe on which run_scheduler_process reports its start-up to the launcher is an object of the runner's that keeps what is sent; the trace records its pool sizes",
       "sites": []
+    },
+    {
+      "symbol": "oracle/run_serverargs.py CUDA_STUBBED (sgl_kernel, flashinfer)",
+      "kind": "environment",
+      "how": "ServerArgs resolution on the restored CUDA platform imports sgl_kernel and flashinfer, the CUDA kernel packages SGLang's CUDA image installs and the CPU runner does not (oracle/requirements.txt). run_serverargs.py adds both to stubs.STUBBED in each case's process before SGLang is imported, so each imports as the MagicMock module of oracle/stubs.py, as SGLang's own CPU tests stub sgl_kernel (python/sglang/test/test_utils.py:2042-2077@297e54fd). Resolution imports them for kernels it does not call and reads none of their values.",
+      "sites": [
+        "run_serverargs.py:stubs.STUBBED"
+      ]
+    },
+    {
+      "symbol": "the CUDA platform of a ServerArgs case",
+      "kind": "platform",
+      "how": "Tier 1 (oracle/run_serverargs.py) resolves each case of oracle/serverargs/cases.json as SGLang resolves it on the case's chip, so the oracle restores that chip's CUDA platform before SGLang reads it: SGLang's own seam runtime_context.override_platform(...).install() (python/sglang/srt/runtime_context.py:1950@297e54fd) states CUDA, the chip's compute capability and SM, and flashinfer installed; sglang.srt.platforms._current_platform is SGLang's CudaSRTPlatform; torch.cuda.get_device_capability and get_device_name report the chip's; torch.version.cuda is 13.0, the CUDA toolkit of SGLang's image (docker/Dockerfile:1@297e54fd). Each value is the chip's entry in cases.json, with its source.",
+      "sites": [
+        "run_serverargs.py:platforms._current_platform",
+        "run_serverargs.py:torch.cuda.get_device_capability",
+        "run_serverargs.py:torch.cuda.get_device_name",
+        "run_serverargs.py:torch.version.cuda"
+      ]
+    },
+    {
+      "symbol": "sglang.srt.utils.common device probes in a ServerArgs case",
+      "kind": "platform",
+      "how": "the probes ServerArgs resolution calls report the case's chip, in utils.common and where sglang.srt.utils re-exports them: get_device is cuda, is_cuda is true, is_sm90_supported and is_sm100_supported, get_device_capability and get_device_sm the chip's; get_device_memory_capacity and get_nvgpu_memory_capacity the MiB nvidia-smi reports as memory.total (what get_nvgpu_memory_capacity reads on a GPU, utils/common.py@297e54fd), handle_gpu_memory_settings's input (arg_groups/memory_hook.py:78@297e54fd); is_flashinfer_available is true, as on SGLang's CUDA image, which installs flashinfer (utils/common.py:388-395@297e54fd).",
+      "sites": [
+        "run_serverargs.py:common.get_device",
+        "run_serverargs.py:common.get_device_capability",
+        "run_serverargs.py:common.get_device_memory_capacity",
+        "run_serverargs.py:common.get_device_sm",
+        "run_serverargs.py:common.get_nvgpu_memory_capacity",
+        "run_serverargs.py:common.is_cuda",
+        "run_serverargs.py:common.is_flashinfer_available",
+        "run_serverargs.py:common.is_sm100_supported",
+        "run_serverargs.py:common.is_sm90_supported",
+        "run_serverargs.py:srt_utils.get_device",
+        "run_serverargs.py:srt_utils.get_device_capability",
+        "run_serverargs.py:srt_utils.get_device_memory_capacity",
+        "run_serverargs.py:srt_utils.get_device_sm",
+        "run_serverargs.py:srt_utils.get_nvgpu_memory_capacity",
+        "run_serverargs.py:srt_utils.is_cuda",
+        "run_serverargs.py:srt_utils.is_flashinfer_available",
+        "run_serverargs.py:srt_utils.is_sm100_supported",
+        "run_serverargs.py:srt_utils.is_sm90_supported"
+      ]
+    },
+    {
+      "symbol": "SGLANG_* in a ServerArgs case",
+      "kind": "environment",
+      "how": "every SGLANG_* and SGL_* variable of the caller's environment is removed before the cases run: no case states one, so SGLang's own defaults (python/sglang/srt/environ.py@297e54fd) apply, as config/ assumes.",
+      "sites": [
+        "run_serverargs.py:os.environ[]"
+      ]
     },
     {
       "symbol": "SGLang device code outside the decision modules",
