@@ -35,7 +35,7 @@ commit this build pins ([Data compatibility](installation.md#catalog-compatibili
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout 7794a6c6277b370874fb188e1bfa8d1ae597aea1
+git -C blis-substrate checkout 16f5c2772b7a6b24e0bc4ca3dc1e47ec120efd3b
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
