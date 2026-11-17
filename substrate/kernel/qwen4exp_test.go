@@ -115,7 +115,7 @@ func TestAMeasuredSparseGQARateReplacesTheStandIn(t *testing.T) {
 		c := *s
 		c.Coefficients = slices.Clone(s.Coefficients)
 		for _, e := range s.Coefficients {
-			if e.Name == "attention_decode_rate_swa" {
+			if e.Name == "no_such_entry" {
 				e.Name, e.Value = "attention_decode_rate_sparse_gqa", e.Value*50
 				c.Coefficients = append(c.Coefficients, e)
 				found = true
@@ -124,7 +124,7 @@ func TestAMeasuredSparseGQARateReplacesTheStandIn(t *testing.T) {
 		fast.Coefficients[i] = &c
 	}
 	if !found {
-		t.Skip("no attention rate entry to copy")
+		t.Fatal("the registry has no attention_decode_rate_swa entry to copy: a skip here would pass unseen (X16)")
 	}
 	measured := withGraph(t, fast, sparseGQA(512))
 	if substituted(measured, "attention_decode_rate_sparse_gqa") {
