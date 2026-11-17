@@ -58,6 +58,7 @@ var engineKeys = map[string][]string{
 	"disable_cascade_attn":                     {"disable_cascade_attn"},
 	"enable_prefix_caching":                    {"enable_prefix_caching"},
 	"swa_bounded_replay":                       {"swa_bounded_replay"},
+	"enable_scale_out":                         {"enable_scale_out"},
 	"block_size":                               {"block_size"},
 	"max_num_batched_tokens":                   {"max_num_batched_tokens"},
 	"max_num_seqs":                             {"max_num_seqs"},

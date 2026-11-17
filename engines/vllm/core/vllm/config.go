@@ -187,6 +187,12 @@ type settings struct {
 	// kvCapacity is the KV cache size the engine core logs at start-up (kv.KVCapacity), the
 	// pool's tokens at max_model_len.
 	kvCapacity kv.Capacity
+	// servesRender is whether the model server answers the router's render endpoints: the
+	// frontend's --enable-scale-out (Engine.EnableScaleOut), false by default. vLLM's
+	// register_scale_out_api_routers answers every render, derender and token-in/token-out route
+	// with HTTP 403 unless it is set or the server runs in a dedicated token-only mode, which
+	// this engine does not model (tokens_only stays refused).
+	servesRender bool
 }
 
 // dpSettings are a data-parallel group's settings.
@@ -396,6 +402,7 @@ func resolve(c Config) (settings, error) {
 	// loop state (an empty schedule occupies a slot, a full queue blocks on the oldest batch, and a
 	// blocked step schedules nothing until that batch completes; vllm/v1/engine/core.py:698-810@5df63a72).
 
+	s.servesRender = e.EnableScaleOut != nil && *e.EnableScaleOut
 	prefixCaching := e.EnablePrefixCaching == nil || *e.EnablePrefixCaching
 	if err := checkMambaCache(c, prefixCaching); err != nil {
 		return settings{}, err

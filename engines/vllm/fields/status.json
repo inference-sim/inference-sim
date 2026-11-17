@@ -1976,12 +1976,16 @@
   },
   "config:enable_scale_out": {
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#54"
+    "traces": [
+     "core/vllm/testdata/golden-render/stated-false.json",
+     "core/vllm/testdata/golden-render/stated-true.json",
+     "core/vllm/testdata/golden-render/unset.json"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:enable_server_load_tracking": {
    "estimation": {

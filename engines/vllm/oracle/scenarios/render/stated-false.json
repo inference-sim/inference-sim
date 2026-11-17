@@ -1,0 +1,1 @@
+{"name": "render-false", "description": "enable_scale_out stated false", "config": {"enable_scale_out": false, "supported_tasks": ["generate"]}}

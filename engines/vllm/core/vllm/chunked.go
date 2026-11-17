@@ -27,7 +27,9 @@ type chunkedInput struct {
 // refusal below can say what is covered.
 const chunkedOffKnown = "oracle/scenarios/chunked-prefill-off*.json and oracle/scenarios-t3/t3-chunked-prefill-off*.json " +
 	"run vLLM's Scheduler with it off on one full-attention KV group, with and without prefix caching, " +
-	"preemption, KV events, a long-prefill cap, priority scheduling and async scheduling at one pipeline stage"
+	"preemption, KV events, a long-prefill cap, priority scheduling and async scheduling at one pipeline stage; " +
+	"oracle/scenarios/connector/nixl-chunked-off-*.json run it with the NIXL connector as a prefiller, a decoder (a pull that " +
+	"fails and recomputes included) and both at once"
 
 // ResolveChunkedPrefill is the enable_chunked_prefill that runs: the stated value, else True, the
 // default of a causal decoder (SchedulerConfig, vllm/config/scheduler.py:134@5df63a72;
@@ -79,8 +81,6 @@ func checkChunkedPrefill(c Config, chunked bool, in chunkedInput) error {
 		with = "speculative decoding"
 	case e.MaxLoRAs > 0:
 		with = "max_loras"
-	case c.KVTransfer != nil:
-		with = "a KV transfer connector"
 	case c.KVOffload != nil:
 		with = "a KV offload tier"
 	case c.DataParallelSize > 1:

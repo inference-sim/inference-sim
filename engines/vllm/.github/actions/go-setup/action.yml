@@ -25,10 +25,7 @@ outputs:
 runs:
   using: composite
   steps:
-    - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
-      with:
-        go-version-file: go.mod
-        cache: false
+    - uses: inference-sim/blis-substrate/.github/actions/go-toolchain@883a2709c250e4724ce11d1d6ba2cc12662b01e7 # v0.15.0
     - id: keys
       shell: bash
       env:

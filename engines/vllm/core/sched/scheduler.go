@@ -214,8 +214,16 @@ type Output struct {
 	Preempted []string
 	// NewIDs are requests admitted from the waiting queue this step.
 	NewIDs []string
-	// PrefixHit is the locally cached tokens of each newly admitted request.
+	// PrefixHit is the locally cached tokens of each request whose admission took a prefix
+	// lookup this step: a request admitted to run, and one parked on an asynchronous KV load
+	// (WAITING_FOR_REMOTE_KVS), which is admitted to the KV cache at this step and runs in a
+	// later one (scheduler.py:1251-1257, 1496-1534@4ba787ec). Only the first is in NewIDs.
 	PrefixHit map[string]int
+	// PrefixExternal is num_external_computed_tokens of each such request: the tokens the KV
+	// connector supplies beyond the local hit (scheduler.py:1251-1257@4ba787ec). It is set, even
+	// at zero, for every request in PrefixHit when a KV connector is configured, and nil
+	// without one.
+	PrefixExternal map[string]int
 	// SpecDecode is scheduled_spec_decode_tokens: the drafts each request verifies this step
 	// (-1 for first-decode padding).
 	SpecDecode map[string][]int64
@@ -904,6 +912,17 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 			if s.connector != nil {
 				s.connector.AfterAlloc(r, s.allocatedBlocks(r.ID), external)
 			}
+			if lookedUp {
+				// The admission's prefix lookup is recorded here, once the blocks are allocated and
+				// whether the request runs now or waits for its load (:1251-1257, 1496-1511).
+				out.PrefixHit[r.ID] = newLocal
+				if s.connector != nil {
+					if out.PrefixExternal == nil {
+						out.PrefixExternal = map[string]int{}
+					}
+					out.PrefixExternal[r.ID] = external
+				}
+			}
 			if async {
 				// WAITING_FOR_REMOTE_KVS (:1320-1341): the blocks are allocated, the load runs
 				// between steps, and the request waits in kv_holding_waiting.
@@ -922,9 +941,6 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 				scheduledLoRAs[r.LoRA] = true
 			}
 			out.Scheduled[r.ID] = numNew
-			if lookedUp {
-				out.PrefixHit[r.ID] = newLocal
-			}
 			tokenBudget -= numNew
 			inputBudget -= numNew + draftSlots
 			r.Status = Running

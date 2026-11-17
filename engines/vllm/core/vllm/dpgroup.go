@@ -50,7 +50,9 @@ type DPGroup struct {
 	// engine keeps only its own endpoint, so PlaceAt starts from this and not from a rank's.
 	pool   *placement.Placement
 	pricer Pricer
-	rankOf map[string]int
+	// servesRender is whether the server answers the router's render calls (ServesRender).
+	servesRender bool
+	rankOf       map[string]int
 	// abortedOn are the requests Finish aborted, or that finished, while an iteration in flight
 	// scheduled them, by rank: their rankOf entries go once no iteration in flight does.
 	abortedOn map[string]int
@@ -109,7 +111,7 @@ func newDPGroup(st settings, pricer Pricer) (*DPGroup, error) {
 		return nil, fmt.Errorf("vllm: a pricer is required: the latency kernel's, or fixed durations")
 	}
 	n := st.dp.ranks
-	g := &DPGroup{dp: &core.DP{LB: core.NewLoadBalancers(n, st.dp.clients)}, pricer: pricer, rankOf: map[string]int{}, abortedOn: map[string]int{},
+	g := &DPGroup{dp: &core.DP{LB: core.NewLoadBalancers(n, st.dp.clients)}, pricer: pricer, servesRender: st.servesRender, rankOf: map[string]int{}, abortedOn: map[string]int{},
 		queueSize: max(st.queueSize, 1), statsIntervalUs: max(st.dp.statsIntervalUs, 1), epoch: -1}
 	if st.placement != nil {
 		pl := *st.placement
@@ -629,6 +631,17 @@ func (g *DPGroup) EnableKVEvents() {
 
 // KVEventsRefusal is the ranks' (Engine.KVEventsRefusal): every rank runs one configuration.
 func (g *DPGroup) KVEventsRefusal() error { return g.ranks[0].e.KVEventsRefusal() }
+
+// OffloadCachedTokens is how much of id's Scheduled.CachedTokens the KV offload tier supplied, as
+// its rank's engine says.
+func (g *DPGroup) OffloadCachedTokens(id string) int {
+	for _, r := range g.ranks {
+		if n := r.e.OffloadCachedTokens(id); n > 0 {
+			return n
+		}
+	}
+	return 0
+}
 
 // Ranks is the group's data-parallel width.
 func (g *DPGroup) Ranks() int { return len(g.ranks) }
