@@ -45,16 +45,57 @@ type chunk struct {
 
 func (c *chunk) ready() bool { return c.refCnt >= 0 }
 
-// NumChunks is CPUOffloadingSpec's num_chunks (vllm/v1/kv_offload/cpu/spec.py:96-127@5df63a72):
+// NumChunks is CPUOffloadingSpec's num_chunks (vllm/v1/kv_offload/cpu/spec.py:100-130@4ba787ec):
 // cpu_bytes_to_use over one chunk's bytes, a worker's KV bytes per block times the workers
 // times blocks_per_chunk, rounded up to the page size (the host's mmap.PAGESIZE).
 func NumChunks(cpuBytes, workerBytesPerBlock int64, worldSize, blocksPerChunk int, pageSize int64) int {
+	perChunk := ChunkBytes(workerBytesPerBlock, worldSize, blocksPerChunk, pageSize)
+	if perChunk == 0 {
+		return 0
+	}
+	return int(cpuBytes / perChunk)
+}
+
+// ChunkBytes is CPUOffloadingSpec's kv_bytes_per_chunk (vllm/v1/kv_offload/cpu/spec.py:106-130@4ba787ec):
+// one chunk's bytes over the workers, rounded up to the page size, padding included; 0 when a
+// worker holds no KV bytes.
+func ChunkBytes(workerBytesPerBlock int64, worldSize, blocksPerChunk int, pageSize int64) int64 {
 	if workerBytesPerBlock <= 0 || worldSize <= 0 {
 		return 0
 	}
 	perChunk := workerBytesPerBlock * int64(worldSize) * int64(blocksPerChunk)
-	perChunk = (perChunk + pageSize - 1) / pageSize * pageSize
-	return int(cpuBytes / perChunk)
+	return (perChunk + pageSize - 1) / pageSize * pageSize
+}
+
+// OffloadGroup is one KV cache group as the CPU tier's info reads it (OffloadingGroupConfig,
+// vllm/v1/kv_offload/config.py:11-21@4ba787ec): its tokens a block and, for a sliding-window group,
+// the chunks a request keeps (nil for a full-attention group).
+type OffloadGroup struct {
+	TokensPerBlock int  `json:"tokens_per_block"`
+	WindowChunks   *int `json:"window_chunks"`
+}
+
+// ConfigInfo is CPUOffloadingManager.config_info's one series (vllm/v1/kv_offload/cpu/common.py:34-72
+// and cpu/manager.py:482-485@4ba787ec): the vllm:kv_offload_config_info labels, the tier's chunks,
+// blocks a chunk, bytes, and the tokens it holds for requests of maxModelLen tokens ("None" when
+// maxModelLen is not known). A tiering manager adds its tier label (tiering/manager.py:1231-1248),
+// which core/connector/tiering answers.
+func ConfigInfo(numChunks, blocksPerChunk int, bytesPerChunk int64, maxModelLen int, groups []OffloadGroup) map[string]any {
+	var tokens any = "None"
+	if maxModelLen > 0 && len(groups) > 0 {
+		perRequest := 0
+		for _, g := range groups {
+			per := g.TokensPerBlock * blocksPerChunk
+			n := (maxModelLen + per - 1) / per
+			if g.WindowChunks != nil && *g.WindowChunks < n {
+				n = *g.WindowChunks
+			}
+			perRequest += n
+		}
+		tokens = numChunks * maxModelLen / perRequest
+	}
+	return map[string]any{"cpu_num_chunks": numChunks, "cpu_blocks_per_chunk": blocksPerChunk,
+		"cpu_kv_cache_size_bytes": int64(numChunks) * bytesPerChunk, "cpu_kv_cache_size_tokens": tokens}
 }
 
 // cpuManager is CPUOffloadingManager (vllm/v1/kv_offload/cpu/manager.py:47-483@5df63a72) with the

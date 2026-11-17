@@ -1,0 +1,538 @@
+{
+ "manager": [
+  {
+   "args": {
+    "ctx": "c1",
+    "req": "a"
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "f55ff16f66f43360266b95db6f8fec01d76031054306ae4a4b380598f6cfd11400000000",
+     "2c3a4249d77070058649dbd822dcaf7957586fce428cfb2ca88b94741eda8b0700000000"
+    ],
+    "positions": {},
+    "req": "a"
+   },
+   "m": "prepare_store",
+   "ret": {
+    "evicted": [],
+    "ids": [
+     0,
+     1
+    ],
+    "keys_to_store": [
+     "f55ff16f66f43360266b95db6f8fec01d76031054306ae4a4b380598f6cfd11400000000",
+     "2c3a4249d77070058649dbd822dcaf7957586fce428cfb2ca88b94741eda8b0700000000"
+    ]
+   }
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "f55ff16f66f43360266b95db6f8fec01d76031054306ae4a4b380598f6cfd11400000000",
+     "2c3a4249d77070058649dbd822dcaf7957586fce428cfb2ca88b94741eda8b0700000000"
+    ],
+    "req": "a",
+    "success": true
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "positions": {},
+    "req": "a"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "req": "b"
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "keys": [
+     "f55ff16f66f43360266b95db6f8fec01d76031054306ae4a4b380598f6cfd11400000000",
+     "7dc96f776c8423e57a2785489a3f9c43fb6e756876d6ad9a9cac4aa4e72ec19300000000"
+    ],
+    "positions": {},
+    "req": "b"
+   },
+   "m": "prepare_store",
+   "ret": {
+    "evicted": [
+     "2c3a4249d77070058649dbd822dcaf7957586fce428cfb2ca88b94741eda8b0700000000"
+    ],
+    "ids": [
+     1
+    ],
+    "keys_to_store": [
+     "7dc96f776c8423e57a2785489a3f9c43fb6e756876d6ad9a9cac4aa4e72ec19300000000"
+    ]
+   }
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "keys": [
+     "7dc96f776c8423e57a2785489a3f9c43fb6e756876d6ad9a9cac4aa4e72ec19300000000"
+    ],
+    "req": "b",
+    "success": true
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "keys": [
+     "f55ff16f66f43360266b95db6f8fec01d76031054306ae4a4b380598f6cfd11400000000",
+     "7dc96f776c8423e57a2785489a3f9c43fb6e756876d6ad9a9cac4aa4e72ec19300000000",
+     "4814d92093ac8a0f4a2163ab87dee509ba306a58f5888be0edcb2fcd0712028b00000000"
+    ],
+    "positions": {},
+    "req": "b"
+   },
+   "m": "prepare_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "key": "2c3a4249d77070058649dbd822dcaf7957586fce428cfb2ca88b94741eda8b0700000000",
+    "req": "b"
+   },
+   "m": "lookup",
+   "ret": "MISS"
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "positions": {},
+    "req": "b"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {},
+   "m": "get_stats",
+   "ret": {
+    "vllm:kv_offload_cpu_allocation_size": {
+     "()": [
+      2,
+      1,
+      1
+     ]
+    },
+    "vllm:kv_offload_cpu_cache_read_usage_perc": {
+     "()": 0.0
+    },
+    "vllm:kv_offload_cpu_cache_usage_perc": {
+     "()": 0.0
+    },
+    "vllm:kv_offload_cpu_cache_write_usage_perc": {
+     "()": 0.0
+    }
+   }
+  },
+  {
+   "args": {},
+   "m": "shutdown",
+   "ret": null
+  }
+ ],
+ "policy": [
+  {
+   "args": {
+    "key": "f55ff16f66f43360266b95db6f8fec01d76031054306ae4a4b380598f6cfd11400000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "2c3a4249d77070058649dbd822dcaf7957586fce428cfb2ca88b94741eda8b0700000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "f55ff16f66f43360266b95db6f8fec01d76031054306ae4a4b380598f6cfd11400000000",
+     "2c3a4249d77070058649dbd822dcaf7957586fce428cfb2ca88b94741eda8b0700000000"
+    ],
+    "req": "a"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "f55ff16f66f43360266b95db6f8fec01d76031054306ae4a4b380598f6cfd11400000000",
+     "2c3a4249d77070058649dbd822dcaf7957586fce428cfb2ca88b94741eda8b0700000000"
+    ],
+    "positions": {},
+    "req": "a"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 0,
+     "ref": -1
+    },
+    "ctx": "c1",
+    "key": "f55ff16f66f43360266b95db6f8fec01d76031054306ae4a4b380598f6cfd11400000000",
+    "positions": {},
+    "req": "a"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 1,
+     "ref": -1
+    },
+    "ctx": "c1",
+    "key": "2c3a4249d77070058649dbd822dcaf7957586fce428cfb2ca88b94741eda8b0700000000",
+    "positions": {},
+    "req": "a"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "f55ff16f66f43360266b95db6f8fec01d76031054306ae4a4b380598f6cfd11400000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 0,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "f55ff16f66f43360266b95db6f8fec01d76031054306ae4a4b380598f6cfd11400000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "2c3a4249d77070058649dbd822dcaf7957586fce428cfb2ca88b94741eda8b0700000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 1,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "2c3a4249d77070058649dbd822dcaf7957586fce428cfb2ca88b94741eda8b0700000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "groups": [
+     [
+      "f55ff16f66f43360266b95db6f8fec01d76031054306ae4a4b380598f6cfd11400000000",
+      "2c3a4249d77070058649dbd822dcaf7957586fce428cfb2ca88b94741eda8b0700000000"
+     ]
+    ],
+    "positions": {},
+    "req": "a"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "f55ff16f66f43360266b95db6f8fec01d76031054306ae4a4b380598f6cfd11400000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 0,
+    "ref": 0
+   }
+  },
+  {
+   "args": {
+    "key": "7dc96f776c8423e57a2785489a3f9c43fb6e756876d6ad9a9cac4aa4e72ec19300000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "keys": [
+     "7dc96f776c8423e57a2785489a3f9c43fb6e756876d6ad9a9cac4aa4e72ec19300000000"
+    ],
+    "req": "b"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "keys": [
+     "f55ff16f66f43360266b95db6f8fec01d76031054306ae4a4b380598f6cfd11400000000",
+     "7dc96f776c8423e57a2785489a3f9c43fb6e756876d6ad9a9cac4aa4e72ec19300000000"
+    ],
+    "positions": {},
+    "req": "b"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "n": 1,
+    "protected": [
+     "7dc96f776c8423e57a2785489a3f9c43fb6e756876d6ad9a9cac4aa4e72ec19300000000",
+     "f55ff16f66f43360266b95db6f8fec01d76031054306ae4a4b380598f6cfd11400000000"
+    ]
+   },
+   "m": "evict",
+   "ret": [
+    {
+     "id": 1,
+     "key": "2c3a4249d77070058649dbd822dcaf7957586fce428cfb2ca88b94741eda8b0700000000"
+    }
+   ]
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 1,
+     "ref": -1
+    },
+    "ctx": "c2",
+    "key": "7dc96f776c8423e57a2785489a3f9c43fb6e756876d6ad9a9cac4aa4e72ec19300000000",
+    "positions": {},
+    "req": "b"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "7dc96f776c8423e57a2785489a3f9c43fb6e756876d6ad9a9cac4aa4e72ec19300000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 1,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "7dc96f776c8423e57a2785489a3f9c43fb6e756876d6ad9a9cac4aa4e72ec19300000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "f55ff16f66f43360266b95db6f8fec01d76031054306ae4a4b380598f6cfd11400000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 0,
+    "ref": 0
+   }
+  },
+  {
+   "args": {
+    "key": "7dc96f776c8423e57a2785489a3f9c43fb6e756876d6ad9a9cac4aa4e72ec19300000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 1,
+    "ref": 0
+   }
+  },
+  {
+   "args": {
+    "key": "4814d92093ac8a0f4a2163ab87dee509ba306a58f5888be0edcb2fcd0712028b00000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "keys": [
+     "4814d92093ac8a0f4a2163ab87dee509ba306a58f5888be0edcb2fcd0712028b00000000"
+    ],
+    "req": "b"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "keys": [
+     "4814d92093ac8a0f4a2163ab87dee509ba306a58f5888be0edcb2fcd0712028b00000000"
+    ],
+    "positions": {},
+    "req": "b"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "n": 1,
+    "protected": [
+     "4814d92093ac8a0f4a2163ab87dee509ba306a58f5888be0edcb2fcd0712028b00000000",
+     "7dc96f776c8423e57a2785489a3f9c43fb6e756876d6ad9a9cac4aa4e72ec19300000000",
+     "f55ff16f66f43360266b95db6f8fec01d76031054306ae4a4b380598f6cfd11400000000"
+    ]
+   },
+   "m": "evict",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "2c3a4249d77070058649dbd822dcaf7957586fce428cfb2ca88b94741eda8b0700000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "groups": [
+     [
+      "f55ff16f66f43360266b95db6f8fec01d76031054306ae4a4b380598f6cfd11400000000",
+      "7dc96f776c8423e57a2785489a3f9c43fb6e756876d6ad9a9cac4aa4e72ec19300000000",
+      "4814d92093ac8a0f4a2163ab87dee509ba306a58f5888be0edcb2fcd0712028b00000000"
+     ]
+    ],
+    "positions": {},
+    "req": "b"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  }
+ ],
+ "provenance": {
+  "blis_vllm_commit": "82b8519e100557ab8165687456bbec426b2af118",
+  "kind": "direct",
+  "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
+  "mock_version": "gpu-mock/7+f4274aa648c4",
+  "mocks": [
+   "vllm.v1.outputs.ModelRunnerOutput",
+   "tests.v1.core.utils.create_scheduler",
+   "sampled token stream",
+   "vllm.v1.core.sched.scheduler.time",
+   "vllm.v1.metrics.stats.time",
+   "vllm.v1.engine.time",
+   "vllm.v1.outputs.DraftTokenIds",
+   "spec-decode acceptance",
+   "tests.v1.core.utils.VllmConfig",
+   "tests.v1.core.utils.SchedulerConfig",
+   "vllm.config.vllm.HAS_TRITON",
+   "KV event publisher",
+   "tests.v1.core.utils.KVCacheConfig",
+   "tests.v1.core.utils.CacheConfig",
+   "vllm.v1.executor.abstract.Executor",
+   "EngineCore construction",
+   "vllm.platforms.cpu async override",
+   "use_v2_model_runner (CPU wheel without Triton)",
+   "vllm.config.ParallelConfig.sync_dp_state",
+   "DP coordinator stats transport",
+   "DPLBAsyncMPClient construction",
+   "DPEngineCoreProc construction",
+   "DP wave loop (harness copy of DPEngineCoreProc.run_busy_loop)",
+   "NIXL connector scheduler config",
+   "KV-transfer parameters on a request",
+   "OffloadingConnector scheduler config",
+   "OffloadingConnector worker (OffloadingWorkerMetadata transport)",
+   "finished_req_ids iteration order (per-process hash seed)"
+  ],
+  "model": "facebook/opt-125m",
+  "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+  "oracle_inputs": {
+   "oracle/drive_kv_interfaces.py": "edb41c5303e50d8b3827ba87c3314e696d1984cf79a2830e3327cc0844a6a022",
+   "oracle/kv_interfaces.py": "4bcde8955836b6ef732f8c901fa94c89a5b7592dcf1db8f6322e3be451c81c10",
+   "oracle/mocks.json": "afd576782c5322ce4c6aa4cdb72fb513e3e78cd8ea54dd6043af0cdf5680a658",
+   "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+   "oracle/run_scheduler.py": "1239a1d64f057fcb543789762859ea33211627e3f2b66b46087ed9ee936222f6",
+   "oracle/scenarios-fid5/cpu-evicts-around-the-protected-offer.json": "4a6fc57f109fdd346f436362a15457f0b5f4cf90a09bdc536cace5f53a172d0f"
+  },
+  "platform": "linux-x86_64",
+  "python": "3.12.16",
+  "requirements_lock_sha256": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+  "scenario_sha256": "4a6fc57f109fdd346f436362a15457f0b5f4cf90a09bdc536cace5f53a172d0f",
+  "seed": null,
+  "tier": 2,
+  "vllm_commit": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "vllm_distribution": "0.33.0+cpu",
+  "vllm_version": "0.33.0"
+ },
+ "spec": [
+  {
+   "args": {
+    "alignment": 4096,
+    "blocks_per_chunk": 1,
+    "cpu_bytes_to_use": 32768,
+    "eviction_policy": "lru",
+    "groups": [
+     {
+      "tokens_per_block": 16,
+      "window_chunks": null
+     }
+    ],
+    "max_model_len": 0,
+    "offload_prompt_only": true,
+    "replicated_layout": false,
+    "secondary_tiers": 0,
+    "spec": "CPUOffloadingSpec",
+    "worker_kv_bytes_per_block": 16384,
+    "world_size": 1
+   },
+   "m": "get_manager",
+   "ret": {
+    "kv_bytes_per_chunk": 16384,
+    "manager": "CPUOffloadingManager",
+    "num_chunks": 2
+   }
+  }
+ ]
+}

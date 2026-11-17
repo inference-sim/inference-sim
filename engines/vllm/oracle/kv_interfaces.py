@@ -3,9 +3,12 @@
 
 A framework's trace is the sequence of calls made at its interface, each with its arguments and
 vLLM's answer. Two interfaces are traced here: OffloadingManager (vllm/v1/kv_offload/base.py:
-235-421@5df63a72), as the connector's scheduler side calls it, and CachePolicy
-(vllm/v1/kv_offload/cpu/policies/base.py:48-140@5df63a72), as the manager calls it. Each spec's
-get_manager is recorded with what the spec derived from its config (OffloadingSpec, base.py:595-640).
+283-510@4ba787ec), as the connector's scheduler side calls it, and CachePolicy
+(vllm/v1/kv_offload/cpu/policies/base.py:48-160@4ba787ec), as the manager calls it. Each spec's
+get_manager is recorded with what the spec derived from its config (OffloadingSpec, base.py:692-757).
+
+OffloadingManager's lock (base.py:284-304) is not traced: it is a context manager that only
+excludes other threads, and decides nothing.
 
 Interface calls are observed with sys.monitoring (PEP 669): events on the code objects of the
 interface methods, nothing more. No vLLM object, class or module is written to, so this replaces
@@ -13,9 +16,14 @@ nothing and needs no entry in oracle/mocks.json. A call made from inside another
 interface (TieringOffloadingManager forwarding to its CPU primary tier, the policy's touch inside
 on_store_miss) is the callee's business, not a call at the interface, and is not recorded.
 
-No traced method reads the clock: the CPU manager, the LRU policy and a tiering manager with no
-secondary tiers decide on keys, counts and ranks alone. The scheduler that calls them runs with the
-clock replacement oracle/mocks.json lists (FID-1).
+No traced method decides on the clock: the CPU manager, the LRU policy and a tiering manager with
+no secondary tiers decide on keys, counts and ranks alone. The scheduler that calls them runs with
+the clock replacement oracle/mocks.json lists (FID-1). From v0.33.0 the tiering manager times each
+primary-tier lookup with time.monotonic and reports the duration in get_stats
+(vllm:kv_offload_tiering_lookup_sync_delay_seconds, tiering/manager.py:626-635 and
+tiering/metrics.py:294-320@4ba787ec). A value of a family whose name ends in _seconds or _time is
+read from the clock, so get_stats records such a histogram by its number of observations and such
+a counter or gauge as "clock"; every other value is recorded as it is.
 
 The trace format, which core/connector/offloading/fid5_test.go replays against the port:
     {"spec": [call...], "manager": [call...], "policy": [call...]}
@@ -27,9 +35,9 @@ import sys
 
 MANAGER_METHODS = ("on_new_request", "lookup", "get_load_source", "prepare_load", "touch", "complete_load",
                    "prepare_store", "complete_store", "on_request_finished", "take_events", "on_schedule_end",
-                   "has_pending_work", "reset_cache", "get_stats", "shutdown")
-POLICY_METHODS = ("get", "insert", "remove", "touch", "on_store_miss", "on_request_finished", "evict", "clear",
-                  "mark_evictable", "mark_non_evictable")
+                   "has_pending_work", "reset_cache", "on_reset_flushed", "get_stats", "config_info", "shutdown")
+POLICY_METHODS = ("get", "insert", "remove", "touch", "on_store_miss", "on_request_access", "on_request_finished",
+                  "evict", "clear", "mark_evictable", "mark_non_evictable")
 CO_GENERATOR = 0x20
 
 
@@ -83,6 +91,13 @@ class Monitor:
     def positions(self, c, ks) -> dict:
         return {self.key(k): c.get_offload_key_position(k) for k in ks if c.get_offload_key_position(k) is not None}
 
+    @staticmethod
+    def stat(name, val):
+        """A get_stats value; one read from the clock by its shape only (see the module's docstring)."""
+        if not name.endswith(("_seconds", "_time")):
+            return val
+        return {"observations": len(val)} if isinstance(val, list) else "clock"
+
     def chunk(self, ch):
         return None if ch is None else {"id": int(ch.chunk_id), "ref": int(ch.ref_cnt)}
 
@@ -94,8 +109,13 @@ class Monitor:
         if iface == "manager":
             if m in ("lookup", "get_load_source"):
                 out["key"] = self.key(a["key"])
-            elif m in ("prepare_load", "touch", "complete_load", "prepare_store"):
+            elif m in ("touch", "complete_load"):
                 out["keys"] = self.keys(a["keys"])
+            elif m in ("prepare_load", "prepare_store"):
+                # From v0.33.0 both rank the request's keys by the positions it holds now
+                # (cpu/manager.py:163-189 and :360-361@4ba787ec).
+                ks = list(a["keys"])
+                out["keys"], out["positions"] = self.keys(ks), self.positions(a["req_context"], ks)
             elif m == "complete_store":
                 out["keys"], out["success"] = self.keys(a["keys"]), bool(a.get("success", True))
             elif m == "on_request_finished":
@@ -108,7 +128,12 @@ class Monitor:
             if m in ("get", "remove", "mark_evictable", "mark_non_evictable"):
                 out["key"] = self.key(a["key"])
             elif m == "insert":
+                # The storing request's position of the key ranks the chunk (lru.py:107-121@4ba787ec).
                 out["key"], out["chunk"] = self.key(a["key"]), self.chunk(a["chunk"])
+                out["positions"] = self.positions(a["req_context"], [a["key"]])
+            elif m == "on_request_access":
+                ks = list(a["keys"])
+                out["keys"], out["positions"] = self.keys(ks), self.positions(a["req_context"], ks)
             elif m in ("touch", "on_store_miss"):
                 ks = list(a["keys"])
                 out["keys"] = self.keys(ks)
@@ -126,7 +151,11 @@ class Monitor:
                    "world_size": int(c.parallel.world_size), "blocks_per_chunk": int(s.blocks_per_chunk),
                    "replicated_layout": bool(s.replicated_layout), "alignment": int(s.BLOCK_SIZE_ALIGNMENT),
                    "eviction_policy": s.eviction_policy, "offload_prompt_only": bool(s.offload_prompt_only),
-                   "secondary_tiers": len(s.extra_config.get("secondary_tiers") or [])}
+                   "secondary_tiers": len(s.extra_config.get("secondary_tiers") or []),
+                   # config_info's tokens at max_model_len read these (cpu/common.py:59-72@4ba787ec).
+                   "max_model_len": int(c.model.max_model_len),
+                   "groups": [{"tokens_per_block": int(g.tokens_per_block),
+                               "window_chunks": g.sliding_window_size_in_chunks} for g in c.groups]}
         return out
 
     def ret(self, iface, m, v, f):
@@ -150,8 +179,10 @@ class Monitor:
                         "evicted": self.keys(v.evicted_keys)}
             if m == "has_pending_work":
                 return bool(v)
+            if m == "config_info":
+                return [dict(x) for x in v]
             if m == "get_stats":
-                return {name: {repr(lv): val for lv, val in sorted(vals.items(), key=lambda kv: repr(kv[0]))}
+                return {name: {repr(lv): self.stat(name, val) for lv, val in sorted(vals.items(), key=lambda kv: repr(kv[0]))}
                         for name, vals in sorted(v._values.items())}
             return repr(v)
         if m == "get":
@@ -161,7 +192,8 @@ class Monitor:
         return repr(v)
 
     def event(self, e) -> dict:
-        return {"keys": self.keys(e.keys), "medium": e.medium.name, "removed": bool(e.removed)}
+        return {"keys": self.keys(e.keys), "medium": e.medium.name, "removed": bool(e.removed),
+                "metadata_only": bool(e.metadata_only)}
 
     # --- events ---
     # Each callback runs inside the lambda registered for it, so the interface method's own frame is

@@ -106,14 +106,25 @@ func TestThePortAnswersEveryOffloadInterfaceCallAsVLLMDoes(t *testing.T) {
 			if v, _ := tr.Provenance["mock_version"].(string); v == "" {
 				t.Error("the trace records no mock version")
 			}
-			numChunks := replaySpec(t, tr.Spec)
-			if len(tr.Manager) > 0 {
-				if numChunks < 0 {
-					t.Fatal("manager calls with no spec that built the manager")
-				}
-				replayManager(t, numChunks, tr.Manager)
+			tiering := false
+			for _, c := range tr.Spec {
+				tiering = tiering || arg[string](t, c, "spec") == "TieringOffloadingSpec"
 			}
+			built := replaySpec(t, tr.Spec)
 			replayPolicy(t, tr.Policy)
+			if len(tr.Manager) == 0 {
+				return
+			}
+			if built == nil {
+				t.Fatal("manager calls with no spec that built the manager")
+			}
+			if tiering {
+				// From v0.33.0 a TieringOffloadingManager's get_stats adds its own tracker's series
+				// (vllm/v1/kv_offload/tiering/manager.py:1205-1229@4ba787ec), and its config_info a tier
+				// label, so its manager calls are the tiering layer's to answer, not the CPU tier's.
+				t.Skip("TieringOffloadingManager calls: replayed by core/connector/tiering against its manager with no secondary tiers over the CPU primary tier")
+			}
+			replayManager(t, *built, tr.Manager)
 		})
 	}
 }
@@ -184,11 +195,18 @@ func args(c fid5Call) string {
 	return strings.Join(parts, ", ")
 }
 
-// replaySpec checks each get_manager: the chunk count the port sizes the CPU tier with
-// (NumChunks), and that the manager is the CPU tier the port runs. It returns the last count, or
-// -1 with no spec call.
-func replaySpec(t *testing.T, calls []fid5Call) int {
-	n := -1
+// builtTier is what the last get_manager built, as the port sizes it.
+type builtTier struct {
+	numChunks int
+	// info is the manager's config_info answer.
+	info []map[string]any
+}
+
+// replaySpec checks each get_manager: the chunk count and chunk bytes the port sizes the CPU tier
+// with (NumChunks, ChunkBytes), and that the manager is the CPU tier the port runs. It returns the
+// last tier built, or nil with no spec call.
+func replaySpec(t *testing.T, calls []fid5Call) *builtTier {
+	var built *builtTier
 	for i, c := range calls {
 		spec := arg[string](t, c, "spec")
 		copies := arg[int](t, c, "world_size")
@@ -198,8 +216,9 @@ func replaySpec(t *testing.T, calls []fid5Call) int {
 		got := NumChunks(arg[int64](t, c, "cpu_bytes_to_use"), arg[int64](t, c, "worker_kv_bytes_per_block"), copies,
 			arg[int](t, c, "blocks_per_chunk"), arg[int64](t, c, "alignment"))
 		var ret struct {
-			Manager   string `json:"manager"`
-			NumChunks int    `json:"num_chunks"`
+			Manager         string `json:"manager"`
+			NumChunks       int    `json:"num_chunks"`
+			KVBytesPerChunk int64  `json:"kv_bytes_per_chunk"`
 		}
 		if err := json.Unmarshal(c.Ret, &ret); err != nil {
 			t.Fatal(err)
@@ -207,6 +226,13 @@ func replaySpec(t *testing.T, calls []fid5Call) int {
 		if got != ret.NumChunks {
 			t.Fatalf("spec call %d (%s): the port sizes %d chunks, vLLM %d", i, args(c), got, ret.NumChunks)
 		}
+		bytes := ChunkBytes(arg[int64](t, c, "worker_kv_bytes_per_block"), copies, arg[int](t, c, "blocks_per_chunk"),
+			arg[int64](t, c, "alignment"))
+		if bytes != ret.KVBytesPerChunk {
+			t.Fatalf("spec call %d (%s): the port gives a chunk %d bytes, vLLM %d", i, args(c), bytes, ret.KVBytesPerChunk)
+		}
+		info := ConfigInfo(got, arg[int](t, c, "blocks_per_chunk"), bytes, arg[int](t, c, "max_model_len"),
+			arg[[]OffloadGroup](t, c, "groups"))
 		// The port runs both registered specs as its CPU tier (Check), TieringOffloadingSpec only with
 		// no secondary tiers, over the LRU policy.
 		if err := Check(Options{SpecName: spec, SecondaryTiers: arg[int](t, c, "secondary_tiers"),
@@ -217,12 +243,12 @@ func replaySpec(t *testing.T, calls []fid5Call) int {
 		if ret.Manager != want {
 			t.Fatalf("spec call %d: %s built a %s, want %s", i, spec, ret.Manager, want)
 		}
-		n = got
+		built = &builtTier{numChunks: got, info: []map[string]any{info}}
 	}
-	return n
+	return built
 }
 
-// cpuStatNames are the CPU tier's get_stats metrics (vllm/v1/kv_offload/cpu/common.py:8-13@5df63a72).
+// cpuStatNames are the CPU tier's get_stats metrics (vllm/v1/kv_offload/cpu/common.py:14-17@4ba787ec).
 const (
 	statUsage = "vllm:kv_offload_cpu_cache_usage_perc"
 	statWrite = "vllm:kv_offload_cpu_cache_write_usage_perc"
@@ -230,8 +256,8 @@ const (
 	statAlloc = "vllm:kv_offload_cpu_allocation_size"
 )
 
-func replayManager(t *testing.T, numChunks int, calls []fid5Call) {
-	m := newCPUManager(numChunks)
+func replayManager(t *testing.T, built builtTier, calls []fid5Call) {
+	m := newCPUManager(built.numChunks)
 	acc := map[string]*reqAccess{}
 	access := func(c fid5Call) *reqAccess {
 		name := arg[string](t, c, "ctx")
@@ -239,6 +265,15 @@ func replayManager(t *testing.T, numChunks int, calls []fid5Call) {
 			acc[name] = newReqAccess()
 		}
 		return acc[name]
+	}
+	// positioned is the call's request with the token positions it held when vLLM's manager read
+	// them (prepare_load and prepare_store, cpu/manager.py:163-189 and :360-361@4ba787ec).
+	positioned := func(c fid5Call) *reqAccess {
+		a := access(c)
+		for h, p := range arg[map[string]int](t, c, "positions") {
+			a.positions[key(t, h)] = p
+		}
+		return a
 	}
 	for i, c := range calls {
 		switch c.M {
@@ -249,7 +284,7 @@ func replayManager(t *testing.T, numChunks int, calls []fid5Call) {
 		case "get_load_source":
 			same(t, i, c, m.loadSource())
 		case "prepare_load":
-			same(t, i, c, m.prepareLoad(keys(t, arg[[]string](t, c, "keys")), access(c)))
+			same(t, i, c, m.prepareLoad(keys(t, arg[[]string](t, c, "keys")), positioned(c)))
 		case "touch":
 			m.touch(keys(t, arg[[]string](t, c, "keys")))
 			same(t, i, c, nil)
@@ -257,7 +292,7 @@ func replayManager(t *testing.T, numChunks int, calls []fid5Call) {
 			m.completeLoad(keys(t, arg[[]string](t, c, "keys")))
 			same(t, i, c, nil)
 		case "prepare_store":
-			stored, ids, evicted, ok := m.prepareStore(keys(t, arg[[]string](t, c, "keys")), access(c))
+			stored, ids, evicted, ok := m.prepareStore(keys(t, arg[[]string](t, c, "keys")), positioned(c))
 			if !ok {
 				same(t, i, c, nil)
 				break
@@ -274,9 +309,11 @@ func replayManager(t *testing.T, numChunks int, calls []fid5Call) {
 			}
 			m.requestFinished(a)
 			same(t, i, c, nil)
-		case "on_schedule_end", "shutdown":
+		case "on_schedule_end", "on_reset_flushed", "shutdown":
 			// OffloadingManager's defaults, which the CPU manager keeps: nothing to do
-			// (vllm/v1/kv_offload/base.py:395-421@5df63a72).
+			// (vllm/v1/kv_offload/base.py:463-510@4ba787ec). A tiering manager with no secondary
+			// tiers never holds promotions, so its on_reset_flushed has nothing to release either
+			// (tiering/manager.py:1199-1203).
 			same(t, i, c, nil)
 		case "has_pending_work":
 			same(t, i, c, m.hasPendingWork())
@@ -288,6 +325,8 @@ func replayManager(t *testing.T, numChunks int, calls []fid5Call) {
 			same(t, i, c, nil)
 		case "get_stats":
 			compareStats(t, i, c, m.stats())
+		case "config_info":
+			same(t, i, c, built.info)
 		default:
 			t.Fatalf("call %d: OffloadingManager.%s is not replayed", i, c.M)
 		}
@@ -316,6 +355,18 @@ func compareStats(t *testing.T, i int, c fid5Call, st cpuStats) {
 
 func replayPolicy(t *testing.T, calls []fid5Call) {
 	p := newLRU()
+	acc := map[string]*reqAccess{}
+	// access is the call's request, with the token positions vLLM read from it during the call.
+	access := func(c fid5Call) *reqAccess {
+		name := arg[string](t, c, "ctx")
+		if acc[name] == nil {
+			acc[name] = newReqAccess()
+		}
+		for h, v := range arg[map[string]int](t, c, "positions") {
+			acc[name].positions[key(t, h)] = v
+		}
+		return acc[name]
+	}
 	for i, c := range calls {
 		switch c.M {
 		case "insert":
@@ -323,8 +374,11 @@ func replayPolicy(t *testing.T, calls []fid5Call) {
 				ID  int `json:"id"`
 				Ref int `json:"ref"`
 			}](t, c, "chunk")
-			// The recorded v0.32.0 call has no request context: insert ranks it next, as v0.32.0 did.
-			p.insert(key(t, arg[string](t, c, "key")), &chunk{refCnt: ch.Ref, id: ch.ID}, nil)
+			// The storing request ranks a key it positions (lru.py:107-121@4ba787ec).
+			p.insert(key(t, arg[string](t, c, "key")), &chunk{refCnt: ch.Ref, id: ch.ID}, access(c))
+			same(t, i, c, nil)
+		case "on_request_access":
+			p.onRequestAccess(keys(t, arg[[]string](t, c, "keys")), access(c))
 			same(t, i, c, nil)
 		case "get":
 			// The chunk's ref_cnt is the manager's to change, outside the policy; its slot is the
