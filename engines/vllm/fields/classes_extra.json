@@ -1,4 +1,36 @@
 {
+ "api_server_count": {
+  "stated": [
+   {
+    "trace": "core/engine/testdata/golden-dp/dp4-lb.json",
+    "values": [
+     1
+    ],
+    "why": "the recorded DP routing traces run one load-balancing client (oracle/run_dp.py client_count, default 1), which is api_server_count 1"
+   },
+   {
+    "trace": "oracle/scenarios-dp-clients/dp4-lb-clients2.json",
+    "values": [
+     2
+    ],
+    "why": "the scenario states client_count 2, which oracle/run_dp.py runs as two DPLBAsyncMPClient objects; vLLM's trace for it is produced by CI on every run and compared by TestDPClientsAgainstVLLM"
+   },
+   {
+    "trace": "oracle/scenarios-dp-clients/dp4-lb-clients3-lag.json",
+    "values": [
+     3
+    ],
+    "why": "client_count 3 with the coordinator's counts two steps late; vLLM's trace is produced by CI (TestDPClientsAgainstVLLM)"
+   },
+   {
+    "trace": "oracle/scenarios-dp-clients/dp2-kv-pressure-clients2.json",
+    "values": [
+     2
+    ],
+    "why": "client_count 2 with the burst on one client, under KV pressure; vLLM's trace is produced by CI (TestDPClientsAgainstVLLM)"
+   }
+  ]
+ },
  "MC_ENABLE_DEST_DEVICE_AFFINITY": {
   "kind": "numeric",
   "why": "no file of the serving process names the variable, so nothing compares it: one class holds every value"

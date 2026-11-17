@@ -153,7 +153,7 @@ class Source:
 
     def frontend_flag(self, name):
         """The AnnAssign of a FrontendArgs field, or a synthetic one built from its add_argument call."""
-        tree = gf.parse(os.path.join(self.root, "vllm", "entrypoints", "launchers", "cli_args.py"))
+        tree = gf.parse(gf.cli_args_path(self.root))
         for n in tree.body:
             if isinstance(n, ast.ClassDef) and n.name in ("BaseFrontendArgs", "FrontendArgs"):
                 for st in n.body:

@@ -56,7 +56,14 @@ type Group struct {
 // Config is the connector's configuration (SchedulerOffloadConfig.from_spec,
 // offloading/scheduler.py:176-344, over CPUOffloadingSpec).
 type Config struct {
+	// Groups are the offloaded KV cache groups, in the order the connector keeps them.
 	Groups []Group
+	// KVGroups is the engine's KV cache group id of each offloaded group, so Groups[i] is group
+	// KVGroups[i] of the blocks the scheduler passes. vLLM offloads only the prefix-cacheable groups
+	// (get_offloading_group_ids, vllm/distributed/kv_transfer/kv_connector/v1/offloading/config.py:38-45
+	// at v0.33.0), so a model with a ring or a bounded-replay window (DeepSeek V4.1) offloads some of
+	// its groups. nil is every group, in order.
+	KVGroups []int
 	// BlocksPerChunk is blocks_per_chunk (offloading/config.py:98-134); 0 means 1.
 	BlocksPerChunk int
 	// TokensPerHash is the scheduler's hash block size.
@@ -79,6 +86,19 @@ type Config struct {
 	// TieringOffloadingManager with its secondary tiers (vllm/v1/kv_offload/tiering/spec.py@4ba787ec).
 	// nil is the CPU tier alone (CPUOffloadingSpec, or TieringOffloadingSpec with no secondary tier).
 	Manager func(cpu *CPUPrimary) (Manager, error)
+}
+
+// selected is the offloaded groups' entries of per, which holds one entry per KV cache group of the
+// engine (the connector sees only the groups it offloads, as vLLM's does).
+func selected[T any](cfg Config, per []T) []T {
+	if cfg.KVGroups == nil {
+		return per
+	}
+	out := make([]T, len(cfg.KVGroups))
+	for i, g := range cfg.KVGroups {
+		out[i] = per[g]
+	}
+	return out
 }
 
 // groupCfg is GroupOffloadConfig with its derived sizes.
@@ -306,6 +326,9 @@ func New(cfg Config) (*Scheduler, error) {
 	if cfg.PrefixCaching {
 		s.loading = map[Key]bool{}
 	}
+	if cfg.KVGroups != nil && len(cfg.KVGroups) != len(cfg.Groups) {
+		return nil, fmt.Errorf("offloading: %d KV group ids for %d offloaded groups", len(cfg.KVGroups), len(cfg.Groups))
+	}
 	fullChunk := map[int]bool{}
 	for _, g := range cfg.Groups {
 		if g.BlockSize != cfg.Groups[0].BlockSize {
@@ -406,7 +429,18 @@ func Check(o Options) error {
 // KV cache groups (it is SupportsHMA, offloading_connector.py:53), the batch queue and drafters
 // (oracle/run_offloading.py run_queued; fuzz seeds 60000+).
 func (s *Scheduler) ConnectorModels() sched.Capabilities {
-	return sched.Capabilities{HybridGroups: true, ConcurrentBatches: true, Drafters: true}
+	return sched.Capabilities{HybridGroups: true, ConcurrentBatches: true, Drafters: true, PackedGroups: true}
+}
+
+// LoadedGroups implements sched.GroupLoader: the offloading connector states no
+// get_loaded_kv_cache_group_ids of its own, so its load restores the prefix-cacheable groups
+// (KVConnectorBase_V1.get_loaded_kv_cache_group_ids, vllm/distributed/kv_transfer/kv_connector/v1/
+// base.py:505-515@4ba787ec), which are the groups it offloads: a bounded-replay window is never one.
+func (s *Scheduler) LoadedGroups(_ *sched.Request, all []int) []int {
+	if s.cfg.KVGroups == nil {
+		return all
+	}
+	return append([]int(nil), s.cfg.KVGroups...)
 }
 
 // RequiresKVDelivery is requires_kv_delivery (offloading_connector.py:72-76): a best-effort
@@ -676,6 +710,7 @@ func (s *Scheduler) lookupComplete(st *reqState) (int, bool) {
 // request another connector of a MultiConnector loads
 // (vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1351-1363@4ba787ec).
 func (s *Scheduler) AfterAlloc(r *sched.Request, blocks sched.AllocatedBlocks, external int) {
+	blocks.Groups = selected(s.cfg, blocks.Groups)
 	for _, gb := range blocks.Groups {
 		for _, id := range gb {
 			if id != 0 {
@@ -800,6 +835,7 @@ func (s *Scheduler) updateReqStates(step sched.StepOutput) {
 		if rq.NewBlocks == nil {
 			continue
 		}
+		newBlocks := selected(s.cfg, rq.NewBlocks)
 		if len(s.swa) > 0 {
 			e := make([]int, len(s.swa))
 			for i, gi := range s.swa {
@@ -808,8 +844,8 @@ func (s *Scheduler) updateReqStates(step sched.StepOutput) {
 			ends[rq.ID] = e
 		}
 		for gi := range s.groups {
-			st.groups[gi].blockIDs = append(st.groups[gi].blockIDs, rq.NewBlocks[gi]...)
-			for _, b := range rq.NewBlocks[gi] {
+			st.groups[gi].blockIDs = append(st.groups[gi].blockIDs, newBlocks[gi]...)
+			for _, b := range newBlocks[gi] {
 				if b != 0 {
 					s.allocated[b] = true
 				}
