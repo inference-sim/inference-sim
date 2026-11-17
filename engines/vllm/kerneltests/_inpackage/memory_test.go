@@ -330,8 +330,11 @@ func TestAPackedSparseMLACacheIsItsOwnSize(t *testing.T) {
 //
 // Asserted as a contrast on one deployment: minimax-m2.5 on h200, and the same chip marked as
 // data-center Blackwell (native NVFP4, which nothing else in this fp8-served deployment
-// reads). Decode-only and prefill-only steps must price identically on both; a mixed step
-// must be cheaper on the FlashAttention part by exactly the smaller floor per attention layer.
+// reads). A decode-only step must price identically on both; the two backends' prefill kernels have
+// their own rates (blis-substrate#217), so what is compared is the rebate, what the decode and the
+// prefill priced alone cost over the mixed step they make: FlashAttention's must exceed FlashInfer's
+// by the smaller floor per attention layer, within 5% (the rates of the two prefill kernels differ
+// by a little more than the floors do).
 func TestAMixedStepIsOneAttentionLaunchOnFlashAttention(t *testing.T) {
 	build := func(blackwell bool) *Kernel {
 		t.Helper()
@@ -359,11 +362,10 @@ func TestAMixedStepIsOneAttentionLaunchOnFlashAttention(t *testing.T) {
 	prefill := decodeBatch(1, 256, 256)
 	mixed := kernel.Batch{DecodeThreshold: 8, Reqs: append(append([]kernel.ReqShape{},
 		decode.Reqs...), prefill.Reqs...)}
-	for name, b := range map[string]kernel.Batch{"decode": decode, "prefill": prefill} {
-		if a, c := busy(fa, b), busy(fi, b); a != c {
-			t.Errorf("a %s-only step priced %v on FlashAttention and %v on FlashInfer", name, a, c)
-		}
+	if a, c := busy(fa, decode), busy(fi, decode); a != c {
+		t.Errorf("a decode-only step priced %v on FlashAttention and %v on FlashInfer", a, c)
 	}
+	rebate := func(k *Kernel) time.Duration { return busy(k, decode) + busy(k, prefill) - busy(k, mixed) }
 	// The decode floor is the layer kind's own where the registry carries one, the
 	// part-wide one otherwise; the smaller of it and the prefill floor is what one launch
 	// saves.
@@ -378,9 +380,9 @@ func TestAMixedStepIsOneAttentionLaunchOnFlashAttention(t *testing.T) {
 			attnLayers += l.Count
 		}
 	}
-	saved := busy(fi, mixed) - busy(fa, mixed)
+	saved := rebate(fa) - rebate(fi)
 	want := time.Duration(float64(smaller) * float64(attnLayers))
-	if d := saved - want; d < -2 || d > 2 {
+	if d := saved - want; d < -want/20 || d > want/20 {
 		t.Errorf("a mixed step saved %v on FlashAttention, want one smaller floor per "+
 			"attention layer, %v", saved, want)
 	}
