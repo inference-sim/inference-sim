@@ -41,12 +41,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-light-${{ github.event.pull_request.number || github.ref }}
+  group: ci-light-${{ github.event.pull_request.number || github.ref }}${{ github.event.action == 'edited' && !github.event.changes.base && '-edit' || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   light-go:
-    name: light - format, vet, build and changed packages
+    name: "light - format, vet, build and changed packages${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -89,7 +90,8 @@ jobs:
           if [ "$inpackage" = 1 ]; then echo "testing: kerneltests/_inpackage, through its script"; kerneltests/scripts/run-inpackage.sh; fi
 
   light-lint:
-    name: light - golangci-lint
+    name: "light - golangci-lint${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -107,7 +109,8 @@ jobs:
           args: --new-from-merge-base=${{ github.event.pull_request.base.sha }} ./...
 
   light-generated:
-    name: light - field list and value classes are generated from the release
+    name: "light - field list and value classes are generated from the release${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -127,7 +130,8 @@ jobs:
         run: python3 -I fields/gen_classes.py vllm-source fields.json --check fields/value_classes.json
 
   light-goldens:
-    name: light - golden provenance and reviewers
+    name: "light - golden provenance and reviewers${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
