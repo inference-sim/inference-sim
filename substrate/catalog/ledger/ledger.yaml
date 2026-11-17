@@ -47,3 +47,14 @@ rules:
       - {role: fit, from: 0, to: 69}
       - {role: select, from: 70, to: 84}
       - {role: validate, from: 85, to: 99}
+  # Red Hat configiq end-to-end rows, added to partition version 1 with the seed kept: a new
+  # source's first cut-points are additive, because the role key's message names the source and
+  # no existing unit's role moves (D7; the ledger owner's decision of 2026-11-16, blis-design#14).
+  # The proportions mirror InferenceX. There is no legacy side.
+  configiq:
+    cut_points:
+      - {role: fit, from: 0, to: 29}
+      - {role: select, from: 30, to: 39}
+      - {role: validate, from: 40, to: 49}
+      - {role: held, from: 50, to: 79}
+      - {role: anchor, from: 80, to: 99}

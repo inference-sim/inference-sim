@@ -292,6 +292,18 @@ type Batch struct {
 	// below them is read the same way. It must not be negative (Validate).
 	DraftPaddedTokens int
 
+	// SkipDrafts is a step whose drafter proposes no drafts, because no request on any rank of
+	// the data-parallel group can use them: vLLM v0.33.0's V2 model runner then proposes zero
+	// tokens (skip_drafts, vllm/v1/worker/gpu/model_runner.py:2117-2135@4ba787ec, ANDed across
+	// the group in vllm/v1/worker/gpu/dp_utils.py:75-88). The drafter still runs the work that
+	// keeps its KV in step with the target: an EAGLE-style drafter's first pass over the
+	// scheduled tokens, with no head or sampling (spec_decode/target_dependent_ar/speculator.py:
+	// 281-300), and a parallel-block drafter's context K/V (spec_decode/dflash/speculator.py:
+	// 546-553). The passes that propose, and their head, do not run. The engine decides it and
+	// states it; false is a step that proposes as before. A step that proposes nothing states no
+	// proposing pass's width, so DraftPaddedTokens is zero (Validate).
+	SkipDrafts bool
+
 	// TailFrom is the index, in the model graph's expanded layer stack, of the first layer that
 	// runs over fewer rows than the requests scheduled: the layers from TailFrom to the end of
 	// the stack run each request's ReqShape.TailRows rows, not its Scheduled tokens. The engine
@@ -477,8 +489,8 @@ type Override struct {
 func (b Batch) PaddedTokens() int { return b.Tokens() + b.PadTokens }
 
 // Validate reports a batch no step can have: a negative pad, budget, threshold or
-// per-request count, or a tail statement that rows cannot satisfy (more rows than scheduled, or
-// rows with no layer to apply to).
+// per-request count, a tail statement that rows cannot satisfy (more rows than scheduled, or
+// rows with no layer to apply to), or a drafter pass width in a step that proposes no drafts.
 func (b Batch) Validate() error {
 	var bad, over []string
 	for field, v := range map[string]int{
@@ -508,6 +520,10 @@ func (b Batch) Validate() error {
 	}
 	if b.TailPadTokens > 0 && b.TailFrom == 0 {
 		over = append(over, fmt.Sprintf("TailPadTokens %d is stated with no TailFrom", b.TailPadTokens))
+	}
+	if b.SkipDrafts && b.DraftPaddedTokens > 0 {
+		return fmt.Errorf("batch: SkipDrafts with DraftPaddedTokens %d: a step that proposes no drafts launches "+
+			"no proposing pass to pad", b.DraftPaddedTokens)
 	}
 	if len(bad) > 0 {
 		sort.Strings(bad)

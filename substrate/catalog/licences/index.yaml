@@ -30,6 +30,12 @@ models:
       - file: MIT.deepseek.txt
         source: https://huggingface.co/deepseek-ai/DeepSeek-R1-0528/raw/4236a6af538feda4548eca9ab308586007567f52/LICENSE
         sha256: f2c6c602815669d292889e5be8c802f2ed950653b77999b1584e8e6aed25d040
+  - model: deepseek-r1-0528-fp4-v2
+    licence: MIT
+    texts:
+      - file: MIT.nvidia.txt
+        source: https://huggingface.co/nvidia/DeepSeek-R1-0528-FP4-V2/raw/25a138f28f49022958b9f2d205f9b7de0cdb6e18/LICENSE
+        sha256: c6bbdbdabe1aa56ade66f961688a8e4d5663b00c8566213f26d2cd9443fccc95
   - model: deepseek-v2-lite
     licence: LicenseRef-deepseek
     texts:
@@ -69,6 +75,19 @@ models:
         sha256: b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5
     note: "The card names MIT, and the repository holds no licence file and names no copyright holder, so the text is SPDX's MIT licence."
   - model: glm-5-nvfp4
+    licence: MIT
+    texts:
+      - file: MIT.txt
+        source: https://raw.githubusercontent.com/spdx/license-list-data/279b7e997a87c09be00dd6bdda189519ade502cf/text/MIT.txt
+        sha256: b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5
+    note: "The card names MIT, and the repository holds no licence file and names no copyright holder, so the text is SPDX's MIT licence."
+  - model: glm-5.1-fp8
+    licence: MIT
+    texts:
+      - file: MIT.zhipu-ai.txt
+        source: https://huggingface.co/zai-org/GLM-5.1-FP8/raw/f396cf805182f4ca10fa675e1a99815b3ca384db/LICENSE
+        sha256: f4a18c6ae40b0a8e7d2b7667f52f6e1994e54a46430d2e172b73cb8c9b5eb0d7
+  - model: glm-5.1-nvfp4
     licence: MIT
     texts:
       - file: MIT.txt
@@ -224,12 +243,14 @@ models:
       - file: LicenseRef-muse-model-license.txt
         source: https://huggingface.co/unsloth/Muse-Spark-Open-816B-A42B/raw/49cade7b0c6ed297f0434229ac67eea5f9ae1220/LICENSE.md
         sha256: 458a5c57d8e622e395eb0e59799ba5bba1ea7524ffd120ee6e3018688d7d6ace
+    note: "The licence text is read from the public unsloth mirror, because the gated source repository serves no file without access. The mirror and the source list the same git blob ids at the two revisions: LICENSE.md 425b4e8b, config.json e6df3a84."
   - model: muse-spark-open-816b-a42b-nvfp4
     licence: LicenseRef-muse-model-license
     texts:
       - file: LicenseRef-muse-model-license.txt
         source: https://huggingface.co/unsloth/Muse-Spark-Open-816B-A42B-NVFP4/raw/fc6908f53c6882d4ec48fca5ba144e41d21e1f92/LICENSE.md
         sha256: 458a5c57d8e622e395eb0e59799ba5bba1ea7524ffd120ee6e3018688d7d6ace
+    note: "The licence text is read from the public unsloth mirror, because the gated source repository serves no file without access. The mirror and the source list the same git blob ids at the two revisions: LICENSE.md 425b4e8b, config.json d2cd088c, hf_quant_config.json ce1d779c."
   - model: muse-spark-open-dspark
     licence: LicenseRef-muse-spark-open
     texts:

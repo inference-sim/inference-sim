@@ -39,6 +39,21 @@ This is how vLLM, and the InferenceX runs that force a published AL, realise one
 simulator using it reproduces those runs. Natural acceptance spreads more than this
 schedule does, so per-request tails derived from it are optimistic.
 
+A value that measured natural acceptance says so (`realisation: natural`). With no rates of
+its own it is spread with `NaturalRates` and the decay a profile set fits to its measured
+curves (its `shapes`, below):
+
+```
+p_i = q ^ (i ^ decay_exponent), with q chosen so the rates sum to AL - 1
+```
+
+An exponent of 1 is a constant per-token acceptance probability; a larger one decays faster
+down the positions. The decay is an estimate (`method: calibrated`), not yet judged against
+held-out end-to-end runs (VAL-6): the resolution records it as the `natural_decay` schedule and
+names the shape, and a run records both. Requests still advance by the mean acceptance length
+until an engine draws the accepted count per step (inference-sim/blis-vllm#147), so today the
+shape changes only adaptive-verification pricing.
+
 Acceptance is not the kernel's input. K and the method stay in the deployment's
 [`speculative`](deployment.md) block, because they change what a step costs; acceptance
 changes only how far requests advance.
@@ -59,14 +74,43 @@ InferenceX's golden SPEED-Bench curves:
 | `kind` | string | yes | Always `AcceptanceProfileSet`. |
 | `name` | string | yes | The set's identity. By convention it equals the file name, which is what a scenario's `acceptance.profiles` uses. |
 | `caveats` | list of strings | no | What the set does not cover and how far its values travel. No entry may be empty. |
+| `shapes` | list | no | How natural acceptance spreads over the draft positions, fitted to the set's measured curves, below. |
 | `profiles` | list | yes | At least one profile, below. |
+
+### Shapes
+
+One shape per speculative method, and one fitted to every method's curves, which a method with
+none of its own takes. Two shapes for one method are an error.
+
+<!-- fields: acceptance.Shape -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `speculative_method` | string | no | The method whose curves it was fitted to. Left out for the shape fitted to every method's. |
+| `decay_exponent` | number | yes | The exponent of the decay above, in [0.5, 2]. |
+| `fitted_from` | list of strings | yes | The source of every curve it was fitted to. No entry may be empty. |
+| `rule` | string | yes | How the exponent was fitted. |
+| `method` | string | yes | How the exponent was obtained: `calibrated` (a one-parameter form fitted to measured curves) or `assumed`. A shape is an estimate, so `measured` is refused. |
 
 ### Profiles
 
-A profile is keyed by model, drafter, speculative method, K, thinking mode and workload
-category. Two profiles with one key are an error. The drafter is the model's own in-graph
-speculator when it is left out, or the catalog name of a separate drafter checkpoint; the
-same target with two drafters has two profiles.
+A profile is keyed by model, drafter, speculative method, K, thinking mode, workload
+category, draft sampler and verifier. Two profiles with one key are an error. The drafter is
+the model's own in-graph speculator when it is left out, or the catalog name of a separate
+drafter checkpoint; the same target with two drafters has two profiles. The draft sampler and
+the verifier are stated where they tell one measurement from another of the same target,
+drafter and method, such as Kimi-K3's DSpark curves under greedy and probabilistic drafting.
+The engine that measured the value is a key field too. A profile states the settings as its
+source states them; a setting the source left at its engine's default is the marker `default`.
+A request states the run's values as its engine resolves them, defaults included, and the
+engine's own defaults for its release (`DefaultDraftSampler`, `DefaultVerifier`). The lookup
+compares only: a profile's `default` stands for the requesting engine's stated default when the
+profile's engine is the request's, and for nothing otherwise. A field neither side states is
+left out, meaning unstated. The exact key matches a field only when both sides state the same
+value or both leave it unstated; any other difference, an unstated side included, is borrowed
+by `same_drafter_other_settings` and named in `differed`. A key that states them renders them
+after the category, as `.../coding/draft-probabilistic/verify-block/engine-vllm`. The design states this in
+D8 (inference-sim/blis-design#13).
 
 <!-- fields: acceptance.Profile -->
 
@@ -74,6 +118,9 @@ same target with two drafters has two profiles.
 |---|---|---|---|
 | `model` | string | yes | The catalog model name, not the source's spelling of it. |
 | `drafter` | string | no | The catalog name of the separate drafter checkpoint the value was measured with. Left out for the model's own speculator, such as its MTP layers. No `+`, `/` or space, and not the target's own name. |
+| `draft_sampler` | string | no | How the drafter sampled its drafts: `greedy` or `probabilistic`, or `default` when the source left it at its engine's default. Left out when the source states nothing (unstated). |
+| `verifier` | string | no | How the target verified drafts, in vLLM v0.33.0's vocabulary: `standard`, `block` or `fly`, or `default` when the source left it at its engine's default. Left out when the source states nothing (unstated). |
+| `engine` | string | no | The serving engine that measured the value, lower case. Left out when unstated. |
 | `architecture` | string | no | The target's architecture as its graph records it (`global.architecture`). A lookup that borrows from another target reads it; a profile that states none is never borrowed across targets. It must equal the graph's. |
 | `speculative_method` | string | yes | The engine's method name, as a deployment's `engine.speculative.method` states it. |
 | `num_spec_tokens` | integer | yes | K. At least 1. |
@@ -94,6 +141,7 @@ same target with two drafters has two profiles.
 | Key | Type | Required | Meaning |
 |---|---|---|---|
 | `source` | string | yes | The document the value was read from. |
+| `sha256` | string | no | The SHA-256 of the source file, as 64 lower-case hex digits, so a reader can check it has the file the value was read from. |
 | `run` | string | no | The job that measured it, such as a GitHub Actions run. |
 | `benchmark` | string | no | The prompt set, such as `SPEED-Bench Qualitative`. |
 | `prompts` | integer | no | How many prompts it covered. Not negative. |
@@ -130,6 +178,7 @@ speculates another K it is refused rather than rescaled.
 | `acceptance_rate` | number | one of three | (AL − 1) / K, in [0, 1]. Not with `acceptance_length`. |
 | `per_position_rates` | list of numbers | one of three | K rates, as for a profile. Alone, they state AL as 1 + their sum; with either of the others, they must agree with it. |
 | `source` | string | no | Where the value came from, recorded with the resolution. |
+| `realisation` | string | no | How the run realised its acceptance: `natural` (real verification) or `synthetic` (the engine's forced acceptance). A natural value with no rates is spread with its method's shape, and refused when no set states one; a synthetic or unstated one with `MinimumVarianceRates`. |
 
 ## Scenario pin
 
@@ -187,16 +236,20 @@ one, in this order (design D8), and records that it did:
    that states none gives 1 + K(AL − 1)/K₀, where K₀ is its K. That figure cannot exceed what
    the profile's own rates would give, so it does not overstate drafting's gain. The lookup
    never extrapolates.
-2. **Another drafter of the same target**, preferring the same method and then the lowest
+2. **The same target, drafter and method under another draft sampler or verifier**
+   (`same_drafter_other_settings`). It takes the profiles that differ in the fewest of the
+   two, then the lowest value at the run's K by the first step's rules, so that a borrowed
+   setting does not overstate drafting's gain.
+3. **Another drafter of the same target**, preferring the same method and then the lowest
    value at the run's K, found by the first step's rules, so that drafting's gain is not
    overstated. The drafter must differ from the run's: the same drafter under another
    method is not another drafter, no step takes it, and the lookup refuses it.
-3. **The same method on another target** whose graph records the same architecture. The
+4. **The same method on another target** whose graph records the same architecture. The
    profile must state its architecture, and the run's must be known.
 
 Every step keeps the category and the thinking mode, apart from a fallback category the user
 requested. The fallback category stands in only when the workload's own category supplies
-nothing: the lookup tries the exact key and all three steps in the workload's category first,
+nothing: the lookup tries the exact key and every step in the workload's category first,
 and only then repeats them in the fallback category. Any remaining tie breaks in this order: the profile measured on the run's
 hardware, then the newest source (`provenance.date`), then the set name, then the key, so the
 choice is deterministic whatever order the sets are listed in. Two profiles that share a key
@@ -204,8 +257,8 @@ but record different sampling or settings are not interchangeable, and an exact 
 two sets is ambiguous; the lookup refuses both. A scenario's `exact_only`, or the request's,
 limits the lookup to exact matches.
 
-The resolution records `step` (`exact`, `same_drafter_other_k`, `other_drafter` or
-`other_target`), the key fields that `differed`, how K was brought to the run's (`k_rule`),
+The resolution records `step` (`exact`, `same_drafter_other_k`,
+`same_drafter_other_settings`, `other_drafter` or `other_target`), the key fields that `differed`, how K was brought to the run's (`k_rule`),
 and every profile read. The Result carries the same record on its `speculative_acceptance`
 property.
 
@@ -241,8 +294,9 @@ A profile set is invalid if
   more than 0.01 from AL − 1;
 - `method` is not recognized or is `not_charged`, or a field the method requires, per the
   table above, is missing;
-- a provenance has no `source`, a negative count, an empty setting, or sampling with no
-  `temperature`, a negative one, a `top_p` outside (0, 1] or a `top_k` below −1.
+- a provenance has no `source`, a `sha256` that is not 64 hex digits, a negative count, an
+  empty setting, or sampling with no `temperature`, a negative one, a `top_p` outside (0, 1]
+  or a `top_k` below −1.
 
 An inline value is invalid if `num_spec_tokens` is less than 1, it states no acceptance,
 it states both `acceptance_length` and `acceptance_rate`, either lies outside its range,

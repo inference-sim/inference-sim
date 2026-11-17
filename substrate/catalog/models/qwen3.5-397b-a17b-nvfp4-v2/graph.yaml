@@ -91,7 +91,7 @@ layer_kinds:
     role: input_norm
   - op: GEMM
     role: qkv_proj
-    n: 9216
+    n: 17408
     k: 4096
     weight_dtype: fp8
   - op: Attention
@@ -100,6 +100,9 @@ layer_kinds:
     n_q: 32
     n_kv: 2
     d_h: 256
+  - op: Elementwise
+    role: attn_output_gate
+    bytes_per_token: 49152
   - op: GEMM
     role: o_proj
     n: 4096
@@ -149,13 +152,28 @@ layer_kinds:
     - 7
   - - 7
     - 8
+  - - 8
+    - 9
 - id: mtp_moe
   nodes:
+  - op: Elementwise
+    role: mtp_pre_fc_norm_embedding
+  - op: Elementwise
+    role: mtp_pre_fc_norm_hidden
+  - op: GEMM
+    role: mtp_fc
+    n: 4096
+    k: 8192
+    weight_dtype: bf16
+    tp: column
+  - op: AllGather
+    role: mtp_fc_out
+    emit: tensor_parallel
   - op: Elementwise
     role: input_norm
   - op: GEMM
     role: qkv_proj
-    n: 9216
+    n: 17408
     k: 4096
   - op: Attention
     holds_engine_kv: true
@@ -163,6 +181,9 @@ layer_kinds:
     n_q: 32
     n_kv: 2
     d_h: 256
+  - op: Elementwise
+    role: attn_output_gate
+    bytes_per_token: 49152
   - op: GEMM
     role: o_proj
     n: 4096
@@ -203,6 +224,16 @@ layer_kinds:
     - 7
   - - 7
     - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
 stack:
   pattern:
   - gdn_moe

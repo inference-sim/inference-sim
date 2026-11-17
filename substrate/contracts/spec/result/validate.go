@@ -11,6 +11,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/check"
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/metrics"
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 )
@@ -333,6 +334,7 @@ func (in Input) validate(p *validate.Problems) {
 			p.Field(at+".source", "%q is not one of command_line, environment, default", o.Source)
 		}
 	}
+	validateFiles(in.Files, p)
 	for i, w := range in.WorkloadProperties {
 		at := fmt.Sprintf("input.workload_properties[%d]", i)
 		switch {
@@ -350,6 +352,25 @@ func (in Input) validate(p *validate.Problems) {
 			p.Field(at+".profile", "is stated exactly when source is profile")
 		}
 		w.validateBorrowing(p, at)
+		switch {
+		case w.RatesSchedule != "" && w.RatesSchedule != "minimum_variance" && w.RatesSchedule != "natural_decay":
+			p.Field(at+".rates_schedule", "%q is not one of minimum_variance, natural_decay", w.RatesSchedule)
+		case (w.RatesSchedule == "natural_decay") != (w.RatesShape != nil):
+			p.Field(at+".rates_shape", "is stated exactly when rates_schedule is natural_decay")
+		case w.RatesShape != nil:
+			s := w.RatesShape
+			if s.Set == "" {
+				p.Field(at+".rates_shape.set", "required: the profile set that holds the shape")
+			}
+			if p.FiniteField(at+".rates_shape.decay_exponent", s.DecayExponent) &&
+				(s.DecayExponent < acceptance.MinDecayExponent || s.DecayExponent > acceptance.MaxDecayExponent) {
+				p.Field(at+".rates_shape.decay_exponent", "must lie in [%v, %v], got %v",
+					acceptance.MinDecayExponent, acceptance.MaxDecayExponent, s.DecayExponent)
+			}
+			if !acceptance.ShapeMethod(s.Method) {
+				p.Field(at+".rates_shape.method", "%q is not calibrated or assumed: a fitted shape is an estimate", s.Method)
+			}
+		}
 		if len(w.Values) == 0 && w.Source != PropertyDefault {
 			p.Field(at+".values", "required: the values %s supplied", w.Source)
 		}
@@ -879,9 +900,10 @@ func (w WorkloadProperty) validateBorrowing(p *validate.Problems, at string) {
 	if w.Source != PropertyProfile {
 		p.Field(at+".step", "is stated only when source is profile, because only a profile lookup borrows")
 	}
-	steps := map[string]bool{"exact": true, "same_drafter_other_k": true, "other_drafter": true, "other_target": true}
+	steps := map[string]bool{"exact": true, "same_drafter_other_k": true, "same_drafter_other_settings": true,
+		"other_drafter": true, "other_target": true}
 	if !steps[w.Step] {
-		p.Field(at+".step", "%q is not one of exact, same_drafter_other_k, other_drafter, other_target", w.Step)
+		p.Field(at+".step", "%q is not one of exact, same_drafter_other_k, same_drafter_other_settings, other_drafter, other_target", w.Step)
 	}
 	if len(w.Profiles) == 0 {
 		p.Field(at+".profiles", "required with step: the profiles the value was read from")
@@ -908,12 +930,13 @@ func (w WorkloadProperty) validateBorrowing(p *validate.Problems, at string) {
 	}
 }
 
-var profileKeyFields = []string{"model", "drafter", "speculative_method", "num_spec_tokens"}
+var profileKeyFields = []string{"model", "drafter", "speculative_method", "num_spec_tokens", "draft_sampler", "verifier", "engine"}
 
 // ProfileKeyFields returns the key fields in which a borrowed acceptance profile can differ
-// from the run's (design D8): the target model, the drafter, the speculative method and the
-// number of speculative tokens. A point record's profile substitution names them from the same
-// list.
+// from the run's (design D8): the target model, the drafter, the speculative method, the
+// number of speculative tokens, and the draft sampler and verifier
+// (inference-sim/blis-substrate#174). A point record's profile substitution names them from the
+// same list.
 func ProfileKeyFields() []string { return append([]string(nil), profileKeyFields...) }
 
 // IsProfileKeyField reports whether name is one of ProfileKeyFields.

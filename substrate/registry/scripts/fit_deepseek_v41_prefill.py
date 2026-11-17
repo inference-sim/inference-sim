@@ -443,7 +443,8 @@ def entries(chip: str, g: dict, mg: dict, sp: dict, ix: dict, rg: dict, mh: dict
         f"combined_topk = round_up(top_k + window, 128) = {math.ceil(g['v41_tokens'] / 128) * 128}. "
         f"SCOPED TO THIS MODEL: fitted on the h64 instance V4.1 runs at every TP width. "
         f"{part['e2e']} Reproduce with scripts/fit_deepseek_v41_prefill.py.")
-    sp_src = [("model", f"{aisim}{base.FLASHMLA_TABLE} (NVIDIA {name}), {base.FLASHMLA_LANE}, "
+    sp_src = [("model", f"{base.table_cite(sku, base.FLASHMLA_TABLE)} (NVIDIA {name}), "
+               f"{base.FLASHMLA_LANE}, "
                f"{base.FLASHMLA_FIT_MODEL}, {sp['n']} prefill points", "primary"),
               ("model", "vLLM v0.31.0 models/deepseek_v41/nvidia/flashmla.py "
                "DeepseekV4FlashMLAAttention._forward_prefill", "supporting")]

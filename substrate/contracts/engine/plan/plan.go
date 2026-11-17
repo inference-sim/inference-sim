@@ -57,6 +57,38 @@ type PoolPlan struct {
 	// InFlight is the most steps in flight at once; 0 means 1, the value without asynchronous
 	// or overlap scheduling.
 	InFlight int
+
+	// The settings the engine resolved that the cost model prices (resolved.go). Each is stated
+	// in neutral words, and the cost model applies no default to any of them (SUB-6).
+
+	// Batch is the most requests and tokens one step may schedule.
+	Batch BatchLimits
+	// MaxContext is the longest sequence the engine admits, in tokens; 0 when neither the
+	// deployment nor the model states one.
+	MaxContext units.Tokens
+	// PageTokens is the tokens one KV page holds; 0 is not stated.
+	PageTokens units.Tokens
+	// MemoryFraction is the share of each GPU's memory the engine may take, in (0, 1]; 0 is not
+	// stated.
+	MemoryFraction float64
+	// WeightFormat is the format, in the catalog's dtype words (model.DType: bf16, fp8, nvfp4,
+	// ...), that every weight whose graph node states no format of its own is served in; "" is
+	// the checkpoint's own.
+	WeightFormat string
+	// Cache is how the engine stores KV and recurrent state.
+	Cache CacheFormat
+	// MoE is how the engine runs mixture-of-experts layers.
+	MoE MoEPlan
+	// Collectives says which collectives the engine's layers run.
+	Collectives CollectivePlan
+	// DecodeContext is how a decode-context-parallel group combines and stripes; read only when
+	// the layout's decode-context width exceeds one.
+	DecodeContext DecodeContextPlan
+	// Microbatch is true when the engine splits a large enough step into two micro-batches whose
+	// compute and communication overlap.
+	Microbatch bool
+	// Engram is where the model's Engram lookup tables live, for a model that has them.
+	Engram EngramPlacement
 }
 
 // Implementations are the distinct kernel implementations the pool runs: those of Layers and of
@@ -367,6 +399,14 @@ type GraphPolicy struct {
 	Mode GraphMode
 	// Buckets are the captured sizes, in tokens or in requests according to Mode.
 	Buckets []int
+	// Decode is how a uniform decode step launches when its size is captured, and Other how any
+	// other step does: a full graph, a piecewise graph with the attention run eagerly, or eagerly
+	// (LaunchEager, the zero value).
+	Decode Launch
+	Other  Launch
+	// Ceiling is the largest token count a captured graph covers; a step above it launches
+	// eagerly. 0 is none.
+	Ceiling units.Tokens
 }
 
 // GraphMode is how captured graphs are keyed.
@@ -403,6 +443,15 @@ type DraftPolicy struct {
 	// target-wide work is its context stack, needs neither.
 	FirstPassRows FirstPassRows
 	PassRequests  PassRequests
+	// Adaptive is true when the verifier runs a draft budget chosen each step from the expected
+	// acceptance, rather than every drafted token.
+	Adaptive bool
+	// RetainedTokens is the KV tokens a request keeps beyond its context for the drafter to read
+	// ahead; 0 is none.
+	RetainedTokens units.Tokens
+	// OwnWorkspace is true when the drafter's attention runs in a workspace of its own, held
+	// beside the target's, rather than inside the target's.
+	OwnWorkspace bool
 }
 
 // FirstPassRows is which rows an autoregressive drafter's first pass processes. Every pass
@@ -650,6 +699,13 @@ type DraftShape struct {
 	// the lockstep group, apart from the target's, so a rank's draft pass can be wider than its own
 	// draft rows, and the engine states how wide (the target's padding is PaddedShape).
 	Passes []DraftPass
+	// Skip says the drafter proposes no drafts in this step, because no request on any rank of
+	// the data-parallel group can use them; the engine decides it (vLLM v0.33.0's skip_drafts,
+	// vllm/v1/worker/gpu/model_runner.py:2117-2135@4ba787ec) and the cost model prices the step
+	// without the passes that propose (kernel.Batch.SkipDrafts). The drafter still keeps its KV in
+	// step with the target, which the cost model prices from the requests. A skipped step states
+	// no drafted tokens and no drafter pass (Validate). False is a step that proposes as before.
+	Skip bool
 }
 
 // DraftPass is one rank's drafter launch. The zero value is no drafter pass.

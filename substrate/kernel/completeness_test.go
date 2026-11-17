@@ -8,9 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/rules"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/load"
 )
 
@@ -46,10 +44,8 @@ func pricedEverywhere(t *testing.T) (built int, coefficient, engine map[string]m
 				t.Fatal(err)
 			}
 			r := Repos{Scenarios: dir, Data: d,
-				Rules: func(string) rules.EngineRules { return inertRules{} },
-				EngineSettings: func(*deployment.Deployment, int) (enginesettings.Settings, error) {
-					return enginesettings.Settings{BlockSize: 16, MaxNumSeqs: 64, MaxNumBatchedTokens: 8192, MaxModelLen: 8192}, nil
-				}}
+				Rules:      func(string) rules.EngineRules { return inertRules{} },
+				DraftModel: noDrafter, Lower: lowerTo(8192, 16, 0)}
 			in, err := OpenInputs("s.yaml", r, 0)
 			var k *Kernel
 			if err == nil {

@@ -36,6 +36,13 @@
           },
           "type": "array"
         },
+        "realisation": {
+          "enum": [
+            "natural",
+            "synthetic"
+          ],
+          "type": "string"
+        },
         "source": {
           "type": "string"
         }
@@ -443,6 +450,11 @@
                 "gateway_queue_delay_p95_ms",
                 "gateway_queue_delay_p99_ms",
                 "goodput_rps",
+                "icl_mean_ms",
+                "icl_p50_ms",
+                "icl_p90_ms",
+                "icl_p95_ms",
+                "icl_p99_ms",
                 "interactivity_mean",
                 "interactivity_of_mean_tpot",
                 "interactivity_p50",
@@ -505,6 +517,11 @@
                 "gateway_queue_delay_p95_ms",
                 "gateway_queue_delay_p99_ms",
                 "goodput_rps",
+                "icl_mean_ms",
+                "icl_p50_ms",
+                "icl_p90_ms",
+                "icl_p95_ms",
+                "icl_p99_ms",
                 "interactivity_mean",
                 "interactivity_of_mean_tpot",
                 "interactivity_p50",
@@ -567,6 +584,11 @@
                 "gateway_queue_delay_p95_ms",
                 "gateway_queue_delay_p99_ms",
                 "goodput_rps",
+                "icl_mean_ms",
+                "icl_p50_ms",
+                "icl_p90_ms",
+                "icl_p95_ms",
+                "icl_p99_ms",
                 "interactivity_mean",
                 "interactivity_of_mean_tpot",
                 "interactivity_p50",
@@ -768,6 +790,26 @@
       ],
       "type": "object"
     },
+    "result.File": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "content",
+        "path",
+        "sha256"
+      ],
+      "type": "object"
+    },
     "result.Frame": {
       "additionalProperties": false,
       "properties": {
@@ -805,6 +847,11 @@
               "gateway_queue_delay_p95_ms",
               "gateway_queue_delay_p99_ms",
               "goodput_rps",
+              "icl_mean_ms",
+              "icl_p50_ms",
+              "icl_p90_ms",
+              "icl_p95_ms",
+              "icl_p99_ms",
               "interactivity_mean",
               "interactivity_of_mean_tpot",
               "interactivity_p50",
@@ -930,6 +977,12 @@
       "properties": {
         "deployment": {
           "$ref": "#/$defs/deployment.Deployment"
+        },
+        "files": {
+          "items": {
+            "$ref": "#/$defs/result.File"
+          },
+          "type": "array"
         },
         "options": {
           "items": {
@@ -1062,6 +1115,39 @@
         "drain",
         "measured",
         "warmup"
+      ],
+      "type": "object"
+    },
+    "result.RatesShape": {
+      "additionalProperties": false,
+      "properties": {
+        "decay_exponent": {
+          "type": "number"
+        },
+        "method": {
+          "enum": [
+            "measured",
+            "calibrated",
+            "transferred",
+            "literature",
+            "vendor_spec",
+            "roofline",
+            "assumed",
+            "not_charged"
+          ],
+          "type": "string"
+        },
+        "set": {
+          "type": "string"
+        },
+        "speculative_method": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "decay_exponent",
+        "method",
+        "set"
       ],
       "type": "object"
     },
@@ -1343,6 +1429,11 @@
               "gateway_queue_delay_p95_ms",
               "gateway_queue_delay_p99_ms",
               "goodput_rps",
+              "icl_mean_ms",
+              "icl_p50_ms",
+              "icl_p90_ms",
+              "icl_p95_ms",
+              "icl_p99_ms",
               "interactivity_mean",
               "interactivity_of_mean_tpot",
               "interactivity_p50",
@@ -1744,6 +1835,12 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "rates_schedule": {
+          "type": "string"
+        },
+        "rates_shape": {
+          "$ref": "#/$defs/result.RatesShape"
         },
         "source": {
           "enum": [

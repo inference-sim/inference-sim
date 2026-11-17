@@ -13,7 +13,7 @@ import (
 // that contradicts the chip's catalog entry before anything is priced.
 // A GB200 NVL72 scenario that omits gpus_per_node and gpus_per_rack resolves to the
 // entry's 4 and 72, as one that restates them does; pricing the two alike follows, since
-// the layout reads only the resolved values (resolve.ResolveLayout). The engine models'
+// the layout reads only the resolved values (resolve.ResolveGeometry). The engine models'
 // golden suites price such scenarios end to end.
 func TestKernelReadsTheResolvedPackaging(t *testing.T) {
 	d, err := load.Embedded()

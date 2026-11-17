@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/load"
 )
@@ -12,7 +12,7 @@ import (
 // mixedPrecisionServed is the layout the engine model states for nvidia/MiniMax-M3-NVFP4: MXFP8
 // linears (one scale byte per 32 weights), NVFP4 routed experts, an FP32 router, a BF16 head and
 // a BF16 embedding.
-var mixedPrecisionServed = enginesettings.ServedWeights{Linear: "fp8", LinearScaleElements: 32,
+var mixedPrecisionServed = plan.WeightLayout{Linear: "fp8", LinearScaleElements: 32,
 	RoutedExperts: "nvfp4", Router: "fp32", Head: "bf16", Embedding: "bf16"}
 
 // The engine model states the layout it serves and the kernel proves the graph stores exactly
@@ -25,8 +25,8 @@ func TestTheServedLayoutIsProvedAgainstTheGraph(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	served := func(in Inputs, sw *enginesettings.ServedWeights) Inputs {
-		return withEngine(in, func(e *enginesettings.Settings) { e.ServedWeights = sw })
+	served := func(in Inputs, sw *plan.WeightLayout) Inputs {
+		return withPlan(in, func(l *plan.Lowered) { l.ServedLayout = sw })
 	}
 	base := quantCase(t, d, "minimax-m3-nvfp4", "b200")
 	if _, err := New(served(base, &mixedPrecisionServed)); err != nil {
@@ -153,24 +153,6 @@ func TestTheMixedPrecisionGraphPricesNVFP4ExpertsUnderFP8Linears(t *testing.T) {
 		}
 		if pricesOf(mx) == pricesOf(nv) {
 			t.Errorf("%s: the NVFP4 graph prices as the MXFP8 one", chip)
-		}
-	}
-}
-
-// The kernel recognises no engine quantization spelling beyond the ones servedDType prices: a
-// ModelOpt or microscaling spelling is the engine model's to resolve, and reaches the kernel as
-// the layout it serves (ServedWeights) with Quantization empty.
-func TestAnEngineQuantizationSpellingTheKernelDoesNotPriceIsRefused(t *testing.T) {
-	d, err := load.Embedded()
-	if err != nil {
-		t.Fatal(err)
-	}
-	base := quantCase(t, d, "minimax-m3-nvfp4", "b200")
-	for _, spelling := range []string{"modelopt_mixed", "mxfp8", "modelopt_mxfp8", "gpt_oss_mxfp4"} {
-		in := withEngine(base, func(e *enginesettings.Settings) { e.Quantization = spelling })
-		_, err := New(in)
-		if err == nil || !strings.Contains(err.Error(), "not one this kernel prices") {
-			t.Errorf("quantization %q: %v", spelling, err)
 		}
 	}
 }

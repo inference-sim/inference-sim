@@ -135,7 +135,7 @@ CPU_FIT = (
     "at 1 MiB blocks it reaches 40-44 GB/s. These are the same rows fit_host_link.py fits for "
     "host_link_bandwidth, whose h100 value is the larger of the two rates, so tier and cap are one fit and not "
     "two. The run bodies the fit read are no longer served by the API, so the fit cannot be re-derived from "
-    "public data today (blis-registry#57)."
+    "public data today (https://github.com/inference-sim/blis-registry/issues/57)."
 )
 
 CPU_TRANSFER_RULE = (

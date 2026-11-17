@@ -17,16 +17,13 @@ Collective.Bytes # not yet priced: the cost model reads a plan in the boundary t
 Collective.CrossesNodes # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 Collective.Group # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 DraftPass.Launch # not priced: the kernel charges a parallel-block drafter's host launches by its own capture rule (draftHost), not by a launch mode the engine states; pricing it needs a measured host-launch coefficient for an eager or piecewise drafter, which the registry does not hold
-DraftPolicy.Chain # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 DraftPolicy.TreeSteps # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 DraftPolicy.TreeTopK # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 DraftShape.Drafted # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 DraftShape.Verified # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 Endpoint.Node # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 Endpoint.Rack # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
-GraphPolicy.Buckets # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 GraphPolicy.Mode # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
-HostPlan.NativeFrontend # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 KVGroup.BytesPerPage # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 KVGroup.TokensPerPage # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 KVGroup.Window # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
@@ -48,12 +45,8 @@ PaddedShape.Launch # not yet priced: the cost model reads a plan in the boundary
 PaddedShape.Tokens # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 PoolPlan.Buffers # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 PoolPlan.DraftLayers # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
-PoolPlan.Drafts # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 PoolPlan.Fabric # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
-PoolPlan.Graphs # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 PoolPlan.Hardware # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
-PoolPlan.Host # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
-PoolPlan.InFlight # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 PoolPlan.KV # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 PoolPlan.KVBudget # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 PoolPlan.Layers # not yet priced: the cost model reads a plan in the boundary transition's equivalence step

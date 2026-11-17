@@ -80,32 +80,27 @@ reason. They are of two kinds.
 
 ### Engine settings the kernel filled in
 
+The engine's lowering resolves every engine setting the kernel prices and records what it took
+where the deployment stated nothing (`plan.Lowered.Notes`); the kernel reports those first, as
+it received them, under the same set, then its own, listed here. The engine documents its notes
+(for vLLM, blis-vllm's `compat/lowering`).
+
 <!-- assumptions -->
 
 | Name | Recorded when |
 |---|---|
 | `attention_prefill_<kind>` | A measured prefill family for an attention kind (`sparse_mla`) or a scorer's role (`block_index_scores`) is only partly in the scenario's sets, so it is not used, and prefill is priced as without it. Value `fallback`. |
-| `async_scheduling_spec` | The deployment speculates and the engine rules carry no async-compatible draft list, so the draft method is taken as leaving async scheduling on. |
-| `block_size` | The deployment states no block size. 64 for a DSA sparse-attention model, whose indexer accepts only 64; for a DeepSeek-V4-family model the one kernel block its sparse backends accept on the part (for DeepSeek-V4.1 64 on SM90 and 128 on SM100; for DeepSeek-V4 256 on every part); otherwise vLLM's default of 16. |
 | `cache_record` | A graph states a cache with no record listed under the cache data type that runs, so the cache is sized at its base record. |
 | `compute_rate_<kind>` | A GEMM's weights are in a format whose rate the catalog does not state: FP32 weights run at the TF32 rate, taken as half the dense BF16 peak. |
 | `compute_capability` | The catalog states no compute capability for the chip, so its generation is inferred from its native-format peaks and name where it decides kernel selection. |
-| `cudagraph_mode` | No CUDA graph mode is stated. vLLM's default, `FULL_AND_PIECEWISE`. |
 | `deepep_v2_mode` | The MoE dispatch runs DeepEP v2, whose path vLLM picks from `enforce_eager`, which a deployment cannot state: a resolved `cudagraph_mode` of `NONE` is read as it. Value `deepep_v2_eager` or `deepep_v2_graph`. |
-| `dcp_comm_backend` | Decode-context parallelism is on and no combine backend is stated: the stock `ag_rs`. Also when one is stated but the engine rules give no list to check it against. |
 | `engine_version` | The scenario declares a vLLM release other than the one whose behavior the kernel prices (v0.31.0). |
 | `fabric_bandwidth_efficiency` | The cluster names a fabric and the scenario's sets carry no `fabric_bandwidth_efficiency` scoped to it, so every byte that crosses it -- a cross-node collective, a P/D handoff, a pipeline-stage boundary -- is priced at the catalog's nominal line rate. Value `1`. |
-| `engram_cpu_offload` | A graph states an Engram table and the deployment does not say where it lives: the release's `cpu_offload` default. |
-| `engram_dp_shared_memory` | An Engram table under data parallelism, with `dp_shared_memory` unstated: resolved as the engine resolves it. |
 | `gemm_eps_max_<kind>` | A kernel with a ramp of its own has none in the registry for the part, so it is priced on the one it falls back to, at the peak it computes at: a weight-only kernel (Marlin W8A16 MXFP8, W4A16 grouped) on the BF16 ramp; Marlin W4A16 NVFP4 grouped on the W4A16 MXFP4 grouped ramp, and that on BF16's; a native-FP4 part's grouped NVFP4 MoE (`nvfp4_grouped`) on the dense NVFP4 ramp. |
 | `host_gather_rate_uva` | A table lookup reads a host-resident table (an Engram table under `cpu_offload`) and the registry has no rate for that gather, so its rows are read at the host link's rate. |
 | `hybrid_kv_cache_manager` | A graph states window caches and the deployment runs a KV connector, which can turn the hybrid KV cache manager off and the window rings into full-length caches. |
 | `kv_cache_grouping` | A graph states its caches and the rules pack cannot group them into the engine's shared block pool, so each cache is sized at its own page rather than in whole pool blocks. The reason names what the pack does not model. |
-| `mamba_cache_mode` | A model with recurrent layers states no recurrent cache mode: `align` with prefix caching on, `none` with it off. |
-| `max_cudagraph_capture_size` | Any CUDA graph is captured and the deployment states neither `max_cudagraph_capture_size` nor `cudagraph_capture_sizes`: vLLM's default ceiling, above which a step runs with no graph. |
-| `max_model_len` | The deployment states no context length, or states `auto`: the bound is the model's context window from the graph (for `auto`, the most the engine can fit it to). |
-| `max_num_batched_tokens` | No token budget per step is stated. vLLM's default for the chip's memory size. |
-| `max_num_seqs` | No limit on concurrent requests is stated. vLLM's default for the chip's memory size. |
+| `max_model_len` | A decode kernel the graph says runs over a buffer padded to `max_model_len`, and the plan states no context bound: each request is charged over its own context. Value `context`. |
 | `modality` | The graph prices the text decoder of a multimodal model; its vision or audio tower is not priced. |
 | `mhc` | Only one of the mHC pre and post forms resolves, so neither is used. Value `fallback`. |
 | `moe_a2a_<kind>` | A DeepEP backend (`deepep_high_throughput`, `deepep_low_latency`, `deepep_v2_eager`, `deepep_v2_graph`) runs the MoE dispatch but has no measured price for the part and expert width, or the expert group spans nodes, so it is priced as the generic routed all-to-all. |
@@ -117,7 +112,6 @@ reason. They are of two kinds.
 | `pp_layer_partition` | The pool runs pipeline parallelism, and `VLLM_PP_LAYER_PARTITION`, which a deployment cannot state, is taken as unset: the stages split the layers as `get_pp_indices` does by default. Value `unset`. |
 | `sharded_projection_gather` | The deployment splits a replicated projection over TP at decode, as Muse Spark's MoE pooler and unpooler on Blackwell (`sharded_at_decode`): the gather that reassembles its columns is priced as the registry's NCCL all-gather over TP, where the engine fuses it into the next norm with its own NVLink kernels, which no registry entry measures. Value `nccl all_gather`. |
 | `recurrent_prefill_rate_<kind>` | A recurrent mixer has no measured prefill form, so its prefill tokens are priced as the chunked scan's FLOPs on the BF16 ramp rather than at the decode scan's rate. |
-| `sparse_mla_backend` | A DSA sparse-attention model on Hopper selects FlashInfer's sparse MLA backend, which needs a FlashInfer release the kernel cannot see installed. |
 | `sparse_read_per_query` | A speculating deployment of a sparse-attention model: each verify token is charged its own window-and-top-k read, as vLLM gathers them, though the registry's rate was fitted on single-token decode and the sharing between a request's tokens was never measured. |
 | `adaptive_verification_survival` | A deployment enabling DSpark adaptive verification: every request's draft slots are ranked by one survival curve, the run's stated per-position rates or, from its mean acceptance length, vLLM's minimum-variance schedule (`_acceptance_length_to_rates`), where the engine ranks each request by its own online estimate. Natural acceptance spreads more, so the trimmed budget is a lower bound on the trim. |
 | `adaptive_verification_cost_curves` | A deployment enabling DSpark adaptive verification: the draft and verify cost tables the engine profiles from timed dummy steps are built, as the engine builds them, from this kernel's own NoOverlap prices of the same dummy steps, so the budget follows the kernel's prices rather than measured timings. |
@@ -166,8 +160,9 @@ example.
 `Resolved()` returns a `kernel.Resolution`: the tensor-, data- and expert-parallel widths the
 layout resolved to, the all-reduce backend that will run, whether asynchronous scheduling,
 cascade attention and sequence-parallel MoE are on, and a list of overrides. Each
-override names the field, what was requested, what was resolved, and why. The kernel records
-these:
+override names the field, what was requested, what was resolved, and why. The engine's lowering
+records them (`plan.Lowered.Overrides`) and the kernel reports them as it received them; for
+vLLM they are these:
 
 | Field | When |
 |---|---|

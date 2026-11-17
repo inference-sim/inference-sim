@@ -56,12 +56,12 @@ pytestmark = pytest.mark.skipif(
 # quantized dtype -- CutlassFP8ScaledMMLinearKernel, FlashInferCuteDslNvFp4LinearKernel,
 # and a FlashInfer/DeepGEMM dispatch for fp8_block -- not the single `torch_flow` path the
 # TRT-LLM sweep measures. A100 keeps SGLang, the only lane carrying that family for it.
-# l40s's newest vLLM gemm collection is 0.24.0; the Hopper and Blackwell parts use 0.25.0
+# l40s's newest vLLM gemm collection is 0.30.0; the Hopper and Blackwell parts use 0.25.0
 # or 0.27.1 and are covered by the shape-ramp gate below rather than here.
 PARTS = [
     ("h200_sxm", "h200", "vllm/0.25.0", "2.29.2"),
     ("h100_sxm", "h100", "vllm/0.25.0", "2.29.2"),
-    ("l40s", "l40s", "vllm/0.24.0", "2.27.3"),
+    ("l40s", "l40s", "vllm/0.30.0", "2.27.3"),
     ("gb200", "gb200-nvl72", "vllm/0.27.1", "2.29.2"),
     # a100_sxm's GEMM moved to the vLLM lane too: its vLLM sweep (0.14.0) is smaller
     # than SGLang's but measures the engine being predicted, and scored against the vLLM
@@ -119,7 +119,7 @@ def run_script(script: str, *args: str) -> str:
 # fit_gemm_shape_ramp.py on vllm/0.25.0. Their eps_max and m_half come from that JOINT
 # fit, so re-deriving them from the one-factor envelope would check a provenance the
 # registry no longer claims. l40s and a100-sxm are absent deliberately: their vLLM gemm
-# sweeps are at 0.24.0 and 0.14.0, and pinning one collection per part is what keeps a
+# sweeps are at 0.30.0 and 0.14.0, and pinning one collection per part is what keeps a
 # difference between parts attributable to silicon rather than to an engine version.
 SHAPE_RAMP_PARTS = {"h200", "h100", "b200", "b300", "gb200-nvl72"}
 SHAPE_RAMP_COLLECTION = "vllm/0.25.0"
@@ -471,9 +471,11 @@ def test_v41_mhc_entries_price_the_sweep_at_the_contracts_bytes(sku, chip, op):
 
 def _flashmla_decode_rows(sku):
     import math
-    import pyarrow.parquet as pq
-    t = pq.read_table(DATA / sku / "sparse_attention" / "vllm" / "0.25.0" /
-                      "dsv4_hca_attn_module_perf.parquet").to_pydict()
+    # The writer's own reader: the FlashMLA kernel table is at the kernel pin
+    # ($AISIMULATE_DSV4_KERNEL_DATA), not at the main one, which no longer has it.
+    sys.path.insert(0, str(REPO / "scripts"))
+    import fit_deepseek_v41_h200 as v41
+    t = v41.read(DATA, sku, v41.FLASHMLA_TABLE)
     out = []
     for i in range(len(t["latency"])):
         if t["isl"][i] != 1 or t["model"][i] != "sgl-project/DeepSeek-V4-Flash-FP8":

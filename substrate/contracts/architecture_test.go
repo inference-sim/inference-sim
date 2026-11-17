@@ -21,7 +21,7 @@ func TestSpecDoesNotDependOnRules(t *testing.T) {
 		"./spec/scenario", "./spec/deployment", "./spec/workload",
 		"./spec/evaluation", "./spec/acceptance", "./spec/routing", "./spec/measurement", "./spec/router",
 		"./spec/connector", "./spec/routertable",
-		"./spec/result", "./spec/trace", "./spec/pointrecord", "./metrics", "./spec/fields",
+		"./spec/result", "./spec/trace", "./spec/pointrecord", "./metrics", "./spec/fields", "./spec/kernelimpls",
 		"./vocab", "./check", "./units", "./engine/plan", "./engine/env",
 	} {
 		out, err := exec.Command("go", "list", "-deps", pkg).Output()
@@ -129,22 +129,6 @@ func TestTheFieldListImportsNoEngineKnowledge(t *testing.T) {
 	}
 }
 
-// TestEngineSettingsImportOnlyTheStandardLibrary: a latency kernel prices from these settings
-// and an engine model fills them from its own engine block, so they import nothing either side
-// would then share.
-func TestEngineSettingsImportOnlyTheStandardLibrary(t *testing.T) {
-	out, err := exec.Command("go", "list", "-deps", "-f", "{{if not .Standard}}{{.ImportPath}}{{end}}",
-		"./kernel/enginesettings").Output()
-	if err != nil {
-		t.Fatalf("go list -deps ./kernel/enginesettings: %v", err)
-	}
-	for _, dep := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if dep != "" && dep != "github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings" {
-			t.Errorf("kernel/enginesettings depends on %s; it must need only the standard library", dep)
-		}
-	}
-}
-
 // TestEmbedImportsOnlyTheStandardLibrary: the router contract is implemented in a router's
 // repository and called from a simulator's, so importing it must cost either side nothing but
 // this module. A dependency here would become a dependency of every router that implements it.
@@ -204,6 +188,25 @@ func TestPlanPackagesStayInTheirLane(t *testing.T) {
 			if rel, in := strings.CutPrefix(dep, mod); in && !ok[rel] {
 				t.Errorf("%s depends on %s; it may import only %v", pkg, rel, allowed)
 			}
+		}
+	}
+}
+
+// TestHarnessImportsOnlyTheStandardLibrary: every engine repository imports contracts/harness in
+// its tests, and an engine repository imports nothing from another (design §5), so the harness
+// may bring with it only what SUB-1 allows a contracts/ package. It needs only the standard
+// library; SUB-1 would also allow golang.org/x/tools, which it does not use.
+func TestHarnessImportsOnlyTheStandardLibrary(t *testing.T) {
+	for _, pkg := range []string{"./harness", "./harness/cmd/harnessfiles"} {
+		out, err := exec.Command("go", "list", "-deps", "-f", "{{if not .Standard}}{{.ImportPath}}{{end}}", pkg).Output()
+		if err != nil {
+			t.Fatalf("go list -deps %s: %v", pkg, err)
+		}
+		for _, dep := range strings.Fields(string(out)) {
+			if dep == "github.com/inference-sim/blis-substrate/contracts/harness" || dep == "github.com/inference-sim/blis-substrate/contracts/harness/cmd/harnessfiles" {
+				continue
+			}
+			t.Errorf("%s depends on %s; the engine harness uses the standard library only (SUB-1)", pkg, dep)
 		}
 	}
 }

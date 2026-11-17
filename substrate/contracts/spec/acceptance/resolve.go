@@ -38,7 +38,19 @@ type Request struct {
 	Drafter           string
 	SpeculativeMethod string
 	NumSpecTokens     int
-	Hardware          string
+	// DraftSampler and Verifier are the run's, as its engine resolves them; empty is unstated,
+	// never a default. A lookup matches them exactly, and borrows across them only by
+	// StepOtherSettings, which names them as differing.
+	DraftSampler DraftSampler
+	Verifier     Verifier
+	// Engine is the engine serving the run, as its deployment names it; empty is unstated.
+	Engine string
+	// DefaultDraftSampler and DefaultVerifier are the engine's own defaults for those settings at
+	// its release, which it states from its configuration. A profile of the same engine whose
+	// source left a setting at its default (the "default" marker) is compared as that value.
+	DefaultDraftSampler DraftSampler
+	DefaultVerifier     Verifier
+	Hardware            string
 	// Architecture is the architecture of the target model as its graph records it
 	// (global.architecture). Borrowing from another target needs it; without it that step is
 	// skipped.
@@ -63,11 +75,17 @@ type Request struct {
 // Resolution is a run's acceptance and its origin, for the run to record.
 type Resolution struct {
 	AcceptanceLength float64
-	// PerPositionRates are the stated rates, or the minimum-variance schedule when
-	// RatesDerived.
+	// PerPositionRates are the stated rates, or, when RatesDerived, the rates Schedule
+	// derived them with.
 	PerPositionRates []float64
 	RatesDerived     bool
-	Layer            Layer
+	// Schedule says how the rates were obtained: stated, or derived with the engine's
+	// minimum-variance schedule, or with a set's natural decay (Shape, from ShapeSet). A
+	// derived schedule is an estimate, and a run records it.
+	Schedule Schedule
+	Shape    *Shape
+	ShapeSet string
+	Layer    Layer
 
 	// Set and Profile are the profile set and entry a profile layer resolved to.
 	Set     string
@@ -120,7 +138,7 @@ func Resolve(req Request) (Resolution, error) {
 		return Resolution{}, fmt.Errorf("num_spec_tokens must be at least 1, got %d: a run without speculation has no acceptance", k)
 	}
 	if req.CLI != nil {
-		return fromValue(LayerCLI, req.CLI, k)
+		return fromValue(LayerCLI, req.CLI, req)
 	}
 	// The fallback category follows the same precedence as the value: the command line, then
 	// the scenario's pin.
@@ -133,7 +151,7 @@ func Resolve(req Request) (Resolution, error) {
 			fallback, fallbackLayer = pin.FallbackCategory, LayerScenario
 		}
 		if pin.Value != nil {
-			return fromValue(LayerScenario, pin.Value, k)
+			return fromValue(LayerScenario, pin.Value, req)
 		}
 		if pin.Profiles != "" {
 			if req.ScenarioSet == nil || req.ScenarioSet.Name != pin.Profiles {
@@ -143,24 +161,52 @@ func Resolve(req Request) (Resolution, error) {
 		}
 	}
 	if req.Workload.Value != nil {
-		return fromValue(LayerWorkload, req.Workload.Value, k)
+		return fromValue(LayerWorkload, req.Workload.Value, req)
 	}
 	return lookup(LayerRegistry, req.Registry, req, fallback, fallbackLayer)
 }
 
-func fromValue(layer Layer, v *Value, k int) (Resolution, error) {
+// fromValue resolves a stated value. Its rates are the stated ones; else, for a natural value,
+// NaturalRates with the shape of the run's speculative method from the scenario's set or the
+// registry's (ShapeFor), and a natural value with no shape is refused; else, for a synthetic
+// or unstated one, the engine's minimum-variance schedule.
+func fromValue(layer Layer, v *Value, req Request) (Resolution, error) {
 	if p := v.Validate(); !p.OK() {
 		return Resolution{}, fmt.Errorf("%s acceptance: %s", layer, p.Error())
 	}
-	if err := CheckK(v, k); err != nil {
+	if err := CheckK(v, req.NumSpecTokens); err != nil {
 		return Resolution{}, fmt.Errorf("%s acceptance: %w", layer, err)
 	}
-	rates, derived, err := v.Rates()
+	r := Resolution{AcceptanceLength: v.Length(), Layer: layer, Source: v.Source}
+	if len(v.PerPositionRates) > 0 || v.Realisation != RealisationNatural {
+		rates, derived, err := v.Rates()
+		if err != nil {
+			return Resolution{}, fmt.Errorf("%s acceptance: %w", layer, err)
+		}
+		r.PerPositionRates, r.RatesDerived, r.Schedule = rates, derived, scheduleOf(derived)
+		return r, nil
+	}
+	sets := append([]*ProfileSet{req.ScenarioSet}, req.Registry...)
+	shape, set := ShapeFor(sets, req.SpeculativeMethod)
+	if shape == nil {
+		return Resolution{}, fmt.Errorf("%s acceptance: a natural value that states no per_position_rates is spread with "+
+			"a fitted shape, and %s states none for %q or for every method; state the rates, or the realisation "+
+			"synthetic if the run forced its acceptance", layer, setNames(sets), req.SpeculativeMethod)
+	}
+	rates, err := NaturalRates(r.AcceptanceLength, req.NumSpecTokens, shape.DecayExponent)
 	if err != nil {
 		return Resolution{}, fmt.Errorf("%s acceptance: %w", layer, err)
 	}
-	return Resolution{AcceptanceLength: v.Length(), PerPositionRates: rates,
-		RatesDerived: derived, Layer: layer, Source: v.Source}, nil
+	r.PerPositionRates, r.RatesDerived, r.Schedule = rates, true, ScheduleNaturalDecay
+	r.Shape, r.ShapeSet = shape, set
+	return r, nil
+}
+
+func scheduleOf(derived bool) Schedule {
+	if derived {
+		return ScheduleMinimumVariance
+	}
+	return ScheduleStated
 }
 
 func lookup(layer Layer, sets []*ProfileSet, req Request, fallback string, fallbackLayer Layer) (Resolution, error) {
@@ -174,9 +220,18 @@ func lookup(layer Layer, sets []*ProfileSet, req Request, fallback string, fallb
 	if !req.Workload.Thinking.Valid() {
 		return Resolution{}, fmt.Errorf("%s acceptance: thinking %q is not one of %v", layer, req.Workload.Thinking, AllThinkingModes())
 	}
+	if !req.DraftSampler.Resolved() || !req.Verifier.Resolved() || !ValidEngine(req.Engine) ||
+		!req.DefaultDraftSampler.Resolved() || !req.DefaultVerifier.Resolved() {
+		return Resolution{}, fmt.Errorf("%s acceptance: draft sampler %q, verifier %q, their defaults %q and %q, or engine %q "+
+			"is not one of %v, %v or an engine name; a request states resolved values",
+			layer, req.DraftSampler, req.Verifier, req.DefaultDraftSampler, req.DefaultVerifier, req.Engine,
+			AllDraftSamplers(), AllVerifiers())
+	}
+	sets = withEngineDefaults(sets, req)
 	key := Key{Model: req.Model, Drafter: req.Drafter, SpeculativeMethod: req.SpeculativeMethod,
 		NumSpecTokens: req.NumSpecTokens, Thinking: req.Workload.Thinking,
-		Category: req.Workload.Category}
+		Category: req.Workload.Category, DraftSampler: req.DraftSampler, Verifier: req.Verifier,
+		Engine: req.Engine}
 	// The workload's own category comes first, exact key and then every borrowing step. The
 	// fallback category stands in only when that category supplies nothing at all, and then
 	// the same two attempts are made under it.
@@ -231,7 +286,7 @@ func resolveKey(layer Layer, sets []*ProfileSet, req Request, key Key) (Resoluti
 		return Resolution{}, false, fmt.Errorf("%s acceptance: profile %s: %w", layer, key, err)
 	}
 	r := Resolution{AcceptanceLength: prof.AcceptanceLength, PerPositionRates: rates,
-		RatesDerived: derived, Layer: layer, Set: set, Profile: prof,
+		RatesDerived: derived, Schedule: scheduleOf(derived), Layer: layer, Set: set, Profile: prof,
 		Step: StepExact, Used: []Used{{Set: set, Profile: prof}}}
 	if prof.Provenance != nil {
 		r.Source = prof.Provenance.Source

@@ -4,12 +4,11 @@ import (
 	"fmt"
 	"math"
 	"strconv"
-	"strings"
+
 	"time"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/rules"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
@@ -44,7 +43,6 @@ import (
 // to inference.
 func (k *Kernel) liftDraft(c *resolve.Coefficients, inferred func(price.PlannedLayer) float64) error {
 	d := k.plan.Draft
-	spec := k.engine.Speculative
 	switch {
 	case k.numSpecTokens() == 0:
 		return nil
@@ -54,7 +52,7 @@ func (k *Kernel) liftDraft(c *resolve.Coefficients, inferred func(price.PlannedL
 				"passes cost nothing and its weights are not resident")
 		return nil
 	}
-	if err := k.liftDraftPasses(d, spec); err != nil {
+	if err := k.liftDraftPasses(d, k.drafterName); err != nil {
 		return err
 	}
 	k.speculating = true
@@ -68,14 +66,6 @@ func (k *Kernel) liftDraft(c *resolve.Coefficients, inferred func(price.PlannedL
 					"never measured")
 			break
 		}
-	}
-	// A different method is a different drafter -- its own checkpoint (EAGLE3), no GPU pass
-	// at all (n-gram) -- which this graph does not describe, so it is refused rather than
-	// priced as the graph's.
-	if spec.Method != "" && d.Method != "" && specMethod(spec.Method) != specMethod(d.Method) {
-		return fmt.Errorf("the deployment drafts with %q and the model graph states a %q "+
-			"speculator; a %s drafter is not described by this graph, so it cannot be priced",
-			spec.Method, d.Method, spec.Method)
 	}
 	if n := k.numSpecTokens(); d.NumSpec > 0 && n != d.NumSpec {
 		// The graph sizes what depends on the draft length -- a parallel-block drafter's
@@ -139,13 +129,13 @@ func (k *Kernel) liftDraft(c *resolve.Coefficients, inferred func(price.PlannedL
 // speculator.py:432-478@v0.32.0), and with PassRequestsAll the head and the later passes run for
 // every request, one still in the middle of its prompt included (the same file, :232-295 and
 // :480-530).
-func (k *Kernel) liftDraftPasses(d *price.DraftPlan, spec *enginesettings.Speculative) error {
+func (k *Kernel) liftDraftPasses(d *price.DraftPlan, drafter string) error {
 	if d.Drafting != model.DraftingAutoregressive {
 		return nil
 	}
 	who := "the model graph's own speculator"
-	if spec.DraftModel != "" {
-		who = "draft_model " + spec.DraftModel
+	if drafter != "" {
+		who = "draft_model " + drafter
 	}
 	for _, f := range []struct {
 		name, value string
@@ -170,16 +160,6 @@ func (k *Kernel) liftDraftPasses(d *price.DraftPlan, spec *enginesettings.Specul
 	k.draftFirstPass = k.statedFirstPassRows == plan.FirstPassScheduled
 	k.draftAllRequests = k.statedPassRequests == plan.PassRequestsAll
 	return nil
-}
-
-// specMethod is a speculative method's name as vLLM v0.31.0 runs it: every model-specific
-// MTP name (deepseek_mtp, nemotron_h_mtp, ... -- MTPModelTypes) is replaced with mtp
-// (vllm/config/speculative.py:39-67, 1135-1139).
-func specMethod(m string) string {
-	if strings.HasSuffix(m, "_mtp") {
-		return "mtp"
-	}
-	return m
 }
 
 // priceDraft prices one step's draft work, adding each resource's time to per, and returns
@@ -361,7 +341,7 @@ func (k *Kernel) draftHost(b kernel.Batch, kernels int) time.Duration {
 // forms, per-role attention forms, the host gather rate and where engram tables live, the
 // FlashMLA head padding, and the regions a model breaks out of its own capture.
 func (k *Kernel) liftStepTerms(c *resolve.Coefficients, g *model.Graph) error {
-	k.resolveEngram(k.rules)
+	k.resolveEngram()
 	// Every layer a step can price: the target's, its embedding and head, and, while the
 	// deployment speculates, the drafter's. A term needed only by a draft layer is needed.
 	layers := append([]price.PlannedLayer{k.plan.Head, k.plan.Embedding}, k.plan.Layers...)
@@ -370,21 +350,17 @@ func (k *Kernel) liftStepTerms(c *resolve.Coefficients, g *model.Graph) error {
 			d.Head, d.SequentialHead)
 	}
 	usedRec := map[model.RecurrentKind]bool{}
-	hostGather, engram, maxLenExtent := false, false, false
+	hostGather, maxLenExtent := false, false
 	for _, l := range layers {
 		if l.RecurrentKind != "" {
 			usedRec[l.RecurrentKind] = true
 		}
 		for _, gt := range l.Gathers {
 			hostGather = hostGather || k.gatherResidency(gt) == model.ResidencyHost
-			engram = engram || gt.Control == model.ResidencyEngramCPUOffload
 		}
 		for _, cw := range l.Context {
 			maxLenExtent = maxLenExtent || cw.MaxModelLenExtent
 		}
-	}
-	if engram {
-		k.assumeEngram()
 	}
 	if maxLenExtent && k.maxModelLen <= 0 {
 		k.assume("max_model_len", "context",
@@ -486,7 +462,7 @@ func (k *Kernel) liftStepTerms(c *resolve.Coefficients, g *model.Graph) error {
 	// start and finish (nvidia/engram.py:464-492).
 	// Not under dual-batch overlap: vLLM leaves the breakable wrapper off when it micro-batches
 	// (vllm/v1/worker/gpu_model_runner.py:5396-5407).
-	dbo := k.engine.DBO != nil && k.engine.DBO.Enabled
+	dbo := k.low.Microbatch
 	if a := g.Global.Architecture; !dbo && (a == rules.ArchDeepseekV41 || a == rules.ArchDeepseekV4) {
 		k.breakableCapture = true
 		k.captureBreaks = k.captureBreaksOf(k.plan.Layers)
@@ -513,55 +489,11 @@ func (k *Kernel) captureBreaksOf(layers []price.PlannedLayer) int {
 	return n
 }
 
-// assumeEngram records how an engram table's placement was settled where the deployment did
-// not settle it.
-func (k *Kernel) assumeEngram() {
-	ec := k.engine.EngramConfig
-	if ec == nil || ec.CPUOffload == nil {
-		where := "HBM"
-		if k.engramOnHost {
-			where = "host memory"
-		}
-		k.assume("engram_cpu_offload", strconv.FormatBool(k.engramOnHost),
-			"unstated, so the release's EngramConfig.cpu_offload default places the Engram "+
-				"tables in "+where+" (vllm/config/engram.py)")
-	}
-	if (ec == nil || ec.DPSharedMemory == nil) && k.layout.DP > 1 {
-		k.assume("engram_dp_shared_memory", strconv.Itoa(k.engramShards)+" shards",
-			"unstated, so it resolves as the engine resolves it: on when cpu_offload is on, "+
-				"use_thp off, dp above one and elastic EP off (resolve_dp_shared_memory, "+
-				"vllm/config/engram.py:92-97); the kernel cannot see "+
-				"whether /dev/shm holds the tables, where the engine falls back to splitting them")
-	}
-}
-
-// resolveEngram settles where an engram_cpu_offload table lives and how many ways its heads
-// split (blis-schemas deployment.EngramConfig). cpu_offload unstated is the release's
-// default; tables in host memory are shared by a node's data-parallel replicas where
-// dp_shared_memory resolves on (the engine's default when cpu_offload is on, use_thp is off
-// and dp exceeds one), and otherwise split across them too, tp x local-dp ways.
-func (k *Kernel) resolveEngram(r resolve.EngineRules) {
-	k.engramOnHost = r.EngramOnHostByDefault()
-	ec := k.engine.EngramConfig
-	if ec != nil && ec.CPUOffload != nil {
-		k.engramOnHost = *ec.CPUOffload
-	}
-	dp := max(k.layout.DP, 1)
-	shared := k.engramOnHost && dp > 1
-	if ec != nil && ec.UseTHP != nil && *ec.UseTHP {
-		shared = false
-	}
-	if ec != nil && ec.DPSharedMemory != nil {
-		shared = *ec.DPSharedMemory
-	}
-	local := k.pool.Parallel.DPLocal
-	if local <= 0 {
-		local = dp
-	}
-	k.engramShards = max(k.layout.TP, 1)
-	if !shared && local > 1 {
-		k.engramShards *= local
-	}
+// resolveEngram takes where an Engram table lives and how many ways one copy is split, as the
+// engine resolved them (Plan.Engram).
+func (k *Kernel) resolveEngram() {
+	k.engramOnHost = k.low.Engram.Host
+	k.engramShards = max(k.low.Engram.Shards, 1)
 }
 
 // gatherResidency is where a table resolves to.

@@ -5,9 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/rules"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/load"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
@@ -209,10 +207,7 @@ pools:
 	build := func(util float64) error {
 		r, name := openRepos(t, d, body)
 		r.Rules = func(string) rules.EngineRules { return inertRules{} }
-		r.EngineSettings = func(*deployment.Deployment, int) (enginesettings.Settings, error) {
-			return enginesettings.Settings{BlockSize: 16, MaxNumSeqs: 64, MaxNumBatchedTokens: 8192,
-				MaxModelLen: 8192, GPUMemoryUtilization: util}, nil
-		}
+		r.DraftModel, r.Lower = noDrafter, lowerTo(8192, 16, util)
 		in, err := OpenInputs(name, r, 0)
 		if err != nil {
 			t.Fatal(err)

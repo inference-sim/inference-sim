@@ -390,7 +390,7 @@ func (k *Kernel) shardsAtDecode(g *price.PlannedGEMM, tokens int) bool {
 	d := g.ShardedAtDecode
 	if d == nil || k.layout.TP <= 1 || max(k.layout.DP, 1) > 1 || k.family < d.CapabilityFamily ||
 		k.layout.SequenceParallelMoE || k.layout.ModelSequenceParallel ||
-		k.rules.MegaMoEBackend(k.engine.MoEBackend) || tokens <= 0 || tokens > d.MaxTokens {
+		k.low.MoE.Fused || tokens <= 0 || tokens > d.MaxTokens {
 		return false
 	}
 	// Spanning nodes is the engine's host test (tp_group_spans_nodes, in_the_same_node_as,

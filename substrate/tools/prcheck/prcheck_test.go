@@ -212,7 +212,7 @@ func TestDescriptionCheck(t *testing.T) {
 }
 
 // X14: a pin written as a release tag resolves to the commit the tag points at, and a stale
-// pin fails (blis-schemas#92). Known-bad inputs: a hash that is not the tag's commit, a tag
+// pin fails (https://github.com/inference-sim/blis-schemas/issues/92). Known-bad inputs: a hash that is not the tag's commit, a tag
 // that does not resolve, and a line with a tag but no hash for it.
 func TestDescriptionChecksReleaseTagPins(t *testing.T) {
 	head, base := strings.Repeat("1", 40), strings.Repeat("2", 40)

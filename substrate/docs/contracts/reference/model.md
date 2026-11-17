@@ -488,8 +488,8 @@ K of zero or less is refused for every method (:393, :1826-1830). The rule is th
 
 | Key | Type | Required | Meaning |
 |---|---|---|---|
-| `id` | string | yes | The SPDX identifier, or `LicenseRef-<name>` for a licence SPDX does not list. When the model card names no licence, or only `other`, the identifier names the licence file read at the pinned revision; `LicenseRef-other` and `LicenseRef-none-stated` are refused. |
-| `evidence` | string | yes | The `https` URL the licence was read from, naming the pinned revision: the model card, or the licence file when the card names none. |
+| `id` | string | yes | The SPDX identifier, or `LicenseRef-<name>` for a licence SPDX does not list. When the model card names no licence, or only `other`, the identifier names the licence file read at the pinned revision; `LicenseRef-other` and `LicenseRef-none-stated` are refused. When the revision states no licence at all (no card licence and no licence file), it is SPDX's `NONE`, which is not on the allow-list, so the entry must pin `config.sha256`. |
+| `evidence` | string | yes | The `https` URL the licence was read from, naming the pinned revision: the model card, the licence file when the card names none, or the provider's API record of the revision (for a gated repository, or for `NONE`). |
 
 A model's `config.json` is committed only when its licence is on the allow-list
 (`vocab.RedistributableLicences`). Each `LicenseRef` entry there names one licence text a

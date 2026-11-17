@@ -168,6 +168,35 @@ func TestIdentityValidateChecksDrafterNames(t *testing.T) {
 	}
 }
 
+// A checkpoint whose card names no licence and whose repository holds no licence file records
+// SPDX's NONE (X12). It is not on the allow-list, so the entry must pin its config by hash; with
+// the pin it passes the licence check, without it it fails, and a placeholder LicenseRef is
+// still refused with a message naming NONE.
+func TestIdentityValidateLicenceRecordsNoLicenceOnAHashOnlyEntry(t *testing.T) {
+	const rev = "46c90f412549c472941a68382d91a99e5e6372a0"
+	card := func() *Identity {
+		return &Identity{
+			Name:    "drafter",
+			Source:  &Source{Provider: "huggingface", Repo: "org/drafter", Revision: rev},
+			Licence: &Licence{ID: NoLicence, Evidence: "https://huggingface.co/api/models/org/drafter/revision/" + rev},
+			Config:  &ConfigPin{SHA256: strings.Repeat("ab", 32)},
+		}
+	}
+	if p := card().ValidateWithLicence(); !p.OK() {
+		t.Fatalf("a hash-only entry stating no licence failed:\n%s", p.Error())
+	}
+	unpinned := card()
+	unpinned.Config = nil
+	if p := unpinned.ValidateLicence(); p.OK() || !strings.Contains(p.Error(), "config.sha256") {
+		t.Errorf("an entry stating no licence without a config pin passed, or did not name the pin: %v", p.Error())
+	}
+	placeholder := card()
+	placeholder.Licence.ID = "LicenseRef-none-stated"
+	if p := placeholder.ValidateLicence(); p.OK() || !strings.Contains(p.Error(), NoLicence) {
+		t.Errorf("a placeholder licence passed, or its refusal did not name %s: %v", NoLicence, p.Error())
+	}
+}
+
 // A model's header pins name safetensors shards inside the repository, each once, with a
 // SHA-256 (SUB-15, X12). Each way a pin can be wrong is refused.
 func TestIdentityValidateChecksHeaderPins(t *testing.T) {

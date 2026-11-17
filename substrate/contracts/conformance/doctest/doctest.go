@@ -7,10 +7,10 @@
 //
 //   - an unknown key;
 //   - a repeated key;
-//   - a fraction in an integer field (yaml.v3 truncates it, blis-schemas#114);
+//   - a fraction in an integer field (yaml.v3 truncates it, https://github.com/inference-sim/blis-schemas/issues/114);
 //   - an integer a float64 field cannot hold exactly (yaml.v3 rounds it);
 //   - a non-finite number, .nan and .inf, in a float field;
-//   - a recursive alias (blis-schemas#107);
+//   - a recursive alias (https://github.com/inference-sim/blis-schemas/issues/107);
 //   - the unknown key and the number cases again, each written inside the sequence form of a
 //     merge key (<<: [{...}]), which a checker that reads only <<: *anchor would miss.
 //

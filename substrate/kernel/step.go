@@ -307,7 +307,13 @@ func (k *Kernel) priceStep(b, drafted kernel.Batch,
 	}
 	overlapSeconds += k.priceHead(k.plan.Head, &s, &perResource)
 
-	// The drafter's passes, when the deployment speculates (see priceDraft).
+	// The drafter's passes, when the deployment speculates (see priceDraft). In a step that
+	// proposes no drafts (kernel.Batch.SkipDrafts) no request drafts: priceDraft then charges only
+	// the work that keeps the drafter's KV in step, its context stack and a first pass over the
+	// scheduled tokens without its head, and not the passes that propose.
+	if drafted.SkipDrafts {
+		drafted.Reqs, drafted.DraftPaddedTokens = nil, 0
+	}
 	draftKernels := 0
 	if k.speculating && draft {
 		var d float64
@@ -682,10 +688,10 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 				}
 			}
 			if pf, ok := k.attentionPrefillByKind[l.AttnKind]; ok && s.prefillRequests > 0 &&
-				primaryRecord(l) > 0 {
+				sparsePrefillRecord(l, kv[i].perToken) > 0 {
 				// The kind's measured prefill form, over FlashMLA's block reads.
 				read := sparsePrefillReadBytes(s.prefillChunks, l.AttnWindow, l.AttnIndexTopK,
-					l.AttnCompressRatio, primaryRecord(l), heads)
+					l.AttnCompressRatio, sparsePrefillRecord(l, kv[i].perToken), heads)
 				attnSMSeconds += pf.seconds(float64(s.prefillRequests),
 					float64(s.prefillTokens), read)
 			} else if s.prefillRequests > 0 {
@@ -806,7 +812,7 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 				// can matter.
 				if k.layout.DCP > 1 && dcpShardsKV(a.Kind) {
 					tokens = dcpLocalTokens([]int{int(tokens + 0.5)}, k.layout.DCP,
-						k.decodeContext.Interleave)
+						int(k.decodeContext.Interleave))
 				}
 				charge(tokens * perToken)
 			}
