@@ -112,7 +112,7 @@
   "max_total_num_tokens": 160
  },
  "provenance": {
-  "blis_sglang_commit": "599e2ea215da8217583edd4a7051f1533b41b332",
+  "blis_sglang_commit": "9531e8d4266a63187092d17b18e8d02611188c3b",
   "lockfile_sha256": "a3fb4e4773230faee4ffdd89437a96b2f3bfb3082e4be4cef4f44d44c66ed569",
   "mock_version": "gpu-mock/9+f7e50518d4b2",
   "model": "Qwen/Qwen2.5-0.5B-Instruct",
@@ -122,7 +122,7 @@
    "oracle/harness.py": "a3b5bfbc5670969a78dff5d50e24a5e17bbb8d50ed70e1d77825013608c10ac5",
    "oracle/mocks.json": "9782b21a0b9428d105a51cde9983b1554f456ef4e7f7ac11c73992f202104173",
    "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
-   "oracle/run_metrics.py": "074f6a5bf64bbd13e17b37955a0171d9c2c30ea5c5bea7ee2c60e6ccc475ffae",
+   "oracle/run_metrics.py": "28fe975372b71bb9ec7a8577daac2cfecd63d128099fbb1e849c3fcf4f5b719d",
    "oracle/run_sched.py": "1ecb02ee786a4eaa1c6359c71685e591b8ce7fe4a45fe40a995e3383be33929b",
    "oracle/run_scheduler.py": "7d624d8c7cf66f9daf849d6029f7e5af71bc9ed06fca712f0c1b5b7aa9a96ceb",
    "oracle/scenarios-metrics/m-dfs-page16.json": "ddebd78dbe0a51993e862d7997e498a1c3bfc0a82ce4c19e0f107ce05e3529ef",
@@ -3036,16 +3036,6 @@
     ],
     [
      "sglang:scheduler_idle_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
-     "sglang:scheduler_process_cpu_seconds_total",
      {
       "engine_type": "unified",
       "moe_ep_rank": "0",
@@ -6197,16 +6187,6 @@
      0.0
     ],
     [
-     "sglang:scheduler_process_cpu_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
      "sglang:scheduler_stage_seconds_total",
      {
       "category": "get_next_batch_to_run",
@@ -9349,16 +9329,6 @@
     ],
     [
      "sglang:scheduler_idle_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
-     "sglang:scheduler_process_cpu_seconds_total",
      {
       "engine_type": "unified",
       "moe_ep_rank": "0",
@@ -12540,16 +12510,6 @@
     ],
     [
      "sglang:scheduler_idle_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
-     "sglang:scheduler_process_cpu_seconds_total",
      {
       "engine_type": "unified",
       "moe_ep_rank": "0",
@@ -15982,16 +15942,6 @@
      0.0
     ],
     [
-     "sglang:scheduler_process_cpu_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
      "sglang:scheduler_stage_seconds_total",
      {
       "category": "get_next_batch_to_run",
@@ -19404,16 +19354,6 @@
     ],
     [
      "sglang:scheduler_idle_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
-     "sglang:scheduler_process_cpu_seconds_total",
      {
       "engine_type": "unified",
       "moe_ep_rank": "0",
@@ -22851,16 +22791,6 @@
      0.0
     ],
     [
-     "sglang:scheduler_process_cpu_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
      "sglang:scheduler_stage_seconds_total",
      {
       "category": "get_next_batch_to_run",
@@ -26289,16 +26219,6 @@
      0.0
     ],
     [
-     "sglang:scheduler_process_cpu_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
      "sglang:scheduler_stage_seconds_total",
      {
       "category": "get_next_batch_to_run",
@@ -29718,16 +29638,6 @@
     ],
     [
      "sglang:scheduler_idle_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
-     "sglang:scheduler_process_cpu_seconds_total",
      {
       "engine_type": "unified",
       "moe_ep_rank": "0",
@@ -33168,16 +33078,6 @@
      0.0
     ],
     [
-     "sglang:scheduler_process_cpu_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
      "sglang:scheduler_stage_seconds_total",
      {
       "category": "get_next_batch_to_run",
@@ -36596,16 +36496,6 @@
      0.0
     ],
     [
-     "sglang:scheduler_process_cpu_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
      "sglang:scheduler_stage_seconds_total",
      {
       "category": "get_next_batch_to_run",
@@ -40015,16 +39905,6 @@
     ],
     [
      "sglang:scheduler_idle_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
-     "sglang:scheduler_process_cpu_seconds_total",
      {
       "engine_type": "unified",
       "moe_ep_rank": "0",
@@ -43457,16 +43337,6 @@
      0.0
     ],
     [
-     "sglang:scheduler_process_cpu_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
      "sglang:scheduler_stage_seconds_total",
      {
       "category": "get_next_batch_to_run",
@@ -46868,16 +46738,6 @@
     ],
     [
      "sglang:scheduler_idle_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
-     "sglang:scheduler_process_cpu_seconds_total",
      {
       "engine_type": "unified",
       "moe_ep_rank": "0",
@@ -50304,16 +50164,6 @@
      0.0
     ],
     [
-     "sglang:scheduler_process_cpu_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
      "sglang:scheduler_stage_seconds_total",
      {
       "category": "get_next_batch_to_run",
@@ -53722,16 +53572,6 @@
     ],
     [
      "sglang:scheduler_idle_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
-     "sglang:scheduler_process_cpu_seconds_total",
      {
       "engine_type": "unified",
       "moe_ep_rank": "0",
@@ -57158,16 +56998,6 @@
      0.0
     ],
     [
-     "sglang:scheduler_process_cpu_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
      "sglang:scheduler_stage_seconds_total",
      {
       "category": "get_next_batch_to_run",
@@ -60564,16 +60394,6 @@
     ],
     [
      "sglang:scheduler_idle_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
-     "sglang:scheduler_process_cpu_seconds_total",
      {
       "engine_type": "unified",
       "moe_ep_rank": "0",
@@ -63988,16 +63808,6 @@
      0.0
     ],
     [
-     "sglang:scheduler_process_cpu_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
      "sglang:scheduler_stage_seconds_total",
      {
       "category": "get_next_batch_to_run",
@@ -67394,16 +67204,6 @@
     ],
     [
      "sglang:scheduler_idle_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
-     "sglang:scheduler_process_cpu_seconds_total",
      {
       "engine_type": "unified",
       "moe_ep_rank": "0",
@@ -70818,16 +70618,6 @@
      0.0
     ],
     [
-     "sglang:scheduler_process_cpu_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
      "sglang:scheduler_stage_seconds_total",
      {
       "category": "get_next_batch_to_run",
@@ -74224,16 +74014,6 @@
     ],
     [
      "sglang:scheduler_idle_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
-     "sglang:scheduler_process_cpu_seconds_total",
      {
       "engine_type": "unified",
       "moe_ep_rank": "0",
@@ -77648,16 +77428,6 @@
      0.0
     ],
     [
-     "sglang:scheduler_process_cpu_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
      "sglang:scheduler_stage_seconds_total",
      {
       "category": "get_next_batch_to_run",
@@ -81054,16 +80824,6 @@
     ],
     [
      "sglang:scheduler_idle_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
-     "sglang:scheduler_process_cpu_seconds_total",
      {
       "engine_type": "unified",
       "moe_ep_rank": "0",
@@ -84478,16 +84238,6 @@
      0.0
     ],
     [
-     "sglang:scheduler_process_cpu_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
      "sglang:scheduler_stage_seconds_total",
      {
       "category": "get_next_batch_to_run",
@@ -87884,16 +87634,6 @@
     ],
     [
      "sglang:scheduler_idle_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
-     "sglang:scheduler_process_cpu_seconds_total",
      {
       "engine_type": "unified",
       "moe_ep_rank": "0",
@@ -91308,16 +91048,6 @@
      0.0
     ],
     [
-     "sglang:scheduler_process_cpu_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
      "sglang:scheduler_stage_seconds_total",
      {
       "category": "get_next_batch_to_run",
@@ -94723,16 +94453,6 @@
      0.0
     ],
     [
-     "sglang:scheduler_process_cpu_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
      "sglang:scheduler_stage_seconds_total",
      {
       "category": "get_next_batch_to_run",
@@ -98129,16 +97849,6 @@
     ],
     [
      "sglang:scheduler_idle_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
-     "sglang:scheduler_process_cpu_seconds_total",
      {
       "engine_type": "unified",
       "moe_ep_rank": "0",
@@ -101556,16 +101266,6 @@
      0.0
     ],
     [
-     "sglang:scheduler_process_cpu_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
      "sglang:scheduler_stage_seconds_total",
      {
       "category": "get_next_batch_to_run",
@@ -104961,16 +104661,6 @@
      0.0
     ],
     [
-     "sglang:scheduler_process_cpu_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
      "sglang:scheduler_stage_seconds_total",
      {
       "category": "get_next_batch_to_run",
@@ -108357,16 +108047,6 @@
     ],
     [
      "sglang:scheduler_idle_seconds_total",
-     {
-      "engine_type": "unified",
-      "moe_ep_rank": "0",
-      "pp_rank": "0",
-      "tp_rank": "0"
-     },
-     0.0
-    ],
-    [
-     "sglang:scheduler_process_cpu_seconds_total",
      {
       "engine_type": "unified",
       "moe_ep_rank": "0",
