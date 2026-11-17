@@ -121,6 +121,8 @@ jobs:
         run: python -I oracle/check_modules.py sglang-source
       - name: the guards fail on what they guard
         run: python -I oracle/test_checks.py sglang-source
+      - name: the lowering oracle's replacement check fails on what it guards
+        run: python -I oracle/lower/test_check_replacements.py
   # The oracle's environment (SGL-1, FID-2): SGLang checked out at the commit provenance.go pins, the
   # locked environment installed by hash and checked against the lock (.github/actions/oracle-env),
   # the manifest check (FID-1, FID-8), and the scheduler importing from the checkout on CPU.
@@ -156,6 +158,20 @@ jobs:
           python -I oracle/run_serverargs.py sglang-source oracle/serverargs/cases.json serverargs-models > oracle-traces/serverargs.json
       - name: the committed ServerArgs answers are SGLang's own
         run: python -I oracle/compare_serverargs.py config/testdata/serverargs.json oracle-traces/serverargs.json
+      # Lowering: SGLang's own decode CUDA-graph, gather, attention and MoE functions, run after
+      # SGLang resolves and publishes each accepted case (oracle/lower/extract.py; every
+      # replacement listed in oracle/lower/replacements.json). The answers must equal
+      # lower/testdata/sglang_lower.json, which the Go test (lower TestLowerAgainstSGLang) compares.
+      - name: every replacement the lowering oracle makes is listed
+        run: python -I oracle/lower/check_replacements.py oracle/lower/extract.py oracle/lower/replacements.json
+      - name: lower every accepted case through SGLang's own functions
+        env:
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          python -I oracle/lower/extract.py sglang-source oracle/serverargs/cases.json serverargs-models oracle/lower/cases.json > oracle-traces/lower.json
+      - name: the committed lowering answers are SGLang's own
+        run: diff -u lower/testdata/sglang_lower.json oracle-traces/lower.json
       # Tier 2: every scenario through SGLang's own Scheduler (run_scheduler_process), its event loop
       # unmodified. The runner fails unless every request finishes, the loop ends on the harness's
       # ShutdownReq, every forward pass was launched from SGLang's own event loop at the checkout,
