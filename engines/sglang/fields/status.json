@@ -296,7 +296,7 @@
   "config:base_gpu_id": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -377,7 +377,7 @@
   "config:checkpoint_engine_wait_weights_before_ready": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -404,7 +404,7 @@
   "config:config": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -440,7 +440,7 @@
   "config:context_length": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -557,7 +557,7 @@
   "config:custom_sigquit_handler": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -566,7 +566,7 @@
   "config:custom_weight_loader": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -692,7 +692,7 @@
   "config:decrypted_config_file": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -701,7 +701,7 @@
   "config:decrypted_draft_config_file": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -764,7 +764,7 @@
   "config:delete_ckpt_after_loading": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -782,7 +782,7 @@
   "config:device": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -1115,7 +1115,7 @@
   "config:download_dir": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -1196,7 +1196,7 @@
   "config:dtype": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -2222,7 +2222,7 @@
   "config:engine_info_bootstrap_port": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -2510,7 +2510,7 @@
   "config:gc_threshold": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -2537,7 +2537,7 @@
   "config:gpu_id_step": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -2780,7 +2780,7 @@
   "config:is_embedding": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -2789,7 +2789,7 @@
   "config:json_model_override_args": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -2852,7 +2852,7 @@
   "config:kv_cache_dtype": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -2987,7 +2987,7 @@
   "config:load_format": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -3311,7 +3311,7 @@
   "config:mlx_enable_sampling": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -3392,7 +3392,7 @@
   "config:model_checksum": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -3401,7 +3401,7 @@
   "config:model_config_parser": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -3410,7 +3410,7 @@
   "config:model_impl": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -3419,7 +3419,7 @@
   "config:model_loader_extra_config": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -3428,7 +3428,7 @@
   "config:model_path": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -3437,7 +3437,7 @@
   "config:modelexpress_config": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -3446,7 +3446,7 @@
   "config:modelopt_checkpoint_restore_path": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -3455,7 +3455,7 @@
   "config:modelopt_checkpoint_save_path": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -3464,7 +3464,7 @@
   "config:modelopt_export_path": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -3473,7 +3473,7 @@
   "config:modelopt_quant": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -3581,7 +3581,7 @@
   "config:numa_node": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -3887,7 +3887,7 @@
   "config:qsa_indexer_dtype": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -3896,7 +3896,7 @@
   "config:quantization": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -3905,7 +3905,7 @@
   "config:quantization_param_path": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -3914,7 +3914,7 @@
   "config:quantize_and_serve": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -3950,7 +3950,7 @@
   "config:random_seed": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -3968,7 +3968,7 @@
   "config:remote_instance_weight_loader_backend": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -3977,7 +3977,7 @@
   "config:remote_instance_weight_loader_seed_instance_ip": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -3986,7 +3986,7 @@
   "config:remote_instance_weight_loader_seed_instance_service_port": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -3995,7 +3995,7 @@
   "config:remote_instance_weight_loader_send_weights_group_ports": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -4004,7 +4004,7 @@
   "config:remote_instance_weight_loader_start_seed_via_transfer_engine": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -4058,7 +4058,7 @@
   "config:revision": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -4076,7 +4076,7 @@
   "config:rl_quant_profile": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -4211,7 +4211,7 @@
   "config:sleep_on_idle": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -4247,7 +4247,7 @@
   "config:soft_watchdog_timeout": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -4652,7 +4652,7 @@
   "config:startup_weight_load_mode": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -4859,7 +4859,7 @@
   "config:trust_remote_code": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -4904,7 +4904,7 @@
   "config:use_ray": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -4940,7 +4940,7 @@
   "config:watchdog_timeout": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -5021,7 +5021,7 @@
   "config:weight_cache_mode": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -5030,7 +5030,7 @@
   "config:weight_cache_socket": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -5039,7 +5039,7 @@
   "config:weight_cache_timeout": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -5048,7 +5048,7 @@
   "config:weight_loader_disable_mmap": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -5057,7 +5057,7 @@
   "config:weight_loader_drop_cache_after_load": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -5066,7 +5066,7 @@
   "config:weight_loader_prefetch_checkpoints": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
@@ -5075,7 +5075,7 @@
   "config:weight_loader_prefetch_num_threads": {
    "status": "not_modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#24"
+    "issue": "inference-sim/blis-sglang#49"
    },
    "estimation": {
     "rule": "none"
