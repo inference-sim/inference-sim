@@ -24,6 +24,10 @@ type WekaConvertOptions struct {
 	MaxThinkTimeUs int64
 	// MinRounds skips sessions with fewer usable main-agent turns (default 1).
 	MinRounds int
+	// MaxContext bounds every round's recorded prompt plus output; 0 = no ceiling. MaxContextMode
+	// says what a session with a round over it becomes (max_context.go).
+	MaxContext     int
+	MaxContextMode MaxContextMode
 	// DropSubagents converts a session containing type:"subagent" groups by dropping
 	// them (their wall-clock folds into the next main turn's think gap). Unset, such a
 	// session is refused (ErrWekaSubagentFanOut): the dropped child requests would put
@@ -202,6 +206,9 @@ func ConvertWekaSession(raw []byte, opts WekaConvertOptions) ([]TraceRecord, err
 			ThinkUs:   thinkUs,
 			Status:    "ok", // Weka errors are filtered at source
 		})
+	}
+	if rounds = boundContext(rounds, opts.MaxContext, opts.MaxContextMode); len(rounds) < minRounds {
+		return nil, nil
 	}
 	return EncodeSessionToTraceRecords(s.ID, rounds), nil
 }

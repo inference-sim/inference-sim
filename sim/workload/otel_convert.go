@@ -20,6 +20,10 @@ type OTelConvertOptions struct {
 	MaxThinkTimeUs int64 // cap on per-round arrival gap; 0 = no cap
 	IncludeErrors  bool  // keep spans with status.code == 2
 	MinRounds      int   // skip sessions with fewer usable calls (default 1)
+	// MaxContext bounds every round's recorded prompt plus output; 0 = no ceiling.
+	// MaxContextMode says what a session with a round over it becomes (max_context.go).
+	MaxContext     int
+	MaxContextMode MaxContextMode
 }
 
 // otelSpan is the subset of an OTel span we read. Unknown fields are ignored
@@ -188,6 +192,9 @@ func ConvertOTelTrace(raw []byte, opts OTelConvertOptions) ([]TraceRecord, error
 			ArrivalUs:      arrival,
 			Status:         status,
 		})
+	}
+	if rounds = boundContext(rounds, opts.MaxContext, opts.MaxContextMode); len(rounds) < minRounds {
+		return nil, nil
 	}
 	return EncodeSessionToTraceRecords(sessionID, rounds), nil
 }

@@ -16,12 +16,14 @@ import (
 )
 
 var (
-	otelInputPath     string
-	otelTraceOutput   string
-	otelContextGrowth string
-	otelMaxThinkTime  time.Duration
-	otelIncludeErrors bool
-	otelMinRounds     int
+	otelInputPath      string
+	otelTraceOutput    string
+	otelContextGrowth  string
+	otelMaxThinkTime   time.Duration
+	otelIncludeErrors  bool
+	otelMinRounds      int
+	otelMaxContext     int
+	otelMaxContextMode string
 )
 
 var convertOtelCmd = &cobra.Command{
@@ -48,7 +50,12 @@ token counts) rather than 'blis run' (distribution sampling).`,
 		if otelMaxThinkTime < 0 {
 			logrus.Fatalf("--max-think-time must be >= 0, got %s", otelMaxThinkTime)
 		}
+		if err := workload.ValidateMaxContext(otelMaxContext, workload.MaxContextMode(otelMaxContextMode)); err != nil {
+			logrus.Fatalf("%v", err)
+		}
 		opts := workload.OTelConvertOptions{
+			MaxContext:     otelMaxContext,
+			MaxContextMode: workload.MaxContextMode(otelMaxContextMode),
 			ContextGrowth:  otelContextGrowth,
 			MaxThinkTimeUs: otelMaxThinkTime.Microseconds(),
 			IncludeErrors:  otelIncludeErrors,
@@ -185,6 +192,8 @@ func init() {
 	convertOtelCmd.Flags().StringVar(&otelContextGrowth, "context-growth", "accumulate", "Prefix model: \"accumulate\" (strict growing shared prefix) or \"independent\"")
 	convertOtelCmd.Flags().DurationVar(&otelMaxThinkTime, "max-think-time", 15*time.Second, "Cap on per-round inter-call gap (think time); 0 = no cap")
 	convertOtelCmd.Flags().BoolVar(&otelIncludeErrors, "include-errors", false, "Include spans with error status (status.code == 2)")
+	convertOtelCmd.Flags().IntVar(&otelMaxContext, "max-context", 0, "Ceiling on a round's prompt plus output tokens; 0 = none. A session with a round over it is handled as --max-context-mode says")
+	convertOtelCmd.Flags().StringVar(&otelMaxContextMode, "max-context-mode", "", "With --max-context: \"drop-session\" discards a session with a round over the ceiling; \"truncate\" keeps it up to the first such round (no default: they bias the corpus differently)")
 	convertOtelCmd.Flags().IntVar(&otelMinRounds, "min-rounds", 1, "Skip sessions with fewer than N usable LLM calls")
 	_ = convertOtelCmd.MarkFlagRequired("input")
 	_ = convertOtelCmd.MarkFlagRequired("trace-output")
