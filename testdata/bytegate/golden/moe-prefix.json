@@ -882,9 +882,9 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.14.2-0.20261117044346-6eaad394e072",
+    "substrate": "v0.14.2-0.20261117033037-6e56a2d474cd",
     "router": "v1.0.0-blis.4",
-    "engine_module": "v0.32.1-0.20261117044643-40622bc81b42"
+    "engine_module": "v0.32.1-0.20261117012328-0e64151389b7"
   },
   "window": {
     "start_us": 49999,
@@ -2217,11 +2217,9 @@
   "reports": {
     "engine": {
       "cluster": {
-        "busy_share": 0.49688269666403284,
         "cache_hit_rate": 0.7908147554365093,
         "cache_hit_rate_whole_run": 0.7908147554365093,
         "cpu_tier_hit_rate": 0,
-        "decode_busy_share": 0.4302823694026201,
         "engine_admissions": 80,
         "gateway_queue_delay_mean_ms": 0,
         "gateway_queue_delay_p90_ms": 0,
@@ -2235,7 +2233,6 @@
         "measured_failed_requests": 0,
         "preemption_rate": 0,
         "preemptions": 0,
-        "prefill_busy_share": 0.06660032726141274,
         "scheduling_delay_p99_ms": 54.303439999999995,
         "simulated_duration_s": 15.175678,
         "step_interval_mean_ms": 15.138428936989389,
@@ -2284,23 +2281,6 @@
           "itl_p95_ms": 0,
           "itl_p99_ms": 0,
           "length_capped_requests": 0,
-          "measured_window": {
-            "busy_share": 0,
-            "decode_busy_share": 0,
-            "e2e_mean_ms": 0,
-            "e2e_p90_ms": 0,
-            "e2e_p95_ms": 0,
-            "e2e_p99_ms": 0,
-            "measured_completed_requests": 0,
-            "output_tok_s": 0,
-            "prefill_busy_share": 0,
-            "ttft_mean_ms": 0,
-            "ttft_p90_ms": 0,
-            "ttft_p95_ms": 0,
-            "ttft_p99_ms": 0,
-            "window_end_us": 15229465,
-            "window_start_us": 49999
-          },
           "preemption_count": 0,
           "responses_per_sec": 0,
           "scheduling_delay_p99_ms": 0,
@@ -2330,24 +2310,6 @@
           "itl_p95_ms": 24.346,
           "itl_p99_ms": 34.291,
           "length_capped_requests": 0,
-          "measured_window": {
-            "busy_share": 0.9937653933280657,
-            "decode_busy_share": 0.8605647388052402,
-            "e2e_mean_ms": 8147.3295375,
-            "e2e_p90_ms": 11360.909,
-            "e2e_p95_ms": 11906.231299999998,
-            "e2e_p99_ms": 12895.740819999994,
-            "measured_completed_requests": 80,
-            "mfu": 0.014865237336749977,
-            "output_tok_s": 2811.4295983798115,
-            "prefill_busy_share": 0.13320065452282548,
-            "ttft_mean_ms": 86.87305,
-            "ttft_p90_ms": 98.94480000000001,
-            "ttft_p95_ms": 102.51604999999999,
-            "ttft_p99_ms": 103.69086999999999,
-            "window_end_us": 15229465,
-            "window_start_us": 49999
-          },
           "preemption_count": 0,
           "responses_per_sec": 5.271593137387338,
           "scheduling_delay_p99_ms": 54.303439999999995,

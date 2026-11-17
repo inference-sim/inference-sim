@@ -4,7 +4,7 @@ go 1.27.2
 
 require (
 	github.com/go-logr/logr v1.4.4
-	github.com/inference-sim/blis-substrate v0.14.2-0.20261117065802-feea9dd2a04a // TEMPORARY: inference-sim/blis-substrate branch m3/integration, until it is released
+	github.com/inference-sim/blis-substrate v0.14.2-0.20261117033037-6e56a2d474cd // TEMPORARY: inference-sim/blis-substrate branch m3/pool-hardware (blis-substrate#276, on m3/integration), until it is released
 	github.com/inference-sim/blis-vllm v0.32.1-0.20261117012328-0e64151389b7 // TEMPORARY: inference-sim/blis-vllm branch m3/integration (vLLM v0.33.0), until v0.33.0-blis.1 is tagged
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4

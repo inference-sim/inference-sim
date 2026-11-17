@@ -818,6 +818,7 @@ var runCmd = &cobra.Command{
 			bundleHPAScrapeDelayStddev           float64
 			bundleAnalyzerCfg                    cluster.V2SaturationAnalyzerConfig
 			bundleNodePools                      []cluster.NodePoolConfig
+			poolChips                            map[string]*poolChip
 			bundleInstanceLifecycle              cluster.InstanceLifecycleConfig
 		)
 		if bundle != nil {
@@ -835,32 +836,10 @@ var runCmd = &cobra.Command{
 					MinReplicas:       bundle.Autoscaler.Analyzer.MinReplicas,
 				}
 			}
+			// Each pool's chip is the scenario's (cluster.pools, SIM-17); a pool of a chip other
+			// than the scenario's own opens a variant of the scenario for it.
+			poolChips = openPoolChips(bundle.NodePools)
 			for _, np := range bundle.NodePools {
-				// Every instance is priced by the kernel for the scenario's chip, so a node
-				// pool of another GPU would simulate hardware the kernel never priced.
-				if !strings.EqualFold(np.GPUType, gpu) {
-					logrus.Fatalf("policy bundle node pool %q is %q GPUs, but scenario %q runs on %q; every "+
-						"instance is priced for the scenario's hardware, so node pools must match it (heterogeneous "+
-						"fleets: #1925)",
-						np.Name, np.GPUType, kernelScenario, gpu)
-				}
-				// The kernel sizes every instance's KV from the catalog chip's memory; a pool
-				// stating other memory would describe a device the run does not simulate.
-				if chip := kernelOpened.Deployment().DeviceMemoryGiB; np.GPUMemoryGiB > 0 &&
-					math.Abs(np.GPUMemoryGiB-chip) > 1e-9 {
-					logrus.Fatalf("policy bundle node pool %q states gpu_memory_gib %g, but the catalog "+
-						"chip %q has %g GiB, from which the kernel sizes every instance's KV; state %g",
-						np.Name, np.GPUMemoryGiB, gpu, chip, chip)
-				}
-				// A node pool's gpus_per_node is the node the kernel places and prices ranks
-				// on: the cluster's packaging, resolved from the scenario and the chip's
-				// catalog entry (blis-substrate scenario.Cluster.Packaging). A pool stating
-				// another node size would host ranks on nodes the kernel never priced.
-				if gpn := kernelOpened.Packaging().GPUsPerNode; np.GPUsPerNode != gpn {
-					logrus.Fatalf("policy bundle node pool %q states gpus_per_node %d, but scenario %q resolves "+
-						"to %d GPUs per node (%s), on which the kernel places and prices every rank; state %d",
-						np.Name, np.GPUsPerNode, kernelScenario, gpn, kernelOpened.Packaging(), gpn)
-				}
 				bundleNodePools = append(bundleNodePools, cluster.NodePoolConfig{
 					Name:         np.Name,
 					GPUType:      np.GPUType,
@@ -982,7 +961,8 @@ var runCmd = &cobra.Command{
 			NodePools:                      bundleNodePools,
 			ScenarioEndpointTopology:       cluster.StaticEndpointTopology(scenarioTopology),
 			InstanceLifecycle:              bundleInstanceLifecycle,
-			NewEngine:                      engineDriverFactory(scenarioEngine, simulationHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
+			NewEngine: withPoolChips(engineDriverFactory(scenarioEngine, simulationHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
+				poolChips, scenarioEngine, simulationHorizon, seed, ec.Speculative.Acceptance),
 		}
 		// Session callback installation (Constraint 3 fix):
 		// Follow-up collection must be UNCONDITIONAL for saturation analysis correctness.
