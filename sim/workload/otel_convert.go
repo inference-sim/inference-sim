@@ -26,6 +26,10 @@ type OTelConvertOptions struct {
 	// the previous span's end and this span's start, as the trace records it; a round whose
 	// previous span has no usable end states none.
 	ThinkFromArrivalGaps bool
+	// MaxContext bounds every round's recorded prompt plus output; 0 = no ceiling.
+	// MaxContextMode says what a session with a round over it becomes (max_context.go).
+	MaxContext     int
+	MaxContextMode MaxContextMode
 }
 
 // OTelSession is one converted session with what the converter learned about it beyond its
@@ -285,6 +289,9 @@ func ConvertOTelSession(raw []byte, opts OTelConvertOptions) (*OTelSession, erro
 			round.ThinkUs = &think
 		}
 		rounds = append(rounds, round)
+	}
+	if rounds = boundContext(rounds, opts.MaxContext, opts.MaxContextMode); len(rounds) < minRounds {
+		return nil, nil
 	}
 	return &OTelSession{Records: EncodeSessionToTraceRecords(sessionID, rounds), StartUs: t0,
 		SystemText: spans[0].system, SystemShare: spans[0].systemShare}, nil
