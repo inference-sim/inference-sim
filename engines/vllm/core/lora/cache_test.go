@@ -21,6 +21,8 @@ type trace struct {
 		MaxCPULoRAs int `json:"max_cpu_loras"`
 	} `json:"config"`
 	Steps []struct {
+		Op         string  `json:"op"`
+		Result     *bool   `json:"result"`
 		Requested  []int   `json:"requested"`
 		Events     [][]any `json:"events"`
 		Error      *string `json:"error"`
@@ -48,7 +50,20 @@ func replay(t *testing.T, tr trace) string {
 		t.Fatal(err)
 	}
 	for i, s := range tr.Steps {
-		ev, err := c.SetActive(s.Requested)
+		var ev []Event
+		var err error
+		switch s.Op {
+		case "load":
+			ev, err = c.Load(s.Requested[0])
+		case "unload":
+			var was bool
+			was, ev = c.Unload(s.Requested[0])
+			if s.Result == nil || *s.Result != was {
+				return "step " + itoa(i) + ": unload reported " + fmtBool(was) + ", vLLM's " + fmtResult(s.Result)
+			}
+		default:
+			ev, err = c.SetActive(s.Requested)
+		}
 		if (err != nil) != (s.Error != nil) {
 			return "step " + itoa(i) + ": error " + errString(err) + ", vLLM's " + ptrString(s.Error)
 		}
@@ -141,3 +156,11 @@ func ptrString(s *string) string {
 	return *s
 }
 func fmtEvents(ev []Event) string { b, _ := json.Marshal(ev); return string(b) }
+
+func fmtBool(b bool) string { x, _ := json.Marshal(b); return string(x) }
+func fmtResult(b *bool) string {
+	if b == nil {
+		return "none"
+	}
+	return fmtBool(*b)
+}

@@ -14,7 +14,7 @@ import json
 import os
 import sys
 
-FIELDS = ("requested", "events", "error", "registered", "active", "slots")
+FIELDS = ("op", "result", "requested", "events", "error", "registered", "active", "slots")
 
 
 def first_difference(golden: dict, fresh: dict) -> str:
