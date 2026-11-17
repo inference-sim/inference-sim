@@ -46,6 +46,9 @@ type ClusterSimulator struct {
 	routerSender      eventSender
 	kvConnectorSender eventSender
 	autoscalerSender  eventSender
+	// clusterAutoscaler decides node counts from the pending-placement queue (cluster_autoscaler.go);
+	// nil for none.
+	clusterAutoscaler ClusterAutoscaler
 	instanceSenders   map[InstanceID]*eventSender
 	// testSender is the sender of events tests schedule by hand (senderTest).
 	testSender *eventSender
@@ -509,6 +512,11 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 			sim.NewStream(config.Seed, streamAutoscaler),
 		)
 	}
+
+	if err := config.ClusterAutoscaler.Validate(); err != nil && cs.startupErr == nil {
+		cs.startupErr = err
+	}
+	cs.clusterAutoscaler = newClusterAutoscaler(config.ClusterAutoscaler)
 
 	// Store raw callback for PD session follow-up (issue #884).
 	cs.sessionCallback = onRequestDone
