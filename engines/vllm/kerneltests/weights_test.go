@@ -4,6 +4,7 @@ package latencykernel_test
 
 import (
 	. "github.com/inference-sim/blis-substrate/kernel"
+	"strings"
 
 	"testing"
 
@@ -89,7 +90,7 @@ func TestASharedExpertNodeIsDense(t *testing.T) {
 		for i := range in.Model.LayerKinds {
 			var kept []model.Node
 			for _, n := range in.Model.LayerKinds[i].Nodes {
-				if n.Role != "shared_experts" {
+				if !strings.HasPrefix(n.Role, "shared_") {
 					kept = append(kept, n)
 				}
 			}
