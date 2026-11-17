@@ -11,11 +11,14 @@ import (
 )
 
 // The port of UnifiedRadixCache, its Python tree core and FullComponent answers every call
-// SGLang's own cache answered, in every trace of the framework (FID-5): the scheduler's calls
+// SGLang's own cache answered in every trace of the framework (FID-5): the scheduler's calls
 // while it ran a scenario, and the driver's in orderings the scheduler does not make. The calls
-// the cache makes in turn, at the allocator and the request pool, are SGLang's too, in order.
-// The allocator and the request pool are stand-ins that answer as the trace says SGLang's did;
-// their own ports are checked against the same traces where they are built.
+// the cache makes in turn are SGLang's too, in order and with the same answers: at the tree core,
+// at the allocator and at the request pool. The tree core's own calls at TreeComponent are checked
+// only through those answers (https://github.com/inference-sim/blis-sglang/issues/57). The
+// allocator and the request pool are stand-ins that answer as the trace says SGLang's did; their
+// own ports are checked against the same traces where they are built. A call SGLang raised on
+// must make the port panic.
 func TestTheRadixCacheAnswersEveryTracedCallAsSGLangDoes(t *testing.T) {
 	replayed := 0
 	for name, tr := range loadGoldens(t) {
@@ -159,6 +162,7 @@ type replay struct {
 	pool  *stubPool
 	nodes *Nodes
 	bySeq map[int]Call
+	core  *loggingCore
 	// desc is, for each call, the calls it made at any depth, in order.
 	desc map[int][]Call
 }
@@ -261,6 +265,8 @@ func replayRadix(tr Trace) (int, error) {
 			if err != nil {
 				return n, err
 			}
+			r.core = &loggingCore{TreeCore: r.c.core}
+			r.c.core = r.core
 			built = true
 		case c.Iface == PrefixCacheIface && c.Class == "UnifiedRadixCache":
 			if !built {
@@ -308,11 +314,25 @@ func (r *replay) call(c Call) error {
 		}
 		r.alloc.avail = append(r.alloc.avail, v)
 	}
-	r.alloc.made, r.pool.made = nil, nil
+	r.alloc.made, r.pool.made, r.core.log = nil, nil, nil
+	if c.Raise != "" {
+		// SGLang raised: the port must refuse the same call.
+		if !panics(func() { _ = r.answer(c) }) {
+			return fmt.Errorf("SGLang raised %s and the port answered", c.Raise)
+		}
+		return nil
+	}
 	if err := r.answer(c); err != nil {
 		return err
 	}
-	// The calls the cache made in turn.
+	wantCore, err := r.wantCore(c.Seq)
+	if err != nil {
+		return err
+	}
+	if err := r.sameCore(r.core.log, wantCore); err != nil {
+		return err
+	}
+	// The calls the cache made in turn at the pools.
 	want, err := r.wantMade(c)
 	if err != nil {
 		return err
@@ -370,7 +390,11 @@ func (r *replay) wantMade(c Call) (wantCalls, error) {
 			}
 			w.alloc = append(w.alloc, madeCall{"free_segments", fmt.Sprint(parts)})
 		case "free":
-			w.alloc = append(w.alloc, madeCall{"free", ""})
+			var s []int64
+			if err := x.Arg("free_index", &s); err != nil {
+				return w, err
+			}
+			w.alloc = append(w.alloc, madeCall{"free", fmt.Sprint(s)})
 		}
 	}
 	for _, x := range r.within(c.Seq, ReqToTokenIface, "write") {
@@ -678,3 +702,229 @@ func (a *stubAllocator) AllocDecode(_ []int, _ []int64) ([]int64, bool) {
 
 func (a *stubAllocator) MambaFullCacheDonor() MambaFullCacheDonor           { return nil }
 func (a *stubAllocator) GetExtendAllocationDemand(_, _ []int, n, _ int) int { return n }
+
+// loggingCore records each call the radix cache makes at its tree core, by SGLang's method
+// name, with the figures of its answer that a replay compares.
+type loggingCore struct {
+	TreeCore
+	log []coreCall
+}
+
+// coreCall is one tree-core call: its method, and the answer figures compared. Node ids are
+// kept as the port's and compared through the replay's pairing.
+type coreCall struct {
+	m     string
+	ints  []int
+	nodes []NodeID
+	slots [][]int64
+}
+
+func (l *loggingCore) add(c coreCall) { l.log = append(l.log, c) }
+
+func (l *loggingCore) Reset() { l.TreeCore.Reset(); l.add(coreCall{m: "reset"}) }
+func (l *loggingCore) TakeEvents() []Event {
+	e := l.TreeCore.TakeEvents()
+	l.add(coreCall{m: "take_events", ints: []int{len(e)}})
+	return e
+}
+func (l *loggingCore) RootNodeHandle(k *string) NodeID {
+	n := l.TreeCore.RootNodeHandle(k)
+	l.add(coreCall{m: "root_node_handle", nodes: []NodeID{n}})
+	return n
+}
+func (l *loggingCore) MatchPrefix(p MatchPrefixParams) MatchResult {
+	r := l.TreeCore.MatchPrefix(p)
+	l.add(coreCall{m: "match_prefix", ints: []int{r.DevicePrefixLen, r.FullKVHitLength}, nodes: []NodeID{r.LastDeviceNode, r.BestMatchNode}})
+	return r
+}
+func (l *loggingCore) SupportsFastMatchPrefix() bool {
+	l.add(coreCall{m: "supports_fast_match_prefix"})
+	return l.TreeCore.SupportsFastMatchPrefix()
+}
+func (l *loggingCore) CollectFullDeviceIndices(from, until NodeID) []int64 {
+	s := l.TreeCore.CollectFullDeviceIndices(from, until)
+	l.add(coreCall{m: "collect_full_device_indices", slots: [][]int64{s}})
+	return s
+}
+func (l *loggingCore) BeginInsert(p InsertParams) InsertStep {
+	s := l.TreeCore.BeginInsert(p)
+	l.add(coreCall{m: "begin_insert", ints: []int{s.Result.PrefixLen}, nodes: []NodeID{s.Result.LastDeviceNode}, slots: s.FreeDeviceKV})
+	return s
+}
+func (l *loggingCore) HasOngoingInsert() bool {
+	l.add(coreCall{m: "has_ongoing_insert"})
+	return l.TreeCore.HasOngoingInsert()
+}
+func (l *loggingCore) EndInsert() [][]int64 {
+	l.add(coreCall{m: "end_insert"})
+	return l.TreeCore.EndInsert()
+}
+func (l *loggingCore) IncLockRef(n NodeID) LockReceipt {
+	r := l.TreeCore.IncLockRef(n)
+	l.add(coreCall{m: "inc_lock_ref", ints: []int{*r.Delta}})
+	return r
+}
+func (l *loggingCore) DecLockRef(n NodeID, r LockReceipt) {
+	l.TreeCore.DecLockRef(n, r)
+	l.add(coreCall{m: "dec_lock_ref"})
+}
+func (l *loggingCore) EvictDeviceStart(c ComponentType, n int) {
+	l.TreeCore.EvictDeviceStart(c, n)
+	l.add(coreCall{m: "evict_device_start", ints: []int{n}})
+}
+func (l *loggingCore) EvictDeviceNextNode(c ComponentType, t Tracker) EvictionStep {
+	s := l.TreeCore.EvictDeviceNextNode(c, t)
+	cc := coreCall{m: "evict_device_next_node"}
+	if s.Node != nil {
+		cc.nodes = []NodeID{*s.Node}
+	}
+	l.add(cc)
+	return s
+}
+func (l *loggingCore) EvictDeviceLeaf(n NodeID, wb bool) EvictionStep {
+	s := l.TreeCore.EvictDeviceLeaf(n, wb)
+	l.add(coreCall{m: "evict_device_leaf", ints: []int{s.Tracker[FullComponentType]}, slots: s.DeviceFrees[FullComponentType]})
+	return s
+}
+func (l *loggingCore) EvictDeviceEnd(c ComponentType) {
+	l.TreeCore.EvictDeviceEnd(c)
+	l.add(coreCall{m: "evict_device_end"})
+}
+func (l *loggingCore) EvictableSize() int {
+	v := l.TreeCore.EvictableSize()
+	l.add(coreCall{m: "evictable_size", ints: []int{v}})
+	return v
+}
+func (l *loggingCore) ProtectedSize() int {
+	v := l.TreeCore.ProtectedSize()
+	l.add(coreCall{m: "protected_size", ints: []int{v}})
+	return v
+}
+func (l *loggingCore) FullEvictableSize() int {
+	v := l.TreeCore.FullEvictableSize()
+	l.add(coreCall{m: "full_evictable_size", ints: []int{v}})
+	return v
+}
+func (l *loggingCore) FullProtectedSize() int {
+	v := l.TreeCore.FullProtectedSize()
+	l.add(coreCall{m: "full_protected_size", ints: []int{v}})
+	return v
+}
+
+// wantCore is the tree-core calls the call numbered seq made itself, in order, as coreCalls in
+// SGLang's node ids.
+func (r *replay) wantCore(seq int) ([]coreCall, error) {
+	var out []coreCall
+	for _, x := range r.tr.Calls {
+		if x.Iface != TreeCoreIface || x.In == nil || *x.In != seq {
+			continue
+		}
+		cc := coreCall{m: x.Method}
+		var err error
+		switch x.Method {
+		case "take_events":
+			var e []json.RawMessage
+			err = x.Answer(&e)
+			cc.ints = []int{len(e)}
+		case "root_node_handle":
+			var n NodeID
+			err = x.Answer(&n)
+			cc.nodes = []NodeID{n}
+		case "match_prefix":
+			var m MatchResult
+			err = x.Answer(&m)
+			cc.ints, cc.nodes = []int{m.DevicePrefixLen, m.FullKVHitLength}, []NodeID{m.LastDeviceNode, m.BestMatchNode}
+		case "collect_full_device_indices":
+			var s []int64
+			err = x.Answer(&s)
+			cc.slots = [][]int64{s}
+		case "begin_insert":
+			var s struct {
+				Actions []struct {
+					T       string    `json:"_t"`
+					Indices [][]int64 `json:"indices"`
+				} `json:"actions"`
+				Result InsertResult `json:"result"`
+			}
+			err = x.Answer(&s)
+			cc.ints, cc.nodes = []int{s.Result.PrefixLen}, []NodeID{s.Result.LastDeviceNode}
+			for _, a := range s.Actions {
+				if a.T != "FreeDeviceKV" {
+					return nil, fmt.Errorf("seq %d: begin_insert emitted %s", x.Seq, a.T)
+				}
+				cc.slots = append(cc.slots, a.Indices...)
+			}
+		case "inc_lock_ref":
+			var lr LockReceipt
+			err = x.Answer(&lr)
+			if lr.Delta != nil {
+				cc.ints = []int{*lr.Delta}
+			}
+		case "evict_device_start":
+			var n int
+			err = x.Arg("request_cnt", &n)
+			cc.ints = []int{n}
+		case "evict_device_next_node":
+			var s struct {
+				Node *NodeID `json:"node_id"`
+			}
+			err = x.Answer(&s)
+			if s.Node != nil {
+				cc.nodes = []NodeID{*s.Node}
+			}
+		case "evict_device_leaf":
+			var s struct {
+				DeviceFrees map[ComponentType][][]int64 `json:"device_frees"`
+				Tracker     map[ComponentType]int       `json:"tracker"`
+			}
+			err = x.Answer(&s)
+			cc.ints, cc.slots = []int{s.Tracker[FullComponentType]}, s.DeviceFrees[FullComponentType]
+		case "evictable_size", "protected_size", "full_evictable_size", "full_protected_size":
+			var v int
+			err = x.Answer(&v)
+			cc.ints = []int{v}
+		}
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, cc)
+	}
+	return out, nil
+}
+
+func (r *replay) sameCore(got, want []coreCall) error {
+	if len(got) != len(want) {
+		return fmt.Errorf("the cache made %d tree-core calls %v; SGLang's made %d %v", len(got), names(got), len(want), names(want))
+	}
+	for i := range got {
+		g, w := got[i], want[i]
+		if g.m != w.m || !slices.Equal(g.ints, w.ints) || len(g.slots) != len(w.slots) || len(g.nodes) != len(w.nodes) {
+			return fmt.Errorf("tree-core call %d: %s %v %v; SGLang's %s %v %v", i, g.m, g.ints, g.slots, w.m, w.ints, w.slots)
+		}
+		for j := range g.slots {
+			if !slices.Equal(g.slots[j], w.slots[j]) {
+				return fmt.Errorf("tree-core call %d %s: slots %v; SGLang's %v", i, g.m, g.slots, w.slots)
+			}
+		}
+		for j := range g.nodes {
+			if err := r.pair(w.nodes[j], g.nodes[j]); err != nil {
+				return fmt.Errorf("tree-core call %d %s: %w", i, g.m, err)
+			}
+		}
+	}
+	return nil
+}
+
+func names(cs []coreCall) []string {
+	var out []string
+	for _, c := range cs {
+		out = append(out, c.m)
+	}
+	return out
+}
+
+func panics(f func()) (p bool) {
+	defer func() { p = recover() != nil }()
+	f()
+	return false
+}

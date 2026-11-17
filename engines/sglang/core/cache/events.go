@@ -140,6 +140,9 @@ func (t *treeCore) nodeHashValues(n *node) []string {
 }
 
 // nodeEventHashValues is compute_node_event_hash_values (mem_cache/utils.py:178-214@297e54fd).
+// For a namespaced node SGLang's _node_event_hash_values (events.py:172-179) also computes and
+// caches the storage hash_value, which only a host tier or storage reads; the FULL device port
+// has neither, so it computes the storage hashes when it first needs them instead.
 func (t *treeCore) nodeEventHashValues(n *node) []string {
 	if n.key.ExtraKey == nil && n.key.CacheSalt == nil {
 		return t.nodeHashValues(n)

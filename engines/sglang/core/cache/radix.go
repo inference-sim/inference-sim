@@ -34,8 +34,11 @@ type RadixConfig struct {
 // tree core (SGL-1) and the FULL component alone, on the device: no host tier, no storage, no
 // external linker, no streaming session.
 type RadixCache struct {
-	cfg   RadixConfig
-	tree  *treeCore
+	cfg  RadixConfig
+	tree *treeCore
+	// core is the tree core as the cache calls it, through UnifiedTreeCoreInterface: every call
+	// the cache makes at the tree core goes through it, in SGLang's order.
+	core  TreeCore
 	alloc Allocator
 	pool  ReqToTokenPool
 }
@@ -62,14 +65,16 @@ func NewRadixCache(cfg RadixConfig, alloc Allocator, pool ReqToTokenPool) (*Radi
 	c := &RadixCache{cfg: cfg, alloc: alloc, pool: pool,
 		tree: newTreeCore(cfg.PageSize, cfg.IsEagle, events, cfg.DynamoFormat)}
 	c.tree.full.heap.priority = prio
+	c.core = c.tree
 	c.Reset()
 	return c, nil
 }
 
 // Reset is reset and _reset_full (:416-453): a new tree, and an AllBlocksCleared event.
 func (c *RadixCache) Reset() {
-	c.tree.reset()
+	c.core.Reset()
 	if c.tree.events.enabled {
+		// record_all_cleared (events.py:304-307) at the end of _reset_full (:451).
 		c.tree.events.enqueue(Event{Type: "AllBlocksCleared"})
 	}
 }
@@ -79,7 +84,7 @@ func (c *RadixCache) MatchPrefix(p MatchPrefixParams) MatchResult {
 	if c.cfg.Disable {
 		return c.tree.emptyMatch()
 	}
-	return c.tree.MatchPrefix(p)
+	return c.core.MatchPrefix(p)
 }
 
 // TouchPrefix is touch_prefix (:647-652): the tree walk alone.
@@ -87,10 +92,10 @@ func (c *RadixCache) TouchPrefix(k Key) {
 	if c.cfg.Disable {
 		return
 	}
-	c.tree.MatchPrefix(MatchPrefixParams{Key: k})
+	c.core.MatchPrefix(MatchPrefixParams{Key: k})
 }
 
-func (c *RadixCache) SupportsFastMatchPrefix() bool { return c.tree.SupportsFastMatchPrefix() }
+func (c *RadixCache) SupportsFastMatchPrefix() bool { return c.core.SupportsFastMatchPrefix() }
 func (c *RadixCache) SupportsPrefixSharing() bool   { return !c.cfg.Disable }
 func (c *RadixCache) SupportsSWA() bool             { return false }
 func (c *RadixCache) SupportsMamba() bool           { return false }
@@ -101,11 +106,14 @@ func (c *RadixCache) Insert(p InsertParams) InsertResult {
 	if c.cfg.Disable {
 		return InsertResult{}
 	}
-	step := c.tree.BeginInsert(p)
+	if c.core.HasOngoingInsert() {
+		panic("cache: re-entrant insert")
+	}
+	step := c.core.BeginInsert(p)
 	for _, s := range step.FreeDeviceKV {
 		c.alloc.FreeSegment(s, 0)
 	}
-	c.tree.EndInsert()
+	c.core.EndInsert()
 	return *step.Result
 }
 
@@ -156,18 +164,18 @@ func (c *RadixCache) evictFull(request, target int) int {
 	}
 	quota := request
 	if toTarget {
-		quota = max(request, tr[FullComponentType]+c.tree.EvictableSize())
+		quota = max(request, tr[FullComponentType]+c.core.FullEvictableSize())
 	}
-	c.tree.EvictDeviceStart(FullComponentType, quota)
-	defer c.tree.EvictDeviceEnd(FullComponentType)
+	c.core.EvictDeviceStart(FullComponentType, quota)
+	defer c.core.EvictDeviceEnd(FullComponentType)
 	for {
-		step := c.tree.EvictDeviceNextNode(FullComponentType, tr)
+		step := c.core.EvictDeviceNextNode(FullComponentType, tr)
 		if step.Node == nil {
 			if !step.MadeProgress {
 				break
 			}
 		} else {
-			leaf := c.tree.EvictDeviceLeaf(*step.Node, false)
+			leaf := c.core.EvictDeviceLeaf(*step.Node, false)
 			// FreeComponentDeviceSlot, applied by FullComponent (components/full.py:537-552).
 			for _, s := range leaf.DeviceFrees[FullComponentType] {
 				c.alloc.FreeSegment(s, 0)
@@ -186,18 +194,20 @@ func (c *RadixCache) IncLockRef(n NodeID) LockReceipt {
 	if c.cfg.Disable {
 		return LockReceipt{}
 	}
-	return c.tree.IncLockRef(n)
+	return c.core.IncLockRef(n)
 }
 
 func (c *RadixCache) DecLockRef(n NodeID, r LockReceipt) {
 	if c.cfg.Disable {
 		return
 	}
-	c.tree.DecLockRef(n, r)
+	c.core.DecLockRef(n, r)
 }
 
 // Lock and Unlock are lock and unlock (:1094-1106).
 func (c *RadixCache) Lock(n NodeID) *TreeLock {
+	// TreeLock(node, inc_lock_ref(node).to_dec_params()): the receipt keeps the anchor, and
+	// DecLockRefParams carries no delta (base_prefix_cache.py:205-213@297e54fd).
 	r := c.IncLockRef(n)
 	return &TreeLock{Node: n, Receipt: LockReceipt{Node: r.Node}}
 }
@@ -243,7 +253,8 @@ func (c *RadixCache) Checkpoint(req *Req, upTo int) {
 	}
 
 	last := res.LastDeviceNode
-	indices := c.tree.CollectFullDeviceIndices(last, c.tree.root.id)
+	// path_device_indices (:3965-3966).
+	indices := c.core.CollectFullDeviceIndices(last, c.core.RootNodeHandle(nil))
 	if req.KV.CacheProtectedLen > len(indices)+c.cfg.PageSize-1 || res.PrefixLen > len(indices) || len(indices) != aligned {
 		panic("cache: a checkpoint's insert does not cover the request's protected prefix")
 	}
@@ -282,7 +293,7 @@ func coalesce(ranges [][2]int) [][2]int {
 
 // PrefixDeviceIndices is prefix_device_indices (:3955-3963).
 func (c *RadixCache) PrefixDeviceIndices(req *Req) []int64 {
-	path := c.tree.CollectFullDeviceIndices(*req.LastNode, c.tree.root.id)
+	path := c.core.CollectFullDeviceIndices(*req.LastNode, c.core.RootNodeHandle(req.ExtraKey))
 	return path[:min(len(path), req.PrefixLen)]
 }
 
@@ -298,9 +309,9 @@ func (c *RadixCache) FlushPendingBackups()                                {}
 func (c *RadixCache) FinishStoragePrefetchAdmission(string, int, *string) {}
 func (c *RadixCache) ReleaseHostResources()                               {}
 
-func (c *RadixCache) EvictableSize() int     { return c.tree.EvictableSize() }
-func (c *RadixCache) ProtectedSize() int     { return c.tree.ProtectedSize() }
-func (c *RadixCache) FullEvictableSize() int { return c.tree.EvictableSize() }
-func (c *RadixCache) FullProtectedSize() int { return c.tree.ProtectedSize() }
+func (c *RadixCache) EvictableSize() int     { return c.core.EvictableSize() }
+func (c *RadixCache) ProtectedSize() int     { return c.core.ProtectedSize() }
+func (c *RadixCache) FullEvictableSize() int { return c.core.FullEvictableSize() }
+func (c *RadixCache) FullProtectedSize() int { return c.core.FullProtectedSize() }
 func (c *RadixCache) TotalSize() (int, int)  { return c.tree.totalSize(), 0 }
-func (c *RadixCache) TakeEvents() []Event    { return c.tree.TakeEvents() }
+func (c *RadixCache) TakeEvents() []Event    { return c.core.TakeEvents() }

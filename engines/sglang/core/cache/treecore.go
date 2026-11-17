@@ -102,6 +102,11 @@ func (t *treeCore) node(id NodeID) *node {
 	return n
 }
 
+// Reset is reset (:482-544), as the cache calls it.
+func (t *treeCore) Reset() { t.reset() }
+
+var _ TreeCore = (*treeCore)(nil)
+
 // --- RadixKey ---
 
 func (k Key) slice(start, stop int) Key {
