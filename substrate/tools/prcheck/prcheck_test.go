@@ -322,7 +322,7 @@ func TestDocReferences(t *testing.T) {
 	has(t, DocFindings("docs/a.md", []byte("[c](c.md)\n"), tree, roots), "docs/c.md does not exist")
 	has(t, DocFindings("docs/a.md", []byte("| x | y |\n|---|---|\n| 1 | 2 |\n| 1 | 2 |\n"), tree, roots), "is repeated")
 	none(t, DocFindings("docs/a.md", []byte("```\n`kernel/old.go`\n```\nprose `config.json`\n"), tree, roots))
-	none(t, DocFindings("docs/a.md", []byte("[m](catalog/reference/models/x.md) [t]([[catalog.tree]]/a.go)\n"), tree, roots))
+	none(t, DocFindings("docs/a.md", []byte("[t]([[catalog.tree]]/a.go)\n"), tree, roots))
 }
 
 // X14: an abbreviated hash is refused in any phrasing, and ordinary hex-looking text is not.

@@ -1221,7 +1221,7 @@ func TestLoadConnectorRegistry(t *testing.T) {
 // TestLoadResultReadsJSONAndYAMLStrictly: the simulator writes a Result as JSON by default
 // and YAML on request, so the one loader reads both, and refuses an unknown key in either.
 func TestLoadResultReadsJSONAndYAMLStrictly(t *testing.T) {
-	j := filepath.Join("..", "docs", "contracts", "examples", "result.json")
+	j := filepath.Join("testdata", "examples", "result.json")
 	r, err := LoadResult(j)
 	if err != nil {
 		t.Fatalf("LoadResult(%s): %v", j, err)

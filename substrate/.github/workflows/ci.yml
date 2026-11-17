@@ -62,7 +62,6 @@ jobs:
       catalog: ${{ steps.filter.outputs.catalog }}
       ledger: ${{ steps.filter.outputs.ledger }}
       registry: ${{ steps.filter.outputs.registry }}
-      docs: ${{ steps.filter.outputs.docs }}
       golang: ${{ steps.filter.outputs.golang }}
       apidiff: ${{ steps.filter.outputs.apidiff }}
     steps:
@@ -77,7 +76,7 @@ jobs:
           set -euo pipefail
           # On a push with no usable base, or a manual run, every job runs.
           if [ -z "${BASE:-}" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-            for k in contracts kernel catalog ledger registry docs golang apidiff; do echo "$k=true" >> "$GITHUB_OUTPUT"; done
+            for k in contracts kernel catalog ledger registry golang apidiff; do echo "$k=true" >> "$GITHUB_OUTPUT"; done
             exit 0
           fi
           # CHANGED_FILES is set only by tools/changedjobs's test, which runs this step on a chosen list.
@@ -117,7 +116,6 @@ jobs:
           echo "catalog=$(has "$shared|^catalog/" catalog)"                      >> "$GITHUB_OUTPUT"
           echo "ledger=$(has "$shared|^catalog/ledger/|^ledger/" ledger)"       >> "$GITHUB_OUTPUT"
           echo "registry=$(has "$shared|^\.github/quarantine\.yaml$|^registry/" registry)" >> "$GITHUB_OUTPUT"
-          echo "docs=$(has "$shared|^docs/|^mkdocs\.yml|^catalog/|^registry/|^contracts/example_test\.go")" >> "$GITHUB_OUTPUT"
           # golangci-lint judges Go code only: it needs a Go file, the module files, its own
           # configuration, or a workflow or action that builds it.
           echo "golang=$(has "$shared|\.go$|^\.golangci\.yml$")" >> "$GITHUB_OUTPUT"
@@ -604,33 +602,6 @@ jobs:
             exit 1
           fi
 
-  # The docs site builds with every warning an error: a broken link, a missing snippet, a page
-  # left out of the navigation. The hooks render the catalog's and the registry's reference
-  # pages from the committed data, so a data change can break the site too.
-  docs:
-    name: "docs build${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
-    needs: changes
-    if: needs.changes.outputs.docs == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: docs/requirements.txt
-      - run: pip install --require-hashes -r docs/requirements.txt
-      - env:
-          DOCS_RELEASE: main
-        run: python -m pytest docs/hooks -q
-      - env:
-          DOCS_SOURCE_REF: ${{ github.sha }}
-          DOCS_RELEASE: ${{ github.ref_type == 'tag' && github.ref_name || 'main' }}
-        run: mkdocs build --strict
-
   # The one check branch protection requires. A job its paths did not trigger counts as
   # passed; a job that ran and failed, or was cancelled, fails this one (X16, X17). The legs
   # and side checks are listed as well as their aggregates, so a leg that failed or was
@@ -646,7 +617,7 @@ jobs:
   required:
     name: "required${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     if: ${{ always() && (github.event.action != 'edited' || github.event.changes.base) }}
-    needs: [changes, go, lint, contracts, contracts-tests, contracts-checks, kernel, kernel-tests, kernel-checks, mutants, catalog, ledger, registry, docs]
+    needs: [changes, go, lint, contracts, contracts-tests, contracts-checks, kernel, kernel-tests, kernel-checks, mutants, catalog, ledger, registry]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:

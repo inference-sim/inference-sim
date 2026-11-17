@@ -4,8 +4,7 @@
 //
 //	go run ./tools/invariants render [-check]
 //	    Writes this repository's generated files from the registry: the generated block
-//	    of AGENTS.md, .github/pull_request_template.md, and docs/contracts/invariants/
-//	    (the design's appendix index and the release plan's status table). With -check it
+//	    of AGENTS.md and .github/pull_request_template.md. With -check it
 //	    writes nothing and fails if any file differs from what it would write.
 //	go run ./tools/invariants agents -repo <name>
 //	go run ./tools/invariants template -repo <name>
@@ -134,10 +133,8 @@ func outputs(reg *invariants.Registry, root string) (map[string]string, error) {
 		return nil, fmt.Errorf("AGENTS.md: %w", err)
 	}
 	return map[string]string{
-		"AGENTS.md":                               agents,
-		".github/pull_request_template.md":        renderTemplate(reg, self),
-		"docs/contracts/invariants/appendix.html": renderAppendix(reg),
-		"docs/contracts/invariants/status.html":   renderStatusTable(reg),
+		"AGENTS.md":                        agents,
+		".github/pull_request_template.md": renderTemplate(reg, self),
 	}, nil
 }
 

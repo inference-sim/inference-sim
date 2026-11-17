@@ -42,7 +42,7 @@ a slope that is mostly noise. Its entries say so.
 WHY THE LINEAR FORM AND NOT RING ALGEBRA. Ring hop-count predicts the 4->8 floor ratio as
 (2*7/8)/(2*3/4) = 1.167 against a measured median of 1.703 -- wrong by 46%, because a
 collective floor is dominated by per-rank synchronisation and launch cost rather than by
-hops. That model was refuted before this one was adopted; see methodology.md 8.5.
+hops. That model was refuted before this one was adopted; see the design's registry rules (§9)
 
 RATES ARE NOT EXTRAPOLATED. The 16-rank peak and transition rates carry the part's own
 8-rank MEASURED values. Every rate extrapolator tested was biased low -- geometric decay

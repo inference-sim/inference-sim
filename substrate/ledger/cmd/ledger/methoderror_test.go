@@ -14,32 +14,6 @@ import (
 	"github.com/inference-sim/blis-substrate/load"
 )
 
-const methodErrorPagePath = "../../../docs/registry/reference/method-error.md"
-
-// The committed reference page is the page the committed registry produces (VAL-5): a figure
-// on it cannot disagree with the data.
-func TestMethodErrorPageIsCurrent(t *testing.T) {
-	var out, errb bytes.Buffer
-	if code := run([]string{"method-error", "-check", methodErrorPagePath}, &out, &errb); code != 0 {
-		t.Fatalf("exit %d: %s%s", code, out.String(), errb.String())
-	}
-}
-
-func TestAStaleMethodErrorPageIsRefused(t *testing.T) {
-	raw, err := os.ReadFile(methodErrorPagePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	stale := filepath.Join(t.TempDir(), "page.md")
-	if err := os.WriteFile(stale, []byte(strings.Replace(string(raw), "| 1.04 |", "| 9.99 |", 1)), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	var out, errb bytes.Buffer
-	if code := run([]string{"method-error", "-check", stale}, &out, &errb); code != 1 || !strings.Contains(errb.String(), "not the page the registry produces") {
-		t.Errorf("exit %d: %s", code, errb.String())
-	}
-}
-
 func TestMethodErrorWritesAReportThatNamesNoUnit(t *testing.T) {
 	dir := t.TempDir()
 	rep := filepath.Join(dir, "report.json")

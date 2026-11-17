@@ -623,7 +623,7 @@
     check: Every generated file matches its generator's output
     runs: pull_request
     status: ci
-    test: 'tools/docgen: TestGeneratedDocsAreCurrent'
+    test: 'tools/schemagen: TestPublishedSchemasMatchTheTypes'
   - repo: blis-vllm
     check: Every generated file matches its generator's output
     runs: pull_request

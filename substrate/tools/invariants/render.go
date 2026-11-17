@@ -2,9 +2,7 @@ package main
 
 import (
 	"fmt"
-	"html"
 	"regexp"
-	"sort"
 	"strings"
 
 	"github.com/inference-sim/blis-substrate/contracts/invariants"
@@ -32,65 +30,6 @@ func families(reg *invariants.Registry) [][]invariants.Invariant {
 		out = append(out, g)
 	}
 	return out
-}
-
-// renderAppendix writes the design's Appendix A, the invariant index: one row per family,
-// with its identifiers, the repositories its checks run in, and the sections defining it.
-func renderAppendix(reg *invariants.Registry) string {
-	var b strings.Builder
-	b.WriteString("<!-- Generated from blis-substrate/contracts/invariants by go run ./tools/invariants render. Do not edit. -->\n")
-	b.WriteString("<div class=\"tbl\"><table>\n")
-	b.WriteString("<thead><tr><th>Identifiers</th><th>Count</th><th>Checks run in</th><th>Defined in</th></tr></thead>\n<tbody>\n")
-	for _, g := range families(reg) {
-		if len(g) == 0 {
-			continue
-		}
-		repos := map[string]bool{}
-		secs := map[string]bool{}
-		var secList []string
-		for _, inv := range g {
-			for _, r := range inv.Scope {
-				repos[r] = true
-			}
-			if !secs[inv.Section] {
-				secs[inv.Section] = true
-				secList = append(secList, inv.Section)
-			}
-		}
-		var rs []string
-		for r := range repos {
-			rs = append(rs, "<code>"+r+"</code>")
-		}
-		sort.Strings(rs)
-		fmt.Fprintf(&b, "<tr><td>%s</td><td>%d</td><td>%s</td><td>%s</td></tr>\n",
-			idRange(g), len(g), strings.Join(rs, ", "), strings.Join(secList, ", "))
-	}
-	b.WriteString("</tbody></table></div>\n")
-	return b.String()
-}
-
-func idRange(g []invariants.Invariant) string {
-	first, last := g[0].ID, g[len(g)-1].ID
-	if first == last {
-		return `<span class="inv">` + first + `</span>`
-	}
-	return `<span class="inv">` + first + `</span>–<span class="inv">` + idNumber.FindString(last) + `</span>`
-}
-
-// renderStatusTable writes the rows of the release plan's §3.2 table: identifier, the
-// statement's first sentence, status, the milestone by which every check is in CI, and the
-// note.
-func renderStatusTable(reg *invariants.Registry) string {
-	var b strings.Builder
-	b.WriteString("<!-- Generated from blis-substrate/contracts/invariants by go run ./tools/invariants render. Do not edit. -->\n")
-	b.WriteString("<div class=\"tbl\"><table>\n<thead><tr><th>Invariant</th><th>Statement, first sentence</th><th>Status</th><th>In CI by</th><th>Note</th></tr></thead>\n<tbody>\n")
-	for _, inv := range reg.Invariants {
-		by := invariants.MilestoneLabel(inv.Target.Milestone)
-		fmt.Fprintf(&b, "<tr><td><span class=\"inv\">%s</span></td><td>%s</td><td><code>%s</code></td><td>%s</td><td>%s</td></tr>\n",
-			inv.ID, html.EscapeString(firstSentence(inv.Statement)), inv.Status, by, html.EscapeString(inv.Note))
-	}
-	b.WriteString("</tbody></table></div>\n")
-	return b.String()
 }
 
 // firstSentence returns the statement up to the first full stop outside parentheses that

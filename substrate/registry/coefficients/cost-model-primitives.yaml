@@ -5,7 +5,7 @@
 # (moe_routing_imbalance_median), fit_marlin_grouped_ramp.py (gemm_*_w4a16_mxfp4_grouped),
 # fit_deepseek_v41_h200.py (the assumed gemm_*_w8a16_mxfp8 and host_gather_rate_uva), and
 # emit_primitives.py (the descriptor entries and A100's MoE median).
-# docs/reproducing-coefficients.md maps every family to its owner.
+# registry/scripts/rederive.sh lists every writer.
 # Re-run the owner and commit the diff rather than editing values here.
 #
 # Two kinds of number, both NVIDIA-sourced:

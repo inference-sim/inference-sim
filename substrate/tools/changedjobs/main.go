@@ -72,7 +72,9 @@ func Select(changed []string, jobs map[string][]string, load Loader) (map[string
 func reaches(file string, pkgs []Pkg) bool {
 	file = path.Clean(file)
 	for _, p := range pkgs {
-		if path.Dir(file) == p.Dir {
+		// A Markdown file beside a package's sources is not part of its build, unless the package
+		// embeds it (checked below).
+		if path.Dir(file) == p.Dir && !strings.HasSuffix(file, ".md") {
 			return true
 		}
 		testdata := p.Dir + "/testdata/"

@@ -18,7 +18,7 @@ import (
 
 func v41(t *testing.T) *model.Graph {
 	t.Helper()
-	g, err := LoadModelGraph("../docs/contracts/examples/model-graph-deepseek-v4.1.yaml")
+	g, err := LoadModelGraph("testdata/examples/model-graph-deepseek-v4.1.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +277,7 @@ func TestV41BundleValidates(t *testing.T) {
 // silently drop the cache's residency, so decoding refuses it, and an unknown key too.
 func TestCacheOwnedIsRequired(t *testing.T) {
 	dir := t.TempDir()
-	src, err := os.ReadFile("../docs/contracts/examples/model-graph-deepseek-v4.1.yaml")
+	src, err := os.ReadFile("testdata/examples/model-graph-deepseek-v4.1.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
