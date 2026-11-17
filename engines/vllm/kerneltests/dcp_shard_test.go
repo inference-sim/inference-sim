@@ -342,12 +342,19 @@ func TestDCPDividesTheReadRateButNotThePerCallFloor(t *testing.T) {
 	for _, dcp := range []int{2, 8} {
 		slope, intercept := fit(dcp)
 		// The rate term divides by exactly the shard.
-		if want := slope1 / float64(dcp); math.Abs(slope-want)/want > 1e-9 {
+		// StepTime returns a time.Duration, which holds whole nanoseconds, so each read
+		// is good to 1 ns and the slope between two reads to 2 ns over the span.
+		// Tolerate that quantisation, not a relative 1e-9 that a refit's last digit can
+		// cross; a rate left undivided is off by a factor of dcp, far outside it.
+		const quantum = 1e-9
+		span := float64(16384 - 8192)
+		if want := slope1 / float64(dcp); math.Abs(slope-want) > 4*quantum/span {
 			t.Errorf("dcp=%d: the per-token read rate is %.6e, want %.6e (the dcp=1 "+
 				"figure over %d)", dcp, slope, want, dcp)
 		}
 		// The floor does not move at all.
-		if math.Abs(intercept-intercept1) > 1e-12 {
+		// The intercept inherits the slope's quantisation times the 8192-token origin.
+		if math.Abs(intercept-intercept1) > 8*quantum {
 			t.Errorf("dcp=%d: the per-call floor moved to %.9f ms from %.9f ms; a "+
 				"launch cost is paid once per rank whatever the shard",
 				dcp, intercept*1e3, intercept1*1e3)

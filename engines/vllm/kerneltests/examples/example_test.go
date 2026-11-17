@@ -76,8 +76,8 @@ func ExampleOpen() {
 	// --8<-- [end:open]
 
 	// Output:
-	// between 24.1 and 25.4 ms, bottleneck hbm
-	// sm        4.5 ms
+	// between 24.0 and 25.3 ms, bottleneck hbm
+	// sm        4.3 ms
 	// hbm      16.5 ms
 	// nvlink    0.9 ms
 	// host      3.5 ms
