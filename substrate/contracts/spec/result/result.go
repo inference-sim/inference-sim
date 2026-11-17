@@ -691,6 +691,14 @@ type RequestRow struct {
 	E2EUs  *int64   `yaml:"e2e_us,omitempty"`
 	// SchedulingDelayUs is the time from arrival at an engine to the first scheduled step.
 	SchedulingDelayUs *int64 `yaml:"scheduling_delay_us,omitempty"`
+	// QueueEntryUs is the clock at which the request entered an engine's waiting queue: the
+	// request's arrival at the engine, after the router and any flow-control wait. Present only
+	// for a request that reached an engine (inference-sim#1973).
+	QueueEntryUs *int64 `yaml:"queue_entry_us,omitempty"`
+	// FirstTokenUs is the clock at which the request's first token reached the client, so
+	// that ttft_us is first_token_us - arrival_us. Present exactly where a first token was
+	// delivered, as ttft_us is (inference-sim#1973).
+	FirstTokenUs *int64 `yaml:"first_token_us,omitempty"`
 	// GatewayQueueDelayUs is the time spent in the router's flow-control queue.
 	GatewayQueueDelayUs *int64 `yaml:"gateway_queue_delay_us,omitempty"`
 	// CompletionIndex is the request's 1-based position in the run's order of completion,

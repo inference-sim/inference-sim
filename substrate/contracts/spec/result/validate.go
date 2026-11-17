@@ -745,10 +745,25 @@ func (r *Result) validateRows(p *validate.Problems) {
 			p.Field(at+".tpot_us", "required for a completed request with at least two output tokens")
 		}
 		for f, v := range map[string]*int64{"ttft_us": row.TTFTUs, "e2e_us": row.E2EUs,
-			"scheduling_delay_us": row.SchedulingDelayUs, "gateway_queue_delay_us": row.GatewayQueueDelayUs} {
+			"scheduling_delay_us": row.SchedulingDelayUs, "gateway_queue_delay_us": row.GatewayQueueDelayUs,
+			"queue_entry_us": row.QueueEntryUs, "first_token_us": row.FirstTokenUs} {
 			if v != nil && *v < 0 {
 				p.Field(at+"."+f, "must not be negative")
 			}
+		}
+		// The event times lie on the one simulated clock, in the order a request lives them (#1973).
+		if row.QueueEntryUs != nil && *row.QueueEntryUs < row.ArrivalUs {
+			p.Field(at+".queue_entry_us", "is %d, before the request's arrival_us %d", *row.QueueEntryUs, row.ArrivalUs)
+		}
+		if row.FirstTokenUs != nil && row.OutputTokens < 1 {
+			p.Field(at+".first_token_us", "a request that emitted no token has no first-token time")
+		}
+		if row.FirstTokenUs != nil && row.QueueEntryUs != nil && *row.FirstTokenUs < *row.QueueEntryUs {
+			p.Field(at+".first_token_us", "is %d, before queue_entry_us %d", *row.FirstTokenUs, *row.QueueEntryUs)
+		}
+		if row.FirstTokenUs != nil && row.TTFTUs != nil && *row.FirstTokenUs-row.ArrivalUs != *row.TTFTUs {
+			p.Field(at+".first_token_us", "is %d: ttft_us %d must equal first_token_us - arrival_us (%d)",
+				*row.FirstTokenUs, *row.TTFTUs, *row.FirstTokenUs-row.ArrivalUs)
 		}
 		if row.TPOTUs != nil && (math.IsNaN(*row.TPOTUs) || math.IsInf(*row.TPOTUs, 0) || *row.TPOTUs < 0) {
 			p.Field(at+".tpot_us", "must be a finite number, not negative")

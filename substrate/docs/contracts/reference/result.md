@@ -399,6 +399,8 @@ has `e2e_us`. The rows' fates agree with `requests`.
 | `tpot_us` | number | when sampled | (E2E - TTFT) / (output tokens - 1). |
 | `e2e_us` | integer | when sampled | Request latency; at least `ttft_us`. |
 | `scheduling_delay_us` | integer | no | Arrival at an engine to the first scheduled step. |
+| `queue_entry_us` | integer | no | Clock at which the request entered an engine's waiting queue; not before `arrival_us`. |
+| `first_token_us` | integer | when sampled | Clock at which the first token reached the client; `ttft_us` is this less `arrival_us`. |
 | `gateway_queue_delay_us` | integer | no | Time in the router's flow-control queue. |
 | `completion_index` | integer | completed | The 1-based position in the run's order of completion. |
 | `prompt_tokens` | integer | yes | Prompt tokens. |
