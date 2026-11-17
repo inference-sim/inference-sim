@@ -361,6 +361,12 @@ stack:
   - attn_moe
   repeat: 15
 modality: text_decoder_of_multimodal
+encoder:
+  towers: []
+  omitted:
+  - modality: image
+    reason: the tower's stored dtype is not stated by config.json and no safetensors headers are pinned
+    issue: inference-sim/blis-substrate#277
 head:
 - op: Elementwise
   role: final_norm
