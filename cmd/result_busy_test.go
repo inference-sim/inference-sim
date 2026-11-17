@@ -28,12 +28,19 @@ func TestResultStatesBusyShares(t *testing.T) {
 			t.Errorf("instance %s: prefill %v + decode %v != busy %v, or one is empty", id, pf, dc, busy)
 		}
 		sum += busy
+		if mfu, ok := mw["mfu"].(float64); !ok || mfu <= 0 || mfu > busy {
+			t.Errorf("instance %s mfu %v, want in (0, busy_share %v]: a step cannot run more than the peak", id, mw["mfu"], busy)
+		}
 	}
 	if got := cluster["busy_share"].(float64); math.Abs(got-sum/float64(len(insts))) > 1e-9 {
 		t.Errorf("cluster busy_share %v, want the instances' mean %v", got, sum/float64(len(insts)))
 	}
 	_, heavy := run("64")
+	t.Logf("concurrency 4: busy %v mfu %v; concurrency 64: busy %v mfu %v", cluster["busy_share"], cluster["mfu"], heavy["busy_share"], heavy["mfu"])
 	if heavy["busy_share"].(float64) <= cluster["busy_share"].(float64) {
 		t.Errorf("busy_share %v at concurrency 64 is not above %v at 4", heavy["busy_share"], cluster["busy_share"])
+	}
+	if heavy["mfu"].(float64) <= cluster["mfu"].(float64) {
+		t.Errorf("mfu %v at concurrency 64 is not above %v at 4: batching more work per weight read raises utilization", heavy["mfu"], cluster["mfu"])
 	}
 }
