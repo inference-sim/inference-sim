@@ -1306,3 +1306,75 @@ func TestResult_PhasedTraceReplaysDrainGatedAndKeepsItsPhasesThroughTheExport(t 
 		}
 	}
 }
+
+// #1926: blis run generates a phased workload (WorkloadSpec phases and a per-client phase),
+// sends the measured phase when the warm-up drained, hits the prefix the warm-up left, labels
+// every row, and exports a trace whose replay gives the same arrivals, phases and cache hits
+// (INV-13, DEV-7).
+func TestResult_RunOfAPhasedWorkloadDrainsGatesAndReplaysToTheSameRows(t *testing.T) {
+	dir := t.TempDir()
+	client := func(id, phase string) string {
+		return "  - id: " + id + "\n    phase: " + phase + "\n    tenant_id: t\n    slo_class: standard\n    rate_fraction: 1\n" +
+			"    arrival: {process: poisson}\n    prefix_group: sys\n    prefix_length: 512\n" +
+			"    input_distribution: {type: constant, params: {value: 600}}\n" +
+			"    output_distribution: {type: constant, params: {value: 24}}\n"
+	}
+	spec := filepath.Join(dir, "spec.yaml")
+	body := "version: \"2\"\nseed: 7\ncategory: language\naggregate_rate: 20\nphases:\n" +
+		"  - {name: warmup, num_requests: 4, concurrency: 2}\n  - {name: measured, num_requests: 6, concurrency: 2}\nclients:\n" +
+		client("w", "warmup") + client("m", "measured")
+	if err := os.WriteFile(spec, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "run")
+	stdout, stderr, err := runKernelCLI(t, "run", "--scenario", kernelTestScenario, "--seed", "5", "--workload-spec", spec, "--trace-output", out)
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+	}
+	first := parseResult(t, stdout)
+	var lastWarmEnd, firstMeasured int64 = 0, -1
+	measuredCached, warm, meas := 0, 0, 0
+	for _, row := range first.RequestRows {
+		switch row.Phase {
+		case "warmup":
+			warm++
+			if row.E2EUs == nil {
+				t.Fatalf("%s: a warm-up request did not complete", row.ID)
+			}
+			lastWarmEnd = max(lastWarmEnd, row.ArrivalUs+*row.E2EUs)
+		case "measured":
+			meas++
+			if firstMeasured < 0 || row.ArrivalUs < firstMeasured {
+				firstMeasured = row.ArrivalUs
+			}
+			measuredCached += row.CachedLocalTokens
+		default:
+			t.Errorf("%s: phase %q, want warmup or measured", row.ID, row.Phase)
+		}
+	}
+	if warm != 4 || meas != 6 {
+		t.Fatalf("rows: %d warm-up and %d measured, want 4 and 6", warm, meas)
+	}
+	if firstMeasured < lastWarmEnd {
+		t.Errorf("the measured phase starts at %d, before the warm-up drained at %d", firstMeasured, lastWarmEnd)
+	}
+	if measuredCached == 0 {
+		t.Errorf("the measured requests hit no cached token: the warm-up's prefix did not carry across")
+	}
+	rstdout, rstderr, err := runKernelCLI(t, "replay", "--scenario", kernelTestScenario, "--seed", "5",
+		"--trace-header", out+".yaml", "--trace-data", out+".csv")
+	if err != nil {
+		t.Fatalf("replay: %v\n%s", err, lastLines(rstderr, 5))
+	}
+	second := parseResult(t, rstdout)
+	if len(second.RequestRows) != len(first.RequestRows) {
+		t.Fatalf("INV-13: the replay has %d rows, the run %d", len(second.RequestRows), len(first.RequestRows))
+	}
+	for i, a := range first.RequestRows {
+		b := second.RequestRows[i]
+		if a.Phase != b.Phase || a.ArrivalUs != b.ArrivalUs || a.CachedLocalTokens != b.CachedLocalTokens {
+			t.Errorf("INV-13: row %d is phase %q arrival %d cached %d in the run, %q %d %d in the replay", i, a.Phase,
+				a.ArrivalUs, a.CachedLocalTokens, b.Phase, b.ArrivalUs, b.CachedLocalTokens)
+		}
+	}
+}

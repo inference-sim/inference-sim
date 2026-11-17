@@ -44,6 +44,7 @@ func ExpandCohorts(cohorts []CohortSpec) []ClientSpec {
 				OutputDist:   cohort.OutputDist,
 				PrefixGroup:  prefixGroup,
 				Streaming:    cohort.Streaming,
+				Phase:        cohort.Phase,
 				PrefixLength: cohort.PrefixLength,
 				// Pointer fields shared across all expanded clients.
 				// Safe: workload generation reads but never mutates these fields.
