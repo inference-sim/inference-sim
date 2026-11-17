@@ -1989,6 +1989,7 @@ func (k *Kernel) computeFixedBytes(g *model.Graph) kernel.MemoryBreakdown {
 			CommBuffers:    k.deepEPBufferBytes(g),
 			// Every stage's rank grows it; the binding stage is the one sized.
 			NonTorchInBudget: k.nonTorchInBudget,
+			EngineBuffers:    k.statedBufferBytes(),
 		}
 	}
 	var weights float64
@@ -2013,6 +2014,7 @@ func (k *Kernel) computeFixedBytes(g *model.Graph) kernel.MemoryBreakdown {
 		// after it, so they are (deepEPBufferBytes).
 		CommBuffers:      k.deepEPBufferBytes(g),
 		NonTorchInBudget: k.nonTorchInBudget,
+		EngineBuffers:    k.statedBufferBytes(),
 	}
 }
 

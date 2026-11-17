@@ -206,7 +206,7 @@ adds the method.
 
 | Type | Meaning |
 |---|---|
-| `MemoryBreakdown` | `Weights`, `ActivationPeak`, `CUDAGraph`, `EPLBRedundant`, `CommBuffers`, `NonTorchInBudget` (the non-torch growth vLLM counts inside the KV budget), in bytes; `Total()` sums them. |
+| `MemoryBreakdown` | `Weights`, `ActivationPeak`, `CUDAGraph`, `EPLBRedundant`, `CommBuffers`, `NonTorchInBudget` (the non-torch growth vLLM counts inside the KV budget), `EngineBuffers` (the per-rank GPU buffers the engine states in its plan, which also come out of the KV budget), in bytes; `Total()` sums them. |
 | `Direction` | `to_tier` (eviction) or `from_tier` (fetch). Priced separately because flash reads and writes differ. |
 | `Placement` | A rank's `Node`, `Rack` and `Pool` (the pool's role). Comparing two placements chooses the link a transfer uses. |
 | `CoefficientOrigin` | One row of the provenance trail: entry `Name`, `Set`, `Method`, `Scope`, and `KernelMatch`: `exact` when the entry lists a kernel implementation that runs, `unkeyed` when it lists none, empty for a value the kernel supplied itself. |
