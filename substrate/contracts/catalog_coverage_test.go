@@ -142,8 +142,12 @@ func hasNodeWeightDType(g *model.Graph, d model.DType) bool {
 
 func hasPrologue(g *model.Graph) bool { return len(g.Stack.Prologue) > 0 }
 
+// isMultimodal: the graph describes a model whose source also has a tower, either as the decoder
+// alone (ModalityTextDecoderOfMultimodal) or with the towers it prices (ModalityMultimodal, an
+// Encoder section).
 func isMultimodal(g *model.Graph) bool {
-	return g.Modality == model.ModalityTextDecoderOfMultimodal
+	return g.Modality == model.ModalityTextDecoderOfMultimodal ||
+		(g.Modality == model.ModalityMultimodal && g.Encoder != nil && len(g.Encoder.Towers) > 0)
 }
 
 // TestCatalogArchitectureFamiliesAreExpressible walks every architecture family the
