@@ -888,7 +888,7 @@
     "simulator": "(devel)",
     "substrate": "v0.15.1-0.20261117220848-04ffd2b8d9a9",
     "router": "v1.0.0-blis.5.0.20261117220222-6638ea3c77d9",
-    "engine_module": "v0.33.0-blis.1.0.20261117221457-264524be9a53"
+    "engine_module": "v0.33.0-blis.1.0.20261117223439-b1141c4445ad"
   },
   "window": {
     "start_us": 0,
