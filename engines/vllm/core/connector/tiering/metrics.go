@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-// Derived from vllm/v1/kv_offload/tiering/metrics.py, tiering/manager.py (get_stats, config_info) and
-// vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
+// Derived from vllm/v1/kv_offload/tiering/metrics.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
+// Also derived from tiering/manager.py (get_stats, config_info) and from
+// vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py at the same commit.
 
 package tiering
 
