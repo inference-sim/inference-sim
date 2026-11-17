@@ -4746,7 +4746,24 @@
         "issue": "inference-sim/blis-vllm#53"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "none",
+        "approximates": {
+          "mode": {
+            "env.VLLM_USE_NCCL_SYMM_MEM": null
+          },
+          "evidence": "the registry's all-reduce floors and rates, fitted on AISimulate's NCCL sweep at NCCL's defaults (cost-model-collectives)",
+          "differs": "a stated 1 registers the all-reduce buffers as NCCL symmetric memory so the all-reduce can use the NVLS symmetric kernels, which the sweep did not run; the all-reduce is priced at the default NCCL algorithm; a stated 0 is the default",
+          "when": [
+            {
+              "value_in": [
+                "1",
+                "0",
+                "true",
+                "false"
+              ]
+            }
+          ]
+        }
       }
     },
     {
@@ -5195,7 +5212,25 @@
         "issue": "inference-sim/blis-vllm#75"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "none",
+        "approximates": {
+          "mode": {
+            "all2all_backend": "flashinfer_nvlink_one_sided"
+          },
+          "evidence": "no allowed table measures FlashInfer's NVLink one-sided all-to-all: the AISimulate moe_a2a_perf collections for b200, b300, gb200 and gb300 (vLLM 0.24.0 and TRT-LLM 1.3.0rc11) hold only the DeepEP high-throughput and low-latency backends (checked 2026-11-17); the cost model prices a dispatch with no measured kernel as NCCL's all-to-all over top_k bytes (kernel/deepep.go liftDeepEP, recorded as an assumption)",
+          "differs": "the backend is FlashInfer's NVLinkOneSidedAlltoAll (FlashInferNVLinkOneSidedManager, vllm/distributed/device_communicators/all2all.py:759 at 4ba787ec9959), a one-sided NVLink put kernel that NCCL's all-to-all is not; the dispatch and combine are priced at NCCL's all-to-all floor and rate, not at the kernel's own, which no allowed data measures",
+          "when": [
+            {
+              "value_in": [
+                "flashinfer_nvlink_one_sided"
+              ],
+              "compute_capability": {
+                "gte": "10.0",
+                "lt": "11.0"
+              }
+            }
+          ]
+        }
       }
     },
     {
@@ -5542,7 +5577,25 @@
         "issue": "inference-sim/blis-vllm#80"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "none",
+        "approximates": {
+          "mode": {
+            "attention_config.mla_prefill_backend": null
+          },
+          "evidence": "the registry's attention lanes, fitted on AISimulate attention timings of vLLM's MLA kernels on b200 and b300, with the engine's attention implementation unreported so the pooled lanes price",
+          "differs": "a stated TRTLLM_RAGGED runs FlashInfer's trtllm-gen ragged MLA prefill (TrtllmRaggedPrefillBackend, vllm/v1/attention/backends/mla/prefill/trtllm_ragged.py:36 at 4ba787ec9959) where auto picks another prefill kernel; the prefill is priced at the pooled lanes' speed, not at that kernel's",
+          "when": [
+            {
+              "value_in": [
+                "trtllm_ragged"
+              ],
+              "compute_capability": {
+                "gte": "10.0",
+                "lt": "11.0"
+              }
+            }
+          ]
+        }
       }
     },
     {
@@ -5967,7 +6020,25 @@
         "issue": "inference-sim/blis-vllm#80"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "none",
+        "approximates": {
+          "mode": {
+            "compilation_config.custom_ops": null
+          },
+          "evidence": "the lowering's launch counts and elementwise fusions are those of the default compiled model (custom_ops unset), priced from the registry's per-kernel rates",
+          "differs": "a stated list switches named ops (+rms_norm, +quant_fp8, +rotary_embedding) from the inductor-generated kernel to vLLM's custom CUDA kernel, or all of them with all, which changes those ops' launches and bytes; the step is priced with the default choice",
+          "when": [
+            {
+              "value_list_has_any": [
+                "+rms_norm",
+                "+quant_fp8",
+                "+rotary_embedding",
+                "all",
+                "+all"
+              ]
+            }
+          ]
+        }
       }
     },
     {
@@ -6166,7 +6237,22 @@
         "issue": "inference-sim/blis-vllm#59"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "none",
+        "approximates": {
+          "mode": {
+            "compilation_config.mode": null
+          },
+          "evidence": "the lowering's launch counts and fusions are those of the default VLLM_COMPILE mode, priced from the registry's per-kernel rates",
+          "differs": "a stated mode 0 (NONE) runs the model as plain PyTorch with no torch.compile fusion, so the step launches more, smaller kernels than the lowering counts; the step is priced faster than it ran",
+          "when": [
+            {
+              "value_in": [
+                "0",
+                "none"
+              ]
+            }
+          ]
+        }
       }
     },
     {
@@ -9423,7 +9509,29 @@
         "issue": "inference-sim/blis-substrate#150"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "none",
+        "approximates": {
+          "mode": {
+            "moe_backend": null
+          },
+          "evidence": "the registry prices a routed expert group by weight format on the ramp fitted for it (blis-substrate#150, #285), and records that the stated backend is not the one it measured",
+          "differs": "a stated backend (FlashInfer TRT-LLM or CUTLASS, DeepGEMM mega-MoE, Marlin) runs its own kernel with its own ramp; the experts are priced by weight format at the cost model's choice for that format, so the step carries that backend's difference",
+          "when": [
+            {
+              "value_in": [
+                "flashinfer_trtllm",
+                "flashinfer_cutlass",
+                "deep_gemm_mega_moe",
+                "deep_gemm_amxf4_mega_moe",
+                "marlin"
+              ],
+              "compute_capability": {
+                "gte": "10.0",
+                "lt": "11.0"
+              }
+            }
+          ]
+        }
       }
     },
     {
