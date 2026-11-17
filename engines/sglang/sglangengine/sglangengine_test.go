@@ -104,7 +104,7 @@ func TestTheFactoryRefusesAnotherReleaseAndWhatTheEngineDoesNotModel(t *testing.
 	for block, issue := range map[string]string{
 		"model_path: m\ntp_size: 8\ndp_size: 8\nenable_dp_attention: true\n": "#70",
 		"model_path: m\nenable_hierarchical_cache: true\n":                   "#37",
-		"model_path: m\nstream_interval: 10\n":                              "#49",
+		"model_path: m\nstream_interval: 10\n":                               "#49",
 	} {
 		_, err := FactoryFor(h).New(specOf(t, block))
 		if err == nil || !strings.Contains(err.Error(), issue) {
@@ -128,5 +128,35 @@ func TestADecodePassIsPaddedToTheCaptureBucketThatHoldsIt(t *testing.T) {
 	p.StepTime(engine.Batch{Reqs: make([]engine.Scheduled, 9)})
 	if *h.k.lastPad != 0 {
 		t.Errorf("a batch past the largest bucket runs eagerly")
+	}
+}
+
+// Each setting the engine does not run is refused by refuseUnmodelled on its own, naming its
+// issue. Through the factory the pool plan refuses attention-DP pools too, so a factory-level test
+// cannot tell the refusal here from the plan's; this one calls it directly (a mutant that drops a
+// case is caught by that case's row).
+func TestEachUnmodelledSettingIsRefusedOnItsOwn(t *testing.T) {
+	def := config.Defaults()
+	if err := refuseUnmodelled(&def); err != nil {
+		t.Fatalf("the defaults are refused: %v", err)
+	}
+	spec := "EAGLE"
+	for _, tc := range []struct {
+		name  string
+		set   func(*config.ServerArgs)
+		issue string
+	}{
+		{"speculative decoding", func(a *config.ServerArgs) { a.SpeculativeAlgorithm = &spec }, "#68"},
+		{"DP attention", func(a *config.ServerArgs) { a.EnableDpAttention = true }, "#70"},
+		{"a data-parallel size above one", func(a *config.ServerArgs) { a.DpSize = 2 }, "#70"},
+		{"pipeline parallelism", func(a *config.ServerArgs) { a.PpSize = 2 }, "#72"},
+		{"P/D disaggregation", func(a *config.ServerArgs) { a.DisaggregationMode = "prefill" }, "#64"},
+		{"HiCache", func(a *config.ServerArgs) { a.EnableHierarchicalCache = true }, "#37"},
+	} {
+		a := config.Defaults()
+		tc.set(&a)
+		if err := refuseUnmodelled(&a); err == nil || !strings.Contains(err.Error(), tc.issue) {
+			t.Errorf("%s: got %v, want a refusal citing %s", tc.name, err, tc.issue)
+		}
 	}
 }
