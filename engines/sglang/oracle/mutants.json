@@ -434,6 +434,18 @@
     "core/cache/radix.go:Checkpoint:<-><=#1:if prio < math.MaxInt64 {": "a node keeps the larger of its priorities, so the prompt's wrapped-around priority never lowers the output node's",
     "core/cache/radix.go:Checkpoint:||->&&#1:if req.KV.CacheProtectedLen > len(indices)+c.cfg.PageSize-1 || res.PrefixLen > len(indices) || len(indices) != aligned {": "the check asserts the tree's insert met its own contract, which no input breaks; it fires only if the tree core is wrong",
     "core/cache/radix.go:Checkpoint:||->&&#2:if req.KV.CacheProtectedLen > len(indices)+c.cfg.PageSize-1 || res.PrefixLen > len(indices) || len(indices) != aligned {": "the check asserts the tree's insert met its own contract, which no input breaks; it fires only if the tree core is wrong",
-    "core/cache/radix.go:FreeKVRow:>->>=#1:if len(segs) > 0 {": "freeing no segments frees nothing"
+    "core/cache/radix.go:FreeKVRow:>->>=#1:if len(segs) > 0 {": "freeing no segments frees nothing",
+    "core/cache/events.go:nodeHashValues:>->>=#1:if p := n.parent; p != nil && p.hashValue != nil && p.key.Len() > 0 && len(p.hashValue) > 0 {": "the only node with an empty key is the root, whose hash list is nil, so the following len test already refuses it",
+    "core/cache/events.go:nodeHashValues:>->>=#2:if p := n.parent; p != nil && p.hashValue != nil && p.key.Len() > 0 && len(p.hashValue) > 0 {": "a non-nil hash list of a node in the tree is never empty",
+    "core/cache/events.go:nodeHashValues:&&->||#3:if p := n.parent; p != nil && p.hashValue != nil && p.key.Len() > 0 && len(p.hashValue) > 0 {": "the other three tests of the chain are true exactly when the last is, for nodes the tree holds",
+    "core/cache/treecore.go:matchAt:>->>=#1:if page > 1 {": "at page size 1 the rounding m / 1 * 1 returns m",
+    "core/cache/treecore.go:uneevict:>->>=#1:if n.lockRef > 0 {": "uneevict runs only for an evicted node, and the FULL-only device tree has none (an evicted leaf is removed from the tree)",
+    "core/cache/treecore.go:uneevict:!=->==#1:if n.parent != nil {": "uneevict runs only for an evicted node, and the FULL-only device tree has none (an evicted leaf is removed from the tree)",
+    "core/cache/treecore.go:isDeviceLeaf:||->&&#1:if n == t.root || n.evicted() || n.lockRef > 0 {": "the root's lock_ref is 1 from construction (as SGLang's), so the lock test refuses it either way",
+    "core/cache/treecore.go:Less:<-><=#1:return pa[0] < pb[0]": "the branch is entered only when pa[0] != pb[0]",
+    "core/cache/treecore.go:Less:<-><=#1:return pa[1] < pb[1]": "the branch is entered only when the pairs differ and their first parts are equal, so the second parts differ",
+    "core/cache/treecore.go:Less:!=->==#1:if a.lastAccess != b.lastAccess {": "the tie-break is reached only when the priority pairs are equal; every modelled policy but fifo and filo carries lastAccess in its pair, and a creation time is unique per node, so the pairs of two leaves are never equal there",
+    "core/cache/treecore.go:Less:<-><=#1:return a.lastAccess < b.lastAccess": "the branch is entered only when lastAccess differs",
+    "core/cache/treecore.go:Less:<-><=#1:return a.id < b.id": "the heap compares two distinct nodes, whose ids differ"
   }
 }
