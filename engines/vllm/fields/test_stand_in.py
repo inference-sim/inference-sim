@@ -27,6 +27,10 @@ import stand_in  # noqa: E402
 
 SOURCE = os.environ.get("VLLM_SOURCE")
 VECTORS = os.path.join(HERE, "stand_in_vectors.json")
+# NCCL's own documentation (no vLLM function resolves them): cuMem is auto-enabled by default since 2.19 and 1 overrides
+# the autodetection with the same choice; NVLS defaults to 2 and 1 differs only in failing when allocation fails.
+CUMEM = [("1", True), ("0", False), ("", False), ("2", False)]
+NVLS = [("1", True), ("2", True), ("0", False), ("", False)]
 TLS = [("cuda_copy,rc", True), ("cuda_copy,cuda_ipc,rc", True), ("all", True), ("cuda_copy,cuda_ipc,tcp", False),
        ("tcp", False), ("^rc", False), ("sm,self", False)]
 
@@ -76,6 +80,9 @@ def vectors_from_upstream():
                      "exact": value == rcache_final()})
     for value, exact in TLS:
         rows.append({"field": "UCX_TLS", "value": value, "owner": "ucx-faq", "exact": exact})
+    for field, values in (("NCCL_CUMEM_ENABLE", CUMEM), ("NCCL_NVLS_ENABLE", NVLS)):
+        for value, exact in values:
+            rows.append({"field": field, "value": value, "owner": "nccl-user-guide", "exact": exact})
     return rows
 
 

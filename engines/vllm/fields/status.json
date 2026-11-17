@@ -16,7 +16,9 @@
   "env:VLLM_USE_SIMPLE_KV_OFFLOAD": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:348 marks it inert; a run that does not set it leaves vLLM's default, off (vllm/envs.py:2243@5df63a72), which the engine resolves",
   "env:VLLM_FLASHINFER_ALLREDUCE_BACKEND": "vllm/distributed/device_communicators/flashinfer_all_reduce.py:143-178@5df63a72 resolves an unset (auto) backend to mnnvl, with a trtllm fallback allowed, on one node, and to mnnvl without fallback on compute capability 10.0 and up across nodes, so a recipe that states mnnvl across nodes on such a part runs as the default does, while one that states it on one node does not (no fallback); the latency kernel prices every tensor-parallel all-reduce from the NCCL sweep whichever FlashInfer backend runs (it has no implementation-keyed all-reduce entry), so the stand-in changes no price. The field's valid_when says for which values and groups the stand-in is exact; fields/stand_in_vectors.json holds it to _resolve_fi_ar_backend",
   "env:UCX_RCACHE_MAX_UNRELEASED": "vllm/distributed/nixl_utils.py:20-36@5df63a72 sets UCX_RCACHE_MAX_UNRELEASED to 1024 itself when the environment does not state it, so a run that states 1024 runs as an unset one does; UCX's variable (src/ucs/memory/rcache.c:114-118 at UCX v1.19.0, the version inside the nixl 1.5.0 wheel is not known) only sets when invalidated registration regions are cleaned up and does not choose a transport or a rate; the field's valid_when says for which values the stand-in is exact; fields/stand_in_vectors.json holds it to _maybe_set_ucx_rcache_limit",
-  "env:UCX_TLS": "NIXL's UCX backend is the default (vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:525-526@5df63a72) and UCX_TLS restricts the transports it may use (UCX FAQ). The engine prices a handoff between nodes over the NIC at the cluster fabric's rate unless UCX_CUDA_IPC_ENABLE_MNNVL=y is stated (compat/kernelmodel, rackHandoff), which is the path a list of RDMA transports without cuda_ipc takes, so unset stands in exactly for such a list; the field's valid_when says for which lists the stand-in is exact"
+  "env:UCX_TLS": "NIXL's UCX backend is the default (vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:525-526@5df63a72) and UCX_TLS restricts the transports it may use (UCX FAQ). The engine prices a handoff between nodes over the NIC at the cluster fabric's rate unless UCX_CUDA_IPC_ENABLE_MNNVL=y is stated (compat/kernelmodel, rackHandoff), which is the path a list of RDMA transports without cuda_ipc takes, so unset stands in exactly for such a list; the field's valid_when says for which lists the stand-in is exact",
+  "env:NCCL_CUMEM_ENABLE": "vLLM's serving process does not read NCCL_CUMEM_ENABLE (it names it only in vllm/distributed/weight_transfer/sharded_rdt_trainer.py:1156@4ba787ec); NCCL does. NCCL autodetects cuMem since 2.19 and the variable only overrides that, so a stated 1 on a run that completed is NCCL's default and the unset stand-in is exact for it; a stated 0 disables cuMem (and with it NVLS and MNNVL), changes the buffers NCCL registers, and is not exact. The field's valid_when says for which values; fields/stand_in_vectors.json holds it (owner nccl-user-guide)",
+  "env:NCCL_NVLS_ENABLE": "vLLM's serving process does not read NCCL_NVLS_ENABLE (it names it only in vllm/model_executor/determinism/batch_invariant.py:1409@4ba787ec, where it sets 0); NCCL does. The default is 2 and 1 differs from it only in making a failed NVLS allocation fatal (NCCL user guide), so a stated 1 or 2 on a run that completed runs as the unset stand-in does; 0 disables NVLink SHARP, which changes the collectives' algorithm, and is not exact. The field's valid_when says for which values; fields/stand_in_vectors.json holds it (owner nccl-user-guide)"
  },
  "extra_env": [
   "MC_ENABLE_DEST_DEVICE_AFFINITY",
@@ -5744,7 +5746,15 @@
   },
   "env:NCCL_CUMEM_ENABLE": {
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset",
+    "preserves": "NCCL's own choice: since NCCL 2.19 it allocates with the CUDA cuMem functions whenever the system supports them (NCCL user guide, NCCL_CUMEM_ENABLE), and a stated 1 only overrides the autodetection with the same choice. The latency kernel prices every collective from the NCCL sweep at NCCL's defaults",
+    "valid_when": [
+     {
+      "value_in": [
+       "1"
+      ]
+     }
+    ]
    },
    "evidence": {
     "issue": "inference-sim/blis-vllm#62"
@@ -5825,7 +5835,16 @@
   },
   "env:NCCL_NVLS_ENABLE": {
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset",
+    "preserves": "NCCL's own choice: the default is 2, use NVLink SHARP where the system supports it, and 1 differs only in failing communicator initialization when the NVLS resources cannot be allocated (NCCL user guide, NCCL_NVLS_ENABLE), which a run that completed did not do. The latency kernel prices every collective from the NCCL sweep at NCCL's defaults",
+    "valid_when": [
+     {
+      "value_in": [
+       "1",
+       "2"
+      ]
+     }
+    ]
    },
    "evidence": {
     "issue": "inference-sim/blis-vllm#62"

@@ -735,7 +735,15 @@
         "issue": "inference-sim/blis-vllm#62"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset",
+        "preserves": "NCCL's own choice: since NCCL 2.19 it allocates with the CUDA cuMem functions whenever the system supports them (NCCL user guide, NCCL_CUMEM_ENABLE), and a stated 1 only overrides the autodetection with the same choice. The latency kernel prices every collective from the NCCL sweep at NCCL's defaults",
+        "valid_when": [
+          {
+            "value_in": [
+              "1"
+            ]
+          }
+        ]
       }
     },
     {
@@ -834,7 +842,16 @@
         "issue": "inference-sim/blis-vllm#62"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset",
+        "preserves": "NCCL's own choice: the default is 2, use NVLink SHARP where the system supports it, and 1 differs only in failing communicator initialization when the NVLS resources cannot be allocated (NCCL user guide, NCCL_NVLS_ENABLE), which a run that completed did not do. The latency kernel prices every collective from the NCCL sweep at NCCL's defaults",
+        "valid_when": [
+          {
+            "value_in": [
+              "1",
+              "2"
+            ]
+          }
+        ]
       }
     },
     {

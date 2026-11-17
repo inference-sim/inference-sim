@@ -544,5 +544,53 @@
   "value": "sm,self",
   "owner": "ucx-faq",
   "exact": false
+ },
+ {
+  "field": "NCCL_CUMEM_ENABLE",
+  "value": "1",
+  "owner": "nccl-user-guide",
+  "exact": true
+ },
+ {
+  "field": "NCCL_CUMEM_ENABLE",
+  "value": "0",
+  "owner": "nccl-user-guide",
+  "exact": false
+ },
+ {
+  "field": "NCCL_CUMEM_ENABLE",
+  "value": "",
+  "owner": "nccl-user-guide",
+  "exact": false
+ },
+ {
+  "field": "NCCL_CUMEM_ENABLE",
+  "value": "2",
+  "owner": "nccl-user-guide",
+  "exact": false
+ },
+ {
+  "field": "NCCL_NVLS_ENABLE",
+  "value": "1",
+  "owner": "nccl-user-guide",
+  "exact": true
+ },
+ {
+  "field": "NCCL_NVLS_ENABLE",
+  "value": "2",
+  "owner": "nccl-user-guide",
+  "exact": true
+ },
+ {
+  "field": "NCCL_NVLS_ENABLE",
+  "value": "0",
+  "owner": "nccl-user-guide",
+  "exact": false
+ },
+ {
+  "field": "NCCL_NVLS_ENABLE",
+  "value": "",
+  "owner": "nccl-user-guide",
+  "exact": false
  }
 ]
