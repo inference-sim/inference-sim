@@ -26,6 +26,12 @@ type rig struct {
 
 func newRig(t *testing.T, files tiering.MemFiles) rig {
 	t.Helper()
+	return newRigWith(t, files, func(fs *tiering.FSTier) tiering.Tier { return fs })
+}
+
+// newRigWith is newRig with the tier the manager sees wrapped by wrap.
+func newRigWith(t *testing.T, files tiering.MemFiles, wrap func(*tiering.FSTier) tiering.Tier) rig {
+	t.Helper()
 	s, err := sched.New(sched.Config{MaxNumSeqs: 4, MaxNumBatchedTokens: 512, BlockSize: block, NumBlocks: 64,
 		MaxModelLen: 1024, EnableChunkedPrefill: true, EnablePrefixCaching: true, ReserveFullSequence: true,
 		KVGroups: kv.ResolveGroups([]kv.Group{{Kind: kv.FullAttention}}, false), MaxConcurrentBatches: 1})
@@ -36,7 +42,7 @@ func newRig(t *testing.T, files tiering.MemFiles) rig {
 	conn, err := offloading.New(offloading.Config{Groups: []offloading.Group{{BlockSize: block}}, TokensPerHash: s.KV.HashBlockSize(),
 		NumChunks: 32, OffloadPromptOnly: true, PrefixCaching: true, Workers: 1,
 		Manager: func(cpu *offloading.CPUPrimary) (offloading.Manager, error) {
-			return tiering.Connector{M: tiering.New(tiering.CPU(cpu), []tiering.Tier{fs}, nil)}, nil
+			return tiering.Connector{M: tiering.New(tiering.CPU(cpu), []tiering.Tier{wrap(fs)}, nil)}, nil
 		}})
 	if err != nil {
 		t.Fatal(err)
@@ -126,5 +132,92 @@ func TestABlockFileOnSharedStorageIsLoadedThroughTheConnector(t *testing.T) {
 	// The request waits while the lookup resolves (RETRY) and the promotion runs (HIT_PENDING).
 	if deferredSteps == 0 {
 		t.Error("the request was loaded at its first step, want it deferred while the fs lookup is in flight")
+	}
+}
+
+// writerFiles are the block files of a prompt of three chunks that another engine cascaded to the
+// shared storage.
+func writerFiles(t *testing.T) tiering.MemFiles {
+	t.Helper()
+	files := tiering.MemFiles{}
+	w := newRig(t, files)
+	if err := w.s.Add(&sched.Request{ID: "w", Prompt: promptOf(3*block + 5), MaxTokens: 1, EOS: -1}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 20 && (w.s.HasRequests() || w.conn.HasPendingPushWork()); i++ {
+		w.step(t)
+	}
+	if len(files) != 3 {
+		t.Fatalf("writer left %d block files, want its 3 chunks", len(files))
+	}
+	return files
+}
+
+// A request's kv_load_tiers decide whether it reads the shared storage (_create_req_context): with
+// none, or one that allows the storage medium, the reader promotes the 3 chunks from the fs tier and
+// loads them; one that allows only the CPU tier, or an empty list, computes its whole prompt.
+func TestARequestsLoadTiersDecideWhetherItReadsTheSharedStorage(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		params map[string]any
+		want   int
+	}{
+		{"no params", nil, 3},
+		{"params without a filter", map[string]any{"other": 1}, 3},
+		{"storage allowed", map[string]any{"kv_load_tiers": []any{map[string]any{"medium": "storage"}}}, 3},
+		{"cpu only", map[string]any{"kv_load_tiers": []any{map[string]any{"medium": "cpu"}}}, 0},
+		{"none", map[string]any{"kv_load_tiers": []any{}}, 0},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := newRig(t, writerFiles(t))
+			if err := r.s.Add(&sched.Request{ID: "r", Prompt: promptOf(3*block + 5), MaxTokens: 1, EOS: -1,
+				KVTransferParams: c.params}); err != nil {
+				t.Fatal(err)
+			}
+			loaded := 0
+			for i := 0; i < 20 && r.s.HasRequests(); i++ {
+				m := r.step(t)
+				for _, j := range m.Loads {
+					loaded += len(j.GPU)
+				}
+			}
+			if loaded != c.want {
+				t.Errorf("loaded %d blocks from the shared storage, want %d", loaded, c.want)
+			}
+		})
+	}
+}
+
+// paramsTier is an fs tier that records the kv_transfer_params of the context it is told a request
+// starts with.
+type paramsTier struct {
+	*tiering.FSTier
+	seen map[string]map[string]any
+}
+
+func (p paramsTier) OnNewRequest(c *tiering.ReqContext) tiering.Policy {
+	p.seen[c.ReqID] = c.Params
+	return p.FSTier.OnNewRequest(c)
+}
+
+// A tier is given the request's kv_transfer_params in its context, as vLLM's connector gives its
+// tiers (ReqContext.kv_transfer_params): the keys the client stated, unread.
+func TestATierSeesTheRequestsTransferParams(t *testing.T) {
+	seen := map[string]map[string]any{}
+	r := newRigWith(t, tiering.MemFiles{}, func(fs *tiering.FSTier) tiering.Tier { return paramsTier{fs, seen} })
+	params := map[string]any{"remote_kv_source": map[string]any{"host": "h"}, "kv_load_tiers": []any{}}
+	for id, p := range map[string]map[string]any{"a": params, "b": nil} {
+		if err := r.s.Add(&sched.Request{ID: id, Prompt: promptOf(block + 5), MaxTokens: 1, EOS: -1, KVTransferParams: p}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < 10 && r.s.HasRequests(); i++ {
+		r.step(t)
+	}
+	if got := seen["a"]; got["remote_kv_source"] == nil || len(got) != 2 {
+		t.Errorf("tier saw %v for a, want its two stated keys", got)
+	}
+	if got, ok := seen["b"]; !ok || got != nil {
+		t.Errorf("tier saw %v (started: %v) for b, want a request with no params", got, ok)
 	}
 }

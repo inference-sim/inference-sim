@@ -430,6 +430,7 @@ func (s *Scheduler) updateKeys(st *reqState) {
 // on_new_request, whose answer is the request's offload policy.
 func (s *Scheduler) OnNewRequest(r *sched.Request) {
 	a := newAccess(r.ID)
+	a.params = r.KVTransferParams
 	st := &reqState{req: r, access: a, jobs: map[int]bool{}, policy: s.manager.OnNewRequest(a)}
 	for range s.groups {
 		st.groups = append(st.groups, &groupState{})
@@ -704,6 +705,7 @@ func (s *Scheduler) finished(r *sched.Request) bool {
 	if st == nil {
 		// An untracked request (:2351-2359@4ba787ec): the manager sees it start and finish.
 		a := newAccess(r.ID)
+		a.params = r.KVTransferParams
 		s.manager.OnNewRequest(a)
 		s.manager.OnRequestFinished(a)
 		return false
