@@ -19,7 +19,7 @@ import (
 //
 // The count may only fall. Lower it when a fitter starts writing the field; never raise it. The
 // measures, fit_range and ci95 ratchets stay in registry/validator/test_coefficient_properties.py.
-const maxFittedWithoutKernelImpls = 876
+const maxFittedWithoutKernelImpls = 870
 
 type fittedEntry struct {
 	set   string
