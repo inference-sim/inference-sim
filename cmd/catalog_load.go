@@ -122,8 +122,8 @@ func loadCatalog(root string) (catalogLoadReport, error) {
 	//
 	// The networks/ fabric reader is CONSTRAINED before it is written (#1838): a fabric class
 	// states its nominal InterNodeBwGBps — which IS the PD-transfer bandwidth, there is no
-	// separate PD figure (R2H2, blis-catalog#10) — and carries NO PDTransferBaseLatencyMs.
-	// blis-catalog#12 removed that key (the nominal value was always a 0 placeholder) and the
+	// separate PD figure (R2H2, https://github.com/inference-sim/blis-catalog/issues/10) — and carries NO PDTransferBaseLatencyMs.
+	// https://github.com/inference-sim/blis-catalog/issues/12 removed that key (the nominal value was always a 0 placeholder) and the
 	// closed fabric schema now rejects it, so a reader that reads or requires it reads a key the
 	// catalog does not have the moment CATALOG_REVISION advances past that PR. BLIS itself has no
 	// PD-transfer bandwidth or base-latency input: blis-latency-kernel prices the P/D handoff
@@ -339,7 +339,7 @@ func loadCatalogWorkloadEntries(root string) (int, []string) {
 			problems = append(problems, yamlErr.Error())
 			continue
 		}
-		// A replay workload (blis-catalog#34, e.g. agentx-mvp) is not a preset: blis-schemas'
+		// A replay workload (https://github.com/inference-sim/blis-catalog/issues/34, e.g. agentx-mvp) is not a preset: blis-schemas'
 		// strict reader and its validator decide it, and `blis replay --workload-spec` reads it.
 		if w, err := blisschemas.LoadCatalogWorkload(path); err == nil && w.Replay != nil {
 			if p := w.Replay.Validate(); !p.OK() {

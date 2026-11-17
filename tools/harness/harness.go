@@ -296,7 +296,7 @@ func scaled(v int64, factor float64) int64 {
 // prompt, so how many ran changes no block the main phase can read
 // (TestThePrimedMainPhaseDoesNotDependOnHowManyCopiesRan). RunCold gives the empty-engine run of
 // such a point, as information only. The exact two-phase protocol, with drain-gated phases in
-// the trace format, is tracked as blis-schemas#56 and inference-sim#1926.
+// the trace format, is tracked as inference-sim/blis-substrate#156 and inference-sim#1926.
 func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 	if err := RequireBlis(cfg.Blis); err != nil {
 		return Observation{}, err

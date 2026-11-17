@@ -332,7 +332,7 @@ func engineSection(m *sim.Metrics, sum sim.MeasuredSummary, raw *cluster.RawMetr
 	if len(whole.Adapters) > 0 {
 		c["adapters"] = toGeneric(whole.Adapters)
 	}
-	// The whole-run figures stdout printed before the Result (blis-schemas#41 section A: "whole-run
+	// The whole-run figures stdout printed before the Result (inference-sim/blis-substrate#154 section A: "whole-run
 	// values, when wanted, are a second named window"; schema v1 states one window, so they are
 	// the engine's): latencies over every completed request, the per-decode-step interval the
 	// legacy itl_* keys held, and the rates over the simulated run.

@@ -21,7 +21,7 @@ import (
 )
 
 // R2H3 follow-up (#1838): the catalog's `networks/*.yaml` reusable fabric classes carry NO
-// PDTransferBaseLatencyMs. blis-catalog#12 removed it — a fabric class has no inherent
+// PDTransferBaseLatencyMs. https://github.com/inference-sim/blis-catalog/issues/12 removed it — a fabric class has no inherent
 // per-transfer base latency to state (the nominal figure was always 0, so the field only ever
 // carried a placeholder), and because the fabric schema is CLOSED the catalog CI gate now
 // rejects the key outright as an unknown field.
@@ -32,13 +32,13 @@ import (
 // cmd/catalog_load.go's namespace list still says so. The point of #1838, and of this file, is
 // that the reader MUST be authored against a field-free fabric class *when* it lands, because
 // the catalog↔loader compatibility is pinned by CATALOG_REVISION: the moment that pin advances
-// past blis-catalog#12, a reader expecting the field reads a key the catalog no longer has (and
+// past https://github.com/inference-sim/blis-catalog/issues/12, a reader expecting the field reads a key the catalog no longer has (and
 // a fixture still carrying it fails the catalog's own gate).
 //
 // The three rules #1838 states for that reader:
 //
 //	1. read the fabric's InterNodeBwGBps (nominal) as the PD-transfer bandwidth — there is no
-//	   separate PD bandwidth figure (R2H2, blis-catalog#10);
+//	   separate PD bandwidth figure (R2H2, https://github.com/inference-sim/blis-catalog/issues/10);
 //	2. do NOT read or require PDTransferBaseLatencyMs from the fabric class;
 //	3. (retired) the PD-transfer base latency was a --pd-transfer-base-latency input; the flag is
 //	   gone and the kernel prices the handoff.
@@ -66,7 +66,7 @@ const pdTransferBaseLatencyField = "PDTransferBaseLatencyMs"
 const knownConfigTag = "model_autoscaler_interval_us"
 
 // fabricBandwidthKey is the fabric class's nominal inter-node bandwidth, which IS the PD-transfer
-// bandwidth figure — there is no separate PD one (rule 1, R2H2, blis-catalog#10).
+// bandwidth figure — there is no separate PD one (rule 1, R2H2, https://github.com/inference-sim/blis-catalog/issues/10).
 const fabricBandwidthKey = "InterNodeBwGBps"
 
 // ---------------------------------------------------------------------------
@@ -109,7 +109,7 @@ func TestNetworksFabric_NoConfigKeyBindsPDTransferBaseLatency(t *testing.T) {
 					}
 					if strings.ToLower(key) == folded {
 						t.Errorf("%s:%d: a config key %q is bound to a struct field — the catalog's "+
-							"networks/ fabric classes carry no %s (blis-catalog#12 removed it, and the "+
+							"networks/ fabric classes carry no %s (https://github.com/inference-sim/blis-catalog/issues/12 removed it, and the "+
 							"closed fabric schema now rejects it), so no file may supply it; the "+
 							"kernel prices the P/D handoff (#1838)",
 							rel, line, key, pdTransferBaseLatencyField)
@@ -118,7 +118,7 @@ func TestNetworksFabric_NoConfigKeyBindsPDTransferBaseLatency(t *testing.T) {
 				for _, name := range field.Names {
 					if name.Name == pdTransferBaseLatencyField {
 						t.Errorf("%s:%d: %s is declared — no struct may carry one: a fabric class "+
-							"has none (blis-catalog#12 removed it from networks/*.yaml, #1838), and the "+
+							"has none (https://github.com/inference-sim/blis-catalog/issues/12 removed it from networks/*.yaml, #1838), and the "+
 							"kernel prices the P/D handoff", rel, line, pdTransferBaseLatencyField)
 					}
 				}
@@ -289,7 +289,7 @@ func TestNetworksFabric_FixtureCatalogDeclaresNoPDTransferBaseLatency(t *testing
 		{"case variant", "pdtransferbaselatencyms: 0\n", true},
 		{"json object", "{\"PDTransferBaseLatencyMs\": 0}\n", true},
 		{"second document of a stream", "InterNodeBwGBps: 400\n---\nPDTransferBaseLatencyMs: 0\n", true},
-		{"comment mention", "# PDTransferBaseLatencyMs was removed by blis-catalog#12\nInterNodeBwGBps: 400\n", false},
+		{"comment mention", "# PDTransferBaseLatencyMs was removed by https://github.com/inference-sim/blis-catalog/issues/12\nInterNodeBwGBps: 400\n", false},
 		{"string value mention", "note: PDTransferBaseLatencyMs is gone\n", false},
 	} {
 		got := len(catalogDeclsOf(t, tc.name, pdTransferBaseLatencyField, []byte(tc.doc))) > 0
@@ -326,9 +326,9 @@ func TestNetworksFabric_FixtureCatalogDeclaresNoPDTransferBaseLatency(t *testing
 			if !strings.EqualFold(decl.name, pdTransferBaseLatencyField) {
 				continue
 			}
-			t.Errorf("%s:%d declares %s: the catalog does not carry that key (blis-catalog#12 removed "+
+			t.Errorf("%s:%d declares %s: the catalog does not carry that key (https://github.com/inference-sim/blis-catalog/issues/12 removed "+
 				"it from the closed networks/ fabric schema, which now rejects it), and the PD-transfer "+
-				"base latency comes from --pd-transfer-base-latency / blis-registry#10 (#1838)",
+				"base latency comes from --pd-transfer-base-latency / https://github.com/inference-sim/blis-registry/issues/10 (#1838)",
 				path, decl.line, pdTransferBaseLatencyField)
 		}
 		return nil
@@ -372,7 +372,7 @@ func TestNetworksFabric_FixtureCatalogDeclaresNoPDTransferBaseLatency(t *testing
 	}
 
 	// Rule 1: a fabric class states its bandwidth as InterNodeBwGBps (nominal), which is the
-	// PD-transfer bandwidth figure — there is no separate PD one (R2H2, blis-catalog#10).
+	// PD-transfer bandwidth figure — there is no separate PD one (R2H2, https://github.com/inference-sim/blis-catalog/issues/10).
 	networksDir := filepath.Join(fixtureCatalog, "networks")
 	entries, err := os.ReadDir(networksDir)
 	if os.IsNotExist(err) {
@@ -405,7 +405,7 @@ func assertFabricDeclaresUsableBandwidth(t *testing.T, path string, data []byte)
 	if len(decls) == 0 {
 		t.Errorf("%s declares no %s: a fabric class states its nominal inter-node bandwidth there, "+
 			"and that IS the PD-transfer bandwidth — there is no separate PD figure (#1838, "+
-			"blis-catalog#10)", path, fabricBandwidthKey)
+			"https://github.com/inference-sim/blis-catalog/issues/10)", path, fabricBandwidthKey)
 		return
 	}
 	for _, decl := range decls {
@@ -417,7 +417,7 @@ func assertFabricDeclaresUsableBandwidth(t *testing.T, path string, data []byte)
 		if !fabricBandwidthUsable(decl.scalar) {
 			t.Errorf("%s:%d: %s = %q, want a positive finite number: the reader takes the PD-transfer "+
 				"bandwidth from this figure, so a zero/empty/non-numeric one leaves it with nothing to "+
-				"read (#1838, blis-catalog#10)", path, decl.line, fabricBandwidthKey, decl.scalar)
+				"read (#1838, https://github.com/inference-sim/blis-catalog/issues/10)", path, decl.line, fabricBandwidthKey, decl.scalar)
 		}
 	}
 }
@@ -493,9 +493,9 @@ func TestNetworksFabric_ReaderHasNotLandedYet(t *testing.T) {
 			t.Errorf("catalogLoadReport.%s is a namespace the loader did not read when #1838 was "+
 				"written. If it is the networks/ fabric reader (under any name), re-read #1838 before "+
 				"relying on it: (1) the fabric's %s (nominal) is the PD-transfer bandwidth, there is no "+
-				"separate PD figure; (2) the fabric class carries NO %s (blis-catalog#12 removed it and "+
+				"separate PD figure; (2) the fabric class carries NO %s (https://github.com/inference-sim/blis-catalog/issues/12 removed it and "+
 				"the closed schema rejects it); (3) the PD-transfer base latency stays sourced from "+
-				"--pd-transfer-base-latency, owned by blis-registry#10 — the effective value is that "+
+				"--pd-transfer-base-latency, owned by https://github.com/inference-sim/blis-registry/issues/10 — the effective value is that "+
 				"number alone. Then delete this tripwire in the reader's PR. If it is an unrelated "+
 				"namespace, add %q to catalogLoadReportKnownFields and keep going.",
 				field.Name, fabricBandwidthKey, pdTransferBaseLatencyField, field.Name)

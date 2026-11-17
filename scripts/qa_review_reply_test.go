@@ -236,7 +236,7 @@ func TestReplyDetailEscapesControlCharacters(t *testing.T) {
 // TestUnusableReplyExhaustionFailsClosedAndNamesTheCause: when every attempt is unusable the script
 // must still fail closed — non-zero exit, nothing on stdout that a caller could parse as a result —
 // but stderr must say WHY, with the attempt count and the input size, instead of a bare traceback
-// that reads as MISSING with no cause (the blis-schemas#100 case was three empty replies in a row).
+// that reads as MISSING with no cause (the https://github.com/inference-sim/blis-schemas/issues/100 case was three empty replies in a row).
 func TestUnusableReplyExhaustionFailsClosedAndNamesTheCause(t *testing.T) {
 	requirePython3(t)
 	for _, mod := range []string{"questioner", "answerer", "adjudicator"} {
