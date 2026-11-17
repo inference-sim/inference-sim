@@ -406,7 +406,7 @@ func (i *InstanceSimulator) ConsumeWarmUpRequest() {
 }
 
 // validInstanceTransitions maps valid source → target pairs for instance lifecycle.
-// This table IS INV-14 (see docs/contributing/standards/invariants.md#inv-14): the
+// This table IS INV-14 (see .github/agent-prompts/standards/invariants.md#inv-14): the
 // legal edge set, which is also monotone — every edge advances the instance along
 // Scheduling < Loading < WarmingUp < Active < Draining < Terminated and none regresses.
 // Adding a backward edge here fails TestInstanceStateMachine_NoBackwardTransitions.

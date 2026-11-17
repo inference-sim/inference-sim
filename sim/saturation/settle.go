@@ -34,7 +34,7 @@
 // What the detector promises is measured, not assumed: settle_test.go simulates single-server
 // queues whose behaviour is known exactly (open M/M/1 and M/G/1 at loads 0.5 to 1.5, a closed
 // queue, Pareto service) and states the false-alarm rate (a settled system read as overloaded)
-// and the power (an overloaded one read as overloaded) at each window length. docs/guide states
+// and the power (an overloaded one read as overloaded) at each window length. the design states
 // the table; the test fails if the detector no longer meets it.
 package saturation
 

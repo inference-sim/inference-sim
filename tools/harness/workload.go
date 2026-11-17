@@ -22,7 +22,7 @@ package harness
 // Those vectors are recoverable exactly. scripts/gen_inferencex_workloads.py reproduces the
 // calls and writes them, per (ISL, OSL, CONC), to testdata/inferencex-workloads/seed0.json;
 // fixture_test.go cross-checks the file against an independent Go implementation of NumPy's
-// legacy generator. docs/kernel-exclusive/APPLES-TO-APPLES.md carries the file:line citations.
+// legacy generator. docs/kernel-exclusive/APPLES-TO-APPLES.md (removed by X29; read it at tag v0.18.0) carries the file:line citations.
 //
 // # What the client sent
 //
@@ -33,7 +33,7 @@ package harness
 // VERIFIED point -- every pinned revision gives zero mismatch and no server-added token -- the
 // sent length is exactly the TARGET the fixture replays, so the simulated prompt is that target.
 // A point the evidence file does not hold (e.g. a gated tokenizer whose run left no engine log) is
-// not verified and carries that gap; docs/kernel-exclusive/APPLES-TO-APPLES.md "The sent prompt
+// not verified and carries that gap; docs/kernel-exclusive/APPLES-TO-APPLES.md (removed by X29; read it at tag v0.18.0) "The sent prompt
 // lengths" has the file:line citations. With --ignore-eos the output length is the target exactly
 // (max_tokens = output_len).
 

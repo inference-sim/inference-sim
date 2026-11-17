@@ -50,4 +50,4 @@ The `--rate`/`--num-requests` in the quickstart is a synthetic open-loop workloa
 benchmark reproduction. For deployments authored from a recipe (Kimi-K3), settings BLIS does not
 model are dropped and noted in the file header (e.g. `enforce-eager`; an unset `max-model-len`
 is given a concrete BLIS sizing value). Absolute latencies for deployments outside the kernel's
-scored set are estimates; see [Model compatibility](../docs/reference/models.md).
+scored set are estimates; see the design (https://inference-sim.github.io/blis-design/).

@@ -5,8 +5,6 @@ package cluster
 // on values published to it (DEV-1, DEV-4), and each is listed here with the upstream controller
 // it models and its validation status and evidence (design 8.9), so a reader can tell a policy
 // the model verified from one it validated.
-//
-// docs/reference/control-loops.md is generated from this list (TestControlLoopsPage).
 
 // ValidationStatus says how far a control loop's behaviour has been checked against the system
 // it models (design section 8.9).

@@ -109,7 +109,7 @@ func main() {
 	fmt.Printf("  The sent prompt lengths are verified equal to the targets per point by\n")
 	fmt.Printf("  testdata/inferencex-workloads/prompt-lengths.json; an unverified point is a gap.\n")
 	fmt.Printf("  Not reproduced: settings blis-schemas cannot express.\n")
-	fmt.Printf("  See docs/kernel-exclusive/APPLES-TO-APPLES.md.\n")
+	fmt.Printf("  See docs/kernel-exclusive/APPLES-TO-APPLES.md (removed by X29; read it at tag v0.18.0).\n")
 	fmt.Printf("error: anchor EXCLUDED, matching build_e2e_accuracy_overview.py. Both sides\n")
 	fmt.Printf("  are normalised to their own lowest concurrency. Verified by reproduction:\n")
 	fmt.Printf("  this definition on AISimulate's own data returns its published %.2f%%.\n",

@@ -546,8 +546,8 @@ func TestQAReportAuthorFindsTheReportTheDeliveryLoopPosts(t *testing.T) {
 // adjudication step still swallows its failure reason when it no longer does. #1715 shipped exactly
 // that stale status and needed a follow-up commit to remove it.
 func TestAdjudicateRCWiringStatusMatchesReality(t *testing.T) {
-	const docPath = "docs/contributing/automated-delivery.md"
-	doc := readFileOrFail(t, filepath.Join("..", "docs", "contributing", "automated-delivery.md"))
+	const docPath = ".github/agent-prompts/automated-delivery.md"
+	doc := readFileOrFail(t, filepath.Join("..", ".github", "agent-prompts", "automated-delivery.md"))
 	// Matched on the patch FILENAME rather than on prose: the paragraph can be reworded freely, but
 	// naming a patch file that no longer exists is the specific staleness this catches.
 	docSaysPending := strings.Contains(doc, "deliver-verify-adjudicate-rc.patch")

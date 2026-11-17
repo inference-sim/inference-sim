@@ -1,7 +1,7 @@
 package cmd
 
 // Building the Result document from a finished run (#1871). The mapping from today's
-// MetricsOutput onto the Result's sections is the table in docs/guide/results.md
+// MetricsOutput onto the Result's sections is the table in testdata/result-field-map.md
 // ("Where each MetricsOutput field went"); TestResultFieldMap_EveryMetricsOutputFieldHasAHome
 // keeps that table complete.
 
@@ -185,7 +185,7 @@ func windowRulesOf(m *sim.Metrics, sum sim.MeasuredSummary) windowRules {
 // reads as instant; the rates need a window. Each figure carries the count of samples behind
 // it.
 //
-// Two series were renamed by the registry (docs/guide/results.md has the table): the
+// Two series were renamed by the registry (testdata/result-field-map.md has the table): the
 // per-request (latency - TTFT) / (output tokens - 1), schema 1's itl_*, is tpot_*; and the
 // per-step interval the engine section carried is step_interval_*. Schema 1's itl_* is not
 // the registry's itl, which pools every gap between output tokens: that one is written from
@@ -437,7 +437,7 @@ func sessionBreakdown(sm *cluster.SessionMetrics) map[string]float64 {
 // figures under their registry identifiers; the targets and each class's counts stay in the
 // goodput section. The values are emitGoodput's, unchanged from schema 1: goodput_rps is over
 // the run's simulated length, not the measured window the registry names, and moving it to
-// the window is a validation change of its own (docs/guide/results.md, "Known differences").
+// the window is a validation change of its own.
 func goodputOf(m *sim.Metrics, targets map[string]workload.SLODimTargets, injectedByClass map[string]int64,
 	figures map[string]result.Figure) *result.Goodput {
 	if len(targets) == 0 {

@@ -475,7 +475,7 @@ Example:
 
 		// Build cluster config (same as runCmd, using replayHorizon instead of simulationHorizon).
 		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/root.go (runCmd
-		// DeploymentConfig literal). See docs/contributing/standards/invariants.md INV-13.
+		// DeploymentConfig literal). See .github/agent-prompts/standards/invariants.md INV-13.
 		requireKernelCapacity(kernelPD)
 		requirePullPricing(kernelPD, pdTransferContention)
 		scenarioTopology, topologyErr := scenarioEndpointTopology(kernelOpened, kernelPD, numInstances, prefillInstances, decodeInstances)

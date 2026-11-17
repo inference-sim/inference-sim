@@ -717,7 +717,7 @@ func (cs *ClusterSimulator) fireArrivalHook(req *sim.Request, timeUs int64) {
 		// INV-15, not INV-3 or INV-6 (the IDs this guard cited before #1772):
 		// this is a precondition on the arrival stream the cluster is GIVEN, so
 		// the repair is in the arrival source, not in the clock or in output
-		// ordering. See docs/contributing/standards/invariants.md#inv-15.
+		// ordering. See .github/agent-prompts/standards/invariants.md#inv-15.
 		panic(fmt.Sprintf("ClusterSimulator: arrival hook received out-of-order request %q (timeUs=%d < last=%d) — INV-15 violation: arrivals must be non-decreasing in ArrivalTime",
 			req.ID, timeUs, cs.lastArrivalHookTime))
 	}
@@ -1032,7 +1032,7 @@ func (c *ClusterSimulator) Run() error {
 		// `total` spans the full canonical ledger: every arrival is either admission-
 		// rejected or injected, and every injected request ends in one of INV-1's ten
 		// non-completion terminal buckets (the ten-term form minus `completed`; see
-		// sim/cluster/metrics.go and docs/contributing/standards/invariants.md). Keep this
+		// sim/cluster/metrics.go and .github/agent-prompts/standards/invariants.md). Keep this
 		// in sync with that ledger — a missing term silently makes the absolute claim
 		// over-fire (#2064 review). gatewayTimedOut is already folded into TimedOutRequests
 		// above; GatewayQueueDepth counts requests still held at the horizon.
