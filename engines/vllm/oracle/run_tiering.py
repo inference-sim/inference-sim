@@ -39,6 +39,7 @@ or store the key's object in the tier's bucket, and the sequence may also call
                {"m": "allow", "tier": 0}      ... and accepts them again
                {"m": "hold", "tier": 0}       the tier's transfers stay in flight across calls
                {"m": "release", "tier": 0}    ... and finish after each call again
+               {"m": "nixl_down", "tier": 0}  (p2p) WRITEs to the tier's instance fail; control stays up
                {"m": "refuse_next", "tier": 0}  the tier's next transfer fails at submission (transfer() "ERR")
 
 Usage:
@@ -294,7 +295,11 @@ def _run_sequence(sq, vllm_root, path, fake_nixl, call_manager, key_of, offloadi
                         else:
                             fake_nixl.put(tier._agent, p, b"\0" * tier.block_size_bytes)
                     elif m in ("hold", "release"):
-                        fake_nixl.hold(mon.tiers[c["tier"]]._agent, m == "hold")
+                        t = mon.tiers[c["tier"]]
+                        fake_nixl.hold(t._data._agent if t.tier_type == "p2p" else t._agent, m == "hold")
+                    elif m == "nixl_down":
+                        # The instance's data plane is lost but its control socket stays up: WRITEs to it fail.
+                        fake_nixl.agent_down(mon.tiers[c["tier"]]._nixl_agent_name)
                     elif m in ("deny", "allow"):
                         fake_nixl.deny(mon.tiers[c["tier"]]._agent, m == "deny")
                     elif m == "refuse_next":
