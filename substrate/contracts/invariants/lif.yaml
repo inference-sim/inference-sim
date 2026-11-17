@@ -165,6 +165,14 @@
     status: ci
     test: 'tools/modlint: TestEachRuleHasAKnownBadInput'
     known_bad: 'tools/modlint: TestEachRuleHasAKnownBadInput'
+  - repo: blis-substrate
+    check: >-
+      prcheck workflows refuses a step that uses actions/setup-go outside the go-toolchain action, so a
+      job in any repository that calls the shared checks installs contracts/toolchain's version
+    runs: pull_request
+    status: ci
+    test: 'tools/prcheck: TestAJobThatInstallsGoFromGoModIsRefused'
+    known_bad: 'tools/prcheck: TestAJobThatInstallsGoFromGoModIsRefused'
   - repo: blis-vllm
     check: A CI step that fails if go version differs from it
     runs: pull_request
