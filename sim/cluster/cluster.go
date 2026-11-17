@@ -149,6 +149,8 @@ type ClusterSimulator struct {
 	// request (which carries SessionID). Separate from the per-instance closure to
 	// avoid double-notifying tenantTracker (issue #884). Nil for non-session workloads.
 	sessionCallback func(*sim.Request, int64) []*sim.Request
+	// plannedRounds names the session rounds planned and never issued (SetPlannedRounds).
+	plannedRounds func() []sim.PlannedRound
 
 	// Data-parallel lockstep replicas (#1909). replicaOf maps each rank's instance ID to
 	// its replica; both nil when every instance is an independent engine.
@@ -602,6 +604,7 @@ func (cs *ClusterSimulator) wireInstance(inst *InstanceSimulator) {
 		return nil // don't inject locally — route through cluster pipeline
 	}
 	inst.SetCallbacks(onFirstToken, onRequestDone)
+	inst.SetRunStateHook(cs.noteRunState)
 	inst.setPullPriced(cs.startPull)
 	inst.onTransition = func(inst *InstanceSimulator) {
 		if cs.gateway != nil {
@@ -962,8 +965,11 @@ func (c *ClusterSimulator) Run() error {
 	// drained without reaching its horizon leaves no request without a fate.
 	if stoppedAtHorizon {
 		c.endAtHorizon()
+		c.endUnissuedRounds(c.config.Horizon)
 	} else if err := c.stalled(); err != nil {
 		return err
+	} else {
+		c.endUnissuedRounds(c.clock)
 	}
 	if err := c.checkFates(); err != nil {
 		return err
@@ -1409,6 +1415,7 @@ func (c *ClusterSimulator) detectPrefillCompletions(inst *InstanceSimulator) {
 		// the step event (#1903): the handoff cannot begin before the KV it moves exists.
 		parent.PrefillCompleteTime = parent.PrefillSubReq.DepartureTime
 		delete(c.pendingPrefillCompletions, subReqID)
+		c.advanceRequest(parent.OriginalRequest, sim.LifecycleWaitingDecodeKV)
 		c.pdPrefillCompletedCount++
 		c.pdPrefillOutputTokens += parent.PrefillSubReq.GeneratedTokens
 		c.startPrefillHold(parent)

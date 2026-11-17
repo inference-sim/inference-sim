@@ -50,6 +50,9 @@ func requestRows(cs *cluster.ClusterSimulator, m *sim.Metrics) []result.RequestR
 			row.CachedLocalTokens, row.CachedExternalTokens = rm.CachedLocalTokens, rm.CachedExternalTokens
 			if d, ok := m.RequestSchedulingDelays[rec.ID]; ok {
 				row.SchedulingDelayUs = &d
+				// The prompt tokens the engine computed itself at first scheduling: the prompt
+				// less what the device cache and the external tier supplied (#1973).
+				row.ComputedTokens = max(f.PromptTokens-rm.CachedLocalTokens-rm.CachedExternalTokens, 0)
 			}
 			if rm.GatewayQueueDelay > 0 {
 				us := int64(rm.GatewayQueueDelay*1e3 + 0.5)

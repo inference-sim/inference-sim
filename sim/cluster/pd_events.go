@@ -170,6 +170,7 @@ func (cs *ClusterSimulator) startPull(req *sim.Request, _, blocks int64, demand 
 		return
 	}
 	parent.DecodeSubReq = req
+	cs.advanceRequest(parent.OriginalRequest, sim.LifecycleTransferring)
 	// The blocks are the engine's own count of what the pull moves (engine.Transfer.Blocks): the
 	// simulator does no KV block arithmetic.
 	parent.PulledKVBlocks = blocks
@@ -410,5 +411,6 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	// ParentRequest.CompletionTime and read DecodeSubReq.State/ProgressIndex
 	// for timeout detection and context accumulation.
 	cs.pendingDecodeCompletions[decodeSubReq.ID] = e.parentReq.ID
+	cs.advanceRequest(e.parentReq.OriginalRequest, sim.LifecycleDecodeQueued)
 	decodeInst.InjectDecodeOnline(decodeSubReq, e.time)
 }

@@ -7,12 +7,12 @@ package sim
 // (FateLedger.Create), so a counting error in the fates cannot be hidden by the same error
 // elsewhere: the run fails unless the two agree (FateLedger.Check).
 //
-// The ledger holds the request state machine of SIM-8 at client granularity: a request is
-// created, arrives at the gateway, and ends in exactly one fate. The edges are
-// validLifecycleEdges; every intermediate state has an edge to every end state, so an
-// eviction, a timeout or the horizon can end a request wherever it is. A P/D request's stages
-// (prefill, waiting for decode KV, transferring, decoding) are states of its sub-requests on
-// the engines; the ledger sees the parent, which ends once.
+// The ledger holds the request state machine of SIM-8: a request is created, arrives at the
+// gateway, moves through the states of a colocated or a P/D path (validLifecycleMoves), and ends
+// in exactly one fate. Every held state has an edge to every fate but not started
+// (validLifecycleEdges), so an eviction, a timeout or the horizon can end a request wherever it
+// is, and the horizon's fate is read from the state (HorizonFate). A P/D request's stages are
+// states of the parent, which ends once.
 
 import (
 	"errors"
@@ -73,6 +73,19 @@ const (
 	DropDecodeKV        = "decode_kv_unavailable"  // a P/D decode side could not take its KV (dropped_unservable)
 )
 
+// PlannedRound is a round a session planned and never issued: the session ended before it, by a
+// timeout, a drop, the horizon or the follow-up budget. It is registered so it has exactly one
+// fate, not started (SIM-8), and a row. Its arrival never happened, so the row states none.
+type PlannedRound struct {
+	ID         string
+	SessionID  string
+	RoundIndex int
+	Model      string
+	Adapter    string
+	SLOClass   string
+	TenantID   string
+}
+
 // FateRecord is one request's fate: what it was, why (for a drop), and when it was written.
 type FateRecord struct {
 	Fate   Fate
@@ -80,31 +93,120 @@ type FateRecord struct {
 	At     int64
 }
 
-// LifecycleState is a state of the request state machine at client granularity.
+// LifecycleState is a state of the request state machine (SIM-8, design §8.7).
 type LifecycleState string
 
 const (
 	// LifecycleCreated: the workload produced the request; its arrival has not happened.
 	LifecycleCreated LifecycleState = "created"
-	// LifecycleArrived: the request reached the gateway. From here the cluster holds it: in
-	// the gateway, on an engine, or between the stages of a P/D handoff.
+	// LifecycleArrived: the request reached the gateway. From here the cluster holds it: in the
+	// gateway, in the event pipeline or in an engine's queue, waiting.
 	LifecycleArrived LifecycleState = "arrived"
+	// LifecycleRunning: a colocated request an engine is running.
+	LifecycleRunning LifecycleState = "running"
+	// LifecyclePrefillQueued: a P/D request dispatched to its prefill engine, waiting there.
+	LifecyclePrefillQueued LifecycleState = "prefill_queued"
+	// LifecyclePrefilling: a P/D request whose prefill engine is running its prefill.
+	LifecyclePrefilling LifecycleState = "prefilling"
+	// LifecycleWaitingDecodeKV: prefill is done; the decode engine has not started the pull of
+	// its KV (the handoff waits among the decode engine's waiting handoffs).
+	LifecycleWaitingDecodeKV LifecycleState = "waiting_decode_kv"
+	// LifecycleTransferring: the decode engine's pull of the request's KV is moving it.
+	LifecycleTransferring LifecycleState = "transferring"
+	// LifecycleDecodeQueued: the KV landed; the request waits on the decode engine for its first step.
+	LifecycleDecodeQueued LifecycleState = "decode_queued"
+	// LifecycleDecoding: the decode engine is running the request.
+	LifecycleDecoding LifecycleState = "decoding"
+	// LifecyclePreempted: an engine preempted the request; it waits in the engine's queue to
+	// resume, on whichever stage it was running.
+	LifecyclePreempted LifecycleState = "preempted"
 	// LifecycleEnded: the request has its fate.
 	LifecycleEnded LifecycleState = "ended"
 )
 
-// validLifecycleEdges is the request state machine (SIM-8). A created request either arrives
-// or, if its arrival falls after the horizon, ends not started. An arrived request ends in any
-// fate but not-started. An ended request has no edge.
-var validLifecycleEdges = map[LifecycleState]map[Fate]bool{
-	LifecycleCreated: {FateNotStarted: true},
-	LifecycleArrived: {FateCompleted: true, FateDropped: true, FateTimedOut: true,
-		FateInFlightAtHorizon: true, FateQueuedAtHorizon: true},
-	LifecycleEnded: {},
+// lifecycleOrder lists the states in the order of the machine's path.
+var lifecycleOrder = []LifecycleState{LifecycleCreated, LifecycleArrived, LifecycleRunning,
+	LifecyclePrefillQueued, LifecyclePrefilling, LifecycleWaitingDecodeKV, LifecycleTransferring,
+	LifecycleDecodeQueued, LifecycleDecoding, LifecyclePreempted, LifecycleEnded}
+
+// LifecycleStates returns every state of the machine.
+func LifecycleStates() []LifecycleState { return append([]LifecycleState(nil), lifecycleOrder...) }
+
+// heldStates are the states a request is in while the cluster holds it: every state between
+// arrival and the fate.
+var heldStates = []LifecycleState{LifecycleArrived, LifecycleRunning, LifecyclePrefillQueued,
+	LifecyclePrefilling, LifecycleWaitingDecodeKV, LifecycleTransferring, LifecycleDecodeQueued,
+	LifecycleDecoding, LifecyclePreempted}
+
+// IsHeld reports whether s is a state in which the cluster holds the request.
+func IsHeld(s LifecycleState) bool {
+	for _, h := range heldStates {
+		if s == h {
+			return true
+		}
+	}
+	return false
 }
+
+// validLifecycleMoves are the edges between states other than the end. Every held state also
+// has an edge to every fate but not started (validLifecycleEdges), so an eviction, a timeout or
+// the horizon can end a request wherever it is. Preemption sends a running stage to
+// preempted, and the engine resumes the request on the stage it left.
+var validLifecycleMoves = map[LifecycleState][]LifecycleState{
+	LifecycleCreated:         {LifecycleArrived},
+	LifecycleArrived:         {LifecycleRunning, LifecyclePrefillQueued},
+	LifecycleRunning:         {LifecyclePreempted},
+	LifecyclePrefillQueued:   {LifecyclePrefilling},
+	LifecyclePrefilling:      {LifecyclePreempted, LifecycleWaitingDecodeKV},
+	LifecycleWaitingDecodeKV: {LifecycleTransferring},
+	LifecycleTransferring:    {LifecycleDecodeQueued},
+	LifecycleDecodeQueued:    {LifecycleDecoding},
+	LifecycleDecoding:        {LifecyclePreempted},
+	LifecyclePreempted:       {LifecycleRunning, LifecyclePrefilling, LifecycleDecoding},
+}
+
+// CanMove reports whether the machine has an edge from state from to state to.
+func CanMove(from, to LifecycleState) bool {
+	for _, t := range validLifecycleMoves[from] {
+		if t == to {
+			return true
+		}
+	}
+	return false
+}
+
+// validLifecycleEdges are the edges to a fate (SIM-8). A created request ends only not started,
+// when its arrival falls after the horizon or its round is never issued. A held request ends in
+// any fate but not started. An ended request has no edge.
+var validLifecycleEdges = func() map[LifecycleState]map[Fate]bool {
+	m := map[LifecycleState]map[Fate]bool{
+		LifecycleCreated: {FateNotStarted: true},
+		LifecycleEnded:   {},
+	}
+	for _, s := range heldStates {
+		m[s] = map[Fate]bool{FateCompleted: true, FateDropped: true, FateTimedOut: true,
+			FateInFlightAtHorizon: true, FateQueuedAtHorizon: true}
+	}
+	return m
+}()
 
 // CanEnd reports whether a request in state s may end with fate f.
 func CanEnd(s LifecycleState, f Fate) bool { return validLifecycleEdges[s][f] }
+
+// HorizonFate is the fate of a request the cluster holds when the horizon stops the run, read
+// from its state: one an engine is running, or whose KV is being pulled, is in flight; one
+// waiting anywhere (the gateway, an engine's queue, the decode engine's waiting handoffs, or
+// preempted) is queued. A state that is not held has no horizon fate.
+func HorizonFate(s LifecycleState) (Fate, bool) {
+	switch s {
+	case LifecycleRunning, LifecyclePrefilling, LifecycleTransferring, LifecycleDecoding:
+		return FateInFlightAtHorizon, true
+	case LifecycleArrived, LifecyclePrefillQueued, LifecycleWaitingDecodeKV, LifecycleDecodeQueued,
+		LifecyclePreempted:
+		return FateQueuedAtHorizon, true
+	}
+	return "", false
+}
 
 type fateEntry struct {
 	state  LifecycleState
@@ -140,14 +242,23 @@ func (l *FateLedger) Create(id string) error {
 
 // Arrive records that request id reached the gateway.
 func (l *FateLedger) Arrive(id string) error {
-	e, ok := l.entries[id]
-	if !ok {
+	if _, ok := l.entries[id]; !ok {
 		return fmt.Errorf("request %q arrived but was never created", id)
 	}
-	if e.state != LifecycleCreated {
-		return fmt.Errorf("request %q arrived in state %s; only a created request arrives", id, e.state)
+	return l.Advance(id, LifecycleArrived)
+}
+
+// Advance moves request id along an edge of the machine to state to. A move the machine has no
+// edge for is an error: the request keeps its state.
+func (l *FateLedger) Advance(id string, to LifecycleState) error {
+	e, ok := l.entries[id]
+	if !ok {
+		return fmt.Errorf("request %q moved to %s but was never created", id, to)
 	}
-	e.state = LifecycleArrived
+	if !CanMove(e.state, to) {
+		return fmt.Errorf("request %q: no edge from %s to %s (SIM-8)", id, e.state, to)
+	}
+	e.state = to
 	return nil
 }
 
@@ -199,6 +310,18 @@ func (l *FateLedger) Fate(id string) (FateRecord, bool) {
 // Created is the number of requests the workload produced.
 func (l *FateLedger) Created() int { return l.created }
 
+// Held returns the IDs of the requests the cluster holds (arrived, not ended), sorted.
+func (l *FateLedger) Held() []string {
+	var ids []string
+	for id, e := range l.entries {
+		if IsHeld(e.state) {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	return ids
+}
+
 // Unended returns the IDs of the requests in state s, sorted.
 func (l *FateLedger) Unended(s LifecycleState) []string {
 	var ids []string
@@ -246,9 +369,8 @@ func (l *FateLedger) Check() error {
 		return nil
 	}
 	var missing []string
-	for _, s := range []LifecycleState{LifecycleCreated, LifecycleArrived} {
-		missing = append(missing, l.Unended(s)...)
-	}
+	missing = append(missing, l.Unended(LifecycleCreated)...)
+	missing = append(missing, l.Held()...)
 	if len(missing) > 5 {
 		missing = append(missing[:5], "...")
 	}
