@@ -115,6 +115,11 @@ func snapshotResultFlags(command string, cmd *cobra.Command) {
 		logrus.Fatalf("%v", err)
 	}
 	resultInputOptions = opts
+	files, err := optionFiles(cmd.Flags())
+	if err != nil {
+		logrus.Fatalf("%v", err)
+	}
+	resultOptionFiles = files
 }
 
 // flagOverrides is one override per flag the user set to a value other than its default, that is

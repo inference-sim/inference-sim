@@ -823,8 +823,23 @@ func TestResult_FromResultRefusesAChangedFileAndTheOtherCommand(t *testing.T) {
 	if err := os.WriteFile(file, []byte(out), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, stderr, err := runKernelCLI(t, "run", "--from-result", file); err == nil || !strings.Contains(stderr, "pass the file again") {
-		t.Errorf("a missing file option was not refused: %v\n%s", err, lastLines(stderr, 3))
+	// The Result holds the spec (input.files), so the reproduction needs it not passed again;
+	// a Result that does not hold it, such as one written before input.files, is refused.
+	if _, stderr, err := runKernelCLI(t, "run", "--from-result", file); err != nil {
+		t.Errorf("the Result holds the spec, but the reproduction failed without it: %v\n%s", err, lastLines(stderr, 3))
+	}
+	r := parseResult(t, out)
+	r.Input.Files = nil
+	bare, err := result.Marshal(r, result.FormatJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bareFile := filepath.Join(dir, "bare.json")
+	if err := os.WriteFile(bareFile, bare, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, stderr, err := runKernelCLI(t, "run", "--from-result", bareFile); err == nil || !strings.Contains(stderr, "pass the file again") {
+		t.Errorf("a missing file the Result does not hold was not refused: %v\n%s", err, lastLines(stderr, 3))
 	}
 	other := filepath.Join(dir, "other.yaml")
 	if err := os.WriteFile(other, []byte(strings.Replace(body, "seed: 3", "seed: 4", 1)), 0o644); err != nil {

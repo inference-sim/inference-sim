@@ -109,6 +109,10 @@ func emitRunResult(p postRun) {
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
+	files, err := resultFiles(docs.Deployment)
+	if err != nil {
+		logrus.Fatalf("%v", err)
+	}
 	sum := aggregated.Summary()
 	routerReq := p.gateway.Requirements()
 	artifacts, err := resultArtifacts(p.artifacts)
@@ -122,6 +126,7 @@ func emitRunResult(p postRun) {
 		Packaging:      resultPackaging(kernelOpened),
 		Policy:         policy,
 		Options:        resultInputOptions,
+		Files:          files,
 		Generator:      result.Generator{Workload: p.run.Binding, Load: p.run.Load, Seed: p.frame.Seed},
 		NumRequests:    p.run.NumRequests,
 		Overrides:      runOverrides(p.extraOverrides...),
