@@ -81,7 +81,7 @@ func (a *V2SaturationAnalyzer) Analyze(metrics ModelSignals) AnalyzerResult {
 		supply       float64
 		demand       float64
 		replicaCount int
-		costPerHour  float64
+		costSum      float64 // sum of the replicas' CostPerHour, accumulated in slice order (R2)
 	}
 	variants := make(map[VariantSpec]*variantAgg)
 
@@ -105,9 +105,10 @@ func (a *V2SaturationAnalyzer) Analyze(metrics ModelSignals) AnalyzerResult {
 
 		agg, ok := variants[r.Variant]
 		if !ok {
-			agg = &variantAgg{costPerHour: r.CostPerHour}
+			agg = &variantAgg{}
 			variants[r.Variant] = agg
 		}
+		agg.costSum += r.CostPerHour
 		agg.supply += effectiveCapacity
 		agg.demand += demand
 		agg.replicaCount++
@@ -119,11 +120,14 @@ func (a *V2SaturationAnalyzer) Analyze(metrics ModelSignals) AnalyzerResult {
 	vcs := make([]VariantCapacity, 0, len(variants))
 	for v, agg := range variants {
 		vcs = append(vcs, VariantCapacity{
-			Variant:        v,
-			Supply:         agg.supply,
-			Demand:         agg.demand,
-			ReplicaCount:   agg.replicaCount,
-			CostPerReplica: agg.costPerHour,
+			Variant:      v,
+			Supply:       agg.supply,
+			Demand:       agg.demand,
+			ReplicaCount: agg.replicaCount,
+			// Mean over the variant's replicas, so a variant whose replicas cost different
+			// amounts (a node-spanning instance bills several nodes) is priced at its
+			// population's mean, not at whichever replica came first (#1536).
+			CostPerReplica: agg.costSum / float64(agg.replicaCount),
 		})
 	}
 	sort.Slice(vcs, func(i, j int) bool {
