@@ -236,6 +236,13 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 		}
 		quantization = ""
 	}
+	// An MXFP4 method quantizes the routed experts only, which the graph already states in MXFP4,
+	// so the linear layers are served at the checkpoint's width (mxfp4ExpertsOnly).
+	if ok, err := mxfp4ExpertsOnly(g, quantization); err != nil {
+		return nil, err
+	} else if ok {
+		quantization = ""
+	}
 	if sw := eng.ServedWeights; sw != nil {
 		out.ServedLayout = &plan.WeightLayout{Linear: sw.Linear, LinearScaleElements: sw.LinearScaleElements,
 			RoutedExperts: sw.RoutedExperts, Router: sw.Router, Head: sw.Head, Embedding: sw.Embedding}
