@@ -729,6 +729,13 @@ jobs:
       # FID-8). The committed answers must equal what the pinned release gives now.
       - name: the lowering's expected answers are vLLM's own
         run: python -I oracle/lower/extract.py vllm-source check core/lower/testdata/vllm_lower.json
+      # Which of Muse Spark's three fused kernels vLLM builds for a layout, and at which step sizes
+      # (core/lower MuseSparkFusionsFor), from the release's own gating code run on this CPU with
+      # the GPU, FlashInfer's MNNVL workspaces and the process group replaced.
+      - name: the Muse Spark fusion decisions are vLLM's own
+        run: |
+          catalog="$(go list -m -f '{{.Dir}}' github.com/inference-sim/blis-substrate)/catalog/models"
+          BLIS_ORACLE_CATALOG="$catalog" python -I oracle/musefusion/oracle.py vllm-source check core/lower/testdata/muse_fusions.json
       - name: every replacement the lowering oracle makes is listed
         run: |
           python3 -I oracle/lower/check_replacements.py oracle/lower/extract.py oracle/lower/replacements.json
