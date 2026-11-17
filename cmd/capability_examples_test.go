@@ -50,6 +50,22 @@ func capExampleFails(t *testing.T, dir string, args ...string) string {
 }
 
 // num reads a number from the Result by its dotted path.
+// promptHitRate is the share of prompt tokens the engine served from a cache: its own prefix-cache hit
+// rate plus the share an offload tier served (vLLM's prompt_tokens_cached is local plus external,
+// PrefillStats, vllm/v1/core/sched/scheduler.py:1251-1257@4ba787ec). Since blis-vllm#248 the engine
+// counts the prompts a connector loads asynchronously in the prefix-cache queries, so the engine's
+// own hit rate alone no longer includes what a tier keeps.
+func (d capDoc) promptHitRate() float64 {
+	d.t.Helper()
+	rate := d.num("engine.cluster.cache_hit_rate")
+	if v, ok := resultValue(d.doc, "engine.cluster.cpu_tier_hit_rate"); ok {
+		if f, ok := v.(float64); ok {
+			rate += f
+		}
+	}
+	return rate
+}
+
 func (d capDoc) num(path string) float64 {
 	d.t.Helper()
 	v, ok := resultValue(d.doc, path)
@@ -171,7 +187,7 @@ func TestCapabilityExample_CPUTierKeepsEvictedPrefixes(t *testing.T) {
 		"--workload-spec", filepath.Join(capExamplesDir, "spill-workload.yaml")}
 	with := capExampleRun(t, capExamplesDir, args...)
 	without := capExampleRun(t, withoutOffload(t, "cpu-tier.yaml"), args...)
-	hit, hitOff := with.num("engine.cluster.cache_hit_rate"), without.num("engine.cluster.cache_hit_rate")
+	hit, hitOff := with.promptHitRate(), without.promptHitRate()
 	if hit <= hitOff+0.03 {
 		t.Errorf("cache hit rate %.3f with the CPU tier, %.3f without: the tier keeps nothing", hit, hitOff)
 	}
@@ -557,7 +573,7 @@ func TestCapabilityExample_FSTierKeepsWhatTheCPUTierEvicts(t *testing.T) {
 	if !strings.Contains(raw, line) {
 		t.Fatal("fixture: the example states no fs tier")
 	}
-	if a, b := with.num("engine.cluster.cache_hit_rate"), without.num("engine.cluster.cache_hit_rate"); a <= b+0.02 {
+	if a, b := with.promptHitRate(), without.promptHitRate(); a <= b+0.02 {
 		t.Errorf("cache hit rate %.3f with the fs tier, %.3f without: the device keeps nothing", a, b)
 	}
 	if with.completed() <= without.completed() {
@@ -618,7 +634,7 @@ func TestCapabilityExample_ObjectStoreTierKeepsWhatTheCPUTierEvicts(t *testing.T
 	if _, ok := pd["link_peak_concurrent_transfers_tier-s3-to-node-0"]; !ok {
 		t.Errorf("the Result states no copy on the bucket's link: %v", pd)
 	}
-	if a, b := with.num("engine.cluster.cache_hit_rate"), without.num("engine.cluster.cache_hit_rate"); a <= b+0.02 {
+	if a, b := with.promptHitRate(), without.promptHitRate(); a <= b+0.02 {
 		t.Errorf("cache hit rate %.3f with the bucket, %.3f without: the bucket keeps nothing", a, b)
 	}
 }
