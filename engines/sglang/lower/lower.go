@@ -60,11 +60,14 @@ func (e *NotLowered) Error() string {
 	return fmt.Sprintf("%s is not lowered (%s)", e.Name, e.Issue)
 }
 
-// check refuses the settings whose lowering reads state a CPU run cannot know: elastic EP
+// check refuses context parallelism (cp.go), and the settings whose lowering reads state a CPU run cannot know: elastic EP
 // (elastic_expanded_world_enabled reads the live world, common.py:4083-4089), and the MORI
 // all-to-all backend (its gather rule reads SGLANG_MORI_EP_V2 and SGLANG_MORI_RECV_BOUND,
 // common.py:4100-4116).
 func check(a *config.ServerArgs) error {
+	if err := contextParallel(a); err != nil {
+		return err
+	}
 	if a.ElasticEpBackend != nil {
 		return &NotLowered{Name: "elastic_ep_backend", Issue: issueLower}
 	}
