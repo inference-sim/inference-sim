@@ -136,3 +136,19 @@ func TestFA4IsABuildOnSM90(t *testing.T) {
 		t.Errorf("FA4 on SM90 is not identified: %+v", got)
 	}
 }
+
+// Sparse MLA on SM90 (FLASHINFER_MLA_SPARSE_SM90, the backend vLLM selects for a sparse-MLA model
+// on an H200) runs FlashInfer's FA3 MLA template for prefill and decode, and only on SM90: the
+// lowering finds the H200 build, and a B200 build of it is an error.
+func TestSparseMLAOnSM90IsABuildOnH200Only(t *testing.T) {
+	sel := AttentionSelection("FLASHINFER_MLA_SPARSE_SM90")
+	for _, prim := range []plan.Primitive{plan.PrimAttentionPrefill, plan.PrimAttentionDecode} {
+		got, err := Implementation(prim, sel, "flashinfer", "BatchMLAPagedAttentionWrapper[fa3]", 9, 0)
+		if err != nil || got.CodeHash == "" {
+			t.Errorf("%s on SM90: %+v, %v; want an identified build", prim, got, err)
+		}
+		if _, err := Implementation(prim, sel, "flashinfer", "BatchMLAPagedAttentionWrapper[fa3]", 10, 0); err == nil {
+			t.Errorf("%s on SM100: no error; the backend runs on SM90 only", prim)
+		}
+	}
+}
