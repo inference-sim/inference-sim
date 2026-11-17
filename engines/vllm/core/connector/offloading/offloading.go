@@ -333,6 +333,8 @@ func (s *Scheduler) MatchedTokensOrDefer(r *sched.Request, local int) (int, bool
 	st := s.reqs[r.ID]
 	for _, gs := range st.groups {
 		gs.blockIDs = gs.blockIDs[:0]
+		// Restarting at token 0: every chunk is offered again (:1243-1245@4ba787ec).
+		gs.nextStored = 0
 	}
 	if len(st.jobs) > 0 {
 		return 0, false, true
@@ -493,8 +495,18 @@ func (s *Scheduler) lookupComplete(st *reqState) (int, bool) {
 }
 
 // AfterAlloc is update_state_after_alloc (scheduler.py:1146-1279): the load job for the hit's
-// chunks into the request's fresh blocks.
+// chunks into the request's fresh blocks. Every allocated block is noted first, with or without
+// a hit, so that re-allocation flush detection (BuildMeta) also sees the blocks allocated for a
+// request another connector of a MultiConnector loads
+// (vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1351-1363@4ba787ec).
 func (s *Scheduler) AfterAlloc(r *sched.Request, blocks sched.AllocatedBlocks, external int) {
+	for _, gb := range blocks.Groups {
+		for _, id := range gb {
+			if id != 0 {
+				s.allocated[id] = true
+			}
+		}
+	}
 	if external == 0 {
 		return
 	}
@@ -506,11 +518,6 @@ func (s *Scheduler) AfterAlloc(r *sched.Request, blocks sched.AllocatedBlocks, e
 	bpc := s.cfg.BlocksPerChunk
 	for gi, g := range s.groups {
 		gb := blocks.Groups[gi]
-		for _, id := range gb {
-			if id != 0 {
-				s.allocated[id] = true
-			}
-		}
 		numGPU := cdiv(cached, g.BlockSize)
 		first := cdiv(local, g.BlockSize)
 		start := numGPU
@@ -784,6 +791,11 @@ func (s *Scheduler) buildStores(step sched.StepOutput) []Job {
 				if mask != nil && !anyIn(mask, idx*bpc, bpc) {
 					continue
 				}
+				// A reachable null block would leave part of the chunk unwritten
+				// (scheduler.py:2001-2012@4ba787ec).
+				if nullReachable(gs.blockIDs[k*bpc:(k+1)*bpc], mask, idx*bpc) {
+					continue
+				}
 				newKeys = append(newKeys, gs.keys[k])
 			}
 		}
@@ -852,6 +864,17 @@ func (s *Scheduler) buildStores(step sched.StepOutput) []Job {
 		}
 	}
 	return out
+}
+
+// nullReachable reports whether a chunk's blocks hold a null block (id 0) that the reachable mask
+// keeps (every block when the mask is nil).
+func nullReachable(blocks []int, mask []bool, off int) bool {
+	for b, id := range blocks {
+		if id == 0 && (mask == nil || mask[off+b]) {
+			return true
+		}
+	}
+	return false
 }
 
 func anyIn(mask []bool, from, n int) bool {

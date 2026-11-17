@@ -147,6 +147,18 @@ type reqAccess struct {
 	// storeMisses are the keys this request already reported to on_store_miss (store_miss_keys).
 	storeMisses map[Key]bool
 	generation  int
+	// lruRank is the request's provisional LRU rank and the cache generation it was taken in
+	// (_RequestRank, vllm/v1/kv_offload/cpu/policies/lru.py:20-23@4ba787ec); 0 is none yet.
+	lruRank, lruGeneration int
+}
+
+// positionOf is ReqContext.get_offload_key_position (vllm/v1/kv_offload/base.py@4ba787ec).
+func (a *reqAccess) positionOf(k Key) (int, bool) {
+	if a == nil {
+		return 0, false
+	}
+	p, ok := a.positions[k]
+	return p, ok
 }
 
 func newReqAccess() *reqAccess {
@@ -172,8 +184,11 @@ func (m *cpuManager) allocate(n int) []*chunk {
 	return out
 }
 
-// record is _record_request_cache_access (manager.py:157-179) for the keys' order.
-func (a *reqAccess) record(keys []Key) {
+// record is _record_request_cache_access (vllm/v1/kv_offload/cpu/manager.py:163-189@4ba787ec)
+// for the keys' order. It returns the keys the request observes for the first time, which the
+// manager reports to the policy (on_request_access, :182-183).
+func (a *reqAccess) record(keys []Key) []Key {
+	var fresh []Key
 	for _, k := range keys {
 		if a.seen[k] {
 			continue
@@ -183,7 +198,9 @@ func (a *reqAccess) record(keys []Key) {
 		}
 		a.groups[k.group()] = append(a.groups[k.group()], k)
 		a.seen[k] = true
+		fresh = append(fresh, k)
 	}
+	return fresh
 }
 
 // lookup is lookup (manager.py:188-195).
@@ -214,7 +231,7 @@ func (m *cpuManager) prepareLoad(keys []Key, a *reqAccess) []int {
 		c.refCnt++
 		ids[i] = c.id
 	}
-	a.record(keys)
+	m.lru.onRequestAccess(a.record(keys), a)
 	return ids
 }
 
@@ -271,7 +288,7 @@ func (m *cpuManager) prepareStore(keys []Key, a *reqAccess) (stored []Key, chunk
 			rec = append(rec, k)
 		}
 	}
-	a.record(rec)
+	m.lru.onRequestAccess(a.record(rec), a)
 	if len(stored) == 0 {
 		return nil, nil, nil, true
 	}
@@ -297,7 +314,7 @@ func (m *cpuManager) prepareStore(keys []Key, a *reqAccess) (stored []Key, chunk
 	chunks := m.allocate(len(stored))
 	chunkIDs = make([]int, len(chunks))
 	for i, k := range stored {
-		m.lru.insert(k, chunks[i])
+		m.lru.insert(k, chunks[i], a)
 		chunkIDs[i] = chunks[i].id
 	}
 	m.writePending += len(stored)
@@ -358,37 +375,66 @@ func allPositioned(keys []Key, positions map[Key]int) bool {
 	return true
 }
 
-// lruPolicy is LRUCachePolicy (vllm/v1/kv_offload/cpu/policies/lru.py:16-173@5df63a72): every
+// rank is an LRU recency rank (lru.py:16, _HeapEntry@4ba787ec): a request's keys share its
+// provisional rank, ordered by minus their token position so its tails precede its heads; every
+// other rank is (n, 0). Ranks order lexicographically.
+type rank struct{ major, minor int }
+
+func (r rank) less(o rank) bool {
+	return r.major < o.major || (r.major == o.major && r.minor < o.minor)
+}
+
+// lruPolicy is LRUCachePolicy (vllm/v1/kv_offload/cpu/policies/lru.py:26-230@4ba787ec): every
 // chunk has a recency rank, assigned on insert and on a request's access; eviction takes the
-// evictable chunks of lowest rank. vLLM keeps a lazy heap; the order it evicts in is the ranks',
+// evictable chunks of lowest rank. At v0.33.0 an active request's keys share one provisional
+// rank across store batches, so a running request's prefix is not evicted between its batches;
+// finalization commits its recency. vLLM keeps a lazy heap; the order it evicts in is the ranks',
 // which this keeps directly.
 type lruPolicy struct {
 	chunks    map[Key]*chunk
-	ranks     map[Key]int
+	ranks     map[Key]rank
 	evictable map[Key]bool
 	next      int
+	// generation is _cache_generation, which clear advances so no request keeps a rank taken
+	// before the reset.
+	generation int
 }
 
 func newLRU() *lruPolicy {
-	return &lruPolicy{chunks: map[Key]*chunk{}, ranks: map[Key]int{}, evictable: map[Key]bool{}}
+	return &lruPolicy{chunks: map[Key]*chunk{}, ranks: map[Key]rank{}, evictable: map[Key]bool{}}
 }
 
-// get is get (lru.py:73-75).
+// get is get (lru.py:104-105).
 func (p *lruPolicy) get(k Key) *chunk { return p.chunks[k] }
 
-// remove is remove (lru.py:86-90), after a failed store.
+// remove is remove, after a failed store.
 func (p *lruPolicy) remove(k Key) {
 	delete(p.chunks, k)
 	delete(p.ranks, k)
 	delete(p.evictable, k)
 }
 
-// clear is clear (lru.py:107-113).
+// clear is clear (lru.py:165-172): it also advances the cache generation.
 func (p *lruPolicy) clear() {
-	p.chunks, p.ranks, p.evictable, p.next = map[Key]*chunk{}, map[Key]int{}, map[Key]bool{}, 0
+	p.chunks, p.ranks, p.evictable, p.next = map[Key]*chunk{}, map[Key]rank{}, map[Key]bool{}, 0
+	p.generation++
 }
 
-// touchReq is touch (lru.py:92-94): the keys, last first, become most recent.
+// requestRank is _get_request_rank (lru.py:51-61): the request's provisional rank, taken once
+// per cache generation.
+func (p *lruPolicy) requestRank(a *reqAccess) int {
+	if a == nil {
+		p.next++
+		return p.next
+	}
+	if a.lruRank == 0 || a.lruGeneration != p.generation {
+		p.next++
+		a.lruRank, a.lruGeneration = p.next, p.generation
+	}
+	return a.lruRank
+}
+
+// touchReq is touch (lru.py:128-130): the keys, last first, become most recent.
 func (p *lruPolicy) touchReq(keys []Key) {
 	rev := make([]Key, len(keys))
 	for i, k := range keys {
@@ -397,12 +443,33 @@ func (p *lruPolicy) touchReq(keys []Key) {
 	p.touch(rev)
 }
 
-// onStoreMiss is the base policy's on_store_miss (cpu/policies/base.py:80-89), a touch. The keys
-// are not in the cache yet, so for the LRU it changes nothing.
+// onStoreMiss is the base policy's on_store_miss, a touch. The keys are not in the cache yet,
+// so for the LRU it changes nothing.
 func (p *lruPolicy) onStoreMiss(keys []Key) { p.touchReq(keys) }
 
-// onRequestFinished is on_request_finished (lru.py:96-105): the request's keys in head-to-tail
-// order across groups (order_request_keys, cpu/policies/base.py:10-22), the head made most recent.
+// onRequestAccess is on_request_access (lru.py:132-152): each newly observed key with a token
+// position takes the request's shared rank at minus that position, unless it already ranks at or
+// above it.
+func (p *lruPolicy) onRequestAccess(keys []Key, a *reqAccess) {
+	if len(keys) == 0 || a == nil {
+		return
+	}
+	rr := p.requestRank(a)
+	for _, k := range keys {
+		pos, ok := a.positions[k]
+		if _, cached := p.chunks[k]; !ok || !cached {
+			continue
+		}
+		nr := rank{rr, -pos}
+		if !p.ranks[k].less(nr) {
+			continue
+		}
+		p.ranks[k] = nr
+	}
+}
+
+// onRequestFinished is on_request_finished (lru.py:154-163): the request's keys in head-to-tail
+// order across groups (order_request_keys), the head made most recent.
 func (p *lruPolicy) onRequestFinished(groups [][]Key, positions map[Key]int) {
 	var keys []Key
 	for _, g := range groups {
@@ -414,24 +481,40 @@ func (p *lruPolicy) onRequestFinished(groups [][]Key, positions map[Key]int) {
 	p.touchReq(keys)
 }
 
-// insert is insert (lru.py:77-84).
-func (p *lruPolicy) insert(k Key, c *chunk) {
+// insert is insert (lru.py:107-121): a key the request positions takes the request's shared
+// rank at minus its position; any other the next rank.
+func (p *lruPolicy) insert(k Key, c *chunk, a *reqAccess) {
 	p.chunks[k] = c
-	p.next++
-	p.ranks[k] = p.next
+	if pos, ok := a.positionOf(k); ok {
+		p.ranks[k] = rank{p.requestRank(a), -pos}
+	} else {
+		p.next++
+		p.ranks[k] = rank{p.next, 0}
+	}
 	if c.refCnt == 0 {
 		p.evictable[k] = true
 	}
 }
 
-// touch is _update_recency (lru.py:60-71): each present key, in order, gets the next rank.
+// touch is _update_recency (lru.py:86-88, _assign_new_rank :63-68): each present key, in order,
+// gets the next rank.
 func (p *lruPolicy) touch(keys []Key) {
 	for _, k := range keys {
 		if _, ok := p.chunks[k]; ok {
 			p.next++
-			p.ranks[k] = p.next
+			p.ranks[k] = rank{p.next, 0}
 		}
 	}
+}
+
+// before orders two keys as vLLM's heap does its (rank, key) entries: by rank, then by the key's
+// bytes. A request's keys in two KV cache groups at one position share a rank, so the key decides.
+func (p *lruPolicy) before(a, b Key) bool {
+	ra, rb := p.ranks[a], p.ranks[b]
+	if ra != rb {
+		return ra.less(rb)
+	}
+	return a < b
 }
 
 // eviction is one evicted chunk with its key.
@@ -455,7 +538,7 @@ func (p *lruPolicy) evict(n int, protected map[Key]bool) []eviction {
 	if len(cands) < n {
 		return nil
 	}
-	sort.Slice(cands, func(i, j int) bool { return p.ranks[cands[i]] < p.ranks[cands[j]] })
+	sort.Slice(cands, func(i, j int) bool { return p.before(cands[i], cands[j]) })
 	out := make([]eviction, n)
 	for i, k := range cands[:n] {
 		out[i] = eviction{k, p.chunks[k]}
@@ -475,6 +558,6 @@ func (p *lruPolicy) inRankOrder() []Key {
 	for k := range p.chunks {
 		out = append(out, k)
 	}
-	sort.Slice(out, func(i, j int) bool { return p.ranks[out[i]] < p.ranks[out[j]] })
+	sort.Slice(out, func(i, j int) bool { return p.before(out[i], out[j]) })
 	return out
 }
