@@ -173,6 +173,16 @@ layer_kinds:
 - id: mtp_moe
   nodes:
   - op: Elementwise
+    role: mtp_enorm
+  - op: Elementwise
+    role: mtp_hnorm
+  - op: GEMM
+    role: mtp_eh_proj
+    n: 7168
+    k: 14336
+    weight_dtype: bf16
+    tp: replicated
+  - op: Elementwise
     role: input_norm
   - op: GEMM
     role: qkv_a_proj
@@ -248,6 +258,12 @@ layer_kinds:
     - 11
   - - 11
     - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+  - - 14
+    - 15
 stack:
   prologue:
   - attn_dense
