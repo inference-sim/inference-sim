@@ -43,6 +43,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -52,6 +53,11 @@ IGNORE = shutil.ignore_patterns(".git", "sglang-source", "oracle-model", "oracle
 # is killed, so a hung `go test` and the test binary it started cannot outlive the mutant and hold the
 # runner. The limit is far above a healthy suite (a few seconds); BLIS_MUTANT_TIMEOUT_S overrides it.
 TIMEOUT_S = int(os.environ.get("BLIS_MUTANT_TIMEOUT_S", "240"))
+# A mutant can also make a suite allocate without bound (core/cache's matchAt with its comparison flipped
+# grew a test binary by about 0.4 GiB a second); on a runner that kills the whole job within seconds, long
+# before TIMEOUT_S. The suite's process group is polled and killed past this resident size, and the mutant
+# counts as caught. A healthy suite stays far below it; BLIS_MUTANT_MAX_RSS_MB overrides it.
+MAX_RSS_MB = int(os.environ.get("BLIS_MUTANT_MAX_RSS_MB", "3072"))
 PORTED = re.compile(r"^// Derived from python/sglang/", re.M)
 FLIPS = {"<": "<=", "<=": "<", ">": ">=", ">=": ">", "==": "!=", "!=": "==", "&&": "||", "||": "&&"}
 OPERATOR = re.compile(r"<<=|>>=|<<|>>|<-|:=|&&|\|\||==|!=|<=|>=|<|>")
@@ -191,21 +197,35 @@ def command(cfg: dict, m: dict, sglang: str) -> list:
             for a in cfg["suites"][m["suite"]]["command"]]
 
 
+def group_rss_mb(pgid: int) -> float:
+    """Resident size, in MiB, of every process in the process group (Linux and macOS ps)."""
+    out = subprocess.run(["ps", "-A", "-o", "pgid=,rss="], capture_output=True, text=True).stdout
+    kib = 0
+    for line in out.splitlines():
+        f = line.split()
+        if len(f) == 2 and f[0] == str(pgid):
+            kib += int(f[1])
+    return kib / 1024
+
+
 def run_suite(cmd: list, cwd: str) -> bool:
-    """Run one mutant's suite; True when it passes (the mutant survived). A suite that outlives TIMEOUT_S is
-    killed with everything it started and counts as failing, so the mutant is caught."""
+    """Run one mutant's suite; True when it passes (the mutant survived). A suite that outlives TIMEOUT_S, or
+    grows past MAX_RSS_MB, is killed with everything it started and counts as failing: the mutant is caught."""
     proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                             start_new_session=True)
-    try:
-        proc.communicate(timeout=TIMEOUT_S)
-    except subprocess.TimeoutExpired:
+    deadline = time.monotonic() + TIMEOUT_S
+    while True:
         try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        proc.communicate()
-        return False
-    return proc.returncode == 0
+            proc.communicate(timeout=1)
+            return proc.returncode == 0
+        except subprocess.TimeoutExpired:
+            if time.monotonic() > deadline or group_rss_mb(proc.pid) > MAX_RSS_MB:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                proc.communicate()
+                return False
 
 
 def apply(scratch: str, m: dict) -> str:

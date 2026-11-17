@@ -876,6 +876,29 @@ class MutationSweep(unittest.TestCase):
         time.sleep(5)
         self.assertFalse(os.path.exists(marker), "the suite's grandchild outlived the killed mutant")
 
+    def test_a_mutant_whose_suite_allocates_without_bound_is_caught_in_seconds(self):
+        # A mutant can make a test binary grow by gigabytes a second (core/cache's matchAt with its comparison
+        # flipped did); on a runner that kills the job before any time limit fires. The sweep polls the suite's
+        # process group and kills it past BLIS_MUTANT_MAX_RSS_MB, and the mutant counts as caught. The suite here
+        # takes 400 MiB and then stalls: only the memory ceiling can end it quickly.
+        root = self.repo([dict(self.mutant("M"), suite="hog")])
+        hog = "x = bytearray(400 * 1024 * 1024); x[::4096] = b'1' * len(x[::4096]); import time; time.sleep(600)"
+        path = os.path.join(root, "oracle", "mutants.json")
+        with open(path) as f:
+            cfg = json.load(f)
+        cfg["suites"]["hog"] = {"command": [sys.executable, "-c", hog], "tests": []}
+        with open(path, "w") as f:
+            json.dump(cfg, f)
+        scratch = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, scratch, True)
+        t0 = time.monotonic()
+        r = subprocess.run([sys.executable, "-I", os.path.join(HERE, "mutate.py"), "--root", root, "--only", "M",
+                            "nowhere", os.path.join(scratch, "tree")], cwd=root, capture_output=True, text=True,
+                           timeout=60, env={**os.environ, "BLIS_MUTANT_MAX_RSS_MB": "200"})
+        self.assertLess(time.monotonic() - t0, 30)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("CAUGHT     M", r.stdout)
+
     def test_a_survivor_a_stale_gap_and_a_broken_mutant_fail(self):
         survivor = self.mutant("B", old="return 1", new="return 2")
         for name, mutants, gaps, text in [
