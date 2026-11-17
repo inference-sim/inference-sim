@@ -101,7 +101,7 @@ func resultData(d *load.Data) result.Data {
 // resultScenarioDocs reads the scenario and deployment the run used, through blis-schemas' own
 // strict bundle loader (the same decoding the kernel applies).
 func resultScenarioDocs() (resultDocs, error) {
-	path := filepath.Join(kernelScenarioDir, kernelScenario)
+	path := engineScenarioPath() // the SGLang scenario itself, not its host-side twin
 	sc, dep, err := blisschemas.LoadBundle(path)
 	if err != nil {
 		return resultDocs{}, fmt.Errorf("re-reading the scenario for the Result document: %w", err)
