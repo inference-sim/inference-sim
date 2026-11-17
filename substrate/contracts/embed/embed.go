@@ -447,6 +447,11 @@ type Request struct {
 	// TTL is how long the client waits for the request, sent when positive as
 	// time.Duration.String (x-llm-d-inference-ttl).
 	TTL time.Duration
+
+	// SessionID is the client's session identifier, sent when non-empty as x-session-id, the
+	// header llm-d's session-affinity plugins read by default. It is the opaque string a
+	// multi-turn client would send on every turn of one conversation.
+	SessionID string
 }
 
 // Decision is where the router sent a request. Endpoints are named by address
