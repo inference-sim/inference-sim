@@ -142,6 +142,8 @@ jobs:
         run: python -I tools/surface/test_gen_surface.py
       - name: the lowering oracle's replacement check fails on what it guards
         run: python -I oracle/lower/test_check_replacements.py
+      - name: the tree-core comparison fails on what it guards
+        run: python -I oracle/test_treecore_diff.py
   # The oracle's environment (SGL-1, FID-2): SGLang checked out at the commit provenance.go pins, the
   # locked environment installed by hash and checked against the lock (.github/actions/oracle-env),
   # the manifest check (FID-1, FID-8), and the scheduler importing from the checkout on CPU.
@@ -282,6 +284,46 @@ jobs:
         run: |
           set -euo pipefail
           python -I oracle/compare_goldens.py oracle-traces-pools/direct "$(git -C sglang-source rev-parse HEAD)" oracle/scenarios-pools core/cache/testdata/golden-pools/direct
+
+
+  # S45 (design §6.4, SGL-1, SGL-5): SGLang's Rust tree core, its production default on Linux,
+  # against the Python one the oracle pins, on every cache sequence. The Rust core is built from
+  # the pinned checkout (rust/sglang-radix-tree, cargo build --locked) with the toolchain its
+  # rust-toolchain.toml pins: SGLang's default build mode builds from a source checkout
+  # (tree_core_registry.py:75-87), and the runner refuses a fallback to the Python core. A difference passes only when oracle/treecore-divergences.json lists
+  # it with an open issue.
+  treecore-diff:
+    name: treecore-diff
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - id: env
+        uses: ./.github/actions/oracle-env
+      - name: install the Rust toolchain the checkout pins
+        run: |
+          set -euo pipefail
+          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' sglang-source/rust/rust-toolchain.toml)"
+          test -n "$channel"
+          rustup toolchain install "$channel" --profile minimal
+          (cd sglang-source/rust && cargo --version --verbose && rustc -vV)
+      - name: compare the two tree cores on every cache sequence
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          export ORACLE_MODEL="$PWD/oracle-model"
+          python -I oracle/run_treecore_diff.py sglang-source treecore-diff.json
+      - name: upload the comparison
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: treecore-diff
+          path: treecore-diff.json
 
   # FID-3: a golden trace's decisions change only in a commit with a golden-reviewed trailer, and a
   # new golden was recorded on CI's platform from the committed lock.
