@@ -28,7 +28,6 @@ func TestUnmodelledSettingsAreRefusedByName(t *testing.T) {
 		{"disagg", func(c *Config) { c.DisaggregationMode = "prefill" }, "disaggregation"},
 		{"interval", func(c *Config) { c.PrefillDecodeInterval = 4 }, "prefill-decode interval"},
 		{"pp", func(c *Config) { c.PPSize = 2 }, "pipeline parallelism"},
-		{"dfs", func(c *Config) { c.Policy = "dfs-weight" }, "dfs-weight"},
 		{"unknown", func(c *Config) { c.Policy = "nope" }, "unknown schedule_policy"},
 		{"tree", func(c *Config) { c.TreeCache = "HiRadixCache" }, "HiRadixCache"},
 		{"allocator", func(c *Config) { c.Allocator = "SWATokenToKVPoolAllocator" }, "SWATokenToKVPoolAllocator"},

@@ -27,17 +27,18 @@ const (
 	LOF                  Policy = "lof"
 	Random               Policy = "random"
 	RoutingKey           Policy = "routing-key"
+	DFSWeight            Policy = "dfs-weight"
 )
 
 // waitingQueuePrefixMatchMax bounds the waiting queue lpm and hrrn match (:127).
 const waitingQueuePrefixMatchMax = 128
 
 // validatePolicy is _validate_and_adjust_policy (:324-344): a disabled tree cache turns every
-// cache-aware policy into fcfs, except that shortest-prefill-first is refused there. The
-// policies SGLang has and the port does not are refused by name.
+// cache-aware policy into fcfs, except that shortest-prefill-first is refused there. A name
+// SGLang does not know is refused as SGLang refuses it.
 func validatePolicy(name string, treeDisabled bool) (Policy, error) {
 	switch Policy(name) {
-	case LPM, HRRN:
+	case LPM, HRRN, DFSWeight:
 		if treeDisabled {
 			return FCFS, nil
 		}
@@ -49,14 +50,12 @@ func validatePolicy(name string, treeDisabled bool) (Policy, error) {
 		return ShortestPrefillFirst, nil
 	case FCFS, LOF, Random, RoutingKey:
 		return Policy(name), nil
-	case "dfs-weight":
-		return "", fmt.Errorf("sched: the %s schedule policy is not modelled (%s)", name, Refusal)
 	}
 	return "", fmt.Errorf("sched: unknown schedule_policy %q", name)
 }
 
 func (p Policy) cacheAware() bool {
-	return p == LPM || p == HRRN || p == ShortestPrefillFirst
+	return p == LPM || p == HRRN || p == ShortestPrefillFirst || p == DFSWeight
 }
 
 // simTree is the waiting-queue radix tree (RadixCache.create_simulated, radix_cache.py:320-339,
@@ -109,6 +108,18 @@ func (s *Scheduler) calcPriority(queue []*Req, running *Batch) {
 			sort.SliceStable(queue, func(i, j int) bool {
 				return lpmKey(queue[i], deprioritized) < lpmKey(queue[j], deprioritized)
 			})
+		case DFSWeight:
+			// _sort_by_dfs_weight (:493-499): the tree orders the requests by the nodes they matched.
+			handles := make([]cache.NodeID, len(queue))
+			for i, r := range queue {
+				handles[i] = *r.C.LastNode
+			}
+			order := s.tree.DFSWeightOrder(handles)
+			sorted := make([]*Req, len(order))
+			for i, idx := range order {
+				sorted[i] = queue[idx]
+			}
+			copy(queue, sorted)
 		case HRRN:
 			processed := s.processedTokens
 			sort.SliceStable(queue, func(i, j int) bool {

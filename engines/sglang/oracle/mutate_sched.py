@@ -52,6 +52,7 @@ M=[
 ("adder.go","i = max(len(a.reqStates)-1, 0)","i = len(a.reqStates)","ignore_eos insertion quirk"),
 ("adder.go","paged := a.ceilPaged(cand) + a.pageSize","paged := a.ceilPaged(cand)","ignore_eos page overhead"),
 ("adder.go","a.budget.totalOffset -= a.runningRequestTotalTokenOffset(r)","","preempted offset kept"),
+("policy.go","\t\t\tcopy(queue, sorted)\n","","dfs order ignored"),
 ("adder.go","len(a.canRunList) >= *x {","len(a.canRunList) > *x {","prefill max requests"),
 ("adder.go","\t\t\treturn NoToken\n\t\t}\n\t\tfreed += float64(st.occupied)","\t\t}\n\t\tfreed += float64(st.occupied)","ignore_eos ledger never refuses"),
 ]
