@@ -214,6 +214,9 @@ func open(s engine.Spec, given *load.Data) (pool, error) {
 	if err != nil {
 		return pool{}, fmt.Errorf("vllmengine: %w", err)
 	}
+	if err := refuseDenseLocalCadence(filepath.Base(path), m.Deployment().MoE, par.DP, resolvedInterval(node)); err != nil {
+		return pool{}, err
+	}
 	blocks, kvBytes, err := poolBlocks(m, st)
 	if err != nil {
 		return pool{}, fmt.Errorf("vllmengine: %s: %w", filepath.Base(path), err)
@@ -1025,3 +1028,32 @@ type (
 	Frontend   = vllm.Frontend
 	Frontender = vllm.Frontender
 )
+
+// denseLocalCadenceIssue tracks the dense-model data-parallel ranks' own local prefill cadence.
+const denseLocalCadenceIssue = "https://github.com/inference-sim/blis-vllm/issues/268"
+
+// refuseDenseLocalCadence refuses a dense (non-MoE) model at data_parallel_size above 1 with
+// prefill_schedule_interval above 1. vLLM v0.33.0 reconfigures each rank of such a deployment to
+// data_parallel_size 1, so the rank is not DP-coordinated and its Scheduler applies the interval as
+// its own local cadence (vllm/v1/core/sched/scheduler.py:398-403 at v0.33.0). DPGroup runs the ranks
+// as one lockstep wave under the engine-core cadence, which is the MoE regime, so running the
+// combination would price a different throttle without saying so.
+func refuseDenseLocalCadence(scenario string, moe bool, dp, interval int) error {
+	if moe || dp <= 1 || interval <= 1 {
+		return nil
+	}
+	return fmt.Errorf("vllmengine: %s: dense_dp_local_prefill_cadence: prefill_schedule_interval %d on a dense model at "+
+		"data_parallel_size %d gives each rank vLLM v0.33.0's own local cadence, which the data-parallel group does not "+
+		"model (%s)", scenario, interval, dp, denseLocalCadenceIssue)
+}
+
+// resolvedInterval is the engine block's stated prefill_schedule_interval, 0 when unstated.
+func resolvedInterval(node yaml.Node) int {
+	var b struct {
+		Interval int `yaml:"prefill_schedule_interval"`
+	}
+	if err := node.Decode(&b); err != nil {
+		return 0
+	}
+	return b.Interval
+}
