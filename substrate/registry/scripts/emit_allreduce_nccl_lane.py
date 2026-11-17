@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write the NCCL lane of the fp16 tensor-parallel all-reduce (inference-sim/blis-substrate#116, #137).
+"""Write the NCCL lane of the fp16 tensor-parallel all-reduce (inference-sim/blis-substrate#116).
 
     python scripts/emit_allreduce_nccl_lane.py [--data <aisimulate systems/data>] [--check]
 
@@ -28,7 +28,7 @@ THE SOURCE of each part, cited by the sweep's own `version` column and not by it
 A width the sweep does not carry has no entry. The kernel then prices that width from the custom
 lane and records an assumption (kernel all_reduce_lane); it never borrows another width.
 
-#137, THE 2.30.7 TABLE. On b200 and gb200, and on h100 and h200, AISimulate's comm/nccl/2.30.7
+THE 2.30.7 TABLE. On b200 and gb200, and on h100 and h200, AISimulate's comm/nccl/2.30.7
 file measures the same all-reduce at 2 and 4 ranks through torch.distributed (a different
 collector, not a different NCCL alone). It is not a lane here: no engine states the NCCL version,
 and the collector's flat ~26-115 us floor is the eager call, not NCCL. What this writer does is
@@ -174,8 +174,7 @@ def build(data: Path, before: str) -> str:
                             f"ProcessGroupNCCL, a different collector) measures this width's floor "
                             f"(least latency over its three smallest messages, 5 KiB and up) at {cmp[0]:.2f}x this entry and, over its {cmp[2]} messages at or "
                             f"above 16 MiB (the cited sweep interpolated log-log), a median latency {cmp[1]:.3f}x; it is "
-                            f"not a lane (no engine states the NCCL version; inference-sim/"
-                            f"blis-substrate#137). ")
+                            f"not a lane (no engine states the NCCL version). ")
                 for e in lane_entries(chip, sku, directory, version, w, g, note):
                     cb.upsert(blocks, e, after=anchor)
     return cb.join(blocks)

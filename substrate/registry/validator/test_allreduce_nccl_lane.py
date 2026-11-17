@@ -4,7 +4,7 @@ The kernel prices a tensor-parallel all-reduce from the lane of the kernel the e
 (kernel/collective_lane_test.go proves the selection). These tests check the data the NCCL lane
 carries: that it is a complete, ordered triple per width, that it is slower than the custom
 kernel's lane where both are measured (the direction the issue's acceptance test names), and that
-the 2.30.7 comparison of inference-sim/blis-substrate#137 is on the entries it concerns. They
+the NCCL 2.30.7 comparison is on the entries it concerns. They
 read only the committed file, so they run in CI with no AISimulate tree.
 """
 
@@ -73,7 +73,7 @@ def test_a_lane_floor_does_not_fall_as_the_group_widens():
 
 
 def test_the_2_30_7_comparison_is_recorded_where_the_issue_reports_it():
-    """#137: the >= 16 MiB latency ratio of the 2.30.7 table to the cited sweep."""
+    """The >= 16 MiB latency ratio of the 2.30.7 table to the cited sweep."""
     expect = {("b200", 2): 1.376, ("b200", 4): 1.252, ("gb200_nvl72", 2): 1.739,
               ("gb200_nvl72", 4): 1.670, ("h100", 2): 1.009, ("h100", 4): 1.029,
               ("h200", 2): 1.032, ("h200", 4): 1.049}
