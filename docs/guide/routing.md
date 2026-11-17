@@ -303,7 +303,7 @@ plugin policy, the types whose signals the simulation does not produce.
 | Kind | Types |
 |---|---|
 | Profile handlers and pickers | `single-profile-handler`, `disagg-profile-handler`, `max-score-picker`, `random-picker`, `weighted-random-picker` |
-| Filters | `decode-filter`, `prefill-filter`, `encode-filter`, `label-selector-filter`, `topology-affinity-filter` (kernel-backed placement), `prefix-cache-affinity-filter` (its TTFT gate on the in-flight load, `ttftSource: prefillThroughput`, the default) |
+| Filters | `decode-filter`, `prefill-filter`, `encode-filter`, `label-selector-filter`, `topology-affinity-filter` (kernel-backed placement), `prefix-cache-affinity-filter` (its TTFT gate on the in-flight load, `ttftSource: prefillThroughput`, the default), `utilization-filter` (caps on the in-flight load and the engine's running requests, waiting queue and KV-cache utilization) |
 | Scorers | `queue-scorer`, `kv-cache-utilization-scorer`, `prefix-cache-scorer`, `load-aware-scorer`, `running-requests-size-scorer`, `lora-affinity-scorer`, `token-load-scorer`, `no-hit-lru-scorer`, `active-request-scorer`, `context-length-aware`, `topology-affinity-scorer` (kernel-backed placement) |
 | P/D deciders | `always-disagg-pd-decider`, `prefix-based-pd-decider` |
 | Data producers | `approx-prefix-cache-producer`, `precise-prefix-cache-producer` (fed by the engines' KV events), `inflight-load-producer`, `token-producer` (estimate backend, or vLLM backend with a fixed URL) |

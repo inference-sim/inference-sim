@@ -302,6 +302,22 @@ func TestPrefixCacheAffinityFilterRunsOnTheInFlightLoad(t *testing.T) {
 	}
 }
 
+// TestUtilizationFilterRunsOnAPDRouter: a P/D router configuration whose prefill profile filters with a
+// utilization-filter is hosted (#2205); before the filter was audited the router refused it as unaudited.
+func TestUtilizationFilterRunsOnAPDRouter(t *testing.T) {
+	dep := testDeployment(4)
+	dep.PrefillInstances, dep.DecodeInstances = 2, 2
+	setPDPrice(&dep, func(tokens int64) int64 { return 50 })
+	config := strings.Replace(pdConfig, "- type: prefill-filter\n", "- type: prefill-filter\n- type: inflight-load-producer\n"+
+		"- type: utilization-filter\n  name: guard\n  parameters:\n    conditions:\n    - metric: waiting-queue\n      maxValue: 8\n"+
+		"    - metric: kv-cache-utilization\n      maxValue: 0.95\n", 1)
+	config = strings.Replace(config, "  - pluginRef: prefill-filter\n", "  - pluginRef: prefill-filter\n  - pluginRef: guard\n", 1)
+	// The filter is Alpha in llm-d's router, so the configuration states --allow-experimental-plugins as llm-d's guides do.
+	if err := refusal(t, dep, config, roleLabels, "--allow-experimental-plugins"); err != nil {
+		t.Fatalf("a P/D configuration with a utilization-filter must run: %v", err)
+	}
+}
+
 // TestAllow: BLIS's policy allows exactly its supported types, and gives each refused type its
 // recorded reason or the generic one.
 func TestAllow(t *testing.T) {
