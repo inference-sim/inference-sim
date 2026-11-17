@@ -12,7 +12,7 @@
 #   export AISIMULATE_DATA=<aisimulate>/python/aisimulate/src/aisimulate_core/systems/data
 #   export BLIS_CATALOG=<the repository's catalog/ directory>
 #   export AISIMULATE_ALLREDUCE_DATA=<aisimulate @7980e95>/.../systems/data  # relane_allreduce_vllm.py
-#   export AISIM_GLM53_DATA=<aisim @AISIM_GLM53_SHA>/python/aisim/src/aisim_core/systems/data  # fit_glm53_attention.py
+#   export AISIM_GLM53_DATA=<aisim @AISIM_GLM53_SHA>/python/aisim/src/aisim_core/systems/data  # fit_glm53_attention.py, fit_glm53_fp8_prefill_scale.py
 #   python -I scripts/fetch_cited_inferencex.py <dir>
 #   export COLLECTIVEX_DATA=<dir>                       # test_deepep_ll_graph.py
 #   export OPERATORX_DATA=<dir>                         # test_operatorx.py; the same dir: the fetcher
