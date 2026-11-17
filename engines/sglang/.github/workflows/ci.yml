@@ -518,6 +518,33 @@ jobs:
           name: treecore-diff
           path: treecore-diff.json
 
+      # HiCache host pools' sizing and layout refusals (oracle/run_host_pools.py): SGLang's own
+      # MHA, MLA and DSA host pools, as the assembler builds them.
+      - name: trace the HiCache host pools
+        if: ${{ !cancelled() }}
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          export ORACLE_MODEL="$PWD/oracle-model"
+          mkdir -p oracle-traces-host-pools
+          for s in oracle/scenarios-host-pools/*.json; do
+            python -I oracle/run_host_pools.py direct sglang-source "$s" "oracle-traces-host-pools/$(basename "$s" .json).trace.json"
+          done
+      - name: upload the HiCache host pool traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: oracle-traces-host-pools
+          path: oracle-traces-host-pools/
+      - name: every HiCache host pool golden is SGLang's own output
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          python -I oracle/compare_goldens.py oracle-traces-host-pools "$(git -C sglang-source rev-parse HEAD)" oracle/scenarios-host-pools core/hicache/testdata/golden-fid5/host-pools
+
   # FID-3: a golden trace's decisions change only in a commit with a golden-reviewed trailer, and a
   # new golden was recorded on CI's platform from the committed lock.
   goldens-reviewed:
