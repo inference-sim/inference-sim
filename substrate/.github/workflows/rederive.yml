@@ -82,9 +82,9 @@ jobs:
       INFERENCEX_SHA: e63beeeee981b5f7bd055685a32cc38ad30c7fdb
       # The engine release's kernel-implementation table the trtllm-gen lane is keyed by
       # (emit_attention_trtllm_gen.py), and the GLM-5.3 sparse-MLA entries are keyed by
-      # (fit_glm53_attention.py). TEMPORARY: the pushed head of inference-sim/blis-vllm#154,
-      # until a blis-vllm release publishes the table.
-      BLIS_VLLM_SHA: 4cee7e5245c37a225d9644e3319896b989b33cf4
+      # (fit_glm53_attention.py), and the moe.grouped_gemm builds (fit_hopper_fp8_grouped_ramp.py).
+      # TEMPORARY: the pushed head of inference-sim/blis-vllm#217 (on #154), until a blis-vllm release publishes the table.
+      BLIS_VLLM_SHA: 63fbe3b7103f91404f6ccaeb8d681109c8dc52f5
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

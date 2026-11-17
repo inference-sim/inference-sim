@@ -65,6 +65,9 @@ WRITERS = [
     ("relane_gemm_envelope.py", "the GEMM efficiency ramp"),
     ("relane_moe_imbalance.py", "the MoE routing-imbalance median"),
     ("fit_marlin_grouped_ramp.py", "the Marlin W4A16 grouped GEMM ramp"),
+    # Hopper block-FP8 grouped experts per MoE backend, keyed by the engine release's
+    # kernel_impls.json ($BLIS_KERNEL_IMPLS) to the build each was measured on.
+    ("fit_hopper_fp8_grouped_ramp.py", "the Hopper FP8 grouped ramp per MoE backend"),
     # The h100/h200 fp16 all-reduce on vLLM 0.31.0's custom kernel. Needs aisimulate
     # 7980e95 (the 0.31.0 sweep); exits 2, failing, on a tree without it.
     ("relane_allreduce_vllm.py", "the h100/h200 vLLM 0.31.0 all-reduce triples"),
@@ -262,6 +265,12 @@ def test_every_fitted_family_has_a_writer():
         "gemm_m_half": "relane_gemm_envelope.py",
         "moe_routing_imbalance_median": "relane_moe_imbalance.py",
         "host_link_bandwidth": "fit_host_link.py",
+        "gemm_eps_max_fp8_grouped_triton": "fit_hopper_fp8_grouped_ramp.py",
+        "gemm_m_half_fp8_grouped_triton": "fit_hopper_fp8_grouped_ramp.py",
+        "gemm_floor_fp8_grouped_triton": "fit_hopper_fp8_grouped_ramp.py",
+        "gemm_eps_max_fp8_grouped_flashinfer_cutlass": "fit_hopper_fp8_grouped_ramp.py",
+        "gemm_m_half_fp8_grouped_flashinfer_cutlass": "fit_hopper_fp8_grouped_ramp.py",
+        "gemm_floor_fp8_grouped_flashinfer_cutlass": "fit_hopper_fp8_grouped_ramp.py",
         "gemm_eps_max_w4a16_mxfp4_grouped": "fit_marlin_grouped_ramp.py",
         "gemm_m_half_w4a16_mxfp4_grouped": "fit_marlin_grouped_ramp.py",
         "gemm_eps_max_w4a16_nvfp4_grouped": "fit_marlin_nvfp4_grouped_ramp.py",

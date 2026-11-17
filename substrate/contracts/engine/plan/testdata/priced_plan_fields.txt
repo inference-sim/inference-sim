@@ -42,6 +42,7 @@ GraphPolicy.Ceiling # kernel: TestEachResolvedPlanSettingMovesAPrice
 GraphPolicy.Decode # kernel: TestEachResolvedPlanSettingMovesAPrice
 GraphPolicy.Other # kernel: TestEachResolvedPlanSettingMovesAPrice
 MoEPlan.Dispatch # kernel: TestEachResolvedPlanSettingMovesAPrice
+MoEPlan.Experts # kernel: TestEachResolvedPlanSettingMovesAPrice
 MoEPlan.Fused # kernel: TestEachResolvedPlanSettingMovesAPrice
 MoEPlan.RedundantExperts # kernel: TestEachResolvedPlanSettingMovesAPrice
 PoolPlan.Batch # kernel: TestEachResolvedPlanSettingMovesAPrice
