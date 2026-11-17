@@ -388,6 +388,7 @@ instance_lifecycle:
   warm_up_request_count: 5    # requests served before leaving WarmingUp state
   warm_up_ttft_factor: 2.0    # TTFT multiplier applied to warm-up requests (≥ 1.0)
   drain_policy: "WAIT"        # IMMEDIATE | WAIT | REDIRECT
+  weight_source: nvme_gen4    # optional storage tier the weights load from (#1215): an instance loads in loading_delay plus the time to read its per-rank weights from this tier (registry offload_tier_<tier>_* entries; the scenario lists cost-model-offload-tiers). Empty = loading_delay is the whole delay
   warm_start_initial_instances: false  # true = startup instances skip loading_delay (model pre-deployed); autoscaler-added instances always pay loading_delay
 ```
 

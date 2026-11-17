@@ -824,7 +824,9 @@ var runCmd = &cobra.Command{
 					Stddev: bundle.InstanceLifecycle.LoadingDelay.Stddev,
 				},
 				WarmStartInitialInstances: bundle.InstanceLifecycle.WarmStartInitialInstances,
+				WeightSource:              bundle.InstanceLifecycle.WeightSource,
 			}
+			requireWeightSource(bundleInstanceLifecycle.WeightSource, kernelOpened, poolChips)
 		}
 		// CLI flag overrides bundle value when explicitly set.
 		if cmd.Flags().Changed("model-autoscaler-interval-us") {
@@ -924,6 +926,7 @@ var runCmd = &cobra.Command{
 			NodePools:                      bundleNodePools,
 			ScenarioEndpointTopology:       cluster.StaticEndpointTopology(scenarioTopology),
 			InstanceLifecycle:              bundleInstanceLifecycle,
+			WeightLoadTime:                 weightLoader(kernelOpened, poolChips),
 			NewEngine: withPoolChips(engineDriverFactory(scenarioEngine, simulationHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
 				poolChips, scenarioEngine, simulationHorizon, seed, ec.Speculative.Acceptance),
 		}

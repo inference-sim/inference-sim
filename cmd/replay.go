@@ -414,7 +414,9 @@ Example:
 					Stddev: bundle.InstanceLifecycle.LoadingDelay.Stddev,
 				},
 				WarmStartInitialInstances: bundle.InstanceLifecycle.WarmStartInitialInstances,
+				WeightSource:              bundle.InstanceLifecycle.WeightSource,
 			}
+			requireWeightSource(bundleInstanceLifecycle.WeightSource, kernelOpened, nil)
 		}
 
 		// PD disaggregation validation (same as runCmd, R3) — INV-13 Track A.
@@ -480,7 +482,8 @@ Example:
 			ScenarioEndpointTopology:   cluster.StaticEndpointTopology(scenarioTopology),
 			// A contract-built release replays on the engine it ran on, built the same way as in
 			// run (INV-13); a compatibility release keeps the compatibility engine.
-			NewEngine: engineDriverFactory(scenarioEngine, replayHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
+			WeightLoadTime: weightLoader(kernelOpened, nil),
+			NewEngine:      engineDriverFactory(scenarioEngine, replayHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
 		}
 
 		// Run simulation — wire SessionManager for closed-loop, nil for fixed mode
