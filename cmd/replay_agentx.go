@@ -63,8 +63,9 @@ type agentXRun struct {
 }
 
 // loadReplaySpec reads a replay workload document: a bare Replay or a document with a
-// replay: or workload.replay: key. A reference to a catalog replay workload is refused:
-// the replay must be stated inline.
+// replay: or workload.replay: key. It may be a reference to a catalog replay workload
+// (workload: <name>, with the run's choices), which resolveAgentXSpec resolves against the
+// catalog in use.
 func loadReplaySpec(path string) (*workload.Replay, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -93,11 +94,6 @@ func loadReplaySpec(path string) (*workload.Replay, error) {
 				return nil, err
 			}
 			node = r
-		}
-	}
-	if m, ok := node.(map[string]any); ok {
-		if name, ok := m["workload"]; ok {
-			return nil, fmt.Errorf("%s names catalog replay workload %v; state the replay inline", path, name)
 		}
 	}
 	raw, err := yaml.Marshal(node)
@@ -153,6 +149,27 @@ func resolveAgentXSpec(cmd *cobra.Command) (*workload.Replay, error) {
 	if agxWorkloadSpec != "" {
 		var err error
 		if r, err = loadReplaySpec(agxWorkloadSpec); err != nil {
+			return nil, err
+		}
+	}
+	if r.Workload != "" {
+		// A reference to a catalog replay workload: the run's own choices (flags included)
+		// go over the entry's definition (Replay.Resolve), which the flags may not restate.
+		if err := applyReplayRunFlags(cmd, r); err != nil {
+			return nil, err
+		}
+		entry, err := mustRunData().Workload(r.Workload)
+		if err != nil {
+			return nil, fmt.Errorf("replay workload %q: %w", r.Workload, err)
+		}
+		if entry.Replay == nil {
+			return nil, fmt.Errorf("catalog workload %q is a traffic shape, not a replay workload", r.Workload)
+		}
+		if agxScenarioFlag != "" && agxScenarioFlag != string(entry.Replay.Scenario) {
+			return nil, fmt.Errorf("--agentic-scenario %s disagrees with catalog replay workload %q, which is %s",
+				agxScenarioFlag, r.Workload, entry.Replay.Scenario)
+		}
+		if r, err = r.Resolve(entry.Replay); err != nil {
 			return nil, err
 		}
 	}
@@ -216,6 +233,33 @@ func resolveAgentXSpec(cmd *cobra.Command) (*workload.Replay, error) {
 		return nil, fmt.Errorf("warmup mode %q is not implemented", r.WarmupMode())
 	}
 	return r, nil
+}
+
+// applyReplayRunFlags puts the flags that state a run's own choices (a reference may state
+// exactly these) onto r.
+func applyReplayRunFlags(cmd *cobra.Command, r *workload.Replay) error {
+	if cmd.Flags().Changed("concurrency") {
+		r.Concurrency = agxConcurrency
+	}
+	if cmd.Flags().Changed("seed") {
+		s := seed
+		r.RandomSeed = &s
+	}
+	if cmd.Flags().Changed("benchmark-duration") {
+		r.BenchmarkDurationS = agxBenchmarkDur.Seconds()
+	}
+	if agxGracePeriod != "" {
+		g := math.Inf(1)
+		if agxGracePeriod != "inf" && agxGracePeriod != ".inf" {
+			d, err := time.ParseDuration(agxGracePeriod)
+			if err != nil {
+				return fmt.Errorf("--grace-period: %w", err)
+			}
+			g = d.Seconds()
+		}
+		r.GracePeriodS = &g
+	}
+	return nil
 }
 
 // buildAgentXRun resolves the descriptor against the deployment, loads the corpus once,
