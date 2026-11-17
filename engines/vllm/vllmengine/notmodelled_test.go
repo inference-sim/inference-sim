@@ -80,6 +80,7 @@ var engineKeys = map[string][]string{
 	"kv_events.publisher":                      {"kv_events_config.publisher"},
 	"kv_events.topic":                          {"kv_events_config.topic"},
 	"max_loras":                                {"max_loras"},
+	"max_cpu_loras":                            {"max_cpu_loras"},
 	"quantization":                             {"quantization"},
 	"cache_dtype":                              {"kv_cache_dtype"},
 	"mamba_cache_dtype":                        {"mamba_cache_dtype"},
