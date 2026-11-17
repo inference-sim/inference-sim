@@ -88,6 +88,10 @@ type p2pAdd struct {
 type startedTransfer struct {
 	addr string
 	tr   engine.Transfer
+	// bytes is what the engine states the transfer moves when it starts (PeerWriteBytes); ok false
+	// for a transfer that is not a WRITE to a peer.
+	bytes int64
+	ok    bool
 }
 
 // p2pWorld is a hand-run simulator for engines with a p2p tier: it delivers each engine's outbox
@@ -260,7 +264,8 @@ func (w *p2pWorld) run(limit engine.Time) {
 				if err := n.e.Plan().CheckTransfer(tr.Move); err != nil {
 					w.t.Fatal(err)
 				}
-				w.started = append(w.started, startedTransfer{n.addr, tr})
+				bytes, ok := n.e.PeerWriteBytes(tr)
+				w.started = append(w.started, startedTransfer{n.addr, tr, bytes, ok})
 				n.xfers = append(n.xfers, p2pDue{now + w.xfer, tr.ID})
 			}
 			for _, f := range b.Finished {
@@ -362,6 +367,20 @@ func TestAP2PDecoderLoadsItsPromptFromThePrefiller(t *testing.T) {
 	}
 	if _, priced := p.TransferTime(w.writes()[0].tr); priced {
 		t.Error("the engine priced a WRITE to a peer; the simulator prices it from its Move")
+	}
+	// Each WRITE moves its chunks of the CPU tier: one 4 KiB block a chunk, one worker.
+	bytes := int64(0)
+	for _, s := range w.writes() {
+		if !s.ok {
+			t.Fatalf("the engine stated no bytes for its WRITE %+v when it started", s.tr)
+		}
+		bytes += s.bytes
+	}
+	if bytes != 96/16*4096 {
+		t.Errorf("the WRITEs move %d bytes, want the prompt's 6 chunks of 4096", bytes)
+	}
+	if _, ok := p.PeerWriteBytes(engine.Transfer{ID: 1 << 40}); ok {
+		t.Error("the engine states bytes for a transfer that is not a WRITE to a peer")
 	}
 }
 
@@ -698,5 +717,61 @@ func TestTheTierPollRoundIsDueExactlyOneIntervalAfterTheLast(t *testing.T) {
 	step(1000) // due: a round runs, and the next is one interval later
 	if got := wake(1000); got != 2000 {
 		t.Fatalf("a schedule at 1000 skipped the round due then; the next wake is %d, want 2000", got)
+	}
+}
+
+// Two instances built from one engine block state one side-channel address, so a host gives each its
+// own (SetPeerAddr), as a deployment sets VLLM_P2P_SIDE_CHANNEL_HOST per node. The address is the one
+// the engine's messages come from and the one a peer's message must name; it cannot change once the
+// tier has a session, and an address that is not host:port is refused.
+func TestAHostGivesEachInstanceItsOwnPeerAddress(t *testing.T) {
+	a, b := p2pEngine(t, 5711, decoderAt), p2pEngine(t, 5711, prefillerAt)
+	if a.PeerAddr() != b.PeerAddr() {
+		t.Fatalf("two engines of one block state %q and %q; the test needs them alike", a.PeerAddr(), b.PeerAddr())
+	}
+	if err := a.SetPeerAddr("blis-node-1:5711"); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.SetPeerAddr("blis-node-0:5711"); err != nil {
+		t.Fatal(err)
+	}
+	if a.PeerAddr() == b.PeerAddr() || a.PeerAddr() != "blis-node-1:5711" {
+		t.Fatalf("after SetPeerAddr the engines are at %q and %q", a.PeerAddr(), b.PeerAddr())
+	}
+	// a's request names a prefiller; a's connect to it comes from a's new address.
+	if err := a.Add(kvParams(req("d1", 100, 2), fromPrefiller("kv1")), 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Schedule(0); err != nil {
+		t.Fatal(err)
+	}
+	out := a.Outbox()
+	if len(out) != 1 || out[0].From != "blis-node-1:5711" {
+		t.Fatalf("the engine's connect is %+v, want one from blis-node-1:5711", out)
+	}
+	// The connect names the identity the peer dials back: the tier's own, which must be the new one.
+	if m, err := decodeP2PMsg(out[0].Payload); err != nil || m.PeerID != "blis-node-1:5711" {
+		t.Fatalf("the connect names the tier as %q (%v), want blis-node-1:5711", m.PeerID, err)
+	}
+	connect := encodeP2PMsg(kvtier.P2PMsg{Type: "connect", PeerID: prefillerAddr, AgentMetadata: []byte("agent"),
+		BlockLen: 4096, NumBlocks: 200})
+	msg := engine.PeerMessage{From: prefillerAddr, To: "localhost:5711", Seq: 1, Bytes: int64(len(connect)), Payload: connect}
+	if err := a.Deliver(msg, 10); err == nil {
+		t.Error("a message to the block's address was taken after the engine was given its own")
+	}
+	msg.To = "blis-node-1:5711"
+	if err := a.Deliver(msg, 10); err != nil {
+		t.Errorf("a message to the engine's own address was refused: %v", err)
+	}
+	if err := a.SetPeerAddr("blis-node-1:5799"); err == nil {
+		t.Error("the address changed after the tier had a session")
+	}
+	for _, bad := range []string{"blis-node-0", ":5711", "blis-node-0:0", "blis-node-0:70000", "blis-node-0:x"} {
+		if err := b.SetPeerAddr(bad); err == nil {
+			t.Errorf("SetPeerAddr(%q) was accepted", bad)
+		}
+	}
+	if err := mustEngine(t, fsTier).SetPeerAddr("blis-node-0:5711"); err == nil {
+		t.Error("an engine with no p2p tier took a peer address")
 	}
 }

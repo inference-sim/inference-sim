@@ -117,6 +117,14 @@ func Adopt(in AdoptInputs) (Adopted, error) {
 			"there). Drop the setting to run on the compatibility engine",
 			in.Scenario, shape.Roles[i], strings.Join(stated, ", "), strings.Join(CompatVersions(), " and "))
 	}
+	// vLLM's p2p tier (connector_options.secondary_tiers) came with the v0.33.0 engine, which builds
+	// it (core/vllm offloadtiers_p2p.go); the compatibility engine has no such tier, and the offload
+	// it resolves drops the option (KVOffloadBlockFromDeployment), so a release it runs is refused.
+	if !core && StatesP2PTier(shape.Offload) {
+		return Adopted{}, fmt.Errorf("scenario %q: offload.connector_options.secondary_tiers states vLLM's p2p tier, "+
+			"which the %s releases the compatibility engine models do not have; it runs on the v%s engine, so state engine.version %q",
+			in.Scenario, strings.Join(CompatVersions(), " and "), vllm.Version, vllm.Version)
+	}
 	// A colocated run simulates one pool's engine; a second colocated pool would be dropped.
 	if !slices.Contains(shape.Roles, deployment.RolePrefill) && len(shape.Roles) > 1 {
 		return Adopted{}, fmt.Errorf("scenario %q states %d colocated pools; a run simulates one colocated "+

@@ -514,11 +514,19 @@ func KVOffloadBlockFromDeployment(o *deployment.Offload) (*KVOffloadBlock, error
 	}
 	if c, err := engineconfig.DecodeConnectorOptions(o.ConnectorOptions); err != nil {
 		return nil, fmt.Errorf("offload.connector_options: %w", err)
-	} else if c != nil {
+	} else if c != nil && !(len(c.SecondaryTiers) > 0 && len(statedConnectorOptions(c)) == 0) {
+		// A block stating only secondary_tiers names vLLM's p2p tier (engineconfig.ConnectorOptions
+		// accepts no other), which the v0.33.0 engine builds itself (core/vllm offloadtiers_p2p.go);
+		// the offload this resolves is the CPU tier, and Adopt refuses the p2p tier for a
+		// compatibility-engine release, which has none.
+		names := statedConnectorOptions(c)
+		if len(names) == 0 {
+			names = []string{"an empty block"}
+		}
 		return nil, fmt.Errorf("offload.connector_options (%s) is not simulated: blis-schemas added the "+
 			"connector options with the v0.32.0 engine, and blis-vllm's compatibility engine models the "+
 			"0.29/0.31 offload block (connector, spec, tiers, eviction_policy), so drop them",
-			strings.Join(statedConnectorOptions(c), ", "))
+			strings.Join(names, ", "))
 	}
 	if o.Connector == SimpleConnector {
 		return simpleOffloadBlock(o)
@@ -565,7 +573,7 @@ func KVOffloadBlockFromDeployment(o *deployment.Offload) (*KVOffloadBlock, error
 }
 
 // statedConnectorOptions are the connector options c states, by their scenario field names, in
-// declaration order.
+// declaration order, other than secondary_tiers (KVOffloadBlockFromDeployment).
 func statedConnectorOptions(c *engineconfig.ConnectorOptions) []string {
 	var out []string
 	add := func(stated bool, name string) {
@@ -580,9 +588,6 @@ func statedConnectorOptions(c *engineconfig.ConnectorOptions) []string {
 	add(c.LazyOffload != nil, "lazy_offload")
 	add(c.BlocksPerChunk != 0, "blocks_per_chunk")
 	add(c.KVLoadFailurePolicy != "", "kv_load_failure_policy")
-	if len(out) == 0 {
-		out = append(out, "an empty block")
-	}
 	return out
 }
 

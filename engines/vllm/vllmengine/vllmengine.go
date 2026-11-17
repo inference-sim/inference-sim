@@ -294,10 +294,24 @@ func offloadOf(m *kernelmodel.Model, o *deployment.Offload) (*yaml.Node, error) 
 	bpc := 0
 	if opts != nil {
 		bpc = opts.BlocksPerChunk
-		*opts = engineconfig.ConnectorOptions{BlocksPerChunk: opts.BlocksPerChunk}
+		// A p2p tier sits on no device, so it is stated in the connector's own options, as vLLM states it
+		// (kv_connector_extra_config.secondary_tiers), and passed through unchanged; the engine builds it
+		// (core/vllm offloadtiers_p2p.go) and refuses what it cannot run.
+		for i, t := range opts.SecondaryTiers {
+			if t["type"] != "p2p" {
+				return nil, fmt.Errorf("offload.connector_options.secondary_tiers[%d]: %v is not a tier on no device: only "+
+					"p2p is stated here, and a tier on a catalog device is one of offload.tiers (%s)", i, t["type"], secondaryTierIssue)
+			}
+			if o.Spec != "TieringOffloadingSpec" {
+				return nil, fmt.Errorf("offload.connector_options.secondary_tiers[%d]: a p2p tier is TieringOffloadingSpec's, "+
+					"and the offload's spec is %q (%s)", i, o.Spec, secondaryTierIssue)
+			}
+			secondary = append(secondary, t)
+		}
+		*opts = engineconfig.ConnectorOptions{BlocksPerChunk: opts.BlocksPerChunk, SecondaryTiers: opts.SecondaryTiers}
 		if again, _ := engineconfig.DecodeConnectorOptions(o.ConnectorOptions); again != nil && !reflect.DeepEqual(*again, *opts) {
-			return nil, fmt.Errorf("offload.connector_options: only blocks_per_chunk is an OffloadingConnector option (%s)",
-				offloadIssue)
+			return nil, fmt.Errorf("offload.connector_options: only blocks_per_chunk and secondary_tiers are OffloadingConnector "+
+				"options (%s)", offloadIssue)
 		}
 	}
 	perBlock, err := offloadBytesPerBlock(m)
@@ -628,7 +642,11 @@ func (p pool) complete(given yaml.Node) yaml.Node {
 		// (vllm/config/vllm.py:655-675@4ba787ec), which the catalog's model graph holds.
 		setIfAbsent(&block, "mtp_nextn_predict_layers", fmt.Sprint(n))
 	}
-	if role := kvRoleOf(p.role); role != "" && p.connector != "" {
+	// vLLM's P/D deployment over its p2p tier states the OffloadingConnector as its only KV connector
+	// (docs/features/kv_offloading_usage.md "P2P (Including P/D)" at vLLM v0.33.0): the engine runs it
+	// as kv_offload, whose p2p tier loads the decode's prompt, so the pool states no kv_transfer.
+	p2pHandoff := p.connector == offloadChild && p.offload != nil
+	if role := kvRoleOf(p.role); role != "" && p.connector != "" && !p2pHandoff {
 		// A P/D pool's kv_transfer_config: the deployment's pd_transfer.connector, and the pool's
 		// role as vLLM's kv_role (a prefill pool produces KV, a decode pool consumes it).
 		kt := yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
