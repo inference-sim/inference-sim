@@ -14113,7 +14113,7 @@
  },
  "kind": "recorded",
  "provenance": {
-  "blis_sglang_commit": "599e2ea215da8217583edd4a7051f1533b41b332",
+  "blis_sglang_commit": "9531e8d4266a63187092d17b18e8d02611188c3b",
   "lockfile_sha256": "a3fb4e4773230faee4ffdd89437a96b2f3bfb3082e4be4cef4f44d44c66ed569",
   "mock_version": "gpu-mock/9+f7e50518d4b2",
   "model": "Qwen/Qwen2.5-0.5B-Instruct",
