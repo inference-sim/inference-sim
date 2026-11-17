@@ -179,6 +179,12 @@ type PlannedLayer struct {
 	DenseGEMMs []PlannedGEMM
 	// DenseWeightBytes is the parameter bytes those GEMMs read, independent of batch.
 	DenseWeightBytes float64
+	// ExpertBiasShardedBytesPerExpert and ExpertBiasReplicatedBytesPerExpert are the bias a routed
+	// expert's checkpoint stores, resident beside its weights: the gate and up projections' biases,
+	// which split over the tensor-parallel ranks with their outputs, and the down projection's,
+	// which a row-parallel layer keeps whole on every rank. They are the checkpoint's bytes, so
+	// the weight padding of expertPadding does not apply to them.
+	ExpertBiasShardedBytesPerExpert, ExpertBiasReplicatedBytesPerExpert float64
 
 	// ExpertFLOPsPerTokenPerExpert is the grouped-GEMM work for one token routed to one
 	// expert. A step multiplies by tokens and by top_k.
@@ -794,6 +800,10 @@ func planNodes(nodes []model.Node, em Emitter, o PlanOptions,
 			resident := read
 			if n.Aliases != "" {
 				resident = 0
+			} else {
+				// The bias the checkpoint stores beside the weights is resident with them
+				// (blis-schemas Node.BiasDType); a node without one adds nothing.
+				resident += biasBytes(n, float64(n.N))
 			}
 			g := PlannedGEMM{
 				N: n.N, K: n.K, FLOPsPerToken: f, ShardN: shardN,
@@ -859,6 +869,7 @@ func planNodes(nodes []model.Node, em Emitter, o PlanOptions,
 				shared := 3 * float64(n.N) * float64(n.K) * float64(max(n.Experts, 1))
 				pl.SharedExpertFLOPsPerToken += 2 * shared
 				pl.SharedExpertWeightBytes += shared * ew
+				pl.SharedExpertWeightBytes += biasBytes(n, float64(2*n.N+n.K)*float64(max(n.Experts, 1)))
 				if err := setFormat(&pl.SharedFormat, &sharedSet, o.Format(n),
 					"shared-expert"); err != nil {
 					return pl, err
@@ -884,6 +895,9 @@ func planNodes(nodes []model.Node, em Emitter, o PlanOptions,
 			// Only the WEIGHT terms take a node's dtype override: activations and
 			// collectives cross at the served width whatever the weights are stored as.
 			pl.ExpertWeightBytesPerExpert += perExpert * ew
+			// A routed expert's bias: N for each of the gate and the up projection, K for the down.
+			pl.ExpertBiasShardedBytesPerExpert += biasBytes(n, float64(2*n.N))
+			pl.ExpertBiasReplicatedBytesPerExpert += biasBytes(n, float64(n.K))
 			pl.TopK = max(pl.TopK, n.TopK)
 			pl.Experts = max(pl.Experts, n.Experts)
 			pl.ExpertInner = max(pl.ExpertInner, n.N)
@@ -1056,4 +1070,13 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// biasBytes is the resident bytes of elements bias elements stored at the node's bias dtype,
+// zero for a node that states none.
+func biasBytes(n model.Node, elements float64) float64 {
+	if n.BiasDType == "" {
+		return 0
+	}
+	return elements * model.StoredBytes(n.BiasDType, nil)
 }

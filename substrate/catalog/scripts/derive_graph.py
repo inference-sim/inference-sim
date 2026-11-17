@@ -1917,6 +1917,34 @@ HEAD_AT_BASE_ARCHS = frozenset({
 })
 
 
+# Architectures whose checkpoint stores a bias beside the projections named here, by graph role,
+# and the config key that turns the attention ones on. gpt-oss-120b: a bias on the attention
+# projections (attention_bias), on the router, and on every routed expert's gate_up and down
+# projections (gpt_oss.py in vLLM; the checkpoint's gate_up_proj_bias and down_proj_bias). The
+# bias is stored at the base width; how an engine converts or pads it is the engine's lowering
+# (inference-sim/blis-substrate#281).
+NODE_BIAS_ROLES = {
+    "GptOssForCausalLM": {"qkv_proj": "attention_bias", "o_proj": "attention_bias",
+                          "router": None, "experts": None},
+}
+
+
+def apply_node_biases(graph: dict[str, Any], cfg: dict[str, Any], raw: dict[str, Any],
+                      arch: str, model: str) -> None:
+    """State bias_dtype on the GEMM and GroupedGEMM nodes whose checkpoint carries a bias."""
+    roles = NODE_BIAS_ROLES.get(arch)
+    if not roles:
+        return
+    dtype = base_dtype(cfg, raw, model)
+    for kind in graph["layer_kinds"]:
+        for node in kind["nodes"]:
+            if node.get("op") not in ("GEMM", "GroupedGEMM") or node.get("role") not in roles:
+                continue
+            key = roles[node["role"]]
+            if key is None or cfg.get(key):
+                node["bias_dtype"] = dtype
+
+
 def ct_matches(name: str, entry: str) -> bool:
     """vLLM's compressed-tensors name match: the entry itself, or the regex after "re:"
     matched from the start of the name (is_equal_or_regex_match,
@@ -8440,6 +8468,7 @@ def _derive(config_path: Path, model: str) -> dict[str, Any]:
         "layer_kinds": kinds,
         "stack": stack,
     }
+    apply_node_biases(graph, cfg, raw, arch, model)
 
     # A config that nests its text shapes beside another tower describes more than
     # this graph prices, and the graph says so rather than leaving a reader to find out

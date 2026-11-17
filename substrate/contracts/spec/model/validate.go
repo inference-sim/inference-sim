@@ -502,6 +502,17 @@ func (n Node) validate(p *validate.Problems, at string) {
 		}
 	}
 
+	// A bias dtype is a checkpoint fact on a node that holds parameters, and a name no
+	// reader knows is an error rather than a bias priced at nothing.
+	if n.BiasDType != "" {
+		switch {
+		case !n.BiasDType.Valid():
+			p.Field(at+".bias_dtype", "%q is not a recognized dtype", n.BiasDType)
+		case n.Op != OpGEMM && n.Op != OpGroupedGEMM:
+			p.Field(at+".bias_dtype", "only a GEMM or GroupedGEMM holds parameters")
+		}
+	}
+
 	// The latent-read compression factor is meaningful only on a compressed sparse-MLA
 	// layer, so it is rejected on any other op or attention kind -- gated the same way as
 	// the other MLA-specific parameters. The field is optional (omitempty), so a zero is

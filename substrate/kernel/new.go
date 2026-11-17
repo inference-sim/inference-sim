@@ -2343,6 +2343,7 @@ func (k *Kernel) residentBytes(l price.PlannedLayer) float64 {
 		b += l.ExpertWeightBytesPerExpert * k.geom(&l).perRank / k.expertTensorShards *
 			k.expertPadding(&l)
 	}
+	b += (l.ExpertBiasShardedBytesPerExpert/k.expertTensorShards + l.ExpertBiasReplicatedBytesPerExpert) * k.geom(&l).perRank
 	if l.SharedTokenSharded && sp {
 		b += l.SharedExpertWeightBytes
 	} else {

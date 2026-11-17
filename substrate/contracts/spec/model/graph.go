@@ -568,6 +568,14 @@ type Node struct {
 	// express that split, and inferring it from the quantization method would be a guess
 	// about a width the checkpoint states.
 	WeightDType DType `yaml:"weight_dtype,omitempty"`
+	// BiasDType is the dtype of the bias the checkpoint stores beside this node's weights, a
+	// checkpoint fact like WeightDType. Empty means the node has no bias, which is every node
+	// of a graph written before the field existed. The bias is resident beside the weights: a
+	// GEMM's holds N elements, and a GroupedGEMM's holds, for each expert, N elements for each
+	// of the gate and the up projection and K for the down projection. How an engine converts
+	// or pads it (a TRTLLM MoE path holds it in float32 at a padded shape) is the engine's
+	// lowering, not the graph's.
+	BiasDType DType `yaml:"bias_dtype,omitempty"`
 	// GroupedGEMM only.
 	//
 	// Shared says whether this group is a shared expert (true: every token passes through
