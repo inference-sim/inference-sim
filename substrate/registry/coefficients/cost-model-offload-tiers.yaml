@@ -28,7 +28,7 @@ coefficients:
       units: bytes_per_us
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - {kind: discussion, cite: "inference-sim PR #1594 (commit 3673d3655e), the kv_offload_devices section of defaults.yaml, split into blis-catalog at b20b7f1: a representative class seeded with no source cited", role: primary}
       rationale: >
@@ -38,7 +38,7 @@ coefficients:
       units: bytes_per_us
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - {kind: discussion, cite: "inference-sim PR #1594 (commit 3673d3655e), the kv_offload_devices section of defaults.yaml, split into blis-catalog at b20b7f1: a representative class seeded with no source cited", role: primary}
       rationale: >
@@ -48,7 +48,7 @@ coefficients:
       units: us_per_transfer
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - {kind: discussion, cite: "inference-sim PR #1594 (commit 3673d3655e), the kv_offload_devices section of defaults.yaml, split into blis-catalog at b20b7f1: a representative class seeded with no source cited", role: primary}
       rationale: >
@@ -58,7 +58,7 @@ coefficients:
       units: bytes_per_us
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - {kind: discussion, cite: "inference-sim PR #1594 (commit 3673d3655e), the kv_offload_devices section of defaults.yaml, split into blis-catalog at b20b7f1: a representative class seeded with no source cited", role: primary}
       rationale: >
@@ -68,7 +68,7 @@ coefficients:
       units: bytes_per_us
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - {kind: discussion, cite: "inference-sim PR #1594 (commit 3673d3655e), the kv_offload_devices section of defaults.yaml, split into blis-catalog at b20b7f1: a representative class seeded with no source cited", role: primary}
       rationale: >
@@ -78,7 +78,7 @@ coefficients:
       units: us_per_transfer
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - {kind: discussion, cite: "inference-sim PR #1594 (commit 3673d3655e), the kv_offload_devices section of defaults.yaml, split into blis-catalog at b20b7f1: a representative class seeded with no source cited", role: primary}
       rationale: >
@@ -88,7 +88,7 @@ coefficients:
       units: bytes_per_us
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - {kind: discussion, cite: "inference-sim PR #1594 (commit 3673d3655e), the kv_offload_devices section of defaults.yaml, split into blis-catalog at b20b7f1: a representative class seeded with no source cited", role: primary}
       rationale: >
@@ -98,7 +98,7 @@ coefficients:
       units: bytes_per_us
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - {kind: discussion, cite: "inference-sim PR #1594 (commit 3673d3655e), the kv_offload_devices section of defaults.yaml, split into blis-catalog at b20b7f1: a representative class seeded with no source cited", role: primary}
       rationale: >
@@ -108,7 +108,7 @@ coefficients:
       units: us_per_transfer
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - {kind: discussion, cite: "inference-sim PR #1594 (commit 3673d3655e), the kv_offload_devices section of defaults.yaml, split into blis-catalog at b20b7f1: a representative class seeded with no source cited", role: primary}
       rationale: >
@@ -118,7 +118,7 @@ coefficients:
       units: bytes_per_us
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - {kind: discussion, cite: "inference-sim PR #1594 (commit 3673d3655e), the kv_offload_devices section of defaults.yaml, split into blis-catalog at b20b7f1: a representative class seeded with no source cited", role: primary}
       rationale: >
@@ -128,7 +128,7 @@ coefficients:
       units: bytes_per_us
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - {kind: discussion, cite: "inference-sim PR #1594 (commit 3673d3655e), the kv_offload_devices section of defaults.yaml, split into blis-catalog at b20b7f1: a representative class seeded with no source cited", role: primary}
       rationale: >
@@ -138,7 +138,7 @@ coefficients:
       units: us_per_transfer
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - {kind: discussion, cite: "inference-sim PR #1594 (commit 3673d3655e), the kv_offload_devices section of defaults.yaml, split into blis-catalog at b20b7f1: a representative class seeded with no source cited", role: primary}
       rationale: >
@@ -163,7 +163,7 @@ coefficients:
       units: bytes_per_us
       method: transferred
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h200, l40s, rtx6000pro-server]}
       transferred_from: "hardware=h100"
       transfer_rule: >
         Used unchanged: the rate measured on the H100 host is the only one measured for this tier, and before this entry the catalog applied it to every host without saying so. TierTime then holds the rate to this chip's own measured host_link_bandwidth, so a host whose link is slower than the H100's is priced at its own link. No H200, Blackwell or Grace-Blackwell host has been timed for this tier.
@@ -191,7 +191,7 @@ coefficients:
       units: bytes_per_us
       method: transferred
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h200, l40s, rtx6000pro-server]}
       transferred_from: "hardware=h100"
       transfer_rule: >
         Used unchanged: the rate measured on the H100 host is the only one measured for this tier, and before this entry the catalog applied it to every host without saying so. TierTime then holds the rate to this chip's own measured host_link_bandwidth, so a host whose link is slower than the H100's is priced at its own link. No H200, Blackwell or Grace-Blackwell host has been timed for this tier.
@@ -214,7 +214,7 @@ coefficients:
       units: us_per_transfer
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h200, l40s, rtx6000pro-server]}
       sources:
         - {kind: model, cite: "InferenceX CollectiveX swap_blocks, sku h100-dgxc, image vllm/vllm-openai:v0.27.1, runs 35158674963 and 36334394602 (public InferenceX Data API /api/v1/collectivex/runs/{id}); pinned host memory, contiguous layout", role: supporting}
       rationale: >
@@ -240,7 +240,7 @@ coefficients:
       units: bytes_per_us
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h200, l40s, rtx6000pro-server]}
       sources:
         - {kind: vendor_doc, cite: "NVIDIA DGX H100 user guide and datasheet: 8 x 3.84 TB NVMe U.2 in RAID 0 at /raid (PCIe Gen4); the drive model is not public", role: supporting}
         - {kind: vendor_doc, cite: "NVIDIA DGX SuperPOD H100 reference architecture: '> 50 GB/s' from internal NVMe (a design target, not a measurement)", role: supporting}
@@ -272,7 +272,7 @@ coefficients:
       units: bytes_per_us
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h200, l40s, rtx6000pro-server]}
       sources:
         - {kind: vendor_doc, cite: "NVIDIA DGX H100 user guide and datasheet: 8 x 3.84 TB NVMe U.2 in RAID 0 at /raid (PCIe Gen4); the drive model is not public", role: supporting}
         - {kind: vendor_doc, cite: "NVIDIA DGX SuperPOD H100 reference architecture: '> 50 GB/s' from internal NVMe (a design target, not a measurement)", role: supporting}
@@ -304,7 +304,7 @@ coefficients:
       units: us_per_transfer
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h200, l40s, rtx6000pro-server]}
       sources:
         - {kind: vendor_doc, cite: "NVIDIA DGX H100 user guide and datasheet: 8 x 3.84 TB NVMe U.2 in RAID 0 at /raid (PCIe Gen4); the drive model is not public", role: supporting}
         - {kind: vendor_doc, cite: "NVIDIA DGX SuperPOD H100 reference architecture: '> 50 GB/s' from internal NVMe (a design target, not a measurement)", role: supporting}
