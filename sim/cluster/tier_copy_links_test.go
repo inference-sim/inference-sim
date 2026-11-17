@@ -48,11 +48,10 @@ func (e *storingEngine) TransferDone(id engine.TransferID, ok bool, now engine.T
 
 // tierCopyDone runs a cluster of two instances that each start one tier copy of a megabyte over the
 // same link, at 1 GB/s (1000 us alone), for the requests given, and returns when each copy was done.
-func tierCopyDone(t *testing.T, contention bool, requests int) []int64 {
+func tierCopyDone(t *testing.T, requests int) ([]int64, map[string]int) {
 	t.Helper()
 	done := map[engine.TransferID]int64{}
 	cfg := newTestDeploymentConfig(2)
-	cfg.TierCopyContention = contention
 	cfg.NewEngine = func(index int, _ sim.InstanceConfig) (*sim.EngineDriver, error) {
 		fifo, err := enginetest.NewFIFO(enginetest.FIFOConfig{MaxRunning: 1, TokenBudget: 64, InFlight: 1, StepBaseUs: 10})
 		if err != nil {
@@ -75,32 +74,83 @@ func tierCopyDone(t *testing.T, contention bool, requests int) []int64 {
 	for _, at := range done {
 		out = append(out, at)
 	}
-	return out
+	return out, cs.TierLinkPeakConcurrent()
 }
 
 // Offload-tier copies share the links they cross with each other (#2108): two instances each store a
-// megabyte over one link at the same time and each takes longer than the same copy alone, while with
-// the arbiter off, each takes its demand alone.
+// megabyte over one link at the same time and each takes longer than the same copy alone, and the
+// run states the sharing: the link carried two transfers at once (one when alone).
 func TestTierCopiesOnOneLinkShareItsCapacity(t *testing.T) {
-	alone := tierCopyDone(t, true, 1)
+	alone, peakAlone := tierCopyDone(t, 1)
 	if len(alone) != 1 {
 		t.Fatalf("%d copies done with one request, want 1", len(alone))
 	}
-	shared := tierCopyDone(t, true, 2)
+	shared, peakShared := tierCopyDone(t, 2)
 	if len(shared) != 2 {
 		t.Fatalf("%d copies done with two requests, want 2", len(shared))
 	}
-	unshared := tierCopyDone(t, false, 2)
 	for _, at := range shared {
 		if at <= alone[0]+500 {
 			t.Errorf("a copy sharing its link was done at %d, want well past %d, when the same copy alone was", at, alone[0])
 		}
 	}
-	for _, at := range unshared {
-		// The arbiter rounds a copy's time up to a whole tick, as it does a handoff's, and the copy
-		// without it truncates (sim.TierTicks): a lone copy differs by at most that tick.
-		if at < alone[0]-1 || at > alone[0]+1 {
-			t.Errorf("without the arbiter a copy was done at %d, want %d (within a tick), as when alone", at, alone[0])
+	const link = "tier/cpu_dram/store/node0"
+	if peakAlone[link] != 1 || peakShared[link] != 2 {
+		t.Errorf("transfers in flight together on %s: alone %v, shared %v, want 1 and 2", link, peakAlone, peakShared)
+	}
+}
+
+// startTierCopyEvent admits a tier copy to the cluster's link arbiter at its time, as an engine's
+// copy is when the driver starts it.
+type startTierCopyEvent struct {
+	time   int64
+	demand kernel.TransferDemand
+	landed *int64
+}
+
+func (e *startTierCopyEvent) Timestamp() int64 { return e.time }
+func (e *startTierCopyEvent) Priority() int    { return 6 }
+func (e *startTierCopyEvent) Execute(cs *ClusterSimulator) {
+	cs.admitTierFlow(e.demand, e.time, func(at int64) { *e.landed = at })
+}
+
+// A tier copy and a P/D pull that cross one link share it (#2108): the pull's decode node ingress
+// carries both, so the pull takes longer than it priced alone, the copy takes longer than the same
+// copy alone, and the link's peak is two transfers.
+func TestATierCopyAndAPullOnOneLinkShareIt(t *testing.T) {
+	reqs := func() []*sim.Request { return []*sim.Request{holdTestRequest("a", 1, 0, 4096, 4)} }
+	// The decode node's NIC ingress, which the handoff crosses, carries the megabyte-scale copy too.
+	copyDemand := func() kernel.TransferDemand {
+		return kernel.TransferDemand{Bytes: 4096 * 1000, Links: []kernel.LinkUse{
+			{Link: "nic/ingress/node/1", BytesPerSecond: testNICBytesPerSecond}}}
+	}
+	run := func(withCopy bool, at int64) (*ClusterSimulator, int64) {
+		cs := newTestCluster(contentionConfig(2, 1, 1, true), NewSliceRequestSource(reqs()), nil)
+		var landed int64
+		if withCopy {
+			cs.scheduleTestEvent(&startTierCopyEvent{time: at, demand: copyDemand(), landed: &landed})
 		}
+		mustRun(t, cs)
+		return cs, landed
+	}
+	alone, _ := run(false, 0)
+	p := parentsByID(alone)["a"]
+	start, aloneTicks := p.TransferStartTime, p.TransferCompleteTime-p.TransferStartTime
+	if aloneTicks != p.TransferAloneTicks {
+		t.Fatalf("the pull alone took %d ticks, priced %d", aloneTicks, p.TransferAloneTicks)
+	}
+	shared, landed := run(true, start)
+	q := parentsByID(shared)["a"]
+	if q.TransferStartTime != start {
+		t.Fatalf("the pull started at %d with a copy in flight, %d without", q.TransferStartTime, start)
+	}
+	if d := q.TransferCompleteTime - q.TransferStartTime; d <= aloneTicks {
+		t.Errorf("the pull took %d ticks beside the copy, %d alone: the copy did not share its link", d, aloneTicks)
+	}
+	if landed-start <= 4096 {
+		t.Errorf("the copy took %d ticks beside the pull, 4096 alone", landed-start)
+	}
+	if peak := shared.TierLinkPeakConcurrent()["nic/ingress/node/1"]; peak != 2 {
+		t.Errorf("the decode ingress carried at most %d transfers at once, want the pull and the copy", peak)
 	}
 }

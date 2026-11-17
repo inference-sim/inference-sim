@@ -228,7 +228,7 @@ func scheduleTransferCompletion(cs *ClusterSimulator, parentReq *ParentRequest, 
 	numBlocks := parentReq.PulledKVBlocks
 	duration := AloneTicks(flow)
 	parentReq.TransferAloneTicks = duration
-	if cs.pdLinks != nil {
+	if cs.pdContention {
 		cs.pdLinkFlows[cs.pdLinks.Start(startTime, flow)] = parentReq
 		logrus.Debugf("[cluster] KV transfer started for %s at %d: %d blocks, %d μs alone, sharing links with %d others",
 			parentReq.ID, startTime, numBlocks, duration, cs.pdLinks.InFlight()-1)
@@ -242,8 +242,8 @@ func scheduleTransferCompletion(cs *ClusterSimulator, parentReq *ParentRequest, 
 
 // tierCopy is an offload-tier copy in the link arbiter: the transfer and the instance that started it.
 type tierCopy struct {
-	inst *InstanceSimulator
-	id   engine.TransferID
+	// land reports the copy landed at the given tick.
+	land func(at int64)
 }
 
 // startTierCopy admits an offload-tier copy the instance's engine started at now to the link arbiter,
@@ -252,10 +252,16 @@ type tierCopy struct {
 // A copy alone on its links takes its demand alone, as it does without the arbiter, to a whole tick
 // rounded up as a handoff's is (AloneTicks) rather than truncated (sim.TierTicks).
 func (cs *ClusterSimulator) startTierCopy(inst *InstanceSimulator, id engine.TransferID, demand kernel.TransferDemand, now int64) {
+	cs.admitTierFlow(demand, now, func(at int64) { inst.tierLanded(id, at) })
+}
+
+// admitTierFlow puts a tier copy's demand in the link arbiter at now; land is called when it completes.
+func (cs *ClusterSimulator) admitTierFlow(demand kernel.TransferDemand, now int64, land func(at int64)) {
+	cs.tierCopies++
 	if cs.tierLinkFlows == nil {
 		cs.tierLinkFlows = make(map[FlowID]tierCopy)
 	}
-	cs.tierLinkFlows[cs.pdLinks.Start(now, FlowOf(demand))] = tierCopy{inst: inst, id: id}
+	cs.tierLinkFlows[cs.pdLinks.Start(now, FlowOf(demand))] = tierCopy{land: land}
 	cs.scheduleLinkWake()
 }
 
@@ -290,7 +296,7 @@ func (e *PDLinkWakeEvent) Execute(cs *ClusterSimulator) {
 	for _, id := range cs.pdLinks.Advance(e.time) {
 		if tc, ok := cs.tierLinkFlows[id]; ok {
 			delete(cs.tierLinkFlows, id)
-			tc.inst.tierLanded(tc.id, e.time)
+			tc.land(e.time)
 			continue
 		}
 		parent := cs.pdLinkFlows[id]
@@ -303,7 +309,16 @@ func (e *PDLinkWakeEvent) Execute(cs *ClusterSimulator) {
 // PDLinkPeakConcurrent is, per link, the most handoffs ever in flight on it together; nil when
 // contention is off.
 func (cs *ClusterSimulator) PDLinkPeakConcurrent() map[string]int {
-	if cs.pdLinks == nil {
+	if !cs.pdContention {
+		return nil
+	}
+	return cs.pdLinks.PeakConcurrent()
+}
+
+// TierLinkPeakConcurrent is, per link, the most transfers (tier copies and, with contention, handoffs)
+// ever in flight on it together; nil when no engine started a tier copy.
+func (cs *ClusterSimulator) TierLinkPeakConcurrent() map[string]int {
+	if cs.tierCopies == 0 {
 		return nil
 	}
 	return cs.pdLinks.PeakConcurrent()
