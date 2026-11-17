@@ -76,7 +76,11 @@ type ProfileSet struct {
 	// Caveats state what the set does not cover and how far its values travel: which
 	// categories have no curve, which hardware they were measured on, which K the image
 	// refused.
-	Caveats  []string  `yaml:"caveats,omitempty"`
+	Caveats []string `yaml:"caveats,omitempty"`
+	// Shapes state how natural acceptance spreads over the draft positions, fitted to the
+	// set's measured curves: a natural value that states no rates takes its rates from the
+	// shape for its method (NaturalRates).
+	Shapes   []Shape   `yaml:"shapes,omitempty"`
 	Profiles []Profile `yaml:"profiles"`
 }
 
@@ -227,6 +231,11 @@ type Value struct {
 	// Source cites where the value came from, such as the server log of the run it
 	// reproduces. It is recorded with the resolution.
 	Source string `yaml:"source,omitempty"`
+	// Realisation is how the run the value describes realised its acceptance: natural (real
+	// verification) or synthetic (the engine's forced acceptance). It decides how a value
+	// that states no per-position rates is spread: a natural one with its method's measured
+	// decay, a synthetic or unstated one with the engine's minimum-variance schedule.
+	Realisation Realisation `yaml:"realisation,omitempty"`
 }
 
 // UnmarshalYAML restores strict unknown-key checking, which a Value nested under a type
