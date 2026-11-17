@@ -405,7 +405,7 @@ This is the pattern used by `TieredKVCache` (wraps `KVCacheState`) and could be 
 - Which existing interface is being composed
 - What new behavior the wrapper adds (offloading, caching, monitoring, latency injection)
 - How metrics aggregate across tiers (the wrapper must expose the same metrics interface as the inner module, combining results appropriately)
-- How configuration selects the composition (e.g., `--kv-cpu-blocks > 0` triggers tiered wrapping)
+- How configuration selects the composition (e.g., a `cpu_dram` tier in the scenario's `offload` block triggers tiered wrapping)
 
 **Key principle:** The wrapper must satisfy the same interface contract as the inner module. Any caller that works with the inner module must work identically with the wrapper (Liskov substitution).
 

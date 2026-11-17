@@ -98,10 +98,7 @@ func TestBothCommands_EngineAndDeploymentKnobsAreNotFlags(t *testing.T) {
 // consumed by resolvePolicies are registered in both runCmd and replayCmd (BC-2).
 func TestResolvePolicies_PolicyFlagsRegisteredInBothCommands(t *testing.T) {
 	policyFlags := []string{
-		"scheduler", "preemption-policy",
-		"kv-cpu-blocks", "kv-offload-threshold", "trace-level",
-		"counterfactual-k", "summarize-trace", "policy-config",
-		"dp-load-balancing",
+		"trace-level", "counterfactual-k", "summarize-trace", "policy-config",
 	}
 	for _, name := range policyFlags {
 		assert.NotNilf(t, runCmd.Flags().Lookup(name),
@@ -149,10 +146,8 @@ func TestReplayCmd_SourceContainsNoPolicyInlineBlocks(t *testing.T) {
 func TestBothCommands_SimConfigFlagsHaveIdenticalDefaults(t *testing.T) {
 	sharedFlags := []string{
 		"scenario", "scenarios", "registry", "catalog",
-		"scheduler", "preemption-policy",
-		"kv-cpu-blocks", "kv-offload-threshold", "trace-level",
-		"counterfactual-k", "summarize-trace", "policy-config",
-		"num-instances", "dp-load-balancing",
+		"trace-level", "counterfactual-k", "summarize-trace", "policy-config",
+		"num-instances",
 		// llm-d router environment flags (cmd/router.go): replay must accept the same router
 		// configuration run does (INV-13).
 		"gateway-latency", "epp-scrape-jitter", "kv-event-delay",

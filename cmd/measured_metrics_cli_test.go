@@ -3,13 +3,32 @@ package cmd
 import (
 	"encoding/json"
 	"math"
+	"os"
+	"path/filepath"
 	"runtime/debug"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/metrics"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim"
 )
+
+// dsparkScenariosWithoutBoundedReplay is a directory holding dsparkScenario with its pool
+// stating engine.swa_bounded_replay: false.
+func dsparkScenariosWithoutBoundedReplay(t *testing.T) string {
+	t.Helper()
+	raw := readFile(t, filepath.Join(pdScenarios, dsparkScenario))
+	if !strings.Contains(raw, "    engine:\n") {
+		t.Fatal("fixture has no pool engine block to edit")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, dsparkScenario),
+		[]byte(strings.Replace(raw, "    engine:\n", "    engine:\n      swa_bounded_replay: false\n", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
 
 // dsparkScenario drafts K=5 DSpark tokens on DeepSeek-V4.1-Flash.
 const dsparkScenario = "deepseek-v4.1-flash-h100-tp8-dspark5.yaml"
@@ -123,26 +142,30 @@ func TestResult_PrefixCacheIsTheModelsResolution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	off := false
+	offDir := dsparkScenariosWithoutBoundedReplay(t)
+	mOff, err := kernelmodel.Open(dsparkScenario, reposOf(offDir, catalog, registry))
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, c := range []struct {
-		flags    []string
-		override *bool
-		from     string
+		name, dir string
+		model     *kernelmodel.Model
+		from      string
 	}{
-		{nil, nil, "v0.31.0 default"},
-		{[]string{"--swa-bounded-replay", "false"}, &off, "--swa-bounded-replay"},
+		{"the scenario as stated", pdScenarios, m, "v0.31.0 default"},
+		{"swa_bounded_replay: false", offDir, mOff, "engine.swa_bounded_replay"},
 	} {
-		args := append([]string{"run", "--scenarios", pdScenarios, "--scenario", dsparkScenario,
-			"--num-requests", "5", "--rate", "2", "--seed", "4", "--speculative-acceptance-length", "3.2"}, c.flags...)
+		args := []string{"run", "--scenarios", c.dir, "--scenario", dsparkScenario,
+			"--num-requests", "5", "--rate", "2", "--seed", "4", "--speculative-acceptance-length", "3.2"}
 		stdout, stderr, err := runKernelCLI(t, args...)
 		if err != nil {
-			t.Fatalf("run %v: %v\n%s", c.flags, err, lastLines(stderr, 5))
+			t.Fatalf("run %s: %v\n%s", c.name, err, lastLines(stderr, 5))
 		}
 		eng, _ := resultDoc(t, stdout)["reports"].(map[string]any)["engine"].(map[string]any)
 		pool, _ := eng["colocated"].(map[string]any)
 		raw, ok := pool["prefix_cache"]
 		if !ok {
-			t.Fatalf("flags %v: no colocated prefix_cache record in the engine report", c.flags)
+			t.Fatalf("%s: no colocated prefix_cache record in the engine report", c.name)
 		}
 		enc, err := json.Marshal(raw)
 		if err != nil {
@@ -150,13 +173,17 @@ func TestResult_PrefixCacheIsTheModelsResolution(t *testing.T) {
 		}
 		var got sim.PrefixCacheRecord
 		if err := json.Unmarshal(enc, &got); err != nil {
-			t.Fatalf("flags %v: the prefix_cache record: %v", c.flags, err)
+			t.Fatalf("%s: the prefix_cache record: %v", c.name, err)
 		}
-		want := m.PrefixHit(c.override)
+		want := c.model.PrefixHit(nil)
 		if got.Layout != sim.KVPrefixHit(want.Hit) || got.ModelRunner != want.Runner || got.SWABoundedReplayFrom != c.from ||
 			got.SWABoundedReplay == nil || want.BoundedReplay == nil || *got.SWABoundedReplay != *want.BoundedReplay {
-			t.Errorf("flags %v: recorded %+v, want the model's %+v from %q", c.flags, got, want, c.from)
+			t.Errorf("%s: recorded %+v, want the model's %+v from %q", c.name, got, want, c.from)
 		}
+	}
+	off := false
+	if mOff.PrefixHit(nil).Hit != m.PrefixHit(&off).Hit {
+		t.Error("a pool stating swa_bounded_replay: false must cut prefix hits as the model does with the replay off")
 	}
 	if def, offR := m.PrefixHit(nil), m.PrefixHit(&off); def.Hit == offR.Hit {
 		t.Fatal("non-vacuity: the bounded replay must change DeepSeek-V4.1's layout")

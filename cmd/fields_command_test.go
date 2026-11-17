@@ -26,7 +26,7 @@ func reportedByTheEngine(t *testing.T, scenarioPath string) fields.FieldList {
 		t.Fatal(err)
 	}
 	registerContractEngines()
-	eng, err := engine.New(engine.Spec{Kind: sel.Ref.Kind, UpstreamVersion: sel.Ref.Version,
+	eng, err := engine.New(engine.Spec{Kind: sel.Kind, UpstreamVersion: sel.Version,
 		Roots: contractRoots(scenarioPath)})
 	if err != nil {
 		t.Fatalf("building the engine: %v", err)

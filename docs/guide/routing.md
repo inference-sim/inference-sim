@@ -162,11 +162,11 @@ Everything the router reads comes from the simulated engines, with real engine s
   blocks' tokens as the router saw them, so the router's index holds, per pod, exactly the
   blocks the engine can serve from its cache. A terminated instance's blocks are cleared.
   Speculative indexing (`speculativeIndexing`) expires its entries on simulated time. With a CPU
-  KV tier (`--kv-cpu-blocks`, or the `--kv-offload-config` chain), a block that becomes ready on
+  KV tier (a `cpu_dram` tier in the scenario's `offload` block), a block that becomes ready on
   the CPU tier, or leaves it, is published as a location event on tier `cpu`, in the same
   ordered stream, so the router indexes each block on every tier that holds it. A file-system
   tier behind the CPU tier publishes only when its `enable_kv_events` is set (vLLM's default is
-  off): a block written to it is a location event on tier `shared_storage`, the medium llm-d's
+  off; the v0.32.0 engine refuses a file-system tier, blis-vllm#63): a block written to it is a location event on tier `shared_storage`, the medium llm-d's
   file-system backend publishes, which the prefix scorer weighs 0.4 by default
   (`kvCacheBackendConfigs`). With it off, the router cannot follow a block whose only copy is on
   that tier: when the block is promoted back to the CPU tier, its location event names a block

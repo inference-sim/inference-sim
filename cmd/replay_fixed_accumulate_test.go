@@ -81,10 +81,6 @@ func runFixedAccumulateReplayWithOutput(t *testing.T, headerPath, dataPath strin
 	numInstances = 1
 	seed = seedVal
 	longPrefillTokenThreshold = 0
-	kvCPUBlocks = 0
-	kvOffloadThreshold = 0.9
-	kvTransferBandwidth = 100.0
-	kvTransferBaseLatency = 0
 	scheduler = "fcfs"
 	policyConfigPath = ""
 	maxModelLen = 1000000
