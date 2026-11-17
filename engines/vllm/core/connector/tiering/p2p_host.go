@@ -325,8 +325,6 @@ type memData struct {
 	strikes     map[string]int
 	faults      map[string]string
 	peerGen     map[string]int
-	// started is whether the registration worker thread has started.
-	started bool
 }
 
 // p2pMaxTransferFailures is _MAX_CONSECUTIVE_TRANSFER_FAILURES (data/nixl.py:64).
@@ -359,16 +357,8 @@ func (d *memData) SetDraining(on bool) {
 func (d *memData) AddRemotePeerAsync(peer string, metadata []byte, _ int64, _ int, _ int64) P2PRegistration {
 	d.peerGen[peer]++
 	r := &memReg{d: d, peer: peer, name: string(metadata), gen: d.peerGen[peer]}
-	// The registration runs on the transport's one-worker ThreadPoolExecutor. Its first submit
-	// starts the worker thread and waits for it to start, and the worker runs the queued
-	// registration (in-memory, microseconds) before the caller takes the GIL back, so the first
-	// registration has resolved when the session next checks it, in the same poll. A later submit
-	// wakes an idle worker the caller does not wait for: it resolves by the next driver call.
-	if !d.started {
-		d.started = true
-		r.run()
-		return r
-	}
+	// The registration runs on the transport's worker thread; the oracle's agent resolves it at the
+	// driver's transport rule after the call, never in the poll that started it.
 	d.net.regs = append(d.net.regs, r)
 	return r
 }
