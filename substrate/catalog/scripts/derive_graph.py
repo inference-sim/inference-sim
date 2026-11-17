@@ -486,8 +486,13 @@ MODELOPT_MODULES: dict[str, dict[str, Any]] = {
     # Qwen3VLForConditionalGeneration mapper renames "model.language_model." to
     # "language_model.model." and "lm_head." to "language_model.lm_head.", qwen3_vl.py:1969-1974).
     # A full-attention layer's projections are self_attn.qkv_proj and o_proj; a Gated DeltaNet
-    # layer's output projection is linear_attn.out_proj (its in_proj_qkvz and in_proj_ba are
-    # priced inside the RecurrentUpdate node, not as GEMMs). The routed experts are a FusedMoE at
+    # layer's are linear_attn.in_proj_qkvz, in_proj_ba and out_proj (QwenGatedDeltaNetAttention,
+    # layers/mamba/gdn/qwen_gdn_linear_attn.py:610-626, 675-683). The checkpoint stores the input
+    # projections as in_proj_qkv, in_proj_z, in_proj_b and in_proj_a, which vLLM packs
+    # (packed_modules_mapping, qwen3_5.py:481-484); v0.33.0 applies only the renaming half of the
+    # mapper to a quantization config's lists (get_rename_mapper, models/utils.py:180-200), so an
+    # exclusion names the shards and reaches the packed module by substring (is_layer_excluded,
+    # modelopt.py:191-226), as modelopt_excluded matches. The routed experts are a FusedMoE at
     # mlp.experts and the shared expert a Qwen2MoeMLP at mlp.shared_expert (qwen3_next.py), which
     # vLLM fuses into the routed layer only under ROCm's AITER (resolve_layer_fused_shared_expert,
     # layers/fused_moe/utils.py:55-89), so on NVIDIA parts the two keep their own widths. The MTP
@@ -567,14 +572,12 @@ MODELOPT_MODULES: dict[str, dict[str, Any]] = {
         "roles": {
             "qkv_proj": "self_attn.qkv_proj",
             "o_proj": "self_attn.o_proj",
+            "recurrent_in_proj_qkvz": "linear_attn.in_proj_qkvz",
+            "recurrent_in_proj_ba": "linear_attn.in_proj_ba",
             "mixer_out": "linear_attn.out_proj",
             "experts": "mlp.experts",
         },
         "shared": ("mlp.shared_expert.gate_up_proj", "mlp.shared_expert.down_proj"),
-        # Linears a kind runs that no GEMM node prices: the DeltaNet input projections ride in the
-        # RecurrentUpdate node at the base width, so a checkpoint that quantizes either is refused
-        # rather than priced at a width it does not store (qwen3_next.py in_proj_qkvz, in_proj_ba).
-        "unpriced": {"gdn_moe": ("linear_attn.in_proj_qkvz", "linear_attn.in_proj_ba")},
         "prefix": {"model.language_model.": "language_model.model.",
                    "lm_head.": "language_model.lm_head.", "model.visual.": "visual."},
         "stacked": {".q_proj": ".qkv_proj", ".k_proj": ".qkv_proj", ".v_proj": ".qkv_proj",
@@ -743,6 +746,11 @@ FUSED_SHARDS = {
     "wk_weights_proj": ("wk", "weights_proj"),
     "qkv_proj": ("q_proj", "k_proj", "v_proj"),
     "gate_up_proj": ("gate_proj", "up_proj"),
+    # A Gated DeltaNet layer's input projections, which Qwen3.5 checkpoints store as four
+    # tensors and Qwen3-Next checkpoints as the two packed ones (qwen3_5.py:481-484,
+    # qwen3_next.py:825-834).
+    "in_proj_qkvz": ("in_proj_qkv", "in_proj_z"),
+    "in_proj_ba": ("in_proj_b", "in_proj_a"),
 }
 
 
@@ -865,13 +873,6 @@ def modelopt_place_widths(kinds: list[dict[str, Any]], stack: dict[str, Any],
                 f"one node cannot price both")
         return flat.pop()
 
-    for kid, paths in spec.get("unpriced", {}).items():
-        for fmt, i in layers_of.get(kid, []):
-            for path in paths:
-                if width_of(fmt.format(i=i) + path):
-                    raise DeriveError(f"{model}: the ModelOpt list quantizes {fmt.format(i=i) + path}, "
-                                      f"which no node of {kid!r} prices at its own width; it is "
-                                      f"priced at the base width inside the recurrent update")
     out = []
     for kind in kinds:
         idx = layers_of.get(kind["id"], [])
@@ -4921,6 +4922,57 @@ def handler_minimax_dspark(cfg, raw, model):
     return kinds, {"pattern": ["dspark_layer"], "repeat": layers}, extras
 
 
+# The quant_method spellings for which vLLM v0.33.0 builds AutoAWQConfig, AutoGPTQConfig or
+# INCConfig on CUDA, and so replicates a Qwen3.5 DeltaNet layer's in_proj_ba rather than
+# splitting it (maybe_disable_tp, layers/mamba/gdn/qwen_gdn_linear_attn.py:853-871).
+GDN_BA_REPLICATED_METHODS = frozenset({"awq", "gptq", "auto-round", "inc"})
+
+# The checkpoint tensors each DeltaNet input projection loads, packed or as Qwen3.5 stores them.
+GDN_IN_PROJ_SHARDS = {
+    "recurrent_in_proj_qkvz": ("in_proj_qkvz", ("in_proj_qkv", "in_proj_z")),
+    "recurrent_in_proj_ba": ("in_proj_ba", ("in_proj_b", "in_proj_a")),
+}
+
+
+def gdn_fp8_unconverted(cfg: dict[str, Any], raw: dict[str, Any], model: str, role: str,
+                        layers: list[int]) -> str | None:
+    """The base width, where an fp8 checkpoint leaves a DeltaNet input projection unconverted
+    on every DeltaNet layer; None where it converts it on every one.
+
+    Qwen3.5-397B-A17B-FP8 names in_proj_b and in_proj_a (and conv1d) in modules_to_not_convert
+    on all 45 DeltaNet layers and leaves in_proj_qkv and in_proj_z to the fp8 block format, so
+    in_proj_ba stays bf16 beside an fp8 in_proj_qkvz. vLLM skips a packed module whose shards
+    are all listed and refuses one whose shards are listed in part (is_layer_skipped,
+    model_executor/layers/quantization/utils/quant_utils.py:619-690@v0.33.0, which fp8.py:154-167
+    reads from modules_to_not_convert); a projection skipped on
+    some layers and not others would need two nodes, and is refused too."""
+    quant = raw.get("quantization_config") or cfg.get("quantization_config") or {}
+    if not isinstance(quant, dict) or "fp8" not in str(quant.get("quant_method", "")).lower():
+        return None
+    names = quant.get("modules_to_not_convert") or quant.get("ignored_layers") or []
+    packed, shards = GDN_IN_PROJ_SHARDS[role]
+
+    def listed(i, tensor):
+        tail = f"layers.{i}.linear_attn.{tensor}"
+        return any(n == tail or n.endswith("." + tail) for n in names)
+
+    skipped = set()
+    for i in layers:
+        if listed(i, packed):
+            skipped.add(True)
+            continue
+        hit = {listed(i, t) for t in shards}
+        if len(hit) > 1:
+            raise DeriveError(f"{model}: layer {i} leaves part of linear_attn.{packed} "
+                              f"unconverted ({shards}); vLLM refuses a packed module whose "
+                              f"shards differ in precision")
+        skipped |= hit
+    if len(skipped) > 1:
+        raise DeriveError(f"{model}: linear_attn.{packed} is fp8 on some DeltaNet layers and "
+                          f"unconverted on others; one node cannot price both")
+    return base_dtype(cfg, raw, model) if skipped == {True} else None
+
+
 def handler_qwen3_5_moe(cfg, raw, model):
     """Qwen3.5-MoE: a Gated DeltaNet linear-attention layer on most layers, full attention
     on every fourth, and a routed expert MLP with a shared expert on all of them.
@@ -4983,8 +5035,34 @@ def handler_qwen3_5_moe(cfg, raw, model):
               collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE)]
         return n
 
+    # The input projections, as vLLM v0.33.0 builds them for this layout
+    # (QwenGatedDeltaNetAttention with gqa_interleaved_layout=False, qwen3_5.py:150-155):
+    # in_proj_qkvz is a MergedColumnParallelLinear of [key_dim, key_dim, value_dim, value_dim]
+    # over hidden, and in_proj_ba one of [num_v_heads] * 2 (qwen_gdn_linear_attn.py:803-851),
+    # both called on the layer input before the convolution and the delta rule (forward_cuda,
+    # :1134-1148). Both split their output across ranks (column), except that on CUDA vLLM
+    # replicates in_proj_ba under an AWQ, GPTQ or INC config, whose Marlin kernel needs 64
+    # output columns a rank (maybe_disable_tp, :853-871; the configs a checkpoint's
+    # quant_method selects, auto_awq.py:263-286, auto_gptq.py:214-233, inc/inc.py:361-368).
+    # The depthwise conv1d (conv_dim x conv_kernel, :596-602) is not a GEMM and stays with the
+    # RecurrentUpdate node, as A_log and dt_bias do.
+    key_dim, value_dim = k_heads * k_dim, v_heads * v_dim
+    quant = raw.get("quantization_config") or {}
+    method = str(quant.get("quant_method", "")).lower()
+    ba_tp = "replicated" if method in GDN_BA_REPLICATED_METHODS else "column"
+    in_proj = [
+        dict(gemm("recurrent_in_proj_qkvz", 2 * key_dim + 2 * value_dim, hidden), tp="column"),
+        dict(gemm("recurrent_in_proj_ba", 2 * v_heads, hidden), tp=ba_tp),
+    ]
+    gdn_layers = [i for i, t in enumerate(types) if t == "linear_attention"]
+    for node in in_proj:
+        kept = gdn_fp8_unconverted(cfg, raw, model, node["role"], gdn_layers)
+        if kept:
+            node["weight_dtype"] = kept
+
     gdn_mixer = [
         norm("input_norm"),
+        *in_proj,
         {
             "op": "RecurrentUpdate",
             "recurrent_kind": "gdn",
@@ -5007,8 +5085,7 @@ def handler_qwen3_5_moe(cfg, raw, model):
     ]
     sequence = ["attn_moe" if t == "full_attention" else "gdn_moe" for t in types]
     stack = compress(sequence)
-    quant = raw.get("quantization_config") or {}
-    if str(quant.get("quant_method", "")).lower() != "modelopt":
+    if method != "modelopt":
         return kinds, stack
     # A ModelOpt checkpoint's widths, node by node. Its MTP module is a full-attention MoE
     # layer like attn_moe, but the list can leave it at another width than the decoder's
@@ -5048,33 +5125,61 @@ def handler_nemotron_h(cfg, raw, model):
             f"layer vector"
         )
 
+    heads = int(cfg["mamba_num_heads"])
+    inner = heads * int(cfg["mamba_head_dim"])
+    groups = int(cfg.get("n_groups") or cfg.get("mamba_n_groups") or 1)
+    state = int(cfg["ssm_state_size"])
+    # The input projection, as vLLM v0.33.0's MambaMixer2 builds it for NemotronH
+    # (nemotron_h.py:390-405): one linear over hidden whose output is the gate z and x
+    # (intermediate_size each), B and C (n_groups x ssm_state_size each) and dt (one per
+    # head), a MergedColumnParallelLinear split by output column across ranks
+    # (layers/mamba/mamba_mixer2.py:346-371). Where tp does not divide n_groups vLLM takes
+    # n_groups == 1 only and gives every rank the whole group's B and C (:333-341, 373-401), a
+    # replication the column split here does not state; every committed NemotronH checkpoint
+    # has n_groups 8. The depthwise conv1d (conv_dim x conv_kernel, built with no quant
+    # config, :347-357) is not a GEMM and stays with the RecurrentUpdate node, as A, D and
+    # dt_bias do.
+    in_proj = dict(gemm("recurrent_in_proj", 2 * inner + 2 * groups * state + heads, hidden),
+                   tp="column")
+    out_proj = gemm("mixer_out", hidden, inner)
     mamba = [
         norm("input_norm"),
+        in_proj,
         {
             "op": "RecurrentUpdate",
             "recurrent_kind": "mamba2",
-            "n_heads": int(cfg["mamba_num_heads"]),
-            "state_size": int(cfg["ssm_state_size"]),
-            "n_groups": int(cfg.get("n_groups") or cfg.get("mamba_n_groups") or 1),
+            "n_heads": heads,
+            "state_size": state,
+            "n_groups": groups,
             "conv_kernel": int(cfg["conv_kernel"]),
-            "intermediate_size": int(cfg["mamba_num_heads"]) * int(cfg["mamba_head_dim"]),
+            "intermediate_size": inner,
             "state_dtype": DTYPES.get(
                 str(cfg.get("mamba_ssm_cache_dtype", "float32")).lower(), "fp32"),
         },
-        gemm("mixer_out", hidden,
-             int(cfg["mamba_num_heads"]) * int(cfg["mamba_head_dim"])),
+        out_proj,
         collective("AllReduce", "mixer_out", EMIT_TENSOR_PARALLEL),
     ]
     # The recurrent mixer's projections where the checkpoint states their width. The
-    # nvfp4 variant stores these at FP8 while its routed experts are NVFP4, so they
-    # cannot take the global width either way round.
+    # nvfp4 variants store both at FP8 while their routed experts are NVFP4, so they
+    # cannot take the global width either way round. A map lists every quantized module,
+    # and one it leaves out stays at the base (ModelOptMixedPrecisionConfig,
+    # modelopt.py@v0.33.0), so a projection listed on some Mamba layers and not others
+    # states two widths for one node and is refused.
     classes = quantized_classes(cfg, model)
-    if classes.get("recurrent_out"):
-        for n in mamba:
-            # Scoped to the projection: the AllReduce that follows shares the role name
-            # and holds no parameters, so a dtype on it describes nothing.
-            if n.get("role") == "mixer_out" and n["op"] == "GEMM":
-                n["weight_dtype"] = classes["recurrent_out"]
+    listed = raw_quant(cfg, model).get("quantized_layers") or {}
+    mamba_layers = [i for i, name in enumerate(vector) if name == "mamba"]
+    for cls, node, module in (("recurrent_in", in_proj, "mixer.in_proj"),
+                              ("recurrent_out", out_proj, "mixer.out_proj")):
+        if not classes.get(cls):
+            continue
+        missing = [i for i in mamba_layers
+                   if not any(k == f"layers.{i}.{module}" or k.endswith(f".layers.{i}.{module}")
+                                  for k in listed)]
+        if missing:
+            raise DeriveError(f"{model}: quantized_layers names {module} at "
+                              f"{classes[cls]} on some Mamba layers and not on layers "
+                              f"{missing[:8]}; one node cannot price both")
+        node["weight_dtype"] = classes[cls]
     moe_nodes = [
         norm("input_norm"),
         *moe_block(cfg, model, hidden),

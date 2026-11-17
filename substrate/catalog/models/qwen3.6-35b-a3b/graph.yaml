@@ -16,6 +16,16 @@ layer_kinds:
   nodes:
   - op: Elementwise
     role: input_norm
+  - op: GEMM
+    role: recurrent_in_proj_qkvz
+    n: 12288
+    k: 2048
+    tp: column
+  - op: GEMM
+    role: recurrent_in_proj_ba
+    n: 64
+    k: 2048
+    tp: column
   - op: RecurrentUpdate
     recurrent_kind: gdn
     n_heads: 32
@@ -61,6 +71,10 @@ layer_kinds:
     - 6
   - - 6
     - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
 - id: attn_moe
   nodes:
   - op: Elementwise

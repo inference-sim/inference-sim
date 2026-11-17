@@ -16,6 +16,12 @@ layer_kinds:
   nodes:
   - op: Elementwise
     role: input_norm
+  - op: GEMM
+    role: recurrent_in_proj
+    n: 10304
+    k: 2688
+    tp: column
+    weight_dtype: fp8
   - op: RecurrentUpdate
     recurrent_kind: mamba2
     n_heads: 64
@@ -39,6 +45,8 @@ layer_kinds:
     - 2
   - - 2
     - 3
+  - - 3
+    - 4
 - id: moe
   nodes:
   - op: Elementwise
