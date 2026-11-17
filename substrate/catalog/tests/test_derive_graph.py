@@ -9822,3 +9822,29 @@ def test_a_served_format_does_not_reprice_what_a_partial_checkpoint_left_unquant
     plain = _derived_edited(tmp_path, "qwen3-14b")
     head = next(n for n in plain["head"] if n.get("role") == "lm_head")
     assert _resident_bytes(plain, head, served="fp8") == head["n"] * head["k"]
+
+
+def test_qwen4_exp_modelopt_mixed_precision_places_the_experts_and_nothing_else(tmp_path):
+    """Qwen3.8-Flash-Next-NVFP4's quantized_layers names the decoder layers' routed experts
+    (NVFP4), the MTP layer's (block-wise FP8) and the n-gram table; its ignore list names the
+    rest. The placed width of each module vLLM names follows that map."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    ignore = ["lm_head", "model.language_model.embed_tokens", "model.language_model.hyper_connection_mixer*",
+              "model.language_model.layers.0.attn_hyper_connection*", "model.language_model.layers.0.linear_attn*",
+              "model.language_model.layers.0.mlp.gate", "model.language_model.layers.0.mlp.shared_expert*",
+              "model.language_model.layers.0.mlp.shared_expert_gate",
+              "model.language_model.layers.0.mlp_hyper_connection*"]
+    raw = _qwen4_cfg()
+    raw["quantization_config"] = {
+        "quant_method": "modelopt", "quant_algo": "MIXED_PRECISION", "ignore": ignore,
+        "quantized_layers": {
+            "model.language_model.layers.0.mlp.experts": {"quant_algo": "NVFP4", "group_size": 16},
+            "mtp.layers.0.mlp.experts": {"quant_algo": "FP8_PB_WO", "group_size": 128},
+        },
+    }
+    width = derive_graph.modelopt_placed_width(raw, "qwen4-test", "Qwen4ExpForConditionalGeneration")
+    assert width("language_model.model.layers.0.mlp.experts") == "nvfp4"
+    assert width("mtp.layers.0.mlp.experts") == "fp8"
+    assert width("language_model.model.layers.0.linear_attn.in_proj_qkvz") is None
+    assert width("language_model.model.layers.0.mlp.shared_expert.gate_up_proj") is None

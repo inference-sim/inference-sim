@@ -168,6 +168,9 @@ QUANT_ALGOS = {
     "NVFP4": "nvfp4",
     "MXFP4": "mxfp4",
     "FP8": "fp8",
+    # ModelOpt's block-wise weight-only FP8 (128 x 128 blocks, bf16 inverse scales): the weight
+    # is stored at one byte, as Qwen3.8-Flash-Next-NVFP4 stores its MTP experts.
+    "FP8_PB_WO": "fp8",
     "INT8": "int8",
     "INT4": "int4",
     # A W{weights}A{activations} spelling names both widths; the graph prices WEIGHT
@@ -408,7 +411,8 @@ MODELOPT_PER_NODE_ARCHS = frozenset({
 # quantized_layers map, each checked against a committed checkpoint (GLM-5.3-NVFP4,
 # Qwen3.5-397B-A17B-NVFP4-V2). Another architecture's mixed block is still refused: its module
 # names have not been read against a real map.
-MODELOPT_MIXED_ARCHS = frozenset({"GlmMoeDsaForCausalLM", "Qwen3_5MoeForConditionalGeneration"})
+MODELOPT_MIXED_ARCHS = frozenset({"GlmMoeDsaForCausalLM", "Qwen3_5MoeForConditionalGeneration",
+                                  "Qwen4ExpForConditionalGeneration"})
 
 # The quant_method spellings vLLM v0.33.0 builds a ModelOpt config from for a mixed checkpoint:
 # "modelopt", which ModelOptMixedPrecisionConfig.override_quantization_method turns into
@@ -692,6 +696,41 @@ MODELOPT_MODULES: dict[str, dict[str, Any]] = {
         "stacked": {".q_proj": ".qkv_proj", ".k_proj": ".qkv_proj", ".v_proj": ".qkv_proj",
                     ".gate_proj": ".gate_up_proj", ".up_proj": ".gate_up_proj"},
     },
+    # Qwen4ExpForConditionalGeneration is a Qwen3VL subclass, so the loader's renames are
+    # Qwen3.5's. Its NVFP4 checkpoint quantizes the 48 decoder layers' routed experts at NVFP4, the
+    # MTP layer's at block-wise FP8 and the n-gram table at FP8, and lists everything else in
+    # `ignore` (attention, the DeltaNet projections, the hyper-connection projections, the router,
+    # the shared expert and its gate, the embedding and the head). The shared expert is stacked
+    # gate_up like Qwen3.5's (qwen4_exp/nvidia/model.py:253-261@v0.33.0 builds Qwen3Next's block).
+    "Qwen4ExpForConditionalGeneration": {
+        "layer": "language_model.model.layers.{i}.",
+        "draft_layer": "mtp.layers.{i}.",
+        "head": "language_model.lm_head",
+        "roles": {
+            "qkv_proj": "self_attn.qkv_proj",
+            "indexer_qk_proj": "self_attn.indexer.index_qk_proj",
+            "o_proj": "self_attn.o_proj",
+            "recurrent_in_proj_qkvz": "linear_attn.in_proj_qkvz",
+            "recurrent_in_proj_ba": "linear_attn.in_proj_ba",
+            "mixer_out": "linear_attn.out_proj",
+            "experts": "mlp.experts",
+            "attn_hc_down": "attn_hyper_connection.input_mix_weight_down",
+            "attn_hc_inject": "attn_hyper_connection.block_inject_weight",
+            "attn_hc_up": "attn_hyper_connection.input_mix_weight_up",
+            "mlp_hc_down": "mlp_hyper_connection.input_mix_weight_down",
+            "mlp_hc_inject": "mlp_hyper_connection.block_inject_weight",
+            "mlp_hc_up": "mlp_hyper_connection.input_mix_weight_up",
+            "ple_kv_proj": "ple.kv_proj",
+            # The MTP module's input stage and final mix: no list entry reaches them.
+            "mtp_fc_embedding": None, "mtp_fc_hidden": None,
+            "mtp_final_hc_down": None, "mtp_final_hc_up": None,
+        },
+        "shared": ("mlp.shared_expert.gate_up_proj", "mlp.shared_expert.down_proj"),
+        "prefix": {"model.language_model.": "language_model.model.",
+                   "lm_head": "language_model.lm_head", "model.visual.": "visual."},
+        "stacked": {".q_proj": ".qkv_proj", ".k_proj": ".qkv_proj", ".v_proj": ".qkv_proj",
+                    ".gate_proj": ".gate_up_proj", ".up_proj": ".gate_up_proj"},
+    },
 }
 
 
@@ -879,6 +918,9 @@ FUSED_SHARDS = {
     # qwen3_next.py:825-834).
     "in_proj_qkvz": ("in_proj_qkv", "in_proj_z"),
     "in_proj_ba": ("in_proj_b", "in_proj_a"),
+    # Qwen4Exp's per-layer embedding projection: key_proj and value_proj load into kv_proj
+    # (nvidia/ple_layer.py:112-120@v0.33.0).
+    "kv_proj": ("key_proj", "value_proj"),
 }
 
 
@@ -5768,11 +5810,17 @@ def handler_qwen4_exp(cfg, raw, model):
             if n["op"] == "GEMM":
                 n.setdefault("weight_dtype", base)
     kinds = [{"id": k, "nodes": v, "edges": chain(v)} for k, v in kinds_nodes.items()]
+    stack = compress(sequence)
+    if str(quant.get("quant_method", "")).lower() in MODELOPT_METHODS:
+        # A ModelOpt checkpoint: each node's width from the quantization map (the experts at NVFP4
+        # on the decoder layers and FP8 on the MTP layer; the rest unquantized).
+        kinds = modelopt_place_widths(kinds, stack, raw, model,
+                                      draft=(DRAFT_KIND_ID, list(range(mtp))) if mtp else None)
     lm_head = gemm("lm_head", int(require(cfg, "vocab_size", model)), hidden)
     if fp8:
         lm_head["weight_dtype"] = base
     extras = {"head": [*final_hc, norm("final_norm"), lm_head]}
-    return kinds, compress(sequence), extras
+    return kinds, stack, extras
 
 
 def ngram_shard_shape(model: str, layer: int, shards: int) -> tuple[int, int, int]:
