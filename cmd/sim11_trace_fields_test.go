@@ -255,7 +255,7 @@ func TestSIM11_TraceFieldsConsumedChangeTheResult(t *testing.T) {
 			t.Fatal(err)
 		}
 		return runReplayCaptureStdout(t, []string{"--trace-header", hp, "--trace-data", dp,
-			"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t),
+			"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosServingRender(t),
 			"--registry", kernelRegistryDir(t), "--defaults-filepath", defaultsPath,
 			"--num-instances", "2", "--horizon", "60000000"})
 	}
