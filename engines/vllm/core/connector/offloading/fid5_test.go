@@ -323,7 +323,8 @@ func replayPolicy(t *testing.T, calls []fid5Call) {
 				ID  int `json:"id"`
 				Ref int `json:"ref"`
 			}](t, c, "chunk")
-			p.insert(key(t, arg[string](t, c, "key")), &chunk{refCnt: ch.Ref, id: ch.ID})
+			// The recorded v0.32.0 call has no request context: insert ranks it next, as v0.32.0 did.
+			p.insert(key(t, arg[string](t, c, "key")), &chunk{refCnt: ch.Ref, id: ch.ID}, nil)
 			same(t, i, c, nil)
 		case "get":
 			// The chunk's ref_cnt is the manager's to change, outside the policy; its slot is the

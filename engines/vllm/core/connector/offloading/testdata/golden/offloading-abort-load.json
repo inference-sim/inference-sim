@@ -22,10 +22,10 @@
   }
  },
  "provenance": {
-  "blis_vllm_commit": "d855ac9d0501427f819cda43a5fbcde33966b640",
+  "blis_vllm_commit": "74a07eccbdafffe39f57b9738e49bee225f4bece",
   "cpu_chunks": 16,
-  "lockfile_sha256": "8baca0cbd0f28f5455c4d2c1b39a81ac3c424089e4c875e93614794c77932167",
-  "mock_version": "gpu-mock/5+af60be80e293",
+  "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
+  "mock_version": "gpu-mock/7+f4274aa648c4",
   "mocks": [
    "vllm.v1.outputs.ModelRunnerOutput",
    "tests.v1.core.utils.create_scheduler",
@@ -59,22 +59,22 @@
   "model": "facebook/opt-125m",
   "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
   "oracle_inputs": {
-   "oracle/mocks.json": "29fec19aa8b5bd75e12b37893eea761684d4399a7e3bee1066cb749eac58769c",
-   "oracle/requirements.lock": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
-   "oracle/run_enginecore.py": "52f5ca457d4f046679d0ca364c599a8015a4c30c8cf197a5eaf0b8829e4e1a71",
-   "oracle/run_offloading.py": "5d2d5c98b38e0f4b08a2d3402b2e2f89dd2f2e96ffb2dad905eb1dc63595f48e",
-   "oracle/run_scheduler.py": "dd0cbc255201f6d63588c720f4e687276f4b73fec0f490e997afdaacc2a5a127",
+   "oracle/mocks.json": "afd576782c5322ce4c6aa4cdb72fb513e3e78cd8ea54dd6043af0cdf5680a658",
+   "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+   "oracle/run_enginecore.py": "bb562e23d0ae394ca5d3a099a6083bec69ee7aff5915f35995277a07609a7c0f",
+   "oracle/run_offloading.py": "2d4427698e2b4ec2490409923517326179fb940c013e772de9acb396adf0809a",
+   "oracle/run_scheduler.py": "1239a1d64f057fcb543789762859ea33211627e3f2b66b46087ed9ee936222f6",
    "oracle/scenarios/offloading/offloading-abort-load.json": "feb361e8c5b87f2602cc7adbbf67b8c145f8aea50c159271eacde8fe47152160"
   },
   "platform": "linux-x86_64",
   "python": "3.12.16",
-  "requirements_lock_sha256": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
+  "requirements_lock_sha256": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
   "scenario_sha256": "feb361e8c5b87f2602cc7adbbf67b8c145f8aea50c159271eacde8fe47152160",
   "seed": null,
   "tier": 4,
-  "vllm_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
-  "vllm_distribution": "0.32.0+cpu",
-  "vllm_version": "0.32.0"
+  "vllm_commit": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "vllm_distribution": "0.33.0+cpu",
+  "vllm_version": "0.33.0"
  },
  "steps": [
   {
@@ -115,18 +115,8 @@
     "cpu": {
      "chunks": [
       [
-       "a2621334354fadfa/0",
-       0,
-       -1
-      ],
-      [
-       "f816bd041daedc97/0",
-       1,
-       -1
-      ],
-      [
-       "1916a3fa8902fa9e/0",
-       2,
+       "67000592732f9d89/0",
+       4,
        -1
       ],
       [
@@ -135,13 +125,23 @@
        -1
       ],
       [
-       "67000592732f9d89/0",
-       4,
+       "1916a3fa8902fa9e/0",
+       2,
        -1
       ],
       [
-       "60d5582cb90052b5/0",
-       5,
+       "f816bd041daedc97/0",
+       1,
+       -1
+      ],
+      [
+       "a2621334354fadfa/0",
+       0,
+       -1
+      ],
+      [
+       "a04ff547ebb7e8c1/0",
+       7,
        -1
       ],
       [
@@ -150,8 +150,8 @@
        -1
       ],
       [
-       "a04ff547ebb7e8c1/0",
-       7,
+       "60d5582cb90052b5/0",
+       5,
        -1
       ]
      ],
@@ -251,18 +251,8 @@
     "cpu": {
      "chunks": [
       [
-       "60d5582cb90052b5/0",
-       5,
-       -1
-      ],
-      [
-       "43d2c1d3a9318a53/0",
-       6,
-       -1
-      ],
-      [
-       "a04ff547ebb7e8c1/0",
-       7,
+       "2cedd367c68687ce/0",
+       9,
        -1
       ],
       [
@@ -271,8 +261,18 @@
        -1
       ],
       [
-       "2cedd367c68687ce/0",
-       9,
+       "a04ff547ebb7e8c1/0",
+       7,
+       -1
+      ],
+      [
+       "43d2c1d3a9318a53/0",
+       6,
+       -1
+      ],
+      [
+       "60d5582cb90052b5/0",
+       5,
        -1
       ],
       [
@@ -628,38 +628,8 @@
        0
       ],
       [
-       "f6ce321ee61c1aff/0",
-       10,
-       -1
-      ],
-      [
-       "099a7d9a2a8f1c71/0",
-       11,
-       -1
-      ],
-      [
-       "ad4a127f459635a9/0",
-       12,
-       -1
-      ],
-      [
-       "bb1c9ac13cef37cb/0",
-       13,
-       -1
-      ],
-      [
-       "d4de3546213df49a/0",
-       14,
-       -1
-      ],
-      [
-       "0ace57cf160843c0/0",
-       15,
-       -1
-      ],
-      [
-       "bd2bcb35ac53714c/0",
-       2,
+       "fdeff0e7fc2bde86/0",
+       4,
        -1
       ],
       [
@@ -668,8 +638,38 @@
        -1
       ],
       [
-       "fdeff0e7fc2bde86/0",
-       4,
+       "bd2bcb35ac53714c/0",
+       2,
+       -1
+      ],
+      [
+       "0ace57cf160843c0/0",
+       15,
+       -1
+      ],
+      [
+       "d4de3546213df49a/0",
+       14,
+       -1
+      ],
+      [
+       "bb1c9ac13cef37cb/0",
+       13,
+       -1
+      ],
+      [
+       "ad4a127f459635a9/0",
+       12,
+       -1
+      ],
+      [
+       "099a7d9a2a8f1c71/0",
+       11,
+       -1
+      ],
+      [
+       "f6ce321ee61c1aff/0",
+       10,
        -1
       ]
      ],
@@ -1109,19 +1109,9 @@
     "cpu": {
      "chunks": [
       [
-       "f816bd041daedc97/0",
-       1,
-       1
-      ],
-      [
        "a2621334354fadfa/0",
        0,
        0
-      ],
-      [
-       "2cedd367c68687ce/0",
-       9,
-       1
       ],
       [
        "bd150221b72d1c7c/0",
@@ -1187,6 +1177,16 @@
        "f6ce321ee61c1aff/0",
        10,
        0
+      ],
+      [
+       "f816bd041daedc97/0",
+       1,
+       1
+      ],
+      [
+       "2cedd367c68687ce/0",
+       9,
+       1
       ]
      ],
      "evictable": 14,
@@ -1275,19 +1275,9 @@
     "cpu": {
      "chunks": [
       [
-       "f816bd041daedc97/0",
-       1,
-       1
-      ],
-      [
        "a2621334354fadfa/0",
        0,
        0
-      ],
-      [
-       "2cedd367c68687ce/0",
-       9,
-       1
       ],
       [
        "bd150221b72d1c7c/0",
@@ -1353,6 +1343,16 @@
        "f6ce321ee61c1aff/0",
        10,
        0
+      ],
+      [
+       "f816bd041daedc97/0",
+       1,
+       1
+      ],
+      [
+       "2cedd367c68687ce/0",
+       9,
+       1
       ]
      ],
      "evictable": 14,
@@ -1406,11 +1406,6 @@
        0
       ],
       [
-       "2cedd367c68687ce/0",
-       9,
-       1
-      ],
-      [
        "bd150221b72d1c7c/0",
        8,
        0
@@ -1474,6 +1469,11 @@
        "f6ce321ee61c1aff/0",
        10,
        0
+      ],
+      [
+       "2cedd367c68687ce/0",
+       9,
+       1
       ],
       [
        "f816bd041daedc97/0",
@@ -1533,11 +1533,6 @@
        0
       ],
       [
-       "2cedd367c68687ce/0",
-       9,
-       0
-      ],
-      [
        "bd150221b72d1c7c/0",
        8,
        0
@@ -1600,6 +1595,11 @@
       [
        "f6ce321ee61c1aff/0",
        10,
+       0
+      ],
+      [
+       "2cedd367c68687ce/0",
+       9,
        0
       ],
       [
@@ -1681,11 +1681,6 @@
        0
       ],
       [
-       "2cedd367c68687ce/0",
-       9,
-       0
-      ],
-      [
        "bd150221b72d1c7c/0",
        8,
        0
@@ -1748,6 +1743,11 @@
       [
        "f6ce321ee61c1aff/0",
        10,
+       0
+      ],
+      [
+       "2cedd367c68687ce/0",
+       9,
        0
       ],
       [
@@ -1804,11 +1804,6 @@
        0
       ],
       [
-       "2cedd367c68687ce/0",
-       9,
-       0
-      ],
-      [
        "bd150221b72d1c7c/0",
        8,
        0
@@ -1871,6 +1866,11 @@
       [
        "f6ce321ee61c1aff/0",
        10,
+       0
+      ],
+      [
+       "2cedd367c68687ce/0",
+       9,
        0
       ],
       [
