@@ -157,6 +157,7 @@ class 1. With `[1 above, 256 below]`: 0 is class 0, 1 and 256 are class 1, 257 i
 | `reason` | string | for `substitute` | Why the setting is a fair stand-in. |
 | `preserves` | string | with `valid_when` | A sentence naming what the upstream resolves identically when the field is left unset or stated as `setting`. |
 | `valid_when` | list | no | Clauses saying when the stand-in is exact, below. Absent, the rule applies to every value. |
+| `approximates` | mapping | no | An execution-mode substitution for a field with no exact stand-in, below. Only with `none`. |
 
 Rules:
 
@@ -171,6 +172,25 @@ Rules:
 
 `setting` and `reason` are allowed only with `substitute`. `preserves` and `valid_when` are
 allowed only with `leave_unset` or `substitute`.
+
+#### An approximation (`approximates`)
+
+A field with no exact stand-in (rule `none`) may name an execution mode it is priced as instead,
+for named values and parts only. A point it covers is priced with `mode` and carries the
+substitution `execution_mode` ("an execution mode is substituted", design §11.3), so it is graded
+G2 at best, below an exact stand-in; a value it does not cover stays G5. It is never exact:
+`valid_when` stays the statement of exactness, and `Exact` does not read `approximates`. A
+consumer asks `fields.Approximate(estimation, facts)`, which evaluates `when` with the clause rules
+below.
+
+<!-- fields: fields.Approximation -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `mode` | mapping | yes | Configuration field names and values the point is priced with: the substituted execution mode. Not empty. |
+| `evidence` | string | yes | The measurement that prices `mode`, and why it is the nearest. |
+| `differs` | string | yes | A sentence saying what differs from the mode the value selects. |
+| `when` | list | yes | Clauses, as `valid_when`'s, naming the values and parts covered; at least one. |
 
 #### When the stand-in is exact
 

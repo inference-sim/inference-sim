@@ -19,7 +19,8 @@ var (
 	engineKeys     = keySet("kind", "version")
 	fieldKeys      = keySet("name", "source", "status", "evidence", "value_classes", "estimation")
 	evidenceKeys   = keySet("traces", "proof", "issue", "note")
-	estimationKeys = keySet("rule", "setting", "reason", "preserves", "valid_when")
+	estimationKeys = keySet("rule", "setting", "reason", "preserves", "valid_when", "approximates")
+	approxKeys     = keySet("mode", "evidence", "differs", "when")
 	classesKeys    = keySet("type", "values", "covered", "thresholds", "covered_classes")
 	thresholdKeys  = keySet("value", "closed")
 	clauseKeys     = keySet("value_in", "value_list_has_any", "value_list_has_none",
@@ -117,6 +118,7 @@ const (
 	levelThresholds
 	levelThreshold
 	levelValidWhen
+	levelApprox
 	levelClause
 	levelComparison
 	levelFree // inside a setting, or a list of trace paths: any keys, still checked for duplicates
@@ -147,7 +149,7 @@ func (w *walker) value(path string, lv level) error {
 func (w *walker) object(path string, lv level) error {
 	allowed := map[level]map[string]bool{levelList: listKeys, levelEngine: engineKeys,
 		levelField: fieldKeys, levelEvidence: evidenceKeys, levelEstimation: estimationKeys,
-		levelClasses: classesKeys, levelThreshold: thresholdKeys, levelClause: clauseKeys,
+		levelClasses: classesKeys, levelThreshold: thresholdKeys, levelClause: clauseKeys, levelApprox: approxKeys,
 		levelComparison: comparisonKeys}[lv]
 	seen := map[string]bool{}
 	for w.dec.More() {
@@ -178,6 +180,10 @@ func (w *walker) object(path string, lv level) error {
 		case lv == levelClasses && key == "thresholds":
 			child = levelThresholds
 		case lv == levelEstimation && key == "valid_when":
+			child = levelValidWhen
+		case lv == levelEstimation && key == "approximates":
+			child = levelApprox
+		case lv == levelApprox && key == "when":
 			child = levelValidWhen
 		case lv == levelClause && (key == "tp_group_nodes" || key == "compute_capability"):
 			child = levelComparison
