@@ -6,6 +6,11 @@
 //	    X20, over the commits base..head: at most one Assisted-by line, no Co-authored-by
 //	    naming a tool, no Signed-off-by naming a tool or on a release-bot commit. It does not
 //	    check for a signature or a sign-off: those are encouraged, not required.
+//	prcheck commits -strict -maintainer "Name <email>;..." -base <rev> -head <rev>
+//	    Also, per commit, merge commits included: a good signature, an author who is a
+//	    maintainer or a Signed-off-by line of one, exactly one Assisted-by and one Signed-off-by
+//	    line. The integrator runs it on each integration head before another repository pins it
+//	    (inference-sim/blis-substrate#335).
 //	prcheck workflows [-dir .github]
 //	    X21, X22, X16: actions pinned by commit, pip --require-hashes, no ignored exit
 //	    codes, no skipped tests in a job, gate trigger paths as declared.
@@ -126,6 +131,8 @@ func run(args []string, w io.Writer) error {
 	minItems := fs.Int("min", 1, "the minimum number of go test results")
 	runsSHA := fs.String("runs-sha", "", "the commit whose check runs the path gates are read from; default -head")
 	wait := fs.Duration("wait", 45*time.Minute, "how long path-gates waits for a triggered gate to complete")
+	strict := fs.Bool("strict", false, "commits: also require a good signature, a maintainer author or sign-off, and exactly one Assisted-by and Signed-off-by line")
+	maintainers := fs.String("maintainer", "", "commits -strict: the maintainers' identities, \"Name <email>\", separated by semicolons")
 	today := fs.String("today", "", "the date to judge expiry on (YYYY-MM-DD); default today, UTC")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
@@ -143,8 +150,17 @@ func run(args []string, w io.Writer) error {
 			return fmt.Errorf("no commits in %s..%s; the check processes at least one (X22)", *base, *head)
 		}
 		var bad []string
+		var maint []string
+		for _, m := range strings.Split(*maintainers, ";") {
+			if strings.TrimSpace(m) != "" {
+				maint = append(maint, m)
+			}
+		}
 		for _, c := range cs {
 			bad = append(bad, CommitPolicy(c)...)
+			if *strict {
+				bad = append(bad, StrictCommitPolicy(c, maint)...)
+			}
 		}
 		fmt.Fprintf(w, "commits: %d checked\n", len(cs))
 		return report(w, "commit-policy", bad)
@@ -502,7 +518,8 @@ func gitCommits(base, head string) ([]Commit, error) {
 		}
 		author, _ := git("log", "-1", "--format=%an <%ae>", h)
 		committer, _ := git("log", "-1", "--format=%cn <%ce>", h)
-		cs = append(cs, Commit{Hash: h, Message: msg, Author: author, Committer: committer})
+		sig, _ := git("log", "-1", "--format=%G?", h)
+		cs = append(cs, Commit{Hash: h, Message: msg, Author: author, Committer: committer, Signature: sig})
 	}
 	return cs, nil
 }

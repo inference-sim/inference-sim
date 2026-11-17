@@ -614,6 +614,10 @@ def test_recurrent_floors_are_positive_and_bounded():
 # Scope and provenance hygiene
 # --------------------------------------------------------------------------------------
 
+# Names whose part-wide entry may be split into a default and chip-specific values (see the test below).
+PER_CHIP_LAUNCH_TERMS = ("host_launch_per_kernel",)
+
+
 def test_hardware_independent_sets_cover_every_catalog_part():
     """A set that claims to apply everywhere must name every part the catalog holds.
 
@@ -635,6 +639,7 @@ def test_hardware_independent_sets_cover_every_catalog_part():
     # same value, and any entry beyond the first is `transferred` with transferred_from naming a
     # sibling's scope. A split may not smuggle in a per-part value.
     split: dict = {}
+    per_chip: dict = {}
     for setname, name, body in ENTRIES:
         if setname not in ("cost-model-host-overheads.yaml", "cost-model-memory.yaml"):
             continue
@@ -646,6 +651,13 @@ def test_hardware_independent_sets_cover_every_catalog_part():
         # one chip by design and must not be swept into this rule by its name prefix.
         # cost-model-memory holds engine-structural memory terms with no per-part value in
         # their sources, scoped to every part for the same reason the host set is.
+        if not models and name in PER_CHIP_LAUNCH_TERMS:
+            # The launch term inside a captured graph is the gap between one node's end and the
+            # next's start, a property of the GPU as much as of the host. It may carry a chip's
+            # own value where that chip's fit units support one (accuracy/preregistrations.md
+            # K1), checked below.
+            per_chip.setdefault((setname, name), []).append(body)
+            continue
         if not models:
             missing = sorted(cat - set(scope.get("hardware", [])))
             assert not missing, (
@@ -655,6 +667,19 @@ def test_hardware_independent_sets_cover_every_catalog_part():
             )
             continue
         split.setdefault((setname, name, models), []).append(body)
+    for (setname, name), bodies in per_chip.items():
+        # A per-chip value must be a chip's own: one default entry for the parts with none, and each
+        # chip-specific entry carries the interval its fit units gave. Together they scope every part
+        # exactly once, so no part is priced at zero and none is priced by two entries.
+        counted = [h for b in bodies for h in b["scope"].get("hardware", [])]
+        assert sorted(counted) == sorted(set(counted)), f"{name}: a part is scoped by two entries: {counted}"
+        assert not sorted(cat - set(counted)), (
+            f"{setname}: {name} does not scope {sorted(cat - set(counted))}, so it is priced at zero there.")
+        defaults = [b for b in bodies if len(b["scope"].get("hardware", [])) > 1]
+        assert len(defaults) == 1, f"{name}: want one default entry for the parts without their own value"
+        for b in bodies:
+            if b is not defaults[0]:
+                assert b.get("ci95"), f"{name} for {b['scope']}: a chip's own value must carry its interval"
     for (setname, name, models), bodies in split.items():
         # The model-scoped capture form is read all or none, and where it is absent the
         # kernel charges the part-wide cudagraph_capture_bytes_<mode> (blis-latency-kernel
