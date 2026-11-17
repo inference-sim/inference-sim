@@ -99,3 +99,41 @@ func TestTheDrafterCeilingCountsPrefillRows(t *testing.T) {
 		t.Errorf("three decode rows: %v, want eager %v", got, eager)
 	}
 }
+
+// Under data parallelism a rank's parallel-block drafter replays the graph its group agreed
+// (Batch.DraftPaddedTokens), not the graph of its own requests, and the context rows that graph
+// stores are those of the group's width (num_graph_reqs, dflash/speculator.py
+// _prepare_graph_replay). A lighter rank with a prefill chunk stores its context rows eagerly at
+// its own width, but not at the group's wider one; and a group whose agreed width is past the
+// drafter's capture ceiling runs eagerly on every rank (inference-sim/blis-substrate#125).
+func TestALighterRankReplaysTheGroupsDrafterGraph(t *testing.T) {
+	const kSpec = 3
+	k := &Kernel{
+		low:         plan.PoolPlan{Drafts: plan.DraftPolicy{Chain: kSpec, OwnWorkspace: true}},
+		plan:        &price.Plan{Draft: &price.DraftPlan{ContextKernels: 2, Drafting: model.DraftingParallelBlock}},
+		graphDecode: graphModeFull, draftCaptureTokens: 24,
+		launchEager: time.Microsecond, replayPerStep: 5 * time.Microsecond,
+	}
+	const kernels = 40
+	// Two requests: one decode row and a 10-token prefill chunk, 14 target tokens in all.
+	decode := kernel.ReqShape{Scheduled: kSpec + 1, Computed: 100, PromptLen: 100}
+	chunk := kernel.ReqShape{Scheduled: 10, Computed: 0, PromptLen: 4096}
+	b := kernel.Batch{DecodeThreshold: kSpec + 1, Reqs: []kernel.ReqShape{decode, chunk}}
+	replay := k.replayPerStep
+	contextStore := replay + 2*k.launchEager
+	eager := kernels * k.launchEager
+
+	if got := k.draftHost(b, kernels); got != contextStore {
+		t.Errorf("a rank stating no pad: %v, want a replay plus the eager context store %v (14 tokens "+
+			"past its own 2 x (K+1) = 8 context rows)", got, contextStore)
+	}
+	b.DraftPaddedTokens = 6 * kSpec // the group agreed on 6 requests: 24 context rows hold the 14 tokens
+	if got := k.draftHost(b, kernels); got != replay {
+		t.Errorf("a rank padded to its group's 6 requests: %v, want a bare replay %v: the group's graph "+
+			"stores 6 x (K+1) = 24 context rows, which hold its 14 tokens", got, replay)
+	}
+	b.DraftPaddedTokens = 9 * kSpec // 27 draft tokens, past the 24-token capture ceiling
+	if got := k.draftHost(b, kernels); got != eager {
+		t.Errorf("a group wider than the capture ceiling: %v, want eager %v", got, eager)
+	}
+}

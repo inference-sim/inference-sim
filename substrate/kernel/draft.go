@@ -326,6 +326,9 @@ func (k *Kernel) draftHasOwnGraphs() bool {
 // (_num_graph_context_tokens, :309-311); a step scheduling more target tokens than that --
 // any step with a prefill row -- stores the rest eagerly before the replay
 // (_precompute_context_kv, :480-482), so its context kernels are charged as eager launches.
+// Both the dispatch and that count are the graph's request count, which under data parallelism is
+// the group's agreed width (_prepare_graph_replay, num_graph_reqs), so a lighter rank pays what the
+// slow rank's width implies.
 func (k *Kernel) draftHost(b kernel.Batch, kernels int) time.Duration {
 	n := k.numSpecTokens()
 	reqs := 0
@@ -334,12 +337,26 @@ func (k *Kernel) draftHost(b kernel.Batch, kernels int) time.Duration {
 			reqs++
 		}
 	}
-	tokens := reqs * n
+	// The graph is dispatched on the rows the engine launched, which its data-parallel group
+	// agreed (Batch.DraftPaddedTokens, coordinate_batch_across_dp), not on this rank's own
+	// requests: a lighter rank replays the group's graph, and stores context rows up to that
+	// graph's width. A caller that states no pad prices the rank's own requests, as before.
+	graphReqs := reqs
+	if n > 0 && b.DraftPaddedTokens > 0 {
+		graphReqs = max(reqs, b.DraftPaddedTokens/n)
+	}
+	tokens := graphReqs * n
 	if k.graphDecode != graphModeFull || tokens == 0 || tokens > k.draftCaptureTokens {
 		return time.Duration(float64(k.launchEager) * float64(kernels))
 	}
 	host := k.replayPerStep
-	if b.Tokens() > reqs*(n+1) {
+	// _num_graph_context_tokens(num_graph_reqs): one full verify per graph request, bounded by
+	// max_num_tokens; the rank's own target tokens past it are stored before the replay.
+	graphContext := graphReqs * (n + 1)
+	if k.batchedTokens > 0 {
+		graphContext = min(graphContext, k.batchedTokens)
+	}
+	if b.Tokens() > graphContext {
 		host += time.Duration(float64(k.launchEager) * float64(k.plan.Draft.ContextKernels))
 	}
 	return host
