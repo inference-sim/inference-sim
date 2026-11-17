@@ -68,6 +68,12 @@ models:
         source: https://raw.githubusercontent.com/spdx/license-list-data/279b7e997a87c09be00dd6bdda189519ade502cf/text/MIT.txt
         sha256: b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5
     note: "The card names MIT, and the repository holds no licence file and names no copyright holder, so the text is SPDX's MIT licence."
+  - model: glm-5.1-fp8
+    licence: MIT
+    texts:
+      - file: MIT.zhipu-ai.txt
+        source: https://huggingface.co/zai-org/GLM-5.1-FP8/raw/f396cf805182f4ca10fa675e1a99815b3ca384db/LICENSE
+        sha256: f4a18c6ae40b0a8e7d2b7667f52f6e1994e54a46430d2e172b73cb8c9b5eb0d7
   - model: glm-5.2
     licence: MIT
     texts:
