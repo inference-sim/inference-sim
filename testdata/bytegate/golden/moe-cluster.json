@@ -889,7 +889,7 @@
     "simulator": "(devel)",
     "substrate": "v0.14.2-0.20261117153501-c48aa81d029a",
     "router": "v1.0.0-blis.4.0.20261117140125-6acd0a87e875",
-    "engine_module": "v0.32.1-0.20261117073624-bc5a9a97ee7b"
+    "engine_module": "v0.32.1-0.20261117162711-50c139b8221b"
   },
   "window": {
     "start_us": 33333,
@@ -2799,6 +2799,7 @@
         "measured_cancelled_requests": 0,
         "measured_context_overflow_requests": 0,
         "measured_failed_requests": 0,
+        "mfu": 0.006946465438538494,
         "preemption_rate": 0,
         "preemptions": 0,
         "prefill_busy_share": 0.07344803445884684,
@@ -2858,6 +2859,7 @@
             "e2e_p95_ms": 8028.4037499999995,
             "e2e_p99_ms": 8498.4315,
             "measured_completed_requests": 26,
+            "mfu": 0.006473830496573841,
             "output_tok_s": 1385.4397037537747,
             "prefill_busy_share": 0.06226220963423836,
             "ttft_mean_ms": 83.47596153846153,
@@ -2904,6 +2906,7 @@
             "e2e_p95_ms": 8105.57725,
             "e2e_p99_ms": 8443.929499999998,
             "measured_completed_requests": 36,
+            "mfu": 0.007510971860417056,
             "output_tok_s": 1499.1403569355562,
             "prefill_busy_share": 0.08194668732484381,
             "ttft_mean_ms": 83.0741388888889,
@@ -2950,6 +2953,7 @@
             "e2e_p95_ms": 6834.702649999998,
             "e2e_p99_ms": 7886.49797,
             "measured_completed_requests": 28,
+            "mfu": 0.006694292248986577,
             "output_tok_s": 1189.6321168526779,
             "prefill_busy_share": 0.07389292665082182,
             "ttft_mean_ms": 86.45492857142857,
@@ -2996,6 +3000,7 @@
             "e2e_p95_ms": 7674.9686,
             "e2e_p99_ms": 7884.72013,
             "measured_completed_requests": 30,
+            "mfu": 0.007106767148176505,
             "output_tok_s": 1398.9405082915146,
             "prefill_busy_share": 0.07569031422548338,
             "ttft_mean_ms": 83.96239999999999,
@@ -3057,6 +3062,15 @@
             "Primitive": "",
             "Running": "",
             "Scope": "512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph",
+            "Set": "blis-latency-kernel"
+          },
+          {
+            "KernelMatch": "",
+            "Method": "assumed",
+            "Name": "moe_routing",
+            "Primitive": "",
+            "Running": "",
+            "Scope": ": the experts class vLLM resolves for mxfp4 routed experts (moe_backend \"\") is not resolved here, so no selection launch is counted",
             "Set": "blis-latency-kernel"
           },
           {
@@ -3434,7 +3448,7 @@
           }
         ],
         "method_counts": {
-          "assumed": 42,
+          "assumed": 43,
           "measured": 105,
           "not_charged": 1,
           "vendor_spec": 14
@@ -3485,7 +3499,7 @@
           "sequence-parallel-architecture-known",
           "sequence-parallel-moe-implied"
         ],
-        "total": 162
+        "total": 163
       }
     }
   },

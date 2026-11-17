@@ -866,7 +866,7 @@
     "simulator": "(devel)",
     "substrate": "v0.14.2-0.20261117153501-c48aa81d029a",
     "router": "v1.0.0-blis.4.0.20261117140125-6acd0a87e875",
-    "engine_module": "v0.32.1-0.20261117073624-bc5a9a97ee7b"
+    "engine_module": "v0.32.1-0.20261117162711-50c139b8221b"
   },
   "window": {
     "start_us": 250000,
@@ -1535,6 +1535,7 @@
         "measured_cancelled_requests": 0,
         "measured_context_overflow_requests": 0,
         "measured_failed_requests": 0,
+        "mfu": 0.035819387140168565,
         "preemption_rate": 0,
         "preemptions": 0,
         "prefill_busy_share": 0.11321614544970197,
@@ -1616,6 +1617,15 @@
             "Primitive": "",
             "Running": "",
             "Scope": "512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph",
+            "Set": "blis-latency-kernel"
+          },
+          {
+            "KernelMatch": "",
+            "Method": "assumed",
+            "Name": "moe_routing",
+            "Primitive": "",
+            "Running": "",
+            "Scope": ": the experts class vLLM resolves for mixed routed experts (moe_backend \"marlin\") is not resolved here, so no selection launch is counted",
             "Set": "blis-latency-kernel"
           },
           {
@@ -2029,7 +2039,7 @@
           }
         ],
         "method_counts": {
-          "assumed": 45,
+          "assumed": 46,
           "measured": 101,
           "not_charged": 1,
           "transferred": 2,
@@ -2083,7 +2093,7 @@
             "stated": "unset"
           }
         ],
-        "total": 163
+        "total": 164
       }
     }
   },
