@@ -68,6 +68,9 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 	// that Data, so the Result's hashes and its one selected-entry report cover the lookups of
 	// every pool's engine (blis-vllm#90, design §3.3, VAL-6).
 	data := mustRunData()
+	// The run's file systems under the fs tiers' root_dirs, shared by every engine of the model
+	// (#1698): one store for each (model, root_dir).
+	storage := newTierStorage()
 	build := func(index int, ic sim.InstanceConfig) (*sim.EngineDriver, error) {
 		m := latency
 		if kernelPDOpened != nil {
@@ -93,6 +96,7 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 		if err := placeInstance(eng, kernelPDOpened, index); err != nil {
 			return nil, fmt.Errorf("scenario %q: instance_%d: %w", kernelScenario, index, err)
 		}
+		storage.share(eng, model)
 		// --renderer-num-workers and --api-server-count are vLLM's API-server settings, which
 		// blis-schemas does not carry yet; the engine resolves them into the admission queue its
 		// plan states, and the driver queues requests on that shape.
