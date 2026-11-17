@@ -771,10 +771,10 @@ func (r *Result) validateRows(p *validate.Problems) {
 				p.Field(at+".length_capped", "only a completed request stops at a length limit")
 			}
 		}
-		switch row.Phase {
-		case "", PhaseWarmup, PhaseProfile, PhaseGrace:
-		default:
-			p.Field(at+".phase", "%q is not one of warmup, profile, grace", row.Phase)
+		// A phase is the label the workload gave it (trace.Phase): any lowercase slug. The three
+		// constants name the ones a measured window treats specially.
+		if row.Phase != "" && !phaseSlug.MatchString(string(row.Phase)) {
+			p.Field(at+".phase", "%q is not a lowercase slug (letters, digits, - and _)", row.Phase)
 		}
 		if a := row.Agentic; a != nil {
 			switch a.Kind {
@@ -1017,3 +1017,5 @@ func (c SelectedCoefficient) validatePriced(p *validate.Problems, at string, mar
 		p.Field(at+".kernel_match", "%q is not exact or unkeyed: a lookup does not return an entry whose implementations do not run", c.KernelMatch)
 	}
 }
+
+var phaseSlug = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)

@@ -252,6 +252,7 @@ var documented = map[string]struct {
 	"trace.KVOffloadTier":         {typ: reflect.TypeOf(trace.KVOffloadTier{})},
 	"trace.Router":                {typ: reflect.TypeOf(trace.Router{})},
 	"trace.Record":                {typ: reflect.TypeOf(trace.Record{})},
+	"trace.Phase":                 {typ: reflect.TypeOf(trace.Phase{})},
 	"workload.TokenBlocks":        {typ: reflect.TypeOf(workload.TokenBlocks{})},
 	"trace.SLODimTargets":         {typ: reflect.TypeOf(trace.SLODimTargets{})},
 	"workload.Spec":               {typ: reflect.TypeOf(workload.Spec{})},

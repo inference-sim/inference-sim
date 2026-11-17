@@ -350,7 +350,7 @@ func TestEachFailureModeIsRefused(t *testing.T) {
 		{"row drop reasons disagree with the counts", row(3, func(x *RequestRow) { x.DropReason = DropUnservable }), "request_rows", "dropped for"},
 		{"length-capped row disagrees with the count", row(0, func(x *RequestRow) { x.LengthCapped = true }), "request_rows", "length-capped"},
 		{"length-capped row not completed", row(2, func(x *RequestRow) { x.LengthCapped = true }), "request_rows[2].length_capped", "only a completed"},
-		{"unknown phase", row(0, func(x *RequestRow) { x.Phase = "main" }), "request_rows[0].phase", "is not one of"},
+		{"unknown phase", row(0, func(x *RequestRow) { x.Phase = "Main Phase" }), "request_rows[0].phase", "lowercase slug"},
 		{"agentic tag with unknown kind", row(0, func(x *RequestRow) {
 			x.Agentic = &AgenticTag{TraceID: "t", Stream: "t", Kind: "child"}
 		}), "request_rows[0].agentic.kind", "is not one of"},

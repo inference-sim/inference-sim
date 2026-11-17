@@ -721,7 +721,8 @@ type RequestRow struct {
 	Agentic *AgenticTag `yaml:"agentic,omitempty"`
 }
 
-// Phase is a request's benchmark phase, after aiperf's benchmark_phase tag. Only
+// Phase is a request's benchmark phase: the name of the workload's phase it was sent in
+// (trace.Phase), after aiperf's benchmark_phase tag. Any lowercase slug is valid; only
 // PhaseWarmup is outside the measured window.
 type Phase string
 
