@@ -8,7 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
@@ -156,5 +158,68 @@ func TestSparseGQABesideRecurrentLayersIsAHybridTheAlignmentSizes(t *testing.T) 
 	g.LayerKinds[1].Nodes = []model.Node{main}
 	if f, _ := attentionOf(g, engineconfig.Engine{BlockSize: 64, CacheDType: "auto"}, 8); f.kernelErr == nil {
 		t.Error("head size 256 on plain GQA lost its kernel-block caveat")
+	}
+}
+
+// Opening a pool of a Qwen4Exp model refuses at start-up what the QSA backend refuses, with the
+// refusal reaching the caller; the same pool of another architecture opens.
+func TestOpeningAQwen4ExpPoolRefusesWhatTheBackendRefuses(t *testing.T) {
+	const scenario = "gpt-oss-120b-h200-fp4-vllm-tp4.yaml"
+	open := func(arch string, edit func(*deployment.Pool)) error {
+		in, err := latencykernel.OpenInputs(scenario, repos(), 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		g := *in.Model
+		g.Global.Architecture = arch
+		in.Model = &g
+		edit(&in.Deployment.Pools[0])
+		_, err = fromInputs(in)
+		return err
+	}
+	dcp := func(p *deployment.Pool) { p.Parallel.DCP = 2 }
+	err := open(qwen4, dcp)
+	if err == nil || !strings.Contains(err.Error(), "decode context parallelism") {
+		t.Errorf("DCP 2 on Qwen4Exp: %v, want a refusal naming decode context parallelism", err)
+	}
+	if err := open(qwen4, func(*deployment.Pool) {}); err != nil && strings.Contains(err.Error(), "QSA") {
+		t.Errorf("a plain Qwen4Exp pool was refused by the QSA check: %v", err)
+	}
+	if err := open("GptOssForCausalLM", dcp); err != nil && strings.Contains(err.Error(), "QSA") {
+		t.Errorf("another architecture was refused by the QSA check: %v", err)
+	}
+}
+
+// kvLayersOf maps a hybrid of Gated DeltaNet and QSA layers to the specs vLLM registers, in
+// layer order: three recurrent layers, then the QSA layer's K/V cache, ring and compressed keys,
+// twice over. Before the QSA branch it refused the scorer's caches as unmapped.
+func TestKVLayersOfAQwen4ExpHybridAreTheEnginesSpecs(t *testing.T) {
+	main, scorer := qsaNodes()
+	main.Caches = []model.Cache{{Name: "kv", Kind: model.CacheKV, Owned: true, BytesPerEntry: 2048}}
+	scorer.Caches = []model.Cache{{Name: "index", Kind: model.CacheIndex, Owned: true, BytesPerEntry: 256, TokensPerEntry: 4}}
+	gdn := model.Node{Op: model.OpRecurrentUpdate, RecurrentKind: model.RecurrentGDN, NumHeads: 48, StateSize: 128,
+		ConvKernel: 4, IntermediateSize: 10240, StateDType: model.DTypeFP32}
+	g := &model.Graph{Global: model.GlobalShape{WeightDType: model.DTypeBF16, ContextWindow: 262144},
+		LayerKinds: []model.LayerKind{{ID: "rec", Nodes: []model.Node{gdn}}, {ID: "attn", Nodes: []model.Node{scorer, main}}},
+		Stack:      model.Stack{Pattern: []string{"rec", "rec", "rec", "attn"}, Repeat: 2}}
+	e := engineconfig.Engine{BlockSize: 64}
+	plan := mustPlan(t, g, e, 8)
+	pool := deployment.Pool{Parallel: deployment.Parallelism{TP: 8, PP: 1, DP: 1}}
+	runs, err := kvLayersOf(g, pool, e, deepseekServing{mamba: plan})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var specs []string
+	count := map[string]int{}
+	for _, r := range runs {
+		specs = append(specs, r.Spec)
+		count[r.Spec] += r.Count
+	}
+	if want := "mamba full circular_buffer mla mamba full circular_buffer mla"; strings.Join(specs, " ") != want {
+		// Consecutive identical runs merge, so the recurrent layers of a block are one run.
+		t.Errorf("specs %v, want %s", specs, want)
+	}
+	if count["mamba"] != 6 || count["full"] != 2 || count["circular_buffer"] != 2 || count["mla"] != 2 {
+		t.Errorf("layers per spec %v: want 6 recurrent and 2 each of the QSA layer's three", count)
 	}
 }

@@ -41,6 +41,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/inference-sim/blis-substrate/contracts/rules"
@@ -737,6 +738,43 @@ func ruleList(p *pack.Pack) []rules.Rule {
 			},
 		},
 		{
+			Name: "qwen4-exp-qsa-backend",
+			Because: "Qwen4Exp's full-attention layers run the QWEN4_EXP_QSA_TRITON backend, which refuses decode-context " +
+				"parallelism (supports_dcp False, vllm/models/qwen4_exp/nvidia/qsa.py:212-213, :254-256) and, with the layer, " +
+				"prefill-context parallelism (:370-377), reports supports_kv_connector False (:205-206), accepts only " +
+				"MultipleOf(16) kernel block sizes (:188-190), and requires a BF16 or FP8-e4m3 main KV cache (:361-368); " +
+				"a graph that names no Qwen4Exp architecture is not checked (vLLM v0.33.0, 4ba787ec9959e566d3b587a796dff07673324da5)",
+			Check: func(in rules.Input, out *rules.Problems) {
+				if in.Model == nil || !qwen4ExpArchitectures[in.Model.Global.Architecture] {
+					return
+				}
+				connector := in.Deployment != nil && (in.Deployment.PDTransfer != nil || in.Deployment.Offload != nil)
+				forEachPool(in, func(at string, pool engineconfig.Pool) {
+					refuse := func(what string) {
+						out.RuleErrorf("qwen4-exp-qsa-backend", "%s: %s; engine %s refuses it for %s (inference-sim/blis-vllm#202)",
+							at, what, Version, in.Model.Global.Architecture)
+					}
+					if pool.Parallel.DCP > 1 {
+						refuse("decode_context_parallel_size " + strconv.Itoa(pool.Parallel.DCP))
+					}
+					if pool.Parallel.PCP > 1 {
+						refuse("prefill_context_parallel_size " + strconv.Itoa(pool.Parallel.PCP))
+					}
+					if connector {
+						refuse("a KV connector (pd_transfer or offload)")
+					}
+					if b := pool.Engine.BlockSize; b != 0 && b%16 != 0 {
+						refuse("block_size " + strconv.Itoa(b) + ", not a multiple of 16")
+					}
+					switch pool.Engine.CacheDType {
+					case "", "auto", "bfloat16", "fp8", "fp8_e4m3":
+					default:
+						refuse("cache_dtype " + pool.Engine.CacheDType)
+					}
+				})
+			},
+		},
+		{
 			Name:    "engram-excludes-dbo",
 			Because: "this release refuses dual-batch overlap and microbatching at startup for a DeepseekV41ForCausalLM with Engram layers (vllm/config/vllm.py: \"DeepSeek V4.1 Engram does not support DBO or microbatching\"); a graph with Engram lookups that names no architecture draws a warning, since the refusal turns on the architecture",
 			Check: func(in rules.Input, out *rules.Problems) {
@@ -1378,4 +1416,10 @@ func effectiveBlocks(g *model.Graph, stated, pcp int) []int {
 		return []int{sure, with}
 	}
 	return []int{sure}
+}
+
+// qwen4ExpArchitectures are the architectures whose attention layers are QSA
+// (vllm/models/qwen4_exp/nvidia/model.py at v0.33.0).
+var qwen4ExpArchitectures = map[string]bool{
+	"Qwen4ExpForCausalLM": true, "Qwen4ExpForConditionalGeneration": true, "Qwen4ExpMTP": true,
 }

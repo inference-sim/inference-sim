@@ -159,7 +159,7 @@ func kvLayersOf(g *model.Graph, pool deployment.Pool, engine engineconfig.Engine
 		for _, r := range runs {
 			indexer = indexer || r.Spec == "indexer"
 		}
-		if !indexer {
+		if !indexer && !hasSparseGQA(g) {
 			return nil, fmt.Errorf("indexer_kv_dtype=%q is read only for MiniMax-M3's indexer cache, and this model has none, so a "+
 				"stated value would be dropped (https://github.com/inference-sim/blis-vllm/issues/84)", d)
 		}
@@ -245,6 +245,22 @@ func kvLayersRead(g *model.Graph, pool deployment.Pool, engine engineconfig.Engi
 			if n.Op != model.OpAttention {
 				continue
 			}
+			if n.AttentionKind == sparseGQA {
+				// Qwen4Exp's QSA layer registers the K/V cache and its indexer's two caches.
+				qr, err := qsaLayerRuns(id, kinds[id], n, tp, engine, false)
+				if err != nil {
+					return nil, err
+				}
+				plain = plain && len(qr) == 0
+				for _, r := range qr {
+					if l := len(runs) - 1; l >= 0 && sameRun(runs[l], r) {
+						runs[l].Count++
+					} else {
+						runs = append(runs, r)
+					}
+				}
+				continue
+			}
 			r := KVLayerRun{Count: 1, Spec: "full", NumKVHeads: max(n.NumKVHeads/tp, 1), HeadSize: n.HeadDim}
 			for _, c := range n.Caches {
 				switch {
@@ -286,6 +302,22 @@ func kvLayersRead(g *model.Graph, pool deployment.Pool, engine engineconfig.Engi
 		for _, id := range g.Speculator.Stack.Expand() {
 			for _, n := range kinds[id].Nodes {
 				if n.Op != model.OpAttention {
+					continue
+				}
+				if n.AttentionKind == sparseGQA {
+					// The MTP module's QSA layer registers the caches a target layer does.
+					qr, err := qsaLayerRuns(id, kinds[id], n, tp, engine, true)
+					if err != nil {
+						return nil, err
+					}
+					plain = false
+					for _, r := range qr {
+						if l := len(runs) - 1; l >= 0 && sameRun(runs[l], r) {
+							runs[l].Count++
+						} else {
+							runs = append(runs, r)
+						}
+					}
 					continue
 				}
 				if len(n.Caches) > 0 {

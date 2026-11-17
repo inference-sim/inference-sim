@@ -9,6 +9,8 @@ import (
 	"fmt"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+
+	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 // sparseGQA is model.AttentionSparseGQA (blis-substrate#253). It is spelled here until this module
@@ -126,4 +128,47 @@ func qwen4ExpAttentionRuns(main, scorer model.Node, tp, blockSize, numSpec int, 
 		{Count: 1, Spec: "circular_buffer", NumKVHeads: 1, HeadSize: ringWidth, BlockSize: qsaRingRows(ratio, numSpec), ElemBytes: 2},
 		{Count: 1, Spec: "mla", NumKVHeads: 1, HeadSize: keyWidth, BlockSize: blockSize, TokensPerState: ratio, ElemBytes: elem},
 	}, nil
+}
+
+// hasSparseGQA is whether g has a sparse_gqa layer, whose indexer reads indexer_kv_dtype
+// (QSAIndexer, nvidia/indexer_qsa.py:152-154).
+func hasSparseGQA(g *model.Graph) bool {
+	for _, k := range g.LayerKinds {
+		for _, n := range k.Nodes {
+			if n.Op == model.OpAttention && n.AttentionKind == sparseGQA {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// qsaLayerRuns is the runs of the QSA layer whose main node is n in layer kind lk: nothing for the
+// indexer's scorer, which registers its caches with its main node. The MTP module's layer (draft)
+// has the same caches, marked as the drafter's.
+func qsaLayerRuns(id string, lk model.LayerKind, n model.Node, tp int, e engineconfig.Engine, draft bool) ([]KVLayerRun, error) {
+	if !n.ReadsEngineKV() {
+		return nil, nil
+	}
+	var scorer *model.Node
+	for i := range lk.Nodes {
+		if c := lk.Nodes[i]; c.Op == model.OpAttention && c.AttentionKind == sparseGQA && !c.ReadsEngineKV() {
+			scorer = &lk.Nodes[i]
+		}
+	}
+	if scorer == nil {
+		return nil, fmt.Errorf("layer kind %s: a sparse_gqa attention node with no indexer scorer beside it", id)
+	}
+	numSpec := 0
+	if e.Speculative != nil {
+		numSpec = e.Speculative.NumSpecTokens
+	}
+	runs, err := qwen4ExpAttentionRuns(n, *scorer, tp, e.BlockSize, numSpec, e.IndexerKVDType, true)
+	if err != nil {
+		return nil, fmt.Errorf("layer kind %s: %w", id, err)
+	}
+	for i := range runs {
+		runs[i].Draft = draft
+	}
+	return runs, nil
 }
