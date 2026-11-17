@@ -2558,6 +2558,64 @@
     "name": "cudagraph_capture_sizes"
    }
   },
+  "data_parallel_rpc_port": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0
+    ]
+   },
+   "basis": {
+    "kind": "numeric",
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": null,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [],
+      "uncut": true,
+      "covered_by": [
+       "oracle/inertness/data_parallel_rpc_port.json"
+      ]
+     },
+     {
+      "unset": true,
+      "compared_at": [
+       "vllm/engine/arg_utils.py:2561"
+      ],
+      "covered_by": []
+     }
+    ],
+    "relations": [],
+    "sites": [
+     {
+      "at": "vllm/engine/arg_utils.py:2561",
+      "expr": "self.data_parallel_rpc_port is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": 29550,
+      "trace": "oracle/inertness/data_parallel_rpc_port.json"
+     },
+     {
+      "value": 13345,
+      "trace": "oracle/inertness/data_parallel_rpc_port.json"
+     },
+     {
+      "value": 62100,
+      "trace": "oracle/inertness/data_parallel_rpc_port.json"
+     }
+    ],
+    "name": "data_parallel_rpc_port"
+   }
+  },
   "data_parallel_size": {
    "value_classes": {
     "type": "numeric",

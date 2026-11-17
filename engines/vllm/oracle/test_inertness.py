@@ -95,6 +95,38 @@ class Controls(unittest.TestCase):
         self.assertEqual(r["verdict"], "not_inert")
         self.assertTrue([p for p in r["problems"] if "decisions of run outputproc differ" in p], r["problems"])
 
+    def handshake_spec(self, field, probes, expect_port=True, **extra):
+        base = {"data_parallel_size": 2, "data_parallel_size_local": 1, "data_parallel_address": "10.0.0.1"}
+        base.pop(field, None)
+        run = {"id": "launch", "kind": "handshake", "entry": "launch_core_engines", "apply": {"engine_args": field},
+               "base": base, "echo": field, "expect_port": expect_port, **extra}
+        return {"field": field, "release": "x", "readers": [], "probes": [{"label": str(v), "value": v} for v in probes],
+                "runs": [run]}
+
+    def test_a_handshake_run_sees_a_field_that_changes_how_the_cores_are_started(self):
+        # data_parallel_size_local 1 against 2 changes how many engine cores the front end starts itself and
+        # whether they handshake over a local socket: engine-facing, so the run must report it.
+        r = self.h.evaluate(ROOT, self.handshake_spec("data_parallel_size_local", [1, 2], expect_port=False,
+                                                      ignore=["parallel_config.data_parallel_master_port",
+                                                              "parallel_config._data_parallel_master_port_list"]))
+        self.assertEqual(r["verdict"], "not_inert")
+        self.assertTrue([p for p in r["problems"] if "decisions of run launch differ" in p], r["problems"])
+
+    def test_a_handshake_run_requires_the_endpoint_to_carry_the_stated_port(self):
+        # A run that claims to probe a port through data_parallel_size_local finds an endpoint that does not
+        # carry the stated value, and says so instead of passing.
+        r = self.h.evaluate(ROOT, self.handshake_spec("data_parallel_size_local", [1, 1],
+                                                      ignore=["parallel_config.data_parallel_master_port",
+                                                              "parallel_config._data_parallel_master_port_list"]))
+        self.assertTrue([p for p in r["problems"] if "does not carry the stated port" in p], r["problems"])
+
+    def test_a_handshake_run_ignores_only_the_paths_it_is_told_to(self):
+        # The config draws free ports for the data-parallel master at random: without "ignore" two probes of
+        # the rpc port differ in them, and the run says so rather than passing.
+        r = self.h.evaluate(ROOT, self.handshake_spec("data_parallel_rpc_port", [29550, 13345]))
+        self.assertEqual(r["verdict"], "not_inert")
+        self.assertTrue([p for p in r["problems"] if "decisions of run launch differ" in p], r["problems"])
+
     def test_a_disposition_the_harness_does_not_check_is_refused(self):
         spec = copy.deepcopy(proof("stream_interval"))
         spec["runs"] = []

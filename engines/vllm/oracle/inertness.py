@@ -21,6 +21,14 @@ after --write, the result. Runs:
               through the scenario's scheduler_config; the trace without provenance is the decisions.
   config      EngineArgs(...).create_engine_config(): the value the field resolves to and what the
               resolved scheduler/cache/parallel config holds; this is the tier's "defaults resolved".
+  handshake   the code that starts the engine cores and hands each the address of the front end's handshake
+              socket, for a field that sets that address (data_parallel_rpc_port): launch_core_engines,
+              run_headless (vllm serve --headless) or ExternalElasticEPScaleCoordinator's scale-up handshake
+              server, each run with the process and socket layer replaced by recorders (nothing is bound and
+              no process is started). The engine-facing decisions are what the engine cores are started with
+              (the resolved parallel, scheduler and cache config, how many cores, which are local, whether the
+              handshake is local) with the stated port removed from the endpoint; the endpoint itself is
+              recorded and must carry the stated port (the run shows the read reaches the address).
   outputproc  vLLM's OutputProcessor fed a scripted EngineCoreOutput stream, for a front-end field: what it
               hands back to the engine core (requests to abort) is compared; what it delivers to the
               client is recorded as frontend_effect and may differ.
@@ -39,7 +47,7 @@ another kind is an error ("unknown disposition"), until a proof needs one and th
 
 The scan of the reads is of Python (vllm/**/*.py). A file may add "named_in": {"vllm": [...], "rust": [...]},
 the files under vllm/ and rust/ (tests excluded for rust) that name the field at all, and the check
-compares the list with the tree: a read in a front end the scan does not parse (the Rust front end) is
+compares the list with the tree ("named_aliases" adds other spellings of the name, such as a command-line flag): a read in a front end the scan does not parse (the Rust front end) is
 then listed and reviewed, and a file of the engine that starts to name the field fails the check.
 
 Coverage names a vLLM file by its path inside vLLM and matches the executed file by that path's suffix, so
@@ -52,6 +60,7 @@ the design accepts (it never does here).
 """
 
 import ast
+import contextlib
 import dataclasses
 import hashlib
 import importlib.util
@@ -60,6 +69,7 @@ import os
 import re
 import sys
 import tempfile
+import types
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
@@ -208,7 +218,8 @@ def run_config(vllm_root, run, value):
     """EngineArgs(...).create_engine_config() with the probe stated. "observe" lists the resolved values the
     file wants to see in the result; "compare" lists the config sections (scheduler_config, cache_config, ...)
     whose every field is compared across the probes, except the field the probe states ("echo"), which holds
-    the stated value by construction."""
+    the stated value by construction, and the paths in "ignore" (values the config draws at random on every
+    call, such as a free port; the file says why)."""
     if vllm_root not in sys.path:
         sys.path.append(vllm_root)
     from vllm.engine.arg_utils import EngineArgs  # noqa: E402
@@ -225,6 +236,8 @@ def run_config(vllm_root, run, value):
 
     whole = {section: dump(getattr(cfg, section)) for section in run.get("compare", [])}
     without(whole, run["echo"])
+    for path in run.get("ignore", []):
+        without(whole, path)
     # echo is where the field itself resolves: it must be the stated value, and is not compared across probes.
     return {"resolved": {path: dig(path) for path in run["observe"]}, "echo": dig(run["echo"]), "stated": value,
             "whole": whole}
@@ -274,7 +287,144 @@ def run_outputproc(vllm_root, run, value):
             "frontend_effect": delivered}
 
 
-RUNNERS = {"scheduler": run_scheduler, "config": run_config, "outputproc": run_outputproc}
+@contextlib.contextmanager
+def replaced(module, **attrs):
+    """module with the named attributes replaced for the duration (the process and socket layer of a handshake run)."""
+    old = {k: getattr(module, k) for k in attrs}
+    for k, v in attrs.items():
+        setattr(module, k, v)
+    try:
+        yield
+    finally:
+        for k, v in old.items():
+            setattr(module, k, v)
+
+
+def endpoint_form(addr, port):
+    """An address with the stated port removed ("tcp://host:<port>"), or its transport alone for an ipc path
+    (whose name is random). Everything else in the address must agree across probes."""
+    if addr.startswith("ipc://"):
+        return "ipc"
+    suffix = ":%d" % port
+    return addr[: -len(suffix)] + ":<port>" if addr.endswith(suffix) else addr
+
+
+def handshake_config(cfg, field, ignore=()):
+    """The resolved parallel, scheduler and cache config of a handshake run without the probed field and the
+    paths in "ignore" (values the config draws at random on each call, such as free ports)."""
+    whole = {s: dump(getattr(cfg, s)) for s in ("parallel_config", "scheduler_config", "cache_config")}
+    without(whole, "parallel_config." + field)
+    for path in ignore:
+        without(whole, path)
+    return whole
+
+
+def run_handshake(vllm_root, run, value):
+    if vllm_root not in sys.path:
+        sys.path.append(vllm_root)
+    from vllm.engine.arg_utils import EngineArgs  # noqa: E402
+
+    model = os.environ.get("ORACLE_MODEL", "facebook/opt-125m")
+    field = run["echo"]
+    base = dict(run.get("base", {}))
+    seen = {"procs": [], "sockets": [], "waits": [], "coordinators": [], "servers": []}
+    endpoints = []
+
+    class Proc:
+        """CoreEngineProcManager: records what the engine cores would be started with."""
+
+        def __init__(self, **kw):
+            kw.pop("vllm_config", None)
+            kw.pop("executor_class", None)
+            endpoints.append(kw.pop("handshake_address", None))
+            kw.pop("client_handshake_address", None)
+            seen["procs"].append(kw)
+
+        def monitor_engine_liveness(self):
+            pass
+
+        def shutdown(self, timeout=None):
+            pass
+
+    class Coordinator:
+        def __init__(self, parallel_config, enable_wave_coordination, **kw):
+            seen["coordinators"].append({"wave": enable_wave_coordination})
+            self.proc = types.SimpleNamespace(pid=1, sentinel=0, exitcode=None, name="coordinator")
+
+        def get_engine_socket_addresses(self):
+            return "ipc://coordinator-in", "ipc://coordinator-out"
+
+        def get_stats_publish_address(self):
+            return "ipc://coordinator-stats"
+
+    @contextlib.contextmanager
+    def socket_ctx(path, socket_type, bind=None, **kw):
+        endpoints.append(path)
+        seen["sockets"].append({"type": str(socket_type), "bind": bind})
+        yield None
+
+    def wait(sock, engines, parallel_config, coordinated, cache_config, launch):
+        seen["waits"].append([[int.from_bytes(e.identity, "little"), e.local] for e in engines] + [coordinated])
+
+    import vllm.distributed.utils as dist_utils  # noqa: E402
+    import vllm.v1.engine.utils as eng_utils  # noqa: E402
+
+    entry = run["entry"]
+    if entry == "run_headless":
+        from vllm.entrypoints.common.cli_args import make_arg_parser, validate_parsed_serve_args  # noqa: E402
+        import vllm.entrypoints.cli.serve as serve  # noqa: E402
+        from vllm.utils.argparse_utils import FlexibleArgumentParser  # noqa: E402
+
+        args = make_arg_parser(FlexibleArgumentParser()).parse_args(
+            ["--model", model, "--headless"] + list(run["cli"]) + [run["apply"]["cli"], str(value)])
+        validate_parsed_serve_args(args)
+        args.api_server_count = 1
+        captured = {}
+
+        class HeadlessProc(Proc):
+            def __init__(self, **kw):
+                captured["config"] = kw["vllm_config"]
+                super().__init__(**kw)
+
+        with replaced(serve, CoreEngineProcManager=HeadlessProc, Executor=types.SimpleNamespace(get_class=lambda c: None)):
+            serve.run_headless(args)
+        cfg = captured["config"]
+    else:
+        args = EngineArgs(model=model, **{run["apply"]["engine_args"]: value}, **base)
+        cfg = args.create_engine_config()
+        if entry == "launch_core_engines":
+            store = types.SimpleNamespace(port=0)
+            with replaced(eng_utils, CoreEngineProcManager=Proc, DPCoordinator=Coordinator, zmq_socket_ctx=socket_ctx,
+                          wait_for_engine_startup=wait), replaced(dist_utils, create_tcp_store=lambda *a, **k: store):
+                with eng_utils.launch_core_engines(cfg, None, False, eng_utils.EngineZmqAddresses(inputs=[], outputs=[])):
+                    pass
+        elif entry == "elastic_scale_up":
+            import vllm.distributed.elastic_ep.external_elastic_ep as ee  # noqa: E402
+            from vllm.v1.engine import ReconfigureDistributedRequest  # noqa: E402
+
+            class Server:
+                def __init__(self, handshake_address, **kw):
+                    endpoints.append(handshake_address)
+                    seen["servers"].append({k: kw[k] for k in ("expected_new_ranks", "num_redundant_experts", "elastic_ep_max_dp_size")})
+
+                def start(self):
+                    pass
+
+            bootstrap = ReconfigureDistributedRequest(
+                new_data_parallel_size=4, new_data_parallel_rank=-1, new_data_parallel_rank_local=-1,
+                new_data_parallel_master_ip="10.0.0.1", new_data_parallel_master_port=29500,
+                new_data_parallel_master_port_list=[29501], coord_store_port=29502)
+            me = types.SimpleNamespace(client=types.SimpleNamespace(vllm_config=cfg), _get_existing_engine_zmq_address=lambda: {})
+            with replaced(ee, ExternalElasticEPScaleUpHandshakeServer=Server):
+                ee.ExternalElasticEPScaleCoordinator._start_scale_up_handshake_server(me, bootstrap, 2, 0, 8)
+        else:
+            raise SystemExit("inertness: unknown handshake entry %r" % entry)
+    forms = [endpoint_form(e, value) for e in endpoints if e is not None]
+    return {"to_engine": {"started_with": seen, "endpoints": forms, "config": handshake_config(cfg, field, run.get("ignore", []))},
+            "endpoint": [e for e in endpoints if e is not None], "stated": value}
+
+
+RUNNERS = {"handshake": run_handshake, "scheduler": run_scheduler, "config": run_config, "outputproc": run_outputproc}
 
 
 def reader_ok(vllm_root, r, source_lines):
@@ -301,7 +451,8 @@ def files_naming(root, top, name, suffixes, skip=lambda rel: False):
                 continue
             try:
                 with open(os.path.join(root, rel), encoding="utf-8") as f:
-                    if name in f.read():
+                    text = f.read()
+                    if any(n in text for n in ((name,) if isinstance(name, str) else name)):
                         found.append(rel)
             except (UnicodeDecodeError, OSError):
                 continue
@@ -331,7 +482,8 @@ def evaluate(vllm_root, spec):
             if r["expr"] not in text:
                 result["problems"].append("the reviewed read %s no longer holds %r" % (r["at"], r["expr"]))
     if "named_in" in spec:
-        name = spec["field"]
+        # The field's name, and the spellings the proof lists in "named_aliases" (a command-line flag, a Rust field).
+        name = (spec["field"],) + tuple(spec.get("named_aliases", []))
         tree = {"vllm": files_naming(root, "vllm", name, (".py",)),
                 "rust": files_naming(root, "rust", name, (".rs",), rust_test_file)}
         for top, have in sorted(tree.items()):
@@ -352,7 +504,7 @@ def evaluate(vllm_root, spec):
             outs = {}
             for p in probes:
                 outs[p["label"]] = RUNNERS[run["kind"]](root, run, p["value"])
-            engine_facing = {k: (v.get("to_engine", v) if run["kind"] == "outputproc" else v) for k, v in outs.items()}
+            engine_facing = {k: (v.get("to_engine", v) if run["kind"] in ("outputproc", "handshake") else v) for k, v in outs.items()}
             whole_same = True
             if run["kind"] == "config":
                 for k, v in outs.items():
@@ -370,6 +522,13 @@ def evaluate(vllm_root, spec):
             entry = {"decisions": hashes, "identical": len(set(hashes.values())) == 1 and whole_same}
             if run["kind"] == "config":
                 entry["compared_sections"] = run.get("compare", [])
+            if run["kind"] == "handshake":
+                # The endpoint is the field's own effect: it must carry the stated port, and it differs by it.
+                for k, v in outs.items():
+                    carried = [e for e in v["endpoint"] if not e.startswith("ipc://")]
+                    if run.get("expect_port", True) and (not carried or any(not e.endswith(":%d" % v["stated"]) for e in carried)):
+                        result["problems"].append("handshake run %s: the endpoint %r does not carry the stated port %r" % (run["id"], v["endpoint"], v["stated"]))
+                entry["endpoint"] = {k: ["ipc" if e.startswith("ipc://") else e for e in v["endpoint"]] for k, v in outs.items()}
             if run["kind"] == "outputproc":
                 entry["frontend_effect"] = {k: digest(v["frontend_effect"]) for k, v in outs.items()}
                 entry["frontend_effect_differs"] = len(set(entry["frontend_effect"].values())) > 1
