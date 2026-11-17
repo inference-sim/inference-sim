@@ -563,7 +563,9 @@ func replayL2(tr hiTrace) (int, error) {
 	n, b := 0, 0
 	for i, c := range tr.Calls {
 		for b < len(tr.BoundaryAt) && tr.BoundaryAt[b] <= i {
-			r.l2.queues.Tick()
+			if _, err := r.l2.queues.Boundary(); err != nil {
+				return n, err
+			}
 			b++
 		}
 		if r.under(c, cache.PrefixCacheIface) {
@@ -1678,8 +1680,8 @@ func replayL2Direct(tr hiTrace, sq sequence) (int, error) {
 
 func (r *l2Replay) entry(e seqEntry, span []cache.Call, bound map[string]cache.MatchResult, allocs map[string][]int64) error {
 	if e.Boundary {
-		r.l2.queues.Tick()
-		return nil
+		_, err := r.l2.queues.Boundary()
+		return err
 	}
 	l := r.l2
 	switch e.On {
