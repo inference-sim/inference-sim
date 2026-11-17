@@ -381,7 +381,7 @@
      "num_speculative_tokens": 3
     }
    },
-   "expect": "async_scheduling is only supported with EAGLE"
+   "expect": "not supported by the V1 model runner with ngram"
   },
   {
    "name": "refused-negative-max-loras",

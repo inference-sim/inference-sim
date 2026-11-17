@@ -66,6 +66,12 @@ def main() -> None:
     if vllm_root not in sys.path:
         sys.path.append(vllm_root)
     os.environ.setdefault("VLLM_LOGGING_LEVEL", "ERROR")
+    # Every case is the engine block core/vllm TestEngineArgsAgainstVLLM builds, which states
+    # use_v2_model_runner: false; vLLM reads that statement as VLLM_USE_V2_MODEL_RUNNER
+    # (vllm/config/vllm.py:748-750@4ba787ec). Unstated, v0.33.0 picks the V2 runner wherever
+    # Triton is installed (:752-767), as the oracle's triton-cpu is, and its async-scheduling
+    # checks differ by runner (:1651-1680), so the cases state the runner the block states.
+    os.environ.setdefault("VLLM_USE_V2_MODEL_RUNNER", "0")
     here = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, here)
     from vllm.engine.arg_utils import EngineArgs  # noqa: E402
