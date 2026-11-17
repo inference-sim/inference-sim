@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/ledger"
+	"github.com/inference-sim/blis-substrate/ledger/configiq"
 	"github.com/inference-sim/blis-substrate/ledger/inferencex"
 )
 
@@ -18,6 +19,7 @@ import (
 func TestCommittedLedger(t *testing.T) {
 	l, err := ledger.Load("../catalog/ledger", map[string]ledger.RoleKeyFunc{
 		inferencex.SourceID: inferencex.RoleKey,
+		configiq.SourceID:   configiq.RoleKey,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -109,7 +111,7 @@ func TestExtractorPinEqualsTheLedgerEntry(t *testing.T) {
 // the jobs read holds a unit for it with the canonical role key. A pin added to sources.yaml
 // without regenerating the list fails here, with no network.
 func TestEverySupplementRecordHasAUnit(t *testing.T) {
-	l, err := ledger.Load("../catalog/ledger", map[string]ledger.RoleKeyFunc{inferencex.SourceID: inferencex.RoleKey})
+	l, err := ledger.Load("../catalog/ledger", map[string]ledger.RoleKeyFunc{inferencex.SourceID: inferencex.RoleKey, configiq.SourceID: configiq.RoleKey})
 	if err != nil {
 		t.Fatal(err)
 	}
