@@ -6,8 +6,8 @@ name: blis
 # AGENTS.md section and pull-request template, the selected-version lint), and the nightly
 # checks (cited issues stay open, X28).
 #
-# The commit is blis-substrate v0.15.0's (the merge commit of inference-sim/blis-substrate#177), which carries the
-# generated invariant sections the check compares (SIM-16, SIM-17, SIM-18).
+# The commit is the pinned blis-substrate release's (stack.json states it), which carries the generated invariant
+# sections the check compares (SIM-16, SIM-17, SIM-18).
 
 on:
   pull_request:
