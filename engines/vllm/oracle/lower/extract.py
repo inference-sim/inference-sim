@@ -648,7 +648,7 @@ def kv_pool_cases(root):
     from vllm.v1.attention.backends.mla.indexer import DeepseekV4IndexerBackend
     supported_v4 = [m.name for m in get_supported_kv_cache_layouts([DeepseekV4IndexerBackend])]
 
-    def one(name, tp, block, layers, backend_cls, label, v4, indexer_sparse_logits=False):
+    def one(name, tp, block, layers, backend_cls, label, v4, indexer_sparse_logits=False, capacity_grid=()):
         cfg = {"block_size": block, "kv_layers": layers}
         specs = rs.layer_specs(cfg)
         if indexer_sparse_logits:
@@ -689,9 +689,32 @@ def kv_pool_cases(root):
                 else:
                     rle.append([1] + key)
             pages.append(rle)
-        return {"model": name, "tp": tp, "block_size": block, "backend": label, "runs": runs,
+        case = {"model": name, "tp": tp, "block_size": block, "backend": label, "runs": runs,
                 "layout": layout.name, "groups": [len(g.layer_names) for g in groups], "group_pages": pages,
                 "bytes_per_block": {"LBNHC": lbnhc, "BLHNC": blhnc}, "per_layer_equals_once": lbnhc == blhnc}
+        if capacity_grid:
+            case["capacity"] = [capacity(vc, specs, tp, block, v4, mml, inflight, extra, nblocks, layout)
+                                for mml, inflight, extra, nblocks in capacity_grid]
+        return case
+
+    def capacity(vc, specs, tp, block, v4, mml, inflight, extra, nblocks, layout):
+        """The size the engine core logs at start-up, from vLLM's own get_kv_cache_capacity
+        (kv_cache_planning.py:1120-1128) over the groups get_kv_cache_configs forms: every
+        sliding-window spec tagged with extra_retained_tokens = num_prefill_lookahead_tokens - 1
+        (:1636-1641), a pool of nblocks blocks, max_in_flight_tokens as the config states it."""
+        from vllm.v1.core.kv_cache_utils import get_kv_cache_capacity
+        from vllm.v1.kv_cache_interface import KVCacheConfig, SlidingWindowSpec
+        tagged = {k: (replace(sp, extra_retained_tokens=extra) if isinstance(sp, SlidingWindowSpec) else sp)
+                  for k, sp in specs.items()}
+        cv = types.SimpleNamespace(**vars(vc))
+        cv.model_config = types.SimpleNamespace(max_model_len=mml)
+        cv.max_in_flight_tokens = inflight
+        cv.num_prefill_lookahead_tokens = extra + 1
+        groups = get_kv_cache_groups(cv, tagged)
+        cfg = KVCacheConfig(num_blocks=nblocks, kv_cache_tensors=[], kv_cache_groups=groups)
+        tokens, conc = get_kv_cache_capacity(cv, cfg)
+        return {"max_model_len": mml, "max_in_flight_tokens": inflight, "extra_retained_tokens": extra,
+                "num_blocks": nblocks, "tokens": tokens, "max_concurrency": conc}
 
     out = []
     for name, (tps, build) in fp8_arches().items():
@@ -706,12 +729,22 @@ def kv_pool_cases(root):
         with open(os.path.join(here, "..", "scenarios", scenario), encoding="utf-8") as f:
             sc = json.load(f)["config"]
         layers = sc["kv_layers"]
-        out.append(one(name, 8, sc["block_size"], layers, None, "no kernel block size", True))
+        out.append(one(name, 8, sc["block_size"], layers, None, "no kernel block size", True,
+                       capacity_grid=CAPACITY_GRID))
         if any(r.get("head_size") == 132 for r in layers):
             out.append(one(name, 8, sc["block_size"], layers, None, "indexer_sparse_logits on", True,
                            indexer_sparse_logits=True))
     return out
 
+
+# (max_model_len, max_in_flight_tokens, extra_retained_tokens, num_blocks): the lengths the dashboard's
+# deployments serve, a synchronous and an asynchronous batch queue at its token budgets, with and
+# without a multi-token drafter's retained tokens, over pools of several sizes.
+CAPACITY_GRID = tuple((mml, inflight, extra, nblocks)
+                      for mml in (2304, 9472)
+                      for inflight in (512, 1024, 8192, 32768)
+                      for extra in (0, 2)
+                      for nblocks in (4096, 17475))
 
 MOE_EXPERTS = (72, 128, 256, 384, 512)
 MOE_BACKENDS = ("allgather_reducescatter", "deepep_low_latency", "deepep_high_throughput", "flashinfer_nvlink_one_sided")
