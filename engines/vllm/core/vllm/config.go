@@ -361,7 +361,8 @@ func resolve(c Config) (settings, error) {
 		// any (v1_async_sched_incompat, vllm/config/vllm.py:1651-1680@4ba787ec). The unstated
 		// default falls back to synchronous instead (resolveAsync).
 		return s, fmt.Errorf("vllm: async scheduling is not supported by the V1 model runner with %s-based "+
-			"speculative decoding (vllm/config/vllm.py:1651-1680@4ba787ec)", method)
+			"speculative decoding: on V1 it is only supported with EAGLE, MTP, draft_model, ngram_gpu, DSpark or "+
+			"DFlash drafters (vllm/config/vllm.py:1651-1680@4ba787ec)", method)
 	}
 	if async && v2 && !asyncSpecMethod(method) {
 		// The V2 runner runs async scheduling with this drafter, stated or resolved, which is not
