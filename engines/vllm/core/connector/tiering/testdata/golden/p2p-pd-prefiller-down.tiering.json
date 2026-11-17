@@ -159,12 +159,25 @@
   },
   {
    "args": {
+    "ctx": "c1",
+    "keys": [
+     "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000"
+    ],
+    "positions": {},
+    "req": "d"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
     "chunk": {
      "id": 0,
      "ref": -1
     },
     "ctx": "c1",
     "key": "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000",
+    "positions": {},
     "req": "d"
    },
    "m": "insert",
@@ -221,12 +234,25 @@
   },
   {
    "args": {
+    "ctx": "c2",
+    "keys": [
+     "015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e00000000"
+    ],
+    "positions": {},
+    "req": "e"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
     "chunk": {
      "id": 1,
      "ref": -1
     },
     "ctx": "c2",
     "key": "015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e00000000",
+    "positions": {},
     "req": "e"
    },
    "m": "insert",
@@ -282,6 +308,13 @@
     "blocks_per_chunk": 1,
     "cpu_bytes_to_use": 65536,
     "eviction_policy": "lru",
+    "groups": [
+     {
+      "tokens_per_block": 16,
+      "window_chunks": null
+     }
+    ],
+    "max_model_len": 0,
     "offload_prompt_only": true,
     "replicated_layout": false,
     "secondary_tiers": 1,
@@ -302,6 +335,13 @@
     "blocks_per_chunk": 1,
     "cpu_bytes_to_use": 65536,
     "eviction_policy": "lru",
+    "groups": [
+     {
+      "tokens_per_block": 16,
+      "window_chunks": null
+     }
+    ],
+    "max_model_len": 0,
     "offload_prompt_only": true,
     "replicated_layout": false,
     "secondary_tiers": 1,

@@ -46,6 +46,7 @@
     "keys": [
      "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
     ],
+    "positions": {},
     "req": "pz1"
    },
    "m": "prepare_store",
@@ -167,6 +168,7 @@
     "keys": [
      "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
     ],
+    "positions": {},
     "req": "pz2"
    },
    "m": "prepare_store",
@@ -288,6 +290,7 @@
     "keys": [
      "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000"
     ],
+    "positions": {},
     "req": "pz3"
    },
    "m": "prepare_store",
@@ -409,6 +412,7 @@
     "keys": [
      "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000"
     ],
+    "positions": {},
     "req": "pz4"
    },
    "m": "prepare_store",
@@ -530,6 +534,7 @@
     "keys": [
      "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
     ],
+    "positions": {},
     "req": "pz5"
    },
    "m": "prepare_store",
@@ -653,6 +658,7 @@
     "keys": [
      "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
     ],
+    "positions": {},
     "req": "pz6"
    },
    "m": "prepare_store",
@@ -776,6 +782,7 @@
     "keys": [
      "15b142a96c75c121041160531cabb00e12d066b9432d7b43093a4ce3c01d61e900000000"
     ],
+    "positions": {},
     "req": "pz7"
    },
    "m": "prepare_store",
@@ -899,6 +906,7 @@
     "keys": [
      "341d2572e579fb5f301339e969a7e4dacb53f7776fc1deedc1c9af22d06f9fde00000000"
     ],
+    "positions": {},
     "req": "pz8"
    },
    "m": "prepare_store",
@@ -1022,6 +1030,7 @@
     "keys": [
      "de2ab4a37fe705580f2f56449305aa57a072da83f8cb78ca0e8a70db1ed5f1ef00000000"
     ],
+    "positions": {},
     "req": "pz9"
    },
    "m": "prepare_store",
@@ -1257,12 +1266,25 @@
   },
   {
    "args": {
+    "ctx": "c1",
+    "keys": [
+     "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+    ],
+    "positions": {},
+    "req": "dz1"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
     "chunk": {
      "id": 0,
      "ref": -1
     },
     "ctx": "c1",
     "key": "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000",
+    "positions": {},
     "req": "dz1"
    },
    "m": "insert",
@@ -1288,12 +1310,25 @@
   },
   {
    "args": {
+    "ctx": "c2",
+    "keys": [
+     "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000"
+    ],
+    "positions": {},
+    "req": "pz1"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
     "chunk": {
      "id": 0,
      "ref": -1
     },
     "ctx": "c2",
     "key": "a12bf715f7ab7be6191f9c077a3c28af52e28ee4cc34658a8903e732d015f62400000000",
+    "positions": {},
     "req": "pz1"
    },
    "m": "insert",
@@ -1422,12 +1457,25 @@
   },
   {
    "args": {
+    "ctx": "c3",
+    "keys": [
+     "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+    ],
+    "positions": {},
+    "req": "dz2"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
     "chunk": {
      "id": 1,
      "ref": -1
     },
     "ctx": "c3",
     "key": "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000",
+    "positions": {},
     "req": "dz2"
    },
    "m": "insert",
@@ -1453,12 +1501,25 @@
   },
   {
    "args": {
+    "ctx": "c4",
+    "keys": [
+     "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000"
+    ],
+    "positions": {},
+    "req": "pz2"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
     "chunk": {
      "id": 1,
      "ref": -1
     },
     "ctx": "c4",
     "key": "cb869e4ba2f1781a9bbf6177571933746e411a17743532573e4efdc7a9e084ab00000000",
+    "positions": {},
     "req": "pz2"
    },
    "m": "insert",
@@ -1587,12 +1648,25 @@
   },
   {
    "args": {
+    "ctx": "c5",
+    "keys": [
+     "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000"
+    ],
+    "positions": {},
+    "req": "dz3"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
     "chunk": {
      "id": 2,
      "ref": -1
     },
     "ctx": "c5",
     "key": "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000",
+    "positions": {},
     "req": "dz3"
    },
    "m": "insert",
@@ -1618,12 +1692,25 @@
   },
   {
    "args": {
+    "ctx": "c6",
+    "keys": [
+     "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000"
+    ],
+    "positions": {},
+    "req": "pz3"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
     "chunk": {
      "id": 2,
      "ref": -1
     },
     "ctx": "c6",
     "key": "556bcae9f7f1706ea93af865b7fb968e4af8913cf89dc9c8af40a699b1dc7f9800000000",
+    "positions": {},
     "req": "pz3"
    },
    "m": "insert",
@@ -1752,12 +1839,25 @@
   },
   {
    "args": {
+    "ctx": "c7",
+    "keys": [
+     "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000"
+    ],
+    "positions": {},
+    "req": "dz4"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
     "chunk": {
      "id": 3,
      "ref": -1
     },
     "ctx": "c7",
     "key": "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000",
+    "positions": {},
     "req": "dz4"
    },
    "m": "insert",
@@ -1783,12 +1883,25 @@
   },
   {
    "args": {
+    "ctx": "c8",
+    "keys": [
+     "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000"
+    ],
+    "positions": {},
+    "req": "pz4"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
     "chunk": {
      "id": 3,
      "ref": -1
     },
     "ctx": "c8",
     "key": "8727818500e2ad4e7a89076b0d23c8ace766e03f94f604a5b3b4bd43081803bd00000000",
+    "positions": {},
     "req": "pz4"
    },
    "m": "insert",
@@ -1917,12 +2030,25 @@
   },
   {
    "args": {
+    "ctx": "c9",
+    "keys": [
+     "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
+    ],
+    "positions": {},
+    "req": "dz5"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
     "chunk": {
      "id": 3,
      "ref": -1
     },
     "ctx": "c9",
     "key": "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000",
+    "positions": {},
     "req": "dz5"
    },
    "m": "insert",
@@ -1944,6 +2070,18 @@
     "req": "pz5"
    },
    "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c10",
+    "keys": [
+     "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000"
+    ],
+    "positions": {},
+    "req": "pz5"
+   },
+   "m": "on_request_access",
    "ret": null
   },
   {
@@ -1969,6 +2107,7 @@
     },
     "ctx": "c10",
     "key": "ba73143cf81b0a2cffafa48a8e995bd430824d80586f0e9ebbb9dd0627e2928f00000000",
+    "positions": {},
     "req": "pz5"
    },
    "m": "insert",
@@ -2097,12 +2236,25 @@
   },
   {
    "args": {
+    "ctx": "c11",
+    "keys": [
+     "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
+    ],
+    "positions": {},
+    "req": "dz6"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
     "chunk": {
      "id": 3,
      "ref": -1
     },
     "ctx": "c11",
     "key": "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000",
+    "positions": {},
     "req": "dz6"
    },
    "m": "insert",
@@ -2124,6 +2276,18 @@
     "req": "pz6"
    },
    "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c12",
+    "keys": [
+     "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000"
+    ],
+    "positions": {},
+    "req": "pz6"
+   },
+   "m": "on_request_access",
    "ret": null
   },
   {
@@ -2149,6 +2313,7 @@
     },
     "ctx": "c12",
     "key": "522fcf7da79015ca7b733974713f275da7031ca2f21cf43e298bc850ba7b732d00000000",
+    "positions": {},
     "req": "pz6"
    },
    "m": "insert",
@@ -2277,12 +2442,25 @@
   },
   {
    "args": {
+    "ctx": "c13",
+    "keys": [
+     "15b142a96c75c121041160531cabb00e12d066b9432d7b43093a4ce3c01d61e900000000"
+    ],
+    "positions": {},
+    "req": "dz7"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
     "chunk": {
      "id": 3,
      "ref": -1
     },
     "ctx": "c13",
     "key": "15b142a96c75c121041160531cabb00e12d066b9432d7b43093a4ce3c01d61e900000000",
+    "positions": {},
     "req": "dz7"
    },
    "m": "insert",
@@ -2304,6 +2482,18 @@
     "req": "pz7"
    },
    "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c14",
+    "keys": [
+     "15b142a96c75c121041160531cabb00e12d066b9432d7b43093a4ce3c01d61e900000000"
+    ],
+    "positions": {},
+    "req": "pz7"
+   },
+   "m": "on_request_access",
    "ret": null
   },
   {
@@ -2329,6 +2519,7 @@
     },
     "ctx": "c14",
     "key": "15b142a96c75c121041160531cabb00e12d066b9432d7b43093a4ce3c01d61e900000000",
+    "positions": {},
     "req": "pz7"
    },
    "m": "insert",
@@ -2457,12 +2648,25 @@
   },
   {
    "args": {
+    "ctx": "c15",
+    "keys": [
+     "341d2572e579fb5f301339e969a7e4dacb53f7776fc1deedc1c9af22d06f9fde00000000"
+    ],
+    "positions": {},
+    "req": "dz8"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
     "chunk": {
      "id": 3,
      "ref": -1
     },
     "ctx": "c15",
     "key": "341d2572e579fb5f301339e969a7e4dacb53f7776fc1deedc1c9af22d06f9fde00000000",
+    "positions": {},
     "req": "dz8"
    },
    "m": "insert",
@@ -2488,6 +2692,18 @@
   },
   {
    "args": {
+    "ctx": "c16",
+    "keys": [
+     "341d2572e579fb5f301339e969a7e4dacb53f7776fc1deedc1c9af22d06f9fde00000000"
+    ],
+    "positions": {},
+    "req": "pz8"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
     "n": 1,
     "protected": [
      "341d2572e579fb5f301339e969a7e4dacb53f7776fc1deedc1c9af22d06f9fde00000000"
@@ -2509,6 +2725,7 @@
     },
     "ctx": "c16",
     "key": "341d2572e579fb5f301339e969a7e4dacb53f7776fc1deedc1c9af22d06f9fde00000000",
+    "positions": {},
     "req": "pz8"
    },
    "m": "insert",
@@ -2637,12 +2854,25 @@
   },
   {
    "args": {
+    "ctx": "c17",
+    "keys": [
+     "de2ab4a37fe705580f2f56449305aa57a072da83f8cb78ca0e8a70db1ed5f1ef00000000"
+    ],
+    "positions": {},
+    "req": "dz9"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
     "chunk": {
      "id": 3,
      "ref": -1
     },
     "ctx": "c17",
     "key": "de2ab4a37fe705580f2f56449305aa57a072da83f8cb78ca0e8a70db1ed5f1ef00000000",
+    "positions": {},
     "req": "dz9"
    },
    "m": "insert",
@@ -2668,6 +2898,18 @@
   },
   {
    "args": {
+    "ctx": "c18",
+    "keys": [
+     "de2ab4a37fe705580f2f56449305aa57a072da83f8cb78ca0e8a70db1ed5f1ef00000000"
+    ],
+    "positions": {},
+    "req": "pz9"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
     "n": 1,
     "protected": [
      "de2ab4a37fe705580f2f56449305aa57a072da83f8cb78ca0e8a70db1ed5f1ef00000000"
@@ -2689,6 +2931,7 @@
     },
     "ctx": "c18",
     "key": "de2ab4a37fe705580f2f56449305aa57a072da83f8cb78ca0e8a70db1ed5f1ef00000000",
+    "positions": {},
     "req": "pz9"
    },
    "m": "insert",
@@ -2817,12 +3060,25 @@
   },
   {
    "args": {
+    "ctx": "c19",
+    "keys": [
+     "4ae43fd8358484a65b03cff3b3f0ebe5478dea48398d24628f41429518e4bce000000000"
+    ],
+    "positions": {},
+    "req": "d10"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
     "chunk": {
      "id": 3,
      "ref": -1
     },
     "ctx": "c19",
     "key": "4ae43fd8358484a65b03cff3b3f0ebe5478dea48398d24628f41429518e4bce000000000",
+    "positions": {},
     "req": "d10"
    },
    "m": "insert",
@@ -2893,12 +3149,25 @@
   },
   {
    "args": {
+    "ctx": "c20",
+    "keys": [
+     "13876d0627a48f198e5d5eeba044eaaece7545a112d872ef1fc7af768e4da77f00000000"
+    ],
+    "positions": {},
+    "req": "d11"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
     "chunk": {
      "id": 3,
      "ref": -1
     },
     "ctx": "c20",
     "key": "13876d0627a48f198e5d5eeba044eaaece7545a112d872ef1fc7af768e4da77f00000000",
+    "positions": {},
     "req": "d11"
    },
    "m": "insert",
@@ -2957,6 +3226,13 @@
     "blocks_per_chunk": 1,
     "cpu_bytes_to_use": 65536,
     "eviction_policy": "lru",
+    "groups": [
+     {
+      "tokens_per_block": 16,
+      "window_chunks": null
+     }
+    ],
+    "max_model_len": 0,
     "offload_prompt_only": true,
     "replicated_layout": false,
     "secondary_tiers": 1,
@@ -2977,6 +3253,13 @@
     "blocks_per_chunk": 1,
     "cpu_bytes_to_use": 65536,
     "eviction_policy": "lru",
+    "groups": [
+     {
+      "tokens_per_block": 16,
+      "window_chunks": null
+     }
+    ],
+    "max_model_len": 0,
     "offload_prompt_only": true,
     "replicated_layout": false,
     "secondary_tiers": 1,
