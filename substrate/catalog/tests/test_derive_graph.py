@@ -5846,6 +5846,66 @@ def test_muse_spark_layers_follow_layer_types():
     assert sum(lt == "full_attention" for lt in t["layer_types"]) == 16
 
 
+def test_muse_spark_states_a_rope_table_on_exactly_the_layers_that_rotate(tmp_path):
+    """MuseSpark1xAttention builds its own fp32 cos/sin table in every layer whose
+    layer_rope_theta is positive (46 of 62 here), replicated on every rank
+    (inference-sim/blis-substrate#378). The graph states it as a Gather of max_position_embeddings
+    rows of head_dim fp32 values, resident only, on those layers and no other; a layer kind that would mix
+    rotating and non-rotating layers is refused."""
+    for model in (MUSE, MUSE_NVFP4):
+        raw = config_of(model)
+        t = text_config(raw)
+        g = graph_of(model)
+        rotating = [i for i, th in enumerate(t["layer_rope_theta"]) if th > 0]
+        assert len(rotating) == 46
+        for i in range(t["num_hidden_layers"]):
+            tables = [n for n in _kind_of(g, i)["nodes"] if n.get("role") == "rope_cos_sin_cache"]
+            if i in rotating:
+                assert len(tables) == 1 and tables[0]["op"] == "Gather", i
+                assert tables[0]["rows"] == t["max_position_embeddings"], i
+                assert tables[0]["row_bytes"] == t["head_dim"] * 4, i
+                assert "shard" not in tables[0], i  # replicated
+                # resident memory, not step work: no lookup of its own to launch or move rows
+                assert tables[0]["resident_only"] is True, i
+                assert "rows_per_token" not in tables[0] and "out_bytes_per_token" not in tables[0], i
+            else:
+                assert not tables, i
+    raw = config_of(MUSE)
+    bad = json.loads(json.dumps(raw))
+    bad["text_config"]["layer_rope_theta"][2] = 0  # a sliding layer that does not rotate
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match="RoPE table"):
+        _derive_raw(bad, tmp_path)
+    short = json.loads(json.dumps(raw))
+    short["text_config"]["layer_rope_theta"].pop()
+    with pytest.raises(derive_graph.DeriveError, match="layer_rope_theta"):
+        _derive_raw(short, tmp_path)
+
+
+def test_muse_spark_dspark_drafter_holds_a_rope_table_in_each_layer(tmp_path):
+    """The DSpark drafter's attention builds its own RotaryEmbedding in every layer, in every
+    engine build (vllm-project/vllm#65206 shares only the target's): max_position_embeddings
+    rows of head_dim values, fp32 because its config computes the outer product in fp32,
+    resident and not a step's work (inference-sim/blis-substrate#378)."""
+    raw = config_of(MUSE_DSPARK)
+    t = text_config(raw)
+    g = graph_of(MUSE_DSPARK)
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    tables = [n for n in kinds["dspark_layer"]["nodes"] if n.get("role") == "rope_cos_sin_cache"]
+    assert len(tables) == 1 and tables[0]["op"] == "Gather" and tables[0]["resident_only"] is True
+    assert tables[0]["rows"] == t["max_position_embeddings"]
+    assert tables[0]["row_bytes"] == t["head_dim"] * 4 and t["rope_use_fp32_in_outer_product"]
+    assert g["speculator"]["stack"]["repeat"] == t["num_hidden_layers"] == 5
+    bad = json.loads(json.dumps(raw))
+    badt = bad.get("text_config", bad)
+    badt["every_n_layers_nope"] = 4
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match="every_n_layers_nope"):
+        _derive_raw(bad, tmp_path)
+
+
 def test_muse_spark_experts_run_at_the_latent_width():
     """Every layer is an MoE of 256 experts at top-8 whose GEMMs run at moe_hidden_size,
     between a pooler and an unpooler that run every token, with no shared expert."""

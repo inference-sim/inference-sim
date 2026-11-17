@@ -681,6 +681,13 @@ type Node struct {
 	// Shard is how the table divides across tensor-parallel ranks. Empty means
 	// replicated.
 	Shard GatherShard `yaml:"shard,omitempty"`
+	// ResidentOnly says the engine holds this table on every rank but no kernel of the layer
+	// reads it as a lookup of its own: its bytes are resident (and divided by Shard), and the
+	// node adds no launch and no per-token traffic. A table another node's kernel reads
+	// inside a fusion that node already counts is one -- the RoPE cos/sin table a fused
+	// QK-norm and RoPE kernel indexes. rows_per_token and out_bytes_per_token must then be
+	// absent. Absent means a lookup that launches and moves rows_per_token rows a token.
+	ResidentOnly bool `yaml:"resident_only,omitempty"`
 
 	// Elementwise: bytes touched per token, when it is not derivable from
 	// HiddenSize alone.
