@@ -36,6 +36,10 @@ var supported = map[string]bool{
 	// Its TTFT load gate reads the in-flight load (inflight-load-producer) on its default source;
 	// the fork refuses the latency-predictor source.
 	"prefix-cache-affinity-filter": true,
+	// Audited at the pinned fork: it reads the in-flight load (inflight-load-producer), and the engine's
+	// running requests, waiting queue and KV-cache utilization, all of which the simulated engines
+	// publish; it holds no clock, goroutine or draw (the fork's hosting lint has no entry for it).
+	"utilization-filter": true,
 	// scorers
 	"queue-scorer":                 true,
 	"kv-cache-utilization-scorer":  true,
