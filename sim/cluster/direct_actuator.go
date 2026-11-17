@@ -4,6 +4,7 @@
 package cluster
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 
@@ -68,6 +69,17 @@ func (a *DirectActuator) scaleUp(d ScaleDecision) error {
 			id, d.ModelID, d.Variant.GPUType, d.Variant.TPDegree,
 		)
 		if err != nil {
+			if errors.Is(err, ErrNoCapacity) {
+				// No Ready node has room: the replica waits in the pending queue for a node (#741),
+				// and is placed, in arrival order, when one becomes Ready. It is not dropped.
+				if a.queuePending(id, d, err) {
+					continue
+				}
+				// The model already has as many placements waiting as this decision asks for, so a
+				// repeat of the same decision does not queue the same replica again.
+				a.nextInstSeq--
+				continue
+			}
 			logrus.Errorf("[actuator] scale-up for model %q variant %v: PlaceInstance failed: %v (INV-A2)", d.ModelID, d.Variant, err)
 			lastErr = err
 			continue
@@ -107,6 +119,26 @@ func (a *DirectActuator) scaleUp(d ScaleDecision) error {
 			id, d.ModelID, nodeID, matchedGPU, d.Variant.TPDegree)
 	}
 	return lastErr
+}
+
+// queuePending queues one replica of d in the placement manager's pending queue, unless the queue
+// already holds as many placements for the same model and variant as d's remaining demand asks
+// for. It reports whether it queued one.
+func (a *DirectActuator) queuePending(id InstanceID, d ScaleDecision, cause error) bool {
+	waiting := 0
+	for _, p := range a.cluster.placement.Pending() {
+		if p.ModelID == d.ModelID && p.Variant == d.Variant {
+			waiting++
+		}
+	}
+	if waiting >= d.Delta {
+		logrus.Debugf("[actuator] scale-up for model %q variant %v: %d placement(s) already pending", d.ModelID, d.Variant, waiting)
+		return false
+	}
+	simCfg := a.cluster.config.resolveConfigForRole(PoolRole(0))
+	a.cluster.placement.AddPendingAt(id, d.ModelID, d.Variant.GPUType, d.Variant.TPDegree, simCfg, a.cluster.clock)
+	logrus.Infof("[actuator] scale-up for model %q variant %v: %v; queued as pending placement %s", d.ModelID, d.Variant, cause, id)
+	return true
 }
 
 // scaleDown drains existing instance(s) for the given decision. Returns error if

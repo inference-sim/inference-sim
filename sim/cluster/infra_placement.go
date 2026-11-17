@@ -4,8 +4,10 @@
 package cluster
 
 import (
+	"errors"
 	"fmt"
 	"math/rand"
+	"slices"
 	"sort"
 
 	"github.com/sirupsen/logrus"
@@ -45,11 +47,36 @@ type nodePoolState struct {
 
 // pendingInstance records an instance that could not be placed immediately.
 type pendingInstance struct {
-	id       InstanceID
-	model    string
-	gpuType  string
-	tpDegree int
-	simCfg   sim.InstanceConfig // per-instance simulator configuration
+	id          InstanceID
+	model       string
+	gpuType     string
+	tpDegree    int
+	simCfg      sim.InstanceConfig // per-instance simulator configuration
+	requestedAt int64              // simulation time the placement was first requested
+}
+
+// ErrNoCapacity is wrapped by the error PlaceInstance returns when no Ready node has room for the
+// instance now. It says the request is satisfiable in principle and waits for capacity, unlike a
+// request no pool shape can ever hold.
+var ErrNoCapacity = errors.New("no capacity")
+
+// PendingPlacement is an instance placement that could not be satisfied because no Ready node had
+// room: it waits in the placement manager's queue and is retried, in arrival order, when a node
+// becomes Ready (#741). The cluster autoscaler reads the queue to decide how many nodes to add.
+type PendingPlacement struct {
+	ModelID string
+	Variant VariantSpec
+	// RequestedAt is the simulation time (microseconds) the placement was first requested.
+	RequestedAt int64
+}
+
+// Pending returns the queued placements in arrival order, as a copy.
+func (pm *PlacementManager) Pending() []PendingPlacement {
+	out := make([]PendingPlacement, len(pm.pendingInsts))
+	for i, p := range pm.pendingInsts {
+		out[i] = PendingPlacement{ModelID: p.model, Variant: NewVariantSpec(p.gpuType, p.tpDegree), RequestedAt: p.requestedAt}
+	}
+	return out
 }
 
 // placedInstance records a successfully placed instance with its node and GPU assignments.
@@ -57,6 +84,7 @@ type placedInstance struct {
 	id       InstanceID
 	nodeID   string
 	gpuIDs   []string
+	model    string             // the model the instance serves (empty: the cluster's)
 	gpuType  string             // gpu_type from the matched pool config
 	tpDegree int                // tensor-parallel degree from the pending instance request
 	simCfg   sim.InstanceConfig // per-instance simulator configuration
@@ -397,7 +425,7 @@ func (pm *PlacementManager) PlaceInstance(id InstanceID, model, gpuType string, 
 			"it exceeds every pool's gpus_per_node but is not a whole multiple of it (multi-node TP requires "+
 			"tpDegree %% gpus_per_node == 0); this is unsatisfiable regardless of capacity", id, tpDegree, gpuTypeDisplay)
 	}
-	return "", nil, "", fmt.Errorf("PlaceInstance %s: no Ready node has %d free %s GPUs (single-node or whole-node spanning within a pool)", id, tpDegree, gpuTypeDisplay)
+	return "", nil, "", fmt.Errorf("PlaceInstance %s: %w: no Ready node has %d free %s GPUs (single-node or whole-node spanning within a pool)", id, ErrNoCapacity, tpDegree, gpuTypeDisplay)
 }
 
 // tpDegreeSatisfiableByShape reports whether SOME matching pool could, at full
@@ -630,14 +658,12 @@ func (pm *PlacementManager) RetryPendingInstances() []placedInstance {
 		p := pm.pendingInsts[i]
 		nodeID, gpuIDs, matchedGPUType, err := pm.PlaceInstance(p.id, p.model, p.gpuType, p.tpDegree)
 		if err == nil {
-			nowPlaced = append(nowPlaced, placedInstance{id: p.id, nodeID: nodeID, gpuIDs: gpuIDs, gpuType: matchedGPUType, tpDegree: p.tpDegree, simCfg: p.simCfg})
-			// Remove from pending: swap with last and shrink (R21).
-			// Swap-remove pattern: move last element to position i, then truncate.
-			// This is O(1) removal vs O(N) for shifting all elements left.
-			pm.pendingInsts[i] = pm.pendingInsts[len(pm.pendingInsts)-1]
-			pm.pendingInsts = pm.pendingInsts[:len(pm.pendingInsts)-1]
-			// Do NOT increment i — the element now at position i (previously last)
-			// needs to be checked in the next iteration.
+			nowPlaced = append(nowPlaced, placedInstance{id: p.id, nodeID: nodeID, gpuIDs: gpuIDs, model: p.model, gpuType: matchedGPUType, tpDegree: p.tpDegree, simCfg: p.simCfg})
+			// Remove from pending, keeping the rest in arrival order: placements are retried in
+			// the order they were requested (#741), so the queue is never reordered by a removal.
+			pm.pendingInsts = slices.Delete(pm.pendingInsts, i, i+1)
+			maxIter-- // the pass covers the placements that were queued when it began
+			// Do NOT increment i — the next placement has moved into position i.
 		} else {
 			i++
 		}
@@ -647,12 +673,18 @@ func (pm *PlacementManager) RetryPendingInstances() []placedInstance {
 
 // AddPending registers an instance as pending (placement deferred until a node is ready).
 func (pm *PlacementManager) AddPending(id InstanceID, model, gpuType string, tpDegree int, simCfg sim.InstanceConfig) {
+	pm.AddPendingAt(id, model, gpuType, tpDegree, simCfg, 0)
+}
+
+// AddPendingAt is AddPending for a placement requested at simulation time at (microseconds).
+func (pm *PlacementManager) AddPendingAt(id InstanceID, model, gpuType string, tpDegree int, simCfg sim.InstanceConfig, at int64) {
 	pm.pendingInsts = append(pm.pendingInsts, pendingInstance{
-		id:       id,
-		model:    model,
-		gpuType:  gpuType,
-		tpDegree: tpDegree,
-		simCfg:   simCfg,
+		id:          id,
+		model:       model,
+		gpuType:     gpuType,
+		tpDegree:    tpDegree,
+		simCfg:      simCfg,
+		requestedAt: at,
 	})
 }
 
