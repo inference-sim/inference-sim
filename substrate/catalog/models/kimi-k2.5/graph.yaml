@@ -215,7 +215,102 @@ stack:
   pattern:
   - attn_moe
   repeat: 60
-modality: text_decoder_of_multimodal
+modality: multimodal
+encoder:
+  towers:
+  - modality: image
+    input:
+      patch_size: 14
+      channels: 3
+    merge_ratio: 4
+    output_hidden_size: 7168
+    parallel: tensor
+    weight_dtype: bf16
+    embedding:
+    - op: gemm
+      role: patch_embed
+      n: 1152
+      k: 588
+      bias: true
+      tp: replicated
+    - op: elementwise
+      role: pos_embed
+      bytes_per_row: 9216
+      params: 4718592
+    layer_kinds:
+    - id: vit_block
+      nodes:
+      - op: elementwise
+        role: norms
+        bytes_per_row: 9216
+        params: 4608
+        tp: replicated
+      - op: gemm
+        role: qkv
+        n: 3456
+        k: 1152
+        bias: true
+        tp: column
+      - op: attention
+        role: attention
+        n_heads: 16
+        d_h: 72
+        tp: sharded
+      - op: gemm
+        role: o_proj
+        n: 1152
+        k: 1152
+        bias: true
+        tp: row
+      - op: gemm
+        role: fc1
+        n: 4304
+        k: 1152
+        bias: true
+        tp: column
+      - op: elementwise
+        role: act
+        bytes_per_row: 17216
+        tp: sharded
+      - op: gemm
+        role: fc2
+        n: 1152
+        k: 4304
+        bias: true
+        tp: row
+    stack:
+      pattern:
+      - vit_block
+      repeat: 27
+    projector:
+    - op: elementwise
+      role: final_norm
+      bytes_per_row: 4608
+      params: 2304
+      tp: replicated
+    - op: elementwise
+      role: merge_pre_norm
+      bytes_per_row: 4608
+      params: 2304
+      tp: replicated
+    - op: gemm
+      role: merge_fc1
+      n: 4608
+      k: 4608
+      bias: true
+      tp: replicated
+      rows: output_tokens
+    - op: elementwise
+      role: merge_act
+      bytes_per_row: 18432
+      rows: output_tokens
+    - op: gemm
+      role: merge_fc2
+      n: 7168
+      k: 4608
+      bias: true
+      tp: replicated
+      rows: output_tokens
 head:
 - op: Elementwise
   role: final_norm

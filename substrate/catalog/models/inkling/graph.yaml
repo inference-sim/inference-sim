@@ -186,6 +186,15 @@ stack:
   - full_moe
   repeat: 11
 modality: text_decoder_of_multimodal
+encoder:
+  towers: []
+  omitted:
+  - modality: image
+    reason: the hmlp tower's layer widths come from a planner that has been read, not run
+    issue: inference-sim/blis-substrate#278
+  - modality: audio
+    reason: a discrete-mel embedding sum, which is not priced
+    issue: inference-sim/blis-substrate#275
 head:
 - op: Elementwise
   role: final_norm

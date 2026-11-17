@@ -97,7 +97,112 @@ stack:
   pattern:
   - attn_moe
   repeat: 48
-modality: text_decoder_of_multimodal
+modality: multimodal
+encoder:
+  towers:
+  - modality: image
+    input:
+      patch_size: 14
+      channels: 3
+      tile_pixels: 336
+      class_tokens: 1
+    merge_ratio: 4
+    output_hidden_size: 5120
+    parallel: tensor
+    weight_dtype: bf16
+    embedding:
+    - op: gemm
+      role: patch_embed
+      n: 1408
+      k: 588
+      tp: column
+    - op: elementwise
+      role: class_and_pos
+      bytes_per_row: 5632
+      params: 813824
+    - op: elementwise
+      role: pre_norm
+      bytes_per_row: 5632
+      params: 2816
+      tp: replicated
+    layer_kinds:
+    - id: vit_block
+      nodes:
+      - op: elementwise
+        role: norms
+        bytes_per_row: 11264
+        params: 5632
+        tp: replicated
+      - op: gemm
+        role: qkv
+        n: 4224
+        k: 1408
+        bias: true
+        tp: column
+      - op: attention
+        role: attention
+        n_heads: 16
+        d_h: 88
+        tp: sharded
+      - op: gemm
+        role: o_proj
+        n: 1408
+        k: 1408
+        bias: true
+        tp: row
+      - op: gemm
+        role: fc1
+        n: 5632
+        k: 1408
+        bias: true
+        tp: column
+      - op: elementwise
+        role: act
+        bytes_per_row: 22528
+        tp: sharded
+      - op: gemm
+        role: fc2
+        n: 1408
+        k: 5632
+        bias: true
+        tp: row
+    stack:
+      pattern:
+      - vit_block
+      repeat: 34
+    projector:
+    - op: elementwise
+      role: post_norm
+      bytes_per_row: 5632
+      params: 2816
+      tp: replicated
+    - op: gemm
+      role: adapter_fc1
+      n: 4096
+      k: 5632
+      tp: column
+      rows: output_tokens
+    - op: elementwise
+      role: adapter_act
+      bytes_per_row: 16384
+      rows: output_tokens
+      tp: sharded
+    - op: gemm
+      role: adapter_fc2
+      n: 4096
+      k: 4096
+      tp: row
+      rows: output_tokens
+    - op: elementwise
+      role: adapter_act2
+      bytes_per_row: 16384
+      rows: output_tokens
+    - op: gemm
+      role: projector
+      n: 5120
+      k: 4096
+      tp: replicated
+      rows: output_tokens
 head:
 - op: Elementwise
   role: final_norm
