@@ -107,30 +107,35 @@ sources:
       No unit list yet. The sweeps are reachable from CI (registry's rederive.yml checks them out
       at this commit, 1,471 files and 115 MB under systems/data/), but the ingest tool for
       AISimulate is not written; the registry's fitting scripts read the sweeps directly until it
-      is.
+      is. The repository has since been renamed ai-dynamo/aisim, and its data moved to
+      python/aisim/src/aisim_core/systems/data. At its head 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18
+      six writers' --check fails, because they take the newest vLLM version a part has (now
+      0.30.0 and 0.31.0) and because a DeepSeek-V4.1 table they read was split in two, so moving
+      this pin is a refit of those families and waits for their fit lists.
     # The end-to-end accuracy artifact kernel/scripts/extract_aisimulate_e2e.py reads, pinned to
     # one run (D3). The extractor refuses a summary.json whose SHA-256, run id, attempt, evaluated
     # commit or release tag differs from kernel/scripts/aisimulate_e2e.pin.json, which a test
-    # requires to equal this entry. Its predictions are NVIDIA's; its measured relatives come
-    # from the InferenceX release db-dump/2026-09-28 (the artifact's measurement_source_url).
-    # The run's overall conclusion is failure because two release-branch jobs failed; the job
-    # for main, whose artifact this is, succeeded and the summary's campaign status is complete.
-    # GitHub keeps the artifact until expires_at, 2026-12-30: a copy of summary.json is
-    # authentic if its SHA-256 below matches, so it can be archived anywhere.
+    # requires to equal this entry. Its predictions are NVIDIA's; its measured values come from
+    # InferenceX through the Hugging Face dataset ai-dynamo/aisim-infx-cache at revision
+    # 37cdb0319a7e695f560e43ba79441dcea6029374 (the summary's snapshot.measurement_source_url and
+    # release_tag), which is not publicly readable: its card answered 401 on 2026-11-16, so its
+    # terms cannot be read. The summary's campaign status is complete. GitHub keeps the
+    # artifact until expires_at, 2027-02-12: a copy of summary.json is authentic if its SHA-256
+    # below matches, so it can be archived anywhere.
     artifacts:
       - id: e2e-accuracy-web
-        used_by: kernel/scripts/extract_aisimulate_e2e.py, which turns summary.json into the shape-only per-point corpus (204 sweeps, 1066 points)
+        used_by: kernel/scripts/extract_aisimulate_e2e.py, which turns summary.json into the shape-only per-point corpus (103 sweeps, 561 points of the artifact's 1,753)
         revision:
           kind: workflow_artifact
-          url: https://github.com/ai-dynamo/aisimulate/actions/runs/36849388864
-          ref: "36849388864"
+          url: https://github.com/ai-dynamo/aisim/actions/runs/43584761964
+          ref: "43584761964"
           run_attempt: 1
-          commit: cab77b9c7888b1c40df8cd3228f5e03c355ef23c
+          commit: a4bbb52b3adebc57c5cb264a6924e82e02af676b
           artifact: e2e-accuracy-web-0d6e4079e36703eb
           assets:
-            - {name: e2e-accuracy-web-0d6e4079e36703eb.zip, sha256: a3cdf7b4937223a76e32ca028c5442ba1aab523e914d71d2244e5753140d9f5c}
-            - {name: summary.json, sha256: e1a380ad7b06ae7f27edc95357e24219f4003e3ed73a3f93ff0dcd192578a3a2}
-            - {name: qualification.json, sha256: ed7c5732db912cabb39dd8b1ecc264bbb70f80ebb7bc71d9d5be83cea10bc5c3}
+            - {name: e2e-accuracy-web-0d6e4079e36703eb.zip, sha256: 47c03314e552b442e6716fd0fdc0b865ee031d391b39b14d066f23592f775aaa}
+            - {name: summary.json, sha256: d5012fef06f4e63abebf0cdb43104b699c303f937b77d0de9ba0db6b2350b8c2}
+            - {name: qualification.json, sha256: c0f02e05e70fc8f05c257726b2d5e0a9e631e7a2353b57f015f791737e4bedfb}
     licence:
       spdx: Apache-2.0
       evidence:
@@ -144,16 +149,19 @@ sources:
         # The end-to-end artifact pinned above carries measured values taken from InferenceX,
         # whose results have no stated terms (the inferencex source). The quoted field is in
         # summary.json (SHA-256 below), produced by the run at this commit.
-        - url: https://github.com/ai-dynamo/aisimulate/commit/cab77b9c7888b1c40df8cd3228f5e03c355ef23c
-          sha256: e1a380ad7b06ae7f27edc95357e24219f4003e3ed73a3f93ff0dcd192578a3a2
-          lines: "snapshot.measurement_source_url"
-          quote: "InferenceX release db-dump/2026-09-28"
+        - url: https://github.com/ai-dynamo/aisim/commit/a4bbb52b3adebc57c5cb264a6924e82e02af676b
+          sha256: d5012fef06f4e63abebf0cdb43104b699c303f937b77d0de9ba0db6b2350b8c2
+          lines: "snapshot.measurement_source"
+          quote: "SemiAnalysis InferenceX"
       note: >-
-        Lines 3-8 of the same file except one vendored config.json, which is MIT. GitHub reports
-        the repository's licence as NOASSERTION because of that preamble. The restriction is
-        not AISimulate's own: the end-to-end artifact holds measured values from InferenceX,
-        whose terms for results are unstated, so the entry is not redistributable and its
-        values are not committed (decided with the maintainer, 2026-11-12).
+        Lines 3-8 of the same file except one vendored config.json, which is MIT. At the
+        artifact's commit and at the renamed repository's head the LICENSE differs only in that
+        file's path (sha256 f6e57785dee0efcfffbb547e06f5fc8c4257ee1cbd16aa5afeb5df3ae6d1de02 at
+        6fdf6fb6). GitHub reports the repository's licence as NOASSERTION because of that
+        preamble. The restriction is not AISimulate's own: the end-to-end artifact holds
+        measured values from InferenceX, whose terms for results are unstated, through a
+        dataset whose terms cannot be read, so the entry is not redistributable and its values
+        are not committed (decided with the maintainer, 2026-11-12).
 
   - id: aisimulate-fpm
     title: NVIDIA forward-pass dataset on Hugging Face (nvidia/aisimulate-fpm-dataset)
