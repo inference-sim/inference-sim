@@ -1,0 +1,222 @@
+kind: ModelGraph
+name: nemotron-3-super-120b-a12b-fp8
+derived_from:
+  format: hf_config_json
+  path: config.json
+  sha256: ff5d6d643b288d4149b0bf820ecb5fe87dd9bbc08b6b811241c57840e11e30e3
+  deriver_version: 1
+global:
+  hidden_size: 4096
+  vocab_size: 131072
+  tie_word_embeddings: false
+  weight_dtype: bf16
+  architecture: NemotronHForCausalLM
+layer_kinds:
+- id: mamba
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: recurrent_in_proj
+    n: 18560
+    k: 4096
+    tp: column
+    weight_dtype: fp8
+  - op: RecurrentUpdate
+    recurrent_kind: mamba2
+    n_heads: 128
+    state_size: 128
+    n_groups: 8
+    conv_kernel: 4
+    intermediate_size: 8192
+    state_dtype: fp32
+  - op: GEMM
+    role: mixer_out
+    n: 4096
+    k: 8192
+    weight_dtype: fp8
+  - op: AllReduce
+    role: mixer_out
+    emit: tensor_parallel
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+- id: moe
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: routed_expert_down_proj
+    n: 1024
+    k: 4096
+  - op: GroupedGEMM
+    shared: false
+    role: experts
+    n: 2688
+    k: 4096
+    experts: 512
+    top_k: 22
+    shared_experts: 1
+    shared_intermediate_size: 5376
+    latent_size: 1024
+    weight_dtype: fp8
+  - op: GEMM
+    role: routed_expert_up_proj
+    n: 4096
+    k: 1024
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+- id: attention
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_proj
+    n: 4608
+    k: 4096
+  - op: Attention
+    holds_engine_kv: true
+    kind: gqa
+    n_q: 32
+    n_kv: 2
+    d_h: 128
+  - op: GEMM
+    role: o_proj
+    n: 4096
+    k: 4096
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+- id: mtp_moe
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: routed_expert_down_proj
+    n: 1024
+    k: 4096
+  - op: GroupedGEMM
+    shared: false
+    role: experts
+    n: 2688
+    k: 4096
+    experts: 512
+    top_k: 22
+    shared_experts: 1
+    shared_intermediate_size: 5376
+    latent_size: 1024
+  - op: GEMM
+    role: routed_expert_up_proj
+    n: 4096
+    k: 1024
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+stack:
+  prologue:
+  - mamba
+  - moe
+  - mamba
+  - moe
+  - mamba
+  - moe
+  - mamba
+  - attention
+  - moe
+  - mamba
+  - moe
+  - mamba
+  - moe
+  - mamba
+  - moe
+  - mamba
+  - attention
+  - moe
+  - mamba
+  - moe
+  - mamba
+  - moe
+  - mamba
+  pattern:
+  - moe
+  - mamba
+  - attention
+  - moe
+  - mamba
+  - moe
+  - mamba
+  - moe
+  - mamba
+  - moe
+  - mamba
+  repeat: 5
+  epilogue:
+  - attention
+  - moe
+  - mamba
+  - moe
+  - mamba
+  - moe
+  - mamba
+  - moe
+  - mamba
+  - moe
+head:
+- op: Elementwise
+  role: final_norm
+- op: GEMM
+  role: lm_head
+  n: 131072
+  k: 4096
+speculator:
+  method: nemotron_h_mtp
+  num_spec_tokens: 1
+  stack:
+    pattern:
+    - attention
+    - mtp_moe
+    repeat: 1
