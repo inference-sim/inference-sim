@@ -4,13 +4,15 @@
   "golden_dirs": [
     "oracle/testdata/golden/",
     "core/cache/testdata/golden-fid5/",
-    "core/cache/testdata/golden-pools/"
+    "core/cache/testdata/golden-pools/",
+    "core/hicache/testdata/golden-fid5/"
   ],
   "golden_files": [],
   "harness_files": [
     "run_*.py",
     "harness.py",
-    "stubs.py"
+    "stubs.py",
+    "step_runner.py"
   ],
   "decision_prefixes": [
     "sglang.srt.managers.scheduler.",

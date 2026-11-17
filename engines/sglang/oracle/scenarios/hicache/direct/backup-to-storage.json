@@ -1,0 +1,28 @@
+{
+  "description": "Write-through with the file storage backend, page size 4. A 12-token insert is backed up to host; once the boundary completes its ack, writing_check hands each backed-up node to storage (write_storage), and the backup thread body writes its pages at the next boundary, one iteration per boundary; the scheduler side then drains the backup acks. A node already in storage is written again.",
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "seed": 0,
+  "cache": {"page_size": 4, "kv_size": 64, "max_num_reqs": 4, "max_context_len": 64, "layer_num": 2, "head_num": 2, "head_dim": 4},
+  "hicache": {"write_policy": "write_through", "io_backend": "direct", "mem_layout": "layer_first", "ratio": 2.0, "storage_backend": "file", "prefetch_policy": "best_effort"},
+  "calls": [
+    {"on": "allocator", "m": "alloc", "n": 12, "as": "a"},
+    {"on": "cache", "m": "insert", "tokens": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], "value": "a"},
+    {"on": "cache", "m": "check_hicache_events"},
+    {"boundary": true},
+    {"on": "cache", "m": "check_hicache_events"},
+    {"boundary": true},
+    {"on": "cache", "m": "check_hicache_events"},
+    {"on": "allocator", "m": "alloc", "n": 4, "as": "b"},
+    {"on": "cache", "m": "insert", "tokens": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], "values": ["a", "b"], "prev_prefix_len": 12, "as": "i2"},
+    {"on": "cache", "m": "check_hicache_events"},
+    {"boundary": true},
+    {"on": "cache", "m": "check_hicache_events"},
+    {"boundary": true},
+    {"on": "cache", "m": "check_hicache_events"},
+    {"boundary": true},
+    {"on": "cache", "m": "check_hicache_events"},
+    {"on": "cache", "m": "write_backup_storage", "node": "i2"},
+    {"boundary": true},
+    {"on": "cache", "m": "check_hicache_events"}
+  ]
+}
