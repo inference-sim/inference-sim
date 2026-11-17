@@ -775,3 +775,84 @@ func TestAHostGivesEachInstanceItsOwnPeerAddress(t *testing.T) {
 		t.Error("an engine with no p2p tier took a peer address")
 	}
 }
+
+// p2pEngineOfWorld is p2pEngine whose connector runs on a world of the given size (kv_offload workers).
+// The model's KV bytes a block are the same for every world size, 32 KiB, so one worker's share
+// (bytes_per_block) is 32 KiB over the world, and a chunk, which holds a block's copy of every
+// worker, is 32 KiB whatever the world: the length the p2p handshake compares.
+func p2pEngineOfWorld(t *testing.T, port int, at plan.Endpoint, world int, extra string) *Engine {
+	t.Helper()
+	e := mustEngine(t, extra+fmt.Sprintf("kv_offload: {connector: OffloadingConnector, spec: TieringOffloadingSpec, "+
+		"cpu_bytes: 6553600, bytes_per_block: %d, workers: %d, secondary_tiers: [{type: p2p, port: %d}]}\n", 32768/world, world, port))
+	if err := e.PlaceAt(at); err != nil {
+		t.Fatal(err)
+	}
+	return e
+}
+
+// A prefiller and a decoder of different tensor parallelism are compatible peers when the layout is
+// parallelism agnostic (one non-MLA full-attention group): vLLM's p2p handshake compares the
+// FileMapper run config built with parallel_agnostic=True, which names no tensor-parallel size
+// (tiering/p2p/manager.py:351-356, file_mapper.py:100-127@4ba787ec), so the decoder loads the prompt
+// from the prefiller across the fabric instead of recomputing it (inference-sim#2214).
+func TestAP2PDecoderOfAnotherTensorParallelismLoadsItsPromptFromThePrefiller(t *testing.T) {
+	p, d := p2pEngineOfWorld(t, 5710, prefillerAt, 4, ""), p2pEngineOfWorld(t, 5711, decoderAt, 8, "")
+	w := newP2PWorld(t, p, d)
+	w.placeAll(prefillerAt, decoderAt)
+	w.add(0, 0, kvParams(req("p1", 96, 1), `{"remote_decoder":{"kv_request_id":"kv1"}}`))
+	w.add(0, 1, kvParams(req("d1", 100, 2), fromPrefiller("kv1")))
+	w.run(10_000_000)
+
+	if _, ok := w.nodes[1].finished["d1"]; !ok {
+		t.Fatal("the decoder's request did not finish")
+	}
+	if got := w.nodes[1].first["d1"]; got != 4 {
+		t.Errorf("the decoder's first step computed %d tokens of d1, want the 4 past the prompt: it recomputed the prompt "+
+			"the tp 4 prefiller held", got)
+	}
+	moved := 0
+	for _, s := range w.writes() {
+		moved += s.tr.Tokens
+	}
+	if moved != 96 {
+		t.Errorf("the WRITEs moved %d tokens, want the prompt's 96", moved)
+	}
+}
+
+// What the layout compares: a parallelism-agnostic layout names no parallel size, any other does.
+func TestTheP2PFingerprintNamesTheParallelSizesOnlyWhenTheLayoutIsNotAgnostic(t *testing.T) {
+	ns := func(world int, agnostic bool) string {
+		return kvtier.Namespace{TokensPerHash: 16, BlocksPerFile: 1, TPSize: world, PPSize: 1, PCPSize: 1, DCPSize: 1,
+			ParallelAgnostic: agnostic}.RunConfig()
+	}
+	if ns(4, true) != ns(8, true) {
+		t.Errorf("an agnostic layout's run config differs between tp 4 and tp 8:\n%s\n%s", ns(4, true), ns(8, true))
+	}
+	if ns(4, false) == ns(8, false) {
+		t.Errorf("a layout that is not agnostic names no tensor-parallel size:\n%s", ns(4, false))
+	}
+}
+
+// is_parallelism_agnostic: one non-MLA full-attention group on the V1 model runner. A compressed
+// (MLA) group, an indexer, a sliding window, several groups or the V2 runner are not.
+func TestParallelismAgnosticIsVLLMsGate(t *testing.T) {
+	full := KVLayerRun{Count: 2, Spec: "full", NumKVHeads: 8, HeadSize: 128}
+	for _, c := range []struct {
+		name string
+		runs []KVLayerRun
+		v2   bool
+		want bool
+	}{
+		{"no kv_layers: one full-attention group", nil, false, true},
+		{"a full-attention run", []KVLayerRun{full}, false, true},
+		{"the V2 model runner", []KVLayerRun{full}, true, false},
+		{"an MLA run", []KVLayerRun{{Count: 2, Spec: "mla", NumKVHeads: 1, HeadSize: 576}}, false, false},
+		{"an indexer run", []KVLayerRun{full, {Count: 1, Spec: "indexer"}}, false, false},
+		{"a sliding window beside full attention", []KVLayerRun{full, {Count: 2, Spec: "sliding_window", SlidingWindow: 128}}, false, false},
+		{"a drafter's layers", []KVLayerRun{full, {Count: 1, Spec: "full", Draft: true}}, false, false},
+	} {
+		if got := parallelismAgnostic(c.runs, c.v2); got != c.want {
+			t.Errorf("%s: parallelismAgnostic = %v, want %v", c.name, got, c.want)
+		}
+	}
+}

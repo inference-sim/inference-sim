@@ -153,7 +153,7 @@ type offload struct {
 // model. Each KV cache group is offloaded at its block size, a sliding window with the
 // extra_retained_tokens the drafter's prefill lookahead sets (get_kv_cache_configs,
 // vllm/v1/core/kv_cache_utils.py:2582-2589@5df63a72).
-func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method string, prefixCaching bool, at plan.Endpoint, install installer) (*offload, error) {
+func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method string, prefixCaching, parallelAgnostic bool, at plan.Endpoint, install installer) (*offload, error) {
 	if c.Connector != "OffloadingConnector" {
 		return nil, fmt.Errorf("vllm: kv_offload.connector %q is not modelled through the engine (modelled: "+
 			"OffloadingConnector; registry/connectors.yaml)", c.Connector)
@@ -255,7 +255,7 @@ func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method 
 	for i, g := range kvGroups {
 		eagle[i] = spec.EagleBlockDrop && s.KV.GroupSpec(g).Eagle
 	}
-	tiers, err := buildTiers(c, bpc, bs, offloading.ChunkBytes(c.BytesPerBlock, copies, bpc, page), chunks, tierNamespace(s, bpc, world))
+	tiers, err := buildTiers(c, bpc, bs, offloading.ChunkBytes(c.BytesPerBlock, copies, bpc, page), chunks, tierNamespace(s, bpc, world, parallelAgnostic))
 	if err != nil {
 		return nil, err
 	}

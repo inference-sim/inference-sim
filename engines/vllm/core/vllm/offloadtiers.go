@@ -457,12 +457,13 @@ func (e *Engine) ShareTierStorage(s TierStorage) {
 
 // tierNamespace is what the fs tier's FileMapper reads from the spec (FileMapper.from_offloading_spec,
 // vllm/v1/kv_offload/file_mapper.py@4ba787ec), as the engine knows it: the hash and chunk sizes, each
-// KV cache group's block size, and the world size, collapsed by parallel_agnostic. A block file's
+// KV cache group's block size, and the world size, collapsed by parallel_agnostic, which is the
+// connector's is_parallelism_agnostic (parallelismAgnostic). A block file's
 // name is then the same for every engine of one KV layout; the model is the TierStorage's to keep
 // apart.
-func tierNamespace(s *sched.Scheduler, bpc, world int) kvtier.Namespace {
+func tierNamespace(s *sched.Scheduler, bpc, world int, parallelAgnostic bool) kvtier.Namespace {
 	ns := kvtier.Namespace{TokensPerHash: s.KV.HashBlockSize(), BlocksPerFile: bpc, TPSize: world, PPSize: 1,
-		PCPSize: 1, DCPSize: 1, ParallelAgnostic: true}
+		PCPSize: 1, DCPSize: 1, ParallelAgnostic: parallelAgnostic}
 	for g := 0; g < s.KV.NumGroups(); g++ {
 		ns.Groups = append(ns.Groups, kvtier.KVGroupName{TokensPerBlock: s.KV.GroupBlockSize(g),
 			LayerNames: []string{fmt.Sprintf("group%d", g)}})
