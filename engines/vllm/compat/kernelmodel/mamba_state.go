@@ -55,8 +55,12 @@ type mambaPlan struct {
 	// blockSize is the engine's block_size after the hybrid alignment; source says how.
 	blockSize int
 	source    string
-	// run is the "mamba" run one layer is (Count 1).
-	run KVLayerRun
+	// run is the "mamba" run one layer of the model's main geometry is (Count 1); runs holds the
+	// run of every geometry the model has, which is that one alone unless the architecture builds
+	// several Mamba state layouts (Qwen4Exp's Gated DeltaNet layers and its per-layer embedding's
+	// short convolution, get_mamba_specs_from_config, qwen4_exp/nvidia/model.py:880-900@4ba787ec).
+	run  KVLayerRun
+	runs map[geometry]KVLayerRun
 	// assumptions are the facts the plan could not read from the graph, as pricing assumptions.
 	assumptions []string
 }
@@ -67,10 +71,11 @@ type geometry struct {
 	kind                                                   model.RecurrentKind
 	heads, stateSize, groups, convKernel, intermediateSize int
 	stateDType                                             model.DType
+	convDilation                                           int
 }
 
 func recurrentGeometry(n model.Node) geometry {
-	return geometry{n.RecurrentKind, n.NumHeads, n.StateSize, n.NumGroups, n.ConvKernel, n.IntermediateSize, n.StateDType}
+	return geometry{n.RecurrentKind, n.NumHeads, n.StateSize, n.NumGroups, n.ConvKernel, n.IntermediateSize, n.StateDType, n.ConvDilation}
 }
 
 // stackNodes calls f for every node of the layer kinds the stack names, in model order.
@@ -108,15 +113,25 @@ func planMamba(g *model.Graph, e engineconfig.Engine, env mambaEnv) (*mambaPlan,
 		return nil, fmt.Errorf("recurrent layers: "+format, a...)
 	}
 	var first *model.Node
+	var extra []model.Node // short convolutions beside the main geometry, where the architecture builds several layouts
 	var mixed error
+	several := isQwen4Exp(g.Global.Architecture)
 	stackNodes(g, g.Stack, func(id string, n model.Node) {
 		if n.Op != model.OpRecurrentUpdate || mixed != nil {
 			return
 		}
-		if first == nil {
+		switch {
+		case several && n.RecurrentKind == model.RecurrentShortConv:
+			for _, e := range extra {
+				if recurrentGeometry(e) == recurrentGeometry(n) {
+					return
+				}
+			}
+			extra = append(extra, n)
+		case first == nil:
 			c := n
 			first = &c
-		} else if recurrentGeometry(*first) != recurrentGeometry(n) {
+		case recurrentGeometry(*first) != recurrentGeometry(n):
 			mixed = fmt.Errorf("layer kind %s: a %s state of another geometry than the model's other recurrent layers; "+
 				"vLLM sizes one Mamba page for the model (Platform._align_hybrid_block_size, "+
 				"vllm/platforms/interface.py:1040-1056@5df63a72), so a model of several is not mapped", id, n.RecurrentKind)
@@ -124,6 +139,9 @@ func planMamba(g *model.Graph, e engineconfig.Engine, env mambaEnv) (*mambaPlan,
 	})
 	if mixed != nil {
 		return refuse("%v", mixed)
+	}
+	if first == nil {
+		return refuse("the model's only recurrent layers are short convolutions, which only a Gated DeltaNet model's per-layer embedding builds")
 	}
 	n := *first
 	if sp := g.Speculator; sp != nil && e.Speculative != nil && e.Speculative.NumSpecTokens > 0 {
@@ -170,6 +188,22 @@ func planMamba(g *model.Graph, e engineconfig.Engine, env mambaEnv) (*mambaPlan,
 		return refuse("%v", err)
 	}
 	state := conv*int64(convBytes) + ssm*int64(ssmBytes)
+	// Every geometry's own state; the model's page is the largest (platforms/interface.py:1049-1056
+	// @4ba787ec), and the smaller states are padded to it.
+	states := map[geometry]int64{recurrentGeometry(n): state}
+	page := state
+	for _, x := range extra {
+		xconv, _, err := stateElems(x, env.tp, numSpec)
+		if err != nil {
+			return refuse("%v", err)
+		}
+		xc, _, err := stateDTypes(x, e, modelBytes)
+		if err != nil {
+			return refuse("%v", err)
+		}
+		states[recurrentGeometry(x)] = xconv * int64(xc)
+		page = max(page, states[recurrentGeometry(x)])
+	}
 
 	plan := &mambaPlan{node: recurrentGeometry(n)}
 	run := KVLayerRun{Count: 1, Spec: "mamba", StateBytes: int(state), MambaCacheMode: mode,
@@ -211,7 +245,7 @@ func planMamba(g *model.Graph, e engineconfig.Engine, env mambaEnv) (*mambaPlan,
 		if mode == "align" {
 			run.BlockSize = plan.blockSize
 		}
-		plan.run = run
+		plan.run, plan.runs = run, runsOf(run, states)
 		return plan, nil
 	}
 	block := e.BlockSize
@@ -244,7 +278,7 @@ func planMamba(g *model.Graph, e engineconfig.Engine, env mambaEnv) (*mambaPlan,
 			"common multiple of the MLA backends' smallest kernel blocks, which the install selects", block)
 	}
 	hb, err := vllm.AlignHybridBlockSize(vllm.HybridBlockInput{
-		Block: block, AttnPage1Token: attn.page1Token, MambaPage: state,
+		Block: block, AttnPage1Token: attn.page1Token, MambaPage: page,
 		KernelBlockMin: attn.kernelMin, BackendBlockLCM: attn.kernelMin, MLA: attn.mla,
 		MambaCacheMode: mode, MambaBlockSize: mambaBlock,
 	})
@@ -253,10 +287,25 @@ func planMamba(g *model.Graph, e engineconfig.Engine, env mambaEnv) (*mambaPlan,
 	}
 	plan.blockSize = hb.BlockSize
 	plan.source = fmt.Sprintf("vLLM v0.32.0 aligns a hybrid model's block_size so the attention page (%d bytes a token) holds the "+
-		"%d-byte Mamba page (Platform._align_hybrid_block_size, vllm/platforms/interface.py:939-1126@5df63a72)", attn.page1Token, state)
+		"%d-byte Mamba page (Platform._align_hybrid_block_size, vllm/platforms/interface.py:939-1126@5df63a72)", attn.page1Token, page)
 	run.BlockSize, run.PageSizePadded = hb.MambaBlockSize, int(hb.PageSizePadded)
-	plan.run = run
+	plan.run, plan.runs = run, runsOf(run, states)
+	if len(extra) > 0 {
+		plan.assumptions = append(plan.assumptions, "the per-layer embedding's short-convolution layer takes no prefill checkpoint block: "+
+			"its spec carries one only under mamba_cache_mode align and a grid the scheduler states (qwen4_exp/nvidia/ple_layer.py:196-211@4ba787ec), which is not modelled")
+	}
 	return plan, nil
+}
+
+// runsOf is the "mamba" run of each geometry: the plan's run with that geometry's own state bytes.
+func runsOf(run KVLayerRun, states map[geometry]int64) map[geometry]KVLayerRun {
+	out := make(map[geometry]KVLayerRun, len(states))
+	for g, b := range states {
+		r := run
+		r.StateBytes = int(b)
+		out[g] = r
+	}
+	return out
 }
 
 // modelDType is the width of the model's activations, which the conv state takes under
@@ -306,6 +355,9 @@ func stateDTypes(n model.Node, e engineconfig.Engine, modelBytes int) (conv, ssm
 		}
 		conv = b
 	}
+	if n.RecurrentKind == model.RecurrentShortConv {
+		return conv, 0, nil // no temporal state
+	}
 	s := e.MambaSSMCacheDType
 	if s == "" || s == "auto" {
 		node, named := dtypeBytes(n.StateDType)
@@ -338,6 +390,16 @@ func stateDTypes(n model.Node, e engineconfig.Engine, modelBytes int) (conv, ssm
 // element count the layout does not change. numSpec widens the conv state's window.
 func stateElems(n model.Node, tp, numSpec int) (conv, ssm int64, err error) {
 	tp = max(tp, 1)
+	if n.RecurrentKind == model.RecurrentShortConv {
+		// short_conv_state_shape at tensor-parallel width 1 (the state is replicated), with the
+		// dilated window (conv_kernel - 1) x dilation plus the speculative rows
+		// (qwen4_exp/nvidia/model.py:790-809@4ba787ec; mamba_utils.py:248-260).
+		if n.IntermediateSize <= 0 || n.ConvKernel <= 0 {
+			return 0, 0, fmt.Errorf("the short_conv node states no intermediate_size or conv_kernel")
+		}
+		window := (n.ConvKernel-1)*max(n.ConvDilation, 1) + numSpec
+		return int64(n.IntermediateSize) * int64(window), 0, nil
+	}
 	div := func(what string, v int) (int64, error) {
 		if v <= 0 || v%tp != 0 {
 			return 0, fmt.Errorf("%s %d is not divisible by tensor_parallel_size %d", what, v, tp)
@@ -544,8 +606,8 @@ func (p *mambaPlan) mambaRun(kind string, n model.Node) (KVLayerRun, error) {
 		return KVLayerRun{}, fmt.Errorf("layer kind %s: recurrent state is not mapped to a KV cache spec: no recurrent plan "+
 			"was resolved for this engine", kind)
 	}
-	if recurrentGeometry(n) != p.node {
-		return KVLayerRun{}, fmt.Errorf("layer kind %s: a %s state of another geometry than the model's recurrent layers", kind, n.RecurrentKind)
+	if r, ok := p.runs[recurrentGeometry(n)]; ok {
+		return r, nil
 	}
-	return p.run, nil
+	return KVLayerRun{}, fmt.Errorf("layer kind %s: a %s state of another geometry than the model's recurrent layers", kind, n.RecurrentKind)
 }
