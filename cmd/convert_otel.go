@@ -247,7 +247,7 @@ func init() {
 	convertOtelCmd.Flags().StringVar(&otelContextGrowth, "context-growth", "accumulate", "Prefix model: \"accumulate\" (strict growing shared prefix) or \"independent\"")
 	convertOtelCmd.Flags().DurationVar(&otelMaxThinkTime, "max-think-time", 15*time.Second, "Cap on per-round inter-call gap (think time); 0 = no cap")
 	convertOtelCmd.Flags().BoolVar(&otelIncludeErrors, "include-errors", false, "Include spans with error status (status.code == 2)")
-	convertOtelCmd.Flags().BoolVar(&otelThinkFromArrivalGaps, "think-from-arrival-gaps", false, "State no think time, so a replay derives it from arrival gaps (reproduces the output of versions before #2130; by default the think time is the gap from the previous span's end to this span's start)")
+	convertOtelCmd.Flags().BoolVar(&otelThinkFromArrivalGaps, "think-from-arrival-gaps", false, "State no think time, so a replay derives it from arrival gaps (reproduces the output of versions before the think-time change; by default the think time is the gap from the previous span's end to this span's start)")
 	convertOtelCmd.Flags().IntVar(&otelMaxContext, "max-context", 0, "Ceiling on a round's prompt plus output tokens; 0 = none. A session with a round over it is handled as --max-context-mode says")
 	convertOtelCmd.Flags().StringVar(&otelMaxContextMode, "max-context-mode", "", "With --max-context: \"drop-session\" discards a session with a round over the ceiling; \"truncate\" keeps it up to the first such round (no default: they bias the corpus differently)")
 	convertOtelCmd.Flags().IntVar(&otelMinRounds, "min-rounds", 1, "Skip sessions with fewer than N usable LLM calls")

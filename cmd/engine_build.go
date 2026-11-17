@@ -572,7 +572,7 @@ func openModel() (*kernelmodel.Model, error) {
 }
 
 // openChipModel opens the pool of the scenario file name in dir and sizes it, so a chip the
-// scenario cannot run on is refused when the model is opened (a node pool's variant, #1925).
+// scenario cannot run on is refused when the model is opened (a node pool's variant).
 func openChipModel(name, dir string) (*engineModel, error) {
 	m, err := build.OpenModel(name, dir, mustRunData())
 	if err != nil {

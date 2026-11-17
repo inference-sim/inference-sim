@@ -22,7 +22,7 @@ type OTelConvertOptions struct {
 	MinRounds      int   // skip sessions with fewer usable calls (default 1)
 	// ThinkFromArrivalGaps states no think time, so a replay derives it from the arrival gaps,
 	// which bundle the service time into the think time. It exists only to reproduce the output
-	// of versions before #2130. By default each follow-up round's think time is the gap between
+	// of versions before the think-time change. By default each follow-up round's think time is the gap between
 	// the previous span's end and this span's start, as the trace records it; a round whose
 	// previous span has no usable end states none.
 	ThinkFromArrivalGaps bool

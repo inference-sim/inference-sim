@@ -197,7 +197,7 @@ func (b *PolicyBundle) Validate() error {
 		return fmt.Errorf("autoscaler.analyzer.avg_input_tokens must be > 0, got %v", a.AvgInputTokens)
 	}
 	if a.MinReplicas < 0 {
-		return fmt.Errorf("autoscaler.analyzer.min_replicas must be >= 1 (0 or absent = 1; scale-to-zero is not modelled, #909), got %d", a.MinReplicas)
+		return fmt.Errorf("autoscaler.analyzer.min_replicas must be >= 1 (0 or absent = 1; a model scales to zero through autoscaler.scale_to_zero_idle_us), got %d", a.MinReplicas)
 	}
 	// Cross-check scale_down_boundary < scale_up_threshold using effective (post-default) values.
 	// A one-sided override (e.g. scale_down_boundary: 0.9, scale_up_threshold unset → default 0.8)

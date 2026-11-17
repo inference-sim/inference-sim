@@ -1451,7 +1451,7 @@ cohorts:
 	}
 }
 
-// #1914: a replay that cannot reproduce an accumulate trace refuses it at startup and names the
+// A replay that cannot reproduce an accumulate trace refuses it at startup and names the
 // session modes that can, rather than replaying it without the cross-round prefix reuse.
 func TestReplay_AccumulateTraceRefusesFixedMode(t *testing.T) {
 	dir := t.TempDir()

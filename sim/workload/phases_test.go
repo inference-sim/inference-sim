@@ -8,7 +8,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 )
 
-// #1926: the loader refuses a trace whose phases and phase column disagree, and a phased trace
+// The loader refuses a trace whose phases and phase column disagree, and a phased trace
 // round-trips through the export and the load.
 func TestLoadTraceV2_PhasesAndThePhaseColumnMustAgree(t *testing.T) {
 	rec := func(id int, phase string) TraceRecord {
