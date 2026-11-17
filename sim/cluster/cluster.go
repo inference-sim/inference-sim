@@ -559,6 +559,10 @@ func (cs *ClusterSimulator) buildInstance(index int, id InstanceID, cfg sim.Inst
 
 // wireInstance connects an instance's request lifecycle to the gateway and to session
 // follow-ups. Follow-ups route through the cluster pipeline, never injected locally (BC-9).
+//
+// NOTE: When ClusterSubsystem hooks are introduced (see discussion #1033 PR D), the
+// OnRequestDone wiring here is the one site to replace with the subsystem dispatch; the startup
+// loop and addLiveInstance both call it, so it cannot be dispatched twice.
 func (cs *ClusterSimulator) wireInstance(inst *InstanceSimulator) {
 	onFirstToken := func(req *sim.Request, at int64) {
 		if parent := cs.parentOf(req); parent != nil {
@@ -1294,9 +1298,8 @@ func (c *ClusterSimulator) preemptionsTotal() int64 {
 // (autoscaler direct placement). NOT used by the NewClusterSimulator startup path,
 // which builds its instances in one pass.
 //
-// simCfg must already have GPU set (pool-authoritative, SC-004).
-// Returns true on success. On false, GPU allocations have been released — callers
-// must not touch the instance and should skip/continue.
+// simCfg must already have GPU set (pool-authoritative, SC-004). It cannot fail: a build
+// refusal here is an invariant break and panics.
 //
 // Maintenance note: if you add a new field to instance initialisation here, also
 // check NewClusterSimulator's construction loop (which does NOT call this method).
@@ -1308,7 +1311,7 @@ func (cs *ClusterSimulator) addLiveInstance(
 	gpuIDs []string,
 	tpDegree int,
 	costPerHour float64,
-) bool {
+) {
 	// A live instance's engine is built as a startup one's is, at the next index past every
 	// instance the cluster has built.
 	cs.liveBuilt++
@@ -1336,8 +1339,6 @@ func (cs *ClusterSimulator) addLiveInstance(
 	if cs.gateway != nil {
 		cs.gateway.OnInstanceChange(inst)
 	}
-
-	return true
 }
 
 // poolsConfigured returns true if PD disaggregation pool topology is active.

@@ -62,9 +62,7 @@ func (e *NodeReadyEvent) Execute(cs *ClusterSimulator) {
 
 		// #1529: cost = distinct-nodes-spanned × pool cost_per_hour (mirrors startup path).
 		instCost := cs.placement.InstanceCostPerHour(p.gpuIDs, poolCostPerHour)
-		if !cs.addLiveInstance(p.id, cs.config.Model, p.simCfg, p.nodeID, p.gpuIDs, p.tpDegree, instCost) {
-			continue // GPU release already handled by addLiveInstance
-		}
+		cs.addLiveInstance(p.id, cs.config.Model, p.simCfg, p.nodeID, p.gpuIDs, p.tpDegree, instCost)
 	}
 }
 

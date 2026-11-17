@@ -128,19 +128,33 @@ func TestDirectActuatorApply(t *testing.T) {
 		NewDirectActuator(nil)
 	})
 
-	t.Run("id_format_is_zero_padded", func(t *testing.T) {
-		// Verify that instance IDs use zero-padded format (%06d) so lexicographic
-		// sort matches creation order even past single digits.
-		cs := newTestCluster(newTestDeploymentConfig(1), NewSliceRequestSource(nil), nil)
-		actuator := NewDirectActuator(cs)
+	t.Run("a_refused_placement_does_not_consume_an_instance_number", func(t *testing.T) {
+		// GIVEN: a pool of A100-80 GPUs. The first decision asks for a GPU type the cluster
+		// does not have, so its placement is refused; the second asks for the pool's type.
+		base := newTestDeploymentConfig(1)
+		base.Model = "test-model"
+		base.NodePools = []NodePoolConfig{
+			{Name: "a100-pool", GPUType: "A100-80", GPUsPerNode: 4, InitialNodes: 1, MaxNodes: 2, GPUMemoryGiB: 80},
+		}
+		cs := newTestCluster(base, NewSliceRequestSource(nil), nil)
+		cs.instances = []*InstanceSimulator{}
 
-		// Manually increment seq and check ID format
-		actuator.nextInstSeq = 9
-		expected := "autoscale-m1-000010"
-		actuator.nextInstSeq++
-		got := string(InstanceID(fmt.Sprintf("autoscale-%s-%06d", "m1", actuator.nextInstSeq)))
-		if got != expected {
-			t.Errorf("ID = %q, want %q (zero-padded for correct lexicographic order)", got, expected)
+		// WHEN: both decisions are applied.
+		err := NewDirectActuator(cs).Apply([]ScaleDecision{
+			{ModelID: "test-model", Variant: NewVariantSpec("no-such-gpu", 1), Delta: 1},
+			{ModelID: "test-model", Variant: NewVariantSpec("A100-80", 1), Delta: 1},
+		})
+
+		// THEN: the refusal is reported, and the one instance that exists is number 1, with
+		// no gap where the refused placement would have been.
+		if err == nil {
+			t.Fatal("Apply reported no error for a placement the cluster cannot make")
+		}
+		if len(cs.instances) != 1 {
+			t.Fatalf("len(cs.instances) = %d, want 1", len(cs.instances))
+		}
+		if got, want := string(cs.instances[0].ID()), "autoscale-test-model-000001"; got != want {
+			t.Errorf("instance ID = %q, want %q (a refused placement must not use up a number)", got, want)
 		}
 	})
 
