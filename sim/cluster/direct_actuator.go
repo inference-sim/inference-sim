@@ -9,6 +9,7 @@ import (
 	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/trace"
 	"github.com/sirupsen/logrus"
 )
 
@@ -35,6 +36,7 @@ func NewDirectActuator(cluster *ClusterSimulator) *DirectActuator {
 func (a *DirectActuator) Apply(decisions []ScaleDecision) error {
 	var errs []error
 	for _, d := range decisions {
+		before := a.modelReplicas(d.ModelID)
 		if d.Delta > 0 {
 			if err := a.scaleUp(d); err != nil {
 				errs = append(errs, err)
@@ -44,11 +46,38 @@ func (a *DirectActuator) Apply(decisions []ScaleDecision) error {
 				errs = append(errs, err)
 			}
 		}
+		a.recordScale(d, before)
 	}
 	if len(errs) > 0 {
 		return fmt.Errorf("actuator: %d operation(s) failed; first: %w", len(errs), errs[0])
 	}
 	return nil
+}
+
+// modelReplicas counts the model's instances that are serving or coming up: not draining or terminated.
+func (a *DirectActuator) modelReplicas(model string) int {
+	n := 0
+	for _, inst := range a.cluster.instances {
+		if inst.Model == model && inst.State != sim.InstanceStateDraining && inst.State != sim.InstanceStateTerminated {
+			n++
+		}
+	}
+	return n
+}
+
+// recordScale writes the decision, as applied, to the decision trace (level decisions) (#743).
+func (a *DirectActuator) recordScale(d ScaleDecision, before int) {
+	if a.cluster.trace == nil || d.Delta == 0 {
+		return
+	}
+	trigger := "required_capacity"
+	if d.Delta < 0 {
+		trigger = "spare_capacity"
+	}
+	a.cluster.trace.RecordModelScale(trace.ModelScaleRecord{Clock: a.cluster.clock, ModelID: d.ModelID,
+		GPUType: d.Variant.GPUType, TPDegree: d.Variant.TPDegree, Delta: d.Delta, OldReplicas: before,
+		NewReplicas: a.modelReplicas(d.ModelID), Trigger: trigger, Utilization: d.Utilization,
+		RequiredCapacity: d.RequiredCapacity, SpareCapacity: d.SpareCapacity})
 }
 
 // scaleUp places new instance(s) for the given decision. Returns error if any placement fails.

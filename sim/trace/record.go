@@ -116,3 +116,33 @@ type KVTransferRecord struct {
 	PrefillInstanceID string
 	DecodeInstanceID  string
 }
+
+// ModelScaleRecord is one model-autoscaler scale decision as the actuator applied it (#743). It
+// is recorded for every decision with a non-zero Delta.
+type ModelScaleRecord struct {
+	Clock       int64 // simulation time of the actuation, microseconds
+	ModelID     string
+	GPUType     string // the variant targeted
+	TPDegree    int
+	Delta       int    // the decision's change; never 0
+	OldReplicas int    // the model's replicas (not terminated or draining) just before it was applied
+	NewReplicas int    // the same count just after
+	Trigger     string // "required_capacity" for a scale-up, "spare_capacity" for a scale-down
+	// The analyzer's signals for the model at the tick that made the decision.
+	Utilization      float64
+	RequiredCapacity float64
+	SpareCapacity    float64
+}
+
+// ClusterScaleRecord is one cluster-autoscaler node decision as the cluster applied it (#743). It
+// is recorded for every decision with a non-zero Delta.
+type ClusterScaleRecord struct {
+	Clock        int64 // simulation time of the decision, microseconds
+	PoolName     string
+	OldNodeCount int // non-terminated nodes of the pool before
+	NewNodeCount int // and after
+	// TriggerReason is why: "pending_threshold" for a node added for a waiting placement.
+	TriggerReason  string
+	PendingCount   int     // pending placements at the decision
+	GPUUtilization float64 // the pool's allocated GPUs over its GPUs at the decision
+}

@@ -103,6 +103,9 @@ type ScaleDecision struct {
 	ModelID string
 	Variant VariantSpec
 	Delta   int // +N = scale up by N replicas, -N = scale down by N replicas; never 0
+	// Utilization, RequiredCapacity and SpareCapacity are the analyzer's signals for the model at the
+	// tick that made the decision, filled in by the pipeline for the trace (#743).
+	Utilization, RequiredCapacity, SpareCapacity float64
 }
 
 // GPUInventory is a read-only view of available GPU capacity, passed to Engine.Optimize().
@@ -248,6 +251,15 @@ func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 	// Stage 3: Optimize — ask Engine for scale decisions.
 	inventory := cs.gpuInventory()
 	decisions := p.engine.Optimize(results, inventory)
+	for i := range decisions {
+		for _, r := range results {
+			if r.ModelID == decisions[i].ModelID {
+				decisions[i].Utilization, decisions[i].RequiredCapacity, decisions[i].SpareCapacity =
+					r.Utilization, r.RequiredCapacity, r.SpareCapacity
+				break
+			}
+		}
+	}
 
 	// Stage 4: Stabilization window gate — pass a decision only once its signal has been
 	// continuously present for ScaleUp/DownStabilizationWindowUs. Reset timer on signal loss.
