@@ -1511,9 +1511,15 @@ left at the engine's default as the marker `default`. No engine default is writt
 the engine states its resolved values and its own defaults, and the lookup compares a `default`
 marker with the requesting engine's stated default. So the three Kimi-K3 DSpark curves and the
 two MiniMax-M3 GQA-drafter curves are carried apart, and a run identical to a curve's
-collection matches it exactly. Two curves that agree on every key field are both refused, and a
-verifier outside the key's vocabulary (vLLM v0.33.0's standard, block and fly) refuses its curve;
-both cite inference-sim/blis-substrate#207.
+collection matches it exactly. Two curves that agree on every key field are both refused. This is a
+decision, not a gap: a lookup matches the run's engine, draft sampler and verifier, and a run states
+no sampling temperature (or any other sampling parameter) for a key field to be matched against, so a
+sampling field could not be looked up and would only make a key no run can reach. Each refused curve
+is named in the set's caveats. A verifier outside the key's vocabulary (vLLM v0.33.0's standard, block
+and fly) refuses its curve, and the caveat names the engine release that lacks it: InferenceX lists
+`relaxed` without defining it, and vLLM v0.33.0's `RejectionSampleMethod` is standard, synthetic,
+block or fly. A verifier an engine release implements and InferenceX publishes becomes a key value
+(with its validator and examples) in the change that adds the release.
 
 ### 12.4 Hardware: stated, or read from the run
 
