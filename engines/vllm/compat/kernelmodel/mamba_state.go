@@ -463,6 +463,13 @@ func attentionOf(g *model.Graph, e engineconfig.Engine, tp int) (attentionFacts,
 		if n.Op != model.OpAttention || err != nil {
 			return
 		}
+		// A sparse-GQA layer's indexer scorer keeps caches of its own that size no page of the
+		// model's attention (qwen4ExpAttentionRuns); its main node is a FullAttentionSpec of
+		// K and V like a grouped-query layer's (qsa.py:552-561@4ba787ec).
+		qsa := n.AttentionKind == sparseGQA
+		if qsa && !n.ReadsEngineKV() {
+			return
+		}
 		mla := n.AttentionKind == model.AttentionMLA
 		kv, head := max(n.NumKVHeads/max(tp, 1), 1), n.HeadDim
 		if mla {
@@ -473,13 +480,13 @@ func attentionOf(g *model.Graph, e engineconfig.Engine, tp int) (attentionFacts,
 			geo[2] = 1
 		}
 		switch {
-		case n.AttentionKind != model.AttentionMLA && n.AttentionKind != model.AttentionGQA && n.AttentionKind != model.AttentionSWA:
+		case n.AttentionKind != model.AttentionMLA && n.AttentionKind != model.AttentionGQA && n.AttentionKind != model.AttentionSWA && !qsa:
 			err = fmt.Errorf("layer kind %s: %s attention beside recurrent layers is not mapped", id, n.AttentionKind)
-		case len(n.Caches) > 0:
+		case len(n.Caches) > 0 && !qsa:
 			err = fmt.Errorf("layer kind %s: an attention node stating caches beside recurrent layers is not mapped", id)
 		case head <= 0 || n.NumKVHeads <= 0:
 			err = fmt.Errorf("layer kind %s: the attention node states no n_kv or d_h", id)
-		case !mla && head > 128 && out.kernelErr == nil:
+		case !mla && !qsa && head > 128 && out.kernelErr == nil:
 			// FlashAttention 4 selects its own kernel block for head sizes of 256 and for fp8 KV at
 			// head size 512 (flash_attn.py:296-352@5df63a72), which the install decides. It is
 			// reported after an unstated block_size, which is the more basic gap.
