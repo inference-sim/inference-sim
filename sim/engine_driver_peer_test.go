@@ -1,10 +1,14 @@
 package sim
 
 import (
+	"fmt"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/env"
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"github.com/inference-sim/blis-substrate/contracts/units"
@@ -94,8 +98,27 @@ func newPeering(t *testing.T, addr string) *peering {
 	return &peering{FIFO: fifo, addr: addr, writeDone: map[engine.TransferID]int64{}, placed: map[string]plan.Endpoint{}}
 }
 
-func peerEnv(ticks int64) testutil.PullEnv {
-	return testutil.FixedPull(16, func(int64, plan.Endpoint, plan.Endpoint) int64 { return ticks })
+// writeBytes is what the peering engine states for its WRITE (PeerWriteBytes).
+const writeBytes = 4096
+
+func (e *peering) PeerWriteBytes(t engine.Transfer) (int64, bool) { return writeBytes, t.ID == 2001 }
+
+// writeEnv is a PullEnv that prices a peer WRITE (PeerWritePricer) as its bytes at a fixed floor, and
+// records the bytes it was asked to price.
+type writeEnv struct {
+	testutil.PullEnv
+	ticks int64
+	asked *[]int64
+}
+
+func (w writeEnv) PeerWriteDemand(_ plan.PoolPlan, _ engine.Transfer, bytes int64) (kernel.TransferDemand, error) {
+	*w.asked = append(*w.asked, bytes)
+	return kernel.TransferDemand{Floor: time.Duration(w.ticks) * time.Microsecond}, nil
+}
+
+func peerEnv(ticks int64) writeEnv {
+	return writeEnv{PullEnv: testutil.FixedPull(16, func(int64, plan.Endpoint, plan.Endpoint) int64 { return ticks }),
+		ticks: ticks, asked: new([]int64)}
 }
 
 // The driver hands the router each message an engine queued, at the instant of the call that
@@ -175,4 +198,46 @@ func TestEngineDriver_AnEngineThatIsNotPeeredHasNoPeerAddress(t *testing.T) {
 	if err := d.PlacePeer("x:1", plan.Endpoint{}); err != nil {
 		t.Errorf("PlacePeer on an engine that is not PeerPlaced: %v", err)
 	}
+}
+
+// A WRITE is priced from the bytes the engine states, through the Environment's PeerWritePricer,
+// and not as a pull.
+func TestEngineDriver_APeerWriteIsPricedFromTheBytesTheEngineStates(t *testing.T) {
+	eng := newPeering(t, "a:1")
+	env := peerEnv(100)
+	d := NewEngineDriver(eng, EngineDriverConfig{Horizon: 1 << 40, Environment: env})
+	d.InjectArrival(&Request{ID: "a", InputTokens: tokens(8), OutputTokens: tokens(1)})
+	d.Run()
+	if len(*env.asked) != 1 || (*env.asked)[0] != writeBytes {
+		t.Errorf("the Environment was asked to price WRITEs of %v bytes, want one of %d", *env.asked, writeBytes)
+	}
+}
+
+type noBytes struct{ *peering }
+
+func (noBytes) PeerWriteBytes(engine.Transfer) (int64, bool) { return 0, false }
+
+// A WRITE the engine states no bytes for, an engine without PeerWriteBytes, and an Environment
+// that cannot price a WRITE each stop the run naming what is missing; none is priced at zero.
+func TestEngineDriver_AWriteWithoutBytesOrAPricerStopsTheRun(t *testing.T) {
+	run := func(eng engine.Engine, e env.Environment) (msg string) {
+		defer func() { msg = strings.TrimSpace(strings.Join([]string{msg, toString(recover())}, " ")) }()
+		d := NewEngineDriver(eng, EngineDriverConfig{Horizon: 1 << 40, Environment: e})
+		d.InjectArrival(&Request{ID: "a", InputTokens: tokens(8), OutputTokens: tokens(1)})
+		d.Run()
+		return ""
+	}
+	if got := run(noBytes{newPeering(t, "a:1")}, peerEnv(100)); !strings.Contains(got, "states no bytes") {
+		t.Errorf("an engine that states no bytes: %q", got)
+	}
+	if got := run(newPeering(t, "a:1"), peerEnv(100).PullEnv); !strings.Contains(got, "PeerWriteDemand") {
+		t.Errorf("an Environment that cannot price a WRITE: %q", got)
+	}
+}
+
+func toString(v any) string {
+	if v == nil {
+		return ""
+	}
+	return fmt.Sprint(v)
 }

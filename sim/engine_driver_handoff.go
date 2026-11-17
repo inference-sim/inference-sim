@@ -59,11 +59,11 @@ func (d *EngineDriver) startTransfers(ts []engine.Transfer, now int64) {
 // than computeEnd, when the compute stream they wait on frees.
 func (d *EngineDriver) startTransfersAfter(ts []engine.Transfer, now, computeEnd int64) {
 	for _, t := range ts {
-		demand := d.priceTransfer(t)
 		if isPeerWrite(t) {
-			d.startPeerWrite(t, demand, now)
+			d.startPeerWrite(t, d.priceWrite(t), now)
 			continue
 		}
+		demand := d.priceTransfer(t)
 		if t.Tier != "" {
 			d.startTierTransfer(t, demand, computeEnd)
 			continue

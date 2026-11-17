@@ -74,6 +74,60 @@ func (d *EngineDriver) DeliverPeer(m engine.PeerMessage, now int64) {
 	d.drainPeer(now)
 }
 
+// PeerWritePricer is the part of an Environment that prices a peer WRITE (design 6.1). A WRITE is
+// not a pull: it leaves the engine's own pool, carries the bytes the engine states (its blocks as
+// the p2p tier stores them) and may stay on one node. The Environment is asked through this
+// optional interface, because env.Environment's TransferDemand cannot take the bytes.
+type PeerWritePricer interface {
+	PeerWriteDemand(p plan.PoolPlan, t engine.Transfer, bytes int64) (kernel.TransferDemand, error)
+}
+
+// peerWriteBytes is the optional engine method that states a WRITE's bytes.
+type peerWriteBytes interface {
+	PeerWriteBytes(engine.Transfer) (int64, bool)
+}
+
+// priceWrite is what the peer WRITE t demands of the fabric: the bytes the engine states
+// (PeerWriteBytes) priced by the Environment's PeerWritePricer. An engine that is not Planned or
+// states no bytes for the WRITE, a host with no Environment or an Environment that cannot price a
+// WRITE, and a WRITE the cost model refuses are each a failure of the run, never a zero price.
+func (d *EngineDriver) priceWrite(t engine.Transfer) kernel.TransferDemand {
+	p, ok := d.eng.(engine.Planned)
+	if !ok {
+		panic(fmt.Sprintf("engine driver: the engine started a peer WRITE %d for %q and states no plan "+
+			"(engine.Planned), so the cost model cannot price it", t.ID, t.Request))
+	}
+	b, ok := d.eng.(peerWriteBytes)
+	if !ok {
+		panic(fmt.Sprintf("engine driver: the engine started a peer WRITE %d for %q and cannot state its bytes "+
+			"(PeerWriteBytes), so the cost model cannot price it", t.ID, t.Request))
+	}
+	bytes, ok := b.PeerWriteBytes(t)
+	if !ok {
+		panic(fmt.Sprintf("engine driver: the engine states no bytes for its peer WRITE %d of %q", t.ID, t.Request))
+	}
+	if d.cfg.Environment == nil {
+		panic(fmt.Sprintf("engine driver: the engine started peer WRITE %d for %q, and the driver has no "+
+			"Environment to price it", t.ID, t.Request))
+	}
+	w, ok := d.cfg.Environment.(PeerWritePricer)
+	if !ok {
+		panic(fmt.Sprintf("engine driver: peer WRITE %d of %q: the driver's Environment (%T) cannot price a "+
+			"peer WRITE (PeerWriteDemand)", t.ID, t.Request, d.cfg.Environment))
+	}
+	if err := t.Validate(); err != nil {
+		panic(fmt.Sprintf("engine driver: peer WRITE %d of %q: %v", t.ID, t.Request, err))
+	}
+	if err := p.Plan().CheckTransfer(t.Move); err != nil {
+		panic(fmt.Sprintf("engine driver: peer WRITE %d of %q: %v", t.ID, t.Request, err))
+	}
+	demand, err := w.PeerWriteDemand(p.Plan(), t, bytes)
+	if err != nil {
+		panic(fmt.Sprintf("engine driver: peer WRITE %d of %q: %v", t.ID, t.Request, err))
+	}
+	return demand
+}
+
 // startPeerWrite runs an engine's WRITE to a peer. With a host that shares link capacity
 // (OnPeerWritePriced) the WRITE joins the arbiter and lands when it completes (PeerWriteLanded);
 // without one it takes its demand alone (TierTicks). Writes do not queue behind one another: each
