@@ -1,5 +1,5 @@
 name: qwen3.8-flash-next-nvfp4-radixark
-# Qwen3.8-Flash-Next-NVFP4 (RadixArk), a conversion of Qwen/Qwen3.8-Flash-Next: the card states no licence, so the base model's applies. The decoder layers' routed experts are NVFP4; the MTP experts, the n-gram table and everything else are BF16 or FP8 as the headers state. Its licence is not on the allow-list, so only the config's hash and the derived graph are committed (X12).
+# Qwen3.8-Flash-Next-NVFP4 (RadixArk), a conversion of Qwen/Qwen3.8-Flash-Next: the card (the evidence URL) names Qwen/Qwen3.8-Flash-Next as its base and states no licence of its own, so the base model's qwen-community-1.0 applies. The decoder layers' routed experts are NVFP4; the MTP experts, the n-gram table and everything else are BF16 or FP8 as the headers state. Its licence is not on the allow-list, so only the config's hash and the derived graph are committed (X12).
 # The shard headers are fetched by range request and not committed; each is pinned by the SHA-256 of its header bytes.
 source:
   provider: huggingface
@@ -8,7 +8,7 @@ source:
   retrieved: 2026-11-17
 licence:
   id: LicenseRef-qwen-community-1.0
-  evidence: https://huggingface.co/Qwen/Qwen3.8-Flash-Next/raw/812d96e10a0dd82b69d749e68693698cf6c36daa/LICENSE
+  evidence: https://huggingface.co/RadixArk/Qwen3.8-Flash-Next-NVFP4/raw/7b719225242aacd3dbd3f9407468c2ee9a9d2594/README.md
 config:
   sha256: e765305daba0951974308f4d32c075b52a6a45974730d273f2216718a994d624
 shard_index:
