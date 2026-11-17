@@ -120,7 +120,7 @@ These settings come from the scenario (and the kernel), and no CLI flag sets the
 
 **Data parallelism (MoE only).** A pool with `dp > 1` becomes one engine per data-parallel rank, each sized as one vLLM EngineCore. The ranks of one instance step in lockstep and the router sees them as one endpoint, balanced across ranks by vLLM's internal DP load balancer; `parallel.data_parallel_load_balancing: external` (blis-schemas#76, per pool; under P/D every rank is already its own endpoint, so a P/D pool's mode is resolved but changes no routing) instead makes every rank its own endpoint, as vLLM's external-LB modes do ([Latency Models](../guide/latency-models.md#data-and-expert-parallelism-moe)). `dp > 1` on a dense model is refused.
 
-**Node pools.** When `node_pools` are configured in `--policy-config`, every pool's `gpu_type` must equal the scenario's `cluster.hardware`.
+**Node pools.** When `node_pools` are configured in `--policy-config`, every pool's `gpu_type` must equal the chip the scenario states for that pool (`cluster.pools[].hardware`, else `cluster.hardware`), and each instance is priced and sized for its pool's chip ([Cluster](../guide/cluster.md#node-pools-and-multi-node-placement)).
 
 ## Simulation Control
 
@@ -365,11 +365,12 @@ priority:
 # scheduler or preemption is refused.
 
 # Node pool infrastructure (optional; omit for single-pool mode)
-# Every pool's gpu_type must equal the scenario's cluster.hardware, and gpu_type must be
+# Every pool's gpu_type must equal the chip the scenario states for that pool
+# (cluster.pools, else cluster.hardware), and gpu_type must be
 # unique across pools (#1537). See docs/guide/cluster.md.
 node_pools:
   - name: "gpu-pool-1"
-    gpu_type: "h200"      # must equal the scenario's cluster.hardware
+    gpu_type: "h200"      # must equal the scenario's chip for this pool
     gpus_per_node: 8
     gpu_memory_gib: 141.0
     initial_nodes: 2
@@ -427,7 +428,7 @@ lora:
 ```
 
 !!! note "Node pools and the scenario's hardware"
-    When `node_pools` are configured (via `--policy-config`), every pool's `gpu_type` must equal the scenario's `cluster.hardware`. KV capacity and step time for every placed instance come from the kernel for the scenario's hardware. `gpu_type` must also be unique across pools (#1537).
+    When `node_pools` are configured (via `--policy-config`), every pool's `gpu_type` must equal the chip the scenario states for that pool. KV capacity and step time for every placed instance come from the kernel for its pool's chip. `gpu_type` must also be unique across pools (#1537).
 
 ---
 

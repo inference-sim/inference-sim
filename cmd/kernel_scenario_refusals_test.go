@@ -85,7 +85,7 @@ func TestRunCmd_KernelBackend_ScenarioRefusals(t *testing.T) {
 		// Encode alone is refused earlier, by the topology check (no decode-capable pool).
 		{"encode instances only", "requires a decode-capable pool",
 			run(plain, "--num-instances", "2", "--encode-instances", "1")},
-		{"a node pool of another GPU", "node pools must match it",
+		{"a node pool of another GPU", "for that pool",
 			run(plain, "--policy-config", writeNodePoolBundle(t, "H100", "141"))},
 		{"a node pool stating other GPU memory", "states gpu_memory_gib 80",
 			run(plain, "--policy-config", writeNodePoolBundle(t, "h200", "80"))},

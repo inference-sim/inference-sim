@@ -91,8 +91,15 @@ matters when a shared link (e.g. the decode node's NIC in xP1D) runs close to sa
 
 ### Node pools and multi-node placement
 
-When node pools are configured (`--policy-config` with `node_pools`), every pool's `gpu_type` must
-equal the scenario's `cluster.hardware`, and `gpu_type` must be unique across pools.
+When node pools are configured (`--policy-config` with `node_pools`), each pool's chip is
+stated in the scenario, not the bundle: `cluster.pools` lists named pools, each with an optional
+`hardware` (a catalog chip), and `cluster.hardware` is the default for a pool that states none. A
+bundle `node_pools` entry refers to the scenario's pool of the same name, and its `gpu_type` must
+equal that pool's chip. An instance is priced and sized by the chip of the pool it is placed in:
+the run opens one variant of the scenario, one kernel, for each distinct pool chip, and refuses by
+name a chip that has no catalog entry or that the scenario's model cannot run on. A scenario that
+states no `cluster.pools` has one chip, `cluster.hardware`. Pools of different chips serve
+colocated scenarios only. `gpu_type` must be unique across pools.
 
 An instance whose TP group exceeds a pool's `gpus_per_node` can occupy **whole nodes across the same
 pool**. This happens only as a fallback (BLIS first tries a single node in any matching pool) and

@@ -569,6 +569,19 @@ func openModel() (*kernelmodel.Model, error) {
 	return build.OpenModel(kernelScenario, kernelScenarioDir, data)
 }
 
+// openChipModel opens the pool of the scenario file name in dir and sizes it, so a chip the
+// scenario cannot run on is refused when the model is opened (a node pool's variant, #1925).
+func openChipModel(name, dir string) (*engineModel, error) {
+	m, err := build.OpenModel(name, dir, mustRunData())
+	if err != nil {
+		return nil, err
+	}
+	if _, err := m.Settings(); err != nil {
+		return nil, fmt.Errorf("the scenario does not run on this chip: %w", err)
+	}
+	return m, nil
+}
+
 // expertModelConfig is the engine's model configuration as the scenario's graph states it: its
 // expert geometry only (routed experts and experts per token, 0 for a dense model). Nothing
 // else of ModelConfig is populated: no HF config is parsed, and a half-filled struct read as
