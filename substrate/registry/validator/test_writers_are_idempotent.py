@@ -107,6 +107,10 @@ WRITERS = [
     # The same family's fp8_ds_mla scale on that form, from aisim's h200 DSA context table at the
     # same pin ($AISIM_GLM53_DATA), BF16 and fp8 caches measured on one collector.
     ("fit_glm53_fp8_prefill_scale.py", "the GLM-5.3 family's h200 fp8 sparse-MLA prefill scale"),
+    # The per-model non-KV memory terms from fit-unit start-up logs
+    # (validator/testdata/anchors/memory_startup_fit_units.json): capture form, activation multiple
+    # and in-budget non-torch per (model, part, tp).
+    ("fit_memory_startup.py", "the per-model non-KV memory terms from start-up logs"),
 ]
 
 # relane_attention_mla.py is DELIBERATELY ABSENT from both lists, and this records why so
@@ -306,6 +310,8 @@ def test_every_fitted_family_has_a_writer():
            for w in ("8rank_gb200_nvl72", "16rank_gb200_nvl72", "16rank_h200")},
         **{f"cudagraph_capture_{t}_full_and_piecewise": "fit_deepseek_v41_capture.py"
            for t in ("floor_bytes", "bytes_per_mixed_token", "bytes_per_decode_token")},
+        **{f"activation_buffer_count_moe_{n}rank": "fit_memory_startup.py" for n in (1, 2, 4, 8)},
+        **{f"nontorch_in_budget_bytes_{n}rank": "fit_memory_startup.py" for n in (1, 2, 4, 8)},
     }
     # Families whose absence of a writer is recorded rather than accidental.
     exempt = {

@@ -594,5 +594,386 @@ coefficients:
         capture_model returns 0). Recorded as a deliberate zero so that an eager
         deployment reads "no cost" rather than "cost unknown", and so that every mode a
         consumer can be given has an entry to resolve.
+  - cudagraph_capture_floor_bytes_full_and_piecewise:
+      value: 751950050
+      units: bytes_per_rank
+      method: measured
+      fitted: true
+      scope: {hardware: [b200], model: [deepseek-v4.1-flash], tp: [4]}
+      measures: {time: device, execution: eager, harness: "vLLM's start-up memory profile (gpu_worker.py determine_available_memory) on InferenceX fit-role units"}
+      fit_range:
+        - {dim: tokens, low: 64.0, high: 1024.0}
+      ci95: [676457349, 782297615]
+      sources:
+        - {kind: discussion, cite: "InferenceX server logs of fit-role units, derived figures vendored in validator/testdata/anchors/memory_startup_fit_units.json", role: primary}
+        - {kind: discussion, cite: "vLLM v0.33.0 vllm/v1/worker/gpu_worker.py:720-756 (determine_available_memory: the budget, and peak activation holding the CUDA-graph estimate)", role: supporting}
+      rationale: >
+        The floor of the FULL_AND_PIECEWISE capture estimate vLLM subtracts, 0.700 GiB per rank. 6 fit units of deepseek-v4.1-flash on b200 (runs 35012527430, 35480787586); estimate residuals -0.02 to +0.02 GiB. The two ceilings move together in these runs, so the decode slope is not identified and is 0; the mixed slope carries both families. A single-model entry, a recorded exception to the single-model ratchet: the term is deepseek-v4.1-flash's own because of its DSpark drafter and its Engram path (tables offloaded to pinned host memory, 23.6 GiB per rank host-side in these logs), which only this model runs; the logs do not size their device-side share, so the 5-8 GiB above the other models is not attributed further. The general form is inference-sim/blis-substrate#294. Fitted by scripts/fit_memory_startup.py on fit-role units only (D7); groups below 5 fit units keep the committed value. The logged peak activation holds the CUDA-graph estimate (gpu_worker.py:748-750), so this split charges the estimate once; the estimate is profile_cudagraph_memory's (vllm/v1/worker/gpu_model_runner.py:6268@v0.33.0).
+  - cudagraph_capture_bytes_per_mixed_token_full_and_piecewise:
+      value: 16652778
+      units: bytes_per_token
+      method: measured
+      fitted: true
+      scope: {hardware: [b200], model: [deepseek-v4.1-flash], tp: [4]}
+      measures: {time: device, execution: eager, harness: "vLLM's start-up memory profile (gpu_worker.py determine_available_memory) on InferenceX fit-role units"}
+      fit_range:
+        - {dim: tokens, low: 64.0, high: 1024.0}
+      ci95: [16621428, 17448305]
+      sources:
+        - {kind: discussion, cite: "InferenceX server logs of fit-role units, derived figures vendored in validator/testdata/anchors/memory_startup_fit_units.json", role: primary}
+        - {kind: discussion, cite: "vLLM v0.33.0 vllm/v1/worker/gpu_worker.py:720-756 (determine_available_memory: the budget, and peak activation holding the CUDA-graph estimate)", role: supporting}
+      rationale: >
+        Capture-estimate bytes per rank per token of the capture ceiling, 15.881 MiB. 6 fit units of deepseek-v4.1-flash on b200 (runs 35012527430, 35480787586); estimate residuals -0.02 to +0.02 GiB. The two ceilings move together in these runs, so the decode slope is not identified and is 0; the mixed slope carries both families. A single-model entry, a recorded exception to the single-model ratchet: the term is deepseek-v4.1-flash's own because of its DSpark drafter and its Engram path (tables offloaded to pinned host memory, 23.6 GiB per rank host-side in these logs), which only this model runs; the logs do not size their device-side share, so the 5-8 GiB above the other models is not attributed further. The general form is inference-sim/blis-substrate#294. Fitted by scripts/fit_memory_startup.py on fit-role units only (D7); groups below 5 fit units keep the committed value. The logged peak activation holds the CUDA-graph estimate (gpu_worker.py:748-750), so this split charges the estimate once; the estimate is profile_cudagraph_memory's (vllm/v1/worker/gpu_model_runner.py:6268@v0.33.0).
+  - cudagraph_capture_bytes_per_decode_token_full_and_piecewise:
+      value: 0
+      units: bytes_per_token
+      method: not_charged
+      fitted: false
+      scope: {hardware: [b200], model: [deepseek-v4.1-flash], tp: [4]}
+      sources:
+        - {kind: discussion, cite: "InferenceX server logs of fit-role units, derived figures vendored in validator/testdata/anchors/memory_startup_fit_units.json", role: primary}
+      rationale: >
+        Not charged apart: in these runs the uniform-decode FULL ceiling moves with the capture ceiling, so the decode family's bytes are not separable from the mixed slope, which carries both. 6 fit units of deepseek-v4.1-flash on b200 (runs 35012527430, 35480787586); estimate residuals -0.02 to +0.02 GiB. The two ceilings move together in these runs, so the decode slope is not identified and is 0; the mixed slope carries both families. A single-model entry, a recorded exception to the single-model ratchet: the term is deepseek-v4.1-flash's own because of its DSpark drafter and its Engram path (tables offloaded to pinned host memory, 23.6 GiB per rank host-side in these logs), which only this model runs; the logs do not size their device-side share, so the 5-8 GiB above the other models is not attributed further. The general form is inference-sim/blis-substrate#294. Fitted by scripts/fit_memory_startup.py on fit-role units only (D7); groups below 5 fit units keep the committed value. The logged peak activation holds the CUDA-graph estimate (gpu_worker.py:748-750), so this split charges the estimate once; the estimate is profile_cudagraph_memory's (vllm/v1/worker/gpu_model_runner.py:6268@v0.33.0).
+  - cudagraph_capture_floor_bytes_full_and_piecewise:
+      value: 788477234
+      units: bytes_per_rank
+      method: measured
+      fitted: true
+      scope: {hardware: [gb200-nvl72], model: [deepseek-v4.1-flash], tp: [4]}
+      measures: {time: device, execution: eager, harness: "vLLM's start-up memory profile (gpu_worker.py determine_available_memory) on InferenceX fit-role units"}
+      fit_range:
+        - {dim: tokens, low: 16.0, high: 512.0}
+      ci95: [700894232, 862572599]
+      sources:
+        - {kind: discussion, cite: "InferenceX server logs of fit-role units, derived figures vendored in validator/testdata/anchors/memory_startup_fit_units.json", role: primary}
+        - {kind: discussion, cite: "vLLM v0.33.0 vllm/v1/worker/gpu_worker.py:720-756 (determine_available_memory: the budget, and peak activation holding the CUDA-graph estimate)", role: supporting}
+      rationale: >
+        The floor of the FULL_AND_PIECEWISE capture estimate vLLM subtracts, 0.734 GiB per rank. 6 fit units of deepseek-v4.1-flash on gb200 (runs 34504963973, 34835471317); estimate residuals -0.06 to +0.05 GiB. The two ceilings move together in these runs, so the decode slope is not identified and is 0; the mixed slope carries both families. A single-model entry, a recorded exception to the single-model ratchet: the term is deepseek-v4.1-flash's own because of its DSpark drafter and its Engram path (tables offloaded to pinned host memory, 23.6 GiB per rank host-side in these logs), which only this model runs; the logs do not size their device-side share, so the 5-8 GiB above the other models is not attributed further. The general form is inference-sim/blis-substrate#294. Fitted by scripts/fit_memory_startup.py on fit-role units only (D7); groups below 5 fit units keep the committed value. The logged peak activation holds the CUDA-graph estimate (gpu_worker.py:748-750), so this split charges the estimate once; the estimate is profile_cudagraph_memory's (vllm/v1/worker/gpu_model_runner.py:6268@v0.33.0).
+  - cudagraph_capture_bytes_per_mixed_token_full_and_piecewise:
+      value: 16827777
+      units: bytes_per_token
+      method: measured
+      fitted: true
+      scope: {hardware: [gb200-nvl72], model: [deepseek-v4.1-flash], tp: [4]}
+      measures: {time: device, execution: eager, harness: "vLLM's start-up memory profile (gpu_worker.py determine_available_memory) on InferenceX fit-role units"}
+      fit_range:
+        - {dim: tokens, low: 16.0, high: 512.0}
+      ci95: [16665368, 17841701]
+      sources:
+        - {kind: discussion, cite: "InferenceX server logs of fit-role units, derived figures vendored in validator/testdata/anchors/memory_startup_fit_units.json", role: primary}
+        - {kind: discussion, cite: "vLLM v0.33.0 vllm/v1/worker/gpu_worker.py:720-756 (determine_available_memory: the budget, and peak activation holding the CUDA-graph estimate)", role: supporting}
+      rationale: >
+        Capture-estimate bytes per rank per token of the capture ceiling, 16.048 MiB. 6 fit units of deepseek-v4.1-flash on gb200 (runs 34504963973, 34835471317); estimate residuals -0.06 to +0.05 GiB. The two ceilings move together in these runs, so the decode slope is not identified and is 0; the mixed slope carries both families. A single-model entry, a recorded exception to the single-model ratchet: the term is deepseek-v4.1-flash's own because of its DSpark drafter and its Engram path (tables offloaded to pinned host memory, 23.6 GiB per rank host-side in these logs), which only this model runs; the logs do not size their device-side share, so the 5-8 GiB above the other models is not attributed further. The general form is inference-sim/blis-substrate#294. Fitted by scripts/fit_memory_startup.py on fit-role units only (D7); groups below 5 fit units keep the committed value. The logged peak activation holds the CUDA-graph estimate (gpu_worker.py:748-750), so this split charges the estimate once; the estimate is profile_cudagraph_memory's (vllm/v1/worker/gpu_model_runner.py:6268@v0.33.0).
+  - cudagraph_capture_bytes_per_decode_token_full_and_piecewise:
+      value: 0
+      units: bytes_per_token
+      method: not_charged
+      fitted: false
+      scope: {hardware: [gb200-nvl72], model: [deepseek-v4.1-flash], tp: [4]}
+      sources:
+        - {kind: discussion, cite: "InferenceX server logs of fit-role units, derived figures vendored in validator/testdata/anchors/memory_startup_fit_units.json", role: primary}
+      rationale: >
+        Not charged apart: in these runs the uniform-decode FULL ceiling moves with the capture ceiling, so the decode family's bytes are not separable from the mixed slope, which carries both. 6 fit units of deepseek-v4.1-flash on gb200 (runs 34504963973, 34835471317); estimate residuals -0.06 to +0.05 GiB. The two ceilings move together in these runs, so the decode slope is not identified and is 0; the mixed slope carries both families. A single-model entry, a recorded exception to the single-model ratchet: the term is deepseek-v4.1-flash's own because of its DSpark drafter and its Engram path (tables offloaded to pinned host memory, 23.6 GiB per rank host-side in these logs), which only this model runs; the logs do not size their device-side share, so the 5-8 GiB above the other models is not attributed further. The general form is inference-sim/blis-substrate#294. Fitted by scripts/fit_memory_startup.py on fit-role units only (D7); groups below 5 fit units keep the committed value. The logged peak activation holds the CUDA-graph estimate (gpu_worker.py:748-750), so this split charges the estimate once; the estimate is profile_cudagraph_memory's (vllm/v1/worker/gpu_model_runner.py:6268@v0.33.0).
+  - cudagraph_capture_floor_bytes_full_and_piecewise:
+      value: 226704035
+      units: bytes_per_rank
+      method: measured
+      fitted: true
+      scope: {hardware: [gb300], model: [deepseek-v4.1-flash], tp: [4]}
+      measures: {time: device, execution: eager, harness: "vLLM's start-up memory profile (gpu_worker.py determine_available_memory) on InferenceX fit-role units"}
+      fit_range:
+        - {dim: tokens, low: 64.0, high: 1024.0}
+      ci95: [148685944, 273996072]
+      sources:
+        - {kind: discussion, cite: "InferenceX server logs of fit-role units, derived figures vendored in validator/testdata/anchors/memory_startup_fit_units.json", role: primary}
+        - {kind: discussion, cite: "vLLM v0.33.0 vllm/v1/worker/gpu_worker.py:720-756 (determine_available_memory: the budget, and peak activation holding the CUDA-graph estimate)", role: supporting}
+      rationale: >
+        The floor of the FULL_AND_PIECEWISE capture estimate vLLM subtracts, 0.211 GiB per rank. 15 fit units of deepseek-v4.1-flash on gb300 (runs 35012581501, 35073891536, 35529688883); estimate residuals -0.13 to +0.16 GiB. The two ceilings move together in these runs, so the decode slope is not identified and is 0; the mixed slope carries both families. A single-model entry, a recorded exception to the single-model ratchet: the term is deepseek-v4.1-flash's own because of its DSpark drafter and its Engram path (tables offloaded to pinned host memory, 23.6 GiB per rank host-side in these logs), which only this model runs; the logs do not size their device-side share, so the 5-8 GiB above the other models is not attributed further. The general form is inference-sim/blis-substrate#294. Fitted by scripts/fit_memory_startup.py on fit-role units only (D7); groups below 5 fit units keep the committed value. The logged peak activation holds the CUDA-graph estimate (gpu_worker.py:748-750), so this split charges the estimate once; the estimate is profile_cudagraph_memory's (vllm/v1/worker/gpu_model_runner.py:6268@v0.33.0).
+  - cudagraph_capture_bytes_per_mixed_token_full_and_piecewise:
+      value: 16584107
+      units: bytes_per_token
+      method: measured
+      fitted: true
+      scope: {hardware: [gb300], model: [deepseek-v4.1-flash], tp: [4]}
+      measures: {time: device, execution: eager, harness: "vLLM's start-up memory profile (gpu_worker.py determine_available_memory) on InferenceX fit-role units"}
+      fit_range:
+        - {dim: tokens, low: 64.0, high: 1024.0}
+      ci95: [16308777, 17553475]
+      sources:
+        - {kind: discussion, cite: "InferenceX server logs of fit-role units, derived figures vendored in validator/testdata/anchors/memory_startup_fit_units.json", role: primary}
+        - {kind: discussion, cite: "vLLM v0.33.0 vllm/v1/worker/gpu_worker.py:720-756 (determine_available_memory: the budget, and peak activation holding the CUDA-graph estimate)", role: supporting}
+      rationale: >
+        Capture-estimate bytes per rank per token of the capture ceiling, 15.816 MiB. 15 fit units of deepseek-v4.1-flash on gb300 (runs 35012581501, 35073891536, 35529688883); estimate residuals -0.13 to +0.16 GiB. The two ceilings move together in these runs, so the decode slope is not identified and is 0; the mixed slope carries both families. A single-model entry, a recorded exception to the single-model ratchet: the term is deepseek-v4.1-flash's own because of its DSpark drafter and its Engram path (tables offloaded to pinned host memory, 23.6 GiB per rank host-side in these logs), which only this model runs; the logs do not size their device-side share, so the 5-8 GiB above the other models is not attributed further. The general form is inference-sim/blis-substrate#294. Fitted by scripts/fit_memory_startup.py on fit-role units only (D7); groups below 5 fit units keep the committed value. The logged peak activation holds the CUDA-graph estimate (gpu_worker.py:748-750), so this split charges the estimate once; the estimate is profile_cudagraph_memory's (vllm/v1/worker/gpu_model_runner.py:6268@v0.33.0).
+  - cudagraph_capture_bytes_per_decode_token_full_and_piecewise:
+      value: 0
+      units: bytes_per_token
+      method: not_charged
+      fitted: false
+      scope: {hardware: [gb300], model: [deepseek-v4.1-flash], tp: [4]}
+      sources:
+        - {kind: discussion, cite: "InferenceX server logs of fit-role units, derived figures vendored in validator/testdata/anchors/memory_startup_fit_units.json", role: primary}
+      rationale: >
+        Not charged apart: in these runs the uniform-decode FULL ceiling moves with the capture ceiling, so the decode family's bytes are not separable from the mixed slope, which carries both. 15 fit units of deepseek-v4.1-flash on gb300 (runs 35012581501, 35073891536, 35529688883); estimate residuals -0.13 to +0.16 GiB. The two ceilings move together in these runs, so the decode slope is not identified and is 0; the mixed slope carries both families. A single-model entry, a recorded exception to the single-model ratchet: the term is deepseek-v4.1-flash's own because of its DSpark drafter and its Engram path (tables offloaded to pinned host memory, 23.6 GiB per rank host-side in these logs), which only this model runs; the logs do not size their device-side share, so the 5-8 GiB above the other models is not attributed further. The general form is inference-sim/blis-substrate#294. Fitted by scripts/fit_memory_startup.py on fit-role units only (D7); groups below 5 fit units keep the committed value. The logged peak activation holds the CUDA-graph estimate (gpu_worker.py:748-750), so this split charges the estimate once; the estimate is profile_cudagraph_memory's (vllm/v1/worker/gpu_model_runner.py:6268@v0.33.0).
+  - cudagraph_capture_floor_bytes_full_and_piecewise:
+      value: 225158394
+      units: bytes_per_rank
+      method: measured
+      fitted: true
+      scope: {hardware: [b300], model: [kimi-k2.5-nvfp4], tp: [4]}
+      measures: {time: device, execution: eager, harness: "vLLM's start-up memory profile (gpu_worker.py determine_available_memory) on InferenceX fit-role units"}
+      fit_range:
+        - {dim: tokens, low: 2.0, high: 512.0}
+        - {dim: requests, low: 1.0, high: 256.0}
+      ci95: [161197190, 261343797]
+      sources:
+        - {kind: discussion, cite: "InferenceX server logs of fit-role units, derived figures vendored in validator/testdata/anchors/memory_startup_fit_units.json", role: primary}
+        - {kind: discussion, cite: "vLLM v0.33.0 vllm/v1/worker/gpu_worker.py:720-756 (determine_available_memory: the budget, and peak activation holding the CUDA-graph estimate)", role: supporting}
+      rationale: >
+        The floor of the FULL_AND_PIECEWISE capture estimate vLLM subtracts, 0.210 GiB per rank. 7 fit units of kimi-k2.5-nvfp4 on b300 (runs 31148296509); estimate residuals -0.05 to +0.09 GiB. The two ceilings move together in these runs, so the decode slope is not identified and is 0; the mixed slope carries both families. A single-model entry, a recorded exception to the single-model ratchet: the term is kimi-k2.5-nvfp4's own because of its latent attention, whose activation width is the 7,168 hidden size (MLA), and its routed-expert workspace at 384 experts; no drafter. The general form is inference-sim/blis-substrate#294. Fitted by scripts/fit_memory_startup.py on fit-role units only (D7); groups below 5 fit units keep the committed value. The logged peak activation holds the CUDA-graph estimate (gpu_worker.py:748-750), so this split charges the estimate once; the estimate is profile_cudagraph_memory's (vllm/v1/worker/gpu_model_runner.py:6268@v0.33.0).
+  - cudagraph_capture_bytes_per_mixed_token_full_and_piecewise:
+      value: 2434516
+      units: bytes_per_token
+      method: measured
+      fitted: true
+      scope: {hardware: [b300], model: [kimi-k2.5-nvfp4], tp: [4]}
+      measures: {time: device, execution: eager, harness: "vLLM's start-up memory profile (gpu_worker.py determine_available_memory) on InferenceX fit-role units"}
+      fit_range:
+        - {dim: tokens, low: 2.0, high: 512.0}
+        - {dim: requests, low: 1.0, high: 256.0}
+      ci95: [2358660, 8121893]
+      sources:
+        - {kind: discussion, cite: "InferenceX server logs of fit-role units, derived figures vendored in validator/testdata/anchors/memory_startup_fit_units.json", role: primary}
+        - {kind: discussion, cite: "vLLM v0.33.0 vllm/v1/worker/gpu_worker.py:720-756 (determine_available_memory: the budget, and peak activation holding the CUDA-graph estimate)", role: supporting}
+      rationale: >
+        Capture-estimate bytes per rank per token of the capture ceiling, 2.322 MiB. 7 fit units of kimi-k2.5-nvfp4 on b300 (runs 31148296509); estimate residuals -0.05 to +0.09 GiB. The two ceilings move together in these runs, so the decode slope is not identified and is 0; the mixed slope carries both families. A single-model entry, a recorded exception to the single-model ratchet: the term is kimi-k2.5-nvfp4's own because of its latent attention, whose activation width is the 7,168 hidden size (MLA), and its routed-expert workspace at 384 experts; no drafter. The general form is inference-sim/blis-substrate#294. Fitted by scripts/fit_memory_startup.py on fit-role units only (D7); groups below 5 fit units keep the committed value. The logged peak activation holds the CUDA-graph estimate (gpu_worker.py:748-750), so this split charges the estimate once; the estimate is profile_cudagraph_memory's (vllm/v1/worker/gpu_model_runner.py:6268@v0.33.0).
+  - cudagraph_capture_bytes_per_decode_token_full_and_piecewise:
+      value: 0
+      units: bytes_per_token
+      method: not_charged
+      fitted: false
+      scope: {hardware: [b300], model: [kimi-k2.5-nvfp4], tp: [4]}
+      sources:
+        - {kind: discussion, cite: "InferenceX server logs of fit-role units, derived figures vendored in validator/testdata/anchors/memory_startup_fit_units.json", role: primary}
+      rationale: >
+        Not charged apart: in these runs the uniform-decode FULL ceiling moves with the capture ceiling, so the decode family's bytes are not separable from the mixed slope, which carries both. 7 fit units of kimi-k2.5-nvfp4 on b300 (runs 31148296509); estimate residuals -0.05 to +0.09 GiB. The two ceilings move together in these runs, so the decode slope is not identified and is 0; the mixed slope carries both families. A single-model entry, a recorded exception to the single-model ratchet: the term is kimi-k2.5-nvfp4's own because of its latent attention, whose activation width is the 7,168 hidden size (MLA), and its routed-expert workspace at 384 experts; no drafter. The general form is inference-sim/blis-substrate#294. Fitted by scripts/fit_memory_startup.py on fit-role units only (D7); groups below 5 fit units keep the committed value. The logged peak activation holds the CUDA-graph estimate (gpu_worker.py:748-750), so this split charges the estimate once; the estimate is profile_cudagraph_memory's (vllm/v1/worker/gpu_model_runner.py:6268@v0.33.0).
+  - cudagraph_capture_floor_bytes_full_and_piecewise:
+      value: 250347036
+      units: bytes_per_rank
+      method: measured
+      fitted: true
+      scope: {hardware: [h100], model: [minimax-m3-mxfp8], tp: [8]}
+      measures: {time: device, execution: eager, harness: "vLLM's start-up memory profile (gpu_worker.py determine_available_memory) on InferenceX fit-role units"}
+      fit_range:
+        - {dim: tokens, low: 8.0, high: 104.0}
+        - {dim: requests, low: 2.0, high: 26.0}
+      ci95: [126209255, 484397616]
+      sources:
+        - {kind: discussion, cite: "InferenceX server logs of fit-role units, derived figures vendored in validator/testdata/anchors/memory_startup_fit_units.json", role: primary}
+        - {kind: discussion, cite: "vLLM v0.33.0 vllm/v1/worker/gpu_worker.py:720-756 (determine_available_memory: the budget, and peak activation holding the CUDA-graph estimate)", role: supporting}
+      rationale: >
+        The floor of the FULL_AND_PIECEWISE capture estimate vLLM subtracts, 0.233 GiB per rank. 9 fit units of minimax-m3-mxfp8 on h100 (runs 33221188566, 36273460789); estimate residuals -0.11 to +0.25 GiB. The two ceilings move together in these runs, so the decode slope is not identified and is 0; the mixed slope carries both families. A single-model entry, a recorded exception to the single-model ratchet: the term is minimax-m3-mxfp8's own because of its EAGLE3 drafter (method eagle3 in every fitted run), whose forward and graphs share the profile, and its block-sparse attention. The general form is inference-sim/blis-substrate#294. Fitted by scripts/fit_memory_startup.py on fit-role units only (D7); groups below 5 fit units keep the committed value. The logged peak activation holds the CUDA-graph estimate (gpu_worker.py:748-750), so this split charges the estimate once; the estimate is profile_cudagraph_memory's (vllm/v1/worker/gpu_model_runner.py:6268@v0.33.0).
+  - cudagraph_capture_bytes_per_mixed_token_full_and_piecewise:
+      value: 7733006
+      units: bytes_per_token
+      method: measured
+      fitted: true
+      scope: {hardware: [h100], model: [minimax-m3-mxfp8], tp: [8]}
+      measures: {time: device, execution: eager, harness: "vLLM's start-up memory profile (gpu_worker.py determine_available_memory) on InferenceX fit-role units"}
+      fit_range:
+        - {dim: tokens, low: 8.0, high: 104.0}
+        - {dim: requests, low: 2.0, high: 26.0}
+      ci95: [4563403, 10747834]
+      sources:
+        - {kind: discussion, cite: "InferenceX server logs of fit-role units, derived figures vendored in validator/testdata/anchors/memory_startup_fit_units.json", role: primary}
+        - {kind: discussion, cite: "vLLM v0.33.0 vllm/v1/worker/gpu_worker.py:720-756 (determine_available_memory: the budget, and peak activation holding the CUDA-graph estimate)", role: supporting}
+      rationale: >
+        Capture-estimate bytes per rank per token of the capture ceiling, 7.375 MiB. 9 fit units of minimax-m3-mxfp8 on h100 (runs 33221188566, 36273460789); estimate residuals -0.11 to +0.25 GiB. The two ceilings move together in these runs, so the decode slope is not identified and is 0; the mixed slope carries both families. A single-model entry, a recorded exception to the single-model ratchet: the term is minimax-m3-mxfp8's own because of its EAGLE3 drafter (method eagle3 in every fitted run), whose forward and graphs share the profile, and its block-sparse attention. The general form is inference-sim/blis-substrate#294. Fitted by scripts/fit_memory_startup.py on fit-role units only (D7); groups below 5 fit units keep the committed value. The logged peak activation holds the CUDA-graph estimate (gpu_worker.py:748-750), so this split charges the estimate once; the estimate is profile_cudagraph_memory's (vllm/v1/worker/gpu_model_runner.py:6268@v0.33.0).
+  - cudagraph_capture_bytes_per_decode_token_full_and_piecewise:
+      value: 0
+      units: bytes_per_token
+      method: not_charged
+      fitted: false
+      scope: {hardware: [h100], model: [minimax-m3-mxfp8], tp: [8]}
+      sources:
+        - {kind: discussion, cite: "InferenceX server logs of fit-role units, derived figures vendored in validator/testdata/anchors/memory_startup_fit_units.json", role: primary}
+      rationale: >
+        Not charged apart: in these runs the uniform-decode FULL ceiling moves with the capture ceiling, so the decode family's bytes are not separable from the mixed slope, which carries both. 9 fit units of minimax-m3-mxfp8 on h100 (runs 33221188566, 36273460789); estimate residuals -0.11 to +0.25 GiB. The two ceilings move together in these runs, so the decode slope is not identified and is 0; the mixed slope carries both families. A single-model entry, a recorded exception to the single-model ratchet: the term is minimax-m3-mxfp8's own because of its EAGLE3 drafter (method eagle3 in every fitted run), whose forward and graphs share the profile, and its block-sparse attention. The general form is inference-sim/blis-substrate#294. Fitted by scripts/fit_memory_startup.py on fit-role units only (D7); groups below 5 fit units keep the committed value. The logged peak activation holds the CUDA-graph estimate (gpu_worker.py:748-750), so this split charges the estimate once; the estimate is profile_cudagraph_memory's (vllm/v1/worker/gpu_model_runner.py:6268@v0.33.0).
+  - cudagraph_capture_floor_bytes_full_and_piecewise:
+      value: 194827628
+      units: bytes_per_rank
+      method: measured
+      fitted: true
+      scope: {hardware: [h200], model: [minimax-m3-mxfp8], tp: [8]}
+      measures: {time: device, execution: eager, harness: "vLLM's start-up memory profile (gpu_worker.py determine_available_memory) on InferenceX fit-role units"}
+      fit_range:
+        - {dim: tokens, low: 16.0, high: 96.0}
+        - {dim: requests, low: 4.0, high: 24.0}
+      ci95: [145551669, 386547057]
+      sources:
+        - {kind: discussion, cite: "InferenceX server logs of fit-role units, derived figures vendored in validator/testdata/anchors/memory_startup_fit_units.json", role: primary}
+        - {kind: discussion, cite: "vLLM v0.33.0 vllm/v1/worker/gpu_worker.py:720-756 (determine_available_memory: the budget, and peak activation holding the CUDA-graph estimate)", role: supporting}
+      rationale: >
+        The floor of the FULL_AND_PIECEWISE capture estimate vLLM subtracts, 0.181 GiB per rank. 6 fit units of minimax-m3-mxfp8 on h200 (runs 34174440759, 34896669482); estimate residuals -0.04 to +0.06 GiB. The two ceilings move together in these runs, so the decode slope is not identified and is 0; the mixed slope carries both families. A single-model entry, a recorded exception to the single-model ratchet: the term is minimax-m3-mxfp8's own because of its EAGLE3 drafter (method eagle3 in every fitted run), whose forward and graphs share the profile, and its block-sparse attention. The general form is inference-sim/blis-substrate#294. Fitted by scripts/fit_memory_startup.py on fit-role units only (D7); groups below 5 fit units keep the committed value. The logged peak activation holds the CUDA-graph estimate (gpu_worker.py:748-750), so this split charges the estimate once; the estimate is profile_cudagraph_memory's (vllm/v1/worker/gpu_model_runner.py:6268@v0.33.0).
+  - cudagraph_capture_bytes_per_mixed_token_full_and_piecewise:
+      value: 7019940
+      units: bytes_per_token
+      method: measured
+      fitted: true
+      scope: {hardware: [h200], model: [minimax-m3-mxfp8], tp: [8]}
+      measures: {time: device, execution: eager, harness: "vLLM's start-up memory profile (gpu_worker.py determine_available_memory) on InferenceX fit-role units"}
+      fit_range:
+        - {dim: tokens, low: 16.0, high: 96.0}
+        - {dim: requests, low: 4.0, high: 24.0}
+      ci95: [4697620, 8575022]
+      sources:
+        - {kind: discussion, cite: "InferenceX server logs of fit-role units, derived figures vendored in validator/testdata/anchors/memory_startup_fit_units.json", role: primary}
+        - {kind: discussion, cite: "vLLM v0.33.0 vllm/v1/worker/gpu_worker.py:720-756 (determine_available_memory: the budget, and peak activation holding the CUDA-graph estimate)", role: supporting}
+      rationale: >
+        Capture-estimate bytes per rank per token of the capture ceiling, 6.695 MiB. 6 fit units of minimax-m3-mxfp8 on h200 (runs 34174440759, 34896669482); estimate residuals -0.04 to +0.06 GiB. The two ceilings move together in these runs, so the decode slope is not identified and is 0; the mixed slope carries both families. A single-model entry, a recorded exception to the single-model ratchet: the term is minimax-m3-mxfp8's own because of its EAGLE3 drafter (method eagle3 in every fitted run), whose forward and graphs share the profile, and its block-sparse attention. The general form is inference-sim/blis-substrate#294. Fitted by scripts/fit_memory_startup.py on fit-role units only (D7); groups below 5 fit units keep the committed value. The logged peak activation holds the CUDA-graph estimate (gpu_worker.py:748-750), so this split charges the estimate once; the estimate is profile_cudagraph_memory's (vllm/v1/worker/gpu_model_runner.py:6268@v0.33.0).
+  - cudagraph_capture_bytes_per_decode_token_full_and_piecewise:
+      value: 0
+      units: bytes_per_token
+      method: not_charged
+      fitted: false
+      scope: {hardware: [h200], model: [minimax-m3-mxfp8], tp: [8]}
+      sources:
+        - {kind: discussion, cite: "InferenceX server logs of fit-role units, derived figures vendored in validator/testdata/anchors/memory_startup_fit_units.json", role: primary}
+      rationale: >
+        Not charged apart: in these runs the uniform-decode FULL ceiling moves with the capture ceiling, so the decode family's bytes are not separable from the mixed slope, which carries both. 6 fit units of minimax-m3-mxfp8 on h200 (runs 34174440759, 34896669482); estimate residuals -0.04 to +0.06 GiB. The two ceilings move together in these runs, so the decode slope is not identified and is 0; the mixed slope carries both families. A single-model entry, a recorded exception to the single-model ratchet: the term is minimax-m3-mxfp8's own because of its EAGLE3 drafter (method eagle3 in every fitted run), whose forward and graphs share the profile, and its block-sparse attention. The general form is inference-sim/blis-substrate#294. Fitted by scripts/fit_memory_startup.py on fit-role units only (D7); groups below 5 fit units keep the committed value. The logged peak activation holds the CUDA-graph estimate (gpu_worker.py:748-750), so this split charges the estimate once; the estimate is profile_cudagraph_memory's (vllm/v1/worker/gpu_model_runner.py:6268@v0.33.0).
+  - activation_buffer_count_moe_4rank:
+      value: 22.583
+      units: dimensionless
+      method: measured
+      fitted: true
+      scope: {hardware: [b300], model: [kimi-k2.5-nvfp4], tp: [4]}
+      measures: {time: device, execution: eager, harness: "vLLM's start-up memory profile (gpu_worker.py determine_available_memory) on InferenceX fit-role units"}
+      fit_range:
+        - {dim: tokens, low: 8192.0, high: 8192.0}
+      ci95: [22.491, 23.406]
+      sources:
+        - {kind: discussion, cite: "InferenceX server logs of fit-role units, derived figures vendored in validator/testdata/anchors/memory_startup_fit_units.json", role: primary}
+        - {kind: discussion, cite: "vLLM v0.33.0 vllm/v1/worker/gpu_worker.py:720-756 (determine_available_memory: the budget, and peak activation holding the CUDA-graph estimate)", role: supporting}
+      rationale: >
+        The activation multiple of kimi-k2.5-nvfp4 on b300 at 4-rank tensor parallelism: the transient (logged peak activation minus the logged CUDA-graph estimate) over max_num_batched_tokens x 7168 x 2, median of 7 fit units. A single-model entry, a recorded exception to the single-model ratchet: the term is kimi-k2.5-nvfp4's own because of its latent attention, whose activation width is the 7,168 hidden size (MLA), and its routed-expert workspace at 384 experts; no drafter. The general form is inference-sim/blis-substrate#294. Fitted by scripts/fit_memory_startup.py on fit-role units only (D7); groups below 5 fit units keep the committed value. The logged peak activation holds the CUDA-graph estimate (gpu_worker.py:748-750), so this split charges the estimate once; the estimate is profile_cudagraph_memory's (vllm/v1/worker/gpu_model_runner.py:6268@v0.33.0).
+  - activation_buffer_count_moe_8rank:
+      value: 9.76
+      units: dimensionless
+      method: measured
+      fitted: true
+      scope: {hardware: [h100], model: [minimax-m3-mxfp8], tp: [8]}
+      measures: {time: device, execution: eager, harness: "vLLM's start-up memory profile (gpu_worker.py determine_available_memory) on InferenceX fit-role units"}
+      fit_range:
+        - {dim: tokens, low: 8192.0, high: 8192.0}
+      ci95: [9.68, 9.84]
+      sources:
+        - {kind: discussion, cite: "InferenceX server logs of fit-role units, derived figures vendored in validator/testdata/anchors/memory_startup_fit_units.json", role: primary}
+        - {kind: discussion, cite: "vLLM v0.33.0 vllm/v1/worker/gpu_worker.py:720-756 (determine_available_memory: the budget, and peak activation holding the CUDA-graph estimate)", role: supporting}
+      rationale: >
+        The activation multiple of minimax-m3-mxfp8 on h100 at 8-rank tensor parallelism: the transient (logged peak activation minus the logged CUDA-graph estimate) over max_num_batched_tokens x 8192 x 2, median of 9 fit units. A single-model entry, a recorded exception to the single-model ratchet: the term is minimax-m3-mxfp8's own because of its EAGLE3 drafter (method eagle3 in every fitted run), whose forward and graphs share the profile, and its block-sparse attention. The general form is inference-sim/blis-substrate#294. Fitted by scripts/fit_memory_startup.py on fit-role units only (D7); groups below 5 fit units keep the committed value. The logged peak activation holds the CUDA-graph estimate (gpu_worker.py:748-750), so this split charges the estimate once; the estimate is profile_cudagraph_memory's (vllm/v1/worker/gpu_model_runner.py:6268@v0.33.0).
+  - activation_buffer_count_moe_8rank:
+      value: 9.76
+      units: dimensionless
+      method: measured
+      fitted: true
+      scope: {hardware: [h200], model: [minimax-m3-mxfp8], tp: [8]}
+      measures: {time: device, execution: eager, harness: "vLLM's start-up memory profile (gpu_worker.py determine_available_memory) on InferenceX fit-role units"}
+      fit_range:
+        - {dim: tokens, low: 8192.0, high: 8192.0}
+      ci95: [9.68, 9.84]
+      sources:
+        - {kind: discussion, cite: "InferenceX server logs of fit-role units, derived figures vendored in validator/testdata/anchors/memory_startup_fit_units.json", role: primary}
+        - {kind: discussion, cite: "vLLM v0.33.0 vllm/v1/worker/gpu_worker.py:720-756 (determine_available_memory: the budget, and peak activation holding the CUDA-graph estimate)", role: supporting}
+      rationale: >
+        The activation multiple of minimax-m3-mxfp8 on h200 at 8-rank tensor parallelism: the transient (logged peak activation minus the logged CUDA-graph estimate) over max_num_batched_tokens x 8192 x 2, median of 6 fit units. A single-model entry, a recorded exception to the single-model ratchet: the term is minimax-m3-mxfp8's own because of its EAGLE3 drafter (method eagle3 in every fitted run), whose forward and graphs share the profile, and its block-sparse attention. The general form is inference-sim/blis-substrate#294. Fitted by scripts/fit_memory_startup.py on fit-role units only (D7); groups below 5 fit units keep the committed value. The logged peak activation holds the CUDA-graph estimate (gpu_worker.py:748-750), so this split charges the estimate once; the estimate is profile_cudagraph_memory's (vllm/v1/worker/gpu_model_runner.py:6268@v0.33.0).
+  - nontorch_in_budget_bytes_4rank:
+      value: 9116068086
+      units: bytes_per_rank
+      method: measured
+      fitted: true
+      scope: {hardware: [b200], model: [deepseek-v4.1-flash], tp: [4]}
+      measures: {time: device, execution: eager, harness: "vLLM's start-up memory profile (gpu_worker.py determine_available_memory) on InferenceX fit-role units"}
+      fit_range:
+        - {dim: tokens, low: 16384.0, high: 16384.0}
+      ci95: [9110699377, 9121436796]
+      sources:
+        - {kind: discussion, cite: "InferenceX server logs of fit-role units, derived figures vendored in validator/testdata/anchors/memory_startup_fit_units.json", role: primary}
+        - {kind: discussion, cite: "vLLM v0.33.0 vllm/v1/worker/gpu_worker.py:720-756 (determine_available_memory: the budget, and peak activation holding the CUDA-graph estimate)", role: supporting}
+      rationale: >
+        vLLM's non-torch memory growth inside the KV budget on deepseek-v4.1-flash on b200 at 4-rank tensor parallelism, 8.490 GiB per rank: consumed memory minus Model loading took, median of 6 fit units. It is part of non_kv_cache_memory (gpu_worker.py:720-756) and is not the communicator or workspace reservation the kernel holds before the snapshot. A single-model entry, a recorded exception to the single-model ratchet: the term is deepseek-v4.1-flash's own because of its DSpark drafter and its Engram path (tables offloaded to pinned host memory, 23.6 GiB per rank host-side in these logs), which only this model runs; the logs do not size their device-side share, so the 5-8 GiB above the other models is not attributed further. The general form is inference-sim/blis-substrate#294. Fitted by scripts/fit_memory_startup.py on fit-role units only (D7); groups below 5 fit units keep the committed value. The logged peak activation holds the CUDA-graph estimate (gpu_worker.py:748-750), so this split charges the estimate once; the estimate is profile_cudagraph_memory's (vllm/v1/worker/gpu_model_runner.py:6268@v0.33.0).
+  - nontorch_in_budget_bytes_4rank:
+      value: 8965744230
+      units: bytes_per_rank
+      method: measured
+      fitted: true
+      scope: {hardware: [gb200-nvl72], model: [deepseek-v4.1-flash], tp: [4]}
+      measures: {time: device, execution: eager, harness: "vLLM's start-up memory profile (gpu_worker.py determine_available_memory) on InferenceX fit-role units"}
+      fit_range:
+        - {dim: tokens, low: 16384.0, high: 16384.0}
+      ci95: [8960375521, 8997956486]
+      sources:
+        - {kind: discussion, cite: "InferenceX server logs of fit-role units, derived figures vendored in validator/testdata/anchors/memory_startup_fit_units.json", role: primary}
+        - {kind: discussion, cite: "vLLM v0.33.0 vllm/v1/worker/gpu_worker.py:720-756 (determine_available_memory: the budget, and peak activation holding the CUDA-graph estimate)", role: supporting}
+      rationale: >
+        vLLM's non-torch memory growth inside the KV budget on deepseek-v4.1-flash on gb200 at 4-rank tensor parallelism, 8.350 GiB per rank: consumed memory minus Model loading took, median of 6 fit units. It is part of non_kv_cache_memory (gpu_worker.py:720-756) and is not the communicator or workspace reservation the kernel holds before the snapshot. A single-model entry, a recorded exception to the single-model ratchet: the term is deepseek-v4.1-flash's own because of its DSpark drafter and its Engram path (tables offloaded to pinned host memory, 23.6 GiB per rank host-side in these logs), which only this model runs; the logs do not size their device-side share, so the 5-8 GiB above the other models is not attributed further. The general form is inference-sim/blis-substrate#294. Fitted by scripts/fit_memory_startup.py on fit-role units only (D7); groups below 5 fit units keep the committed value. The logged peak activation holds the CUDA-graph estimate (gpu_worker.py:748-750), so this split charges the estimate once; the estimate is profile_cudagraph_memory's (vllm/v1/worker/gpu_model_runner.py:6268@v0.33.0).
+  - nontorch_in_budget_bytes_4rank:
+      value: 9524089979
+      units: bytes_per_rank
+      method: measured
+      fitted: true
+      scope: {hardware: [gb300], model: [deepseek-v4.1-flash], tp: [4]}
+      measures: {time: device, execution: eager, harness: "vLLM's start-up memory profile (gpu_worker.py determine_available_memory) on InferenceX fit-role units"}
+      fit_range:
+        - {dim: tokens, low: 16384.0, high: 16384.0}
+      ci95: [9502615142, 9529458689]
+      sources:
+        - {kind: discussion, cite: "InferenceX server logs of fit-role units, derived figures vendored in validator/testdata/anchors/memory_startup_fit_units.json", role: primary}
+        - {kind: discussion, cite: "vLLM v0.33.0 vllm/v1/worker/gpu_worker.py:720-756 (determine_available_memory: the budget, and peak activation holding the CUDA-graph estimate)", role: supporting}
+      rationale: >
+        vLLM's non-torch memory growth inside the KV budget on deepseek-v4.1-flash on gb300 at 4-rank tensor parallelism, 8.870 GiB per rank: consumed memory minus Model loading took, median of 15 fit units. It is part of non_kv_cache_memory (gpu_worker.py:720-756) and is not the communicator or workspace reservation the kernel holds before the snapshot. A single-model entry, a recorded exception to the single-model ratchet: the term is deepseek-v4.1-flash's own because of its DSpark drafter and its Engram path (tables offloaded to pinned host memory, 23.6 GiB per rank host-side in these logs), which only this model runs; the logs do not size their device-side share, so the 5-8 GiB above the other models is not attributed further. The general form is inference-sim/blis-substrate#294. Fitted by scripts/fit_memory_startup.py on fit-role units only (D7); groups below 5 fit units keep the committed value. The logged peak activation holds the CUDA-graph estimate (gpu_worker.py:748-750), so this split charges the estimate once; the estimate is profile_cudagraph_memory's (vllm/v1/worker/gpu_model_runner.py:6268@v0.33.0).
+  - nontorch_in_budget_bytes_4rank:
+      value: 1020054733
+      units: bytes_per_rank
+      method: measured
+      fitted: true
+      scope: {hardware: [b300], model: [kimi-k2.5-nvfp4], tp: [4]}
+      measures: {time: device, execution: eager, harness: "vLLM's start-up memory profile (gpu_worker.py determine_available_memory) on InferenceX fit-role units"}
+      fit_range:
+        - {dim: tokens, low: 8192.0, high: 8192.0}
+      ci95: [1014686024, 1138166334]
+      sources:
+        - {kind: discussion, cite: "InferenceX server logs of fit-role units, derived figures vendored in validator/testdata/anchors/memory_startup_fit_units.json", role: primary}
+        - {kind: discussion, cite: "vLLM v0.33.0 vllm/v1/worker/gpu_worker.py:720-756 (determine_available_memory: the budget, and peak activation holding the CUDA-graph estimate)", role: supporting}
+      rationale: >
+        vLLM's non-torch memory growth inside the KV budget on kimi-k2.5-nvfp4 on b300 at 4-rank tensor parallelism, 0.950 GiB per rank: consumed memory minus Model loading took, median of 7 fit units. It is part of non_kv_cache_memory (gpu_worker.py:720-756) and is not the communicator or workspace reservation the kernel holds before the snapshot. A single-model entry, a recorded exception to the single-model ratchet: the term is kimi-k2.5-nvfp4's own because of its latent attention, whose activation width is the 7,168 hidden size (MLA), and its routed-expert workspace at 384 experts; no drafter. The general form is inference-sim/blis-substrate#294. Fitted by scripts/fit_memory_startup.py on fit-role units only (D7); groups below 5 fit units keep the committed value. The logged peak activation holds the CUDA-graph estimate (gpu_worker.py:748-750), so this split charges the estimate once; the estimate is profile_cudagraph_memory's (vllm/v1/worker/gpu_model_runner.py:6268@v0.33.0).
+  - nontorch_in_budget_bytes_8rank:
+      value: 1760936591
+      units: bytes_per_rank
+      method: measured
+      fitted: true
+      scope: {hardware: [h100], model: [minimax-m3-mxfp8], tp: [8]}
+      measures: {time: device, execution: eager, harness: "vLLM's start-up memory profile (gpu_worker.py determine_available_memory) on InferenceX fit-role units"}
+      fit_range:
+        - {dim: tokens, low: 8192.0, high: 8192.0}
+      ci95: [1755567882, 1766305301]
+      sources:
+        - {kind: discussion, cite: "InferenceX server logs of fit-role units, derived figures vendored in validator/testdata/anchors/memory_startup_fit_units.json", role: primary}
+        - {kind: discussion, cite: "vLLM v0.33.0 vllm/v1/worker/gpu_worker.py:720-756 (determine_available_memory: the budget, and peak activation holding the CUDA-graph estimate)", role: supporting}
+      rationale: >
+        vLLM's non-torch memory growth inside the KV budget on minimax-m3-mxfp8 on h100 at 8-rank tensor parallelism, 1.640 GiB per rank: consumed memory minus Model loading took, median of 9 fit units. It is part of non_kv_cache_memory (gpu_worker.py:720-756) and is not the communicator or workspace reservation the kernel holds before the snapshot. A single-model entry, a recorded exception to the single-model ratchet: the term is minimax-m3-mxfp8's own because of its EAGLE3 drafter (method eagle3 in every fitted run), whose forward and graphs share the profile, and its block-sparse attention. The general form is inference-sim/blis-substrate#294. Fitted by scripts/fit_memory_startup.py on fit-role units only (D7); groups below 5 fit units keep the committed value. The logged peak activation holds the CUDA-graph estimate (gpu_worker.py:748-750), so this split charges the estimate once; the estimate is profile_cudagraph_memory's (vllm/v1/worker/gpu_model_runner.py:6268@v0.33.0).
+  - nontorch_in_budget_bytes_8rank:
+      value: 2093796557
+      units: bytes_per_rank
+      method: measured
+      fitted: true
+      scope: {hardware: [h200], model: [minimax-m3-mxfp8], tp: [8]}
+      measures: {time: device, execution: eager, harness: "vLLM's start-up memory profile (gpu_worker.py determine_available_memory) on InferenceX fit-role units"}
+      fit_range:
+        - {dim: tokens, low: 8192.0, high: 8192.0}
+      ci95: [2040109466, 2136746231]
+      sources:
+        - {kind: discussion, cite: "InferenceX server logs of fit-role units, derived figures vendored in validator/testdata/anchors/memory_startup_fit_units.json", role: primary}
+        - {kind: discussion, cite: "vLLM v0.33.0 vllm/v1/worker/gpu_worker.py:720-756 (determine_available_memory: the budget, and peak activation holding the CUDA-graph estimate)", role: supporting}
+      rationale: >
+        vLLM's non-torch memory growth inside the KV budget on minimax-m3-mxfp8 on h200 at 8-rank tensor parallelism, 1.950 GiB per rank: consumed memory minus Model loading took, median of 6 fit units. It is part of non_kv_cache_memory (gpu_worker.py:720-756) and is not the communicator or workspace reservation the kernel holds before the snapshot. A single-model entry, a recorded exception to the single-model ratchet: the term is minimax-m3-mxfp8's own because of its EAGLE3 drafter (method eagle3 in every fitted run), whose forward and graphs share the profile, and its block-sparse attention. The general form is inference-sim/blis-substrate#294. Fitted by scripts/fit_memory_startup.py on fit-role units only (D7); groups below 5 fit units keep the committed value. The logged peak activation holds the CUDA-graph estimate (gpu_worker.py:748-750), so this split charges the estimate once; the estimate is profile_cudagraph_memory's (vllm/v1/worker/gpu_model_runner.py:6268@v0.33.0).
 
 # 14 entries generated.

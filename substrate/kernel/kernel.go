@@ -254,6 +254,9 @@ type Kernel struct {
 	// the data-parallel ranks (see lift), and 1 when it is on, because an expert-parallel
 	// rank owns whole experts.
 	expertTensorShards float64
+	// nonTorchInBudget is the measured non-torch growth inside the KV budget (liftMemory), zero
+	// where no fit-unit group measured it, which liftMemory records.
+	nonTorchInBudget int64
 
 	// tp and localExpertShare are the per-rank divisors, held as floats so the hot path
 	// multiplies rather than converting. localExpertShare is the fraction of the model's

@@ -29,8 +29,8 @@ import (
 func pricesOf(k *Kernel) string {
 	var b strings.Builder
 	f := k.FixedBytes()
-	fmt.Fprintf(&b, "mem %d %d %d %d %d|seq %d %d|", f.Weights, f.ActivationPeak, f.CUDAGraph, f.EPLBRedundant, f.CommBuffers,
-		k.SequenceFixedBytes(), k.SequenceVariableBytes(4096))
+	fmt.Fprintf(&b, "mem %d %d %d %d %d %d|seq %d %d|", f.Weights, f.ActivationPeak, f.CUDAGraph, f.EPLBRedundant, f.CommBuffers,
+		f.NonTorchInBudget, k.SequenceFixedBytes(), k.SequenceVariableBytes(4096))
 	decode := kernel.ReqShape{Scheduled: 1, Computed: 4095, PromptLen: 4096}
 	prefill := kernel.ReqShape{Scheduled: 512, PromptLen: 512}
 	// A prefill of the engine's whole token budget, which is where a collective's message is

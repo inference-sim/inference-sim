@@ -36,6 +36,10 @@ gemm_eps_max_nvfp4_grouped b200,b300
 gemm_eps_max_w4a16_mxfp4_grouped a100-80,a100-sxm,l40s
 gemm_eps_max_w4a16_nvfp4_grouped a100-80,a100-sxm,l40s
 host_gather_rate_uva a100-80,a100-sxm,b200,b300,l40s
+# nontorch_in_budget_bytes_<N>rank (2026-11-17, blis-substrate#76, coordinator condition: no silent zero): a term new
+# with the memory fit, measured only where a fit-unit group exists; elsewhere the kernel charges nothing and
+# states the gap. It is listed to name that gap, not to admit a default; #294 removes it.
+nontorch_in_budget_bytes_8rank a100-80,a100-sxm,b200,b300,h100,h200,l40s
 recurrent_decode_floor_gdn a100-80,a100-sxm,l40s
 recurrent_decode_floor_kda a100-80,a100-sxm,l40s
 recurrent_decode_floor_mamba2 a100-80,a100-sxm,l40s

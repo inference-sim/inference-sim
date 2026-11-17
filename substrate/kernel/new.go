@@ -1195,6 +1195,18 @@ func (k *Kernel) liftMemory(c *resolve.Coefficients, g *model.Graph) error {
 	}
 	k.workspaceBytes = int64(workspace)
 
+	// The non-torch memory vLLM counts inside the budget, measured per model and part on fit units
+	// (registry scripts/fit_memory_startup.py). Where no group measured it, nothing is charged and
+	// the gap is stated on the point rather than priced as a silent zero.
+	nonTorch := fmt.Sprintf("nontorch_in_budget_bytes_%drank", min(max(k.layout.TP, 1), 8))
+	if c.Has(nonTorch) {
+		k.nonTorchInBudget = int64(c.ValueOr(nonTorch, 0))
+	} else {
+		k.assume(nonTorch, "0", "no fit-unit group measures the non-torch memory vLLM grows inside the "+
+			"KV budget for this model and part (non_kv_cache_memory, gpu_worker.py:720-756@v0.33.0), so "+
+			"none is charged and the KV budget is overstated by it")
+	}
+
 	capture, err := need("cudagraph_capture_bytes_" + k.graphModeName)
 	if err != nil {
 		return err
@@ -1975,6 +1987,8 @@ func (k *Kernel) computeFixedBytes(g *model.Graph) kernel.MemoryBreakdown {
 			CUDAGraph:      k.captureBytes,
 			EPLBRedundant:  int64(m.eplbRedundant),
 			CommBuffers:    k.deepEPBufferBytes(g),
+			// Every stage's rank grows it; the binding stage is the one sized.
+			NonTorchInBudget: k.nonTorchInBudget,
 		}
 	}
 	var weights float64
@@ -1997,7 +2011,8 @@ func (k *Kernel) computeFixedBytes(g *model.Graph) kernel.MemoryBreakdown {
 		// holds them before the memory snapshot its budget is measured from, so they are
 		// outside gpu_memory_utilization (PreSnapshotBytes). DeepEP's buffers are made
 		// after it, so they are (deepEPBufferBytes).
-		CommBuffers: k.deepEPBufferBytes(g),
+		CommBuffers:      k.deepEPBufferBytes(g),
+		NonTorchInBudget: k.nonTorchInBudget,
 	}
 }
 

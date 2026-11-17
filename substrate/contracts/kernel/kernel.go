@@ -160,12 +160,18 @@ type MemoryBreakdown struct {
 	CUDAGraph      int64 // capture cost; zero when capture is off
 	EPLBRedundant  int64 // redundant-expert replicas; zero when EPLB is off
 	CommBuffers    int64 // collective and all-to-all buffers
+	// NonTorchInBudget is the non-torch memory a rank grows inside the KV budget while the
+	// engine loads and profiles: the non-torch part of vLLM's non_kv_cache_memory
+	// (vllm/v1/worker/gpu_worker.py:720-756@v0.33.0), which it subtracts with the weights and the
+	// transient peak. Not a communicator reservation held before the budget's snapshot.
+	NonTorchInBudget int64
 }
 
 // Total returns the sum. Callers that only need a feasibility answer use it; the
 // fields exist for callers that need to act on the result.
 func (m MemoryBreakdown) Total() int64 {
-	return m.Weights + m.ActivationPeak + m.CUDAGraph + m.EPLBRedundant + m.CommBuffers
+	return m.Weights + m.ActivationPeak + m.CUDAGraph + m.EPLBRedundant + m.CommBuffers +
+		m.NonTorchInBudget
 }
 
 // Resource is the axis a cost lands on. A communication op appears as ResourceSM
