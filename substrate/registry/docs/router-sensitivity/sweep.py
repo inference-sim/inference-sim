@@ -63,7 +63,7 @@ def layout_scenario(lay, shape, pol):
     pn, dn = math.ceil(p * pg / gpn), math.ceil(d * dg / gpn)
     sub = {"@NAME@": f"{lay['id']}-{shape.lower()}-{pol}", "@ENGINE@": lay["engine_version"], "@MODEL@": lay["model"],
            "@HARDWARE@": lay["hardware"], "@FABRIC@": lay["fabric"], "@GPN@": gpn, "@NODES@": pn + dn,
-           "@PNODES@": pn, "@DNODES@": dn, "@QUANT@": lay["quantization"], "@ROUTER@": pol, "@BLOCK@": lay.get("block_size", 16)}
+           "@PNODES@": pn, "@DNODES@": dn, "@ROUTER@": pol}
     for role, key in (("prefill", "P"), ("decode", "D")):
         x = lay[role]
         sub.update({f"@{key}TP@": x["tp"], f"@{key}PP@": x["pp"], f"@{key}DP@": x["dp"],
@@ -72,8 +72,7 @@ def layout_scenario(lay, shape, pol):
     eng = lay["engine_by_shape"][shape]
     for role, key in (("prefill", "@PENG@"), ("decode", "@DENG@")):
         st = dict(eng[role]["set"])
-        st.setdefault("max_model_len", 32768)  # a window the recipe does not state: the model graph has none, so a named substitution
-        s = s.replace(key, "\n".join(f"      {k}: {v}" for k, v in st.items()))
+        s = s.replace(key, "\n".join(f"      {k}: {json.dumps(v)}" for k, v in st.items()))
     for k, v in sub.items():
         s = s.replace(k, str(v))
     return s
