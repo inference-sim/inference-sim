@@ -1,0 +1,46 @@
+# The scenario the router sensitivity sweep runs for one layout (sweep.py --layouts fills the @ fields from the
+# layout). A prefill pool and a decode pool of the layout's instances, joined by NIXL over the layout's fabric. The
+# router is the llm-d profile pair in router/<name>.yaml. Engine settings the layout does not state are the fixed
+# block below, the same for every layout and not read from any run's launch command: a named substitution.
+kind: Scenario
+name: @NAME@
+engine: {kind: vllm, version: "@ENGINE@"}
+model: @MODEL@
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]
+cluster:
+  hardware: @HARDWARE@
+  fabric: @FABRIC@
+  gpus_per_node: @GPN@
+  nodes: @NODES@
+---
+kind: Deployment
+name: @NAME@
+pools:
+  - role: prefill
+    nodes: @PNODES@
+    parallel: {tp: @PTP@, pp: @PPP@, dp: @PDP@, enable_expert_parallel: @PEP@}
+    engine:
+      quantization: @QUANT@
+      kv_cache_dtype: fp8
+      block_size: @BLOCK@
+      max_num_batched_tokens: 8192
+      max_num_seqs: 256
+      max_model_len: 32768
+      gpu_memory_utilization: 0.9
+      compilation_config: {cudagraph_mode: PIECEWISE}
+  - role: decode
+    nodes: @DNODES@
+    parallel: {tp: @DTP@, pp: @DPP@, dp: @DDP@, enable_expert_parallel: @DEP@}
+    engine:
+      quantization: @QUANT@
+      kv_cache_dtype: fp8
+      block_size: @BLOCK@
+      max_num_batched_tokens: 8192
+      max_num_seqs: 256
+      max_model_len: 32768
+      gpu_memory_utilization: 0.9
+      compilation_config: {cudagraph_mode: PIECEWISE}
+pd_transfer:
+  connector: NixlConnector
+router:
+  endpoint_picker_config: router/@ROUTER@.yaml

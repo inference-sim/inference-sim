@@ -13,10 +13,11 @@ ratio over the cells of a regime and over the alternatives. It is stated rounded
 decimals. The Go test in contracts/spec/routertable recomputes the bounds of the committed
 catalog entries from this file with its own code, so the two cannot drift.
 """
-import argparse, collections, csv, math, sys
+import argparse, collections, csv, json, math, sys
 
 FIGURES = ["ttft_p50_ms", "ttft_p99_ms", "tpot_p50_ms", "e2e_p50_ms", "output_tok_s", "request_throughput"]
 SEEDS = 3
+POLICIES_ALL = ["round-robin", "random-picker", "least-active-requests", "queue-scorer", "default"]
 
 
 def load(path):
@@ -90,6 +91,57 @@ def emit(cells, policy):
                       f"      max_ratio: {up(best):.2f}")
 
 
+def load_layouts(path):
+    """Cells of a layout sweep: {layout: {(shape, conc): {policy: rows}}} and each layout's regime fields."""
+    cells, regime = collections.defaultdict(lambda: collections.defaultdict(lambda: collections.defaultdict(list))), {}
+    for r in csv.DictReader(open(path)):
+        if r["completed"] != r["requests"]:
+            raise SystemExit(f"{r['layout']} {r['shape']} {r['concurrency']} {r['policy']} seed {r['seed']}: "
+                             f"{r['completed']} of {r['requests']} requests completed; a run that did not finish has no row")
+        cells[r["layout"]][(r["shape"], int(r["concurrency"]))][r["policy"]].append(r)
+        regime[r["layout"]] = {k: r[k] for k in ("workload", "model", "hardware", "engine_version", "fabric", "prefill", "decode")}
+    return cells, regime
+
+
+def par_yaml(text):
+    tp, pp, dp, ep = (int(x[2:]) for x in text.split("."))
+    return f"{{tp: {tp}, pp: {pp}, dp: {dp}, expert_parallel: {'true' if ep else 'false'}}}"
+
+
+def emit_layouts(path, policy, layouts_file, evidence, policies=POLICIES_ALL):
+    """The ratios block for every complete layout of a layout sweep. A layout is complete when every shape it names
+    has every concurrency, every policy and three seeds; an incomplete one is listed on stderr and not emitted."""
+    cells, regime = load_layouts(path)
+    want = {l["id"]: l for l in json.load(open(layouts_file))["layouts"]}
+    for lid, l in want.items():
+        if lid not in cells:
+            print(f"{lid}: no runs, not emitted", file=sys.stderr)
+    for lid in want:
+        if lid not in cells:
+            continue
+        by = cells[lid]
+        shapes = want[lid]["shapes"]
+        concs = sorted({k[1] for k in by})
+        bad = [(sh, c) for sh in shapes for c in concs
+               if any(len(by[(sh, c)].get(p, [])) != SEEDS for p in policies)]
+        if bad or {k[0] for k in by} != set(shapes):
+            print(f"{lid}: incomplete ({len(bad)} cells), not emitted", file=sys.stderr)
+            continue
+        g = regime[lid]
+        for group in ([OTHER_LOAD_BLIND[policy]], LOAD_READING):
+            for m in BOUND_METRICS:
+                best = 1.0
+                for (sh, c), pol in by.items():
+                    for o in group:
+                        a, b = mean(pol[policy], m), mean(pol[o], m)
+                        best = max(best, a / b, b / a)
+                print(f"    - evidence: {evidence}\n      metric: {m}\n      against: [{', '.join(sorted(group))}]\n      regime:\n"
+                      f"        workload: {g['workload']}\n        concurrencies: [{', '.join(str(c) for c in concs)}]\n"
+                      f"        model: {g['model']}\n        hardware: {g['hardware']}\n        engine_version: \"{g['engine_version']}\"\n"
+                      f"        fabric: {g['fabric']}\n        prefill: {par_yaml(g['prefill'])}\n        decode: {par_yaml(g['decode'])}\n"
+                      f"        shapes: [{', '.join(shapes)}]\n      max_ratio: {up(best):.2f}")
+
+
 def spread(cells):
     """Largest to smallest cell mean across every policy, for each figure and concurrency: the
     smallest and the largest over the pool shapes. The measure the first scoping analysis used."""
@@ -119,9 +171,14 @@ def main():
     ap.add_argument("--workload")
     ap.add_argument("--concurrency")
     ap.add_argument("--shapes")
+    ap.add_argument("--emit-layouts", metavar="LAYOUTS_JSON", help="print the ratios of every complete layout of a layout sweep (runs is its CSV)")
+    ap.add_argument("--evidence", help="with --emit-layouts: the evidence file name each ratio carries")
     ap.add_argument("--emit", action="store_true", help="print the ratios block the catalog entries carry")
     ap.add_argument("--spread", action="store_true", help="print the spread across all policies, per concurrency")
     a = ap.parse_args()
+    if a.emit_layouts:
+        emit_layouts(a.runs, a.policy, a.emit_layouts, a.evidence)
+        return
     cells = load(a.runs)
     if a.check:
         sys.exit(1 if check(cells) else 0)
