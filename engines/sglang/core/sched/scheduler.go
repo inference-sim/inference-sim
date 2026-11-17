@@ -63,6 +63,8 @@ type Config struct {
 	// scheduler makes its Reports only when metrics are on (SchedulerMetricsReporter.
 	// current_scheduler_metrics_enabled), and a decode batch logs every interval-th time.
 	EnableMetrics bool `json:"enable_metrics"`
+	// AllowAutoTruncate is --allow-auto-truncate (get_serving().allow_auto_truncate).
+	AllowAutoTruncate bool `json:"allow_auto_truncate"`
 	// EnableKVEvents is --kv-events-config naming a publisher on this rank: the scheduler takes the
 	// tree cache's events at the points SchedulerKvEventsPublisher.publish_kv_events is called.
 	EnableKVEvents bool `json:"enable_kv_events"`
@@ -247,9 +249,14 @@ func (s *Scheduler) handleGenerateRequest(a Arrival) {
 		r.C.CacheSalt = &salt
 	}
 	s.initReqMaxNewTokens(r)
-	// validate_input_length (utils.py:259-289) without --allow-auto-truncate.
+	// validate_input_length (managers/utils.py:259-289@297e54fd): an input at or past the limit is cut
+	// to it under --allow-auto-truncate, and aborted otherwise.
 	if len(r.C.OriginInputIDs) >= s.cfg.MaxReqInputLen {
-		r.setFinishWithAbort()
+		if s.cfg.AllowAutoTruncate {
+			r.C.OriginInputIDs = r.C.OriginInputIDs[:s.cfg.MaxReqInputLen]
+		} else {
+			r.setFinishWithAbort()
+		}
 	}
 	s.addRequestToQueue(r)
 }

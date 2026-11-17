@@ -131,12 +131,38 @@ func (e *Engine) Add(r engine.Request, now engine.Time) error {
 	// ends where the output ends and the scheduler plans for it as it plans for any request that may
 	// stop early. The client's budget (max_new_tokens) ends it otherwise.
 	ignoreEOS := r.Tags["ignore_eos"] == "true"
+	prompt := r.Prompt
+	maxBudget := r.MaxOutputTokens
+	// TokenizerManager._validate_one_request (managers/tokenizer_manager.py:1331-1372@297e54fd),
+	// the front of the server a client's request passes before the scheduler: an input at or past the
+	// context length, or an input and output budget past it, is an error to the client, or is cut
+	// under --allow-auto-truncate. (num_reserved_tokens is 0 without EAGLE, utils.py:484-499.)
+	if e.cfg.ContextLen > 0 {
+		in := len(prompt)
+		if in >= e.cfg.ContextLen {
+			if !e.cfg.AllowAutoTruncate {
+				return fmt.Errorf("sglang: The input (%d tokens) is longer than the model's context length (%d tokens)", in, e.cfg.ContextLen)
+			}
+			prompt = prompt[:e.cfg.ContextLen]
+			in = len(prompt)
+		}
+		if maxBudget > 0 && maxBudget+in > e.cfg.ContextLen {
+			if !e.cfg.AllowAutoTruncate {
+				return fmt.Errorf("sglang: Requested token count exceeds the model's maximum context length of %d tokens. You requested a total of %d tokens: %d tokens from the input messages and %d tokens for the completion. Please reduce the number of tokens in the input messages or the completion to fit within the limit",
+					e.cfg.ContextLen, maxBudget+in, in, maxBudget)
+			}
+			maxBudget = max(0, e.cfg.ContextLen-in)
+			if maxBudget == 0 {
+				return fmt.Errorf("sglang: request %s: nothing is left of the context after its input", r.ID)
+			}
+		}
+	}
 	n, budgetEnds := len(r.Output), false
 	maxNew := noBudget
-	if r.MaxOutputTokens > 0 {
-		maxNew = r.MaxOutputTokens
-		if r.MaxOutputTokens < n {
-			n, budgetEnds = r.MaxOutputTokens, true
+	if maxBudget > 0 {
+		maxNew = maxBudget
+		if maxBudget < n {
+			n, budgetEnds = maxBudget, true
 		}
 	}
 	script := widen(r.Output[:n])
@@ -145,7 +171,7 @@ func (e *Engine) Add(r engine.Request, now engine.Time) error {
 	} else if !budgetEnds {
 		script[n-1] = e.cfg.EOSTokenIDs[0]
 	}
-	a := sched.Arrival{RID: r.ID, Prompt: widen(r.Prompt), MaxNewTokens: maxNew, IgnoreEOS: ignoreEOS, Script: script, CacheSalt: r.CacheSalt}
+	a := sched.Arrival{RID: r.ID, Prompt: widen(prompt), MaxNewTokens: maxNew, IgnoreEOS: ignoreEOS, Script: script, CacheSalt: r.CacheSalt}
 	if e.cfg.EnablePriorityScheduling {
 		p := r.Priority
 		if !e.cfg.ScheduleLowPriorityValuesFirst {
@@ -156,7 +182,7 @@ func (e *Engine) Add(r engine.Request, now engine.Time) error {
 	if err := e.sc.Enqueue(a); err != nil {
 		return err
 	}
-	e.scripts[r.ID] = &scripted{budgetEnds: budgetEnds, promptLen: len(r.Prompt)}
+	e.scripts[r.ID] = &scripted{budgetEnds: budgetEnds, promptLen: len(prompt)}
 	return nil
 }
 

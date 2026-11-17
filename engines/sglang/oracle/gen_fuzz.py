@@ -6,12 +6,12 @@ size, pool size, chunk size, policy and mixed chunk. The same seed makes the sam
 Usage: python3 -I oracle/gen_fuzz.py <seed> <out.json> [--policy P] [--page N] [--mixed] [--tight]
                                      [--priority [--low-first] [--threshold N] [--no-preempt]] [--routing]
                                      [--queue-limit N] [--priority-disabled] [--heavy] [--prefill-max N] [--oversize] [--no-cache] [--seed-arg N]
-                                     [--overlap [--eos] [--no-consecutive-prefill-overlap]]
+                                     [--truncate] [--overlap [--eos] [--no-consecutive-prefill-overlap]]
 
 --priority gives each request a priority in -3..3 (some none) and turns priority scheduling on; --routing gives
 each a routing key from three; --queue-limit sets max_queued_requests; --oversize adds a request SGLang
 aborts at ingest for its length; --no-cache disables the radix cache (fixed-length requests then take
-add_one_req_ignore_eos); --overlap runs SGLang's overlap event loop (S14); --eos makes the sampled token the model's
+add_one_req_ignore_eos); --truncate sets --allow-auto-truncate (use it with --oversize: the long input is cut to the limit and runs); --overlap runs SGLang's overlap event loop (S14); --eos makes the sampled token the model's
 end-of-sequence token, so each request that does not ignore it finishes at its first token, while a decode batch that
 holds it is already launched (the extra discarded step); --no-consecutive-prefill-overlap sets
 SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP; --heavy makes more requests that generate longer; --seed-arg sets the server's random_seed (the random policy's stream).
@@ -63,6 +63,8 @@ def scenario(seed: int, policy: str, page: int, mixed: bool, tight: bool, opt) -
         server_args["prefill_max_requests"] = opt.prefill_max
     if opt.queue_limit:
         server_args["max_queued_requests"] = opt.queue_limit
+    if opt.truncate:
+        server_args["allow_auto_truncate"] = True
     if opt.oversize:
         reqs.append({"rid": "big", "arrival_step": 1, "prompt": [7000 + j for j in range(pool + 8)],
                      "max_new_tokens": 4, "ignore_eos": True})
@@ -104,6 +106,7 @@ if __name__ == "__main__":
     ap.add_argument("--queue-limit", type=int, default=0)
     ap.add_argument("--oversize", action="store_true")
     ap.add_argument("--no-cache", action="store_true")
+    ap.add_argument("--truncate", action="store_true")
     ap.add_argument("--overlap", action="store_true")
     ap.add_argument("--eos", action="store_true")
     ap.add_argument("--no-consecutive-prefill-overlap", action="store_true")
