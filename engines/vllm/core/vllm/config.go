@@ -181,6 +181,8 @@ type settings struct {
 	sched     sched.Config
 	queueSize int
 	v2Runner  bool
+	// layout is what the offloading connector's layout gates read (offloadLayout).
+	layout offloadLayoutFacts
 	// connector is the pool's P/D connector, nil for none; pp is pipeline_parallel_size, which
 	// vLLM's NIXL worker checks it against.
 	connector *connectorConfig
@@ -525,6 +527,7 @@ func resolve(c Config) (settings, error) {
 		KVGroups:             groups,
 	}
 	s.queueSize, s.v2Runner = queue, v2
+	s.layout = offloadLayoutFacts{agnostic: parallelismAgnostic(c.KVLayers, v2), plainGroup: len(c.KVLayers) == 0, pp: pp}
 	if v, ok := e.Env["PYTHONHASHSEED"]; ok {
 		s.hashSeed = &v
 	}
@@ -1011,4 +1014,52 @@ func checkRulesWith(pack rules.EngineRules, e engineconfig.Engine, pp int) error
 	}
 	return fmt.Errorf("vllm: the engine block fails vLLM %s's rules: %s", pack.EngineVersion(),
 		strings.Join(lines, "; "))
+}
+
+// parallelismAgnostic is the offloading connector's is_parallelism_agnostic, which the p2p and fs tiers
+// read to drop the parallel sizes from the layout they compare and name files by
+// (vllm/distributed/kv_transfer/kv_connector/v1/offloading/config.py:217-225@4ba787ec,
+// FileMapper.from_offloading_spec, vllm/v1/kv_offload/file_mapper.py:100-127). It holds for a model
+// of one non-MLA full-attention KV cache group, off the V2 model runner. A model that states no
+// kv_layers is one full-attention group. A compressed (MLA) group, an indexer group, a sliding
+// window, a state layer, a draft layer or several groups are not agnostic.
+//
+// Not read here, so a layout that fails them is taken as agnostic: that the KV heads are sharded
+// across the tensor-parallel ranks (num_kv_heads x tp == total KV heads), per-token-head KV scales,
+// and decode or prefill context parallelism. The engine states none of them.
+func parallelismAgnostic(runs []KVLayerRun, v2 bool) bool {
+	if v2 {
+		return false
+	}
+	for _, r := range runs {
+		if r.Spec != "full" || r.Draft {
+			return false
+		}
+	}
+	return true
+}
+
+// offloadLayoutFacts are what the offloading connector's two layout gates read of the pool:
+// agnostic is parallelismAgnostic over the stated kv_layers (which is true for a model that states
+// none, MLA or not), plainGroup that none are stated, and pp the pipeline_parallel_size.
+type offloadLayoutFacts struct {
+	agnostic, plainGroup bool
+	pp                   int
+}
+
+// offloadLayout is the pair of layout flags the p2p and fs tiers read: is_parallelism_agnostic and
+// replicated_layout (offloading/config.py:196-208 and :217-225@4ba787ec). An MLA model is never
+// parallelism-agnostic (MLAAttentionSpec is excluded); its latent is replicated across the
+// tensor-parallel ranks, which vLLM names replicated_layout when the pool is tensor-parallel only:
+// tp above 1, no pipeline parallelism, world size equal to tp. The run config of such a pool names
+// no parallel size, so MLA pools of different tensor parallelism handshake; a pool with pipeline
+// parallelism names them, so it does not. An MLA model that states kv_layers (DeepSeek V4's groups)
+// is taken as neither: whether its groups' replicas equal tp is not read here.
+// Not read: the mp executor and a single node (replicated_layout's last two terms), and
+// decode or prefill context parallelism.
+func offloadLayout(f offloadLayoutFacts, mla bool, world int) (agnostic, replicated bool) {
+	if !mla {
+		return f.agnostic, false
+	}
+	return false, f.plainGroup && f.pp <= 1 && world > 1
 }
