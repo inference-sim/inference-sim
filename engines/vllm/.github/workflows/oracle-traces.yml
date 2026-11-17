@@ -98,7 +98,9 @@ jobs:
           python -I oracle/drive_kv_interfaces.py vllm-source oracle/scenarios-fid5 oracle/out/fid5
       - name: record the Go side's provenance
         run: go run ./cmd/provenance > oracle/out/provenance.json
+      # Uploaded whatever the steps did, so a failing run still shows the traces it wrote.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
         with:
           name: oracle-traces
           path: |
