@@ -86,6 +86,13 @@ models:
       - file: MIT.zhipu-ai.txt
         source: https://huggingface.co/zai-org/GLM-5.2-FP8/raw/f33c6dc501ee5a2c7e35155653b1b1abbc320951/LICENSE
         sha256: f4a18c6ae40b0a8e7d2b7667f52f6e1994e54a46430d2e172b73cb8c9b5eb0d7
+  - model: glm-5.2-nvfp4
+    licence: MIT
+    texts:
+      - file: MIT.txt
+        source: https://raw.githubusercontent.com/spdx/license-list-data/279b7e997a87c09be00dd6bdda189519ade502cf/text/MIT.txt
+        sha256: b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5
+    note: "The card names MIT, and the repository holds no licence file and names no copyright holder, so the text is SPDX's MIT licence."
   - model: glm-5.3
     licence: LicenseRef-glm-5.3
     texts:
@@ -98,6 +105,13 @@ models:
       - file: MIT.z-ai.txt
         source: https://huggingface.co/zai-org/GLM-5.3-Flash/raw/eb9eb208eb0d988989d07a6a12d0fdeb5f52574a/LICENSE
         sha256: 30b85b6b9659f2e78aa259f8faf5d920a68dee7c9ced3fa6dba1f19f2bc4fca1
+  - model: glm-5.3-flash-nvfp4
+    licence: MIT
+    texts:
+      - file: MIT.txt
+        source: https://raw.githubusercontent.com/spdx/license-list-data/279b7e997a87c09be00dd6bdda189519ade502cf/text/MIT.txt
+        sha256: b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5
+    note: "The card names MIT, and the repository holds no licence file and names no copyright holder, so the text is SPDX's MIT licence."
   - model: kimi-k2.5
     licence: LicenseRef-modified-mit
     texts:
