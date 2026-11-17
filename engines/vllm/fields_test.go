@@ -132,3 +132,50 @@ func TestMemoryUtilizationIsClassedModelledWithItsEvidence(t *testing.T) {
 	}
 	t.Fatal("fields.json has no gpu_memory_utilization")
 }
+
+// A stated moe_backend is not refused where the engine can price it: the field list covers, with a
+// named execution-mode substitution, the backends a recorded run states on the parts it states
+// them on (blis-substrate#150). On an SM90 part Triton and FlashInfer CUTLASS are the backends the
+// engine's own expert-kernel selection orders for block-FP8 experts; CuteDSL is a Blackwell
+// backend. A backend or part no clause covers stays unapproximated, so the point is refused by name.
+func TestAStatedMoEBackendIsApproximatedWhereTheEnginePricesIt(t *testing.T) {
+	l, err := fields.Load("fields.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var e fields.Estimation
+	for _, f := range l.Fields {
+		if f.Name == "moe_backend" {
+			e = f.Estimation
+		}
+	}
+	for _, c := range []struct {
+		value, cc string
+		covered   bool
+	}{
+		{"triton", "9.0", true},
+		{"Triton", "9.0", true},
+		{"flashinfer_cutlass", "9.0", true},
+		{"flashinfer_cutedsl", "10.0", true},
+		{"flashinfer_trtllm", "10.0", true},
+		{"deep_gemm_mega_moe", "10.0", true},
+		{"triton", "10.0", false},
+		{"flashinfer_cutedsl", "9.0", false},
+		{"marlin", "9.0", false},
+		{"triton", "", false},
+	} {
+		_, got := fields.Approximate(e, fields.Facts{Value: c.value, ComputeCapability: c.cc})
+		if got != c.covered {
+			t.Errorf("moe_backend %q on compute capability %q: approximated %v, want %v", c.value, c.cc, got, c.covered)
+		}
+		if fields.Exact(e, fields.Facts{Value: c.value, ComputeCapability: c.cc}) {
+			t.Errorf("moe_backend %q is exact, but it has no stand-in", c.value)
+		}
+	}
+	// The SM90 clause is valid for block-FP8 experts only and the clause grammar cannot test the
+	// weight scheme, so the approximation must say so where a reader of a scored point sees it.
+	a, _ := fields.Approximate(e, fields.Facts{Value: "triton", ComputeCapability: "9.0"})
+	if !strings.Contains(a.Differs, "block-FP8 experts only") {
+		t.Errorf("the approximation covering moe_backend on SM90 does not say it is valid for block-FP8 only: %q", a.Differs)
+	}
+}
