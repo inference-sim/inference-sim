@@ -170,6 +170,7 @@ allow yet.
 | Key | Type | Required | Meaning |
 |---|---|---|---|
 | `evidence` | mapping | yes | The measurement the ratios come from, below. |
+| `more_evidence` | list of mappings | no | Further measurements, each of the same kind as `evidence` (a CSV of runs with the regime's fields in every row, such as a layout sweep). A ratio names the file it comes from; without one it comes from `evidence`. |
 | `ratios` | list | yes | The limits: at least one, each for one figure, one set of alternatives and one regime. |
 | `not_measured` | list of strings | yes | What the bound does not cover, one sentence each. At least one: a bound that claims to cover everything is not a measured bound. |
 
@@ -187,6 +188,7 @@ allow yet.
 
 | Key | Type | Required | Meaning |
 |---|---|---|---|
+| `evidence` | string | no | The `file` of the measurement this ratio is recomputed from, when it is not the bound's primary one. |
 | `metric` | string | yes | The [metric registry](metrics.md) identifier of the figure, for example `ttft_p50_ms`. |
 | `against` | list of strings | yes | The alternatives the policy was compared with, each by the name of its plugin composition in the evidence file's `policy` column. Sorted, each once, none the entry's own policy. |
 | `regime` | mapping | yes | Where the ratio was measured, below. |
