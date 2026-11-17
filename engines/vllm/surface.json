@@ -2,13 +2,13 @@
  "generator": "tools/surface/gen_surface.py",
  "upstream": {
   "name": "vllm",
-  "tag": "v0.32.0",
-  "commit": "5df63a7203cdb9328d824a27b682e77c7b9928be"
+  "tag": "v0.33.0",
+  "commit": "4ba787ec9959e566d3b587a796dff07673324da5"
  },
  "counts": {
   "modelled": 63,
-  "out_of_scope": 39,
-  "refused": 147
+  "out_of_scope": 40,
+  "refused": 158
  },
  "items": [
   {
@@ -60,7 +60,7 @@
     "oracle/scenarios/connector",
     "core/connector/nixl/testdata/golden"
    ],
-   "why": "vLLM binds the name to NixlPullConnector's class (vllm/distributed/kv_transfer/kv_connector/v1/nixl/connector.py:414@5df63a72)"
+   "why": "vLLM binds the name to NixlPullConnector's class (vllm/distributed/kv_transfer/kv_connector/v1/nixl/connector.py:432@4ba787ec)"
   },
   {
    "id": "connector:NixlPullConnector",
@@ -299,7 +299,7 @@
    "id": "backpressure_class:EMABackpressureDetector",
    "category": "backpressure_class",
    "name": "EMABackpressureDetector",
-   "site": "vllm/v1/kv_offload/tiering/backpressure.py:173",
+   "site": "vllm/v1/kv_offload/tiering/backpressure.py:189",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/13"
   },
@@ -307,7 +307,7 @@
    "id": "offload_medium:CPU",
    "category": "offload_medium",
    "name": "CPU",
-   "site": "vllm/v1/kv_offload/base.py:50",
+   "site": "vllm/v1/kv_offload/base.py:51",
    "status": "modelled",
    "evidence": [
     "oracle/scenarios/offloading",
@@ -319,7 +319,7 @@
    "id": "offload_medium:STORAGE",
    "category": "offload_medium",
    "name": "STORAGE",
-   "site": "vllm/v1/kv_offload/base.py:51",
+   "site": "vllm/v1/kv_offload/base.py:52",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/63",
    "why": "the fs and obj secondary tiers"
@@ -328,7 +328,7 @@
    "id": "offload_backend:kv_offloading_backend=native",
    "category": "offload_backend",
    "name": "kv_offloading_backend=native",
-   "site": "vllm/config/cache.py:65",
+   "site": "vllm/config/cache.py:178",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/87"
   },
@@ -336,7 +336,7 @@
    "id": "offload_backend:kv_offloading_backend=lmcache",
    "category": "offload_backend",
    "name": "kv_offloading_backend=lmcache",
-   "site": "vllm/config/cache.py:65",
+   "site": "vllm/config/cache.py:178",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/87"
   },
@@ -360,7 +360,7 @@
    "id": "kv_event_publisher:null",
    "category": "kv_event_publisher",
    "name": "null",
-   "site": "vllm/distributed/kv_events.py:568",
+   "site": "vllm/distributed/kv_events.py:580",
    "status": "modelled",
    "evidence": [
     "oracle/scenarios/kv-events.json",
@@ -372,7 +372,7 @@
    "id": "kv_event_publisher:zmq",
    "category": "kv_event_publisher",
    "name": "zmq",
-   "site": "vllm/distributed/kv_events.py:569",
+   "site": "vllm/distributed/kv_events.py:581",
    "status": "modelled",
    "evidence": [
     "oracle/scenarios/kv-events.json",
@@ -395,7 +395,7 @@
    "id": "kv_event_type:BlockRemoved",
    "category": "kv_event_type",
    "name": "BlockRemoved",
-   "site": "vllm/distributed/kv_events.py:116",
+   "site": "vllm/distributed/kv_events.py:123",
    "status": "modelled",
    "evidence": [
     "oracle/scenarios/kv-events.json",
@@ -406,7 +406,7 @@
    "id": "kv_event_type:AllBlocksCleared",
    "category": "kv_event_type",
    "name": "AllBlocksCleared",
-   "site": "vllm/distributed/kv_events.py:137",
+   "site": "vllm/distributed/kv_events.py:144",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
    "why": "emitted by reset_prefix_cache, which no simulated run calls"
@@ -428,10 +428,18 @@
    "issue": "https://github.com/inference-sim/blis-vllm/issues/12"
   },
   {
+   "id": "kv_event_source:UMBPStoreKVEvents",
+   "category": "kv_event_source",
+   "name": "UMBPStoreKVEvents",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/umbp/connector.py:51",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/66"
+  },
+  {
    "id": "kv_cache_spec:role HISPARSE_SOURCE",
    "category": "kv_cache_spec",
    "name": "role HISPARSE_SOURCE",
-   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2635",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2658",
    "manager": "HiSparseSourceManager",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/43"
@@ -440,7 +448,7 @@
    "id": "kv_cache_spec:FullAttentionSpec",
    "category": "kv_cache_spec",
    "name": "FullAttentionSpec",
-   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2638",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2661",
    "manager": "FullAttentionManager",
    "status": "modelled",
    "evidence": [
@@ -452,7 +460,7 @@
    "id": "kv_cache_spec:HiSparseHotSpec",
    "category": "kv_cache_spec",
    "name": "HiSparseHotSpec",
-   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2643",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2666",
    "manager": "HiSparseHotManager",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/43"
@@ -461,7 +469,7 @@
    "id": "kv_cache_spec:HiSparseResidentSpec",
    "category": "kv_cache_spec",
    "name": "HiSparseResidentSpec",
-   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2648",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2671",
    "manager": "HiSparseResidentManager",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/43"
@@ -470,7 +478,7 @@
    "id": "kv_cache_spec:SlidingWindowSpec",
    "category": "kv_cache_spec",
    "name": "SlidingWindowSpec",
-   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2654",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2677",
    "manager": "SlidingWindowManager",
    "status": "modelled",
    "evidence": [
@@ -482,7 +490,7 @@
    "id": "kv_cache_spec:CircularBufferSpec",
    "category": "kv_cache_spec",
    "name": "CircularBufferSpec",
-   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2659",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2682",
    "manager": "CircularBufferManager",
    "status": "modelled",
    "evidence": [
@@ -494,7 +502,7 @@
    "id": "kv_cache_spec:SlidingWindowMLASpec",
    "category": "kv_cache_spec",
    "name": "SlidingWindowMLASpec",
-   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2664",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2687",
    "manager": "SlidingWindowManager",
    "status": "modelled",
    "evidence": [
@@ -506,7 +514,7 @@
    "id": "kv_cache_spec:MambaSpec",
    "category": "kv_cache_spec",
    "name": "MambaSpec",
-   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2670",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2693",
    "manager": "MambaManager",
    "status": "modelled",
    "evidence": [
@@ -519,7 +527,7 @@
    "id": "kv_cache_spec:ChunkedLocalAttentionSpec",
    "category": "kv_cache_spec",
    "name": "ChunkedLocalAttentionSpec",
-   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2673",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2696",
    "manager": "ChunkedLocalAttentionManager",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/149"
@@ -528,7 +536,7 @@
    "id": "kv_cache_spec:CrossAttentionSpec",
    "category": "kv_cache_spec",
    "name": "CrossAttentionSpec",
-   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2678",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2701",
    "manager": "CrossAttentionManager",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/149"
@@ -537,7 +545,7 @@
    "id": "kv_cache_spec:MLAAttentionSpec",
    "category": "kv_cache_spec",
    "name": "MLAAttentionSpec",
-   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2685",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2708",
    "manager": "FullAttentionManager",
    "status": "modelled",
    "evidence": [
@@ -549,7 +557,7 @@
    "id": "kv_cache_spec:RSWASpec",
    "category": "kv_cache_spec",
    "name": "RSWASpec",
-   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2688",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2711",
    "manager": "RSWAManager",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/149"
@@ -558,7 +566,7 @@
    "id": "kv_cache_spec:HiddenStateCacheSpec",
    "category": "kv_cache_spec",
    "name": "HiddenStateCacheSpec",
-   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2694",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2717",
    "manager": "FullAttentionManager",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/150",
@@ -568,7 +576,7 @@
    "id": "kv_cache_spec:SinkFullAttentionSpec",
    "category": "kv_cache_spec",
    "name": "SinkFullAttentionSpec",
-   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2699",
+   "site": "vllm/v1/core/single_type_kv_cache_manager.py:2722",
    "manager": "SinkFullAttentionManager",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/149"
@@ -577,7 +585,7 @@
    "id": "speculative_method:ngram",
    "category": "speculative_method",
    "name": "ngram",
-   "site": "vllm/config/speculative.py:73",
+   "site": "vllm/config/speculative.py:74",
    "status": "modelled",
    "evidence": [
     "oracle/scenarios/spec-ngram.json",
@@ -585,26 +593,10 @@
    ]
   },
   {
-   "id": "speculative_method:medusa",
-   "category": "speculative_method",
-   "name": "medusa",
-   "site": "vllm/config/speculative.py:73",
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/150"
-  },
-  {
-   "id": "speculative_method:mlp_speculator",
-   "category": "speculative_method",
-   "name": "mlp_speculator",
-   "site": "vllm/config/speculative.py:73",
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/150"
-  },
-  {
    "id": "speculative_method:draft_model",
    "category": "speculative_method",
    "name": "draft_model",
-   "site": "vllm/config/speculative.py:73",
+   "site": "vllm/config/speculative.py:74",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/17"
   },
@@ -612,7 +604,7 @@
    "id": "speculative_method:suffix",
    "category": "speculative_method",
    "name": "suffix",
-   "site": "vllm/config/speculative.py:73",
+   "site": "vllm/config/speculative.py:74",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/150"
   },
@@ -620,7 +612,7 @@
    "id": "speculative_method:custom_class",
    "category": "speculative_method",
    "name": "custom_class",
-   "site": "vllm/config/speculative.py:73",
+   "site": "vllm/config/speculative.py:74",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/66",
    "refusal": "code_not_visible",
@@ -630,7 +622,7 @@
    "id": "speculative_method:eagle",
    "category": "speculative_method",
    "name": "eagle",
-   "site": "vllm/config/speculative.py:70",
+   "site": "vllm/config/speculative.py:71",
    "status": "modelled",
    "evidence": [
     "oracle/scenarios/hybrid-swa-eagle.json",
@@ -641,7 +633,7 @@
    "id": "speculative_method:eagle3",
    "category": "speculative_method",
    "name": "eagle3",
-   "site": "vllm/config/speculative.py:70",
+   "site": "vllm/config/speculative.py:71",
    "status": "modelled",
    "evidence": [
     "oracle/scenarios/spec-eagle3.json",
@@ -652,7 +644,7 @@
    "id": "speculative_method:extract_hidden_states",
    "category": "speculative_method",
    "name": "extract_hidden_states",
-   "site": "vllm/config/speculative.py:70",
+   "site": "vllm/config/speculative.py:71",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/150"
   },
@@ -664,7 +656,7 @@
    "alias_of": "mtp",
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   {
@@ -675,7 +667,7 @@
    "alias_of": "mtp",
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   {
@@ -686,7 +678,7 @@
    "alias_of": "mtp",
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   {
@@ -697,7 +689,7 @@
    "alias_of": "mtp",
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   {
@@ -708,7 +700,7 @@
    "alias_of": "mtp",
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   {
@@ -719,7 +711,7 @@
    "alias_of": "mtp",
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   {
@@ -730,7 +722,7 @@
    "alias_of": "mtp",
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   {
@@ -741,7 +733,7 @@
    "alias_of": "mtp",
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   {
@@ -752,7 +744,7 @@
    "alias_of": "mtp",
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   {
@@ -763,7 +755,7 @@
    "alias_of": "mtp",
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   {
@@ -774,7 +766,7 @@
    "alias_of": "mtp",
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   {
@@ -785,7 +777,7 @@
    "alias_of": "mtp",
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   {
@@ -796,7 +788,7 @@
    "alias_of": "mtp",
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   {
@@ -807,7 +799,7 @@
    "alias_of": "mtp",
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   {
@@ -818,7 +810,7 @@
    "alias_of": "mtp",
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   {
@@ -829,7 +821,7 @@
    "alias_of": "mtp",
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   {
@@ -840,7 +832,7 @@
    "alias_of": "mtp",
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   {
@@ -851,7 +843,7 @@
    "alias_of": "mtp",
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   {
@@ -874,7 +866,7 @@
    "alias_of": "mtp",
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   {
@@ -885,7 +877,7 @@
    "alias_of": "mtp",
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   {
@@ -896,7 +888,18 @@
    "alias_of": "mtp",
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  {
+   "id": "speculative_method:step5_mtp",
+   "category": "speculative_method",
+   "name": "step5_mtp",
+   "site": "vllm/config/speculative.py:38",
+   "alias_of": "mtp",
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   {
@@ -907,7 +910,7 @@
    "alias_of": "mtp",
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   {
@@ -918,7 +921,7 @@
    "alias_of": "mtp",
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   {
@@ -929,7 +932,7 @@
    "alias_of": "mtp",
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   {
@@ -940,7 +943,7 @@
    "alias_of": "mtp",
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   {
@@ -951,14 +954,14 @@
    "alias_of": "mtp",
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   {
    "id": "speculative_method:dflash",
    "category": "speculative_method",
    "name": "dflash",
-   "site": "vllm/config/speculative.py:68",
+   "site": "vllm/config/speculative.py:69",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/150"
   },
@@ -966,7 +969,7 @@
    "id": "speculative_method:ngram_gpu",
    "category": "speculative_method",
    "name": "ngram_gpu",
-   "site": "vllm/config/speculative.py:67",
+   "site": "vllm/config/speculative.py:68",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/150"
   },
@@ -974,7 +977,7 @@
    "id": "speculative_method:dspark",
    "category": "speculative_method",
    "name": "dspark",
-   "site": "vllm/config/speculative.py:69",
+   "site": "vllm/config/speculative.py:70",
    "status": "modelled",
    "evidence": [
     "oracle/scenarios/spec-dspark.json",
@@ -1058,7 +1061,7 @@
    "id": "path_loader:kv_events_config.publisher (EventPublisherFactory.register_publisher)",
    "category": "path_loader",
    "name": "kv_events_config.publisher (EventPublisherFactory.register_publisher)",
-   "site": "vllm/distributed/kv_events.py:576",
+   "site": "vllm/distributed/kv_events.py:588",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/66",
    "refusal": "code_not_visible",
@@ -1068,7 +1071,7 @@
    "id": "path_loader:kv_connector_extra_config.secondary_tiers[] kvcr policy (dotted name)",
    "category": "path_loader",
    "name": "kv_connector_extra_config.secondary_tiers[] kvcr policy (dotted name)",
-   "site": "vllm/v1/kv_offload/tiering/kvcr/manager.py:111",
+   "site": "vllm/v1/kv_offload/tiering/kvcr/manager.py:112",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/66",
    "refusal": "code_not_visible",
@@ -1078,7 +1081,7 @@
    "id": "path_loader:scheduler_config.scheduler_cls",
    "category": "path_loader",
    "name": "scheduler_config.scheduler_cls",
-   "site": "vllm/config/scheduler.py:253",
+   "site": "vllm/config/scheduler.py:256",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/66",
    "refusal": "code_not_visible",
@@ -1098,7 +1101,7 @@
    "id": "framework:SupportsHMA",
    "category": "framework",
    "name": "SupportsHMA",
-   "site": "vllm/distributed/kv_transfer/kv_connector/v1/base.py:100",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/base.py:101",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/144",
    "why": "no recorded or direct trace at its interface (FID-5)"
@@ -1107,7 +1110,7 @@
    "id": "framework:KVConnectorWorkerMetadata",
    "category": "framework",
    "name": "KVConnectorWorkerMetadata",
-   "site": "vllm/distributed/kv_transfer/kv_connector/v1/base.py:162",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/base.py:163",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/144",
    "why": "no recorded or direct trace at its interface (FID-5)"
@@ -1116,7 +1119,7 @@
    "id": "framework:KVConnectorBase_V1 worker side",
    "category": "framework",
    "name": "KVConnectorBase_V1 worker side",
-   "site": "vllm/distributed/kv_transfer/kv_connector/v1/base.py:233",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/base.py:239",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/144",
    "why": "no recorded or direct trace at its interface (FID-5)"
@@ -1125,7 +1128,7 @@
    "id": "framework:KVConnectorBase_V1 scheduler side",
    "category": "framework",
    "name": "KVConnectorBase_V1 scheduler side",
-   "site": "vllm/distributed/kv_transfer/kv_connector/v1/base.py:472",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/base.py:487",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/144",
    "why": "no recorded or direct trace at its interface (FID-5)"
@@ -1134,7 +1137,7 @@
    "id": "framework:OffloadingManager",
    "category": "framework",
    "name": "OffloadingManager",
-   "site": "vllm/v1/kv_offload/base.py:235",
+   "site": "vllm/v1/kv_offload/base.py:283",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/144",
    "why": "no recorded or direct trace at its interface (FID-5)"
@@ -1143,7 +1146,7 @@
    "id": "framework:OffloadingWorker",
    "category": "framework",
    "name": "OffloadingWorker",
-   "site": "vllm/v1/kv_offload/base.py:568",
+   "site": "vllm/v1/kv_offload/base.py:657",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/144",
    "why": "no recorded or direct trace at its interface (FID-5)"
@@ -1152,7 +1155,7 @@
    "id": "framework:OffloadingSpec",
    "category": "framework",
    "name": "OffloadingSpec",
-   "site": "vllm/v1/kv_offload/base.py:595",
+   "site": "vllm/v1/kv_offload/base.py:692",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/144",
    "why": "no recorded or direct trace at its interface (FID-5)"
@@ -1170,7 +1173,7 @@
    "id": "framework:ParentManager",
    "category": "framework",
    "name": "ParentManager",
-   "site": "vllm/v1/kv_offload/tiering/base.py:94",
+   "site": "vllm/v1/kv_offload/tiering/base.py:98",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/63",
    "why": "no recorded or direct trace at its interface (FID-5)"
@@ -1179,7 +1182,7 @@
    "id": "framework:SecondaryTierManager",
    "category": "framework",
    "name": "SecondaryTierManager",
-   "site": "vllm/v1/kv_offload/tiering/base.py:131",
+   "site": "vllm/v1/kv_offload/tiering/base.py:135",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/63",
    "why": "no recorded or direct trace at its interface (FID-5)"
@@ -1197,7 +1200,7 @@
    "id": "framework:BackpressureDetector",
    "category": "framework",
    "name": "BackpressureDetector",
-   "site": "vllm/v1/kv_offload/tiering/backpressure.py:110",
+   "site": "vllm/v1/kv_offload/tiering/backpressure.py:119",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/13",
    "why": "no recorded or direct trace at its interface (FID-5)"
@@ -1206,7 +1209,7 @@
    "id": "metric_family:vllm:<kvcr DURATION_METRIC>",
    "category": "metric_family",
    "name": "vllm:<kvcr DURATION_METRIC>",
-   "site": "vllm/v1/kv_offload/tiering/kvcr/manager.py:125",
+   "site": "vllm/v1/kv_offload/tiering/kvcr/manager.py:126",
    "manifest_class": "unavailable",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
@@ -1215,7 +1218,7 @@
    "id": "metric_family:vllm:<kvcr STATE_METRIC>",
    "category": "metric_family",
    "name": "vllm:<kvcr STATE_METRIC>",
-   "site": "vllm/v1/kv_offload/tiering/kvcr/manager.py:137",
+   "site": "vllm/v1/kv_offload/tiering/kvcr/manager.py:138",
    "manifest_class": "unavailable",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
@@ -1224,7 +1227,7 @@
    "id": "metric_family:vllm:<kvcr TRANSFER_BLOCKS_METRIC>",
    "category": "metric_family",
    "name": "vllm:<kvcr TRANSFER_BLOCKS_METRIC>",
-   "site": "vllm/v1/kv_offload/tiering/kvcr/manager.py:133",
+   "site": "vllm/v1/kv_offload/tiering/kvcr/manager.py:134",
    "manifest_class": "unavailable",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
@@ -1233,7 +1236,7 @@
    "id": "metric_family:vllm:<kvcr TRANSFER_BYTES_METRIC>",
    "category": "metric_family",
    "name": "vllm:<kvcr TRANSFER_BYTES_METRIC>",
-   "site": "vllm/v1/kv_offload/tiering/kvcr/manager.py:129",
+   "site": "vllm/v1/kv_offload/tiering/kvcr/manager.py:130",
    "manifest_class": "unavailable",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
@@ -1264,7 +1267,7 @@
    "manifest_class": "unavailable",
    "status": "out_of_scope",
    "reason": "no_priced_work",
-   "citation": "vllm/v1/metrics/loggers.py:630-640@5df63a72",
+   "citation": "vllm/v1/metrics/loggers.py:630-640@4ba787ec",
    "why": "a count of NaN logits, a property of the numerics, not of the work"
   },
   {
@@ -1314,7 +1317,7 @@
    "manifest_class": "unavailable",
    "status": "out_of_scope",
    "reason": "no_priced_work",
-   "citation": "vllm/v1/metrics/loggers.py:594-600@5df63a72",
+   "citation": "vllm/v1/metrics/loggers.py:594-600@4ba787ec",
    "why": "an operator's sleep-mode RPC, which no served request makes"
   },
   {
@@ -1564,7 +1567,16 @@
    "id": "metric_family:vllm:kv_offload_allocation_failure",
    "category": "metric_family",
    "name": "vllm:kv_offload_allocation_failure",
-   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:124",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:141",
+   "manifest_class": "exact",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_config_info",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_config_info",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:396",
    "manifest_class": "exact",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
@@ -1573,7 +1585,7 @@
    "id": "metric_family:vllm:kv_offload_cpu_allocation_size",
    "category": "metric_family",
    "name": "vllm:kv_offload_cpu_allocation_size",
-   "site": "vllm/v1/kv_offload/cpu/spec.py:73",
+   "site": "vllm/v1/kv_offload/cpu/spec.py:77",
    "manifest_class": "exact",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
@@ -1582,7 +1594,7 @@
    "id": "metric_family:vllm:kv_offload_cpu_cache_read_usage_perc",
    "category": "metric_family",
    "name": "vllm:kv_offload_cpu_cache_read_usage_perc",
-   "site": "vllm/v1/kv_offload/cpu/spec.py:66",
+   "site": "vllm/v1/kv_offload/cpu/spec.py:70",
    "manifest_class": "exact",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
@@ -1591,7 +1603,7 @@
    "id": "metric_family:vllm:kv_offload_cpu_cache_usage_perc",
    "category": "metric_family",
    "name": "vllm:kv_offload_cpu_cache_usage_perc",
-   "site": "vllm/v1/kv_offload/cpu/spec.py:51",
+   "site": "vllm/v1/kv_offload/cpu/spec.py:55",
    "manifest_class": "exact",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
@@ -1600,7 +1612,7 @@
    "id": "metric_family:vllm:kv_offload_cpu_cache_write_usage_perc",
    "category": "metric_family",
    "name": "vllm:kv_offload_cpu_cache_write_usage_perc",
-   "site": "vllm/v1/kv_offload/cpu/spec.py:59",
+   "site": "vllm/v1/kv_offload/cpu/spec.py:63",
    "manifest_class": "exact",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
@@ -1609,7 +1621,7 @@
    "id": "metric_family:vllm:kv_offload_load_bytes",
    "category": "metric_family",
    "name": "vllm:kv_offload_load_bytes",
-   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:65",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:82",
    "manifest_class": "derived",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
@@ -1618,7 +1630,7 @@
    "id": "metric_family:vllm:kv_offload_load_size",
    "category": "metric_family",
    "name": "vllm:kv_offload_load_size",
-   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:71",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:88",
    "manifest_class": "derived",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
@@ -1627,7 +1639,7 @@
    "id": "metric_family:vllm:kv_offload_load_time",
    "category": "metric_family",
    "name": "vllm:kv_offload_load_time",
-   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:68",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:85",
    "manifest_class": "derived",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
@@ -1636,7 +1648,7 @@
    "id": "metric_family:vllm:kv_offload_lookup_async_delay_seconds",
    "category": "metric_family",
    "name": "vllm:kv_offload_lookup_async_delay_seconds",
-   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:104",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:121",
    "manifest_class": "derived",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
@@ -1645,7 +1657,7 @@
    "id": "metric_family:vllm:kv_offload_lookup_sync_delay_seconds",
    "category": "metric_family",
    "name": "vllm:kv_offload_lookup_sync_delay_seconds",
-   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:85",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:102",
    "manifest_class": "derived",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
@@ -1654,7 +1666,7 @@
    "id": "metric_family:vllm:kv_offload_size",
    "category": "metric_family",
    "name": "vllm:kv_offload_size",
-   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:147",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:164",
    "manifest_class": "derived",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
@@ -1663,7 +1675,7 @@
    "id": "metric_family:vllm:kv_offload_store_bytes",
    "category": "metric_family",
    "name": "vllm:kv_offload_store_bytes",
-   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:75",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:92",
    "manifest_class": "derived",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
@@ -1672,7 +1684,7 @@
    "id": "metric_family:vllm:kv_offload_store_size",
    "category": "metric_family",
    "name": "vllm:kv_offload_store_size",
-   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:81",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:98",
    "manifest_class": "derived",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
@@ -1681,7 +1693,7 @@
    "id": "metric_family:vllm:kv_offload_store_time",
    "category": "metric_family",
    "name": "vllm:kv_offload_store_time",
-   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:78",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:95",
    "manifest_class": "derived",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
@@ -1690,7 +1702,7 @@
    "id": "metric_family:vllm:kv_offload_stores_skipped",
    "category": "metric_family",
    "name": "vllm:kv_offload_stores_skipped",
-   "site": "vllm/v1/kv_offload/cpu/spec.py:84",
+   "site": "vllm/v1/kv_offload/cpu/spec.py:88",
    "manifest_class": "exact",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
@@ -1699,7 +1711,7 @@
    "id": "metric_family:vllm:kv_offload_tiering_active_cascade_jobs",
    "category": "metric_family",
    "name": "vllm:kv_offload_tiering_active_cascade_jobs",
-   "site": "vllm/v1/kv_offload/tiering/spec.py:235",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:244",
    "manifest_class": "exact",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
@@ -1708,7 +1720,7 @@
    "id": "metric_family:vllm:kv_offload_tiering_active_promotion_jobs",
    "category": "metric_family",
    "name": "vllm:kv_offload_tiering_active_promotion_jobs",
-   "site": "vllm/v1/kv_offload/tiering/spec.py:228",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:237",
    "manifest_class": "exact",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
@@ -1717,7 +1729,7 @@
    "id": "metric_family:vllm:kv_offload_tiering_backpressure_blocks_dropped",
    "category": "metric_family",
    "name": "vllm:kv_offload_tiering_backpressure_blocks_dropped",
-   "site": "vllm/v1/kv_offload/tiering/spec.py:269",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:300",
    "manifest_class": "exact",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
@@ -1726,7 +1738,7 @@
    "id": "metric_family:vllm:kv_offload_tiering_backpressure_store_latency_ema",
    "category": "metric_family",
    "name": "vllm:kv_offload_tiering_backpressure_store_latency_ema",
-   "site": "vllm/v1/kv_offload/tiering/spec.py:251",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:282",
    "manifest_class": "derived",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
@@ -1735,7 +1747,7 @@
    "id": "metric_family:vllm:kv_offload_tiering_backpressure_stores_dropped",
    "category": "metric_family",
    "name": "vllm:kv_offload_tiering_backpressure_stores_dropped",
-   "site": "vllm/v1/kv_offload/tiering/spec.py:260",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:291",
    "manifest_class": "exact",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
@@ -1744,7 +1756,7 @@
    "id": "metric_family:vllm:kv_offload_tiering_cascade_job_failures",
    "category": "metric_family",
    "name": "vllm:kv_offload_tiering_cascade_job_failures",
-   "site": "vllm/v1/kv_offload/tiering/spec.py:184",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:193",
    "manifest_class": "derived",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
@@ -1753,7 +1765,7 @@
    "id": "metric_family:vllm:kv_offload_tiering_chunk_hits",
    "category": "metric_family",
    "name": "vllm:kv_offload_tiering_chunk_hits",
-   "site": "vllm/v1/kv_offload/tiering/spec.py:197",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:206",
    "manifest_class": "exact",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
@@ -1762,7 +1774,7 @@
    "id": "metric_family:vllm:kv_offload_tiering_chunk_queries",
    "category": "metric_family",
    "name": "vllm:kv_offload_tiering_chunk_queries",
-   "site": "vllm/v1/kv_offload/tiering/spec.py:191",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:200",
    "manifest_class": "exact",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
@@ -1771,7 +1783,7 @@
    "id": "metric_family:vllm:kv_offload_tiering_lookup_async_delay_seconds",
    "category": "metric_family",
    "name": "vllm:kv_offload_tiering_lookup_async_delay_seconds",
-   "site": "vllm/v1/kv_offload/tiering/spec.py:125",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:130",
    "manifest_class": "derived",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
@@ -1780,7 +1792,7 @@
    "id": "metric_family:vllm:kv_offload_tiering_lookup_sync_delay_seconds",
    "category": "metric_family",
    "name": "vllm:kv_offload_tiering_lookup_sync_delay_seconds",
-   "site": "vllm/v1/kv_offload/tiering/spec.py:103",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:108",
    "manifest_class": "derived",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
@@ -1789,7 +1801,7 @@
    "id": "metric_family:vllm:kv_offload_tiering_primary_read_usage_perc",
    "category": "metric_family",
    "name": "vllm:kv_offload_tiering_primary_read_usage_perc",
-   "site": "vllm/v1/kv_offload/tiering/spec.py:219",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:228",
    "manifest_class": "exact",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
@@ -1798,7 +1810,7 @@
    "id": "metric_family:vllm:kv_offload_tiering_primary_write_usage_perc",
    "category": "metric_family",
    "name": "vllm:kv_offload_tiering_primary_write_usage_perc",
-   "site": "vllm/v1/kv_offload/tiering/spec.py:210",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:219",
    "manifest_class": "exact",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
@@ -1807,7 +1819,7 @@
    "id": "metric_family:vllm:kv_offload_tiering_promotion_allocation_failures",
    "category": "metric_family",
    "name": "vllm:kv_offload_tiering_promotion_allocation_failures",
-   "site": "vllm/v1/kv_offload/tiering/spec.py:202",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:211",
    "manifest_class": "exact",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
@@ -1816,7 +1828,16 @@
    "id": "metric_family:vllm:kv_offload_tiering_promotion_job_failures",
    "category": "metric_family",
    "name": "vllm:kv_offload_tiering_promotion_job_failures",
-   "site": "vllm/v1/kv_offload/tiering/spec.py:176",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:185",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+  },
+  {
+   "id": "metric_family:vllm:kv_offload_tiering_promotion_latency_seconds",
+   "category": "metric_family",
+   "name": "vllm:kv_offload_tiering_promotion_latency_seconds",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:251",
    "manifest_class": "derived",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
@@ -1825,7 +1846,7 @@
    "id": "metric_family:vllm:kv_offload_tiering_read_bytes",
    "category": "metric_family",
    "name": "vllm:kv_offload_tiering_read_bytes",
-   "site": "vllm/v1/kv_offload/tiering/spec.py:147",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:152",
    "manifest_class": "derived",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
@@ -1834,7 +1855,7 @@
    "id": "metric_family:vllm:kv_offload_tiering_read_time",
    "category": "metric_family",
    "name": "vllm:kv_offload_tiering_read_time",
-   "site": "vllm/v1/kv_offload/tiering/spec.py:154",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:159",
    "manifest_class": "derived",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
@@ -1843,7 +1864,7 @@
    "id": "metric_family:vllm:kv_offload_tiering_write_bytes",
    "category": "metric_family",
    "name": "vllm:kv_offload_tiering_write_bytes",
-   "site": "vllm/v1/kv_offload/tiering/spec.py:161",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:169",
    "manifest_class": "derived",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
@@ -1852,7 +1873,7 @@
    "id": "metric_family:vllm:kv_offload_tiering_write_time",
    "category": "metric_family",
    "name": "vllm:kv_offload_tiering_write_time",
-   "site": "vllm/v1/kv_offload/tiering/spec.py:168",
+   "site": "vllm/v1/kv_offload/tiering/spec.py:176",
    "manifest_class": "derived",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
@@ -1861,7 +1882,7 @@
    "id": "metric_family:vllm:kv_offload_total_bytes",
    "category": "metric_family",
    "name": "vllm:kv_offload_total_bytes",
-   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:141",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:158",
    "manifest_class": "derived",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
@@ -1870,7 +1891,7 @@
    "id": "metric_family:vllm:kv_offload_total_time",
    "category": "metric_family",
    "name": "vllm:kv_offload_total_time",
-   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:144",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/metrics.py:161",
    "manifest_class": "derived",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
@@ -1895,7 +1916,7 @@
    "manifest_class": "unavailable",
    "status": "out_of_scope",
    "reason": "no_priced_work",
-   "citation": "vllm/v1/metrics/loggers.py:713-735@5df63a72",
+   "citation": "vllm/v1/metrics/loggers.py:713-735@4ba787ec",
    "why": "the multimodal processor cache; BLIS simulates text serving"
   },
   {
@@ -1906,8 +1927,53 @@
    "manifest_class": "unavailable",
    "status": "out_of_scope",
    "reason": "no_priced_work",
-   "citation": "vllm/v1/metrics/loggers.py:713-735@5df63a72",
+   "citation": "vllm/v1/metrics/loggers.py:713-735@4ba787ec",
    "why": "the multimodal processor cache; BLIS simulates text serving"
+  },
+  {
+   "id": "metric_family:vllm:mooncake_bytes_transferred",
+   "category": "metric_family",
+   "name": "vllm:mooncake_bytes_transferred",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/stats.py:215",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/138"
+  },
+  {
+   "id": "metric_family:vllm:mooncake_num_descriptors",
+   "category": "metric_family",
+   "name": "vllm:mooncake_num_descriptors",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/stats.py:225",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/138"
+  },
+  {
+   "id": "metric_family:vllm:mooncake_num_failed_recvs",
+   "category": "metric_family",
+   "name": "vllm:mooncake_num_failed_recvs",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/stats.py:243",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/138"
+  },
+  {
+   "id": "metric_family:vllm:mooncake_num_failed_transfers",
+   "category": "metric_family",
+   "name": "vllm:mooncake_num_failed_transfers",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/stats.py:235",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/138"
+  },
+  {
+   "id": "metric_family:vllm:mooncake_num_kv_expired_reqs",
+   "category": "metric_family",
+   "name": "vllm:mooncake_num_kv_expired_reqs",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/stats.py:251",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/138"
   },
   {
    "id": "metric_family:vllm:mooncake_store_operation_bytes_total",
@@ -1953,6 +2019,15 @@
    "manifest_class": "derived",
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/12"
+  },
+  {
+   "id": "metric_family:vllm:mooncake_xfer_time_seconds",
+   "category": "metric_family",
+   "name": "vllm:mooncake_xfer_time_seconds",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/mooncake/stats.py:205",
+   "manifest_class": "derived",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/138"
   },
   {
    "id": "metric_family:vllm:nixl_bytes_transferred",
@@ -2319,7 +2394,7 @@
    "manifest_class": "unavailable",
    "status": "out_of_scope",
    "reason": "no_priced_work",
-   "citation": "vllm/entrypoints/rl/online/metrics.py:19-31@5df63a72",
+   "citation": "vllm/entrypoints/rl/online/metrics.py:19-31@4ba787ec",
    "why": "an RL trainer's weight-update endpoint, which no served request calls"
   },
   {
@@ -2330,7 +2405,7 @@
    "manifest_class": "unavailable",
    "status": "out_of_scope",
    "reason": "no_priced_work",
-   "citation": "vllm/entrypoints/rl/online/metrics.py:19-31@5df63a72",
+   "citation": "vllm/entrypoints/rl/online/metrics.py:19-31@4ba787ec",
    "why": "an RL trainer's weight-update endpoint, which no served request calls"
   },
   {
@@ -2386,7 +2461,7 @@
    "manifest_class": "unavailable",
    "status": "out_of_scope",
    "reason": "no_priced_work",
-   "citation": "vllm/entrypoints/serve/dev/sleep/metrics.py:21-33@5df63a72",
+   "citation": "vllm/entrypoints/serve/dev/sleep/metrics.py:21-33@4ba787ec",
    "why": "an operator's sleep-mode endpoint, which no served request calls"
   },
   {
@@ -2397,7 +2472,7 @@
    "manifest_class": "unavailable",
    "status": "out_of_scope",
    "reason": "no_priced_work",
-   "citation": "vllm/entrypoints/serve/dev/sleep/metrics.py:21-33@5df63a72",
+   "citation": "vllm/entrypoints/serve/dev/sleep/metrics.py:21-33@4ba787ec",
    "why": "an operator's sleep-mode endpoint, which no served request calls"
   },
   {
@@ -2468,8 +2543,44 @@
    "manifest_class": "unavailable",
    "status": "out_of_scope",
    "reason": "no_priced_work",
-   "citation": "vllm/parser/metrics.py:38@5df63a72",
+   "citation": "vllm/parser/metrics.py:38@4ba787ec",
    "why": "response parsing in the API server, after the engine"
+  },
+  {
+   "id": "metric_family:vllm:umbp_transfer_bytes_total",
+   "category": "metric_family",
+   "name": "vllm:umbp_transfer_bytes_total",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/umbp/stats.py:109",
+   "manifest_class": "unavailable",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/66"
+  },
+  {
+   "id": "metric_family:vllm:umbp_transfer_completed_total",
+   "category": "metric_family",
+   "name": "vllm:umbp_transfer_completed_total",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/umbp/stats.py:99",
+   "manifest_class": "unavailable",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/66"
+  },
+  {
+   "id": "metric_family:vllm:umbp_transfer_failed_total",
+   "category": "metric_family",
+   "name": "vllm:umbp_transfer_failed_total",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/umbp/stats.py:104",
+   "manifest_class": "unavailable",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/66"
+  },
+  {
+   "id": "metric_family:vllm:umbp_transfer_submitted_total",
+   "category": "metric_family",
+   "name": "vllm:umbp_transfer_submitted_total",
+   "site": "vllm/distributed/kv_transfer/kv_connector/v1/umbp/stats.py:94",
+   "manifest_class": "unavailable",
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/66"
   },
   {
    "id": "metric_family:vllm:watermark_requests",
@@ -2479,7 +2590,7 @@
    "manifest_class": "unavailable",
    "status": "out_of_scope",
    "reason": "no_priced_work",
-   "citation": "vllm/v1/metrics/loggers.py:643-650@5df63a72",
+   "citation": "vllm/v1/metrics/loggers.py:643-650@4ba787ec",
    "why": "the watermark status of finished outputs, a property of the sampled text"
   },
   {
@@ -2490,7 +2601,7 @@
    "manifest_class": "unavailable",
    "status": "out_of_scope",
    "reason": "no_priced_work",
-   "citation": "vllm/entrypoints/speech_to_text/realtime/metrics.py:23-39@5df63a72",
+   "citation": "vllm/entrypoints/speech_to_text/realtime/metrics.py:23-39@4ba787ec",
    "why": "the realtime speech-to-text endpoint; BLIS simulates text serving"
   },
   {
@@ -2501,7 +2612,7 @@
    "manifest_class": "unavailable",
    "status": "out_of_scope",
    "reason": "no_priced_work",
-   "citation": "vllm/entrypoints/speech_to_text/realtime/metrics.py:23-39@5df63a72",
+   "citation": "vllm/entrypoints/speech_to_text/realtime/metrics.py:23-39@4ba787ec",
    "why": "the realtime speech-to-text endpoint; BLIS simulates text serving"
   },
   {
@@ -2512,7 +2623,7 @@
    "manifest_class": "unavailable",
    "status": "out_of_scope",
    "reason": "no_priced_work",
-   "citation": "vllm/entrypoints/speech_to_text/realtime/metrics.py:23-39@5df63a72",
+   "citation": "vllm/entrypoints/speech_to_text/realtime/metrics.py:23-39@4ba787ec",
    "why": "the realtime speech-to-text endpoint; BLIS simulates text serving"
   }
  ]
