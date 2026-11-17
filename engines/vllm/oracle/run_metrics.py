@@ -200,11 +200,11 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         # An abort at this step, before the step runs. Two kinds, because only one reaches the
         # finish-reason counter:
         #  - "client" (the default): AsyncLLM.abort. The frontend's OutputProcessor forgets the
-        #    request (async_llm.py:918), then EngineCore finishes it in the scheduler
-        #    (core.py:554-559@5df63a72). No output carries the abort back, so the request is in
+        #    request (async_llm.py:955), then EngineCore finishes it in the scheduler
+        #    (core.py:564-569@4ba787ec). No output carries the abort back, so the request is in
         #    no vllm:request_success sample.
         #  - "engine": the engine ends the request itself (pause in abort mode, shutdown with a
-        #    zero timeout; core.py:1648-1651, 2089-2092@5df63a72). EngineCoreProc._send_abort_outputs,
+        #    zero timeout; core.py:1725-1728, 2209-2212@4ba787ec). EngineCoreProc._send_abort_outputs,
         #    vLLM's own method, queues an output with finish_reason ABORT, which the frontend
         #    processes while it still holds the request, so the abort is counted.
         client = sorted(rid for rid, r in by_id.items() if r.get("abort_step") == step
