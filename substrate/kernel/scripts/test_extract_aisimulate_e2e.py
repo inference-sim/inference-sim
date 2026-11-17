@@ -34,60 +34,88 @@ def ck(label, ok, detail=""):
         FAILURES.append(label)
 
 
-def point(c):
-    return {"concurrency": c, "status": "success",
-            "measured": {"tpot_relative": 1.0 + c / 100, "ttft_relative": 1.0 + c / 50}}
+# The catalog the cases read: model directories whose model.yaml names a checkpoint, as the
+# repository's catalog/models does. Two entries share one checkpoint, as a speculator shipped
+# inside its target's checkpoint does.
+CATALOG = {
+    "gpt-oss-120b": "openai/gpt-oss-120b",
+    "flash": "org/Flash",
+    "flash-dspark": "org/Flash",
+}
 
 
-def good_summary(model="gptoss120b", points=(1, 4, 16)):
+def write_catalog(root: Path) -> None:
+    for name, repo in CATALOG.items():
+        (root / name).mkdir(parents=True)
+        (root / name / "model.yaml").write_text(
+            f"name: {name}\nsource:\n  provider: huggingface\n  repo: {repo}\n"
+            f"  revision: {'d' * 40}\nlicence:\n  id: Apache-2.0\n")
+
+
+def point(c, status="success"):
+    """One point as the renamed simulator's artifact states it: its block is `aisim`."""
+    return {"concurrency": c, "status": status,
+            "measured": {"tpot_relative": 1.0 + c / 100, "ttft_relative": 1.0 + c / 50},
+            "aisim": {"tpot_relative": 1.0 + c / 90, "tpot_error_pct": 1.5,
+                      "ttft_relative": 1.0 + c / 40, "ttft_error_pct": 2.5},
+            "aic": {"tpot_relative": None, "ttft_relative": None}}
+
+
+def topology(tid="t1", serving="aggregated", spec=None, pp=1, points=(1, 4, 16)):
+    return {"id": tid, "serving": serving, "spec_method": spec, "precision": "fp8",
+            "framework": "vllm", "total_gpus": 4, "is_multinode": False,
+            "parallelism": {"tp_size": 4, "pp_size": pp, "attention_dp_size": 1,
+                            "moe_ep_size": 1, "moe_tp_size": 4},
+            "points": [point(c) for c in points]}
+
+
+def good_summary(model="openai/gpt-oss-120b", points=(1, 4, 16), gpu="h100"):
     return {
         "snapshot": {
             "evaluated_revision": {"branch": "main", "commit_sha": COMMIT},
-            "release_tag": "db-dump/2026-09-28",
-            "campaign": {"run_id": "36849388864", "run_attempt": "1", "status": "complete"},
+            "release_tag": "hf/" + "e" * 40,
+            "campaign": {"run_id": "43584761964", "run_attempt": "1", "status": "complete"},
         },
-        "scope": {}, "totals": {},
+        "scope": {}, "totals": {"aisim": {"tpot_mape_pct": 18.85}, "aic": {}},
         "models": [{"model": model, "workloads": [{
             "identity": "1024:1024", "label": "1k1k",
-            "gpus": [{"gpu": "h100", "topologies": [{
-                "id": "t1", "serving": "aggregated", "spec_method": None, "precision": "fp8",
-                "framework": "vllm",
-                "parallelism": {"tp_size": 4, "pp_size": 1, "attention_dp_size": 1,
-                                "moe_ep_size": 1, "moe_tp_size": 4},
-                "points": [point(c) for c in points]}]}]}]}],
+            "gpus": [{"gpu": gpu, "topologies": [topology(points=points)]}]}]}],
     }
 
 
 def pin_for(raw: bytes, sweeps=1, points=3):
     return {"source": "aisimulate", "artifact_id": "e2e-accuracy-web",
-            "repository": "ai-dynamo/aisimulate", "run_id": "36849388864", "run_attempt": 1,
-            "commit": COMMIT, "release_tag": "db-dump/2026-09-28",
+            "repository": "ai-dynamo/aisim", "run_id": "43584761964", "run_attempt": 1,
+            "commit": COMMIT, "release_tag": "hf/" + "e" * 40,
             "artifact": "e2e-accuracy-web-0d6e4079e36703eb", "zip_sha256": "b" * 64,
             "summary_sha256": hashlib.sha256(raw).hexdigest(),
             "expected": {"sweeps": sweeps, "points": points}}
 
 
-def run(summary, mutate_pin=None, use_committed_pin=False, raw=None):
-    """Run the extractor on a summary; return (exit code, stderr, whether it wrote a corpus)."""
+def run(summary, mutate_pin=None, use_committed_pin=False, raw=None, sweeps=1, points=3):
+    """Run the extractor on a summary; return (exit code, stderr, the corpus or None)."""
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
+        write_catalog(tmp / "models")
         raw = raw if raw is not None else json.dumps(summary).encode()
         (tmp / "summary.json").write_bytes(raw)
-        pin = pin_for(raw)
+        pin = pin_for(raw, sweeps=sweeps, points=points)
         if mutate_pin:
             mutate_pin(pin)
         (tmp / "pin.json").write_text(json.dumps(pin))
         out = tmp / "corpus.json"
-        cmd = [sys.executable, "-I", str(SCRIPT), str(tmp / "summary.json"), "-o", str(out)]
+        cmd = [sys.executable, "-I", str(SCRIPT), str(tmp / "summary.json"), "-o", str(out),
+               "--catalog", str(tmp / "models")]
         if not use_committed_pin:
             cmd += ["--pin", str(tmp / "pin.json")]
         r = subprocess.run(cmd, capture_output=True, text=True)
-        return r.returncode, r.stderr, out.exists()
+        corpus = json.loads(out.read_text()) if out.exists() else None
+        return r.returncode, r.stderr, corpus
 
 
 def refused(label, summary, needle, **kw):
-    code, err, wrote = run(summary, **kw)
-    ck(label, code == 1 and needle in err and not wrote, f"exit {code}: {err.strip()[:200]}")
+    code, err, corpus = run(summary, **kw)
+    ck(label, code == 1 and needle in err and corpus is None, f"exit {code}: {err.strip()[:200]}")
 
 
 def edit(fn):
@@ -97,8 +125,52 @@ def edit(fn):
 
 
 def main() -> int:
-    code, err, wrote = run(good_summary())
-    ck("the pinned artifact is extracted", code == 0 and wrote, f"exit {code}: {err.strip()}")
+    code, err, corpus = run(good_summary())
+    ck("the pinned artifact is extracted", code == 0 and corpus is not None,
+       f"exit {code}: {err.strip()}")
+
+    # The renamed simulator: its per-point block is `aisim`, and its figures reach the corpus
+    # under the field names the corpus readers use.
+    p = corpus["sweeps"][0]["points"][1] if corpus else {}
+    ck("a point carries the simulator's prediction from its aisim block",
+       p.get("aisimulate_tpot_relative") == 1.0 + 4 / 90
+       and p.get("aisimulate_ttft_relative") == 1.0 + 4 / 40
+       and p.get("aisimulate_tpot_error_pct") == 1.5, str(p))
+    ck("the corpus carries the simulator's totals from the aisim block",
+       bool(corpus) and corpus["aisimulate_totals"] == {"tpot_mape_pct": 18.85})
+    refused("a summary whose totals name the simulator only by its old block is refused",
+            edit(lambda s: s["totals"].update(aisimulate=s["totals"].pop("aisim"))),
+            "no 'aisim' block")
+
+    # A checkpoint is the catalog model whose source.repo names it, read from the catalog.
+    ck("the checkpoint maps to the catalog model that names it",
+       bool(corpus) and corpus["sweeps"][0]["model"] == "gpt-oss-120b")
+    refused("a checkpoint that two catalog models name is refused",
+            good_summary(model="org/Flash"), "is the source of 2 catalog models")
+    code, err, c = run(good_summary(gpu="gb200"))
+    ck("a gb200 topology is priced on the catalog's gb200-nvl72",
+       code == 0 and c["sweeps"][0]["gpu"] == "gb200-nvl72"
+       and c["sweeps"][0]["scenario"].startswith("gpt-oss-120b-gb200-nvl72-"), err.strip())
+
+    # Every point is kept or counted under one reason: disaggregated, speculative, multi-stage,
+    # short and unknown-checkpoint topologies, and a failed point in a kept sweep.
+    def mixed(s):
+        tops = s["models"][0]["workloads"][0]["gpus"][0]["topologies"]
+        tops[0]["points"].append(point(32, status="failed"))
+        tops += [topology("pd", serving="disaggregated"), topology("mtp", spec="mtp"),
+                 topology("pp", pp=2), topology("short", points=(1, 2))]
+        s["models"].append(copy.deepcopy(s["models"][0]))
+        s["models"][1]["model"] = "nvidia/gpt-oss-120b-NVFP4"
+    code, err, c = run(edit(mixed))
+    ck("each skipped point is counted once, under its reason",
+       code == 0 and c["selection"]["skipped"] == {
+           "failed point in a kept sweep": 1,
+           "serving=disaggregated spec=none": 3,
+           "serving=aggregated spec=mtp": 3,
+           "pp_size>1": 3,
+           "fewer than three successful points": 2,
+           "checkpoint not in catalog": 15,
+       }, f"exit {code}: {err.strip()[:200]} {c and c['selection']['skipped']}")
 
     # A changed byte: the digest no longer matches the pin.
     refused("a summary with another SHA-256 is refused",
@@ -126,15 +198,15 @@ def main() -> int:
             "commit_sha")
     refused("no snapshot at all is refused", edit(lambda s: s.pop("snapshot")), "snapshot")
     refused("another release tag is refused",
-            edit(lambda s: s["snapshot"].update(release_tag="db-dump/2026-10-05")), "release_tag")
+            edit(lambda s: s["snapshot"].update(release_tag="hf/" + "f" * 40)), "release_tag")
     refused("an incomplete campaign is refused",
             edit(lambda s: s["snapshot"]["campaign"].update(status="running")), "status")
 
     # X22: nothing read is a failure, and the pin's counts are a minimum that is also a maximum.
-    refused("a pinned artifact whose slugs match nothing reads 0 points and fails",
-            good_summary(model="unknown-slug"), "slugs no longer match")
+    refused("a pinned artifact whose checkpoints match nothing reads 0 points and fails",
+            good_summary(model="org/unknown"), "no longer match the catalog")
     refused("a sweep below three points yields nothing and fails",
-            good_summary(points=(1, 4)), "slugs no longer match")
+            good_summary(points=(1, 4)), "no longer match the catalog")
     refused("a different number of points than the pin records is refused",
             good_summary(), "pin records", mutate_pin=lambda p: p["expected"].update(points=4))
     refused("a different number of sweeps than the pin records is refused",
@@ -148,15 +220,15 @@ def main() -> int:
         "a pin with no digest": (lambda p: p.update(summary_sha256=""), "summary_sha256 is not a SHA-256"),
         "a pin expecting nothing": (lambda p: p.update(expected={"sweeps": 0, "points": 0}), "expected needs positive"),
     }.items():
-        code, err, wrote = run(good_summary(), mutate_pin=fn)
-        ck(f"{label} is refused", code != 0 and why in err and not wrote,
+        code, err, corpus = run(good_summary(), mutate_pin=fn)
+        ck(f"{label} is refused", code != 0 and why in err and corpus is None,
            f"exit {code}: {err.strip()[:160]}")
 
     # The reviewer's repro: a document whose snapshot says latest, with one valid sweep.
-    code, err, wrote = run(edit(lambda s: s["snapshot"].update(evaluated_revision="latest")),
-                           use_committed_pin=True)
+    code, err, corpus = run(edit(lambda s: s["snapshot"].update(evaluated_revision="latest")),
+                            use_committed_pin=True)
     ck("the committed pin refuses a 'latest' snapshot with one valid sweep",
-       code == 1 and not wrote, f"exit {code}")
+       code == 1 and corpus is None, f"exit {code}")
 
     # The committed pin is itself exact.
     pin = json.loads(COMMITTED_PIN.read_text())
