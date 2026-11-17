@@ -263,26 +263,12 @@ func runDecodeGPUs(cs *cluster.ClusterSimulator, dep *deployment.Deployment) int
 
 // runGPUsByRole is runGPUs, and the part of it the decode instances occupy.
 func runGPUsByRole(cs *cluster.ClusterSimulator, dep *deployment.Deployment) (all, decode int) {
-	gpus, isDecode := instanceGPUs(cs, dep)
-	for id, g := range gpus {
-		all += g
-		if isDecode[id] {
-			decode += g
-		}
-	}
-	return all, decode
-}
-
-// instanceGPUs is the GPUs each instance occupies, by instance id, and which of them are
-// decode instances.
-func instanceGPUs(cs *cluster.ClusterSimulator, dep *deployment.Deployment) (gpus map[string]int, decode map[string]bool) {
 	perRole := map[deployment.Role]int{}
 	if dep != nil {
 		for _, p := range dep.Pools {
 			perRole[p.Role] = max(p.Parallel.TP, 1) * max(p.Parallel.PP, 1) * max(p.Parallel.PCP, 1)
 		}
 	}
-	gpus, decode = map[string]int{}, map[string]bool{}
 	membership := cs.PoolMembership()
 	for _, inst := range cs.Instances() {
 		role := deployment.RoleColocated
@@ -298,10 +284,12 @@ func instanceGPUs(cs *cluster.ClusterSimulator, dep *deployment.Deployment) (gpu
 		if !ok {
 			g = max(inst.TPDegree, 1)
 		}
-		gpus[string(inst.ID())] = g
-		decode[string(inst.ID())] = role == deployment.RoleDecode
+		all += g
+		if role == deployment.RoleDecode {
+			decode += g
+		}
 	}
-	return gpus, decode
+	return all, decode
 }
 
 // engineSection is what the engine side of the run reported: under "cluster" the aggregate

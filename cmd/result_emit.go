@@ -147,7 +147,7 @@ func emitRunResult(p postRun) {
 		Data:           resultData(data),
 	}
 	eng := engineSection(aggregated, sum, raw, series, prefixCacheRecords, acceptanceRecord, instanceSections(cs, sum), p.agentic)
-	addBusy(eng, cs, docs.Deployment, sum)
+	addBusy(eng, cs, sum)
 	out := resultMetrics{
 		Aggregated:      aggregated,
 		Ledger:          resultLedger(cs),

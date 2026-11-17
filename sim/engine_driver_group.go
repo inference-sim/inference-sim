@@ -229,7 +229,7 @@ func (d *EngineDriver) kickGroup(now int64) {
 		}
 		o.notePreempted(ob)
 		o.admit(ob, now, now)
-		o.Metrics.Busy.Record(d.eng, ob, now, end)
+		o.Metrics.Busy.Record(ob, now, end)
 	}
 	for _, f := range b.Finished {
 		// A request the step ended without running it (engine.Batch.Finished) ends on the rank
