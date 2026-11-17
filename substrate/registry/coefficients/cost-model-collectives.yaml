@@ -2422,65 +2422,65 @@ coefficients:
       rationale: >
         694.75 GB/s, the rate in max(floor + size / rate, size / peak). Fitted over 21 points by minimising the mean absolute log ratio, which weighs an under-prediction and an over equally. It cuts this configuration's geometric error from 1.304x under the two-parameter form to 1.159x. Below the asymptote, which is 0.92 of it, because a collective reaches its asymptotic bandwidth only at messages far larger than one forward pass produces.
   - collective_floor_all_reduce_fp16_2rank_gb200_nvl72:
-      value: 10.86
+      value: 3.7
       units: us_per_transfer
       method: measured
-      fitted: false
+      fitted: true
       scope: {hardware: [gb200-nvl72]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.29.2/nccl_perf.parquet (NCCL 2.29.2, NVIDIA GB200)", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 5875048fd273; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA GB200), 23 messages at 2 ranks", role: primary}
       rationale: >
-        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size; that region spans 1.05x, so the minimum rather than the median. 21 points in the sweep.
+        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. Relaned from NCCL 2.29.2's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.030x against the NCCL 2.29.2 values' 1.938x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_peak_rate_all_reduce_fp16_2rank_gb200_nvl72:
-      value: 264880.8
-      units: bytes_per_us
-      method: measured
-      fitted: false
-      scope: {hardware: [gb200-nvl72]}
-      sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.29.2/nccl_perf.parquet (NCCL 2.29.2, NVIDIA GB200)", role: primary}
-      rationale: >
-        264.88 GB/s, the maximum of message_size over latency across 21 points. Used as a ceiling on achievable bandwidth rather than as the rate itself: see collective_transition_rate_all_reduce_fp16_2rank_gb200_nvl72.
-  - collective_transition_rate_all_reduce_fp16_2rank_gb200_nvl72:
-      value: 246000.0
+      value: 287128.9
       units: bytes_per_us
       method: measured
       fitted: true
       scope: {hardware: [gb200-nvl72]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.29.2/nccl_perf.parquet (NCCL 2.29.2, NVIDIA GB200)", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 5875048fd273; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA GB200), 23 messages at 2 ranks", role: primary}
       rationale: >
-        246.00 GB/s, the rate in max(floor + size / rate, size / peak). Fitted over 21 points by minimising the mean absolute log ratio, which weighs an under-prediction and an over equally. It cuts this configuration's geometric error from 1.256x under the two-parameter form to 1.116x. Below the asymptote, which is 0.93 of it, because a collective reaches its asymptotic bandwidth only at messages far larger than one forward pass produces.
+        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 287.13 GB/s. Relaned from NCCL 2.29.2's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.030x against the NCCL 2.29.2 values' 1.938x (11 messages; scripts/relane_allreduce_vllm.py).
+  - collective_transition_rate_all_reduce_fp16_2rank_gb200_nvl72:
+      value: 234250.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [gb200-nvl72]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 5875048fd273; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA GB200), 23 messages at 2 ranks", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.037x against 1.187x under max(size/peak, floor). 234.25 GB/s. Relaned from NCCL 2.29.2's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.030x against the NCCL 2.29.2 values' 1.938x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_floor_all_reduce_fp16_4rank_gb200_nvl72:
-      value: 15.63
+      value: 4.04
       units: us_per_transfer
       method: measured
-      fitted: false
+      fitted: true
       scope: {hardware: [gb200-nvl72]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.29.2/nccl_perf.parquet (NCCL 2.29.2, NVIDIA GB200)", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 5875048fd273; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA GB200), 23 messages at 4 ranks", role: primary}
       rationale: >
-        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size; that region spans 1.04x, so the minimum rather than the median. 21 points in the sweep.
+        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. Relaned from NCCL 2.29.2's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.047x against the NCCL 2.29.2 values' 2.308x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_peak_rate_all_reduce_fp16_4rank_gb200_nvl72:
-      value: 209363.5
-      units: bytes_per_us
-      method: measured
-      fitted: false
-      scope: {hardware: [gb200-nvl72]}
-      sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.29.2/nccl_perf.parquet (NCCL 2.29.2, NVIDIA GB200)", role: primary}
-      rationale: >
-        209.36 GB/s, the maximum of message_size over latency across 21 points. Used as a ceiling on achievable bandwidth rather than as the rate itself: see collective_transition_rate_all_reduce_fp16_4rank_gb200_nvl72.
-  - collective_transition_rate_all_reduce_fp16_4rank_gb200_nvl72:
-      value: 201250.0
+      value: 193539.9
       units: bytes_per_us
       method: measured
       fitted: true
       scope: {hardware: [gb200-nvl72]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.29.2/nccl_perf.parquet (NCCL 2.29.2, NVIDIA GB200)", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 5875048fd273; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA GB200), 23 messages at 4 ranks", role: primary}
       rationale: >
-        201.25 GB/s, the rate in max(floor + size / rate, size / peak). Fitted over 21 points by minimising the mean absolute log ratio, which weighs an under-prediction and an over equally. It cuts this configuration's geometric error from 1.295x under the two-parameter form to 1.154x. Below the asymptote, which is 0.96 of it, because a collective reaches its asymptotic bandwidth only at messages far larger than one forward pass produces.
+        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 193.54 GB/s. Relaned from NCCL 2.29.2's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.047x against the NCCL 2.29.2 values' 2.308x (11 messages; scripts/relane_allreduce_vllm.py).
+  - collective_transition_rate_all_reduce_fp16_4rank_gb200_nvl72:
+      value: 185750.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [gb200-nvl72]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 5875048fd273; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA GB200), 23 messages at 4 ranks", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.043x against 1.145x under max(size/peak, floor). 185.75 GB/s. Relaned from NCCL 2.29.2's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.047x against the NCCL 2.29.2 values' 2.308x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_floor_all_reduce_int8_2rank_gb200_nvl72:
       value: 10.9
       units: us_per_transfer
@@ -2990,9 +2990,9 @@ coefficients:
       fitted: true
       scope: {hardware: [h100]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 06b4dcadf86e; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 2 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 06b4dcadf86e; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 2 ranks", role: primary}
       rationale: >
-        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.084x against the 0.24.0 values' 1.187x (11 messages; scripts/relane_allreduce_vllm.py).
+        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. Relaned from vLLM 0.24.0's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.084x against the vLLM 0.24.0 values' 1.187x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_peak_rate_all_reduce_fp16_2rank_h100:
       value: 167099.4
       units: bytes_per_us
@@ -3000,9 +3000,9 @@ coefficients:
       fitted: true
       scope: {hardware: [h100]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 06b4dcadf86e; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 2 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 06b4dcadf86e; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 2 ranks", role: primary}
       rationale: >
-        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 167.10 GB/s. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.084x against the 0.24.0 values' 1.187x (11 messages; scripts/relane_allreduce_vllm.py).
+        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 167.10 GB/s. Relaned from vLLM 0.24.0's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.084x against the vLLM 0.24.0 values' 1.187x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_transition_rate_all_reduce_fp16_2rank_h100:
       value: 122250.0
       units: bytes_per_us
@@ -3010,9 +3010,9 @@ coefficients:
       fitted: true
       scope: {hardware: [h100]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 06b4dcadf86e; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 2 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 06b4dcadf86e; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 2 ranks", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.082x against 1.273x under max(size/peak, floor). 122.25 GB/s. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.084x against the 0.24.0 values' 1.187x (11 messages; scripts/relane_allreduce_vllm.py).
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.082x against 1.273x under max(size/peak, floor). 122.25 GB/s. Relaned from vLLM 0.24.0's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.084x against the vLLM 0.24.0 values' 1.187x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_floor_all_reduce_fp16_4rank_h100:
       value: 3.06
       units: us_per_transfer
@@ -3020,9 +3020,9 @@ coefficients:
       fitted: true
       scope: {hardware: [h100]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 06b4dcadf86e; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 4 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 06b4dcadf86e; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 4 ranks", role: primary}
       rationale: >
-        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.058x against the 0.24.0 values' 1.249x (11 messages; scripts/relane_allreduce_vllm.py).
+        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. Relaned from vLLM 0.24.0's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.058x against the vLLM 0.24.0 values' 1.249x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_peak_rate_all_reduce_fp16_4rank_h100:
       value: 106199.9
       units: bytes_per_us
@@ -3030,9 +3030,9 @@ coefficients:
       fitted: true
       scope: {hardware: [h100]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 06b4dcadf86e; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 4 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 06b4dcadf86e; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 4 ranks", role: primary}
       rationale: >
-        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 106.20 GB/s. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.058x against the 0.24.0 values' 1.249x (11 messages; scripts/relane_allreduce_vllm.py).
+        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 106.20 GB/s. Relaned from vLLM 0.24.0's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.058x against the vLLM 0.24.0 values' 1.249x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_transition_rate_all_reduce_fp16_4rank_h100:
       value: 103250.0
       units: bytes_per_us
@@ -3040,9 +3040,9 @@ coefficients:
       fitted: true
       scope: {hardware: [h100]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 06b4dcadf86e; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 4 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 06b4dcadf86e; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 4 ranks", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.065x against 1.185x under max(size/peak, floor). 103.25 GB/s. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.058x against the 0.24.0 values' 1.249x (11 messages; scripts/relane_allreduce_vllm.py).
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.065x against 1.185x under max(size/peak, floor). 103.25 GB/s. Relaned from vLLM 0.24.0's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.058x against the vLLM 0.24.0 values' 1.249x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_floor_all_reduce_fp16_8rank_h100:
       value: 3.27
       units: us_per_transfer
@@ -3050,9 +3050,9 @@ coefficients:
       fitted: true
       scope: {hardware: [h100]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 06b4dcadf86e; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 8 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 06b4dcadf86e; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 8 ranks", role: primary}
       rationale: >
-        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.125x against the 0.24.0 values' 1.209x (11 messages; scripts/relane_allreduce_vllm.py).
+        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. Relaned from vLLM 0.24.0's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.125x against the vLLM 0.24.0 values' 1.209x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_peak_rate_all_reduce_fp16_8rank_h100:
       value: 115057.5
       units: bytes_per_us
@@ -3060,9 +3060,9 @@ coefficients:
       fitted: true
       scope: {hardware: [h100]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 06b4dcadf86e; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 8 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 06b4dcadf86e; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 8 ranks", role: primary}
       rationale: >
-        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 115.06 GB/s. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.125x against the 0.24.0 values' 1.209x (11 messages; scripts/relane_allreduce_vllm.py).
+        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 115.06 GB/s. Relaned from vLLM 0.24.0's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.125x against the vLLM 0.24.0 values' 1.209x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_transition_rate_all_reduce_fp16_8rank_h100:
       value: 108500.0
       units: bytes_per_us
@@ -3070,9 +3070,9 @@ coefficients:
       fitted: true
       scope: {hardware: [h100]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 06b4dcadf86e; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 8 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 06b4dcadf86e; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H100 80GB HBM3), 23 messages at 8 ranks", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.124x against 1.257x under max(size/peak, floor). 108.50 GB/s. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.125x against the 0.24.0 values' 1.209x (11 messages; scripts/relane_allreduce_vllm.py).
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.124x against 1.257x under max(size/peak, floor). 108.50 GB/s. Relaned from vLLM 0.24.0's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.125x against the vLLM 0.24.0 values' 1.209x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_floor_all_reduce_int8_2rank_h100:
       value: 6.38
       units: us_per_transfer
@@ -3792,9 +3792,9 @@ coefficients:
       fitted: true
       scope: {hardware: [h200]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 c6ea519cd7cb; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 2 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 c6ea519cd7cb; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 2 ranks", role: primary}
       rationale: >
-        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.083x against the 0.24.0 values' 1.278x (11 messages; scripts/relane_allreduce_vllm.py).
+        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. Relaned from vLLM 0.24.0's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.083x against the vLLM 0.24.0 values' 1.278x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_peak_rate_all_reduce_fp16_2rank_h200:
       value: 165886.6
       units: bytes_per_us
@@ -3802,9 +3802,9 @@ coefficients:
       fitted: true
       scope: {hardware: [h200]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 c6ea519cd7cb; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 2 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 c6ea519cd7cb; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 2 ranks", role: primary}
       rationale: >
-        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 165.89 GB/s. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.083x against the 0.24.0 values' 1.278x (11 messages; scripts/relane_allreduce_vllm.py).
+        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 165.89 GB/s. Relaned from vLLM 0.24.0's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.083x against the vLLM 0.24.0 values' 1.278x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_transition_rate_all_reduce_fp16_2rank_h200:
       value: 122000.0
       units: bytes_per_us
@@ -3812,9 +3812,9 @@ coefficients:
       fitted: true
       scope: {hardware: [h200]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 c6ea519cd7cb; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 2 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 c6ea519cd7cb; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 2 ranks", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.078x against 1.269x under max(size/peak, floor). 122.00 GB/s. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.083x against the 0.24.0 values' 1.278x (11 messages; scripts/relane_allreduce_vllm.py).
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.078x against 1.269x under max(size/peak, floor). 122.00 GB/s. Relaned from vLLM 0.24.0's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.083x against the vLLM 0.24.0 values' 1.278x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_floor_all_reduce_fp16_4rank_h200:
       value: 2.82
       units: us_per_transfer
@@ -3822,9 +3822,9 @@ coefficients:
       fitted: true
       scope: {hardware: [h200]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 c6ea519cd7cb; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 4 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 c6ea519cd7cb; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 4 ranks", role: primary}
       rationale: >
-        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.059x against the 0.24.0 values' 1.278x (11 messages; scripts/relane_allreduce_vllm.py).
+        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. Relaned from vLLM 0.24.0's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.059x against the vLLM 0.24.0 values' 1.278x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_peak_rate_all_reduce_fp16_4rank_h200:
       value: 111607.2
       units: bytes_per_us
@@ -3832,9 +3832,9 @@ coefficients:
       fitted: true
       scope: {hardware: [h200]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 c6ea519cd7cb; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 4 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 c6ea519cd7cb; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 4 ranks", role: primary}
       rationale: >
-        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 111.61 GB/s. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.059x against the 0.24.0 values' 1.278x (11 messages; scripts/relane_allreduce_vllm.py).
+        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 111.61 GB/s. Relaned from vLLM 0.24.0's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.059x against the vLLM 0.24.0 values' 1.278x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_transition_rate_all_reduce_fp16_4rank_h200:
       value: 104250.0
       units: bytes_per_us
@@ -3842,9 +3842,9 @@ coefficients:
       fitted: true
       scope: {hardware: [h200]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 c6ea519cd7cb; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 4 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 c6ea519cd7cb; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 4 ranks", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.067x against 1.194x under max(size/peak, floor). 104.25 GB/s. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.059x against the 0.24.0 values' 1.278x (11 messages; scripts/relane_allreduce_vllm.py).
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.067x against 1.194x under max(size/peak, floor). 104.25 GB/s. Relaned from vLLM 0.24.0's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.059x against the vLLM 0.24.0 values' 1.278x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_floor_all_reduce_fp16_8rank_h200:
       value: 3.05
       units: us_per_transfer
@@ -3852,9 +3852,9 @@ coefficients:
       fitted: true
       scope: {hardware: [h200]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 c6ea519cd7cb; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 8 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 c6ea519cd7cb; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 8 ranks", role: primary}
       rationale: >
-        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.153x against the 0.24.0 values' 1.249x (11 messages; scripts/relane_allreduce_vllm.py).
+        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. Relaned from vLLM 0.24.0's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.153x against the vLLM 0.24.0 values' 1.249x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_peak_rate_all_reduce_fp16_8rank_h200:
       value: 121573.1
       units: bytes_per_us
@@ -3862,9 +3862,9 @@ coefficients:
       fitted: true
       scope: {hardware: [h200]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 c6ea519cd7cb; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 8 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 c6ea519cd7cb; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 8 ranks", role: primary}
       rationale: >
-        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 121.57 GB/s. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.153x against the 0.24.0 values' 1.249x (11 messages; scripts/relane_allreduce_vllm.py).
+        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 121.57 GB/s. Relaned from vLLM 0.24.0's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.153x against the vLLM 0.24.0 values' 1.249x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_transition_rate_all_reduce_fp16_8rank_h200:
       value: 112500.0
       units: bytes_per_us
@@ -3872,9 +3872,9 @@ coefficients:
       fitted: true
       scope: {hardware: [h200]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 7980e950, sha256 c6ea519cd7cb; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 8 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 c6ea519cd7cb; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA H200), 23 messages at 8 ranks", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.148x against 1.284x under max(size/peak, floor). 112.50 GB/s. Relaned from vLLM 0.24.0's sweep to 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.153x against the 0.24.0 values' 1.249x (11 messages; scripts/relane_allreduce_vllm.py).
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.148x against 1.284x under max(size/peak, floor). 112.50 GB/s. Relaned from vLLM 0.24.0's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.153x against the vLLM 0.24.0 values' 1.249x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_floor_all_reduce_int8_2rank_h200:
       value: 6.2
       units: us_per_transfer
@@ -5090,65 +5090,65 @@ coefficients:
 
   # --- gb300 (gb300) ---
   - collective_floor_all_reduce_fp16_2rank_gb300:
-      value: 7.033
+      value: 3.72
       units: us_per_transfer
       method: measured
       fitted: true
       scope: {hardware: [gb300]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/vllm/0.27.0/custom_allreduce_perf.parquet (vLLM 0.27.0 custom all-reduce, CUDA-graph lane, NVIDIA GB300), 23 messages at 2 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 0c7a6c9b6fea; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA GB300), 23 messages at 2 ranks", role: primary}
       rationale: >
-        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size. Fitted on vLLM's OWN custom all-reduce rather than NCCL: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. The CUDA-graph lane is the one a decode step runs in. Three-parameter geometric error 1.189x.
+        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. Relaned from vLLM 0.27.0's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.038x against the vLLM 0.27.0 values' 1.494x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_peak_rate_all_reduce_fp16_2rank_gb300:
-      value: 289452.8
-      units: bytes_per_us
-      method: measured
-      fitted: false
-      scope: {hardware: [gb300]}
-      sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/vllm/0.27.0/custom_allreduce_perf.parquet (vLLM 0.27.0 custom all-reduce, CUDA-graph lane, NVIDIA GB300), 23 messages at 2 ranks", role: primary}
-      rationale: >
-        Maximum message_size/latency over the 23-point sweep, an order statistic rather than a curve fit. A ceiling on throughput; the transition rate below is what prices a forward pass.
-  - collective_transition_rate_all_reduce_fp16_2rank_gb300:
-      value: 233500.0
+      value: 291655.5
       units: bytes_per_us
       method: measured
       fitted: true
       scope: {hardware: [gb300]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/vllm/0.27.0/custom_allreduce_perf.parquet (vLLM 0.27.0 custom all-reduce, CUDA-graph lane, NVIDIA GB300), 23 messages at 2 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 0c7a6c9b6fea; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA GB300), 23 messages at 2 ranks", role: primary}
       rationale: >
-        The rate in the transition region a forward pass's messages actually land in, fitted by grid search against the three-parameter form the kernel evaluates: max(floor + size/rate, size/peak). Geometric error 1.189x against 1.363x for the two-parameter form.
+        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 291.66 GB/s. Relaned from vLLM 0.27.0's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.038x against the vLLM 0.27.0 values' 1.494x (11 messages; scripts/relane_allreduce_vllm.py).
+  - collective_transition_rate_all_reduce_fp16_2rank_gb300:
+      value: 234750.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [gb300]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 0c7a6c9b6fea; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA GB300), 23 messages at 2 ranks", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.042x against 1.196x under max(size/peak, floor). 234.75 GB/s. Relaned from vLLM 0.27.0's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.038x against the vLLM 0.27.0 values' 1.494x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_floor_all_reduce_fp16_4rank_gb300:
-      value: 7.505
+      value: 3.77
       units: us_per_transfer
       method: measured
       fitted: true
       scope: {hardware: [gb300]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/vllm/0.27.0/custom_allreduce_perf.parquet (vLLM 0.27.0 custom all-reduce, CUDA-graph lane, NVIDIA GB300), 23 messages at 4 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 0c7a6c9b6fea; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA GB300), 23 messages at 4 ranks", role: primary}
       rationale: >
-        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size. Fitted on vLLM's OWN custom all-reduce rather than NCCL: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. The CUDA-graph lane is the one a decode step runs in. Three-parameter geometric error 1.205x.
+        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. Relaned from vLLM 0.27.0's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.057x against the vLLM 0.27.0 values' 1.485x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_peak_rate_all_reduce_fp16_4rank_gb300:
-      value: 211485.5
-      units: bytes_per_us
-      method: measured
-      fitted: false
-      scope: {hardware: [gb300]}
-      sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/vllm/0.27.0/custom_allreduce_perf.parquet (vLLM 0.27.0 custom all-reduce, CUDA-graph lane, NVIDIA GB300), 23 messages at 4 ranks", role: primary}
-      rationale: >
-        Maximum message_size/latency over the 23-point sweep, an order statistic rather than a curve fit. A ceiling on throughput; the transition rate below is what prices a forward pass.
-  - collective_transition_rate_all_reduce_fp16_4rank_gb300:
-      value: 192750.0
+      value: 198764.5
       units: bytes_per_us
       method: measured
       fitted: true
       scope: {hardware: [gb300]}
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/vllm/0.27.0/custom_allreduce_perf.parquet (vLLM 0.27.0 custom all-reduce, CUDA-graph lane, NVIDIA GB300), 23 messages at 4 ranks", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 0c7a6c9b6fea; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA GB300), 23 messages at 4 ranks", role: primary}
       rationale: >
-        The rate in the transition region a forward pass's messages actually land in, fitted by grid search against the three-parameter form the kernel evaluates: max(floor + size/rate, size/peak). Geometric error 1.205x against 1.355x for the two-parameter form.
+        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 198.76 GB/s. Relaned from vLLM 0.27.0's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.057x against the vLLM 0.27.0 values' 1.485x (11 messages; scripts/relane_allreduce_vllm.py).
+  - collective_transition_rate_all_reduce_fp16_4rank_gb300:
+      value: 188250.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [gb300]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/vllm/0.31.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 0c7a6c9b6fea; vLLM 0.31.0 custom all-reduce, CUDA-graph lane, NVIDIA GB300), 23 messages at 4 ranks", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.053x against 1.166x under max(size/peak, floor). 188.25 GB/s. Relaned from vLLM 0.27.0's sweep to vLLM 0.31.0's: on every second message, held out, the 0.31.0 fit scores 1.057x against the vLLM 0.27.0 values' 1.485x (11 messages; scripts/relane_allreduce_vllm.py).
   - collective_floor_all_reduce_fp16_8rank_gb300:
       value: 13.158
       units: us_per_transfer
@@ -5891,65 +5891,83 @@ coefficients:
         ASSUMED: this part's own measured 4-rank transition rate, carried to 8 ranks, for the reason the peak above gives. The kernel treats a missing transition rate as fatal because the two-parameter form understates a collective by up to 3.8x in the message range a forward pass produces, so an assumed figure with a stated direction is better than absence -- but it is an upper bound on rate and under-states this collective's time.
   # --- gb200-nvl72 wide-group collectives (gb200, NCCL version column 2.27.7; see each entry's version-mix caveat) ---
   - collective_floor_all_reduce_fp16_8rank_gb200_nvl72:
-      value: 27.69
+      value: 13.16
       units: us_per_transfer
-      method: measured
+      method: transferred
       fitted: false
       scope: {hardware: [gb200-nvl72]}
+      transferred_from: "hardware=gb300"
+      transfer_rule: "the same NVL72 NVLink-5 fabric and vLLM custom all-reduce kernel; gb300's triple at this width is used unchanged, checked on gb200-nvl72's own rows at 2 and 4 ranks within 1.1x"
+      supersedes: "collective_floor_all_reduce_fp16_8rank_gb200_nvl72 {hardware: [gb200-nvl72]} method measured, NCCL 2.23 (inference-sim/blis-substrate#116)"
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.23/nccl_perf.parquet (version column: 2.27.7, NVIDIA GB200-NVL72), all_reduce, half, 8 ranks, 21 messages", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/vllm/0.27.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 c3147d2a88a5; vLLM 0.27.0 custom all-reduce, CUDA-graph lane, NVIDIA GB300), 23 messages at 8 ranks", role: primary}
       rationale: >
-        Minimum latency over the 5 messages at or below 4 KiB, where latency does not depend on size. An order statistic rather than a fit: a floor is a lower bound on achievable latency, so a high outlier must not raise it. NCCL is vLLM's own path for all_reduce -- CustomAllreduce implements all-reduce only. VERSION MIX, STATED: this part's committed 2- and 4-rank entries cite NCCL 2.29.2, and this entry is NCCL 2.27.7. Both live in the directory named `2.23`, whose rows self-report two different versions -- the path is not the provenance, the column is. One collection per part is the rule this registry otherwise holds, and it is broken here deliberately because the alternative is no coefficient and a deployment the kernel then refuses to price. The disagreement is measured rather than assumed: on B200, where the same shapes exist at three NCCL minor versions, the shipped estimators agree to a median 1.01x-1.06x with p10-p90 inside +/-8%, and 2.29.2 is the fastest in all 24 cells -- so an older-version floor runs slightly HIGH and this entry over-states rather than under-states. Width-2 floors are the worst case for cross-version agreement (to 1.205x) and are not touched.
+        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. TRANSFERRED from gb300: no gb200-nvl72 sweep measures vLLM's custom all-reduce at 8 ranks, where the group spans trays and vLLM serves it over multi-node NVLink; the NCCL 2.23 triple it supersedes prices a kernel vLLM does not call (inference-sim/blis-substrate#116). Checked where both parts are measured, vLLM 0.31.0 at 2 and 4 ranks, gb300's triple scoring gb200-nvl72's messages: 2 ranks 1.037x against 1.037x; 4 ranks 1.080x against 1.043x (gate 1.1x). scripts/relane_allreduce_vllm.py.
   - collective_peak_rate_all_reduce_fp16_8rank_gb200_nvl72:
-      value: 199923.6
+      value: 186227.1
       units: bytes_per_us
-      method: measured
+      method: transferred
       fitted: false
       scope: {hardware: [gb200-nvl72]}
+      transferred_from: "hardware=gb300"
+      transfer_rule: "the same NVL72 NVLink-5 fabric and vLLM custom all-reduce kernel; gb300's triple at this width is used unchanged, checked on gb200-nvl72's own rows at 2 and 4 ranks within 1.1x"
+      supersedes: "collective_peak_rate_all_reduce_fp16_8rank_gb200_nvl72 {hardware: [gb200-nvl72]} method measured, NCCL 2.23 (inference-sim/blis-substrate#116)"
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.23/nccl_perf.parquet (version column: 2.27.7, NVIDIA GB200-NVL72), all_reduce, half, 8 ranks, 21 messages", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/vllm/0.27.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 c3147d2a88a5; vLLM 0.27.0 custom all-reduce, CUDA-graph lane, NVIDIA GB300), 23 messages at 8 ranks", role: primary}
       rationale: >
-        Maximum message_size/latency over 21 points, an order statistic. A ceiling on throughput; the transition rate below is what prices a forward pass. VERSION MIX, STATED: this part's committed 2- and 4-rank entries cite NCCL 2.29.2, and this entry is NCCL 2.27.7. Both live in the directory named `2.23`, whose rows self-report two different versions -- the path is not the provenance, the column is. One collection per part is the rule this registry otherwise holds, and it is broken here deliberately because the alternative is no coefficient and a deployment the kernel then refuses to price. The disagreement is measured rather than assumed: on B200, where the same shapes exist at three NCCL minor versions, the shipped estimators agree to a median 1.01x-1.06x with p10-p90 inside +/-8%, and 2.29.2 is the fastest in all 24 cells -- so an older-version floor runs slightly HIGH and this entry over-states rather than under-states. Width-2 floors are the worst case for cross-version agreement (to 1.205x) and are not touched.
+        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 186.23 GB/s. TRANSFERRED from gb300: no gb200-nvl72 sweep measures vLLM's custom all-reduce at 8 ranks, where the group spans trays and vLLM serves it over multi-node NVLink; the NCCL 2.23 triple it supersedes prices a kernel vLLM does not call (inference-sim/blis-substrate#116). Checked where both parts are measured, vLLM 0.31.0 at 2 and 4 ranks, gb300's triple scoring gb200-nvl72's messages: 2 ranks 1.037x against 1.037x; 4 ranks 1.080x against 1.043x (gate 1.1x). scripts/relane_allreduce_vllm.py.
   - collective_transition_rate_all_reduce_fp16_8rank_gb200_nvl72:
-      value: 134750.0
+      value: 172500.0
       units: bytes_per_us
-      method: measured
-      fitted: true
+      method: transferred
+      fitted: false
       scope: {hardware: [gb200-nvl72]}
+      transferred_from: "hardware=gb300"
+      transfer_rule: "the same NVL72 NVLink-5 fabric and vLLM custom all-reduce kernel; gb300's triple at this width is used unchanged, checked on gb200-nvl72's own rows at 2 and 4 ranks within 1.1x"
+      supersedes: "collective_transition_rate_all_reduce_fp16_8rank_gb200_nvl72 {hardware: [gb200-nvl72]} method measured, NCCL 2.23 (inference-sim/blis-substrate#116)"
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.23/nccl_perf.parquet (version column: 2.27.7, NVIDIA GB200-NVL72), all_reduce, half, 8 ranks, 21 messages", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/vllm/0.27.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 c3147d2a88a5; vLLM 0.27.0 custom all-reduce, CUDA-graph lane, NVIDIA GB300), 23 messages at 8 ranks", role: primary}
       rationale: >
-        The rate in the transition region a forward pass's messages land in, fitted by grid search against the three-parameter form the kernel evaluates. Geometric error 1.117x against 1.271x for the two-parameter form. VERSION MIX, STATED: this part's committed 2- and 4-rank entries cite NCCL 2.29.2, and this entry is NCCL 2.27.7. Both live in the directory named `2.23`, whose rows self-report two different versions -- the path is not the provenance, the column is. One collection per part is the rule this registry otherwise holds, and it is broken here deliberately because the alternative is no coefficient and a deployment the kernel then refuses to price. The disagreement is measured rather than assumed: on B200, where the same shapes exist at three NCCL minor versions, the shipped estimators agree to a median 1.01x-1.06x with p10-p90 inside +/-8%, and 2.29.2 is the fastest in all 24 cells -- so an older-version floor runs slightly HIGH and this entry over-states rather than under-states. Width-2 floors are the worst case for cross-version agreement (to 1.205x) and are not touched.
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.046x against 1.165x under max(size/peak, floor). 172.50 GB/s. TRANSFERRED from gb300: no gb200-nvl72 sweep measures vLLM's custom all-reduce at 8 ranks, where the group spans trays and vLLM serves it over multi-node NVLink; the NCCL 2.23 triple it supersedes prices a kernel vLLM does not call (inference-sim/blis-substrate#116). Checked where both parts are measured, vLLM 0.31.0 at 2 and 4 ranks, gb300's triple scoring gb200-nvl72's messages: 2 ranks 1.037x against 1.037x; 4 ranks 1.080x against 1.043x (gate 1.1x). scripts/relane_allreduce_vllm.py.
   - collective_floor_all_reduce_fp16_16rank_gb200_nvl72:
-      value: 47.74
+      value: 45.9
       units: us_per_transfer
-      method: measured
+      method: transferred
       fitted: false
       scope: {hardware: [gb200-nvl72]}
+      transferred_from: "hardware=gb300"
+      transfer_rule: "the same NVL72 NVLink-5 fabric and vLLM custom all-reduce kernel; gb300's triple at this width is used unchanged, checked on gb200-nvl72's own rows at 2 and 4 ranks within 1.1x"
+      supersedes: "collective_floor_all_reduce_fp16_16rank_gb200_nvl72 {hardware: [gb200-nvl72]} method measured, NCCL 2.23 (inference-sim/blis-substrate#116)"
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.23/nccl_perf.parquet (version column: 2.27.7, NVIDIA GB200-NVL72), all_reduce, half, 16 ranks, 21 messages", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/vllm/0.27.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 c3147d2a88a5; vLLM 0.27.0 custom all-reduce, CUDA-graph lane, NVIDIA GB300), 23 messages at 16 ranks", role: primary}
       rationale: >
-        Minimum latency over the 5 messages at or below 4 KiB, where latency does not depend on size. An order statistic rather than a fit: a floor is a lower bound on achievable latency, so a high outlier must not raise it. NCCL is vLLM's own path for all_reduce -- CustomAllreduce implements all-reduce only. VERSION MIX, STATED: this part's committed 2- and 4-rank entries cite NCCL 2.29.2, and this entry is NCCL 2.27.7. Both live in the directory named `2.23`, whose rows self-report two different versions -- the path is not the provenance, the column is. One collection per part is the rule this registry otherwise holds, and it is broken here deliberately because the alternative is no coefficient and a deployment the kernel then refuses to price. The disagreement is measured rather than assumed: on B200, where the same shapes exist at three NCCL minor versions, the shipped estimators agree to a median 1.01x-1.06x with p10-p90 inside +/-8%, and 2.29.2 is the fastest in all 24 cells -- so an older-version floor runs slightly HIGH and this entry over-states rather than under-states. Width-2 floors are the worst case for cross-version agreement (to 1.205x) and are not touched.
+        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. TRANSFERRED from gb300: no gb200-nvl72 sweep measures vLLM's custom all-reduce at 16 ranks, where the group spans trays and vLLM serves it over multi-node NVLink; the NCCL 2.23 triple it supersedes prices a kernel vLLM does not call (inference-sim/blis-substrate#116). Checked where both parts are measured, vLLM 0.31.0 at 2 and 4 ranks, gb300's triple scoring gb200-nvl72's messages: 2 ranks 1.037x against 1.037x; 4 ranks 1.080x against 1.043x (gate 1.1x). scripts/relane_allreduce_vllm.py.
   - collective_peak_rate_all_reduce_fp16_16rank_gb200_nvl72:
-      value: 194880.0
+      value: 170712.3
       units: bytes_per_us
-      method: measured
+      method: transferred
       fitted: false
       scope: {hardware: [gb200-nvl72]}
+      transferred_from: "hardware=gb300"
+      transfer_rule: "the same NVL72 NVLink-5 fabric and vLLM custom all-reduce kernel; gb300's triple at this width is used unchanged, checked on gb200-nvl72's own rows at 2 and 4 ranks within 1.1x"
+      supersedes: "collective_peak_rate_all_reduce_fp16_16rank_gb200_nvl72 {hardware: [gb200-nvl72]} method measured, NCCL 2.23 (inference-sim/blis-substrate#116)"
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.23/nccl_perf.parquet (version column: 2.27.7, NVIDIA GB200-NVL72), all_reduce, half, 16 ranks, 21 messages", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/vllm/0.27.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 c3147d2a88a5; vLLM 0.27.0 custom all-reduce, CUDA-graph lane, NVIDIA GB300), 23 messages at 16 ranks", role: primary}
       rationale: >
-        Maximum message_size/latency over 21 points, an order statistic. A ceiling on throughput; the transition rate below is what prices a forward pass. VERSION MIX, STATED: this part's committed 2- and 4-rank entries cite NCCL 2.29.2, and this entry is NCCL 2.27.7. Both live in the directory named `2.23`, whose rows self-report two different versions -- the path is not the provenance, the column is. One collection per part is the rule this registry otherwise holds, and it is broken here deliberately because the alternative is no coefficient and a deployment the kernel then refuses to price. The disagreement is measured rather than assumed: on B200, where the same shapes exist at three NCCL minor versions, the shipped estimators agree to a median 1.01x-1.06x with p10-p90 inside +/-8%, and 2.29.2 is the fastest in all 24 cells -- so an older-version floor runs slightly HIGH and this entry over-states rather than under-states. Width-2 floors are the worst case for cross-version agreement (to 1.205x) and are not touched.
+        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 170.71 GB/s. TRANSFERRED from gb300: no gb200-nvl72 sweep measures vLLM's custom all-reduce at 16 ranks, where the group spans trays and vLLM serves it over multi-node NVLink; the NCCL 2.23 triple it supersedes prices a kernel vLLM does not call (inference-sim/blis-substrate#116). Checked where both parts are measured, vLLM 0.31.0 at 2 and 4 ranks, gb300's triple scoring gb200-nvl72's messages: 2 ranks 1.037x against 1.037x; 4 ranks 1.080x against 1.043x (gate 1.1x). scripts/relane_allreduce_vllm.py.
   - collective_transition_rate_all_reduce_fp16_16rank_gb200_nvl72:
-      value: 164000.0
+      value: 141500.0
       units: bytes_per_us
-      method: measured
-      fitted: true
+      method: transferred
+      fitted: false
       scope: {hardware: [gb200-nvl72]}
+      transferred_from: "hardware=gb300"
+      transfer_rule: "the same NVL72 NVLink-5 fabric and vLLM custom all-reduce kernel; gb300's triple at this width is used unchanged, checked on gb200-nvl72's own rows at 2 and 4 ranks within 1.1x"
+      supersedes: "collective_transition_rate_all_reduce_fp16_16rank_gb200_nvl72 {hardware: [gb200-nvl72]} method measured, NCCL 2.23 (inference-sim/blis-substrate#116)"
       sources:
-        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.23/nccl_perf.parquet (version column: 2.27.7, NVIDIA GB200-NVL72), all_reduce, half, 16 ranks, 21 messages", role: primary}
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/vllm/0.27.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 c3147d2a88a5; vLLM 0.27.0 custom all-reduce, CUDA-graph lane, NVIDIA GB300), 23 messages at 16 ranks", role: primary}
       rationale: >
-        The rate in the transition region a forward pass's messages land in, fitted by grid search against the three-parameter form the kernel evaluates. Geometric error 1.084x against 1.209x for the two-parameter form. VERSION MIX, STATED: this part's committed 2- and 4-rank entries cite NCCL 2.29.2, and this entry is NCCL 2.27.7. Both live in the directory named `2.23`, whose rows self-report two different versions -- the path is not the provenance, the column is. One collection per part is the rule this registry otherwise holds, and it is broken here deliberately because the alternative is no coefficient and a deployment the kernel then refuses to price. The disagreement is measured rather than assumed: on B200, where the same shapes exist at three NCCL minor versions, the shipped estimators agree to a median 1.01x-1.06x with p10-p90 inside +/-8%, and 2.29.2 is the fastest in all 24 cells -- so an older-version floor runs slightly HIGH and this entry over-states rather than under-states. Width-2 floors are the worst case for cross-version agreement (to 1.205x) and are not touched.
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.079x against 1.199x under max(size/peak, floor). 141.50 GB/s. TRANSFERRED from gb300: no gb200-nvl72 sweep measures vLLM's custom all-reduce at 16 ranks, where the group spans trays and vLLM serves it over multi-node NVLink; the NCCL 2.23 triple it supersedes prices a kernel vLLM does not call (inference-sim/blis-substrate#116). Checked where both parts are measured, vLLM 0.31.0 at 2 and 4 ranks, gb300's triple scoring gb200-nvl72's messages: 2 ranks 1.037x against 1.037x; 4 ranks 1.080x against 1.043x (gate 1.1x). scripts/relane_allreduce_vllm.py.
   - collective_floor_all_reduce_int8_8rank_gb200_nvl72:
       value: 27.19
       units: us_per_transfer

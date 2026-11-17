@@ -6,7 +6,7 @@ a measured value, the method estimates it as if the measurement did not exist, a
 with the measurement. The two parts of the A100 family carry the same measured values, so they are left out
 together; otherwise each would predict itself from its twin.
 
-The figures below cover 927 measured points of the committed coefficient registry. A ratio is
+The figures below cover 917 measured points of the committed coefficient registry. A ratio is
 `max(estimate/truth, truth/estimate)`: 1.00 is exact and 2.00 is a factor of two either way.
 
 - **Same generation** is the median of the same quantity on the other chips of the held-out chip's architecture
@@ -22,17 +22,17 @@ those methods and says so rather than reusing the figures above for them. The wh
 | Family | Points | Same generation, median | Same generation, worst | Global median, median | Global median, worst |
 |---|---|---|---|---|---|
 | `collective_floor_all_gather` | 34 | 1.04 | 1.16 | 1.10 | 1.65 |
-| `collective_floor_all_reduce` | 40 | 1.07 | 3.78 | 1.30 | 4.39 |
+| `collective_floor_all_reduce` | 37 | 1.09 | 1.97 | 1.31 | 3.99 |
 | `collective_floor_alltoall` | 34 | 1.03 | 1.27 | 1.15 | 1.59 |
 | `collective_floor_reduce_scatter` | 34 | 1.04 | 1.16 | 1.10 | 1.70 |
 | `collective_peak_rate_all_gather` | 34 | 1.01 | 1.03 | 1.80 | 185.94 |
-| `collective_peak_rate_all_reduce` | 40 | 1.02 | 2.02 | 1.70 | 253.38 |
+| `collective_peak_rate_all_reduce` | 37 | 1.02 | 2.02 | 1.73 | 202.52 |
 | `collective_peak_rate_alltoall` | 34 | 1.03 | 1.11 | 1.67 | 154.97 |
 | `collective_peak_rate_reduce_scatter` | 34 | 1.01 | 1.03 | 1.77 | 199.62 |
 | `collective_transition_rate_all_gather` | 34 | 1.02 | 1.07 | 2.05 | 236.80 |
-| `collective_transition_rate_all_reduce` | 40 | 1.04 | 2.07 | 1.84 | 290.88 |
+| `collective_transition_rate_all_reduce` | 37 | 1.03 | 2.07 | 1.83 | 264.71 |
 | `collective_transition_rate_alltoall` | 34 | 1.03 | 1.08 | 1.82 | 233.40 |
 | `collective_transition_rate_reduce_scatter` | 34 | 1.01 | 1.16 | 1.97 | 230.33 |
-| `gemm_eps_max` | 29 | 1.05 | 1.39 | 1.07 | 2.40 |
-| `gemm_m_half` | 29 | 1.14 | 2.54 | 1.18 | 3.63 |
-| `other` | 158 | 1.05 | 2.95 | 1.11 | 16.11 |
+| `gemm_eps_max` | 29 | 1.03 | 1.33 | 1.07 | 2.40 |
+| `gemm_m_half` | 29 | 1.16 | 2.54 | 1.26 | 4.12 |
+| `other` | 158 | 1.05 | 2.95 | 1.14 | 61.42 |

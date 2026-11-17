@@ -1000,7 +1000,7 @@ def test_the_single_model_ratchet_counts_a_new_entry():
 # they do, each count below is the number of fitted entries that state none, and it may
 # only fall. Lower the constant when a fitter starts writing the field; never raise it.
 FITTED = [(s, n, b) for s, n, b in ENTRIES if b.get("method") in ("measured", "calibrated")]
-MAX_FITTED_WITHOUT = {"kernel_impls": 901, "measures": 901, "fit_range": 901, "ci95": 901}
+MAX_FITTED_WITHOUT = {"kernel_impls": 895, "measures": 895, "fit_range": 895, "ci95": 895}
 
 
 @pytest.mark.parametrize("field", sorted(MAX_FITTED_WITHOUT))
@@ -1009,7 +1009,7 @@ def test_fitted_entries_without_an_evidence_record_only_go_down(field):
     assert len(missing) <= MAX_FITTED_WITHOUT[field], (
         f"{len(missing)} measured or calibrated entries state no {field}, above the "
         f"{MAX_FITTED_WITHOUT[field]} committed. A new fitted entry records {field}.")
-    assert len(FITTED) == 917, f"{len(FITTED)} fitted entries; update the ratchets with it"
+    assert len(FITTED) == 911, f"{len(FITTED)} fitted entries; update the ratchets with it"
 
 
 def fitted_without(field, entries):

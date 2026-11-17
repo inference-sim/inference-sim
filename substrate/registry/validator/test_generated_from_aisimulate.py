@@ -209,18 +209,23 @@ def test_collective_floors_and_rates_survive_independent_rederivation(
 
 
 @pytest.mark.parametrize(
-    "sku, chip, vllm",
+    "sku, chip, vllm, widths",
     [
-        # h200 and h100 were relaned to vLLM 0.31.0's sweep (relane_allreduce_vllm.py),
-        # which AISimulate carries from 7980e95; at the older pinned tree it is absent and
-        # the case skips with that reason.
-        ("h200_sxm", "h200", "0.31.0"),
-        ("h100_sxm", "h100", "0.31.0"),
-        ("b200_sxm", "b200", "0.24.0"),
-        ("b300_sxm", "b300", "0.24.0"),
+        # h200, h100, gb200 and gb300 are on vLLM 0.31.0's sweep (relane_allreduce_vllm.py).
+        # The Grace-Blackwell sweeps stop at one tray, 2 and 4 ranks.
+        ("h200_sxm", "h200", "0.31.0", (2, 4, 8)),
+        ("h100_sxm", "h100", "0.31.0", (2, 4, 8)),
+        ("gb200", "gb200-nvl72", "0.31.0", (2, 4)),
+        ("gb300", "gb300", "0.31.0", (2, 4)),
+        # gb300's cross-tray widths: 0.27.0 is the newest sweep that measures them.
+        ("gb300", "gb300", "0.27.0", (8, 16)),
+        # gb200 at 8 and 16 ranks carries gb300's triple, transferred
+        # (test_gb200_cross_tray_all_reduce_is_gb300s_custom_kernel).
+        ("b200_sxm", "b200", "0.24.0", (2, 4, 8)),
+        ("b300_sxm", "b300", "0.24.0", (2, 4, 8)),
     ],
 )
-def test_all_reduce_survives_rederivation_from_the_vllm_lane(sku, chip, vllm):
+def test_all_reduce_survives_rederivation_from_the_vllm_lane(sku, chip, vllm, widths):
     """The all-reduce triple must re-derive from the collection its citations name.
 
     BLIS prices vLLM serving, and vLLM serves a tensor-parallel all-reduce from its own
@@ -232,13 +237,9 @@ def test_all_reduce_survives_rederivation_from_the_vllm_lane(sku, chip, vllm):
     4.711us here, and the eager lane is slower than NCCL rather than faster. A test that
     accepted any of the three would accept a 3.4x mispricing.
     """
-    # The 0.31.0 sweep is read from the tree relane_allreduce_vllm.py is pinned to
-    # (AISIMULATE_ALLREDUCE_DATA, aisimulate 7980e95), the rest from the main pin.
-    root = Path(os.environ.get("AISIMULATE_ALLREDUCE_DATA") or DATA) if vllm == "0.31.0" else DATA
-    base = root / sku / "comm" / "vllm" / vllm
+    base = DATA / sku / "comm" / "vllm" / vllm
     if not (base / "custom_allreduce_perf.parquet").is_file():
-        pytest.skip(f"{sku}: vllm/{vllm} custom all-reduce sweep absent; set "
-                    f"AISIMULATE_ALLREDUCE_DATA to an aisimulate 7980e95 systems/data tree")
+        pytest.skip(f"{sku}: vllm/{vllm} custom all-reduce sweep absent from {DATA}")
     reg = registry_values()
     out = run_script("fit_collectives_vllm.py", str(base))
     checked = 0
@@ -248,6 +249,8 @@ def test_all_reduce_survives_rederivation_from_the_vllm_lane(sku, chip, vllm):
         if len(parts) < 8 or parts[0] != "vllm_graph":
             continue
         ranks = int(parts[1])
+        if ranks not in widths:
+            continue
         floor, transition, peak = float(parts[2]), float(parts[3]), float(parts[4])
         stem = f"all_reduce_fp16_{ranks}rank_{chip.replace('-', '_')}"
         for key, want, tol in (
@@ -262,10 +265,31 @@ def test_all_reduce_survives_rederivation_from_the_vllm_lane(sku, chip, vllm):
                 f"of the vLLM lane gives {want}"
             )
             checked += 1
-    assert checked == 9, (
-        f"{chip}: expected 3 ranks x 3 coefficients from the vllm_graph lane, "
+    assert checked == 3 * len(widths), (
+        f"{chip}: expected {len(widths)} ranks x 3 coefficients from the vllm_graph lane, "
         f"compared {checked}"
     )
+
+
+def test_gb200_cross_tray_all_reduce_is_gb300s_custom_kernel():
+    """gb200 at 8 and 16 ranks prices vLLM's custom all-reduce over multi-node NVLink.
+
+    No gb200 sweep measures that kernel across trays; gb300's does, on the same NVL72
+    fabric, so the gb200 entries are gb300's triple, transferred, and supersede the NCCL
+    ring triples (a kernel vLLM does not call). A gb200 cross-tray all-reduce priced from
+    NCCL again fails here."""
+    doc = yaml.safe_load((REPO / "coefficients" / "cost-model-collectives.yaml").read_text())
+    by = {}
+    for item in doc["coefficients"]:
+        (key, body), = item.items()
+        by.setdefault((key, tuple(body["scope"]["hardware"])), []).append(body)
+    for w in (8, 16):
+        for kind in ("floor", "peak_rate", "transition_rate"):
+            to = by[(f"collective_{kind}_all_reduce_fp16_{w}rank_gb200_nvl72", ("gb200-nvl72",))]
+            src = by[(f"collective_{kind}_all_reduce_fp16_{w}rank_gb300", ("gb300",))]
+            assert [b["method"] for b in to] == ["transferred"], (w, kind, to)
+            assert to[0]["value"] == pytest.approx(src[0]["value"], abs=0.005), (w, kind)
+            assert to[0]["transferred_from"] == "hardware=gb300"
 
 
 # The one family measured outside AISimulate: AISimulate has no host-link measurement (its
