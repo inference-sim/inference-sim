@@ -23,7 +23,7 @@ var Columns = []string{
 
 // OptionalColumns are written after Columns, in this order, each only when some record
 // carries a value for it.
-var OptionalColumns = []string{"slo_target_us", "adapter", "think_time_us", "input_tokens_reset"}
+var OptionalColumns = []string{"slo_target_us", "adapter", "think_time_us", "input_tokens_reset", "phase"}
 
 // ReadHeader reads a header strictly: an unknown key, a duplicate key or a value of the
 // wrong type is an error. It does not validate; call Validate.
@@ -175,7 +175,7 @@ func parseRow(row []string, at map[string]int) (Record, error) {
 	}
 	r.ClientID, r.TenantID, r.SLOClass = str("client_id"), str("tenant_id"), str("slo_class")
 	r.SessionID, r.PrefixGroup, r.Model = str("session_id"), str("prefix_group"), str("model")
-	r.Status, r.Adapter = Status(str("status")), str("adapter")
+	r.Status, r.Adapter, r.Phase = Status(str("status")), str("adapter"), str("phase")
 	integer("request_id", &r.RequestID)
 	integer("round_index", &r.RoundIndex)
 	integer("prefix_length", &r.PrefixLength)
@@ -219,6 +219,7 @@ func WriteRecords(w io.Writer, records []Record) error {
 		has["adapter"] = has["adapter"] || r.Adapter != ""
 		has["think_time_us"] = has["think_time_us"] || r.ThinkTimeUs != nil
 		has["input_tokens_reset"] = has["input_tokens_reset"] || r.InputTokensReset != nil
+		has["phase"] = has["phase"] || r.Phase != ""
 	}
 	cols := append([]string{}, Columns...)
 	for _, c := range OptionalColumns {
@@ -260,6 +261,8 @@ func WriteRecords(w io.Writer, records []Record) error {
 				row = append(row, ptr(r.ThinkTimeUs))
 			case "input_tokens_reset":
 				row = append(row, ptr(r.InputTokensReset))
+			case "phase":
+				row = append(row, r.Phase)
 			}
 		}
 		if err := cw.Write(row); err != nil {

@@ -410,7 +410,7 @@ has `e2e_us`. The rows' fates agree with `requests`.
 | `computed_tokens` | integer | no | Prompt tokens the engine computed. |
 | `output_tokens` | integer | yes | Tokens emitted. |
 | `length_capped` | boolean | no | Completed at a length limit. |
-| `phase` | string | no | `warmup`, `profile` or `grace`, when the workload marks phases. |
+| `phase` | string | no | The workload phase the request was sent in, a lowercase slug (`warmup` is outside the measured window), when the workload marks phases. |
 | `instance` | string | no | The engine instance that served it. |
 | `model` | string | no | The model tag. |
 | `adapter` | string | no | The LoRA adapter. |

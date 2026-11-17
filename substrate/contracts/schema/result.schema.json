@@ -2068,6 +2068,12 @@
           ],
           "type": "string"
         },
+        "phases": {
+          "items": {
+            "$ref": "#/$defs/trace.Phase"
+          },
+          "type": "array"
+        },
         "router": {
           "$ref": "#/$defs/trace.Router"
         },
@@ -2218,6 +2224,31 @@
         "single_transfer_fraction",
         "type",
         "write_bandwidth"
+      ],
+      "type": "object"
+    },
+    "trace.Phase": {
+      "additionalProperties": false,
+      "properties": {
+        "concurrency": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "offset_us": {
+          "type": "integer"
+        },
+        "start": {
+          "enum": [
+            "after_drain",
+            "at"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
       ],
       "type": "object"
     },

@@ -36,6 +36,7 @@ columns `vllm_priority`, `x_request_id`, `server_input_tokens`, `send_time_us`,
 | `session_context_growth` | string | no | `accumulate`: each session round's input is the previous round's input and output, then its new tokens. Omitted, rounds are drawn independently. |
 | `goodput_slo_targets` | mapping | no | Latency targets per SLO class, keyed by class name, below. Class names are free. |
 | `kv_offload` | mapping | no | The resolved KV-cache offload configuration of the run that wrote the trace, below. |
+| `phases` | list | no | Drain-gated stages in order, below. A phase starts after the previous one drains (`start: after_drain`, plus `offset_us`) or at the clock `offset_us` (`start: at`); `concurrency` limits its requests in flight. Names are lowercase slugs, each used once and each naming at least one request. The format marks phases; the reader decides which count. |
 | `max_nodes_spanned` | integer | no | The most nodes one instance occupied, when more than one. A replay refuses a trace it cannot reproduce. |
 | `router` | mapping | no | The llm-d router inputs the run routed with, below. |
 
@@ -43,6 +44,19 @@ A `generated` or `replayed` trace records a BLIS deployment, and a replay keeps 
 authoritative: it does not add offload tiers or other deployment options the run did not
 have. A `converted` trace records none, so a replay takes them from the scenario and the
 command line (`Header.RecordsDeployment`, inference-sim #2067).
+
+### `phases[]`
+
+<!-- fields: trace.Phase -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `name` | string | yes | The label the phase's records carry in `phase`. A lowercase slug, unique in the trace. |
+| `start` | string | no | `after_drain` (the default): every request of the previous phase has ended. `at`: the clock `offset_us`. |
+| `offset_us` | integer | no | The wait after the drain, or the start clock for `at`. Not negative; `at` phases are in order. |
+| `concurrency` | integer | no | Requests of the phase in flight at most; a request is sent when an earlier one of the phase ends. Zero sends each at its recorded arrival. |
+
+Engine, KV and prefix-cache state carry across phases. A phase that names no request is refused.
 
 ### `goodput_slo_targets.<class>`
 
@@ -115,7 +129,7 @@ The resolved numbers, so a replay reproduces the run whatever its host's default
 
 The first row names the columns; a reader finds them by name. The columns of `Columns` are
 required; those of `OptionalColumns` (`slo_target_us`, `adapter`, `think_time_us`,
-`input_tokens_reset`) are written only when some row carries one. Any other column is
+`input_tokens_reset`, `phase`) are written only when some row carries one. Any other column is
 refused.
 
 <!-- fields: trace.Record -->
@@ -147,6 +161,7 @@ refused.
 | `slo_target_us` | integer | no | The request's TTFT target; 0 is none. |
 | `adapter` | string | no | The LoRA adapter; empty for the base model. |
 | `think_time_us` | integer | no | Recorded client think time before the round; an empty cell is not recorded, distinct from 0. |
+| `phase` | string | with header `phases` | The header phase the request belongs to; every request names one when the header lists phases, and none does otherwise. |
 | `input_tokens_reset` | integer | no | The recorded absolute input of a round whose context was compacted; empty on other rounds. |
 
 ## Checks
