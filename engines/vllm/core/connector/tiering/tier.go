@@ -17,7 +17,10 @@
 // when it ends.
 package tiering
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Key is an OffloadKey: a block hash with its KV cache group index as 4 big-endian bytes
 // (make_offload_key, vllm/v1/kv_offload/base.py:30-32@4ba787ec).
@@ -122,6 +125,59 @@ func (f Filter) allows(med Medium, loc Locality) bool {
 		}
 	}
 	return false
+}
+
+// KVLoadTiersKey is the kv_transfer_params key that carries a request's load-tier filter
+// (KV_LOAD_TIERS_KEY, offloading/scheduler.py:72@4ba787ec).
+const KVLoadTiersKey = "kv_load_tiers"
+
+// ParseTierFilter is _parse_tier_filter (offloading/scheduler.py:496-537@4ba787ec) on the JSON value of
+// kv_load_tiers: a list of {"medium", "locality"} matchers. A value that is not a list allows every
+// tier; an entry that is not an object, or names a medium or locality that is not one (matched
+// upper-cased), is skipped; a list with no entry left allows every tier unless it was empty, which
+// allows none.
+func ParseTierFilter(raw any) Filter {
+	list, ok := raw.([]any)
+	if !ok {
+		return AllTiers
+	}
+	var ms []Matcher
+	for _, e := range list {
+		entry, ok := e.(map[string]any)
+		if !ok {
+			continue
+		}
+		var m Matcher
+		valid := true
+		if v, stated := entry["medium"]; stated && v != nil {
+			s, isStr := v.(string)
+			switch med := Medium(strings.ToUpper(s)); {
+			case isStr && (med == MediumCPU || med == MediumStorage):
+				m.Medium = med
+			default:
+				valid = false
+			}
+		}
+		if v, stated := entry["locality"]; valid && stated && v != nil {
+			s, isStr := v.(string)
+			switch loc := Locality(strings.ToUpper(s)); {
+			case isStr && (loc == LocalityLocal || loc == LocalityRemote):
+				m.Locality = loc
+			default:
+				valid = false
+			}
+		}
+		if valid {
+			ms = append(ms, m)
+		}
+	}
+	if len(ms) == 0 {
+		if len(list) == 0 {
+			return Filter{}
+		}
+		return AllTiers
+	}
+	return Filter{Matchers: ms}
 }
 
 // ReqContext is ReqContext (base.py:92-118) as the tiers see it: one per request, the same value

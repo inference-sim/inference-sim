@@ -81,6 +81,73 @@ func TestAPromptStoredByOneEngineIsLoadedByAnotherOverSharedStorage(t *testing.T
 	}
 }
 
+// A request's kv_transfer_params, carried in its Tags, reach the tiering manager: one whose kv_load_tiers
+// allow only the CPU tier does not promote from the shared storage, so it computes its whole prompt; the
+// same prompt without the filter promotes the shared prefix and computes only the rest.
+func TestARequestsLoadTiersTagKeepsItOffTheSharedStorage(t *testing.T) {
+	files := sharedFiles{}
+	w := mustEngine(t, fsTier)
+	w.ShareTierStorage(files.storage)
+	a := req("a", 96, 2)
+	if err := w.Add(a, 0); err != nil {
+		t.Fatal(err)
+	}
+	runOne(t, w, 5)
+	for name, c := range map[string]struct {
+		tag       string
+		wantFirst int
+	}{
+		"no tag":       {"", 4},
+		"storage":      {`{"kv_load_tiers":[{"medium":"storage"}]}`, 4},
+		"cpu only":     {`{"kv_load_tiers":[{"medium":"cpu"}]}`, 64},
+		"no tier":      {`{"kv_load_tiers":[]}`, 64},
+		"other key":    {`{"do_remote_decode":true}`, 4},
+		"empty object": {`{}`, 4},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := mustEngine(t, fsTier)
+			r.ShareTierStorage(files.storage)
+			b := req("b", 0, 2)
+			b.Prompt = append(append([]int32(nil), a.Prompt...), 7, 8, 9, 10)
+			if c.tag != "" {
+				b.Tags = map[string]string{TagKVTransferParams: c.tag}
+			}
+			if err := r.Add(b, 0); err != nil {
+				t.Fatal(err)
+			}
+			if _, first := runTiers(t, r, nil); first["b"] != c.wantFirst {
+				t.Fatalf("b's first step computed %d tokens, want %d", first["b"], c.wantFirst)
+			}
+		})
+	}
+}
+
+// A request's kv_transfer_params that the offloading connector would apply and the engine does not
+// model are refused, naming the issue; a tag that is not a JSON object is refused; an engine with no
+// kv_offload ignores the tag.
+func TestARequestTransferParamsTheEngineCannotApplyAreRefused(t *testing.T) {
+	for name, c := range map[string]struct{ tag, want string }{
+		"max_load_tokens":    {`{"max_load_tokens":8}`, "issues/203"},
+		"max_offload_tokens": {`{"max_offload_tokens":0}`, "issues/203"},
+		"not json":           {`kv_load_tiers`, "JSON object"},
+		"a list":             {`[1]`, "JSON object"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := req("a", 32, 2)
+			r.Tags = map[string]string{TagKVTransferParams: c.tag}
+			err := mustEngine(t, fsTier).Add(r, 0)
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("Add = %v, want an error naming %q", err, c.want)
+			}
+		})
+	}
+	r := req("a", 32, 2)
+	r.Tags = map[string]string{TagKVTransferParams: `{"max_load_tokens":8}`}
+	if err := mustEngine(t, "").Add(r, 0); err != nil {
+		t.Fatalf("an engine with no kv_offload refused a tag it does not read: %v", err)
+	}
+}
+
 // runTiers is runOne at a transfer time of 5, also returning the tokens each request's first
 // scheduled step computed; onStart, if set, sees each transfer as it starts.
 func runTiers(t *testing.T, e *Engine, onStart func(engine.Transfer)) ([]engine.Transfer, map[string]int) {

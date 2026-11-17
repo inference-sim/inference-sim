@@ -16,7 +16,8 @@ scheduler-side manager (spec.py:342-350; cpu/shared_offload_region.py:107-146), 
 has not; with no secondary tiers its TieringOffloadingManager forwards every call the connector
 scheduler makes to its CPUPrimaryTierOffloadingManager, a CPUOffloadingManager with the same
 policy (tiering/manager.py:396-417, 569-604, 618-661, 736-781, 843-873, 912-921@5df63a72). A
-scenario stating TieringOffloadingSpec is refused here rather than run on the other spec.
+scenario stating TieringOffloadingSpec with no secondary tier is refused here rather than run on the
+other spec; one with secondary tiers runs run_tiered, below.
 
 What is replaced, all listed in oracle/mocks.json:
 - the GPU: tier 2's mock (each request completing its known tokens samples its next assigned
@@ -58,12 +59,30 @@ the step's load and store jobs (job id, request, CPU chunks, GPU blocks by group
 flushed, the jobs completed, the jobs still pending, and the CPU tier's chunks in LRU order
 (key, chunk id, reference count), its free and evictable chunk counts.
 
+A scenario that states spec_name TieringOffloadingSpec with secondary tiers (oracle/scenarios/
+offloading-tiering) runs run_tiered: the same Scheduler, connector and worker mock, over the
+TieringOffloadingManager that spec builds (tiering/spec.py:331-380@4ba787ec), and its fs tier, vLLM's
+own code over a real directory (the file system is the transport, nothing in vLLM is replaced).
+Each fs tier is configured with one load-priority I/O thread and no store-priority thread
+(n_read_threads 1, n_write_threads 0), so the thread runs a step's loads, then its stores, each in
+submission order. After each step the runner waits, by reading only, until every tier's pool is idle
+and its lookup worker has posted the batch the step flushed (wait_transport): every tier job a step
+submits has finished before the next step, and the next step's first manager call collects it. The
+engine's replay of the trace (core/vllm/offloadtiers_diff_test.go) completes each tier job and
+resolves each lookup batch the same way. A lookup slower than a step is not covered. The manager needs
+a /dev/shm region for its scheduler side (tiering/spec.py:355-362; cpu/shared_offload_region.py:107-146),
+so this kind runs on Linux (CI) only.
+
 Usage: python -I oracle/run_offloading.py <vllm checkout> <scenario.json | dir> [out dir]
 """
 
+import copy
 import json
 import os
+import shutil
 import sys
+import tempfile
+import time
 
 
 def main() -> None:
@@ -276,6 +295,8 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     extra = conn.get("extra_config") or {}
     if conn["name"] != "OffloadingConnector":
         sys.exit(f"{scenario_path}: this runner drives OffloadingConnector, not {conn['name']}")
+    if extra.get("spec_name", "CPUOffloadingSpec") == "TieringOffloadingSpec" and extra.get("secondary_tiers"):
+        return run_tiered(vllm_root, scenario_path, sc)
     if extra.get("spec_name", "CPUOffloadingSpec") != "CPUOffloadingSpec":
         sys.exit(f"{scenario_path}: spec_name {extra['spec_name']!r}: the oracle runs CPUOffloadingSpec (see the "
                  "module docstring)")
@@ -455,6 +476,242 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     prov["tier"] = 4
     prov["cpu_chunks"] = manager._num_chunks
     return {"provenance": prov, "steps": steps, "finished": dict(sorted(finished.items()))}
+
+
+TIER_WAIT_S = 30.0
+
+
+def wait_transport(tier) -> None:
+    """Read-only waits: the tier's I/O pool is idle, and its lookup worker posted what was flushed
+    (as oracle/run_tiering.py waits after each call)."""
+    from vllm.v1.kv_offload.tiering.async_lookup import LookupPhase  # noqa: E402
+
+    tier._pool.wait_idle()
+    lm = tier._lookup_manager
+    deadline = time.monotonic() + TIER_WAIT_S
+    while any(s.phase is LookupPhase.IN_FLIGHT for s in list(lm._lookup_state.values())) and \
+            lm._pending_results.qsize() == 0:
+        if time.monotonic() > deadline:
+            raise RuntimeError("run_offloading: the lookup worker did not post within %.0fs" % TIER_WAIT_S)
+        time.sleep(0.001)
+
+
+def tier_job_rows(mgr) -> list:
+    """The tier jobs the manager has registered and not yet collected, as [job id, tier index,
+    "promotion" or "cascade", chunks, request]: right after a schedule(), the jobs that schedule
+    submitted (the first manager call of a step collects the finished ones, tiering/manager.py:
+    448-458@4ba787ec)."""
+    rows = []
+    for jid, jm in sorted(mgr._jobs.items()):
+        j = jm.transfer_job
+        rows.append([int(jid), int(jm.tier_idx), "promotion" if j.is_promotion else "cascade", len(j.keys),
+                     j.req_context.req_id])
+    return rows
+
+
+def tier_files(tier, root: str) -> list:
+    """The block files under a tier's root_dir, relative to it, the run's config file left out."""
+    config = tier.file_mapper.get_config_file_path()
+    out = []
+    for d, _, names in os.walk(root):
+        for n in names:
+            p = os.path.join(d, n)
+            if p != config:
+                out.append(os.path.relpath(p, root))
+    return sorted(out)
+
+
+def run_tiered(vllm_root: str, scenario_path: str, sc: dict) -> dict:
+    """A scenario with secondary tiers: run_one's loop over TieringOffloadingSpec's manager, with the
+    tiers' own state recorded beside the CPU tier's (offload.tier_jobs: the tier jobs the step submitted, in
+    its schedule and in its output; tier_files: each tier's block files once the step's transport finished). Synchronous scheduling, one
+    batch at a time. A tier's "root_dir" that starts "@root" is under a fresh directory for the run."""
+    if vllm_root not in sys.path:
+        sys.path.append(vllm_root)
+    os.environ.setdefault("VLLM_LOGGING_LEVEL", "ERROR")
+    model = os.environ.get("ORACLE_MODEL", "facebook/opt-125m")
+
+    import tests.v1.kv_connector.unit.utils as helpers  # noqa: E402
+    from vllm.distributed.kv_transfer.kv_connector.v1.offloading.common import (  # noqa: E402
+        OffloadingWorkerMetadata,
+    )
+    from vllm.sampling_params import SamplingParams  # noqa: E402
+    from vllm.utils.hashing import sha256  # noqa: E402
+    from vllm.v1.core.kv_cache_utils import get_request_block_hasher, init_none_hash  # noqa: E402
+    from vllm.v1.metrics.stats import KV_FETCH_STAGES  # noqa: E402
+    from vllm.v1.outputs import KVConnectorOutput, ModelRunnerOutput  # noqa: E402
+    from vllm.v1.request import Request, RequestStatus  # noqa: E402
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, here)
+    from run_scheduler import kv_state, provenance  # noqa: E402
+
+    sc = copy.deepcopy(sc)
+    cfg = sc["config"]
+    extra = cfg["connector"]["extra_config"]
+    if cfg.get("async_scheduling") or int(cfg.get("pipeline_parallel_size", 1)) > 1 or cfg.get("speculative") \
+            or cfg.get("use_v2_model_runner"):
+        sys.exit(f"{scenario_path}: a tiering scenario runs the synchronous loop: no async scheduling, pipeline "
+                 "parallelism, drafter or V2 runner")
+    for t in extra["secondary_tiers"]:
+        if t.get("type") != "fs":
+            sys.exit(f"{scenario_path}: secondary tier type {t.get('type')!r}: this runner drives fs tiers")
+    root = tempfile.mkdtemp(prefix="blis-offloading-tiers-")
+    roots = []
+    for t in extra["secondary_tiers"]:
+        if str(t.get("root_dir", "")).startswith("@root"):
+            t["root_dir"] = root + t["root_dir"][len("@root"):]
+        roots.append(t["root_dir"])
+    mgr = None
+    try:
+        vllm_config = build_config(cfg, model)
+        scheduler = helpers.create_scheduler(vllm_config, num_blocks=cfg["num_blocks"],
+                                             kv_cache_config=kv_cache_config(cfg, vllm_config))
+        assert scheduler.max_model_len == cfg["max_model_len"]
+        cs = scheduler.connector.connector_scheduler
+        mgr = cs.manager
+        if type(mgr).__name__ != "TieringOffloadingManager":
+            sys.exit(f"{scenario_path}: the connector built {type(mgr).__name__}, not TieringOffloadingManager")
+        primary = mgr.primary_tier
+        workers = cs.config.num_workers
+        by_id = {r["id"]: r for r in sc["requests"]}
+        sampled_so_far = {r["id"]: 0 for r in sc["requests"]}
+
+        init_none_hash(sha256)
+        hasher = get_request_block_hasher(scheduler.hash_block_size, sha256,
+                                          scheduler.vllm_config.num_hash_lookahead_tokens)
+        pending = sorted(sc["requests"], key=lambda r: (r["arrival_step"], r["id"]))
+        finished = {}
+        steps = []
+        max_steps = sc.get("max_steps", 10000)
+        worker = Worker(by_id, cfg.get("transfer") or {}, workers, KVConnectorOutput, OffloadingWorkerMetadata)
+
+        def add_arrivals(upto: int) -> None:
+            while pending and pending[0]["arrival_step"] <= upto:
+                r = pending.pop(0)
+                # A request's kv_transfer_params (the connector reads kv_load_tiers) ride in extra_args.
+                params = SamplingParams(max_tokens=r.get("max_tokens", 1 << 20),
+                                        extra_args={"kv_transfer_params": r["kv_transfer_params"]}
+                                        if "kv_transfer_params" in r else None)
+                params.update_from_generation_config({}, helpers.EOS_TOKEN_ID)
+                scheduler.add_request(Request(
+                    request_id=r["id"], prompt_token_ids=list(r["prompt"]), sampling_params=params,
+                    pooling_params=None, arrival_time=float(r["arrival_step"]),
+                    priority=r.get("priority", 0), block_hasher=hasher))
+
+        def connector_state() -> dict:
+            live = {r.request_id for r in scheduler.running}
+            live |= {r.request_id for r in scheduler.waiting}
+            live |= {r.request_id for r in scheduler.kv_holding_waiting}
+            return {
+                "waiting_for_remote_kv": sorted(r.request_id for r in scheduler.kv_holding_waiting
+                                                if r.status == RequestStatus.WAITING_FOR_REMOTE_KVS),
+                "recv_landed": sorted(scheduler.finished_recving_kv_req_ids),
+                "delay_freed": sorted(rid for rid, r in scheduler.requests.items()
+                                      if rid not in live and r.is_finished()),
+                "kv_holding_waiting": sorted(r.request_id for r in scheduler.kv_holding_waiting),
+                "kv_fetch_stages": [scheduler._kv_fetch_counts[s] for s in KV_FETCH_STAGES],
+                "num_requests": len(scheduler.requests),
+            }
+
+        def gpu_spec(spec) -> list:
+            return [[int(b) for b in spec.block_ids], list(spec.group_sizes), list(spec.block_indices)]
+
+        def cpu_state() -> dict:
+            policy = primary._policy
+            chunks = sorted(policy.chunks.items(), key=lambda kv: policy._ranks[kv[0]])
+            return {
+                "chunks": [[key_text(k), int(c.chunk_id), int(c.ref_cnt)] for k, c in chunks],
+                "free": primary._get_num_free_chunks(),
+                "evictable": primary._num_evictable_cache_chunks,
+            }
+
+        step = 0
+        while step < max_steps:
+            add_arrivals(step)
+            if not scheduler.has_requests():
+                if not pending:
+                    break
+                steps.append({"step": step, "idle": True})
+                step += 1
+                continue
+            order_finished(scheduler)
+            out = scheduler.schedule()
+            meta = out.kv_connector_metadata
+            record = {
+                "step": step,
+                "scheduled": dict(sorted(out.num_scheduled_tokens.items())),
+                "preempted": sorted(out.preempted_req_ids or []),
+            }
+            off = {
+                "loads": [[jid, j.req_id, [int(c) for c in j.src_spec.block_ids], gpu_spec(j.dst_spec)]
+                          for jid, j in sorted(meta.load_jobs.items())],
+                "stores": [[jid, j.req_id, [int(c) for c in j.dst_spec.block_ids], gpu_spec(j.src_spec)]
+                           for jid, j in sorted(meta.store_jobs.items())],
+                "flush": sorted(meta.jobs_to_flush or []),
+            }
+            kv_out, done = worker.execute(meta, step)
+
+            req_ids, sampled = [], []
+            for rid in out.num_scheduled_tokens:
+                req = scheduler.requests[rid]
+                req_ids.append(rid)
+                if req.is_prefill_chunk:
+                    sampled.append([])
+                    continue
+                outp = by_id[rid]["output"]
+                k = sampled_so_far[rid]
+                toks = []
+                if k < len(outp):
+                    toks.append(helpers.EOS_TOKEN_ID if k == len(outp) - 1 else outp[k])
+                    sampled_so_far[rid] = k + 1
+                sampled.append(toks)
+
+            off["completed"] = done
+            aborts = sorted(rid for rid, r in by_id.items() if r.get("abort_step") == step)
+            if aborts:
+                scheduler.finish_requests(aborts, RequestStatus.FINISHED_ABORTED)
+            record["aborted"] = aborts
+            mro = ModelRunnerOutput(
+                req_ids=req_ids, req_id_to_index={rid: i for i, rid in enumerate(req_ids)},
+                sampled_token_ids=sampled, logprobs=None, prompt_logprobs_dict={}, pooler_output=[],
+                kv_connector_output=kv_out)
+            engine_outputs = scheduler.update_from_output(out, mro)
+            # The jobs the step submitted: its schedule's (a promotion) and its output's (a finished
+            # store's cascade, complete_store). The next step's first manager call collects them.
+            tier_jobs = tier_job_rows(mgr)
+            fin = []
+            for eco in engine_outputs.values():
+                for o in eco.outputs:
+                    if o.finish_reason is not None:
+                        fin.append(o.request_id)
+                        finished[o.request_id] = {"reason": str(o.finish_reason),
+                                                  "output_tokens": sampled_so_far[o.request_id], "step": step}
+            record["finished"] = sorted(fin)
+            record.update(kv_state(scheduler))
+            record.update(connector_state())
+            off["jobs"] = sorted(cs._jobs)
+            off["pending_push"] = cs.has_pending_push_work()
+            off["cpu"] = cpu_state()
+            # The step's transport finishes before the next step (the module docstring).
+            for tier in mgr.secondary_tiers:
+                wait_transport(tier)
+            off["tier_jobs"] = tier_jobs
+            off["tier_files"] = [tier_files(t, r) for t, r in zip(mgr.secondary_tiers, roots)]
+            record["offload"] = off
+            steps.append(record)
+            step += 1
+
+        prov = provenance(vllm_root, scenario_path)
+        prov["tier"] = 4
+        prov["kind"] = "tiered"
+        prov["cpu_chunks"] = primary._num_chunks
+        prov["secondary_tiers"] = [t.tier_type for t in mgr.secondary_tiers]
+        return {"provenance": prov, "steps": steps, "finished": dict(sorted(finished.items()))}
+    finally:
+        if mgr is not None:
+            mgr.shutdown()
+        shutil.rmtree(root, ignore_errors=True)
 
 
 class QueuedGPU:
