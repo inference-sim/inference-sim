@@ -397,25 +397,6 @@
     }
   ],
   "known_gaps": {
-    "core/metrics/kvevents.go:appendArrayHeader:<-><=#1:case n < 1<<16:": "no test kills this mutant yet; tracked in blis-sglang#106 (M3.1)",
-    "core/metrics/kvevents.go:appendInt:<-><=#1:case v >= 0 && v < 1<<16:": "no test kills this mutant yet; tracked in blis-sglang#106 (M3.1)",
-    "core/metrics/kvevents.go:appendInt:<-><=#1:case v >= 0 && v < 1<<32:": "no test kills this mutant yet; tracked in blis-sglang#106 (M3.1)",
-    "core/metrics/kvevents.go:appendInt:<-><=#1:case v >= 0 && v < 1<<8:": "no test kills this mutant yet; tracked in blis-sglang#106 (M3.1)",
-    "core/metrics/kvevents.go:appendInt:>=->>#1:case v >= -(1 << 15):": "no test kills this mutant yet; tracked in blis-sglang#106 (M3.1)",
-    "core/metrics/kvevents.go:appendInt:>=->>#1:case v >= -(1 << 31):": "no test kills this mutant yet; tracked in blis-sglang#106 (M3.1)",
-    "core/metrics/kvevents.go:appendInt:>=->>#1:case v >= -(1 << 7):": "no test kills this mutant yet; tracked in blis-sglang#106 (M3.1)",
-    "core/metrics/kvevents.go:appendInt:>=->>#1:case v >= -32:": "no test kills this mutant yet; tracked in blis-sglang#106 (M3.1)",
-    "core/metrics/kvevents.go:appendInt:>=->>#1:case v >= 0 && v < 1<<32:": "no test kills this mutant yet; tracked in blis-sglang#106 (M3.1)",
-    "core/metrics/kvevents.go:appendInt:>=->>#1:case v >= 0 && v < 1<<8:": "no test kills this mutant yet; tracked in blis-sglang#106 (M3.1)",
-    "core/metrics/kvevents.go:appendMapHeader:<-><=#1:if n < 16 {": "no test kills this mutant yet; tracked in blis-sglang#106 (M3.1)",
-    "core/metrics/kvevents.go:appendString:<-><=#1:case n < 1<<16:": "no test kills this mutant yet; tracked in blis-sglang#106 (M3.1)",
-    "core/metrics/kvevents.go:appendString:<-><=#1:case n < 1<<8:": "no test kills this mutant yet; tracked in blis-sglang#106 (M3.1)",
-    "core/metrics/kvevents.go:appendString:<-><=#1:case n < 32:": "no test kills this mutant yet; tracked in blis-sglang#106 (M3.1)",
-    "core/metrics/metrics.go:Series:<-><=#1:for i := 0; i+1 < len(kv); i += 2 {": "no test kills this mutant yet; tracked in blis-sglang#107 (M3.1)",
-    "core/metrics/metrics.go:Series:<-><=#1:return labelKey(out[i].Labels) < labelKey(out[j].Labels)": "no test kills this mutant yet; tracked in blis-sglang#107 (M3.1)",
-    "core/metrics/metrics.go:Series:<-><=#1:return out[i].Name < out[j].Name": "no test kills this mutant yet; tracked in blis-sglang#107 (M3.1)",
-    "core/metrics/metrics.go:prefillReport:>->>=#1:if d > 0 {": "no test kills this mutant yet; tracked in blis-sglang#107 (M3.1)",
-    "core/metrics/metrics.go:prefillReport:>->>=#1:if total > 0 {": "no test kills this mutant yet; tracked in blis-sglang#107 (M3.1)",
     "core/hicache/host.go:Alloc:>->>=#1:if needSize > len(p.freeSlots) {": "no test kills this mutant yet; tracked in blis-sglang#108 (M3.1)",
     "core/hicache/host.go:Alloc:>->>=#1:if needSize > p.AvailableSize() {": "no test kills this mutant yet; tracked in blis-sglang#108 (M3.1)",
     "core/hicache/host.go:NewHostPool:!=->==#1:if c <= 0 || c%p.pageSize != 0 {": "no test kills this mutant yet; tracked in blis-sglang#108 (M3.1)",
@@ -448,9 +429,6 @@
     "core/hicache/counter.go:Complete:>=->>#1:if layer < 0 || layer >= len(l.LoadEvents) {": "no test kills this mutant yet; tracked in blis-sglang#110 (M3.1)",
     "core/hicache/host.go:NewHostPool:<=-><#1:if c <= 0 || c%p.pageSize != 0 {": "no test kills this mutant yet; tracked in blis-sglang#108 (M3.1)",
     "core/hicache/host.go:mergeReleaseSlots:&&->||#1:if len(p.freeSlots) == 0 && len(p.releaseSlots) == 1 {": "no test kills this mutant yet; tracked in blis-sglang#108 (M3.1)",
-    "core/metrics/kvevents.go:appendInt:>=->>#1:case v >= 0 && v < 1<<16:": "no test kills this mutant yet; tracked in blis-sglang#106 (M3.1)",
-    "core/metrics/kvevents.go:appendInt:>=->>#1:case v >= 0:": "no test kills this mutant yet; tracked in blis-sglang#106 (M3.1)",
-    "core/metrics/metrics.go:Series:!=->==#1:if out[i].Name != out[j].Name {": "no test kills this mutant yet; tracked in blis-sglang#107 (M3.1)",
     "lower/lower.go:RequireMLPTPGather:==->!=#1:case b == \"none\":": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
     "lower/lower.go:CaptureBatchSizes:>->>=#1:if bs > largest {": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
     "core/hicache/controller.go:ParseStorageBackendExtraConfig:!=->==#1:if !isNum || err != nil {": "no test kills this mutant yet; tracked in blis-sglang#109 (M3.1)"
@@ -517,6 +495,14 @@
     "core/sched/adder.go:addOneReqIgnoreEOS:<=-><#1:if st.left <= a.reqStates[i].left {": "the flip only moves the new entry within a run of equal lefts, or, when none is larger, to the before-the-last position inside that run; the sequence of lefts is the same either way, and an order within equal lefts changes no check (see the sort mutant above), so no admission differs",
     "core/sched/batch.go:releaseOverallocated:>->>=#1:if ps := s.cfg.PageSize; ps > 1 {": "ceilTo(start, 1) is start, so for a page size of 1 the rounding changes nothing and the branch taken at a page size of 1 gives the same start; a page size is never below 1, so no input tells > 1 from >= 1",
     "core/sched/batch.go:releaseOverallocated:<-><=#1:if start < end {": "when start equals end the range is empty; FreeKVRow then passes one segment of no slots to FreeSegments, whose pageDisjoint skips a segment with no slots, so nothing is freed either way",
-    "core/sched/batch.go:retractionOrder:>->>=#1:return ao > bo": "the comparison is reached only when ao != bo, and for unequal integers ao > bo and ao >= bo are the same, so no input tells them apart"
+    "core/sched/batch.go:retractionOrder:>->>=#1:return ao > bo": "the comparison is reached only when ao != bo, and for unequal integers ao > bo and ao >= bo are the same, so no input tells them apart",
+    "core/metrics/kvevents.go:appendInt:>=->>#1:case v >= 0 && v < 1<<8:": "a value of 0 is taken by the first case (v >= 0 && v < 1<<7) and never reaches this one, so v > 0 and v >= 0 select the same values here",
+    "core/metrics/kvevents.go:appendInt:>=->>#1:case v >= 0 && v < 1<<16:": "a value of 0 is taken by the first case (v >= 0 && v < 1<<7) and never reaches this one, so v > 0 and v >= 0 select the same values here",
+    "core/metrics/kvevents.go:appendInt:>=->>#1:case v >= 0 && v < 1<<32:": "a value of 0 is taken by the first case (v >= 0 && v < 1<<7) and never reaches this one, so v > 0 and v >= 0 select the same values here",
+    "core/metrics/kvevents.go:appendInt:>=->>#1:case v >= 0:": "a value of 0 is taken by the first case (v >= 0 && v < 1<<7) and never reaches this one, so v > 0 and v >= 0 select the same values here",
+    "core/metrics/metrics.go:Series:<-><=#1:for i := 0; i+1 < len(kv); i += 2 {": "base is only called with key and value pairs (the mode and priority labels), so len(kv) is even and i+1 <= len(kv) holds exactly when i+1 < len(kv) does, for i even; the odd length where they differ is never passed",
+    "core/metrics/metrics.go:Series:<-><=#1:return labelKey(out[i].Labels) < labelKey(out[j].Labels)": "no two series share both name and labels (a test asserts it), so the labels of two series of one name are never equal and < and <= agree",
+    "core/metrics/metrics.go:Series:<-><=#1:return out[i].Name < out[j].Name": "this return is reached only when the names differ, and for different names a < b and a <= b are the same test",
+    "core/metrics/metrics.go:prefillReport:>->>=#1:if d > 0 {": "effective holds input and device_hit from start-up, so adding a d of 0 to either adds 0.0 to a value that already exists and changes nothing"
   }
 }
