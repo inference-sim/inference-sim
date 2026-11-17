@@ -1351,7 +1351,7 @@
     "start_event": {
      "_t": "StepDeviceEvent"
     },
-    "timing_enabled": false
+    "timing_enabled": true
    },
    "seq": 43
   },
@@ -4598,23 +4598,23 @@
  ],
  "kind": "direct",
  "provenance": {
-  "blis_sglang_commit": "abdfecbc0f35949639d74d4583e806e806e4c707",
+  "blis_sglang_commit": "b1f1c06b3869ded582ecf207181e0ef09eabdc53",
   "lockfile_sha256": "a3fb4e4773230faee4ffdd89437a96b2f3bfb3082e4be4cef4f44d44c66ed569",
-  "mock_version": "gpu-mock/5+00be9c34ae0c",
+  "mock_version": "gpu-mock/5+ff75612c6c82",
   "model": "Qwen/Qwen2.5-0.5B-Instruct",
   "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
   "oracle_inputs": {
    "oracle/cache_interfaces.py": "eaa605e74915b2804a0a56dd1c30c7cfddf0f644f8771fd36418e53cdaf919e3",
    "oracle/harness.json": "9bf9ac653bb8689ef1aa36d2f76ebdc4119cda513ec937070174fe0025648018",
    "oracle/harness.py": "3baba27680b19f7f6e2d8a489899b6cebf01557afb9f68b2952e94ad2ca00676",
-   "oracle/hicache_interfaces.py": "04d6d21037aca13eb45e822fca52e77d4831eb59b4337fe638914931454b72d3",
-   "oracle/mocks.json": "9d41127ff4b8f3998f3e3a6167b2d369e424da7ddabe88b0c5fdac153646e938",
+   "oracle/hicache_interfaces.py": "20bbe10dd6c27183547f95a10edabe0f01974dc2808c0b0a775a3bbd26c8fb9b",
+   "oracle/mocks.json": "d9f9dbad5ce2d0a61bde6bb8e274a1017a92b9f5fc1e8c19fc60cec71d594a4e",
    "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
    "oracle/run_cache_iface.py": "ad1a3711ff89b58da150089cc04eada656ce8c82f98c99cb17443bf80bc26664",
-   "oracle/run_hicache.py": "d113692951fae5f498296dae0c021edb2a3133717861ced66593f19f0e9780d8",
-   "oracle/run_scheduler.py": "5ed6396481c3f867c93ed7dc6b2296b77d2860bc16f70f209e5198a19138570b",
+   "oracle/run_hicache.py": "a5a5a63c8d774bccc54fe954772c10dc97d496dd0f942f0ab6be1cb721f611e4",
+   "oracle/run_scheduler.py": "7d624d8c7cf66f9daf849d6029f7e5af71bc9ed06fca712f0c1b5b7aa9a96ceb",
    "oracle/scenarios/hicache/direct/prefetch-from-storage.json": "9b4204389283bc156b5d9bf2058570dfb04bed286cf0269ab5699231e96f7d74",
-   "oracle/step_runner.py": "ff4565322b9e01999f1d9a49e877b8eeaf5d54ed2374a891d5c972c6eb12afd3",
+   "oracle/step_runner.py": "b63a8f8de414e77ed56a56ed7dac679f3b1d811e89770cf3c9575883db84c361",
    "oracle/stubs.py": "e30a3a770e3a4f91008449145089328ba8fbb83b35bda7082e1c77e323eb1692",
    "oracle/traces.py": "66d1818a2eb1b3d8bbfa3c5988bc088a8741798e46e536152ab368961bbd28a6"
   },
@@ -4632,6 +4632,7 @@
    "at": "built",
    "boundaries": 0,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 132,
@@ -4664,6 +4665,7 @@
    "at": 0,
    "boundaries": 0,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 132,
@@ -4696,6 +4698,7 @@
    "at": 1,
    "boundaries": 0,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 120,
@@ -4763,6 +4766,7 @@
    "at": 2,
    "boundaries": 0,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [
      {
@@ -4803,6 +4807,7 @@
    "at": 3,
    "boundaries": 1,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [
      {
@@ -4843,6 +4848,7 @@
    "at": 4,
    "boundaries": 1,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 120,
@@ -4875,6 +4881,9 @@
    "at": 5,
    "boundaries": 2,
    "controller": {
+    "ack_backup_completed_tokens": [
+     12
+    ],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 120,
@@ -4907,6 +4916,7 @@
    "at": 6,
    "boundaries": 2,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 120,
@@ -4939,6 +4949,7 @@
    "at": 7,
    "boundaries": 2,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 120,
@@ -4971,6 +4982,7 @@
    "at": 8,
    "boundaries": 2,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 132,
@@ -5003,6 +5015,7 @@
    "at": 9,
    "boundaries": 2,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 132,
@@ -5035,6 +5048,7 @@
    "at": 10,
    "boundaries": 2,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 132,
@@ -5067,6 +5081,7 @@
    "at": 11,
    "boundaries": 3,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 132,
@@ -5099,6 +5114,7 @@
    "at": 12,
    "boundaries": 3,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 120,
@@ -5131,6 +5147,7 @@
    "at": 13,
    "boundaries": 4,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 120,
@@ -5163,6 +5180,7 @@
    "at": 14,
    "boundaries": 4,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 120,
@@ -5195,6 +5213,7 @@
    "at": 15,
    "boundaries": 4,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 120,
@@ -5227,6 +5246,7 @@
    "at": 16,
    "boundaries": 5,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 120,
@@ -5259,6 +5279,7 @@
    "at": 17,
    "boundaries": 5,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 120,
@@ -5291,6 +5312,7 @@
    "at": 18,
    "boundaries": 6,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 120,
@@ -5323,6 +5345,7 @@
    "at": 19,
    "boundaries": 6,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 132,
@@ -5355,6 +5378,7 @@
    "at": 20,
    "boundaries": 6,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 132,
@@ -5387,6 +5411,7 @@
    "at": 21,
    "boundaries": 6,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 132,
@@ -5419,6 +5444,7 @@
    "at": 22,
    "boundaries": 7,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 132,
@@ -5451,6 +5477,7 @@
    "at": 23,
    "boundaries": 7,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 120,
@@ -5483,6 +5510,7 @@
    "at": 24,
    "boundaries": 8,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 120,
@@ -5515,6 +5543,7 @@
    "at": 25,
    "boundaries": 8,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 120,
@@ -5547,6 +5576,7 @@
    "at": 26,
    "boundaries": 9,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 120,
@@ -5579,6 +5609,7 @@
    "at": 27,
    "boundaries": 9,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 120,
@@ -5611,6 +5642,7 @@
    "at": 28,
    "boundaries": 10,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 120,
@@ -5643,6 +5675,7 @@
    "at": 29,
    "boundaries": 10,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 132,
@@ -5675,6 +5708,7 @@
    "at": 30,
    "boundaries": 11,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 132,
@@ -5707,6 +5741,7 @@
    "at": 31,
    "boundaries": 11,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 132,
@@ -5739,6 +5774,7 @@
    "at": 32,
    "boundaries": 11,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 132,
@@ -5771,6 +5807,7 @@
    "at": 33,
    "boundaries": 11,
    "controller": {
+    "ack_backup_completed_tokens": [],
     "ack_load_queue": [],
     "ack_write_queue": [],
     "host_free": 132,

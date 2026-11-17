@@ -33,17 +33,17 @@
   "max_total_num_tokens": 4096
  },
  "provenance": {
-  "blis_sglang_commit": "abdfecbc0f35949639d74d4583e806e806e4c707",
+  "blis_sglang_commit": "b1f1c06b3869ded582ecf207181e0ef09eabdc53",
   "lockfile_sha256": "a3fb4e4773230faee4ffdd89437a96b2f3bfb3082e4be4cef4f44d44c66ed569",
-  "mock_version": "gpu-mock/5+00be9c34ae0c",
+  "mock_version": "gpu-mock/5+ff75612c6c82",
   "model": "Qwen/Qwen2.5-0.5B-Instruct",
   "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
   "oracle_inputs": {
    "oracle/harness.json": "9bf9ac653bb8689ef1aa36d2f76ebdc4119cda513ec937070174fe0025648018",
    "oracle/harness.py": "3baba27680b19f7f6e2d8a489899b6cebf01557afb9f68b2952e94ad2ca00676",
-   "oracle/mocks.json": "9d41127ff4b8f3998f3e3a6167b2d369e424da7ddabe88b0c5fdac153646e938",
+   "oracle/mocks.json": "d9f9dbad5ce2d0a61bde6bb8e274a1017a92b9f5fc1e8c19fc60cec71d594a4e",
    "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
-   "oracle/run_scheduler.py": "5ed6396481c3f867c93ed7dc6b2296b77d2860bc16f70f209e5198a19138570b",
+   "oracle/run_scheduler.py": "7d624d8c7cf66f9daf849d6029f7e5af71bc9ed06fca712f0c1b5b7aa9a96ceb",
    "oracle/scenarios/tiny-overlap.json": "5716756de17ecc7d67f2ef1de34802ddc3508cabf515d5efd672eeef5bd36381",
    "oracle/stubs.py": "e30a3a770e3a4f91008449145089328ba8fbb83b35bda7082e1c77e323eb1692",
    "oracle/traces.py": "66d1818a2eb1b3d8bbfa3c5988bc088a8741798e46e536152ab368961bbd28a6"
