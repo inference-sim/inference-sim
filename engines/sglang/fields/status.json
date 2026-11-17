@@ -4894,12 +4894,12 @@
    }
   },
   "config:trust_remote_code": {
-   "status": "proven_inert",
+   "status": "inert_unproven",
    "evidence": {
-    "proof": "oracle/inertness/trust_remote_code.json"
+    "note": "No proof file: the dashboard scorer reads a proven-inert boolean as needing a value list the substrate forbids for one, so the field stays unproven. Reviewed reading at SGLang v0.5.23 297e54fd: it is passed to the loaders of the model configuration, tokenizer and processor (managers/tp_worker.py, managers/tokenizer_manager.py, arg_groups/*_hook.py); the catalog fixes the architecture, so loading vendor code selects no kernel and changes no schedule. lower.TestInertFieldsChangeNoDecision shows resolution and the lowered plan unchanged at true and false."
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:trust_request_chat_template": {

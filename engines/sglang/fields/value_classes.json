@@ -5810,39 +5810,6 @@
      }
     ]
    }
-  },
-  "trust_remote_code": {
-   "value_classes": {
-    "type": "boolean",
-    "covered": [
-     "false",
-     "true"
-    ]
-   },
-   "basis": {
-    "name": "trust_remote_code",
-    "kind": "boolean",
-    "sites": [],
-    "stated": [
-     {
-      "value": false,
-      "trace": "oracle/inertness/trust_remote_code.json"
-     },
-     {
-      "value": true,
-      "trace": "oracle/inertness/trust_remote_code.json"
-     }
-    ],
-    "classes": [
-     {
-      "uncut": true,
-      "compared_at": [],
-      "covered_by": [
-       "oracle/inertness/trust_remote_code.json"
-      ]
-     }
-    ]
-   }
   }
  }
 }
