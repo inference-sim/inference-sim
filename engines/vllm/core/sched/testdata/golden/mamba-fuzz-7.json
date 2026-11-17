@@ -61,7 +61,7 @@
   "scheduler_block_size": 32
  },
  "provenance": {
-  "blis_vllm_commit": "3e1eec489f8b17c3bdafa2f8180a50c993ace643",
+  "blis_vllm_commit": "a2de59211983db4f396355f2e9d33149b4876921",
   "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
   "mock_version": "gpu-mock/9+2ee0b3b47a9c",
   "mocks": [

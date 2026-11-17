@@ -22,7 +22,7 @@
   }
  },
  "provenance": {
-  "blis_vllm_commit": "3e1eec489f8b17c3bdafa2f8180a50c993ace643",
+  "blis_vllm_commit": "a2de59211983db4f396355f2e9d33149b4876921",
   "cpu_chunks": 24,
   "engine": {
    "async_scheduling": true,
@@ -71,7 +71,7 @@
    "oracle/mocks.json": "9521f9f69e212f249e79b33614003c43dea5642e45499afa48b893737fc49f9b",
    "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
    "oracle/run_enginecore.py": "bb562e23d0ae394ca5d3a099a6083bec69ee7aff5915f35995277a07609a7c0f",
-   "oracle/run_offloading.py": "2d4427698e2b4ec2490409923517326179fb940c013e772de9acb396adf0809a",
+   "oracle/run_offloading.py": "5d9ce700b38d454a921f0ef248678157a2f8d2e80a5d7645d50c3fb04e74dcf4",
    "oracle/run_scheduler.py": "1239a1d64f057fcb543789762859ea33211627e3f2b66b46087ed9ee936222f6",
    "oracle/scenarios/offloading/offloading-pp2-async.json": "d556be763bbfc63880d40146e6b27bfb641b9df6f58d3c41deefa4e079c6c949"
   },
