@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -80,7 +81,7 @@ func TestRunCmd_ScenarioOffloadBlock(t *testing.T) {
 			if err != nil {
 				t.Fatalf("flag offload run: %v\n%s", err, lastLines(stderr, 3))
 			}
-			if simulatedFigures(t, scen) != simulatedFigures(t, flag) {
+			if withoutTierLinkFigures(simulatedFigures(t, scen)) != withoutTierLinkFigures(simulatedFigures(t, flag)) {
 				t.Errorf("the scenario's offload block and the equivalent --kv-offload-config differ\n--- scenario\n%s\n--- flag\n%s", scen, flag)
 			}
 			hs, hf := readFile(t, filepath.Join(tmp, "scen.yaml")), readFile(t, filepath.Join(tmp, "flag.yaml"))
@@ -101,7 +102,7 @@ func TestRunCmd_ScenarioOffloadBlock(t *testing.T) {
 			if h := readFile(t, filepath.Join(tmp, "c4.yaml")); !strings.Contains(h, "blocks_per_chunk: 4") {
 				t.Errorf("the trace header does not record blocks_per_chunk 4:\n%s", h)
 			}
-			if alone, _, err := run(tc.src, filepath.Join(tmp, "c4flag"), "--kv-offload-config", chunked); err != nil || simulatedFigures(t, alone) != simulatedFigures(t, c4) {
+			if alone, _, err := run(tc.src, filepath.Join(tmp, "c4flag"), "--kv-offload-config", chunked); err != nil || withoutTierLinkFigures(simulatedFigures(t, alone)) != withoutTierLinkFigures(simulatedFigures(t, c4)) {
 				t.Errorf("blocks_per_chunk 4 from the flag alone differs from the flag beside the scenario block: err=%v", err)
 			}
 			if rep, stderr, err := runKernelCLI(t, append(append([]string{"replay", "--trace-header", filepath.Join(tmp, "c4.yaml"),
@@ -164,4 +165,39 @@ func TestKVOffloadFromDeployment_TheSimpleConnector(t *testing.T) {
 			t.Fatalf("%+v must be refused", o)
 		}
 	}
+}
+
+// withoutTierLinkFigures drops the link_peak_concurrent_transfers_* figures, which state the links the
+// run's tier copies shared (#2108): the run that takes the offload block from the scenario reports
+// them, and the one that takes it from --kv-offload-config does not, though its figures otherwise
+// equal the scenario's.
+func withoutTierLinkFigures(figures string) string {
+	var v any
+	if err := json.Unmarshal([]byte(figures), &v); err != nil {
+		return figures
+	}
+	// drop removes the figures, and the maps they leave empty, as a run that never had them has none.
+	var drop func(any)
+	drop = func(x any) {
+		switch m := x.(type) {
+		case map[string]any:
+			for k, e := range m {
+				if strings.HasPrefix(k, "link_peak_concurrent_transfers_") {
+					delete(m, k)
+					continue
+				}
+				drop(e)
+				if c, ok := e.(map[string]any); ok && len(c) == 0 {
+					delete(m, k)
+				}
+			}
+		case []any:
+			for _, e := range m {
+				drop(e)
+			}
+		}
+	}
+	drop(v)
+	out, _ := json.MarshalIndent(v, "", "  ")
+	return string(out)
 }

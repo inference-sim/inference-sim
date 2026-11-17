@@ -224,12 +224,79 @@ func (d *EngineDriver) noteHandoffs(hs []engine.Handoff) {
 // (vllm/v1/worker/gpu/kv_connector.py:81, 131-138; offloading/worker.py:218-236). Loads therefore never overlap each other, nor stores each other, but a load and a
 // store do.
 func (d *EngineDriver) startTierTransfer(t engine.Transfer, demand kernel.TransferDemand, after int64) {
+	if d.OnTierPriced != nil {
+		d.queueTierTransfer(t, demand, after)
+		return
+	}
 	if d.tierFreeAt == nil {
 		d.tierFreeAt = map[engine.TransferKind]int64{}
 	}
 	start := max(after, d.tierFreeAt[t.Kind])
 	d.tierFreeAt[t.Kind] = start + TierTicks(demand)
 	d.schedule(&driverTierTransferDone{at: d.tierFreeAt[t.Kind], id: t.ID})
+}
+
+// queuedTier is a tier copy waiting for its kind's stream: it may move no earlier than after.
+type queuedTier struct {
+	id     engine.TransferID
+	demand kernel.TransferDemand
+	after  int64
+}
+
+// queueTierTransfer lines a copy up behind the earlier copies of its kind (a load never overlaps a
+// load, nor a store a store), and starts it when its stream frees and the compute it waits on ends.
+func (d *EngineDriver) queueTierTransfer(t engine.Transfer, demand kernel.TransferDemand, after int64) {
+	if d.tierQueue == nil {
+		d.tierQueue = map[engine.TransferKind][]queuedTier{}
+		d.tierRunning = map[engine.TransferKind]bool{}
+		d.tierOf = map[engine.TransferID]engine.TransferKind{}
+	}
+	d.tierOf[t.ID] = t.Kind
+	d.tierQueue[t.Kind] = append(d.tierQueue[t.Kind], queuedTier{id: t.ID, demand: demand, after: after})
+	d.pumpTier(t.Kind, d.Clock)
+}
+
+// pumpTier starts the head of kind's queue if its stream is free: now when the compute it waits on
+// has ended, else at that instant.
+func (d *EngineDriver) pumpTier(kind engine.TransferKind, now int64) {
+	q := d.tierQueue[kind]
+	if d.tierRunning[kind] || len(q) == 0 {
+		return
+	}
+	head := q[0]
+	if head.after > now {
+		d.schedule(&driverTierStart{at: head.after, kind: kind})
+		return
+	}
+	d.tierQueue[kind] = q[1:]
+	d.tierRunning[kind] = true
+	d.OnTierPriced(head.id, head.demand, now)
+}
+
+// driverTierStart wakes a stream whose next copy waits on the compute stream.
+type driverTierStart struct {
+	at   int64
+	kind engine.TransferKind
+}
+
+func (e *driverTierStart) Timestamp() int64    { return e.at }
+func (e *driverTierStart) Priority() int       { return PriorityQueued }
+func (e *driverTierStart) run(d *EngineDriver) { d.pumpTier(e.kind, e.at) }
+
+// TierLanded reports at now that the tier copy id (OnTierPriced) has landed: the engine is told, and
+// the next copy of its kind may start.
+func (d *EngineDriver) TierLanded(id engine.TransferID, now int64) {
+	kind, ok := d.tierOf[id]
+	if !ok {
+		panic(fmt.Sprintf("engine driver: TierLanded(%d): no tier copy by that id is in flight", id))
+	}
+	delete(d.tierOf, id)
+	d.tierRunning[kind] = false
+	if err := d.eng.TransferDone(id, true, now); err != nil {
+		panic(fmt.Sprintf("engine driver: TransferDone(%d) of a tier transfer: %v", id, err))
+	}
+	d.pumpTier(kind, now)
+	d.kick(now)
 }
 
 // driverTierTransferDone reports an offload-tier transfer landed. Transfer completions run after
