@@ -1,0 +1,3570 @@
+{
+ "calls": [
+  {
+   "args": {
+    "device": "cpu",
+    "enable_memory_saver": false,
+    "max_context_len": 64,
+    "size": 4
+   },
+   "cls": "ReqToTokenPool",
+   "i": "req_to_token",
+   "m": "__init__",
+   "ret": {
+    "max_context_len": 64,
+    "size": 4
+   },
+   "seq": 0
+  },
+  {
+   "args": {
+    "allocation_label": null,
+    "device": "cpu",
+    "dtype": "torch.bfloat16",
+    "enable_alt_stream": true,
+    "enable_kv_cache_copy": false,
+    "enable_memory_saver": false,
+    "end_layer": null,
+    "head_dim": 16,
+    "head_num": 2,
+    "kv_cache_layout": null,
+    "layer_num": 2,
+    "page_size": 1,
+    "post_capture_active": false,
+    "quant_method": null,
+    "size": 64,
+    "start_layer": null,
+    "swa_head_dim": null,
+    "swa_head_num": null,
+    "swa_v_head_dim": null,
+    "v_head_dim": null
+   },
+   "cls": "MHATokenToKVPool",
+   "i": "kv_pool",
+   "m": "__init__",
+   "ret": {
+    "dtype": "torch.bfloat16",
+    "head_dim": 16,
+    "head_num": 2,
+    "layer_num": 2,
+    "page_size": 1,
+    "size": 64,
+    "store_dtype": "torch.bfloat16",
+    "v_head_dim": 16
+   },
+   "seq": 1
+  },
+  {
+   "args": {
+    "device": "cpu",
+    "dtype": "torch.bfloat16",
+    "kvcache": {
+     "_t": "MHATokenToKVPool"
+    },
+    "need_sort": false,
+    "size": 64
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "__init__",
+   "ret": {
+    "dtype": "torch.bfloat16",
+    "need_sort": false,
+    "page_size": 1,
+    "size": 64
+   },
+   "seq": 2
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "CacheInitParams",
+     "attn_cp_cache_group": null,
+     "attn_cp_rank": 0,
+     "attn_cp_size": 1,
+     "attn_tp_cache_group": null,
+     "chunked_prefill_size": null,
+     "component_registry_override": null,
+     "decoder_swa_bounded_replay": false,
+     "disable": false,
+     "draft_swa_window": 0,
+     "dynamo_kv_event_format": false,
+     "enable_kv_cache_events": true,
+     "enable_mamba_extra_buffer": false,
+     "enable_mamba_extra_buffer_lazy": false,
+     "enable_metrics": false,
+     "enable_session_radix_cache": false,
+     "eviction_policy": "priority",
+     "eviction_policy_config": null,
+     "is_eagle": false,
+     "kv_event_lora_names": {
+      "_t": "KvEventLoraNames"
+     },
+     "mtp_draft_device_pools": [],
+     "mtp_draft_mamba_pools": [],
+     "page_size": 1,
+     "pp_cache_group": null,
+     "pp_rank": 0,
+     "pp_size": 1,
+     "req_to_token_pool": {
+      "_t": "ReqToTokenPool"
+     },
+     "sidecar_draft_device_pools": [],
+     "sliding_window_size": null,
+     "swa_gates_prefix_match": true,
+     "token_to_kv_pool_allocator": {
+      "_t": "TokenToKVPoolAllocator"
+     },
+     "tp_cache_group": null,
+     "tree_components": [
+      "FULL"
+     ],
+     "tree_core_backend": "python"
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "__init__",
+   "ret": {
+    "disable": false,
+    "page_size": 1
+   },
+   "seq": 3
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 3,
+   "m": "reset",
+   "ret": null,
+   "seq": 4
+  },
+  {
+   "args": {},
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 3,
+   "m": "reset_session_state",
+   "ret": null,
+   "seq": 5
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 3,
+   "m": "reset",
+   "ret": null,
+   "seq": 6
+  },
+  {
+   "args": {},
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 3,
+   "m": "reset_session_state",
+   "ret": null,
+   "seq": 7
+  },
+  {
+   "args": {
+    "need_size": 4
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "alloc",
+   "ret": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "seq": 8
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 2,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      1,
+      2,
+      3,
+      4
+     ]
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "insert",
+   "ret": {
+    "_t": "InsertResult",
+    "adopted_ranges": null,
+    "cache_actions": [],
+    "host_insert_dropped": false,
+    "inserted_host_node": null,
+    "last_device_node": 10,
+    "mamba_exist": false,
+    "prefix_len": 0,
+    "rotation_tail_declined": false,
+    "swa_branch_inserted": false,
+    "total_len": 0
+   },
+   "seq": 9
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 9,
+   "m": "has_ongoing_insert",
+   "ret": false,
+   "seq": 10
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 2,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      1,
+      2,
+      3,
+      4
+     ]
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 9,
+   "m": "begin_insert",
+   "ret": {
+    "_t": "InsertStepResult",
+    "actions": [],
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": 10,
+     "mamba_exist": false,
+     "prefix_len": 0,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    }
+   },
+   "seq": 11
+  },
+  {
+   "args": {
+    "node": {
+     "node": 10
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 11,
+   "m": "reclaimable_value_len",
+   "ret": 4,
+   "seq": 12
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "is_new_leaf": true,
+    "node": {
+     "node": 10
+    },
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 2,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      1,
+      2,
+      3,
+      4
+     ]
+    },
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": 10,
+     "mamba_exist": false,
+     "prefix_len": 0,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 11,
+   "m": "commit_insert_component_data",
+   "ret": null,
+   "seq": 13
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 9,
+   "m": "end_insert",
+   "ret": [],
+   "seq": 14
+  },
+  {
+   "args": {
+    "need_size": 4
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "alloc",
+   "ret": [
+    5,
+    6,
+    7,
+    8
+   ],
+   "seq": 15
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       5,
+       6,
+       7,
+       8
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      5,
+      6,
+      7,
+      8
+     ]
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "insert",
+   "ret": {
+    "_t": "InsertResult",
+    "adopted_ranges": null,
+    "cache_actions": [],
+    "host_insert_dropped": false,
+    "inserted_host_node": null,
+    "last_device_node": 11,
+    "mamba_exist": false,
+    "prefix_len": 0,
+    "rotation_tail_declined": false,
+    "swa_branch_inserted": false,
+    "total_len": 0
+   },
+   "seq": 16
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 16,
+   "m": "has_ongoing_insert",
+   "ret": false,
+   "seq": 17
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       5,
+       6,
+       7,
+       8
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      5,
+      6,
+      7,
+      8
+     ]
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 16,
+   "m": "begin_insert",
+   "ret": {
+    "_t": "InsertStepResult",
+    "actions": [],
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": 11,
+     "mamba_exist": false,
+     "prefix_len": 0,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    }
+   },
+   "seq": 18
+  },
+  {
+   "args": {
+    "node": {
+     "node": 11
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 18,
+   "m": "reclaimable_value_len",
+   "ret": 4,
+   "seq": 19
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "is_new_leaf": true,
+    "node": {
+     "node": 11
+    },
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       5,
+       6,
+       7,
+       8
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      5,
+      6,
+      7,
+      8
+     ]
+    },
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": 11,
+     "mamba_exist": false,
+     "prefix_len": 0,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 18,
+   "m": "commit_insert_component_data",
+   "ret": null,
+   "seq": 20
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 16,
+   "m": "end_insert",
+   "ret": [],
+   "seq": 21
+  },
+  {
+   "args": {
+    "need_size": 4
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "alloc",
+   "ret": [
+    9,
+    10,
+    11,
+    12
+   ],
+   "seq": 22
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       9,
+       10,
+       11,
+       12
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 1,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      9,
+      10,
+      11,
+      12
+     ]
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "insert",
+   "ret": {
+    "_t": "InsertResult",
+    "adopted_ranges": null,
+    "cache_actions": [],
+    "host_insert_dropped": false,
+    "inserted_host_node": null,
+    "last_device_node": 12,
+    "mamba_exist": false,
+    "prefix_len": 0,
+    "rotation_tail_declined": false,
+    "swa_branch_inserted": false,
+    "total_len": 0
+   },
+   "seq": 23
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 23,
+   "m": "has_ongoing_insert",
+   "ret": false,
+   "seq": 24
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       9,
+       10,
+       11,
+       12
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 1,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      9,
+      10,
+      11,
+      12
+     ]
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 23,
+   "m": "begin_insert",
+   "ret": {
+    "_t": "InsertStepResult",
+    "actions": [],
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": 12,
+     "mamba_exist": false,
+     "prefix_len": 0,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    }
+   },
+   "seq": 25
+  },
+  {
+   "args": {
+    "node": {
+     "node": 12
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 25,
+   "m": "reclaimable_value_len",
+   "ret": 4,
+   "seq": 26
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "is_new_leaf": true,
+    "node": {
+     "node": 12
+    },
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       9,
+       10,
+       11,
+       12
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 1,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      9,
+      10,
+      11,
+      12
+     ]
+    },
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": 12,
+     "mamba_exist": false,
+     "prefix_len": 0,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 25,
+   "m": "commit_insert_component_data",
+   "ret": null,
+   "seq": 27
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 23,
+   "m": "end_insert",
+   "ret": [],
+   "seq": 28
+  },
+  {
+   "args": {
+    "need_size": 4
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "alloc",
+   "ret": [
+    13,
+    14,
+    15,
+    16
+   ],
+   "seq": 29
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      13,
+      14,
+      15,
+      16
+     ]
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "insert",
+   "ret": {
+    "_t": "InsertResult",
+    "adopted_ranges": null,
+    "cache_actions": [],
+    "host_insert_dropped": false,
+    "inserted_host_node": null,
+    "last_device_node": 10,
+    "mamba_exist": false,
+    "prefix_len": 4,
+    "rotation_tail_declined": false,
+    "swa_branch_inserted": false,
+    "total_len": 0
+   },
+   "seq": 30
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 30,
+   "m": "has_ongoing_insert",
+   "ret": false,
+   "seq": 31
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      13,
+      14,
+      15,
+      16
+     ]
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 30,
+   "m": "begin_insert",
+   "ret": {
+    "_t": "InsertStepResult",
+    "actions": [
+     {
+      "_t": "FreeDeviceKV",
+      "indices": [
+       [
+        13,
+        14,
+        15,
+        16
+       ]
+      ]
+     }
+    ],
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": 10,
+     "mamba_exist": false,
+     "prefix_len": 4,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    }
+   },
+   "seq": 32
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "node": {
+     "node": 10
+    },
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      13,
+      14,
+      15,
+      16
+     ]
+    },
+    "prefix_len": 4,
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": null,
+     "mamba_exist": false,
+     "prefix_len": 0,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    },
+    "total_prefix_len": 0,
+    "value_slice": [
+     13,
+     14,
+     15,
+     16
+    ]
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 32,
+   "m": "update_component_on_insert_overlap",
+   "ret": 4,
+   "seq": 33
+  },
+  {
+   "args": {
+    "cache_actions": [
+     {
+      "_t": "FreeDeviceKV",
+      "indices": [
+       [
+        13,
+        14,
+        15,
+        16
+       ]
+      ]
+     }
+    ],
+    "is_new_leaf": false,
+    "node": {
+     "node": 10
+    },
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      13,
+      14,
+      15,
+      16
+     ]
+    },
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": 10,
+     "mamba_exist": false,
+     "prefix_len": 4,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 32,
+   "m": "commit_insert_component_data",
+   "ret": null,
+   "seq": 34
+  },
+  {
+   "args": {
+    "free_index": [
+     13,
+     14,
+     15,
+     16
+    ],
+    "start_pos": 0
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "in": 30,
+   "m": "free_segment",
+   "ret": null,
+   "seq": 35
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 30,
+   "m": "end_insert",
+   "ret": [],
+   "seq": 36
+  },
+  {
+   "args": {
+    "need_size": 4
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "alloc",
+   "ret": [
+    17,
+    18,
+    19,
+    20
+   ],
+   "seq": 37
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      17,
+      18,
+      19,
+      20
+     ]
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "insert",
+   "ret": {
+    "_t": "InsertResult",
+    "adopted_ranges": null,
+    "cache_actions": [],
+    "host_insert_dropped": false,
+    "inserted_host_node": null,
+    "last_device_node": 10,
+    "mamba_exist": false,
+    "prefix_len": 4,
+    "rotation_tail_declined": false,
+    "swa_branch_inserted": false,
+    "total_len": 0
+   },
+   "seq": 38
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 38,
+   "m": "has_ongoing_insert",
+   "ret": false,
+   "seq": 39
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      17,
+      18,
+      19,
+      20
+     ]
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 38,
+   "m": "begin_insert",
+   "ret": {
+    "_t": "InsertStepResult",
+    "actions": [
+     {
+      "_t": "FreeDeviceKV",
+      "indices": [
+       [
+        17,
+        18,
+        19,
+        20
+       ]
+      ]
+     }
+    ],
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": 10,
+     "mamba_exist": false,
+     "prefix_len": 4,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    }
+   },
+   "seq": 40
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "node": {
+     "node": 10
+    },
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      17,
+      18,
+      19,
+      20
+     ]
+    },
+    "prefix_len": 4,
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": null,
+     "mamba_exist": false,
+     "prefix_len": 0,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    },
+    "total_prefix_len": 0,
+    "value_slice": [
+     17,
+     18,
+     19,
+     20
+    ]
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 40,
+   "m": "update_component_on_insert_overlap",
+   "ret": 4,
+   "seq": 41
+  },
+  {
+   "args": {
+    "cache_actions": [
+     {
+      "_t": "FreeDeviceKV",
+      "indices": [
+       [
+        17,
+        18,
+        19,
+        20
+       ]
+      ]
+     }
+    ],
+    "is_new_leaf": false,
+    "node": {
+     "node": 10
+    },
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      17,
+      18,
+      19,
+      20
+     ]
+    },
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": 10,
+     "mamba_exist": false,
+     "prefix_len": 4,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 40,
+   "m": "commit_insert_component_data",
+   "ret": null,
+   "seq": 42
+  },
+  {
+   "args": {
+    "free_index": [
+     17,
+     18,
+     19,
+     20
+    ],
+    "start_pos": 0
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "in": 38,
+   "m": "free_segment",
+   "ret": null,
+   "seq": 43
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 38,
+   "m": "end_insert",
+   "ret": [],
+   "seq": 44
+  },
+  {
+   "args": {
+    "need_size": 4
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "alloc",
+   "ret": [
+    21,
+    22,
+    23,
+    24
+   ],
+   "seq": 45
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       5,
+       6,
+       7,
+       8
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      21,
+      22,
+      23,
+      24
+     ]
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "insert",
+   "ret": {
+    "_t": "InsertResult",
+    "adopted_ranges": null,
+    "cache_actions": [],
+    "host_insert_dropped": false,
+    "inserted_host_node": null,
+    "last_device_node": 11,
+    "mamba_exist": false,
+    "prefix_len": 4,
+    "rotation_tail_declined": false,
+    "swa_branch_inserted": false,
+    "total_len": 0
+   },
+   "seq": 46
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 46,
+   "m": "has_ongoing_insert",
+   "ret": false,
+   "seq": 47
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       5,
+       6,
+       7,
+       8
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      21,
+      22,
+      23,
+      24
+     ]
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 46,
+   "m": "begin_insert",
+   "ret": {
+    "_t": "InsertStepResult",
+    "actions": [
+     {
+      "_t": "FreeDeviceKV",
+      "indices": [
+       [
+        21,
+        22,
+        23,
+        24
+       ]
+      ]
+     }
+    ],
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": 11,
+     "mamba_exist": false,
+     "prefix_len": 4,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    }
+   },
+   "seq": 48
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "node": {
+     "node": 11
+    },
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       5,
+       6,
+       7,
+       8
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      21,
+      22,
+      23,
+      24
+     ]
+    },
+    "prefix_len": 4,
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": null,
+     "mamba_exist": false,
+     "prefix_len": 0,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    },
+    "total_prefix_len": 0,
+    "value_slice": [
+     21,
+     22,
+     23,
+     24
+    ]
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 48,
+   "m": "update_component_on_insert_overlap",
+   "ret": 4,
+   "seq": 49
+  },
+  {
+   "args": {
+    "cache_actions": [
+     {
+      "_t": "FreeDeviceKV",
+      "indices": [
+       [
+        21,
+        22,
+        23,
+        24
+       ]
+      ]
+     }
+    ],
+    "is_new_leaf": false,
+    "node": {
+     "node": 11
+    },
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       5,
+       6,
+       7,
+       8
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      21,
+      22,
+      23,
+      24
+     ]
+    },
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": 11,
+     "mamba_exist": false,
+     "prefix_len": 4,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 48,
+   "m": "commit_insert_component_data",
+   "ret": null,
+   "seq": 50
+  },
+  {
+   "args": {
+    "free_index": [
+     21,
+     22,
+     23,
+     24
+    ],
+    "start_pos": 0
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "in": 46,
+   "m": "free_segment",
+   "ret": null,
+   "seq": 51
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 46,
+   "m": "end_insert",
+   "ret": [],
+   "seq": 52
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       9,
+       10,
+       11,
+       12
+      ]
+     },
+     "req": null
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "match_prefix",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 12,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": 12,
+    "last_host_node": 12,
+    "last_visited_node_id": 12,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 53
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       9,
+       10,
+       11,
+       12
+      ]
+     },
+     "req": null
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 53,
+   "m": "match_prefix",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 12,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": 12,
+    "last_host_node": 12,
+    "last_visited_node_id": 12,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 54
+  },
+  {
+   "args": {
+    "match_device_only": true
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 54,
+   "m": "create_match_validator",
+   "ret": {
+    "_t": "callable"
+   },
+   "seq": 55
+  },
+  {
+   "args": {
+    "best_value_len": 1,
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       9,
+       10,
+       11,
+       12
+      ]
+     },
+     "req": null
+    },
+    "result": {
+     "_t": "MatchResult",
+     "best_match_node": {
+      "node": 12
+     },
+     "cache_actions": [],
+     "cache_protected_len": null,
+     "device_prefix_len": 4,
+     "full_device_match_len": null,
+     "full_kv_hit_length": 4,
+     "host_hit_length": 0,
+     "last_device_node": {
+      "node": 12
+     },
+     "last_host_node": {
+      "node": 12
+     },
+     "last_visited_node_id": 12,
+     "mamba_branching_seqlen": null,
+     "mamba_host_hit_length": 0,
+     "swa_branching_seqlen": null,
+     "swa_host_hit_length": 0
+    },
+    "value_chunks": [
+     [
+      9,
+      10,
+      11,
+      12
+     ]
+    ]
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 54,
+   "m": "finalize_match_result_in_tree_core",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": {
+     "node": 12
+    },
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": {
+     "node": 12
+    },
+    "last_host_node": {
+     "node": 12
+    },
+    "last_visited_node_id": 12,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 56
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       9,
+       10,
+       11,
+       12
+      ]
+     },
+     "req": null
+    },
+    "result": {
+     "_t": "MatchResult",
+     "best_match_node": 12,
+     "cache_actions": [],
+     "cache_protected_len": null,
+     "device_prefix_len": 4,
+     "full_device_match_len": null,
+     "full_kv_hit_length": 4,
+     "host_hit_length": 0,
+     "last_device_node": 12,
+     "last_host_node": 12,
+     "last_visited_node_id": 12,
+     "mamba_branching_seqlen": null,
+     "mamba_host_hit_length": 0,
+     "swa_branching_seqlen": null,
+     "swa_host_hit_length": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 53,
+   "m": "finalize_match_result_in_cache",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 12,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": 12,
+    "last_host_node": 12,
+    "last_visited_node_id": 12,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 57
+  },
+  {
+   "args": {
+    "need_size": 4
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "alloc",
+   "ret": [
+    25,
+    26,
+    27,
+    28
+   ],
+   "seq": 58
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       13,
+       14,
+       15,
+       16
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      25,
+      26,
+      27,
+      28
+     ]
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "insert",
+   "ret": {
+    "_t": "InsertResult",
+    "adopted_ranges": null,
+    "cache_actions": [],
+    "host_insert_dropped": false,
+    "inserted_host_node": null,
+    "last_device_node": 13,
+    "mamba_exist": false,
+    "prefix_len": 0,
+    "rotation_tail_declined": false,
+    "swa_branch_inserted": false,
+    "total_len": 0
+   },
+   "seq": 59
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 59,
+   "m": "has_ongoing_insert",
+   "ret": false,
+   "seq": 60
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       13,
+       14,
+       15,
+       16
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      25,
+      26,
+      27,
+      28
+     ]
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 59,
+   "m": "begin_insert",
+   "ret": {
+    "_t": "InsertStepResult",
+    "actions": [],
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": 13,
+     "mamba_exist": false,
+     "prefix_len": 0,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    }
+   },
+   "seq": 61
+  },
+  {
+   "args": {
+    "node": {
+     "node": 13
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 61,
+   "m": "reclaimable_value_len",
+   "ret": 4,
+   "seq": 62
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "is_new_leaf": true,
+    "node": {
+     "node": 13
+    },
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       13,
+       14,
+       15,
+       16
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      25,
+      26,
+      27,
+      28
+     ]
+    },
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": 13,
+     "mamba_exist": false,
+     "prefix_len": 0,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 61,
+   "m": "commit_insert_component_data",
+   "ret": null,
+   "seq": 63
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 59,
+   "m": "end_insert",
+   "ret": [],
+   "seq": 64
+  },
+  {
+   "args": {},
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "take_events",
+   "ret": [
+    {
+     "_t": "AllBlocksCleared"
+    },
+    {
+     "_t": "BlockStored",
+     "block_hashes": [
+      7470307888890966271,
+      -1634645291211865391,
+      7325169757385981536,
+      -4123756397210254169
+     ],
+     "block_size": 1,
+     "cache_salt": null,
+     "lora_id": null,
+     "lora_name": null,
+     "medium": "GPU",
+     "parent_block_hash": null,
+     "session_id": null,
+     "token_ids": [
+      1,
+      2,
+      3,
+      4
+     ]
+    },
+    {
+     "_t": "BlockStored",
+     "block_hashes": [
+      2707990113706553795,
+      -7784140002525171642,
+      8807335019747967922,
+      7847789333395492728
+     ],
+     "block_size": 1,
+     "cache_salt": null,
+     "lora_id": null,
+     "lora_name": null,
+     "medium": "GPU",
+     "parent_block_hash": null,
+     "session_id": null,
+     "token_ids": [
+      5,
+      6,
+      7,
+      8
+     ]
+    },
+    {
+     "_t": "BlockStored",
+     "block_hashes": [
+      -6987498104845123535,
+      -6897068530448291644,
+      552871968443039772,
+      -712947639348271964
+     ],
+     "block_size": 1,
+     "cache_salt": null,
+     "lora_id": null,
+     "lora_name": null,
+     "medium": "GPU",
+     "parent_block_hash": null,
+     "session_id": null,
+     "token_ids": [
+      9,
+      10,
+      11,
+      12
+     ]
+    },
+    {
+     "_t": "BlockStored",
+     "block_hashes": [
+      4883709756531329411,
+      -5986369608565327378,
+      1908706201296291085,
+      4823721009719442635
+     ],
+     "block_size": 1,
+     "cache_salt": null,
+     "lora_id": null,
+     "lora_name": null,
+     "medium": "GPU",
+     "parent_block_hash": null,
+     "session_id": null,
+     "token_ids": [
+      13,
+      14,
+      15,
+      16
+     ]
+    }
+   ],
+   "seq": 65
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 65,
+   "m": "take_events",
+   "ret": [
+    {
+     "_t": "AllBlocksCleared"
+    },
+    {
+     "_t": "BlockStored",
+     "block_hashes": [
+      7470307888890966271,
+      -1634645291211865391,
+      7325169757385981536,
+      -4123756397210254169
+     ],
+     "block_size": 1,
+     "cache_salt": null,
+     "lora_id": null,
+     "lora_name": null,
+     "medium": "GPU",
+     "parent_block_hash": null,
+     "session_id": null,
+     "token_ids": [
+      1,
+      2,
+      3,
+      4
+     ]
+    },
+    {
+     "_t": "BlockStored",
+     "block_hashes": [
+      2707990113706553795,
+      -7784140002525171642,
+      8807335019747967922,
+      7847789333395492728
+     ],
+     "block_size": 1,
+     "cache_salt": null,
+     "lora_id": null,
+     "lora_name": null,
+     "medium": "GPU",
+     "parent_block_hash": null,
+     "session_id": null,
+     "token_ids": [
+      5,
+      6,
+      7,
+      8
+     ]
+    },
+    {
+     "_t": "BlockStored",
+     "block_hashes": [
+      -6987498104845123535,
+      -6897068530448291644,
+      552871968443039772,
+      -712947639348271964
+     ],
+     "block_size": 1,
+     "cache_salt": null,
+     "lora_id": null,
+     "lora_name": null,
+     "medium": "GPU",
+     "parent_block_hash": null,
+     "session_id": null,
+     "token_ids": [
+      9,
+      10,
+      11,
+      12
+     ]
+    },
+    {
+     "_t": "BlockStored",
+     "block_hashes": [
+      4883709756531329411,
+      -5986369608565327378,
+      1908706201296291085,
+      4823721009719442635
+     ],
+     "block_size": 1,
+     "cache_salt": null,
+     "lora_id": null,
+     "lora_name": null,
+     "medium": "GPU",
+     "parent_block_hash": null,
+     "session_id": null,
+     "token_ids": [
+      13,
+      14,
+      15,
+      16
+     ]
+    }
+   ],
+   "seq": 66
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "EvictParams",
+     "mamba_num": 0,
+     "num_tokens": 4,
+     "swa_num_tokens": 0
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "evict",
+   "ret": {
+    "_t": "EvictResult",
+    "mamba_num_evicted": 0,
+    "num_tokens_evicted": 4,
+    "swa_num_tokens_evicted": 0
+   },
+   "seq": 67
+  },
+  {
+   "args": {
+    "component_type": "FULL",
+    "request_cnt": 4
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 67,
+   "m": "evict_device_start",
+   "ret": null,
+   "seq": 68
+  },
+  {
+   "args": {
+    "request_cnt": 4
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 68,
+   "m": "evict_device_start",
+   "ret": null,
+   "seq": 69
+  },
+  {
+   "args": {
+    "component_type": "FULL",
+    "tracker": {
+     "FULL": 0
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 67,
+   "m": "evict_device_next_node",
+   "ret": {
+    "_t": "EvictDeviceNextNodeResult",
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "made_progress": true,
+    "mamba_backup_node_id": null,
+    "node_id": 11,
+    "swa_backup_node_id": null,
+    "swa_backup_num_tokens": 0,
+    "tracker": {},
+    "unbacked_tokens": 0
+   },
+   "seq": 70
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "tracker": {
+     "FULL": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 70,
+   "m": "evict_device_next_node",
+   "ret": 11,
+   "seq": 71
+  },
+  {
+   "args": {
+    "is_write_back": false,
+    "node_id": 11
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 67,
+   "m": "evict_device_leaf",
+   "ret": {
+    "_t": "EvictDeviceLeafResult",
+    "backup_kv": null,
+    "cache_actions": [],
+    "device_frees": {
+     "FULL": [
+      [
+       5,
+       6,
+       7,
+       8
+      ]
+     ]
+    },
+    "host_frees": {},
+    "tracker": {
+     "FULL": 4
+    },
+    "unbacked_tokens": 4
+   },
+   "seq": 72
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "node": {
+     "node": 11
+    },
+    "target": "ALL"
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 72,
+   "m": "evict_component",
+   "ret": [
+    4,
+    0
+   ],
+   "seq": 73
+  },
+  {
+   "args": {
+    "node": {
+     "node": 11
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 72,
+   "m": "discard_deleted_session_leaf",
+   "ret": null,
+   "seq": 74
+  },
+  {
+   "args": {
+    "action": {
+     "_t": "FreeComponentDeviceSlot",
+     "component_type": "FULL",
+     "indices": [
+      [
+       5,
+       6,
+       7,
+       8
+      ]
+     ]
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 67,
+   "m": "apply_component_action",
+   "ret": null,
+   "seq": 75
+  },
+  {
+   "args": {
+    "free_index": [
+     5,
+     6,
+     7,
+     8
+    ],
+    "start_pos": 0
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "in": 75,
+   "m": "free_segment",
+   "ret": null,
+   "seq": 76
+  },
+  {
+   "args": {
+    "component_type": "FULL",
+    "tracker": {
+     "FULL": 4
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 67,
+   "m": "evict_device_next_node",
+   "ret": {
+    "_t": "EvictDeviceNextNodeResult",
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "made_progress": false,
+    "mamba_backup_node_id": null,
+    "node_id": null,
+    "swa_backup_node_id": null,
+    "swa_backup_num_tokens": 0,
+    "tracker": {},
+    "unbacked_tokens": 0
+   },
+   "seq": 77
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "tracker": {
+     "FULL": 4
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 77,
+   "m": "evict_device_next_node",
+   "ret": null,
+   "seq": 78
+  },
+  {
+   "args": {
+    "component_type": "FULL"
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 67,
+   "m": "evict_device_end",
+   "ret": null,
+   "seq": 79
+  },
+  {
+   "args": {},
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 79,
+   "m": "evict_device_end",
+   "ret": null,
+   "seq": 80
+  },
+  {
+   "args": {},
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "take_events",
+   "ret": [
+    {
+     "_t": "BlockRemoved",
+     "block_hashes": [
+      2707990113706553795,
+      -7784140002525171642,
+      8807335019747967922,
+      7847789333395492728
+     ],
+     "medium": "GPU"
+    }
+   ],
+   "seq": 81
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 81,
+   "m": "take_events",
+   "ret": [
+    {
+     "_t": "BlockRemoved",
+     "block_hashes": [
+      2707990113706553795,
+      -7784140002525171642,
+      8807335019747967922,
+      7847789333395492728
+     ],
+     "medium": "GPU"
+    }
+   ],
+   "seq": 82
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "EvictParams",
+     "mamba_num": 0,
+     "num_tokens": 4,
+     "swa_num_tokens": 0
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "evict",
+   "ret": {
+    "_t": "EvictResult",
+    "mamba_num_evicted": 0,
+    "num_tokens_evicted": 4,
+    "swa_num_tokens_evicted": 0
+   },
+   "seq": 83
+  },
+  {
+   "args": {
+    "component_type": "FULL",
+    "request_cnt": 4
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 83,
+   "m": "evict_device_start",
+   "ret": null,
+   "seq": 84
+  },
+  {
+   "args": {
+    "request_cnt": 4
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 84,
+   "m": "evict_device_start",
+   "ret": null,
+   "seq": 85
+  },
+  {
+   "args": {
+    "component_type": "FULL",
+    "tracker": {
+     "FULL": 0
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 83,
+   "m": "evict_device_next_node",
+   "ret": {
+    "_t": "EvictDeviceNextNodeResult",
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "made_progress": true,
+    "mamba_backup_node_id": null,
+    "node_id": 13,
+    "swa_backup_node_id": null,
+    "swa_backup_num_tokens": 0,
+    "tracker": {},
+    "unbacked_tokens": 0
+   },
+   "seq": 86
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "tracker": {
+     "FULL": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 86,
+   "m": "evict_device_next_node",
+   "ret": 13,
+   "seq": 87
+  },
+  {
+   "args": {
+    "is_write_back": false,
+    "node_id": 13
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 83,
+   "m": "evict_device_leaf",
+   "ret": {
+    "_t": "EvictDeviceLeafResult",
+    "backup_kv": null,
+    "cache_actions": [],
+    "device_frees": {
+     "FULL": [
+      [
+       25,
+       26,
+       27,
+       28
+      ]
+     ]
+    },
+    "host_frees": {},
+    "tracker": {
+     "FULL": 4
+    },
+    "unbacked_tokens": 4
+   },
+   "seq": 88
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "node": {
+     "node": 13
+    },
+    "target": "ALL"
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 88,
+   "m": "evict_component",
+   "ret": [
+    4,
+    0
+   ],
+   "seq": 89
+  },
+  {
+   "args": {
+    "node": {
+     "node": 13
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 88,
+   "m": "discard_deleted_session_leaf",
+   "ret": null,
+   "seq": 90
+  },
+  {
+   "args": {
+    "action": {
+     "_t": "FreeComponentDeviceSlot",
+     "component_type": "FULL",
+     "indices": [
+      [
+       25,
+       26,
+       27,
+       28
+      ]
+     ]
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 83,
+   "m": "apply_component_action",
+   "ret": null,
+   "seq": 91
+  },
+  {
+   "args": {
+    "free_index": [
+     25,
+     26,
+     27,
+     28
+    ],
+    "start_pos": 0
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "in": 91,
+   "m": "free_segment",
+   "ret": null,
+   "seq": 92
+  },
+  {
+   "args": {
+    "component_type": "FULL",
+    "tracker": {
+     "FULL": 4
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 83,
+   "m": "evict_device_next_node",
+   "ret": {
+    "_t": "EvictDeviceNextNodeResult",
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "made_progress": false,
+    "mamba_backup_node_id": null,
+    "node_id": null,
+    "swa_backup_node_id": null,
+    "swa_backup_num_tokens": 0,
+    "tracker": {},
+    "unbacked_tokens": 0
+   },
+   "seq": 93
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "tracker": {
+     "FULL": 4
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 93,
+   "m": "evict_device_next_node",
+   "ret": null,
+   "seq": 94
+  },
+  {
+   "args": {
+    "component_type": "FULL"
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 83,
+   "m": "evict_device_end",
+   "ret": null,
+   "seq": 95
+  },
+  {
+   "args": {},
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 95,
+   "m": "evict_device_end",
+   "ret": null,
+   "seq": 96
+  },
+  {
+   "args": {},
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "take_events",
+   "ret": [
+    {
+     "_t": "BlockRemoved",
+     "block_hashes": [
+      4883709756531329411,
+      -5986369608565327378,
+      1908706201296291085,
+      4823721009719442635
+     ],
+     "medium": "GPU"
+    }
+   ],
+   "seq": 97
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 97,
+   "m": "take_events",
+   "ret": [
+    {
+     "_t": "BlockRemoved",
+     "block_hashes": [
+      4883709756531329411,
+      -5986369608565327378,
+      1908706201296291085,
+      4823721009719442635
+     ],
+     "medium": "GPU"
+    }
+   ],
+   "seq": 98
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "EvictParams",
+     "mamba_num": 0,
+     "num_tokens": 4,
+     "swa_num_tokens": 0
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "evict",
+   "ret": {
+    "_t": "EvictResult",
+    "mamba_num_evicted": 0,
+    "num_tokens_evicted": 4,
+    "swa_num_tokens_evicted": 0
+   },
+   "seq": 99
+  },
+  {
+   "args": {
+    "component_type": "FULL",
+    "request_cnt": 4
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 99,
+   "m": "evict_device_start",
+   "ret": null,
+   "seq": 100
+  },
+  {
+   "args": {
+    "request_cnt": 4
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 100,
+   "m": "evict_device_start",
+   "ret": null,
+   "seq": 101
+  },
+  {
+   "args": {
+    "component_type": "FULL",
+    "tracker": {
+     "FULL": 0
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 99,
+   "m": "evict_device_next_node",
+   "ret": {
+    "_t": "EvictDeviceNextNodeResult",
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "made_progress": true,
+    "mamba_backup_node_id": null,
+    "node_id": 12,
+    "swa_backup_node_id": null,
+    "swa_backup_num_tokens": 0,
+    "tracker": {},
+    "unbacked_tokens": 0
+   },
+   "seq": 102
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "tracker": {
+     "FULL": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 102,
+   "m": "evict_device_next_node",
+   "ret": 12,
+   "seq": 103
+  },
+  {
+   "args": {
+    "is_write_back": false,
+    "node_id": 12
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 99,
+   "m": "evict_device_leaf",
+   "ret": {
+    "_t": "EvictDeviceLeafResult",
+    "backup_kv": null,
+    "cache_actions": [],
+    "device_frees": {
+     "FULL": [
+      [
+       9,
+       10,
+       11,
+       12
+      ]
+     ]
+    },
+    "host_frees": {},
+    "tracker": {
+     "FULL": 4
+    },
+    "unbacked_tokens": 4
+   },
+   "seq": 104
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "node": {
+     "node": 12
+    },
+    "target": "ALL"
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 104,
+   "m": "evict_component",
+   "ret": [
+    4,
+    0
+   ],
+   "seq": 105
+  },
+  {
+   "args": {
+    "node": {
+     "node": 12
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 104,
+   "m": "discard_deleted_session_leaf",
+   "ret": null,
+   "seq": 106
+  },
+  {
+   "args": {
+    "action": {
+     "_t": "FreeComponentDeviceSlot",
+     "component_type": "FULL",
+     "indices": [
+      [
+       9,
+       10,
+       11,
+       12
+      ]
+     ]
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 99,
+   "m": "apply_component_action",
+   "ret": null,
+   "seq": 107
+  },
+  {
+   "args": {
+    "free_index": [
+     9,
+     10,
+     11,
+     12
+    ],
+    "start_pos": 0
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "in": 107,
+   "m": "free_segment",
+   "ret": null,
+   "seq": 108
+  },
+  {
+   "args": {
+    "component_type": "FULL",
+    "tracker": {
+     "FULL": 4
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 99,
+   "m": "evict_device_next_node",
+   "ret": {
+    "_t": "EvictDeviceNextNodeResult",
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "made_progress": false,
+    "mamba_backup_node_id": null,
+    "node_id": null,
+    "swa_backup_node_id": null,
+    "swa_backup_num_tokens": 0,
+    "tracker": {},
+    "unbacked_tokens": 0
+   },
+   "seq": 109
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "tracker": {
+     "FULL": 4
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 109,
+   "m": "evict_device_next_node",
+   "ret": null,
+   "seq": 110
+  },
+  {
+   "args": {
+    "component_type": "FULL"
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 99,
+   "m": "evict_device_end",
+   "ret": null,
+   "seq": 111
+  },
+  {
+   "args": {},
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 111,
+   "m": "evict_device_end",
+   "ret": null,
+   "seq": 112
+  },
+  {
+   "args": {},
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "take_events",
+   "ret": [
+    {
+     "_t": "BlockRemoved",
+     "block_hashes": [
+      -6987498104845123535,
+      -6897068530448291644,
+      552871968443039772,
+      -712947639348271964
+     ],
+     "medium": "GPU"
+    }
+   ],
+   "seq": 113
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 113,
+   "m": "take_events",
+   "ret": [
+    {
+     "_t": "BlockRemoved",
+     "block_hashes": [
+      -6987498104845123535,
+      -6897068530448291644,
+      552871968443039772,
+      -712947639348271964
+     ],
+     "medium": "GPU"
+    }
+   ],
+   "seq": 114
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "EvictParams",
+     "mamba_num": 0,
+     "num_tokens": 4,
+     "swa_num_tokens": 0
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "evict",
+   "ret": {
+    "_t": "EvictResult",
+    "mamba_num_evicted": 0,
+    "num_tokens_evicted": 4,
+    "swa_num_tokens_evicted": 0
+   },
+   "seq": 115
+  },
+  {
+   "args": {
+    "component_type": "FULL",
+    "request_cnt": 4
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 115,
+   "m": "evict_device_start",
+   "ret": null,
+   "seq": 116
+  },
+  {
+   "args": {
+    "request_cnt": 4
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 116,
+   "m": "evict_device_start",
+   "ret": null,
+   "seq": 117
+  },
+  {
+   "args": {
+    "component_type": "FULL",
+    "tracker": {
+     "FULL": 0
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 115,
+   "m": "evict_device_next_node",
+   "ret": {
+    "_t": "EvictDeviceNextNodeResult",
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "made_progress": true,
+    "mamba_backup_node_id": null,
+    "node_id": 10,
+    "swa_backup_node_id": null,
+    "swa_backup_num_tokens": 0,
+    "tracker": {},
+    "unbacked_tokens": 0
+   },
+   "seq": 118
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "tracker": {
+     "FULL": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 118,
+   "m": "evict_device_next_node",
+   "ret": 10,
+   "seq": 119
+  },
+  {
+   "args": {
+    "is_write_back": false,
+    "node_id": 10
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 115,
+   "m": "evict_device_leaf",
+   "ret": {
+    "_t": "EvictDeviceLeafResult",
+    "backup_kv": null,
+    "cache_actions": [],
+    "device_frees": {
+     "FULL": [
+      [
+       1,
+       2,
+       3,
+       4
+      ]
+     ]
+    },
+    "host_frees": {},
+    "tracker": {
+     "FULL": 4
+    },
+    "unbacked_tokens": 4
+   },
+   "seq": 120
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "node": {
+     "node": 10
+    },
+    "target": "ALL"
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 120,
+   "m": "evict_component",
+   "ret": [
+    4,
+    0
+   ],
+   "seq": 121
+  },
+  {
+   "args": {
+    "node": {
+     "node": 10
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 120,
+   "m": "discard_deleted_session_leaf",
+   "ret": null,
+   "seq": 122
+  },
+  {
+   "args": {
+    "action": {
+     "_t": "FreeComponentDeviceSlot",
+     "component_type": "FULL",
+     "indices": [
+      [
+       1,
+       2,
+       3,
+       4
+      ]
+     ]
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 115,
+   "m": "apply_component_action",
+   "ret": null,
+   "seq": 123
+  },
+  {
+   "args": {
+    "free_index": [
+     1,
+     2,
+     3,
+     4
+    ],
+    "start_pos": 0
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "in": 123,
+   "m": "free_segment",
+   "ret": null,
+   "seq": 124
+  },
+  {
+   "args": {
+    "component_type": "FULL",
+    "tracker": {
+     "FULL": 4
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 115,
+   "m": "evict_device_next_node",
+   "ret": {
+    "_t": "EvictDeviceNextNodeResult",
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "made_progress": false,
+    "mamba_backup_node_id": null,
+    "node_id": null,
+    "swa_backup_node_id": null,
+    "swa_backup_num_tokens": 0,
+    "tracker": {},
+    "unbacked_tokens": 0
+   },
+   "seq": 125
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "tracker": {
+     "FULL": 4
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 125,
+   "m": "evict_device_next_node",
+   "ret": null,
+   "seq": 126
+  },
+  {
+   "args": {
+    "component_type": "FULL"
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 115,
+   "m": "evict_device_end",
+   "ret": null,
+   "seq": 127
+  },
+  {
+   "args": {},
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 127,
+   "m": "evict_device_end",
+   "ret": null,
+   "seq": 128
+  },
+  {
+   "args": {},
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "take_events",
+   "ret": [
+    {
+     "_t": "BlockRemoved",
+     "block_hashes": [
+      7470307888890966271,
+      -1634645291211865391,
+      7325169757385981536,
+      -4123756397210254169
+     ],
+     "medium": "GPU"
+    }
+   ],
+   "seq": 129
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 129,
+   "m": "take_events",
+   "ret": [
+    {
+     "_t": "BlockRemoved",
+     "block_hashes": [
+      7470307888890966271,
+      -1634645291211865391,
+      7325169757385981536,
+      -4123756397210254169
+     ],
+     "medium": "GPU"
+    }
+   ],
+   "seq": 130
+  }
+ ],
+ "kind": "direct",
+ "provenance": {
+  "blis_sglang_commit": "6d3000617d82b6ea2b5958c1c0a3f2898e77fca2",
+  "lockfile_sha256": "a3fb4e4773230faee4ffdd89437a96b2f3bfb3082e4be4cef4f44d44c66ed569",
+  "mock_version": "gpu-mock/4+4be739f2a212",
+  "model": "none: the driver builds SGLang's pools and cache from the sequence's cache block",
+  "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+  "oracle_inputs": {
+   "oracle/cache_interfaces.py": "65cbb6a4d473dcccc0d3ce6b262be075d35b54993636aff9d35b655f11f4e264",
+   "oracle/harness.json": "c9fc5c0cf22ba9274aec27d768d097303e166b1b6dc97883ec2972c4b29e27b6",
+   "oracle/harness.py": "a1ab29f3421f2a5b504a0096f59cbe38055c8c2615a99d2d7c09bda96b0c5df6",
+   "oracle/mocks.json": "8863c3c7c02de293b2ddbad2bb421b5741c95eef87019025d24835e44a84b1e7",
+   "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+   "oracle/run_cache_iface.py": "ad1a3711ff89b58da150089cc04eada656ce8c82f98c99cb17443bf80bc26664",
+   "oracle/run_scheduler.py": "28ed3f13aa2d7502a317a0dd1974b7c67f7ee784761605acd54d57e26168f353",
+   "oracle/scenarios-cache-iface/policy-priority.json": "f38a9f17ec364b2f7ac59c9bfe87e1dc52d90bf85b638932e5cdc23b05168375",
+   "oracle/stubs.py": "e30a3a770e3a4f91008449145089328ba8fbb83b35bda7082e1c77e323eb1692",
+   "oracle/traces.py": "66d1818a2eb1b3d8bbfa3c5988bc088a8741798e46e536152ab368961bbd28a6"
+  },
+  "platform": "linux-x86_64",
+  "python": "3.12.16",
+  "requirements_lock_sha256": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+  "scenario_sha256": "f38a9f17ec364b2f7ac59c9bfe87e1dc52d90bf85b638932e5cdc23b05168375",
+  "seed": 0,
+  "sglang_commit": "297e54fd105e974cdf401e5b4d20253a22c16f90",
+  "tier": 2
+ }
+}

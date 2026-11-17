@@ -1,0 +1,116 @@
+{
+ "description": "A lock on one branch holds it and its ancestors against an eviction that asks for everything; the unlock makes them evictable again.",
+ "model": "none: the driver builds SGLang's pools and cache from the sequence's cache block",
+ "seed": 0,
+ "cache": {
+  "page_size": 1,
+  "kv_size": 64,
+  "max_num_reqs": 4,
+  "max_context_len": 64,
+  "layer_num": 2,
+  "head_num": 2,
+  "head_dim": 16,
+  "kv_cache_events": true
+ },
+ "calls": [
+  {
+   "on": "allocator",
+   "m": "alloc",
+   "n": 6,
+   "as": "a"
+  },
+  {
+   "on": "cache",
+   "m": "insert",
+   "tokens": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "value": "a"
+  },
+  {
+   "on": "allocator",
+   "m": "alloc",
+   "n": 4,
+   "as": "b"
+  },
+  {
+   "on": "cache",
+   "m": "insert",
+   "tokens": [
+    7,
+    8,
+    9,
+    10
+   ],
+   "value": "b"
+  },
+  {
+   "on": "cache",
+   "m": "match_prefix",
+   "tokens": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "as": "m"
+  },
+  {
+   "on": "cache",
+   "m": "inc_lock_ref",
+   "node": "m",
+   "as": "l"
+  },
+  {
+   "on": "cache",
+   "m": "protected_size"
+  },
+  {
+   "on": "cache",
+   "m": "evictable_size"
+  },
+  {
+   "on": "cache",
+   "m": "evict",
+   "num_tokens": 64
+  },
+  {
+   "on": "cache",
+   "m": "evictable_size"
+  },
+  {
+   "on": "allocator",
+   "m": "available_size"
+  },
+  {
+   "on": "cache",
+   "m": "dec_lock_ref",
+   "node": "m",
+   "lock": "l"
+  },
+  {
+   "on": "cache",
+   "m": "protected_size"
+  },
+  {
+   "on": "cache",
+   "m": "evict",
+   "num_tokens": 64
+  },
+  {
+   "on": "allocator",
+   "m": "available_size"
+  },
+  {
+   "on": "cache",
+   "m": "take_events"
+  }
+ ]
+}

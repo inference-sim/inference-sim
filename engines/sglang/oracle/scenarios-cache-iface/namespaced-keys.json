@@ -1,0 +1,142 @@
+{
+ "description": "The same tokens under no namespace, under an extra_key and under a cache_salt are three branches: a match finds only its own namespace, and each stores and removes its own events.",
+ "model": "none: the driver builds SGLang's pools and cache from the sequence's cache block",
+ "seed": 0,
+ "cache": {
+  "page_size": 1,
+  "kv_size": 64,
+  "max_num_reqs": 4,
+  "max_context_len": 64,
+  "layer_num": 2,
+  "head_num": 2,
+  "head_dim": 16,
+  "kv_cache_events": true
+ },
+ "calls": [
+  {
+   "on": "allocator",
+   "m": "alloc",
+   "n": 4,
+   "as": "a"
+  },
+  {
+   "on": "cache",
+   "m": "insert",
+   "tokens": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "value": "a"
+  },
+  {
+   "on": "allocator",
+   "m": "alloc",
+   "n": 4,
+   "as": "b"
+  },
+  {
+   "on": "cache",
+   "m": "insert",
+   "tokens": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "value": "b",
+   "extra_key": "lora-x"
+  },
+  {
+   "on": "allocator",
+   "m": "alloc",
+   "n": 4,
+   "as": "c"
+  },
+  {
+   "on": "cache",
+   "m": "insert",
+   "tokens": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "value": "c",
+   "cache_salt": "s1"
+  },
+  {
+   "on": "cache",
+   "m": "match_prefix",
+   "tokens": [
+    1,
+    2,
+    3,
+    4,
+    5
+   ]
+  },
+  {
+   "on": "cache",
+   "m": "match_prefix",
+   "tokens": [
+    1,
+    2,
+    3
+   ],
+   "extra_key": "lora-x"
+  },
+  {
+   "on": "cache",
+   "m": "match_prefix",
+   "tokens": [
+    1,
+    2
+   ],
+   "cache_salt": "s1"
+  },
+  {
+   "on": "cache",
+   "m": "match_prefix",
+   "tokens": [
+    1,
+    2
+   ],
+   "extra_key": "lora-y"
+  },
+  {
+   "on": "allocator",
+   "m": "alloc",
+   "n": 6,
+   "as": "d"
+  },
+  {
+   "on": "cache",
+   "m": "insert",
+   "tokens": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "value": "d",
+   "cache_salt": "s1"
+  },
+  {
+   "on": "cache",
+   "m": "take_events"
+  },
+  {
+   "on": "cache",
+   "m": "evict",
+   "num_tokens": 64
+  },
+  {
+   "on": "cache",
+   "m": "take_events"
+  }
+ ]
+}

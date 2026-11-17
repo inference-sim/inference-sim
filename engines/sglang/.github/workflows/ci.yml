@@ -214,6 +214,37 @@ jobs:
           path: oracle-traces/
       - name: every golden trace is SGLang's own output
         run: python -I oracle/compare_goldens.py oracle-traces "$(git -C sglang-source rev-parse HEAD)"
+      # FID-5 (design §7.6): the cache framework's interfaces traced as SGLang's own classes answer
+      # them. Recorded: each tier-2 scenario through the scheduler, every call at the six cache
+      # interfaces observed (oracle/cache_interfaces.py). Direct: the driver's own sequences.
+      - name: trace the cache framework's interfaces
+        if: ${{ !cancelled() }}
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          export ORACLE_MODEL="$PWD/oracle-model"
+          mkdir -p oracle-traces-fid5/recorded oracle-traces-fid5/direct
+          for s in oracle/scenarios/*.json; do
+            python -I oracle/run_cache_iface.py recorded sglang-source "$s" "oracle-traces-fid5/recorded/$(basename "$s" .json).trace.json"
+          done
+          for s in oracle/scenarios-cache-iface/*.json; do
+            python -I oracle/run_cache_iface.py direct sglang-source "$s" "oracle-traces-fid5/direct/$(basename "$s" .json).trace.json"
+          done
+      - name: upload the cache interface traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: oracle-traces-fid5
+          path: oracle-traces-fid5/
+      - name: every cache interface golden is SGLang's own output
+        run: |
+          set -euo pipefail
+          commit="$(git -C sglang-source rev-parse HEAD)"
+          python -I oracle/compare_goldens.py oracle-traces-fid5/recorded "$commit" oracle/scenarios core/cache/testdata/golden-fid5/recorded
+          python -I oracle/compare_goldens.py oracle-traces-fid5/direct "$commit" oracle/scenarios-cache-iface core/cache/testdata/golden-fid5/direct
 
   # FID-3: a golden trace's decisions change only in a commit with a golden-reviewed trailer, and a
   # new golden was recorded on CI's platform from the committed lock.
