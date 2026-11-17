@@ -115,8 +115,8 @@ func TestPhaseGate_UnsentRequestsEndNotStarted(t *testing.T) {
 	phases := []trace.Phase{{Name: "warmup"}, {Name: "measured"}}
 	cs := phasedCluster(t, phasedRequests(1, 3, 256, 5000), phases, 20_000)
 	tally := cs.Fates().Tally()
-	if tally.ByFate[sim.FateNotStarted] != 3 || tally.Created != 4 || tally.Total() != 4 {
-		t.Fatalf("tally = %+v, want the 3 unsent measured requests not started, 4 counted", tally)
+	if tally.PlannedNotIssued != 3 || tally.Created != 1 || tally.Total() != 1 {
+		t.Fatalf("tally = %+v, want the 3 unsent measured requests planned and not issued, 1 generated", tally)
 	}
 	if f := cs.RequestFacts()["meas_0"]; f.Phase != "measured" || f.PromptTokens != 256 {
 		t.Errorf("unsent request facts = %+v, want phase measured and 256 prompt tokens", f)
