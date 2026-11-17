@@ -273,6 +273,41 @@ class CoverageMatching(unittest.TestCase):
             self.assertFalse(cov.ran("vllm/v1/engine/tiny.py:2", 2))
 
 
+class HostIndependence(unittest.TestCase):
+    """A proof's hashes are computed on whatever runner the job lands on, so they must not carry a value that
+    the runner's CPU decides: vLLM's CPU platform resolves cache_config.mamba_ssm_cache_dtype to float32 on a
+    CPU with AVX512-BF16 and leaves it auto on one without (vllm/platforms/cpu.py), and CI's runners are of both
+    kinds (the proof's hashes failed on a runner without it)."""
+
+    def test_a_handshake_run_hashes_the_same_config_on_a_cpu_with_and_without_avx512_bf16(self):
+        import dataclasses
+        h = load()
+
+        @dataclasses.dataclass
+        class Cache:
+            block_size: int = 16
+            mamba_ssm_cache_dtype: str = "auto"
+
+        @dataclasses.dataclass
+        class Section:
+            max_num_seqs: int = 128
+            data_parallel_rpc_port: int = 29550
+
+        class Cfg:
+            def __init__(self, dtype):
+                self.parallel_config = Section()
+                self.scheduler_config = Section()
+                self.cache_config = Cache(mamba_ssm_cache_dtype=dtype)
+
+        runs = [r for r in proof("data_parallel_rpc_port")["runs"] if r["kind"] == "handshake"]
+        self.assertTrue(runs)
+        for run in runs:
+            with self.subTest(run=run["id"]):
+                with_bf16 = h.handshake_config(Cfg("float32"), "data_parallel_rpc_port", run.get("ignore", []))
+                without = h.handshake_config(Cfg("auto"), "data_parallel_rpc_port", run.get("ignore", []))
+                self.assertEqual(h.digest(with_bf16), h.digest(without))
+
+
 class CommittedProofs(unittest.TestCase):
     @unittest.skipUnless(ROOT, "VLLM_SOURCE is unset")
     def test_every_committed_proof_is_what_the_harness_computes_now(self):
