@@ -125,6 +125,13 @@ func Adopt(in AdoptInputs) (Adopted, error) {
 			"which the %s releases the compatibility engine models do not have; it runs on the v%s engine, so state engine.version %q",
 			in.Scenario, strings.Join(CompatVersions(), " and "), vllm.Version, vllm.Version)
 	}
+	// vLLM's obj tier, on an object store, came with the v0.33.0 engine too (vllmengine); the
+	// compatibility engine models the fs tier only.
+	if !core && StatesObjectStoreTier(shape.Offload) {
+		return Adopted{}, fmt.Errorf("scenario %q: offload states a tier on an object store, which vLLM reaches through its obj "+
+			"tier; the compatibility engine (the %s releases) models the fs tier only, and the v%s engine runs it, so state "+
+			"engine.version %q", in.Scenario, strings.Join(CompatVersions(), " and "), vllm.Version, vllm.Version)
+	}
 	// A colocated run simulates one pool's engine; a second colocated pool would be dropped.
 	if !slices.Contains(shape.Roles, deployment.RolePrefill) && len(shape.Roles) > 1 {
 		return Adopted{}, fmt.Errorf("scenario %q states %d colocated pools; a run simulates one colocated "+

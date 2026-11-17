@@ -19,7 +19,7 @@ const objTier = "kv_offload: {connector: OffloadingConnector, spec: TieringOfflo
 // sharedBuckets is one object store: every bucket's objects in one MemBucket each.
 type sharedBuckets map[string]*kvtier.MemBucket
 
-func (s sharedBuckets) bucket(name string) kvtier.Bucket {
+func (s sharedBuckets) bucket(name string) TierBucket {
 	if s[name] == nil {
 		s[name] = kvtier.NewMemBucket()
 	}

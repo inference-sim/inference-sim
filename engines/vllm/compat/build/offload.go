@@ -487,8 +487,23 @@ const OffloadCPUTier = "cpu_dram"
 const fsTierRoot = "/mnt/kv-offload"
 
 // objectStoreDevices are catalog devices that are not a filesystem: vLLM reaches them through
-// its obj tier (tiering/obj), which BLIS does not simulate.
+// its obj tier (tiering/obj). The v0.33.0 engine builds it (vllmengine); the offload this resolves
+// prices it as any secondary tier on its device, and Adopt refuses it for a compatibility-engine
+// release, which has none.
 var objectStoreDevices = map[string]bool{"s3": true}
+
+// StatesObjectStoreTier reports whether an offload block states a tier on an object store.
+func StatesObjectStoreTier(o *deployment.Offload) bool {
+	if o == nil {
+		return false
+	}
+	for _, t := range o.Tiers {
+		if objectStoreDevices[t.Device] {
+			return true
+		}
+	}
+	return false
+}
 
 // offloadConnectors are the offload connectors the model is: vLLM's native OffloadingConnector
 // (the connector `--kv-offloading-backend native` configures, vllm/config/vllm.py:1140-1148).
@@ -545,10 +560,6 @@ func KVOffloadBlockFromDeployment(o *deployment.Offload) (*KVOffloadBlock, error
 			b := t.Bytes
 			block.CPUBytesToUse = &b
 			continue
-		}
-		if objectStoreDevices[t.Device] {
-			return nil, fmt.Errorf("offload.tiers[%d] (%q) is an object store, which vLLM reaches through "+
-				"its obj secondary tier; BLIS simulates the fs tier only (https://github.com/inference-sim/blis-vllm/issues/63)", i, t.Device)
 		}
 		if o.Spec != "TieringOffloadingSpec" {
 			return nil, fmt.Errorf("offload.tiers[%d] (%q) is a secondary tier, which only the "+

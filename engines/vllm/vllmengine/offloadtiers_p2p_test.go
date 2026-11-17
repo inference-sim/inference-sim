@@ -115,3 +115,43 @@ func TestAP2PHandoffDeploymentBuildsBothPoolsPeered(t *testing.T) {
 		}
 	}
 }
+
+// A deployment's tier on the catalog's object store (s3) is vLLM's obj tier in a bucket named by the
+// device, not an fs tier, and the engine builds it: it takes its bucket through ShareTierBuckets,
+// with a host's own types. Before, the factory built it as an fs tier with root_dir /s3.
+func TestATierOnAnObjectStoreIsAnObjTier(t *testing.T) {
+	Register()
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: tieredScenario(t, "    - {tier: s3, bytes: 1099511627776}\n")}
+	done, err := prepare(spec, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b struct {
+		O struct {
+			Tiers []map[string]any `yaml:"secondary_tiers"`
+		} `yaml:"kv_offload"`
+	}
+	if err := done.Config.Decode(&b); err != nil {
+		t.Fatal(err)
+	}
+	if len(b.O.Tiers) != 1 || b.O.Tiers[0]["type"] != "obj" || b.O.Tiers[0]["device_class"] != "s3" {
+		t.Fatalf("kv_offload secondary_tiers %v, want one obj tier on s3", b.O.Tiers)
+	}
+	if store, _ := b.O.Tiers[0]["store_config"].(map[string]any); store["bucket"] != "s3" {
+		t.Errorf("store_config %v, want the bucket named by the device", b.O.Tiers[0]["store_config"])
+	}
+	e, err := engine.New(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type hostBucket = interface {
+		Exists(key string) bool
+		Write(keys []string) bool
+		Read(keys []string) bool
+	}
+	if _, ok := e.(interface {
+		ShareTierBuckets(func(bucket string) hostBucket)
+	}); !ok {
+		t.Error("the engine takes no bucket a host can give it with its own types")
+	}
+}
