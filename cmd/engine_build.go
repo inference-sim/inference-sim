@@ -976,8 +976,8 @@ func registerContractEngines() { coreengine.Register() }
 func EngineReleases() []stack.Upstream {
 	sk, sv, sc := sglangEngineRelease()
 	return []stack.Upstream{
-		{Kind: blisvllm.Kind, Version: blisvllm.Upstream.Version, Commit: blisvllm.Upstream.Commit},
 		{Kind: sk, Version: sv, Commit: sc},
+		{Kind: blisvllm.Kind, Version: blisvllm.Upstream.Version, Commit: blisvllm.Upstream.Commit},
 	}
 }
 
