@@ -1,0 +1,3771 @@
+{
+ "calls": [
+  {
+   "args": {
+    "device": "cpu",
+    "enable_memory_saver": false,
+    "max_context_len": 64,
+    "size": 4
+   },
+   "cls": "ReqToTokenPool",
+   "i": "req_to_token",
+   "m": "__init__",
+   "ret": {
+    "max_context_len": 64,
+    "size": 4
+   },
+   "seq": 0
+  },
+  {
+   "args": {
+    "allocation_label": null,
+    "device": "cpu",
+    "dtype": "torch.bfloat16",
+    "enable_alt_stream": true,
+    "enable_kv_cache_copy": false,
+    "enable_memory_saver": false,
+    "end_layer": null,
+    "head_dim": 16,
+    "head_num": 2,
+    "kv_cache_layout": null,
+    "layer_num": 2,
+    "page_size": 1,
+    "post_capture_active": false,
+    "quant_method": null,
+    "size": 128,
+    "start_layer": null,
+    "swa_head_dim": null,
+    "swa_head_num": null,
+    "swa_v_head_dim": null,
+    "v_head_dim": null
+   },
+   "cls": "MHATokenToKVPool",
+   "i": "kv_pool",
+   "m": "__init__",
+   "ret": {
+    "dtype": "torch.bfloat16",
+    "head_dim": 16,
+    "head_num": 2,
+    "layer_num": 2,
+    "page_size": 1,
+    "size": 128,
+    "store_dtype": "torch.bfloat16",
+    "v_head_dim": 16
+   },
+   "seq": 1
+  },
+  {
+   "args": {
+    "device": "cpu",
+    "dtype": "torch.bfloat16",
+    "kvcache": {
+     "_t": "MHATokenToKVPool"
+    },
+    "need_sort": false,
+    "size": 128
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "__init__",
+   "ret": {
+    "dtype": "torch.bfloat16",
+    "need_sort": false,
+    "page_size": 1,
+    "size": 128
+   },
+   "seq": 2
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "CacheInitParams",
+     "attn_cp_cache_group": null,
+     "attn_cp_rank": 0,
+     "attn_cp_size": 1,
+     "attn_tp_cache_group": null,
+     "chunked_prefill_size": null,
+     "component_registry_override": null,
+     "decoder_swa_bounded_replay": false,
+     "disable": false,
+     "draft_swa_window": 0,
+     "dynamo_kv_event_format": false,
+     "enable_kv_cache_events": false,
+     "enable_mamba_extra_buffer": false,
+     "enable_mamba_extra_buffer_lazy": false,
+     "enable_metrics": false,
+     "enable_session_radix_cache": false,
+     "eviction_policy": "lru",
+     "eviction_policy_config": null,
+     "is_eagle": false,
+     "kv_event_lora_names": {
+      "_t": "KvEventLoraNames"
+     },
+     "mtp_draft_device_pools": [],
+     "mtp_draft_mamba_pools": [],
+     "page_size": 1,
+     "pp_cache_group": null,
+     "pp_rank": 0,
+     "pp_size": 1,
+     "req_to_token_pool": {
+      "_t": "ReqToTokenPool"
+     },
+     "sidecar_draft_device_pools": [],
+     "sliding_window_size": null,
+     "swa_gates_prefix_match": true,
+     "token_to_kv_pool_allocator": {
+      "_t": "TokenToKVPoolAllocator"
+     },
+     "tp_cache_group": null,
+     "tree_components": [
+      "FULL"
+     ],
+     "tree_core_backend": "python"
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "__init__",
+   "ret": {
+    "disable": false,
+    "page_size": 1
+   },
+   "seq": 3
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 3,
+   "m": "reset",
+   "ret": null,
+   "seq": 4
+  },
+  {
+   "args": {},
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 3,
+   "m": "reset_session_state",
+   "ret": null,
+   "seq": 5
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 3,
+   "m": "reset",
+   "ret": null,
+   "seq": 6
+  },
+  {
+   "args": {},
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 3,
+   "m": "reset_session_state",
+   "ret": null,
+   "seq": 7
+  },
+  {
+   "args": {
+    "need_size": 4
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "alloc",
+   "ret": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "seq": 8
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      1,
+      2,
+      3,
+      4
+     ]
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "insert",
+   "ret": {
+    "_t": "InsertResult",
+    "adopted_ranges": null,
+    "cache_actions": [],
+    "host_insert_dropped": false,
+    "inserted_host_node": null,
+    "last_device_node": 10,
+    "mamba_exist": false,
+    "prefix_len": 0,
+    "rotation_tail_declined": false,
+    "swa_branch_inserted": false,
+    "total_len": 0
+   },
+   "seq": 9
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 9,
+   "m": "has_ongoing_insert",
+   "ret": false,
+   "seq": 10
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      1,
+      2,
+      3,
+      4
+     ]
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 9,
+   "m": "begin_insert",
+   "ret": {
+    "_t": "InsertStepResult",
+    "actions": [],
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": 10,
+     "mamba_exist": false,
+     "prefix_len": 0,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    }
+   },
+   "seq": 11
+  },
+  {
+   "args": {
+    "node": {
+     "node": 10
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 11,
+   "m": "reclaimable_value_len",
+   "ret": 4,
+   "seq": 12
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "is_new_leaf": true,
+    "node": {
+     "node": 10
+    },
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      1,
+      2,
+      3,
+      4
+     ]
+    },
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": 10,
+     "mamba_exist": false,
+     "prefix_len": 0,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 11,
+   "m": "commit_insert_component_data",
+   "ret": null,
+   "seq": 13
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 9,
+   "m": "end_insert",
+   "ret": [],
+   "seq": 14
+  },
+  {
+   "args": {
+    "need_size": 4
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "alloc",
+   "ret": [
+    5,
+    6,
+    7,
+    8
+   ],
+   "seq": 15
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       5,
+       6,
+       7,
+       8
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      5,
+      6,
+      7,
+      8
+     ]
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "insert",
+   "ret": {
+    "_t": "InsertResult",
+    "adopted_ranges": null,
+    "cache_actions": [],
+    "host_insert_dropped": false,
+    "inserted_host_node": null,
+    "last_device_node": 11,
+    "mamba_exist": false,
+    "prefix_len": 0,
+    "rotation_tail_declined": false,
+    "swa_branch_inserted": false,
+    "total_len": 0
+   },
+   "seq": 16
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 16,
+   "m": "has_ongoing_insert",
+   "ret": false,
+   "seq": 17
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       5,
+       6,
+       7,
+       8
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      5,
+      6,
+      7,
+      8
+     ]
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 16,
+   "m": "begin_insert",
+   "ret": {
+    "_t": "InsertStepResult",
+    "actions": [],
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": 11,
+     "mamba_exist": false,
+     "prefix_len": 0,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    }
+   },
+   "seq": 18
+  },
+  {
+   "args": {
+    "node": {
+     "node": 11
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 18,
+   "m": "reclaimable_value_len",
+   "ret": 4,
+   "seq": 19
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "is_new_leaf": true,
+    "node": {
+     "node": 11
+    },
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       5,
+       6,
+       7,
+       8
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      5,
+      6,
+      7,
+      8
+     ]
+    },
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": 11,
+     "mamba_exist": false,
+     "prefix_len": 0,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 18,
+   "m": "commit_insert_component_data",
+   "ret": null,
+   "seq": 20
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 16,
+   "m": "end_insert",
+   "ret": [],
+   "seq": 21
+  },
+  {
+   "args": {
+    "need_size": 4
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "alloc",
+   "ret": [
+    9,
+    10,
+    11,
+    12
+   ],
+   "seq": 22
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       9,
+       10,
+       11,
+       12
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      9,
+      10,
+      11,
+      12
+     ]
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "insert",
+   "ret": {
+    "_t": "InsertResult",
+    "adopted_ranges": null,
+    "cache_actions": [],
+    "host_insert_dropped": false,
+    "inserted_host_node": null,
+    "last_device_node": 12,
+    "mamba_exist": false,
+    "prefix_len": 0,
+    "rotation_tail_declined": false,
+    "swa_branch_inserted": false,
+    "total_len": 0
+   },
+   "seq": 23
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 23,
+   "m": "has_ongoing_insert",
+   "ret": false,
+   "seq": 24
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       9,
+       10,
+       11,
+       12
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      9,
+      10,
+      11,
+      12
+     ]
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 23,
+   "m": "begin_insert",
+   "ret": {
+    "_t": "InsertStepResult",
+    "actions": [],
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": 12,
+     "mamba_exist": false,
+     "prefix_len": 0,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    }
+   },
+   "seq": 25
+  },
+  {
+   "args": {
+    "node": {
+     "node": 12
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 25,
+   "m": "reclaimable_value_len",
+   "ret": 4,
+   "seq": 26
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "is_new_leaf": true,
+    "node": {
+     "node": 12
+    },
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       9,
+       10,
+       11,
+       12
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      9,
+      10,
+      11,
+      12
+     ]
+    },
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": 12,
+     "mamba_exist": false,
+     "prefix_len": 0,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 25,
+   "m": "commit_insert_component_data",
+   "ret": null,
+   "seq": 27
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 23,
+   "m": "end_insert",
+   "ret": [],
+   "seq": 28
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4
+      ]
+     },
+     "req": null
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "match_prefix",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 10,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": 10,
+    "last_host_node": 10,
+    "last_visited_node_id": 10,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 29
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4
+      ]
+     },
+     "req": null
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 29,
+   "m": "match_prefix",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 10,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": 10,
+    "last_host_node": 10,
+    "last_visited_node_id": 10,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 30
+  },
+  {
+   "args": {
+    "match_device_only": true
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 30,
+   "m": "create_match_validator",
+   "ret": {
+    "_t": "callable"
+   },
+   "seq": 31
+  },
+  {
+   "args": {
+    "best_value_len": 1,
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4
+      ]
+     },
+     "req": null
+    },
+    "result": {
+     "_t": "MatchResult",
+     "best_match_node": {
+      "node": 10
+     },
+     "cache_actions": [],
+     "cache_protected_len": null,
+     "device_prefix_len": 4,
+     "full_device_match_len": null,
+     "full_kv_hit_length": 4,
+     "host_hit_length": 0,
+     "last_device_node": {
+      "node": 10
+     },
+     "last_host_node": {
+      "node": 10
+     },
+     "last_visited_node_id": 10,
+     "mamba_branching_seqlen": null,
+     "mamba_host_hit_length": 0,
+     "swa_branching_seqlen": null,
+     "swa_host_hit_length": 0
+    },
+    "value_chunks": [
+     [
+      1,
+      2,
+      3,
+      4
+     ]
+    ]
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 30,
+   "m": "finalize_match_result_in_tree_core",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": {
+     "node": 10
+    },
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": {
+     "node": 10
+    },
+    "last_host_node": {
+     "node": 10
+    },
+    "last_visited_node_id": 10,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 32
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4
+      ]
+     },
+     "req": null
+    },
+    "result": {
+     "_t": "MatchResult",
+     "best_match_node": 10,
+     "cache_actions": [],
+     "cache_protected_len": null,
+     "device_prefix_len": 4,
+     "full_device_match_len": null,
+     "full_kv_hit_length": 4,
+     "host_hit_length": 0,
+     "last_device_node": 10,
+     "last_host_node": 10,
+     "last_visited_node_id": 10,
+     "mamba_branching_seqlen": null,
+     "mamba_host_hit_length": 0,
+     "swa_branching_seqlen": null,
+     "swa_host_hit_length": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 29,
+   "m": "finalize_match_result_in_cache",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 10,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": 10,
+    "last_host_node": 10,
+    "last_visited_node_id": 10,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 33
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       5,
+       6,
+       7,
+       8
+      ]
+     },
+     "req": null
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "match_prefix",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 11,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": 11,
+    "last_host_node": 11,
+    "last_visited_node_id": 11,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 34
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       5,
+       6,
+       7,
+       8
+      ]
+     },
+     "req": null
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 34,
+   "m": "match_prefix",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 11,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": 11,
+    "last_host_node": 11,
+    "last_visited_node_id": 11,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 35
+  },
+  {
+   "args": {
+    "match_device_only": true
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 35,
+   "m": "create_match_validator",
+   "ret": {
+    "_t": "callable"
+   },
+   "seq": 36
+  },
+  {
+   "args": {
+    "best_value_len": 1,
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       5,
+       6,
+       7,
+       8
+      ]
+     },
+     "req": null
+    },
+    "result": {
+     "_t": "MatchResult",
+     "best_match_node": {
+      "node": 11
+     },
+     "cache_actions": [],
+     "cache_protected_len": null,
+     "device_prefix_len": 4,
+     "full_device_match_len": null,
+     "full_kv_hit_length": 4,
+     "host_hit_length": 0,
+     "last_device_node": {
+      "node": 11
+     },
+     "last_host_node": {
+      "node": 11
+     },
+     "last_visited_node_id": 11,
+     "mamba_branching_seqlen": null,
+     "mamba_host_hit_length": 0,
+     "swa_branching_seqlen": null,
+     "swa_host_hit_length": 0
+    },
+    "value_chunks": [
+     [
+      5,
+      6,
+      7,
+      8
+     ]
+    ]
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 35,
+   "m": "finalize_match_result_in_tree_core",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": {
+     "node": 11
+    },
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": {
+     "node": 11
+    },
+    "last_host_node": {
+     "node": 11
+    },
+    "last_visited_node_id": 11,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 37
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       5,
+       6,
+       7,
+       8
+      ]
+     },
+     "req": null
+    },
+    "result": {
+     "_t": "MatchResult",
+     "best_match_node": 11,
+     "cache_actions": [],
+     "cache_protected_len": null,
+     "device_prefix_len": 4,
+     "full_device_match_len": null,
+     "full_kv_hit_length": 4,
+     "host_hit_length": 0,
+     "last_device_node": 11,
+     "last_host_node": 11,
+     "last_visited_node_id": 11,
+     "mamba_branching_seqlen": null,
+     "mamba_host_hit_length": 0,
+     "swa_branching_seqlen": null,
+     "swa_host_hit_length": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 34,
+   "m": "finalize_match_result_in_cache",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 11,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": 11,
+    "last_host_node": 11,
+    "last_visited_node_id": 11,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 38
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       9,
+       10,
+       11,
+       12
+      ]
+     },
+     "req": null
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "match_prefix",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 12,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": 12,
+    "last_host_node": 12,
+    "last_visited_node_id": 12,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 39
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       9,
+       10,
+       11,
+       12
+      ]
+     },
+     "req": null
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 39,
+   "m": "match_prefix",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 12,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": 12,
+    "last_host_node": 12,
+    "last_visited_node_id": 12,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 40
+  },
+  {
+   "args": {
+    "match_device_only": true
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 40,
+   "m": "create_match_validator",
+   "ret": {
+    "_t": "callable"
+   },
+   "seq": 41
+  },
+  {
+   "args": {
+    "best_value_len": 1,
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       9,
+       10,
+       11,
+       12
+      ]
+     },
+     "req": null
+    },
+    "result": {
+     "_t": "MatchResult",
+     "best_match_node": {
+      "node": 12
+     },
+     "cache_actions": [],
+     "cache_protected_len": null,
+     "device_prefix_len": 4,
+     "full_device_match_len": null,
+     "full_kv_hit_length": 4,
+     "host_hit_length": 0,
+     "last_device_node": {
+      "node": 12
+     },
+     "last_host_node": {
+      "node": 12
+     },
+     "last_visited_node_id": 12,
+     "mamba_branching_seqlen": null,
+     "mamba_host_hit_length": 0,
+     "swa_branching_seqlen": null,
+     "swa_host_hit_length": 0
+    },
+    "value_chunks": [
+     [
+      9,
+      10,
+      11,
+      12
+     ]
+    ]
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 40,
+   "m": "finalize_match_result_in_tree_core",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": {
+     "node": 12
+    },
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": {
+     "node": 12
+    },
+    "last_host_node": {
+     "node": 12
+    },
+    "last_visited_node_id": 12,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 42
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       9,
+       10,
+       11,
+       12
+      ]
+     },
+     "req": null
+    },
+    "result": {
+     "_t": "MatchResult",
+     "best_match_node": 12,
+     "cache_actions": [],
+     "cache_protected_len": null,
+     "device_prefix_len": 4,
+     "full_device_match_len": null,
+     "full_kv_hit_length": 4,
+     "host_hit_length": 0,
+     "last_device_node": 12,
+     "last_host_node": 12,
+     "last_visited_node_id": 12,
+     "mamba_branching_seqlen": null,
+     "mamba_host_hit_length": 0,
+     "swa_branching_seqlen": null,
+     "swa_host_hit_length": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 39,
+   "m": "finalize_match_result_in_cache",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 12,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": 12,
+    "last_host_node": 12,
+    "last_visited_node_id": 12,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 43
+  },
+  {
+   "args": {
+    "node_handles": [
+     12,
+     11,
+     10
+    ]
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "dfs_weight_order",
+   "ret": [
+    2,
+    1,
+    0
+   ],
+   "seq": 44
+  },
+  {
+   "args": {
+    "node_ids": [
+     12,
+     11,
+     10
+    ]
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 44,
+   "m": "dfs_weight_order",
+   "ret": [
+    2,
+    1,
+    0
+   ],
+   "seq": 45
+  },
+  {
+   "args": {
+    "node_handles": [
+     10,
+     12,
+     11,
+     11
+    ]
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "dfs_weight_order",
+   "ret": [
+    2,
+    3,
+    0,
+    1
+   ],
+   "seq": 46
+  },
+  {
+   "args": {
+    "node_ids": [
+     10,
+     12,
+     11,
+     11
+    ]
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 46,
+   "m": "dfs_weight_order",
+   "ret": [
+    2,
+    3,
+    0,
+    1
+   ],
+   "seq": 47
+  },
+  {
+   "args": {
+    "node_handles": [
+     12,
+     10
+    ]
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "dfs_weight_order",
+   "ret": [
+    1,
+    0
+   ],
+   "seq": 48
+  },
+  {
+   "args": {
+    "node_ids": [
+     12,
+     10
+    ]
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 48,
+   "m": "dfs_weight_order",
+   "ret": [
+    1,
+    0
+   ],
+   "seq": 49
+  },
+  {
+   "args": {
+    "need_size": 4
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "alloc",
+   "ret": [
+    13,
+    14,
+    15,
+    16
+   ],
+   "seq": 50
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       20,
+       21
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      13,
+      14,
+      15,
+      16
+     ]
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "insert",
+   "ret": {
+    "_t": "InsertResult",
+    "adopted_ranges": null,
+    "cache_actions": [],
+    "host_insert_dropped": false,
+    "inserted_host_node": null,
+    "last_device_node": 14,
+    "mamba_exist": false,
+    "prefix_len": 2,
+    "rotation_tail_declined": false,
+    "swa_branch_inserted": false,
+    "total_len": 0
+   },
+   "seq": 51
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 51,
+   "m": "has_ongoing_insert",
+   "ret": false,
+   "seq": 52
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       20,
+       21
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      13,
+      14,
+      15,
+      16
+     ]
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 51,
+   "m": "begin_insert",
+   "ret": {
+    "_t": "InsertStepResult",
+    "actions": [
+     {
+      "_t": "FreeDeviceKV",
+      "indices": [
+       [
+        13,
+        14
+       ]
+      ]
+     }
+    ],
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": 14,
+     "mamba_exist": false,
+     "prefix_len": 2,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    }
+   },
+   "seq": 53
+  },
+  {
+   "args": {
+    "child": {
+     "node": 10
+    },
+    "new_parent": {
+     "node": 13
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 53,
+   "m": "redistribute_on_node_split",
+   "ret": null,
+   "seq": 54
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "node": {
+     "node": 13
+    },
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       20,
+       21
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      13,
+      14,
+      15,
+      16
+     ]
+    },
+    "prefix_len": 2,
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": null,
+     "mamba_exist": false,
+     "prefix_len": 0,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    },
+    "total_prefix_len": 0,
+    "value_slice": [
+     13,
+     14
+    ]
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 53,
+   "m": "update_component_on_insert_overlap",
+   "ret": 2,
+   "seq": 55
+  },
+  {
+   "args": {
+    "node": {
+     "node": 14
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 53,
+   "m": "reclaimable_value_len",
+   "ret": 2,
+   "seq": 56
+  },
+  {
+   "args": {
+    "cache_actions": [
+     {
+      "_t": "FreeDeviceKV",
+      "indices": [
+       [
+        13,
+        14
+       ]
+      ]
+     }
+    ],
+    "is_new_leaf": true,
+    "node": {
+     "node": 14
+    },
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       20,
+       21
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      13,
+      14,
+      15,
+      16
+     ]
+    },
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": 14,
+     "mamba_exist": false,
+     "prefix_len": 2,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 53,
+   "m": "commit_insert_component_data",
+   "ret": null,
+   "seq": 57
+  },
+  {
+   "args": {
+    "free_index": [
+     13,
+     14
+    ],
+    "start_pos": 0
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "in": 51,
+   "m": "free_segment",
+   "ret": null,
+   "seq": 58
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 51,
+   "m": "end_insert",
+   "ret": [],
+   "seq": 59
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4
+      ]
+     },
+     "req": null
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "match_prefix",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 10,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": 10,
+    "last_host_node": 10,
+    "last_visited_node_id": 10,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 60
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4
+      ]
+     },
+     "req": null
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 60,
+   "m": "match_prefix",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 10,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": 10,
+    "last_host_node": 10,
+    "last_visited_node_id": 10,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 61
+  },
+  {
+   "args": {
+    "match_device_only": true
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 61,
+   "m": "create_match_validator",
+   "ret": {
+    "_t": "callable"
+   },
+   "seq": 62
+  },
+  {
+   "args": {
+    "best_value_len": 2,
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4
+      ]
+     },
+     "req": null
+    },
+    "result": {
+     "_t": "MatchResult",
+     "best_match_node": {
+      "node": 10
+     },
+     "cache_actions": [],
+     "cache_protected_len": null,
+     "device_prefix_len": 4,
+     "full_device_match_len": null,
+     "full_kv_hit_length": 4,
+     "host_hit_length": 0,
+     "last_device_node": {
+      "node": 10
+     },
+     "last_host_node": {
+      "node": 10
+     },
+     "last_visited_node_id": 10,
+     "mamba_branching_seqlen": null,
+     "mamba_host_hit_length": 0,
+     "swa_branching_seqlen": null,
+     "swa_host_hit_length": 0
+    },
+    "value_chunks": [
+     [
+      1,
+      2
+     ],
+     [
+      3,
+      4
+     ]
+    ]
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 61,
+   "m": "finalize_match_result_in_tree_core",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": {
+     "node": 10
+    },
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": {
+     "node": 10
+    },
+    "last_host_node": {
+     "node": 10
+    },
+    "last_visited_node_id": 10,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 63
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4
+      ]
+     },
+     "req": null
+    },
+    "result": {
+     "_t": "MatchResult",
+     "best_match_node": 10,
+     "cache_actions": [],
+     "cache_protected_len": null,
+     "device_prefix_len": 4,
+     "full_device_match_len": null,
+     "full_kv_hit_length": 4,
+     "host_hit_length": 0,
+     "last_device_node": 10,
+     "last_host_node": 10,
+     "last_visited_node_id": 10,
+     "mamba_branching_seqlen": null,
+     "mamba_host_hit_length": 0,
+     "swa_branching_seqlen": null,
+     "swa_host_hit_length": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 60,
+   "m": "finalize_match_result_in_cache",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 10,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": 10,
+    "last_host_node": 10,
+    "last_visited_node_id": 10,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 64
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       20,
+       21
+      ]
+     },
+     "req": null
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "match_prefix",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 14,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": 14,
+    "last_host_node": 14,
+    "last_visited_node_id": 14,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 65
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       20,
+       21
+      ]
+     },
+     "req": null
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 65,
+   "m": "match_prefix",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 14,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": 14,
+    "last_host_node": 14,
+    "last_visited_node_id": 14,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 66
+  },
+  {
+   "args": {
+    "match_device_only": true
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 66,
+   "m": "create_match_validator",
+   "ret": {
+    "_t": "callable"
+   },
+   "seq": 67
+  },
+  {
+   "args": {
+    "best_value_len": 2,
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       20,
+       21
+      ]
+     },
+     "req": null
+    },
+    "result": {
+     "_t": "MatchResult",
+     "best_match_node": {
+      "node": 14
+     },
+     "cache_actions": [],
+     "cache_protected_len": null,
+     "device_prefix_len": 4,
+     "full_device_match_len": null,
+     "full_kv_hit_length": 4,
+     "host_hit_length": 0,
+     "last_device_node": {
+      "node": 14
+     },
+     "last_host_node": {
+      "node": 14
+     },
+     "last_visited_node_id": 14,
+     "mamba_branching_seqlen": null,
+     "mamba_host_hit_length": 0,
+     "swa_branching_seqlen": null,
+     "swa_host_hit_length": 0
+    },
+    "value_chunks": [
+     [
+      1,
+      2
+     ],
+     [
+      15,
+      16
+     ]
+    ]
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 66,
+   "m": "finalize_match_result_in_tree_core",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": {
+     "node": 14
+    },
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": {
+     "node": 14
+    },
+    "last_host_node": {
+     "node": 14
+    },
+    "last_visited_node_id": 14,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 68
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       20,
+       21
+      ]
+     },
+     "req": null
+    },
+    "result": {
+     "_t": "MatchResult",
+     "best_match_node": 14,
+     "cache_actions": [],
+     "cache_protected_len": null,
+     "device_prefix_len": 4,
+     "full_device_match_len": null,
+     "full_kv_hit_length": 4,
+     "host_hit_length": 0,
+     "last_device_node": 14,
+     "last_host_node": 14,
+     "last_visited_node_id": 14,
+     "mamba_branching_seqlen": null,
+     "mamba_host_hit_length": 0,
+     "swa_branching_seqlen": null,
+     "swa_host_hit_length": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 65,
+   "m": "finalize_match_result_in_cache",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 14,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": 14,
+    "last_host_node": 14,
+    "last_visited_node_id": 14,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 69
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2
+      ]
+     },
+     "req": null
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "match_prefix",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 13,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 2,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 2,
+    "host_hit_length": 0,
+    "last_device_node": 13,
+    "last_host_node": 13,
+    "last_visited_node_id": 13,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 70
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2
+      ]
+     },
+     "req": null
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 70,
+   "m": "match_prefix",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 13,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 2,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 2,
+    "host_hit_length": 0,
+    "last_device_node": 13,
+    "last_host_node": 13,
+    "last_visited_node_id": 13,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 71
+  },
+  {
+   "args": {
+    "match_device_only": true
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 71,
+   "m": "create_match_validator",
+   "ret": {
+    "_t": "callable"
+   },
+   "seq": 72
+  },
+  {
+   "args": {
+    "best_value_len": 1,
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2
+      ]
+     },
+     "req": null
+    },
+    "result": {
+     "_t": "MatchResult",
+     "best_match_node": {
+      "node": 13
+     },
+     "cache_actions": [],
+     "cache_protected_len": null,
+     "device_prefix_len": 2,
+     "full_device_match_len": null,
+     "full_kv_hit_length": 2,
+     "host_hit_length": 0,
+     "last_device_node": {
+      "node": 13
+     },
+     "last_host_node": {
+      "node": 13
+     },
+     "last_visited_node_id": 13,
+     "mamba_branching_seqlen": null,
+     "mamba_host_hit_length": 0,
+     "swa_branching_seqlen": null,
+     "swa_host_hit_length": 0
+    },
+    "value_chunks": [
+     [
+      1,
+      2
+     ]
+    ]
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 71,
+   "m": "finalize_match_result_in_tree_core",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": {
+     "node": 13
+    },
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 2,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 2,
+    "host_hit_length": 0,
+    "last_device_node": {
+     "node": 13
+    },
+    "last_host_node": {
+     "node": 13
+    },
+    "last_visited_node_id": 13,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 73
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2
+      ]
+     },
+     "req": null
+    },
+    "result": {
+     "_t": "MatchResult",
+     "best_match_node": 13,
+     "cache_actions": [],
+     "cache_protected_len": null,
+     "device_prefix_len": 2,
+     "full_device_match_len": null,
+     "full_kv_hit_length": 2,
+     "host_hit_length": 0,
+     "last_device_node": 13,
+     "last_host_node": 13,
+     "last_visited_node_id": 13,
+     "mamba_branching_seqlen": null,
+     "mamba_host_hit_length": 0,
+     "swa_branching_seqlen": null,
+     "swa_host_hit_length": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 70,
+   "m": "finalize_match_result_in_cache",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 13,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 2,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 2,
+    "host_hit_length": 0,
+    "last_device_node": 13,
+    "last_host_node": 13,
+    "last_visited_node_id": 13,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 74
+  },
+  {
+   "args": {
+    "node_handles": [
+     12,
+     14,
+     11,
+     10
+    ]
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "dfs_weight_order",
+   "ret": [
+    3,
+    1,
+    2,
+    0
+   ],
+   "seq": 75
+  },
+  {
+   "args": {
+    "node_ids": [
+     12,
+     14,
+     11,
+     10
+    ]
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 75,
+   "m": "dfs_weight_order",
+   "ret": [
+    3,
+    1,
+    2,
+    0
+   ],
+   "seq": 76
+  },
+  {
+   "args": {
+    "node_handles": [
+     13,
+     12,
+     11
+    ]
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "dfs_weight_order",
+   "ret": [
+    0,
+    2,
+    1
+   ],
+   "seq": 77
+  },
+  {
+   "args": {
+    "node_ids": [
+     13,
+     12,
+     11
+    ]
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 77,
+   "m": "dfs_weight_order",
+   "ret": [
+    0,
+    2,
+    1
+   ],
+   "seq": 78
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "EvictParams",
+     "mamba_num": 0,
+     "num_tokens": 4,
+     "swa_num_tokens": 0
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "evict",
+   "ret": {
+    "_t": "EvictResult",
+    "mamba_num_evicted": 0,
+    "num_tokens_evicted": 4,
+    "swa_num_tokens_evicted": 0
+   },
+   "seq": 79
+  },
+  {
+   "args": {
+    "component_type": "FULL",
+    "request_cnt": 4
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 79,
+   "m": "evict_device_start",
+   "ret": null,
+   "seq": 80
+  },
+  {
+   "args": {
+    "request_cnt": 4
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 80,
+   "m": "evict_device_start",
+   "ret": null,
+   "seq": 81
+  },
+  {
+   "args": {
+    "component_type": "FULL",
+    "tracker": {
+     "FULL": 0
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 79,
+   "m": "evict_device_next_node",
+   "ret": {
+    "_t": "EvictDeviceNextNodeResult",
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "made_progress": true,
+    "mamba_backup_node_id": null,
+    "node_id": 11,
+    "swa_backup_node_id": null,
+    "swa_backup_num_tokens": 0,
+    "tracker": {},
+    "unbacked_tokens": 0
+   },
+   "seq": 82
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "tracker": {
+     "FULL": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 82,
+   "m": "evict_device_next_node",
+   "ret": 11,
+   "seq": 83
+  },
+  {
+   "args": {
+    "is_write_back": false,
+    "node_id": 11
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 79,
+   "m": "evict_device_leaf",
+   "ret": {
+    "_t": "EvictDeviceLeafResult",
+    "backup_kv": null,
+    "cache_actions": [],
+    "device_frees": {
+     "FULL": [
+      [
+       5,
+       6,
+       7,
+       8
+      ]
+     ]
+    },
+    "host_frees": {},
+    "tracker": {
+     "FULL": 4
+    },
+    "unbacked_tokens": 4
+   },
+   "seq": 84
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "node": {
+     "node": 11
+    },
+    "target": "ALL"
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 84,
+   "m": "evict_component",
+   "ret": [
+    4,
+    0
+   ],
+   "seq": 85
+  },
+  {
+   "args": {
+    "node": {
+     "node": 11
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 84,
+   "m": "discard_deleted_session_leaf",
+   "ret": null,
+   "seq": 86
+  },
+  {
+   "args": {
+    "action": {
+     "_t": "FreeComponentDeviceSlot",
+     "component_type": "FULL",
+     "indices": [
+      [
+       5,
+       6,
+       7,
+       8
+      ]
+     ]
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 79,
+   "m": "apply_component_action",
+   "ret": null,
+   "seq": 87
+  },
+  {
+   "args": {
+    "free_index": [
+     5,
+     6,
+     7,
+     8
+    ],
+    "start_pos": 0
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "in": 87,
+   "m": "free_segment",
+   "ret": null,
+   "seq": 88
+  },
+  {
+   "args": {
+    "component_type": "FULL",
+    "tracker": {
+     "FULL": 4
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 79,
+   "m": "evict_device_next_node",
+   "ret": {
+    "_t": "EvictDeviceNextNodeResult",
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "made_progress": false,
+    "mamba_backup_node_id": null,
+    "node_id": null,
+    "swa_backup_node_id": null,
+    "swa_backup_num_tokens": 0,
+    "tracker": {},
+    "unbacked_tokens": 0
+   },
+   "seq": 89
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "tracker": {
+     "FULL": 4
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 89,
+   "m": "evict_device_next_node",
+   "ret": null,
+   "seq": 90
+  },
+  {
+   "args": {
+    "component_type": "FULL"
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 79,
+   "m": "evict_device_end",
+   "ret": null,
+   "seq": 91
+  },
+  {
+   "args": {},
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 91,
+   "m": "evict_device_end",
+   "ret": null,
+   "seq": 92
+  },
+  {
+   "args": {
+    "need_size": 4
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "alloc",
+   "ret": [
+    17,
+    18,
+    19,
+    20
+   ],
+   "seq": 93
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       5,
+       6,
+       7,
+       8
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      17,
+      18,
+      19,
+      20
+     ]
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "insert",
+   "ret": {
+    "_t": "InsertResult",
+    "adopted_ranges": null,
+    "cache_actions": [],
+    "host_insert_dropped": false,
+    "inserted_host_node": null,
+    "last_device_node": 15,
+    "mamba_exist": false,
+    "prefix_len": 0,
+    "rotation_tail_declined": false,
+    "swa_branch_inserted": false,
+    "total_len": 0
+   },
+   "seq": 94
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 94,
+   "m": "has_ongoing_insert",
+   "ret": false,
+   "seq": 95
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       5,
+       6,
+       7,
+       8
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      17,
+      18,
+      19,
+      20
+     ]
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 94,
+   "m": "begin_insert",
+   "ret": {
+    "_t": "InsertStepResult",
+    "actions": [],
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": 15,
+     "mamba_exist": false,
+     "prefix_len": 0,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    }
+   },
+   "seq": 96
+  },
+  {
+   "args": {
+    "node": {
+     "node": 15
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 96,
+   "m": "reclaimable_value_len",
+   "ret": 4,
+   "seq": 97
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "is_new_leaf": true,
+    "node": {
+     "node": 15
+    },
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       5,
+       6,
+       7,
+       8
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      17,
+      18,
+      19,
+      20
+     ]
+    },
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": 15,
+     "mamba_exist": false,
+     "prefix_len": 0,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 96,
+   "m": "commit_insert_component_data",
+   "ret": null,
+   "seq": 98
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 94,
+   "m": "end_insert",
+   "ret": [],
+   "seq": 99
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       5,
+       6,
+       7,
+       8
+      ]
+     },
+     "req": null
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "match_prefix",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 15,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": 15,
+    "last_host_node": 15,
+    "last_visited_node_id": 15,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 100
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       5,
+       6,
+       7,
+       8
+      ]
+     },
+     "req": null
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 100,
+   "m": "match_prefix",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 15,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": 15,
+    "last_host_node": 15,
+    "last_visited_node_id": 15,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 101
+  },
+  {
+   "args": {
+    "match_device_only": true
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 101,
+   "m": "create_match_validator",
+   "ret": {
+    "_t": "callable"
+   },
+   "seq": 102
+  },
+  {
+   "args": {
+    "best_value_len": 1,
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       5,
+       6,
+       7,
+       8
+      ]
+     },
+     "req": null
+    },
+    "result": {
+     "_t": "MatchResult",
+     "best_match_node": {
+      "node": 15
+     },
+     "cache_actions": [],
+     "cache_protected_len": null,
+     "device_prefix_len": 4,
+     "full_device_match_len": null,
+     "full_kv_hit_length": 4,
+     "host_hit_length": 0,
+     "last_device_node": {
+      "node": 15
+     },
+     "last_host_node": {
+      "node": 15
+     },
+     "last_visited_node_id": 15,
+     "mamba_branching_seqlen": null,
+     "mamba_host_hit_length": 0,
+     "swa_branching_seqlen": null,
+     "swa_host_hit_length": 0
+    },
+    "value_chunks": [
+     [
+      17,
+      18,
+      19,
+      20
+     ]
+    ]
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 101,
+   "m": "finalize_match_result_in_tree_core",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": {
+     "node": 15
+    },
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": {
+     "node": 15
+    },
+    "last_host_node": {
+     "node": 15
+    },
+    "last_visited_node_id": 15,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 103
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       5,
+       6,
+       7,
+       8
+      ]
+     },
+     "req": null
+    },
+    "result": {
+     "_t": "MatchResult",
+     "best_match_node": 15,
+     "cache_actions": [],
+     "cache_protected_len": null,
+     "device_prefix_len": 4,
+     "full_device_match_len": null,
+     "full_kv_hit_length": 4,
+     "host_hit_length": 0,
+     "last_device_node": 15,
+     "last_host_node": 15,
+     "last_visited_node_id": 15,
+     "mamba_branching_seqlen": null,
+     "mamba_host_hit_length": 0,
+     "swa_branching_seqlen": null,
+     "swa_host_hit_length": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 100,
+   "m": "finalize_match_result_in_cache",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 15,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": 15,
+    "last_host_node": 15,
+    "last_visited_node_id": 15,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 104
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       9,
+       10,
+       11,
+       12
+      ]
+     },
+     "req": null
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "match_prefix",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 12,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": 12,
+    "last_host_node": 12,
+    "last_visited_node_id": 12,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 105
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       9,
+       10,
+       11,
+       12
+      ]
+     },
+     "req": null
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 105,
+   "m": "match_prefix",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 12,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": 12,
+    "last_host_node": 12,
+    "last_visited_node_id": 12,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 106
+  },
+  {
+   "args": {
+    "match_device_only": true
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 106,
+   "m": "create_match_validator",
+   "ret": {
+    "_t": "callable"
+   },
+   "seq": 107
+  },
+  {
+   "args": {
+    "best_value_len": 1,
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       9,
+       10,
+       11,
+       12
+      ]
+     },
+     "req": null
+    },
+    "result": {
+     "_t": "MatchResult",
+     "best_match_node": {
+      "node": 12
+     },
+     "cache_actions": [],
+     "cache_protected_len": null,
+     "device_prefix_len": 4,
+     "full_device_match_len": null,
+     "full_kv_hit_length": 4,
+     "host_hit_length": 0,
+     "last_device_node": {
+      "node": 12
+     },
+     "last_host_node": {
+      "node": 12
+     },
+     "last_visited_node_id": 12,
+     "mamba_branching_seqlen": null,
+     "mamba_host_hit_length": 0,
+     "swa_branching_seqlen": null,
+     "swa_host_hit_length": 0
+    },
+    "value_chunks": [
+     [
+      9,
+      10,
+      11,
+      12
+     ]
+    ]
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 106,
+   "m": "finalize_match_result_in_tree_core",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": {
+     "node": 12
+    },
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": {
+     "node": 12
+    },
+    "last_host_node": {
+     "node": 12
+    },
+    "last_visited_node_id": 12,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 108
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       9,
+       10,
+       11,
+       12
+      ]
+     },
+     "req": null
+    },
+    "result": {
+     "_t": "MatchResult",
+     "best_match_node": 12,
+     "cache_actions": [],
+     "cache_protected_len": null,
+     "device_prefix_len": 4,
+     "full_device_match_len": null,
+     "full_kv_hit_length": 4,
+     "host_hit_length": 0,
+     "last_device_node": 12,
+     "last_host_node": 12,
+     "last_visited_node_id": 12,
+     "mamba_branching_seqlen": null,
+     "mamba_host_hit_length": 0,
+     "swa_branching_seqlen": null,
+     "swa_host_hit_length": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 105,
+   "m": "finalize_match_result_in_cache",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 12,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 4,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 4,
+    "host_hit_length": 0,
+    "last_device_node": 12,
+    "last_host_node": 12,
+    "last_visited_node_id": 12,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 109
+  },
+  {
+   "args": {
+    "node_handles": [
+     15,
+     12,
+     10,
+     14
+    ]
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "dfs_weight_order",
+   "ret": [
+    2,
+    3,
+    1,
+    0
+   ],
+   "seq": 110
+  },
+  {
+   "args": {
+    "node_ids": [
+     15,
+     12,
+     10,
+     14
+    ]
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 110,
+   "m": "dfs_weight_order",
+   "ret": [
+    2,
+    3,
+    1,
+    0
+   ],
+   "seq": 111
+  },
+  {
+   "args": {
+    "node_handles": [
+     12,
+     15
+    ]
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "dfs_weight_order",
+   "ret": [
+    0,
+    1
+   ],
+   "seq": 112
+  },
+  {
+   "args": {
+    "node_ids": [
+     12,
+     15
+    ]
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 112,
+   "m": "dfs_weight_order",
+   "ret": [
+    0,
+    1
+   ],
+   "seq": 113
+  }
+ ],
+ "kind": "direct",
+ "provenance": {
+  "blis_sglang_commit": "7706e6b78b26d34cb5959f3d084bad819876c4f4",
+  "lockfile_sha256": "a3fb4e4773230faee4ffdd89437a96b2f3bfb3082e4be4cef4f44d44c66ed569",
+  "mock_version": "gpu-mock/4+4be739f2a212",
+  "model": "none: the driver builds SGLang's pools and cache from the sequence's cache block",
+  "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+  "oracle_inputs": {
+   "oracle/cache_interfaces.py": "65cbb6a4d473dcccc0d3ce6b262be075d35b54993636aff9d35b655f11f4e264",
+   "oracle/harness.json": "c9fc5c0cf22ba9274aec27d768d097303e166b1b6dc97883ec2972c4b29e27b6",
+   "oracle/harness.py": "a1ab29f3421f2a5b504a0096f59cbe38055c8c2615a99d2d7c09bda96b0c5df6",
+   "oracle/mocks.json": "8863c3c7c02de293b2ddbad2bb421b5741c95eef87019025d24835e44a84b1e7",
+   "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+   "oracle/run_cache_iface.py": "ad1a3711ff89b58da150089cc04eada656ce8c82f98c99cb17443bf80bc26664",
+   "oracle/run_dfs_order.py": "27ea15eba6fe82e5c91021e6abe0286ce17a10bb913295b942a342005111393a",
+   "oracle/run_scheduler.py": "28ed3f13aa2d7502a317a0dd1974b7c67f7ee784761605acd54d57e26168f353",
+   "oracle/scenarios-dfs-order/ties-splits-and-deletes.json": "cb3c21f8cf307279b41e03164bd0b71a846aeadca3c9ae446cf9ed89a6112a12",
+   "oracle/stubs.py": "e30a3a770e3a4f91008449145089328ba8fbb83b35bda7082e1c77e323eb1692",
+   "oracle/traces.py": "66d1818a2eb1b3d8bbfa3c5988bc088a8741798e46e536152ab368961bbd28a6"
+  },
+  "platform": "linux-x86_64",
+  "python": "3.12.16",
+  "requirements_lock_sha256": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+  "scenario_sha256": "cb3c21f8cf307279b41e03164bd0b71a846aeadca3c9ae446cf9ed89a6112a12",
+  "seed": 0,
+  "sglang_commit": "297e54fd105e974cdf401e5b4d20253a22c16f90",
+  "tier": 2
+ }
+}
