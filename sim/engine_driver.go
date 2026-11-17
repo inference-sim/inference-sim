@@ -960,7 +960,9 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 	if d.kvEventSink != nil && len(res.KVEvents) > 0 {
 		events := make([]KVEvent, len(res.KVEvents))
 		for i, e := range res.KVEvents {
-			events[i] = KVEvent{Removed: e.Removed, Hash: e.Hash, Parent: e.Parent, Tokens: tokenIDs(e.Tokens), Tier: e.Tier}
+			events[i] = KVEvent{Removed: e.Removed, Hash: e.Hash, Parent: e.Parent, Tokens: tokenIDs(e.Tokens), Tier: e.Tier,
+				Cleared: e.Cleared, LoRAID: e.LoRAID, LoRAName: e.LoRAName, ExtraKeys: e.ExtraKeys,
+				CacheSalt: e.CacheSalt, GroupIdx: e.GroupIdx, SpecKind: e.SpecKind, SlidingWindow: e.SlidingWindow}
 		}
 		d.kvEventSink(end, events)
 	}
@@ -1269,6 +1271,14 @@ func (d *EngineDriver) SetKVEventSink(sink func(at int64, events []KVEvent)) err
 	p.EnableKVEvents()
 	d.kvEventSink = sink
 	return nil
+}
+
+// KVEventsCarryIdentity reports whether the engine's stored-block events name the adapter and the
+// extra keys that keyed each block's hash (a KVEventsCarryIdentity method on the engine). An engine
+// that does not say publishes events a router cannot tell an adapter's blocks apart by.
+func (d *EngineDriver) KVEventsCarryIdentity() bool {
+	q, ok := d.eng.(interface{ KVEventsCarryIdentity() bool })
+	return ok && q.KVEventsCarryIdentity()
 }
 
 // KVEventsRefusal is why a router cannot index the engine's KV events, for an engine that says

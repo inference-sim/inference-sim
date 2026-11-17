@@ -882,9 +882,9 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.14.2-0.20261117033037-6e56a2d474cd",
+    "substrate": "v0.14.2-0.20261117022851-33fa3d9219f2",
     "router": "v1.0.0-blis.4",
-    "engine_module": "v0.32.1-0.20261117052329-354b99351f12"
+    "engine_module": "v0.32.1-0.20261117012328-0e64151389b7"
   },
   "window": {
     "start_us": 49999,
