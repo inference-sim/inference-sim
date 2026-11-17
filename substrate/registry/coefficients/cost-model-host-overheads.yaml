@@ -62,7 +62,7 @@ coefficients:
       units: us_per_request
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - kind: discussion
           cite: "SemiAnalysis InferenceX concurrency-1 absolutes, used for the MAGNITUDE only; see the provenance caveat below"
@@ -118,7 +118,7 @@ coefficients:
       units: us_per_request
       method: not_charged
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s], model: [deepseek-v4.1-flash]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server], model: [deepseek-v4.1-flash]}
       sources:
         - {kind: discussion, cite: "validator/testdata/anchors/v41_frontend_bench.json: diagnosis/frontend/bench_frontend.py (sha256 338a7feffa10): median of 5 timings per step of json.loads of the chat request body, vLLM v0.31.0 deepseek_v41_encoding.encode_messages (verbatim, thinking_mode=thinking), HF tokenizers encode with the DeepSeek-V4.1 tokenizer.json @5254448, sha256 over pickled (parent, 64-token block); synthetic conversations of random vocabulary ids (seed 42)", role: primary}
       rationale: >
@@ -128,7 +128,7 @@ coefficients:
       units: us_per_token
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - kind: discussion
           cite: "BLIS trained-physics (removed; git 2dcf24014edd) queueing (alpha_1 = a per-input-token term in a fitted queueing form), used as an order-of-magnitude anchor only"
@@ -156,7 +156,7 @@ coefficients:
       units: us_per_token
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s], model: [deepseek-v4.1-flash]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server], model: [deepseek-v4.1-flash]}
       sources:
         - {kind: discussion, cite: "validator/testdata/anchors/v41_frontend_bench.json: diagnosis/frontend/bench_frontend.py (sha256 338a7feffa10): median of 5 timings per step of json.loads of the chat request body, vLLM v0.31.0 deepseek_v41_encoding.encode_messages (verbatim, thinking_mode=thinking), HF tokenizers encode with the DeepSeek-V4.1 tokenizer.json @5254448, sha256 over pickled (parent, 64-token block); synthetic conversations of random vocabulary ids (seed 42)", role: primary}
       rationale: >
@@ -166,7 +166,7 @@ coefficients:
       units: us_per_token
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s], model: [deepseek-v4.1-flash]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server], model: [deepseek-v4.1-flash]}
       sources:
         - {kind: discussion, cite: "crusoecloud/fastokens 7923de6c76753347d4090c444e22f6c95a15f01b README.md (blob e0bb3b7811029d8c7d7f97823ad179c87cc9a715): 'on average achieves a 10x+ faster tokenization compared to the tokenizers library'", role: primary}
         - {kind: discussion, cite: "vllm-project/vllm PR #47583 benchmark: DeepSeek-V3 tokenizer cold encode 35.66 ms at 32K, 160.40 ms at 128K tokens", role: supporting}
@@ -178,7 +178,7 @@ coefficients:
       units: us_per_token
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - kind: discussion
           cite: "BLIS trained-physics (removed; git 2dcf24014edd) output_token_processing = 45.907545 (fitted on H100 against a different step-time form), used as an order-of-magnitude anchor only"
@@ -202,7 +202,7 @@ coefficients:
       units: us_per_request
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - kind: discussion
           cite: "BLIS trained-physics (removed; git 2dcf24014edd) post_decode_fixed = 777.3455 (fitted on H100 against a different step-time form), used as an order-of-magnitude anchor only"
@@ -223,7 +223,7 @@ coefficients:
       units: us_per_layer
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - kind: vendor_doc
           cite: "CUDA kernel launch overhead is conventionally quoted at 5-10 us for an eager launch; no measurement of vLLM's per-layer launch count is published"
@@ -256,7 +256,7 @@ coefficients:
       transferred_from: "hardware=h200,model=deepseek-v4.1-flash"
       transfer_rule: "the value derived on the H200 nodes is carried unchanged to the other parts, on the assumption that their host CPU and CUDA driver dispatch an op and launch a kernel as fast as the H200 nodes behind the anchor"
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, l40s], model: [deepseek-v4.1-flash]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, l40s, rtx6000pro-server], model: [deepseek-v4.1-flash]}
       sources:
         - {kind: discussion, cite: "an internal DeepSeek-V4.1-Flash H200 enforce-eager serving run's report (not redistributed), sha256 f250d35ee0fb; derived inputs in validator/testdata/anchors/v41_h200_enforce_eager_anchor.json: mean ITL c1-c64", role: primary}
         - {kind: discussion, cite: "validator/testdata/anchors/v41_kernel_eager_basis.json: the kernel's own device time and launch count for the anchor's step, blis-latency-kernel 07ed4245beb80e1597393a629adf9adbbb4bf55a", role: supporting}
@@ -267,7 +267,7 @@ coefficients:
       units: us_per_step
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - kind: vendor_doc
           cite: "CUDA graph replay is conventionally quoted at 5-10 us for the whole graph; no vLLM-specific measurement is published"
@@ -285,7 +285,7 @@ coefficients:
       units: us_per_transfer
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       ci95: [3.1, 3.3]
       sources:
         - {kind: discussion, cite: "Residual of two published Granite-5 capacity runs against this cost model: H200 8x TP=8 at 8257-token context (measured ITL 6.02 ms) and H100 8x TP=8 at 707-token context (measured ITL 6.13 ms), both at one concurrent request", role: primary}

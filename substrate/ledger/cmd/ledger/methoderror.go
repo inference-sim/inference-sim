@@ -22,7 +22,8 @@ var generations = map[string]string{
 	"h100": "Hopper", "h200": "Hopper",
 	"b200": "Blackwell", "b300": "Blackwell", "gb200-nvl72": "Blackwell", "gb300": "Blackwell",
 	"a100-sxm": "Ampere", "a100-80": "Ampere",
-	"l40s": "Ada",
+	"l40s":              "Ada",
+	"rtx6000pro-server": "RTXBlackwell",
 }
 
 // nearCopies groups chips whose measured values are the same parts' values under two names, so
@@ -31,7 +32,7 @@ var generations = map[string]string{
 var nearCopies = map[string]string{"a100-80": "a100", "a100-sxm": "a100"}
 
 var (
-	chipSuffix  = regexp.MustCompile(`_(a100_80|a100_sxm|b200|b300|gb200_nvl72|gb300|h100|h200|l40s)$`)
+	chipSuffix  = regexp.MustCompile(`_(a100_80|a100_sxm|b200|b300|gb200_nvl72|gb300|h100|h200|l40s|rtx6000pro_server)$`)
 	rankInName  = regexp.MustCompile(`_\d+rank`)
 	formatSufix = regexp.MustCompile(`_(fp16|int8|bf16|fp8_block|fp8|nvfp4|mxfp4|w4a16_[a-z0-9_]+|w8a16_[a-z0-9_]+)$`)
 	// The hardware term of a scope key (coefficient.Scope.Key: "label=v1,v2;" terms), and only it:
