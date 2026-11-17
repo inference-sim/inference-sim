@@ -38,7 +38,7 @@ variable. To use a checkout of blis-substrate's own `catalog/`:
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout 1c42710ed28b45ed6244b5ffdf4f04e166fd5bf1
+git -C blis-substrate checkout 958d845ea670808ab3607e5eaee3a314d64c2694
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
