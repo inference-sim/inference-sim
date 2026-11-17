@@ -67,6 +67,19 @@ type Config struct {
 	// (vllm/entrypoints/cli/serve.py:123-126@4ba787ec), which a caller states. A single engine has
 	// no balancer, so the count does not change it.
 	APIServerCount int `yaml:"api_server_count,omitempty"`
+	// DataParallelSizeLocal is vLLM's data_parallel_size_local: the data-parallel ranks on one
+	// node (vllm/config/parallel.py:149@4ba787ec). It sizes a hybrid balancer's front end, which
+	// balances only its node's ranks. Unstated is every rank.
+	DataParallelSizeLocal int `yaml:"data_parallel_size_local,omitempty"`
+	// DataParallelHybridLB, DataParallelExternalLB and DataParallelMultiPortExternalLB are vLLM's
+	// load-balancing flags. External (or the multi-port launcher, which starts one external rank
+	// server per local rank) gives every rank its own endpoint and front end, a DPAsyncMPClient
+	// that balances nothing; hybrid gives each node one endpoint whose front end, a
+	// DPLBAsyncMPClient, balances that node's ranks. The router outside the engine picks the
+	// endpoint (DPGroup.AddToEndpoint). See resolveDPBalancing for the flags' resolution.
+	DataParallelHybridLB            bool `yaml:"data_parallel_hybrid_lb,omitempty"`
+	DataParallelExternalLB          bool `yaml:"data_parallel_external_lb,omitempty"`
+	DataParallelMultiPortExternalLB bool `yaml:"data_parallel_multi_port_external_lb,omitempty"`
 	// MambaModel is whether the model runs vLLM's MambaModelConfig hook: a Mamba or hybrid
 	// attention/Mamba model (ModelConfig.is_hybrid, vllm/config/model.py:2023-2032@5df63a72, or a
 	// Mamba architecture, vllm/model_executor/models/config.py:1073-1095@5df63a72). It is the model's,
@@ -191,6 +204,63 @@ type dpSettings struct {
 	statsIntervalUs                      int64
 	// clients is the number of load-balancing clients (api_server_count), at least 1.
 	clients int
+	// balancing is how the ranks are exposed (dpInternal, dpHybrid or dpExternal) and local the
+	// ranks behind one endpoint: every rank for internal, the node's for hybrid, one for external.
+	balancing string
+	local     int
+}
+
+// The data-parallel balancing modes the engine runs (vllm/v1/engine/core_client.py:155-166@4ba787ec
+// for the client each makes).
+const (
+	dpInternal = "internal"
+	dpHybrid   = "hybrid"
+	dpExternal = "external"
+)
+
+// resolveDPBalancing is EngineArgs.create_engine_config's resolution of the load-balancing flags
+// for a group of dp ranks (vllm/engine/arg_utils.py:2383-2392, 2447-2538@4ba787ec) and
+// make_async_mp_client's choice of client. The group is the whole data-parallel deployment: a
+// rank's own --data-parallel-rank or --data-parallel-start-rank only says which pod runs it.
+//   - hybrid and external together are refused;
+//   - external, or the multi-port launcher that starts external rank servers, runs one rank per
+//     endpoint, and a stated data_parallel_size_local other than 1 is refused;
+//   - hybrid needs data_parallel_size_local, runs as external when it is 1, and as internal when
+//     it is every rank;
+//   - a group of one rank has no balancer.
+func resolveDPBalancing(c Config, dp int) (mode string, local int, err error) {
+	external := c.DataParallelExternalLB || c.DataParallelMultiPortExternalLB
+	if c.DataParallelSizeLocal < 0 {
+		return "", 0, fmt.Errorf("vllm: data_parallel_size_local %d: it counts ranks and is not negative", c.DataParallelSizeLocal)
+	}
+	if c.DataParallelHybridLB && external {
+		return "", 0, fmt.Errorf("vllm: data_parallel_hybrid_lb and data_parallel_external_lb cannot be enabled together; " +
+			"vLLM refuses the pair (arg_utils.py:2383-2390@4ba787ec)")
+	}
+	if dp <= 1 {
+		return dpInternal, 1, nil
+	}
+	local = c.DataParallelSizeLocal
+	switch {
+	case external:
+		if local != 0 && local != 1 {
+			return "", 0, fmt.Errorf("vllm: an external data-parallel rank requires data_parallel_size_local 1; got %d "+
+				"(arg_utils.py:2476-2482@4ba787ec)", local)
+		}
+		return dpExternal, 1, nil
+	case c.DataParallelHybridLB && local == 0:
+		return "", 0, fmt.Errorf("vllm: data_parallel_hybrid_lb requires data_parallel_size_local, the ranks on each node " +
+			"(arg_utils.py:2527-2532@4ba787ec)")
+	case c.DataParallelHybridLB && local == 1:
+		return dpExternal, 1, nil // not eligible with one rank per node: vLLM switches to external
+	case c.DataParallelHybridLB && local < dp:
+		if dp%local != 0 {
+			return "", 0, fmt.Errorf("vllm: data_parallel_size %d is not a whole number of nodes of data_parallel_size_local %d: "+
+				"each hybrid front end balances the same number of ranks", dp, local)
+		}
+		return dpHybrid, local, nil
+	}
+	return dpInternal, dp, nil // hybrid with every rank local disables itself
 }
 
 // maxModelLenIssue is the open issue an unstated max_model_len cites (design X28).
@@ -486,6 +556,9 @@ func resolve(c Config) (settings, error) {
 	s.dp = dpSettings{ranks: max(c.DataParallelSize, 1), syncInterval: e.DPSyncInterval,
 		prefillInterval: max(e.PrefillScheduleInterval, 1), statsIntervalUs: c.DPStatsIntervalUs,
 		clients: max(c.APIServerCount, 1)}
+	if s.dp.balancing, s.dp.local, err = resolveDPBalancing(c, s.dp.ranks); err != nil {
+		return settings{}, err
+	}
 	if s.dp.syncInterval == 0 {
 		s.dp.syncInterval = 16
 	}

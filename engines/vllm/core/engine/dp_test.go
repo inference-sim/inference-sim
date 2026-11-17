@@ -29,6 +29,12 @@ type dpScenario struct {
 		StatsLag                  int    `json:"stats_lag"`
 		AsyncScheduling           bool   `json:"async_scheduling"`
 		ClientCount               int    `json:"client_count"`
+		// The load-balancing flags a scenario of oracle/scenarios-dp-modes states, with vLLM's own
+		// names; frontLocal resolves them.
+		DataParallelHybridLB            bool `json:"data_parallel_hybrid_lb"`
+		DataParallelExternalLB          bool `json:"data_parallel_external_lb"`
+		DataParallelMultiPortExternalLB bool `json:"data_parallel_multi_port_external_lb"`
+		DataParallelSizeLocal           int  `json:"data_parallel_size_local"`
 	} `json:"config"`
 	Requests []struct {
 		ID          string  `json:"id"`
@@ -38,6 +44,9 @@ type dpScenario struct {
 		MaxTokens   int     `json:"max_tokens"`
 		Priority    int     `json:"priority"`
 		Client      *int    `json:"client"`
+		// Endpoint is the front end the router sent the request to, under hybrid or external
+		// balancing.
+		Endpoint *int `json:"endpoint"`
 	} `json:"requests"`
 	MaxSteps int `json:"max_steps"`
 }
@@ -77,6 +86,19 @@ type dpTrace struct {
 }
 
 // runDP drives a DP scenario exactly as oracle/run_dp.py drives vLLM's DP engine-core loop.
+// frontLocal is the ranks behind one front end under the flags, as EngineArgs.create_engine_config
+// resolves them (vllm/engine/arg_utils.py:2447-2538@4ba787ec): one for external (or hybrid with one rank per node), the node's for
+// hybrid with 1 < size_local < dp, and every rank (the internal balancer) otherwise.
+func frontLocal(hybrid, external bool, sizeLocal, dp int) int {
+	switch {
+	case external || (hybrid && sizeLocal == 1):
+		return 1 // hybrid with one rank per node is not eligible and runs as external
+	case hybrid && sizeLocal > 1 && sizeLocal < dp:
+		return sizeLocal
+	}
+	return dp
+}
+
 func runDP(t *testing.T, sc dpScenario) dpTrace {
 	t.Helper()
 	c := sc.Config
@@ -87,6 +109,10 @@ func runDP(t *testing.T, sc dpScenario) dpTrace {
 	}
 	gpu := &mockGPU{outputs: map[string][]int64{}, sampled: map[string]int{}, async: c.AsyncScheduling}
 	d := &DP{LB: NewLoadBalancers(n, c.ClientCount)}
+	if local := frontLocal(c.DataParallelHybridLB, c.DataParallelExternalLB || c.DataParallelMultiPortExternalLB,
+		c.DataParallelSizeLocal, n); local < n {
+		d.Fronts = NewFronts(n, local, max(c.ClientCount, 1))
+	}
 	// With async scheduling every rank runs the AsyncScheduler and step_with_batch_queue with a
 	// queue of max_concurrent_batches (oracle/run_dp_async.py); otherwise step() (run_dp.py).
 	queue := MaxConcurrentBatches(1, c.AsyncScheduling, false)
@@ -131,10 +157,14 @@ func runDP(t *testing.T, sc dpScenario) dpTrace {
 	next := 0
 	for step := 0; step < maxSteps; step++ {
 		if step%statsEvery == 0 {
+			counts := make([][3]float64, n)
 			if idx := len(history) - 1 - c.StatsLag; idx >= 0 {
-				d.LB.Publish(history[idx])
+				counts = history[idx]
+			}
+			if len(d.Fronts) > 0 {
+				d.PublishFronts(counts)
 			} else {
-				d.LB.Publish(make([][3]float64, n))
+				d.LB.Publish(counts)
 			}
 		}
 		rec := dpStepRec{Step: step, Arrivals: [][]any{}}
@@ -145,7 +175,12 @@ func runDP(t *testing.T, sc dpScenario) dpTrace {
 				mt = 1 << 20
 			}
 			var rank int
-			if r.Client != nil {
+			if len(d.Fronts) > 0 {
+				var err error
+				if rank, err = d.AddFront(*r.Endpoint, r.ID); err != nil {
+					t.Fatal(err)
+				}
+			} else if r.Client != nil {
 				rank = d.AddVia(*r.Client, r.ID)
 			} else {
 				rank = d.Add(r.ID)
@@ -179,7 +214,7 @@ func runDP(t *testing.T, sc dpScenario) dpTrace {
 			}
 			for _, f := range rs.Step.Finished {
 				rr.Finished = append(rr.Finished, f.ID)
-				d.LB.Finished(f.ID)
+				d.FinishedFront(i, f.ID)
 			}
 			sort.Strings(rr.Finished)
 			rec.Ranks = append(rec.Ranks, rr)
@@ -366,6 +401,73 @@ func TestDPAsyncAgainstVLLM(t *testing.T) {
 			checkDPProvenance(t, path, want)
 			if d := dpDivergence(want, runDP(t, sc)); d != "" {
 				t.Fatalf("earliest divergence from vLLM v0.33.0: %s", d)
+			}
+		})
+	}
+}
+
+// TestDPModesAgainstVLLM runs every scenario of oracle/scenarios-dp-modes, a data-parallel group
+// under hybrid or external load balancing with the router naming each request's front end, and
+// compares the routing and every rank's steps with vLLM's own DPLBAsyncMPClient objects (one per
+// node, over that node's ranks) and, for external balancing, a one-engine DPLBAsyncMPClient per rank (a DPAsyncMPClient returns the same engine). BLIS_VLLM_DP_MODES_DIR
+// names the fresh traces oracle/run_dp.py wrote from CI's pinned environment; no trace of vLLM's is
+// committed for these scenarios.
+func TestDPModesAgainstVLLM(t *testing.T) {
+	dir := os.Getenv("BLIS_VLLM_DP_MODES_DIR")
+	if dir == "" {
+		t.Skip("BLIS_VLLM_DP_MODES_DIR is unset: hybrid and external routing were NOT checked against vLLM (CI's oracle job sets it)")
+	}
+	scenarios, err := filepath.Glob("../../oracle/scenarios-dp-modes/*.json")
+	if err != nil || len(scenarios) == 0 {
+		t.Fatalf("no balancing-mode scenarios (%v)", err)
+	}
+	for _, path := range scenarios {
+		name := strings.TrimSuffix(filepath.Base(path), ".json")
+		t.Run(name, func(t *testing.T) {
+			var sc dpScenario
+			readJSON(t, path, &sc)
+			var want dpTrace
+			readJSON(t, filepath.Join(dir, name+".trace.json"), &want)
+			checkDPProvenance(t, path, want)
+			if d := dpDivergence(want, runDP(t, sc)); d != "" {
+				t.Fatalf("earliest divergence from vLLM: %s", d)
+			}
+		})
+	}
+}
+
+// The router, not the engine, chooses the front end: whatever the load, a request sent to a
+// hybrid node lands on one of that node's ranks, and a request sent to an external rank lands on
+// that rank. This runs without vLLM; TestDPModesAgainstVLLM adds that vLLM routes the same.
+func TestARequestStaysOnTheEndpointTheRouterChose(t *testing.T) {
+	scenarios, err := filepath.Glob("../../oracle/scenarios-dp-modes/*.json")
+	if err != nil || len(scenarios) == 0 {
+		t.Fatalf("no balancing-mode scenarios (%v)", err)
+	}
+	for _, path := range scenarios {
+		name := strings.TrimSuffix(filepath.Base(path), ".json")
+		t.Run(name, func(t *testing.T) {
+			var sc dpScenario
+			readJSON(t, path, &sc)
+			c := sc.Config
+			local := frontLocal(c.DataParallelHybridLB, c.DataParallelExternalLB || c.DataParallelMultiPortExternalLB, c.DataParallelSizeLocal, c.DataParallelSize)
+			if local >= c.DataParallelSize {
+				t.Fatalf("%s states no hybrid or external balancing", name)
+			}
+			tr := runDP(t, sc)
+			spread := map[int]bool{}
+			for _, r := range sc.Requests {
+				rank, ok := tr.Routed[r.ID]
+				if !ok {
+					t.Fatalf("request %s was never routed", r.ID)
+				}
+				if first := *r.Endpoint * local; rank < first || rank >= first+local {
+					t.Errorf("request %s sent to endpoint %d (ranks %d-%d) ran on rank %d", r.ID, *r.Endpoint, first, first+local-1, rank)
+				}
+				spread[rank] = true
+			}
+			if local > 1 && len(spread) < 3 {
+				t.Errorf("a node's balancer used ranks %v: the scenario is meant to spread each node's burst over both its ranks", spread)
 			}
 		})
 	}

@@ -103,8 +103,8 @@ func TestReadmeNamesEveryLeaveUnsetField(t *testing.T) {
 			}
 		}
 	}
-	if len(want) != 15 {
-		t.Errorf("fields.json has %d not_modelled leave_unset fields, want 15; update the README list and this count", len(want))
+	if len(want) != 12 {
+		t.Errorf("fields.json has %d not_modelled leave_unset fields, want 12; update the README list and this count", len(want))
 	}
 }
 

@@ -1204,27 +1204,37 @@
     "rule": "leave_unset"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#86"
+    "traces": [
+     "oracle/scenarios-dp-modes/dp4-external-rank-affinity.json",
+     "core/engine/testdata/golden-dp/dp4-lb.json"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:data_parallel_hybrid_lb": {
    "estimation": {
     "rule": "leave_unset"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#64"
+    "traces": [
+     "oracle/scenarios-dp-modes/dp4-hybrid-local2.json",
+     "oracle/scenarios-dp-modes/dp4-hybrid-local2-lag.json",
+     "core/engine/testdata/golden-dp/dp4-lb.json"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:data_parallel_multi_port_external_lb": {
    "estimation": {
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#86"
+    "traces": [
+     "oracle/scenarios-dp-modes/dp4-external-multi-port.json",
+     "core/engine/testdata/golden-dp/dp4-lb.json"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:data_parallel_rank": {
    "estimation": {
@@ -1261,9 +1271,11 @@
     "rule": "leave_unset"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#55"
+    "traces": [
+     "oracle/scenarios-dp-modes/dp4-hybrid-local2.json"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:data_parallel_start_rank": {
    "estimation": {
