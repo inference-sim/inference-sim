@@ -85,7 +85,7 @@ func TestPreHopperComesFromTheComputeCapability(t *testing.T) {
 	}
 }
 
-// The catalog's nine parts keep the answers the name lists gave: A100 and L40S are
+// The catalog's ten parts keep the answers the name lists gave: A100 and L40S are
 // pre-Hopper, the rest are not, and the A100 defaults hold for the two A100 parts alone.
 func TestCatalogPartsKeepTheirGenerationAndBatchDefaults(t *testing.T) {
 	d, err := load.Embedded()
@@ -93,8 +93,8 @@ func TestCatalogPartsKeepTheirGenerationAndBatchDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	names := d.Chips()
-	if len(names) != 9 {
-		t.Fatalf("catalog has %d chips, want 9: %v", len(names), names)
+	if len(names) != 10 {
+		t.Fatalf("catalog has %d chips, want 10: %v", len(names), names)
 	}
 	for _, n := range names {
 		chip, _ := d.Chip(n)
