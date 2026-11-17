@@ -235,6 +235,9 @@ type capRequest struct {
 	HandledBy string  `json:"handled_by"`
 	TTFT      float64 `json:"ttft_ms"`
 	E2E       float64 `json:"e2e_ms"`
+	// Planned is a session round that was planned and never issued: it has a row but no prompt,
+	// and is not a generated request.
+	Planned bool
 }
 
 // capRunRows is capRun, returning the Result's per-request rows too.
@@ -247,7 +250,8 @@ func capRunRows(t *testing.T, args ...string) (capOut, []capRequest) {
 	var rows []capRequest
 	for _, r := range parseResult(t, stdout).RequestRows {
 		c := capRequest{SLOClass: r.SLOClass, TenantID: r.TenantID, SessionID: r.SessionID, Round: r.RoundIndex,
-			ArrivedAt: float64(r.ArrivalUs) / 1e6, Prompt: r.PromptTokens, HandledBy: r.Instance}
+			ArrivedAt: float64(r.ArrivalUs) / 1e6, Prompt: r.PromptTokens, HandledBy: r.Instance,
+			Planned: r.Fate == result.FateNotStarted && r.PromptTokens == 0}
 		if r.TTFTUs != nil {
 			c.TTFT = float64(*r.TTFTUs) / 1e3
 		}
@@ -622,7 +626,12 @@ func TestCapabilityMatrix_Compositions(t *testing.T) {
 			t.Fatal("no request rows")
 		}
 		rounds := map[int]int{}
+		issued := 0
 		for _, r := range rows {
+			if r.Planned {
+				continue
+			}
+			issued++
 			rounds[r.Round]++
 			if r.Prompt != want[r.Round] {
 				t.Errorf("session %s round %d: prompt %d tokens, want %d", r.SessionID, r.Round, r.Prompt, want[r.Round])
@@ -631,8 +640,8 @@ func TestCapabilityMatrix_Compositions(t *testing.T) {
 		if rounds[1] == 0 || rounds[2] == 0 {
 			t.Errorf("rounds seen %v: the run must reach rounds 1 and 2 for the table to be tested", rounds)
 		}
-		if got := o.num("total_output_tokens"); got != float64(len(rows)*50) {
-			t.Errorf("total output tokens = %v, want %d: %d requests of 50", got, len(rows)*50, len(rows))
+		if got := o.num("total_output_tokens"); got != float64(issued*50) {
+			t.Errorf("total output tokens = %v, want %d: %d requests of 50", got, issued*50, issued)
 		}
 	})
 
