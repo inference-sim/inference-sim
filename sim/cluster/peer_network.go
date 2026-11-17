@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
-	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/inference-sim/sim"
 )
 
@@ -110,7 +109,7 @@ func (cs *ClusterSimulator) assignPeerAddr(inst *InstanceSimulator) {
 
 // placePeer tells at's engine where peer sits, in the numbering of at's own pool.
 func (cs *ClusterSimulator) placePeer(at, peer *InstanceSimulator) {
-	var ep plan.Endpoint = cs.config.PeerEndpoint(peer.id)
+	ep := cs.config.PeerEndpoint(peer.id)
 	if err := at.drv.PlacePeer(peer.drv.PeerAddr(), ep); err != nil {
 		panic(fmt.Sprintf("ClusterSimulator: placing peer %s for %s: %v", peer.id, at.id, err))
 	}
