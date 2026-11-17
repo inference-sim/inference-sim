@@ -36,6 +36,7 @@
     "keys": [
      "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000"
     ],
+    "positions": {},
     "req": "a"
    },
    "m": "prepare_store",
@@ -81,6 +82,7 @@
      ],
      "locality": null,
      "medium": "CPU",
+     "metadata_only": false,
      "removed": false
     }
    ]
@@ -95,6 +97,7 @@
      ],
      "locality": null,
      "medium": "CPU",
+     "metadata_only": false,
      "removed": false
     }
    ]
@@ -105,6 +108,7 @@
     "keys": [
      "015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e00000000"
     ],
+    "positions": {},
     "req": "a"
    },
    "m": "prepare_store",
@@ -148,6 +152,7 @@
      ],
      "locality": null,
      "medium": "CPU",
+     "metadata_only": false,
      "removed": false
     }
    ]
@@ -162,6 +167,7 @@
      ],
      "locality": null,
      "medium": "CPU",
+     "metadata_only": false,
      "removed": false
     }
    ]
@@ -193,6 +199,7 @@
      "94091dd64a21ffe94214bc6d17deeb43873a5cf2f0a71b4b5caa9a5c81b6967d00000000",
      "88dbf612972c594a2c2f6dde493ef1c4cd27adba8c36e6ebd00b89ff143aba6100000000"
     ],
+    "positions": {},
     "req": "b"
    },
    "m": "prepare_store",
@@ -302,6 +309,7 @@
      ],
      "locality": null,
      "medium": "CPU",
+     "metadata_only": false,
      "removed": true
     },
     {
@@ -312,6 +320,7 @@
      ],
      "locality": null,
      "medium": "CPU",
+     "metadata_only": false,
      "removed": false
     },
     {
@@ -320,6 +329,7 @@
      ],
      "locality": null,
      "medium": "CPU",
+     "metadata_only": false,
      "removed": true
     },
     {
@@ -328,6 +338,7 @@
      ],
      "locality": null,
      "medium": "CPU",
+     "metadata_only": false,
      "removed": true
     },
     {
@@ -336,6 +347,7 @@
      ],
      "locality": null,
      "medium": "STORAGE",
+     "metadata_only": false,
      "removed": false
     },
     {
@@ -346,6 +358,7 @@
      ],
      "locality": null,
      "medium": "STORAGE",
+     "metadata_only": false,
      "removed": false
     }
    ]
@@ -361,6 +374,7 @@
      ],
      "locality": null,
      "medium": "CPU",
+     "metadata_only": false,
      "removed": true
     },
     {
@@ -371,6 +385,7 @@
      ],
      "locality": null,
      "medium": "CPU",
+     "metadata_only": false,
      "removed": false
     },
     {
@@ -379,6 +394,7 @@
      ],
      "locality": null,
      "medium": "CPU",
+     "metadata_only": false,
      "removed": true
     },
     {
@@ -387,6 +403,7 @@
      ],
      "locality": null,
      "medium": "CPU",
+     "metadata_only": false,
      "removed": true
     }
    ]
@@ -427,12 +444,25 @@
   },
   {
    "args": {
+    "ctx": "c1",
+    "keys": [
+     "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000"
+    ],
+    "positions": {},
+    "req": "a"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
     "chunk": {
      "id": 0,
      "ref": -1
     },
     "ctx": "c1",
     "key": "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000",
+    "positions": {},
     "req": "a"
    },
    "m": "insert",
@@ -509,12 +539,25 @@
   },
   {
    "args": {
+    "ctx": "c1",
+    "keys": [
+     "015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e00000000"
+    ],
+    "positions": {},
+    "req": "a"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
     "chunk": {
      "id": 1,
      "ref": -1
     },
     "ctx": "c1",
     "key": "015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e00000000",
+    "positions": {},
     "req": "a"
    },
    "m": "insert",
@@ -622,6 +665,20 @@
   },
   {
    "args": {
+    "ctx": "c2",
+    "keys": [
+     "2f5052c9fd15b19a18c584d01363568198613f0c34e84409ef7938709a159ec200000000",
+     "94091dd64a21ffe94214bc6d17deeb43873a5cf2f0a71b4b5caa9a5c81b6967d00000000",
+     "88dbf612972c594a2c2f6dde493ef1c4cd27adba8c36e6ebd00b89ff143aba6100000000"
+    ],
+    "positions": {},
+    "req": "b"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
     "n": 2,
     "protected": [
      "2f5052c9fd15b19a18c584d01363568198613f0c34e84409ef7938709a159ec200000000",
@@ -649,6 +706,7 @@
     },
     "ctx": "c2",
     "key": "2f5052c9fd15b19a18c584d01363568198613f0c34e84409ef7938709a159ec200000000",
+    "positions": {},
     "req": "b"
    },
    "m": "insert",
@@ -662,6 +720,7 @@
     },
     "ctx": "c2",
     "key": "94091dd64a21ffe94214bc6d17deeb43873a5cf2f0a71b4b5caa9a5c81b6967d00000000",
+    "positions": {},
     "req": "b"
    },
    "m": "insert",
@@ -675,6 +734,7 @@
     },
     "ctx": "c2",
     "key": "88dbf612972c594a2c2f6dde493ef1c4cd27adba8c36e6ebd00b89ff143aba6100000000",
+    "positions": {},
     "req": "b"
    },
    "m": "insert",
@@ -884,6 +944,18 @@
     "req": "b"
    },
    "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "keys": [
+     "015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e00000000"
+    ],
+    "positions": {},
+    "req": "b"
+   },
+   "m": "on_request_access",
    "ret": null
   },
   {
@@ -909,6 +981,7 @@
     },
     "ctx": "c2",
     "key": "015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e00000000",
+    "positions": {},
     "req": "b"
    },
    "m": "insert",
@@ -941,6 +1014,18 @@
   },
   {
    "args": {
+    "ctx": "c2",
+    "keys": [
+     "c3c81c2b9a9ae9e358d68fc47dbc8596f19b420011e71c657d1616f14fb7791700000000"
+    ],
+    "positions": {},
+    "req": "b"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
     "n": 1,
     "protected": [
      "c3c81c2b9a9ae9e358d68fc47dbc8596f19b420011e71c657d1616f14fb7791700000000"
@@ -962,6 +1047,7 @@
     },
     "ctx": "c2",
     "key": "c3c81c2b9a9ae9e358d68fc47dbc8596f19b420011e71c657d1616f14fb7791700000000",
+    "positions": {},
     "req": "b"
    },
    "m": "insert",
@@ -997,6 +1083,13 @@
     "blocks_per_chunk": 1,
     "cpu_bytes_to_use": 49152,
     "eviction_policy": "lru",
+    "groups": [
+     {
+      "tokens_per_block": 16,
+      "window_chunks": null
+     }
+    ],
+    "max_model_len": 0,
     "offload_prompt_only": true,
     "replicated_layout": false,
     "secondary_tiers": 1,
@@ -1292,6 +1385,7 @@
      ],
      "locality": null,
      "medium": "STORAGE",
+     "metadata_only": false,
      "removed": false
     },
     {
@@ -1302,6 +1396,7 @@
      ],
      "locality": null,
      "medium": "STORAGE",
+     "metadata_only": false,
      "removed": false
     }
    ]

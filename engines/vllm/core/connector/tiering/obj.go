@@ -81,6 +81,8 @@ type objXfer struct {
 	id    int
 	names []string
 	write bool
+	// req is the request the job serves.
+	req string
 	// done and ok are the transfer's state: PROC until it has run, then DONE (ok) or ERR.
 	done, ok bool
 }
@@ -183,18 +185,23 @@ func (t *ObjTier) submit(j *TransferJob, write bool) {
 	for i, k := range j.Keys {
 		names[i] = t.mapper.name(k)
 	}
-	t.inflight = append(t.inflight, &objXfer{id: j.ID, names: names, write: write})
+	req := ""
+	if j.Req != nil {
+		req = j.Req.ReqID
+	}
+	t.inflight = append(t.inflight, &objXfer{id: j.ID, names: names, write: write, req: req})
 }
 
-// InFlight are the ids of the transfers that have not run, in submission order, and whether each
-// is a WRITE.
-func (t *ObjTier) InFlight() (ids []int, writes []bool) {
+// Jobs are the transfers in flight that have not run, in submission order, in the shape the fs
+// tier reports its queued jobs: what a host needs to time each one (a WRITE is a store).
+func (t *ObjTier) Jobs() []FSJob {
+	var out []FSJob
 	for _, x := range t.inflight {
 		if !x.done {
-			ids, writes = append(ids, x.id), append(writes, x.write)
+			out = append(out, FSJob{ID: x.id, Store: x.write, Chunks: len(x.names), Req: x.req})
 		}
 	}
-	return ids, writes
+	return out
 }
 
 // Run ends one transfer in flight, as NIXL does when its last byte has moved: a WRITE puts its

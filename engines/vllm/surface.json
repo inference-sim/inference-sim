@@ -6,9 +6,9 @@
   "commit": "4ba787ec9959e566d3b587a796dff07673324da5"
  },
  "counts": {
-  "modelled": 68,
+  "modelled": 69,
   "out_of_scope": 40,
-  "refused": 153
+  "refused": 152
  },
  "items": [
   {
@@ -250,8 +250,13 @@
    "name": "obj",
    "site": "vllm/v1/kv_offload/tiering/factory.py:164",
    "class": "vllm.v1.kv_offload.tiering.obj.manager.ObjectStoreSecondaryTierManager",
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/tiering",
+    "core/connector/tiering/testdata/golden",
+    "core/vllm/offloadtiers_obj_test.go"
+   ],
+   "why": "over the CPU primary tier; each job one NIXL OBJ transfer, a transfer to or from the tier's device_class priced on its offload_tier_<device>_* coefficients, which are scenario inputs (blis-vllm#184); the probe worker timed by named substitution (blis-vllm#190); store backpressure refused (blis-vllm#13)"
   },
   {
    "id": "secondary_tier:kvcr",
