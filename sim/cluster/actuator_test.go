@@ -7,6 +7,12 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
+// left reports that a scale-down took inst out of service: Draining while it has work, Terminated
+// at once when it is idle (the default WAIT policy releases an idle instance immediately).
+func left(inst *InstanceSimulator) bool {
+	return inst.State == sim.InstanceStateDraining || inst.State == sim.InstanceStateTerminated
+}
+
 // TestDirectActuatorApply verifies DirectActuator behavior for scale-up and scale-down.
 // T020 from tasks.md — US3 acceptance scenarios 3.2, 3.3.
 func TestDirectActuatorApply(t *testing.T) {
@@ -21,7 +27,7 @@ func TestDirectActuatorApply(t *testing.T) {
 		return inst
 	}
 
-	t.Run("scale_down_transitions_to_draining", func(t *testing.T) {
+	t.Run("scale_down_drains_the_oldest", func(t *testing.T) {
 		// Two active instances for model "m1" with variant A100/TP=1.
 		// Scale-down should drain the lexicographically first (oldest) instance.
 		cs := newTestCluster(newTestDeploymentConfig(1), NewSliceRequestSource(nil), nil)
@@ -38,8 +44,8 @@ func TestDirectActuatorApply(t *testing.T) {
 		}
 
 		// inst-a sorts before inst-b — inst-a should be drained
-		if inst2.State != sim.InstanceStateDraining {
-			t.Errorf("inst-a State = %q, want Draining (oldest by ID)", inst2.State)
+		if left(inst2) != true {
+			t.Errorf("inst-a State = %q, want it drained (oldest by ID)", inst2.State)
 		}
 		if inst1.State != sim.InstanceStateActive {
 			t.Errorf("inst-b State = %q, want Active (not selected)", inst1.State)
@@ -78,8 +84,8 @@ func TestDirectActuatorApply(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Apply returned error: %v", err)
 		}
-		if active.State != sim.InstanceStateDraining {
-			t.Errorf("active inst State = %q, want Draining", active.State)
+		if !left(active) {
+			t.Errorf("active inst State = %q, want it drained", active.State)
 		}
 	})
 
@@ -114,8 +120,8 @@ func TestDirectActuatorApply(t *testing.T) {
 		if err == nil {
 			t.Error("Apply should return error for partial scale-down failure")
 		}
-		if inst.State != sim.InstanceStateDraining {
-			t.Errorf("inst State = %q, want Draining (first iteration should succeed)", inst.State)
+		if !left(inst) {
+			t.Errorf("inst State = %q, want it drained (first iteration should succeed)", inst.State)
 		}
 	})
 
@@ -128,19 +134,65 @@ func TestDirectActuatorApply(t *testing.T) {
 		NewDirectActuator(nil)
 	})
 
-	t.Run("id_format_is_zero_padded", func(t *testing.T) {
-		// Verify that instance IDs use zero-padded format (%06d) so lexicographic
-		// sort matches creation order even past single digits.
-		cs := newTestCluster(newTestDeploymentConfig(1), NewSliceRequestSource(nil), nil)
-		actuator := NewDirectActuator(cs)
+	t.Run("a_refused_placement_does_not_consume_an_instance_number", func(t *testing.T) {
+		// GIVEN: a pool of A100-80 GPUs. The first decision asks for a tensor-parallel degree
+		// below 1, which no placement can satisfy, so it is refused (a placement that merely finds
+		// no room waits in the pending queue instead); the second asks for a valid placement.
+		base := newTestDeploymentConfig(1)
+		base.Model = "test-model"
+		base.NodePools = []NodePoolConfig{
+			{Name: "a100-pool", GPUType: "A100-80", GPUsPerNode: 4, InitialNodes: 1, MaxNodes: 2, GPUMemoryGiB: 80},
+		}
+		cs := newTestCluster(base, NewSliceRequestSource(nil), nil)
+		cs.instances = []*InstanceSimulator{}
 
-		// Manually increment seq and check ID format
-		actuator.nextInstSeq = 9
-		expected := "autoscale-m1-000010"
-		actuator.nextInstSeq++
-		got := string(InstanceID(fmt.Sprintf("autoscale-%s-%06d", "m1", actuator.nextInstSeq)))
-		if got != expected {
-			t.Errorf("ID = %q, want %q (zero-padded for correct lexicographic order)", got, expected)
+		// WHEN: both decisions are applied.
+		err := NewDirectActuator(cs).Apply([]ScaleDecision{
+			{ModelID: "test-model", Variant: VariantSpec{GPUType: "A100-80", TPDegree: 0}, Delta: 1},
+			{ModelID: "test-model", Variant: NewVariantSpec("A100-80", 1), Delta: 1},
+		})
+
+		// THEN: the refusal is reported, and the one instance that exists is number 1, with
+		// no gap where the refused placement would have been.
+		if err == nil {
+			t.Fatal("Apply reported no error for a placement the cluster cannot make")
+		}
+		if len(cs.instances) != 1 {
+			t.Fatalf("len(cs.instances) = %d, want 1", len(cs.instances))
+		}
+		if got, want := string(cs.instances[0].ID()), "autoscale-test-model-000001"; got != want {
+			t.Errorf("instance ID = %q, want %q (a refused placement must not use up a number)", got, want)
+		}
+	})
+
+	t.Run("queued_placements_take_consecutive_numbers_after_the_placed_one", func(t *testing.T) {
+		// GIVEN: one node of 3 GPUs and a decision for three TP2 replicas: one fits, the other two
+		// find no room and wait in the pending queue.
+		base := newTestDeploymentConfig(1)
+		base.Model = "test-model"
+		base.NodePools = []NodePoolConfig{
+			{Name: "a100-pool", GPUType: "A100-80", GPUsPerNode: 3, InitialNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80},
+		}
+		cs := newTestCluster(base, NewSliceRequestSource(nil), nil)
+		cs.instances = []*InstanceSimulator{}
+
+		// WHEN: the decision is applied.
+		if err := NewDirectActuator(cs).Apply([]ScaleDecision{{ModelID: "test-model", Variant: NewVariantSpec("A100-80", 2), Delta: 3}}); err != nil {
+			t.Fatal(err)
+		}
+
+		// THEN: the placed replica is number 1 and the two waiting ones are numbers 2 and 3, each
+		// its own, so the instances they become never share an ID.
+		if len(cs.instances) != 1 || string(cs.instances[0].ID()) != "autoscale-test-model-000001" {
+			t.Fatalf("placed instances = %v, want exactly autoscale-test-model-000001", cs.instances)
+		}
+		var got []string
+		for _, p := range cs.placement.pendingInsts {
+			got = append(got, string(p.id))
+		}
+		want := []string{"autoscale-test-model-000002", "autoscale-test-model-000003"}
+		if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+			t.Errorf("pending placement IDs = %v, want %v", got, want)
 		}
 	})
 
@@ -226,7 +278,7 @@ func TestDirectActuatorApply(t *testing.T) {
 		}
 	})
 
-	t.Run("scale_up_no_capacity_returns_error", func(t *testing.T) {
+	t.Run("scale_up_no_capacity_queues_the_rest", func(t *testing.T) {
 		// GIVEN: node has 2 GPU slots; NumInstances=1 consumes 1 at startup, leaving 1 available.
 		// Requesting Delta=2 means: first placement succeeds, second exhausts capacity.
 		base := newTestDeploymentConfig(1)
@@ -242,9 +294,13 @@ func TestDirectActuatorApply(t *testing.T) {
 			{ModelID: "test-model", Variant: NewVariantSpec("A100-80", 1), Delta: 2},
 		})
 
-		// THEN: first succeeds, second fails — Apply returns error.
-		if err == nil {
-			t.Error("Apply should return error when placement capacity is exhausted")
+		// THEN: first succeeds; the second waits for a node in the pending queue (#741) and is
+		// not reported as a failure.
+		if err != nil {
+			t.Errorf("Apply returned %v; a replica with no room waits in the pending queue", err)
+		}
+		if n := len(cs.placement.Pending()); n != 1 {
+			t.Errorf("%d pending placement(s), want the one replica that did not fit", n)
 		}
 		// And 1 instance was created (first iteration succeeded).
 		if len(cs.instances) != 1 {

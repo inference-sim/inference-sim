@@ -4,10 +4,12 @@
 package cluster
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/trace"
 	"github.com/sirupsen/logrus"
 )
 
@@ -17,6 +19,9 @@ import (
 type DirectActuator struct {
 	cluster     *ClusterSimulator
 	nextInstSeq int // monotonic counter for generating unique instance IDs
+	// drainPolicy is how scale-down drains an instance (InstanceLifecycleConfig.DrainPolicy),
+	// resolved once at construction; WAIT when the config states none (#910).
+	drainPolicy DrainPolicy
 }
 
 // NewDirectActuator constructs a DirectActuator. Panics if cluster is nil.
@@ -24,7 +29,11 @@ func NewDirectActuator(cluster *ClusterSimulator) *DirectActuator {
 	if cluster == nil {
 		panic("NewDirectActuator: cluster must not be nil")
 	}
-	return &DirectActuator{cluster: cluster}
+	name := DrainPolicyName(cluster.config.InstanceLifecycle.DrainPolicy)
+	if name == "" {
+		name = DrainPolicyWait
+	}
+	return &DirectActuator{cluster: cluster, drainPolicy: NewDrainPolicy(name)}
 }
 
 // Apply processes scale decisions. For Delta > 0, places new instances.
@@ -34,6 +43,7 @@ func NewDirectActuator(cluster *ClusterSimulator) *DirectActuator {
 func (a *DirectActuator) Apply(decisions []ScaleDecision) error {
 	var errs []error
 	for _, d := range decisions {
+		before := a.modelReplicas(d.ModelID)
 		if d.Delta > 0 {
 			if err := a.scaleUp(d); err != nil {
 				errs = append(errs, err)
@@ -43,11 +53,38 @@ func (a *DirectActuator) Apply(decisions []ScaleDecision) error {
 				errs = append(errs, err)
 			}
 		}
+		a.recordScale(d, before)
 	}
 	if len(errs) > 0 {
 		return fmt.Errorf("actuator: %d operation(s) failed; first: %w", len(errs), errs[0])
 	}
 	return nil
+}
+
+// modelReplicas counts the model's instances that are serving or coming up: not draining or terminated.
+func (a *DirectActuator) modelReplicas(model string) int {
+	n := 0
+	for _, inst := range a.cluster.instances {
+		if inst.Model == model && inst.State != sim.InstanceStateDraining && inst.State != sim.InstanceStateTerminated {
+			n++
+		}
+	}
+	return n
+}
+
+// recordScale writes the decision, as applied, to the decision trace (level decisions) (#743).
+func (a *DirectActuator) recordScale(d ScaleDecision, before int) {
+	if a.cluster.trace == nil || d.Delta == 0 {
+		return
+	}
+	trigger := "required_capacity"
+	if d.Delta < 0 {
+		trigger = "spare_capacity"
+	}
+	a.cluster.trace.RecordModelScale(trace.ModelScaleRecord{Clock: a.cluster.clock, ModelID: d.ModelID,
+		GPUType: d.Variant.GPUType, TPDegree: d.Variant.TPDegree, Delta: d.Delta, OldReplicas: before,
+		NewReplicas: a.modelReplicas(d.ModelID), Trigger: trigger, Utilization: d.Utilization,
+		RequiredCapacity: d.RequiredCapacity, SpareCapacity: d.SpareCapacity})
 }
 
 // scaleUp places new instance(s) for the given decision. Returns error if any placement fails.
@@ -60,18 +97,30 @@ func (a *DirectActuator) scaleUp(d ScaleDecision) error {
 
 	var lastErr error
 	for i := 0; i < d.Delta; i++ {
-		a.nextInstSeq++
-		id := InstanceID(fmt.Sprintf("autoscale-%s-%06d", d.ModelID, a.nextInstSeq))
+		// The sequence number is committed only once the placement succeeds, so a refused
+		// placement leaves no gap in the autoscale-<model>-NNNNNN IDs.
+		id := InstanceID(fmt.Sprintf("autoscale-%s-%06d", d.ModelID, a.nextInstSeq+1))
 
 		// Reserve GPU slots. GPUType comes from the scale decision (variant-authoritative).
 		nodeID, gpuIDs, matchedGPU, err := a.cluster.placement.PlaceInstance(
 			id, d.ModelID, d.Variant.GPUType, d.Variant.TPDegree,
 		)
 		if err != nil {
+			if errors.Is(err, ErrNoCapacity) {
+				// No Ready node has room: the replica waits in the pending queue for a node (#741),
+				// and is placed, in arrival order, when one becomes Ready. It is not dropped.
+				// The queued replica keeps this number for when it is placed; a repeat of a decision
+				// the model already has enough placements waiting for queues nothing and uses none.
+				if a.queuePending(id, d, err) {
+					a.nextInstSeq++
+				}
+				continue
+			}
 			logrus.Errorf("[actuator] scale-up for model %q variant %v: PlaceInstance failed: %v (INV-A2)", d.ModelID, d.Variant, err)
 			lastErr = err
 			continue
 		}
+		a.nextInstSeq++
 
 		// Build simCfg: start from the cluster default, then apply the pool-authoritative GPU
 		// type (SC-004, mirrors NewClusterSimulator startup path).
@@ -81,32 +130,43 @@ func (a *DirectActuator) scaleUp(d ScaleDecision) error {
 		simCfg := a.cluster.config.resolveConfigForRole(PoolRole(0))
 		simCfg.GPU = matchedGPU
 
-		// Look up CostPerHour for this GPU type (mirrors NodeReadyEvent and startup path).
-		var costPerHour float64
-		for i := range a.cluster.config.NodePools {
-			if a.cluster.config.NodePools[i].GPUType == matchedGPU {
-				costPerHour = a.cluster.config.NodePools[i].CostPerHour
-				break
-			}
-		}
 		// Record the instance's node span (mirrors the startup + deferred paths).
 		a.cluster.recordNodeSpan(gpuIDs)
 
 		// #1529: cost = distinct-nodes-spanned × pool cost_per_hour (mirrors startup +
 		// deferred paths). Single-node instances are unchanged (1×).
-		instCost := a.cluster.placement.InstanceCostPerHour(gpuIDs, costPerHour)
+		instCost := a.cluster.placement.PlacedInstanceCostPerHour(gpuIDs)
 
 		// Construct, register, and activate the instance; the gateway sees its pod when it
 		// becomes ready.
-		if !a.cluster.addLiveInstance(id, d.ModelID, simCfg, nodeID, gpuIDs, d.Variant.TPDegree, instCost) {
-			lastErr = fmt.Errorf("scale-up for model %q: instance %s could not be registered", d.ModelID, id)
-			continue
-		}
+		a.cluster.addLiveInstance(id, d.ModelID, simCfg, nodeID, gpuIDs, d.Variant.TPDegree, instCost)
 
 		logrus.Infof("[actuator] scale-up: placed instance %s for model %q on node %s (gpu=%s, tp=%d)",
 			id, d.ModelID, nodeID, matchedGPU, d.Variant.TPDegree)
 	}
 	return lastErr
+}
+
+// queuePending queues one replica of d in the placement manager's pending queue, unless the queue
+// already holds as many placements for the same model and variant as d's remaining demand asks
+// for. It reports whether it queued one.
+func (a *DirectActuator) queuePending(id InstanceID, d ScaleDecision, cause error) bool {
+	waiting := 0
+	for _, p := range a.cluster.placement.Pending() {
+		if p.ModelID == d.ModelID && p.Variant == d.Variant {
+			waiting++
+		}
+	}
+	if waiting >= d.Delta {
+		logrus.Debugf("[actuator] scale-up for model %q variant %v: %d placement(s) already pending", d.ModelID, d.Variant, waiting)
+		return false
+	}
+	simCfg := a.cluster.config.resolveConfigForRole(PoolRole(0))
+	a.cluster.placement.AddPendingAt(id, d.ModelID, d.Variant.GPUType, d.Variant.TPDegree, simCfg, a.cluster.clock)
+	logrus.Infof("[actuator] scale-up for model %q variant %v: %v; queued as pending placement %s", d.ModelID, d.Variant, cause, id)
+	// The cluster autoscaler hears of the new placement at once (#740).
+	a.cluster.runClusterAutoscaler()
+	return true
 }
 
 // scaleDown drains existing instance(s) for the given decision. Returns error if
@@ -134,8 +194,8 @@ func (a *DirectActuator) scaleDown(d ScaleDecision) error {
 			lastErr = err
 			continue // keep trying remaining iterations (next iteration may find different variant match)
 		}
-		inst.TransitionTo(sim.InstanceStateDraining)
-		logrus.Infof("[actuator] scale-down: draining instance %s for model %q", inst.ID(), d.ModelID)
+		a.drainPolicy.Drain(inst, a.cluster)
+		logrus.Infof("[actuator] scale-down: draining instance %s for model %q (%T)", inst.ID(), d.ModelID, a.drainPolicy)
 	}
 	return lastErr
 }

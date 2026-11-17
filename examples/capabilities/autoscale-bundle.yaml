@@ -1,0 +1,42 @@
+# The scaling policy for autoscale.yaml.
+#
+# node_pools: the cluster's one pool of H200 nodes, one node to start, up to four. A node takes
+# provisioning_delay to arrive.
+node_pools:
+  - name: gpu-pool
+    gpu_type: h200
+    gpus_per_node: 8
+    gpu_memory_gib: 139.80072021
+    initial_nodes: 1
+    min_nodes: 1
+    max_nodes: 4
+    cost_per_hour: 32
+    provisioning_delay: {mean: 5.0, stddev: 0}
+
+# instance_lifecycle: the replica the run starts with is pre-deployed; a replica the autoscaler adds loads for loading_delay plus the time to read
+# its weights from weight_source, and a scale-down drains it with drain_policy (WAIT lets its
+# requests finish).
+instance_lifecycle:
+  warm_start_initial_instances: true
+  loading_delay: {mean: 2.0, stddev: 0}
+  weight_source: nvme_gen4
+  drain_policy: WAIT
+
+# autoscaler: every second, add a replica per 4 requests in flight; remove all replicas once the
+# model has had no request for 5 s (scale to zero), and bring one back, holding the request that
+# found none for up to 30 s (scale from zero).
+autoscaler:
+  interval_us: 1000000
+  analyzer: {kind: threshold, signal: in_flight, target: 4, min_replicas: 0}
+  scale_to_zero_idle_us: 5000000
+  scale_from_zero_hold_us: 30000000
+
+# cluster_autoscaler: add a node when a replica has waited 1 s for room; remove an empty node of an
+# under-used pool (bin-pack), keeping at least one.
+cluster_autoscaler:
+  policy: pending-driven
+  pending_threshold_us: 1000000
+  max_nodes_per_pool: 4
+  scale_down: bin-pack
+  low_water_mark: 0.3
+  min_nodes_per_pool: 1

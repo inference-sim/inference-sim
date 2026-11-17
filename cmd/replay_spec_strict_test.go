@@ -2,10 +2,11 @@ package cmd
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/internal/substratedata"
 )
 
 // A replay descriptor controls the corpus, the phase windows, the warm-up and the acceptance
@@ -63,13 +64,11 @@ func TestLoadReplaySpec_RefusesUnknownFieldsInEveryForm(t *testing.T) {
 // valid document that loaded before must still load. The files are the substrate's example and
 // its catalog workload, read from the pinned module.
 func TestLoadReplaySpec_AcceptsTheSubstratesCommentKeys(t *testing.T) {
-	dir := func(rel string) string {
-		out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/inference-sim/blis-substrate").Output()
-		if err != nil {
-			t.Fatal(err)
-		}
-		return filepath.Join(strings.TrimSpace(string(out)), rel)
+	root, err := substratedata.Dir()
+	if err != nil {
+		t.Fatal(err)
 	}
+	dir := func(rel string) string { return filepath.Join(root, rel) }
 	for _, rel := range []string{"docs/contracts/examples/workload-replay.yaml", "catalog/workloads/agentx-mvp.yaml"} {
 		t.Run(filepath.Base(rel), func(t *testing.T) {
 			r, err := loadReplaySpec(dir(rel))

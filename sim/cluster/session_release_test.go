@@ -10,9 +10,9 @@ import (
 )
 
 // A session's next round arrives think_time after the client has the previous round's last
-// chunk, on the colocated path and the P/D path alike (SIM-8, #1913). The client sees a round
-// complete only after the post-decode overhead, which E2E includes; releasing the follow-up at
-// the engine's last step made every round arrive PostDecodeFixedOverhead early.
+// content chunk, on the colocated path and the P/D path alike (SIM-8, #2130): the instant the
+// Result's row states, arrival plus its E2E, which leaves out the post-decode overhead that follows
+// the chunk. Counting think time from the end of the overhead delayed every round by it.
 func TestSessionRelease_NextRoundFollowsClientVisibleCompletion(t *testing.T) {
 	const overhead, think = int64(5000), int64(1000)
 	for _, tc := range []struct {
@@ -27,13 +27,12 @@ func TestSessionRelease_NextRoundFollowsClientVisibleCompletion(t *testing.T) {
 			editEngine(&cfg, func(c *simConfig) { c.LatencyModel = fakeLatencyWithCoeffs(coeffs) })
 			return cfg
 		}, func(cs *ClusterSimulator, id string) (int64, bool) {
-			t, ok := cs.AggregatedMetrics().RequestCompletionTimes[id]
-			return int64(t), ok
+			return cs.AggregatedMetrics().ClientCompletionTime(id)
 		}},
 		{"pd", func() DeploymentConfig { return newTestDisaggDeploymentConfigWithOverhead(float64(overhead)) },
 			func(cs *ClusterSimulator, id string) (int64, bool) {
 				p := cs.parentRequests[id]
-				return p.CompletionTime, p != nil && p.CompletionTime > 0
+				return p.CompletionTime - overhead, p != nil && p.CompletionTime > 0
 			}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -72,7 +71,7 @@ func TestSessionRelease_NextRoundFollowsClientVisibleCompletion(t *testing.T) {
 			for i := 1; i < len(order); i++ {
 				seen, ok := tc.done(cs, order[i-1])
 				if !ok {
-					t.Fatalf("round %s has no client-visible completion", order[i-1])
+					t.Fatalf("round %s has no completion", order[i-1])
 				}
 				if got := arrival[order[i]] - seen; got != think {
 					t.Errorf("round %d arrives %d µs after round %d's last chunk, want think time %d (post-decode overhead %d)",

@@ -78,7 +78,7 @@ directories:
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout 7794a6c6277b370874fb188e1bfa8d1ae597aea1
+git -C blis-substrate checkout c48aa81d029a5d2b696e5eb3dfe5f3986132b818
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
@@ -94,9 +94,9 @@ it is stale.
 <!-- BEGIN GENERATED from stack.json: versions -->
 | Component | Version | Commit |
 |---|---|---|
-| `github.com/inference-sim/blis-substrate` | `v0.14.2-0.20261117011026-7794a6c6277b` | `7794a6c6277b` |
-| `github.com/inference-sim/blis-vllm` | `v0.32.1-0.20261117012328-0e64151389b7` | `0e64151389b7` |
-| `github.com/inference-sim/llm-d-router` | `v1.0.0-blis.4` |  |
+| `github.com/inference-sim/blis-substrate` | `v0.14.2-0.20261117153501-c48aa81d029a` | `c48aa81d029a` |
+| `github.com/inference-sim/blis-vllm` | `v0.32.1-0.20261117162711-50c139b8221b` | `50c139b8221b` |
+| `github.com/inference-sim/llm-d-router` | `v1.0.0-blis.4.0.20261117140125-6acd0a87e875` | `6acd0a87e875` |
 | vllm (engine) | `0.33.0` | `4ba787ec9959` |
 | llm-d (router) | `1.0.0` | `b9393d1a9f1d` |
 | llm-d guides | | `4427f55cb626` |

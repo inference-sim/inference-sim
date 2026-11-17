@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"gopkg.in/yaml.v3"
 )
 
 // The Result carries what the dashboard needs for its G1 conditions (design 11.3, COV-4): per
@@ -38,36 +39,86 @@ func primitivesOverlay(t *testing.T) string {
 }
 
 // primitivesOverlayFor is primitivesOverlay for a model, with the lines added to
-// gemm_eps_max_fp8 given.
+// gemm_eps_max_fp8 given (a YAML mapping). It reads the committed set, takes the two h200 entries
+// by name (and by their scope, which names the chip alone), and writes each back with its scope
+// narrowed to the model and the extra keys added; no value is copied by text, so a refit of the
+// registry cannot make the overlay stale.
 func primitivesOverlayFor(t *testing.T, model, epsLines string) string {
 	t.Helper()
 	src, err := os.ReadFile(filepath.Join(testRegistryDir(), "coefficients", "cost-model-primitives.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := string(src)
-	const base = "      scope: {hardware: [h200]}\n"
-	narrow := "      scope: {hardware: [h200], model: [" + model + "]}\n"
-	edit := func(old, add string) {
-		t.Helper()
-		if !strings.HasSuffix(old, base) {
-			t.Fatalf("anchor %q does not end in the h200 scope", old)
-		}
-		if strings.Count(body, old) != 1 {
-			t.Fatalf("the committed set has %d copies of %q; the overlay needs exactly one", strings.Count(body, old), old)
-		}
-		body = strings.Replace(body, old, strings.TrimSuffix(old, base)+narrow+add, 1)
+	var doc yaml.Node
+	if err := yaml.Unmarshal(src, &doc); err != nil {
+		t.Fatal(err)
 	}
-	edit("      value: 0.736\n      units: dimensionless\n      method: measured\n      fitted: true\n"+base, epsLines)
-	edit("      value: 113\n      units: tokens\n      method: measured\n      fitted: true\n"+base, "      ci95: [0, 1000]\n")
+	extras := map[string]string{"gemm_eps_max_fp8": epsLines, "gemm_m_half_fp8": "ci95: [0, 1000]\n"}
+	found := map[string]int{}
+	var walk func(n *yaml.Node)
+	walk = func(n *yaml.Node) {
+		// An entry is a one-key mapping, name: {value, ..., scope}.
+		if n.Kind == yaml.MappingNode && len(n.Content) == 2 && n.Content[1].Kind == yaml.MappingNode {
+			name, body := n.Content[0].Value, n.Content[1]
+			if add, ok := extras[name]; ok && narrowScope(t, body, model, add) {
+				found[name]++
+			}
+		}
+		for _, c := range n.Content {
+			walk(c)
+		}
+	}
+	walk(&doc)
+	for name := range extras {
+		if found[name] != 1 {
+			t.Fatalf("the committed set has %d h200 entries named %s, scoped to the chip alone; the overlay needs exactly one", found[name], name)
+		}
+	}
+	out, err := yaml.Marshal(&doc)
+	if err != nil {
+		t.Fatal(err)
+	}
 	dir := filepath.Join(t.TempDir(), "overlay")
 	if err := os.MkdirAll(filepath.Join(dir, "coefficients"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "coefficients", "cost-model-primitives.yaml"), []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "coefficients", "cost-model-primitives.yaml"), out, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return dir
+}
+
+// narrowScope narrows an entry whose scope is {hardware: [h200]} to the model, appends the keys of
+// add (a YAML mapping) to it, and reports whether the entry was such.
+func narrowScope(t *testing.T, entry *yaml.Node, model, add string) bool {
+	t.Helper()
+	for i := 0; i+1 < len(entry.Content); i += 2 {
+		if entry.Content[i].Value != "scope" {
+			continue
+		}
+		sc := entry.Content[i+1]
+		if sc.Kind != yaml.MappingNode || len(sc.Content) != 2 || sc.Content[0].Value != "hardware" ||
+			toJSON(nodeValue(t, sc.Content[1])) != `["h200"]` {
+			return false
+		}
+		var m yaml.Node
+		if err := yaml.Unmarshal([]byte("model: ["+model+"]\n"+strings.TrimLeft(add, " ")), &m); err != nil {
+			t.Fatal(err)
+		}
+		sc.Content = append(sc.Content, m.Content[0].Content[:2]...)
+		entry.Content = append(entry.Content, m.Content[0].Content[2:]...)
+		return true
+	}
+	return false
+}
+
+func nodeValue(t *testing.T, n *yaml.Node) any {
+	t.Helper()
+	var v any
+	if err := n.Decode(&v); err != nil {
+		t.Fatal(err)
+	}
+	return v
 }
 
 // selectedByName reads the Result's selected coefficients from a command's stdout, by name.

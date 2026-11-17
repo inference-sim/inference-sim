@@ -1,6 +1,8 @@
 package cluster
 
 import (
+	"time"
+
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -15,6 +17,10 @@ type DeploymentConfig struct {
 
 	NumInstances int
 
+	// ClusterAutoscaler configures the node-count loop (cluster_autoscaler.go, #740). The zero
+	// value is none: no node is ever provisioned beyond the pools' initial nodes.
+	ClusterAutoscaler ClusterAutoscalerConfig
+
 	// NewEngine builds an instance's engine through blis-schemas' engine.Engine contract, for a
 	// release the compatibility engine does not model (engine_version 0.33.0, GOAL.md); nil
 	// builds the compatibility engine (sim.NewEngine). It receives the instance's index in the
@@ -22,6 +28,13 @@ type DeploymentConfig struct {
 	// The build site (cmd/engine_build.go) supplies it, so this package names no engine
 	// implementation.
 	NewEngine func(index int, cfg sim.InstanceConfig) (*sim.EngineDriver, error) `json:"-" yaml:"-"`
+
+	// WeightLoadTime prices reading an instance's resident weights from a storage tier (#1215):
+	// the time for an instance of tpDegree ranks on chip gpu to load from tier. It is used when
+	// InstanceLifecycle.WeightSource names a tier; the build site supplies it from the kernel of
+	// the instance's chip, so this package prices nothing itself. An error means the tier cannot
+	// be priced for the chip, which the build site refuses before the run starts.
+	WeightLoadTime func(gpu, tier string, tpDegree int) (time.Duration, error) `json:"-" yaml:"-"`
 
 	// DPLockstepRanks is the data-parallel width of an MoE replica (#1909): each run of this
 	// many consecutive instances is one replica whose ranks step in lockstep and share one
@@ -131,6 +144,14 @@ type DeploymentConfig struct {
 
 	// Phase 1C: Model autoscaler pipeline (issue #692).
 	// Zero value is safe: ModelAutoscalerIntervalUs=0 disables the autoscaler entirely (INV-6).
+	// ScaleToZeroIdleUs, above 0, drains all of a model's replicas after that long without a request
+	// and with nothing in flight (#909). 0, the default, never does.
+	ScaleToZeroIdleUs float64 `yaml:"scale_to_zero_idle_us,omitempty"`
+	// ScaleFromZeroHoldUs, above 0, makes a request for a model with no replica start one and wait,
+	// up to that long, for it (#908); ScaleFromZeroPollUs is how often a held request looks again
+	// (0: 100 ms). 0, the default, rejects such a request as before.
+	ScaleFromZeroHoldUs            float64   `yaml:"scale_from_zero_hold_us,omitempty"`
+	ScaleFromZeroPollUs            float64   `yaml:"scale_from_zero_poll_us,omitempty"`
 	ModelAutoscalerIntervalUs      float64   `yaml:"model_autoscaler_interval_us,omitempty"`       // tick interval in μs; 0 = autoscaler disabled
 	HPAScrapeDelay                 DelaySpec `yaml:"hpa_scrape_delay,omitempty"`                   // HPA scrape lag: time from WVA metric emission to HPA acting; zero = same-tick actuation; Mean/Stddev in seconds
 	ScaleUpStabilizationWindowUs   float64   `yaml:"scale_up_stabilization_window_us,omitempty"`   // HPA scale-up stabilization window in μs; 0 = act on first signal (HPA default)
@@ -139,6 +160,13 @@ type DeploymentConfig struct {
 	// Zero values are safe: NewClusterSimulator applies WVA reference defaults
 	// (KvCacheThreshold=0.8, ScaleUpThreshold=0.8, ScaleDownBoundary=0.4, AvgInputTokens=512).
 	AutoscalerAnalyzerConfig V2SaturationAnalyzerConfig `yaml:"autoscaler_analyzer,omitempty"`
+	// AutoscalerAnalyzer selects the analyzer (inference-sim#2063): v2-saturation (the default, whose
+	// thresholds are AutoscalerAnalyzerConfig) or threshold, a target-value rule on one signal.
+	AutoscalerAnalyzer AnalyzerSelection `yaml:"autoscaler_analyzer_selection,omitempty"`
+	// CollectorWindowSize, above 0, makes the autoscaler's collector a WindowedCollector that keeps
+	// that many ticks of readings and fills the latency fields from per-tick deltas (#1141). 0, the
+	// default, uses the plain collector.
+	CollectorWindowSize int `yaml:"collector_window_size,omitempty"`
 }
 
 // resolveConfigForRole returns the configuration an instance in the given pool role is built

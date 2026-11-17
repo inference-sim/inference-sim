@@ -6,4 +6,5 @@ router:
   epp_flags:
     - --endpoint-selector=llm-d.ai/inference-serving=true
     - --endpoint-target-ports=8000
+  scrape_jitter_us: 50000
   seed: 4267288175126347664

@@ -26,7 +26,7 @@ Every `blis run` / `blis replay` obeys these; see `docs/getting-started/` and `d
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout 7794a6c6277b370874fb188e1bfa8d1ae597aea1
+git -C blis-substrate checkout c48aa81d029a5d2b696e5eb3dfe5f3986132b818
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
@@ -159,7 +159,7 @@ The cost model (blis-substrate `kernel/`, adapter blis-vllm `compat/kernelmodel`
 
 ## Post-Hoc Saturation Detection
 
-Analyzes completed runs (distinct from the real-time flow-control detector). Package `sim/saturation/`; streaming detectors `composite`, `threshold`, `backlog-drift`, `peak-rate`, each with a false-alarm calibration knob. CLI (on `run` and `replay`): `--detectors <name|comma-list|all>`, `--saturation-config <yaml>`, `--saturation-report <path>` (writes `{"final":{...},"trace":[...]}`), `--saturation-final-window <duration>`. run→replay is byte-identical (INV-13). Full mechanism, tuning knobs, and migration from the pre-#1516 flags: `docs/contributing/saturation-analyzer-extension.md`.
+Analyzes completed runs (distinct from the real-time flow-control detector). Package `sim/saturation/`: one steady-state detector (DEV-10), `settle`, classifying the measured window SETTLED, OVERLOADED or INCOMPLETE from the trend of the backlog; the earlier roster (composite, threshold, backlog-drift, peak-rate) is gone. CLI (on `run` and `replay`): `--detectors settle`, `--saturation-report <path>` (writes the verdict). Statistic and measured false-alarm rate and power: `docs/contributing/saturation-analyzer-extension.md`.
 
 ## File Organization
 
@@ -188,7 +188,7 @@ Request pipeline: Arrival → Admission → Routing → WaitQueue → Batch Form
 ### Templates & Plans
 
 - `docs/contributing/templates/design-guidelines.md` — start here when designing anything new.
-- Active plans: `docs/plans/` (gitignored). Archived design docs are gone.
+- Active plans: a local plans directory, gitignored. Archived design docs are gone.
 
 ## Active Technologies
 

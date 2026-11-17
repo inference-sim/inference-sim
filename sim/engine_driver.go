@@ -160,6 +160,10 @@ type EngineDriver struct {
 	// OnRequestDone and OnFirstToken are the cluster's callbacks, as on Simulator.
 	OnRequestDone func(req *Request, tick int64) []*Request
 	OnFirstToken  func(req *Request, at int64)
+	// OnRunState tells the cluster each time the engine starts running a request (running true)
+	// or preempts it back to its queue (running false), the transitions of SIM-8's machine that
+	// only the engine sees. Nil for a driver used without a cluster.
+	OnRunState func(req *Request, running bool)
 
 	stepIdx int
 	// preEventClock is the clock before the event running now (a group's dummy-only step restores
@@ -621,7 +625,7 @@ func (d *EngineDriver) outcome(b engine.Batch) engine.Outcome {
 		if r == nil || s.Drafts <= 0 {
 			continue
 		}
-		r.acceptCarry += d.cfg.Acceptance * float64(s.Drafts)
+		r.acceptCarry += float64(d.cfg.Acceptance * float64(s.Drafts))
 		n := min(int(r.acceptCarry), s.Drafts)
 		r.acceptCarry -= float64(n)
 		if n > 0 {
@@ -708,6 +712,7 @@ func (d *EngineDriver) kick(now int64) {
 			break
 		}
 		start, end := d.timeBatch(b, now)
+		d.Metrics.Busy.Record(d.eng, b, start, end)
 		// The worker submits a step's offload copies after its forward pass, and each copy's
 		// stream waits on the compute stream (startTierTransfer): they start when the step ends.
 		d.startTransfersAfter(b.TransfersStarted, now, end)
@@ -922,6 +927,9 @@ func (d *EngineDriver) admit(b engine.Batch, now, start int64) {
 				r.lastEnd = start
 			}
 			r.req.State = StateRunning
+			if d.OnRunState != nil {
+				d.OnRunState(r.req, true)
+			}
 			r.scheduledIdx = d.stepIdx
 			d.Metrics.RequestSchedulingDelays[s.ID] = now - r.req.ArrivalTime
 			if s.PrefixLookup && !r.lookedUp {
@@ -949,6 +957,9 @@ func (d *EngineDriver) notePreempted(b engine.Batch) {
 		d.Metrics.PreemptionCount++
 		if r := d.reqs[id]; r != nil {
 			r.req.State = StateQueued
+			if d.OnRunState != nil {
+				d.OnRunState(r.req, false)
+			}
 			r.resumed = r.emitted > 0
 		}
 	}
@@ -980,7 +991,9 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 	if d.kvEventSink != nil && len(res.KVEvents) > 0 {
 		events := make([]KVEvent, len(res.KVEvents))
 		for i, e := range res.KVEvents {
-			events[i] = KVEvent{Removed: e.Removed, Hash: e.Hash, Parent: e.Parent, Tokens: tokenIDs(e.Tokens), Tier: e.Tier}
+			events[i] = KVEvent{Removed: e.Removed, Hash: e.Hash, Parent: e.Parent, Tokens: tokenIDs(e.Tokens), Tier: e.Tier,
+				Cleared: e.Cleared, LoRAID: e.LoRAID, LoRAName: e.LoRAName, ExtraKeys: e.ExtraKeys,
+				CacheSalt: e.CacheSalt, GroupIdx: e.GroupIdx, SpecKind: e.SpecKind, SlidingWindow: e.SlidingWindow}
 		}
 		d.kvEventSink(end, events)
 	}
@@ -1290,6 +1303,14 @@ func (d *EngineDriver) SetKVEventSink(sink func(at int64, events []KVEvent)) err
 	p.EnableKVEvents()
 	d.kvEventSink = sink
 	return nil
+}
+
+// KVEventsCarryIdentity reports whether the engine's stored-block events name the adapter and the
+// extra keys that keyed each block's hash (a KVEventsCarryIdentity method on the engine). An engine
+// that does not say publishes events a router cannot tell an adapter's blocks apart by.
+func (d *EngineDriver) KVEventsCarryIdentity() bool {
+	q, ok := d.eng.(interface{ KVEventsCarryIdentity() bool })
+	return ok && q.KVEventsCarryIdentity()
 }
 
 // KVEventsRefusal is why a router cannot index the engine's KV events, for an engine that says

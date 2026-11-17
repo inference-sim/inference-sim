@@ -118,11 +118,12 @@ path. The rules:
 
 - The `cpu_dram` tier is required, and it must be the first tier: every secondary tier sits
   behind the CPU tier, as in vLLM.
-- The v0.33.0 engine models the `cpu_dram` tier only and refuses a secondary tier, such as
-  `tier: nvme_gen4` (blis-vllm#63). A secondary tier needs `spec: TieringOffloadingSpec`, and
-  its device must be one the catalog defines.
-- An object store (`s3`) is refused: vLLM reaches it through its `obj` tier, which BLIS does
-  not simulate.
+- A secondary tier is a catalog storage device below the CPU tier (`tier: nvme_gen4`, with
+  `spec: TieringOffloadingSpec`); the engine runs it as vLLM's `fs` tier. Its copies share link
+  capacity with each other and with P/D pulls. A runnable example is
+  `examples/capabilities/fs-tier.yaml` ([Capabilities Guide](capabilities.md)).
+- An object store (`s3`) is refused by name until the engine's `obj` tier is in the build
+  (blis-vllm#63); so is the peer-to-peer tier's `secondary_tiers` option.
 - `SimpleCPUOffloadConnector` takes one `cpu_dram` tier and offloads every block.
 - Another connector or spec, `prefetch_depth`, `arc` and a 0-byte tier are refused by name.
 

@@ -1,0 +1,18 @@
+# 160 distinct 2,000-token system prompts, one user each, at 20 requests/s for 20 s. Together they
+# exceed the HBM budget of examples/capabilities/cpu-tier.yaml, so a prompt's blocks are evicted
+# before its next request unless a CPU tier keeps them. Bound the run with --horizon: an
+# inference_perf workload states stages, not a request count.
+version: "1"
+seed: 42
+
+inference_perf:
+  stages:
+    - rate: 20.0
+      duration: 20
+  shared_prefix:
+    num_unique_system_prompts: 160
+    num_users_per_system_prompt: 1
+    system_prompt_len: 2000
+    question_len: 100
+    output_len: 16
+    enable_multi_turn_chat: false

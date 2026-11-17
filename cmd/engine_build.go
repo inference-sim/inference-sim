@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/engine/env"
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
@@ -574,6 +576,19 @@ func openModel() (*kernelmodel.Model, error) {
 		return nil, err
 	}
 	return build.OpenModel(kernelScenario, kernelScenarioDir, data)
+}
+
+// openChipModel opens the pool of the scenario file name in dir and sizes it, so a chip the
+// scenario cannot run on is refused when the model is opened (a node pool's variant).
+func openChipModel(name, dir string) (*engineModel, error) {
+	m, err := build.OpenModel(name, dir, mustRunData())
+	if err != nil {
+		return nil, err
+	}
+	if _, err := m.Settings(); err != nil {
+		return nil, fmt.Errorf("the scenario does not run on this chip: %w", err)
+	}
+	return m, nil
 }
 
 // expertModelConfig is the engine's model configuration as the scenario's graph states it: its
@@ -1422,7 +1437,13 @@ func (e *transferEnvironment) tierDemand(t plan.Transfer) (kernel.TransferDemand
 	key := tierKey{t.Tier, dir}
 	rate, ok := e.rates[key]
 	if !ok {
-		rate = tierRate(k, t.Tier, dir)
+		// One rate for the link, which every copy over it states (the link arbiter refuses a link
+		// stated at two). The recovered rate is a float that rounds once more than the kernel's
+		// (tierRate's probe is 2^50 bytes priced in whole nanoseconds, so it is off by under one
+		// part in 10^14), so it is raised by one part in 10^12: a copy alone then never drains later
+		// than the kernel's price, and sooner by a nanosecond per 1000 s of copy at most, which
+		// the copy's floor takes up below.
+		rate = tierRate(k, t.Tier, dir) * (1 + 1e-12)
 		e.rates[key] = rate
 	}
 	d := kernel.TransferDemand{
@@ -1433,16 +1454,14 @@ func (e *transferEnvironment) tierDemand(t plan.Transfer) (kernel.TransferDemand
 			BytesPerSecond: rate,
 		}},
 	}
+	if d.AloneTime() < price {
+		// The copy drains a little before the kernel's price: its floor is the price, so alone it
+		// costs exactly that, and a copy that shares the link still drains at the link's one rate.
+		d.Floor = price
+	}
 	if d.AloneTime() != price {
-		// The recovered rate is a float that rounds once more than the kernel's, so a copy that
-		// lands on the edge of a nanosecond can differ by one. State the rate this copy was
-		// priced at instead: the bytes over the price, widened by half a nanosecond so the
-		// truncation lands on the price itself.
-		d.Links[0].BytesPerSecond = float64(bytes) / ((float64(price) + 0.5) / float64(time.Second))
-		if d.AloneTime() != price {
-			return kernel.TransferDemand{}, fmt.Errorf("the demand of a copy of %d bytes %s tier %q costs %v alone but "+
-				"the kernel prices it at %v", bytes, dirName(dir), t.Tier, d.AloneTime(), price)
-		}
+		return kernel.TransferDemand{}, fmt.Errorf("the demand of a copy of %d bytes %s tier %q costs %v alone but "+
+			"the kernel prices it at %v", bytes, dirName(dir), t.Tier, d.AloneTime(), price)
 	}
 	if err := d.Check(); err != nil {
 		return kernel.TransferDemand{}, err
@@ -1467,4 +1486,72 @@ func tierRate(k kernel.Kernel, tier string, dir kernel.Direction) float64 {
 		}
 	}
 	return 0
+}
+
+// Instance loading time from the instance's weights (#1215).
+//
+// A policy bundle's instance_lifecycle.weight_source names a catalog storage tier. An instance
+// then loads in loading_delay (what does not depend on its weights) plus the time to read its
+// resident weights from that tier. The weights are the cost model's own per-rank figure (the bytes
+// it sizes KV against, design SUB-14), so a larger model, a wider tensor
+// parallelism or a quantised checkpoint changes the delay with no extra input. The rate is the
+// registry's offload_tier_<tier>_* entries for the instance's chip, read through the kernel's
+// TierTime, so a faster chip or tier loads faster and a chip the registry has no entry for is
+// refused by name.
+
+// weightLoadTime is the time for an instance of tpDegree ranks to read its resident weights
+// from tier on kernel k. The weights are the kernel's per-rank figure (FixedBytes, the bytes the
+// cost model itself sizes KV against); every rank on a node reads at once and shares the tier
+// (TierTime's queue depth), and the nodes of a multi-node instance read in parallel, so one
+// node's time is the instance's. At this pin the engine's PoolPlan does not yet state resident
+// weights (https://github.com/inference-sim/blis-latency-kernel/issues/84), so the kernel is the one source; when the plan does, this is
+// the figure to replace. Weights kept in host memory are not in the kernel's figure and are not
+// priced here.
+func weightLoadTime(k kernel.Kernel, gpusPerNode int, tier string, tpDegree int) (time.Duration, error) {
+	ranksOnNode := max(1, min(tpDegree, gpusPerNode))
+	bytes := k.FixedBytes().Weights
+	d := k.TierTime(tier, kernel.DirectionFromTier, bytes, ranksOnNode)
+	if d < 0 || d >= time.Duration(math.MaxInt64/4) {
+		return 0, fmt.Errorf("weight_source %q: the kernel cannot price a read of %d bytes from it", tier, bytes)
+	}
+	return d, nil
+}
+
+// weightLoader returns DeploymentConfig.WeightLoadTime: it prices an instance on the kernel of
+// its pool's chip, the variant for a chip other than the scenario's own (withPoolChips) and the
+// scenario's opened kernel otherwise.
+func weightLoader(def *engineModel, variants map[string]*poolChip) func(gpu, tier string, tpDegree int) (time.Duration, error) {
+	return func(gpu, tier string, tpDegree int) (time.Duration, error) {
+		m := def
+		if v, ok := variants[strings.ToLower(gpu)]; ok {
+			m = v.model
+		}
+		return weightLoadTime(m.Kernel(), m.Packaging().GPUsPerNode, tier, tpDegree)
+	}
+}
+
+// requireWeightSource refuses, before the run starts, a weight source that the kernel of any
+// chip the run places instances on cannot price. The refusal names the chip and the registry
+// entries the tier needs (the TierTime of a tier with no entry is unbounded, never zero).
+func requireWeightSource(tier string, def *engineModel, variants map[string]*poolChip) {
+	if tier == "" {
+		return
+	}
+	chips := map[string]*engineModel{gpu: def}
+	for _, v := range variants {
+		chips[v.chip] = v.model
+	}
+	names := make([]string, 0, len(chips))
+	for c := range chips {
+		names = append(names, c)
+	}
+	slices.Sort(names)
+	for _, c := range names {
+		if d := chips[c].Kernel().TierTime(tier, kernel.DirectionFromTier, 1, 1); d < 0 || d >= time.Duration(math.MaxInt64/4) {
+			logrus.Fatalf("policy bundle instance_lifecycle.weight_source %q cannot be priced on chip %q: the coefficient sets "+
+				"of the scenario carry no %s, %s and %s for it (the registry set cost-model-offload-tiers; the catalog's "+
+				"storage tiers are in catalog/devices/storage.yaml)", tier, c, coefficient.OffloadTierReadRate(tier),
+				coefficient.OffloadTierWriteRate(tier), coefficient.OffloadTierBaseLatency(tier))
+		}
+	}
 }
