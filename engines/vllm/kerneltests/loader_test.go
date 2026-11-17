@@ -88,7 +88,7 @@ func fixtureInputsAt(t testing.TB, path string) Inputs {
 	scenario := filepath.Base(path)
 	// The fixture itself is committed beside this test, so it is never merely absent:
 	// a failure to read one is a malformed fixture and always a real failure.
-	sc, dep, err := LoadBundle(path)
+	sc, dep, err := schemas.LoadBundle(path)
 	if err != nil {
 		t.Fatalf("committed fixture %s: %v", scenario, err)
 	}

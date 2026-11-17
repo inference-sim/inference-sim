@@ -18,6 +18,15 @@ var summaries = map[string]struct{ title, summary string }{
 			"several tokens into one stored state are sized only where the model graph states " +
 			"its caches; a graph that does not is sized as one full-length cache per layer.",
 	},
+	"step_terms.go|(*Kernel).expertPadding|Coverage limit": {
+		"MXFP4 expert padding on other backends",
+		"The kernel pads the MXFP4 expert weights and work to the shapes the Marlin and TRTLLM " +
+			"backends allocate (hidden up to a multiple of 256, each rank's intermediate up to 128). " +
+			"The CUTLASS and DeepGEMM backends round the hidden size to 128, and the FlashInfer EP " +
+			"megakernel and b12x do not pad; the kernel does not know which backend the engine " +
+			"picked, so a deployment on those backends is priced with slightly too much expert " +
+			"weight and work.",
+	},
 	"draft.go|(*Kernel).draftHasOwnGraphs|Coverage limit": {
 		"An autoregressive drafter's own graphs",
 		"A parallel-block drafter such as DSpark is charged under its own CUDA graphs and " +
