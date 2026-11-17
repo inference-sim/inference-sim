@@ -94,6 +94,7 @@ same target with two drafters has two profiles.
 | Key | Type | Required | Meaning |
 |---|---|---|---|
 | `source` | string | yes | The document the value was read from. |
+| `sha256` | string | no | The SHA-256 of the source file, as 64 lower-case hex digits, so a reader can check it has the file the value was read from. |
 | `run` | string | no | The job that measured it, such as a GitHub Actions run. |
 | `benchmark` | string | no | The prompt set, such as `SPEED-Bench Qualitative`. |
 | `prompts` | integer | no | How many prompts it covered. Not negative. |
@@ -241,8 +242,9 @@ A profile set is invalid if
   more than 0.01 from AL − 1;
 - `method` is not recognized or is `not_charged`, or a field the method requires, per the
   table above, is missing;
-- a provenance has no `source`, a negative count, an empty setting, or sampling with no
-  `temperature`, a negative one, a `top_p` outside (0, 1] or a `top_k` below −1.
+- a provenance has no `source`, a `sha256` that is not 64 hex digits, a negative count, an
+  empty setting, or sampling with no `temperature`, a negative one, a `top_p` outside (0, 1]
+  or a `top_k` below −1.
 
 An inline value is invalid if `num_spec_tokens` is less than 1, it states no acceptance,
 it states both `acceptance_length` and `acceptance_rate`, either lies outside its range,
