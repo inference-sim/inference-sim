@@ -27,6 +27,7 @@
 #     kernel hash (kernel_impls.json) and the lane entries state it.
 attention_decode_rate_block_index_scores a100-80,a100-sxm,b200,b300,h100,h200,l40s
 attention_decode_rate_mla a100-80,a100-sxm,l40s
+attention_decode_rate_sparse_gqa a100-80,a100-sxm,b200,b300,h100,h200,l40s
 attention_decode_rate_sparse_mla a100-80,a100-sxm,b200,b300,h100,h200,l40s
 attention_prefill_rate_block_index_scores a100-80,a100-sxm,b200,b300,h100,h200,l40s
 attention_prefill_rate_sparse_mla a100-80,a100-sxm,b200,b300,h100,h200,l40s
@@ -34,6 +35,7 @@ compute_rate_fp32 a100-80,a100-sxm,b200,b300,h100,h200,l40s
 gemm_eps_max_nvfp4_grouped b200,b300
 gemm_eps_max_w4a16_mxfp4_grouped a100-80,a100-sxm,l40s
 gemm_eps_max_w4a16_nvfp4_grouped a100-80,a100-sxm,l40s
+host_gather_rate_uva a100-80,a100-sxm,b200,b300,l40s
 recurrent_decode_floor_gdn a100-80,a100-sxm,l40s
 recurrent_decode_floor_kda a100-80,a100-sxm,l40s
 recurrent_decode_floor_mamba2 a100-80,a100-sxm,l40s

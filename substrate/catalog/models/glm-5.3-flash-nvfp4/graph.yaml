@@ -95,6 +95,12 @@ layer_kinds:
   - op: Elementwise
     role: hc_ffn_mix
     bytes_per_token: 114848
+  - op: GEMM
+    role: router
+    n: 288
+    k: 4096
+    tp: replicated
+    weight_dtype: bf16
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -103,13 +109,21 @@ layer_kinds:
     experts: 288
     top_k: 8
     weight_dtype: nvfp4
-  - op: GroupedGEMM
-    shared: true
-    role: shared_experts
-    n: 2048
+  - op: GEMM
+    role: shared_gate_up
+    n: 4096
     k: 4096
-    experts: 1
-    top_k: 1
+    tp: column
+    weight_dtype: bf16
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 12288
+  - op: GEMM
+    role: shared_down
+    n: 4096
+    k: 2048
+    tp: row
     weight_dtype: bf16
   - op: All2All
     role: moe_dispatch_combine
@@ -152,6 +166,14 @@ layer_kinds:
     - 16
   - - 16
     - 17
+  - - 17
+    - 18
+  - - 18
+    - 19
+  - - 19
+    - 20
+  - - 20
+    - 21
 - id: kda_dense
   nodes:
   - op: GEMM
@@ -244,6 +266,7 @@ layer_kinds:
     role: qkv_a_proj
     n: 2048
     k: 4096
+    tp: replicated
     weight_dtype: bf16
   - &id013
     op: Elementwise
@@ -267,32 +290,38 @@ layer_kinds:
     n: 4096
     k: 1536
     weight_dtype: bf16
+    tp: replicated
   - &id017
     op: GEMM
     role: index_wk_weights_proj
     n: 160
     k: 4096
     weight_dtype: bf16
+    tp: replicated
   - &id018
     op: GEMM
     role: index_head_gate_proj
     n: 32
     k: 4096
     weight_dtype: fp32
+    tp: replicated
   - &id019
     op: GEMM
     role: index_kpool_compress_gate
     n: 128
     k: 4096
     weight_dtype: bf16
+    tp: replicated
   - &id020
     op: Elementwise
     role: index_kpool_compress
     bytes_per_token: 1825
+    tp: replicated
   - &id021
     op: Elementwise
     role: index_k_norm
     bytes_per_token: 512
+    tp: replicated
   - &id022
     op: Attention
     holds_engine_kv: false
@@ -302,6 +331,7 @@ layer_kinds:
     n_kv: 1
     d_h: 128
     compress_ratio: 4
+    tp: replicated
   - &id023
     op: Attention
     holds_engine_kv: true
@@ -330,6 +360,12 @@ layer_kinds:
   - op: Elementwise
     role: hc_ffn_mix
     bytes_per_token: 114848
+  - op: GEMM
+    role: router
+    n: 288
+    k: 4096
+    tp: replicated
+    weight_dtype: bf16
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -338,13 +374,21 @@ layer_kinds:
     experts: 288
     top_k: 8
     weight_dtype: nvfp4
-  - op: GroupedGEMM
-    shared: true
-    role: shared_experts
-    n: 2048
+  - op: GEMM
+    role: shared_gate_up
+    n: 4096
     k: 4096
-    experts: 1
-    top_k: 1
+    tp: column
+    weight_dtype: bf16
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 12288
+  - op: GEMM
+    role: shared_down
+    n: 4096
+    k: 2048
+    tp: row
     weight_dtype: bf16
   - op: All2All
     role: moe_dispatch_combine
@@ -393,6 +437,14 @@ layer_kinds:
     - 19
   - - 19
     - 20
+  - - 20
+    - 21
+  - - 21
+    - 22
+  - - 22
+    - 23
+  - - 23
+    - 24
 - id: mtp_moe
   nodes:
   - op: Elementwise
@@ -422,6 +474,12 @@ layer_kinds:
   - *id025
   - op: Elementwise
     role: post_attn_norm
+  - op: GEMM
+    role: router
+    n: 288
+    k: 4096
+    tp: replicated
+    weight_dtype: bf16
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -429,7 +487,22 @@ layer_kinds:
     k: 4096
     experts: 288
     top_k: 8
-    shared_experts: 1
+    weight_dtype: bf16
+  - op: GEMM
+    role: shared_gate_up
+    n: 4096
+    k: 4096
+    tp: column
+    weight_dtype: bf16
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 12288
+  - op: GEMM
+    role: shared_down
+    n: 4096
+    k: 2048
+    tp: row
     weight_dtype: bf16
   - op: All2All
     role: moe_dispatch_combine
@@ -484,6 +557,14 @@ layer_kinds:
     - 21
   - - 21
     - 22
+  - - 22
+    - 23
+  - - 23
+    - 24
+  - - 24
+    - 25
+  - - 25
+    - 26
 stack:
   prologue:
   - kda_dense

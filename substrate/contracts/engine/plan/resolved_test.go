@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -17,7 +18,8 @@ func TestValidateResolvedRefusesEachMeaninglessSettingByName(t *testing.T) {
 		DecodeContext: DecodeContextPlan{Combine: CombineAllToAll, Interleave: 16},
 		Engram:        EngramPlacement{Host: true, Shards: 2},
 		Graphs:        GraphPolicy{Decode: LaunchGraph, Other: LaunchPiecewise, Ceiling: 512},
-		Drafts:        DraftPolicy{RetainedTokens: 2}, InFlight: 2}
+		Drafts:        DraftPolicy{RetainedTokens: 2}, InFlight: 2,
+		Launches: []LaunchChange{{FromTokens: 1, ToTokens: 128, PerLayer: -3}, {FromTokens: 129, ToTokens: 256, PerLayer: -2}}}
 	if err := ok.ValidateResolved(); err != nil {
 		t.Fatalf("a plan of meaningful values is refused: %v", err)
 	}
@@ -36,6 +38,7 @@ func TestValidateResolvedRefusesEachMeaninglessSettingByName(t *testing.T) {
 		{"Cache.LatentCellBytes", func(p *PoolPlan) { p.Cache.LatentCellBytes = -1 }},
 		{"Cache.StateElementBytes", func(p *PoolPlan) { p.Cache.StateElementBytes = -1 }},
 		{"MoE.RedundantExperts", func(p *PoolPlan) { p.MoE.RedundantExperts = -1 }},
+		{"MoE.Routing", func(p *PoolPlan) { p.MoE.Routing = "inline" }},
 		{"DecodeContext.Combine", func(p *PoolPlan) { p.DecodeContext.Combine = "ring" }},
 		{"DecodeContext.Interleave", func(p *PoolPlan) { p.DecodeContext.Interleave = -1 }},
 		{"Engram.Shards", func(p *PoolPlan) { p.Engram.Shards = -1 }},
@@ -44,8 +47,15 @@ func TestValidateResolvedRefusesEachMeaninglessSettingByName(t *testing.T) {
 		{"Graphs.Ceiling", func(p *PoolPlan) { p.Graphs.Ceiling = -1 }},
 		{"Drafts.RetainedTokens", func(p *PoolPlan) { p.Drafts.RetainedTokens = -1 }},
 		{"InFlight", func(p *PoolPlan) { p.InFlight = -1 }},
+		{"Launches[0] covers 0 to 128", func(p *PoolPlan) { p.Launches = []LaunchChange{{ToTokens: 128, PerLayer: -3}} }},
+		{"Launches[0] covers 129 to 128", func(p *PoolPlan) { p.Launches = []LaunchChange{{FromTokens: 129, ToTokens: 128, PerLayer: -3}} }},
+		{"Launches[0] changes no launch", func(p *PoolPlan) { p.Launches = []LaunchChange{{FromTokens: 1, ToTokens: 8}} }},
+		{"Launches[1] (100 to 256 tokens) overlaps Launches[0]", func(p *PoolPlan) {
+			p.Launches = []LaunchChange{{FromTokens: 1, ToTokens: 128, PerLayer: -3}, {FromTokens: 100, ToTokens: 256, PerLayer: -2}}
+		}},
 	} {
 		p := ok
+		p.Launches = slices.Clone(ok.Launches)
 		c.edit(&p)
 		err := p.ValidateResolved()
 		if err == nil || !strings.Contains(err.Error(), c.field) {

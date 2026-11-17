@@ -512,8 +512,8 @@ func (n Node) validate(p *validate.Problems, at string) {
 		if n.CompressRatio < 0 {
 			p.Field(at+".compress_ratio", "must be positive, got %d", n.CompressRatio)
 		}
-		if n.Op != OpAttention || n.AttentionKind != AttentionSparseMLA {
-			p.Field(at+".compress_ratio", "only priced by a sparse_mla attention node")
+		if n.Op != OpAttention || !n.AttentionKind.Sparse() {
+			p.Field(at+".compress_ratio", "only priced by a sparse_mla or sparse_gqa attention node")
 		}
 	}
 
@@ -522,8 +522,14 @@ func (n Node) validate(p *validate.Problems, at string) {
 	// positivity and the index_topk-or-compress_ratio requirement are checked in the
 	// sparse-MLA branch below, so this guard only polices placement -- reporting the
 	// negative value there too would double-report the one in the branch.
-	if n.IndexTopK != 0 && (n.Op != OpAttention || n.AttentionKind != AttentionSparseMLA) {
-		p.Field(at+".index_topk", "only priced by a sparse_mla attention node")
+	if n.IndexTopK != 0 && (n.Op != OpAttention || !n.AttentionKind.Sparse()) {
+		p.Field(at+".index_topk", "only priced by a sparse_mla or sparse_gqa attention node")
+	}
+
+	// conv_dilation spaces a short convolution's taps, so any other node that states it
+	// would price a convolution it does not run.
+	if n.ConvDilation != 0 && (n.Op != OpRecurrentUpdate || n.RecurrentKind != RecurrentShortConv) {
+		p.Field(at+".conv_dilation", "only priced by a short_conv recurrent node")
 	}
 
 	switch n.Op {
@@ -611,13 +617,49 @@ func (n Node) validate(p *validate.Problems, at string) {
 					"sparse MLA requires a positive index_topk, compress_ratio or window")
 			}
 		}
+		// A sparse-GQA node is one of two things. The main node reads the engine's KV and
+		// is narrowed by a budget of selected tokens, so it needs index_topk. The
+		// indexer's scorer reads a key cache compressed by compress_ratio, so it needs
+		// that. Either alone says nothing about which cost the node prices; a main node
+		// with a ratio, or a scorer with a budget, would price the other node's read.
+		if n.AttentionKind == AttentionSparseGQA && n.HoldsEngineKV != nil {
+			switch {
+			case n.IndexTopK < 0:
+				p.Field(at+".index_topk", "must be positive, got %d", n.IndexTopK)
+			case *n.HoldsEngineKV && n.IndexTopK < 1:
+				p.Field(at+".index_topk", "sparse GQA that reads the engine's KV requires a positive index_topk")
+			case !*n.HoldsEngineKV && n.CompressRatio < 1:
+				p.Field(at+".compress_ratio", "a sparse GQA indexer scorer requires a positive compress_ratio")
+			}
+			if *n.HoldsEngineKV && n.CompressRatio != 0 {
+				p.Field(at+".compress_ratio", "the main sparse GQA node reads one entry per token; the compressed key cache belongs to the indexer scorer node")
+			}
+			if !*n.HoldsEngineKV && n.IndexTopK != 0 {
+				p.Field(at+".index_topk", "the indexer scorer scores every compressed entry; the budget belongs to the main sparse GQA node")
+			}
+		}
 		forbid(p, at, map[string]int{"experts": n.Experts, "state_size": n.StateSize})
 	case OpRecurrentUpdate:
 		if !n.RecurrentKind.Valid() {
 			p.Field(at+".recurrent_kind", "%q is not a recognized recurrent kind", n.RecurrentKind)
 		}
-		requirePositive(p, at, "n_heads", n.NumHeads)
-		requirePositive(p, at, "state_size", n.StateSize)
+		if n.RecurrentKind == RecurrentShortConv {
+			// A short convolution has no recurrent state to size: heads, state_size and
+			// groups would price a state it does not keep.
+			requirePositive(p, at, "conv_kernel", n.ConvKernel)
+			requirePositive(p, at, "intermediate_size", n.IntermediateSize)
+			for name, v := range map[string]int{"n_heads": n.NumHeads, "state_size": n.StateSize, "n_groups": n.NumGroups} {
+				if v != 0 {
+					p.Field(at+"."+name, "a short_conv node keeps no recurrent state; remove it")
+				}
+			}
+			if n.ConvDilation < 0 {
+				p.Field(at+".conv_dilation", "must be positive, got %d", n.ConvDilation)
+			}
+		} else {
+			requirePositive(p, at, "n_heads", n.NumHeads)
+			requirePositive(p, at, "state_size", n.StateSize)
+		}
 		if n.RecurrentKind == RecurrentMamba2 {
 			requirePositive(p, at, "n_groups", n.NumGroups)
 			requirePositive(p, at, "conv_kernel", n.ConvKernel)

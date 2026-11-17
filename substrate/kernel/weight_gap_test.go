@@ -20,9 +20,9 @@ import (
 // Left out on both sides, each named: the MoE router (a node of its own with #228, removed from
 // the graph here so the comparison does not depend on that change); the multimodal tower, which
 // these graphs do not hold (#107 item 2); the expert biases gpt-oss stores, which the schema has
-// no field for (0.074 GiB); block-FP8 scale tensors (#122). The part is a B200, on which the
-// kernel adds no expert padding (vLLM's MXFP4 round-up to 256 hidden and 128 intermediate,
-// fused_moe/oracle/mxfp4.py:837-879, is engine lowering and is not counted here either).
+// no field for (0.074 GiB). The MXFP4 experts are allocated at
+// vLLM's padded shapes (#273): hidden up to a multiple of 256 and each rank's intermediate up to
+// 128 (fused_moe/oracle/mxfp4.py:837-879@v0.33.0), on Hopper and Blackwell alike.
 
 const gib = 1 << 30
 
@@ -46,21 +46,28 @@ func perRank(mods []ckptModule, tp int) float64 {
 }
 
 const (
-	bf16  = 2.0
-	fp8   = 1.0
-	nvfp4 = 0.5 + 1.0/16 // U8 pairs and an F8_E4M3 scale per 16
-	mxfp4 = 0.5 + 1.0/32 // U8 pairs and a U8 (E8M0) scale per 32
+	bf16 = 2.0
+	fp8  = 1.0
+	// fp8block is block-quantized FP8 with its float32 scale per 128 x 128 block (weight_scale_inv
+	// F32, quantization_config.weight_block_size [128, 128]); the graph states the scale since #239.
+	fp8block = fp8 + 4.0/(128*128)
+	nvfp4    = 0.5 + 1.0/16 // U8 pairs and an F8_E4M3 scale per 16
+	mxfp4    = 0.5 + 1.0/32 // U8 pairs and a U8 (E8M0) scale per 32
 )
 
 // gptOSS120B: openai/gpt-oss-120b@b5c939de. quant_method mxfp4 reaches the routed experts only
 // (modules_to_not_convert names self_attn, the router, the embeddings and lm_head; Mxfp4Config
 // gives every LinearBase UnquantizedLinearMethod), so attention and the head are BF16.
-func gptOSS120B() []ckptModule {
+func gptOSS120B(tp int) []ckptModule {
 	const L, H, E, I, V = 36, 2880, 128, 2880, 201088
 	q, kv := 64*64, 8*64
+	up := func(x, m int) int { return (x + m - 1) / m * m }
+	// w13 [E, 2 x I/tp, H] and w2 [E, H, I/tp] on a rank, at the padded widths; stated as the
+	// whole layer (x tp) so perRank's split gives one rank's share.
+	expertParams := float64(E*3*up(I/tp, 128)*up(H, 256)) * float64(tp)
 	return []ckptModule{
 		{L * float64(H*(q+2*kv)+q*H), bf16, false}, // qkv_proj and o_proj
-		{L * E * 3 * float64(I) * H, mxfp4, false}, // experts gate_up [5760, 2880] and down
+		{L * expertParams, mxfp4, false},           // experts gate_up and down
 		{V * H, bf16, false}, {V * H, bf16, false}, // lm_head, embed_tokens (vocab-parallel)
 	}
 }
@@ -94,18 +101,22 @@ func miniMaxM25NVFP4() []ckptModule {
 	}
 }
 
-// miniMaxM25: MiniMaxAI/MiniMax-M2.5@f710177d. FP8 block-quantized attention and experts;
+// miniMaxM25: MiniMaxAI/MiniMax-M2.5@f710177d. FP8 block-quantized attention and experts, each
+// with its float32 block scale;
 // the head is BF16 in the header ([200064, 3072]), and Fp8Config builds ParallelLMHead
 // unquantized (quantization/fp8.py:177-209@4ba787ec).
 func miniMaxM25() []ckptModule {
 	const L, H, E, I, V = 62, 3072, 256, 1536, 200064
 	q, kv := 48*128, 8*128
 	return []ckptModule{
-		{L * float64(H*(q+2*kv)+q*H), fp8, false},
-		{L * E * 3 * float64(I) * H, fp8, false},
+		{L * float64(H*(q+2*kv)+q*H), fp8block, false},
+		{L * E * 3 * float64(I) * H, fp8block, false},
 		{V * H, bf16, false}, {V * H, bf16, false},
 	}
 }
+
+// fixed is a checkpoint whose modules do not depend on the tensor-parallel width.
+func fixed(m []ckptModule) func(int) []ckptModule { return func(int) []ckptModule { return m } }
 
 // withoutRouterNodes is g without the router GEMMs the MoE change (#228) states.
 func withoutRouterNodes(g *model.Graph) *model.Graph {
@@ -131,21 +142,23 @@ func TestPlannedResidentWeightsPerRankAreTheCheckpointsBytes(t *testing.T) {
 	for _, tc := range []struct {
 		model  string
 		served model.DType // what the lowering hands over for the deployment's quantization
+		chip   string
 		tps    []int
-		ckpt   []ckptModule
+		ckpt   func(tp int) []ckptModule
 	}{
-		{"gpt-oss-120b", model.DTypeMXFP4, []int{1, 2, 4, 8}, gptOSS120B()},
-		{"kimi-k2.5-nvfp4", model.DTypeNVFP4, []int{4, 8}, kimiK25NVFP4()},
-		{"minimax-m2.5-nvfp4", model.DTypeNVFP4, []int{1, 2, 4, 8}, miniMaxM25NVFP4()},
-		{"minimax-m2.5", model.DTypeFP8, []int{2, 4, 8}, miniMaxM25()},
+		{"gpt-oss-120b", model.DTypeMXFP4, "b200", []int{1, 2, 4, 8}, gptOSS120B},
+		{"gpt-oss-120b", model.DTypeMXFP4, "h200", []int{1, 2, 4, 8}, gptOSS120B},
+		{"kimi-k2.5-nvfp4", model.DTypeNVFP4, "b200", []int{4, 8}, fixed(kimiK25NVFP4())},
+		{"minimax-m2.5-nvfp4", model.DTypeNVFP4, "b200", []int{1, 2, 4, 8}, fixed(miniMaxM25NVFP4())},
+		{"minimax-m2.5", model.DTypeFP8, "b200", []int{2, 4, 8}, fixed(miniMaxM25())},
 	} {
 		for _, tp := range tc.tps {
-			t.Run(fmt.Sprintf("%s/tp%d", tc.model, tp), func(t *testing.T) {
-				in := planCase(t, d, tc.model, "b200", 1, fmt.Sprintf("tp: %d, pp: 1, dp: 1", tp),
+			t.Run(fmt.Sprintf("%s/%s/tp%d", tc.model, tc.chip, tp), func(t *testing.T) {
+				in := planCase(t, d, tc.model, tc.chip, 1, fmt.Sprintf("tp: %d, pp: 1, dp: 1", tp),
 					func(l *plan.Lowered) { l.Plan.WeightFormat = string(tc.served) })
 				in.Model = withoutRouterNodes(in.Model)
 				got := float64(mustKernel(t, in).FixedBytes().Weights)
-				want := perRank(tc.ckpt, tp)
+				want := perRank(tc.ckpt(tp), tp)
 				if math.Abs(got-want) > 1e-6*want {
 					t.Errorf("a rank holds %.4f GiB of weights as planned; vLLM allocates %.4f GiB "+
 						"for this checkpoint (off by %+.4f GiB)", got/gib, want/gib, (got-want)/gib)

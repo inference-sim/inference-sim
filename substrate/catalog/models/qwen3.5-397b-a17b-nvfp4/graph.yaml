@@ -16,6 +16,18 @@ layer_kinds:
   nodes:
   - op: Elementwise
     role: input_norm
+  - op: GEMM
+    role: recurrent_in_proj_qkvz
+    n: 20480
+    k: 4096
+    tp: column
+    weight_dtype: bf16
+  - op: GEMM
+    role: recurrent_in_proj_ba
+    n: 128
+    k: 4096
+    tp: column
+    weight_dtype: bf16
   - op: RecurrentUpdate
     recurrent_kind: gdn
     n_heads: 64
@@ -33,6 +45,12 @@ layer_kinds:
     emit: tensor_parallel
   - op: Elementwise
     role: post_attn_norm
+  - op: GEMM
+    role: router
+    n: 512
+    k: 4096
+    tp: replicated
+    weight_dtype: bf16
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -41,14 +59,32 @@ layer_kinds:
     experts: 512
     top_k: 10
     weight_dtype: nvfp4
-  - op: GroupedGEMM
-    shared: true
-    role: shared_experts
-    n: 1024
+  - op: GEMM
+    role: shared_gate_up
+    n: 2048
     k: 4096
-    experts: 1
-    top_k: 1
+    tp: column
     weight_dtype: bf16
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 6144
+  - op: GEMM
+    role: shared_down
+    n: 4096
+    k: 1024
+    tp: row
+    weight_dtype: bf16
+  - op: GEMM
+    role: shared_expert_gate
+    n: 1
+    k: 4096
+    tp: replicated
+    weight_dtype: bf16
+  - op: Elementwise
+    role: shared_gate_mul
+    tp: replicated
+    bytes_per_token: 16384
   - op: All2All
     role: moe_dispatch_combine
     emit: expert_parallel
@@ -70,6 +106,22 @@ layer_kinds:
     - 6
   - - 6
     - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+  - - 14
+    - 15
 - id: attn_moe
   nodes:
   - op: Elementwise
@@ -98,6 +150,12 @@ layer_kinds:
     emit: tensor_parallel
   - op: Elementwise
     role: post_attn_norm
+  - op: GEMM
+    role: router
+    n: 512
+    k: 4096
+    tp: replicated
+    weight_dtype: bf16
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -106,14 +164,32 @@ layer_kinds:
     experts: 512
     top_k: 10
     weight_dtype: nvfp4
-  - op: GroupedGEMM
-    shared: true
-    role: shared_experts
-    n: 1024
+  - op: GEMM
+    role: shared_gate_up
+    n: 2048
     k: 4096
-    experts: 1
-    top_k: 1
+    tp: column
     weight_dtype: bf16
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 6144
+  - op: GEMM
+    role: shared_down
+    n: 4096
+    k: 1024
+    tp: row
+    weight_dtype: bf16
+  - op: GEMM
+    role: shared_expert_gate
+    n: 1
+    k: 4096
+    tp: replicated
+    weight_dtype: bf16
+  - op: Elementwise
+    role: shared_gate_mul
+    tp: replicated
+    bytes_per_token: 16384
   - op: All2All
     role: moe_dispatch_combine
     emit: expert_parallel
@@ -139,6 +215,18 @@ layer_kinds:
     - 8
   - - 8
     - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+  - - 14
+    - 15
 - id: mtp_moe
   nodes:
   - op: Elementwise
@@ -180,6 +268,12 @@ layer_kinds:
     emit: tensor_parallel
   - op: Elementwise
     role: post_attn_norm
+  - op: GEMM
+    role: router
+    n: 512
+    k: 4096
+    tp: replicated
+    weight_dtype: bf16
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -187,8 +281,33 @@ layer_kinds:
     k: 4096
     experts: 512
     top_k: 10
-    shared_experts: 1
     weight_dtype: bf16
+  - op: GEMM
+    role: shared_gate_up
+    n: 2048
+    k: 4096
+    tp: column
+    weight_dtype: bf16
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 6144
+  - op: GEMM
+    role: shared_down
+    n: 4096
+    k: 1024
+    tp: row
+    weight_dtype: bf16
+  - op: GEMM
+    role: shared_expert_gate
+    n: 1
+    k: 4096
+    tp: replicated
+    weight_dtype: bf16
+  - op: Elementwise
+    role: shared_gate_mul
+    tp: replicated
+    bytes_per_token: 16384
   - op: All2All
     role: moe_dispatch_combine
     emit: expert_parallel
@@ -222,6 +341,18 @@ layer_kinds:
     - 12
   - - 12
     - 13
+  - - 13
+    - 14
+  - - 14
+    - 15
+  - - 15
+    - 16
+  - - 16
+    - 17
+  - - 17
+    - 18
+  - - 18
+    - 19
 stack:
   pattern:
   - gdn_moe

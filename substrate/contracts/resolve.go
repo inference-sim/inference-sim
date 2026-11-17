@@ -77,6 +77,13 @@ func ValidateAgainstCatalog(b Bundle, catalogRoot, registryRoot string) Report {
 			field.Merge("scenario.cluster", s.Cluster.ValidatePackaging(chip))
 		}
 	}
+	// Each pool that states its own chip names a catalog entry too (SIM-17): a pool whose
+	// chip has no entry is refused here, by the pool's name and the chip's.
+	for i, pool := range s.Cluster.Pools {
+		if pool.Hardware != "" {
+			resolveFile(field, fmt.Sprintf("references.pools[%d].hardware", i), catalogRoot, "hardware", pool.Hardware)
+		}
+	}
 	if s.Cluster.Fabric != "" {
 		resolveFile(field, "references.fabric", catalogRoot, "networks", s.Cluster.Fabric)
 	}

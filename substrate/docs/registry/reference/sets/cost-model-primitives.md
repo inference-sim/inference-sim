@@ -18,6 +18,13 @@ Both constants are fitted per part and per dtype on AISimulate's GEMM sweeps. Th
 to be per part: H100 and H200 share a die and their asymptotes agree, but their knees do
 not, because the knee follows memory bandwidth rather than compute.
 
+**Grouped ramps per MoE backend** (`measured`, and `transferred` to the engine pin's build).
+Block-FP8 routed experts on Hopper are priced on the ramp of the kernel the engine runs them with,
+`gemm_{eps_max,m_half,floor}_fp8_grouped_<backend>` for Triton's fused experts and FlashInfer's
+CUTLASS experts, with a per-layer floor. Each value is keyed (`kernel_impls`) to the build its
+AISimulate rows exercised and moved to the pin's build with that build as `measured_on`
+(scripts/fit_hopper_fp8_grouped_ramp.py).
+
 **MoE routing imbalance** (`measured`). The ratio of grouped-GEMM latency under a skewed
 expert distribution to the same shape under a balanced one, as the median and 90th
 percentile over many paired shapes. Not a curve fit, so `fitted: false`.

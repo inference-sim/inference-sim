@@ -104,10 +104,10 @@ stated value the scenario's validator would refuse is an error. Citations are to
 | Key | Type | Required | Meaning |
 |---|---|---|---|
 | `scenario` | string | yes | One of the [replay scenarios](vocabularies.md#replay-scenarios). |
-| `harness_version` | string | yes | The harness release the replay reproduces. `0.12.0` for `inferencex-agentx-mvp`. |
+| `harness_version` | string | yes | The harness release the replay reproduces. `0.12.0` for both scenarios. |
 | `corpus` | mapping | yes | The traces, below. |
 | `random_seed` | integer | no | Seeds lane snapshots and prompt content. Omitted, 42. (aiperf alone would draw a random seed.) |
-| `benchmark_duration_s` | number | no | The sending window, at least 900. Omitted, 1800. |
+| `benchmark_duration_s` | number | no | The sending window. Under `inferencex-agentx-mvp`, at least 900, and omitted it is 1800. Under `aiperf-constant-load` it is required, with no floor, because aiperf without `--scenario` has no default. |
 | `grace_period_s` | number | no | How long requests in flight at the window's end may finish. Not negative; `.inf` waits indefinitely. Omitted, 30. |
 | `max_context_length` | integer or `max_model_len` | no | Drops every trace whose recorded peak prompt plus output exceeds it. `max_model_len` is the deployment's resolved context length. Omitted, no filter. |
 | `cache_bust` | string | no | Must be `first_turn_prefix`, its default: one marker per session tree. |
@@ -125,6 +125,9 @@ stated value the scenario's validator would refuse is an error. Citations are to
 | `thinking` | string | no | `on` or `off`. Selects the profile with `category`. |
 | `acceptance` | mapping | no | The run's own acceptance, an [inline value](acceptance.md#inline-values). |
 | `routing` | mapping | no | The traffic's own measured routing imbalance, an [inline value](routing.md#inline-values). Outranks the registry's. |
+| `load` | mapping | `aiperf-constant-load` | How the constant-load scenario holds its load, below. Refused for any other scenario. |
+
+Under `aiperf-constant-load`, `system_idle_gap_cap_s`, `trajectory_start` and `warmup` are refused, because only the agentic replay strategy reads them, and `trace_idle_gap_cap_s` is stated in `load`. The scenario's other locks do not apply.
 
 ### Catalog replay workload
 
@@ -173,6 +176,24 @@ in [0, 1]. The scenario fills [0, 1]; unlike its locks, aiperf honours a stated 
 |---|---|---|---|
 | `min_ratio` | number | no | Lower bound. Omitted, 0. |
 | `max_ratio` | number | no | Upper bound, at least `min_ratio`. Omitted, 1. |
+
+### `load`
+
+The load of an aiperf run without `--scenario` over an agentic corpus. The binding's
+`concurrency` is aiperf's `--concurrency`: the number of live root sessions. A session holds
+one slot from its first request until its root conversation's final turn returns; its
+sub-agents' requests take no slot, so requests in flight can exceed `concurrency`, and a
+session in a think-time gap holds a slot with nothing in flight. Citations are to aiperf
+commit `be53bf2953d30e46c500e6a80fc1f8b6f84bc718` (tag `v0.12.0`) in `replay.go`.
+
+<!-- fields: workload.ConstantLoad -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `recycling` | string | no | How a freed slot picks the next corpus root: one of the [session recycling rules](vocabularies.md#session-recycling-rules). Omitted, `sequential`, the Weka loader's preference. |
+| `measured_sessions` | integer | no | The sessions the measured phase may start (`--num-sessions`). Omitted, the window alone bounds the phase. A reference to a catalog entry may state it. |
+| `warmup_duration_s` | number | no | The unmeasured warmup phase's length (`--warmup-duration`), run at the same load. Omitted, no warmup phase. |
+| `trace_idle_gap_cap_s` | number | no | Positive. Within one root trace, every gap between request submissions, parent or sub-agent, is cut to this many seconds. Omitted, no gap is cut. |
 
 ### `warmup`
 

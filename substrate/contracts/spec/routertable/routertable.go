@@ -51,6 +51,13 @@ type Entry struct {
 	// Every citation on the router's side is at one of them, and each has one for the mode and
 	// one for the behaviour.
 	Revisions []string `yaml:"revisions"`
+	// Builds are the builds of the router that a run's recipe names by a version, not by a commit
+	// (a wheel such as "1.3.0.dev20260601"), with the commits each could have been made from. A
+	// build is covered only when the files that decide the mode are byte-identical at every one of
+	// those commits, so a citation at any of them shows the behaviour of the build. Absent when the
+	// entry is established for the commits in Revisions only. Resolving a build string is
+	// ResolveBuild.
+	Builds []Build `yaml:"builds,omitempty"`
 	// Policy is the llm-d policy BLIS simulates in its place, or PolicyNone when no policy is
 	// close enough and the router stays unsupported.
 	Policy Policy `yaml:"policy"`
@@ -70,6 +77,75 @@ type Entry struct {
 	// supports one field of the entry.
 	Evidence []Citation `yaml:"evidence"`
 }
+
+// Build sources: how the commits of a build were found.
+const (
+	// BuildNightly: a development wheel, built from the head of the main branch on the date in its
+	// version, at a time the recipe does not record. Its commits are every first-parent commit of
+	// main from the head at the start of that day (UTC) to the head at its end.
+	BuildNightly = "nightly"
+	// BuildRelease: a release wheel, built from the commit its release tag points to.
+	BuildRelease = "release"
+)
+
+// Build is one build of a router that a run names by version, with every commit it could be.
+//
+// A recipe pins the router by a wheel version, which is no commit. A nightly wheel is made from
+// whatever the main branch held when the nightly ran, so a single version stands for a window of
+// commits. The entry covers the build only if what decides the mode did not change inside the
+// window: each file in Files has one blob identifier at every commit of Commits. Where it changes,
+// the build is not listed, and a run on it stays unmapped.
+type Build struct {
+	// Name is the version as the recipe states it, for example "1.3.0.dev20260601" or "1.2.1".
+	// Each build of an entry once.
+	Name string `yaml:"name"`
+	// Source says how Commits were found: "nightly" or "release".
+	Source string `yaml:"source"`
+	// Window says in words how Commits were found: the dates and the rule, so a reader can redo
+	// it from the router's history.
+	Window string `yaml:"window"`
+	// Commits are every commit the build could have been made from, each a full 40-character
+	// commit, sorted, each once. For a release, the one commit of the tag.
+	Commits []string `yaml:"commits"`
+	// Files are the files that decide the mode, each with its blob identifier, the same at every
+	// commit of Commits. Every router-side citation at one of Commits is of a file listed here.
+	Files []BuildFile `yaml:"files"`
+}
+
+// BuildFile is one file that decides the mode and the git blob identifier it has at every commit
+// of its build.
+type BuildFile struct {
+	// Path is the file, from the router repository's root.
+	Path string `yaml:"path"`
+	// Blob is the file's git blob identifier (40 lower-case hex digits), as `git rev-parse
+	// <commit>:<path>` prints it at every commit of the build.
+	Blob string `yaml:"blob"`
+	// Rule names the rewrite set that makes the file's other blobs the same code, when it has
+	// more than one blob in the window: NormalFormLoggingOnly. Absent when Blob is the file's
+	// only blob at every commit.
+	Rule string `yaml:"rule,omitempty"`
+	// NormalForm is the SHA-256 (64 lowercase hex digits) of Blob's normal form under Rule, as
+	// catalog/scripts/router_normal_form.py prints it. Present exactly when Variants is.
+	NormalForm string `yaml:"normal_form,omitempty"`
+	// Variants are the file's other blobs in the window, each with the SHA-256 of its normal
+	// form, which equals NormalForm. The file then differs between the window's commits only in
+	// what Rule removes, which changes no value the router computes.
+	Variants []BuildVariant `yaml:"variants,omitempty"`
+}
+
+// BuildVariant is another blob a deciding file has inside a build's window.
+type BuildVariant struct {
+	// Blob is the git blob identifier (40 lowercase hex digits).
+	Blob string `yaml:"blob"`
+	// NormalForm is the SHA-256 of the blob's normal form under the file's Rule.
+	NormalForm string `yaml:"normal_form"`
+}
+
+// NormalFormLoggingOnly is the rule set "rust-logging-only" of catalog/scripts/router_normal_form.py:
+// delete logging statements, inline a binding that only carries a value to a deleted statement,
+// drop an unread element of a tuple binding, ignore blank lines. A difference left after these is
+// a difference in what the code computes, and the build is not covered.
+const NormalFormLoggingOnly = "rust-logging-only"
 
 // Citation is one passage of one router's code or documentation at a pinned revision.
 type Citation struct {
@@ -196,7 +272,44 @@ func (e *Entry) Covers(revision string) bool {
 			return true
 		}
 	}
+	for _, b := range e.Builds {
+		for _, c := range b.Commits {
+			if c == revision {
+				return true
+			}
+		}
+	}
 	return false
+}
+
+// CoversBuild reports whether the entry is established for the build a run's recipe names by
+// version (a wheel, for example "1.3.0.dev20260601"). An empty name is a recipe that states no
+// build, which no entry covers.
+func (e *Entry) CoversBuild(build string) bool {
+	return e.BuildOf(build) != nil
+}
+
+// BuildOf returns the entry's build of that name, or nil.
+func (e *Entry) BuildOf(build string) *Build {
+	if build == "" {
+		return nil
+	}
+	for i := range e.Builds {
+		if e.Builds[i].Name == build {
+			return &e.Builds[i]
+		}
+	}
+	return nil
+}
+
+// Revision returns the commit a point record names for the build: the newest commit of its
+// window, which the entry covers and at which the build's files are those the entry cites. Empty
+// when b is nil.
+func (b *Build) Revision() string {
+	if b == nil || len(b.Commits) == 0 {
+		return ""
+	}
+	return b.Commits[len(b.Commits)-1]
 }
 
 // Outcome is what the table says about one run's router.
@@ -249,6 +362,19 @@ func (o Outcome) Scored() bool { return o == OutcomeMapped }
 // commit). The entry is returned whenever one has the run's key, covered or not, so that a
 // reader can name it; only OutcomeMapped scores the point.
 func Resolve(entries []*Entry, router, mode string, affinityTTLS *int, revision string) (*Entry, Outcome) {
+	return resolve(entries, router, mode, affinityTTLS, func(e *Entry) bool { return e.Covers(revision) })
+}
+
+// ResolveBuild is Resolve for a run whose recipe names the router build by version, as a wheel
+// (for example "1.3.0.dev20260601"), not by a commit. The build is covered when an entry with the
+// run's key lists it among its Builds; a version the entry does not list, and a recipe that
+// states none (build ""), are OutcomeRevisionNotCovered: what the entry shows is not shown for
+// that build, so it is not inherited.
+func ResolveBuild(entries []*Entry, router, mode string, affinityTTLS *int, build string) (*Entry, Outcome) {
+	return resolve(entries, router, mode, affinityTTLS, func(e *Entry) bool { return e.CoversBuild(build) })
+}
+
+func resolve(entries []*Entry, router, mode string, affinityTTLS *int, covers func(*Entry) bool) (*Entry, Outcome) {
 	for _, e := range entries {
 		if e.Router != router || e.Mode != mode {
 			continue
@@ -258,7 +384,7 @@ func Resolve(entries []*Entry, router, mode string, affinityTTLS *int, revision 
 			continue
 		}
 		switch {
-		case !e.Covers(revision):
+		case !covers(e):
 			return e, OutcomeRevisionNotCovered
 		case e.Policy == PolicyNone:
 			return e, OutcomeNoPolicy

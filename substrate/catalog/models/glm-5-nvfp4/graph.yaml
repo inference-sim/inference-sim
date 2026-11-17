@@ -20,6 +20,7 @@ layer_kinds:
     role: qkv_a_proj
     n: 2624
     k: 6144
+    tp: replicated
     weight_dtype: bf16
   - op: Elementwise
     role: qkv_a_layernorm
@@ -38,12 +39,14 @@ layer_kinds:
     role: index_wq_b
     n: 4096
     k: 2048
+    tp: replicated
     weight_dtype: bf16
   - op: GEMM
     role: index_wk_weights_proj
     n: 160
     k: 6144
     weight_dtype: bf16
+    tp: replicated
   - op: Attention
     holds_engine_kv: false
     role: block_index_scores
@@ -51,6 +54,7 @@ layer_kinds:
     n_q: 32
     n_kv: 1
     d_h: 128
+    tp: replicated
   - op: Attention
     holds_engine_kv: true
     kind: sparse_mla
@@ -120,6 +124,7 @@ layer_kinds:
     role: qkv_a_proj
     n: 2624
     k: 6144
+    tp: replicated
     weight_dtype: bf16
   - op: Elementwise
     role: qkv_a_layernorm
@@ -138,12 +143,14 @@ layer_kinds:
     role: index_wq_b
     n: 4096
     k: 2048
+    tp: replicated
     weight_dtype: bf16
   - op: GEMM
     role: index_wk_weights_proj
     n: 160
     k: 6144
     weight_dtype: bf16
+    tp: replicated
   - op: Attention
     holds_engine_kv: false
     role: block_index_scores
@@ -151,6 +158,7 @@ layer_kinds:
     n_q: 32
     n_kv: 1
     d_h: 128
+    tp: replicated
   - op: Attention
     holds_engine_kv: true
     kind: sparse_mla
@@ -170,6 +178,12 @@ layer_kinds:
     emit: tensor_parallel
   - op: Elementwise
     role: post_attn_norm
+  - op: GEMM
+    role: router
+    n: 256
+    k: 6144
+    tp: replicated
+    weight_dtype: bf16
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -177,7 +191,22 @@ layer_kinds:
     k: 6144
     experts: 256
     top_k: 8
-    shared_experts: 1
+    weight_dtype: nvfp4
+  - op: GEMM
+    role: shared_gate_up
+    n: 4096
+    k: 6144
+    tp: column
+    weight_dtype: nvfp4
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 12288
+  - op: GEMM
+    role: shared_down
+    n: 6144
+    k: 2048
+    tp: row
     weight_dtype: nvfp4
   - op: All2All
     role: moe_dispatch_combine
@@ -214,6 +243,14 @@ layer_kinds:
     - 13
   - - 13
     - 14
+  - - 14
+    - 15
+  - - 15
+    - 16
+  - - 16
+    - 17
+  - - 17
+    - 18
 - id: mtp_moe
   nodes:
   - op: Elementwise
@@ -232,6 +269,7 @@ layer_kinds:
     role: qkv_a_proj
     n: 2624
     k: 6144
+    tp: replicated
     weight_dtype: bf16
   - op: Elementwise
     role: qkv_a_layernorm
@@ -250,12 +288,14 @@ layer_kinds:
     role: index_wq_b
     n: 4096
     k: 2048
+    tp: replicated
     weight_dtype: bf16
   - op: GEMM
     role: index_wk_weights_proj
     n: 160
     k: 6144
     weight_dtype: bf16
+    tp: replicated
   - op: Attention
     holds_engine_kv: false
     role: block_index_scores
@@ -263,6 +303,7 @@ layer_kinds:
     n_q: 32
     n_kv: 1
     d_h: 128
+    tp: replicated
   - op: Attention
     holds_engine_kv: true
     kind: sparse_mla
@@ -282,6 +323,12 @@ layer_kinds:
     emit: tensor_parallel
   - op: Elementwise
     role: post_attn_norm
+  - op: GEMM
+    role: router
+    n: 256
+    k: 6144
+    tp: replicated
+    weight_dtype: bf16
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -289,7 +336,22 @@ layer_kinds:
     k: 6144
     experts: 256
     top_k: 8
-    shared_experts: 1
+    weight_dtype: bf16
+  - op: GEMM
+    role: shared_gate_up
+    n: 4096
+    k: 6144
+    tp: column
+    weight_dtype: bf16
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 12288
+  - op: GEMM
+    role: shared_down
+    n: 6144
+    k: 2048
+    tp: row
     weight_dtype: bf16
   - op: All2All
     role: moe_dispatch_combine
@@ -332,6 +394,14 @@ layer_kinds:
     - 16
   - - 16
     - 17
+  - - 17
+    - 18
+  - - 18
+    - 19
+  - - 19
+    - 20
+  - - 20
+    - 21
 stack:
   prologue:
   - attn_dense

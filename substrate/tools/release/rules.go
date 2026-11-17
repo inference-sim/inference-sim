@@ -135,11 +135,11 @@ type Deprecation struct {
 	Text string
 }
 
-var deprecatedMarker = regexp.MustCompile(`(?:^\s*//\s*Deprecated:|\bDeprecated:\s*"|MarkDeprecated\(|\bDEPRECATED\b)`)
+var deprecatedMarker = regexp.MustCompile(`(?:^\s*//\s*Deprecated:|\bDeprecated:\s*"|MarkDeprecated\(|\bDEPRECATE[D]\b)`)
 
 // FindDeprecations returns the deprecation markers in Go source: a // Deprecated: comment,
 // a cobra command's Deprecated field, a pflag MarkDeprecated call, or a flag usage that
-// says DEPRECATED (LIF-7 says each deprecation is recorded where the feature is defined).
+// says the word in capitals (LIF-7 says each deprecation is recorded where the feature is defined).
 func FindDeprecations(file string, src []byte) []Deprecation {
 	if !strings.HasSuffix(file, ".go") || strings.HasSuffix(file, "_test.go") {
 		return nil

@@ -15,7 +15,9 @@ import (
 
 // The citations in this file are to aiperf 0.12.0's source, under src/aiperf/: the
 // scenario declaration common/scenario/inferencex_agentx_mvp.py (mvp.py below) and the
-// lock that applies it, common/scenario/validator.py.
+// lock that applies it, common/scenario/validator.py. The constant-load scenario is cited to
+// the same release (tag v0.12.0, commit be53bf2953d30e46c500e6a80fc1f8b6f84bc718), every
+// path under src/aiperf/; each such citation is path:line@be53bf29.
 
 // Replay is a Scenario's third "what traffic" arm: an agentic trace-replay workload and
 // the run's lane count. It takes one of two forms.
@@ -35,6 +37,14 @@ type Replay struct {
 	// Subagents fan out beside their parent without taking a lane, so requests in flight
 	// can far exceed it. One value: a scenario run is not a sweep (validator.py:825-837).
 	// It is the run's choice, so a catalog entry does not state it.
+	//
+	// Under the aiperf-constant-load scenario it is aiperf's --concurrency without
+	// --scenario: the number of live root sessions (cli_config.py:1951-1960@be53bf29), each
+	// holding one session slot from its first request until its root conversation's final
+	// turn returns (credit/issuer.py:320-330@be53bf29; credit/callback_handler.py:620-623@be53bf29).
+	// A sub-agent's requests inherit the root's slot and take none (credit/issuer.py:320-324@be53bf29),
+	// so requests in flight can exceed it; and a session in a think-time gap holds its slot
+	// with nothing in flight, so they can fall below it.
 	Concurrency int `yaml:"concurrency"`
 }
 
@@ -69,7 +79,7 @@ func (r *Replay) Validate() *validate.Problems {
 	if fixed := r.catalogFixedFields(); len(fixed) > 0 {
 		p.Errorf("a reference to catalog replay %q may state only the run's choices "+
 			"(concurrency, random_seed, benchmark_duration_s, grace_period_s, max_context_length, "+
-			"acceptance, routing); it also states %v, which the catalog entry fixes", r.Workload, fixed)
+			"load.measured_sessions, acceptance, routing); it also states %v, which the catalog entry fixes", r.Workload, fixed)
 	}
 	r.validateRunChoices(p)
 	return p
@@ -100,6 +110,7 @@ func (r *Replay) catalogFixedFields() []string {
 	add(d.InterTurnDelayCapS != nil, "inter_turn_delay_cap_s")
 	add(d.Category != "", "category")
 	add(d.Thinking != "", "thinking")
+	add(d.Load != nil && d.Load.fixedByCatalog(), "load")
 	return out
 }
 
@@ -107,16 +118,17 @@ func (r *Replay) catalogFixedFields() []string {
 func (r *Replay) validateRunChoices(p *validate.Problems) {
 	d := r.ReplayDefinition
 	if p.FiniteField("benchmark_duration_s", d.BenchmarkDurationS) {
-		switch {
-		case d.BenchmarkDurationS < 0:
+		// The 900 s floor belongs to the agentic scenario, which a reference does not name;
+		// Resolve checks the merged duration against the entry's own scenario.
+		if d.BenchmarkDurationS < 0 {
 			p.Field("benchmark_duration_s", "must not be negative")
-		case d.BenchmarkDurationS > 0 && d.BenchmarkDurationS < 900:
-			p.Field("benchmark_duration_s",
-				"%v is below the scenario's 900 s floor (mvp.py:32; validator.py:589-602)", d.BenchmarkDurationS)
 		}
 	}
 	if g := d.GracePeriodS; g != nil && (math.IsNaN(*g) || *g < 0) {
 		p.Field("grace_period_s", "must be a non-negative number of seconds or .inf, got %v", *g)
+	}
+	if l := d.Load; l != nil && l.MeasuredSessions < 0 {
+		p.Field("load.measured_sessions", "must not be negative")
 	}
 	if d.Acceptance != nil {
 		p.Merge("acceptance", d.Acceptance.Validate())
@@ -158,6 +170,19 @@ func (r *Replay) Resolve(entry *CatalogReplay) (*Replay, error) {
 	// and resolve without it).
 	if run.Routing != nil {
 		out.Routing = run.Routing
+	}
+	// The measured session count is what the run being reproduced started, so it is the
+	// run's choice and not the catalog entry's.
+	if run.Load != nil {
+		if entry.Load == nil {
+			return nil, fmt.Errorf("replay workload %q states a load block, but the catalog entry's scenario %s has none",
+				r.Workload, entry.Scenario)
+		}
+		l := *entry.Load
+		if run.Load.MeasuredSessions != 0 {
+			l.MeasuredSessions = run.Load.MeasuredSessions
+		}
+		out.Load = &l
 	}
 	if p := r.Validate(); !p.OK() {
 		return nil, fmt.Errorf("replay workload %q: %s", r.Workload, p.Error())
@@ -254,6 +279,81 @@ type ReplayDefinition struct {
 	// Routing is the traffic's own measured expert-parallel routing imbalance, which
 	// outranks the registry's profile for its Category (see routing.Resolve).
 	Routing *routing.Value `yaml:"routing,omitempty"`
+
+	// Load states how the aiperf-constant-load scenario holds its load. Required for that
+	// scenario and refused for any other.
+	Load *ConstantLoad `yaml:"load,omitempty"`
+}
+
+// ConstantLoad is the load of an aiperf run without --scenario over an agentic corpus: a
+// fixed number of root sessions (Replay.Concurrency) kept live, a new session started
+// whenever one ends. The harness runs it as PhaseType.CONCURRENCY with the
+// CONCURRENCY_BURST arrival pattern (timing/config.py:47@be53bf29) through RequestRateStrategy,
+// not the agentic replay strategy, so the lane, trajectory-snapshot and synthesized-warmup
+// machinery of inferencex-agentx-mvp does not run.
+type ConstantLoad struct {
+	// Recycling is the rule that picks the corpus entry a session slot starts when it
+	// frees. Omitted, it is sequential, the Weka loader's preferred strategy
+	// (dataset/loader/weka_trace.py:1056-1057@be53bf29).
+	Recycling SessionRecycling `yaml:"recycling,omitempty"`
+	// MeasuredSessions is the number of sessions the measured phase may start, aiperf's
+	// --num-sessions (cli_config.py:845-847@be53bf29; the session-count stop condition,
+	// timing/phase/stop_conditions.py:152-193@be53bf29). Zero means the phase is bounded by
+	// BenchmarkDurationS alone. It is a property of the run being reproduced, so a run states
+	// it where the workload is bound.
+	MeasuredSessions int `yaml:"measured_sessions,omitempty"`
+	// WarmupDurationS is the unmeasured warmup phase's length (--warmup-duration,
+	// cli_config.py:2263-2274@be53bf29), which runs the same load. Zero means no warmup phase:
+	// aiperf runs none unless a warmup bound is set.
+	WarmupDurationS float64 `yaml:"warmup_duration_s,omitempty"`
+	// TraceIdleGapCapS is the per-trace idle-gap cap (--trace-idle-gap-cap-seconds,
+	// cli_config.py:2178-2196@be53bf29): within one root trace, every gap between consecutive
+	// request submissions, parent and sub-agent alike, is cut to this many seconds
+	// (dataset/loader/weka_trace.py:320-345, 1545-1560@be53bf29), and turn delays are
+	// derived from the compressed timeline. Unset, no gap is cut. The scenario takes it here
+	// and refuses the definition-level trace_idle_gap_cap_s, so a document states it once.
+	TraceIdleGapCapS *float64 `yaml:"trace_idle_gap_cap_s,omitempty"`
+}
+
+// fixedByCatalog reports whether the block states anything but the run's own choice.
+func (l *ConstantLoad) fixedByCatalog() bool {
+	return l.Recycling != "" || l.WarmupDurationS != 0 || l.TraceIdleGapCapS != nil
+}
+
+// SessionRecycling is how a freed session slot picks its next corpus entry. Each value is
+// one of aiperf's --dataset-sampling-strategy samplers over the corpus's root conversations
+// (timing/phase_orchestrator.py:127-134@be53bf29); sub-agent conversations are never drawn,
+// they belong to their root.
+type SessionRecycling string
+
+const (
+	// RecyclingSequential walks the roots in corpus order and wraps to the first after the
+	// last (dataset/dataset_samplers.py:46-63@be53bf29). Deterministic.
+	RecyclingSequential SessionRecycling = "sequential"
+	// RecyclingShuffle visits every root once in a random order, then reshuffles
+	// (dataset/dataset_samplers.py:66@be53bf29). Seeded by RandomSeed.
+	RecyclingShuffle SessionRecycling = "shuffle"
+	// RecyclingRandom draws a root uniformly with replacement
+	// (dataset/dataset_samplers.py:32@be53bf29). Seeded by RandomSeed.
+	RecyclingRandom SessionRecycling = "random"
+)
+
+var sessionRecyclings = map[SessionRecycling]bool{
+	RecyclingSequential: true, RecyclingShuffle: true, RecyclingRandom: true,
+}
+
+// Valid reports whether r is a recognized recycling rule.
+func (r SessionRecycling) Valid() bool { return sessionRecyclings[r] }
+
+// AllSessionRecyclings returns every recycling rule, sorted.
+func AllSessionRecyclings() []string { return enumerate(sessionRecyclings) }
+
+// SessionRecycling returns the recycling rule, sequential when unstated.
+func (r *ReplayDefinition) SessionRecycling() SessionRecycling {
+	if r.Load != nil && r.Load.Recycling != "" {
+		return r.Load.Recycling
+	}
+	return RecyclingSequential
 }
 
 // ReplayScenario names a trace-replay scenario a harness implements. The set is closed:
@@ -266,7 +366,15 @@ type ReplayScenario string
 // against concurrency.
 const ScenarioInferenceXAgentXMVP ReplayScenario = "inferencex-agentx-mvp"
 
-var replayScenarios = map[ReplayScenario]bool{ScenarioInferenceXAgentXMVP: true}
+// ScenarioAIPerfConstantLoad is aiperf run without --scenario over an agentic corpus: a
+// constant number of live root sessions, recycled as they end, each trace's idle gaps
+// optionally capped. Sub-agent requests are kept. See ConstantLoad.
+const ScenarioAIPerfConstantLoad ReplayScenario = "aiperf-constant-load"
+
+var replayScenarios = map[ReplayScenario]bool{
+	ScenarioInferenceXAgentXMVP: true,
+	ScenarioAIPerfConstantLoad:  true,
+}
 
 // Valid reports whether s is a recognized replay scenario.
 func (s ReplayScenario) Valid() bool { return replayScenarios[s] }
@@ -277,6 +385,7 @@ func AllReplayScenarios() []string { return enumerate(replayScenarios) }
 // harnessVersions are the harness releases whose scenario behaviour is transcribed here.
 var harnessVersions = map[ReplayScenario]map[string]bool{
 	ScenarioInferenceXAgentXMVP: {"0.12.0": true},
+	ScenarioAIPerfConstantLoad:  {"0.12.0": true},
 }
 
 // AgentXLoaders are the loaders inferencex-agentx-mvp accepts (mvp.py:14-31), each with
@@ -531,6 +640,9 @@ func (r *ReplayDefinition) IdleCap() float64 {
 // global cap it has no default: the scenario's default leaves it off, so a caller must
 // distinguish an unset cap from one stated as a value.
 func (r *ReplayDefinition) TraceIdleCap() (float64, bool) {
+	if r.Load != nil && r.Load.TraceIdleGapCapS != nil {
+		return *r.Load.TraceIdleGapCapS, true
+	}
 	if r.TraceIdleGapCapS != nil {
 		return *r.TraceIdleGapCapS, true
 	}
@@ -620,6 +732,25 @@ func (r *ReplayDefinition) validateInto(p *validate.Problems) {
 	}
 	p.Merge("corpus", r.Corpus.Validate())
 
+	if g := r.GracePeriodS; g != nil && (math.IsNaN(*g) || *g < 0) {
+		p.Field("grace_period_s", "must be a non-negative number of seconds or .inf, got %v", *g)
+	}
+	if r.Scenario == ScenarioAIPerfConstantLoad {
+		r.validateConstantLoad(p)
+	} else {
+		r.validateAgenticLocks(p)
+		if r.Load != nil {
+			p.Field("load", "only the %s scenario takes a load block", ScenarioAIPerfConstantLoad)
+		}
+	}
+	acceptance.ValidateWorkloadTerms(p, r.Category, r.Thinking, r.Acceptance)
+	if r.Routing != nil {
+		p.Merge("routing", r.Routing.Validate())
+	}
+}
+
+// validateAgenticLocks refuses what inferencex-agentx-mvp's scenario validator refuses.
+func (r *ReplayDefinition) validateAgenticLocks(p *validate.Problems) {
 	if p.FiniteField("benchmark_duration_s", r.BenchmarkDurationS) {
 		switch {
 		case r.BenchmarkDurationS < 0:
@@ -628,9 +759,6 @@ func (r *ReplayDefinition) validateInto(p *validate.Problems) {
 			p.Field("benchmark_duration_s",
 				"%v is below the scenario's 900 s floor (mvp.py:32; validator.py:589-602)", r.BenchmarkDurationS)
 		}
-	}
-	if g := r.GracePeriodS; g != nil && (math.IsNaN(*g) || *g < 0) {
-		p.Field("grace_period_s", "must be a non-negative number of seconds or .inf, got %v", *g)
 	}
 	if r.CacheBust != "" && r.CacheBust != CacheBustFirstTurnPrefix {
 		p.Field("cache_bust", "the scenario requires %s, got %q (validator.py:503-544)",
@@ -682,9 +810,51 @@ func (r *ReplayDefinition) validateInto(p *validate.Problems) {
 	if r.InterTurnDelayCapS != nil {
 		p.Field("inter_turn_delay_cap_s", "the scenario forbids a per-turn delay cap (mvp.py:38; validator.py:642-693)")
 	}
-	acceptance.ValidateWorkloadTerms(p, r.Category, r.Thinking, r.Acceptance)
-	if r.Routing != nil {
-		p.Merge("routing", r.Routing.Validate())
+}
+
+// validateConstantLoad checks an aiperf run without --scenario. None of the scenario's locks
+// apply, since the harness applies the scenario's validator only when --scenario names one
+// (common/scenario/validator.py:95-96@be53bf29); what is refused is a knob that only the agentic
+// replay strategy reads, which a constant-load run never runs, and a load block that cannot
+// describe a run.
+func (r *ReplayDefinition) validateConstantLoad(p *validate.Problems) {
+	switch {
+	case !p.FiniteField("benchmark_duration_s", r.BenchmarkDurationS):
+	case r.BenchmarkDurationS <= 0:
+		// Without the scenario aiperf has no 1800 s default, so the measured window is
+		// whatever the run recorded and cannot be omitted.
+		p.Field("benchmark_duration_s", "required: the measured phase's length in seconds; aiperf without --scenario has no default")
+	}
+	agenticOnly := func(set bool, field, cite string) {
+		if set {
+			p.Field(field, "only the agentic replay strategy reads it (%s); the %s scenario does not run it", cite, ScenarioAIPerfConstantLoad)
+		}
+	}
+	agenticOnly(r.SystemIdleGapCapS != nil, "system_idle_gap_cap_s", "config/phases.py:338-352@be53bf29")
+	agenticOnly(r.TrajectoryStart != nil, "trajectory_start", "timing/strategies/agentic_replay.py:1-60@be53bf29")
+	agenticOnly(r.Warmup != nil, "warmup", "timing/strategies/agentic_replay.py:1-60@be53bf29; use load.warmup_duration_s")
+	if r.TraceIdleGapCapS != nil {
+		p.Field("trace_idle_gap_cap_s", "state the per-trace idle-gap cap in the load block, once")
+	}
+	if r.Load == nil {
+		p.Field("load", "required: the load block of the %s scenario", ScenarioAIPerfConstantLoad)
+		return
+	}
+	l := r.Load
+	if l.Recycling != "" && !l.Recycling.Valid() {
+		p.Field("load.recycling", "%q is not one of %v", l.Recycling, AllSessionRecyclings())
+	}
+	if l.MeasuredSessions < 0 {
+		p.Field("load.measured_sessions", "must not be negative")
+	}
+	if p.FiniteField("load.warmup_duration_s", l.WarmupDurationS) && l.WarmupDurationS < 0 {
+		p.Field("load.warmup_duration_s", "must not be negative")
+	}
+	if c := l.TraceIdleGapCapS; c != nil && p.FiniteField("load.trace_idle_gap_cap_s", *c) && *c <= 0 {
+		p.Field("load.trace_idle_gap_cap_s", "must be a positive number of seconds, got %v", *c)
+	}
+	if r.CacheBust != "" && !r.CacheBust.Valid() {
+		p.Field("cache_bust", "%q is not one of %v", r.CacheBust, AllCacheBusts())
 	}
 }
 

@@ -125,20 +125,62 @@ def scenario_name(model: str, gpu: str, precision: str, framework: str, par: dic
     return "-".join(parts) + ".yaml"
 
 
-def count_points(node: dict) -> int:
-    """How many points lie under one models, workloads or gpus record."""
+def count_points(node: dict, serving_not: str | None = None) -> int:
+    """How many points lie under one models, workloads or gpus record, leaving out the
+    topologies of one serving mode (the disaggregated ones are carried apart, not skipped)."""
     if "points" in node:
-        return len(node["points"])
+        return 0 if node.get("serving") == serving_not and serving_not else len(node["points"])
     for child in ("workloads", "gpus", "topologies"):
         if child in node:
-            return sum(count_points(c) for c in node[child])
+            return sum(count_points(c, serving_not) for c in node[child])
     return 0
+
+
+def disaggregated_record(model: dict, name: str | None, workload: dict, gpu: dict, topology: dict) -> dict:
+    """One prefill/decode topology, whole: every point, scored or failed, with the measured and
+    the estimator's absolute figures (this artifact states them in ms) beside the relatives.
+
+    A topology the artifact lists is kept even when BLIS cannot yet price it (`model` null for a
+    checkpoint the catalog lacks): the comparison counts the estimator's points over all of them,
+    and a point BLIS does not score is uncovered, not absent. The row of the InferenceX dump a
+    topology measures is found by the matcher (accuracy-dashboard matched.py), not here."""
+    points = []
+    for p in topology["points"]:
+        rec = point_record(p) if p.get("status") == "success" else {
+            "concurrency": p["concurrency"], "status": p["status"]}
+        for who, key in (("measured", "measured"), ("aisimulate", ESTIMATOR_BLOCK)):
+            block = p.get(key)
+            if isinstance(block, dict):
+                for m in METRICS:
+                    if block.get(f"{m}_ms") is not None:
+                        rec[f"{who}_{m}_ms"] = block[f"{m}_ms"]
+        if p.get("aisim_error"):
+            rec["aisimulate_error"] = str(p["aisim_error"]).splitlines()[0][:200]
+        points.append(rec)
+    points.sort(key=lambda r: r["concurrency"])
+    return {
+        "topology_id": topology["id"],
+        "checkpoint": model["model"],
+        "model": name,
+        "gpu": CHIPS.get(gpu["gpu"], gpu["gpu"]),
+        "workload": workload["identity"],
+        "label": workload["label"],
+        "framework": topology["framework"],
+        "precision": topology["precision"],
+        "spec_method": topology.get("spec_method") or "none",
+        "total_gpus": topology["total_gpus"],
+        "is_multinode": topology["is_multinode"],
+        "parallelism": topology["parallelism"],
+        "serving": "disaggregated",
+        "points": points,
+    }
 
 
 def extract(summary: dict, models: dict) -> dict:
     """The reachable sweeps. `selection.skipped` counts POINTS per reason, every point of the
     artifact landing in a sweep or under exactly one reason."""
     sweeps = []
+    disaggregated = []
     skipped = collections.Counter()
     for model in summary["models"]:
         names = models.get(model["model"], [])
@@ -147,8 +189,12 @@ def extract(summary: dict, models: dict) -> dict:
                              f"{len(names)} catalog models ({', '.join(names)}); which one it "
                              "measured is not stated")
         name = names[0] if names else None
+        for workload in model["workloads"]:
+            for gpu in workload["gpus"]:
+                disaggregated += [disaggregated_record(model, name, workload, gpu, t)
+                                  for t in gpu["topologies"] if t["serving"] == "disaggregated"]
         if name is None:
-            skipped["checkpoint not in catalog"] += count_points(model)
+            skipped["checkpoint not in catalog"] += count_points(model, "disaggregated")
             continue
         for workload in model["workloads"]:
             for gpu in workload["gpus"]:
@@ -159,6 +205,8 @@ def extract(summary: dict, models: dict) -> dict:
                 for topology in gpu["topologies"]:
                     serving = topology["serving"]
                     spec = topology.get("spec_method") or "none"
+                    if serving == "disaggregated":
+                        continue  # carried whole in `disaggregated`, counted by the pin
                     if serving != "aggregated" or spec != "none":
                         # Not reachable by a step-time ratio at one deployment.
                         skipped[f"serving={serving} spec={spec}"] += len(topology["points"])
@@ -199,6 +247,7 @@ def extract(summary: dict, models: dict) -> dict:
                         }
                     )
     sweeps.sort(key=lambda s: (s["model"], s["gpu"], s["scenario"], s["label"]))
+    disaggregated.sort(key=lambda d: (d["checkpoint"], d["gpu"], d["label"], d["topology_id"]))
     return {
         "source": "NVIDIA AISimulate e2e accuracy artifact (e2e-accuracy-web)",
         "measurement_source": summary["snapshot"].get("measurement_source"),
@@ -218,6 +267,7 @@ def extract(summary: dict, models: dict) -> dict:
             "skipped": dict(skipped),
         },
         "sweeps": sweeps,
+        "disaggregated": disaggregated,
     }
 
 
@@ -376,6 +426,13 @@ def main() -> int:
         print(f"error: {len(corpus['sweeps'])} sweeps, {points} points from the pinned artifact; "
               f"the pin records {want['sweeps']} and {want['points']}", file=sys.stderr)
         return 1
+    wantd = want.get("disaggregated")
+    if wantd is not None:
+        gotd = (len(corpus["disaggregated"]), sum(len(d["points"]) for d in corpus["disaggregated"]))
+        if gotd != (wantd["topologies"], wantd["points"]):
+            print(f"error: {gotd[0]} disaggregated topologies, {gotd[1]} points from the pinned "
+                  f"artifact; the pin records {wantd['topologies']} and {wantd['points']}", file=sys.stderr)
+            return 1
     with open(args.out, "w") as fh:
         json.dump(corpus, fh, indent=1, sort_keys=False)
         fh.write("\n")
