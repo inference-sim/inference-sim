@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
 )
 
 // scenarioArgs are the ServerArgs an oracle scheduler scenario states (oracle/run_sched.py
@@ -195,4 +197,52 @@ func TestSchedConfigFollowsSGLangsArithmeticWhereNoScenarioReachesIt(t *testing.
 			t.Error("want a refusal")
 		}
 	})
+}
+
+// memKernel is a cost model with fixed resident bytes; PoolPlan reads nothing else of it.
+type memKernel struct {
+	kernel.Kernel
+	weights, perToken int64
+}
+
+func (m memKernel) FixedBytes() kernel.MemoryBreakdown {
+	return kernel.MemoryBreakdown{Weights: m.weights}
+}
+func (m memKernel) SequenceVariableBytes(tokens int) int64 { return m.perToken * int64(tokens) }
+
+func TestPoolPlanSizesThePoolFromTheMemoryTheWeightsLeave(t *testing.T) {
+	const gib = int64(1 << 30)
+	k := memKernel{weights: 40 * gib, perToken: 1 << 20} // 40 GiB of weights, 1 MiB per token
+	in := PoolInput{PreModelLoadGiB: 80, MemFractionStatic: 0.9, PageSize: 1, ContextLen: 8192, AttnDPSize: 1}
+	// SGLang keeps 80*(1-0.9) = 8 GiB as slack: 80-40-8 = 32 GiB of KV = 32768 tokens.
+	rt, err := PoolPlan(k, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt.MaxTotalNumTokens != 32768 {
+		t.Errorf("tokens %d, want 32768", rt.MaxTotalNumTokens)
+	}
+	// resolve_max_num_reqs: int(32768/8192*512) = 2048, floor 2048, at most tokens/2.
+	if rt.ReqPoolSize != 2048 || rt.MaxRunningRequests != 2048 {
+		t.Errorf("request pool %d, running %d, want 2048", rt.ReqPoolSize, rt.MaxRunningRequests)
+	}
+	in.PageSize = 64
+	in.MaxTotalTokens = new(int)
+	*in.MaxTotalTokens = 1000
+	if rt, _ = PoolPlan(k, in); rt.MaxTotalNumTokens != 960 {
+		t.Errorf("--max-total-tokens 1000 at page 64: %d tokens, want 960", rt.MaxTotalNumTokens)
+	}
+	in.MaxTotalTokens = nil
+	mrr := 16
+	in.MaxRunningRequests = &mrr
+	if rt, _ = PoolPlan(k, in); rt.ReqPoolSize != 16 {
+		t.Errorf("--max-running-requests 16: pool %d", rt.ReqPoolSize)
+	}
+	if _, err = PoolPlan(memKernel{weights: 75 * gib, perToken: 1 << 20}, in); err == nil {
+		t.Error("weights that leave nothing for the KV cache must be refused")
+	}
+	in.AttnDPSize = 8
+	if _, err = PoolPlan(k, in); err == nil {
+		t.Error("DP attention must be refused by name")
+	}
 }

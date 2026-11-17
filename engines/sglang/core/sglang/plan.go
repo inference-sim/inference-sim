@@ -5,6 +5,9 @@ package sglang
 import (
 	"fmt"
 
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+
+	"github.com/inference-sim/blis-sglang/core/cache"
 	"github.com/inference-sim/blis-sglang/core/sched"
 )
 
@@ -168,4 +171,48 @@ func SchedConfig(a SchedArgs, rt Runtime, env Env) (sched.Config, error) {
 		MaxQueuedRequests:           a.MaxQueuedRequests,
 		PrefillMaxRequests:          a.PrefillMaxRequests,
 	}, nil
+}
+
+// PoolInput is what sizes the KV pool: the device, the settings that bound it, and the model's
+// context length.
+type PoolInput struct {
+	// PreModelLoadGiB is the device's free memory before the weights load (get_available_gpu_memory
+	// before load_model); the host states it, since a simulator has no device to ask.
+	PreModelLoadGiB    float64
+	MemFractionStatic  float64
+	PageSize           int
+	MaxTotalTokens     *int
+	MaxRunningRequests *int
+	ContextLen         int
+	// AttnDPSize above one (DP attention) is refused until S35.
+	AttnDPSize int
+}
+
+// PoolPlan sizes the pools as SGLang's KV cache configurator does from the memory the kernel's
+// cost model holds resident: the weights leave the free memory the budget is read from
+// (_profile_available_bytes), the budget over the per-token KV bytes is the token capacity
+// (config_from_budget), and the request pool follows (resolve_max_num_reqs;
+// kv_cache_configurator.py:2990-3060, :3119-3229@297e54fd). The returned Runtime carries the
+// sizes only; the caller adds the model's facts.
+func PoolPlan(k kernel.Kernel, in PoolInput) (Runtime, error) {
+	if in.AttnDPSize > 1 {
+		return Runtime{}, fmt.Errorf("sglang: pool sizing under DP attention is not modelled (inference-sim/blis-sglang#70)")
+	}
+	const gib = float64(1 << 30)
+	weights := float64(k.FixedBytes().Weights) / gib
+	budget, err := cache.KVBudgetBytes(cache.Profile{AvailableGiB: in.PreModelLoadGiB - weights,
+		PreModelLoadGiB: in.PreModelLoadGiB, MemFractionStatic: in.MemFractionStatic})
+	if err != nil {
+		return Runtime{}, err
+	}
+	// The per-token cell: the kernel's variable bytes over a page-aligned span, so a model whose
+	// bytes come in pages is not rounded to zero.
+	const span = 4096
+	cell := (k.SequenceVariableBytes(span) + span - 1) / span
+	tokens, err := cache.TokenCapacity(budget, cell, in.PageSize, in.MaxTotalTokens, in.ContextLen)
+	if err != nil {
+		return Runtime{}, err
+	}
+	reqs := cache.MaxNumReqs(tokens, in.ContextLen, in.MaxRunningRequests, 1)
+	return Runtime{MaxTotalNumTokens: tokens, ReqPoolSize: reqs, MaxRunningRequests: reqs, ContextLen: in.ContextLen}, nil
 }
