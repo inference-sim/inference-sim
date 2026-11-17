@@ -48,6 +48,7 @@ var towerlessMultimodalConfigs = map[string]string{
 	"3ae7fa89c2f7d1354096418ddaf1331e9e0898a8ca11e804fb6dbaa087efb7da": "qwen3.5-397b-a17b",
 	"9a142fc6c2d67703255ce6120ee04c4c720ec58dba6ae44bebb29c4a2d6e5db8": "qwen3.5-397b-a17b-fp8",
 	"8058591f5ffb5bdacf6cdd87a0d1db126a12cf19259257aec25a91ec22918779": "qwen3.5-397b-a17b-nvfp4",
+	"9408a9e559cc2f05f0b357738213666353e6651160ce8ff477b1c26982bc4f63": "qwen3.5-397b-a17b-nvfp4-v2",
 	"93a4693fa9d8392fbfccd4b3c9873f4bfdcb14fdede978b123d07d19675efe99": "qwen3.6-35b-a3b",
 }
 
