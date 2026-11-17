@@ -352,3 +352,12 @@ func (s *Scheduler) computePrefixMatches(queue []*Req) map[string]bool {
 }
 
 var _ = cache.FullComponentType
+
+// ResolvePolicy is the policy SGLang runs for a configured name once it knows whether the tree
+// cache is disabled (_validate_and_adjust_policy, schedule_policy.py:324-344@297e54fd), refused
+// as SGLang refuses it. The engine's factory calls it so the settings it reports are the ones the
+// scheduler runs.
+func ResolvePolicy(name string, treeDisabled bool) (string, error) {
+	p, err := validatePolicy(name, treeDisabled)
+	return string(p), err
+}
