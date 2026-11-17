@@ -653,6 +653,15 @@
     "tp_size": 8,
     "tool_call_parser": "glm45"
    }
+  },
+  {
+   "name": "glm5-h200-tp8-flashinfer-attn",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "attention_backend": "flashinfer"
+   }
   }
  ]
 }

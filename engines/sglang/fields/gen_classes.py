@@ -192,9 +192,22 @@ def comparisons(src, field):
             for s, op, v, e in sorted(set(out), key=lambda s: (gf.site_order(s[0]), s[1], repr(s[2]), s[3]))]
 
 
+# Keys whose subtree names the hook that decided a value or the model's facts, not a value of the
+# field: the field's name under them is a function name or a model property.
+OUTPUT_KEYS = ("declared_by", "model_facts")
+
+
 def stated_values(repo, field, evidence):
-    """[(value, trace)] for each evidence trace (JSON) that sets the field by its name."""
+    """[(value, trace)] for each evidence trace (JSON) that sets the field by its name, and, for a
+    proven-inert field, for each probe its proof file (a path) lists."""
     out = []
+    proof = evidence.get("proof", "")
+    if proof.endswith(".json"):
+        try:
+            for pr in read_json(os.path.join(repo, proof)).get("probes", []):
+                out.append((pr["value"], proof))
+        except (OSError, ValueError, KeyError):
+            pass
     for tr in evidence.get("traces", []):
         try:
             doc = read_json(os.path.join(repo, tr))
@@ -205,6 +218,8 @@ def stated_values(repo, field, evidence):
             d = todo.pop()
             if isinstance(d, dict):
                 for k, v in d.items():
+                    if k in OUTPUT_KEYS:
+                        continue
                     if k == field.name and (v is None or isinstance(v, (bool, int, float, str))):
                         out.append((v, tr))
                     todo.append(v)
@@ -278,6 +293,9 @@ def classes_for(src, repo, field, evidence):
         for b in (False, True):
             at = sorted(set(truth) | {s for s, op, v, _ in sites if v == b or (isinstance(v, list) and b in v)}, key=gf.site_order)
             classes.append({"values": [b], "compared_at": at, "covered_by": sorted({t for v, t in stated if v is b})})
+        if not sites:
+            # No scanned comparison cuts the field: one class, the whole domain (module docstring, 3).
+            classes = [{"uncut": True, "compared_at": [], "covered_by": sorted({t for _, t in stated})}]
         basis["classes"] = classes
         vc = {"type": "boolean", "covered": sorted({"true" if v else "false" for v, _ in stated if isinstance(v, bool)})}
     elif kind == "numeric":
@@ -301,7 +319,11 @@ def classes_for(src, repo, field, evidence):
         if None in compared or truth:
             classes.append({"unset": True, "compared_at": sorted(compared.get(None, set()) | set(truth), key=gf.site_order),
                             "covered_by": sorted({t for x, t in stated if x is None})})
-        if not choices:
+        # A choice no comparison backs is not written; a field no comparison cuts is one uncut class.
+        classes = [c for c in classes if c["compared_at"] or c.get("unset")]
+        if not sites:
+            classes = [{"uncut": True, "compared_at": [], "covered_by": sorted({t for _, t in stated})}]
+        elif not choices:
             classes.append({"other": True, "compared_at": [], "covered_by": sorted({t for x, t in stated if x is not None and str(x) not in values})})
         basis["classes"] = classes
         vc = {"type": "enumerated", "covered": sorted({str(x) for x, _ in stated if x is not None})}

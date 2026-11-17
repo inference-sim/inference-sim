@@ -245,7 +245,7 @@ func TestInertFieldsChangeNoDecision(t *testing.T) {
 	probes := map[string][]string{
 		"host":              {"0.0.0.0", "127.0.0.1"},
 		"port":              {"8888", "30000"},
-		"trust_remote_code": {"true"},
+		"trust_remote_code": {"true", "false"},
 		"served_model_name": {"glm-5-fp8", "m"},
 		"tool_call_parser":  {"glm47", "qwen"},
 		"reasoning_parser":  {"glm45", "qwen3"},
