@@ -86,6 +86,16 @@ func CheckStatements(p *validate.Problems, at string, ss []Statement) {
 func (b *Bound) Validate(policy Policy) *validate.Problems {
 	p := &validate.Problems{}
 	b.Evidence.validate(p)
+	files := map[string]bool{b.Evidence.File: true}
+	for i, m := range b.MoreEvidence {
+		q := &validate.Problems{}
+		m.validate(q)
+		p.Merge(fmt.Sprintf("more_evidence[%d]", i), q)
+		if files[m.File] {
+			p.Field(fmt.Sprintf("more_evidence[%d].file", i), "%q is named twice", m.File)
+		}
+		files[m.File] = true
+	}
 	if len(b.Ratios) == 0 {
 		p.Field("ratios", "required: at least one ratio, with its metric, alternatives, regime and value")
 	}
@@ -93,7 +103,10 @@ func (b *Bound) Validate(policy Policy) *validate.Problems {
 	for i, r := range b.Ratios {
 		at := fmt.Sprintf("ratios[%d]", i)
 		r.validate(p, at, policy)
-		key := r.Metric + "|" + strings.Join(r.Against, ",") + "|" + r.Regime.key()
+		if r.Evidence != "" && !files[r.Evidence] {
+			p.Field(at+".evidence", "%q is not the file of the bound's evidence or more_evidence", r.Evidence)
+		}
+		key := r.Evidence + "|" + r.Metric + "|" + strings.Join(r.Against, ",") + "|" + r.Regime.key()
 		if seen[key] {
 			p.Field(at, "repeats the metric, alternatives and regime of an earlier ratio")
 		}

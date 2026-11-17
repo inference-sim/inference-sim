@@ -1,0 +1,34 @@
+# The scenario the router sensitivity sweep runs for one layout (sweep.py --layouts fills the @ fields from the
+# layout). A prefill pool and a decode pool of the layout's instances, joined by NIXL over the layout's fabric. The
+# router is the llm-d profile pair in router/<name>.yaml. Each pool's engine settings are the launch flags the frozen
+# recipes of the layout and shape state (layouts.json, engine_by_shape); a setting no recipe states is left out, so the
+# engine's own default applies, and max_model_len, which the scenario must state, is the model config's derived length
+# that vLLM v0.33.0 serves when the launch states none. Only the part's fabric and node size are named substitutions.
+kind: Scenario
+name: @NAME@
+engine: {kind: vllm, version: "@ENGINE@"}
+model: @MODEL@
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]
+cluster:
+  hardware: @HARDWARE@
+  fabric: @FABRIC@
+  gpus_per_node: @GPN@
+  nodes: @NODES@
+---
+kind: Deployment
+name: @NAME@
+pools:
+  - role: prefill
+    nodes: @PNODES@
+    parallel: {tp: @PTP@, pp: @PPP@, dp: @PDP@, enable_expert_parallel: @PEP@}
+    engine:
+@PENG@
+  - role: decode
+    nodes: @DNODES@
+    parallel: {tp: @DTP@, pp: @DPP@, dp: @DDP@, enable_expert_parallel: @DEP@}
+    engine:
+@DENG@
+pd_transfer:
+  connector: NixlConnector
+router:
+  endpoint_picker_config: router/@ROUTER@.yaml

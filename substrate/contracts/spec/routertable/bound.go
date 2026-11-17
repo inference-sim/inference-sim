@@ -51,11 +51,14 @@ const (
 	WorkloadPrefillBound WorkloadKind = "prefill-bound"
 	// WorkloadDecodeBound: closed loop, 256 prompt tokens and 2,048 output tokens.
 	WorkloadDecodeBound WorkloadKind = "decode-bound"
+	// WorkloadLongPrompt: closed loop, 8,192 prompt tokens and 1,024 output tokens (the "8k1k"
+	// length of InferenceX runs), no shared prefix between requests.
+	WorkloadLongPrompt WorkloadKind = "long-prompt"
 )
 
 // WorkloadKinds lists the workload kinds a bound can name, in the order they are documented.
 func WorkloadKinds() []WorkloadKind {
-	return []WorkloadKind{WorkloadBalanced, WorkloadPrefillBound, WorkloadDecodeBound}
+	return []WorkloadKind{WorkloadBalanced, WorkloadPrefillBound, WorkloadDecodeBound, WorkloadLongPrompt}
 }
 
 // Bound is a measured limit on how much the choice of router policy moves a figure.
@@ -66,6 +69,10 @@ func WorkloadKinds() []WorkloadKind {
 type Bound struct {
 	// Evidence is the measurement the ratios come from.
 	Evidence BoundEvidence `yaml:"evidence"`
+	// MoreEvidence lists further measurements, each a CSV of runs of the same kind as Evidence
+	// with the regime's fields in every row (layout sweeps). A ratio names the file it comes
+	// from in its Evidence field; without one it comes from Evidence.
+	MoreEvidence []BoundEvidence `yaml:"more_evidence,omitempty"`
 	// Ratios are the limits, one per metric, regime and set of alternatives.
 	Ratios []Ratio `yaml:"ratios"`
 	// NotMeasured lists what the bound does not cover, each as a sentence: the regimes,
@@ -90,6 +97,9 @@ type BoundEvidence struct {
 // Ratio is the largest ratio between the entry's Policy and a set of alternatives, for one
 // figure, in one regime.
 type Ratio struct {
+	// Evidence is the File of the measurement this ratio is recomputed from, when it is not the
+	// bound's primary one.
+	Evidence string `yaml:"evidence,omitempty"`
 	// Metric is the metric-registry identifier of the figure, for example "ttft_p50_ms".
 	Metric string `yaml:"metric"`
 	// Against names the alternatives the policy was compared with, each by the name of its
@@ -198,6 +208,22 @@ func (b *Bound) For(p Point) *Bound {
 	}
 	out := *b
 	out.Ratios = rs
+	// Keep only the measurements the kept ratios come from, the first of them as the primary.
+	var used []BoundEvidence
+	for _, f := range append([]BoundEvidence{b.Evidence}, b.MoreEvidence...) {
+		for _, r := range rs {
+			if r.evidenceFile(b) == f.File {
+				used = append(used, f)
+				break
+			}
+		}
+	}
+	if len(used) > 0 {
+		out.Evidence, out.MoreEvidence = used[0], nil
+		if len(used) > 1 {
+			out.MoreEvidence = used[1:]
+		}
+	}
 	return &out
 }
 
@@ -208,4 +234,12 @@ func (k WorkloadKind) valid() bool {
 		}
 	}
 	return false
+}
+
+// evidenceFile is the file the ratio is recomputed from.
+func (r Ratio) evidenceFile(b *Bound) string {
+	if r.Evidence != "" {
+		return r.Evidence
+	}
+	return b.Evidence.File
 }
