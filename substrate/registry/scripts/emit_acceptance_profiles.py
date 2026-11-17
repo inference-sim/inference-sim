@@ -155,6 +155,9 @@ class Carried:
     rationale: list[str] = field(default_factory=list)
     transfer: tuple[str, str] | None = None
     rejected: tuple[int, int, str] | None = None
+    draft_sampler: str = ""
+    verifier: str = ""
+    engine: str = ""
 
 
 def read_curve(path: Path, identities: dict) -> Curve:
@@ -585,13 +588,28 @@ def collect(golden: Path = GOLDEN, catalog: Path = CATALOG):
             if k.transfer is None and k.model == model and k.curve.method == \
                     next(c.method for c in curves if c.stem == stem):
                 raise SystemExit(f"TRANSFERS {stem} is stale: {k.curve.stem} measures {model}")
-    # A key two curves claim is refused for both (D8): the key cannot state what differs.
+    # Every profile states the collection settings as its source states them (design D8): the
+    # engine, and the draft sampler and verifier, a value left at the engine's default as the
+    # marker "default", which the lookup compares with the requesting engine's own default.
+    resolved = []
+    for k in carried:
+        facts = k.curve.identity.get("collection") or {}
+        k.engine = str(facts.get("engine") or "")
+        try:
+            k.draft_sampler = key_value(facts, "draft_sample")
+            k.verifier = key_value(facts, "verify")
+        except Refused as e:
+            skipped.append((k.curve.stem, k.curve.model_key, str(e)))
+            continue
+        resolved.append(k)
+    carried = resolved
+    # A key two curves still claim is refused for both (D8): the key cannot state what differs.
     claims: dict[tuple, list[Carried]] = {}
     for k in carried:
         for thinking, cells in k.curve.values.items():
             for n in cells:
-                claims.setdefault((k.model, k.drafter, k.curve.method, n, thinking, category),
-                                  []).append(k)
+                claims.setdefault((k.model, k.drafter, k.curve.method, n, thinking, category,
+                                   k.draft_sampler, k.verifier, k.engine), []).append(k)
     clash: dict[str, set[str]] = {}
     for owners in claims.values():
         if len({o.curve.stem for o in owners}) > 1:
@@ -603,12 +621,39 @@ def collect(golden: Path = GOLDEN, catalog: Path = CATALOG):
         if k.curve.stem in clash:
             others = ", ".join(f"{s}.yaml" for s in sorted(clash[k.curve.stem]))
             skipped.append((k.curve.stem, k.curve.model_key,
-                            f"its profile keys are also claimed by {others}, which a profile's "
-                            "key cannot tell apart (inference-sim/blis-substrate#174)"))
+                            f"its profile keys are also claimed by {others}, measured with the "
+                            "same target, drafter, method, draft sampler and verifier, so "
+                            "nothing a profile's key states tells them apart "
+                            "(inference-sim/blis-substrate#207)"))
         else:
             kept.append(k)
     skipped.sort()
     return kept, skipped, category, cat
+
+
+# The values a profile key takes for a sampler and a verifier (acceptance.DraftSampler,
+# acceptance.Verifier; the verifier in vLLM v0.33.0's vocabulary).
+DRAFT_SAMPLERS = ("greedy", "probabilistic")
+VERIFIERS = ("standard", "block", "fly")
+# The marker a profile states for a setting its source left at the engine's default. The lookup
+# compares it with the default the requesting engine states (acceptance.Request.Default*): the
+# engine resolves its own defaults, so none is written here (X2, X19).
+ENGINE_DEFAULT = "default"
+
+
+def key_value(facts: dict, name: str) -> str:
+    """The key value of identities.yaml fact `name`, as the source states it: an explicit or
+    documented value as stated; a value left at the engine's default as the marker "default";
+    else "" (unstated). A value the key has no word for refuses the curve."""
+    fact = facts.get(name) or {}
+    value, source = fact.get("value"), fact.get("source")
+    if value is None:
+        return ENGINE_DEFAULT if source == "default" else ""
+    allowed = DRAFT_SAMPLERS if name == "draft_sample" else VERIFIERS
+    if value not in allowed:
+        raise Refused(f"its {name} {value!r} is not one of {allowed}, which a profile key states "
+                      "(inference-sim/blis-substrate#207)")
+    return str(value)
 
 
 def key_string(model, drafter, method, k, thinking, category) -> str:
@@ -625,6 +670,12 @@ def profiles(carried: list[Carried], category: str, cat: Catalog) -> list[dict]:
                 p = {"model": c.model}
                 if c.drafter:
                     p["drafter"] = c.drafter
+                if c.draft_sampler:
+                    p["draft_sampler"] = c.draft_sampler
+                if c.verifier:
+                    p["verifier"] = c.verifier
+                if c.engine:
+                    p["engine"] = c.engine
                 p.update({"architecture": cat.architectures[c.model],
                           "speculative_method": c.curve.method, "num_spec_tokens": k,
                           "thinking": thinking, "category": category, "acceptance_length": al})
@@ -645,6 +696,7 @@ def profiles(carried: list[Carried], category: str, cat: Catalog) -> list[dict]:
                 p["provenance"] = prov
                 out.append(p)
     out.sort(key=lambda p: (p["model"], p.get("drafter", ""), p["speculative_method"],
+                            p.get("draft_sampler", ""), p.get("verifier", ""), p.get("engine", ""),
                             p["thinking"], p["num_spec_tokens"]))
     return out
 
@@ -683,6 +735,10 @@ def caveats(carried: list[Carried], skipped, category: str) -> list[str]:
     out.append(f"Collection settings are transcribed from {IDENTITIES} at {INFERENCEX_SHA[:12]}, "
                f"SHA-256 {_LOCK['files'][IDENTITIES]} ({INFERENCEX_URL}/blob/{INFERENCEX_SHA}/"
                f"{GOLDEN_PATH}/{IDENTITIES}).")
+    out.append("Collection settings. Each profile states the engine, draft sampler and verifier "
+               "as its source states them; a setting the source left at its engine's default is "
+               "\"default\", which a lookup compares with the default the requesting engine "
+               "states for its release. A setting the source does not state is unstated.")
     unimaged = sorted({c.model for c in carried if c.provenance["engine_image"] == IMAGE_UNRECORDED})
     if unimaged:
         out.append(f"The source files for {', '.join(unimaged)} name no engine image, so "

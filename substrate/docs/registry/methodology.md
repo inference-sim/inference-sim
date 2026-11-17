@@ -1504,12 +1504,16 @@ InferenceX measures only on the NVFP4 quantization of `zai-org/GLM-5.3`.
 
 ### 12.3 Curves a key cannot tell apart
 
-A profile is keyed by model, drafter, method, K, thinking mode and category; it cannot state
-the draft sampler or the verifier. Where InferenceX publishes two curves that differ only in
-those, the emitter carries neither, as D8 refuses two profiles that share a key under
-different settings rather than choose one. The three Kimi-K3 DSpark curves and the two
-MiniMax-M3 GQA-drafter curves are left out for that reason, until the key states both
-(inference-sim/blis-substrate#174).
+A profile is keyed by model, drafter, method, K, thinking mode, category, and the collection
+settings: engine, draft sampler and verifier (design D8). Every profile states the settings as its
+source states them, from `identities.yaml`: an explicit or documented value as stated, and a value
+left at the engine's default as the marker `default`. No engine default is written here: at lookup
+the engine states its resolved values and its own defaults, and the lookup compares a `default`
+marker with the requesting engine's stated default. So the three Kimi-K3 DSpark curves and the
+two MiniMax-M3 GQA-drafter curves are carried apart, and a run identical to a curve's
+collection matches it exactly. Two curves that agree on every key field are both refused, and a
+verifier outside the key's vocabulary (vLLM v0.33.0's standard, block and fly) refuses its curve;
+both cite inference-sim/blis-substrate#207.
 
 ### 12.4 Hardware: stated, or read from the run
 
