@@ -144,6 +144,8 @@ type ClusterSimulator struct {
 	// tierLinkFlows maps each offload-tier copy in the arbiter to the instance whose engine started
 	// it: the copies share the arbiter's links with the handoffs and with each other (#2108).
 	tierLinkFlows map[FlowID]tierCopy
+	// peers carries the messages of Peered engines (peer_network.go); nil until one registers.
+	peers *peerNetwork
 	// prefillHolds maps each parent whose prefill KV a prefill instance still holds for the
 	// decode pull (DeploymentConfig.PDPrefillKVHold, INV-PD-7) to the blocks held;
 	// heldBlockRefs counts, per prefill instance, how many holds pin each block, and
@@ -625,6 +627,11 @@ func (cs *ClusterSimulator) wireInstance(inst *InstanceSimulator) {
 	inst.setTierPriced(func(id engine.TransferID, demand kernel.TransferDemand, at int64) {
 		cs.startTierCopy(inst, id, demand, at)
 	})
+	// A WRITE to a peer is a transfer like a tier copy: it shares the links it crosses.
+	inst.setPeerWritePriced(func(id engine.TransferID, demand kernel.TransferDemand, at int64) {
+		cs.admitTierFlow(demand, at, func(land int64) { inst.drv.PeerWriteLanded(id, land) })
+	})
+	cs.registerPeer(inst)
 	inst.onTransition = func(inst *InstanceSimulator) {
 		if cs.gateway != nil {
 			cs.gateway.OnInstanceChange(inst)

@@ -91,6 +91,11 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 		if err := placeInstance(eng, kernelPDOpened, index); err != nil {
 			return nil, fmt.Errorf("scenario %q: instance_%d: %w", kernelScenario, index, err)
 		}
+		if kernelPDOpened == nil {
+			if err := placePeerInstance(eng, kernelOpened, index); err != nil {
+				return nil, fmt.Errorf("scenario %q: %w", kernelScenario, err)
+			}
+		}
 		storage.share(eng, model)
 		// --renderer-num-workers and --api-server-count are vLLM's API-server settings, which
 		// blis-schemas does not carry yet; the engine resolves them into the admission queue its

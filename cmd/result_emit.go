@@ -153,6 +153,7 @@ func emitRunResult(p postRun) {
 		Ledger:          resultLedger(cs),
 		PD:              pdMetrics,
 		TierLinks:       cs.TierLinkPeakConcurrent(),
+		Peer:            cs.PeerStats(),
 		Engine:          eng,
 		Router:          routerSection(routerReq, raw.ShedByTier, raw),
 		Kernel:          kernelSection(kernelProvenance(kernelOpened, kernelPDOpened)),

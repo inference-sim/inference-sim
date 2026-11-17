@@ -78,6 +78,9 @@ type resultMetrics struct {
 	// TierLinks is, per link, the most transfers in flight on it together when an engine started
 	// offload-tier copies, which share link capacity with each other and with handoffs (#2108).
 	TierLinks map[string]int
+	// Peer is the peer network's counts and its stated delivery latency; all zero when no engine
+	// of the run exchanged peer messages.
+	Peer cluster.PeerStats
 	// Engine, Router and Kernel are each component's report, already keyed as the
 	// document carries them.
 	Engine map[string]any
@@ -129,7 +132,7 @@ func buildResult(in resultInputs, out resultMetrics) *result.Result {
 
 	r.Window = windowOf(m, sum, out.ClockUs, out.HorizonUs)
 	r.Metrics = standardMetrics(sum, m, in.GPUs, in.DecodeGPUs, r.Window.DurationS)
-	r.Breakdowns = breakdownsOf(m, sum, r.Metrics, out.PD, out.TierLinks)
+	r.Breakdowns = breakdownsOf(m, sum, r.Metrics, out.PD, out.TierLinks, out.Peer)
 	r.Goodput = goodputOf(m, in.GoodputTargets, out.InjectedByClass, r.Metrics)
 	if len(in.Saturation) > 0 {
 		r.Reports.Saturation = in.Saturation
@@ -291,7 +294,7 @@ func splitMetrics(sum sim.MeasuredSummary, defined map[string]result.Figure) map
 
 // breakdownsOf splits the run along the axes it exercised: per model, tenant and adapter
 // (each the whole's metrics over the requests of that key), P/D, and sessions.
-func breakdownsOf(m *sim.Metrics, sum sim.MeasuredSummary, defs map[string]result.Figure, pd *cluster.PDMetrics, tierLinks map[string]int) *result.Breakdowns {
+func breakdownsOf(m *sim.Metrics, sum sim.MeasuredSummary, defs map[string]result.Figure, pd *cluster.PDMetrics, tierLinks map[string]int, peer cluster.PeerStats) *result.Breakdowns {
 	b := &result.Breakdowns{}
 	split := func(key func(sim.RequestMetrics) string) map[string]map[string]float64 {
 		keys := map[string]bool{}
@@ -318,7 +321,7 @@ func breakdownsOf(m *sim.Metrics, sum sim.MeasuredSummary, defs map[string]resul
 	b.PerModel = split(func(rm sim.RequestMetrics) string { return rm.Model })
 	b.PerTenant = split(func(rm sim.RequestMetrics) string { return rm.TenantID })
 	b.PerAdapter = split(func(rm sim.RequestMetrics) string { return rm.Adapter })
-	b.PD = pdBreakdown(pd, tierLinks)
+	b.PD = pdBreakdown(pd, tierLinks, peer)
 	b.Sessions = sessionBreakdown(cluster.ComputeSessionMetrics(m))
 	if b.PerModel == nil && b.PerTenant == nil && b.PerAdapter == nil && b.PD == nil && b.Sessions == nil {
 		return nil
@@ -327,9 +330,9 @@ func breakdownsOf(m *sim.Metrics, sum sim.MeasuredSummary, defs map[string]resul
 }
 
 // pdBreakdown is the prefill/decode split, in ms (the cluster reports microseconds).
-func pdBreakdown(pd *cluster.PDMetrics, tierLinks map[string]int) map[string]float64 {
+func pdBreakdown(pd *cluster.PDMetrics, tierLinks map[string]int, peer cluster.PeerStats) map[string]float64 {
 	if pd == nil {
-		if len(tierLinks) == 0 {
+		if len(tierLinks) == 0 && peer.Sent == 0 {
 			return nil
 		}
 		// A colocated run whose engines copied KV between tiers states the sharing of the links alone.
@@ -337,6 +340,7 @@ func pdBreakdown(pd *cluster.PDMetrics, tierLinks map[string]int) map[string]flo
 		for _, link := range sortedMapKeys(tierLinks) {
 			putUnique(out, "link_peak_concurrent_transfers_"+slugPart(link), float64(tierLinks[link]))
 		}
+		putPeer(out, peer)
 		return out
 	}
 	out := map[string]float64{
@@ -378,10 +382,24 @@ func pdBreakdown(pd *cluster.PDMetrics, tierLinks map[string]int) map[string]flo
 			putUnique(out, "link_peak_concurrent_transfers_"+slugPart(link), float64(tierLinks[link]))
 		}
 	}
+	putPeer(out, peer)
 	for _, pool := range sortedMapKeys(pd.CPUTierHitRate) {
 		putUnique(out, "cpu_tier_hit_rate_"+slugPart(pool), pd.CPUTierHitRate[pool])
 	}
 	return out
+}
+
+// putPeer states the peer network of a run whose engines exchanged messages: the delivery latency
+// is a named substitution (peer_message_delivery_latency) until the ZMQ round trip is measured, and
+// the counts say how many messages it carried and how many it dropped (peer_messages_dropped).
+func putPeer(out map[string]float64, peer cluster.PeerStats) {
+	if peer.Sent == 0 {
+		return
+	}
+	putUnique(out, "peer_message_delivery_latency_us", float64(peer.LatencyTicks))
+	putUnique(out, "peer_messages_sent", float64(peer.Sent))
+	putUnique(out, "peer_messages_delivered", float64(peer.Delivered))
+	putUnique(out, "peer_messages_dropped", float64(peer.Dropped))
 }
 
 // putUnique sets out[key], panicking when two names reduced to the same slug: the second would

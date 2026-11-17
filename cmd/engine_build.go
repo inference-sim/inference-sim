@@ -26,6 +26,7 @@ import (
 	"github.com/inference-sim/blis-vllm/compat/build"
 	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	vplacement "github.com/inference-sim/blis-vllm/core/placement"
 	coreengine "github.com/inference-sim/blis-vllm/vllmengine"
 
 	// Linking these registers the compatibility engine's constructors: compat/kv the KV store
@@ -386,6 +387,10 @@ func (p *kernelPools) environmentOf(c sim.InstanceConfig, colocated *kernelmodel
 	e, err := newTransferEnvironment(own, peer)
 	if err != nil {
 		logrus.Fatalf("scenario %q: %v", kernelScenario, err)
+	}
+	if p != nil && own == p.prefill {
+		// A prefill engine pulls from no one (its peer is its own pool), and its WRITEs land in the decode pool.
+		e.across = p.decode
 	}
 	return wrapEnvironment(e)
 }
@@ -1194,6 +1199,9 @@ type transferEnvironment struct {
 	// own is the pool of the engine that asks, peer the pool its pulls read from (nil when
 	// there is no other pool).
 	own, peer *kernelmodel.Model
+	// across is the pool a peer WRITE of this engine lands in when it leaves its own pool: the other
+	// pool of a disaggregated run, nil in a colocated one (PeerWriteDemand).
+	across *kernelmodel.Model
 	// blockSize is the tokens in one KV block; the pools of a disaggregated run page alike.
 	blockSize int64
 	// rates are the tier links' rates, by tier and direction, recovered once (tierDemand).
@@ -1214,8 +1222,12 @@ func newTransferEnvironment(own, peer *kernelmodel.Model) (*transferEnvironment,
 	if err != nil {
 		return nil, err
 	}
-	return &transferEnvironment{own: own, peer: peer, blockSize: int64(e.BlockSize),
-		rates: map[tierKey]float64{}}, nil
+	te := &transferEnvironment{own: own, peer: peer, blockSize: int64(e.BlockSize),
+		rates: map[tierKey]float64{}}
+	if peer != own {
+		te.across = peer
+	}
+	return te, nil
 }
 
 // poolOrigin is where the pool's own numbering starts in the cluster's: the lowest node and the
@@ -1329,6 +1341,76 @@ func (e *transferEnvironment) pullDemand(p plan.PoolPlan, t plan.Transfer) (kern
 			"and the chip's IntraNodeBwGBps", tokens, from, to, at)
 	}
 	return d, nil
+}
+
+// PeerWriteDemand prices a p2p WRITE (sim.PeerWritePricer) of the bytes the engine states. The WRITE
+// leaves the engine's own pool (from = placement(own, Move.From)). Its destination is in the
+// peer's pool numbering: in a colocated run the engine's own pool, in a disaggregated run the
+// other pool (placement of the opposite pool).
+//
+// Named limit (blis-vllm#204): a WRITE between two instances of one pool in a disaggregated run
+// is read as crossing to the other pool, because a Move names an endpoint and not its pool.
+//
+// Between different global nodes the WRITE crosses the fabric: the kernel's PDTransferDemand links
+// and floor (NIC egress and ingress, and uplinks across switch groups) with Bytes set to the
+// WRITE's. Within one global node it is a copy between two places in host memory over one host
+// link, "host/node/<node>", at the rate of the CPU tier's link recovered as tierDemand recovers
+// it. That is a named substitution for design 6.1's host_copy_rate, which the registry does not
+// hold at this pin (inference-sim#2203). A WRITE of no bytes, or one whose ends do not resolve,
+// is refused.
+func (e *transferEnvironment) PeerWriteDemand(p plan.PoolPlan, t engine.Transfer, bytes int64) (kernel.TransferDemand, error) {
+	if bytes <= 0 {
+		return kernel.TransferDemand{}, fmt.Errorf("a peer WRITE of %d bytes", bytes)
+	}
+	if err := ownEndpoint(p, t.Move.From); err != nil {
+		return kernel.TransferDemand{}, fmt.Errorf("peer WRITE source: %w", err)
+	}
+	dest := e.own
+	if e.peer != nil {
+		dest = e.across
+	}
+	if dest == nil {
+		return kernel.TransferDemand{}, fmt.Errorf("a peer WRITE in a disaggregated run, and this engine has no other pool to write to")
+	}
+	if t.Move.To.Node < 0 || t.Move.To.Rack < 0 || t.Move.From.Node < 0 || t.Move.From.Rack < 0 {
+		return kernel.TransferDemand{}, fmt.Errorf("peer WRITE ends %+v -> %+v do not resolve", t.Move.From, t.Move.To)
+	}
+	from, to := placement(e.own, t.Move.From), placement(dest, t.Move.To)
+	k := e.own.Kernel()
+	if from.Node == to.Node {
+		rate := e.hostRate()
+		if rate <= 0 {
+			return kernel.TransferDemand{}, fmt.Errorf("the CPU tier's link states no rate, so a same-node peer WRITE cannot be priced")
+		}
+		d := kernel.TransferDemand{Bytes: bytes, Floor: k.TierTime(cpuTierDevice, kernel.DirectionFromTier, 0, 1),
+			Links: []kernel.LinkUse{{Link: kernel.LinkID(fmt.Sprintf("host/node/%d", from.Node)), BytesPerSecond: rate}}}
+		return d, d.Check()
+	}
+	tokens := e.blocksOf(int64(t.Move.Tokens)) * e.blockSize
+	d := k.PDTransferDemand(int(tokens), from, to)
+	d.Bytes = bytes
+	if err := d.Check(); err != nil {
+		return kernel.TransferDemand{}, fmt.Errorf("the kernel's demand for a peer WRITE from %+v to %+v is malformed: %w", from, to, err)
+	}
+	if at := d.AloneTime(); at < 0 || at >= time.Duration(math.MaxInt64/2) {
+		return kernel.TransferDemand{}, fmt.Errorf("the kernel cannot price a peer WRITE of %d bytes from %+v to %+v "+
+			"(it reports %v): the link between them states no bandwidth", bytes, from, to, at)
+	}
+	return d, nil
+}
+
+// cpuTierDevice is the catalog device of the CPU tier (placement.CPUDRAM).
+const cpuTierDevice = vplacement.CPUDRAM
+
+// hostRate is the bytes per second of the CPU tier's link, recovered once as tierDemand does.
+func (e *transferEnvironment) hostRate() float64 {
+	key := tierKey{cpuTierDevice, kernel.DirectionFromTier}
+	rate, ok := e.rates[key]
+	if !ok {
+		rate = tierRate(e.own.Kernel(), cpuTierDevice, kernel.DirectionFromTier)
+		e.rates[key] = rate
+	}
+	return rate
 }
 
 // tierDemand is an offload copy to or from the catalog device t.Tier on the node that holds it:

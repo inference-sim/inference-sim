@@ -495,6 +495,8 @@ Example:
 			SharedInstances:            prefillDecodeInstances,
 			EncodeInstances:            encodeInstances,
 			InstanceEndpoint:           kernelPD.instanceEndpoint(),
+			PeerEndpoint:               peerEndpoint(kernelPD, kernelOpened),
+			PeerMessageLatency:         peerMessageLatencyUs,
 			PDTransferContention:       pdTransferContention,
 			PDPrefillKVHold:            kernelPD.holdsPrefillKV(),
 			PDPrefillSamplesFirstToken: true,
