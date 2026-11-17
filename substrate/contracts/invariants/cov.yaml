@@ -173,9 +173,28 @@
 - id: COV-7
   section: §11.8
   statement: >-
-    Coverage (graded anchor units over all anchor units, by engine, engine release, chip and grade,
-    with the share in each grade) is published beside accuracy, with the number of source records
-    the ledger left out (§10.2), and the backlog is published every night.
+    Coverage (graded anchor units over all anchor units, by engine, engine release, chip and grade, with
+    the share in each grade) is published beside accuracy, with the number of source records the ledger
+    left out (§10.2), and the backlog is published every night. Coverage and accuracy are also published
+    by source (InferenceX, configiq), and within each source by engine release, chip and model, so that
+    a second source is a dimension of the one dashboard, not a second dashboard. Every source is graded
+    by the same bands, ceilings and reasons (§11.3, §11.4). A provisional point is one whose source does
+    not record its launch arguments or its experimental frame, but whose row is consistent with every
+    preset of the launcher that published it, at every commit of the launcher's history in the runs'
+    period. Consistent means: the model is one the presets name, the row's tensor-parallel size is one a
+    preset gave that model, the engine release was published after the launcher's history began, and
+    every engine setting the row records equals the presets' value. Such a point is scored with three
+    named substitutions: its parallelism is the presets' (for configiq, no data or expert parallelism,
+    which no preset of the models it covers sets in any of the 17 commits of forge's
+    config.d/models.yaml, 117e2386a31f14c6d00f7fc6da74a2426940216e to
+    5f6603b77c558d68e965a87ca127169c077ae163); a blank parsed engine column means the preset did not
+    pass that flag, for consistent rows only (forge's base arguments in config.d/rhaiis.yaml from
+    b61e356becaaa72727dda419f768ee17e1f0e0be to 5bdf971139c235c26ed1a09b9c8015161037ad3f pass no other
+    flag the dataset parses); and its frame is unknown. Its grade is capped at G3, and it carries the
+    three substitutions and the reason for the cap. Provisional points are shown in their own band
+    beside the graded points, by the same breakdown, and are left out of the headline accuracy and the
+    headline coverage (COV-11). A provisional point is regraded as any other when its source publishes
+    the missing values.
   scope:
   - accuracy-dashboard
   checks:
@@ -225,25 +244,40 @@
   status: new
   target:
     status: ci
-    milestone: 2
+    milestone: 3
 - id: COV-10
   section: §11.8
   statement: >-
     The dashboard copies the run's whole experimental frame (§8.6), not only its engine block: client
-    concurrency, warm-up, drain, duration and the measured-window rule. The requests are the ones
-    the run sent (COV-12), so BLIS's own substreams (DEV-6) draw only what the run's requests do not
-    fix, such as a router's tie-breaks, and replications (DEV-11) cover those draws. A frame field
-    the run did not record makes the point G5 with the reason value_not_recorded (§11.4); no default
-    is substituted. The achieved concurrency in the simulation matches the measured one within a stated
-    tolerance. Each lane is scored on its percentiles and a distribution distance, not only on its
-    mean. A simulated figure compared with a measurement carries its replication interval, or states
-    that the run has no random input (§8.4); its uncertainty is then the measurement's own noise (below)
-    and the model's (§8.8). Where InferenceX has several units whose identifying fields differ only
-    in measured date or benchmark run, and whose recorded image digests agree, or one such unit holding
-    several measurements (§10.2), their spread is reported as the measurement's own noise, and no
-    point's error is counted for a difference smaller than that noise. Units whose image digests differ
-    or are unrecorded are not pooled for noise, because their builds may differ. A unit holding several
-    measurements is scored against their mean.
+    concurrency, warm-up, drain, duration and the measured-window rule. The requests are the ones the
+    run sent (COV-12), so BLIS's own substreams (DEV-6) draw only what the run's requests do not fix,
+    such as a router's tie-breaks, and replications (DEV-11) cover those draws. A frame field the run
+    did not record makes the point G5 with the reason value_not_recorded (§11.4); no default is
+    substituted. There is one exception: a field that the run's recorded harness documents as its
+    default, at the harness release the run records, is documented, not unrecorded. Examples are a
+    harness that stops at its recorded request count, or runs no warm-up by default. The point cites the
+    harness's own documentation or code at that release, names the field, and is graded G2 at best. A
+    harness version that the source's own repository pins in its environment or lockfile, over the
+    period of the runs, counts as the recorded release. Where no release is recorded or pinned, a
+    default is documented only if every release of the harness in the source's date span documents it
+    identically, cited at each release; a field that differs across those releases stays
+    value_not_recorded. A blank value in a column that the source extracts from the run's command line
+    means the value was not recorded, never that the engine's default applied. The achieved concurrency
+    in the simulation matches the measured one within a stated tolerance. Each lane is scored on its
+    percentiles and a distribution distance, not only on its mean. A simulated figure compared with a
+    measurement carries its replication interval, or states that the run has no random input (§8.4); its
+    uncertainty is then the measurement's own noise (below) and the model's (§8.8). Where InferenceX has
+    several units whose identifying fields differ only in measured date or benchmark run, and whose
+    recorded image digests agree, or one such unit holding several measurements (§10.2), their spread is
+    reported as the measurement's own noise, and no point's error is counted for a difference smaller
+    than that noise. Units whose image digests differ or are unrecorded are not pooled for noise,
+    because their builds may differ. A unit holding several measurements is scored against their mean.
+    Where the digests are unrecorded, that mean is used only if the measurements agree with each other:
+    their completed-request counts, and each compared metric, within 20% of the mean. Otherwise the
+    point is G5 value_conflict, and its measurements are reported to the source. Rows a source publishes
+    as a breakdown of one run, such as the per-turn rows of a multi-turn run, are not measurements of
+    the unit. They are kept on the unit's record as a diagnostic input to the event-level comparison,
+    and are never graded or pooled as noise.
   scope:
   - accuracy-dashboard
   checks:

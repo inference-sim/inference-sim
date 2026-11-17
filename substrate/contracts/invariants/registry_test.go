@@ -170,8 +170,8 @@ func TestCommittedRegistryIsValid(t *testing.T) {
 		reviews += len(inv.Review)
 	}
 	// X1 has two questions; X2 to X9, RTR-2, RTR-6, DEV-12, VAL-11, D1 and D7 one each.
-	if reviews != 16 {
-		t.Errorf("the registry holds %d review questions; the design asks 16", reviews)
+	if reviews != 17 {
+		t.Errorf("the registry holds %d review questions; the design asks 17", reviews)
 	}
 }
 
