@@ -85,6 +85,8 @@ reason. They are of two kinds.
 | Name | Recorded when |
 |---|---|
 | `attention_prefill_<kind>` | A measured prefill family for an attention kind (`sparse_mla`) or a scorer's role (`block_index_scores`) is only partly in the scenario's sets, so it is not used, and prefill is priced as without it. Value `fallback`. |
+| `attention_decode_rate_sparse_gqa` | A layer is `sparse_gqa` and the scenario's sets carry no rate for it. The QSA Triton kernel has no measurement in an allowed data source, so the layer and its indexer scorer are priced with the part-wide grouped-query attention pair over the selected tokens. Value `substituted`; a point priced so is capped at the lowest scored grade. |
+| `recurrent_decode_rate_short_conv` | A layer is `short_conv` and the sets carry no decode form for it, so its convolution step is not charged beyond the projections the graph prices. Value `substituted`. |
 | `async_scheduling_spec` | The deployment speculates and the engine rules carry no async-compatible draft list, so the draft method is taken as leaving async scheduling on. |
 | `block_size` | The deployment states no block size. 64 for a DSA sparse-attention model, whose indexer accepts only 64; for a DeepSeek-V4-family model the one kernel block its sparse backends accept on the part (for DeepSeek-V4.1 64 on SM90 and 128 on SM100; for DeepSeek-V4 256 on every part); otherwise vLLM's default of 16. |
 | `cache_record` | A graph states a cache with no record listed under the cache data type that runs, so the cache is sized at its base record. |

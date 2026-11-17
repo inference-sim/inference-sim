@@ -1113,6 +1113,7 @@ func (k *Kernel) lift(c *resolve.Coefficients, g *model.Graph, cacheBytes float6
 			rate:  rate * 1e6, // bytes per microsecond to bytes per second
 		}
 	}
+	k.pricesQwen4Exp(c)
 	k.attentionPrefillFloor = time.Duration(k.optional(c, "attention_prefill_floor",
 		len(usedAttn) > 0, "the per-layer attention prefill floor is not charged") *
 		float64(time.Microsecond))

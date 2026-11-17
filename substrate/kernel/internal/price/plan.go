@@ -901,7 +901,14 @@ func planNodes(nodes []model.Node, em Emitter, o PlanOptions,
 		case model.OpRecurrentUpdate:
 			pl.RecurrentKind = n.RecurrentKind
 			pl.RecurrentStateBytes += recurrentBytes(n, o.StateBytes)
-			pl.RecurrentHeads = max(pl.RecurrentHeads, n.NumHeads)
+			heads := n.NumHeads
+			if n.RecurrentKind == model.RecurrentShortConv {
+				// One unsplittable unit: the engine builds its state at tensor-parallel
+				// width 1 and replicates it (is_kv_cache_tp_replicated, ple_layer.py:169-175
+				// at v0.33.0), so no rank holds a share of it.
+				heads = 1
+			}
+			pl.RecurrentHeads = max(pl.RecurrentHeads, heads)
 			pl.RecurrentStateSize = max(pl.RecurrentStateSize, n.StateSize)
 			pl.RecurrentHeadDim = max(pl.RecurrentHeadDim, n.HeadDim)
 		case model.OpElementwise:
@@ -1001,6 +1008,11 @@ func recurrentBytes(n model.Node, stateBytes float64) float64 {
 			temporal = float64(n.NumHeads) * float64(n.StateSize) * float64(n.StateSize)
 		}
 		return (conv + temporal) * stateBytes
+	case model.RecurrentShortConv:
+		// The window of inputs the dilated kernel reaches back over, per channel: no
+		// temporal state.
+		return float64(n.IntermediateSize) * float64(maxInt(n.ConvKernel-1, 1)) *
+			float64(maxInt(n.ConvDilation, 1)) * stateBytes
 	case model.RecurrentKDA, model.RecurrentGDN:
 		// A matrix-valued state per head.
 		return float64(n.NumHeads) * float64(n.StateSize) * float64(n.StateSize) * stateBytes
