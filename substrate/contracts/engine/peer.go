@@ -1,6 +1,10 @@
 package engine
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+)
 
 // Peered is implemented by an engine that exchanges control messages with peer engines, such
 // as vLLM's p2p KV tier, whose sessions talk over a side channel between instances. It is
@@ -27,6 +31,19 @@ type Peered interface {
 	// simulator drops a message to an engine that has stopped, or to an address no engine
 	// holds, without calling Deliver, and counts it.
 	Deliver(m PeerMessage, now Time) error
+}
+
+// PeerPlaced is implemented by a Peered engine whose transfers end at a peer, such as a p2p
+// KV tier's WRITEs. An engine states every transfer's endpoints itself (Transfer.Move), and it
+// knows a peer only by address. Before the engine's first Schedule the simulator therefore calls
+// PlacePeer for every other Peered engine, with that engine's PeerAddr and where it sits, in the
+// numbering of the peer's own pool, as Request.Peer is (placement.go). The call may repeat for an
+// address, as when the simulator adds an engine later, and the last endpoint wins. A stopped
+// engine is not un-placed: the simulator drops its messages before delivery. An endpoint with a
+// negative coordinate is an error. An engine given a transfer to a peer it was never told about
+// refuses it with an error, because a default endpoint would misprice the move silently.
+type PeerPlaced interface {
+	PlacePeer(addr string, at plan.Endpoint) error
 }
 
 // PeerMessage is one control message from one engine to another.
