@@ -70,6 +70,12 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
                 events.append(["evict", oldest])
             return removed
 
+        def remove_adapter(self, adapter_id):
+            removed = super().remove_adapter(adapter_id)
+            if removed:
+                events.append(["remove", adapter_id])
+            return removed
+
         def activate_adapter(self, lora_id):
             activated = super().activate_adapter(lora_id)
             if activated:
@@ -131,17 +137,34 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
 
             steps = []
             for step in sc["steps"]:
+                # A step is a batch's adapters (set_active_adapters, the model runner's call), or
+                # one dynamic load (add_lora) or unload (remove_lora) of the serving API.
+                if "load" in step:
+                    op, names = "load", [step["load"]]
+                elif "unload" in step:
+                    op, names = "unload", [step["unload"]]
+                else:
+                    op, names = "batch", step["adapters"]
                 requested = []
-                for n in step["adapters"]:
+                for n in names:
                     if lora_id(n) not in requested:
                         requested.append(lora_id(n))
                 del events[:]
                 err = None
+                result = None
                 try:
-                    worker.set_active_adapters([LoRARequest(str(i), i, files) for i in requested], LoRAMapping([], []))
+                    if op == "batch":
+                        worker.set_active_adapters([LoRARequest(str(i), i, files) for i in requested],
+                                                   LoRAMapping([], []))
+                    elif op == "load":
+                        result = worker.add_adapter(LoRARequest(str(requested[0]), requested[0], files))
+                    else:
+                        result = worker.remove_adapter(requested[0])
                 except RuntimeError as e:
                     err = str(e)
+                record = {} if op == "batch" else {"op": op, "result": result}  # batch traces stay as recorded
                 steps.append({
+                    **record,
                     "requested": requested,
                     "events": [list(e) for e in events],
                     "error": err,

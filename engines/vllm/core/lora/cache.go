@@ -25,6 +25,9 @@ const (
 	// Activate moves a cached adapter into a GPU slot (max_loras) so the batch can use it
 	// (LoRAModelManager.activate_adapter).
 	Activate Kind = "activate"
+	// Remove drops an adapter from the CPU cache, as an unload request does
+	// (LoRAModelManager.remove_adapter).
+	Remove Kind = "remove"
 	// Deactivate frees an adapter's GPU slot, for a newcomer or because it left the CPU cache
 	// (_deactivate_adapter).
 	Deactivate Kind = "deactivate"
@@ -113,6 +116,35 @@ func (c *Cache) SetActive(adapters []int) ([]Event, error) {
 	return ev, nil
 }
 
+// Load is add_lora, the worker's side of vLLM's dynamic adapter load (POST /v1/load_lora_adapter ->
+// EngineCore.add_lora -> LRUCacheWorkerLoRAManager.add_adapter, vllm/v1/worker/lora_model_runner_mixin.py:
+// 296-298@4ba787ec): the adapter is loaded unless the CPU cache holds it (the oldest is evicted for
+// room), it is made most recent in both caches, and it is given a GPU slot. Unlike a batch's
+// SetActive it is one adapter and is not bounded by the slots.
+func (c *Cache) Load(adapter int) ([]Event, error) {
+	if adapter < 1 {
+		return nil, fmt.Errorf("lora: adapter id %d", adapter)
+	}
+	return c.add(adapter, nil), nil
+}
+
+// Unload is remove_lora (POST /v1/unload_lora_adapter -> EngineCore.remove_lora ->
+// WorkerLoRAManager.remove_adapter -> LoRAModelManager.remove_adapter, vllm/lora/model_manager.py:
+// 1412-1417@4ba787ec): the adapter loses its GPU slot and leaves the CPU cache. It reports whether
+// the adapter was loaded.
+func (c *Cache) Unload(adapter int) (bool, []Event) {
+	var ev []Event
+	if c.active.has(adapter) {
+		ev = c.freeSlot(adapter, ev)
+		c.active.remove(adapter)
+	}
+	if !c.registered.has(adapter) {
+		return false, ev
+	}
+	c.registered.remove(adapter)
+	return true, append(ev, Event{Remove, adapter})
+}
+
 // add is LRUCacheWorkerLoRAManager.add_adapter.
 func (c *Cache) add(a int, ev []Event) []Event {
 	if !c.registered.has(a) {
@@ -178,6 +210,9 @@ func (c *Cache) activate(a int, ev []Event) []Event {
 	c.active.touch(a)
 	return ev
 }
+
+// Capacity is the CPU cache's size (max_cpu_loras).
+func (c *Cache) Capacity() int { return c.capacity }
 
 // Registered is the CPU cache's adapters, oldest first.
 func (c *Cache) Registered() []int { return append([]int(nil), c.registered.keys...) }

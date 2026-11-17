@@ -91,3 +91,71 @@ func TestMaxCPULoRAsRefusals(t *testing.T) {
 		})
 	}
 }
+
+// An adapter loaded through vLLM's dynamic load before any request is resident, and the request
+// that then names it runs with no load of its own; an adapter nothing loaded is loaded for its
+// request. Unloading removes it again. Before LoadAdapter existed the engine could not place an
+// adapter ahead of its traffic.
+func TestALoadedAdapterNeedsNoLoadForItsRequest(t *testing.T) {
+	built, err := build(t, "max_loras: 2\nmax_cpu_loras: 3\n")()
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := built.(*Engine)
+	if _, err := e.LoadAdapter("a"); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.ResidentAdapterIDs(); len(got) != 1 || got[0] != "a" {
+		t.Fatalf("resident after loading a = %v, want [a]", got)
+	}
+	if e.AdapterCapacity() != 3 {
+		t.Errorf("capacity = %d, want max_cpu_loras 3", e.AdapterCapacity())
+	}
+	loadsFor := func(adapter string, at engine.Time) []int {
+		r := req("r-"+adapter, 16, 1)
+		r.Adapter, r.AdapterPath = adapter, "/loras/"+adapter
+		if err := e.Add(r, at); err != nil {
+			t.Fatal(err)
+		}
+		b, err := e.Schedule(at)
+		if err != nil || b.Empty() {
+			t.Fatalf("batch %v, err %v", b, err)
+		}
+		var loads []int
+		for _, ev := range e.AdapterEvents() {
+			if ev.Kind == lora.Load {
+				loads = append(loads, ev.Adapter)
+			}
+		}
+		if _, err := e.Complete(b.ID, engine.Outcome{}, at+1); err != nil {
+			t.Fatal(err)
+		}
+		return loads
+	}
+	if got := loadsFor("a", 0); len(got) != 0 {
+		t.Errorf("the placed adapter was loaded again for its request: %v", got)
+	}
+	if got := loadsFor("b", 10); len(got) != 1 {
+		t.Errorf("an adapter nothing placed: loads %v, want one", got)
+	}
+	was, _, err := e.UnloadAdapter("a")
+	if err != nil || !was {
+		t.Fatalf("unload a: was %v, err %v", was, err)
+	}
+	for _, n := range e.ResidentAdapterIDs() {
+		if n == "a" {
+			t.Error("a is still resident after unloading it")
+		}
+	}
+	if was, _, _ := e.UnloadAdapter("never"); was {
+		t.Error("unloading an adapter that was never loaded reported it was loaded")
+	}
+
+	plain, err := build(t, "")()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := plain.(*Engine).LoadAdapter("a"); err == nil {
+		t.Error("an engine without LoRA accepted an adapter load")
+	}
+}
