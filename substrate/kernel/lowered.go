@@ -29,6 +29,11 @@ func validateLowered(l plan.Lowered) error {
 	if err := p.ValidateResolved(); err != nil {
 		return err
 	}
+	if w := p.Collectives.AllReduce; w != plan.AllReduceUnstated && w.UsesSMs() != l.Reported.SMAllReduce {
+		return fmt.Errorf("the plan states the all-reduce kernel %q (Plan.Collectives.AllReduce) and "+
+			"Reported.SMAllReduce %t, which disagree about whether it runs on the GPU's SMs; the "+
+			"engine states one resolution (SUB-6)", w, l.Reported.SMAllReduce)
+	}
 	captured := p.Graphs.Decode != plan.LaunchEager || p.Graphs.Other != plan.LaunchEager
 	switch {
 	case p.WeightFormat != "" && model.DType(p.WeightFormat).Bytes() <= 0:
@@ -73,6 +78,15 @@ func (k *Kernel) adoptLowered(l plan.Lowered) error {
 	k.layout.SequenceParallelMoE = c.SequenceParallelMoE
 	k.layout.ModelSequenceParallel = c.SequenceParallelModel
 	k.layout.CustomAllReduce = l.Reported.SMAllReduce
+	k.allReduce = c.AllReduce
+	if k.allReduce == plan.AllReduceUnstated {
+		// An engine that predates Collectives.AllReduce states only whether the reduction runs on
+		// SMs; custom and NCCL are the two kernels that statement can mean.
+		k.allReduce = plan.AllReduceNCCL
+		if l.Reported.SMAllReduce {
+			k.allReduce = plan.AllReduceCustom
+		}
+	}
 	k.overrides = l.Overrides
 	for _, n := range l.Notes {
 		k.assume(n.Name, n.Value, n.Reason)

@@ -1439,43 +1439,87 @@ func (k *Kernel) liftCollectiveFloors(c *resolve.Coefficients) error {
 		keys = append(keys, collKey{Op: model.OpAllGather, Group: price.GroupPCP})
 	}
 	for _, key := range keys {
-		op := key.Op
-		measured := names[op]
-		// The rank count a collective spans, snapped to a width this chip was
-		// actually measured at. The widths come from the registry rather than from a
-		// constant here, so a part swept at 2 and 4 ranks only (a Grace-Blackwell
-		// tray is four GPUs) is not asked for an 8-rank figure that does not exist.
-		ranks, err := k.groupWidth(c, key, measured, dtype, chip)
+		measured := names[key.Op]
+		lane := measured
+		if key.Op == model.OpAllReduce && key.Group == price.GroupTP {
+			lane = k.allReduceLane()
+		}
+		t, err := k.collectiveTriple(c, key, lane, dtype, chip)
+		if err != nil && lane != measured {
+			// The engine states a kernel no sweep measures at this width on this part. The
+			// default lane is a different kernel's figure, so it is recorded, not silent.
+			def, derr := k.collectiveTriple(c, key, measured, dtype, chip)
+			if derr != nil {
+				return derr
+			}
+			k.assume("all_reduce_lane", string(k.allReduce),
+				fmt.Sprintf("no %s all-reduce figure for %d ranks on %s (%v); priced from the %s lane",
+					k.allReduce, def.ranks, k.chip.Name, err, plan.AllReduceCustom))
+			t, err = def, nil
+		}
 		if err != nil {
 			return err
 		}
-		stem := fmt.Sprintf("%s_%s_%drank_%s", measured, dtype, ranks, chip)
-		floor, err := c.Value("collective_floor_" + stem)
-		if err != nil {
-			return fmt.Errorf("no measured floor for a %d-rank %s on %s: %w",
-				ranks, measured, k.chip.Name, err)
-		}
-		rate, err := c.Value("collective_peak_rate_" + stem)
-		if err != nil {
-			return fmt.Errorf("no measured rate for a %d-rank %s on %s: %w",
-				ranks, measured, k.chip.Name, err)
-		}
-		k.collectiveFloors[key] = time.Duration(floor * float64(time.Microsecond))
-		k.collectiveRates[key] = rate * 1e6 // bytes per microsecond to bytes per second
-		// The transition rate is what actually prices a forward pass's collectives; the
-		// peak above is only a ceiling. Absent, the pricing falls back to the
-		// two-parameter form, which is optimistic in the transition region — so its
-		// absence is reported rather than silently tolerated.
-		transition, err := c.Value("collective_transition_rate_" + stem)
-		if err != nil {
-			return fmt.Errorf(
-				"no measured transition rate for a %d-rank %s on %s; the two-parameter "+
-					"form understates a collective by up to 3.8x in the message range a "+
-					"forward pass produces: %w", ranks, measured, k.chip.Name, err)
-		}
-		k.collectiveTransitions[key] = transition * 1e6
+		k.collectiveFloors[key] = t.floor
+		k.collectiveRates[key] = t.rate
+		k.collectiveTransitions[key] = t.transition
 	}
 	return nil
+}
+
+// allReduceLane is the entry-name token of the coefficient lane that prices the tensor-parallel
+// all-reduce under the kernel the engine resolved: the custom kernel's lane carries the plain
+// operation name, every other kernel a lane of its own beside it (all_reduce_nccl, ...).
+func (k *Kernel) allReduceLane() string {
+	if k.allReduce == plan.AllReduceCustom || k.allReduce == plan.AllReduceUnstated {
+		return "all_reduce"
+	}
+	return "all_reduce_" + string(k.allReduce)
+}
+
+// collectiveTriple is one collective's measured floor, peak rate and transition rate in the lane
+// named by measured, at the width its group spans on this chip.
+type collectiveTriple struct {
+	floor            time.Duration
+	rate, transition float64 // bytes per second
+	ranks            int
+}
+
+func (k *Kernel) collectiveTriple(c *resolve.Coefficients, key collKey, measured, dtype, chip string) (collectiveTriple, error) {
+	// The rank count a collective spans, snapped to a width this chip was
+	// actually measured at. The widths come from the registry rather than from a
+	// constant here, so a part swept at 2 and 4 ranks only (a Grace-Blackwell
+	// tray is four GPUs) is not asked for an 8-rank figure that does not exist.
+	ranks, err := k.groupWidth(c, key, measured, dtype, chip)
+	if err != nil {
+		return collectiveTriple{}, err
+	}
+	stem := fmt.Sprintf("%s_%s_%drank_%s", measured, dtype, ranks, chip)
+	floor, err := c.Value("collective_floor_" + stem)
+	if err != nil {
+		return collectiveTriple{}, fmt.Errorf("no measured floor for a %d-rank %s on %s: %w",
+			ranks, measured, k.chip.Name, err)
+	}
+	rate, err := c.Value("collective_peak_rate_" + stem)
+	if err != nil {
+		return collectiveTriple{}, fmt.Errorf("no measured rate for a %d-rank %s on %s: %w",
+			ranks, measured, k.chip.Name, err)
+	}
+	// The transition rate is what actually prices a forward pass's collectives; the
+	// peak above is only a ceiling. Absent, the pricing falls back to the
+	// two-parameter form, which is optimistic in the transition region -- so its
+	// absence is reported rather than silently tolerated.
+	transition, err := c.Value("collective_transition_rate_" + stem)
+	if err != nil {
+		return collectiveTriple{}, fmt.Errorf(
+			"no measured transition rate for a %d-rank %s on %s; the two-parameter "+
+				"form understates a collective by up to 3.8x in the message range a "+
+				"forward pass produces: %w", ranks, measured, k.chip.Name, err)
+	}
+	return collectiveTriple{
+		floor: time.Duration(floor * float64(time.Microsecond)),
+		rate:  rate * 1e6, transition: transition * 1e6, ranks: ranks, // bytes per microsecond to per second
+	}, nil
 }
 
 // snapDeclared snaps a width to one the registry declares for a family of per-width
@@ -2415,10 +2459,7 @@ func (k *Kernel) buildProvenance(c *resolve.Coefficients) {
 			Field: o.Field, Requested: o.Requested, Resolved: o.Resolved, Reason: o.Reason,
 		})
 	}
-	backend := "nccl"
-	if k.layout.CustomAllReduce {
-		backend = "custom"
-	}
+	backend := string(k.allReduce)
 	cascade := k.cascadeAttention
 	async := k.asyncScheduling
 	k.resolution = kernel.Resolution{

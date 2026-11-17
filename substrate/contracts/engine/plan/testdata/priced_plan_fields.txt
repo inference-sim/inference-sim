@@ -28,6 +28,7 @@ CacheFormat.LatentCellBytes # kernel: TestEachResolvedPlanSettingMovesAPrice
 CacheFormat.Record # kernel: TestEachResolvedPlanSettingMovesAPrice
 CacheFormat.Recurrent # kernel: TestEachResolvedPlanSettingMovesAPrice
 CacheFormat.StateElementBytes # kernel: TestEachResolvedPlanSettingMovesAPrice
+CollectivePlan.AllReduce # kernel: TestEachResolvedPlanSettingMovesAPrice
 CollectivePlan.SequenceParallelModel # kernel: TestEachResolvedPlanSettingMovesAPrice
 CollectivePlan.SequenceParallelMoE # kernel: TestEachResolvedPlanSettingMovesAPrice
 DecodeContextPlan.Combine # kernel: TestEachResolvedPlanSettingMovesAPrice

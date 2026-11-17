@@ -148,7 +148,42 @@ type CollectivePlan struct {
 	// the tensor-parallel ranks, so each attention all-reduce becomes an all-gather and a
 	// reduce-scatter.
 	SequenceParallelModel bool
+	// AllReduce is the kernel the engine resolved for the tensor-parallel all-reduce, after
+	// every request it declined (an unsupported width, a group that leaves the node). The cost
+	// model prices the lane measured for that kernel and resolves nothing itself (SUB-6).
+	// Unstated is read from ReportedSettings.SMAllReduce: true is AllReduceCustom, false is
+	// AllReduceNCCL, which is what an engine that predates this field states.
+	AllReduce AllReduceBackend
 }
+
+// AllReduceBackend is the kernel that runs a tensor-parallel all-reduce, in neutral words.
+type AllReduceBackend string
+
+const (
+	// AllReduceUnstated leaves the choice to ReportedSettings.SMAllReduce.
+	AllReduceUnstated AllReduceBackend = ""
+	// AllReduceCustom is the engine's own streaming-multiprocessor kernel over peer memory.
+	AllReduceCustom AllReduceBackend = "custom"
+	// AllReduceNCCL is the communication library's all-reduce.
+	AllReduceNCCL AllReduceBackend = "nccl"
+	// AllReduceFlashInferTRTLLM is FlashInfer's all-reduce on the TensorRT-LLM kernels.
+	AllReduceFlashInferTRTLLM AllReduceBackend = "flashinfer_trtllm"
+	// AllReduceFlashInferMNNVL is FlashInfer's all-reduce over multi-node NVLink.
+	AllReduceFlashInferMNNVL AllReduceBackend = "flashinfer_mnnvl"
+)
+
+// Valid reports whether b is a known word; the unstated word is valid.
+func (b AllReduceBackend) Valid() bool {
+	switch b {
+	case AllReduceUnstated, AllReduceCustom, AllReduceNCCL, AllReduceFlashInferTRTLLM, AllReduceFlashInferMNNVL:
+		return true
+	}
+	return false
+}
+
+// UsesSMs reports whether the kernel runs on the GPU's streaming multiprocessors over peer
+// memory (every word but NCCL); it is meaningful for a stated word only.
+func (b AllReduceBackend) UsesSMs() bool { return b != AllReduceNCCL }
 
 // DecodeContextPlan is how a decode-context-parallel group combines its partial attention and
 // stripes a sequence's KV across its ranks.
@@ -215,6 +250,7 @@ func (p PoolPlan) ValidateResolved() error {
 	width("Cache.StateElementBytes", p.Cache.StateElementBytes)
 	negative("MoE.RedundantExperts", int64(p.MoE.RedundantExperts))
 	word("MoE.Routing", string(p.MoE.Routing), p.MoE.Routing.Valid())
+	word("Collectives.AllReduce", string(p.Collectives.AllReduce), p.Collectives.AllReduce.Valid())
 	word("DecodeContext.Combine", string(p.DecodeContext.Combine), p.DecodeContext.Combine.Valid())
 	negative("DecodeContext.Interleave", int64(p.DecodeContext.Interleave))
 	negative("Engram.Shards", int64(p.Engram.Shards))

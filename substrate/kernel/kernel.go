@@ -200,7 +200,10 @@ type Kernel struct {
 	// priced one of the two at the other's width. For the ops the context-parallel axes
 	// add, the 8-rank floor is 1.35x to 1.60x the 4-rank figure across the nine parts
 	// this registry carries at both; see price.GroupAxis for the per-op spread.
-	collectiveFloors      map[collKey]time.Duration
+	collectiveFloors map[collKey]time.Duration
+	// allReduce is the kernel the engine resolved for the tensor-parallel all-reduce, which selects
+	// the coefficient lane that prices it (liftCollectiveFloors).
+	allReduce             plan.AllReduceBackend
 	collectiveRates       map[collKey]float64
 	collectiveTransitions map[collKey]float64
 

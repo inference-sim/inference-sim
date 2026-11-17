@@ -208,6 +208,11 @@ func TestEachResolvedPlanSettingMovesAPrice(t *testing.T) {
 		{"MoEPlan.Fused", muse, nil, func(l *plan.Lowered) { l.Plan.MoE.Fused = true }},
 		{"MoEPlan.Routing", routed, nil, func(l *plan.Lowered) { l.Plan.MoE.Routing = plan.RoutingSeparate }},
 		{"MoEPlan.RedundantExperts", routed, nil, func(l *plan.Lowered) { l.Plan.MoE.RedundantExperts = 16 }},
+		{"CollectivePlan.AllReduce", dense, func(l *plan.Lowered) {
+			l.Reported.SMAllReduce, l.Plan.Collectives.AllReduce = true, plan.AllReduceCustom
+		}, func(l *plan.Lowered) {
+			l.Reported.SMAllReduce, l.Plan.Collectives.AllReduce = false, plan.AllReduceNCCL
+		}},
 		{"CollectivePlan.SequenceParallelMoE", spMoE, nil, func(l *plan.Lowered) { l.Plan.Collectives.SequenceParallelMoE = true }},
 		{"CollectivePlan.SequenceParallelModel", v41, nil, func(l *plan.Lowered) { l.Plan.Collectives.SequenceParallelModel = true }},
 		{"DecodeContextPlan.Combine", dcp, nil, func(l *plan.Lowered) { l.Plan.DecodeContext.Combine = plan.CombineAllToAll }},
