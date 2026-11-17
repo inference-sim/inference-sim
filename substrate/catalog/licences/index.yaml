@@ -30,6 +30,12 @@ models:
       - file: MIT.deepseek.txt
         source: https://huggingface.co/deepseek-ai/DeepSeek-R1-0528/raw/4236a6af538feda4548eca9ab308586007567f52/LICENSE
         sha256: f2c6c602815669d292889e5be8c802f2ed950653b77999b1584e8e6aed25d040
+  - model: deepseek-r1-0528-fp4-v2
+    licence: MIT
+    texts:
+      - file: MIT.nvidia.txt
+        source: https://huggingface.co/nvidia/DeepSeek-R1-0528-FP4-V2/raw/25a138f28f49022958b9f2d205f9b7de0cdb6e18/LICENSE
+        sha256: c6bbdbdabe1aa56ade66f961688a8e4d5663b00c8566213f26d2cd9443fccc95
   - model: deepseek-v2-lite
     licence: LicenseRef-deepseek
     texts:
