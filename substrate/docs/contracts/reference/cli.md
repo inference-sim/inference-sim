@@ -10,6 +10,7 @@ From the root of a blis-substrate checkout:
 go run ./validate/cmd/validate-catalog      <catalog dir>
 go run ./validate/cmd/validate-registry     <registry dir>
 go run ./validate/cmd/validate-measurements [-local] <measurements dir>
+go run ./validate/cmd/unselected-entries    [-selected RESULT]... [-kernel-impls TABLE]... <registry dir>
 ```
 
 The repository's own data is `catalog`, `registry` and `catalog/measurements`. Any
@@ -67,6 +68,16 @@ It writes one line per file to standard output, the verdict for a run, and exits
 every file validates, `1` when any fails, and `2` on wrong arguments or a path that is not a
 directory.
 
+## unselected-entries
+
+Lists the coefficient entries under `coefficients/` that meet neither condition of design
+VAL-8: no `-selected` Result names the entry in its `selected_entries`, and no `-kernel-impls`
+[kernel-implementation table](kernel-impls.md#which-entries-the-tables-account-for) lists one
+of the entry's `kernel_impls`. Both flags repeat. It writes one line per entry it lists to
+standard output and a summary to standard error, and exits `0` when it lists none, `1` when it
+lists some, and `2` on wrong arguments, a root with no coefficient sets, or a file that does not
+load.
+
 ## Exit codes
 
 | Code | validate-catalog | validate-registry |
@@ -77,4 +88,5 @@ directory.
 
 Source: [`validate/cmd/validate-catalog`](https://github.com/inference-sim/blis-substrate/tree/main/validate/cmd/validate-catalog),
 [`validate/cmd/validate-registry`](https://github.com/inference-sim/blis-substrate/tree/main/validate/cmd/validate-registry),
-[`validate/cmd/validate-measurements`](https://github.com/inference-sim/blis-substrate/tree/main/validate/cmd/validate-measurements).
+[`validate/cmd/validate-measurements`](https://github.com/inference-sim/blis-substrate/tree/main/validate/cmd/validate-measurements),
+[`validate/cmd/unselected-entries`](https://github.com/inference-sim/blis-substrate/tree/main/validate/cmd/unselected-entries).
