@@ -5,7 +5,7 @@ name: rederive
 # `validate.yml`'s derivation-tests job runs validator/ without the AISimulate sweeps, so
 # test_generated_from_aisimulate.py and test_writers_are_idempotent.py skip there: a pull
 # request that hand-edits a fitted value, or changes a writer, was caught only if its
-# author ran them locally (inference-sim/blis-registry#36). This job checks out AISimulate
+# author ran them locally (https://github.com/inference-sim/blis-registry/issues/36). This job checks out AISimulate
 # at the commit every committed value re-derives at and runs the whole suite
 # (scripts/rederive.sh), so a value that its own fitter no longer produces fails.
 #

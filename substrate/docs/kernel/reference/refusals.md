@@ -99,7 +99,7 @@ does not price a prefill that runs B, a pool that reports A for decode and nothi
 does not admit it, and a prefill that runs two kernels is priced only by a pair that lists both.
 
 The registry's pairs are `transferred` from vLLM 0.25.0 and list no implementation, because no
-engine release publishes kernel hashes yet (`kernel_impls.json`; inference-sim/blis-registry#73).
+engine release publishes kernel hashes yet (`kernel_impls.json`; inference-sim/blis-substrate#149).
 So on the committed registry the lane is not priced and an engine's report changes no price. The
 lane is dormant until an entry lists the hash of the prefill kernel and the engine reports it.
 
