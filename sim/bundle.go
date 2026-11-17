@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -68,6 +69,13 @@ type AnalyzerBundleConfig struct {
 type InstanceLifecycleBundleConfig struct {
 	LoadingDelay              DelayBundleSpec `yaml:"loading_delay"`
 	WarmStartInitialInstances bool            `yaml:"warm_start_initial_instances"`
+	// WeightSource names the catalog storage tier an instance's weights are read from when it
+	// loads (#1215), such as nvme_gen4 or s3. The loading time then has two parts: the time to
+	// read the instance's resident weights from that tier, priced from the registry's
+	// offload_tier_<tier>_* entries for the instance's chip, and loading_delay, which is what
+	// remains (process start, CUDA context, graph capture). Empty keeps loading_delay as the
+	// whole loading time.
+	WeightSource string `yaml:"weight_source"`
 }
 
 // AutoscalerBundleConfig holds autoscaler pipeline configuration.
@@ -234,6 +242,9 @@ func (b *PolicyBundle) Validate() error {
 	}
 	if ls < 0 {
 		return fmt.Errorf("instance_lifecycle.loading_delay.stddev must be >= 0, got %v", ls)
+	}
+	if ws := b.InstanceLifecycle.WeightSource; ws != strings.TrimSpace(ws) || strings.ContainsAny(ws, " \t\n") {
+		return fmt.Errorf("instance_lifecycle.weight_source must be a storage tier name such as nvme_gen4, got %q", ws)
 	}
 	return nil
 }

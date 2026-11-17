@@ -1,6 +1,8 @@
 package cluster
 
 import (
+	"time"
+
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -22,6 +24,13 @@ type DeploymentConfig struct {
 	// The build site (cmd/engine_build.go) supplies it, so this package names no engine
 	// implementation.
 	NewEngine func(index int, cfg sim.InstanceConfig) (*sim.EngineDriver, error) `json:"-" yaml:"-"`
+
+	// WeightLoadTime prices reading an instance's resident weights from a storage tier (#1215):
+	// the time for an instance of tpDegree ranks on chip gpu to load from tier. It is used when
+	// InstanceLifecycle.WeightSource names a tier; the build site supplies it from the kernel of
+	// the instance's chip, so this package prices nothing itself. An error means the tier cannot
+	// be priced for the chip, which the build site refuses before the run starts.
+	WeightLoadTime func(gpu, tier string, tpDegree int) (time.Duration, error) `json:"-" yaml:"-"`
 
 	// DPLockstepRanks is the data-parallel width of an MoE replica (#1909): each run of this
 	// many consecutive instances is one replica whose ranks step in lockstep and share one
