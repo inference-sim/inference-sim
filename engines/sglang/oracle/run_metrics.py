@@ -7,8 +7,8 @@ It is oracle/run_sched.py with three additions to each step of its trace:
 
 - "metrics": [[name, {labels}, value], ...] for every sample of the registry whose name starts with
   "sglang:", sorted, as read when the next iteration starts to receive (so it is what the step's
-  reporting left). Series of a wall-clock instant (`_created`) and the label that names this
-  machine's model path are left out;
+  reporting left). Series of a wall-clock instant (`_created`), the process's real CPU time and the label that
+  names this machine's model path are left out;
 - "kv_events": the hex of each msgpack payload the KV-event publisher was asked to send in the step.
   A scenario with `"kv_events_config": "{\\"publisher\\": \\"recording\\"}"` among its server_args
   publishes through a publisher that keeps the bytes in place of the ZMQ socket (oracle/mocks.json);
@@ -30,6 +30,8 @@ import run_sched  # noqa: E402
 EXTRA_SERVER_ARGS = ("enable_metrics", "decode_log_interval", "kv_events_config")
 DROPPED_SUFFIXES = ("_created",)
 DROPPED_LABELS = ("model_name",)
+# Real process CPU time (a psutil reading): it differs between two runs of one scenario.
+DROPPED_SERIES = ("sglang:scheduler_process_cpu_seconds_total",)
 PUBLISHED = []  # the payloads (hex) published since the last step began
 
 
@@ -39,7 +41,7 @@ def registry_samples() -> list:
     out = []
     for fam in REGISTRY.collect():
         for s in fam.samples:
-            if s.name.startswith("sglang:") and not s.name.endswith(DROPPED_SUFFIXES):
+            if s.name.startswith("sglang:") and not s.name.endswith(DROPPED_SUFFIXES) and s.name not in DROPPED_SERIES:
                 labels = {k: v for k, v in sorted(s.labels.items()) if k not in DROPPED_LABELS}
                 out.append([s.name, labels, None if s.value != s.value else s.value])  # NaN is not JSON
     out.sort(key=lambda r: (r[0], sorted(r[1].items())))
