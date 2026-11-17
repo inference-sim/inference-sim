@@ -1950,7 +1950,11 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		// keeps a non-empty ITL, so it is still served: it keeps its TTFT, scheduling delay
 		// and request row (the user did receive that token), but gets no E2E or completion
 		// stamp, since it did not complete (the E2E block below).
-		servedFirstToken := parent.DecodeSubReq != nil && len(parent.DecodeSubReq.ITL) > 0
+		//
+		// A request whose whole output is one token has no inter-token gap, so its ITL is empty
+		// although it was served: the engine stamped its first-token time (TTFTSet) instead, and
+		// that, not a gap, is what says a token reached the client (#2123).
+		servedFirstToken := parent.DecodeSubReq != nil && (len(parent.DecodeSubReq.ITL) > 0 || parent.DecodeSubReq.TTFTSet)
 		served := completed && servedFirstToken
 
 		// Read the decode sub-request's own per-instance measurements before the
@@ -2087,13 +2091,19 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		delete(m.RequestTTFTs, pfx)
 		delete(m.RequestTTFTs, dec)
 		if served {
-			// `served` guarantees DecodeSubReq != nil && len(ITL) > 0, so the decode
+			// `served` guarantees DecodeSubReq != nil and a surviving first token (an ITL
+			// entry, or a stamped first-token time for a one-token output), so the decode
 			// sub-request emitted a first token — including the case where it emitted that
 			// token and THEN timed out mid-generation (a genuine arrival→first-token span;
 			// the user did receive the token). The primary branch additionally needs the
 			// recorded decode scheduling delay; without it, fall back to the prefill-only
 			// TTFT (defensive — decode data partially unavailable).
-			if hasPrefillTTFT && hasDecodeDelay {
+			if len(parent.DecodeSubReq.ITL) == 0 {
+				// A one-token output: the decode engine stamped the first token's time from the
+				// request's arrival (the decode sub-request arrives with the parent), which is
+				// the user-visible TTFT as it stands; no first-step gap exists to rebuild it from.
+				m.RequestTTFTs[pid] = float64(parent.DecodeSubReq.FirstTokenTime)
+			} else if hasPrefillTTFT && hasDecodeDelay {
 				firstDecodeStep := float64(parent.DecodeSubReq.ITL[0])
 				newTTFT := float64(decodeDelay) + firstDecodeStep
 				if newTTFT < 0 {
