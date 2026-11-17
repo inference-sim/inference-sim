@@ -30,8 +30,9 @@ on:
 permissions:
   contents: read
 
+# An edit that does not change the base starts a run in a group of its own with every job skipped.
 concurrency:
-  group: mutation-${{ github.event.pull_request.number || github.ref }}
+  group: mutation-${{ github.event.pull_request.number || github.ref }}${{ github.event.action == 'edited' && !github.event.changes.base && '-edit' || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -42,7 +43,7 @@ jobs:
   # pull request; elsewhere the shards start at once.
   gate:
     name: gate
-    if: github.event_name == 'pull_request'
+    if: ${{ github.event_name == 'pull_request' && (github.event.action != 'edited' || github.event.changes.base) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -78,7 +79,7 @@ jobs:
   mutation-run:
     name: mutation-run (shard ${{ matrix.shard }})
     needs: gate
-    if: ${{ !cancelled() && (needs.gate.result == 'success' || needs.gate.result == 'skipped') }}
+    if: ${{ !cancelled() && (needs.gate.result == 'success' || (needs.gate.result == 'skipped' && github.event.action != 'edited')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
@@ -145,7 +146,7 @@ jobs:
   mutation:
     name: mutation
     needs: [gate, mutation-run]
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && (github.event.action != 'edited' || github.event.changes.base) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
