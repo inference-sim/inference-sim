@@ -6,9 +6,9 @@
   "commit": "4ba787ec9959e566d3b587a796dff07673324da5"
  },
  "counts": {
-  "modelled": 69,
+  "modelled": 70,
   "out_of_scope": 40,
-  "refused": 152
+  "refused": 151
  },
  "items": [
   {
@@ -241,9 +241,13 @@
    "name": "p2p",
    "site": "vllm/v1/kv_offload/tiering/factory.py:158",
    "class": "vllm.v1.kv_offload.tiering.p2p.manager.P2PSecondaryTierManager",
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/204",
-   "why": "refused by type until the engine runs it: the tier is ported and diff-tested at the tiering interfaces (core/connector/tiering P2PTier), but its peer control messages, WRITEs between instances and tier polls are not yet carried by the simulator"
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/tiering",
+    "core/connector/tiering/testdata/golden",
+    "core/vllm/offloadtiers_p2p_test.go"
+   ],
+   "why": "over the CPU primary tier; the engine is a Peered: the tier's control messages travel as the simulator's peer messages and each WRITE is a store between pools priced from its Move, to the endpoint the simulator placed the peer at (PlacePeer); the message delivery latency and the WRITE's duration are the simulator's, and a session that is only idle is polled at the next message or call rather than on the poll thread's schedule (blis-vllm#204); only the UCX data plane, store backpressure refused (blis-vllm#13)"
   },
   {
    "id": "secondary_tier:obj",

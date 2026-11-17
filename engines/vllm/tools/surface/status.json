@@ -1298,9 +1298,13 @@
    "why": "over the CPU primary tier; each job one NIXL OBJ transfer, a transfer to or from the tier's device_class priced on its offload_tier_<device>_* coefficients, which are scenario inputs (blis-vllm#184); the probe worker timed by named substitution (blis-vllm#190); store backpressure refused (blis-vllm#13)"
   },
   "secondary_tier:p2p": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/204",
-   "why": "refused by type until the engine runs it: the tier is ported and diff-tested at the tiering interfaces (core/connector/tiering P2PTier), but its peer control messages, WRITEs between instances and tier polls are not yet carried by the simulator"
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/tiering",
+    "core/connector/tiering/testdata/golden",
+    "core/vllm/offloadtiers_p2p_test.go"
+   ],
+   "why": "over the CPU primary tier; the engine is a Peered: the tier's control messages travel as the simulator's peer messages and each WRITE is a store between pools priced from its Move, to the endpoint the simulator placed the peer at (PlacePeer); the message delivery latency and the WRITE's duration are the simulator's, and a session that is only idle is polled at the next message or call rather than on the poll thread's schedule (blis-vllm#204); only the UCX data plane, store backpressure refused (blis-vllm#13)"
   },
   "speculative_method:bailing_hybrid_mtp": {
    "status": "out_of_scope",
