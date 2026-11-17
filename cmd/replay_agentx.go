@@ -41,12 +41,12 @@ var (
 )
 
 func registerAgentXReplayFlags(c *cobra.Command) {
-	c.Flags().StringVar(&agxScenarioFlag, "agentic-scenario", "", `Replay an agentic harness scenario from its raw corpus instead of a TraceV2 file. One value: "inferencex-agentx-mvp" (aiperf 0.12.0 --scenario inferencex-agentx-mvp). Excludes --trace-header/--trace-data/--session-mode`)
+	c.Flags().StringVar(&agxScenarioFlag, "agentic-scenario", "", `Replay an agentic harness scenario from its raw corpus instead of a TraceV2 file. "inferencex-agentx-mvp" (aiperf 0.12.0 --scenario inferencex-agentx-mvp) or "aiperf-constant-load" (aiperf 0.12.0 without --scenario: --concurrency live root sessions, recycled as they end; its load block comes from --workload-spec). Excludes --trace-header/--trace-data/--session-mode`)
 	c.Flags().StringVar(&agxWorkloadSpec, "workload-spec", "", "With --agentic-scenario: a blis-schemas replay workload YAML (a Replay, or a document whose workload.replay is one); the flags below override it")
 	c.Flags().StringVar(&agxCorpusPath, "corpus", "", "With --agentic-scenario: the Weka v7 corpus file (JSONL, one trace per line), read once and streamed")
 	c.Flags().StringVar(&agxCorpusSHA256, "corpus-sha256", "", "With --agentic-scenario: the corpus file's sha256; the replay refuses a corpus that does not match (defaults to the descriptor's corpus.sha256)")
-	c.Flags().IntVar(&agxConcurrency, "concurrency", 0, "With --agentic-scenario: session-tree lanes (live trees, not requests)")
-	c.Flags().DurationVar(&agxBenchmarkDur, "benchmark-duration", 0, "With --agentic-scenario: the profiling sending window (at least 900s; scenario default 1800s)")
+	c.Flags().IntVar(&agxConcurrency, "concurrency", 0, "With --agentic-scenario: session-tree lanes (live trees, not requests); under aiperf-constant-load, session slots (live root sessions)")
+	c.Flags().DurationVar(&agxBenchmarkDur, "benchmark-duration", 0, "With --agentic-scenario: the profiling sending window (inferencex-agentx-mvp: at least 900s, default 1800s; aiperf-constant-load: required, no floor)")
 	c.Flags().StringVar(&agxGracePeriod, "grace-period", "", `With --agentic-scenario: how long requests in flight at the end of the window may finish before they are cancelled without a record (a duration or "inf"; default 30s)`)
 	c.Flags().StringVar(&agxCorpusCache, "corpus-cache", "", "With --agentic-scenario: a directory for parsed-corpus snapshots, keyed by the corpus sha256, the max-context filter, chain splitting and this build. A run that finds a valid snapshot skips the JSON parse; a missing, damaged or mismatched one is ignored (and logged) and rewritten. Output is identical with or without it")
 	c.Flags().StringVar(&agxMaxContextLength, "max-context-length", "", `With --agentic-scenario: drop every trace whose peak prompt + max(output, 1) exceeds this ("max_model_len" = the deployment's resolved max_model_len, or a token count; default no filter)`)
@@ -269,7 +269,7 @@ func buildAgentXRun(cmd *cobra.Command) (*agentXRun, []*sim.Request) {
 	if !math.IsInf(grace, 1) {
 		graceUs = int64(math.Round(grace * 1e6))
 	}
-	drv, err := simworkload.NewAgentXReplay(corpus, simworkload.AgentXReplayConfig{
+	cfg := simworkload.AgentXReplayConfig{
 		Concurrency:           spec.Concurrency,
 		Seed:                  spec.Seed(),
 		DurationUs:            int64(math.Round(spec.Duration() * 1e6)),
@@ -282,7 +282,12 @@ func buildAgentXRun(cmd *cobra.Command) (*agentXRun, []*sim.Request) {
 		RequestTimeoutUs:      agxRequestTimeoutUs(cmd),
 		MaxModelLen:           maxModelLen,
 		HorizonCapUs:          horizonCap(cmd),
-	})
+	}
+	if spec.Scenario == workload.ScenarioAIPerfConstantLoad {
+		cfg.Constant = agxConstantLoad(spec)
+		cfg.IdleCapUs = 0 // the global idle cap is the agentic strategy's
+	}
+	drv, err := simworkload.NewAgentXReplay(corpus, cfg)
 	if err != nil {
 		logrus.Fatalf("agentic replay: %v", err)
 	}
@@ -315,6 +320,17 @@ func agxTraceIdleCapUs(spec *workload.Replay) int64 {
 		return int64(math.Round(v * 1e6))
 	}
 	return 0
+}
+
+// agxConstantLoad is the constant-load mode's settings from a validated aiperf-constant-load
+// replay: the recycling rule, the measured session count and the warmup length.
+func agxConstantLoad(spec *workload.Replay) *simworkload.AgentXConstantLoad {
+	l := spec.Load
+	return &simworkload.AgentXConstantLoad{
+		Recycling:        string(spec.SessionRecycling()),
+		MeasuredSessions: l.MeasuredSessions,
+		WarmupUs:         int64(math.Round(l.WarmupDurationS * 1e6)),
+	}
 }
 
 // agxWarmupRequestsPerLane is the request-bounded cache-pressure warmup count, 0 unless a
