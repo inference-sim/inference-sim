@@ -20,9 +20,10 @@ func NewCPUPrimary(numChunks int) *CPUPrimary { return &CPUPrimary{m: newCPUMana
 // Access is one request's access state in the CPU tier (_RequestCacheAccess and the ReqContext's
 // key positions); the caller keeps one per request.
 type Access struct {
-	a     *reqAccess
-	id    string
-	state any
+	a      *reqAccess
+	id     string
+	state  any
+	params map[string]any
 }
 
 // NewAccess is a request's access state.
@@ -104,6 +105,9 @@ func (a *Access) State() any { return a.state }
 
 // SetState sets State.
 func (a *Access) SetState(v any) { a.state = v }
+
+// Params is the request's kv_transfer_params (Request.kv_transfer_params), nil for none.
+func (a *Access) Params() map[string]any { return a.params }
 
 // newAccess is a request's access state, for the request id.
 func newAccess(id string) *Access { return &Access{a: newReqAccess(), id: id} }

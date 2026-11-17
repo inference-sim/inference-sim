@@ -368,6 +368,9 @@ func (e *Engine) Add(r engine.Request, now engine.Time) error {
 		return err
 	}
 	sr.Transfer = tp
+	if sr.KVTransferParams, err = e.off.requestParams(r); err != nil {
+		return err
+	}
 	if r.Adapter != "" {
 		if e.maxLoRAs == 0 {
 			// The input processor refuses an adapter when LoRA is off

@@ -71,13 +71,21 @@ func (c cpuPrimary) TakeEvents() []Event             { return nil }
 // Each request's ReqContext is made at on_new_request and kept in the request's Access.
 type Connector struct{ M *Manager }
 
-// ctx is the request's ReqContext (_create_req_context, offloading/scheduler.py:540-552): every
-// load tier allowed (TierFilter.ALL), the CPU tier's state the connector's Access.
+// ctx is the request's ReqContext (_create_req_context, offloading/scheduler.py:540-552): its
+// kv_transfer_params, its load-tier filter from their kv_load_tiers (every tier allowed without one),
+// and the CPU tier's state the connector's Access.
 func ctx(a *offloading.Access) *ReqContext {
 	if c, ok := a.State().(*ReqContext); ok {
 		return c
 	}
-	c := &ReqContext{ReqID: a.ReqID(), Filter: AllTiers, Primary: a}
+	params := a.Params()
+	filter := AllTiers
+	if len(params) > 0 {
+		if raw, stated := params[KVLoadTiersKey]; stated && raw != nil {
+			filter = ParseTierFilter(raw)
+		}
+	}
+	c := &ReqContext{ReqID: a.ReqID(), Filter: filter, Params: params, Primary: a}
 	a.SetState(c)
 	return c
 }
