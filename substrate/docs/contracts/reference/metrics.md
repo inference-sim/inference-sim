@@ -6,16 +6,34 @@ its identifier; the definition lives here, once.</p>
 
 A definition states the metric's formula (the per-sample quantity), its statistic, its
 population (what the statistic is taken over), its window, its unit, and how it treats
-requests unfinished at the horizon. Time to first token, time per output token and
-inter-token latency follow the benchmark clients BLIS is compared with:
+requests unfinished at the horizon. Time to first token, time per output token, inter-token
+latency and inter-chunk latency follow the benchmark clients BLIS is compared with:
 
 - `tpot_*` is per request: each completed request with at least two output tokens gives one
-  sample, (E2E - TTFT) / (output tokens - 1), as `vllm bench serve` computes it.
+  sample, (E2E - TTFT) / (output tokens - 1).
 - `itl_*` is pooled over tokens: every gap between consecutive output tokens of those same
-  requests is one sample (inference-sim #1894).
+  requests is one sample (inference-sim #1894). Tokens that reach the client in one chunk
+  share its arrival time, so the gaps between them are zero. Under speculative decoding a
+  chunk carries several tokens, and most of these gaps are zero.
+- `icl_*` is pooled over chunks: every gap between consecutive chunks streamed to the
+  client is one sample, one per chunk after the first (inference-sim #2128). With one token
+  per chunk it has the same samples as `itl_*`.
 - `step_interval_*` is the engine's step interval. Under speculative decoding one step
   emits several tokens, so it is not a per-token figure, and it is never compared with
-  `itl_*` or `tpot_*`.
+  `itl_*`, `icl_*` or `tpot_*`.
+
+The clients use the name ITL for three different figures, so a client figure is matched to
+a metric by its definition, never by its name. Each metric's `follows` cites the code below.
+
+| Client field | Definition | Metric |
+|---|---|---|
+| `vllm bench serve` TPOT (v0.32.0) | per request, (latency - TTFT) / (output tokens - 1) | `tpot_*` |
+| `vllm bench serve` ITL (v0.32.0) | pooled, one gap per streamed chunk | `icl_*` |
+| aiperf `inter_token_latency`, "ITL" (v0.12.0) | per request, (latency - TTFT) / (output tokens - 1) | `tpot_*` |
+| aiperf `inter_chunk_latency`, "ICL" (v0.12.0) | pooled, one gap per content chunk | `icl_mean_ms` only: aiperf's percentiles are t-digest estimates, not `numpy_linear` |
+| inference-perf `time_per_output_token` (v0.7.0) | per request, (last token time - first token time) / (output tokens - 1) | `tpot_*` |
+| inference-perf `inter_token_latency` (v0.7.0), a tokenizer configured | pooled, one gap per token, zero inside a chunk | `itl_*` |
+| inference-perf `inter_token_latency` (v0.7.0), no tokenizer | pooled, one gap per streamed chunk | `icl_*` |
 
 ## Scope and aggregate
 
