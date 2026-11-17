@@ -820,6 +820,8 @@ var runCmd = &cobra.Command{
 			bundleAnalyzerSel                    cluster.AnalyzerSelection
 			bundleCollectorWindow                int
 			bundleScaleToZeroIdleUs              float64
+			bundleScaleFromZeroHoldUs            float64
+			bundleScaleFromZeroPollUs            float64
 			bundleNodePools                      []cluster.NodePoolConfig
 			poolChips                            map[string]*poolChip
 			bundleInstanceLifecycle              cluster.InstanceLifecycleConfig
@@ -828,6 +830,8 @@ var runCmd = &cobra.Command{
 			if bundle.Autoscaler.IntervalUs > 0 {
 				bundleAutoscalerIntervalUs = bundle.Autoscaler.IntervalUs
 				bundleScaleToZeroIdleUs = bundle.Autoscaler.ScaleToZeroIdleUs
+				bundleScaleFromZeroHoldUs = bundle.Autoscaler.ScaleFromZeroHoldUs
+				bundleScaleFromZeroPollUs = bundle.Autoscaler.ScaleFromZeroPollUs
 				bundleScaleUpStabilizationWindowUs = bundle.Autoscaler.ScaleUpStabilizationWindowUs
 				bundleScaleDownStabilizationWindowUs = bundle.Autoscaler.ScaleDownStabilizationWindowUs
 				bundleHPAScrapeDelayMean = bundle.Autoscaler.HPAScrapeDelay.Mean
@@ -971,6 +975,8 @@ var runCmd = &cobra.Command{
 			Roles:                          rolesOf(runEngine, prefillOverrides, decodeOverrides),
 			ModelAutoscalerIntervalUs:      bundleAutoscalerIntervalUs,
 			ScaleToZeroIdleUs:              bundleScaleToZeroIdleUs,
+			ScaleFromZeroHoldUs:            bundleScaleFromZeroHoldUs,
+			ScaleFromZeroPollUs:            bundleScaleFromZeroPollUs,
 			ScaleUpStabilizationWindowUs:   bundleScaleUpStabilizationWindowUs,
 			ScaleDownStabilizationWindowUs: bundleScaleDownStabilizationWindowUs,
 			HPAScrapeDelay:                 cluster.DelaySpec{Mean: bundleHPAScrapeDelayMean, Stddev: bundleHPAScrapeDelayStddev},

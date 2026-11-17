@@ -50,7 +50,11 @@ type ClusterSimulator struct {
 	// nil for none.
 	clusterAutoscaler ClusterAutoscaler
 	// lastDemandAt is when each model last had a request arrive (scale to zero, #909).
-	lastDemandAt    map[string]int64
+	lastDemandAt map[string]int64
+	// heldSince is when each request held for a cold start was first held, and coldStarted the
+	// models a request has started a replica for and that have none serving yet (scale from zero, #908).
+	heldSince       map[string]int64
+	coldStarted     map[string]bool
 	instanceSenders map[InstanceID]*eventSender
 	// testSender is the sender of events tests schedule by hand (senderTest).
 	testSender *eventSender

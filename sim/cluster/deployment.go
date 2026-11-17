@@ -138,7 +138,12 @@ type DeploymentConfig struct {
 	// Zero value is safe: ModelAutoscalerIntervalUs=0 disables the autoscaler entirely (INV-6).
 	// ScaleToZeroIdleUs, above 0, drains all of a model's replicas after that long without a request
 	// and with nothing in flight (#909). 0, the default, never does.
-	ScaleToZeroIdleUs              float64   `yaml:"scale_to_zero_idle_us,omitempty"`
+	ScaleToZeroIdleUs float64 `yaml:"scale_to_zero_idle_us,omitempty"`
+	// ScaleFromZeroHoldUs, above 0, makes a request for a model with no replica start one and wait,
+	// up to that long, for it (#908); ScaleFromZeroPollUs is how often a held request looks again
+	// (0: 100 ms). 0, the default, rejects such a request as before.
+	ScaleFromZeroHoldUs            float64   `yaml:"scale_from_zero_hold_us,omitempty"`
+	ScaleFromZeroPollUs            float64   `yaml:"scale_from_zero_poll_us,omitempty"`
 	ModelAutoscalerIntervalUs      float64   `yaml:"model_autoscaler_interval_us,omitempty"`       // tick interval in μs; 0 = autoscaler disabled
 	HPAScrapeDelay                 DelaySpec `yaml:"hpa_scrape_delay,omitempty"`                   // HPA scrape lag: time from WVA metric emission to HPA acting; zero = same-tick actuation; Mean/Stddev in seconds
 	ScaleUpStabilizationWindowUs   float64   `yaml:"scale_up_stabilization_window_us,omitempty"`   // HPA scale-up stabilization window in μs; 0 = act on first signal (HPA default)
