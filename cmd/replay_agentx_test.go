@@ -477,3 +477,32 @@ func TestReplayAgentX_ConstantLoadPresetsLoad(t *testing.T) {
 		}
 	}
 }
+
+// A run names the catalog's constant-load preset and states only its own choices (session
+// slots, the window, the measured session count); the preset supplies the corpus, the warmup
+// and the recycling rule (inference-sim#2124).
+func TestReplayAgentX_RunNamesTheConstantLoadPreset(t *testing.T) {
+	spec := filepath.Join(t.TempDir(), "ref.yaml")
+	doc := "workload: agentx-constant-load-256k\nconcurrency: 3\nbenchmark_duration_s: 60\nload:\n  measured_sessions: 4\n"
+	if err := os.WriteFile(spec, []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, f := runAgentXReplay(t, "--workload-spec", spec, "--agentic-scenario", "aiperf-constant-load", "--benchmark-duration", "60s", "--max-context-length", "max_model_len")
+	var m agentXFile
+	if err := json.Unmarshal(f, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m.Agentic.Lanes != 3 || m.Agentic.ProfileStartUs < 900_000_000 || m.Agentic.WarmupRequests == 0 {
+		t.Errorf("slots %d, measured phase at %d µs, %d warmup requests: want 3 slots after the preset's 900 s warmup",
+			m.Agentic.Lanes, m.Agentic.ProfileStartUs, m.Agentic.WarmupRequests)
+	}
+	measured := 0
+	for _, r := range m.Requests {
+		if r.Phase == "profile" {
+			measured++
+		}
+	}
+	if measured == 0 {
+		t.Error("no measured request")
+	}
+}

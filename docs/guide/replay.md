@@ -325,9 +325,9 @@ refused). The corpus is streamed once and refused on a digest mismatch.
 
 aiperf run **without** `--scenario` over the same corpus holds a fixed number of live root
 sessions rather than agentic lanes. The workload is a replay descriptor with a `load:` block
-(`--workload-spec`; the substrate catalog's `agentx-constant-load-256k` and
-`agentx-constant-load-uncapped` are starting points, to which a run adds `concurrency` and
-`load.measured_sessions`). `--concurrency` is then the number of session slots, and the rules
+(`--workload-spec`). A run can name the substrate catalog's `agentx-constant-load-256k` or
+`agentx-constant-load-uncapped` (`workload: <name>` with `concurrency`, a window and
+`load.measured_sessions`), which supplies the corpus, warmup, grace and idle cap. `--concurrency` is then the number of session slots, and the rules
 below are aiperf 0.12.0's (blis-substrate `contracts/spec/workload/replay.go` cites each to its
 file and line):
 
