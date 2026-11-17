@@ -622,12 +622,12 @@ func (g *DPGroup) Plan() plan.PoolPlan { return g.ranks[0].e.Plan() }
 
 var _ engine.Planned = (*DPGroup)(nil)
 
-// rankWidth is the workers of one data-parallel rank, tensor x pipeline.
 // spansNodes reports whether the group's ranks sit on more than one node.
 func (g *DPGroup) spansNodes() bool {
 	return g.pool != nil && g.pool.GroupNodes(len(g.ranks), rankWidth(*g.pool)) > 1
 }
 
+// rankWidth is the workers of one data-parallel rank, tensor x pipeline.
 func rankWidth(p placement.Placement) int { return max(p.Tensor, 1) * max(p.Pipeline, 1) }
 
 // SetPlacement states where the group sits: p.Node is the node of its first rank, and each rank is the replica

@@ -672,3 +672,42 @@ func TestAMultiConnectorProducerGroupAcrossNodesStatesTheNodeThatHoldsEachReques
 		}
 	}
 }
+
+// The real GLM 5.3 shape: tensor-parallel width 8 times data-parallel width 4 on four nodes of eight GPUs, one rank
+// to a node. Each request's KV sits on its owning rank's node, so every handoff states that node, and all four
+// nodes are named by the requests the balancer spreads over the ranks.
+func TestAFourNodeTP8DP4ProducerGroupStatesEachRequestsOwningNode(t *testing.T) {
+	extra := producer + "data_parallel_size: 4\nplacement: {hardware: h100, fabric: ib-400g, tensor: 8, data: 4, nodes: 4, ranks_per_node: 8, node_racks: [0, 0, 0, 0]}\n"
+	pe := newHostEngine(t, extra, 0)
+	h := &host{t: t, engs: []*hostEngine{pe}}
+	g := pe.e.(*DPGroup)
+	if !g.spansNodes() {
+		t.Fatal("a TP8 x DP4 group on four nodes does not span nodes")
+	}
+	const n = 12
+	for i := 0; i < n; i++ {
+		r := req(strings.Repeat("g", i+1), 80, 6)
+		r.RemoteDecode, r.MaxOutputTokens = true, 1
+		if err := g.Add(r, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.run(func() bool { return len(pe.handoffs) == n })
+	if len(pe.handoffs) != n {
+		t.Fatalf("%d handoffs, want %d", len(pe.handoffs), n)
+	}
+	per := int64(g.ranks[0].e.s.KV.Pool.NumBlocks())
+	nodes := map[int]bool{}
+	for _, ho := range pe.handoffs {
+		if ho.At == nil {
+			t.Fatalf("handoff of %s states no endpoint on a four-node producer group", ho.ID)
+		}
+		if rank := int(ho.Blocks[0] / per); ho.At.Node != rank {
+			t.Errorf("handoff of %s is held at node %d, but rank %d computed it (one rank to a node)", ho.ID, ho.At.Node, rank)
+		}
+		nodes[ho.At.Node] = true
+	}
+	if len(nodes) != 4 {
+		t.Errorf("the handoffs name nodes %v; requests spread over four ranks hold KV on all four nodes", nodes)
+	}
+}
