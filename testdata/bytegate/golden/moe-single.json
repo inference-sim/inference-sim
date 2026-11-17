@@ -884,7 +884,7 @@
     "simulator": "(devel)",
     "substrate": "v0.14.2-0.20261117153501-c48aa81d029a",
     "router": "v1.0.0-blis.4.0.20261117140125-6acd0a87e875",
-    "engine_module": "v0.32.1-0.20261117162711-50c139b8221b"
+    "engine_module": "v0.32.1-0.20261117163903-8ad18c69fcfd"
   },
   "window": {
     "start_us": 125000,
