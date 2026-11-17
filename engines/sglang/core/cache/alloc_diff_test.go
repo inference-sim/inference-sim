@@ -39,7 +39,7 @@ func TestAllocatorAndRequestPoolAnswerAsSGLang(t *testing.T) {
 	}
 	for name, tr := range all {
 		t.Run(name, func(t *testing.T) {
-			r := newReplay(t, tr)
+			r := newAllocReplay(t, tr)
 			r.run()
 			if r.entries == 0 {
 				t.Fatal("no allocator or request-pool call was replayed")
@@ -48,7 +48,7 @@ func TestAllocatorAndRequestPoolAnswerAsSGLang(t *testing.T) {
 	}
 }
 
-type replay struct {
+type allocReplay struct {
 	t       *testing.T
 	tr      Trace
 	bySeq   map[int]Call
@@ -58,11 +58,11 @@ type replay struct {
 	entries int
 }
 
-// atPools is whether a call is at the allocator or the request pool.
-func atPools(c Call) bool { return c.Iface == AllocatorIface || c.Iface == ReqToTokenIface }
+// atAllocPools is whether a call is at the allocator or the request pool.
+func atAllocPools(c Call) bool { return c.Iface == AllocatorIface || c.Iface == ReqToTokenIface }
 
-func newReplay(t *testing.T, tr Trace) *replay {
-	r := &replay{t: t, tr: tr, bySeq: map[int]Call{}}
+func newAllocReplay(t *testing.T, tr Trace) *allocReplay {
+	r := &allocReplay{t: t, tr: tr, bySeq: map[int]Call{}}
 	for _, c := range tr.Calls {
 		r.bySeq[c.Seq] = c
 	}
@@ -70,10 +70,10 @@ func newReplay(t *testing.T, tr Trace) *replay {
 }
 
 // owner is the nearest call at the allocator or request pool that made c, at any depth, or nil.
-func (r *replay) owner(c Call) *Call {
+func (r *allocReplay) owner(c Call) *Call {
 	for c.In != nil {
 		p := r.bySeq[*c.In]
-		if atPools(p) {
+		if atAllocPools(p) {
 			return &p
 		}
 		c = p
@@ -81,7 +81,7 @@ func (r *replay) owner(c Call) *Call {
 	return nil
 }
 
-func (r *replay) descends(c Call, seq int) bool {
+func (r *allocReplay) descends(c Call, seq int) bool {
 	for c.In != nil {
 		if *c.In == seq {
 			return true
@@ -91,13 +91,13 @@ func (r *replay) descends(c Call, seq int) bool {
 	return false
 }
 
-func (r *replay) run() {
+func (r *allocReplay) run() {
 	for _, c := range r.tr.Calls {
 		if r.owner(c) != nil {
 			continue // replayed by the call that made it
 		}
 		r.checkRows(c)
-		if atPools(c) || (c.Iface == KVPoolIface && c.Method == "__init__") {
+		if atAllocPools(c) || (c.Iface == KVPoolIface && c.Method == "__init__") {
 			r.exec(c)
 		}
 	}
@@ -105,12 +105,12 @@ func (r *replay) run() {
 
 // checkRows compares each request row a call's arguments carry, as SGLang read it when the call
 // began, with the port's row.
-func (r *replay) checkRows(c Call) {
+func (r *allocReplay) checkRows(c Call) {
 	if r.pool == nil {
 		return
 	}
 	for name, raw := range c.Args {
-		for _, q := range tracedReqs(raw) {
+		for _, q := range allocTracedReqs(raw) {
 			if q.KV.ReqPoolIdx == nil || q.Row == nil {
 				continue
 			}
@@ -123,23 +123,23 @@ func (r *replay) checkRows(c Call) {
 	}
 }
 
-// tracedReq is a request as the recorder encodes it.
-type tracedReq struct {
+// allocTracedReq is a request as the recorder encodes it.
+type allocTracedReq struct {
 	Req  string  `json:"req"`
 	KV   ReqKV   `json:"kv"`
 	Row  []int64 `json:"row"`
 	Fill []int64 `json:"full_untruncated_fill_ids"`
 }
 
-// tracedReqs finds the requests in an encoded argument: one request or a list of them.
-func tracedReqs(raw json.RawMessage) []tracedReq {
-	var one tracedReq
+// allocTracedReqs finds the requests in an encoded argument: one request or a list of them.
+func allocTracedReqs(raw json.RawMessage) []allocTracedReq {
+	var one allocTracedReq
 	if json.Unmarshal(raw, &one) == nil && one.Req != "" {
-		return []tracedReq{one}
+		return []allocTracedReq{one}
 	}
-	var many []tracedReq
+	var many []allocTracedReq
 	if json.Unmarshal(raw, &many) == nil {
-		var out []tracedReq
+		var out []allocTracedReq
 		for _, q := range many {
 			if q.Req != "" {
 				out = append(out, q)
@@ -150,7 +150,7 @@ func tracedReqs(raw json.RawMessage) []tracedReq {
 	return nil
 }
 
-func (q tracedReq) toReq() *Req {
+func (q allocTracedReq) toReq() *Req {
 	kv := q.KV
 	if kv.ReqPoolIdx != nil {
 		i := *kv.ReqPoolIdx
@@ -159,7 +159,7 @@ func (q tracedReq) toReq() *Req {
 	return &Req{ID: q.Req, FillIDs: q.Fill, KV: kv}
 }
 
-func (r *replay) arg(c Call, name string, v any) {
+func (r *allocReplay) arg(c Call, name string, v any) {
 	r.t.Helper()
 	if err := c.Arg(name, v); err != nil {
 		r.t.Fatal(err)
@@ -167,7 +167,7 @@ func (r *replay) arg(c Call, name string, v any) {
 }
 
 // want compares the port's answer with SGLang's, both as JSON.
-func (r *replay) want(c Call, got any) {
+func (r *allocReplay) want(c Call, got any) {
 	r.t.Helper()
 	g, err := json.Marshal(got)
 	if err != nil {
@@ -181,11 +181,11 @@ func (r *replay) want(c Call, got any) {
 		r.t.Fatalf("seq %d %s.%s: SGLang's answer %s: %v", c.Seq, c.Iface, c.Method, c.Ret, err)
 	}
 	if !reflect.DeepEqual(a, b) {
-		r.t.Errorf("seq %d %s.%s(%v): the port answers %s, SGLang %s", c.Seq, c.Iface, c.Method, argText(c), g, c.Ret)
+		r.t.Errorf("seq %d %s.%s(%v): the port answers %s, SGLang %s", c.Seq, c.Iface, c.Method, allocArgText(c), g, c.Ret)
 	}
 }
 
-func argText(c Call) string {
+func allocArgText(c Call) string {
 	b, _ := json.Marshal(c.Args)
 	if len(b) > 200 {
 		b = append(b[:200], "..."...)
@@ -194,7 +194,7 @@ func argText(c Call) string {
 }
 
 // exec makes call c on the port, and checks the answer. A call SGLang raised on must panic.
-func (r *replay) exec(c Call) {
+func (r *allocReplay) exec(c Call) {
 	r.entries++
 	if c.Method == "__init__" {
 		r.build(c)
@@ -203,7 +203,7 @@ func (r *replay) exec(c Call) {
 	if (c.Iface == AllocatorIface && r.alloc == nil) || (c.Iface == ReqToTokenIface && r.pool == nil) {
 		r.t.Fatalf("seq %d %s.%s before it was built", c.Seq, c.Iface, c.Method)
 	}
-	tree := &scriptedTree{r: r, call: c}
+	tree := &allocScriptedTree{r: r, call: c}
 	panicked := func() (p any) {
 		defer func() { p = recover() }()
 		if c.Iface == AllocatorIface {
@@ -219,7 +219,7 @@ func (r *replay) exec(c Call) {
 	tree.done()
 }
 
-func (r *replay) execAllocator(c Call, tree *scriptedTree) {
+func (r *allocReplay) execAllocator(c Call, tree *allocScriptedTree) {
 	a := r.alloc
 	switch c.Method {
 	case "alloc":
@@ -312,6 +312,21 @@ func (r *replay) execAllocator(c Call, tree *scriptedTree) {
 		}
 	case "verify_byte_accounting":
 		r.want(c, a.VerifyByteAccounting())
+	case "get_extend_allocation_demand":
+		var prefix, seq []int
+		var conservative, shard int
+		r.arg(c, "prefix_lens_cpu", &prefix)
+		r.arg(c, "seq_lens_cpu", &seq)
+		r.arg(c, "conservative_num_tokens", &conservative)
+		r.arg(c, "shard_size", &shard)
+		r.want(c, a.GetExtendAllocationDemand(prefix, seq, conservative, shard))
+	case "mamba_full_cache_donor":
+		// SGLang's answer is None for an allocator with no donor; the port's must be nil too.
+		if d := a.MambaFullCacheDonor(); d != nil {
+			r.want(c, fmt.Sprintf("%T", d))
+		} else {
+			r.want(c, nil)
+		}
 	case "get_kvcache":
 		var ret struct {
 			T string `json:"_t"`
@@ -327,7 +342,7 @@ func (r *replay) execAllocator(c Call, tree *scriptedTree) {
 	}
 }
 
-func (r *replay) wantSlots(c Call, got []int64, ok bool) {
+func (r *allocReplay) wantSlots(c Call, got []int64, ok bool) {
 	r.t.Helper()
 	if !ok {
 		r.want(c, nil)
@@ -348,7 +363,7 @@ func poolClass(p KVPool) string {
 	return fmt.Sprintf("%T", p)
 }
 
-func (r *replay) execRequestPool(c Call) {
+func (r *allocReplay) execRequestPool(c Call) {
 	p := r.pool
 	switch c.Method {
 	case "available_size":
@@ -368,7 +383,7 @@ func (r *replay) execRequestPool(c Call) {
 	case "alloc":
 		var raw json.RawMessage
 		r.arg(c, "reqs", &raw)
-		traced := tracedReqs(raw)
+		traced := allocTracedReqs(raw)
 		reqs := make([]*Req, len(traced))
 		for i, q := range traced {
 			reqs[i] = q.toReq()
@@ -383,7 +398,7 @@ func (r *replay) execRequestPool(c Call) {
 	case "free":
 		var raw json.RawMessage
 		r.arg(c, "req", &raw)
-		traced := tracedReqs(raw)
+		traced := allocTracedReqs(raw)
 		if len(traced) != 1 {
 			r.t.Fatalf("seq %d: free of %d requests", c.Seq, len(traced))
 		}
@@ -403,26 +418,26 @@ func (r *replay) execRequestPool(c Call) {
 }
 
 // wantReqsAfter compares each request's row index after the call with SGLang's.
-func (r *replay) wantReqsAfter(c Call, reqs []*Req) {
+func (r *allocReplay) wantReqsAfter(c Call, reqs []*Req) {
 	byID := map[string]*Req{}
 	for _, q := range reqs {
 		byID[q.ID] = q
 	}
 	for _, raw := range c.ReqAfter {
-		for _, after := range tracedReqs(raw) {
+		for _, after := range allocTracedReqs(raw) {
 			q, ok := byID[after.Req]
 			if !ok {
 				continue
 			}
 			if !reflect.DeepEqual(q.KV.ReqPoolIdx, after.KV.ReqPoolIdx) {
 				r.t.Errorf("seq %d %s: request %s holds row %v in the port, %v in SGLang", c.Seq, c.Method, q.ID,
-					deref(q.KV.ReqPoolIdx), deref(after.KV.ReqPoolIdx))
+					allocDeref(q.KV.ReqPoolIdx), allocDeref(after.KV.ReqPoolIdx))
 			}
 		}
 	}
 }
 
-func deref(p *int) any {
+func allocDeref(p *int) any {
 	if p == nil {
 		return nil
 	}
@@ -431,7 +446,7 @@ func deref(p *int) any {
 
 // build constructs the port's pool, request pool or allocator from SGLang's constructor call, and
 // checks the sizing it records.
-func (r *replay) build(c Call) {
+func (r *allocReplay) build(c Call) {
 	var ret map[string]json.RawMessage
 	if err := c.Answer(&ret); err != nil {
 		r.t.Fatal(err)
@@ -470,7 +485,7 @@ func (r *replay) build(c Call) {
 
 // buildKVPool builds the port's pool from SGLang's constructor call, with the sizing attributes
 // the port gives for it.
-func (r *replay) buildKVPool(c Call, num func(string) int) (KVPool, map[string]any) {
+func (r *allocReplay) buildKVPool(c Call, num func(string) int) (KVPool, map[string]any) {
 	var dtype string
 	r.arg(c, "dtype", &dtype)
 	dt, err := ParseDType(dtype)
@@ -525,7 +540,7 @@ func (r *replay) buildKVPool(c Call, num func(string) int) (KVPool, map[string]a
 }
 
 // wantSizing compares each sizing attribute the port gives with the one SGLang's constructor set.
-func (r *replay) wantSizing(c Call, ret map[string]json.RawMessage, got map[string]any) {
+func (r *allocReplay) wantSizing(c Call, ret map[string]json.RawMessage, got map[string]any) {
 	r.t.Helper()
 	for k, v := range got {
 		raw, ok := ret[k]
@@ -543,17 +558,17 @@ func (r *replay) wantSizing(c Call, ret map[string]json.RawMessage, got map[stri
 	}
 }
 
-// scriptedTree answers the tree-cache calls an allocator call makes, from the trace: each must
+// allocScriptedTree answers the tree-cache calls an allocator call makes, from the trace: each must
 // be the next call SGLang's allocator made at the tree cache within that call, and the pool calls
 // SGLang's tree cache made within it are made on the port before it answers.
-type scriptedTree struct {
+type allocScriptedTree struct {
 	PrefixCache
-	r    *replay
+	r    *allocReplay
 	call Call
 	next int
 }
 
-func (s *scriptedTree) take(method string) Call {
+func (s *allocScriptedTree) take(method string) Call {
 	calls := s.r.tr.Within(s.call.Seq, PrefixCacheIface)
 	if s.next >= len(calls) {
 		s.r.t.Fatalf("seq %d %s: the port calls the tree cache's %s, which SGLang's allocator did not",
@@ -567,7 +582,7 @@ func (s *scriptedTree) take(method string) Call {
 	}
 	// The pool calls the tree cache made while answering, in order.
 	for _, d := range s.r.tr.Calls {
-		if atPools(d) && s.r.descends(d, c.Seq) {
+		if atAllocPools(d) && s.r.descends(d, c.Seq) {
 			if o := s.r.owner(d); o != nil && o.Seq == s.call.Seq {
 				s.r.exec(d)
 			}
@@ -576,14 +591,14 @@ func (s *scriptedTree) take(method string) Call {
 	return c
 }
 
-func (s *scriptedTree) done() {
+func (s *allocScriptedTree) done() {
 	if n := len(s.r.tr.Within(s.call.Seq, PrefixCacheIface)); s.next != n {
 		s.r.t.Errorf("seq %d %s: the port made %d of SGLang's %d calls at the tree cache", s.call.Seq,
 			s.call.Method, s.next, n)
 	}
 }
 
-func (s *scriptedTree) SupportsPrefixSharing() bool {
+func (s *allocScriptedTree) SupportsPrefixSharing() bool {
 	var v bool
 	if err := s.take("supports_prefix_sharing").Answer(&v); err != nil {
 		s.r.t.Fatal(err)
@@ -591,7 +606,7 @@ func (s *scriptedTree) SupportsPrefixSharing() bool {
 	return v
 }
 
-func (s *scriptedTree) SupportsMamba() bool {
+func (s *allocScriptedTree) SupportsMamba() bool {
 	var v bool
 	if err := s.take("supports_mamba").Answer(&v); err != nil {
 		s.r.t.Fatal(err)
@@ -599,7 +614,7 @@ func (s *scriptedTree) SupportsMamba() bool {
 	return v
 }
 
-func (s *scriptedTree) EvictForAlloc(p EvictParams) EvictResult {
+func (s *allocScriptedTree) EvictForAlloc(p EvictParams) EvictResult {
 	c := s.take("evict_for_alloc")
 	var args struct {
 		NumTokens int `json:"num_tokens"`
@@ -617,7 +632,7 @@ func (s *scriptedTree) EvictForAlloc(p EvictParams) EvictResult {
 	return out
 }
 
-func (s *scriptedTree) EvictableSize() int {
+func (s *allocScriptedTree) EvictableSize() int {
 	var v int
 	if err := s.take("evictable_size").Answer(&v); err != nil {
 		s.r.t.Fatal(err)

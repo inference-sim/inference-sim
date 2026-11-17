@@ -54,7 +54,7 @@ func loadSizing(t *testing.T) map[string]sizingTrace {
 func TestPoolBufferBytesAreSGLangs(t *testing.T) {
 	n := 0
 	for name, s := range loadSizing(t) {
-		r := newReplay(t, Trace{Calls: s.Calls})
+		r := newAllocReplay(t, Trace{Calls: s.Calls})
 		pools := map[int]KVPool{}
 		var inits []Call
 		for _, c := range s.Calls {
@@ -180,7 +180,7 @@ func TestTokenBudgetFromTheMemoryFractionIsSGLangs(t *testing.T) {
 	if err := json.Unmarshal(raw, &scenario); err != nil {
 		t.Fatal(err)
 	}
-	r := newReplay(t, tr)
+	r := newAllocReplay(t, tr)
 	var kvInit, allocInit, reqInit *Call
 	for i, c := range tr.Calls {
 		if c.Method != "__init__" {
