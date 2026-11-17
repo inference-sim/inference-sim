@@ -1,5 +1,5 @@
 {
- "description": "reset_cache while a store is in flight: the cache starts empty at slot 0, the pre-reset completion changes nothing, the request's earlier access is discarded, and finishing twice or finishing a request never seen is a no-op.",
+ "description": "reset_cache while a store is in flight: the cache starts empty at slot 0, the pre-reset completion changes nothing, the request's earlier access is discarded, and finishing twice or finishing a request never seen is a no-op. From v0.33.0 the connector calls on_reset_flushed once its workers report every job in flight at the reset (vllm/v1/kv_offload/base.py:487-490@4ba787ec), and this sequence does so straight after the reset.",
  "spec": {
   "name": "CPUOffloadingSpec",
   "cpu_bytes_to_use": 32768,
@@ -30,6 +30,9 @@
   },
   {
    "m": "reset_cache"
+  },
+  {
+   "m": "on_reset_flushed"
   },
   {
    "m": "lookup",

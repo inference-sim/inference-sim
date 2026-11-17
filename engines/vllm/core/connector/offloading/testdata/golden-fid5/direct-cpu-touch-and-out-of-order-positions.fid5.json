@@ -1,0 +1,615 @@
+{
+ "manager": [
+  {
+   "args": {
+    "ctx": "c1",
+    "req": "a"
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "628b49d96dcde97a430dd4f597705899e09a968f793491e4b704cae33a40dc0200000000",
+     "c44474038d459e40e4714afefa7bf8dae9f9834b22f5e8ec1dd434ecb62b512e00000000",
+     "cece8a9cecfb6c7e7ee4f3346d5e2544138bfb6e33bec6042a17333a4d3180b000000000"
+    ],
+    "positions": {},
+    "req": "a"
+   },
+   "m": "prepare_store",
+   "ret": {
+    "evicted": [],
+    "ids": [
+     0,
+     1,
+     2
+    ],
+    "keys_to_store": [
+     "628b49d96dcde97a430dd4f597705899e09a968f793491e4b704cae33a40dc0200000000",
+     "c44474038d459e40e4714afefa7bf8dae9f9834b22f5e8ec1dd434ecb62b512e00000000",
+     "cece8a9cecfb6c7e7ee4f3346d5e2544138bfb6e33bec6042a17333a4d3180b000000000"
+    ]
+   }
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "628b49d96dcde97a430dd4f597705899e09a968f793491e4b704cae33a40dc0200000000",
+     "c44474038d459e40e4714afefa7bf8dae9f9834b22f5e8ec1dd434ecb62b512e00000000",
+     "cece8a9cecfb6c7e7ee4f3346d5e2544138bfb6e33bec6042a17333a4d3180b000000000"
+    ],
+    "req": "a",
+    "success": true
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "628b49d96dcde97a430dd4f597705899e09a968f793491e4b704cae33a40dc0200000000"
+    ],
+    "req": "a"
+   },
+   "m": "touch",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "req": "b"
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "keys": [
+     "a2f1a68a3cf7bab14245ba34e6a348b6822aceb4a9ec7ad04a86c2c93ca1a28a00000000"
+    ],
+    "positions": {},
+    "req": "b"
+   },
+   "m": "prepare_store",
+   "ret": {
+    "evicted": [
+     "c44474038d459e40e4714afefa7bf8dae9f9834b22f5e8ec1dd434ecb62b512e00000000"
+    ],
+    "ids": [
+     1
+    ],
+    "keys_to_store": [
+     "a2f1a68a3cf7bab14245ba34e6a348b6822aceb4a9ec7ad04a86c2c93ca1a28a00000000"
+    ]
+   }
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "keys": [
+     "a2f1a68a3cf7bab14245ba34e6a348b6822aceb4a9ec7ad04a86c2c93ca1a28a00000000"
+    ],
+    "req": "b",
+    "success": true
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "key": "628b49d96dcde97a430dd4f597705899e09a968f793491e4b704cae33a40dc0200000000",
+    "req": "b"
+   },
+   "m": "lookup",
+   "ret": "HIT"
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "key": "c44474038d459e40e4714afefa7bf8dae9f9834b22f5e8ec1dd434ecb62b512e00000000",
+    "req": "b"
+   },
+   "m": "lookup",
+   "ret": "MISS"
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "positions": {
+     "628b49d96dcde97a430dd4f597705899e09a968f793491e4b704cae33a40dc0200000000": 48,
+     "c44474038d459e40e4714afefa7bf8dae9f9834b22f5e8ec1dd434ecb62b512e00000000": 16,
+     "cece8a9cecfb6c7e7ee4f3346d5e2544138bfb6e33bec6042a17333a4d3180b000000000": 32
+    },
+    "req": "a"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "keys": [
+     "f413e43d74f8178745c1acb48b2741438ab9ddccf3ed0a4dd451b0419f7ba83700000000"
+    ],
+    "positions": {},
+    "req": "b"
+   },
+   "m": "prepare_store",
+   "ret": {
+    "evicted": [
+     "a2f1a68a3cf7bab14245ba34e6a348b6822aceb4a9ec7ad04a86c2c93ca1a28a00000000"
+    ],
+    "ids": [
+     1
+    ],
+    "keys_to_store": [
+     "f413e43d74f8178745c1acb48b2741438ab9ddccf3ed0a4dd451b0419f7ba83700000000"
+    ]
+   }
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "key": "628b49d96dcde97a430dd4f597705899e09a968f793491e4b704cae33a40dc0200000000",
+    "req": "b"
+   },
+   "m": "lookup",
+   "ret": "HIT"
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "key": "cece8a9cecfb6c7e7ee4f3346d5e2544138bfb6e33bec6042a17333a4d3180b000000000",
+    "req": "b"
+   },
+   "m": "lookup",
+   "ret": "HIT"
+  },
+  {
+   "args": {},
+   "m": "shutdown",
+   "ret": null
+  }
+ ],
+ "policy": [
+  {
+   "args": {
+    "key": "628b49d96dcde97a430dd4f597705899e09a968f793491e4b704cae33a40dc0200000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "c44474038d459e40e4714afefa7bf8dae9f9834b22f5e8ec1dd434ecb62b512e00000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "cece8a9cecfb6c7e7ee4f3346d5e2544138bfb6e33bec6042a17333a4d3180b000000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "628b49d96dcde97a430dd4f597705899e09a968f793491e4b704cae33a40dc0200000000",
+     "c44474038d459e40e4714afefa7bf8dae9f9834b22f5e8ec1dd434ecb62b512e00000000",
+     "cece8a9cecfb6c7e7ee4f3346d5e2544138bfb6e33bec6042a17333a4d3180b000000000"
+    ],
+    "req": "a"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "628b49d96dcde97a430dd4f597705899e09a968f793491e4b704cae33a40dc0200000000",
+     "c44474038d459e40e4714afefa7bf8dae9f9834b22f5e8ec1dd434ecb62b512e00000000",
+     "cece8a9cecfb6c7e7ee4f3346d5e2544138bfb6e33bec6042a17333a4d3180b000000000"
+    ],
+    "positions": {},
+    "req": "a"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 0,
+     "ref": -1
+    },
+    "ctx": "c1",
+    "key": "628b49d96dcde97a430dd4f597705899e09a968f793491e4b704cae33a40dc0200000000",
+    "positions": {},
+    "req": "a"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 1,
+     "ref": -1
+    },
+    "ctx": "c1",
+    "key": "c44474038d459e40e4714afefa7bf8dae9f9834b22f5e8ec1dd434ecb62b512e00000000",
+    "positions": {},
+    "req": "a"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 2,
+     "ref": -1
+    },
+    "ctx": "c1",
+    "key": "cece8a9cecfb6c7e7ee4f3346d5e2544138bfb6e33bec6042a17333a4d3180b000000000",
+    "positions": {},
+    "req": "a"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "628b49d96dcde97a430dd4f597705899e09a968f793491e4b704cae33a40dc0200000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 0,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "628b49d96dcde97a430dd4f597705899e09a968f793491e4b704cae33a40dc0200000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "c44474038d459e40e4714afefa7bf8dae9f9834b22f5e8ec1dd434ecb62b512e00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 1,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "c44474038d459e40e4714afefa7bf8dae9f9834b22f5e8ec1dd434ecb62b512e00000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "cece8a9cecfb6c7e7ee4f3346d5e2544138bfb6e33bec6042a17333a4d3180b000000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 2,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "cece8a9cecfb6c7e7ee4f3346d5e2544138bfb6e33bec6042a17333a4d3180b000000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "628b49d96dcde97a430dd4f597705899e09a968f793491e4b704cae33a40dc0200000000"
+    ],
+    "req": "a"
+   },
+   "m": "touch",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "a2f1a68a3cf7bab14245ba34e6a348b6822aceb4a9ec7ad04a86c2c93ca1a28a00000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "keys": [
+     "a2f1a68a3cf7bab14245ba34e6a348b6822aceb4a9ec7ad04a86c2c93ca1a28a00000000"
+    ],
+    "req": "b"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "keys": [
+     "a2f1a68a3cf7bab14245ba34e6a348b6822aceb4a9ec7ad04a86c2c93ca1a28a00000000"
+    ],
+    "positions": {},
+    "req": "b"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "n": 1,
+    "protected": [
+     "a2f1a68a3cf7bab14245ba34e6a348b6822aceb4a9ec7ad04a86c2c93ca1a28a00000000"
+    ]
+   },
+   "m": "evict",
+   "ret": [
+    {
+     "id": 1,
+     "key": "c44474038d459e40e4714afefa7bf8dae9f9834b22f5e8ec1dd434ecb62b512e00000000"
+    }
+   ]
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 1,
+     "ref": -1
+    },
+    "ctx": "c2",
+    "key": "a2f1a68a3cf7bab14245ba34e6a348b6822aceb4a9ec7ad04a86c2c93ca1a28a00000000",
+    "positions": {},
+    "req": "b"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "a2f1a68a3cf7bab14245ba34e6a348b6822aceb4a9ec7ad04a86c2c93ca1a28a00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 1,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "a2f1a68a3cf7bab14245ba34e6a348b6822aceb4a9ec7ad04a86c2c93ca1a28a00000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "628b49d96dcde97a430dd4f597705899e09a968f793491e4b704cae33a40dc0200000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 0,
+    "ref": 0
+   }
+  },
+  {
+   "args": {
+    "key": "c44474038d459e40e4714afefa7bf8dae9f9834b22f5e8ec1dd434ecb62b512e00000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "groups": [
+     [
+      "c44474038d459e40e4714afefa7bf8dae9f9834b22f5e8ec1dd434ecb62b512e00000000",
+      "cece8a9cecfb6c7e7ee4f3346d5e2544138bfb6e33bec6042a17333a4d3180b000000000",
+      "628b49d96dcde97a430dd4f597705899e09a968f793491e4b704cae33a40dc0200000000"
+     ]
+    ],
+    "positions": {
+     "628b49d96dcde97a430dd4f597705899e09a968f793491e4b704cae33a40dc0200000000": 48,
+     "c44474038d459e40e4714afefa7bf8dae9f9834b22f5e8ec1dd434ecb62b512e00000000": 16,
+     "cece8a9cecfb6c7e7ee4f3346d5e2544138bfb6e33bec6042a17333a4d3180b000000000": 32
+    },
+    "req": "a"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "f413e43d74f8178745c1acb48b2741438ab9ddccf3ed0a4dd451b0419f7ba83700000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "keys": [
+     "f413e43d74f8178745c1acb48b2741438ab9ddccf3ed0a4dd451b0419f7ba83700000000"
+    ],
+    "req": "b"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "keys": [
+     "f413e43d74f8178745c1acb48b2741438ab9ddccf3ed0a4dd451b0419f7ba83700000000"
+    ],
+    "positions": {},
+    "req": "b"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "n": 1,
+    "protected": [
+     "f413e43d74f8178745c1acb48b2741438ab9ddccf3ed0a4dd451b0419f7ba83700000000"
+    ]
+   },
+   "m": "evict",
+   "ret": [
+    {
+     "id": 1,
+     "key": "a2f1a68a3cf7bab14245ba34e6a348b6822aceb4a9ec7ad04a86c2c93ca1a28a00000000"
+    }
+   ]
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 1,
+     "ref": -1
+    },
+    "ctx": "c2",
+    "key": "f413e43d74f8178745c1acb48b2741438ab9ddccf3ed0a4dd451b0419f7ba83700000000",
+    "positions": {},
+    "req": "b"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "628b49d96dcde97a430dd4f597705899e09a968f793491e4b704cae33a40dc0200000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 0,
+    "ref": 0
+   }
+  },
+  {
+   "args": {
+    "key": "cece8a9cecfb6c7e7ee4f3346d5e2544138bfb6e33bec6042a17333a4d3180b000000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 2,
+    "ref": 0
+   }
+  }
+ ],
+ "provenance": {
+  "blis_vllm_commit": "82b8519e100557ab8165687456bbec426b2af118",
+  "kind": "direct",
+  "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
+  "mock_version": "gpu-mock/7+f4274aa648c4",
+  "mocks": [
+   "vllm.v1.outputs.ModelRunnerOutput",
+   "tests.v1.core.utils.create_scheduler",
+   "sampled token stream",
+   "vllm.v1.core.sched.scheduler.time",
+   "vllm.v1.metrics.stats.time",
+   "vllm.v1.engine.time",
+   "vllm.v1.outputs.DraftTokenIds",
+   "spec-decode acceptance",
+   "tests.v1.core.utils.VllmConfig",
+   "tests.v1.core.utils.SchedulerConfig",
+   "vllm.config.vllm.HAS_TRITON",
+   "KV event publisher",
+   "tests.v1.core.utils.KVCacheConfig",
+   "tests.v1.core.utils.CacheConfig",
+   "vllm.v1.executor.abstract.Executor",
+   "EngineCore construction",
+   "vllm.platforms.cpu async override",
+   "use_v2_model_runner (CPU wheel without Triton)",
+   "vllm.config.ParallelConfig.sync_dp_state",
+   "DP coordinator stats transport",
+   "DPLBAsyncMPClient construction",
+   "DPEngineCoreProc construction",
+   "DP wave loop (harness copy of DPEngineCoreProc.run_busy_loop)",
+   "NIXL connector scheduler config",
+   "KV-transfer parameters on a request",
+   "OffloadingConnector scheduler config",
+   "OffloadingConnector worker (OffloadingWorkerMetadata transport)",
+   "finished_req_ids iteration order (per-process hash seed)"
+  ],
+  "model": "facebook/opt-125m",
+  "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+  "oracle_inputs": {
+   "oracle/drive_kv_interfaces.py": "edb41c5303e50d8b3827ba87c3314e696d1984cf79a2830e3327cc0844a6a022",
+   "oracle/kv_interfaces.py": "4bcde8955836b6ef732f8c901fa94c89a5b7592dcf1db8f6322e3be451c81c10",
+   "oracle/mocks.json": "afd576782c5322ce4c6aa4cdb72fb513e3e78cd8ea54dd6043af0cdf5680a658",
+   "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+   "oracle/run_scheduler.py": "1239a1d64f057fcb543789762859ea33211627e3f2b66b46087ed9ee936222f6",
+   "oracle/scenarios-fid5/cpu-touch-and-out-of-order-positions.json": "ee997efada6e9750f607fd4edf0460aac905a9fb80972806f66c3f813d3c9600"
+  },
+  "platform": "linux-x86_64",
+  "python": "3.12.16",
+  "requirements_lock_sha256": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+  "scenario_sha256": "ee997efada6e9750f607fd4edf0460aac905a9fb80972806f66c3f813d3c9600",
+  "seed": null,
+  "tier": 2,
+  "vllm_commit": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "vllm_distribution": "0.33.0+cpu",
+  "vllm_version": "0.33.0"
+ },
+ "spec": [
+  {
+   "args": {
+    "alignment": 4096,
+    "blocks_per_chunk": 1,
+    "cpu_bytes_to_use": 49152,
+    "eviction_policy": "lru",
+    "groups": [
+     {
+      "tokens_per_block": 16,
+      "window_chunks": null
+     }
+    ],
+    "max_model_len": 0,
+    "offload_prompt_only": true,
+    "replicated_layout": false,
+    "secondary_tiers": 0,
+    "spec": "CPUOffloadingSpec",
+    "worker_kv_bytes_per_block": 16384,
+    "world_size": 1
+   },
+   "m": "get_manager",
+   "ret": {
+    "kv_bytes_per_chunk": 16384,
+    "manager": "CPUOffloadingManager",
+    "num_chunks": 3
+   }
+  }
+ ]
+}
