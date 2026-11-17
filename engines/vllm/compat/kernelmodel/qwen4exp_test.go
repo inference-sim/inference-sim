@@ -223,3 +223,55 @@ func TestKVLayersOfAQwen4ExpHybridAreTheEnginesSpecs(t *testing.T) {
 		t.Errorf("layers per spec %v: want 6 recurrent and 2 each of the QSA layer's three", count)
 	}
 }
+
+// Qwen4Exp builds two Mamba state layouts, Gated DeltaNet's and the per-layer embedding's short
+// convolution, and sizes the model's Mamba page as the larger (get_mamba_specs_from_config,
+// qwen4_exp/nvidia/model.py:880-900; platforms/interface.py:1049-1056@4ba787ec). Each layer keeps
+// its own state bytes, and both are padded to one page.
+func qwen4MambaGraph(arch string, short model.Node) *model.Graph {
+	main, scorer := qsaNodes()
+	main.Caches = []model.Cache{{Name: "kv", Kind: model.CacheKV, Owned: true, BytesPerEntry: 2048}}
+	scorer.Caches = []model.Cache{{Name: "index", Kind: model.CacheIndex, Owned: true, BytesPerEntry: 256, TokensPerEntry: 4}}
+	gdn := model.Node{Op: model.OpRecurrentUpdate, RecurrentKind: model.RecurrentGDN, NumHeads: 48, StateSize: 128,
+		ConvKernel: 4, IntermediateSize: 10240, StateDType: model.DTypeFP32}
+	return &model.Graph{Global: model.GlobalShape{Architecture: arch, WeightDType: model.DTypeBF16, ContextWindow: 262144},
+		LayerKinds: []model.LayerKind{{ID: "rec", Nodes: []model.Node{gdn}}, {ID: "ple", Nodes: []model.Node{short, gdn}},
+			{ID: "attn", Nodes: []model.Node{scorer, main}}},
+		Stack: model.Stack{Pattern: []string{"ple", "rec", "rec", "attn"}, Repeat: 2}}
+}
+
+func TestQwen4ExpSizesTheMambaPageAsTheLargerOfItsTwoStateLayouts(t *testing.T) {
+	short := model.Node{Op: model.OpRecurrentUpdate, RecurrentKind: model.RecurrentShortConv, ConvKernel: 4,
+		ConvDilation: 3, IntermediateSize: 10240}
+	e := engineconfig.Engine{BlockSize: 64}
+	plan, err := planMamba(qwen4MambaGraph(qwen4, short), e, mambaEnv{tp: 8, dcp: 1, pcp: 1, capability: 9, maxModelLen: 262144})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gdnRun, shortRun := plan.runs[recurrentGeometry(qwen4MambaGraph(qwen4, short).LayerKinds[0].Nodes[0])], plan.runs[recurrentGeometry(short)]
+	// Gated DeltaNet at tp 8: conv 10240/8 x 3 bf16, temporal 48/8 x 128 x 128 fp32. The short
+	// convolution is replicated: 10240 x (3 x 3) bf16.
+	if gdnRun.StateBytes != 400896 || shortRun.StateBytes != 184320 {
+		t.Errorf("state bytes: gdn %d, short conv %d; want 400896 and 184320", gdnRun.StateBytes, shortRun.StateBytes)
+	}
+	if gdnRun.PageSizePadded != shortRun.PageSizePadded || gdnRun.BlockSize != shortRun.BlockSize || gdnRun.PageSizePadded == 0 {
+		t.Errorf("the two layouts must share one padded page and block: %+v %+v", gdnRun, shortRun)
+	}
+	if r, err := plan.mambaRun("ple", short); err != nil || r.StateBytes != 184320 {
+		t.Errorf("the short-convolution layer's run: %+v, %v", r, err)
+	}
+	// A speculative row widens the short convolution's window by one row of the channels.
+	e.Speculative = &engineconfig.Speculative{Method: "mtp", NumSpecTokens: 1}
+	plan, err = planMamba(qwen4MambaGraph(qwen4, short), e, mambaEnv{tp: 8, dcp: 1, pcp: 1, capability: 9, maxModelLen: 262144})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := plan.runs[recurrentGeometry(short)].StateBytes; got != 10240*(9+1)*2 {
+		t.Errorf("short conv state with one speculative token: %d, want %d", got, 10240*10*2)
+	}
+	// Another architecture's second recurrent geometry is still not mapped.
+	if _, err := planMamba(qwen4MambaGraph("Qwen3_5MoeForConditionalGeneration", short), engineconfig.Engine{BlockSize: 64},
+		mambaEnv{tp: 8, dcp: 1, pcp: 1, capability: 9, maxModelLen: 262144}); err == nil {
+		t.Error("a short convolution beside Gated DeltaNet was mapped for another architecture")
+	}
+}
