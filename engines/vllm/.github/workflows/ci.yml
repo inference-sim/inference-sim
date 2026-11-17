@@ -536,16 +536,17 @@ jobs:
 
   # Tier 5: every vllm:* family vLLM v0.32.0 defines, read from its source and classified
   # exact / derived / unavailable (docs/metrics-manifest.json). A family the release adds or
-  # drops, or a manifest that is not current, fails here; so does a surface.json (X9) that is not current. Runs
-  # when fields/, fields.json, the manifest, its generator, the connector registry, the surface list, its
-  # generator or the evidence it names changed; always reports.
+  # drops, or a manifest that is not current, fails here; so does a field list, a kernel table
+  # (kernel_impls.json) or a surface.json (X9) that is not current. Runs when fields/, fields.json,
+  # kernels/, kernel_impls.json, the manifest, its generator, the connector registry, the surface list,
+  # its generator or the evidence it names changed; always reports.
   metrics-manifest:
     needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - if: needs.changes.outputs.metrics != 'true'
-        run: echo "not selected - none of fields/, fields.json, the manifest, its generator, the registry or the surface list changed"
+        run: echo "not selected - none of fields/, fields.json, kernels/, kernel_impls.json, the manifest, its generator, the registry or the surface list changed"
       - if: needs.changes.outputs.metrics == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - id: go
@@ -585,6 +586,16 @@ jobs:
         env:
           VLLM_SOURCE: ${{ github.workspace }}/vllm-source
         run: python3 -I fields/test_classes.py
+      # kernel_impls.json (design 6.2, VAL-8): every attention kernel the modelled vLLM release can emit, with the
+      # code hash the coefficient registry keys its entries by. regen.py fetches vLLM at provenance.go's tag and
+      # each library at the pin vLLM's own build files state, and runs the generator over them, so no ref here
+      # can disagree with vLLM's pin.
+      - name: kernel_impls.json is current for the modelled release
+        if: needs.changes.outputs.metrics == 'true'
+        run: python3 -I kernels/regen.py --check
+      - name: the kernel-table generator's tests
+        if: needs.changes.outputs.metrics == 'true'
+        run: python3 -I kernels/test_gen_kernel_impls.py
       - name: the manifest is current for the pinned release
         if: needs.changes.outputs.metrics == 'true'
         run: |
