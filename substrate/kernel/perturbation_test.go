@@ -327,32 +327,62 @@ func TestEveryCoefficientFamilyChangesSomePriceOrIsListed(t *testing.T) {
 	if len(scenarios) < 400 {
 		t.Fatalf("only %d scenarios build; the perturbation is not reaching the kernel", len(scenarios))
 	}
-	priced := map[string]bool{}
-	read := map[string]bool{}
-	for _, s := range scenarios {
-		base, err := New(s.in)
+	// A family is priced when any scenario's prices move and read when any scenario reads it, so
+	// the answer does not depend on the order the scenarios are priced in. They are priced on every
+	// CPU, sharing the two sets; a family already seen to move a price is not tried again, as in the
+	// sequential loop. A scenario that cannot be priced fails the test, the first in the list
+	// reported.
+	var pricedSet, readSet sync.Map
+	errAt := make([]error, len(scenarios))
+	var wg sync.WaitGroup
+	next := make(chan int)
+	for w := 0; w < runtime.GOMAXPROCS(0); w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range next {
+				s := scenarios[i]
+				base, err := New(s.in)
+				if err != nil {
+					errAt[i] = fmt.Errorf("%s: %v", s.label, err)
+					continue
+				}
+				want := pricesOf(base)
+				for _, sel := range base.selected {
+					name := sel.Entry.Name
+					fam := family(name)
+					readSet.Store(fam, true)
+					if _, done := pricedSet.Load(fam); done || sel.Entry.Value == 0 {
+						continue
+					}
+					in := s.in
+					in.Coefficients = perturbed(s.in.Coefficients, name)
+					k, err := New(in)
+					if err != nil {
+						errAt[i] = fmt.Errorf("%s: scaling %s by 0.8 makes the kernel refuse: %v", s.label, name, err)
+						break
+					}
+					if pricesOf(k) != want {
+						pricedSet.Store(fam, true)
+					}
+				}
+			}
+		}()
+	}
+	for i := range scenarios {
+		next <- i
+	}
+	close(next)
+	wg.Wait()
+	for _, err := range errAt {
 		if err != nil {
-			t.Fatalf("%s: %v", s.label, err)
-		}
-		want := pricesOf(base)
-		for _, sel := range base.selected {
-			name := sel.Entry.Name
-			fam := family(name)
-			read[fam] = true
-			if priced[fam] || sel.Entry.Value == 0 {
-				continue
-			}
-			in := s.in
-			in.Coefficients = perturbed(s.in.Coefficients, name)
-			k, err := New(in)
-			if err != nil {
-				t.Fatalf("%s: scaling %s by 0.8 makes the kernel refuse: %v", s.label, name, err)
-			}
-			if pricesOf(k) != want {
-				priced[fam] = true
-			}
+			t.Fatal(err)
 		}
 	}
+	priced := map[string]bool{}
+	read := map[string]bool{}
+	pricedSet.Range(func(k, _ any) bool { priced[k.(string)] = true; return true })
+	readSet.Range(func(k, _ any) bool { read[k.(string)] = true; return true })
 	all := map[string]bool{}
 	for _, set := range []string{"cost-model-primitives", "cost-model-collectives", "cost-model-host-overheads",
 		"cost-model-attention", "cost-model-recurrent", "cost-model-memory", "cost-model-fabric"} {
