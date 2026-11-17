@@ -13,7 +13,10 @@ name: mutation
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    # Only a pull request whose base is main; a layer of a stack runs ci-light.yml. `edited` starts the sweep when
+    # a pull request is retargeted to main (a change of base is reported as `edited`).
+    branches: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
     paths:
       - "**.go"
       - "oracle/**"

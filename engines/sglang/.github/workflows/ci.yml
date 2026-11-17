@@ -1,15 +1,19 @@
 name: ci
 
-# The repository's own checks. Every pull request runs them, whatever its base, so each layer of a
-# stack is judged on its own head. The checks branch protection requires are `go`, `lint`,
-# `oracle-checks`, `oracle` and `goldens-reviewed`.
+# The repository's own checks, in full. They judge a pull request whose base is main (the pull request that
+# merges), a push to main, and a run by hand. A pull request on any other base, a layer of a stack, runs
+# ci-light.yml instead, so the oracle shards and the mutation shards do not run on every layer. The checks
+# branch protection requires are `go`, `lint`, `oracle-checks`, `oracle` and `goldens-reviewed`.
+#
+# `edited` is listed so that retargeting a pull request to main (GitHub reports a change of base as `edited`,
+# which is not a default type) starts this set. It also starts it when a title or body is edited.
 
 on:
   push:
     branches: [main]
   pull_request:
-    # Not `edited`: no job here reads the pull request's text (blis.yml and private-names.yml do).
-    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
   workflow_dispatch:
 
 permissions:
