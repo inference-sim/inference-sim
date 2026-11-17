@@ -50,6 +50,10 @@ func TestStrictCommitPolicyNamesEachWayAHistoryFailed(t *testing.T) {
 		tc.edit(&c)
 		t.Run(tc.name, func(t *testing.T) { has(t, StrictCommitPolicy(c, []string{maintainer}), tc.want) })
 	}
+	// git's "# Conflicts:" comment lines after the trailers of a merge commit do not hide them.
+	m := strictGood()
+	m.Message += "\n# Conflicts:\n#\tkernel/new.go\n"
+	none(t, StrictCommitPolicy(m, []string{maintainer}))
 	// A commit by someone else is accepted when a maintainer signs it off.
 	c := strictGood()
 	c.Author = "Agent Run <run@example.com>"

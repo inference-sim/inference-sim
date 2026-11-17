@@ -25,13 +25,17 @@ func StrictCommitPolicy(c Commit, maintainers []string) []string {
 	if c.Signature != "G" {
 		add("signature status %q; the commit is not signed with a key git trusts (strict)", c.Signature)
 	}
+	// A merge commit's message ends with git's own "# Conflicts:" comment lines after the
+	// trailers, so the trailers are read line by line, not as a final paragraph.
 	var signoffs, assisted []string
-	for _, t := range trailers(c.Message) {
-		switch strings.ToLower(t[0]) {
-		case "signed-off-by":
-			signoffs = append(signoffs, t[1])
-		case "assisted-by":
-			assisted = append(assisted, t[1])
+	for _, l := range strings.Split(strings.ReplaceAll(c.Message, "\r\n", "\n"), "\n") {
+		if m := trailerLine.FindStringSubmatch(l); m != nil {
+			switch strings.ToLower(m[1]) {
+			case "signed-off-by":
+				signoffs = append(signoffs, strings.TrimSpace(m[2]))
+			case "assisted-by":
+				assisted = append(assisted, strings.TrimSpace(m[2]))
+			}
 		}
 	}
 	if len(assisted) != 1 {
