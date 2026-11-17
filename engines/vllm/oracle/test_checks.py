@@ -253,5 +253,44 @@ class MutantsStillApply(unittest.TestCase):
         self.check("mutate_sched_alloc")
 
 
+class RecordedTracesDoNotDependOnSetOrder(unittest.TestCase):
+    """A script that walks a set of bytes (vLLM's complete_store walks a set of OffloadKey) records the same
+    order in every run once it starts through fix_hash_seed, and without it records a different order from
+    one run to the next. The seed is not left in the environment the script's code sees (vLLM derives
+    NONE_HASH from it, which would change every key)."""
+
+    PROBE = (
+        "import os, sys\n"
+        "sys.path.insert(0, %r)\n"
+        "if %%s:\n"
+        "    from fixed_hash_seed import fix_hash_seed\n"
+        "    fix_hash_seed(os.path.abspath(__file__), sys.argv[1:])\n"
+        "keys = {bytes([i]) * 8 + b'\\0\\0\\0\\0' for i in range(32)}\n"
+        "print(','.join(k.hex()[:2] for k in keys), os.environ.get('PYTHONHASHSEED'), sys.argv[1:])\n"
+    ) % HERE
+
+    def order(self, tmp, fixed, n=6):
+        path = os.path.join(tmp, "probe_%s.py" % fixed)
+        with open(path, "w") as f:
+            f.write(self.PROBE % fixed)
+        env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON")}
+        out = []
+        for _ in range(n):
+            r = run([sys.executable, "-I", path, "a", "--b"], tmp, env)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            out.append(r.stdout)
+        return out
+
+    def test_fixed_seed_gives_one_order(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runs = self.order(tmp, True)
+            self.assertEqual(len(set(runs)), 1, runs)
+            self.assertTrue(runs[0].rstrip().endswith("None ['a', '--b']"), runs[0])
+
+    def test_unfixed_seed_gives_different_orders(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertGreater(len(set(self.order(tmp, False))), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
