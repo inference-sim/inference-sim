@@ -1069,8 +1069,13 @@
    "why": "refused by type, as every secondary tier is; an in-memory reference tier"
   },
   "secondary_tier:fs": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/tiering",
+    "core/connector/tiering/testdata/golden",
+    "core/vllm/offloadtiers_test.go"
+   ],
+   "why": "over the CPU primary tier; each job a transfer to or from the tier's device_class, priced on its offload_tier_<device>_* coefficients; the lookup worker and thread pool timed by named substitution (blis-vllm#190); store backpressure refused (blis-vllm#13)"
   },
   "secondary_tier:kvcr": {
    "status": "refused",

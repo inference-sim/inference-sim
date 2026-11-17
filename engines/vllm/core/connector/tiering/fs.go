@@ -199,6 +199,8 @@ type fsJob struct {
 	paths []string
 	keys  []Key
 	store bool
+	// req is the request the job serves (TransferJob.req_context).
+	req string
 	// loaded is how many blocks a load read before the first missing file; len(paths) on success.
 	loaded int
 }
@@ -264,12 +266,40 @@ func (t *FSTier) Lookup(k Key, c *ReqContext) Lookup {
 
 // SubmitStore is submit_store (:222-236).
 func (t *FSTier) SubmitStore(j *TransferJob) {
-	t.queued = append(t.queued, &fsJob{id: j.ID, paths: t.paths(j.Keys), keys: append([]Key(nil), j.Keys...), store: true})
+	t.queued = append(t.queued, &fsJob{id: j.ID, paths: t.paths(j.Keys), keys: append([]Key(nil), j.Keys...), store: true,
+		req: reqOf(j)})
 }
 
 // SubmitLoad is submit_load (:238-276).
 func (t *FSTier) SubmitLoad(j *TransferJob) {
-	t.queued = append(t.queued, &fsJob{id: j.ID, paths: t.paths(j.Keys), keys: append([]Key(nil), j.Keys...)})
+	t.queued = append(t.queued, &fsJob{id: j.ID, paths: t.paths(j.Keys), keys: append([]Key(nil), j.Keys...), req: reqOf(j)})
+}
+
+func reqOf(j *TransferJob) string {
+	if j.Req == nil {
+		return ""
+	}
+	return j.Req.ReqID
+}
+
+// FSJob is a job the tier holds queued: what a host needs to time it.
+type FSJob struct {
+	ID int
+	// Store is a store (primary → tier); otherwise a load (a promotion, tier → primary).
+	Store bool
+	// Chunks is the job's chunk count, each a block file of BlockBytes.
+	Chunks int
+	// Req is the request the job serves.
+	Req string
+}
+
+// Jobs are the queued jobs, in submission order.
+func (t *FSTier) Jobs() []FSJob {
+	out := make([]FSJob, 0, len(t.queued))
+	for _, j := range t.queued {
+		out = append(out, FSJob{ID: j.id, Store: j.store, Chunks: len(j.keys), Req: j.req})
+	}
+	return out
 }
 
 func (t *FSTier) paths(keys []Key) []string {
