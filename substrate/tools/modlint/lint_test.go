@@ -304,3 +304,40 @@ func TestPseudoDirectPinEqualToSelectedOnlyDefers(t *testing.T) {
 		t.Fatalf("want the one release-tag finding, got:\n%s", strings.Join(bad, "\n"))
 	}
 }
+
+// The router fork pinned by a pseudo-version is covered by the deferral when it lists the router
+// (inference-sim#2137 pins the fork's commit); a replace to another module, a version that is no
+// pseudo-version, an unlisted router and an ended deferral still fail.
+func TestDeferralCoversTheRouterForkPinnedByCommit(t *testing.T) {
+	day := func(s string) time.Time { d, _ := time.Parse("2006-01-02", s); return d }
+	const listed = "issue: inference-sim/blis-substrate#14\nadded: 2026-11-05\nexpires: 2026-12-05\nmodules: [blis-substrate, blis-vllm, llm-d-router]\nreason: tags follow review\n"
+	const unlisted = "issue: inference-sim/blis-substrate#14\nadded: 2026-11-05\nexpires: 2026-12-05\nmodules: [blis-substrate, blis-vllm]\nreason: tags follow review\n"
+	finding := func(path, version string) string {
+		return "github.com/llm-d/llm-d-router resolves to " + path + " " + version + "; it must resolve to github.com/inference-sim/llm-d-router at a -blis.N tag (LIF-2)"
+	}
+	pin := finding("github.com/inference-sim/llm-d-router", "v1.0.0-blis.4.0.20261117140125-6acd0a87e875")
+	for _, c := range []struct {
+		name, file, finding string
+		on                  time.Time
+		deferred            bool
+	}{
+		{"a listed router at a pseudo-version of the fork is deferred", listed, pin, day("2026-11-17"), true},
+		{"an unlisted router is refused", unlisted, pin, day("2026-11-17"), false},
+		{"a listed router replaced by another module is refused", listed, finding("github.com/someone/llm-d-router", "v1.0.0-blis.4.0.20261117140125-6acd0a87e875"), day("2026-11-17"), false},
+		{"a listed router at a branch name, not a pseudo-version, is refused", listed, finding("github.com/inference-sim/llm-d-router", "llm-d-r"), day("2026-11-17"), false},
+		{"a listed router at a tag-shaped version is not this finding's case and is refused", listed, finding("github.com/inference-sim/llm-d-router", "v1.0.0-blis.4"), day("2026-11-17"), false},
+		{"the deferral has ended, so the pin fails again", listed, pin, day("2026-12-05"), false},
+	} {
+		fail, deferred := ApplyDeferral([]byte(c.file), c.on, []string{c.finding})
+		if c.deferred && (len(deferred) != 1 || len(fail) != 0) {
+			t.Errorf("%s: fail=%v deferred=%v, want one deferred", c.name, fail, deferred)
+		}
+		if !c.deferred && len(deferred) != 0 {
+			t.Errorf("%s: deferred %v, want it to fail", c.name, deferred)
+		}
+	}
+	// With the file deleted (blis-substrate#283), nothing is deferred.
+	if fail, deferred := ApplyDeferral(nil, day("2026-11-17"), []string{pin}); len(fail) != 1 || len(deferred) != 0 {
+		t.Errorf("no file: fail=%v deferred=%v, want the pin to fail", fail, deferred)
+	}
+}
