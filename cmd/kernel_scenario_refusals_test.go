@@ -35,6 +35,18 @@ func writeColocatedVariant(t *testing.T, edits ...string) string {
 	return dir
 }
 
+// colocatedVariant is colocatedFixture with the typed edits applied (writeVariant).
+func colocatedVariant(t *testing.T, edits ...scenarioEdit) string {
+	t.Helper()
+	scenarios, _, _ := kernelRepos(t)
+	return writeVariant(t, filepath.Join(scenarios, colocatedFixture), edits...)
+}
+
+// colocatedEngine is the path of a field of the fixture's colocated pool's engine block.
+func colocatedEngine(field string) []string {
+	return []string{"pools", "role=colocated", "engine", field}
+}
+
 // writeNodePoolBundle writes a --policy-config bundle with one node pool of gpuType GPUs,
 // stating gpuMemGiB.
 func writeNodePoolBundle(t *testing.T, gpuType, gpuMemGiB string) string {
@@ -72,10 +84,9 @@ func TestRunCmd_KernelBackend_ScenarioRefusals(t *testing.T) {
 		// vLLM refuses to start an engine whose window one request cannot fit in its KV, with
 		// its start-up message (vllm/v1/core/kv_cache_utils.py:917-935 at v0.31.0).
 		{"a window larger than the KV budget", "To serve at least one request with the model's max seq len (4000000)",
-			run(writeColocatedVariant(t, "max_model_len: 32768", "max_model_len: 4000000"))},
+			run(colocatedVariant(t, setField("Deployment", "4000000", colocatedEngine("max_model_len")...)))},
 		{"an unsimulated scheduling policy", `engine.scheduling_policy \"lifo\"`,
-			run(writeColocatedVariant(t, "      max_model_len: 32768\n",
-				"      max_model_len: 32768\n      scheduling_policy: lifo\n"))},
+			run(colocatedVariant(t, setField("Deployment", "lifo", colocatedEngine("scheduling_policy")...)))},
 		// A shared-only or encode+shared topology states no dedicated prefill or decode
 		// instance yet is disaggregated; it is refused, not run into a missing handoff pricer.
 		{"shared prefill-decode instances only", "--prefill-decode-instances and --encode-instances are not supported",
@@ -94,9 +105,9 @@ func TestRunCmd_KernelBackend_ScenarioRefusals(t *testing.T) {
 		// (compat/kernelmodel Model.Engine), when the build site sizes the pool, and cmd keeps no
 		// copy of the check. The fixture states neither, so each case states the zero.
 		{"max_num_seqs 0", "max_num_seqs",
-			run(writeColocatedVariant(t, "      max_model_len: 32768\n", "      max_num_seqs: 0\n      max_model_len: 32768\n"))},
+			run(colocatedVariant(t, setField("Deployment", "0", colocatedEngine("max_num_seqs")...)))},
 		{"max_num_batched_tokens 0", "max_num_batched_tokens",
-			run(writeColocatedVariant(t, "      max_model_len: 32768\n", "      max_num_batched_tokens: 0\n      max_model_len: 32768\n"))},
+			run(colocatedVariant(t, setField("Deployment", "0", colocatedEngine("max_num_batched_tokens")...)))},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, stderr, err := runKernelCLI(t, tt.args...)

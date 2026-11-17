@@ -506,7 +506,9 @@ func TestCapabilityMatrix_Compositions(t *testing.T) {
 		t.Parallel()
 		// One data-parallel group per logical instance, and its run/replay parity, are proven by
 		// TestINV13_RunReplayParity_MoEDP.
-		off := capVariant(t, dpScenario, "enable_expert_parallel: true", "enable_expert_parallel: false")
+		scenarios, _, _ := kernelRepos(t)
+		off := writeVariant(t, filepath.Join(scenarios, dpScenario),
+			setField("Deployment", "false", "pools", "role=colocated", "parallel", "enable_expert_parallel"))
 		args := burst(40, 10, 512, 256)
 		ep := capRun(t, runArgs(append([]string{"--scenario", dpScenario, "--num-instances", "1", "--seed", "3"}, args...))...)
 		noEP := capRun(t, runArgs(append([]string{"--scenarios", off, "--scenario", "variant.yaml", "--num-instances", "1", "--seed", "3"}, args...))...)
