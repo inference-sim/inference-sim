@@ -1470,11 +1470,16 @@ def test_mla_prices_its_low_rank_stages_not_one_fused_projection(d: Path):
             # num_heads * v_head_dim rows; no other committed config does.
             gate_rows = nq * v if t.get("mla_use_output_gate") else 0
             if layout["fused_a"]:
+                # The gate rows are a node of their own where the latents replicate and the
+                # gate shards (KimiK3MergedQKVGateLinear); the sum is the one fused weight.
+                split = bool(gate_rows) and "mla_g_proj" in gemms
                 assert gemms["qkv_a_proj"] == (
-                    q_lora + kv_lora + rope + gate_rows, hidden), (
+                    q_lora + kv_lora + rope + (0 if split else gate_rows), hidden), (
                     f"{d.name}/{kind['id']}: qkv_a_proj is {gemms['qkv_a_proj']}; the "
                     f"config gives {q_lora} + {kv_lora} + {rope} + {gate_rows} (gate) "
                     f"from {hidden}")
+                if split:
+                    assert gemms["mla_g_proj"] == (gate_rows, hidden)
             else:
                 # Two launches, as deepseek_v2.py:493 and :605 build them.
                 assert gemms["q_a_proj"] == (q_lora, hidden), (
@@ -6791,8 +6796,9 @@ K3_FAMILY_COMMON = {
     "lm_head": 163840 * 7168,
 }
 K3_FAMILY_MLA = {
-    # q_a_proj + kv_a_proj_with_mqa + the output gate (g_proj) on the layers that are MLA.
-    "qkv_a_proj": 24 * (1536 + 576 + 12288) * 7168,
+    # q_a_proj + kv_a_proj_with_mqa, and the output gate (g_proj) beside them, on the layers that
+    # are MLA: one fused weight in vLLM, two nodes here because the latents replicate and the gate splits.
+    "qkv_a_proj": 24 * (1536 + 576) * 7168, "mla_g_proj": 24 * 12288 * 7168,
     "q_b_proj": 24 * 18432 * 1536, "kv_b_proj": 24 * 24576 * 512, "o_proj": 24 * 7168 * 12288,
 }
 K3_FAMILY_UNPRICED = {
@@ -6821,6 +6827,25 @@ def test_kimi_k3_resident_parameters_equal_the_header_total():
         have = got[role] if role != "mlp" else got["mlp_gate_up"] + got["mlp_down"]
         assert have == n, role
     assert sum(got.values()) + emb + sum(K3_FAMILY_UNPRICED.values()) == 2_779_484_478_208
+
+
+def _tp_of(g: dict, role: str) -> set:
+    return {n.get("tp") for k in g["layer_kinds"] for n in k["nodes"] if n.get("role") == role}
+
+
+def test_kimi_k3_replicates_the_latent_rows_and_shards_the_gate_rows():
+    """KimiK3MergedQKVGateLinear keeps the q_a and kv_a shards whole on every rank and splits the
+    output-gate shard over them (vllm layers/linear.py:1562-1600 at v0.33.0 4ba787ec): a rank
+    holds all 2,112 latent rows and its share of the 12,288 gate rows. The graph states the two
+    as two nodes, one replicated and one split, whose rows sum to the one weight vLLM builds. The
+    DSpark drafter's A-projection, which has no gate, is replicated whole (fused_qkv_a_proj,
+    disable_tp=True)."""
+    g = graph_of(KIMI_K3)
+    assert _tp_of(g, "qkv_a_proj") == {"replicated"} and _tp_of(g, "mla_g_proj") == {None}
+    rows = {r: {n["n"] for k in g["layer_kinds"] for n in k["nodes"] if n.get("role") == r}
+            for r in ("qkv_a_proj", "mla_g_proj")}
+    assert rows == {"qkv_a_proj": {1536 + 512 + 64}, "mla_g_proj": {96 * 128}}
+    assert _tp_of(graph_of(MODELS / "kimi-k3-dspark"), "qkv_a_proj") == {"replicated"}
 
 
 # --- Kimi-K3.1: the same decoder with a DSA indexer on its latent layers (moonshotai/Kimi-K3.1-Pro) ---

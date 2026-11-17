@@ -1868,7 +1868,8 @@ MLA_LAYOUTS = {
     "GlmMoeDsaForCausalLM": {"fused_a": True, "fused_norm": True,
                              "fused_index_norm": True},
     "DeepseekV4ForCausalLM": {"fused_a": True, "fused_norm": True},
-    "KimiK3ForConditionalGeneration": {"fused_a": True, "fused_norm": True},
+    "KimiK3ForConditionalGeneration": {"fused_a": True, "fused_norm": True,
+                                       "replicated_a": True},
     # K3.1's DSA layers fold the indexer's key norm into its cache insert (see
     # kimi_k31_dsa_attention), so its width joins the fused latent norm's.
     "KimiK31ForConditionalGeneration": {"fused_a": True, "fused_norm": True,
@@ -1876,11 +1877,11 @@ MLA_LAYOUTS = {
     # kimi-k3's text_config names KimiLinearForCausalLM while the outer config names
     # KimiK3ForConditionalGeneration; both resolve to vllm.models.kimi_k3, so both map
     # here rather than relying on which view the lookup happens to read.
-    "KimiLinearForCausalLM": {"fused_a": True, "fused_norm": True},
+    "KimiLinearForCausalLM": {"fused_a": True, "fused_norm": True, "replicated_a": True},
     "Glm5NextForConditionalGeneration": {"fused_a": True, "fused_norm": True},
     # The K3 DSpark draft layer is Kimi-K3's own MultiHeadLatentAttention
     # (dspark_mla.py:73-92), so it fuses the two latent norms the same way.
-    "K3DSparkModel": {"fused_a": True, "fused_norm": True},
+    "K3DSparkModel": {"fused_a": True, "fused_norm": True, "replicated_a": True},
     # kimi-k2.5 takes the DeepseekV2MLAAttention shape: its text_config declares
     # DeepseekV3ForCausalLM, the registry sends that to deepseek_v2 (registry.py:90),
     # and KimiK25ForConditionalGeneration initializes its text decoder through
@@ -2051,16 +2052,21 @@ def attention_block(cfg: dict[str, Any], model: str, hidden: int, *,
             # parameters and the work: for kimi-k3 that is 96 * 128 = 12,288 rows, which
             # makes the real launch (14,400, 7,168) rather than (2,112, 7,168).
             gate_rows = nq * v if cfg.get("mla_use_output_gate") else 0
-            if gate_rows and layout["replicated_a"]:
-                raise DeriveError(
-                    f"{model}: mla_use_output_gate is set on a family whose A-projection is "
-                    f"replicated whole; the gate rows are split over the ranks, so one node "
-                    f"cannot state both")
             if layout["fused_a"]:
                 # One A-projection over both latents, as DeepSeekV2FusedQkvAProjLinear
                 # and KimiK3MergedQKVGateLinear build it.
-                stages.append(a_stage(gemm("qkv_a_proj",
-                                           q_lora + kv_lora + rope + gate_rows, hidden)))
+                if gate_rows and layout["replicated_a"]:
+                    # KimiK3MergedQKVGateLinear keeps the q_a and kv_a shards whole on every
+                    # rank and splits the gate shard over them (layers/linear.py:1562-1600,
+                    # v0.33.0 4ba787ec). One node has one split, so the latents are one node
+                    # and the gate beside it, as the K3.1 handler states its own gate. vLLM
+                    # runs them as one launch (the gate slice rides a side stream when the
+                    # weights are unquantized, mla.py:230-236); the graph charges two.
+                    stages.append(a_stage(gemm("qkv_a_proj", q_lora + kv_lora + rope, hidden)))
+                    stages.append(gemm("mla_g_proj", gate_rows, hidden))
+                else:
+                    stages.append(a_stage(gemm("qkv_a_proj",
+                                               q_lora + kv_lora + rope + gate_rows, hidden)))
             else:
                 # The generic DeepseekV2Attention builds these separately
                 # (deepseek_v2.py:493 q_a_proj, :605 kv_a_proj_with_mqa), which is two
