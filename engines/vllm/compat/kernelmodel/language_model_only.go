@@ -21,7 +21,6 @@ import (
 var towerlessMultimodalConfigs = map[string]string{
 	"8be45ce0476004a3f529fd896115a4a2e800a129ad2d3ec05b16050f52e21879": "deepseek-v4.1-flash",
 	"58720f145bcecef9a7ab2b419ab346e7c634af8d2f3e7362e900d00f789ea46c": "inkling",
-	"9408a9e559cc2f05f0b357738213666353e6651160ce8ff477b1c26982bc4f63": "qwen3.5-397b-a17b-nvfp4-v2",
 	"889658f2508e8c61d409b02e70e0d78d8d4452ec65aaafbe129805d213d2e74b": "qwen3.8-flash-next",
 	"c22eb0a053eed62e18f0184d3ca62d3798f208c3e00b9feee939fc3dbacdc8ca": "qwen3.8-flash-next-fp8",
 }
@@ -50,6 +49,7 @@ var pricedTowerConfigs = map[string]string{
 	"4e91fd887cd1f61e59d717f1ec5dea5fa82f4c01f3dca8d7d96b5b29b7b25ea3": "muse-spark-open-816b-a42b",
 	"439857095414fb030946020aea144b8d3545ce95b704893b341548db2e466567": "muse-spark-open-816b-a42b-nvfp4",
 	"3ae7fa89c2f7d1354096418ddaf1331e9e0898a8ca11e804fb6dbaa087efb7da": "qwen3.5-397b-a17b",
+	"9408a9e559cc2f05f0b357738213666353e6651160ce8ff477b1c26982bc4f63": "qwen3.5-397b-a17b-nvfp4-v2",
 	"9a142fc6c2d67703255ce6120ee04c4c720ec58dba6ae44bebb29c4a2d6e5db8": "qwen3.5-397b-a17b-fp8",
 	"8058591f5ffb5bdacf6cdd87a0d1db126a12cf19259257aec25a91ec22918779": "qwen3.5-397b-a17b-nvfp4",
 	"93a4693fa9d8392fbfccd4b3c9873f4bfdcb14fdede978b123d07d19675efe99": "qwen3.6-35b-a3b",
