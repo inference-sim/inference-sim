@@ -8,8 +8,8 @@ GLM-5.3 attention-module table, net of what BLIS charges for the rest of that mo
 Owns, scoped {hardware: [h200], model: [glm-5.3, glm-5.3-flash]} (one family for the two models,
 which run the same kernel; not single-model entries, VAL-7), in cost-model-attention.yaml:
 
-    attention_prefill_floor_sparse_mla        transferred  (a fit; see TRANSFERRED below)
-    attention_prefill_rate_sparse_mla         transferred  (rate_basis: work)
+    attention_prefill_floor_sparse_mla        measured + transferred  (see KEYED below)
+    attention_prefill_rate_sparse_mla         measured + transferred  (rate_basis: work)
     attention_prefill_per_request_sparse_mla  not_charged  (fitted free, no gain; see TERMS)
     attention_prefill_per_token_sparse_mla    not_charged
 
@@ -45,11 +45,13 @@ only when it lowers the mean absolute log error by at least MIN_GAIN. Neither do
 table, so both are written as not_charged, value 0, which keeps the kernel's four-member family
 complete.
 
-TRANSFERRED. The data ran vLLM 0.31.0's FlashInfer SM90 sparse-MLA kernel; no kernel hash shows
-that build is the one the engine's pin runs, because the FLASHINFER_MLA_SPARSE_SM90 backend is a
-gap in blis-vllm's kernel_impls.json (inference-sim/blis-substrate#149). So the fitted entries are
-`transferred` (D5), with `fitted: false` as the schema requires, until that table lists the
-kernel and the entries can be keyed to it. Two more named substitutions:
+KEYED BY THE BUILD THE DATA EXERCISED (D5, VAL-8). The kernel hashes come from the engine
+release's kernel-implementation table (blis-vllm's kernel_impls.json, --kernel-impls or
+$BLIS_KERNEL_IMPLS): the run's FlashInfer version is the one whose run record names the table's image
+digest (collection_meta.yaml), and the pinned version is the engine's. Each fitted value is written
+twice: `measured`, keyed to the run's FLASHINFER_MLA_SPARSE_SM90 prefill build, with what it measures;
+and `transferred`, keyed to the pin's build with the run's in measured_on. Where the table names no
+version for the run, one unkeyed `transferred` entry is written instead. Two more named substitutions:
   - GLM-5.3-Flash's geometry stands for GLM-5.3's. At TP8 both run 8 heads a rank over a
     512-wide latent with a 2048 top-k; GLM-5.3's record is 1152 B (64 rope dims) against
     Flash's 1024 B. The rate (bytes of W a microsecond) is taken as the same, so the kernel,
@@ -94,6 +96,14 @@ TP = 8
 BLOCK = 64
 MODELS = ("glm-5.3", "glm-5.3-flash")
 MIN_GAIN = 0.005
+PRIMITIVE = "attention.prefill"
+SELECTION = "attention backend FLASHINFER_MLA_SPARSE_SM90"
+LIBRARY = "flashinfer"
+VARIANT = "BatchMLAPagedAttentionWrapper[fa3]"
+META = TABLE.parent / "collection_meta.yaml"
+HARNESS = (f"AISimulate collector.vllm.glm53flash_attention_runner at ai-dynamo/aisim {AISIM_SHA[:12]}: one "
+           f"real sparse-MLA layer's GPU kernel time (CUPTI busy time) over module graph replay, the output "
+           f"all-reduce excluded")
 MARKER = "  # BEGIN trtllm-gen prefill lane"
 
 
@@ -112,6 +122,38 @@ def model_geometry(name: str) -> dict:
         raise SystemExit(f"{name}: expected one sparse-MLA geometry, found {sorted(shapes)}")
     nq, lora, rope, topk = shapes.pop()
     return {"heads": nq // TP, "record": 2 * (lora + rope), "topk": topk, "lora": lora}
+
+
+def impl_yaml(b: dict) -> str:
+    return f'{{library: {b["library"]}, variant: "{b["variant"]}", code_hash: {b["code_hash"]}}}'
+
+
+def builds(table: dict, data: Path) -> dict | None:
+    """The SM90 sparse-MLA prefill builds: the run's (the FlashInfer version whose run record names the
+    table's image digest) and the engine pin's; None when the table names no version for the run."""
+    meta = yaml.safe_load((data / META).read_text(encoding="utf-8"))
+    digest = meta["runtime"]["image_digest"]
+    hw = yaml.safe_load((CATALOG / "hardware" / "h200.yaml").read_text(encoding="utf-8"))
+    major, minor = str(hw["ComputeCapability"]).split(".")
+    arch = f"sm_{major}{minor}a"
+
+    def build(version):
+        for r in table["implementations"]:
+            if (r["primitive"], r["selection"], r["library"], r["library_version"], r["variant"],
+                    r["target_arch"]) == (PRIMITIVE, SELECTION, LIBRARY, version, VARIANT, arch):
+                return {"library": LIBRARY, "variant": VARIANT, "code_hash": r["code_hash"], "version": version}
+        raise SystemExit(f"kernel_impls.json lists no {LIBRARY} {version} {VARIANT} build for {arch}")
+    libs = [lib for lib in table["libraries"] if lib["name"] == LIBRARY]
+    pinned = build(next(lib["version"] for lib in libs if lib["pinned"]))
+    seen = [lib["version"] for lib in libs if not lib["pinned"] and digest in lib["pin"]]
+    if len(seen) > 1:
+        raise SystemExit(f"two {LIBRARY} versions cite the run image {digest}: {seen}")
+    if not seen:
+        return None
+    run_build = build(seen[0])
+    if run_build["code_hash"] == pinned["code_hash"]:
+        raise SystemExit("the run's build is the pin's: write one measured entry (not implemented)")
+    return {"run": run_build, "pinned": pinned, "table": table}
 
 
 def table_rows(data: Path, flash: dict) -> dict:
@@ -191,7 +233,7 @@ def pred(r: dict, th: np.ndarray) -> np.ndarray:
     return r["rest"] + design(r) @ th
 
 
-def run(data: Path) -> dict:
+def run(data: Path, table: dict) -> dict:
     geo_by = {m: model_geometry(m) for m in MODELS}
     flash = geo_by["glm-5.3-flash"]
     if geo_by["glm-5.3"]["heads"] != flash["heads"] or geo_by["glm-5.3"]["topk"] != flash["topk"]:
@@ -215,7 +257,7 @@ def run(data: Path) -> dict:
     rates = {m: rate for m in MODELS}
     # The values as written, back in the fit's terms.
     thr = np.array([floor, 0.0, 0.0, flash["record"] * flash["heads"] / 64 / rate])
-    out = {"n": len(r["y"]), "floor": floor, "per_slot": per_slot, "rates": rates, "geo": geo_by,
+    out = {"keyed": builds(table, data), "n": len(r["y"]), "floor": floor, "per_slot": per_slot, "rates": rates, "geo": geo_by,
            "gains": gains, "fit": geo(pred(r, thr), r["y"])}
     below = sub(allr, ~above)
     out["below"] = (len(below["y"]), *geo(pred(below, thr), below["y"]))
@@ -258,10 +300,16 @@ def entries(f: dict) -> list[list[str]]:
                 "kernel/glm53_attention_rest_test.go): BLIS's price of the rest of the module, subtracted")
     src_vllm = ("vLLM v0.31.0 v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py "
                 "FlashInferMLASparseSM90Impl")
-    rule = ("measured on vLLM 0.31.0's FlashInfer SM90 sparse-MLA prefill kernel on this chip and used for "
-            "the engine's pin; no kernel hash shows the two builds run the same kernel (the "
-            "FLASHINFER_MLA_SPARSE_SM90 backend is a gap in kernel_impls.json, "
-            "inference-sim/blis-substrate#149), and nothing is moved between chips")
+    keyed = f["keyed"]
+    if keyed is None:
+        rule = ("measured on vLLM 0.31.0's FlashInfer SM90 sparse-MLA prefill kernel on this chip and used for "
+                "the engine's pin; no kernel hash shows the two builds run the same kernel (kernel_impls.json "
+                "names no FlashInfer version for the run's image), and nothing is moved between chips")
+    else:
+        rule = (f"measured on FlashInfer {keyed['run']['version']}'s {VARIANT} build "
+                f"({keyed['run']['code_hash'][:12]}), which the run's image ran, and used for the pinned FlashInfer "
+                f"{keyed['pinned']['version']}'s build ({keyed['pinned']['code_hash'][:12]}) on the same chip; the two "
+                f"builds' hashes differ, so the value is moved, not shown, and nothing is moved between chips")
     rg = f["range"]
     fit_range = [f"        - {{dim: {d}, low: {lo}, high: {hi}}}" for d, (lo, hi) in rg.items()]
     h = f["holds"]
@@ -290,8 +338,9 @@ def entries(f: dict) -> list[list[str]]:
         "rate over W is taken as the same, so GLM-5.3 pays 1152/1024 of Flash's time a key slot); "
         "a BF16 cache, so an fp8 cache, whose "
         "record the kernel's W scales with, is charged its record's share of the BF16 cost, an "
-        "assumption. TRANSFERRED, not measured, because blis-substrate#149 lists no hash for the "
-        "kernel; fitted: false is the schema's, the number is a fit. The 95% interval is from 200 "
+        "assumption. Each fitted value has a measured entry keyed to the build the run's image ran and "
+        "a transferred one keyed to the engine pin's build (kernel_impls.json), or, where the table names "
+        "no build for the run, one unkeyed transferred entry. The 95% interval is from 200 "
         "bootstrap refits over rows; rows of one shape family are not independent, so it is narrower "
         "than the data justify.")
     out = []
@@ -303,8 +352,6 @@ def entries(f: dict) -> list[list[str]]:
         c_lo, c_hi = f["ci_slot"]
         k = g["record"] * g["heads"] / 64
         ci_rate = (int(round(k / c_hi)), int(round(k / c_lo)))
-        common = ["      transferred_from: \"hardware=h200\"", f"      transfer_rule: \"{rule}\""]
-
         def head(name, value, units, method, extra=()):
             ls = [f"  - {name}:", f"      value: {value}", f"      units: {units}",
                   f"      method: {method}", "      fitted: false"]
@@ -314,9 +361,32 @@ def entries(f: dict) -> list[list[str]]:
                 f'        - {{kind: model, cite: "{src_table}", role: primary}}',
                 f'        - {{kind: model, cite: "{src_rest}", role: supporting}}',
                 f'        - {{kind: model, cite: "{src_vllm}", role: supporting}}']
-        out.append(head("attention_prefill_floor_sparse_mla", f["floor"], "us_per_transfer", "transferred")
-                   + common + [f"      ci95: [{f['ci_floor'][0]}, {f['ci_floor'][1]}]", "      fit_range:"]
-                   + fit_range + srcs + ["      rationale: >", "        " + (
+        if keyed is not None:
+            t = keyed["table"]
+            srcs.append(f'        - {{kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM '
+                        f'{t["engine"]["version"]} ({t["engine"]["commit"][:12]}): the {VARIANT} builds of FlashInfer '
+                        f'{keyed["run"]["version"]} and {keyed["pinned"]["version"]} and the run record that names '
+                        f'the image", role: supporting}}')
+
+        def fitted(name, value, units, extra, ci, rationale):
+            """The value's entries: measured on the run's build and transferred to the pin's, or one
+            unkeyed transferred entry."""
+            tail = [f"      ci95: [{ci[0]}, {ci[1]}]", "      fit_range:", *fit_range, *srcs,
+                    "      rationale: >", "        " + rationale]
+            transfer = ([f"      kernel_impls: [{impl_yaml(keyed['pinned'])}]",
+                         f"      measured_on: [{impl_yaml(keyed['run'])}]"] if keyed else [])
+            transfer += ["      transferred_from: \"hardware=h200\"", f"      transfer_rule: \"{rule}\""]
+            ents = []
+            if keyed is not None:
+                m = head(name, value, units, "measured", extra)
+                m[4] = "      fitted: true"
+                ents.append(m + [f"      kernel_impls: [{impl_yaml(keyed['run'])}]", "      measures:",
+                                 "        time: device", "        execution: captured",
+                                 f'        harness: "{HARNESS}"'] + tail)
+            ents.append(head(name, value, units, "transferred", extra) + transfer + tail)
+            return ents
+
+        out += fitted("attention_prefill_floor_sparse_mla", f["floor"], "us_per_transfer", (), f["ci_floor"], (
                        f"The per-call floor of the GLM-5.3 family's sparse-MLA PREFILL on H200, {f['floor']} us a layer a "
                        f"rank in a step with prefill. THE FORM: t = attention_prefill_floor_sparse_mla + "
                        f"attention_prefill_per_request_sparse_mla x prefill requests + "
@@ -325,11 +395,9 @@ def entries(f: dict) -> list[list[str]]:
                        f"ceil(min(p, {g['topk']}) / 64) x record x {g['heads']} heads / 64, the record "
                        f"{g53['record']} B for glm-5.3 and {g['record']} B for glm-5.3-flash at a BF16 cache. Before "
                        f"it, this layer's prefill was priced on the part-wide prefill pair over its FLOPs. "
-                       + errors + " " + subst)])
-        out.append(head("attention_prefill_rate_sparse_mla", float(rate), "bytes_per_us", "transferred",
-                        ["      rate_basis: work"])
-                   + common + [f"      ci95: [{float(ci_rate[0])}, {float(ci_rate[1])}]", "      fit_range:"]
-                   + fit_range + srcs + ["      rationale: >", "        " + (
+                       + errors + " " + subst))
+        out += fitted("attention_prefill_rate_sparse_mla", float(rate), "bytes_per_us", ["      rate_basis: work"],
+                      (float(ci_rate[0]), float(ci_rate[1])), (
                        f"{rate:,} B/us over W, a WORK rate: W counts each query's read of its top-k "
                        f"records separately, and the queries of one prefill read overlapping keys, which "
                        f"the kernel serves from shared memory and L2 rather than HBM, so W is not HBM "
@@ -339,7 +407,7 @@ def entries(f: dict) -> list[list[str]]:
                        f"{g53['record']} B record pays {g53['record'] / g['record']:.3f}x that. "
                        f"Every query past the top-k reads {g['topk']} keys, so a {g['topk']}-key read costs "
                        f"{g['topk'] * f['per_slot']:.3f} us a query. See attention_prefill_floor_sparse_mla "
-                       f"(this scope) for the form, the errors and the substitutions.")])
+                       f"(this scope) for the form, the errors and the substitutions."))
         for name, units, gain in (("attention_prefill_per_request_sparse_mla", "us_per_request",
                                    f["gains"]["per_request"]),
                                   ("attention_prefill_per_token_sparse_mla", "us_per_token",
@@ -354,8 +422,13 @@ def entries(f: dict) -> list[list[str]]:
 
 def render(text: str, new: list[list[str]]) -> str:
     blocks = cb.split(text)
+    ours = {(cb.name_of(e), cb.scope_key(cb.scope_of(e))) for e in new}
+    keep = {(cb.name_of(e), cb.scope_key(cb.scope_of(e)), cb.method_of(e)) for e in new}
+    blocks = [b for b in blocks if not (cb.name_of(b) and cb.scope_of(b)
+                                        and (cb.name_of(b), cb.scope_key(cb.scope_of(b))) in ours
+                                        and (cb.name_of(b), cb.scope_key(cb.scope_of(b)), cb.method_of(b)) not in keep)]
     for e in new:
-        i = cb.find(blocks, cb.name_of(e), cb.scope_of(e))
+        i = cb.find(blocks, cb.name_of(e), cb.scope_of(e), cb.method_of(e))
         if i is not None:
             blocks[i] = e
             continue
@@ -370,11 +443,15 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data", default=os.environ.get("AISIM_GLM53_DATA", ""),
                     help="aisim systems/data at AISIM_GLM53_SHA (default $AISIM_GLM53_DATA)")
+    ap.add_argument("--kernel-impls", default=os.environ.get("BLIS_KERNEL_IMPLS", ""),
+                    help="the engine release's kernel_impls.json (default $BLIS_KERNEL_IMPLS)")
     ap.add_argument("--check", action="store_true", help="exit 1 if the set would change; write nothing")
     args = ap.parse_args(argv[1:])
     if not args.data:
         raise SystemExit("set AISIM_GLM53_DATA (or --data) to aisim's systems/data directory")
-    f = run(Path(args.data))
+    if not args.kernel_impls:
+        raise SystemExit("set BLIS_KERNEL_IMPLS (or --kernel-impls) to the engine release's kernel_impls.json")
+    f = run(Path(args.data), json.loads(Path(args.kernel_impls).read_text(encoding="utf-8")))
     print(f"floor {f['floor']} us, per slot {f['per_slot']:.4e} us, rates {f['rates']}, fit "
           f"{f['fit'][0]:.3f}x signed {f['fit'][1]:.3f}, gains {f['gains']}, held out {f['holds']}, "
           f"below top-k {f['below']}, ci floor {f['ci_floor']} slot {f['ci_slot']}")

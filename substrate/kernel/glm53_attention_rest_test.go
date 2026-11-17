@@ -1,6 +1,7 @@
 package latencykernel
 
 import (
+	"bytes"
 	"encoding/csv"
 	"fmt"
 	"maps"
@@ -109,12 +110,11 @@ type glm53RestRow struct {
 
 func readGLM53Rest(t *testing.T) []glm53RestRow {
 	t.Helper()
-	f, err := os.Open(glm53RestFile)
+	raw, err := os.ReadFile(glm53RestFile)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
-	recs, err := csv.NewReader(f).ReadAll()
+	recs, err := csv.NewReader(bytes.NewReader(raw)).ReadAll()
 	if err != nil {
 		t.Fatal(err)
 	}
