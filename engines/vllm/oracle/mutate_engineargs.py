@@ -18,6 +18,9 @@ import subprocess
 import sys
 
 TEST = "TestEngineArgsAgainstVLLM"
+# A mutant of a rule the diff test cannot reach, because it states the V2 model runner for every case
+# (core/vllm/engineargs_test.go engineBlockOf), is caught by the test that names the V1 runner.
+TEST_OF = {"E12": "TestAsyncSchedulingWithNgramFollowsTheModelRunner"}
 
 # (id and the rule or default it moves, file, exact old text, new text)
 MUTANTS = [
@@ -44,7 +47,7 @@ MUTANTS = [
     ("E11 the default watermark is 0", "core/vllm/config.go",
      "\twatermark := 0.0\n", "\twatermark := 0.01\n"),
     ("E12 a stated async_scheduling with a non-async drafter is refused", "core/vllm/config.go",
-     "\tif async && e.AsyncScheduling != nil && !asyncSpecMethod(method) {", "\tif false {"),
+     "\tif async && e.AsyncScheduling != nil && !v2 && !asyncSpecMethod(method) {", "\tif false {"),
     ("E13 a speculative method the factory does not build is refused", "core/vllm/config.go",
      "\t\tif !specMethodModelled(method) {", "\t\tif false {"),
 ]
@@ -67,13 +70,14 @@ def main() -> int:
             bad += 1
             continue
         open(target, "w").write(text.replace(old, new))
-        r = subprocess.run(["go", "test", "-count=1", "-run", TEST, "./core/vllm/"], cwd=scratch,
+        test = TEST_OF.get(mid.split(" ", 1)[0], TEST)
+        r = subprocess.run(["go", "test", "-count=1", "-run", test, "./core/vllm/"], cwd=scratch,
                            capture_output=True, text=True, timeout=600)
         out = r.stdout + r.stderr
         if r.returncode == 0:
             print(f"SURVIVED {mid}")
             bad += 1
-        elif f"--- FAIL: {TEST}" in out:
+        elif f"--- FAIL: {test}" in out:
             print(f"CAUGHT   {mid}")
         else:
             tail = out.strip().splitlines()[-3:]
