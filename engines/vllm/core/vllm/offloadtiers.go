@@ -84,7 +84,9 @@ type builtTier struct {
 	rootDir string
 	tier    kvtier.Tier
 	host    hostTier
-	files   *tierFiles
+	// fs is the tier when it is an fs tier, nil otherwise.
+	fs    *kvtier.FSTier
+	files *tierFiles
 	// bucket is an obj tier's store_config bucket, and objects its objects.
 	bucket  string
 	objects *tierBucket
@@ -192,7 +194,7 @@ func buildFS(i int, raw map[string]any, topBackpressure map[string]any, chunkByt
 	}
 	files := &tierFiles{FileStore: kvtier.MemFiles{}}
 	fs := kvtier.NewFSTier(kvtier.FSConfig{RootDir: root, Locality: loc, BlockBytes: chunkBytes, Namespace: ns}, files)
-	return &builtTier{label: fmt.Sprintf("%d:fs", i+1), device: device, rootDir: root, tier: fs, host: fs, files: files}, nil
+	return &builtTier{label: fmt.Sprintf("%d:fs", i+1), device: device, rootDir: root, tier: fs, host: fs, fs: fs, files: files}, nil
 }
 
 // threads is a thread count key, vLLM's default 16 unstated (fs/manager.py:114-115@4ba787ec).
