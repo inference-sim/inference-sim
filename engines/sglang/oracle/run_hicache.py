@@ -59,6 +59,9 @@ INPUTS = ("oracle/run_hicache.py", "oracle/hicache_interfaces.py", "oracle/step_
           "oracle/cache_interfaces.py", "oracle/run_cache_iface.py", "oracle/run_scheduler.py", "oracle/harness.py",
           "oracle/stubs.py", "oracle/traces.py", "oracle/mocks.json", "oracle/harness.json", "oracle/requirements.lock")
 HICACHE_INTERFACES = ("controller", "layer_counter", "l2_transfer", "host_pool", "storage")
+# What a recorded trace holds in place of the file backend's directory, which is made fresh for
+# each run (record_scenario).
+FILE_STORAGE_PLACEHOLDER = "<file_storage_path>"
 
 
 def copy_no_kv(src_layers, dst_layers, src_indices, dst_indices, page_size) -> None:
@@ -111,7 +114,8 @@ def build_hicache(cfg: dict, h: dict, storage_dir: str):
 
     if (h["io_backend"], h["mem_layout"]) != ("direct", "layer_first"):
         raise SystemExit("the oracle runs HiCache's direct io backend on the layer_first layout only: the "
-                         "kernel backend and the other layouts need CUDA kernels it cannot run")
+                         "kernel backend and the other layouts need CUDA kernels it cannot run; they are "
+                         "HiCache L2's to trace (inference-sim/blis-sglang#38)")
     page = cfg["page_size"]
     args = hicache_server_args(page, h, storage_dir)
     set_global_server_args_for_scheduler(args)
@@ -149,6 +153,7 @@ def controller_state(cc, mon) -> dict:
 
     counter = cc.layer_done_counter
     host = cc.mem_pool_host.anchor_entry.host_pool
+    backups = list(cc.ack_backup_queue.queue) if cc.enable_storage else []
     out = {"write_queue": ops(cc.write_queue), "load_queue": ops(cc.load_queue),
            "ack_write_queue": acks(cc.ack_write_queue), "ack_load_queue": acks(cc.ack_load_queue),
            "layer_counter": {"producer_index": counter.producer_index, "consumer_index": counter.consumer_index,
@@ -160,6 +165,8 @@ def controller_state(cc, mon) -> dict:
                           ("prefetch_queue", "backup_queue", "prefetch_buffer", "prefetch_sync_queue",
                            "prefetch_hit_queue", "ack_prefetch_queue", "ack_backup_queue", "host_mem_release_queue")}
         out["storage"]["prefetch_tokens_occupied"] = cc.prefetch_tokens_occupied
+        # Each acked backup's completed tokens, front first, read from the queue without a get.
+        out["ack_backup_completed_tokens"] = [op.completed_tokens for op in backups]
     return mon.enc(out)
 
 
@@ -332,7 +339,8 @@ def recorded_child(scenario: dict, sglang_root: str, out_path: str) -> None:
         # After the harness's replacements, before Scheduler.__init__ builds the controller.
         step_runner.install()
         install_host_register_noop()
-        mon = HiCacheMonitor()
+        store = scenario["hicache"].get("file_storage_path")
+        mon = HiCacheMonitor(placeholders={store: FILE_STORAGE_PLACEHOLDER} if store else None)
         mon.__enter__()
         monitors.append(mon)
 
@@ -352,23 +360,32 @@ def recorded_child(scenario: dict, sglang_root: str, out_path: str) -> None:
 
 
 def record_scenario(sglang_root: str, path: str) -> dict:
-    import run_scheduler
-
     with open(path) as f:
         scenario = json.load(f)
     if "hicache" not in scenario:
         raise SystemExit(f"{path}: a HiCache scenario names its HiCache settings in a \"hicache\" block")
     if scenario["hicache"].get("storage_backend") not in (None, "file"):
-        raise SystemExit(f"{path}: the oracle runs the file storage backend only")
+        raise SystemExit(f"{path}: the oracle runs the file storage backend only; HiCache L3 traces the others "
+                         "(inference-sim/blis-sglang#40)")
+    store = None
     if scenario["hicache"].get("storage_backend"):
         # The scheduler process keeps no SGLANG_* variable, so the file backend's directory is
-        # its extra configuration's: one fixed per scenario, emptied first, so the trace names
-        # the same directory every run and no run reads pages another stored.
-        import shutil
-
-        store = os.path.join(tempfile.gettempdir(), "blis-sglang-hicache", os.path.basename(path).removesuffix(".json"))
-        shutil.rmtree(store, ignore_errors=True)
+        # its extra configuration's: a fresh one per run, so concurrent runs share none and no run
+        # reads pages another stored. The trace records it as FILE_STORAGE_PLACEHOLDER.
+        store = tempfile.mkdtemp(prefix="blis-sglang-hicache-")
         scenario = {**scenario, "hicache": {**scenario["hicache"], "file_storage_path": store}}
+    try:
+        return run_recorded(sglang_root, path, scenario)
+    finally:
+        if store is not None:
+            import shutil
+
+            shutil.rmtree(store, ignore_errors=True)
+
+
+def run_recorded(sglang_root: str, path: str, scenario: dict) -> dict:
+    import run_scheduler
+
     quit_seen = []
     signal.signal(signal.SIGQUIT, lambda *a: quit_seen.append(True))
     with tempfile.TemporaryDirectory() as tmp:

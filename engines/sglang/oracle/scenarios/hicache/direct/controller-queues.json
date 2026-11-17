@@ -1,5 +1,5 @@
 {
-  "description": "The controller's own queues, driven directly. Two writes with flush off wait in the write queue and leave as one merged transfer at start_writing, with both node ids on one ack; a write larger than the host pool's free slots is refused; two loads merge into one transfer at start_loading; a load larger than the device's free slots is refused; evict_host returns slots to the host pool, which hands released slots out only after its free list runs dry. A write-back policy pool: no write-through from the tree, so every write here is the driver's.",
+  "description": "The controller's own queues, driven directly. Two writes with flush off wait in the write queue and leave as one merged transfer at start_writing, with both node ids on one ack; a write larger than the host pool's free slots is refused; two loads merge into one transfer at start_loading; a load larger than the device's free slots is refused; evict_host returns slots to the host pool, which hands released slots out only after its free list runs dry. A load of no host slots queues an empty copy: start_loading takes the layer counter's next event and reports each layer done, but submits no transfer, so the host pool sees no call. A write-back policy pool: no write-through from the tree, so every write here is the driver's.",
   "model": "Qwen/Qwen2.5-0.5B-Instruct",
   "seed": 0,
   "cache": {
@@ -164,6 +164,28 @@
       "m": "evict_host",
       "host": "h2",
       "raises": "AssertionError"
+    },
+    {
+      "boundary": true
+    },
+    {
+      "on": "controller",
+      "m": "load",
+      "host": [
+        "h1",
+        0,
+        0
+      ],
+      "node_id": 204,
+      "as": "l4"
+    },
+    {
+      "on": "controller",
+      "m": "start_loading"
+    },
+    {
+      "on": "controller",
+      "m": "has_inflight_device_transfers"
     },
     {
       "boundary": true

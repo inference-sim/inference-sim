@@ -15,9 +15,8 @@ type Clock struct {
 // Boundaries is how many step boundaries have passed.
 func (c *Clock) Boundaries() int { return c.boundaries }
 
-// Event is a device event (torch.cuda.Event) on the virtual clock: one recorded after boundary
-// k-1 completes at boundary k, a Synchronize completes it at once, and one never recorded is
-// complete, as a CUDA event is. This is the step-driven runner's rule (oracle/step_runner.py).
+// Event is a device event (torch.cuda.Event) on the virtual clock, completing as the step-driven
+// runner's rule says (oracle/step_runner.py RULE).
 type Event struct {
 	clock      *Clock
 	recordedAt int

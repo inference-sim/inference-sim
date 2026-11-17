@@ -15,9 +15,8 @@
 //
 // SGLang does the controller's storage work in threads and its copies on device streams. The port
 // has neither (X6): time advances in step boundaries, given to the controller by its caller
-// (Controller.Boundary). At each boundary each thread body runs one iteration of its loop, and a
-// copy submitted since the last boundary completes, which is the step-driven runner's rule
-// (oracle/step_runner.py, design FID-1), so the port and the oracle order their decisions alike.
+// (Controller.Boundary), by the step-driven runner's rule (oracle/step_runner.py RULE, design
+// FID-1), so the port and the oracle order their decisions alike.
 //
 // The port holds no tensors: a host or device slot is an index, and a page of KV data is the host
 // index it starts at.
@@ -85,8 +84,8 @@ type LayerCounterPort interface {
 // L2TransferPort is L2TransferEngine's interface: the device<->host copies, which the simulator
 // prices as moves (design §6.1).
 type L2TransferPort interface {
-	SubmitDeviceToHost(t Transfer) *Event
-	SubmitHostToDevice(t Transfer, transferLayerIDMax int, onLayerDone func(layer int)) *Event
+	SubmitDeviceToHost(ts []Transfer) *Event
+	SubmitHostToDevice(ts []Transfer, transferLayerIDMax int, onLayerDone func(layer int)) *Event
 }
 
 // HostPoolPort is HostKVCache's interface as the controller and the radix cache call it.

@@ -25,7 +25,9 @@ The format and the recording rules are oracle/cache_interfaces.py's. Three encod
 - an integer that is the id() of an object the trace has met (HiCache keys an allocator's
   transfer event on (id(controller), "write"), cache_controller.py:906) is {"_id_of": its class}:
   a trace never records a memory address;
-- a storage or prefetch operation is its fields, and a HiCache ack its counts and node ids.
+- a storage or prefetch operation is its fields, and a HiCache ack its counts and node ids;
+- a path the runner made for one run (the file backend's directory in a recorded scenario) is
+  its placeholder, wherever a string holds it, so a trace names no run's own directory.
 """
 import inspect
 
@@ -60,8 +62,11 @@ class HiCacheMonitor(Monitor):
 
     sizing_names = tuple(dict.fromkeys(SIZING + HOST_SIZING))
 
-    def __init__(self):
+    def __init__(self, placeholders=None):
         import importlib
+
+        # A path made for this run -> the placeholder the trace records in its place.
+        self.placeholders = dict(placeholders or {})
 
         hybrid = getattr(importlib.import_module(HYBRID_CONTROLLER[0]), HYBRID_CONTROLLER[1])
         ifaces = []
@@ -83,6 +88,10 @@ class HiCacheMonitor(Monitor):
         super()._start(code, offset, f)
 
     def enc(self, x, depth=0):
+        if type(x) is str:  # a str enum is the base class's to encode, by its name
+            for path, placeholder in self.placeholders.items():
+                x = x.replace(path, placeholder)
+            return x
         if isinstance(x, int) and not isinstance(x, bool) and x in self.addresses:
             return {"_id_of": self.addresses[x]}
         tname = type(x).__name__

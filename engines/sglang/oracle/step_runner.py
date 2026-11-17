@@ -11,18 +11,8 @@ race. Here no thread starts. Each thread object records its target; at a step bo
 calls each target, unmodified, so that it runs one iteration of its own loop. Nothing of a thread
 body is copied (FID-8).
 
-The scheduling rule, in one place (RULE, and Runner.boundary):
-
-  At step boundary k, every thread started and not yet joined runs once, in the order the threads
-  were started. A run is one iteration of the target's loop: the stop event the loop tests reads
-  clear at its first test and set from then on, unless the controller really set it. A loop whose
-  own condition goes on past a set stop event (prefetch_thread_func continues while its queue is
-  not empty, cache_controller.py:1240) runs as its condition says. A queue get never waits: an
-  empty queue raises Empty at once, as a timed-out get would.
-
-  A device event recorded after boundary k-1 completes at boundary k: its query() is False until
-  then. synchronize() completes it at once, as a blocking wait does. An event never recorded is
-  complete, as a CUDA event is.
+The scheduling rule is RULE, below; it is stated nowhere else. Runner.boundary and
+StepDeviceEvent carry it out, and oracle/mocks.json's entries and core/hicache point to it.
 
 Who calls boundary(): oracle/run_hicache.py's direct sequences, at each {"boundary": true} entry;
 in a scheduler scenario, the first receive of each event-loop iteration (oracle/harness.py's
@@ -39,8 +29,19 @@ import queue
 import threading
 import types
 
-RULE = ("at boundary k each started thread runs one loop iteration, in start order; "
-        "a device event recorded after boundary k-1 completes at boundary k")
+RULE = """\
+At step boundary k, every thread started and not yet joined runs once, in the order the threads
+were started. A run is one iteration of the target's loop: the stop event the loop tests reads
+clear at its first test and set from then on, unless the controller really set it. A loop whose
+own condition goes on past a set stop event (prefetch_thread_func continues while its queue is
+not empty, cache_controller.py:1240) runs as its condition says. A queue get never waits: an
+empty queue raises Empty at once, as a timed-out get would.
+
+A device event recorded after boundary k-1 completes at boundary k: its query() is False until
+then. synchronize() completes it at once, as a blocking wait does. An event never recorded is
+complete, as a CUDA event is. Its elapsed_time() is 0.0 ms: the oracle has no device clock, and
+a copy's duration is the simulator's to price.
+"""
 
 # Thread targets the oracle refuses to start, each with its open issue (X28).
 REFUSED = {"pp_prefetch_command_thread_func": "the PP prefetch ticket thread runs only with buffer_only host memory "
@@ -72,7 +73,7 @@ class Runner:
         return False
 
     def boundary(self) -> None:
-        """Step boundary k: complete the device events recorded since k-1, then run each thread."""
+        """Step boundary k, by RULE."""
         self.boundaries += 1
         for t in list(self.threads):
             if t not in self.threads:
@@ -112,8 +113,8 @@ class StepThread:
 
 
 class StepEvent:
-    """threading.Event as a thread body's stop event: inside a body it reads clear for the body's
-    one granted test; outside, it is the flag the controller sets and clears."""
+    """threading.Event as a thread body's stop event, read as RULE says; outside a body it is the
+    flag the controller sets and clears."""
 
     def __init__(self):
         self._flag = False
@@ -134,16 +135,19 @@ class StepEvent:
 
 
 class StepQueue(queue.Queue):
-    """queue.Queue whose get never waits: an empty queue raises Empty at once."""
+    """queue.Queue whose get never waits (RULE)."""
 
     def get(self, block=True, timeout=None):
         return super().get(block=False)
 
 
 class StepDeviceEvent:
-    """A device event that completes at the first boundary after its record."""
+    """A device event that completes at the first boundary after its record (RULE). It takes
+    torch.cuda.Event's keyword arguments (enable_timing, blocking, interprocess), so the L2
+    transfer's timing probe (mem_cache/l2_transfer.py:18-28@297e54fd) finds timing supported, as
+    it does on CUDA."""
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         # An event never recorded is complete, as a CUDA event is (cudaEventQuery returns
         # cudaSuccess): LayerDoneCounter.update_producer asserts this of a fresh counter
         # (managers/cache_controller.py:92-96@297e54fd).
@@ -166,6 +170,10 @@ class StepDeviceEvent:
 
     def wait(self, stream=None) -> None:
         return None
+
+    def elapsed_time(self, end_event) -> float:
+        """The milliseconds between this event and end_event: 0.0, by RULE."""
+        return 0.0
 
 
 class _Namespace(types.SimpleNamespace):

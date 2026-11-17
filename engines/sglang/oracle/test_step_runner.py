@@ -7,6 +7,7 @@ iteration's arrivals. Standard library only; no SGLang is imported.
 
 Usage: python3 -I oracle/test_step_runner.py
 """
+import json
 import os
 import queue
 import sys
@@ -111,6 +112,16 @@ class Runner(unittest.TestCase):
         e.synchronize()
         self.assertTrue(e.query(), "a synchronize completes it at once")
 
+    def test_a_device_event_takes_cudas_keywords_and_times_zero(self):
+        # l2_transfer.py:18-28 at SGLang 297e54fd probes Event(enable_timing=True); a TypeError
+        # there turns timing off for every ack, which CUDA does not.
+        fresh_runner()
+        start = step_runner.StepDeviceEvent(enable_timing=True, blocking=False, interprocess=False)
+        end = step_runner.StepDeviceEvent(enable_timing=True)
+        start.record()
+        end.record()
+        self.assertEqual(start.elapsed_time(end), 0.0)
+
     def test_the_pp_ticket_thread_is_refused_by_name(self):
         fresh_runner()
 
@@ -118,6 +129,24 @@ class Runner(unittest.TestCase):
             pass
         with self.assertRaises(NotImplementedError):
             step_runner.StepThread(target=pp_prefetch_command_thread_func).start()
+
+
+class OneRule(unittest.TestCase):
+    """The scheduling rule is stated once, in RULE: every manifest entry for a replacement the
+    runner makes cites it rather than restating it."""
+
+    def test_every_runner_entry_of_the_manifest_cites_rule(self):
+        with open(os.path.join(HERE, "mocks.json")) as f:
+            mocks = json.load(f)["mocks"]
+        runner_entries = [e for e in mocks if "step_runner" in e["how"] or "run synchronously at step k" in e["how"]
+                          or any(s.startswith("step_runner.py:") for s in e["sites"])]
+        self.assertGreaterEqual(len(runner_entries), 3, "the manifest lists the runner's thread, queue and event entries")
+        for e in runner_entries:
+            self.assertIn("oracle/step_runner.py RULE", e["how"], e["symbol"])
+            # A restatement would name the rule's own terms: the start order and the boundary an
+            # event completes at.
+            for term in ("in start order", "recorded after step boundary k-1", "raises Empty at once"):
+                self.assertNotIn(term, e["how"], e["symbol"])
 
 
 SCENARIO = {"requests": [{"rid": "r0", "arrival_step": 3, "prompt": [1]}], "max_steps": 10}

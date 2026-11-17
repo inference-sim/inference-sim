@@ -1,5 +1,5 @@
 {
-  "version": "gpu-mock/5+00be9c34ae0c",
+  "version": "gpu-mock/5+ff75612c6c82",
   "description": "Every replacement the oracle harness makes in SGLang's code, by kind (gpu, clock, transport, environment, platform, external-service, transcription), with the sites oracle/check_mocks.py finds. No entry is a transcription: the event loops run as released.",
   "mocks": [
     {
@@ -147,7 +147,7 @@
     {
       "symbol": "threading.Thread.start at python/sglang/srt/managers/cache_controller.py:478@297e54fd (prefetch_thread_func, in HiCacheController._start_storage_threads)",
       "kind": "environment",
-      "how": "thread body run synchronously at step k: prefetch_thread_func, unmodified, one loop iteration at every step boundary k after the start. The step-driven runner (oracle/step_runner.py, design FID-1): no thread starts; the start registers the target with the runner, and at each step boundary every started, unjoined thread's target runs, unmodified, one iteration of its own loop, in start order (the stop event it tests reads clear once, then set). Boundary k is the first receive of event-loop iteration k in a scheduler scenario (oracle/harness.py begin_step), and each {\"boundary\": true} entry of a direct sequence (oracle/run_hicache.py). The rule is stated once, in step_runner.py's RULE and Runner.boundary.",
+      "how": "thread body run synchronously at step k: prefetch_thread_func, unmodified, one loop iteration at every step boundary k after the start, by the step-driven runner's rule (oracle/step_runner.py RULE, design FID-1): no thread starts; the start registers the target with the runner. Boundary k is the first receive of event-loop iteration k in a scheduler scenario (oracle/harness.py begin_step), and each {\"boundary\": true} entry of a direct sequence (oracle/run_hicache.py).",
       "sites": [
         "step_runner.py:mod.threading"
       ]
@@ -155,61 +155,61 @@
     {
       "symbol": "threading.Thread.start at python/sglang/srt/managers/cache_controller.py:479@297e54fd (prefetch_io_aux_func, in HiCacheController._start_storage_threads)",
       "kind": "environment",
-      "how": "thread body run synchronously at step k: prefetch_io_aux_func, unmodified, one loop iteration at every step boundary k after the start. By the rule of the entry for cache_controller.py:478.",
+      "how": "thread body run synchronously at step k: prefetch_io_aux_func, unmodified, one loop iteration at every step boundary k after the start. By the step-driven runner's rule (oracle/step_runner.py RULE).",
       "sites": []
     },
     {
       "symbol": "threading.Thread.start at python/sglang/srt/managers/cache_controller.py:480@297e54fd (prefetch_sync_thread_func, in HiCacheController._start_storage_threads)",
       "kind": "environment",
-      "how": "thread body run synchronously at step k: prefetch_sync_thread_func, unmodified, one loop iteration at every step boundary k after the start. By the rule of the entry for cache_controller.py:478.",
+      "how": "thread body run synchronously at step k: prefetch_sync_thread_func, unmodified, one loop iteration at every step boundary k after the start. By the step-driven runner's rule (oracle/step_runner.py RULE).",
       "sites": []
     },
     {
       "symbol": "threading.Thread.start at python/sglang/srt/managers/cache_controller.py:481@297e54fd (backup_thread_func, in HiCacheController._start_storage_threads)",
       "kind": "environment",
-      "how": "thread body run synchronously at step k: backup_thread_func, unmodified, one loop iteration at every step boundary k after the start. By the rule of the entry for cache_controller.py:478.",
+      "how": "thread body run synchronously at step k: backup_thread_func, unmodified, one loop iteration at every step boundary k after the start. By the step-driven runner's rule (oracle/step_runner.py RULE).",
       "sites": []
     },
     {
       "symbol": "threading.Thread.start at python/sglang/srt/managers/cache_controller.py:850@297e54fd (prefetch_thread_func, in HiCacheController.reset)",
       "kind": "environment",
-      "how": "thread body run synchronously at step k: prefetch_thread_func, unmodified, one loop iteration at every step boundary k after the start. By the rule of the entry for cache_controller.py:478.",
+      "how": "thread body run synchronously at step k: prefetch_thread_func, unmodified, one loop iteration at every step boundary k after the start. By the step-driven runner's rule (oracle/step_runner.py RULE).",
       "sites": []
     },
     {
       "symbol": "threading.Thread.start at python/sglang/srt/managers/cache_controller.py:851@297e54fd (prefetch_io_aux_func, in HiCacheController.reset)",
       "kind": "environment",
-      "how": "thread body run synchronously at step k: prefetch_io_aux_func, unmodified, one loop iteration at every step boundary k after the start. By the rule of the entry for cache_controller.py:478.",
+      "how": "thread body run synchronously at step k: prefetch_io_aux_func, unmodified, one loop iteration at every step boundary k after the start. By the step-driven runner's rule (oracle/step_runner.py RULE).",
       "sites": []
     },
     {
       "symbol": "threading.Thread.start at python/sglang/srt/managers/cache_controller.py:852@297e54fd (prefetch_sync_thread_func, in HiCacheController.reset)",
       "kind": "environment",
-      "how": "thread body run synchronously at step k: prefetch_sync_thread_func, unmodified, one loop iteration at every step boundary k after the start. By the rule of the entry for cache_controller.py:478.",
+      "how": "thread body run synchronously at step k: prefetch_sync_thread_func, unmodified, one loop iteration at every step boundary k after the start. By the step-driven runner's rule (oracle/step_runner.py RULE).",
       "sites": []
     },
     {
       "symbol": "threading.Thread.start at python/sglang/srt/managers/cache_controller.py:853@297e54fd (backup_thread_func, in HiCacheController.reset)",
       "kind": "environment",
-      "how": "thread body run synchronously at step k: backup_thread_func, unmodified, one loop iteration at every step boundary k after the start. By the rule of the entry for cache_controller.py:478.",
+      "how": "thread body run synchronously at step k: backup_thread_func, unmodified, one loop iteration at every step boundary k after the start. By the step-driven runner's rule (oracle/step_runner.py RULE).",
       "sites": []
     },
     {
       "symbol": "threading.Thread.start at python/sglang/srt/mem_cache/hybrid_cache/hybrid_cache_controller.py:285@297e54fd (pp_prefetch_command_thread_func)",
       "kind": "environment",
-      "how": "thread body run synchronously at step k, by the rule of the entry for cache_controller.py:478; the PP prefetch ticket thread starts only with buffer_only host memory and more than one pipeline stage, and the runner refuses its start by name (pipeline parallelism, inference-sim/blis-sglang#8)",
+      "how": "thread body run synchronously at step k, by the step-driven runner's rule (oracle/step_runner.py RULE); the PP prefetch ticket thread starts only with buffer_only host memory and more than one pipeline stage, and the runner refuses its start by name (pipeline parallelism, inference-sim/blis-sglang#8)",
       "sites": []
     },
     {
       "symbol": "threading.Thread.start at python/sglang/srt/mem_cache/hybrid_cache/hybrid_cache_controller.py:509@297e54fd (pp_prefetch_command_thread_func)",
       "kind": "environment",
-      "how": "thread body run synchronously at step k, by the rule of the entry for cache_controller.py:478; the PP prefetch ticket thread starts only with buffer_only host memory and more than one pipeline stage, and the runner refuses its start by name (pipeline parallelism, inference-sim/blis-sglang#8)",
+      "how": "thread body run synchronously at step k, by the step-driven runner's rule (oracle/step_runner.py RULE); the PP prefetch ticket thread starts only with buffer_only host memory and more than one pipeline stage, and the runner refuses its start by name (pipeline parallelism, inference-sim/blis-sglang#8)",
       "sites": []
     },
     {
       "symbol": "queue.Queue in the HiCache controllers (managers/cache_controller.py:21, mem_cache/hybrid_cache/hybrid_cache_controller.py:11@297e54fd)",
       "kind": "transport",
-      "how": "the queues between the scheduler and the controller's thread bodies are step_runner.StepQueue, a queue.Queue whose get never waits: an empty queue raises Empty at once, as the bodies' timed get does when it times out. Nothing else of the queue changes",
+      "how": "the queues between the scheduler and the controller's thread bodies are step_runner.StepQueue, a queue.Queue whose get never waits (oracle/step_runner.py RULE). Nothing else of the queue changes",
       "sites": [
         "step_runner.py:mod.Queue"
       ]
@@ -217,7 +217,7 @@
     {
       "symbol": "device_module.Event in managers/cache_controller.py:51 and mem_cache/l2_transfer.py:15@297e54fd",
       "kind": "gpu",
-      "how": "the events that mark a host<->device copy done (LayerLoadingEvent, cache_controller.py:65-80; the L2 transfer's ack events, l2_transfer.py:31-34 and :186-189) are step_runner.StepDeviceEvent: an event recorded after step boundary k-1 completes at boundary k, synchronize() completes it at once, and an event never recorded is complete, as a CUDA event is. The device module's streams are the platform's own (torch.cpu's, which do nothing)",
+      "how": "the events that mark a host<->device copy done (LayerLoadingEvent, cache_controller.py:65-80; the L2 transfer's ack events, l2_transfer.py:31-34 and :186-189) are step_runner.StepDeviceEvent, which completes and times as oracle/step_runner.py RULE says. It takes torch.cuda.Event's keyword arguments, so the L2 transfer's timing probe (l2_transfer.py:18-28) finds timing supported and every ack records timing_enabled true, as on CUDA. The device module's streams are the platform's own (torch.cpu's, which do nothing)",
       "sites": [
         "step_runner.py:mod.device_module"
       ]
@@ -242,6 +242,18 @@
       "symbol": "SGLANG_HICACHE_FILE_BACKEND_STORAGE_DIR in a direct HiCache sequence",
       "kind": "environment",
       "how": "the file storage backend (HiCacheFile, mem_cache/hicache_storage.py:728@297e54fd) writes under a fresh temporary directory per sequence, which the driver names in this variable, so no sequence reads pages another run stored",
+      "sites": []
+    },
+    {
+      "symbol": "the file storage backend's directory in a recorded HiCache scenario (HiCacheFile, mem_cache/hicache_storage.py:728-736@297e54fd)",
+      "kind": "environment",
+      "how": "the scheduler process keeps no SGLANG_* variable, so oracle/run_hicache.py record_scenario makes a fresh directory for each run (tempfile.mkdtemp), hands it to SGLang as the file_storage_path of --hicache-storage-backend-extra-config (oracle/run_scheduler.py server_args), and removes it with shutil.rmtree when the run ends; no two runs share a directory and none reads pages another stored. The trace records the directory as the placeholder <file_storage_path> wherever a string holds it (oracle/hicache_interfaces.py), so it names no run's own path",
+      "sites": []
+    },
+    {
+      "symbol": "atexit.register(self.shutdown) in UnifiedRadixCache.init_hicache (mem_cache/unified_radix_cache.py:580@297e54fd), in a direct HiCache sequence",
+      "kind": "environment",
+      "how": "oracle/run_hicache.py drive_sequence unregisters the cache's exit hook (atexit.unregister(cache.shutdown)) once the cache is built. The hook detaches the storage backend when the process exits, after the sequence and its trace are done and its temporary storage directory is removed; it makes no call the sequence records and no decision",
       "sites": []
     },
     {

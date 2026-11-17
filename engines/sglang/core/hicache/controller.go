@@ -237,10 +237,19 @@ func (c *Controller) StartWriting() {
 		panic(err)
 	}
 	c.WriteQueue = nil
-	finish := c.l2.SubmitDeviceToHost(Transfer{Host: host, Device: device})
+	finish := c.l2.SubmitDeviceToHost(l2Transfers(host, device))
 	c.alloc.SetHicacheTransferDoneEvent("write", finish)
 	c.AckWriteQueue = append(c.AckWriteQueue, &Ack{Finish: finish, NodeIDs: op.NodeIDs, NumTokens: len(op.Device),
 		NumBytes: int64(len(op.Device)) * c.sizePerToken()})
+}
+
+// l2Transfers is _l2_transfers (hybrid_cache_controller.py:865-883@297e54fd) with no sidecar
+// pools: the KV transfer, only when it moves any slot.
+func l2Transfers(host, device []int64) []Transfer {
+	if len(host) == 0 {
+		return []Transfer{}
+	}
+	return []Transfer{{Host: host, Device: device}}
 }
 
 func (c *Controller) sizePerToken() int64 {
@@ -286,7 +295,7 @@ func (c *Controller) StartLoading() (int, error) {
 	c.LoadQueue = nil
 	ev := c.counter.Events[producer]
 	ev.Start.Record()
-	finish := c.l2.SubmitHostToDevice(Transfer{Host: host, Device: device}, c.cfg.TransferLayerIDMax, ev.Complete)
+	finish := c.l2.SubmitHostToDevice(l2Transfers(host, device), c.cfg.TransferLayerIDMax, ev.Complete)
 	c.alloc.SetHicacheTransferDoneEvent("load", finish)
 	c.AckLoadQueue = append(c.AckLoadQueue, &Ack{Finish: finish, NodeIDs: op.NodeIDs, NumTokens: len(op.Device),
 		NumBytes: int64(len(op.Device)) * c.sizePerToken()})
@@ -346,16 +355,22 @@ func (c *Controller) AppendHostMemRelease(host []int64) {
 // mode (hybrid_cache_controller.py:1090-1102), which is not modelled.
 func (c *Controller) GetPrefetchSubmission(rid string) *PrefetchSubmission { return nil }
 
+// ErrStorageConfigFile refuses a storage extra configuration given as a file (@path), which
+// SGLang reads as JSON, TOML or YAML (hybrid_cache_controller.py:383-399@297e54fd); it is not
+// modelled until inference-sim/blis-sglang#87.
+var ErrStorageConfigFile = errors.New("hicache: --hicache-storage-backend-extra-config given as @path is not modelled " +
+	"(inference-sim/blis-sglang#87); give the configuration inline")
+
 // ParseStorageBackendExtraConfig is HybridCacheController.parse_storage_backend_extra_config
 // (hybrid_cache_controller.py:378-438@297e54fd) for an inline JSON object; a configuration file
-// (@path) is refused.
+// (@path) is refused (ErrStorageConfigFile).
 func (c *Controller) ParseStorageBackendExtraConfig(extra string) (StorageExtraConfig, error) {
 	out := StorageExtraConfig{Extra: map[string]any{}, PrefetchThreshold: 256, PrefetchTimeoutBase: 1, PrefetchTimeoutPerKiToken: 0.25}
 	if extra == "" {
 		return out, nil
 	}
 	if strings.HasPrefix(extra, "@") {
-		return out, errors.New("hicache: a storage configuration file is not read; give the configuration inline")
+		return out, ErrStorageConfigFile
 	}
 	dec := json.NewDecoder(strings.NewReader(extra))
 	dec.UseNumber()
@@ -398,9 +413,9 @@ func (c *Controller) ParseStorageBackendExtraConfig(extra string) (StorageExtraC
 	return out, nil
 }
 
-// Boundary is one step boundary: every copy submitted since the last one completes, and each
-// storage thread body runs one iteration, in the order SGLang starts the threads
-// (cache_controller.py:478-481). It returns the bodies run, in order.
+// Boundary is one step boundary, by the step-driven runner's rule (oracle/step_runner.py RULE),
+// over the storage thread bodies SGLang starts (cache_controller.py:478-481). It returns the
+// bodies run, in order.
 func (c *Controller) Boundary() ([]string, error) {
 	c.clock.boundaries++
 	if !c.EnableStorage {
@@ -420,10 +435,6 @@ func (c *Controller) Boundary() ([]string, error) {
 	}
 	return ran, nil
 }
-
-// Tick advances the clock by one boundary without running a thread body: what a replay does
-// before it replays the bodies' calls one by one.
-func (c *Controller) Tick() { c.clock.boundaries++ }
 
 // PrefetchThreadFunc is one iteration of the prefetch thread (cache_controller.py:1333-1373). The
 // port's prefetch queue is filled only by SubmitPrefetch, which it refuses, so an iteration finds
@@ -511,21 +522,35 @@ type L2Engine struct {
 	Clock     *Clock
 }
 
-// SubmitDeviceToHost copies device KV to host, every layer at once (l2_transfer.py:132-143).
-func (e *L2Engine) SubmitDeviceToHost(t Transfer) *Event {
-	host, device := e.Host.PrepareTransferIndices(t.Host, t.Device, e.IOBackend)
-	e.Host.BackupFromDeviceAllLayerPhysical(host, device, e.IOBackend)
+// prepare resolves each transfer's indices at its host pool (l2_transfer.py:88-102).
+func (e *L2Engine) prepare(ts []Transfer) []Transfer {
+	out := make([]Transfer, len(ts))
+	for i, t := range ts {
+		host, device := e.Host.PrepareTransferIndices(t.Host, t.Device, e.IOBackend)
+		out[i] = Transfer{Host: host, Device: device}
+	}
+	return out
+}
+
+// SubmitDeviceToHost copies device KV to host, every layer at once (l2_transfer.py:132-143); no
+// transfer makes no copy, and its finish event is recorded all the same.
+func (e *L2Engine) SubmitDeviceToHost(ts []Transfer) *Event {
+	for _, t := range e.prepare(ts) {
+		e.Host.BackupFromDeviceAllLayerPhysical(t.Host, t.Device, e.IOBackend)
+	}
 	finish := NewEvent(e.Clock)
 	finish.Record()
 	return finish
 }
 
 // SubmitHostToDevice copies host KV to the device layer by layer, reporting each layer as it is
-// submitted (l2_transfer.py:145-183).
-func (e *L2Engine) SubmitHostToDevice(t Transfer, transferLayerIDMax int, onLayerDone func(layer int)) *Event {
-	host, device := e.Host.PrepareTransferIndices(t.Host, t.Device, e.IOBackend)
+// submitted, whether or not a transfer copied anything at it (l2_transfer.py:145-183).
+func (e *L2Engine) SubmitHostToDevice(ts []Transfer, transferLayerIDMax int, onLayerDone func(layer int)) *Event {
+	prepared := e.prepare(ts)
 	for layer := range transferLayerIDMax {
-		e.Host.LoadToDevicePerLayerPhysical(host, device, layer, e.IOBackend)
+		for _, t := range prepared {
+			e.Host.LoadToDevicePerLayerPhysical(t.Host, t.Device, layer, e.IOBackend)
+		}
 		if onLayerDone != nil {
 			onLayerDone(layer)
 		}

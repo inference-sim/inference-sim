@@ -63,6 +63,8 @@ type ctrlState struct {
 	} `json:"layer_counter"`
 	HostFree int            `json:"host_free"`
 	Storage  map[string]int `json:"storage"`
+	// AckBackupCompletedTokens is each acked backup's completed tokens, front first (with storage).
+	AckBackupCompletedTokens []int `json:"ack_backup_completed_tokens"`
 }
 
 func loadTraces(t *testing.T) map[string]hiTrace {
@@ -200,17 +202,29 @@ func TestBoundaryRunsTheThreadBodiesInSGLangsStartOrder(t *testing.T) {
 	}
 }
 
+// stopsAt is each trace whose replay stops short of its end, at the call it stops at: a call
+// the port refuses until HiCache L3 storage (refused). Every other trace replays to its end.
+var stopsAt = map[string]string{
+	"direct/prefetch-from-storage": "call 103, controller.submit_prefetch",
+}
+
 // The port of HiCacheController, LayerDoneCounter and HostKVCache answers every call SGLang's
 // answered, in every trace of the framework: the radix cache's and the driver's calls at the
-// controller and the host pool, and the runner's thread bodies at each boundary. The calls the
-// port makes in turn at the host pool, the transfer engine, the device allocator and storage are
-// SGLang's, in order; the allocator and storage are stand-ins that answer as the trace says
-// SGLang's did. After each entry of a direct sequence, the controller's queues, acks, layer
-// counter and host free list are SGLang's. A trace whose calls reach a part refused until HiCache
-// L3 (ErrNotModelled) is replayed up to that call, which is named.
+// controller and the host pool, and, at each step boundary, the thread bodies the port's
+// Boundary runs. The calls the port makes in turn at the host pool, the transfer engine, the
+// device allocator and storage are SGLang's, in order; the allocator and storage are stand-ins
+// that answer as the trace says SGLang's did. After each entry of a direct sequence, the
+// controller's queues, acks, layer counter and host free list are SGLang's. A trace replays to
+// its end, or to the refused call stopsAt names for it.
 func TestTheControllerAnswersEveryTracedCallAsSGLangDoes(t *testing.T) {
 	replayed := 0
-	for name, tr := range loadTraces(t) {
+	traces := loadTraces(t)
+	for name := range stopsAt {
+		if _, ok := traces[name]; !ok {
+			t.Errorf("stopsAt names %s, which is not a trace", name)
+		}
+	}
+	for name, tr := range traces {
 		t.Run(name, func(t *testing.T) {
 			r, err := newReplay(tr)
 			if err != nil {
@@ -221,15 +235,74 @@ func TestTheControllerAnswersEveryTracedCallAsSGLangDoes(t *testing.T) {
 				t.Fatal(err)
 			}
 			replayed += n
-			if stop != "" {
-				t.Logf("%d calls replayed; stopped at %s", n, stop)
-			} else {
-				t.Logf("%d calls replayed", n)
+			want, mayStop := stopsAt[name]
+			switch {
+			case stop == "" && mayStop:
+				t.Errorf("%d calls replayed to the end; the replay should stop at %s", n, want)
+			case stop != "" && !mayStop:
+				t.Errorf("%d calls replayed; stopped at %s, and this trace should replay to its end", n, stop)
+			case stop != "" && !strings.HasPrefix(stop, want+":"):
+				t.Errorf("%d calls replayed; stopped at %s, not at %s", n, stop, want)
+			default:
+				t.Logf("%d calls replayed; boundaries %d of %d", n, r.boundaries, len(tr.BoundaryAt))
 			}
 		})
 	}
 	if replayed == 0 {
 		t.Fatal("no call at the controller was replayed")
+	}
+}
+
+// A replay checks the port's own step boundary: a Boundary that runs a thread body twice, or
+// skips one, fails the replay of a trace whose bodies ran, which the correct Boundary passes.
+func TestTheReplayFailsABoundaryThatRunsABodyTwiceOrSkipsOne(t *testing.T) {
+	tr, ok := loadTraces(t)["direct/backup-to-storage"]
+	if !ok {
+		t.Fatal("no direct/backup-to-storage trace")
+	}
+	mutants := map[string]func(c *Controller) func() ([]string, error){
+		"the port's Boundary": func(c *Controller) func() ([]string, error) { return c.Boundary },
+		"backup_thread_func twice": func(c *Controller) func() ([]string, error) {
+			return func() ([]string, error) {
+				ran, err := c.Boundary()
+				if c.EnableStorage {
+					c.BackupThreadFunc()
+					ran = append(ran, "backup_thread_func")
+				}
+				return ran, err
+			}
+		},
+		"backup_thread_func skipped": func(c *Controller) func() ([]string, error) {
+			return func() ([]string, error) {
+				c.clock.boundaries++
+				return []string{"prefetch_thread_func", "prefetch_io_aux_func", "prefetch_sync_thread_func"}, nil
+			}
+		},
+		"backup_thread_func skipped, named as run": func(c *Controller) func() ([]string, error) {
+			return func() ([]string, error) {
+				c.clock.boundaries++
+				return slices.Clone(threadBodies), nil
+			}
+		},
+	}
+	for name, mutant := range mutants {
+		r, err := newReplay(tr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.boundary = mutant(r.ctrl)
+		_, stop, err := r.run()
+		if name == "the port's Boundary" {
+			if err != nil || stop != "" {
+				t.Errorf("%s: the replay failed (%v) or stopped (%q)", name, err, stop)
+			}
+			continue
+		}
+		if err == nil {
+			t.Errorf("a Boundary with %s passed the replay", name)
+		} else {
+			t.Logf("%s: %v", name, err)
+		}
 	}
 }
 
@@ -308,14 +381,23 @@ type recL2 struct {
 	log *replayLog
 }
 
-func (l *recL2) SubmitDeviceToHost(t Transfer) *Event {
-	l.log.add(L2TransferIface, "submit_device_to_host", js(t.Host, t.Device), nil)
-	return l.eng.SubmitDeviceToHost(t)
+// transferArgs is a submission's transfers as the replay log writes them: [host, device] each.
+func transferArgs(ts []Transfer) [][2][]int64 {
+	out := make([][2][]int64, 0, len(ts))
+	for _, t := range ts {
+		out = append(out, [2][]int64{t.Host, t.Device})
+	}
+	return out
 }
 
-func (l *recL2) SubmitHostToDevice(t Transfer, layers int, done func(int)) *Event {
-	l.log.add(L2TransferIface, "submit_host_to_device", js(t.Host, t.Device, layers), nil)
-	return l.eng.SubmitHostToDevice(t, layers, done)
+func (l *recL2) SubmitDeviceToHost(ts []Transfer) *Event {
+	l.log.add(L2TransferIface, "submit_device_to_host", js(transferArgs(ts)), nil)
+	return l.eng.SubmitDeviceToHost(ts)
+}
+
+func (l *recL2) SubmitHostToDevice(ts []Transfer, layers int, done func(int)) *Event {
+	l.log.add(L2TransferIface, "submit_host_to_device", js(transferArgs(ts), layers), nil)
+	return l.eng.SubmitHostToDevice(ts, layers, done)
 }
 
 // replayAlloc answers the device allocator's calls as the trace says SGLang's did.
@@ -390,6 +472,12 @@ type replay struct {
 	log     *replayLog
 	// boundaries is how many of the trace's boundaries the replay has applied.
 	boundaries int
+	// bodies is each boundary's thread body calls (boundaryBodies); bodySeq marks them, since the
+	// port's Boundary makes them, not the replay.
+	bodies  [][]cache.Call
+	bodySeq map[int]bool
+	// boundary is the port's step boundary: the controller's Boundary.
+	boundary func() ([]string, error)
 }
 
 // madeBy is whether call c was made, at any depth, by a call at one of ifaces.
@@ -430,13 +518,17 @@ func generic(raw json.RawMessage) any {
 
 func (r *replay) arg(c cache.Call, name string) any { return generic(c.Args[name]) }
 
-// expect is how a traced call made by SGLang's controller reads, in the replay log's form.
-func (r *replay) expect(c cache.Call) (string, bool) {
+// expect is how a traced call made by SGLang's controller reads, in the replay log's form. It
+// is false, with no error, for a layer counter call, which the replay reads from the counter
+// itself; a call at another compared interface that it cannot write is an error, so no call the
+// port should have made is dropped unseen.
+func (r *replay) expect(c cache.Call) (string, bool, error) {
 	var args string
 	ret := generic(c.Ret)
 	if c.Raise != "" {
 		ret = "raise"
 	}
+	cannot := fmt.Errorf("the replay cannot compare %s.%s (call %d)", c.Iface, c.Method, c.Seq)
 	switch Interface(c.Iface) {
 	case HostPoolIface:
 		switch c.Method {
@@ -452,21 +544,30 @@ func (r *replay) expect(c cache.Call) (string, bool) {
 		case "get_data_page":
 			args, ret = js(r.arg(c, "index")), nil
 		default:
-			return "", false
+			return "", false, cannot
 		}
 		if c.Method == "backup_from_device_all_layer_physical" || c.Method == "load_to_device_per_layer_physical" {
 			ret = nil
 		}
 	case L2TransferIface:
-		ts, _ := r.arg(c, "transfers").([]any)
-		if len(ts) != 1 {
-			return "", false
+		// Each transfer's host and device slots, in order; a submission may hold none
+		// (hybrid_cache_controller.py:872-883@297e54fd).
+		ts, ok := r.arg(c, "transfers").([]any)
+		if !ok {
+			return "", false, cannot
 		}
-		t0, _ := ts[0].(map[string]any)
-		if c.Method == "submit_device_to_host" {
-			args = js(t0["host_indices"], t0["device_indices"])
-		} else {
-			args = js(t0["host_indices"], t0["device_indices"], r.arg(c, "transfer_layer_id_max"))
+		pairs := make([][2]any, 0, len(ts))
+		for _, x := range ts {
+			t, _ := x.(map[string]any)
+			pairs = append(pairs, [2]any{t["host_indices"], t["device_indices"]})
+		}
+		switch c.Method {
+		case "submit_device_to_host":
+			args = js(pairs)
+		case "submit_host_to_device":
+			args = js(pairs, r.arg(c, "transfer_layer_id_max"))
+		default:
+			return "", false, cannot
 		}
 		ret = nil
 	case Interface(cache.AllocatorIface):
@@ -475,9 +576,12 @@ func (r *replay) expect(c cache.Call) (string, bool) {
 			args = js(r.arg(c, "need_size"))
 		case "set_hicache_transfer_done_event":
 			key, _ := r.arg(c, "transfer_key").([]any)
+			if len(key) != 2 {
+				return "", false, cannot
+			}
 			args, ret = js(key[1]), nil
 		default:
-			return "", false
+			return "", false, cannot
 		}
 	case StorageIface:
 		switch c.Method {
@@ -488,17 +592,56 @@ func (r *replay) expect(c cache.Call) (string, bool) {
 		case "register_mem_host_pool_v2":
 			args, ret = js(r.arg(c, "host_pool_name")), nil
 		default:
-			return "", false
+			return "", false, cannot
 		}
-	default:
+	case LayerCounterIface:
 		// The layer counter's calls inside the controller are read from the counter itself.
-		return "", false
+		return "", false, nil
+	default:
+		return "", false, cannot
 	}
 	var parsed any
 	b, _ := json.Marshal(ret)
 	_ = json.Unmarshal(b, &parsed)
 	rb, _ := json.Marshal(parsed)
-	return fmt.Sprintf("%s.%s(%s)=%s", c.Iface, c.Method, args, rb), true
+	return fmt.Sprintf("%s.%s(%s)=%s", c.Iface, c.Method, args, rb), true, nil
+}
+
+// expected is the calls SGLang's controller made at the compared interfaces inside calls, in
+// order. It loads the device allocator's and storage's answers there into their stand-ins.
+func (r *replay) expected(calls ...cache.Call) ([]string, error) {
+	var want []string
+	r.alloc.answers = nil
+	if r.storage != nil {
+		r.storage.setAnswers = nil
+	}
+	for _, c := range calls {
+		for _, d := range r.descendants(c) {
+			if d.Iface == cache.AllocatorIface && d.Method == "alloc" {
+				var out []int64
+				if d.Raise == "" && string(d.Ret) != "null" {
+					_ = json.Unmarshal(d.Ret, &out)
+				}
+				r.alloc.answers = append(r.alloc.answers, out)
+			}
+			if d.Iface == cache.Interface(StorageIface) && d.Method == "batch_set" {
+				if r.storage == nil {
+					return nil, fmt.Errorf("call %d: storage called with no storage attached", d.Seq)
+				}
+				var ok bool
+				_ = json.Unmarshal(d.Ret, &ok)
+				r.storage.setAnswers = append(r.storage.setAnswers, ok)
+			}
+			s, ok, err := r.expect(d)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				want = append(want, s)
+			}
+		}
+	}
+	return want, nil
 }
 
 func newReplay(tr hiTrace) (*replay, error) {
@@ -585,6 +728,16 @@ func newReplay(tr hiTrace) (*replay, error) {
 	if err != nil {
 		return nil, err
 	}
+	r.boundary = r.ctrl.Boundary
+	if r.bodies, err = boundaryBodies(tr); err != nil {
+		return nil, err
+	}
+	r.bodySeq = map[int]bool{}
+	for _, bs := range r.bodies {
+		for _, b := range bs {
+			r.bodySeq[b.Seq] = true
+		}
+	}
 	if len(storageInits) > 0 {
 		var sa struct {
 			Config struct {
@@ -607,10 +760,12 @@ func newReplay(tr hiTrace) (*replay, error) {
 		// The registration the attach made is compared with SGLang's, inside its __init__.
 		var want []string
 		for _, d := range r.descendants(*ctrlInit) {
-			if d.Iface == cache.Interface(StorageIface) {
-				if s, ok := r.expect(d); ok {
-					want = append(want, s)
+			if d.Iface == cache.Interface(StorageIface) && d.Method != "__init__" {
+				s, _, err := r.expect(d)
+				if err != nil {
+					return nil, err
 				}
+				want = append(want, s)
 			}
 		}
 		if !slices.Equal(r.log.calls, want) {
@@ -622,12 +777,13 @@ func newReplay(tr hiTrace) (*replay, error) {
 }
 
 // driven is whether c is a call the replay makes itself: one at the controller (every recorded
-// controller call comes from outside it), or one at the host pool or the layer counter that the
-// controller and the transfer engine did not make.
+// controller call comes from outside it) that is not a thread body the runner ran at a boundary,
+// or one at the host pool or the layer counter that the controller and the transfer engine did
+// not make.
 func (r *replay) driven(c cache.Call) bool {
 	switch Interface(c.Iface) {
 	case ControllerIface:
-		return c.Method != "__init__"
+		return c.Method != "__init__" && !r.bodySeq[c.Seq]
 	case HostPoolIface, LayerCounterIface:
 		return c.Method != "__init__" && !r.madeBy(c, ControllerIface, L2TransferIface)
 	}
@@ -640,29 +796,102 @@ var refused = map[string]string{
 	"allocate_storage_hit": "HiCache L3 storage prefetch (inference-sim/blis-sglang#40)",
 }
 
+// threadBodies are the controller's thread bodies, which only the runner calls.
+var threadBodies = []string{"prefetch_thread_func", "prefetch_io_aux_func", "prefetch_sync_thread_func", "backup_thread_func"}
+
+// boundaryBodies is, for each boundary of the trace, the thread body calls the runner made
+// there: the top-level controller calls from where the boundary fell that are thread bodies.
+func boundaryBodies(tr hiTrace) ([][]cache.Call, error) {
+	out := make([][]cache.Call, len(tr.BoundaryAt))
+	for k, at := range tr.BoundaryAt {
+		for _, c := range tr.Calls {
+			if c.Seq < at || c.In != nil {
+				continue
+			}
+			if c.Iface != cache.Interface(ControllerIface) || !slices.Contains(threadBodies, c.Method) {
+				break
+			}
+			out[k] = append(out[k], c)
+		}
+	}
+	for _, c := range tr.Calls {
+		if c.In == nil && c.Iface == cache.Interface(ControllerIface) && slices.Contains(threadBodies, c.Method) {
+			found := false
+			for _, bs := range out {
+				found = found || slices.ContainsFunc(bs, func(b cache.Call) bool { return b.Seq == c.Seq })
+			}
+			if !found {
+				return nil, fmt.Errorf("call %d: thread body %s ran outside a step boundary", c.Seq, c.Method)
+			}
+		}
+	}
+	return out, nil
+}
+
+// applyBoundary applies boundary k: the port's Boundary runs, and the bodies it runs and the
+// calls they make at the host pool and storage must be the bodies SGLang's runner ran there and
+// the calls they made, in order.
+func (r *replay) applyBoundary(k int) error {
+	bodies := r.bodies[k]
+	want, err := r.expected(bodies...)
+	if err != nil {
+		return err
+	}
+	var wantRan []string
+	for _, b := range bodies {
+		if b.Raise != "" {
+			return fmt.Errorf("call %d: SGLang's %s raised %q", b.Seq, b.Method, b.Raise)
+		}
+		wantRan = append(wantRan, b.Method)
+	}
+	r.log.calls = nil
+	ran, err := r.boundary()
+	if err != nil {
+		return err
+	}
+	if !slices.Equal(ran, wantRan) {
+		return fmt.Errorf("the port ran %v; SGLang's runner ran %v", ran, wantRan)
+	}
+	if !slices.Equal(r.log.calls, want) {
+		return fmt.Errorf("the port's bodies called\n  %s\nSGLang's called\n  %s", strings.Join(r.log.calls, "\n  "),
+			strings.Join(want, "\n  "))
+	}
+	return nil
+}
+
 func (r *replay) run() (int, string, error) {
 	n := 0
 	states := r.tr.States
 	si := 0
-	tick := func(upTo int) {
-		for r.boundaries < len(r.tr.BoundaryAt) && r.tr.BoundaryAt[r.boundaries] <= upTo {
-			r.ctrl.Tick()
-			r.boundaries++
+	// advance compares each state taken before call upTo and applies each boundary that fell
+	// before it, in the order the trace took them.
+	advance := func(upTo int) error {
+		for {
+			if si < len(states) && states[si].After < upTo && states[si].Boundaries <= r.boundaries {
+				s := states[si]
+				if s.Boundaries != r.boundaries {
+					return fmt.Errorf("the state after call %d is at boundary %d; the replay is at %d", s.After, s.Boundaries, r.boundaries)
+				}
+				if err := r.compareState(s); err != nil {
+					return fmt.Errorf("after call %d, boundary %d: %w", s.After, s.Boundaries, err)
+				}
+				si++
+				continue
+			}
+			if r.boundaries < len(r.tr.BoundaryAt) && r.tr.BoundaryAt[r.boundaries] <= upTo {
+				if err := r.applyBoundary(r.boundaries); err != nil {
+					return fmt.Errorf("boundary %d: %w", r.boundaries+1, err)
+				}
+				r.boundaries++
+				continue
+			}
+			return nil
 		}
 	}
 	for _, c := range r.tr.Calls {
-		// States taken before this call, at the boundaries passed by then.
-		for si < len(states) && states[si].After < c.Seq {
-			for r.boundaries < states[si].Boundaries {
-				r.ctrl.Tick()
-				r.boundaries++
-			}
-			if err := r.compareState(states[si]); err != nil {
-				return n, "", fmt.Errorf("after call %d, boundary %d: %w", states[si].After, states[si].Boundaries, err)
-			}
-			si++
+		if err := advance(c.Seq); err != nil {
+			return n, "", err
 		}
-		tick(c.Seq)
 		if !r.driven(c) {
 			continue
 		}
@@ -674,14 +903,12 @@ func (r *replay) run() (int, string, error) {
 		}
 		n++
 	}
-	for ; si < len(states); si++ {
-		for r.boundaries < states[si].Boundaries {
-			r.ctrl.Tick()
-			r.boundaries++
-		}
-		if err := r.compareState(states[si]); err != nil {
-			return n, "", fmt.Errorf("after call %d: %w", states[si].After, err)
-		}
+	if err := advance(int(^uint(0) >> 1)); err != nil {
+		return n, "", err
+	}
+	if si != len(states) || r.boundaries != len(r.tr.BoundaryAt) {
+		return n, "", fmt.Errorf("the replay compared %d of %d states and applied %d of %d boundaries", si, len(states),
+			r.boundaries, len(r.tr.BoundaryAt))
 	}
 	return n, "", nil
 }
@@ -722,34 +949,12 @@ func optInt(v any) *int {
 
 // call replays one driven call and compares the port's answer and the calls it made.
 func (r *replay) call(c cache.Call) error {
-	r.log.calls = nil
 	// The device allocator and storage answer as SGLang's did inside this call.
-	r.alloc.answers = nil
-	if r.storage != nil {
-		r.storage.setAnswers = nil
+	want, err := r.expected(c)
+	if err != nil {
+		return err
 	}
-	var want []string
-	for _, d := range r.descendants(c) {
-		if d.Iface == cache.AllocatorIface && d.Method == "alloc" {
-			var out []int64
-			if d.Raise == "" && string(d.Ret) != "null" {
-				_ = json.Unmarshal(d.Ret, &out)
-			}
-			if out == nil {
-				r.alloc.answers = append(r.alloc.answers, nil)
-			} else {
-				r.alloc.answers = append(r.alloc.answers, out)
-			}
-		}
-		if d.Iface == cache.Interface(StorageIface) && d.Method == "batch_set" && r.storage != nil {
-			var ok bool
-			_ = json.Unmarshal(d.Ret, &ok)
-			r.storage.setAnswers = append(r.storage.setAnswers, ok)
-		}
-		if s, ok := r.expect(d); ok {
-			want = append(want, s)
-		}
-	}
+	r.log.calls = nil
 	var got any
 	raised := false
 	ctrl := r.ctrl
@@ -758,8 +963,11 @@ func (r *replay) call(c cache.Call) error {
 	case ControllerIface:
 		switch c.Method {
 		case "write":
-			if r.arg(c, "extra_pools") != nil || r.arg(c, "start_owner") != nil {
-				return fmt.Errorf("a write with side pools or a shard owner is not modelled")
+			if r.arg(c, "extra_pools") != nil {
+				return fmt.Errorf("a write with side pools is not modelled (inference-sim/blis-sglang#74)")
+			}
+			if r.arg(c, "start_owner") != nil {
+				return fmt.Errorf("a write with a page-interleaved shard owner is not modelled (inference-sim/blis-sglang#44)")
 			}
 			flush, _ := r.arg(c, "flush").(bool)
 			node, _ := r.arg(c, "node_id").(float64)
@@ -768,7 +976,7 @@ func (r *replay) call(c cache.Call) error {
 			}
 		case "load":
 			if r.arg(c, "extra_pools") != nil || r.arg(c, "device_indices") != nil || r.arg(c, "anchor_indices") != nil {
-				return fmt.Errorf("a load into caller-owned slots or with side pools is not modelled")
+				return fmt.Errorf("a load into caller-owned slots or with side pools is not modelled (inference-sim/blis-sglang#74)")
 			}
 			node, _ := r.arg(c, "node_id").(float64)
 			if d, ok := ctrl.Load(ints(r.arg(c, "host_indices")), optInt(r.arg(c, "priority")), int64(node)); ok {
@@ -791,7 +999,7 @@ func (r *replay) call(c cache.Call) error {
 			got = ctrl.HasInflightDeviceTransfers()
 		case "write_storage":
 			if r.arg(c, "extra_pools") != nil {
-				return fmt.Errorf("a storage backup with side pools is not modelled")
+				return fmt.Errorf("a storage backup with side pools is not modelled (inference-sim/blis-sglang#74)")
 			}
 			got = ctrl.WriteStorage(ints(r.arg(c, "host_indices")), ints(r.arg(c, "token_ids")), strs(r.arg(c, "hash_value")),
 				strs(r.arg(c, "prefix_keys")))
@@ -803,7 +1011,7 @@ func (r *replay) call(c cache.Call) error {
 			}
 		case "append_host_mem_release":
 			if r.arg(c, "extra_pools") != nil && len(r.arg(c, "extra_pools").([]any)) > 0 {
-				return fmt.Errorf("side-pool releases are not modelled")
+				return fmt.Errorf("side-pool releases are not modelled (inference-sim/blis-sglang#74)")
 			}
 			ctrl.AppendHostMemRelease(ints(r.arg(c, "host_indices")))
 		case "parse_storage_backend_extra_config":
@@ -813,14 +1021,6 @@ func (r *replay) call(c cache.Call) error {
 				raised = true
 			}
 			got = []any{cfg.Extra, cfg.PrefetchThreshold, cfg.PrefetchTimeoutBase, cfg.PrefetchTimeoutPerKiToken, cfg.PassPrefixKeys}
-		case "prefetch_thread_func":
-			raised = ctrl.PrefetchThreadFunc() != nil
-		case "prefetch_io_aux_func":
-			raised = ctrl.PrefetchIoAuxFunc() != nil
-		case "prefetch_sync_thread_func":
-			raised = ctrl.PrefetchSyncThreadFunc() != nil
-		case "backup_thread_func":
-			ctrl.BackupThreadFunc()
 		default:
 			return fmt.Errorf("the replay has no call controller.%s", c.Method)
 		}
@@ -905,9 +1105,16 @@ func (r *replay) compareState(s traceState) error {
 		}
 		return out
 	}
+	// The radix cache reaps an ack only once its finish event is done, front first
+	// (unified_radix_cache.py:3404-3410@297e54fd): an ack the port reaps here must be done.
 	reap := func(q []*Ack, want int) ([]*Ack, error) {
 		if len(q) < want {
 			return q, fmt.Errorf("the port holds %d acks; SGLang's %d", len(q), want)
+		}
+		for i, a := range q[:len(q)-want] {
+			if !a.Finish.Query() {
+				return q, fmt.Errorf("SGLang's radix cache reaped ack %d (nodes %v), which the port has not finished", i, a.NodeIDs)
+			}
 		}
 		return q[len(q)-want:], nil
 	}
@@ -957,14 +1164,24 @@ func (r *replay) compareState(s traceState) error {
 		}
 	}
 	if st := s.Controller.Storage; st != nil {
-		// The radix cache's share: what it reaped, and the prefetch tokens it locks.
+		// The radix cache's share: what it reaped from the queues' fronts.
 		if k := len(c.AckBackupQueue) - st["ack_backup_queue"]; k >= 0 {
 			c.AckBackupQueue = c.AckBackupQueue[k:]
 		}
 		if k := len(c.HostMemReleaseQueue) - st["host_mem_release_queue"]; k >= 0 {
 			c.HostMemReleaseQueue = c.HostMemReleaseQueue[k:]
 		}
-		c.PrefetchTokensOccupied = st["prefetch_tokens_occupied"]
+		completed := []int{}
+		for _, op := range c.AckBackupQueue {
+			completed = append(completed, op.CompletedTokens)
+		}
+		want := s.Controller.AckBackupCompletedTokens
+		if want == nil {
+			return fmt.Errorf("the trace records no acked backup's completed tokens")
+		}
+		if err := eq("acked backups' completed tokens", completed, want); err != nil {
+			return err
+		}
 		got := map[string]int{"backup_queue": len(c.BackupQueue), "ack_backup_queue": len(c.AckBackupQueue),
 			"host_mem_release_queue": len(c.HostMemReleaseQueue), "prefetch_queue": 0, "prefetch_buffer": 0,
 			"prefetch_sync_queue": 0, "prefetch_hit_queue": 0, "ack_prefetch_queue": 0,
@@ -974,4 +1191,41 @@ func (r *replay) compareState(s traceState) error {
 		}
 	}
 	return nil
+}
+
+// SGLang's radix cache reaps only finished acks: a state whose queue no longer holds an ack the
+// port has not finished fails the comparison, and one the port has finished is reaped.
+func TestAnAckSGLangReapedMustBeDoneInThePort(t *testing.T) {
+	for _, done := range []bool{false, true} {
+		clock := &Clock{}
+		host, err := NewHostPool(HostSizing{DeviceCapacityTokens: 8, HostToDeviceRatio: 1, PageSize: 1, Layout: "layer_first"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, err := NewController(ControllerConfig{WritePolicy: "write_through", IOBackend: "direct", Layout: "layer_first",
+			PageSize: 1, TransferLayerIDMax: 1}, clock, host, host.Size(), nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		finish := NewEvent(clock)
+		finish.Record()
+		if done {
+			if _, err := c.Boundary(); err != nil {
+				t.Fatal(err)
+			}
+		}
+		c.AckWriteQueue = []*Ack{{Finish: finish, NodeIDs: []int64{1}, NumTokens: 1}}
+		r := &replay{ctrl: c, host: &recHost{HostPool: host, log: &replayLog{}}}
+		var s traceState
+		s.Controller.LayerCounter.ProducerIndex, s.Controller.LayerCounter.ConsumerIndex = -1, -1
+		s.Controller.LayerCounter.Finished = []bool{true, true, true}
+		s.Controller.HostFree = host.AvailableSize()
+		err = r.compareState(s)
+		if done && err != nil {
+			t.Errorf("a finished ack SGLang reaped: %v", err)
+		}
+		if !done && (err == nil || !strings.Contains(err.Error(), "not finished")) {
+			t.Errorf("an unfinished ack SGLang reaped: got %v; want the reap refused", err)
+		}
+	}
 }
