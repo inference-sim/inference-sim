@@ -122,6 +122,12 @@ type EngineDriver struct {
 	// direction: vLLM's CPU offload worker runs stores and loads on separate handlers, each
 	// chaining its own transfers (startTierTransfer).
 	tierFreeAt map[engine.TransferKind]int64
+	// tierQueue, tierRunning and tierOf serve a host that shares link capacity among tier copies
+	// (OnTierPriced): the copies waiting for their kind's stream, the copy each stream runs, and the
+	// kind of each copy in flight.
+	tierQueue   map[engine.TransferKind][]queuedTier
+	tierRunning map[engine.TransferKind]bool
+	tierOf      map[engine.TransferID]engine.TransferKind
 	// recentStages are the last pipelined runner steps, newest last, at most one per stage: each
 	// one's sampling requests, the requests its schedule freed and when it leaves the last stage
 	// (timeBatch's T-pp dependency). Through an engine that counts its runner steps (RunnerSteps)
@@ -176,6 +182,11 @@ type EngineDriver struct {
 	pulls        map[string]engine.TransferID
 	holds        map[string]engine.Handoff
 	OnPullPriced func(req *Request, pulledTokens, blocks int64, demand kernel.TransferDemand, at int64)
+	// OnTierPriced, when set, receives an offload-tier copy at the instant it starts moving, with
+	// its demand on the fabric: the host shares link capacity among the copies and the pulls in
+	// flight, and reports the copy landed (TierLanded). Copies of one kind still move one after
+	// another, as the engine's stream does. Unset, a copy takes its demand alone (TierTicks).
+	OnTierPriced func(id engine.TransferID, demand kernel.TransferDemand, at int64)
 
 	// stalledSteps counts the steps since one last emitted a token or finished a request, and
 	// stallErr is the watchdog's error once the count passes the limit (SIM-7).

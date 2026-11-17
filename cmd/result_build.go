@@ -75,6 +75,9 @@ type resultMetrics struct {
 	Ledger result.Requests
 	// PD is the disaggregation block, nil for a colocated run.
 	PD *cluster.PDMetrics
+	// TierLinks is, per link, the most transfers in flight on it together when an engine started
+	// offload-tier copies, which share link capacity with each other and with handoffs (#2108).
+	TierLinks map[string]int
 	// Engine, Router and Kernel are each component's report, already keyed as the
 	// document carries them.
 	Engine map[string]any
@@ -126,7 +129,7 @@ func buildResult(in resultInputs, out resultMetrics) *result.Result {
 
 	r.Window = windowOf(m, sum, out.ClockUs, out.HorizonUs)
 	r.Metrics = standardMetrics(sum, m, in.GPUs, in.DecodeGPUs, r.Window.DurationS)
-	r.Breakdowns = breakdownsOf(m, sum, r.Metrics, out.PD)
+	r.Breakdowns = breakdownsOf(m, sum, r.Metrics, out.PD, out.TierLinks)
 	r.Goodput = goodputOf(m, in.GoodputTargets, out.InjectedByClass, r.Metrics)
 	if len(in.Saturation) > 0 {
 		r.Reports.Saturation = in.Saturation
@@ -288,7 +291,7 @@ func splitMetrics(sum sim.MeasuredSummary, defined map[string]result.Figure) map
 
 // breakdownsOf splits the run along the axes it exercised: per model, tenant and adapter
 // (each the whole's metrics over the requests of that key), P/D, and sessions.
-func breakdownsOf(m *sim.Metrics, sum sim.MeasuredSummary, defs map[string]result.Figure, pd *cluster.PDMetrics) *result.Breakdowns {
+func breakdownsOf(m *sim.Metrics, sum sim.MeasuredSummary, defs map[string]result.Figure, pd *cluster.PDMetrics, tierLinks map[string]int) *result.Breakdowns {
 	b := &result.Breakdowns{}
 	split := func(key func(sim.RequestMetrics) string) map[string]map[string]float64 {
 		keys := map[string]bool{}
@@ -315,7 +318,7 @@ func breakdownsOf(m *sim.Metrics, sum sim.MeasuredSummary, defs map[string]resul
 	b.PerModel = split(func(rm sim.RequestMetrics) string { return rm.Model })
 	b.PerTenant = split(func(rm sim.RequestMetrics) string { return rm.TenantID })
 	b.PerAdapter = split(func(rm sim.RequestMetrics) string { return rm.Adapter })
-	b.PD = pdBreakdown(pd)
+	b.PD = pdBreakdown(pd, tierLinks)
 	b.Sessions = sessionBreakdown(cluster.ComputeSessionMetrics(m))
 	if b.PerModel == nil && b.PerTenant == nil && b.PerAdapter == nil && b.PD == nil && b.Sessions == nil {
 		return nil
@@ -324,9 +327,17 @@ func breakdownsOf(m *sim.Metrics, sum sim.MeasuredSummary, defs map[string]resul
 }
 
 // pdBreakdown is the prefill/decode split, in ms (the cluster reports microseconds).
-func pdBreakdown(pd *cluster.PDMetrics) map[string]float64 {
+func pdBreakdown(pd *cluster.PDMetrics, tierLinks map[string]int) map[string]float64 {
 	if pd == nil {
-		return nil
+		if len(tierLinks) == 0 {
+			return nil
+		}
+		// A colocated run whose engines copied KV between tiers states the sharing of the links alone.
+		out := map[string]float64{}
+		for _, link := range sortedMapKeys(tierLinks) {
+			putUnique(out, "link_peak_concurrent_transfers_"+slugPart(link), float64(tierLinks[link]))
+		}
+		return out
 	}
 	out := map[string]float64{
 		"disaggregated_requests":         float64(pd.DisaggregatedCount),
@@ -359,6 +370,12 @@ func pdBreakdown(pd *cluster.PDMetrics) map[string]float64 {
 		out["kv_transfer_queue_delay_p90_ms"] = pd.TransferQueueDelayP90 / 1e3
 		for _, link := range sortedMapKeys(pd.LinkPeakConcurrent) {
 			putUnique(out, "link_peak_concurrent_transfers_"+slugPart(link), float64(pd.LinkPeakConcurrent[link]))
+		}
+	}
+	if pd.LinkPeakConcurrent == nil {
+		// Handoffs priced alone: the links tier copies shared still state it.
+		for _, link := range sortedMapKeys(tierLinks) {
+			putUnique(out, "link_peak_concurrent_transfers_"+slugPart(link), float64(tierLinks[link]))
 		}
 	}
 	for _, pool := range sortedMapKeys(pd.CPUTierHitRate) {
