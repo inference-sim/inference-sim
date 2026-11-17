@@ -361,6 +361,10 @@ func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 		cs.schedule(&ScaleActuationEvent{At: actuationAt, Decisions: filtered}, &cs.autoscalerSender)
 	}
 
+	// The cluster autoscaler looks at the pools on every scaling tick (it also runs when a
+	// placement is queued): its scale-down policy needs a look when nothing is pending.
+	cs.runClusterAutoscaler()
+
 	// Stage 6: Schedule next ScalingTickEvent.
 	p.scheduleNextTick(cs, nowUs)
 }

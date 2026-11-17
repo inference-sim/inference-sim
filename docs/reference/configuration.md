@@ -401,7 +401,12 @@ cluster_autoscaler:
   policy: pending-driven        # empty = none: no node is provisioned beyond initial_nodes
   pending_threshold_us: 60000000  # a placement must wait this long before a node is added for it
   max_nodes_per_pool: 8         # 0 = only each pool's own max_nodes
+  scale_down: bin-pack          # empty = nodes are never removed
+  low_water_mark: 0.3
+  min_nodes_per_pool: 1
 ```
+
+`scale_down: bin-pack` removes nodes of an underused pool: with `low_water_mark` (for example 0.3) and `min_nodes_per_pool`, on each scaling tick it takes one node from the most expensive pool whose GPU utilization is below the mark, if the allocated GPUs would still fit on the other nodes, the pool keeps its floor, and no placement is waiting. Only a node with no instance on it is removed; moving instances off a busy node is the drain policies' work.
 
 `pending-driven` adds one node to a pool when a placement for its GPU type has waited the threshold, unless a node of the pool is already on its way or the pool is at its ceiling. The node is ready after the pool's `provisioning_delay`, and its arrival places the waiting replicas in arrival order.
 

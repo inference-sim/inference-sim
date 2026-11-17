@@ -15,7 +15,9 @@ func clusterAutoscalerOf(bundle *sim.PolicyBundle) cluster.ClusterAutoscalerConf
 	}
 	b := bundle.ClusterAutoscaler
 	cfg := cluster.ClusterAutoscalerConfig{Policy: b.Policy,
-		PendingDrivenConfig: cluster.PendingDrivenConfig{PendingThresholdUs: b.PendingThresholdUs, MaxNodesPerPool: b.MaxNodesPerPool}}
+		PendingDrivenConfig: cluster.PendingDrivenConfig{PendingThresholdUs: b.PendingThresholdUs, MaxNodesPerPool: b.MaxNodesPerPool},
+		ScaleDown:           b.ScaleDown,
+		BinPackConfig:       cluster.BinPackConfig{LowWaterMark: b.LowWaterMark, MinNodesPerPool: b.MinNodesPerPool}}
 	if err := cfg.Validate(); err != nil {
 		logrus.Fatalf("policy bundle: %v", err)
 	}
