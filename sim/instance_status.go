@@ -24,10 +24,6 @@ type InstanceStatus struct {
 	AvgInTokens           float64 // average input tokens per completed request; 0 if not yet available
 	AvgOutTokens          float64 // average output tokens per completed request; 0 if not yet available
 	MaxBatchSize          float64 // server-configured max batch size; 0 if not yet available
-	// ResidentAdapters is never populated: buildClusterState leaves it nil and nothing reads
-	// it. LoRA-aware routing is the llm-d router's lora-affinity-scorer, which reads the
-	// adapter sets each engine publishes in vllm:lora_requests_info (sim/engine_metrics.go).
-	ResidentAdapters map[string]bool
 }
 
 // EffectiveLoad returns the total effective load on this instance (no production caller

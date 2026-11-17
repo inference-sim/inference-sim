@@ -492,7 +492,7 @@ tier's in-service queue depth. See [KV Cache & Memory](kv-cache.md).
 The per-step adapter compute overhead is applied to the kernel's step time, and the static
 adapter HBM reservation is set aside from the kernel's KV budget before blocks are counted.
 The LoRA cost coefficients come from `--defaults-filepath` (the `lora:` block of
-`defaults.yaml`) or `--lora-config`.
+`defaults.yaml`) or `--lora-config`. See [LoRA Adapters](lora.md).
 
 ## What it does not yet do
 

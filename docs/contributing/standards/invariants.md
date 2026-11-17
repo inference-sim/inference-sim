@@ -766,7 +766,7 @@ BLIS prices every step with `blis-latency-kernel`; the in-repo roofline and trai
 
 ### LoRA control plane
 
-The LoRA control-plane invariants are stated in full in `docs/plans/2026-07-15-lora-control-plane-design.md` §9, which stays **authoritative**. They are listed here as pointer lines so an `INV-L*` citation in code can be resolved (the resolution rule at the top of this document).
+The LoRA control-plane invariants are stated in full in §9 of the LoRA control-plane design, which remains **authoritative**. The design document is no longer tracked; the last commit that holds it is `0045b726`, and `specs/007-lora-control-plane/` keeps the durable record. They are listed here as pointer lines so an `INV-L*` citation in code can be resolved (the resolution rule at the top of this document).
 
 | ID | Statement (abbreviated — the plan is authoritative) | Relationship | Code citations |
 |---|---|---|---|
