@@ -178,12 +178,25 @@
   },
   {
    "args": {
+    "ctx": "c1",
+    "keys": [
+     "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000"
+    ],
+    "positions": {},
+    "req": "a"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
     "chunk": {
      "id": 0,
      "ref": -1
     },
     "ctx": "c1",
     "key": "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000",
+    "positions": {},
     "req": "a"
    },
    "m": "insert",
@@ -216,12 +229,25 @@
   },
   {
    "args": {
+    "ctx": "c1",
+    "keys": [
+     "015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e00000000"
+    ],
+    "positions": {},
+    "req": "a"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
     "chunk": {
      "id": 1,
      "ref": -1
     },
     "ctx": "c1",
     "key": "015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e00000000",
+    "positions": {},
     "req": "a"
    },
    "m": "insert",
@@ -302,7 +328,7 @@
   }
  ],
  "provenance": {
-  "blis_vllm_commit": "7e6d555cad6299426f08d9dbf15e2b13af07b85d",
+  "blis_vllm_commit": "b692e40fd2bc6cf8d863ad3faf21684c943b3dc1",
   "kind": "direct",
   "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
   "mock_version": "gpu-mock/7+f4274aa648c4",
@@ -339,8 +365,8 @@
   "model": "facebook/opt-125m",
   "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
   "oracle_inputs": {
-   "oracle/drive_kv_interfaces.py": "2514046f0c88642b2e7df101360da35d1c61070f4f712fd5bd53a19dde92a8c4",
-   "oracle/kv_interfaces.py": "654d6b5519829cc1aa200c9333a19cd59b83107ec30b90f02c99c15c0a1fba43",
+   "oracle/drive_kv_interfaces.py": "edb41c5303e50d8b3827ba87c3314e696d1984cf79a2830e3327cc0844a6a022",
+   "oracle/kv_interfaces.py": "4bcde8955836b6ef732f8c901fa94c89a5b7592dcf1db8f6322e3be451c81c10",
    "oracle/mocks.json": "afd576782c5322ce4c6aa4cdb72fb513e3e78cd8ea54dd6043af0cdf5680a658",
    "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
    "oracle/run_scheduler.py": "1239a1d64f057fcb543789762859ea33211627e3f2b66b46087ed9ee936222f6",
@@ -364,6 +390,13 @@
     "blocks_per_chunk": 1,
     "cpu_bytes_to_use": 32768,
     "eviction_policy": "lru",
+    "groups": [
+     {
+      "tokens_per_block": 16,
+      "window_chunks": null
+     }
+    ],
+    "max_model_len": 0,
     "offload_prompt_only": true,
     "replicated_layout": false,
     "secondary_tiers": 1,
