@@ -46,6 +46,23 @@ func TestStateMachine_UnissuedSessionRoundsEndNotStarted(t *testing.T) {
 			t.Errorf("round %d facts = %+v, want session s1 round %d", r, f, r)
 		}
 	}
+	// The row states the arrival the plan gives each round: the clock round 0 ended at, plus one
+	// think time per round since (1,000 us), not 0.
+	end0 := int64(-1)
+	for _, rec := range cs.Fates().Records() {
+		if f := cs.RequestFacts()[rec.ID]; f.SessionID == "s1" && f.RoundIndex == 0 {
+			end0 = rec.At
+		}
+	}
+	if end0 <= 0 {
+		t.Fatalf("non-vacuity: round 0 ended at %d", end0)
+	}
+	for r := 1; r <= 2; r++ {
+		got := cs.RequestFacts()[fmt.Sprintf("session_s1_round_%d_unissued", r)].ArrivalUs
+		if want := end0 + int64(r)*1000; got != want {
+			t.Errorf("round %d arrival %d, want %d (round 0 ended at %d, think 1000 us per round)", r, got, want, end0)
+		}
+	}
 }
 
 // SIM-8: a session that issues every round plans none beyond them.
