@@ -9639,3 +9639,73 @@ def test_qwen4_exp_an_fp8_embedding_table_is_read_at_one_byte_a_value_and_writte
     kinds = {k["id"]: k for k in g["layer_kinds"]}
     emb = _node(kinds[layer_sequence(g["stack"])[1]], "ple_ngram_embedding")
     assert (emb["row_bytes"], emb["out_bytes_per_token"], emb["rows_per_token"]) == (16, 64 * 2, 4)
+
+# --- nvidia/Qwen3.5-397B-A17B-NVFP4-V2: quant_method modelopt_mixed, MIXED_PRECISION ---------
+
+QWEN35_NVFP4_V2 = MODELS / "qwen3.5-397b-a17b-nvfp4-v2"
+QWEN_GATED_ATTENTION = ["qwen3.5-397b-a17b", "qwen3.5-397b-a17b-fp8", "qwen3.5-397b-a17b-nvfp4",
+                        "qwen3.5-397b-a17b-nvfp4-v2", "qwen3.6-35b-a3b"]
+
+
+def _qwen_role_widths(g: dict, kind: str) -> dict:
+    k = {k["id"]: k for k in g["layer_kinds"]}[kind]
+    out = {}
+    for n in k["nodes"]:
+        if n["op"] in ("GEMM", "GroupedGEMM"):
+            out[n["role"]] = n.get("weight_dtype", g["global"]["weight_dtype"])
+            if n.get("shared_experts"):
+                out["shared_experts"] = out[n["role"]]
+    return out
+
+
+def test_qwen35_nvfp4_v2_places_each_module_at_the_width_its_map_states(tmp_path):
+    """The V2 checkpoint's quantized_layers map stores attention q/k/v/o, the DeltaNet
+    in_proj_qkv/in_proj_z/out_proj and the shared expert FP8, the routed experts NVFP4, and
+    names neither in_proj_a/b nor the MTP module, which vLLM therefore leaves unquantized
+    (ModelOptMixedPrecisionConfig.get_quant_method, modelopt.py@v0.33.0). The DeltaNet input
+    projections are read through the shards vLLM packs (in_proj_qkvz from in_proj_qkv and
+    in_proj_z, qwen3_5.py:481-484)."""
+    g = _derive_raw(config_of(QWEN35_NVFP4_V2), tmp_path, "qwen-v2-test")
+    assert g["global"]["weight_dtype"] == "bf16"
+    assert _qwen_role_widths(g, "gdn_moe") == {
+        "recurrent_in_proj_qkvz": "fp8", "recurrent_in_proj_ba": "bf16", "mixer_out": "fp8",
+        "experts": "nvfp4", "shared_experts": "fp8"}
+    assert _qwen_role_widths(g, "attn_moe") == {
+        "qkv_proj": "fp8", "o_proj": "fp8", "experts": "nvfp4", "shared_experts": "fp8"}
+    assert [n.get("weight_dtype", "bf16") for n in g["head"] if n["op"] == "GEMM"] == ["bf16"]
+    assert g["speculator"]["stack"]["pattern"] == ["mtp_moe"]
+    assert set(_qwen_role_widths(g, "mtp_moe").values()) == {"bf16"}
+
+
+def _v2_edit(edit) -> dict:
+    raw = config_of(QWEN35_NVFP4_V2)
+    edit(raw["quantization_config"])
+    return raw
+
+
+@pytest.mark.parametrize("edit,why", [
+    # in_proj_z at NVFP4 beside an FP8 in_proj_qkv: vLLM refuses a fused layer whose shards
+    # state two algorithms ("Mixed quant_algo within fused layer").
+    (lambda q: q["quantized_layers"].__setitem__(
+        "model.language_model.layers.0.linear_attn.in_proj_z", {"quant_algo": "NVFP4", "group_size": 16}),
+     "fuses shards"),
+    # The DeltaNet input projection left out of the map on one layer only.
+    (lambda q: [q["quantized_layers"].pop(f"model.language_model.layers.1.linear_attn.{s}")
+                for s in ("in_proj_qkv", "in_proj_z")], "quantized on some of its layers"),
+    # The shared expert left out of the map on one layer only.
+    (lambda q: [q["quantized_layers"].pop(f"model.language_model.layers.2.mlp.shared_expert.{s}")
+                for s in ("gate_proj", "up_proj", "down_proj")], "quantized on some of its layers"),
+    # modelopt_mixed under a uniform algorithm is not a layout this deriver reads.
+    (lambda q: q.__setitem__("quant_algo", "FP8"), "only as MIXED_PRECISION"),
+])
+def test_qwen35_nvfp4_v2_refuses_what_one_node_cannot_price(tmp_path, edit, why):
+    with pytest.raises(deriver().DeriveError, match=why):
+        _derive_raw(_v2_edit(edit), tmp_path, "qwen-v2-test")
+
+
+def test_modelopt_mixed_is_refused_where_no_map_has_been_read(tmp_path):
+    """modelopt_mixed on an architecture whose module names have not been read against a real
+    quantized_layers map is refused, not priced from its config groups."""
+    raw = _kimi_k25_nvfp4_raw(quant_method="modelopt_mixed", quant_algo="MIXED_PRECISION")
+    with pytest.raises(deriver().DeriveError, match="modelopt_mixed picks the algorithm per layer"):
+        _derive_raw(raw, tmp_path, "x-nvfp4")
