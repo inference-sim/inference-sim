@@ -116,6 +116,9 @@ type offload struct {
 	at plan.Endpoint
 	// next is the last transfer ID started, shared with the P/D side of an engine that has one.
 	next *engine.TransferID
+	// stride and lane make the IDs of a data-parallel group's ranks distinct, as pd's do: rank r of n
+	// states IDs r+1, r+1+n, ... A zero stride is an engine alone, whose IDs are 1, 2, 3 ...
+	stride, lane int
 	// multi is the MultiConnector the offloading connector is a child of, at index child; nil
 	// when it runs alone. Its metadata and worker metadata are the child's slice of the list's.
 	multi *multi.Connector
@@ -289,8 +292,7 @@ func (o *offload) started(batch int, cb any) []engine.Transfer {
 	}
 	var out []engine.Transfer
 	add := func(j offloading.Job, kind engine.TransferKind) {
-		*o.next++
-		id := *o.next
+		id := o.newID()
 		o.jobs[id], o.ids[j.ID] = j.ID, id
 		sizes := make([]int, o.numGroups)
 		for i, n := range j.GroupSizes {
@@ -326,6 +328,12 @@ func (o *offload) started(batch int, cb any) []engine.Transfer {
 	}
 	o.lastFlush = append(o.lastFlush[:0], m.Flush...)
 	return out
+}
+
+// newID is the next transfer's ID (stride, lane).
+func (o *offload) newID() engine.TransferID {
+	*o.next++
+	return (*o.next-1)*engine.TransferID(max(o.stride, 1)) + engine.TransferID(o.lane) + 1
 }
 
 // groupSizes is a transfer in flight's GPU blocks in each KV cache group, nil for one this

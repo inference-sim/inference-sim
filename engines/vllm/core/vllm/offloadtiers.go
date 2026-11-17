@@ -355,8 +355,7 @@ func (o *offload) transfersOf(peersOnly bool) []engine.Transfer {
 				continue
 			}
 			ts.started[key] = true
-			*o.next++
-			id := *o.next
+			id := o.newID()
 			ts.inFlight[id] = key
 			blocks := j.Chunks * ts.blocksPerChunk
 			kind, move := engine.TransferStore, plan.TransferToTier

@@ -257,7 +257,6 @@ func TestMultiConnectorRefusals(t *testing.T) {
 		{"the same child twice", multiBlock("NixlConnector, NixlConnector"), "OffloadingConnector"},
 		{"no children listed", "kv_transfer: {connector: MultiConnector, kv_role: kv_both}\n" + derivedTier, "connectors"},
 		{"three children", multiBlock("NixlConnector, OffloadingConnector, NixlPullConnector"), "connectors"},
-		{"at data parallelism 2", multiBlock(nixlFirst) + "data_parallel_size: 2\n", "data parallelism"},
 	} {
 		_, err := build(t, c.extra)()
 		if err == nil || !strings.Contains(err.Error(), c.want) {

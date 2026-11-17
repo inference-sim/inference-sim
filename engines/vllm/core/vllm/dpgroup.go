@@ -139,6 +139,11 @@ func newDPGroup(st settings, pricer Pricer) (*DPGroup, error) {
 			// its own transfers. The group tells them apart by ID alone (TransferDone).
 			e.pd.stride, e.pd.lane = n, i
 		}
+		if e.off != nil {
+			// Likewise the offloading connector: each rank runs its own, with its own CPU tier
+			// (the engine block's bytes are one engine's), and numbers its jobs the same way.
+			e.off.stride, e.off.lane = n, i
+		}
 		g.ranks = append(g.ranks, &rankState{e: e})
 		g.dp.Ranks = append(g.dp.Ranks, e.core)
 		g.dp.Waves = append(g.dp.Waves, &core.Wave{PrefillScheduleInterval: st.dp.prefillInterval,
