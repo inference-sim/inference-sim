@@ -1,0 +1,40 @@
+name: qwen3.8-flash-next-nvfp4
+# Qwen3.8-Flash-Next-NVFP4 (nvidia): the 48 decoder layers' routed experts are NVFP4, the MTP experts block-wise FP8 and the n-gram table FP8; everything else is BF16. Its licence is not on the allow-list, so only the config's hash and the derived graph are committed (X12).
+# The shard headers are fetched by range request and not committed; each is pinned by the SHA-256 of its header bytes.
+source:
+  provider: huggingface
+  repo: nvidia/Qwen3.8-Flash-Next-NVFP4
+  revision: fc694b54fb0174e0913e6adf86691ef85a4ead47
+  retrieved: 2026-11-17
+licence:
+  id: LicenseRef-nvidia-open-model-license
+  evidence: https://huggingface.co/nvidia/Qwen3.8-Flash-Next-NVFP4/raw/fc694b54fb0174e0913e6adf86691ef85a4ead47/README.md
+config:
+  sha256: deef67a61f3311faf051b23dc4192f442c7fee4f9cd2f38cbcbe4da55c763a80
+shard_index:
+  path: model.safetensors.index.json
+  sha256: 660414e8300728ba80062e6a3c81cb76a65e2ab136ac9e9ceb450ba0c51c3c0d
+headers:
+  - path: model-00001-of-00010.safetensors
+    sha256: 067c21570b51a074d1b15f12fa7e296effcefcec7ca59ff82a8ca150ef11f928
+  - path: model-00002-of-00010.safetensors
+    sha256: 90d8caee55ad5b84c08dbc93690ab097537a67c87c425765f9d55bcf33067224
+  - path: model-00003-of-00010.safetensors
+    sha256: f37fc3267624c0fcdccfffbd33331cbf25f1fe020e50989d542e600062e8db78
+  - path: model-00004-of-00010.safetensors
+    sha256: 97b8a72302628266533e879164ce1c1615b48a24b7a9ad07dffa5484b1e8ede5
+  - path: model-00005-of-00010.safetensors
+    sha256: 72e7e184d81d8da358ae7b804d301ea996d46d1d0ff314205ea081a63fe3f597
+  - path: model-00006-of-00010.safetensors
+    sha256: e7bdec80ff54828b5e3d153d661c9d102b6246d7704a7052302db2b07e17db30
+  - path: model-00007-of-00010.safetensors
+    sha256: 3c9ce038475da2e0b6183123f0ebe0430cf0bec0c4c39dbe97792c3cd523c510
+  - path: model-00008-of-00010.safetensors
+    sha256: 49a949a049646677a525b56320c061cc054dbd4b13f84753128100cfc66d683f
+  - path: model-00009-of-00010.safetensors
+    sha256: c37168c6812697e8b81330af8be69ee90c91a222e5635267990c5bac9341b72c
+  - path: model-00010-of-00010.safetensors
+    sha256: 5bf7b19c4b5950b6eda6763a0da73fb35f499d006c6c7f4f68a6f616720a87e2
+  - path: model-fp8-mtp-ple.safetensors
+    sha256: f40c53c80878e45917adf3602cb55c1f5c2aa496f4b4284994099aca028aa6a9
+drafters: [speculator]
