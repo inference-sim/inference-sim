@@ -363,16 +363,33 @@ func engineSection(m *sim.Metrics, sum sim.MeasuredSummary, raw *cluster.RawMetr
 	return out
 }
 
-// instanceSections are each engine instance's own whole-run figures, keyed by instance id,
-// as a multi-instance run printed them: the MetricsOutput of that instance.
-func instanceSections(cs *cluster.ClusterSimulator) map[string]any {
+// instanceSections are each engine instance's own figures, keyed by instance id, as a
+// multi-instance run printed them: the whole-run MetricsOutput of that instance, and under
+// "measured_window" the same instance's figures over the run's measured window, so a consumer can
+// judge the worst instance on the window and not on the warmup-inflated whole run (#2087). The
+// window is the aggregate's (sum), and the figures are the definitions of the cluster's, taken
+// over the requests this instance served (Metrics.SummaryOver, as the breakdowns do). A run with
+// no measured window states none.
+func instanceSections(cs *cluster.ClusterSimulator, sum sim.MeasuredSummary) map[string]any {
 	insts := cs.Instances()
 	if len(insts) <= 1 {
 		return nil
 	}
 	out := make(map[string]any, len(insts))
 	for _, inst := range insts {
-		out[string(inst.ID())] = toGeneric(inst.Metrics().BuildOutput(string(inst.ID())))
+		id := string(inst.ID())
+		block := toGeneric(inst.Metrics().BuildOutput(id))
+		if m, ok := block.(map[string]any); ok && sum.MeasuredWindowS > 0 {
+			w := inst.Metrics().SummaryOver(func(sim.RequestMetrics) bool { return true }, sum.WindowStartUs, sum.WindowEndUs)
+			m["measured_window"] = map[string]any{
+				"window_start_us": sum.WindowStartUs, "window_end_us": sum.WindowEndUs,
+				"measured_completed_requests": w.MeasuredCompletedRequests,
+				"ttft_mean_ms":                w.TTFTMeanMs, "ttft_p90_ms": w.TTFTP90Ms, "ttft_p95_ms": w.TTFTP95Ms, "ttft_p99_ms": w.TTFTP99Ms,
+				"e2e_mean_ms": w.E2EMeanMs, "e2e_p90_ms": w.E2EP90Ms, "e2e_p95_ms": w.E2EP95Ms, "e2e_p99_ms": w.E2EP99Ms,
+				"output_tok_s": w.OutputThroughputTokS,
+			}
+		}
+		out[id] = block
 	}
 	return out
 }

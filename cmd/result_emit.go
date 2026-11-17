@@ -143,7 +143,7 @@ func emitRunResult(p postRun) {
 		Aggregated:      aggregated,
 		Ledger:          resultLedger(cs),
 		PD:              pdMetrics,
-		Engine:          engineSection(aggregated, sum, raw, series, prefixCacheRecords, acceptanceRecord, instanceSections(cs), p.agentic),
+		Engine:          engineSection(aggregated, sum, raw, series, prefixCacheRecords, acceptanceRecord, instanceSections(cs, sum), p.agentic),
 		Router:          routerSection(routerReq, raw.ShedByTier, raw),
 		Kernel:          kernelSection(kernelProvenance(kernelOpened, kernelPDOpened)),
 		InjectedByClass: cs.InjectedByClass(),
