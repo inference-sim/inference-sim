@@ -21,6 +21,9 @@ type PolicyBundle struct {
 	NodePools         []NodePoolBundleConfig        `yaml:"node_pools"`         // nil = no node pools
 	Autoscaler        AutoscalerBundleConfig        `yaml:"autoscaler"`         // IntervalUs=0 = disabled
 	InstanceLifecycle InstanceLifecycleBundleConfig `yaml:"instance_lifecycle"` // zero = instant loading
+	// LoRAPlacement places LoRA adapters on instances through the engine's dynamic adapter load
+	// (inference-sim#1493, #1495); absent, no adapter is placed.
+	LoRAPlacement LoRAPlacementBundleConfig `yaml:"lora_placement"`
 }
 
 // PriorityConfig holds priority policy configuration.
@@ -68,6 +71,14 @@ type AnalyzerBundleConfig struct {
 type InstanceLifecycleBundleConfig struct {
 	LoadingDelay              DelayBundleSpec `yaml:"loading_delay"`
 	WarmStartInitialInstances bool            `yaml:"warm_start_initial_instances"`
+}
+
+// LoRAPlacementBundleConfig is the policy bundle's lora_placement block (cluster.LoRAPlacementConfig).
+type LoRAPlacementBundleConfig struct {
+	Bundle             string           `yaml:"bundle"`
+	Creation           string           `yaml:"creation"`
+	Assignment         map[int][]string `yaml:"assignment"`
+	PeriodicIntervalUs float64          `yaml:"periodic_interval_us"`
 }
 
 // AutoscalerBundleConfig holds autoscaler pipeline configuration.
