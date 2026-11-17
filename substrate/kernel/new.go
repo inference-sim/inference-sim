@@ -659,17 +659,17 @@ func (k *Kernel) lift(c *resolve.Coefficients, g *model.Graph, cacheBytes float6
 	addFits := func(layers ...price.PlannedLayer) error {
 		for _, l := range layers {
 			for _, g := range l.DenseGEMMs {
-				if err := k.addFit(c, g.Format, false); err != nil {
+				if err := k.addFit(c, g.Format, false, g.Router); err != nil {
 					return err
 				}
 			}
 			if l.ExpertFLOPsPerTokenPerExpert > 0 {
-				if err := k.addFit(c, l.RoutedFormat, true); err != nil {
+				if err := k.addFit(c, l.RoutedFormat, true, false); err != nil {
 					return err
 				}
 			}
 			if l.SharedExpertFLOPsPerToken > 0 {
-				if err := k.addFit(c, l.SharedFormat, false); err != nil {
+				if err := k.addFit(c, l.SharedFormat, false, false); err != nil {
 					return err
 				}
 			}
@@ -688,7 +688,7 @@ func (k *Kernel) lift(c *resolve.Coefficients, g *model.Graph, cacheBytes float6
 	k.layerFits = make([][]gemmFit, len(k.plan.Layers))
 	for i, l := range k.plan.Layers {
 		for _, g := range l.DenseGEMMs {
-			k.layerFits[i] = append(k.layerFits[i], k.fits[fitKey{g.Format, false}])
+			k.layerFits[i] = append(k.layerFits[i], k.fits[fitKey{g.Format, false, g.Router}])
 		}
 	}
 
@@ -1650,6 +1650,9 @@ type gemmFit struct {
 	// floor is the grouped kernel's own per-layer device time below which no step goes, in
 	// seconds (gemm_floor_<suffix>), 0 where the registry carries none.
 	floor float64
+	// smallRows and smallPeak: at most smallRows rows, a GEMM runs on a kernel with its own compute
+	// ceiling (an fp32 router gate's specialised kernel, up to 32 tokens). Zero means none.
+	smallRows, smallPeak float64
 }
 
 // fitKey is a format and whether it is a grouped (MoE) GEMM, which can select a ramp of
@@ -1657,6 +1660,7 @@ type gemmFit struct {
 type fitKey struct {
 	f       price.Format
 	grouped bool
+	router  bool
 }
 
 // fitSpec is how a format is priced: the ramp's coefficient suffix and the peak it is a
@@ -1666,6 +1670,8 @@ type fitSpec struct {
 	suffix, fallback string
 	peak             float64
 	why              string
+	// smallRows and smallPeak: see gemmFit.
+	smallRows, smallPeak float64
 }
 
 // dtypeFitSuffix is the served dtype's fit, as dtypeFit has always chosen it.
@@ -1680,6 +1686,7 @@ func dtypeFitSuffix(d model.DType, chip hardware.Chip) fitSpec {
 //   - FP32 parameters (DeepSeek-V4.1's mHC) run at the TF32 tensor-core rate. The catalog
 //     states no TF32 peak; NVIDIA's data-center datasheets put dense TF32 at half the dense
 //     BF16 figure on every part the catalog carries, which is what is taken.
+//   - An FP32 router gate (MiniMax-M2's GateLinear) is not an mHC projection; see fp32RouterFit.
 //   - MXFP8 on SM90: the FlashInfer MXFP8 kernels ranked ahead of Marlin require SM100, so
 //     vLLM v0.31.0 serves it with MarlinMxfp8LinearKernel, "MXFP8 W8A16 GEMM via Marlin"
 //     (vllm/model_executor/kernels/linear/__init__.py:529-538, mxfp8/flashinfer.py:47-53,
@@ -1689,9 +1696,11 @@ func dtypeFitSuffix(d model.DType, chip hardware.Chip) fitSpec {
 //     TRTLLM and DeepGEMM backends being SM100/SM120 only), at the BF16 rate. An earlier
 //     form priced them at the FP8 peak, a rate the dequantize-then-BF16 path never reaches.
 //   - Everything else is dtypeFit's choice.
-func formatFit(f price.Format, grouped bool, chip hardware.Chip, hopper bool) fitSpec {
+func formatFit(f price.Format, grouped bool, chip hardware.Chip, hopper, router bool) fitSpec {
 	bf16 := chip.BF16Peak * 1e12
 	switch {
+	case f.DType == model.DTypeFP32 && router:
+		return fp32RouterFit(chip, bf16)
 	case f.DType == model.DTypeFP32:
 		return fitSpec{suffix: "bf16", peak: bf16 / 2,
 			why: "FP32 weights run at the TF32 tensor-core rate, taken as half the dense BF16 " +
@@ -1744,8 +1753,8 @@ func expertsFit(f price.Format, chip hardware.Chip, hopper bool, experts string)
 }
 
 // addFit lifts the fit for a format, once.
-func (k *Kernel) addFit(c *resolve.Coefficients, f price.Format, grouped bool) error {
-	key := fitKey{f, grouped}
+func (k *Kernel) addFit(c *resolve.Coefficients, f price.Format, grouped, router bool) error {
+	key := fitKey{f, grouped, router}
 	if _, ok := k.fits[key]; ok {
 		return nil
 	}
@@ -1761,7 +1770,7 @@ func (k *Kernel) addFit(c *resolve.Coefficients, f price.Format, grouped bool) e
 	}
 	spec, ok := expertsFit(f, k.chip, hopper, experts)
 	if !ok {
-		spec = formatFit(f, grouped, k.chip, hopper)
+		spec = formatFit(f, grouped, k.chip, hopper, router)
 	}
 	if spec.fallback != "" && !c.Has("gemm_eps_max_"+spec.suffix) {
 		k.assume("gemm_eps_max_"+spec.suffix, spec.fallback,
@@ -1799,6 +1808,7 @@ func (k *Kernel) addFit(c *resolve.Coefficients, f price.Format, grouped bool) e
 			fit.floor = us * 1e-6
 		}
 	}
+	fit.smallRows, fit.smallPeak = spec.smallRows, spec.smallPeak
 	k.fits[key] = fit
 	return nil
 }
@@ -1855,7 +1865,7 @@ func (k *Kernel) liftFit(c *resolve.Coefficients, spec fitSpec) (gemmFit, error)
 
 // fit returns the lifted fit for a format.
 func (k *Kernel) fit(f price.Format, grouped bool) gemmFit {
-	return k.fits[fitKey{f, grouped}]
+	return k.fits[fitKey{f, grouped, false}]
 }
 
 // validateDocuments runs blis-schemas' FIELD validation over the documents New was given.
@@ -2615,4 +2625,44 @@ func (k *Kernel) checkCollectivesStayInAGroup(firstNode int) error {
 			"instances each inside one group", i, firstNode, g[0], g[1])
 	}
 	return nil
+}
+
+// fp32CUDACoreTFlops is the datasheet FP32 (non-tensor) rate of the parts whose FP32 GEMM runs on
+// CUDA cores: NVIDIA's H100 SXM and H200 SXM datasheets state 67 TFLOP/s, the A100 19.5.
+var fp32CUDACoreTFlops = map[string]float64{"h100": 67, "h200": 67, "a100-sxm": 19.5, "a100-80": 19.5}
+
+// fp32RouterFit is the kernel a routed MoE layer's fp32 gate runs. vLLM's GateLinear
+// (model_executor/layers/fused_moe/router/gate_linear.py:50-136 at v0.33.0 4ba787ec) runs a
+// specialised fp32 kernel for at most 32 tokens on Hopper and Blackwell; there the gate is bound
+// by its 3 MB weight read and the FLOPs are negligible whatever the rate. Above 32 tokens a
+// Blackwell part runs bf16x3 (three BF16 GEMMs on the fp32 weight: a third of the BF16 peak) and
+// a Hopper part falls back to F.linear on the fp32 weight, which is SGEMM on CUDA cores because
+// the engine's default VLLM_FLOAT32_MATMUL_PRECISION is "highest" (envs.py:92, set at
+// v1/worker/gpu_worker.py:219-220). A part with no stated CUDA-core rate keeps the TF32 reading
+// (half the BF16 peak) and the assumption is recorded.
+func fp32RouterFit(chip hardware.Chip, bf16 float64) fitSpec {
+	spec := fp32RouterLargeM(chip, bf16)
+	if chip.NVFP4Peak > 0 || fp32CUDACoreTFlops[chip.Name] > 0 {
+		// Up to 32 tokens the specialised kernel runs (Hopper and Blackwell alike); the gate is bound by
+		// its weight read there, so it keeps the BF16-rate reading the ramp has always priced it at.
+		spec.smallRows, spec.smallPeak = 32, bf16/2
+	}
+	return spec
+}
+
+func fp32RouterLargeM(chip hardware.Chip, bf16 float64) fitSpec {
+	if chip.NVFP4Peak > 0 {
+		return fitSpec{suffix: "bf16", peak: bf16 / 3,
+			why: "an fp32 router gate above 32 tokens runs bf16x3 on a Blackwell part (gate_linear.py:116-136): " +
+				"three BF16 GEMMs, a third of the BF16 peak, on the BF16 ramp"}
+	}
+	if tf, ok := fp32CUDACoreTFlops[chip.Name]; ok {
+		return fitSpec{suffix: "bf16", peak: tf * 1e12,
+			why: "an fp32 router gate above 32 tokens runs F.linear on the fp32 weight (gate_linear.py:116-136), " +
+				"SGEMM on CUDA cores at the datasheet FP32 rate since VLLM_FLOAT32_MATMUL_PRECISION defaults to " +
+				"highest (envs.py:92), on the BF16 ramp"}
+	}
+	return fitSpec{suffix: "bf16", peak: bf16 / 2,
+		why: "FP32 weights run at the TF32 tensor-core rate, taken as half the dense BF16 peak; this part states " +
+			"no CUDA-core FP32 rate, so an fp32 router gate keeps that reading"}
 }
