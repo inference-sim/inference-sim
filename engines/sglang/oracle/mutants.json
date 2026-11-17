@@ -397,21 +397,6 @@
     }
   ],
   "known_gaps": {
-    "core/sched/batch.go:RetractDecode:<=-><#1:if len(sorted) <= 1 && !b.CheckDecodeMem(s, sorted) {": "no test kills this mutant yet; tracked in blis-sglang#105 (M3.1)",
-    "core/sched/batch.go:RetractDecode:||->&&#1:for first || !b.CheckDecodeMem(s, sorted) {": "no test kills this mutant yet; tracked in blis-sglang#105 (M3.1)",
-    "core/sched/batch.go:prefixKVIndices:==->!=#1:if r.C.PrefixLen == 0 {": "no test kills this mutant yet; tracked in blis-sglang#105 (M3.1)",
-    "core/sched/batch.go:releaseOverallocated:>->>=#1:if ps := s.cfg.PageSize; ps > 1 {": "no test kills this mutant yet; tracked in blis-sglang#105 (M3.1)",
-    "core/sched/batch.go:retractionOrder:>->>=#1:return ao > bo": "no test kills this mutant yet; tracked in blis-sglang#105 (M3.1)",
-    "core/sched/budget.go:availableChunkTokens:>->>=#1:if available > 0 {": "no test kills this mutant yet; tracked in blis-sglang#105 (M3.1)",
-    "core/sched/budget.go:hasCapacity:>->>=#1:func (b *budget) hasCapacity() bool { return b.remainingTotal() > 0 && b.remainingCurrent() > 0 }": "no test kills this mutant yet; tracked in blis-sglang#105 (M3.1)",
-    "core/sched/budget.go:hasCapacity:>->>=#2:func (b *budget) hasCapacity() bool { return b.remainingTotal() > 0 && b.remainingCurrent() > 0 }": "no test kills this mutant yet; tracked in blis-sglang#105 (M3.1)",
-    "core/sched/overlap.go:isDisableOverlapForBatch:==->!=#2:isExtend := func(b *Batch) bool { return b != nil && (b.Mode == Extend || b.Mode == Mixed) }": "no test kills this mutant yet; tracked in blis-sglang#105 (M3.1)",
-    "core/sched/overlap.go:overlapIteration:&&->||#1:} else if batch == nil && s.isFullyIdle() {": "no test kills this mutant yet; tracked in blis-sglang#105 (M3.1)",
-    "core/sched/overlap.go:overlapIteration:==->!=#1:} else if batch == nil && s.isFullyIdle() {": "no test kills this mutant yet; tracked in blis-sglang#105 (M3.1)",
-    "core/sched/overlap.go:reqsFinishingInflight:||->&&#1:if !s.cfg.EnableOverlap || len(s.resultQueue) == 0 {": "no test kills this mutant yet; tracked in blis-sglang#105 (M3.1)",
-    "core/sched/report.go:publishKVEvents:==->!=#1:if r == nil {": "no test kills this mutant yet; tracked in blis-sglang#105 (M3.1)",
-    "core/sched/report.go:reportDecode:==->!=#1:if s.forwardCtDecode%interval == 0 {": "no test kills this mutant yet; tracked in blis-sglang#105 (M3.1)",
-    "core/sched/report.go:reportPrefill:==->!=#1:if b.Prefill == nil {": "no test kills this mutant yet; tracked in blis-sglang#105 (M3.1)",
     "core/metrics/kvevents.go:appendArrayHeader:<-><=#1:case n < 1<<16:": "no test kills this mutant yet; tracked in blis-sglang#106 (M3.1)",
     "core/metrics/kvevents.go:appendInt:<-><=#1:case v >= 0 && v < 1<<16:": "no test kills this mutant yet; tracked in blis-sglang#106 (M3.1)",
     "core/metrics/kvevents.go:appendInt:<-><=#1:case v >= 0 && v < 1<<32:": "no test kills this mutant yet; tracked in blis-sglang#106 (M3.1)",
@@ -466,8 +451,6 @@
     "core/metrics/kvevents.go:appendInt:>=->>#1:case v >= 0 && v < 1<<16:": "no test kills this mutant yet; tracked in blis-sglang#106 (M3.1)",
     "core/metrics/kvevents.go:appendInt:>=->>#1:case v >= 0:": "no test kills this mutant yet; tracked in blis-sglang#106 (M3.1)",
     "core/metrics/metrics.go:Series:!=->==#1:if out[i].Name != out[j].Name {": "no test kills this mutant yet; tracked in blis-sglang#107 (M3.1)",
-    "core/sched/batch.go:releaseOverallocated:<-><=#1:if start < end {": "no test kills this mutant yet; tracked in blis-sglang#105 (M3.1)",
-    "core/sched/report.go:publishKVEvents:==->!=#1:if len(ev) == 0 {": "no test kills this mutant yet; tracked in blis-sglang#105 (M3.1)",
     "lower/lower.go:RequireMLPTPGather:==->!=#1:case b == \"none\":": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
     "lower/lower.go:CaptureBatchSizes:>->>=#1:if bs > largest {": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
     "core/hicache/controller.go:ParseStorageBackendExtraConfig:!=->==#1:if !isNum || err != nil {": "no test kills this mutant yet; tracked in blis-sglang#109 (M3.1)"
@@ -531,6 +514,9 @@
     "core/sched/policy.go:sortByRoutingKey:>->>=#1:return ca > cb": "the return is reached only when ca != cb, so ca >= cb and ca > cb are the same test",
     "core/sched/policy.go:priorityBefore:>->>=#1:if s.prioritySign() > 0 {": "prioritySign returns 1 or -1, never 0, so > 0 and >= 0 are the same test",
     "core/sched/adder.go:addOneReqIgnoreEOS:<-><=#1:sort.SliceStable(a.reqStates, func(i, j int) bool { return a.reqStates[i].left < a.reqStates[j].left })": "the flip only reverses entries of equal left, and the check at each index depends on the entries before it only through their occupied sum: the first entry of a run of equal lefts decides alone (the check fails when remaining + freed <= (left+1)*bs, and for the next entry of the run freed has grown, bs has shrunk and left is the same, with left > 0), and the run's total occupied is the same in any order, so every later check sees the same freed and no admission differs",
-    "core/sched/adder.go:addOneReqIgnoreEOS:<=-><#1:if st.left <= a.reqStates[i].left {": "the flip only moves the new entry within a run of equal lefts, or, when none is larger, to the before-the-last position inside that run; the sequence of lefts is the same either way, and an order within equal lefts changes no check (see the sort mutant above), so no admission differs"
+    "core/sched/adder.go:addOneReqIgnoreEOS:<=-><#1:if st.left <= a.reqStates[i].left {": "the flip only moves the new entry within a run of equal lefts, or, when none is larger, to the before-the-last position inside that run; the sequence of lefts is the same either way, and an order within equal lefts changes no check (see the sort mutant above), so no admission differs",
+    "core/sched/batch.go:releaseOverallocated:>->>=#1:if ps := s.cfg.PageSize; ps > 1 {": "ceilTo(start, 1) is start, so for a page size of 1 the rounding changes nothing and the branch taken at a page size of 1 gives the same start; a page size is never below 1, so no input tells > 1 from >= 1",
+    "core/sched/batch.go:releaseOverallocated:<-><=#1:if start < end {": "when start equals end the range is empty; FreeKVRow then passes one segment of no slots to FreeSegments, whose pageDisjoint skips a segment with no slots, so nothing is freed either way",
+    "core/sched/batch.go:retractionOrder:>->>=#1:return ao > bo": "the comparison is reached only when ao != bo, and for unequal integers ao > bo and ao >= bo are the same, so no input tells them apart"
   }
 }
