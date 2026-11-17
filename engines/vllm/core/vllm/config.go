@@ -293,7 +293,7 @@ func resolve(c Config) (settings, error) {
 	if err := refuseNotVisible(c); err != nil {
 		return s, err
 	}
-	if err := refuseUnmodelled(e, c.DataParallelSize > 1); err != nil {
+	if err := refuseUnmodelled(e); err != nil {
 		return s, err
 	}
 	if c.NumGPUBlocks < 2 {
@@ -522,6 +522,10 @@ func resolve(c Config) (settings, error) {
 		DecodeStagger:        pp,
 		UseV2ModelRunner:     v2,
 		KVGroups:             groups,
+		// An engine that is not DP-coordinated applies prefill_schedule_interval itself
+		// (vllm/v1/core/sched/scheduler.py:395-425@4ba787ec); a data-parallel group's engine core
+		// throttles instead (DPGroup, core.Wave), so its ranks' Schedulers keep the interval at 1.
+		LocalPrefillInterval: localPrefillInterval(e.PrefillScheduleInterval, c.DataParallelSize),
 	}
 	s.queueSize, s.v2Runner = queue, v2
 	s.layout = offloadLayoutFacts{agnostic: parallelismAgnostic(c.KVLayers, v2), plainGroup: len(c.KVLayers) == 0, pp: pp}
@@ -744,7 +748,7 @@ func resolveAsync(stated *bool, method string, pp int, v2 bool) bool {
 // refuseUnmodelled refuses engine settings whose effect on scheduling this engine does not
 // model, each with the reason. Settings that only change step time (backends, graph modes,
 // quantization, memory utilization) are the cost model's and pass through untouched.
-func refuseUnmodelled(e engineconfig.Engine, dataParallel bool) error {
+func refuseUnmodelled(e engineconfig.Engine) error {
 	if keys := unreadEnv(e.Env); len(keys) > 0 {
 		// blis-schemas' Env rule: a consumer refuses, or discloses, every key it cannot honour,
 		// and never ignores one (spec/deployment/deployment.go Engine.Env).
@@ -764,13 +768,6 @@ func refuseUnmodelled(e engineconfig.Engine, dataParallel bool) error {
 		// (vllm/config/scheduler.py:203@4ba787ec); 0 is the block's unstated.
 		return fmt.Errorf("vllm: prefill_schedule_interval %d is below 1, which vLLM refuses "+
 			"(vllm/config/scheduler.py:203@4ba787ec)", e.PrefillScheduleInterval)
-	case e.PrefillScheduleInterval > 1 && !dataParallel:
-		// Without a data-parallel group the Scheduler applies the interval itself: it holds prefill
-		// until the interval has passed since the last prefill-carrying step, with a capacity escape
-		// (local_prefill_interval, vllm/v1/core/sched/scheduler.py:395-425, 770-790, 1612-1629
-		// @4ba787ec). That cadence is not ported, so stating it is refused rather than dropped.
-		return fmt.Errorf("vllm: prefill_schedule_interval %d without a data-parallel group is the scheduler's local "+
-			"prefill cadence, which is not modelled (%s172)", e.PrefillScheduleInterval, issueBase)
 	case e.MaxCPULoRAs > 0 && e.MaxCPULoRAs < max(e.MaxLoRAs, 1):
 		// LoRAConfig._validate_lora_config (vllm/config/lora.py:123-126@4ba787ec).
 		return fmt.Errorf("vllm: max_cpu_loras (%d) must be >= max_loras (%d)", e.MaxCPULoRAs, max(e.MaxLoRAs, 1))
@@ -1019,6 +1016,15 @@ func checkRulesWith(pack rules.EngineRules, e engineconfig.Engine, pp int) error
 	}
 	return fmt.Errorf("vllm: the engine block fails vLLM %s's rules: %s", pack.EngineVersion(),
 		strings.Join(lines, "; "))
+}
+
+// localPrefillInterval is the Scheduler's local_prefill_interval: the stated prefill_schedule_interval
+// when data_parallel_size is 1, otherwise 1 (vllm/v1/core/sched/scheduler.py:395-413@4ba787ec).
+func localPrefillInterval(interval, dataParallelSize int) int {
+	if dataParallelSize > 1 {
+		return 1
+	}
+	return max(interval, 1)
 }
 
 // parallelismAgnostic is the offloading connector's is_parallelism_agnostic, which the p2p and fs tiers

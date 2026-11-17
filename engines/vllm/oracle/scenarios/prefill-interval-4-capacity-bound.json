@@ -1,0 +1,189 @@
+{
+ "name": "prefill-interval-4-capacity-bound",
+ "description": "prefill_schedule_interval 4 with more waiting than a release step can admit: the release step leaves requests waiting, so prefill_capacity_bound is set and the cadence stops holding prefill until a release step drains the queue (vllm/v1/core/sched/scheduler.py:395-425, 770-790, 1612-1629@4ba787ec).",
+ "config": {
+  "max_num_seqs": 8,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "num_blocks": 120,
+  "max_model_len": 64,
+  "long_prefill_token_threshold": 0,
+  "enable_prefix_caching": false,
+  "scheduling_policy": "fcfs",
+  "scheduler_config": {
+   "prefill_schedule_interval": 4
+  }
+ },
+ "requests": [
+  {
+   "id": "p0",
+   "arrival_step": 0,
+   "prompt": [
+    1402,
+    16387,
+    4683,
+    13872,
+    5615,
+    2417,
+    5544,
+    4684
+   ],
+   "output": [
+    18537,
+    8595,
+    5574,
+    5830,
+    2085,
+    2986,
+    5475,
+    8574,
+    18552,
+    15671,
+    18238,
+    14519,
+    7715,
+    4051,
+    4871,
+    1667,
+    14203,
+    12191,
+    7504,
+    7747,
+    11823,
+    13843,
+    12956,
+    9079
+   ]
+  },
+  {
+   "id": "p1",
+   "arrival_step": 1,
+   "prompt": [
+    7892,
+    8108,
+    14642,
+    18936,
+    2967,
+    2689,
+    6894,
+    12649,
+    5415,
+    7680,
+    5837,
+    13334
+   ],
+   "output": [
+    1995,
+    3821,
+    18407,
+    15374,
+    8155,
+    7807
+   ]
+  },
+  {
+   "id": "p2",
+   "arrival_step": 1,
+   "prompt": [
+    15168,
+    13041,
+    7350,
+    11834,
+    8182,
+    16797,
+    2357,
+    9630,
+    12010,
+    10613,
+    11955,
+    19739
+   ],
+   "output": [
+    13981,
+    16788,
+    11367,
+    7984,
+    4123,
+    11037
+   ]
+  },
+  {
+   "id": "p3",
+   "arrival_step": 1,
+   "prompt": [
+    6776,
+    19346,
+    18885,
+    10669,
+    4064,
+    6687,
+    7317,
+    1942,
+    13279,
+    4134,
+    14080,
+    10332
+   ],
+   "output": [
+    11013,
+    7451,
+    4735,
+    15902,
+    7638,
+    11942
+   ]
+  },
+  {
+   "id": "p4",
+   "arrival_step": 1,
+   "prompt": [
+    15571,
+    14203,
+    2590,
+    19405,
+    4867,
+    9771,
+    4239,
+    4909,
+    7360,
+    7589,
+    11984,
+    6319
+   ],
+   "output": [
+    5976,
+    16587,
+    2899,
+    17323,
+    17778,
+    10109
+   ]
+  },
+  {
+   "id": "p5",
+   "arrival_step": 1,
+   "prompt": [
+    13202,
+    17064,
+    2247,
+    4670,
+    16906,
+    5519,
+    17307,
+    1805,
+    9347,
+    17048,
+    16396,
+    12426
+   ],
+   "output": [
+    8780,
+    1366,
+    4171,
+    13294,
+    10257,
+    15609
+   ]
+  }
+ ]
+}

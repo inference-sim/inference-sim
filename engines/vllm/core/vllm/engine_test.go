@@ -291,7 +291,6 @@ func TestFactoryRefuses(t *testing.T) {
 		{"V1 runner with PP and async", Version, "async_scheduling: true\npipeline_parallel_size: 2\n", "V1 model runner"},
 		{"prefix_match_unit", Version, "prefix_match_unit: 8\n", "prefix_match_unit"},
 		{"max_cpu_loras", Version, "max_cpu_loras: 4\n", "max_cpu_loras"},
-		{"DP prefill throttling", Version, "prefill_schedule_interval: 4\n", "data-parallel"},
 		{"active seqs above max_num_seqs", Version, "max_num_active_seqs: 9\n", "max_num_active_seqs"},
 		// What vLLM v0.32.0 refuses at startup (review I1, S10, S11).
 		{"a KV pool below one max_model_len sequence", Version, "num_gpu_blocks: 32\n", "cannot hold one max_model_len"},

@@ -39,12 +39,18 @@ type scenario struct {
 		// create_scheduler default the oracle runs.
 		EnableChunkedPrefill *bool `json:"enable_chunked_prefill"`
 		// The knobs vLLM's test helper fixes or omits, passed to its config classes.
-		Watermark             float64 `json:"watermark"`
-		MaxNumActiveSeqs      int     `json:"max_num_active_seqs"`
-		MaxNumScheduledTokens int     `json:"max_num_scheduled_tokens"`
-		LongPrefillAdaptive   bool    `json:"long_prefill_token_threshold_adaptive"`
-		MaxLoRAs              int     `json:"max_loras"`
-		KVEvents              bool    `json:"kv_events"`
+		Watermark float64 `json:"watermark"`
+		// SchedulerConfig is the SchedulerConfig fields a scenario names by field name
+		// (oracle/run_scheduler.py build_scheduler); the Go port reads prefill_schedule_interval,
+		// which on an engine without data parallelism is the Scheduler's local cadence.
+		SchedulerConfig struct {
+			PrefillScheduleInterval int `json:"prefill_schedule_interval"`
+		} `json:"scheduler_config"`
+		MaxNumActiveSeqs      int  `json:"max_num_active_seqs"`
+		MaxNumScheduledTokens int  `json:"max_num_scheduled_tokens"`
+		LongPrefillAdaptive   bool `json:"long_prefill_token_threshold_adaptive"`
+		MaxLoRAs              int  `json:"max_loras"`
+		KVEvents              bool `json:"kv_events"`
 		KVGroups              []struct {
 			Kind          string `json:"kind"`
 			SlidingWindow int    `json:"sliding_window"`
@@ -202,6 +208,7 @@ func run(t *testing.T, sc scenario) trace {
 		ReserveFullSequence: true, Watermark: c.Watermark, MaxNumActiveSeqs: c.MaxNumActiveSeqs,
 		MaxNumScheduledTokens: c.MaxNumScheduledTokens, LongPrefillAdaptive: c.LongPrefillAdaptive,
 		Spec: spec, MaxLoRAs: c.MaxLoRAs, KVEvents: c.KVEvents,
+		LocalPrefillInterval: c.SchedulerConfig.PrefillScheduleInterval,
 		KVGroups: kvGroups(t, c.KVGroups, c.KVLayers, kv.GroupOptions{DisableHybrid: c.DisableHybridKVCacheManager,
 			TagDraftGroups: c.Speculative != nil && trailingDrafter(c.Speculative.Method)}),
 	})
