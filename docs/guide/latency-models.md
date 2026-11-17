@@ -347,12 +347,12 @@ its rank index (`pkg/kvevents/pool.go:134`), which is 0 for an internal-balancer
 
 Known deviations and limits:
 
-- Pad tokens are the kernel's `Batch.PadTokens` (blis-schemas#74): they run the GEMMs,
+- Pad tokens are the kernel's `Batch.PadTokens` (https://github.com/inference-sim/blis-schemas/issues/74): they run the GEMMs,
   collectives, MoE dispatch and experts, and no attention, logits or sampling; an idle rank's
   dummy batch is all pad. This needs the kernel and schemas from the dsv41 branches, which
   `go.mod` pins by `replace` until they are released.
 - vLLM also pads every rank under dual-batch overlap (`should_ubatch`, `dp_utils.py:181`).
-  BLIS does not model DBO, which the kernel does not price (blis-latency-kernel#48).
+  BLIS does not model DBO, which the kernel does not price (https://github.com/inference-sim/blis-latency-kernel/issues/48).
 - One front-end, with the whole in-flight view, stands for the `api_server_count` front-ends
   (dp by default), so `client_count` is 1.
 - The coordinator's counts are sampled at the first assignment of each 100 ms period, not at

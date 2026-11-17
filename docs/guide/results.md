@@ -340,7 +340,7 @@ The Result carries what a scoring harness needs to grade a point against the run
   passed on everything each entry states and the implementation each coefficient priced; it does not
   say that every pool registered, nor that a condition was decided. A registry coefficient that states
   no `kernel_impls` is `unkeyed`, so the kernel-hash condition cannot be decided for it; at the
-  registry this release pins few coefficients state them (blis-registry#73).
+  registry this release pins few coefficients state them (inference-sim/blis-substrate#149).
 - `resolutions` lists, for each pool and each setting the cost model resolves, the engine's value
   beside the host's, with the reason where they differ. A row names its `pool` by the pool's role
   (`colocated`, `prefill`, `decode`); the engine allows one pool per role. Rows are sorted by
