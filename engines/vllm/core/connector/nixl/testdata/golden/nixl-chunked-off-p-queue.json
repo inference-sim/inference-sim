@@ -22,8 +22,8 @@
   }
  },
  "provenance": {
-  "blis_vllm_commit": "0e64151389b7c4fd4dde33fb1369191d1860a174+dirty",
-  "lockfile_sha256": "unrecorded",
+  "blis_vllm_commit": "044ea06821a3e990911adb4b1720b49a6c93967e",
+  "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
   "mock_version": "gpu-mock/7+f4274aa648c4",
   "mocks": [
    "vllm.v1.outputs.ModelRunnerOutput",
@@ -65,7 +65,7 @@
    "oracle/run_scheduler.py": "3d7c19e49cf40785a73bb8947df9288b26464ae93bfc59f64bb36da40c1a8c33",
    "oracle/scenarios/connector/nixl-chunked-off-p-queue.json": "526fe00163234bb93c2e916cf1160673ddf4ed832c4f6b262ae09305b2fe3408"
   },
-  "platform": "darwin-arm64",
+  "platform": "linux-x86_64",
   "python": "3.12.16",
   "requirements_lock_sha256": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
   "scenario_sha256": "526fe00163234bb93c2e916cf1160673ddf4ed832c4f6b262ae09305b2fe3408",
