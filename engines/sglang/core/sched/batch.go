@@ -6,6 +6,7 @@ package sched
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"sort"
 
@@ -261,18 +262,41 @@ func (b *Batch) MixWithRunning(running *Batch) {
 	b.ExtendNumTokens += n
 }
 
-// retractionOrder is _get_decode_retraction_order (:3542-3580) for the default policy: indices
-// from the request to keep first to the one to retract first; the most output first, and among
-// equals the shortest prompt first.
-func retractionOrder(reqs []*Req) []int {
+// retractionOrder is _get_decode_retraction_order (:3542-3580): indices from the request to keep
+// first to the one to retract first. By default the most output comes first, and among equals the
+// shortest prompt. The priority policy puts the more urgent requests first, then by the default
+// order; a request with no priority is the least urgent (sys.maxsize, or its negative, by the
+// direction of the priority values).
+func retractionOrder(reqs []*Req, policy string, lowFirst bool) []int {
 	idx := make([]int, len(reqs))
 	for i := range idx {
 		idx[i] = i
 	}
-	key := func(r *Req) (int, int) { return len(r.C.OutputIDs), -len(r.C.OriginInputIDs) }
+	length := func(r *Req) (int, int) { return len(r.C.OutputIDs), -len(r.C.OriginInputIDs) }
+	prio := func(r *Req) int {
+		if r.HasPriority {
+			return r.Priority
+		}
+		if lowFirst {
+			return math.MaxInt64
+		}
+		return math.MinInt64
+	}
 	sort.SliceStable(idx, func(a, b int) bool {
-		ao, al := key(reqs[idx[a]])
-		bo, bl := key(reqs[idx[b]])
+		x, y := reqs[idx[a]], reqs[idx[b]]
+		if policy == "priority" {
+			// The Python key is priority * -sign, sorted descending: ascending priority when low
+			// values go first, descending otherwise. Compared, not multiplied, so the extremes
+			// cannot overflow.
+			if px, py := prio(x), prio(y); px != py {
+				if lowFirst {
+					return px < py
+				}
+				return px > py
+			}
+		}
+		ao, al := length(x)
+		bo, bl := length(y)
 		if ao != bo {
 			return ao > bo
 		}
@@ -326,7 +350,7 @@ func (s *Scheduler) releaseReq(r *Req, remaining int) {
 // last first, until the next decode step fits; at least one stays. It returns the retracted
 // requests and the new_token_ratio estimate.
 func (b *Batch) RetractDecode(s *Scheduler) (retracted []*Req, ratio float64) {
-	sorted := retractionOrder(b.Reqs)
+	sorted := retractionOrder(b.Reqs, s.cfg.RetractionPolicy, s.cfg.ScheduleLowPriorityValuesFirst)
 	first := true
 	for first || !b.CheckDecodeMem(s, sorted) {
 		if len(sorted) == 1 {
@@ -342,6 +366,8 @@ func (b *Batch) RetractDecode(s *Scheduler) (retracted []*Req, ratio float64) {
 		retracted = append(retracted, r)
 	}
 	if len(sorted) <= 1 && !b.CheckDecodeMem(s, sorted) {
+		// Even the last request cannot fit; SGLang aborts it rather than crash (:3519-3537). No
+		// scenario this oracle can run reaches it, so it stays refused.
 		panic(refusedAt("aborting the last request when it cannot fit after retraction", RetractionRefusal))
 	}
 	b.keepIndices(sorted)
