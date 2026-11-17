@@ -925,6 +925,9 @@ func (x *AgentXReplay) closeWindow(next agxPhase) {
 		}
 	}
 	x.timers = nil
+	if next == agxWarmDrain {
+		x.dropSleepingSends()
+	}
 	for _, in := range x.instances {
 		held := in.held
 		in.held = nil
@@ -934,6 +937,35 @@ func (x *AgentXReplay) closeWindow(next agxPhase) {
 				x.childDone(d.stream)
 			}
 		}
+	}
+}
+
+// dropSleepingSends cancels the sends still asleep when the constant-load warmup's window
+// closes (a delayed child spawn is an asyncio sleep, which the scheduler's cancel does not
+// reach): left to fire, they would send the warmup's sessions' requests into the measured
+// phase. Each is refused as a send after the window, in a fixed order (INV-6).
+func (x *AgentXReplay) dropSleepingSends() {
+	var asleep []*agxDispatch
+	for _, d := range x.byPlaceholder {
+		if d.state == agxTimer && d.inst != nil && d.stream != nil && !d.windowEnd && !d.warmupEnd && d.refusal == nil {
+			asleep = append(asleep, d)
+		}
+	}
+	sort.Slice(asleep, func(i, j int) bool {
+		a, b := asleep[i], asleep[j]
+		if a.dueUs != b.dueUs {
+			return a.dueUs < b.dueUs
+		}
+		if a.stream.id != b.stream.id {
+			return a.stream.id < b.stream.id
+		}
+		return a.turn < b.turn
+	})
+	for _, d := range asleep {
+		delete(x.byPlaceholder, d.ph)
+		d.ph = nil
+		d.state = agxDropped
+		x.refused(d)
 	}
 }
 
@@ -1053,6 +1085,9 @@ func (x *AgentXReplay) spawn(in *agxInstance, branches []int32, originMs float64
 		if k.offset <= 0 {
 			x.submit(&agxDispatch{inst: in, stream: k.s, turn: 0, childPath: true, first: true})
 		}
+	}
+	if x.phase == agxWarmDrain {
+		x.dropSleepingSends() // spawned after the constant-load warmup's window closed
 	}
 }
 
@@ -1525,7 +1560,9 @@ func (x *AgentXReplay) enforceTraceIdleCap(in *agxInstance, afterReturn bool) {
 // _wait_for_returning_complete with BranchOrchestrator.has_pending_branch_work); otherwise
 // the phase completes at the grace end.
 func (x *AgentXReplay) maybeComplete() {
-	if x.phase == agxWarmDrain && x.inFlight == 0 && !x.pendingBranchWork() {
+	// The warmup drains when nothing is in flight and nothing is scheduled: a parent left
+	// suspended on children the closed window refused can never resume, so it is not waited on.
+	if x.phase == agxWarmDrain && x.inFlight == 0 && len(x.byPlaceholder) == 0 {
 		x.startProfiling(x.nowUs)
 		return
 	}
