@@ -529,7 +529,7 @@ func KVOffloadBlockFromDeployment(o *deployment.Offload) (*KVOffloadBlock, error
 	}
 	if c, err := engineconfig.DecodeConnectorOptions(o.ConnectorOptions); err != nil {
 		return nil, fmt.Errorf("offload.connector_options: %w", err)
-	} else if c != nil && !(len(c.SecondaryTiers) > 0 && len(statedConnectorOptions(c)) == 0) {
+	} else if c != nil && (len(c.SecondaryTiers) == 0 || len(statedConnectorOptions(c)) > 0) {
 		// A block stating only secondary_tiers names vLLM's p2p tier (engineconfig.ConnectorOptions
 		// accepts no other), which the v0.33.0 engine builds itself (core/vllm offloadtiers_p2p.go);
 		// the offload this resolves is the CPU tier, and Adopt refuses the p2p tier for a
