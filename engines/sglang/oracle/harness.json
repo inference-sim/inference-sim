@@ -5,7 +5,8 @@
     "oracle/testdata/golden/",
     "core/cache/testdata/golden-fid5/",
     "core/cache/testdata/golden-pools/",
-    "core/hicache/testdata/golden-fid5/"
+    "core/hicache/testdata/golden-fid5/",
+    "core/sched/testdata/golden-sched/"
   ],
   "golden_files": [],
   "harness_files": [

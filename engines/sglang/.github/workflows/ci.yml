@@ -319,6 +319,30 @@ jobs:
         run: |
           set -euo pipefail
           python -I oracle/compare_goldens.py oracle-traces-pools/direct "$(git -C sglang-source rev-parse HEAD)" oracle/scenarios-pools core/cache/testdata/golden-pools/direct
+      # S13: the normal scheduling loop, with the state each step leaves (oracle/run_sched.py).
+      - name: trace the scheduling loop
+        if: ${{ !cancelled() }}
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          export ORACLE_MODEL="$PWD/oracle-model"
+          mkdir -p oracle-traces-sched
+          for s in oracle/scenarios-sched/*.json; do
+            python -I oracle/run_sched.py sglang-source "$s" "oracle-traces-sched/$(basename "$s" .json).trace.json"
+          done
+      - name: upload the scheduling traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: oracle-traces-sched
+          path: oracle-traces-sched/
+      - name: every scheduling golden is SGLang's own output
+        run: |
+          set -euo pipefail
+          python -I oracle/compare_goldens.py oracle-traces-sched "$(git -C sglang-source rev-parse HEAD)" oracle/scenarios-sched core/sched/testdata/golden-sched
 
 
   # S45 (design §6.4, SGL-1, SGL-5): SGLang's Rust tree core, its production default on Linux,

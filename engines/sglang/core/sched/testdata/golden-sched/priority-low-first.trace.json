@@ -1,0 +1,4332 @@
+{
+ "classes": {
+  "allocator": "TokenToKVPoolAllocator",
+  "tree_cache": "UnifiedRadixCache",
+  "tree_core": "UnifiedTreeCore"
+ },
+ "config": {
+  "abort_on_priority_when_disabled": false,
+  "allocator": "TokenToKVPoolAllocator",
+  "chunked_prefill_size": 16,
+  "clip_max_new_tokens": 4096,
+  "disaggregation_mode": "null",
+  "enable_overlap": false,
+  "enable_priority_preemption": true,
+  "enable_priority_scheduling": true,
+  "eos_token_ids": [
+   151643,
+   151645
+  ],
+  "in_batch_prefix_check_threshold": 32,
+  "in_batch_prefix_deprioritize_threshold": 32,
+  "is_mixed_chunk": false,
+  "max_context_len": 32772,
+  "max_prefill_tokens": 16384,
+  "max_queued_requests": null,
+  "max_req_input_len": 314,
+  "max_req_len": 319,
+  "max_running_requests": 3,
+  "max_total_num_tokens": 320,
+  "need_sort": false,
+  "new_token_ratio": {
+   "decay": 0.0010033333333333333,
+   "init": 0.7,
+   "min": 0.098
+  },
+  "page_size": 1,
+  "policy": "fcfs",
+  "pp_max_micro_batch_size": 3,
+  "pp_size": 1,
+  "prefill_decode_interval": 0,
+  "prefill_max_requests": null,
+  "priority_scheduling_preemption_threshold": 0,
+  "radix_cache_disabled": false,
+  "radix_eviction_policy": "lru",
+  "random_seed": 0,
+  "req_pool_size": 3,
+  "retract_decode_steps": 20,
+  "schedule_low_priority_values_first": true,
+  "tree_cache": "UnifiedRadixCache",
+  "vocab_size": 151936
+ },
+ "finished": {
+  "q0": {
+   "reason": {
+    "length": 4,
+    "type": "length"
+   },
+   "step": 13
+  },
+  "q1": {
+   "reason": {
+    "length": 1,
+    "type": "length"
+   },
+   "step": 37
+  },
+  "q2": {
+   "reason": {
+    "length": 18,
+    "type": "length"
+   },
+   "step": 61
+  },
+  "q3": {
+   "reason": {
+    "length": 1,
+    "type": "length"
+   },
+   "step": 46
+  },
+  "q4": {
+   "reason": {
+    "length": 9,
+    "type": "length"
+   },
+   "step": 42
+  },
+  "q5": {
+   "reason": {
+    "length": 12,
+    "type": "length"
+   },
+   "step": 25
+  },
+  "q6": {
+   "reason": {
+    "length": 15,
+    "type": "length"
+   },
+   "step": 29
+  },
+  "q7": {
+   "reason": {
+    "length": 21,
+    "type": "length"
+   },
+   "step": 51
+  },
+  "q8": {
+   "reason": {
+    "length": 3,
+    "type": "length"
+   },
+   "step": 35
+  }
+ },
+ "harness_problems": [],
+ "pool": {
+  "max_req_input_len": 314,
+  "max_total_num_tokens": 320
+ },
+ "provenance": {
+  "blis_sglang_commit": "a40e9fffcd68a0d4f106b1d77ee9ec50ea33c440",
+  "lockfile_sha256": "a3fb4e4773230faee4ffdd89437a96b2f3bfb3082e4be4cef4f44d44c66ed569",
+  "mock_version": "gpu-mock/6+782b6d1d81e3",
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+  "oracle_inputs": {
+   "oracle/harness.json": "a2a388e53018a1de271095da41331020c27de7dc036e667d3510bc66952a33d7",
+   "oracle/harness.py": "a1ab29f3421f2a5b504a0096f59cbe38055c8c2615a99d2d7c09bda96b0c5df6",
+   "oracle/mocks.json": "11f3e41bd562100699ab517d4142735a3222956986494b0c33e65b1a5ee853f1",
+   "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+   "oracle/run_sched.py": "12fc3df0720881f79e010e7b7dd8c0d6c533dfeb466ae8dab3aedcb8fcdfeb6d",
+   "oracle/run_scheduler.py": "28ed3f13aa2d7502a317a0dd1974b7c67f7ee784761605acd54d57e26168f353",
+   "oracle/scenarios-sched/priority-low-first.json": "6294f3492b280dbde9bb66ef71673791ffec7bbb18ef6cc44661c96ed888ec7a",
+   "oracle/stubs.py": "e30a3a770e3a4f91008449145089328ba8fbb83b35bda7082e1c77e323eb1692",
+   "oracle/traces.py": "66d1818a2eb1b3d8bbfa3c5988bc088a8741798e46e536152ab368961bbd28a6"
+  },
+  "platform": "linux-x86_64",
+  "python": "3.12.16",
+  "requirements_lock_sha256": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+  "scenario_sha256": "6294f3492b280dbde9bb66ef71673791ffec7bbb18ef6cc44661c96ed888ec7a",
+  "seed": 0,
+  "sglang_commit": "297e54fd105e974cdf401e5b4d20253a22c16f90",
+  "tier": 2
+ },
+ "receive": {
+  "max_recv_per_poll": -1,
+  "scheduler_recv_interval": 1
+ },
+ "resolved": {
+  "chunked_prefill_size": 16,
+  "max_running_requests": 3,
+  "max_total_tokens": 320,
+  "page_size": 1,
+  "schedule_policy": "fcfs"
+ },
+ "sglang_env": {
+  "SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND": "python"
+ },
+ "shutdown_sent": true,
+ "steps": [
+  {
+   "after": {
+    "available_tokens": 304,
+    "batch_is_full": false,
+    "chunked": "q5",
+    "evictable": 0,
+    "forward_ct": 1,
+    "new_token_ratio": 0.7,
+    "processed_tokens": 16,
+    "protected": 0,
+    "req_pool_available": 2,
+    "running": [],
+    "waiting": [
+     "q1",
+     "q2"
+    ]
+   },
+   "arrivals": [
+    "q1",
+    "q2",
+    "q5"
+   ],
+   "forwards": [
+    {
+     "available_tokens": 304,
+     "batch_size": 1,
+     "chunked": "q5",
+     "decoding": null,
+     "extend_prefix_lens": [
+      0
+     ],
+     "extend_seq_lens": [
+      16
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      3
+     ],
+     "rids": [
+      "q5"
+     ],
+     "seq_lens": [
+      16
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 0
+  },
+  {
+   "after": {
+    "available_tokens": 288,
+    "batch_is_full": false,
+    "chunked": "q5",
+    "evictable": 0,
+    "forward_ct": 2,
+    "new_token_ratio": 0.7,
+    "processed_tokens": 32,
+    "protected": 16,
+    "req_pool_available": 2,
+    "running": [],
+    "waiting": [
+     "q1",
+     "q2"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 288,
+     "batch_size": 1,
+     "chunked": "q5",
+     "decoding": null,
+     "extend_prefix_lens": [
+      16
+     ],
+     "extend_seq_lens": [
+      16
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      3
+     ],
+     "rids": [
+      "q5"
+     ],
+     "seq_lens": [
+      32
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 1
+  },
+  {
+   "after": {
+    "available_tokens": 272,
+    "batch_is_full": false,
+    "chunked": "q5",
+    "evictable": 0,
+    "forward_ct": 3,
+    "new_token_ratio": 0.7,
+    "processed_tokens": 48,
+    "protected": 32,
+    "req_pool_available": 2,
+    "running": [],
+    "waiting": [
+     "q4",
+     "q1",
+     "q2"
+    ]
+   },
+   "arrivals": [
+    "q4"
+   ],
+   "forwards": [
+    {
+     "available_tokens": 272,
+     "batch_size": 1,
+     "chunked": "q5",
+     "decoding": null,
+     "extend_prefix_lens": [
+      32
+     ],
+     "extend_seq_lens": [
+      16
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      3
+     ],
+     "rids": [
+      "q5"
+     ],
+     "seq_lens": [
+      48
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 2
+  },
+  {
+   "after": {
+    "available_tokens": 256,
+    "batch_is_full": false,
+    "chunked": "q4",
+    "evictable": 0,
+    "forward_ct": 4,
+    "new_token_ratio": 0.7,
+    "processed_tokens": 64,
+    "protected": 56,
+    "req_pool_available": 1,
+    "running": [],
+    "waiting": [
+     "q1",
+     "q2"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 256,
+     "batch_size": 2,
+     "chunked": "q4",
+     "decoding": null,
+     "extend_prefix_lens": [
+      48,
+      0
+     ],
+     "extend_seq_lens": [
+      8,
+      8
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      3,
+      2
+     ],
+     "rids": [
+      "q5",
+      "q4"
+     ],
+     "seq_lens": [
+      56,
+      8
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 3
+  },
+  {
+   "after": {
+    "available_tokens": 240,
+    "batch_is_full": false,
+    "chunked": "q4",
+    "evictable": 0,
+    "forward_ct": 5,
+    "new_token_ratio": 0.7,
+    "processed_tokens": 80,
+    "protected": 64,
+    "req_pool_available": 1,
+    "running": [
+     {
+      "kv_allocated": 56,
+      "kv_committed": 56,
+      "output_len": 1,
+      "prefix_len": 56,
+      "rid": "q5"
+     }
+    ],
+    "waiting": [
+     "q1",
+     "q2"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 240,
+     "batch_size": 1,
+     "chunked": "q4",
+     "decoding": null,
+     "extend_prefix_lens": [
+      8
+     ],
+     "extend_seq_lens": [
+      16
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      2
+     ],
+     "rids": [
+      "q4"
+     ],
+     "seq_lens": [
+      24
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 4
+  },
+  {
+   "after": {
+    "available_tokens": 224,
+    "batch_is_full": false,
+    "chunked": "q0",
+    "evictable": 0,
+    "forward_ct": 6,
+    "new_token_ratio": 0.7,
+    "processed_tokens": 96,
+    "protected": 82,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 56,
+      "kv_committed": 56,
+      "output_len": 1,
+      "prefix_len": 56,
+      "rid": "q5"
+     }
+    ],
+    "waiting": [
+     "q6",
+     "q8",
+     "q1",
+     "q2"
+    ]
+   },
+   "arrivals": [
+    "q0",
+    "q6",
+    "q8"
+   ],
+   "forwards": [
+    {
+     "available_tokens": 224,
+     "batch_size": 2,
+     "chunked": "q0",
+     "decoding": null,
+     "extend_prefix_lens": [
+      24,
+      3
+     ],
+     "extend_seq_lens": [
+      2,
+      14
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      2,
+      1
+     ],
+     "rids": [
+      "q4",
+      "q0"
+     ],
+     "seq_lens": [
+      26,
+      17
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 5
+  },
+  {
+   "after": {
+    "available_tokens": 208,
+    "batch_is_full": false,
+    "chunked": "q0",
+    "evictable": 0,
+    "forward_ct": 7,
+    "new_token_ratio": 0.7,
+    "processed_tokens": 112,
+    "protected": 96,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 56,
+      "kv_committed": 56,
+      "output_len": 1,
+      "prefix_len": 56,
+      "rid": "q5"
+     },
+     {
+      "kv_allocated": 26,
+      "kv_committed": 26,
+      "output_len": 1,
+      "prefix_len": 26,
+      "rid": "q4"
+     }
+    ],
+    "waiting": [
+     "q6",
+     "q7",
+     "q8",
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [
+    "q3",
+    "q7"
+   ],
+   "forwards": [
+    {
+     "available_tokens": 208,
+     "batch_size": 1,
+     "chunked": "q0",
+     "decoding": null,
+     "extend_prefix_lens": [
+      17
+     ],
+     "extend_seq_lens": [
+      16
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      1
+     ],
+     "rids": [
+      "q0"
+     ],
+     "seq_lens": [
+      33
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 6
+  },
+  {
+   "after": {
+    "available_tokens": 192,
+    "batch_is_full": true,
+    "chunked": "q6",
+    "evictable": 26,
+    "forward_ct": 8,
+    "new_token_ratio": 0.7,
+    "processed_tokens": 128,
+    "protected": 97,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 56,
+      "kv_committed": 56,
+      "output_len": 1,
+      "prefix_len": 56,
+      "rid": "q5"
+     }
+    ],
+    "waiting": [
+     "q7",
+     "q8",
+     "q1",
+     "q2",
+     "q3",
+     "q4"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 192,
+     "batch_size": 2,
+     "chunked": "q6",
+     "decoding": null,
+     "extend_prefix_lens": [
+      33,
+      0
+     ],
+     "extend_seq_lens": [
+      11,
+      5
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      1,
+      2
+     ],
+     "rids": [
+      "q0",
+      "q6"
+     ],
+     "seq_lens": [
+      44,
+      5
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 7
+  },
+  {
+   "after": {
+    "available_tokens": 176,
+    "batch_is_full": false,
+    "chunked": "q6",
+    "evictable": 26,
+    "forward_ct": 9,
+    "new_token_ratio": 0.7,
+    "processed_tokens": 144,
+    "protected": 102,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 56,
+      "kv_committed": 56,
+      "output_len": 1,
+      "prefix_len": 56,
+      "rid": "q5"
+     },
+     {
+      "kv_allocated": 44,
+      "kv_committed": 44,
+      "output_len": 1,
+      "prefix_len": 44,
+      "rid": "q0"
+     }
+    ],
+    "waiting": [
+     "q7",
+     "q4",
+     "q8",
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 176,
+     "batch_size": 1,
+     "chunked": "q6",
+     "decoding": null,
+     "extend_prefix_lens": [
+      5
+     ],
+     "extend_seq_lens": [
+      16
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      2
+     ],
+     "rids": [
+      "q6"
+     ],
+     "seq_lens": [
+      21
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 8
+  },
+  {
+   "after": {
+    "available_tokens": 160,
+    "batch_is_full": false,
+    "chunked": "q6",
+    "evictable": 26,
+    "forward_ct": 10,
+    "new_token_ratio": 0.7,
+    "processed_tokens": 160,
+    "protected": 118,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 56,
+      "kv_committed": 56,
+      "output_len": 1,
+      "prefix_len": 56,
+      "rid": "q5"
+     },
+     {
+      "kv_allocated": 44,
+      "kv_committed": 44,
+      "output_len": 1,
+      "prefix_len": 44,
+      "rid": "q0"
+     }
+    ],
+    "waiting": [
+     "q7",
+     "q4",
+     "q8",
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 160,
+     "batch_size": 1,
+     "chunked": "q6",
+     "decoding": null,
+     "extend_prefix_lens": [
+      21
+     ],
+     "extend_seq_lens": [
+      16
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      2
+     ],
+     "rids": [
+      "q6"
+     ],
+     "seq_lens": [
+      37
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 9
+  },
+  {
+   "after": {
+    "available_tokens": 158,
+    "batch_is_full": true,
+    "chunked": null,
+    "evictable": 26,
+    "forward_ct": 11,
+    "new_token_ratio": 0.7,
+    "processed_tokens": 162,
+    "protected": 136,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 56,
+      "kv_committed": 56,
+      "output_len": 1,
+      "prefix_len": 56,
+      "rid": "q5"
+     },
+     {
+      "kv_allocated": 44,
+      "kv_committed": 44,
+      "output_len": 1,
+      "prefix_len": 44,
+      "rid": "q0"
+     }
+    ],
+    "waiting": [
+     "q7",
+     "q4",
+     "q8",
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 158,
+     "batch_size": 1,
+     "chunked": null,
+     "decoding": null,
+     "extend_prefix_lens": [
+      37
+     ],
+     "extend_seq_lens": [
+      2
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      2
+     ],
+     "rids": [
+      "q6"
+     ],
+     "seq_lens": [
+      39
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 10
+  },
+  {
+   "after": {
+    "available_tokens": 155,
+    "batch_is_full": true,
+    "chunked": null,
+    "evictable": 26,
+    "forward_ct": 12,
+    "new_token_ratio": 0.6989966666666666,
+    "processed_tokens": 178,
+    "protected": 136,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 57,
+      "kv_committed": 57,
+      "output_len": 2,
+      "prefix_len": 56,
+      "rid": "q5"
+     },
+     {
+      "kv_allocated": 45,
+      "kv_committed": 45,
+      "output_len": 2,
+      "prefix_len": 44,
+      "rid": "q0"
+     },
+     {
+      "kv_allocated": 40,
+      "kv_committed": 40,
+      "output_len": 2,
+      "prefix_len": 39,
+      "rid": "q6"
+     }
+    ],
+    "waiting": [
+     "q7",
+     "q4",
+     "q8",
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 155,
+     "batch_size": 3,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      3,
+      1,
+      2
+     ],
+     "rids": [
+      "q5",
+      "q0",
+      "q6"
+     ],
+     "seq_lens": [
+      57,
+      45,
+      40
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 11
+  },
+  {
+   "after": {
+    "available_tokens": 152,
+    "batch_is_full": true,
+    "chunked": null,
+    "evictable": 26,
+    "forward_ct": 13,
+    "new_token_ratio": 0.6979933333333332,
+    "processed_tokens": 194,
+    "protected": 136,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 58,
+      "kv_committed": 58,
+      "output_len": 3,
+      "prefix_len": 56,
+      "rid": "q5"
+     },
+     {
+      "kv_allocated": 46,
+      "kv_committed": 46,
+      "output_len": 3,
+      "prefix_len": 44,
+      "rid": "q0"
+     },
+     {
+      "kv_allocated": 41,
+      "kv_committed": 41,
+      "output_len": 3,
+      "prefix_len": 39,
+      "rid": "q6"
+     }
+    ],
+    "waiting": [
+     "q7",
+     "q4",
+     "q8",
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 152,
+     "batch_size": 3,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      3,
+      1,
+      2
+     ],
+     "rids": [
+      "q5",
+      "q0",
+      "q6"
+     ],
+     "seq_lens": [
+      58,
+      46,
+      41
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 12
+  },
+  {
+   "after": {
+    "available_tokens": 149,
+    "batch_is_full": true,
+    "chunked": null,
+    "evictable": 70,
+    "forward_ct": 14,
+    "new_token_ratio": 0.6969899999999999,
+    "processed_tokens": 210,
+    "protected": 95,
+    "req_pool_available": 1,
+    "running": [
+     {
+      "kv_allocated": 59,
+      "kv_committed": 59,
+      "output_len": 4,
+      "prefix_len": 56,
+      "rid": "q5"
+     },
+     {
+      "kv_allocated": 0,
+      "kv_committed": 47,
+      "output_len": 4,
+      "prefix_len": 44,
+      "rid": "q0"
+     },
+     {
+      "kv_allocated": 42,
+      "kv_committed": 42,
+      "output_len": 4,
+      "prefix_len": 39,
+      "rid": "q6"
+     }
+    ],
+    "waiting": [
+     "q7",
+     "q4",
+     "q8",
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 149,
+     "batch_size": 3,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      3,
+      1,
+      2
+     ],
+     "rids": [
+      "q5",
+      "q0",
+      "q6"
+     ],
+     "seq_lens": [
+      59,
+      47,
+      42
+     ]
+    }
+   ],
+   "outputs": [
+    {
+     "finished": [
+      "q0"
+     ],
+     "output_lens": [
+      4
+     ],
+     "rids": [
+      "q0"
+     ],
+     "type": "BatchTokenIDOutput"
+    }
+   ],
+   "step": 13
+  },
+  {
+   "after": {
+    "available_tokens": 133,
+    "batch_is_full": false,
+    "chunked": "q7",
+    "evictable": 70,
+    "forward_ct": 15,
+    "new_token_ratio": 0.6969899999999999,
+    "processed_tokens": 226,
+    "protected": 95,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 59,
+      "kv_committed": 59,
+      "output_len": 4,
+      "prefix_len": 56,
+      "rid": "q5"
+     },
+     {
+      "kv_allocated": 42,
+      "kv_committed": 42,
+      "output_len": 4,
+      "prefix_len": 39,
+      "rid": "q6"
+     }
+    ],
+    "waiting": [
+     "q4",
+     "q8",
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 133,
+     "batch_size": 1,
+     "chunked": "q7",
+     "decoding": null,
+     "extend_prefix_lens": [
+      5
+     ],
+     "extend_seq_lens": [
+      16
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      1
+     ],
+     "rids": [
+      "q7"
+     ],
+     "seq_lens": [
+      21
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 14
+  },
+  {
+   "after": {
+    "available_tokens": 117,
+    "batch_is_full": false,
+    "chunked": "q7",
+    "evictable": 70,
+    "forward_ct": 16,
+    "new_token_ratio": 0.6969899999999999,
+    "processed_tokens": 242,
+    "protected": 111,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 59,
+      "kv_committed": 59,
+      "output_len": 4,
+      "prefix_len": 56,
+      "rid": "q5"
+     },
+     {
+      "kv_allocated": 42,
+      "kv_committed": 42,
+      "output_len": 4,
+      "prefix_len": 39,
+      "rid": "q6"
+     }
+    ],
+    "waiting": [
+     "q4",
+     "q8",
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 117,
+     "batch_size": 1,
+     "chunked": "q7",
+     "decoding": null,
+     "extend_prefix_lens": [
+      21
+     ],
+     "extend_seq_lens": [
+      16
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      1
+     ],
+     "rids": [
+      "q7"
+     ],
+     "seq_lens": [
+      37
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 15
+  },
+  {
+   "after": {
+    "available_tokens": 101,
+    "batch_is_full": false,
+    "chunked": "q7",
+    "evictable": 70,
+    "forward_ct": 17,
+    "new_token_ratio": 0.6969899999999999,
+    "processed_tokens": 258,
+    "protected": 127,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 59,
+      "kv_committed": 59,
+      "output_len": 4,
+      "prefix_len": 56,
+      "rid": "q5"
+     },
+     {
+      "kv_allocated": 42,
+      "kv_committed": 42,
+      "output_len": 4,
+      "prefix_len": 39,
+      "rid": "q6"
+     }
+    ],
+    "waiting": [
+     "q4",
+     "q8",
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 101,
+     "batch_size": 1,
+     "chunked": "q7",
+     "decoding": null,
+     "extend_prefix_lens": [
+      37
+     ],
+     "extend_seq_lens": [
+      16
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      1
+     ],
+     "rids": [
+      "q7"
+     ],
+     "seq_lens": [
+      53
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 16
+  },
+  {
+   "after": {
+    "available_tokens": 95,
+    "batch_is_full": true,
+    "chunked": null,
+    "evictable": 70,
+    "forward_ct": 18,
+    "new_token_ratio": 0.6969899999999999,
+    "processed_tokens": 264,
+    "protected": 149,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 59,
+      "kv_committed": 59,
+      "output_len": 4,
+      "prefix_len": 56,
+      "rid": "q5"
+     },
+     {
+      "kv_allocated": 42,
+      "kv_committed": 42,
+      "output_len": 4,
+      "prefix_len": 39,
+      "rid": "q6"
+     }
+    ],
+    "waiting": [
+     "q4",
+     "q8",
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 95,
+     "batch_size": 1,
+     "chunked": null,
+     "decoding": null,
+     "extend_prefix_lens": [
+      53
+     ],
+     "extend_seq_lens": [
+      6
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      1
+     ],
+     "rids": [
+      "q7"
+     ],
+     "seq_lens": [
+      59
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 17
+  },
+  {
+   "after": {
+    "available_tokens": 92,
+    "batch_is_full": true,
+    "chunked": null,
+    "evictable": 70,
+    "forward_ct": 19,
+    "new_token_ratio": 0.6959866666666665,
+    "processed_tokens": 280,
+    "protected": 149,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 60,
+      "kv_committed": 60,
+      "output_len": 5,
+      "prefix_len": 56,
+      "rid": "q5"
+     },
+     {
+      "kv_allocated": 43,
+      "kv_committed": 43,
+      "output_len": 5,
+      "prefix_len": 39,
+      "rid": "q6"
+     },
+     {
+      "kv_allocated": 60,
+      "kv_committed": 60,
+      "output_len": 2,
+      "prefix_len": 59,
+      "rid": "q7"
+     }
+    ],
+    "waiting": [
+     "q4",
+     "q8",
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 92,
+     "batch_size": 3,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      3,
+      2,
+      1
+     ],
+     "rids": [
+      "q5",
+      "q6",
+      "q7"
+     ],
+     "seq_lens": [
+      60,
+      43,
+      60
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 18
+  },
+  {
+   "after": {
+    "available_tokens": 89,
+    "batch_is_full": true,
+    "chunked": null,
+    "evictable": 70,
+    "forward_ct": 20,
+    "new_token_ratio": 0.6949833333333332,
+    "processed_tokens": 296,
+    "protected": 149,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 61,
+      "kv_committed": 61,
+      "output_len": 6,
+      "prefix_len": 56,
+      "rid": "q5"
+     },
+     {
+      "kv_allocated": 44,
+      "kv_committed": 44,
+      "output_len": 6,
+      "prefix_len": 39,
+      "rid": "q6"
+     },
+     {
+      "kv_allocated": 61,
+      "kv_committed": 61,
+      "output_len": 3,
+      "prefix_len": 59,
+      "rid": "q7"
+     }
+    ],
+    "waiting": [
+     "q4",
+     "q8",
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 89,
+     "batch_size": 3,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      3,
+      2,
+      1
+     ],
+     "rids": [
+      "q5",
+      "q6",
+      "q7"
+     ],
+     "seq_lens": [
+      61,
+      44,
+      61
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 19
+  },
+  {
+   "after": {
+    "available_tokens": 86,
+    "batch_is_full": true,
+    "chunked": null,
+    "evictable": 70,
+    "forward_ct": 21,
+    "new_token_ratio": 0.6939799999999998,
+    "processed_tokens": 312,
+    "protected": 149,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 62,
+      "kv_committed": 62,
+      "output_len": 7,
+      "prefix_len": 56,
+      "rid": "q5"
+     },
+     {
+      "kv_allocated": 45,
+      "kv_committed": 45,
+      "output_len": 7,
+      "prefix_len": 39,
+      "rid": "q6"
+     },
+     {
+      "kv_allocated": 62,
+      "kv_committed": 62,
+      "output_len": 4,
+      "prefix_len": 59,
+      "rid": "q7"
+     }
+    ],
+    "waiting": [
+     "q4",
+     "q8",
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 86,
+     "batch_size": 3,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      3,
+      2,
+      1
+     ],
+     "rids": [
+      "q5",
+      "q6",
+      "q7"
+     ],
+     "seq_lens": [
+      62,
+      45,
+      62
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 20
+  },
+  {
+   "after": {
+    "available_tokens": 83,
+    "batch_is_full": true,
+    "chunked": null,
+    "evictable": 70,
+    "forward_ct": 22,
+    "new_token_ratio": 0.6929766666666665,
+    "processed_tokens": 328,
+    "protected": 149,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 63,
+      "kv_committed": 63,
+      "output_len": 8,
+      "prefix_len": 56,
+      "rid": "q5"
+     },
+     {
+      "kv_allocated": 46,
+      "kv_committed": 46,
+      "output_len": 8,
+      "prefix_len": 39,
+      "rid": "q6"
+     },
+     {
+      "kv_allocated": 63,
+      "kv_committed": 63,
+      "output_len": 5,
+      "prefix_len": 59,
+      "rid": "q7"
+     }
+    ],
+    "waiting": [
+     "q4",
+     "q8",
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 83,
+     "batch_size": 3,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      3,
+      2,
+      1
+     ],
+     "rids": [
+      "q5",
+      "q6",
+      "q7"
+     ],
+     "seq_lens": [
+      63,
+      46,
+      63
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 21
+  },
+  {
+   "after": {
+    "available_tokens": 80,
+    "batch_is_full": true,
+    "chunked": null,
+    "evictable": 70,
+    "forward_ct": 23,
+    "new_token_ratio": 0.6919733333333331,
+    "processed_tokens": 344,
+    "protected": 149,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 64,
+      "kv_committed": 64,
+      "output_len": 9,
+      "prefix_len": 56,
+      "rid": "q5"
+     },
+     {
+      "kv_allocated": 47,
+      "kv_committed": 47,
+      "output_len": 9,
+      "prefix_len": 39,
+      "rid": "q6"
+     },
+     {
+      "kv_allocated": 64,
+      "kv_committed": 64,
+      "output_len": 6,
+      "prefix_len": 59,
+      "rid": "q7"
+     }
+    ],
+    "waiting": [
+     "q4",
+     "q8",
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 80,
+     "batch_size": 3,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      3,
+      2,
+      1
+     ],
+     "rids": [
+      "q5",
+      "q6",
+      "q7"
+     ],
+     "seq_lens": [
+      64,
+      47,
+      64
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 22
+  },
+  {
+   "after": {
+    "available_tokens": 77,
+    "batch_is_full": true,
+    "chunked": null,
+    "evictable": 70,
+    "forward_ct": 24,
+    "new_token_ratio": 0.6909699999999998,
+    "processed_tokens": 360,
+    "protected": 149,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 65,
+      "kv_committed": 65,
+      "output_len": 10,
+      "prefix_len": 56,
+      "rid": "q5"
+     },
+     {
+      "kv_allocated": 48,
+      "kv_committed": 48,
+      "output_len": 10,
+      "prefix_len": 39,
+      "rid": "q6"
+     },
+     {
+      "kv_allocated": 65,
+      "kv_committed": 65,
+      "output_len": 7,
+      "prefix_len": 59,
+      "rid": "q7"
+     }
+    ],
+    "waiting": [
+     "q4",
+     "q8",
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 77,
+     "batch_size": 3,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      3,
+      2,
+      1
+     ],
+     "rids": [
+      "q5",
+      "q6",
+      "q7"
+     ],
+     "seq_lens": [
+      65,
+      48,
+      65
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 23
+  },
+  {
+   "after": {
+    "available_tokens": 74,
+    "batch_is_full": true,
+    "chunked": null,
+    "evictable": 70,
+    "forward_ct": 25,
+    "new_token_ratio": 0.6899666666666664,
+    "processed_tokens": 376,
+    "protected": 149,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 66,
+      "kv_committed": 66,
+      "output_len": 11,
+      "prefix_len": 56,
+      "rid": "q5"
+     },
+     {
+      "kv_allocated": 49,
+      "kv_committed": 49,
+      "output_len": 11,
+      "prefix_len": 39,
+      "rid": "q6"
+     },
+     {
+      "kv_allocated": 66,
+      "kv_committed": 66,
+      "output_len": 8,
+      "prefix_len": 59,
+      "rid": "q7"
+     }
+    ],
+    "waiting": [
+     "q4",
+     "q8",
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 74,
+     "batch_size": 3,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      3,
+      2,
+      1
+     ],
+     "rids": [
+      "q5",
+      "q6",
+      "q7"
+     ],
+     "seq_lens": [
+      66,
+      49,
+      66
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 24
+  },
+  {
+   "after": {
+    "available_tokens": 71,
+    "batch_is_full": true,
+    "chunked": null,
+    "evictable": 132,
+    "forward_ct": 26,
+    "new_token_ratio": 0.688963333333333,
+    "processed_tokens": 392,
+    "protected": 98,
+    "req_pool_available": 1,
+    "running": [
+     {
+      "kv_allocated": 0,
+      "kv_committed": 67,
+      "output_len": 12,
+      "prefix_len": 56,
+      "rid": "q5"
+     },
+     {
+      "kv_allocated": 50,
+      "kv_committed": 50,
+      "output_len": 12,
+      "prefix_len": 39,
+      "rid": "q6"
+     },
+     {
+      "kv_allocated": 67,
+      "kv_committed": 67,
+      "output_len": 9,
+      "prefix_len": 59,
+      "rid": "q7"
+     }
+    ],
+    "waiting": [
+     "q4",
+     "q8",
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 71,
+     "batch_size": 3,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      3,
+      2,
+      1
+     ],
+     "rids": [
+      "q5",
+      "q6",
+      "q7"
+     ],
+     "seq_lens": [
+      67,
+      50,
+      67
+     ]
+    }
+   ],
+   "outputs": [
+    {
+     "finished": [
+      "q5"
+     ],
+     "output_lens": [
+      12
+     ],
+     "rids": [
+      "q5"
+     ],
+     "type": "BatchTokenIDOutput"
+    }
+   ],
+   "step": 25
+  },
+  {
+   "after": {
+    "available_tokens": 70,
+    "batch_is_full": true,
+    "chunked": null,
+    "evictable": 106,
+    "forward_ct": 27,
+    "new_token_ratio": 0.688963333333333,
+    "processed_tokens": 393,
+    "protected": 125,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 50,
+      "kv_committed": 50,
+      "output_len": 12,
+      "prefix_len": 39,
+      "rid": "q6"
+     },
+     {
+      "kv_allocated": 67,
+      "kv_committed": 67,
+      "output_len": 9,
+      "prefix_len": 59,
+      "rid": "q7"
+     }
+    ],
+    "waiting": [
+     "q8",
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 70,
+     "batch_size": 1,
+     "chunked": null,
+     "decoding": null,
+     "extend_prefix_lens": [
+      26
+     ],
+     "extend_seq_lens": [
+      1
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      3
+     ],
+     "rids": [
+      "q4"
+     ],
+     "seq_lens": [
+      27
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 26
+  },
+  {
+   "after": {
+    "available_tokens": 67,
+    "batch_is_full": true,
+    "chunked": null,
+    "evictable": 106,
+    "forward_ct": 28,
+    "new_token_ratio": 0.6879599999999997,
+    "processed_tokens": 409,
+    "protected": 125,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 51,
+      "kv_committed": 51,
+      "output_len": 13,
+      "prefix_len": 39,
+      "rid": "q6"
+     },
+     {
+      "kv_allocated": 68,
+      "kv_committed": 68,
+      "output_len": 10,
+      "prefix_len": 59,
+      "rid": "q7"
+     },
+     {
+      "kv_allocated": 28,
+      "kv_committed": 28,
+      "output_len": 3,
+      "prefix_len": 27,
+      "rid": "q4"
+     }
+    ],
+    "waiting": [
+     "q8",
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 67,
+     "batch_size": 3,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      2,
+      1,
+      3
+     ],
+     "rids": [
+      "q6",
+      "q7",
+      "q4"
+     ],
+     "seq_lens": [
+      51,
+      68,
+      28
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 27
+  },
+  {
+   "after": {
+    "available_tokens": 64,
+    "batch_is_full": true,
+    "chunked": null,
+    "evictable": 106,
+    "forward_ct": 29,
+    "new_token_ratio": 0.6869566666666663,
+    "processed_tokens": 425,
+    "protected": 125,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 52,
+      "kv_committed": 52,
+      "output_len": 14,
+      "prefix_len": 39,
+      "rid": "q6"
+     },
+     {
+      "kv_allocated": 69,
+      "kv_committed": 69,
+      "output_len": 11,
+      "prefix_len": 59,
+      "rid": "q7"
+     },
+     {
+      "kv_allocated": 29,
+      "kv_committed": 29,
+      "output_len": 4,
+      "prefix_len": 27,
+      "rid": "q4"
+     }
+    ],
+    "waiting": [
+     "q8",
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 64,
+     "batch_size": 3,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      2,
+      1,
+      3
+     ],
+     "rids": [
+      "q6",
+      "q7",
+      "q4"
+     ],
+     "seq_lens": [
+      52,
+      69,
+      29
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 28
+  },
+  {
+   "after": {
+    "available_tokens": 61,
+    "batch_is_full": true,
+    "chunked": null,
+    "evictable": 159,
+    "forward_ct": 30,
+    "new_token_ratio": 0.685953333333333,
+    "processed_tokens": 441,
+    "protected": 86,
+    "req_pool_available": 1,
+    "running": [
+     {
+      "kv_allocated": 0,
+      "kv_committed": 53,
+      "output_len": 15,
+      "prefix_len": 39,
+      "rid": "q6"
+     },
+     {
+      "kv_allocated": 70,
+      "kv_committed": 70,
+      "output_len": 12,
+      "prefix_len": 59,
+      "rid": "q7"
+     },
+     {
+      "kv_allocated": 30,
+      "kv_committed": 30,
+      "output_len": 5,
+      "prefix_len": 27,
+      "rid": "q4"
+     }
+    ],
+    "waiting": [
+     "q8",
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 61,
+     "batch_size": 3,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      2,
+      1,
+      3
+     ],
+     "rids": [
+      "q6",
+      "q7",
+      "q4"
+     ],
+     "seq_lens": [
+      53,
+      70,
+      30
+     ]
+    }
+   ],
+   "outputs": [
+    {
+     "finished": [
+      "q6"
+     ],
+     "output_lens": [
+      15
+     ],
+     "rids": [
+      "q6"
+     ],
+     "type": "BatchTokenIDOutput"
+    }
+   ],
+   "step": 29
+  },
+  {
+   "after": {
+    "available_tokens": 45,
+    "batch_is_full": false,
+    "chunked": "q8",
+    "evictable": 159,
+    "forward_ct": 31,
+    "new_token_ratio": 0.685953333333333,
+    "processed_tokens": 457,
+    "protected": 86,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 70,
+      "kv_committed": 70,
+      "output_len": 12,
+      "prefix_len": 59,
+      "rid": "q7"
+     },
+     {
+      "kv_allocated": 30,
+      "kv_committed": 30,
+      "output_len": 5,
+      "prefix_len": 27,
+      "rid": "q4"
+     }
+    ],
+    "waiting": [
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 45,
+     "batch_size": 1,
+     "chunked": "q8",
+     "decoding": null,
+     "extend_prefix_lens": [
+      0
+     ],
+     "extend_seq_lens": [
+      16
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      2
+     ],
+     "rids": [
+      "q8"
+     ],
+     "seq_lens": [
+      16
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 30
+  },
+  {
+   "after": {
+    "available_tokens": 29,
+    "batch_is_full": false,
+    "chunked": "q8",
+    "evictable": 159,
+    "forward_ct": 32,
+    "new_token_ratio": 0.685953333333333,
+    "processed_tokens": 473,
+    "protected": 102,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 70,
+      "kv_committed": 70,
+      "output_len": 12,
+      "prefix_len": 59,
+      "rid": "q7"
+     },
+     {
+      "kv_allocated": 30,
+      "kv_committed": 30,
+      "output_len": 5,
+      "prefix_len": 27,
+      "rid": "q4"
+     }
+    ],
+    "waiting": [
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 29,
+     "batch_size": 1,
+     "chunked": "q8",
+     "decoding": null,
+     "extend_prefix_lens": [
+      16
+     ],
+     "extend_seq_lens": [
+      16
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      2
+     ],
+     "rids": [
+      "q8"
+     ],
+     "seq_lens": [
+      32
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 31
+  },
+  {
+   "after": {
+    "available_tokens": 13,
+    "batch_is_full": false,
+    "chunked": "q8",
+    "evictable": 159,
+    "forward_ct": 33,
+    "new_token_ratio": 0.685953333333333,
+    "processed_tokens": 489,
+    "protected": 118,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 70,
+      "kv_committed": 70,
+      "output_len": 12,
+      "prefix_len": 59,
+      "rid": "q7"
+     },
+     {
+      "kv_allocated": 30,
+      "kv_committed": 30,
+      "output_len": 5,
+      "prefix_len": 27,
+      "rid": "q4"
+     }
+    ],
+    "waiting": [
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 13,
+     "batch_size": 1,
+     "chunked": "q8",
+     "decoding": null,
+     "extend_prefix_lens": [
+      32
+     ],
+     "extend_seq_lens": [
+      16
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      2
+     ],
+     "rids": [
+      "q8"
+     ],
+     "seq_lens": [
+      48
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 32
+  },
+  {
+   "after": {
+    "available_tokens": 9,
+    "batch_is_full": true,
+    "chunked": null,
+    "evictable": 159,
+    "forward_ct": 34,
+    "new_token_ratio": 0.685953333333333,
+    "processed_tokens": 493,
+    "protected": 138,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 70,
+      "kv_committed": 70,
+      "output_len": 12,
+      "prefix_len": 59,
+      "rid": "q7"
+     },
+     {
+      "kv_allocated": 30,
+      "kv_committed": 30,
+      "output_len": 5,
+      "prefix_len": 27,
+      "rid": "q4"
+     }
+    ],
+    "waiting": [
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 9,
+     "batch_size": 1,
+     "chunked": null,
+     "decoding": null,
+     "extend_prefix_lens": [
+      48
+     ],
+     "extend_seq_lens": [
+      4
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      2
+     ],
+     "rids": [
+      "q8"
+     ],
+     "seq_lens": [
+      52
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 33
+  },
+  {
+   "after": {
+    "available_tokens": 6,
+    "batch_is_full": true,
+    "chunked": null,
+    "evictable": 159,
+    "forward_ct": 35,
+    "new_token_ratio": 0.6849499999999996,
+    "processed_tokens": 509,
+    "protected": 138,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 71,
+      "kv_committed": 71,
+      "output_len": 13,
+      "prefix_len": 59,
+      "rid": "q7"
+     },
+     {
+      "kv_allocated": 31,
+      "kv_committed": 31,
+      "output_len": 6,
+      "prefix_len": 27,
+      "rid": "q4"
+     },
+     {
+      "kv_allocated": 53,
+      "kv_committed": 53,
+      "output_len": 2,
+      "prefix_len": 52,
+      "rid": "q8"
+     }
+    ],
+    "waiting": [
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 6,
+     "batch_size": 3,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      1,
+      3,
+      2
+     ],
+     "rids": [
+      "q7",
+      "q4",
+      "q8"
+     ],
+     "seq_lens": [
+      71,
+      31,
+      53
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 34
+  },
+  {
+   "after": {
+    "available_tokens": 3,
+    "batch_is_full": true,
+    "chunked": null,
+    "evictable": 213,
+    "forward_ct": 36,
+    "new_token_ratio": 0.6839466666666663,
+    "processed_tokens": 525,
+    "protected": 86,
+    "req_pool_available": 1,
+    "running": [
+     {
+      "kv_allocated": 72,
+      "kv_committed": 72,
+      "output_len": 14,
+      "prefix_len": 59,
+      "rid": "q7"
+     },
+     {
+      "kv_allocated": 32,
+      "kv_committed": 32,
+      "output_len": 7,
+      "prefix_len": 27,
+      "rid": "q4"
+     },
+     {
+      "kv_allocated": 0,
+      "kv_committed": 54,
+      "output_len": 3,
+      "prefix_len": 52,
+      "rid": "q8"
+     }
+    ],
+    "waiting": [
+     "q1",
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 3,
+     "batch_size": 3,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      1,
+      3,
+      2
+     ],
+     "rids": [
+      "q7",
+      "q4",
+      "q8"
+     ],
+     "seq_lens": [
+      72,
+      32,
+      54
+     ]
+    }
+   ],
+   "outputs": [
+    {
+     "finished": [
+      "q8"
+     ],
+     "output_lens": [
+      3
+     ],
+     "rids": [
+      "q8"
+     ],
+     "type": "BatchTokenIDOutput"
+    }
+   ],
+   "step": 35
+  },
+  {
+   "after": {
+    "available_tokens": 1,
+    "batch_is_full": false,
+    "chunked": "q1",
+    "evictable": 199,
+    "forward_ct": 37,
+    "new_token_ratio": 0.6839466666666663,
+    "processed_tokens": 541,
+    "protected": 86,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 72,
+      "kv_committed": 72,
+      "output_len": 14,
+      "prefix_len": 59,
+      "rid": "q7"
+     },
+     {
+      "kv_allocated": 32,
+      "kv_committed": 32,
+      "output_len": 7,
+      "prefix_len": 27,
+      "rid": "q4"
+     }
+    ],
+    "waiting": [
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 1,
+     "batch_size": 1,
+     "chunked": "q1",
+     "decoding": null,
+     "extend_prefix_lens": [
+      0
+     ],
+     "extend_seq_lens": [
+      16
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      2
+     ],
+     "rids": [
+      "q1"
+     ],
+     "seq_lens": [
+      16
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 36
+  },
+  {
+   "after": {
+    "available_tokens": 0,
+    "batch_is_full": true,
+    "chunked": null,
+    "evictable": 216,
+    "forward_ct": 38,
+    "new_token_ratio": 0.6839466666666663,
+    "processed_tokens": 542,
+    "protected": 86,
+    "req_pool_available": 1,
+    "running": [
+     {
+      "kv_allocated": 72,
+      "kv_committed": 72,
+      "output_len": 14,
+      "prefix_len": 59,
+      "rid": "q7"
+     },
+     {
+      "kv_allocated": 32,
+      "kv_committed": 32,
+      "output_len": 7,
+      "prefix_len": 27,
+      "rid": "q4"
+     }
+    ],
+    "waiting": [
+     "q2",
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 0,
+     "batch_size": 1,
+     "chunked": null,
+     "decoding": null,
+     "extend_prefix_lens": [
+      16
+     ],
+     "extend_seq_lens": [
+      1
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      2
+     ],
+     "rids": [
+      "q1"
+     ],
+     "seq_lens": [
+      17
+     ]
+    }
+   ],
+   "outputs": [
+    {
+     "finished": [
+      "q1"
+     ],
+     "output_lens": [
+      1
+     ],
+     "rids": [
+      "q1"
+     ],
+     "type": "BatchTokenIDOutput"
+    }
+   ],
+   "step": 37
+  },
+  {
+   "after": {
+    "available_tokens": 0,
+    "batch_is_full": false,
+    "chunked": "q2",
+    "evictable": 200,
+    "forward_ct": 39,
+    "new_token_ratio": 0.6839466666666663,
+    "processed_tokens": 558,
+    "protected": 86,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 72,
+      "kv_committed": 72,
+      "output_len": 14,
+      "prefix_len": 59,
+      "rid": "q7"
+     },
+     {
+      "kv_allocated": 32,
+      "kv_committed": 32,
+      "output_len": 7,
+      "prefix_len": 27,
+      "rid": "q4"
+     }
+    ],
+    "waiting": [
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 0,
+     "batch_size": 1,
+     "chunked": "q2",
+     "decoding": null,
+     "extend_prefix_lens": [
+      0
+     ],
+     "extend_seq_lens": [
+      16
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      2
+     ],
+     "rids": [
+      "q2"
+     ],
+     "seq_lens": [
+      16
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 38
+  },
+  {
+   "after": {
+    "available_tokens": 9,
+    "batch_is_full": false,
+    "chunked": "q2",
+    "evictable": 175,
+    "forward_ct": 40,
+    "new_token_ratio": 0.6839466666666663,
+    "processed_tokens": 574,
+    "protected": 102,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 72,
+      "kv_committed": 72,
+      "output_len": 14,
+      "prefix_len": 59,
+      "rid": "q7"
+     },
+     {
+      "kv_allocated": 32,
+      "kv_committed": 32,
+      "output_len": 7,
+      "prefix_len": 27,
+      "rid": "q4"
+     }
+    ],
+    "waiting": [
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 9,
+     "batch_size": 1,
+     "chunked": "q2",
+     "decoding": null,
+     "extend_prefix_lens": [
+      16
+     ],
+     "extend_seq_lens": [
+      16
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      2
+     ],
+     "rids": [
+      "q2"
+     ],
+     "seq_lens": [
+      32
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 39
+  },
+  {
+   "after": {
+    "available_tokens": 6,
+    "batch_is_full": true,
+    "chunked": null,
+    "evictable": 175,
+    "forward_ct": 41,
+    "new_token_ratio": 0.6839466666666663,
+    "processed_tokens": 577,
+    "protected": 121,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 72,
+      "kv_committed": 72,
+      "output_len": 14,
+      "prefix_len": 59,
+      "rid": "q7"
+     },
+     {
+      "kv_allocated": 32,
+      "kv_committed": 32,
+      "output_len": 7,
+      "prefix_len": 27,
+      "rid": "q4"
+     }
+    ],
+    "waiting": [
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 6,
+     "batch_size": 1,
+     "chunked": null,
+     "decoding": null,
+     "extend_prefix_lens": [
+      32
+     ],
+     "extend_seq_lens": [
+      3
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      2
+     ],
+     "rids": [
+      "q2"
+     ],
+     "seq_lens": [
+      35
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 40
+  },
+  {
+   "after": {
+    "available_tokens": 3,
+    "batch_is_full": true,
+    "chunked": null,
+    "evictable": 175,
+    "forward_ct": 42,
+    "new_token_ratio": 0.6829433333333329,
+    "processed_tokens": 593,
+    "protected": 121,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 73,
+      "kv_committed": 73,
+      "output_len": 15,
+      "prefix_len": 59,
+      "rid": "q7"
+     },
+     {
+      "kv_allocated": 33,
+      "kv_committed": 33,
+      "output_len": 8,
+      "prefix_len": 27,
+      "rid": "q4"
+     },
+     {
+      "kv_allocated": 36,
+      "kv_committed": 36,
+      "output_len": 2,
+      "prefix_len": 35,
+      "rid": "q2"
+     }
+    ],
+    "waiting": [
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 3,
+     "batch_size": 3,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      1,
+      3,
+      2
+     ],
+     "rids": [
+      "q7",
+      "q4",
+      "q2"
+     ],
+     "seq_lens": [
+      73,
+      33,
+      36
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 41
+  },
+  {
+   "after": {
+    "available_tokens": 0,
+    "batch_is_full": true,
+    "chunked": null,
+    "evictable": 209,
+    "forward_ct": 43,
+    "new_token_ratio": 0.6819399999999995,
+    "processed_tokens": 609,
+    "protected": 94,
+    "req_pool_available": 1,
+    "running": [
+     {
+      "kv_allocated": 74,
+      "kv_committed": 74,
+      "output_len": 16,
+      "prefix_len": 59,
+      "rid": "q7"
+     },
+     {
+      "kv_allocated": 0,
+      "kv_committed": 34,
+      "output_len": 9,
+      "prefix_len": 27,
+      "rid": "q4"
+     },
+     {
+      "kv_allocated": 37,
+      "kv_committed": 37,
+      "output_len": 3,
+      "prefix_len": 35,
+      "rid": "q2"
+     }
+    ],
+    "waiting": [
+     "q3"
+    ]
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 0,
+     "batch_size": 3,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      1,
+      3,
+      2
+     ],
+     "rids": [
+      "q7",
+      "q4",
+      "q2"
+     ],
+     "seq_lens": [
+      74,
+      34,
+      37
+     ]
+    }
+   ],
+   "outputs": [
+    {
+     "finished": [
+      "q4"
+     ],
+     "output_lens": [
+      9
+     ],
+     "rids": [
+      "q4"
+     ],
+     "type": "BatchTokenIDOutput"
+    }
+   ],
+   "step": 42
+  },
+  {
+   "after": {
+    "available_tokens": 8,
+    "batch_is_full": false,
+    "chunked": "q3",
+    "evictable": 185,
+    "forward_ct": 44,
+    "new_token_ratio": 0.6819399999999995,
+    "processed_tokens": 625,
+    "protected": 94,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 74,
+      "kv_committed": 74,
+      "output_len": 16,
+      "prefix_len": 59,
+      "rid": "q7"
+     },
+     {
+      "kv_allocated": 37,
+      "kv_committed": 37,
+      "output_len": 3,
+      "prefix_len": 35,
+      "rid": "q2"
+     }
+    ],
+    "waiting": []
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 8,
+     "batch_size": 1,
+     "chunked": "q3",
+     "decoding": null,
+     "extend_prefix_lens": [
+      5
+     ],
+     "extend_seq_lens": [
+      16
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      3
+     ],
+     "rids": [
+      "q3"
+     ],
+     "seq_lens": [
+      21
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 43
+  },
+  {
+   "after": {
+    "available_tokens": 8,
+    "batch_is_full": false,
+    "chunked": "q3",
+    "evictable": 169,
+    "forward_ct": 45,
+    "new_token_ratio": 0.6819399999999995,
+    "processed_tokens": 641,
+    "protected": 110,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 74,
+      "kv_committed": 74,
+      "output_len": 16,
+      "prefix_len": 59,
+      "rid": "q7"
+     },
+     {
+      "kv_allocated": 37,
+      "kv_committed": 37,
+      "output_len": 3,
+      "prefix_len": 35,
+      "rid": "q2"
+     }
+    ],
+    "waiting": []
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 8,
+     "batch_size": 1,
+     "chunked": "q3",
+     "decoding": null,
+     "extend_prefix_lens": [
+      21
+     ],
+     "extend_seq_lens": [
+      16
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      3
+     ],
+     "rids": [
+      "q3"
+     ],
+     "seq_lens": [
+      37
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 44
+  },
+  {
+   "after": {
+    "available_tokens": 3,
+    "batch_is_full": false,
+    "chunked": "q3",
+    "evictable": 158,
+    "forward_ct": 46,
+    "new_token_ratio": 0.6819399999999995,
+    "processed_tokens": 657,
+    "protected": 126,
+    "req_pool_available": 0,
+    "running": [
+     {
+      "kv_allocated": 74,
+      "kv_committed": 74,
+      "output_len": 16,
+      "prefix_len": 59,
+      "rid": "q7"
+     },
+     {
+      "kv_allocated": 37,
+      "kv_committed": 37,
+      "output_len": 3,
+      "prefix_len": 35,
+      "rid": "q2"
+     }
+    ],
+    "waiting": []
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 3,
+     "batch_size": 1,
+     "chunked": "q3",
+     "decoding": null,
+     "extend_prefix_lens": [
+      37
+     ],
+     "extend_seq_lens": [
+      16
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      3
+     ],
+     "rids": [
+      "q3"
+     ],
+     "seq_lens": [
+      53
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 45
+  },
+  {
+   "after": {
+    "available_tokens": 6,
+    "batch_is_full": false,
+    "chunked": null,
+    "evictable": 203,
+    "forward_ct": 47,
+    "new_token_ratio": 0.6819399999999995,
+    "processed_tokens": 668,
+    "protected": 94,
+    "req_pool_available": 1,
+    "running": [
+     {
+      "kv_allocated": 74,
+      "kv_committed": 74,
+      "output_len": 16,
+      "prefix_len": 59,
+      "rid": "q7"
+     },
+     {
+      "kv_allocated": 37,
+      "kv_committed": 37,
+      "output_len": 3,
+      "prefix_len": 35,
+      "rid": "q2"
+     }
+    ],
+    "waiting": []
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 6,
+     "batch_size": 1,
+     "chunked": null,
+     "decoding": null,
+     "extend_prefix_lens": [
+      53
+     ],
+     "extend_seq_lens": [
+      11
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      3
+     ],
+     "rids": [
+      "q3"
+     ],
+     "seq_lens": [
+      64
+     ]
+    }
+   ],
+   "outputs": [
+    {
+     "finished": [
+      "q3"
+     ],
+     "output_lens": [
+      1
+     ],
+     "rids": [
+      "q3"
+     ],
+     "type": "BatchTokenIDOutput"
+    }
+   ],
+   "step": 46
+  },
+  {
+   "after": {
+    "available_tokens": 4,
+    "batch_is_full": false,
+    "chunked": null,
+    "evictable": 203,
+    "forward_ct": 48,
+    "new_token_ratio": 0.6809366666666662,
+    "processed_tokens": 684,
+    "protected": 94,
+    "req_pool_available": 1,
+    "running": [
+     {
+      "kv_allocated": 75,
+      "kv_committed": 75,
+      "output_len": 17,
+      "prefix_len": 59,
+      "rid": "q7"
+     },
+     {
+      "kv_allocated": 38,
+      "kv_committed": 38,
+      "output_len": 4,
+      "prefix_len": 35,
+      "rid": "q2"
+     }
+    ],
+    "waiting": []
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 4,
+     "batch_size": 2,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      1,
+      2
+     ],
+     "rids": [
+      "q7",
+      "q2"
+     ],
+     "seq_lens": [
+      75,
+      38
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 47
+  },
+  {
+   "after": {
+    "available_tokens": 2,
+    "batch_is_full": false,
+    "chunked": null,
+    "evictable": 203,
+    "forward_ct": 49,
+    "new_token_ratio": 0.6799333333333328,
+    "processed_tokens": 700,
+    "protected": 94,
+    "req_pool_available": 1,
+    "running": [
+     {
+      "kv_allocated": 76,
+      "kv_committed": 76,
+      "output_len": 18,
+      "prefix_len": 59,
+      "rid": "q7"
+     },
+     {
+      "kv_allocated": 39,
+      "kv_committed": 39,
+      "output_len": 5,
+      "prefix_len": 35,
+      "rid": "q2"
+     }
+    ],
+    "waiting": []
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 2,
+     "batch_size": 2,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      1,
+      2
+     ],
+     "rids": [
+      "q7",
+      "q2"
+     ],
+     "seq_lens": [
+      76,
+      39
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 48
+  },
+  {
+   "after": {
+    "available_tokens": 0,
+    "batch_is_full": false,
+    "chunked": null,
+    "evictable": 203,
+    "forward_ct": 50,
+    "new_token_ratio": 0.6789299999999995,
+    "processed_tokens": 716,
+    "protected": 94,
+    "req_pool_available": 1,
+    "running": [
+     {
+      "kv_allocated": 77,
+      "kv_committed": 77,
+      "output_len": 19,
+      "prefix_len": 59,
+      "rid": "q7"
+     },
+     {
+      "kv_allocated": 40,
+      "kv_committed": 40,
+      "output_len": 6,
+      "prefix_len": 35,
+      "rid": "q2"
+     }
+    ],
+    "waiting": []
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 0,
+     "batch_size": 2,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      1,
+      2
+     ],
+     "rids": [
+      "q7",
+      "q2"
+     ],
+     "seq_lens": [
+      77,
+      40
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 49
+  },
+  {
+   "after": {
+    "available_tokens": 0,
+    "batch_is_full": false,
+    "chunked": null,
+    "evictable": 201,
+    "forward_ct": 51,
+    "new_token_ratio": 0.6779266666666661,
+    "processed_tokens": 732,
+    "protected": 94,
+    "req_pool_available": 1,
+    "running": [
+     {
+      "kv_allocated": 78,
+      "kv_committed": 78,
+      "output_len": 20,
+      "prefix_len": 59,
+      "rid": "q7"
+     },
+     {
+      "kv_allocated": 41,
+      "kv_committed": 41,
+      "output_len": 7,
+      "prefix_len": 35,
+      "rid": "q2"
+     }
+    ],
+    "waiting": []
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 0,
+     "batch_size": 2,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      1,
+      2
+     ],
+     "rids": [
+      "q7",
+      "q2"
+     ],
+     "seq_lens": [
+      78,
+      41
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 50
+  },
+  {
+   "after": {
+    "available_tokens": 14,
+    "batch_is_full": false,
+    "chunked": null,
+    "evictable": 264,
+    "forward_ct": 52,
+    "new_token_ratio": 0.6769233333333328,
+    "processed_tokens": 748,
+    "protected": 35,
+    "req_pool_available": 2,
+    "running": [
+     {
+      "kv_allocated": 0,
+      "kv_committed": 79,
+      "output_len": 21,
+      "prefix_len": 59,
+      "rid": "q7"
+     },
+     {
+      "kv_allocated": 42,
+      "kv_committed": 42,
+      "output_len": 8,
+      "prefix_len": 35,
+      "rid": "q2"
+     }
+    ],
+    "waiting": []
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 14,
+     "batch_size": 2,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      1,
+      2
+     ],
+     "rids": [
+      "q7",
+      "q2"
+     ],
+     "seq_lens": [
+      79,
+      42
+     ]
+    }
+   ],
+   "outputs": [
+    {
+     "finished": [
+      "q7"
+     ],
+     "output_lens": [
+      21
+     ],
+     "rids": [
+      "q7"
+     ],
+     "type": "BatchTokenIDOutput"
+    }
+   ],
+   "step": 51
+  },
+  {
+   "after": {
+    "available_tokens": 13,
+    "batch_is_full": false,
+    "chunked": null,
+    "evictable": 264,
+    "forward_ct": 53,
+    "new_token_ratio": 0.6759199999999994,
+    "processed_tokens": 764,
+    "protected": 35,
+    "req_pool_available": 2,
+    "running": [
+     {
+      "kv_allocated": 43,
+      "kv_committed": 43,
+      "output_len": 9,
+      "prefix_len": 35,
+      "rid": "q2"
+     }
+    ],
+    "waiting": []
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 13,
+     "batch_size": 1,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      2
+     ],
+     "rids": [
+      "q2"
+     ],
+     "seq_lens": [
+      43
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 52
+  },
+  {
+   "after": {
+    "available_tokens": 12,
+    "batch_is_full": false,
+    "chunked": null,
+    "evictable": 264,
+    "forward_ct": 54,
+    "new_token_ratio": 0.674916666666666,
+    "processed_tokens": 780,
+    "protected": 35,
+    "req_pool_available": 2,
+    "running": [
+     {
+      "kv_allocated": 44,
+      "kv_committed": 44,
+      "output_len": 10,
+      "prefix_len": 35,
+      "rid": "q2"
+     }
+    ],
+    "waiting": []
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 12,
+     "batch_size": 1,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      2
+     ],
+     "rids": [
+      "q2"
+     ],
+     "seq_lens": [
+      44
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 53
+  },
+  {
+   "after": {
+    "available_tokens": 11,
+    "batch_is_full": false,
+    "chunked": null,
+    "evictable": 264,
+    "forward_ct": 55,
+    "new_token_ratio": 0.6739133333333327,
+    "processed_tokens": 796,
+    "protected": 35,
+    "req_pool_available": 2,
+    "running": [
+     {
+      "kv_allocated": 45,
+      "kv_committed": 45,
+      "output_len": 11,
+      "prefix_len": 35,
+      "rid": "q2"
+     }
+    ],
+    "waiting": []
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 11,
+     "batch_size": 1,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      2
+     ],
+     "rids": [
+      "q2"
+     ],
+     "seq_lens": [
+      45
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 54
+  },
+  {
+   "after": {
+    "available_tokens": 10,
+    "batch_is_full": false,
+    "chunked": null,
+    "evictable": 264,
+    "forward_ct": 56,
+    "new_token_ratio": 0.6729099999999993,
+    "processed_tokens": 812,
+    "protected": 35,
+    "req_pool_available": 2,
+    "running": [
+     {
+      "kv_allocated": 46,
+      "kv_committed": 46,
+      "output_len": 12,
+      "prefix_len": 35,
+      "rid": "q2"
+     }
+    ],
+    "waiting": []
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 10,
+     "batch_size": 1,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      2
+     ],
+     "rids": [
+      "q2"
+     ],
+     "seq_lens": [
+      46
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 55
+  },
+  {
+   "after": {
+    "available_tokens": 9,
+    "batch_is_full": false,
+    "chunked": null,
+    "evictable": 264,
+    "forward_ct": 57,
+    "new_token_ratio": 0.671906666666666,
+    "processed_tokens": 828,
+    "protected": 35,
+    "req_pool_available": 2,
+    "running": [
+     {
+      "kv_allocated": 47,
+      "kv_committed": 47,
+      "output_len": 13,
+      "prefix_len": 35,
+      "rid": "q2"
+     }
+    ],
+    "waiting": []
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 9,
+     "batch_size": 1,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      2
+     ],
+     "rids": [
+      "q2"
+     ],
+     "seq_lens": [
+      47
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 56
+  },
+  {
+   "after": {
+    "available_tokens": 8,
+    "batch_is_full": false,
+    "chunked": null,
+    "evictable": 264,
+    "forward_ct": 58,
+    "new_token_ratio": 0.6709033333333326,
+    "processed_tokens": 844,
+    "protected": 35,
+    "req_pool_available": 2,
+    "running": [
+     {
+      "kv_allocated": 48,
+      "kv_committed": 48,
+      "output_len": 14,
+      "prefix_len": 35,
+      "rid": "q2"
+     }
+    ],
+    "waiting": []
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 8,
+     "batch_size": 1,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      2
+     ],
+     "rids": [
+      "q2"
+     ],
+     "seq_lens": [
+      48
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 57
+  },
+  {
+   "after": {
+    "available_tokens": 7,
+    "batch_is_full": false,
+    "chunked": null,
+    "evictable": 264,
+    "forward_ct": 59,
+    "new_token_ratio": 0.6698999999999993,
+    "processed_tokens": 860,
+    "protected": 35,
+    "req_pool_available": 2,
+    "running": [
+     {
+      "kv_allocated": 49,
+      "kv_committed": 49,
+      "output_len": 15,
+      "prefix_len": 35,
+      "rid": "q2"
+     }
+    ],
+    "waiting": []
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 7,
+     "batch_size": 1,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      2
+     ],
+     "rids": [
+      "q2"
+     ],
+     "seq_lens": [
+      49
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 58
+  },
+  {
+   "after": {
+    "available_tokens": 6,
+    "batch_is_full": false,
+    "chunked": null,
+    "evictable": 264,
+    "forward_ct": 60,
+    "new_token_ratio": 0.6688966666666659,
+    "processed_tokens": 876,
+    "protected": 35,
+    "req_pool_available": 2,
+    "running": [
+     {
+      "kv_allocated": 50,
+      "kv_committed": 50,
+      "output_len": 16,
+      "prefix_len": 35,
+      "rid": "q2"
+     }
+    ],
+    "waiting": []
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 6,
+     "batch_size": 1,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      2
+     ],
+     "rids": [
+      "q2"
+     ],
+     "seq_lens": [
+      50
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 59
+  },
+  {
+   "after": {
+    "available_tokens": 5,
+    "batch_is_full": false,
+    "chunked": null,
+    "evictable": 264,
+    "forward_ct": 61,
+    "new_token_ratio": 0.6678933333333326,
+    "processed_tokens": 892,
+    "protected": 35,
+    "req_pool_available": 2,
+    "running": [
+     {
+      "kv_allocated": 51,
+      "kv_committed": 51,
+      "output_len": 17,
+      "prefix_len": 35,
+      "rid": "q2"
+     }
+    ],
+    "waiting": []
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 5,
+     "batch_size": 1,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      2
+     ],
+     "rids": [
+      "q2"
+     ],
+     "seq_lens": [
+      51
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 60
+  },
+  {
+   "after": {
+    "available_tokens": 4,
+    "batch_is_full": false,
+    "chunked": null,
+    "evictable": 316,
+    "forward_ct": 62,
+    "new_token_ratio": 0.6668899999999992,
+    "processed_tokens": 908,
+    "protected": 0,
+    "req_pool_available": 3,
+    "running": [
+     {
+      "kv_allocated": 0,
+      "kv_committed": 52,
+      "output_len": 18,
+      "prefix_len": 35,
+      "rid": "q2"
+     }
+    ],
+    "waiting": []
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 4,
+     "batch_size": 1,
+     "chunked": "q4",
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2025,
+      "upstream_code": true
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      2
+     ],
+     "rids": [
+      "q2"
+     ],
+     "seq_lens": [
+      52
+     ]
+    }
+   ],
+   "outputs": [
+    {
+     "finished": [
+      "q2"
+     ],
+     "output_lens": [
+      18
+     ],
+     "rids": [
+      "q2"
+     ],
+     "type": "BatchTokenIDOutput"
+    }
+   ],
+   "step": 61
+  },
+  {
+   "arrivals": [],
+   "forwards": [],
+   "outputs": [],
+   "shutdown": true,
+   "step": 62
+  }
+ ],
+ "truncated": false
+}

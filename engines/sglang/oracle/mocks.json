@@ -1,5 +1,5 @@
 {
-  "version": "gpu-mock/7+a694dba4277b",
+  "version": "gpu-mock/8+8e13b6cf1897",
   "description": "Every replacement the oracle harness makes in SGLang's code, by kind (gpu, clock, transport, environment, platform, external-service, transcription), with the sites oracle/check_mocks.py finds, and in `covers` the platform reads, clock reads and thread starts each accounts for (oracle/gen_platform_reads.py lists them, FID-1). No entry is a transcription: the event loops run as released.",
   "mocks": [
     {
@@ -94,9 +94,12 @@
     {
       "symbol": "sglang.srt.managers.scheduler_components.ipc_channels.get_zmq_socket",
       "kind": "external-service",
-      "how": "the tokenizer, an outside service (design §7.3): the PULL socket SchedulerIpcChannels.create makes yields, on its first receive of each loop iteration, that iteration's scenario arrivals (TokenizedGenerateReqInput, through SGLang's msgpack codec), then zmq.Again; once every request has finished it yields a ShutdownReq, which SGLang's own Scheduler.handle_shutdown turns into gracefully_exit, ending the loop. A receive that ends an iteration with arrivals undelivered fails the run. The same factory makes the transport sockets of the next entry; any other socket type raises.",
+      "how": "the tokenizer, an outside service (design §7.3): the PULL socket SchedulerIpcChannels.create makes yields, on its first receive of each loop iteration, that iteration's scenario arrivals (TokenizedGenerateReqInput, through SGLang's msgpack codec), then zmq.Again; once every request has finished it yields a ShutdownReq, which SGLang's own Scheduler.handle_shutdown turns into gracefully_exit, ending the loop. A receive that ends an iteration with arrivals undelivered fails the run. oracle/run_sched.py sets each arrival's ignore_eos, priority and routing_key from its scenario request, as a client would. The same factory makes the transport sockets of the next entry; any other socket type raises.",
       "sites": [
-        "harness.py:ipc_channels.get_zmq_socket"
+        "harness.py:ipc_channels.get_zmq_socket",
+        "run_sched.py:req.sampling_params.ignore_eos",
+        "run_sched.py:req.priority",
+        "run_sched.py:req.routing_key"
       ]
     },
     {
@@ -136,7 +139,8 @@
       "kind": "environment",
       "how": "every SGLANG_* variable of the caller's environment is removed; SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python is set, so the unified radix cache runs its Python tree core (SGL-1; SGLang's default is Rust, python/sglang/srt/environ.py:741@297e54fd). The trace records the variables and the tree-core class, and the runner fails on any other core",
       "sites": [
-        "run_scheduler.py:os.environ[]"
+        "run_scheduler.py:os.environ[]",
+        "run_sched.py:os.environ[]"
       ]
     },
     {
