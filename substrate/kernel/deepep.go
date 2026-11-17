@@ -88,6 +88,14 @@ func (k *Kernel) liftDeepEP(c *resolve.Coefficients) {
 	}
 	variant := k.deepEPVariant()
 	if variant == "" {
+		// A dispatch kernel the registry measures nothing for (mori, nixl_ep, MoonEP, FlashInfer's
+		// all-to-alls, and any library the engine names) is priced as the generic routed
+		// all-to-all, and says so: it is never priced silently as another backend
+		// (blis-vllm#75).
+		if lib := k.low.MoE.Dispatch.Library; lib != "" {
+			k.assume("moe_a2a_"+lib, "generic routed all-to-all",
+				"the registry measures no "+lib+" dispatch kernel, so it is priced as NCCL's all-to-all over top_k bytes")
+		}
 		return
 	}
 	key := collKey{Op: model.OpAll2All, Group: price.GroupExpert}
