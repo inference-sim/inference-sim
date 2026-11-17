@@ -1513,6 +1513,8 @@ MOE_FAMILIES: dict[str, dict[str, Any]] = {
     # (qwen3_5.py:173).
     "Qwen3_5MoeForConditionalGeneration": {"router": "base", "shared": "gated",
                                            "shared_gate": True},
+    # Qwen4ExpSparseMoeBlock is Qwen3NextSparseMoeBlock (nvidia/model.py:253-261@v0.33.0).
+    "Qwen4ExpForConditionalGeneration": {"router": "base", "shared": "gated", "shared_gate": True},
     # Llama4MoE always builds one shared expert, a LlamaMLP at config.intermediate_size
     # (llama4.py:100-116, 125).
     "Llama4ForConditionalGeneration": {"router": "base", "shared": "gated",
@@ -5133,6 +5135,222 @@ def handler_qwen3_5_moe(cfg, raw, model):
     return kinds, stack
 
 
+def handler_qwen4_exp(cfg, raw, model):
+    """Qwen3.8-Flash-Next (Qwen4ExpForConditionalGeneration), as vLLM v0.33.0 builds it
+    (vllm/models/qwen4_exp/nvidia/model.py).
+
+    Every layer is a GatedResidual (hyper-connection) around its mixer and around its MoE
+    (nvidia/model.py:263-279, nvidia/hyperconnection.py): a grouped norm over the hc_count
+    streams, a low-rank down projection, an inject projection to hc_count, an up projection back
+    to the streams, and a combine. The mixer is Gated DeltaNet on three layers in four and QSA
+    (sparse GQA with an indexer) on the fourth. Layer ple_layer_ids[0] - 1 also runs the
+    per-layer embedding branch (model.py:210, ple_layer.py). The MoE is Qwen3Next's sparse block
+    with a shared expert and its gate. The MTP module is one QSA layer behind an embedding mix.
+
+    The graph states the checkpoint's tensors. Which of them vLLM packs (the down and inject
+    projections into one launch, Q, K, V and the indexer into one) is lowering, and the engine's.
+    Hyper-connection work on the residual is Elementwise traffic with its bytes stated, like
+    the mHC nodes of the DeepSeek handlers.
+    """
+    hidden = int(require(cfg, "hidden_size", model))
+    layers = int(require(cfg, "num_layers", model))
+    types = cfg.get("layer_types")
+    if not types or len(types) != layers:
+        raise DeriveError(f"{model}: layer_types must state one entry for each of {layers} layers")
+    unknown = set(types) - {"linear_attention", "full_attention"}
+    if unknown:
+        raise DeriveError(f"{model}: layer_types names {sorted(unknown)}, which this handler cannot price")
+    hc = int(require_key(cfg, "hc_count", model))
+    lowrank = int(require_key(cfg, "hc_lowrank", model))
+    act = DTYPE_WIDTHS[base_dtype(cfg, raw, model)]
+    base = base_dtype(cfg, raw, model)
+    quant = raw.get("quantization_config") or raw_quant(cfg, model)
+    fp8 = "fp8" in str(quant.get("quant_method", "")).lower()
+
+    nq = int(require(cfg, "num_q_heads", model))
+    nkv = int(require(cfg, "num_kv_heads", model))
+    head = int(require(cfg, "head_dim", model))
+    topk = int(require_key(cfg, "indexer_budget", model))
+    ratio = int(require_key(cfg, "indexer_compress_ratio", model))
+    i_heads = int(require_key(cfg, "indexer_n_heads", model))
+    i_kv = int(require_key(cfg, "indexer_kv_heads", model))
+    i_dim = int(require_key(cfg, "indexer_head_dim", model))
+    k_heads = int(require_key(cfg, "linear_num_key_heads", model))
+    v_heads = int(require_key(cfg, "linear_num_value_heads", model))
+    k_dim = int(require_key(cfg, "linear_key_head_dim", model))
+    v_dim = int(require_key(cfg, "linear_value_head_dim", model))
+    conv = int(require_key(cfg, "linear_conv_kernel_dim", model))
+    mtp = int(pick(cfg, "num_spec_tokens") or 0)
+    if cfg.get("output_gate_type") != "sigmoid":
+        raise DeriveError(f"{model}: output_gate_type {cfg.get('output_gate_type')!r}; the Q projection's "
+                          f"gate rows are priced for the sigmoid gate only")
+    streams = hc * hidden
+
+    def replicated(node):
+        # The hyper-connection projections are ReplicatedLinear / disable_tp, and under the
+        # engine's hyper-connection sequence parallelism each rank sees its shard of the tokens.
+        return dict(node, tp="replicated", under_sequence_parallel="token_sharded")
+
+    def traffic(role, nbytes):
+        return replicated(dict(norm(role), bytes_per_token=int(nbytes)))
+
+    def hc_mix(tag):
+        return [
+            traffic(f"{tag}_hc_norm_mix", (streams + hidden) * act),
+            replicated(gemm(f"{tag}_hc_down", lowrank, streams)),
+            replicated(gemm(f"{tag}_hc_inject", hc, streams)),
+            replicated(gemm(f"{tag}_hc_up", streams, lowrank)),
+        ]
+
+    def hc_combine(tag):
+        return [traffic(f"{tag}_hc_combine", (2 * streams + hidden) * act)]
+
+    def mixer_out(role, n, k):
+        # Under the engine's hyper-connection sequence parallelism the mixer's reduction is a
+        # reduce-scatter and its input an all-gather (model.py:323, 336), not an all-reduce.
+        return [gemm(role, n, k),
+                collective("AllReduce", role, EMIT_TENSOR_PARALLEL_UNLESS_SEQUENCE_PARALLEL),
+                collective("ReduceScatter", role, EMIT_SEQUENCE_PARALLEL)]
+
+    key_dim, value_dim = k_heads * k_dim, v_heads * v_dim
+    gdn = [
+        dict(gemm("recurrent_in_proj_qkvz", 2 * key_dim + 2 * value_dim, hidden), tp="column"),
+        dict(gemm("recurrent_in_proj_ba", 2 * v_heads, hidden), tp="column"),
+        {"op": "RecurrentUpdate", "recurrent_kind": "gdn", "n_heads": v_heads, "state_size": k_dim,
+         "conv_kernel": conv, "intermediate_size": 2 * key_dim + value_dim,
+         "state_dtype": DTYPES.get(str(cfg.get("mamba_ssm_dtype", "float32")).lower(), "fp32")},
+        *mixer_out("mixer_out", hidden, value_dim),
+    ]
+
+    # QSA: Q with its output gate, K, V (Qwen4ExpQSAQKVIndexerLinear packs them with the
+    # indexer's, qsa.py:67-135), the indexer's Q/K projection (replicated), the indexer's
+    # scorer over its compressed key cache, and sparse attention over the selected tokens.
+    kv_entry = 2 * nkv * head * act
+    ring_rows = -(-(ratio + mtp) // ratio) * ratio
+    ring_entry = (-(-i_dim // 4) * 4 + 3 * 4) * 2       # bf16 key + exact int64 mrope positions
+    qsa = [
+        dict(gemm("qkv_proj", (2 * nq + 2 * nkv) * head, hidden), tp="column"),
+        dict(gemm("indexer_qk_proj", (i_heads + i_kv) * i_dim, hidden), tp="replicated"),
+        dict(norm("qk_norm_rope"), bytes_per_token=2 * (nq + nkv) * head * act),
+        {"op": "Attention", "role": "block_index_scores", "holds_engine_kv": False, "kind": "sparse_gqa",
+         "n_q": i_heads, "n_kv": i_kv, "d_h": i_dim, "compress_ratio": ratio,
+         "caches": [
+             {"name": "index", "kind": "index", "owned": True, "bytes_per_entry": i_dim * act,
+              "tokens_per_entry": ratio},
+             {"name": "key_ring", "kind": "state", "owned": True, "bytes_per_entry": ring_entry,
+              "entries": ring_rows},
+         ]},
+        {"op": "Attention", "holds_engine_kv": True, "kind": "sparse_gqa", "n_q": nq, "n_kv": nkv,
+         "d_h": head, "index_topk": topk,
+         "caches": [{"name": "kv", "kind": "kv", "owned": True, "bytes_per_entry": kv_entry,
+                     "bytes_by_cache_dtype": {"fp8": kv_entry // 2, "fp8_e4m3": kv_entry // 2}}]},
+        *mixer_out("o_proj", hidden, nq * head),
+    ]
+
+    # The per-layer embedding branch (ple_layer.py:81-224): an n-gram embedding whose table sits
+    # in pinned host memory by default (config/engram.py: cpu_offload True), a projection of its
+    # output to the streams and the hidden size, grouped norms, and a dilated depthwise
+    # convolution with per-request state.
+    ple_ids = [int(i) - 1 for i in cfg.get("ple_layer_ids") or []]
+    ple_nodes: list[dict[str, Any]] = []
+    if ple_ids:
+        if len(ple_ids) != 1:
+            raise DeriveError(f"{model}: {len(ple_ids)} per-layer embedding layers; this handler "
+                              f"prices one")
+        shards = int(require_key(cfg, "split_ngram_parts", model))
+        dilation = int(require_key(cfg, "ngram_size", model))
+        embed_dim = int(require_key(cfg, "ple_embed_dim", model))
+        ple_conv = int(require_key(cfg, "ple_conv_kernel_size", model))
+        rows_per_shard, row_width, stored = ngram_shard_shape(model, ple_ids[0], shards)
+        ngram_heads = embed_dim // row_width
+        ple_nodes = [
+            {"op": "Gather", "role": "ple_ngram_embedding", "rows": shards * rows_per_shard,
+             "row_bytes": row_width * stored, "rows_per_token": ngram_heads,
+             "out_bytes_per_token": ngram_heads * row_width * act, "residency": "host",
+             "residency_control": "engram_cpu_offload"},
+            replicated(gemm("ple_kv_proj", streams + hidden, embed_dim)),
+            traffic("ple_norms", 3 * streams * act * 2),
+            {"op": "RecurrentUpdate", "recurrent_kind": "short_conv", "role": "ple_conv",
+             "conv_kernel": ple_conv, "conv_dilation": dilation, "intermediate_size": streams,
+             "state_dtype": base},
+            traffic("ple_conv_io", 2 * streams * act * 2),
+            traffic("ple_inject", 3 * streams * act),
+        ]
+
+    def moe():
+        return [*moe_block(cfg, model, hidden, raw, family="Qwen4ExpForConditionalGeneration",
+                           shared_width=base if fp8 else None),
+                collective("All2All", "moe_dispatch_combine", EMIT_EXPERT_PARALLEL)]
+
+    def layer(mixer, extra=()):
+        nodes = [*extra, *hc_mix("attn"), collective("AllGather", "attn_in", EMIT_SEQUENCE_PARALLEL),
+                 *mixer, *hc_combine("attn"), *hc_mix("mlp"),
+                 collective("AllGather", "mlp_in", EMIT_SEQUENCE_PARALLEL), *moe(),
+                 collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL_UNLESS_SEQUENCE_PARALLEL),
+                 collective("ReduceScatter", "mlp_out", EMIT_SEQUENCE_PARALLEL), *hc_combine("mlp")]
+        return nodes
+
+    kinds_nodes = {"gdn_moe": layer(gdn), "attn_moe": layer(qsa)}
+    sequence = []
+    for i, t in enumerate(types):
+        if i in ple_ids:
+            if t != "linear_attention":
+                raise DeriveError(f"{model}: the per-layer embedding layer {i} is {t}; this handler "
+                                  f"prices it on a Gated DeltaNet layer")
+            kinds_nodes["gdn_moe_ple"] = layer(gdn, extra=ple_nodes)
+            sequence.append("gdn_moe_ple")
+        else:
+            sequence.append("attn_moe" if t == "full_attention" else "gdn_moe")
+    final_hc = [traffic("final_hc_norm_mix", (streams + hidden) * act),
+                replicated(gemm("final_hc_down", lowrank, streams)),
+                replicated(gemm("final_hc_up", streams, lowrank))]
+    if mtp:
+        # The MTP module (nvidia/mtp.py:172-380): the embedding and the hidden state are normed and
+        # projected (fc_hidden is shared across the hc streams), then one QSA layer and a final mix.
+        draft = [traffic("mtp_pre_fc_norm", (hidden + streams) * act),
+                 gemm("mtp_fc_embedding", hidden, hidden), gemm("mtp_fc_hidden", hidden, hidden),
+                 *layer(qsa), *[dict(n, role="mtp_" + n["role"]) for n in final_hc]]
+        kinds_nodes[DRAFT_KIND_ID] = draft
+    if fp8:
+        # Only the routed experts are fp8 in the checkpoint (modules_to_not_convert names the
+        # rest), so every other linear is stored at the base width.
+        for nodes in kinds_nodes.values():
+            for n in nodes:
+                if n["op"] == "GEMM":
+                    n.setdefault("weight_dtype", base)
+        for n in final_hc:
+            if n["op"] == "GEMM":
+                n.setdefault("weight_dtype", base)
+    kinds = [{"id": k, "nodes": v, "edges": chain(v)} for k, v in kinds_nodes.items()]
+    lm_head = gemm("lm_head", int(require(cfg, "vocab_size", model)), hidden)
+    if fp8:
+        lm_head["weight_dtype"] = base
+    extras = {"head": [*final_hc, norm("final_norm"), lm_head]}
+    return kinds, compress(sequence), extras
+
+
+def ngram_shard_shape(model: str, layer: int, shards: int) -> tuple[int, int, int]:
+    """Rows, width and stored bytes per element of one shard of the per-layer n-gram embedding,
+    from the checkpoint's header (an FP8 checkpoint stores the table at one byte).
+
+    The table is split into split_ngram_parts shards of equal shape; the row count is a padded
+    prime-modulus figure vLLM computes at load, so it is read from the tensor, not derived."""
+    if _HEADERS is None:
+        raise DeriveError(f"{model}: the n-gram embedding's row count is in the shard headers, "
+                          f"and none were supplied")
+    name = f"model.language_model.layers.{layer}.ple.ple_embedding.ngram_embedding.shard_0.weight"
+    t = _HEADERS.get(name)
+    if t is None or len(t.get("shape", [])) != 2:
+        raise DeriveError(f"{model}: no header for {name}")
+    last = f"model.language_model.layers.{layer}.ple.ple_embedding.ngram_embedding.shard_{shards - 1}.weight"
+    if _HEADERS.get(last, {}).get("shape") != t["shape"]:
+        raise DeriveError(f"{model}: the n-gram embedding has fewer than {shards} equal shards")
+    stored = {"BF16": 2, "F16": 2, "F8_E4M3": 1}.get(str(t.get("dtype")))
+    if stored is None:
+        raise DeriveError(f"{model}: the n-gram embedding is stored as {t.get('dtype')}, which has no recorded width")
+    return int(t["shape"][0]), int(t["shape"][1]), stored
+
+
 def handler_nemotron_h(cfg, raw, model):
     """NemotronH: a declared per-layer vector over state-space, MoE and attention
     layers, with no repeating unit and -- on one variant -- no stated layer count.
@@ -6523,6 +6741,7 @@ HANDLERS = {
     "MiniMaxM3SparseForConditionalGeneration": handler_minimax_m3,
     "NemotronHForCausalLM": handler_nemotron_h,
     "Qwen3_5MoeForConditionalGeneration": handler_qwen3_5_moe,
+    "Qwen4ExpForConditionalGeneration": handler_qwen4_exp,
     "KimiK3ForConditionalGeneration": handler_kimi_k3,
     # The same text decoder plus a DSA indexer on the latent layers (dsa_config); its
     # architecture is routed to vllm.models.kimi_k3 in vLLM v0.34.0rc0 (registry.py:489-492).
@@ -6801,6 +7020,8 @@ SPEC_METHODS = {
     # fallback's.
     "DeepseekV4ForCausalLM": "mtp",
     "Qwen3_5MoeForConditionalGeneration": "qwen3_5_mtp",
+    # config/speculative.py:915-932@v0.33.0 rewrites model_type qwen4_exp to qwen4_exp_mtp.
+    "Qwen4ExpForConditionalGeneration": "qwen4_exp_mtp",
     # vLLM rewrites model_type glm5_next to glm5_next_mtp and reads n_predict from
     # get_text_config().num_nextn_predict_layers, architectures ["Glm5NextMTPModel"]
     # (config/speculative.py:1060-1065 on vllm-project/vllm main, with
