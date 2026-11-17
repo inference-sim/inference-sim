@@ -129,7 +129,10 @@ const (
 // given to a run that does not speculate is warned about and ignored.
 func resolveAcceptance(cmd *cobra.Command, k int, method string) (build.Acceptance, bool) {
 	fl := cmd.Flags()
-	a, speculating, err := build.ResolveAcceptance(build.AcceptanceInputs{
+	if err := checkRealisationFlag(fl); err != nil {
+		logrus.Fatalf("%v", err)
+	}
+	a, speculating, err := build.ResolveAcceptance(poolAcceptanceInputs(build.AcceptanceInputs{
 		Scenario: kernelScenario, Shape: scenarioShape, Data: mustRunData(), Hardware: gpu,
 		Workload: workloadAcceptance,
 		Flags: build.AcceptanceFlags{
@@ -138,8 +141,9 @@ func resolveAcceptance(cmd *cobra.Command, k int, method string) (build.Acceptan
 			Thinking: speculativeThinking, Category: speculativeCategory, FallbackCategory: speculativeFallbackCategory,
 			ThinkingSet: fl.Changed(build.AcceptanceThinkingFlag), CategorySet: fl.Changed(build.AcceptanceCategoryFlag),
 			FallbackSet: fl.Changed(build.AcceptanceFallbackFlag),
+			Realisation: acceptance.Realisation(speculativeRealisation),
 		},
-	}, k, method)
+	}), k, method)
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
@@ -152,6 +156,27 @@ func resolveAcceptance(cmd *cobra.Command, k int, method string) (build.Acceptan
 	// resolved here. The engines are built after this (engineDriverFactory).
 	setAcceptanceOverrides(fl, k)
 	return a, speculating
+}
+
+// poolAcceptanceInputs is in with the first pool's part of the lookup's key, from the speculative
+// block of the engine it opened (none when no pool is open): the drafter it names
+// (speculative_config.model, the catalog drafter; inference-sim/inference-sim#2142), its draft
+// sampler and verifier as vLLM resolves them, defaults included, the engine "vllm" and vLLM's own
+// defaults (build.AcceptanceInputs.VLLMInputs). A pool that names no drafter drafts with the
+// target's own speculator.
+func poolAcceptanceInputs(in build.AcceptanceInputs) build.AcceptanceInputs {
+	if kernelOpened == nil {
+		return in.VLLMInputs(nil)
+	}
+	e, err := kernelOpened.Engine()
+	if err != nil {
+		logrus.Fatalf("reading the first pool's speculative settings: %v", err)
+	}
+	in = in.VLLMInputs(e.Speculative)
+	if e.Speculative != nil {
+		in.Drafter = e.Speculative.DraftModel
+	}
+	return in
 }
 
 // The P/D pools (build.OpenPools and its pricing), as the run uses them.
@@ -604,6 +629,9 @@ func acceptanceOverridesOf(fl *pflag.FlagSet, k int) kernelmodel.AcceptanceOverr
 	case fl.Changed(build.AcceptanceLengthFlag):
 		l := speculativeAcceptanceLength
 		cli = &acceptance.Value{NumSpecTokens: k, AcceptanceLength: &l, Source: "--" + build.AcceptanceLengthFlag}
+	}
+	if cli != nil {
+		cli.Realisation = acceptance.Realisation(speculativeRealisation)
 	}
 	var terms *acceptance.Workload
 	if workloadAcceptance != nil || fl.Changed(build.AcceptanceThinkingFlag) || fl.Changed(build.AcceptanceCategoryFlag) {
