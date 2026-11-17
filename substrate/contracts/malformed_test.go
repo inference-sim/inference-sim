@@ -17,6 +17,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/evaluation"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
+	"github.com/inference-sim/blis-substrate/contracts/spec/kernelimpls"
 	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/contracts/spec/pointrecord"
@@ -68,6 +69,7 @@ func TestEveryLoaderRefusesTheMalformedSet(t *testing.T) {
 		{"LoadResult (YAML)", ex("result.json"), &result.Result{}, func(p string) error { return ignore(LoadResult(p)) }},
 		{"LoadWorkloadSpec", ex("workload-spec.yaml"), &workload.Spec{}, func(p string) error { return ignore(LoadWorkloadSpec(p)) }},
 		{"LoadPointRecord", ex("point-record.json"), &pointrecord.Record{}, func(p string) error { return ignore(LoadPointRecord(p)) }},
+		{"LoadKernelImplTable", ex("kernel-impl-table.json"), &kernelimpls.Table{}, func(p string) error { return ignore(LoadKernelImplTable(p)) }},
 	}
 	covered := map[string]bool{"LoadBundle": true} // LoadBundle's two documents are the scenario's and the deployment's
 	for _, l := range loaders {
@@ -176,6 +178,7 @@ func TestEveryLoaderReadsEveryFieldItsExampleStates(t *testing.T) {
 		{"LoadResult", ex("result.json"), func(p string) (any, error) { return LoadResult(p) }},
 		{"LoadWorkloadSpec", ex("workload-spec.yaml"), func(p string) (any, error) { return LoadWorkloadSpec(p) }},
 		{"LoadPointRecord", ex("point-record.json"), func(p string) (any, error) { return LoadPointRecord(p) }},
+		{"LoadKernelImplTable", ex("kernel-impl-table.json"), func(p string) (any, error) { return LoadKernelImplTable(p) }},
 	}
 	for _, l := range loaders {
 		t.Run(l.name, func(t *testing.T) {
