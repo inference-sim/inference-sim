@@ -992,6 +992,9 @@ var runCmd = &cobra.Command{
 		if unservedHook != nil {
 			cs.SetUnservedHook(unservedHook)
 		}
+		if sessionMgr != nil {
+			cs.SetPlannedRounds(sessionMgr.PlannedUnissued)
+		}
 		router := resolveRouterInputs()
 		gw := newGateway(router, model, adapterIDsOf(loraCfg)...)
 		cs.SetGateway(gw)

@@ -1165,3 +1165,57 @@ clients:
 		t.Errorf("INV-13: ttft_mean_ms is %v in the replay, %v in the run", b, a)
 	}
 }
+
+// SIM-8 (#2093) and #1973: a session round planned and never issued has a not_started row, in
+// the session's own index; a scheduled request states the prompt tokens its engine computed
+// itself, which are the prompt less the cached tokens.
+func TestResult_UnissuedSessionRoundsHaveRowsAndScheduledRequestsStateComputedTokens(t *testing.T) {
+	dir := t.TempDir()
+	spec := filepath.Join(dir, "spec.yaml")
+	if err := os.WriteFile(spec, []byte(`version: "2"
+seed: 5
+category: reasoning
+aggregate_rate: 40
+num_requests: 40
+clients:
+  - id: r
+    rate_fraction: 1.0
+    arrival: {process: poisson}
+    prefix_group: sys
+    prefix_length: 256
+    input_distribution: {type: gaussian, params: {mean: 200, std_dev: 20, min: 100, max: 300}}
+    output_distribution: {type: gaussian, params: {mean: 40, std_dev: 5, min: 20, max: 60}}
+    reasoning:
+      multi_turn: {max_rounds: 4, think_time_us: 400000, context_growth: accumulate}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, stderr, err := runKernelCLI(t, "run", "--scenario", kernelTestScenario, "--seed", "5",
+		"--workload-spec", spec, "--horizon", "2000000")
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+	}
+	res := parseResult(t, out)
+	notStarted, scheduled := 0, 0
+	for _, row := range res.RequestRows {
+		if row.Fate == result.FateNotStarted && row.SessionID != "" && row.RoundIndex > 0 {
+			notStarted++
+			if row.ArrivalUs <= 0 {
+				t.Errorf("%s: a planned round states arrival_us %d, want the plan's arrival after its session's last issued round", row.ID, row.ArrivalUs)
+			}
+		}
+		if row.SchedulingDelayUs != nil {
+			scheduled++
+			if want := row.PromptTokens - row.CachedLocalTokens - row.CachedExternalTokens; row.ComputedTokens != want {
+				t.Errorf("%s: computed_tokens %d, want the prompt %d less cached %d+%d", row.ID,
+					row.ComputedTokens, row.PromptTokens, row.CachedLocalTokens, row.CachedExternalTokens)
+			}
+		}
+	}
+	if notStarted == 0 {
+		t.Errorf("no row for an unissued session round: the horizon cuts sessions that planned 4 rounds")
+	}
+	if scheduled == 0 {
+		t.Errorf("non-vacuity: no request was scheduled")
+	}
+}

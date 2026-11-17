@@ -553,6 +553,12 @@ func (i *InstanceSimulator) SetCallbacks(onFirstToken func(*sim.Request, int64),
 	i.drv.OnRequestDone = onRequestDone
 }
 
+// SetRunStateHook installs the callback that hears each time the engine starts running a
+// request or preempts it back to its queue (sim.EngineDriver.OnRunState).
+func (i *InstanceSimulator) SetRunStateHook(h func(req *sim.Request, running bool)) {
+	i.drv.OnRunState = h
+}
+
 // ForgetRequest drops a request's per-request record from the engine's metrics, for a request
 // drained away to another instance (the destination re-registers it).
 func (i *InstanceSimulator) ForgetRequest(id string) {
