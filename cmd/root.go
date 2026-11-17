@@ -988,7 +988,6 @@ var runCmd = &cobra.Command{
 			InstanceLifecycle:              bundleInstanceLifecycle,
 			WeightLoadTime:                 weightLoader(kernelOpened, poolChips),
 			ClusterAutoscaler:              clusterAutoscalerOf(bundle),
-			LoRAPlacement:                  loraPlacementOf(bundle, adapterRegistryOf(loraCfg)),
 			NewEngine: withPoolChips(engineDriverFactory(scenarioEngine, simulationHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
 				poolChips, scenarioEngine, simulationHorizon, seed, ec.Speculative.Acceptance),
 		}

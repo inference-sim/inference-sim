@@ -66,8 +66,6 @@ const (
 	senderKVConnector
 	// senderAutoscaler is the autoscaler: its ticks and actuations.
 	senderAutoscaler
-	// senderLoRAPlacement is the LoRA placement loop: its periodic ticks.
-	senderLoRAPlacement
 	// senderFirstInstance is the sender of the instance at index 0; instance i sends as
 	// senderFirstInstance + i, in the order the cluster loop breaks instance ties.
 	senderFirstInstance senderID = 1 << 20

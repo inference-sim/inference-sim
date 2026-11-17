@@ -21,10 +21,6 @@ type DeploymentConfig struct {
 	// value is none: no node is ever provisioned beyond the pools' initial nodes.
 	ClusterAutoscaler ClusterAutoscalerConfig
 
-	// LoRAPlacement configures the LoRA placement loop (lora_placement.go): which adapters are
-	// loaded on which instances, ahead of traffic and periodically. The zero value places nothing.
-	LoRAPlacement LoRAPlacementConfig
-
 	// NewEngine builds an instance's engine through blis-schemas' engine.Engine contract, for a
 	// release the compatibility engine does not model (engine_version 0.33.0, GOAL.md); nil
 	// builds the compatibility engine (sim.NewEngine). It receives the instance's index in the
