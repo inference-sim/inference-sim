@@ -86,10 +86,11 @@ type MoEPlan struct {
 	Fused bool
 	// Experts is the kernel the engine runs the routed experts' grouped GEMMs with, as its MoE
 	// backend selection resolves it (a stated backend, or the engine's own choice for the weight
-	// format, part and parallelism), named by its kernel library (ExpertsTriton,
-	// ExpertsFlashInferCutlass). The cost model prices the routed term on the ramp measured for
-	// that kernel where the registry carries one. The zero value is not stated, and the routed
-	// term is then priced by weight format alone.
+	// format, part and parallelism), with the build it runs where the engine's kernel table
+	// identifies it (CodeHash, Toolkit). The cost model prices the routed term on the ramp
+	// measured for that kernel (ExpertsTriton, ExpertsFlashInferCutlass name the kernels) where the
+	// registry carries one, and binds the coefficients to the build (VAL-8). The zero value is not
+	// stated, and the routed term is then priced by weight format alone.
 	Experts KernelImpl
 	// RedundantExperts is how many extra copies of experts the engine places beside the model's
 	// own to balance the load; 0 is none.
@@ -128,12 +129,14 @@ var (
 	DispatchDeepEPV2             = KernelImpl{Library: "deepep", Variant: "v2"}
 )
 
-// The grouped-expert kernels a cost model prices by name (MoEPlan.Experts): Triton's fused
-// experts, and FlashInfer's CUTLASS experts. Any other experts kernel is named by its library and
-// variant, and priced by its weight format.
+// The grouped-expert kernels a cost model prices by name (MoEPlan.Experts), by the kernel's own
+// name: Triton's fused grouped GEMM (fused_moe_kernel) and FlashInfer's CUTLASS fused MoE. An
+// engine states the build it runs in full (library, code hash, toolkit), and the cost model binds a
+// coefficient to that build (design VAL-8); these name the kernels its ramps are measured for. Any
+// other experts kernel is priced by its weight format.
 var (
-	ExpertsTriton            = KernelImpl{Library: "triton", Variant: "fused_experts"}
-	ExpertsFlashInferCutlass = KernelImpl{Library: "flashinfer", Variant: "cutlass_experts"}
+	ExpertsTriton            = KernelImpl{Variant: "fused_moe_kernel"}
+	ExpertsFlashInferCutlass = KernelImpl{Library: "flashinfer", Variant: "cutlass_fused_moe"}
 )
 
 // CollectivePlan says which collectives a layer runs, where the engine decides it.

@@ -81,9 +81,10 @@ jobs:
       # curves from (VENDORED.md), and INFERENCEX_SHA in emit_acceptance_profiles.py.
       INFERENCEX_SHA: 9fa76586ed1ef66caadc6b95a9b1448acde94c6b
       # The engine release's kernel-implementation table the trtllm-gen lane is keyed by
-      # (emit_attention_trtllm_gen.py). TEMPORARY: the pushed head of inference-sim/blis-vllm#154,
+      # (emit_attention_trtllm_gen.py, fit_hopper_fp8_grouped_ramp.py). TEMPORARY: the pushed head of
+      # inference-sim/blis-vllm#217 (on #154), whose table adds the moe.grouped_gemm builds,
       # until a blis-vllm release publishes the table.
-      BLIS_VLLM_SHA: e7855679267cac391618dc77a640e3c18b7a4e65
+      BLIS_VLLM_SHA: 63fbe3b7103f91404f6ccaeb8d681109c8dc52f5
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -203,7 +203,7 @@ func TestEachResolvedPlanSettingMovesAPrice(t *testing.T) {
 			l.Plan.MoE.Dispatch = plan.DispatchDeepEPLowLatency
 		}},
 		{"MoEPlan.Experts", hopperFP8, nil, func(l *plan.Lowered) {
-			l.Plan.MoE.Experts = plan.ExpertsTriton
+			l.Plan.MoE.Experts = pinnedBuild(t, d, "gemm_floor_fp8_grouped_triton", "h200")
 		}},
 		{"MoEPlan.Fused", muse, nil, func(l *plan.Lowered) { l.Plan.MoE.Fused = true }},
 		{"MoEPlan.Routing", routed, nil, func(l *plan.Lowered) { l.Plan.MoE.Routing = plan.RoutingSeparate }},
