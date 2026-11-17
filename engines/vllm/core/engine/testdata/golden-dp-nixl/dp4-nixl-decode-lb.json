@@ -44,7 +44,7 @@
   }
  },
  "provenance": {
-  "blis_vllm_commit": "282e693fe0506daa61d385f4a4b558e9f1a6f412",
+  "blis_vllm_commit": "2904a93495adb6efee1ddaefb980cbc1730211f9",
   "engine": {
    "connector": "NixlConnector",
    "data_parallel_size": 4,

@@ -17,7 +17,7 @@
   }
  },
  "provenance": {
-  "blis_vllm_commit": "282e693fe0506daa61d385f4a4b558e9f1a6f412",
+  "blis_vllm_commit": "2904a93495adb6efee1ddaefb980cbc1730211f9",
   "cpu_chunks": 24,
   "engine": {
    "async_scheduling": true,
@@ -63,7 +63,7 @@
    "oracle/mocks.json": "40d28be778dd8f35bbb978c4f2761f92f7c370998e773ae08400409bd15d723c",
    "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
    "oracle/run_enginecore.py": "bb562e23d0ae394ca5d3a099a6083bec69ee7aff5915f35995277a07609a7c0f",
-   "oracle/run_offloading.py": "2d4427698e2b4ec2490409923517326179fb940c013e772de9acb396adf0809a",
+   "oracle/run_offloading.py": "5d9ce700b38d454a921f0ef248678157a2f8d2e80a5d7645d50c3fb04e74dcf4",
    "oracle/run_scheduler.py": "1239a1d64f057fcb543789762859ea33211627e3f2b66b46087ed9ee936222f6",
    "oracle/scenarios/offloading/offloading-armd-pp2-tp4-dspark7.json": "b30d19fcd2dedcfa72655c894afa89fec00c2150950358dbfd8a272ac77695fb"
   },
