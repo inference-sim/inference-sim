@@ -210,7 +210,7 @@ func TestATransferTheEngineReturnsReachesADemand(t *testing.T) {
 	f, _ := enginetest.NewFIFO(enginetest.FIFOConfig{MaxRunning: 1, TokenBudget: 1})
 	for i, m := range e.moves {
 		want := plan.Transfer{Tokens: 4, Kind: plan.TransferFromTier, Tier: enginetest.FIFOTierDevice}
-		if m != want {
+		if !m.Equal(want) {
 			t.Errorf("TransferDemand received %+v, want the engine's Move %+v", m, want)
 		}
 		if got := e.plans[i]; len(got.Tiers) != 1 || got.Tiers[0] != f.Plan().Tiers[0] {
@@ -333,5 +333,72 @@ func TestTheReferenceSplitsAdmissionIntoServiceAndDelay(t *testing.T) {
 	}
 	if d.Service != 350*time.Microsecond || d.Delay != 40*time.Millisecond {
 		t.Fatalf("got %+v", d)
+	}
+}
+
+// A move that every node of a pool makes is priced over every node's links, and a report of one
+// endpoint for such a pool is priced too low. Two nodes of a prefill pool each hold half the KV
+// and both land on the decode node's ingress: the correct report loads it twice.
+func TestNodeAndGroupMovesChangeTheReferenceDemand(t *testing.T) {
+	r := reference()
+	p := plan.PoolPlan{KV: []plan.KVGroup{
+		{BytesPerPage: 4096, TokensPerPage: 16},
+		{BytesPerPage: 1024, TokensPerPage: 16, Window: 32},
+	}}
+	n0, n1 := plan.Endpoint{Node: 0}, plan.Endpoint{Node: 1}
+	dest := plan.Endpoint{Node: 0}
+	oneEndpoint := plan.Transfer{Tokens: 64, Kind: plan.TransferPeer, From: n0, To: dest}
+	everyNode := oneEndpoint
+	everyNode.Nodes = &plan.NodeMoves{Moves: []plan.NodeMove{{From: n0, To: dest}, {From: n1, To: dest}}}
+
+	bad, err := r.TransferDemand(p, oneEndpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	good, err := r.TransferDemand(p, everyNode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := good.Check(); err != nil {
+		t.Fatalf("the demand of a two-node move is malformed: %v", err)
+	}
+	if good.AloneTime() <= bad.AloneTime() {
+		t.Errorf("a pool of two nodes landing on one ingress takes %v, the one-endpoint report %v: the report prices it too low",
+			good.AloneTime(), bad.AloneTime())
+	}
+	var ingress int
+	for _, l := range good.Links {
+		if l.Link == "ref/ingress/0" {
+			ingress = l.Streams
+		}
+	}
+	if ingress != 2 {
+		t.Errorf("the shared ingress carries %d streams, want 2: %+v", ingress, good.Links)
+	}
+	// Nodes that land on nodes of their own share nothing, so the move takes as long as one.
+	apart := everyNode
+	apart.Nodes = &plan.NodeMoves{Moves: []plan.NodeMove{{From: n0, To: n0}, {From: n1, To: n1}}}
+	d, err := r.TransferDemand(p, apart)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.AloneTime() != bad.AloneTime() {
+		t.Errorf("two disjoint node moves take %v, one takes %v", d.AloneTime(), bad.AloneTime())
+	}
+
+	// A hybrid model moves a window's tokens in the window group and all of them in the full group.
+	flat := plan.Transfer{Tokens: 64, Kind: plan.TransferPeer}
+	grouped := flat
+	grouped.Groups = &plan.GroupMoves{Moves: []plan.GroupMove{{Group: 0, Tokens: 64}, {Group: 1, Tokens: 32}}}
+	df, _ := r.TransferDemand(p, flat)
+	dg, err := r.TransferDemand(p, grouped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := int64(4*4096 + 2*1024); dg.Bytes != want {
+		t.Errorf("a two-group move is %d bytes, want %d (4 full pages and 2 window pages)", dg.Bytes, want)
+	}
+	if df.Bytes != 64*4096 {
+		t.Errorf("a move that states no groups is %d bytes, want 64 tokens of the reference's bytes per token", df.Bytes)
 	}
 }

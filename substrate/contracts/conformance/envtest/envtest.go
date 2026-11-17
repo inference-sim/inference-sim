@@ -123,7 +123,12 @@ func (r *Reference) Price(p plan.PoolPlan, step plan.StepShape) (kernel.StepEsti
 	return kernel.StepEstimate{Overlap: d, NoOverlap: d, Bottleneck: kernel.ResourceSM}, nil
 }
 
-// TransferDemand implements env.Environment.
+// TransferDemand implements env.Environment. A move with one endpoint crosses the one link "ref". A
+// move that every node makes (Transfer.Nodes) names a link for each end of each entry: a peer pull
+// leaves "ref/egress/<node>" and lands on "ref/ingress/<node>", and an offload copy uses
+// "ref/tier/<node>". The entries are priced one by one and added with kernel.Concurrent, so two
+// nodes that land on one node's ingress load it twice. A move that states Groups has the bytes of
+// those groups' pages (PoolPlan.GroupMoveBytes).
 func (r *Reference) TransferDemand(p plan.PoolPlan, t plan.Transfer) (kernel.TransferDemand, error) {
 	if err := p.CheckTransfer(t); err != nil {
 		return kernel.TransferDemand{}, err
@@ -136,10 +141,33 @@ func (r *Reference) TransferDemand(p plan.PoolPlan, t plan.Transfer) (kernel.Tra
 	if r.BytesPerSecond <= 0 {
 		return kernel.TransferDemand{}, fmt.Errorf("envtest: no link rate")
 	}
-	return kernel.TransferDemand{
-		Bytes: int64(t.Tokens) * int64(r.BytesPerToken),
-		Links: []kernel.LinkUse{{Link: "ref", BytesPerSecond: r.BytesPerSecond}},
-	}, nil
+	bytes := int64(t.Tokens) * int64(r.BytesPerToken)
+	if b, ok := p.GroupMoveBytes(t); ok {
+		bytes = int64(b)
+	}
+	one := func(from, to plan.Endpoint) kernel.TransferDemand {
+		links := []kernel.LinkUse{{Link: "ref", BytesPerSecond: r.BytesPerSecond}}
+		if len(t.NodeList()) == 0 {
+			return kernel.TransferDemand{Bytes: bytes, Links: links}
+		}
+		if t.Kind == plan.TransferPeer {
+			links = []kernel.LinkUse{
+				{Link: kernel.LinkID(fmt.Sprintf("ref/egress/%d", from.Node)), BytesPerSecond: r.BytesPerSecond},
+				{Link: kernel.LinkID(fmt.Sprintf("ref/ingress/%d", to.Node)), BytesPerSecond: r.BytesPerSecond},
+			}
+		} else {
+			links = []kernel.LinkUse{{Link: kernel.LinkID(fmt.Sprintf("ref/tier/%d", from.Node)), BytesPerSecond: r.BytesPerSecond}}
+		}
+		return kernel.TransferDemand{Bytes: bytes, Links: links}
+	}
+	if len(t.NodeList()) == 0 {
+		return one(t.From, t.To), nil
+	}
+	ds := make([]kernel.TransferDemand, len(t.NodeList()))
+	for i, n := range t.NodeList() {
+		ds[i] = one(n.From, n.To)
+	}
+	return kernel.Concurrent(ds...), nil
 }
 
 // HostDemand implements env.Environment.

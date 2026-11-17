@@ -151,3 +151,45 @@ func TestStreamsDivideALinkAmongTheTransfersOwnFlows(t *testing.T) {
 		t.Errorf("a negative stream count: %v", err)
 	}
 }
+
+// Moves that run together share the links they name: two nodes behind one uplink load it twice,
+// and a node's own NIC carries only its own flow. The move ends with its slowest entry.
+func TestConcurrentAddsSharedLinksAndKeepsPrivateOnes(t *testing.T) {
+	const nic, uplink = 50e9, 100e9
+	node := func(n string) TransferDemand {
+		return TransferDemand{Bytes: 1 << 30, Floor: time.Millisecond, Links: []LinkUse{
+			{Link: LinkID("nic/" + n), BytesPerSecond: nic},
+			{Link: "uplink", BytesPerSecond: uplink},
+		}}
+	}
+	one := node("a")
+	both := Concurrent(node("a"), node("b"))
+	if err := both.Check(); err != nil {
+		t.Fatal(err)
+	}
+	if both.Bytes != one.Bytes || both.Floor != one.Floor {
+		t.Errorf("payload %d and floor %v; want the largest entry's (%d, %v)", both.Bytes, both.Floor, one.Bytes, one.Floor)
+	}
+	streams := map[LinkID]int{}
+	for _, l := range both.Links {
+		streams[l.Link] = max(l.Streams, 1)
+	}
+	if streams["uplink"] != 2 || streams["nic/a"] != 1 || streams["nic/b"] != 1 || len(both.Links) != 3 {
+		t.Errorf("links %+v; want the uplink twice and each NIC once", both.Links)
+	}
+	// Alone each entry is bound by its NIC (50 GB/s); together the uplink gives each 50 GB/s,
+	// which is no slower, and a third entry makes the uplink bind.
+	if both.AloneTime() != one.AloneTime() {
+		t.Errorf("two entries take %v, one takes %v; the uplink's half is still a NIC's rate", both.AloneTime(), one.AloneTime())
+	}
+	three := Concurrent(node("a"), node("b"), node("c"))
+	if three.AloneTime() <= one.AloneTime() {
+		t.Errorf("three entries take %v, one takes %v; three through one uplink must be slower", three.AloneTime(), one.AloneTime())
+	}
+	if got := Concurrent(); got.Bytes != 0 || len(got.Links) != 0 {
+		t.Errorf("Concurrent of nothing = %+v", got)
+	}
+	if got := Concurrent(TransferDemand{}, one); got.Bytes != one.Bytes || len(got.Links) != 2 {
+		t.Errorf("an empty entry changed the demand: %+v", got)
+	}
+}
