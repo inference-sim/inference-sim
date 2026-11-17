@@ -6,11 +6,15 @@ size, pool size, chunk size, policy and mixed chunk. The same seed makes the sam
 Usage: python3 -I oracle/gen_fuzz.py <seed> <out.json> [--policy P] [--page N] [--mixed] [--tight]
                                      [--priority [--low-first] [--threshold N] [--no-preempt]] [--routing]
                                      [--queue-limit N] [--priority-disabled] [--heavy] [--prefill-max N] [--oversize] [--no-cache] [--seed-arg N]
+                                     [--overlap [--eos] [--no-consecutive-prefill-overlap]]
 
 --priority gives each request a priority in -3..3 (some none) and turns priority scheduling on; --routing gives
 each a routing key from three; --queue-limit sets max_queued_requests; --oversize adds a request SGLang
 aborts at ingest for its length; --no-cache disables the radix cache (fixed-length requests then take
-add_one_req_ignore_eos); --heavy makes more requests that generate longer; --seed-arg sets the server's random_seed (the random policy's stream).
+add_one_req_ignore_eos); --overlap runs SGLang's overlap event loop (S14); --eos makes the sampled token the model's
+end-of-sequence token, so each request that does not ignore it finishes at its first token, while a decode batch that
+holds it is already launched (the extra discarded step); --no-consecutive-prefill-overlap sets
+SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP; --heavy makes more requests that generate longer; --seed-arg sets the server's random_seed (the random policy's stream).
 """
 import argparse
 import json
@@ -63,16 +67,22 @@ def scenario(seed: int, policy: str, page: int, mixed: bool, tight: bool, opt) -
         reqs.append({"rid": "big", "arrival_step": 1, "prompt": [7000 + j for j in range(pool + 8)],
                      "max_new_tokens": 4, "ignore_eos": True})
         reqs.sort(key=lambda r: (r["arrival_step"], r["rid"]))
-    return {
+    if opt.eos:
+        for r in reqs:
+            r["ignore_eos"] = rng.random() < 0.4
+    out = {
         "description": f"fuzz seed {seed}: {policy}, page {page}, mixed {mixed}, pool {pool}",
-        "model": "Qwen/Qwen2.5-0.5B-Instruct", "seed": opt.seed_arg, "vocab_size": 151936, "sampled_token": 13,
+        "model": "Qwen/Qwen2.5-0.5B-Instruct", "seed": opt.seed_arg, "vocab_size": 151936, "sampled_token": 151645 if opt.eos else 13,
         "device_memory_gib": 80, "step_seconds": 0.01, "page_size": page, "max_total_tokens": pool,
         "max_running_requests": rng.choice([3, 4, 8]), "chunked_prefill_size": chunk,
-        "schedule_policy": policy, "overlap": False, "disable_radix_cache": opt.no_cache, "max_steps": 1500 if opt.heavy else 400,
+        "schedule_policy": policy, "overlap": opt.overlap, "disable_radix_cache": opt.no_cache, "max_steps": 1500 if opt.heavy else 400,
         "server_args": server_args,
         "record_server_args": ["chunked_prefill_size", "max_running_requests", "max_total_tokens", "page_size", "schedule_policy"],
         "requests": reqs,
     }
+    if opt.no_consecutive_prefill_overlap:
+        out["sglang_env"] = {"SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP": "1"}
+    return out
 
 
 if __name__ == "__main__":
@@ -94,6 +104,9 @@ if __name__ == "__main__":
     ap.add_argument("--queue-limit", type=int, default=0)
     ap.add_argument("--oversize", action="store_true")
     ap.add_argument("--no-cache", action="store_true")
+    ap.add_argument("--overlap", action="store_true")
+    ap.add_argument("--eos", action="store_true")
+    ap.add_argument("--no-consecutive-prefill-overlap", action="store_true")
     ap.add_argument("--seed-arg", type=int, default=0)
     a = ap.parse_args()
     with open(a.out, "w") as f:

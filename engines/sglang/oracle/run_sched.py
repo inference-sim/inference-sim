@@ -15,7 +15,8 @@ ServerArgs selects, unmodified) and adds to each step of the trace:
 It also records the scheduler's resolved settings the Go port is configured from ("config"), so the
 port is compared on its decisions and not on SGLang's start-up resolution (T1, S08).
 
-A scenario may add `server_args` (extra ServerArgs fields, each named in SCHED_SERVER_ARGS) and, per
+A scenario may set `overlap` (SGLang's overlap event loop, S14) and `sglang_env` (the variables named in
+SCHED_SGLANG_ENV), and add `server_args` (extra ServerArgs fields, each named in SCHED_SERVER_ARGS) and, per
 request, `ignore_eos` (default true, as in oracle/run_scheduler.py), `priority` and `routing_key`
 (default none, as a client that sets neither). A request SGLang rejects before it queues is answered
 with an AbortReq, which this runner records as that request's finish. Nothing else differs from
@@ -43,6 +44,9 @@ SCHED_SERVER_ARGS = ("enable_mixed_chunk", "max_prefill_tokens", "schedule_conse
                      "disable_priority_preemption", "abort_on_priority_when_disabled", "max_queued_requests")
 
 ORACLE_INPUTS = run_scheduler.ORACLE_INPUTS + ("oracle/run_sched.py",)
+
+# SGLANG_* variables a scenario may set, by `sglang_env`; the others are removed (run_scheduler.child).
+SCHED_SGLANG_ENV = ("SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP",)
 
 
 def sched_server_args(scenario: dict):
@@ -145,6 +149,7 @@ def config_of(s) -> dict:
         "tree_cache": type(s.tree_cache).__name__,
         "disaggregation_mode": str(s.disaggregation_mode.value),
         "enable_overlap": bool(s.enable_overlap),
+        "disable_consecutive_prefill_overlap": bool(envs.SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP.get()),
         "random_seed": int(s.server_args.random_seed),
         "schedule_low_priority_values_first": bool(s.schedule_low_priority_values_first),
         "priority_scheduling_preemption_threshold": int(s.priority_scheduling_preemption_threshold),
@@ -214,6 +219,11 @@ def child(scenario: dict, sglang_root: str, out_path: str) -> None:
     for name in [n for n in os.environ if n.startswith("SGLANG_")]:
         del os.environ[name]
     os.environ.update(run_scheduler.KEPT_SGLANG_ENV)
+    extra_env = scenario.get("sglang_env", {})
+    bad = sorted(set(extra_env) - set(SCHED_SGLANG_ENV))
+    if bad:
+        raise SystemExit(f"scenario sglang_env {bad} are not settable by oracle/run_sched.py")
+    os.environ.update({k: str(v) for k, v in extra_env.items()})
     import stubs
 
     stubs.install()
@@ -236,7 +246,7 @@ def child(scenario: dict, sglang_root: str, out_path: str) -> None:
     result = {
         "steps": run.steps, "finished": run.finished, "shutdown_sent": run.shutdown_sent, "truncated": run.truncated,
         "pool": {"max_total_num_tokens": init.get("max_total_num_tokens"), "max_req_input_len": init.get("max_req_input_len")},
-        "classes": run.classes, "receive": receive, "sglang_env": dict(sorted(run_scheduler.KEPT_SGLANG_ENV.items())),
+        "classes": run.classes, "receive": receive, "sglang_env": dict(sorted({**run_scheduler.KEPT_SGLANG_ENV, **{k: str(v) for k, v in extra_env.items()}}.items())),
         "resolved": {k: getattr(args, k) for k in sorted(scenario["record_server_args"])},
         "config": getattr(run, "config", None),
         "harness_problems": run.problems + harness.clock_problems(),
