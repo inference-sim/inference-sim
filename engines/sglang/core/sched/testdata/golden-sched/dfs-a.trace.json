@@ -9,6 +9,7 @@
   "allocator": "TokenToKVPoolAllocator",
   "chunked_prefill_size": 48,
   "clip_max_new_tokens": 4096,
+  "disable_consecutive_prefill_overlap": false,
   "disaggregation_mode": "null",
   "enable_overlap": false,
   "enable_priority_preemption": false,
@@ -106,7 +107,7 @@
   "max_total_num_tokens": 160
  },
  "provenance": {
-  "blis_sglang_commit": "a40e9fffcd68a0d4f106b1d77ee9ec50ea33c440",
+  "blis_sglang_commit": "3cfcd06c5f9a4fdb19f2b05c0e3daa0ad3c5d0bd",
   "lockfile_sha256": "a3fb4e4773230faee4ffdd89437a96b2f3bfb3082e4be4cef4f44d44c66ed569",
   "mock_version": "gpu-mock/6+782b6d1d81e3",
   "model": "Qwen/Qwen2.5-0.5B-Instruct",
@@ -116,7 +117,7 @@
    "oracle/harness.py": "a1ab29f3421f2a5b504a0096f59cbe38055c8c2615a99d2d7c09bda96b0c5df6",
    "oracle/mocks.json": "11f3e41bd562100699ab517d4142735a3222956986494b0c33e65b1a5ee853f1",
    "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
-   "oracle/run_sched.py": "12fc3df0720881f79e010e7b7dd8c0d6c533dfeb466ae8dab3aedcb8fcdfeb6d",
+   "oracle/run_sched.py": "afdd9e8a369a4bc6876db3e5df6f6be0b73b75d5ed67b284d218628f58513eff",
    "oracle/run_scheduler.py": "28ed3f13aa2d7502a317a0dd1974b7c67f7ee784761605acd54d57e26168f353",
    "oracle/scenarios-sched/dfs-a.json": "4fb35c88bc4f2914d404e2c9d9c7da882770ce4b2d2f61939e15b8aac39beb40",
    "oracle/stubs.py": "e30a3a770e3a4f91008449145089328ba8fbb83b35bda7082e1c77e323eb1692",
