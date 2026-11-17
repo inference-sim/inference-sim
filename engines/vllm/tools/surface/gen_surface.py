@@ -90,8 +90,14 @@ def citation_rule():
     return re.compile(r"^vllm/[A-Za-z0-9_./-]+\.py:[0-9]+(-[0-9]+)?(, ?[0-9]+(-[0-9]+)?)*@" + UPSTREAM["commit"][:8] + "$")
 
 
+MODULE = "github.com/inference-sim/blis-vllm/"
+
+
 def provenance_upstream(repo):
-    """The Upstream record of provenance.go: its Tag and Commit."""
+    """The Upstream record of provenance.go: its Tag and Commit.
+
+    Each field is a string literal or a reference pkg.Name to a string constant of a package of
+    this module that provenance.go imports, as internal/upstream's Tag and Commit are."""
     path = os.path.join(repo, "provenance.go")
     try:
         with open(path, encoding="utf-8") as f:
@@ -99,11 +105,38 @@ def provenance_upstream(repo):
     except OSError as e:
         raise GenError("provenance.go: %s" % e)
     m = re.search(r"var Upstream = UpstreamRelease\{(.*?)\n\}", text, re.S)
-    tag = m and re.search(r'\bTag:\s*"([^"]+)"', m.group(1))
-    commit = m and re.search(r'\bCommit:\s*"([0-9a-f]{40})"', m.group(1))
-    if not (tag and commit):
+    tag = m and field_value(repo, text, m.group(1), "Tag")
+    commit = m and field_value(repo, text, m.group(1), "Commit")
+    if not (tag and commit and re.fullmatch(r"[0-9a-f]{40}", commit)):
         raise GenError("provenance.go: no Upstream record with a Tag and a 40-hex Commit")
-    return tag.group(1), commit.group(1)
+    return tag, commit
+
+
+def field_value(repo, text, record, field):
+    """A field of the Upstream record: its string literal, or the string constant it names."""
+    lit = re.search(r"\b%s:\s*\"([^\"]+)\"" % field, record)
+    if lit:
+        return lit.group(1)
+    ref = re.search(r"\b%s:\s*([A-Za-z_][A-Za-z0-9_]*)\.([A-Z][A-Za-z0-9_]*)\b" % field, record)
+    if not ref:
+        return None
+    pkg, name = ref.groups()
+    # The import that binds pkg: aliased (pkg "path") or named by its last path element.
+    imports = [path for alias, path in re.findall(r'^\s*(?:import\s+)?([A-Za-z_][A-Za-z0-9_]*\s+)?"(%s[^"]*)"'
+                                               % re.escape(MODULE), text, re.M)
+               if (alias.strip() or path.rsplit("/", 1)[-1]) == pkg]
+    if len(imports) != 1:
+        return None
+    pkgdir = os.path.join(repo, imports[0][len(MODULE):])
+    try:
+        files = sorted(f for f in os.listdir(pkgdir) if f.endswith(".go") and not f.endswith("_test.go"))
+    except OSError:
+        return None
+    found = []
+    for fn in files:
+        with open(os.path.join(pkgdir, fn), encoding="utf-8") as f:
+            found += re.findall(r"^\s*%s\s*=\s*\"([^\"]+)\"" % re.escape(name), f.read(), re.M)
+    return found[0] if len(found) == 1 else None
 
 
 def checkout_commit(src):
