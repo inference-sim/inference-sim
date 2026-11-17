@@ -881,7 +881,11 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 				}
 				numNew = s.reservePrefillLookahead(r, numComputed, numNew)
 				if numNew <= 0 {
-					break
+					// v0.33.0 requeues a request the lookahead leaves nothing to schedule, so it does not
+					// stall the requests behind it (vLLM #59030,
+					// vllm/v1/core/sched/scheduler.py:1394-1398@4ba787ec); v0.32.0 stopped here.
+					skip(q)
+					continue
 				}
 			}
 			// An asynchronous load computes nothing this step, allocates no lookahead slots
