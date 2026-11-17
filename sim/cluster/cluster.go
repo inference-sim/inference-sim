@@ -123,10 +123,13 @@ type ClusterSimulator struct {
 	pdDecodeTimedOutCount  int // decode sub-requests that timed out (for INV-1 in-flight tracking)
 	droppedAtDecodeKV      int // requests dropped due to insufficient KV at decode
 	gatewayUnservable      int // requests refused before dispatch because they cannot be served
-	// pdLinks arbitrates the links concurrent handoffs share (PDTransferContention, #1922);
-	// nil when handoffs are priced as if alone. pdLinkFlows maps each handoff in it to its
+	// pdLinks arbitrates the links concurrent transfers share: the offload-tier copies of every
+	// engine always (#2108), and the handoffs when pdContention is set (PDTransferContention, #1922;
+	// otherwise they are priced as if alone). pdLinkFlows maps each handoff in it to its
 	// parent, and pdLinkWakeGen invalidates every wake but the latest scheduled.
 	pdLinks       *LinkArbiter
+	pdContention  bool
+	tierCopies    int // offload-tier copies admitted to pdLinks
 	pdLinkFlows   map[FlowID]*ParentRequest
 	pdLinkWakeGen int64
 	// tierLinkFlows maps each offload-tier copy in the arbiter to the instance whose engine started
@@ -337,8 +340,7 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 		cs.pendingDecodeCompletions = make(map[string]string)
 		cs.prefillHolds = make(map[string][]int64)
 		if config.PDTransferContention {
-			cs.pdLinks = NewLinkArbiter()
-			cs.pdLinkFlows = make(map[FlowID]*ParentRequest)
+			cs.pdContention = true
 		}
 		cs.heldBlockRefs = make(map[string]map[int64]int)
 		cs.heldKVPeakTokens = make(map[string]int64)
@@ -541,10 +543,8 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 	// Store raw callback for PD session follow-up (issue #884).
 	cs.sessionCallback = onRequestDone
 
-	if (config.PDTransferContention || config.TierCopyContention) && cs.pdLinks == nil {
-		cs.pdLinks = NewLinkArbiter()
-		cs.pdLinkFlows = make(map[FlowID]*ParentRequest)
-	}
+	cs.pdLinks = NewLinkArbiter()
+	cs.pdLinkFlows = make(map[FlowID]*ParentRequest)
 	for _, inst := range cs.instances {
 		cs.wireInstance(inst)
 	}
@@ -613,11 +613,9 @@ func (cs *ClusterSimulator) wireInstance(inst *InstanceSimulator) {
 	}
 	inst.SetCallbacks(onFirstToken, onRequestDone)
 	inst.setPullPriced(cs.startPull)
-	if cs.pdLinks != nil {
-		inst.setTierPriced(func(id engine.TransferID, demand kernel.TransferDemand, at int64) {
-			cs.startTierCopy(inst, id, demand, at)
-		})
-	}
+	inst.setTierPriced(func(id engine.TransferID, demand kernel.TransferDemand, at int64) {
+		cs.startTierCopy(inst, id, demand, at)
+	})
 	inst.onTransition = func(inst *InstanceSimulator) {
 		if cs.gateway != nil {
 			cs.gateway.OnInstanceChange(inst)
