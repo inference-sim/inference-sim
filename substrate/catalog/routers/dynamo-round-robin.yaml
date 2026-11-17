@@ -9,6 +9,83 @@ router: dynamo
 mode: round-robin
 revisions:
   - 1682167d3c97f0fc8cd405dee51f17288eeaeb55
+builds:
+  - name: "1.2.0.dev20260426"
+    source: nightly
+    window: >-
+      The nightly of 2026-04-26 (UTC). A nightly wheel carries the UTC date of its build and is made from the head of
+      main when the run was triggered (.github/workflows/release.yml, nightly branch). The hour is not in the
+      version and a manual dispatch can run at any hour, so the window is every first-parent commit of main from the head at 2026-04-26T00:00Z to the head at 2026-04-27T00:00Z, 2 in all.
+      Each has version = "1.2.0" in pyproject.toml. Found with: git log --first-parent --format=%H main.
+    commits:
+      - 1682167d3c97f0fc8cd405dee51f17288eeaeb55
+      - 55a639e2808ee86fb077fa993c2aded37eba6f0f
+    files:
+      - path: components/src/dynamo/common/configuration/groups/router_args.py
+        blob: 9830e42447523844c3da0090c9762cac4adaa265
+      - path: components/src/dynamo/frontend/main.py
+        blob: 361d16ffd25ce904f6d246843b503be3f3cfc701
+      - path: lib/llm/src/kv_router/prefill_router/mod.rs
+        blob: 905a57adfdeedcaeaecc7946eef28726f1bdb619
+      - path: lib/runtime/src/component/client.rs
+        blob: 59fbbfde4104073c6c6153df795ea79e00b8bbcc
+      - path: lib/runtime/src/pipeline/network/egress/push_router.rs
+        blob: 41fa024caced5a08df4842c479d03ba8c1c891cb
+  - name: "1.2.1"
+    source: release
+    window: >-
+      The release wheel 1.2.1: the commit tag v1.2.1 points to (git rev-parse v1.2.1^{commit}); pyproject.toml has version = "1.2.1" there.
+    commits:
+      - 919682da679aa699d5bca9c872f4c1d9a530bbc0
+    files:
+      - path: components/src/dynamo/common/configuration/groups/router_args.py
+        blob: 9830e42447523844c3da0090c9762cac4adaa265
+      - path: components/src/dynamo/frontend/main.py
+        blob: 361d16ffd25ce904f6d246843b503be3f3cfc701
+      - path: lib/llm/src/kv_router/prefill_router/mod.rs
+        blob: e42b0438edcba699cc5a14247256592476bd3a13
+      - path: lib/runtime/src/component/client.rs
+        blob: 4b0de2461440b67ea2f4d509a9ddf2066b0c8dba
+      - path: lib/runtime/src/pipeline/network/egress/push_router.rs
+        blob: 555ccd63c96523c03c2417e2a489a2d5453af970
+  - name: "1.3.0.dev20260601"
+    source: nightly
+    window: >-
+      The nightly of 2026-06-01 (UTC). A nightly wheel carries the UTC date of its build and is made from the head of
+      main when the run was triggered (.github/workflows/release.yml, nightly branch). The hour is not in the
+      version and a manual dispatch can run at any hour, so the window is every first-parent commit of main from the head at 2026-06-01T00:00Z to the head at 2026-06-02T00:00Z, 19 in all.
+      Each has version = "1.3.0" in pyproject.toml. Found with: git log --first-parent --format=%H main.
+    commits:
+      - 05d0658d2938e4e705fbfb1df0adc15d3895760a
+      - 0f41761679e02738c3aec65e02b9b24aa0f872e6
+      - 281cc54bfda7261434388c02f4a2bd61f8166ac9
+      - 3279230e655230c966e7e331e617df9fc94192d7
+      - 3dee17f059b7f07c74e767715e590e5153f76939
+      - 44713c0f7c8431b444ac9f67c217cc2e585eafd4
+      - 449dbac73eaa6d01c543e8553b24751ee7d6bb2f
+      - 49f3f3ca6f04efd4210847884224e6c7725edce4
+      - 554d67613c39922fb100b8107128d53f6bb8ddd9
+      - 5a5011a0a244f7291cf0e761e4bdd393f0270e3e
+      - 7c4d40b0cc2521a23fff5827158858229c8dac08
+      - 7d7b1fb371e61e3d1639660f7b8042189b19919e
+      - 8ea44f3ab09dbe28a18fbc7d79bf562d36af2c8b
+      - 9f36ec2ab1bd31031df91ec127ab0127ecbd7087
+      - ad7f0f35e479b4293bdba59f91489d639a620c7d
+      - bed9f269312151481cd67a8d21b70e0f52424c2b
+      - d6c5a2b030d5b751cb60682e2586ef9fe5d73f4a
+      - d858d9b23a901dbcad643d27c9d06b2e5f58e57c
+      - f0dc048ce8220b8db835df521bdeda8674e30b35
+    files:
+      - path: components/src/dynamo/common/configuration/groups/router_args.py
+        blob: c2788f6b34147faf868b2619451279d3425659d5
+      - path: components/src/dynamo/frontend/main.py
+        blob: 875dae99aaae50a259e67fe44594098f7cf46d1b
+      - path: lib/llm/src/kv_router/prefill_router/mod.rs
+        blob: 6a37425b4b8d1446079896961aa60ddb3b41a9f2
+      - path: lib/runtime/src/component/client.rs
+        blob: 4afc05117d5395496aec89084e5817ae0bc3a9b8
+      - path: lib/runtime/src/pipeline/network/egress/push_router.rs
+        blob: cbe2e8ee5723452d59e02ff75d6322c0b5a9bd0b
 policy: round-robin
 reason: >-
   Dynamo's round-robin mode rotates strictly per request: it takes the next value of a counter
@@ -66,6 +143,15 @@ difference:
       does (least-active-requests, default, queue-scorer) is not this mode; the second group of
       ratios in the bound is what a wrong guess of the mode would cost.
     evidence: [1, 7]
+  - aspect: overload-filter
+    text: >-
+      From build 1.3.0.dev20260601 Dynamo's round-robin indexes the free list, which leaves out any
+      instance the router has reported overloaded (client.rs 271-281 at bed9f269312151481cd67a8d21b70e0f52424c2b);
+      at 1.2.0.dev20260426 and 1.2.1 it indexes every available instance. A router with no instance
+      reported overloaded rotates over all of them in every build. BLIS does not model the report
+      (it needs a busy threshold, which no recipe the dashboard read sets), so a run that did set one would
+      rotate over fewer workers than the entry's policy spreads over.
+    evidence: [12, 14]
 bound:
   evidence:
     file: registry/docs/router-sensitivity/runs.csv
@@ -471,3 +557,73 @@ evidence:
     path: pkg/epp/framework/plugins/scheduling/picker/maxscore/picker.go
     lines: "108-117"
     claim: The max-score picker rotates each group of equal-score endpoints by a counter drawn once per pick; with the candidates in the random order above, the choice among tied endpoints is random, not a cycle.
+  - side: router
+    field: mode
+    repository: ai-dynamo/dynamo
+    commit: bed9f269312151481cd67a8d21b70e0f52424c2b
+    path: components/src/dynamo/common/configuration/groups/router_args.py
+    lines: "204-206"
+    claim: The router-mode argument (environment variable DYN_ROUTER_MODE) defaults to round-robin, so a run that sets no router mode runs it. The file is the same at every commit of build 1.3.0.dev20260601.
+  - side: router
+    field: mode
+    repository: ai-dynamo/dynamo
+    commit: bed9f269312151481cd67a8d21b70e0f52424c2b
+    path: lib/runtime/src/pipeline/network/egress/push_router.rs
+    lines: "507-518"
+    claim: Round-robin takes the next value of the router's counter and selects the instance at that value modulo the number of free instances.
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: bed9f269312151481cd67a8d21b70e0f52424c2b
+    path: lib/runtime/src/pipeline/network/egress/push_router.rs
+    lines: "132-133"
+    claim: The counter is a field of the router object, so each router keeps its own.
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: bed9f269312151481cd67a8d21b70e0f52424c2b
+    path: lib/runtime/src/component/client.rs
+    lines: "271-281"
+    claim: The free list the counter indexes is the routable instances when none is reported overloaded, and otherwise the routable instances without the overloaded ones.
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: bed9f269312151481cd67a8d21b70e0f52424c2b
+    path: lib/llm/src/kv_router/prefill_router/mod.rs
+    lines: "44-49"
+    claim: The prefill router is an object of its own, with its own inner router and the router mode it was built with, so the prefill workers have a router object separate from the decode workers'.
+  - side: router
+    field: mode
+    repository: ai-dynamo/dynamo
+    commit: 919682da679aa699d5bca9c872f4c1d9a530bbc0
+    path: components/src/dynamo/common/configuration/groups/router_args.py
+    lines: "66-68"
+    claim: The router-mode argument defaults to round-robin, so a run that sets no router mode runs it. The file is the same at the one commit of build 1.2.1.
+  - side: router
+    field: mode
+    repository: ai-dynamo/dynamo
+    commit: 919682da679aa699d5bca9c872f4c1d9a530bbc0
+    path: lib/runtime/src/pipeline/network/egress/push_router.rs
+    lines: "497-512"
+    claim: Round-robin takes the next value of the router's counter and selects the instance at that value modulo the number of available instances.
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: 919682da679aa699d5bca9c872f4c1d9a530bbc0
+    path: lib/runtime/src/pipeline/network/egress/push_router.rs
+    lines: "132-133"
+    claim: The counter is a field of the router object, so each router keeps its own.
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: 919682da679aa699d5bca9c872f4c1d9a530bbc0
+    path: lib/runtime/src/component/client.rs
+    lines: "199-201"
+    claim: The list the counter indexes is the client's available instances.
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: 919682da679aa699d5bca9c872f4c1d9a530bbc0
+    path: lib/llm/src/kv_router/prefill_router/mod.rs
+    lines: "44-49"
+    claim: The prefill router is an object of its own, with its own inner router and the router mode it was built with, so the prefill workers have a router object separate from the decode workers'.
