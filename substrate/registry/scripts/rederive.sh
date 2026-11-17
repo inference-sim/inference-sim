@@ -12,6 +12,7 @@
 #   export AISIMULATE_DATA=<aisimulate>/python/aisimulate/src/aisimulate_core/systems/data
 #   export BLIS_CATALOG=<the repository's catalog/ directory>
 #   export AISIMULATE_ALLREDUCE_DATA=<aisimulate @7980e95>/.../systems/data  # relane_allreduce_vllm.py
+#   export AISIM_GLM53_DATA=<aisim @AISIM_GLM53_SHA>/python/aisim/src/aisim_core/systems/data  # fit_glm53_attention.py
 #   python -I scripts/fetch_cited_inferencex.py <dir>
 #   export COLLECTIVEX_DATA=<dir>                       # test_deepep_ll_graph.py
 #   export OPERATORX_DATA=<dir>                         # test_operatorx.py; the same dir: the fetcher
@@ -27,6 +28,7 @@ set -euo pipefail
 : "${BLIS_CATALOG:?set BLIS_CATALOG to the catalog/ directory of this repository}"
 : "${AISIMULATE_ALLREDUCE_DATA:?set AISIMULATE_ALLREDUCE_DATA to the systems/data of aisimulate at AISIMULATE_ALLREDUCE_SHA (rederive.yml), the h100/h200 vLLM 0.31.0 all-reduce sweep}"
 : "${COLLECTIVEX_DATA:?set COLLECTIVEX_DATA to the directory scripts/fetch_cited_inferencex.py fills}"
+: "${AISIM_GLM53_DATA:?set AISIM_GLM53_DATA to the systems/data of aisim at AISIM_GLM53_SHA (rederive.yml), the GLM-5.3 attention-module table fit_glm53_attention.py reads}"
 
 n=$(find "$AISIMULATE_DATA" -name '*.parquet' | wc -l)
 echo "AISimulate parquets present: $n"
@@ -41,6 +43,10 @@ if [ -n "${INFERENCEX_GOLDEN:-}" ]; then
   fi
   python scripts/emit_acceptance_profiles.py --check
 fi
+
+# The rest-of-module prices fit_glm53_attention.py subtracts are a generated file: it must be
+# what the kernel charges now, or the GLM-5.3 fit below is checked against a stale input.
+(cd .. && go test ./kernel -run '^TestGLM53AttentionRestIsCurrent$' -count=1)
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT

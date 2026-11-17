@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/ledger"
 	"github.com/inference-sim/blis-substrate/load"
 )
@@ -133,5 +134,32 @@ func TestRegistryPointsAreWellFormed(t *testing.T) {
 			t.Errorf("two points for %v", key)
 		}
 		seen[key] = true
+	}
+}
+
+// A coefficient scoped to a chip and a model is one series per model: the series key drops the
+// hardware term only. Before, the hardware pattern ran to the end of the scope and dropped the
+// model with it, so two models' measured entries of one name on one chip were refused as two
+// points of one series, and one model's entry on h200 and another's on h100 were compared as
+// the same quantity.
+func TestSeriesKeyKeepsTheModelScope(t *testing.T) {
+	entry := func(models ...string) coefficient.Entry {
+		return coefficient.Entry{Name: "attention_prefill_floor_sparse_mla",
+			Scope: coefficient.Scope{Hardware: []string{"h200"}, Model: models}}
+	}
+	a, b := seriesKey("cost-model-attention", entry("deepseek-v4.1-flash")), seriesKey("cost-model-attention", entry("glm-5.3"))
+	if a == b {
+		t.Errorf("two models' entries share the series key %q", a)
+	}
+	if strings.Contains(a, "h200") || !strings.Contains(a, "deepseek-v4.1-flash") {
+		t.Errorf("series key %q should drop the chip and keep the model", a)
+	}
+	h100 := coefficient.Entry{Name: "attention_prefill_floor_sparse_mla",
+		Scope: coefficient.Scope{Hardware: []string{"h100"}, Model: []string{"deepseek-v4.1-flash"}}}
+	if k := seriesKey("cost-model-attention", h100); k != a {
+		t.Errorf("one model's entry on two chips is two series: %q and %q", a, k)
+	}
+	if k := seriesKey("s", coefficient.Entry{Name: "gemm_eps_max_bf16_h200", Scope: coefficient.Scope{Hardware: []string{"h200"}}}); k != "s|gemm_eps_max_bf16|" {
+		t.Errorf("a hardware-only entry's key is %q, want %q", k, "s|gemm_eps_max_bf16|")
 	}
 }

@@ -682,10 +682,10 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 				}
 			}
 			if pf, ok := k.attentionPrefillByKind[l.AttnKind]; ok && s.prefillRequests > 0 &&
-				primaryRecord(l) > 0 {
+				sparsePrefillRecord(l, kv[i].perToken) > 0 {
 				// The kind's measured prefill form, over FlashMLA's block reads.
 				read := sparsePrefillReadBytes(s.prefillChunks, l.AttnWindow, l.AttnIndexTopK,
-					l.AttnCompressRatio, primaryRecord(l), heads)
+					l.AttnCompressRatio, sparsePrefillRecord(l, kv[i].perToken), heads)
 				attnSMSeconds += pf.seconds(float64(s.prefillRequests),
 					float64(s.prefillTokens), read)
 			} else if s.prefillRequests > 0 {

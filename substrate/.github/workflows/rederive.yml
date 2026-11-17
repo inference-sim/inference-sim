@@ -77,13 +77,18 @@ jobs:
       # vLLM 0.31.0's custom all-reduce (scripts/relane_allreduce_vllm.py), a sweep the main
       # pin predates. Moving AISIMULATE_SHA itself would refit every family at once.
       AISIMULATE_ALLREDUCE_SHA: 7980e9500c00d9f85d7f296451d12768a743c70e
+      # A third AISimulate commit (the repository is now ai-dynamo/aisim), for one family: the
+      # GLM-5.3 attention-module table scripts/fit_glm53_attention.py fits, which the main pin
+      # predates. TEMPORARY: it folds into AISIMULATE_SHA at the AISimulate re-pin.
+      AISIM_GLM53_SHA: 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18
       # The InferenceX commit validator/testdata/inferencex/curves.json pins the golden acceptance
       # curves at (scripts/refresh_inferencex_curves.py moves both together).
       INFERENCEX_SHA: e63beeeee981b5f7bd055685a32cc38ad30c7fdb
       # The engine release's kernel-implementation table the trtllm-gen lane is keyed by
-      # (emit_attention_trtllm_gen.py). TEMPORARY: the pushed head of inference-sim/blis-vllm#154,
+      # (emit_attention_trtllm_gen.py), and the GLM-5.3 sparse-MLA entries are keyed by
+      # (fit_glm53_attention.py). TEMPORARY: the pushed head of inference-sim/blis-vllm#154,
       # until a blis-vllm release publishes the table.
-      BLIS_VLLM_SHA: e7855679267cac391618dc77a640e3c18b7a4e65
+      BLIS_VLLM_SHA: 4cee7e5245c37a225d9644e3319896b989b33cf4
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -124,6 +129,16 @@ jobs:
           sparse-checkout: |
             python/aisimulate/src/aisimulate_core/systems/data/h100_sxm/comm
             python/aisimulate/src/aisimulate_core/systems/data/h200_sxm/comm
+
+      - name: Check out aisim at the GLM-5.3 pin (the h200 GLM-5.3 attention module only)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ai-dynamo/aisim
+          ref: ${{ env.AISIM_GLM53_SHA }}
+          path: aisim-glm53
+          fetch-depth: 1
+          sparse-checkout: |
+            python/aisim/src/aisim_core/systems/data/h200_sxm/glm53_attention
 
       - name: Check out blis-vllm's kernel_impls.json (pinned)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -170,6 +185,7 @@ jobs:
           BLIS_CATALOG: ${{ github.workspace }}/catalog
           BLIS_KERNEL_IMPLS: ${{ github.workspace }}/blis-vllm/kernel_impls.json
           AISIMULATE_ALLREDUCE_DATA: ${{ github.workspace }}/aisimulate-allreduce/python/aisimulate/src/aisimulate_core/systems/data
+          AISIM_GLM53_DATA: ${{ github.workspace }}/aisim-glm53/python/aisim/src/aisim_core/systems/data
           INFERENCEX_GOLDEN: ${{ github.workspace }}/inferencex/inferencex-e2e/infx/golden_al_distribution
           COLLECTIVEX_DATA: ${{ runner.temp }}/collectivex
           OPERATORX_DATA: ${{ runner.temp }}/collectivex
