@@ -1646,10 +1646,10 @@ EXPECTED_IDENTICAL = {
     frozenset({"kimi-k2.5", "kimi-k2.6"}):
         "one checkpoint geometry: Kimi-K2.6's config.json differs from K2.5's only in "
         "eos_token_id (163585 against 163586), which the cost model does not read",
-    frozenset({"qwen3.5-397b-a17b", "qwen3.5-397b-a17b-fp8"}):
-        "one architecture in two checkpoints: the FP8 release adds a quantization_config "
-        "(block fp8) and differs in nothing else the cost model reads; the signature "
-        "compares node shapes, not the global weight width, as for glm-5.2 and glm-5.2-fp8",
+    # qwen3.5-397b-a17b and its FP8 release are not a group: the FP8 release leaves each
+    # DeltaNet layer's in_proj_b and in_proj_a unconverted (modules_to_not_convert), so its
+    # in_proj_ba node states bf16 beside the fp8 global width, a per-node width the
+    # signature reads.
     frozenset({"llama-2-70b-hf", "llama-3.1-70b-instruct"}):
         "identical compute shapes; they differ in vocab, context length and rope theta",
 }
@@ -8408,7 +8408,9 @@ def test_qwen35_nvfp4_quantizes_the_routed_experts_and_nothing_else():
     assert g["global"]["weight_dtype"] == "bf16"
     assert _widths(g, "attn_moe") == {"qkv_proj": ("bf16", None), "o_proj": ("bf16", None),
                                       "experts": ("nvfp4", 512), "shared_experts": ("bf16", 1)}
-    assert _widths(g, "gdn_moe") == {"mixer_out": ("bf16", None), "experts": ("nvfp4", 512),
+    assert _widths(g, "gdn_moe") == {"recurrent_in_proj_qkvz": ("bf16", None),
+                                     "recurrent_in_proj_ba": ("bf16", None),
+                                     "mixer_out": ("bf16", None), "experts": ("nvfp4", 512),
                                      "shared_experts": ("bf16", 1)}
     assert g["speculator"]["stack"]["pattern"] == ["mtp_moe"]
     assert {w for w, _ in _widths(g, "mtp_moe").values()} == {"bf16"}
@@ -8583,15 +8585,108 @@ def test_pinned_headers_and_a_quantization_block_are_refused_together(tmp_path):
     raw["quantization_config"] = {"quant_method": "fp8"}
     with pytest.raises(derive_graph.DeriveError, match="pins its headers"):
         _derive_with_headers(_glm5_headers(), tmp_path, raw)
-def test_qwen35_nvfp4_refuses_a_quantized_deltanet_input_projection(tmp_path):
-    """The DeltaNet input projections are priced inside the recurrent update at the base width;
-    a list that leaves them quantized is refused rather than priced at a width they do not store."""
+
+
+# --- Recurrent layers' input projections (Mamba-2 in_proj, Gated DeltaNet in_proj_qkvz/ba) ---
+
+NEMOTRON_H_MODELS = ["nemotron-3-ultra-550b-a55b-bf16", "nemotron-3-ultra-550b-a55b-nvfp4",
+                     "nemotron-3.5-lightning-30b-a3b-bf16", "nemotron-3.5-lightning-30b-a3b-nvfp4"]
+GDN_MODELS = ["qwen3.5-397b-a17b", "qwen3.5-397b-a17b-fp8", "qwen3.5-397b-a17b-nvfp4",
+              "qwen3.6-35b-a3b"]
+
+
+def _gemm_widths(g: dict, kind: str) -> dict:
+    """role -> (n, k, tp, stored width) for the kind's GEMM nodes."""
+    k = {k["id"]: k for k in g["layer_kinds"]}[kind]
+    return {n["role"]: (n["n"], n["k"], n.get("tp"), n.get("weight_dtype", g["global"]["weight_dtype"]))
+            for n in k["nodes"] if n["op"] == "GEMM"}
+
+
+@pytest.mark.parametrize("name", NEMOTRON_H_MODELS)
+def test_mamba2_layers_price_their_input_projection(name):
+    """MambaMixer2's in_proj (vLLM v0.33.0 mamba_mixer2.py:346-371) is one column-parallel
+    linear over hidden that yields z and x (intermediate each), B and C (n_groups x state each)
+    and dt (one a head). It is the layer's largest linear, and the graph prices it as a GEMM at
+    the width the checkpoint states: FP8 where quantized_layers names mixer.in_proj, else the
+    base."""
+    d = MODELS / name
+    g, raw = graph_of(d), config_of(d)
+    t = text_config(raw)
+    inner = t["mamba_num_heads"] * t["mamba_head_dim"]
+    n = 2 * inner + 2 * t["n_groups"] * t["ssm_state_size"] + t["mamba_num_heads"]
+    listed = {(v or {}).get("quant_algo") for k, v in
+              ((raw.get("quantization_config") or {}).get("quantized_layers") or {}).items()
+              if k.endswith("mixer.in_proj")}
+    width = {"FP8": "fp8"}[listed.pop()] if listed else "bf16"
+    assert _gemm_widths(g, "mamba")["recurrent_in_proj"] == (n, t["hidden_size"], "column", width)
+
+
+@pytest.mark.parametrize("name", GDN_MODELS)
+def test_gdn_layers_price_their_input_projections(name):
+    """QwenGatedDeltaNetAttention's in_proj_qkvz ([key, key, value, value] over hidden) and
+    in_proj_ba ([num_v_heads] * 2), both MergedColumnParallelLinear (qwen_gdn_linear_attn.py:
+    803-851@v0.33.0), are GEMM nodes of every DeltaNet layer kind."""
+    g = graph_of(MODELS / name)
+    t = text_config(config_of(MODELS / name))
+    key = t["linear_num_key_heads"] * t["linear_key_head_dim"]
+    value = t["linear_num_value_heads"] * t["linear_value_head_dim"]
+    got = _gemm_widths(g, "gdn_moe")
+    assert got["recurrent_in_proj_qkvz"][:3] == (2 * key + 2 * value, t["hidden_size"], "column")
+    assert got["recurrent_in_proj_ba"][:3] == (2 * t["linear_num_value_heads"], t["hidden_size"],
+                                               "column")
+
+
+def test_gdn_input_projections_add_their_weight_to_the_layer():
+    """Metamorphic, through bytes: the DeltaNet layer of qwen3.5-397b-a17b holds the two input
+    projections' bf16 weight beside its output projection, 2 x 4096 x (20480 + 128) bytes."""
+    g = graph_of(MODELS / "qwen3.5-397b-a17b")
+    got = _gemm_widths(g, "gdn_moe")
+    held = sum(n * k * 2 for role, (n, k, _, w) in got.items() if role.startswith("recurrent_in_proj"))
+    assert held == 2 * 4096 * (20480 + 128)
+
+
+def test_qwen35_fp8_stores_in_proj_qkvz_at_fp8_and_leaves_in_proj_ba_at_bf16(tmp_path):
+    """Qwen3.5-397B-A17B-FP8 lists in_proj_b and in_proj_a in modules_to_not_convert on every
+    DeltaNet layer, so the packed in_proj_ba stays bf16 while in_proj_qkvz takes the fp8 block
+    format. Converting them too moves in_proj_ba to fp8, and converting one shard only is refused,
+    as vLLM refuses a packed module whose shards differ (is_layer_skipped)."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    d = MODELS / "qwen3.5-397b-a17b-fp8"
+    got = _gemm_widths(graph_of(d), "gdn_moe")
+    assert got["recurrent_in_proj_qkvz"][3] == "fp8"
+    assert got["recurrent_in_proj_ba"][3] == "bf16"
+
+    raw = config_of(d)
+    q = raw["quantization_config"]
+    q["modules_to_not_convert"] = [m for m in q["modules_to_not_convert"]
+                                   if not m.endswith((".in_proj_a", ".in_proj_b"))]
+    converted = _gemm_widths(_derive_raw(raw, tmp_path, d.name), "gdn_moe")
+    assert converted["recurrent_in_proj_ba"][3] == "fp8"
+
+    raw = config_of(d)
+    q = raw["quantization_config"]
+    q["modules_to_not_convert"].remove("model.language_model.layers.0.linear_attn.in_proj_a")
+    with pytest.raises(derive_graph.DeriveError, match="shards differ"):
+        _derive_raw(raw, tmp_path, d.name)
+
+
+def test_qwen35_nvfp4_places_a_quantized_deltanet_input_projection(tmp_path):
+    """A ModelOpt list that leaves the DeltaNet modules quantized on every DeltaNet layer prices
+    the input projections at NVFP4, like any other linear the list does not exclude. One that
+    leaves them quantized on one layer only states two widths for one node and is refused."""
     sys.path.insert(0, str(DERIVER.parent))
     import derive_graph  # noqa: E402
     raw = config_of(QWEN35_NVFP4)
     q = raw["quantization_config"]
+    q["ignore"] = [p for p in q["ignore"] if not p.endswith(".linear_attn*")]
+    got = _gemm_widths(_derive_raw(raw, tmp_path, "qwen-nvfp4-test"), "gdn_moe")
+    assert {got[r][3] for r in ("recurrent_in_proj_qkvz", "recurrent_in_proj_ba", "mixer_out")} == {"nvfp4"}
+
+    raw = config_of(QWEN35_NVFP4)
+    q = raw["quantization_config"]
     q["ignore"] = [p for p in q["ignore"] if p != "model.language_model.layers.0.linear_attn*"]
-    with pytest.raises(derive_graph.DeriveError, match="in_proj_qkvz"):
+    with pytest.raises(derive_graph.DeriveError, match="'recurrent_in_proj_qkvz' quantized on some"):
         _derive_raw(raw, tmp_path, "qwen-nvfp4-test")
 
 
@@ -8998,3 +9093,63 @@ def test_gemma4_refuses_what_it_cannot_price(d, edit, why, tmp_path):
     import derive_graph  # noqa: E402
     with pytest.raises(derive_graph.DeriveError, match=re.escape(why)):
         _gemma4(d, tmp_path, edit)
+
+
+def test_header_widths_read_qwen35_deltanet_shards():
+    """A Qwen3.5 checkpoint stores the input projections as four tensors that vLLM packs into
+    in_proj_qkvz and in_proj_ba. The header reader answers the packed module from its shards: an
+    F8_E4M3 in_proj_qkv and in_proj_z give fp8, BF16 in_proj_b and in_proj_a give the base."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    pre = "model.language_model.layers.0.linear_attn."
+    headers = {pre + "in_proj_qkv.weight": {"dtype": "F8_E4M3", "shape": [12288, 4096]},
+               pre + "in_proj_z.weight": {"dtype": "F8_E4M3", "shape": [8192, 4096]},
+               pre + "in_proj_b.weight": {"dtype": "BF16", "shape": [64, 4096]},
+               pre + "in_proj_a.weight": {"dtype": "BF16", "shape": [64, 4096]}}
+    spec = derive_graph.MODELOPT_MODULES["Qwen3_5MoeForConditionalGeneration"]
+    derive_graph._HEADERS = headers
+    try:
+        width_of = derive_graph.header_width_of(spec, "synthetic")
+        vllm = "language_model.model.layers.0.linear_attn."
+        assert width_of(vllm + spec["roles"]["recurrent_in_proj_qkvz"].split(".", 1)[1]) == "fp8"
+        assert width_of(vllm + spec["roles"]["recurrent_in_proj_ba"].split(".", 1)[1]) is None
+    finally:
+        derive_graph._HEADERS = None
+
+
+def test_nemotron_h_quantized_layers_place_the_input_projection(tmp_path):
+    """A quantized_layers map naming mixer.in_proj FP8 on every Mamba layer gives the in_proj
+    node fp8 and leaves the rest of the bf16 checkpoint alone; a map that drops it on one Mamba
+    layer states two widths for one node and is refused."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    raw = config_of(MODELS / "nemotron-3.5-lightning-30b-a3b-bf16")
+    mamba = [i for i, kind in enumerate(text_config(raw)["layers_block_type"]) if kind == "mamba"]
+    raw["quantization_config"] = {
+        "quant_method": "modelopt", "quant_algo": "MIXED_PRECISION",
+        "quantized_layers": {f"backbone.layers.{i}.mixer.in_proj": {"quant_algo": "FP8"}
+                             for i in mamba}}
+    got = _gemm_widths(_derive_raw(raw, tmp_path, "nemotron-test"), "mamba")
+    assert got["recurrent_in_proj"][3] == "fp8"
+    assert got["mixer_out"][3] == "bf16"
+
+    raw = config_of(MODELS / "nemotron-3.5-lightning-30b-a3b-nvfp4")
+    del text_config(raw)["quantization_config"]["quantized_layers"][f"backbone.layers.{mamba[-1]}.mixer.in_proj"]
+    with pytest.raises(derive_graph.DeriveError, match="one node cannot price both"):
+        _derive_raw(raw, tmp_path, "nemotron-test")
+
+
+def test_qwen35_in_proj_ba_is_replicated_where_vllm_replicates_it():
+    """On CUDA vLLM replicates a Qwen3.5 DeltaNet layer's in_proj_ba under an AWQ, GPTQ or INC
+    config, whose Marlin kernel needs 64 output columns a rank (maybe_disable_tp,
+    qwen_gdn_linear_attn.py:853-871@v0.33.0); in_proj_qkvz stays column-split."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    raw = config_of(MODELS / "qwen3.6-35b-a3b")
+    cfg = derive_graph.text_config(raw)
+    for method, ba in (("gptq", "replicated"), (None, "column")):
+        r = dict(raw, quantization_config={"quant_method": method, "bits": 4} if method else None)
+        kinds, _ = derive_graph.handler_qwen3_5_moe(cfg, r, "synthetic")
+        gdn = {k["id"]: k for k in kinds}["gdn_moe"]
+        tp = {n["role"]: n.get("tp") for n in gdn["nodes"] if n["op"] == "GEMM"}
+        assert (tp["recurrent_in_proj_qkvz"], tp["recurrent_in_proj_ba"]) == ("column", ba)
