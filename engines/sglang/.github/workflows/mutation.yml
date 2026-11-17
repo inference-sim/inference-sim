@@ -5,6 +5,11 @@ name: mutation
 # request changed: the listed mutants of each changed file and of each changed test file, and the
 # generated mutants of each ported Go function it changed. The full sweep runs nightly, on
 # release tags and on demand.
+#
+# The sweep is shared out over shards that run side by side (oracle/mutate.py --shard I/N; the
+# shards partition the mutants it selects). On a pull request it starts once the cheap checks of
+# ci.yml have passed (`gate`), so a push that fails a one-minute check is not also charged the
+# sweep. The check named `mutation` is the summary: it passes only if every shard passed.
 
 on:
   pull_request:
@@ -30,10 +35,55 @@ env:
   GOTOOLCHAIN: local
 
 jobs:
-  mutation:
-    name: mutation
+  # Waits for the cheap checks of ci.yml on this head, and fails if one of them failed. Only for a
+  # pull request; elsewhere the shards start at once.
+  gate:
+    name: gate
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      checks: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SHA: ${{ github.event.pull_request.head.sha }}
+      CHEAP: go lint oracle-checks goldens-reviewed fields
+    steps:
+      - name: the cheap checks of this head passed
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 60); do
+            runs="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${SHA}/check-runs?per_page=100" --jq '.check_runs')"
+            pending=""
+            for n in $CHEAP; do
+              # The newest check run of the name (the highest id) is the one that counts.
+              r="$(echo "$runs" | jq -r --arg n "$n" '[.[] | select(.name == $n)] | sort_by(.id) | last | "\(.status // "missing") \(.conclusion // "")"')"
+              case "$r" in
+                "completed success") ;;
+                completed*) echo "$n: $r"; echo "a cheap check failed: $n"; exit 1 ;;
+                *) pending="$pending $n" ;;
+              esac
+            done
+            if [ -z "$pending" ]; then echo "go, lint, oracle-checks, goldens-reviewed and fields passed"; exit 0; fi
+            echo "waiting for:$pending"
+            sleep 20
+          done
+          echo "the cheap checks did not finish in 20 minutes"
+          exit 1
+
+  mutation-run:
+    name: mutation-run (shard ${{ matrix.shard }})
+    needs: gate
+    if: ${{ !cancelled() && (needs.gate.result == 'success' || needs.gate.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    env:
+      SHARDS: 6
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -46,7 +96,14 @@ jobs:
           commit="$(sed -n 's/^\tCommit: *"\([0-9a-f]\{40\}\)",$/\1/p' provenance.go)"
           test -n "$commit"
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
+      # Cached under the commit it is at, as in .github/actions/oracle-env; checked against the pin.
+      - id: srccache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: sglang-source
+          key: sglang-source-${{ steps.pin.outputs.commit }}
       - name: check out SGLang at that commit
+        if: steps.srccache.outputs.cache-hit != 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: sgl-project/sglang
@@ -55,7 +112,10 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
       - name: the checkout is that commit
-        run: test "$(git -C sglang-source rev-parse HEAD)" = "${{ steps.pin.outputs.commit }}"
+        run: |
+          set -euo pipefail
+          test "$(git -C sglang-source rev-parse HEAD)" = "${{ steps.pin.outputs.commit }}"
+          test -z "$(git -C sglang-source status --porcelain)"
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
@@ -63,16 +123,32 @@ jobs:
         uses: ./.github/actions/go-setup
         with:
           build-cache: mutation
-      - name: the mutation sweep
+      - name: the mutation sweep, this shard's share
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
+          SHARD: ${{ matrix.shard }}
         run: |
           set -euo pipefail
           mode=()
           if [ -n "${BASE:-}" ]; then mode=(--changed "$BASE"); fi
-          python3 -I oracle/mutate.py "${mode[@]}" sglang-source "$RUNNER_TEMP/mutants" | tee mutation-results.txt
+          python3 -I oracle/mutate.py "${mode[@]}" --shard "$SHARD/$SHARDS" sglang-source "$RUNNER_TEMP/mutants" | tee mutation-results.txt
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: ${{ !cancelled() }}
         with:
-          name: mutation
+          name: mutation-${{ matrix.shard }}
           path: mutation-results.txt
+
+  # The check named `mutation`: every shard passed (and, on a pull request, the cheap checks).
+  mutation:
+    name: mutation
+    needs: [gate, mutation-run]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$NEEDS" | jq -e 'to_entries | all(.[]; .value.result == "success" or (.key == "gate" and .value.result == "skipped"))' > /dev/null

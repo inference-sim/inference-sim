@@ -32,7 +32,16 @@ runs:
         commit="$(sed -n 's/^\tCommit: *"\([0-9a-f]\{40\}\)",$/\1/p' provenance.go)"
         test -n "$commit"
         echo "commit=$commit" >> "$GITHUB_OUTPUT"
+    # The checkout is cached under the commit it is at: a commit names one tree, so the key can
+    # never be stale. A restored checkout is still checked against the pin (next step), and must
+    # have no change to any file.
+    - id: srccache
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: sglang-source
+        key: sglang-source-${{ steps.pin.outputs.commit }}
     - name: check out SGLang at that commit
+      if: steps.srccache.outputs.cache-hit != 'true'
       uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       with:
         repository: sgl-project/sglang
@@ -47,6 +56,24 @@ runs:
         got="$(git -C sglang-source rev-parse HEAD)"
         echo "provenance.go pins ${{ steps.pin.outputs.commit }}; sglang-source is at $got"
         test "$got" = "${{ steps.pin.outputs.commit }}"
+        test -z "$(git -C sglang-source status --porcelain)"
+    # The packages are installed into a virtual environment, cached under the exact Python and the
+    # hash of every file that defines the lock, so a changed lock, hash list or Python installs
+    # afresh. (Restoring packages over the runner's own Python breaks its pip.) A restored
+    # environment is not trusted: pip check, pip freeze and check_lock.py below run either way
+    # and fail unless what is installed is exactly the lock.
+    - id: envcache
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ~/oracle-venv
+        key: oracle-env-${{ runner.os }}-${{ runner.arch }}-py${{ steps.python.outputs.python-version }}-${{ hashFiles('oracle/requirements.lock', 'oracle/requirements-hashed.txt', 'oracle/requirements-pip.txt') }}
+    - name: use the virtual environment
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ "${{ steps.envcache.outputs.cache-hit }}" != "true" ]; then python -m venv ~/oracle-venv; fi
+        echo "$HOME/oracle-venv/bin" >> "$GITHUB_PATH"
+        echo "VIRTUAL_ENV=$HOME/oracle-venv" >> "$GITHUB_ENV"
     # The whole environment is pinned (oracle/requirements.lock, every package ==) and installed
     # without resolving, from oracle/requirements-hashed.txt with every archive's sha256
     # (oracle/lock.sh, X21), so neither a transitive release nor a replaced archive can change a
@@ -56,11 +83,15 @@ runs:
       run: |
         set -euo pipefail
         python -I oracle/check_lock.py --hashed oracle/requirements.lock oracle/requirements-hashed.txt
-        python -m pip install --require-hashes -r oracle/requirements-pip.txt
+        if [ "${{ steps.envcache.outputs.cache-hit }}" != "true" ]; then
+          python -m pip install --require-hashes -r oracle/requirements-pip.txt
+        fi
         # uv runs lock.sh --check; it is installed outside the environment the lock describes.
         python -m pip install --require-hashes --target "$RUNNER_TEMP/uv" -r oracle/requirements-uv.txt
         PATH="$RUNNER_TEMP/uv/bin:$PATH" oracle/lock.sh --check
-        pip install --require-hashes --no-deps --extra-index-url https://download.pytorch.org/whl/cpu -r oracle/requirements-hashed.txt
+        if [ "${{ steps.envcache.outputs.cache-hit }}" != "true" ]; then
+          pip install --require-hashes --no-deps --extra-index-url https://download.pytorch.org/whl/cpu -r oracle/requirements-hashed.txt
+        fi
         pip check
         pip freeze > oracle-env.lock
         python -I oracle/check_lock.py oracle/requirements.lock oracle-env.lock

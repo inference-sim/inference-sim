@@ -177,10 +177,12 @@ are two kinds of mutant:
 A survivor fails the sweep, unless `mutants.json` lists it in `known_gaps`, citing the issue, or in
 `equivalent`, saying why. A pull request sweeps what it changed: the listed mutants of each changed
 file and of each changed test file, and the generated mutants of each changed ported function. The
-full sweep runs nightly, on release tags and on demand.
+full sweep runs nightly, on release tags and on demand. CI shares the selected mutants over six
+shards (`--shard I/N`), which start once the cheap checks have passed; the check named `mutation`
+passes only if every shard did.
 
 ```sh
-python3 -I oracle/mutate.py [--changed <base>] [--list] <sglang checkout> <scratch dir>
+python3 -I oracle/mutate.py [--changed <base>] [--list] [--shard I/N] <sglang checkout> <scratch dir>
 ```
 ## Traces at the cache framework's interfaces (FID-5)
 

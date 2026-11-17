@@ -31,8 +31,10 @@ Modes:
     mutant whose suite's test file changed; the generated mutants of each ported Go function the
     range base..HEAD changes, and of each package whose tests changed.
   --list: print the mutants the mode selects, and run none.
+  --shard I/N: of the mutants the mode selects, in their listed order, run the I-th of every N
+    (I from 0). The N shards partition the selection, so CI runs them side by side.
 
-Usage: python3 -I oracle/mutate.py [--changed <base>] [--list] [--only ID,...] [--root <repository>] <sglang checkout> <scratch dir>
+Usage: python3 -I oracle/mutate.py [--changed <base>] [--list] [--only ID,...] [--shard I/N] [--root <repository>] <sglang checkout> <scratch dir>
 """
 import json
 import os
@@ -249,6 +251,7 @@ def main(argv: list) -> int:
     global ROOT
     base = only = None
     list_only = False
+    shard = None
     args = []
     it = iter(argv)
     for a in it:
@@ -256,6 +259,12 @@ def main(argv: list) -> int:
             base = next(it)
         elif a == "--only":
             only = set(next(it).split(","))
+        elif a == "--shard":
+            i, _, n = next(it).partition("/")
+            if not (i.isdigit() and n.isdigit() and 0 <= int(i) < int(n)):
+                print("mutate: --shard wants I/N with 0 <= I < N", file=sys.stderr)
+                return 2
+            shard = (int(i), int(n))
         elif a == "--list":
             list_only = True
         elif a == "--root":
@@ -291,6 +300,8 @@ def main(argv: list) -> int:
     picked = select(cfg, generated, base)
     if only:
         picked = [m for m in picked if m["id"] in only]
+    if shard:
+        picked = [m for k, m in enumerate(picked) if k % shard[1] == shard[0]]
     if list_only:
         for m in picked:
             print(f"{m['kind']:9} {m['id']}  ({m['guards']})")
