@@ -239,6 +239,7 @@ jobs:
           name: oracle-traces-hicache
           path: oracle-traces-hicache/
       - name: every HiCache interface golden is SGLang's own output
+        if: ${{ !cancelled() }}
         run: |
           set -euo pipefail
           commit="$(git -C sglang-source rev-parse HEAD)"
