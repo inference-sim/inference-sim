@@ -17,6 +17,7 @@ import (
 	"github.com/inference-sim/blis-substrate/load"
 
 	core "github.com/inference-sim/blis-vllm/core/engine"
+	"github.com/inference-sim/blis-vllm/core/kv"
 	"github.com/inference-sim/blis-vllm/core/placement"
 	"github.com/inference-sim/blis-vllm/core/sched"
 )
@@ -547,6 +548,10 @@ func (g *DPGroup) NextWake(now engine.Time) (engine.Time, bool) {
 	}
 	return now + idlePollUs, true
 }
+
+// KVCacheCapacity is each rank's KV cache size, the figure every engine core of the group logs at
+// start-up (Engine.KVCacheCapacity): the ranks are replicas of one pool, so it is one rank's.
+func (g *DPGroup) KVCacheCapacity() kv.Capacity { return g.ranks[0].e.KVCacheCapacity() }
 
 // InFlightLimit implements engine.Engine: each rank's max_concurrent_batches, as many lockstep
 // iterations' batches as a rank's batch queue holds.
