@@ -562,6 +562,97 @@
     "tp_size": 8,
     "chunked_prefill_size": 0
    }
+  },
+  {
+   "name": "dsr1-h200-tp8-recipe-1k",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 1,
+    "disable_radix_cache": true,
+    "max_running_requests": 512,
+    "cuda_graph_max_bs_decode": 512,
+    "chunked_prefill_size": 32768,
+    "max_prefill_tokens": 32768,
+    "mem_fraction_static": 0.82,
+    "attention_backend": "flashinfer",
+    "stream_interval": 10,
+    "decode_log_interval": 1,
+    "host": "0.0.0.0",
+    "port": 8888
+   }
+  },
+  {
+   "name": "dsr1-h200-tp8-recipe-8k",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "dp_size": 1,
+    "disable_radix_cache": true,
+    "max_running_requests": 256,
+    "cuda_graph_max_bs_decode": 256,
+    "chunked_prefill_size": 32768,
+    "max_prefill_tokens": 32768,
+    "mem_fraction_static": 0.82,
+    "attention_backend": "flashinfer",
+    "stream_interval": 10,
+    "decode_log_interval": 1,
+    "host": "0.0.0.0",
+    "port": 8888
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-recipe",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "tool_call_parser": "glm47",
+    "reasoning_parser": "glm45",
+    "mem_fraction_static": 0.85,
+    "served_model_name": "glm-5-fp8",
+    "enable_flashinfer_allreduce_fusion": true,
+    "host": "0.0.0.0",
+    "port": 8888
+   }
+  },
+  {
+   "name": "dsv3-h200-tp8-fa3-explicit",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "attention_backend": "fa3"
+   }
+  },
+  {
+   "name": "dsv3-h200-tp1-fusion-flag",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 1,
+    "enable_flashinfer_allreduce_fusion": true
+   }
+  },
+  {
+   "name": "dsv3-h200-tp8-deprecated-tool-parser",
+   "model": "deepseek-v3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "tool_call_parser": "qwen25"
+   }
+  },
+  {
+   "name": "glm5-h200-tp8-deprecated-glm-parser",
+   "model": "glm-5.3",
+   "chip": "H200",
+   "args": {
+    "tp_size": 8,
+    "tool_call_parser": "glm45"
+   }
   }
  ]
 }

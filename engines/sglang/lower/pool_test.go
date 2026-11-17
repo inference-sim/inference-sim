@@ -233,3 +233,59 @@ func errString(err error) string {
 	}
 	return err.Error()
 }
+
+// TestInertFieldsChangeNoDecision is the proof fields/status.json cites for the fields the
+// recipes state that no decision reads. For each, resolving a pool with the field set to a probe
+// value gives every other ServerArgs field the value it has with the field unset, and lowers to the
+// same plan: the field reaches neither the scheduler's settings nor the cost model's. The reads in
+// SGLang itself are listed with each field in the status file (the HTTP server and the
+// tokenizer, detokenizer and metrics-label code; stream_interval only batches the tokens the
+// detokenizer is sent, output_streamer.py:455-470@297e54fd).
+func TestInertFieldsChangeNoDecision(t *testing.T) {
+	probes := map[string][]string{
+		"host":              {"0.0.0.0", "127.0.0.1"},
+		"port":              {"8888", "30000"},
+		"trust_remote_code": {"true"},
+		"served_model_name": {"glm-5-fp8", "m"},
+		"tool_call_parser":  {"glm47", "qwen"},
+		"reasoning_parser":  {"glm45", "qwen3"},
+		"stream_interval":   {"10", "1", "64"},
+	}
+	for _, g := range []string{"deepseek-r1-0528", "glm-5"} {
+		base := "mem_fraction_static: 0.82\n"
+		want, err := lowerPool(t, g, 8, base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantRes, err := Resolve(PoolInput{Deployment: pool(t, 8, base), Model: graph(t, g), Chip: h200(t)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for field, vals := range probes {
+			for _, v := range vals {
+				block := base + field + ": " + v + "\n"
+				got, err := lowerPool(t, g, 8, block)
+				if err != nil {
+					t.Fatalf("%s %s=%s: %v", g, field, v, err)
+				}
+				if !reflect.DeepEqual(got, want) {
+					t.Errorf("%s %s=%s changes the lowered plan", g, field, v)
+				}
+				res, err := Resolve(PoolInput{Deployment: pool(t, 8, block), Model: graph(t, g), Chip: h200(t)})
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, name := range config.FieldNames() {
+					if name == field {
+						continue
+					}
+					a, _ := res.Value(name)
+					b, _ := wantRes.Value(name)
+					if !reflect.DeepEqual(a, b) {
+						t.Errorf("%s %s=%s changes the resolved %s: %v, was %v", g, field, v, name, a, b)
+					}
+				}
+			}
+		}
+	}
+}
