@@ -241,6 +241,15 @@
    }
   ]
  },
+ "kv_cache_memory_bytes": {
+  "stated": [
+   {
+    "trace": "vllmengine/kvcachememory_test.go",
+    "values": [21474836480],
+    "why": "the test states 20 GiB on DeepSeek-V4-Pro at tensor parallel 8 on H200, at two gpu_memory_utilization values, and finds the KV pool equal to the stated bytes over the bytes a block costs in both, where without the key the pool follows the utilization; a cache larger than the device with the rank's fixed memory is refused"
+   }
+  ]
+ },
  "language_model_only": {
   "stated": [
    {

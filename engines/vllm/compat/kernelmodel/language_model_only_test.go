@@ -1,8 +1,6 @@
 package kernelmodel
 
 import (
-	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -20,7 +18,8 @@ import (
 // table test below covers every one, and these fixtures are the ones with a committed deployment.)
 var languageModelOnlyFixtures = []struct {
 	name, path string
-	towerless  bool
+	// towered says the catalog graph prices a vision tower, so the key decides whether it is resident.
+	towered bool
 	// chip, when set, replaces the fixture's hardware, for a fixture whose weights do not fit its own.
 	chip string
 }{
@@ -64,51 +63,24 @@ func openWithLanguageModelOnly(t *testing.T, path, chip, stated string) *Model {
 	return m
 }
 
-// engine.language_model_only over {a multimodal checkpoint whose graph holds no tower, a
-// text-only model} x {unset, true, false}. Every value builds. True is what the catalog graph
-// prices, so it discloses nothing. Unset and false are vLLM's default, which keeps the tower
-// resident, and for the two multimodal checkpoints the engine discloses the gap; a text-only
-// model builds no MultiModalConfig in vLLM, so nothing differs and nothing is disclosed.
-func TestLanguageModelOnlyIsDisclosedWhereTheGraphPricesNoTower(t *testing.T) {
+// engine.language_model_only over {a multimodal checkpoint whose graph prices its tower, a text-only
+// model} x {unset, true, false}. Every value builds, and none is a substitution: a priced tower is
+// resident or not as the key says, and a text-only model builds no MultiModalConfig, so nothing differs.
+// (A graph that prices no tower is still disclosed: TestPricedAndTowerlessConfigsFollowTheCatalogGraphs.)
+func TestLanguageModelOnlyIsNotASubstitutionWhereTheGraphPricesItsTower(t *testing.T) {
 	for _, f := range languageModelOnlyFixtures {
 		for _, stated := range []string{"", "true", "false"} {
 			t.Run(f.name+"/"+map[string]string{"": "unset"}[stated]+stated, func(t *testing.T) {
-				var got []string
 				m := openWithLanguageModelOnly(t, f.path, f.chip, stated)
 				for _, a := range m.EngineAssumptions() {
-					if strings.HasPrefix(a, "language_model_only") { // the fixtures state cudagraph_mode, which discloses its own
-						got = append(got, a)
+					if strings.HasPrefix(a, "language_model_only") {
+						t.Errorf("assumption %q: the graph prices its tower, so the key is a setting, not a gap", a)
 					}
 				}
-				wantDisclosed := f.towerless && stated != "true"
-				if (len(got) == 1) != wantDisclosed || len(got) > 1 {
-					t.Fatalf("assumptions %q, want one: %t", got, wantDisclosed)
-				}
-				// The substitution is also in the Result's provenance, as a record a grade reads, and the
-				// serialised provenance carries it: a point that leaves the key unset on a multimodal checkpoint
-				// is Substituted, one that states true, and a text-only model's, are not.
 				prov := m.Provenance()
-				if prov.Substituted() != wantDisclosed || len(prov.Substitutions) != map[bool]int{true: 1}[wantDisclosed] {
-					t.Fatalf("provenance substitutions %+v, want one: %t", prov.Substitutions, wantDisclosed)
-				}
-				raw, err := json.Marshal(prov)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if has := strings.Contains(string(raw), `"setting":"language_model_only"`); has != wantDisclosed {
-					t.Errorf("the serialised provenance %s: names the substitution %t, want %t", raw, has, wantDisclosed)
-				}
-				if wantDisclosed {
-					want := map[string]string{"": "unset", "false": "false"}[stated]
-					if s := prov.Substitutions[0]; s.Setting != "language_model_only" || s.Stated != want || s.Priced != "true" {
-						t.Errorf("substitution %+v, want language_model_only %s priced as true", s, want)
-					}
-				}
-				if wantDisclosed {
-					for _, frag := range []string{"language_model_only", f.name, "vision tower", "language_model_only: true"} {
-						if !strings.Contains(got[0], frag) {
-							t.Errorf("assumption %q does not name %q", got[0], frag)
-						}
+				for _, sub := range prov.Substitutions {
+					if sub.Setting == "language_model_only" {
+						t.Errorf("substitution %+v for a graph that prices its tower", sub)
 					}
 				}
 			})
@@ -116,43 +88,66 @@ func TestLanguageModelOnlyIsDisclosedWhereTheGraphPricesNoTower(t *testing.T) {
 	}
 }
 
-// For a multimodal checkpoint whose graph holds no tower, stating language_model_only: true
-// prices nothing differently: the same per-rank fixed bytes, KV budget and blocks, KV layers and
-// step times as the deployment without the key. This is the identity the rule rests on: the cost
-// model already prices the text decoder alone. A text-only model is the control. This shows the
-// engine ignores the key; it does not compare the weights with vLLM's under true (see
-// TestTowerlessMultimodalConfigsNameTheCatalogModels for that limit).
-func TestLanguageModelOnlyTrueChangesNoPrice(t *testing.T) {
+// The key decides whether a priced tower is resident. Unset and false (vLLM's default) hold the tower:
+// the same per-rank fixed bytes and KV budget. True holds none: fewer fixed bytes by at most the tower's
+// stored bytes and at least their tensor-parallel share, and no fewer KV blocks. A text-only model is the
+// control: every value prices alike. No value changes a text-only step: the tower runs only for images.
+func TestLanguageModelOnlyTrueDropsThePricedTowerFromResidentWeights(t *testing.T) {
 	shapes := [][]ReqShape{
 		{{Scheduled: 512, Computed: 0, PromptLen: 512}},
 		{{Scheduled: 1, Computed: 700, PromptLen: 700}, {Scheduled: 1, Computed: 90, PromptLen: 90}},
 		{{Scheduled: 256, Computed: 256, PromptLen: 1024}, {Scheduled: 1, Computed: 3000, PromptLen: 3000}},
 	}
+	data := repos().Data
 	for _, f := range languageModelOnlyFixtures {
 		t.Run(f.name, func(t *testing.T) {
-			base, with := openWithLanguageModelOnly(t, f.path, f.chip, ""), openWithLanguageModelOnly(t, f.path, f.chip, "true")
-			bb, err := base.KVBudget()
+			unset, off, on := openWithLanguageModelOnly(t, f.path, f.chip, ""), openWithLanguageModelOnly(t, f.path, f.chip, "false"),
+				openWithLanguageModelOnly(t, f.path, f.chip, "true")
+			bu, err := unset.KVBudget()
 			if err != nil {
 				t.Fatal(err)
 			}
-			wb, err := with.KVBudget()
+			bf, err := off.KVBudget()
 			if err != nil {
 				t.Fatal(err)
 			}
-			if bb.FixedBytes <= 0 || bb.PerRankBlocks <= 0 {
-				t.Fatalf("the base deployment prices no weights or no blocks: %+v", bb)
+			bt, err := on.KVBudget()
+			if err != nil {
+				t.Fatal(err)
 			}
-			if !reflect.DeepEqual(bb, wb) {
-				t.Errorf("KV budget differs:\n unset %+v\n true  %+v", bb, wb)
+			if bu.FixedBytes <= 0 || bu.PerRankBlocks <= 0 {
+				t.Fatalf("the base deployment prices no weights or no blocks: %+v", bu)
 			}
-			bl, err1 := base.KVLayers()
-			wl, err2 := with.KVLayers()
-			// Kimi-K3's recurrent layers have no KV spec in this package, so both refuse alike.
-			if fmt.Sprint(err1) != fmt.Sprint(err2) || !reflect.DeepEqual(bl, wl) {
-				t.Errorf("KV layers differ: %v %v\n unset %+v\n true  %+v", err1, err2, bl, wl)
+			if !reflect.DeepEqual(bu, bf) {
+				t.Errorf("unset and false are vLLM's one default but price differently:\n unset %+v\n false %+v", bu, bf)
+			}
+			if !f.towered {
+				if !reflect.DeepEqual(bu, bt) {
+					t.Errorf("a text-only model's KV budget differs under true:\n unset %+v\n true  %+v", bu, bt)
+				}
+			} else {
+				g, err := data.Model(f.name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				tw, ok := g.ImageTower()
+				if !ok {
+					t.Fatalf("%s: the graph prices no image tower", f.name)
+				}
+				saved := bu.FixedBytes - bt.FixedBytes
+				whole := int64(tw.WeightBytes())
+				if saved <= 0 || saved > whole {
+					t.Errorf("true saves %d bytes per rank; the tower stores %d", saved, whole)
+				}
+				if tp := int64(on.Kernel().Resolved().TensorParallel()); saved < whole/tp-tp {
+					t.Errorf("true saves %d bytes per rank, under the tower's 1/%d share %d", saved, tp, whole/tp)
+				}
+				if bt.PerRankBlocks < bu.PerRankBlocks {
+					t.Errorf("true leaves %d blocks, fewer than the %d with the tower resident", bt.PerRankBlocks, bu.PerRankBlocks)
+				}
 			}
 			for i, s := range shapes {
-				if b, w := base.StepTimeOfShapes(s), with.StepTimeOfShapes(s); b != w {
+				if b, w := unset.StepTimeOfShapes(s), on.StepTimeOfShapes(s); b != w {
 					t.Errorf("step %d: %d ticks unset, %d with language_model_only true", i, b, w)
 				}
 			}
@@ -160,47 +155,63 @@ func TestLanguageModelOnlyTrueChangesNoPrice(t *testing.T) {
 	}
 }
 
-// Every catalog model whose config.json has a vision_config is in exactly one of
-// towerlessMultimodalConfigs and pricedTowerConfigs, so a multimodal checkpoint cannot be left
-// without a decision. Each digest is the one the catalog's graph was derived from. A listed
-// model's graph holds no node for a vision tower, projector or patch merge (the name pattern
-// below), which is what makes true the identity TestLanguageModelOnlyTrueChangesNoPrice shows; a
-// model in pricedTowerConfigs must match the pattern.
-//
-// The limit: this is a reading of the catalog graph's node names. It is not a comparison with the
-// weights vLLM keeps resident under language_model_only true, which would need vLLM's model
-// classes built on a meta device, and they do not build without their GPU-side parallel groups
-// on the CPU build the oracle runs on. The catalog holds no checkpoint tensor index to count
-// against either. So the test shows the graph names no tower, not that its weight bytes equal
-// vLLM's.
-func TestTowerlessMultimodalConfigsNameTheCatalogModels(t *testing.T) {
+// The kernel prices a resident vision tower at pipeline-parallel width 1 only (the tower sits on the
+// first stage). A Muse Spark deployment at PP2 x TP8 that leaves language_model_only unset therefore
+// still builds, is priced as language_model_only true (the same KV budget and step times), and says so
+// in its provenance, naming the setting as unset; stating true discloses nothing, because then no tower
+// is built.
+func TestPipelineParallelMuseSparkIsPricedWithoutItsTowerAndSaysSo(t *testing.T) {
+	pp2 := filepath.Join("kerneltests", "testdata", "muse-h100-pp2tp8.yaml")
+	unset, on := openWithLanguageModelOnly(t, pp2, "", ""), openWithLanguageModelOnly(t, pp2, "", "true")
+	bu, err := unset.KVBudget()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bt, err := on.KVBudget()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(bu, bt) {
+		t.Errorf("at pp 2 the tower is not priced, so unset must price as true:\n unset %+v\n true  %+v", bu, bt)
+	}
+	var subs []string
+	for _, sub := range unset.Provenance().Substitutions {
+		if sub.Setting == "language_model_only" {
+			if sub.Stated != "unset" || sub.Priced != "true" {
+				t.Errorf("substitution %+v, want unset priced as true", sub)
+			}
+			subs = append(subs, sub.Reason)
+		}
+	}
+	if len(subs) != 1 || !strings.Contains(subs[0], "2 pipeline stages") {
+		t.Errorf("provenance substitutions %q, want one naming the 2 pipeline stages", subs)
+	}
+	for _, sub := range on.Provenance().Substitutions {
+		if sub.Setting == "language_model_only" {
+			t.Errorf("language_model_only: true was given a substitution %+v", sub)
+		}
+	}
+}
+
+// A catalog graph that prices at least one vision tower is in pricedTowerConfigs; one that lists its
+// only tower as omitted is in towerlessMultimodalConfigs and is disclosed when the key is unset or
+// false. Both lists are keyed by the digest of the config the graph was derived from, and every catalog
+// graph with an encoder section is in exactly one of them, so a multimodal checkpoint cannot be left
+// without a decision. A committed vendor config.json with a vision_config must have an encoder section.
+func TestPricedAndTowerlessConfigsFollowTheCatalogGraphs(t *testing.T) {
 	dir, err := substratedata.Catalog()
 	if err != nil {
 		t.Fatal(err)
 	}
 	data := repos().Data
-	tower := regexp.MustCompile(`(?i)vision|tower|projector|merger|patch_merge|vit`)
 	entries, err := os.ReadDir(filepath.Join(dir, "models"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	multimodal := map[string]bool{}
-	for _, e := range entries {
-		cfg, err := os.ReadFile(filepath.Join(dir, "models", e.Name(), "config.json"))
-		if err != nil {
-			continue // a catalog entry without a vendor config (a drafter, say) has no vision_config to find
-		}
-		if strings.Contains(string(cfg), `"vision_config"`) {
-			multimodal[e.Name()] = true
-		}
-	}
-	if len(multimodal) < 18 {
-		t.Fatalf("%d catalog models have a vision_config, the pinned catalog has 18", len(multimodal))
-	}
 	listed := map[string]bool{}
 	for _, table := range []struct {
-		lists map[string]string
-		tower bool
+		lists  map[string]string
+		priced bool
 	}{{towerlessMultimodalConfigs, false}, {pricedTowerConfigs, true}} {
 		for sha, name := range table.lists {
 			if listed[name] {
@@ -214,79 +225,73 @@ func TestTowerlessMultimodalConfigsNameTheCatalogModels(t *testing.T) {
 			if g.DerivedFrom.SHA256 != sha {
 				t.Errorf("%s: the catalog graph was derived from %s, the list has %s", name, g.DerivedFrom.SHA256, sha)
 			}
-			if !multimodal[name] {
-				t.Errorf("%s: config.json has no vision_config, so it is not a multimodal checkpoint", name)
+			if g.Encoder == nil {
+				t.Errorf("%s: the graph states no encoder section, so it is not a multimodal checkpoint", name)
+				continue
 			}
-			graph, err := os.ReadFile(filepath.Join(dir, "models", name, "graph.yaml"))
-			if err != nil {
-				t.Fatal(err)
+			if g.PricesEncoder() != table.priced {
+				t.Errorf("%s: the graph prices a tower: %t, the list says %t", name, g.PricesEncoder(), table.priced)
 			}
-			// The graph's text decoder, not its encoder section: since blis-substrate#301-#303 a
-			// catalog graph states a vision tower under `encoder:`, which the kernel prices only where
-			// the lowering reports an Encoder (blis-vllm#233, a later cut) and otherwise discloses by name
-			// as the assumption "encoder"; the claim of this list is about the decoder.
-			m := tower.Find(withoutEncoderSection(graph))
-			if table.tower && m == nil {
-				t.Errorf("%s: listed as pricing a tower, and the graph names none", name)
-			}
-			if !table.tower && m != nil {
-				t.Errorf("%s: the graph names %q, so it may price a tower and true is not the identity", name, m)
-			}
-			// A listed model is disclosed when the key is unset or false, and not when it is true.
-			got := languageModelOnlyAssumptions(g, engineconfig.Engine{})
-			if !table.tower && (len(got) != 1 || !strings.Contains(got[0], name)) {
-				t.Errorf("%s: unset gives assumptions %q, want one naming the model", name, got)
-			}
-			if table.tower && got != nil {
-				t.Errorf("%s: a model that prices a tower was given an assumption %q", name, got)
-			}
+			unset := languageModelOnlyAssumptions(g, engineconfig.Engine{}, 1)
 			f := false
-			if got := languageModelOnlyAssumptions(g, engineconfig.Engine{LanguageModelOnly: &f}); !table.tower && (len(got) != 1 || !strings.Contains(got[0], "= false")) {
-				t.Errorf("%s: false gives assumptions %q, want one stating false", name, got)
+			stated := languageModelOnlyAssumptions(g, engineconfig.Engine{LanguageModelOnly: &f}, 1)
+			if table.priced && (unset != nil || stated != nil) {
+				t.Errorf("%s: a graph that prices its tower was given assumptions %q %q", name, unset, stated)
 			}
-			if got := languageModelOnlyAssumptions(g, engineconfigStating(true)); got != nil {
+			if !table.priced {
+				if len(unset) != 1 || !strings.Contains(unset[0], name) {
+					t.Errorf("%s: unset gives assumptions %q, want one naming the model", name, unset)
+				}
+				if len(stated) != 1 || !strings.Contains(stated[0], "= false") {
+					t.Errorf("%s: false gives assumptions %q, want one stating false", name, stated)
+				}
+			}
+			if got := languageModelOnlyAssumptions(g, engineconfigStating(true), 1); got != nil {
 				t.Errorf("%s: true gives assumptions %q, want none", name, got)
 			}
 		}
 	}
-	for name := range multimodal {
-		if !listed[name] {
-			t.Errorf("%s has a vision_config and is in neither towerlessMultimodalConfigs nor pricedTowerConfigs", name)
+	for _, e := range entries {
+		g, err := data.Model(e.Name())
+		if err != nil || g.Encoder == nil {
+			continue
+		}
+		if !listed[e.Name()] {
+			t.Errorf("%s has an encoder section and is in neither towerlessMultimodalConfigs nor pricedTowerConfigs", e.Name())
 		}
 	}
-	for _, want := range []string{"minimax-m3", "minimax-m3-mxfp8", "minimax-m3-nvfp4", "kimi-k3", "deepseek-v4.1-flash", "glm-5.3-flash", "inkling",
-		"gemma-4-26b-a4b-it", "gemma-4-26b-a4b-it-fp8-dynamic", "gemma-4-31b-it",
-		"kimi-k2.5", "kimi-k2.6", "llama-4-scout-17b-16e-instruct-fp8-dynamic", "muse-spark-open-816b-a42b",
-		"muse-spark-open-816b-a42b-nvfp4", "qwen3.5-397b-a17b", "qwen3.5-397b-a17b-fp8", "qwen3.6-35b-a3b"} {
-		if !listed[want] {
+	for _, e := range entries {
+		cfg, err := os.ReadFile(filepath.Join(dir, "models", e.Name(), "config.json"))
+		if err != nil || !strings.Contains(string(cfg), `"vision_config"`) {
+			continue
+		}
+		if g, err := data.Model(e.Name()); err != nil || g.Encoder == nil {
+			t.Errorf("%s: config.json has a vision_config and the graph states no encoder section", e.Name())
+		}
+	}
+	for _, want := range []string{"minimax-m3", "kimi-k3", "kimi-k2.5", "qwen3.5-397b-a17b", "gemma-4-31b-it", "glm-5.3-flash"} {
+		g, err := data.Model(want)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := pricedTowerConfigs[g.DerivedFrom.SHA256]; !ok {
+			t.Errorf("%s is not in pricedTowerConfigs", want)
+		}
+	}
+	for _, want := range []string{"deepseek-v4.1-flash", "inkling"} {
+		g, err := data.Model(want)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := towerlessMultimodalConfigs[g.DerivedFrom.SHA256]; !ok {
 			t.Errorf("%s is not in towerlessMultimodalConfigs", want)
 		}
 	}
-	if languageModelOnlyAssumptions(nil, engineconfigStating(true)) != nil {
+	if languageModelOnlyAssumptions(nil, engineconfigStating(true), 1) != nil {
 		t.Error("a nil graph was given an assumption")
 	}
 }
 
 func engineconfigStating(v bool) engineconfig.Engine {
 	return engineconfig.Engine{LanguageModelOnly: &v}
-}
-
-// withoutEncoderSection drops the top-level `encoder:` block of a catalog graph, where the vision
-// tower of a multimodal checkpoint is stated beside the text decoder's layer kinds.
-func withoutEncoderSection(graph []byte) []byte {
-	var out []string
-	skipping := false
-	for _, line := range strings.Split(string(graph), "\n") {
-		if strings.HasPrefix(line, "encoder:") {
-			skipping = true
-			continue
-		}
-		if skipping && line != "" && line[0] != ' ' && line[0] != '\t' && line[0] != '#' {
-			skipping = false
-		}
-		if !skipping {
-			out = append(out, line)
-		}
-	}
-	return []byte(strings.Join(out, "\n"))
 }

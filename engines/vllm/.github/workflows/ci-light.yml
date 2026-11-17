@@ -53,9 +53,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
-        with:
-          go-version-file: go.mod
+      - uses: inference-sim/blis-substrate/.github/actions/go-toolchain@883a2709c250e4724ce11d1d6ba2cc12662b01e7 # v0.15.0
       - name: gofmt
         run: |
           unformatted="$(gofmt -l .)"
@@ -96,9 +94,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
-        with:
-          go-version-file: go.mod
+      - uses: inference-sim/blis-substrate/.github/actions/go-toolchain@883a2709c250e4724ce11d1d6ba2cc12662b01e7 # v0.15.0
       - name: Lint what the layer touches
         uses: golangci/golangci-lint-action@9fae48acfc02a90574d7c304a1758ef9895495fa # v7.0.1
         with:

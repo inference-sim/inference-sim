@@ -52,6 +52,7 @@ so, when it is unset.
 | T4 NIXL connector | `run_connector.py` | `scenarios/connector/` | `gen_connector_fuzz.py` (seeds 10000+ reach `max_model_len`; 20000+ add hybrid groups and drafters; 30000+ the batch queue) | `./core/connector/nixl` (`BLIS_VLLM_CONNECTOR_FUZZ_DIR`) |
 | T4 OffloadingConnector (CPU tier, LRU) | `run_offloading.py` | `scenarios/offloading/` | `gen_offloading_fuzz.py` (seeds 20000+ add sliding-window groups) | `./core/connector/offloading` (`BLIS_VLLM_OFFLOAD_FUZZ_DIR`) |
 | T2 stated `swa_bounded_replay` (vLLM resolves the layout) | `run_swa_layout.py` | `scenarios/swa/` | | `./core/sched` (`TestSWALayoutScenariosAgainstVLLM`), `./compat/kernelmodel` |
+| T2 whether the server answers render calls (`enable_scale_out`) | `run_render.py` | `scenarios/render/` | | `./core/vllm` (`TestRenderGoldensAreVLLMsDecision`) |
 | T4 MultiConnector over NIXL and the OffloadingConnector, both orders | `run_multiconnector.py` | `scenarios/multiconnector/` | `gen_multiconnector_fuzz.py` (seeds 20000+ add sliding-window groups; 40000+ async scheduling) | `./core/connector/multi` (`BLIS_VLLM_MULTI_FUZZ_DIR`) |
 | T5 metrics | `run_metrics.py` | `scenarios/` (tier-2 scenarios) | `gen_fuzz.py` | `./core/metrics` (`BLIS_VLLM_METRICS_FUZZ_DIR`) |
 

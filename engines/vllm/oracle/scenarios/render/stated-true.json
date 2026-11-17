@@ -1,0 +1,1 @@
+{"name": "render-true", "description": "enable_scale_out stated true: the render routes are registered", "config": {"enable_scale_out": true, "supported_tasks": ["generate"]}}

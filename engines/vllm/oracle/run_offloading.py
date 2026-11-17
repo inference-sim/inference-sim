@@ -59,6 +59,12 @@ the step's load and store jobs (job id, request, CPU chunks, GPU blocks by group
 flushed, the jobs completed, the jobs still pending, and the CPU tier's chunks in LRU order
 (key, chunk id, reference count), its free and evictable chunk counts.
 
+A scenario that sets "record_admission_stats" (synchronous scheduling) also records, for each step,
+the PrefillStats of the requests it admitted for the first time (prefill_stats) and the prefix-cache
+and connector queries and hits it counted (admission_stats), including a request parked on an
+asynchronous load, which has no lookup when it first runs (oracle/scenarios/offloading/
+offloading-admission-counters.json).
+
 A scenario that states spec_name TieringOffloadingSpec with secondary tiers (oracle/scenarios/
 offloading-tiering) runs run_tiered: the same Scheduler, connector and worker mock, over the
 TieringOffloadingManager that spec builds (tiering/spec.py:331-380@4ba787ec), and its fs tier, vLLM's
@@ -386,6 +392,7 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
                           add_arrivals, connector_state, cpu_state, gpu_spec, sampled_so_far, finished)
 
     step = 0
+    admitted_seen = set()
     while step < max_steps:
         add_arrivals(step)
         if not scheduler.has_requests():
@@ -402,6 +409,9 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
             "scheduled": dict(sorted(out.num_scheduled_tokens.items())),
             "preempted": sorted(out.preempted_req_ids or []),
         }
+        if sc.get("record_admission_stats"):
+            # Before update_from_output, which takes a finished prefill's stats away.
+            record["prefill_stats"] = prefill_stats(scheduler, out, admitted_seen)
         off = {
             "loads": [[jid, j.req_id, [int(c) for c in j.src_spec.block_ids], gpu_spec(j.dst_spec)]
                       for jid, j in sorted(meta.load_jobs.items())],
@@ -450,6 +460,8 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
             sampled_token_ids=sampled, logprobs=None, prompt_logprobs_dict={}, pooler_output=[],
             kv_connector_output=kv_out)
         engine_outputs = scheduler.update_from_output(out, mro)
+        if sc.get("record_admission_stats"):
+            record["admission_stats"] = admission_stats(engine_outputs)
         if spec and out.total_num_scheduled_tokens > 0:
             from vllm.v1.outputs import DraftTokenIds  # noqa: E402
 
@@ -476,6 +488,50 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     prov["tier"] = 4
     prov["cpu_chunks"] = manager._num_chunks
     return {"provenance": prov, "steps": steps, "finished": dict(sorted(finished.items()))}
+
+
+def prefill_stats(scheduler, out, seen: set) -> dict:
+    """The PrefillStats of each request this schedule admitted for the first time, for a scenario
+    that sets "record_admission_stats" (read only; no decision is made here): [num_prompt_tokens,
+    num_local_cached_tokens, num_external_cached_tokens]. A request is admitted when it is scheduled
+    to run, or parked in WAITING_FOR_REMOTE_KVS by an asynchronous load: the stats are set at the
+    admission, before the load parks it (vllm/v1/core/sched/scheduler.py:1251-1257@4ba787ec).
+    """
+    from vllm.v1.request import RequestStatus  # noqa: E402
+
+    new = [d.req_id for d in out.scheduled_new_reqs]
+    new += [r.request_id for r in scheduler.kv_holding_waiting if r.status == RequestStatus.WAITING_FOR_REMOTE_KVS]
+    stats = {}
+    for rid in sorted(set(new)):
+        r = scheduler.requests.get(rid)
+        if r is None or rid in seen or r.num_preemptions > 0 or r.prefill_stats is None:
+            continue
+        seen.add(rid)
+        ps = r.prefill_stats
+        stats[rid] = [int(ps.num_prompt_tokens), int(ps.num_local_cached_tokens), int(ps.num_external_cached_tokens)]
+    return stats
+
+
+def admission_stats(engine_outputs) -> dict:
+    """The step's SchedulerStats that count admissions, which update_from_output hands to the
+    frontend: prefix_cache_stats as [queries, hits] and connector_prefix_cache_stats as
+    [queries, hits, hits_by_source keyed by the tier's label] (scheduler.py:1476-1511, 3243-3250@4ba787ec).
+    """
+    pre, con = [0, 0], [0, 0, {}]
+    for eco in engine_outputs.values():
+        ss = eco.scheduler_stats
+        if ss is None:
+            continue
+        if ss.prefix_cache_stats is not None:
+            pre[0] += int(ss.prefix_cache_stats.queries)
+            pre[1] += int(ss.prefix_cache_stats.hits)
+        cs = ss.connector_prefix_cache_stats
+        if cs is not None:
+            con[0] += int(cs.queries)
+            con[1] += int(cs.hits)
+            for tier, n in cs.hits_by_source.items():
+                con[2][tier.value] = con[2].get(tier.value, 0) + int(n)
+    return {"prefix": pre, "connector": con}
 
 
 TIER_WAIT_S = 30.0

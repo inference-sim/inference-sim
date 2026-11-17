@@ -29,17 +29,89 @@ type scheduled struct {
 	tokens    map[string]int
 }
 
+// lookupInfo is a request's admission lookup: what the local prefix cache and the KV connector
+// supplied of its prompt (PrefillStats, scheduler.py:1251-1257@4ba787ec).
+type lookupInfo struct {
+	set, reported bool
+	// local and external are num_new_local_computed_tokens and num_external_computed_tokens.
+	local, external int
+	// connector is whether a KV connector is configured.
+	connector bool
+	// sources split external by the CacheHitSource of the tier that supplied it (lower case, as
+	// the label's value), as get_external_cache_hit_sources reports them.
+	sources map[string]int
+	// cached is the tokens the batch reports as supplied by a cache: the local hit and what a
+	// KV offload tier supplied; offload is the latter. Tokens a P/D pull supplied are the
+	// connector's, not a cache's.
+	cached, offload int
+}
+
+// noteLookups notes the lookup of every request whose admission took one in a schedule: one
+// admitted to run and one parked on an asynchronous KV load, which runs in a later schedule with
+// no lookup in it (PrefillStats is set at the admission, scheduler.py:1251-1257@4ba787ec, before
+// the load parks the request).
+func (e *Engine) noteLookups(b core.Batch) {
+	for _, id := range sortedKeys(b.Out.PrefixHit) {
+		st := e.reqs[id]
+		if st == nil {
+			continue
+		}
+		li := lookupInfo{set: true, local: b.Out.PrefixHit[id]}
+		li.external, li.connector = b.Out.PrefixExternal[id]
+		li.cached = li.local
+		if li.external > 0 {
+			li.sources = e.externalSources(e.s.Request(id), li.external)
+			for src, n := range li.sources {
+				if src != "external_unspecified" {
+					li.offload += n
+				}
+			}
+			li.cached += li.offload
+		}
+		st.lookup = li
+	}
+}
+
+// externalSources splits a request's external tokens by the tier that supplied them
+// (get_external_cache_hit_sources, scheduler.py:1494-1503@4ba787ec): the offloading connector
+// names its tiers when it was the one chosen to load the request, and any other connector's
+// tokens are EXTERNAL_UNSPECIFIED (base.py:185-186, 550-566).
+func (e *Engine) externalSources(r *sched.Request, external int) map[string]int {
+	if e.off != nil {
+		chosen := e.off.multi == nil
+		if !chosen {
+			i, ok := e.off.multi.Chosen(r.ID)
+			chosen = ok && i == e.off.child
+		}
+		if chosen {
+			out := map[string]int{}
+			for src, n := range e.off.conn.ExternalHitSources(r, external) {
+				out[strings.ToLower(src)] += n
+			}
+			return out
+		}
+	}
+	return map[string]int{"external_unspecified": external}
+}
+
+// OffloadCachedTokens is how much of the Scheduled.CachedTokens a batch reported for id the KV
+// offload tier supplied, which the simulator splits from the device cache's hit.
+func (e *Engine) OffloadCachedTokens(id string) int {
+	if st := e.reqs[id]; st != nil {
+		return st.lookup.offload
+	}
+	return 0
+}
+
 // recordSchedule notes a schedule's admissions, preemptions and tokens for its batch's step.
 func (e *Engine) recordSchedule(b core.Batch) {
 	sc := scheduled{preempted: append([]string(nil), b.Out.Preempted...), tokens: b.Out.Scheduled}
-	for _, id := range b.Out.NewIDs {
-		hit, looked := b.Out.PrefixHit[id]
-		if !looked {
-			continue
-		}
+	for _, id := range sortedKeys(b.Out.PrefixHit) {
 		r := e.s.Request(id)
+		li := e.reqs[id].lookup
 		sc.admitted = append(sc.admitted, metrics.Admission{ID: id, PromptTokens: r.NumTokens(),
-			LocalHit: hit, Preempted: r.NumPreemptions > 0, CacheLookup: e.prefixCaching()})
+			LocalHit: li.local, Preempted: r.NumPreemptions > 0, CacheLookup: e.prefixCaching(),
+			External: li.external, Connector: li.connector, ExternalBySource: li.sources})
 	}
 	if e.sched == nil {
 		e.sched = map[int]scheduled{}

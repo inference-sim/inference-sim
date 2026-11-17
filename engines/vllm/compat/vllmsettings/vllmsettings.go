@@ -44,6 +44,9 @@ type Settings struct {
 	AsyncScheduling *bool
 	// DisableCascadeAttn is nil when unstated.
 	DisableCascadeAttn *bool
+	// LanguageModelOnly is nil when unstated (vLLM's default, false: a multimodal model keeps its
+	// towers resident).
+	LanguageModelOnly *bool
 
 	All2AllBackend         string
 	AllReduceBackend       string
@@ -132,7 +135,7 @@ func (m MaxModelLen) Stated() (int, bool) {
 // already made from them.
 func (s Settings) Clone() Settings {
 	for _, b := range []**bool{&s.EnablePrefixCaching, &s.AsyncScheduling, &s.DisableCascadeAttn,
-		&s.DisableCustomAllReduce, &s.DCPQReplicate} {
+		&s.DisableCustomAllReduce, &s.DCPQReplicate, &s.LanguageModelOnly} {
 		if *b != nil {
 			v := **b
 			*b = &v
@@ -188,6 +191,7 @@ func Of(e engineconfig.Engine) Settings {
 		EnablePrefixCaching:     e.EnablePrefixCaching,
 		AsyncScheduling:         e.AsyncScheduling,
 		DisableCascadeAttn:      e.DisableCascadeAttn,
+		LanguageModelOnly:       e.LanguageModelOnly,
 		All2AllBackend:          e.All2AllBackend,
 		AllReduceBackend:        e.AllReduceBackend,
 		DisableCustomAllReduce:  e.DisableCustomAllReduce,

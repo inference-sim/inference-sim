@@ -35,6 +35,7 @@ func TestEngineFieldNames(t *testing.T) {
 		"disable_cascade_attn":         "--disable-cascade-attn",
 		"enable_prefix_caching":        "--enable-prefix-caching / --no-enable-prefix-caching",
 		"swa_bounded_replay":           "--swa-bounded-replay / --no-swa-bounded-replay",
+		"enable_scale_out":             "--enable-scale-out",
 		"block_size":                   "--block-size",
 		"max_num_batched_tokens":       "--max-num-batched-tokens",
 		"max_num_seqs":                 "--max-num-seqs",
