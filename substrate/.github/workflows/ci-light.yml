@@ -38,7 +38,8 @@ jobs:
     name: "light - format, vet, build and changed packages${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
     if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The kernel package alone takes more than 20 minutes of tests on a hosted runner (#373, run 44190453806).
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
