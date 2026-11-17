@@ -553,20 +553,6 @@ func resolve(c Config) (settings, error) {
 	if s.offload, err = checkConnectorPair(s.connector, s.offload); err != nil {
 		return settings{}, err
 	}
-	if s.connector != nil && s.connector.Role.producer() && c.DataParallelSize > 1 && c.Placement != nil {
-		// A handoff names no endpoint (engine.Handoff), so the decode side is told only the prefill
-		// instance's first node (engine.Request.Peer). A prefill group whose ranks sit on several nodes
-		// would price every pull from the first node's links, wrong for a request computed on another
-		// rank. This is a limit of the contract (inference-sim/blis-substrate#48), not of vLLM, which
-		// starts such a group; it is refused until Handoff carries the owning rank's endpoint. A decode
-		// group has no such limit: each rank states its own node as the end of its pulls.
-		if n := c.Placement.GroupNodes(c.DataParallelSize, rankWidth(*c.Placement)); n > 1 {
-			return settings{}, fmt.Errorf("vllm: a %s group of %d data-parallel ranks spans %d nodes: the engine contract's handoff "+
-				"names no endpoint, so a pull could not be priced from the node of the rank that holds the KV "+
-				"(inference-sim/blis-substrate#48); vLLM itself starts such a group. Keep a prefill group on one node, "+
-				"or wait for a handoff that carries its rank's endpoint", c.KVTransfer.Role, c.DataParallelSize, n)
-		}
-	}
 	if c.APIServerCount < 0 {
 		return settings{}, fmt.Errorf("vllm: api_server_count %d: it counts API-server processes and is not negative", c.APIServerCount)
 	}
