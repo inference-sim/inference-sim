@@ -13,8 +13,8 @@ Seeds 10000 and up also run requests into max_model_len (LENGTH_CAP_SEEDS). Seed
 sliding windows), a drafter (DSpark with up to 7 drafts and sample_from_anchor, the default; an
 EAGLE-family draft; a four-module MTP drafter, whose lookahead sets NIXL's prefill backoff) with
 a per-request acceptance plan, or both. A load's block-level failures ("invalid_blocks") are
-drawn only beside one group: NIXL's worker reports none under HMA (nixl/base_worker.py:2910-2914
-@5df63a72).
+drawn only beside one group: NIXL's worker reports none under HMA (nixl/base_worker.py:3248-3252
+@4ba787ec).
 
 Usage: python -I oracle/gen_connector_fuzz.py <out dir> <first seed> <count>
 """

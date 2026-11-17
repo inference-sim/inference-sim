@@ -62,7 +62,7 @@ func BytesPerBlock(groups []PageGroup, blockOutermost bool) (int64, error) {
 	return roundUp(widest, lcm), nil
 }
 
-// NumBlocks is get_kv_cache_config_from_groups' block count (kv_cache_utils.py:1622-1628@5df63a72):
+// NumBlocks is get_kv_cache_config_from_groups' block count (kv_cache_planning.py:676-682@4ba787ec):
 // the memory available for the KV cache over BytesPerBlock, floored.
 func NumBlocks(availableBytes int64, groups []PageGroup, blockOutermost bool) (int64, error) {
 	per, err := BytesPerBlock(groups, blockOutermost)
@@ -90,9 +90,9 @@ func gcdOf(a, b int64) int64 {
 //
 // The layout is the one the grouping implies. Packed groups of several page sizes exist only on
 // a block-outermost layout (_get_packed_kv_cache_groups returns None on any other,
-// kv_cache_utils.py:1875-1878@5df63a72), so DeepSeek V4's layers are sized block-outer; every
+// kv_cache_planning.py:929-932@4ba787ec), so DeepSeek V4's layers are sized block-outer; every
 // other model's on vLLM's default for backends that state none, LBNHC, which is layer-outer
-// (_DEFAULT_LAYOUT_PREFERENCE, vllm/v1/attention/backends/utils.py:195-202). A layer's stride
+// (_DEFAULT_LAYOUT_PREFERENCE, vllm/v1/attention/backends/utils.py:229-236). A layer's stride
 // alignment is its StrideAlignment, 1 when unstated: a backend's whole-kernel-block alignment
 // (customize_attention_spec, vllm/v1/worker/utils.py:478-486) is 1 whenever its kernel block
 // divides the block size, and otherwise a fraction of the page that divides it, so it changes no
@@ -164,8 +164,8 @@ func StagePoolBytesPerBlock(layers []Layer, on []bool, o GroupOptions, blockSize
 // StageGroupCopyBytes is, for each of the model's KV cache groups in GroupLayers' order, the bytes
 // the stage's worker copies for one block of that group when it offloads it: vLLM's CPU offload
 // worker copies a group's blocks one (block, layer) page at a time over the group's layers on that
-// worker, each at its unpadded page (_fill_direct_ops, vllm/v1/kv_offload/cpu/gpu_worker.py:395-416;
-// group_data_refs, offloading/worker.py:202-207@5df63a72), so a group of fewer layers than the
+// worker, each at its unpadded page (_fill_direct_ops, vllm/v1/kv_offload/cpu/gpu_worker.py:424-445;
+// group_data_refs, offloading/worker.py:202-207@4ba787ec), so a group of fewer layers than the
 // widest moves fewer bytes a block than the pool's stride. A packed layout (DeepSeek V4's) copies
 // the whole packed block for every group (offloading/worker.py:144-161), the stage's pool bytes
 // per block (StagePoolBytesPerBlock).
@@ -205,7 +205,7 @@ func StageGroupCopyBytes(layers []Layer, on []bool, o GroupOptions, blockSize in
 }
 
 // copyPageBytes is the bytes the offload worker copies for one layer's page: the unpadded page
-// (canonical_mapping.py:396-399@5df63a72), which for a Mamba layer is its states' bytes, not
+// (canonical_mapping.py:396-399@4ba787ec), which for a Mamba layer is its states' bytes, not
 // the page_size_padded the hybrid alignment sets.
 func copyPageBytes(l Layer) int64 {
 	if l.Spec == LayerMamba {

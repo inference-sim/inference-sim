@@ -213,7 +213,7 @@ Per step: `scheduled` (tokens per request), `preempted`, `finished`, `free_block
 
 `scenarios-dp-nixl/` runs `run_dp.py` with a NIXL connector on every rank. A rank is one DP engine
 core: its own vLLM `Scheduler`, KV cache and `NixlConnector` scheduler side, as vLLM gives each rank
-its own `engine_id` (`<uuid>_dp<rank>`, `vllm/v1/engine/core.py:1417-1426@5df63a72`). The prefill rank
+its own `engine_id` (`<uuid>_dp<rank>`, `vllm/v1/engine/core.py:1488-1497@4ba787ec`). The prefill rank
 that ran a request names itself in the request's `kv_transfer_params`, and the decode side pulls that
 rank's blocks for that request, so a P/D pair at DP is per rank and per request; the ranks are coupled
 only by the DP wave (lockstep steps, dummy batches, the all-reduce of the unfinished flags). The
@@ -287,7 +287,7 @@ Per step (beside `scheduled`, `preempted`, `finished`, `free_blocks`, `blocks`, 
 | `blocks` | as for any hybrid model: per running request, one list per KV cache group in group order; a null slot is `["null", 0]`, every other block `[hash or null, ref_cnt]`, never a block id. A Mamba group in align mode holds null blocks for the states it has retired, so the positions of the null blocks are part of the contract |
 | `num_computed` | request id to `num_computed_tokens` after the step, for every running request |
 | `num_tokens` | request id to `num_tokens` (prompt plus outputs so far); the scheduler's `prefill_end` is `max(prompt length, num_tokens - 1)`, so a resumed request replays its outputs |
-| `prefix_hit` | for each request whose first prefill this step scheduled, the tokens that schedule took from the prefix cache (`PrefillStats.num_cached_tokens`, `vllm/v1/metrics/stats.py:308-346@5df63a72`); a resumed request is not listed again |
+| `prefix_hit` | for each request whose first prefill this step scheduled, the tokens that schedule took from the prefix cache (`PrefillStats.num_cached_tokens`, `vllm/v1/metrics/stats.py:308-346@4ba787ec`); a resumed request is not listed again |
 
 The aligned split's chunk sizes are the existing `scheduled` map.
 

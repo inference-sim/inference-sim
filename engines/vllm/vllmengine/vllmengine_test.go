@@ -200,7 +200,7 @@ func stated(block yaml.Node, key string) string {
 
 // Prepare states an MTP drafter's layer count from the catalog: the model graph's speculator
 // stack, whose layers are the checkpoint's num_nextn_predict_layers (deepseek-v4-pro: one), so
-// the factory resolves the prefill lookahead vLLM reserves (vllm/config/vllm.py:644-664@5df63a72).
+// the factory resolves the prefill lookahead vLLM reserves (vllm/config/vllm.py:655-675@4ba787ec).
 // A block that states the field keeps its own value, and a pool drafting with DSpark states none.
 func TestPrepareStatesTheMTPDrafterLayers(t *testing.T) {
 	d001 := openPool(t, "d001-032.yaml")

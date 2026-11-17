@@ -193,7 +193,7 @@ def layer_groups(cfg: dict, vllm_config) -> list:
             pool["startup"]["max_concurrent_batches"] = vllm_config.max_concurrent_batches
         pool_sizes.append(pool)
     # The scheduler's view: a uniform-type group is represented by one of its layers' specs
-    # (generate_scheduler_kv_cache_config, vllm/v1/core/kv_cache_utils.py:2276-2297@5df63a72).
+    # (generate_scheduler_kv_cache_config, vllm/v1/core/kv_cache_utils.py:1096-1117@4ba787ec).
     projected = generate_scheduler_kv_cache_config(
         [KVCacheConfig(num_blocks=cfg["num_blocks"], kv_cache_tensors=[], kv_cache_groups=groups)])
     return projected.kv_cache_groups
@@ -345,7 +345,7 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     while step < max_steps:
         add_arrivals(step)
         # An abort at this step, before the step runs: the scheduler finishes the request
-        # (finish_requests, EngineCore.abort_requests, core.py:554-559@5df63a72). Tier 5 tells a
+        # (finish_requests, EngineCore.abort_requests, core.py:564-569@4ba787ec). Tier 5 tells a
         # client's abort from one the engine sends; the scheduler's decisions are the same.
         aborts = sorted(rid for rid, r in by_id.items() if r.get("abort_step") == step)
         if aborts:
@@ -478,7 +478,7 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict, extra: dic
     # vary a field this way); vLLM's own class validates them.
     sched_extra.update(cfg.get("scheduler_config", {}))
     if cfg.get("kv_layers") and "disable_hybrid_kv_cache_manager" in cfg:
-        # vLLM's own field, which get_kv_cache_groups reads (kv_cache_utils.py:2173@5df63a72). A
+        # vLLM's own field, which get_kv_cache_groups reads (kv_cache_planning.py:1127@4ba787ec). A
         # "kv_groups" scenario states it too, but there the promotion is called directly below.
         sched_extra["disable_hybrid_kv_cache_manager"] = cfg["disable_hybrid_kv_cache_manager"]
     real_vllm_config, real_scheduler_config = helpers.VllmConfig, helpers.SchedulerConfig
@@ -550,8 +550,8 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict, extra: dic
             retention = {}
             if has_mamba(cfg):
                 # The engine's KVCacheConfig carries the retention policy the CacheConfig states
-                # (get_kv_cache_config_from_groups, vllm/v1/core/kv_cache_utils.py:1611-1613 and
-                # 1684-1686@5df63a72): vLLM's default 0 keeps only semantic checkpoints of Mamba
+                # (get_kv_cache_config_from_groups, vllm/v1/core/kv_cache_planning.py:665-667 and
+                # 738-740@4ba787ec): vLLM's default 0 keeps only semantic checkpoints of Mamba
                 # states, where the dataclass's own default (None) keeps every one.
                 retention = {"prefix_cache_retention_interval":
                              built["config"].cache_config.prefix_cache_retention_interval}
@@ -606,7 +606,7 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict, extra: dic
             )
 
             # Layers that share one spec form one group, as get_kv_cache_groups gives them
-            # (kv_cache_utils.py:2185-2189@5df63a72); otherwise each layer is its own group.
+            # (kv_cache_planning.py:1139-1143@4ba787ec); otherwise each layer is its own group.
             if is_kv_cache_spec_uniform(layers):
                 specs = _get_kv_cache_groups_uniform_spec(layers)
             else:

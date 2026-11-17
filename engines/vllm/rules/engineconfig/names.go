@@ -56,7 +56,7 @@ var moves = []move{
 }
 
 // rustFrontendEnv is the environment variable vLLM selects its front end with
-// (vllm/envs.py:170@5df63a72); the block's earlier frontend key was a name for it.
+// (vllm/envs.py:168@4ba787ec); the block's earlier frontend key was a name for it.
 const rustFrontendEnv = "VLLM_USE_RUST_FRONTEND"
 
 // refusedKeys are earlier top-level names that now have another spelling, with what to write for

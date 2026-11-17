@@ -13,10 +13,10 @@ import (
 // cannot select one. There are two ways to select it in v0.32.0, and each is refused here.
 //
 //   - By connector name: MooncakeConnector and MooncakeStoreConnector are registered in
-//     vllm/distributed/kv_transfer/kv_connector/factory.py:225-234@5df63a72. The engine models
+//     vllm/distributed/kv_transfer/kv_connector/factory.py:225-234@4ba787ec. The engine models
 //     NixlConnector and NixlPullConnector and refuses every other name (buildConnector).
 //   - Through the NIXL connector: its backends come from kv_connector_extra_config
-//     (vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:524-526@5df63a72), which can
+//     (vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:623-625@4ba787ec), which can
 //     name MOONCAKE. The engine block's kv_transfer has four keys (connectorConfig: connector,
 //     kv_role, kv_load_failure_policy, and kv_connector_extra_config, which only a MultiConnector reads, for its
 //     "connectors" children) and the block is decoded with KnownFields(true), so no other key of the

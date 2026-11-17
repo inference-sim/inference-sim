@@ -15,11 +15,11 @@ type Release int
 const (
 	// FreeNow: the decode engine aborted a request it had received, and its connector notifies
 	// the prefill side with an empty read, which frees the blocks at once
-	// (nixl/pull_scheduler.py:219-232@5df63a72).
+	// (nixl/pull_scheduler.py:219-232@4ba787ec).
 	FreeNow Release = iota
 	// HoldUntilFirstExpiry: the decode engine never received the request, so no notice comes and
 	// no heartbeat renews the lease; the blocks are freed when it runs out, one lease after the
-	// prefill completed (FirstExpiry; _reap_expired_send_leases, nixl/base_worker.py:3014-3040@5df63a72).
+	// prefill completed (FirstExpiry; _reap_expired_send_leases, nixl/base_worker.py:3352-3378@4ba787ec).
 	HoldUntilFirstExpiry
 	// HoldUntilRenewedExpiry: the decode engine had the request and heartbeated until it
 	// vanished; the blocks are freed when the lease its last heartbeat granted runs out
@@ -69,7 +69,7 @@ func ReleaseAt(r Release, prefillCompleteUs, nowUs, leaseUs int64) int64 {
 // DecodeAccepts reports whether a decode engine whose whole KV pool is decodeKVBlocks can ever
 // take a handoff of promptKVBlocks. One it cannot is rejected outright -- the request is
 // aborted before any allocation, which notifies the prefill side to free at once
-// (DecodeRejected; nixl/pull_scheduler.py:219-232@5df63a72) -- rather than waiting for KV that
+// (DecodeRejected; nixl/pull_scheduler.py:219-232@4ba787ec) -- rather than waiting for KV that
 // can never be freed.
 func DecodeAccepts(promptKVBlocks, decodeKVBlocks int64) bool {
 	return promptKVBlocks <= decodeKVBlocks
@@ -77,9 +77,9 @@ func DecodeAccepts(promptKVBlocks, decodeKVBlocks int64) bool {
 
 // PullComplete is what a completed pull does: the decode side's connector reports the request
 // in finished_sending, so the prefill side frees the blocks it held
-// (nixl/base_worker.py:2985-2997@5df63a72), and the decode scheduler caches the blocks it
+// (nixl/base_worker.py:3323-3335@4ba787ec), and the decode scheduler caches the blocks it
 // received, which only now may serve another request's prefix
-// (_update_waiting_for_remote_kv, sched/scheduler.py:3154-3157@5df63a72).
+// (_update_waiting_for_remote_kv, sched/scheduler.py:3498-3501@4ba787ec).
 type PullComplete struct {
 	FreePrefillHold    bool
 	CacheReceivedBlock bool

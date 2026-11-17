@@ -147,9 +147,9 @@ type group struct {
 // changes.
 type Options struct {
 	// EagleBlockDrop is the scheduler's use_eagle_block_drop
-	// (vllm/v1/core/sched/scheduler.py:315-316, 333@5df63a72).
+	// (vllm/v1/core/sched/scheduler.py:330-331, 356@4ba787ec).
 	EagleBlockDrop bool
-	// PrefillLookahead is num_prefill_lookahead_tokens (vllm/config/vllm.py:644-665@5df63a72).
+	// PrefillLookahead is num_prefill_lookahead_tokens (vllm/config/vllm.py:655-676@4ba787ec).
 	PrefillLookahead int
 	// HashLookahead is the block pool's num_hash_lookahead_tokens (block_pool.py, set from
 	// Scheduler.__init__, vllm/v1/core/sched/scheduler.py:342-358@4ba787ec): the tokens past each
@@ -157,16 +157,16 @@ type Options struct {
 	HashLookahead int
 	// Groups are the KV cache groups; none means one full-attention group.
 	Groups []Group
-	// MaxInFlightTokens is max_in_flight_tokens (vllm/config/vllm.py:589-598@5df63a72):
+	// MaxInFlightTokens is max_in_flight_tokens (vllm/config/vllm.py:600-609@4ba787ec):
 	// max_concurrent_batches times max_num_batched_tokens.
 	MaxInFlightTokens int
 	// RetentionInterval is CacheConfig.prefix_cache_retention_interval for a model with a Mamba
 	// group: nil is dense retention, 0 vLLM's default, a positive multiple of the scheduler
-	// block size a periodic state (vllm/config/cache.py:160-165@5df63a72). Only a Mamba align
+	// block size a periodic state (vllm/config/cache.py:276-281@4ba787ec). Only a Mamba align
 	// group reads it.
 	RetentionInterval *int
 	// PrefixMatchUnit is cache_config.prefix_match_unit: the hash block size when set
-	// (resolve_kv_cache_block_sizes, vllm/v1/core/kv_cache_utils.py:878-881@5df63a72), 0 unset.
+	// (resolve_kv_cache_block_sizes, vllm/v1/core/kv_cache_utils.py:890-893@4ba787ec), 0 unset.
 	PrefixMatchUnit int
 }
 
@@ -207,8 +207,8 @@ func NewManagerWith(numBlocks, blockSize, maxModelLen int, enableCaching bool, w
 	}
 	for _, g := range m.groups {
 		if g.spec.Kind == Mamba && g.spec.MambaCacheMode == "align" {
-			// MambaManager.__init__ (single_type_kv_cache_manager.py:1431-1434@5df63a72); with EAGLE
-			// on the coordinator sets drop_eagle_checkpoint_block (kv_cache_coordinator.py:173-180).
+			// MambaManager.__init__ (single_type_kv_cache_manager.py:1447-1450@4ba787ec); with EAGLE
+			// on the coordinator sets drop_eagle_checkpoint_block (kv_cache_coordinator.py:177-184).
 			a, err := newMambaAlign(m.Pool, g, mambaAlignConfig{HashBlockSize: m.hashBlockSize,
 				SchedulerBlockSize: m.blockSize, NumSpeculativeBlocks: g.spec.MambaSpeculativeBlocks,
 				NumPrefillCheckpointBlocks: g.spec.MambaCheckpointBlocks,
@@ -222,7 +222,7 @@ func NewManagerWith(numBlocks, blockSize, maxModelLen int, enableCaching bool, w
 		}
 	}
 	// eagle_group_ids: the groups flagged as the drafter's, or every group when none is
-	// (kv_cache_coordinator.py:127-133@5df63a72).
+	// (kv_cache_coordinator.py:129-135@4ba787ec).
 	flagged := false
 	for _, g := range specs {
 		flagged = flagged || g.Eagle
@@ -231,8 +231,8 @@ func NewManagerWith(numBlocks, blockSize, maxModelLen int, enableCaching bool, w
 		g.eagle = m.eagle && (g.spec.Eagle || !flagged)
 	}
 	// The coordinator then propagates the bit to every member of a spec group holding a
-	// drafter's group (verify_and_split_kv_cache_groups, kv_cache_coordinator.py:726-736 and
-	// 761-765@5df63a72): a target group of the drafter group's spec drops the EAGLE block too.
+	// drafter's group (verify_and_split_kv_cache_groups, kv_cache_coordinator.py:736-746 and
+	// 771-775@4ba787ec): a target group of the drafter group's spec drops the EAGLE block too.
 	for _, sg := range m.specGroups() {
 		if sg.eagle {
 			for _, i := range sg.ids {
@@ -243,10 +243,10 @@ func NewManagerWith(numBlocks, blockSize, maxModelLen int, enableCaching bool, w
 	return m
 }
 
-// blockSizes is resolve_kv_cache_block_sizes (vllm/v1/core/kv_cache_utils.py:804-904@5df63a72)
+// blockSizes is resolve_kv_cache_block_sizes (vllm/v1/core/kv_cache_utils.py:816-916@4ba787ec)
 // without DCP or a connector: one group runs at the engine's block size; several at the LCM of
 // their block sizes, with hashes at the GCD of the prefix-cacheable ones' when prefix caching
-// is on, at the LCM when it is off (:856-861).
+// is on, at the LCM when it is off (:868-873).
 func blockSizes(groups []Group, engine int, caching bool) (scheduler, hash int) {
 	if len(groups) <= 1 {
 		return engine, engine
@@ -276,7 +276,7 @@ func gcd(a, b int) int {
 }
 
 // cacheable is the group spec's prefix_cacheable: a ring never is (CircularBufferSpec,
-// vllm/v1/kv_cache_interface.py:939-941), nor a bounded-replay window (:1003-1005@5df63a72).
+// vllm/v1/kv_cache_interface.py:998-1000), nor a bounded-replay window (:1062-1064@4ba787ec).
 func (g Group) cacheable() bool {
 	return g.Kind != CircularBuffer && !g.BoundedReplay
 }
@@ -288,7 +288,7 @@ func (g Group) sameSpec(o Group) bool {
 }
 
 // window reports whether a group is a sliding window, of either spec, managed by the
-// SlidingWindowManager (single_type_kv_cache_manager.py:2655-2667@5df63a72).
+// SlidingWindowManager (single_type_kv_cache_manager.py:2678-2690@4ba787ec).
 func (g Group) window() bool { return g.Kind == SlidingWindow || g.Kind == SlidingWindowMLA }
 
 // BlockSize is the scheduler block size, in tokens: the engine's block size for one group.
@@ -297,14 +297,14 @@ func (m *Manager) BlockSize() int { return m.blockSize }
 // HashBlockSize is the block size request block hashes are computed at.
 func (m *Manager) HashBlockSize() int { return m.hashBlockSize }
 
-// SpecDecodeStepBlocks is _spec_decode_step_blocks (vllm/v1/core/sched/scheduler.py:346-357
-// @5df63a72): the blocks one spec-decode step's tokens take in every group, at each group's
+// SpecDecodeStepBlocks is _spec_decode_step_blocks (vllm/v1/core/sched/scheduler.py:370-381
+// @4ba787ec): the blocks one spec-decode step's tokens take in every group, at each group's
 // block size.
 func (m *Manager) SpecDecodeStepBlocks(tokens int) int {
 	n := 0
 	for _, g := range m.groups {
 		if g.spec.Kind == Mamba {
-			// Mamba managers already account for their speculative state blocks (:347-357).
+			// Mamba managers already account for their speculative state blocks (:371-381).
 			continue
 		}
 		n += cdiv(tokens, g.blockSize)
@@ -317,7 +317,7 @@ func (m *Manager) NumGroups() int { return len(m.groups) }
 
 // PrefixIndexable reports whether KV cache group g is one a router's prefix index takes: a full
 // attention group. vLLM tags each event with its group's kv_cache_spec_kind
-// (KVCacheManager.take_events, vllm/v1/core/kv_cache_manager.py:700-721@5df63a72), and llm-d's
+// (KVCacheManager.take_events, vllm/v1/core/kv_cache_manager.py:709-730@4ba787ec), and llm-d's
 // indexer skips the stores and removals of a sliding-window or ring group.
 func (m *Manager) PrefixIndexable(g uint32) bool {
 	return int(g) < len(m.groups) && m.groups[g].spec.Kind == FullAttention
@@ -352,7 +352,7 @@ func (m *Manager) GroupBlockSize(g int) int { return m.groups[g].blockSize }
 // GroupSpec is group g's spec.
 func (m *Manager) GroupSpec(g int) Group { return m.groups[g].spec }
 
-// RemoveSkipped is remove_skipped_blocks (kv_cache_manager.py:631-649@5df63a72): each sliding
+// RemoveSkipped is remove_skipped_blocks (kv_cache_manager.py:640-658@4ba787ec): each sliding
 // window frees the request's blocks wholly below its window for processed computed tokens.
 func (m *Manager) RemoveSkipped(id string, processed int) { m.removeSkipped(id, processed) }
 
@@ -369,10 +369,10 @@ func (m *Manager) ComputedBlocks(hashes []BlockHash, numTokens int) ([][]*Block,
 }
 
 // ComputedBlocksWithBoundary is ComputedBlocks with get_computed_blocks' third result, the
-// shared_prefix_boundary (kv_cache_manager.py:313-321@5df63a72): where a sparse-retention
+// shared_prefix_boundary (kv_cache_manager.py:320-328@4ba787ec): where a sparse-retention
 // group (Mamba) stops short of a longer hit another group has, num_new_computed_tokens plus
 // the longest single-group hit beyond it (num_uncached_common_prefix_tokens,
-// kv_cache_coordinator.py:922-930), 0 when there is none.
+// kv_cache_coordinator.py:932-940), 0 when there is none.
 func (m *Manager) ComputedBlocksWithBoundary(hashes []BlockHash, numTokens int) ([][]*Block, int, int) {
 	if !m.caching {
 		return make([][]*Block, len(m.groups)), 0, 0
@@ -399,8 +399,8 @@ func (m *Manager) ComputedBlocksWithBoundary(hashes []BlockHash, numTokens int) 
 
 // groupHashes is the request's block hashes at a group's block size: the hash at the last
 // hash_block_size boundary of each of the group's blocks, which chains over its whole prefix
-// (BlockHashListWithBlockSize, kv_cache_utils.py:2690-2763; resolve_block_hashes,
-// :2766-2796@5df63a72).
+// (BlockHashListWithBlockSize, kv_cache_utils.py:1157-1230; resolve_block_hashes,
+// :1233-1263@4ba787ec).
 func (m *Manager) groupHashes(hashes []BlockHash, blockSize int) []BlockHash {
 	scale := blockSize / m.hashBlockSize
 	if scale <= 1 {
@@ -1031,7 +1031,7 @@ func (m *Manager) cache(g *group, id string, hashes []BlockHash, numTokens int, 
 }
 
 // reachableWindowBlocks is SlidingWindowManager.reachable_block_mask
-// (single_type_kv_cache_manager.py:1054-1133@5df63a72) for blocks [from, to) of a window
+// (single_type_kv_cache_manager.py:1067-1146@4ba787ec) for blocks [from, to) of a window
 // group, with hits aligned to the scheduler block size and dense retention (a retention
 // interval of None, which the oracle's KV cache config carries): a hit needs the window's
 // contiguous blocks ending on an aligned boundary, so of each aligned segment only its last
@@ -1043,7 +1043,7 @@ func (m *Manager) reachableWindowBlocks(g *group, from, to int) []bool {
 		return nil
 	}
 	perSegment := m.blockSize / g.blockSize
-	need := cdiv(g.spec.Window-1, g.blockSize) // _contiguous_blocks_for_hit, :943-955
+	need := cdiv(g.spec.Window-1, g.blockSize) // _contiguous_blocks_for_hit, :956-968
 	shift := 0
 	if g.eagle {
 		need, shift = need+1, 1
@@ -1089,7 +1089,7 @@ func trimNullHead(bs []*Block) []*Block {
 	return bs[n:]
 }
 
-// PopBlocks is pop_blocks_for_free (kv_cache_coordinator.py:410-427@5df63a72): it drops the
+// PopBlocks is pop_blocks_for_free (kv_cache_coordinator.py:414-431@4ba787ec): it drops the
 // request's bookkeeping in every group and returns its blocks without freeing them, each
 // group's in allocation order, group after group. The caller frees them later, reversed.
 func (m *Manager) PopBlocks(id string) []*Block {
@@ -1106,7 +1106,7 @@ func (m *Manager) PopBlocks(id string) []*Block {
 	return out
 }
 
-// NewStepStarts is new_step_starts (kv_cache_manager.py:920-922@5df63a72), which the scheduler
+// NewStepStarts is new_step_starts (kv_cache_manager.py:929-931@4ba787ec), which the scheduler
 // calls at the start of each step: a Mamba align group forgets the hashes cached in the last
 // step, so a request hitting one of them is no longer deferred.
 func (m *Manager) NewStepStarts() {
@@ -1118,7 +1118,7 @@ func (m *Manager) NewStepStarts() {
 }
 
 // EnablePartialHashHits is the coordinator's enable_partial_hash_hits
-// (kv_cache_coordinator.py:684-706@5df63a72). It is always false here: a manager whose Mamba
+// (kv_cache_coordinator.py:694-716@4ba787ec). It is always false here: a manager whose Mamba
 // block exceeds the hash block size, the only case where vLLM enables it, is refused at
 // construction.
 func (m *Manager) EnablePartialHashHits() bool { return false }

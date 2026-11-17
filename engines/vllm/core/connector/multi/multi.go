@@ -3,10 +3,10 @@
 // Derived from vllm/distributed/kv_transfer/kv_connector/v1/multi_connector.py at vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5).
 
 // Package multi is the scheduler side of vLLM's MultiConnector
-// (vllm/distributed/kv_transfer/kv_connector/v1/multi_connector.py:135@5df63a72): an ordered list
+// (vllm/distributed/kv_transfer/kv_connector/v1/multi_connector.py:133@4ba787ec): an ordered list
 // of child connectors behind the one Connector the scheduler calls. Each hook goes to every child
 // in order; the one choice the wrapper makes is which child loads a request's KV: the first, in
-// the configured order, that reports matched tokens (get_num_new_matched_tokens, :434-456). It
+// the configured order, that reports matched tokens (get_num_new_matched_tokens, :451-473). It
 // saves to all of them. The worker side, which moves the bytes, is the transport.
 //
 // It composes the scheduler sides this repository models, NIXL (core/connector/nixl) and the
@@ -64,7 +64,7 @@ type Connector struct {
 func New(children []Child) (*Connector, error) {
 	if len(children) == 0 {
 		return nil, fmt.Errorf("multi: MultiConnector needs at least one child connector " +
-			"(kv_connector_extra_config connectors, multi_connector.py:226-249@5df63a72)")
+			"(kv_connector_extra_config connectors, multi_connector.py:235-258@4ba787ec)")
 	}
 	c := &Connector{children: append([]Child(nil), children...), chosen: map[string]int{}, hma: true,
 		caps: sched.Capabilities{HybridGroups: true, Drafters: true, ConcurrentBatches: true}}
@@ -83,7 +83,7 @@ func New(children []Child) (*Connector, error) {
 			c.hma = false
 		}
 	}
-	// _all_support_hma (:159-172, 193-200): without it vLLM turns the hybrid manager off, so the
+	// _all_support_hma (:157-170, 191-198): without it vLLM turns the hybrid manager off, so the
 	// scheduler only ever sees one KV cache group, and the wrapper models none beyond that.
 	c.caps.HybridGroups = c.caps.HybridGroups && c.hma
 	return c, nil
@@ -174,12 +174,12 @@ func (c *Connector) Finished(r *sched.Request, computedBlockIDs []int) bool {
 	return c.finished(r, func(ch Child) bool { return ch.Conn.Finished(r, computedBlockIDs) })
 }
 
-// FinishedAllGroups is request_finished_all_groups (:595-616). With every child SupportsHMA
+// FinishedAllGroups is request_finished_all_groups (:612-633). With every child SupportsHMA
 // each gets every group's ids; otherwise vLLM runs one group and calls request_finished.
 func (c *Connector) FinishedAllGroups(r *sched.Request, blockIDs [][]int) bool {
 	if !c.hma {
 		if len(blockIDs) != 1 {
-			panic("multi: HMA with several KV cache groups requires every child to support HMA (multi_connector.py:600-604@5df63a72)")
+			panic("multi: HMA with several KV cache groups requires every child to support HMA (multi_connector.py:617-621@4ba787ec)")
 		}
 		return c.Finished(r, blockIDs[0])
 	}

@@ -8,7 +8,7 @@ package engine
 
 // DPWave is vLLM's DPEngineCoreProc wave state for one data-parallel group: the step counter
 // its unfinished-request all-reduce runs on (_has_global_unfinished_reqs,
-// vllm/v1/engine/core.py:2410-2414@5df63a72). The zero value is a wave that has not started.
+// vllm/v1/engine/core.py:2554-2558@4ba787ec). The zero value is a wave that has not started.
 type DPWave struct {
 	steps int
 }

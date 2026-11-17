@@ -19,7 +19,7 @@ import (
 	"github.com/inference-sim/blis-vllm/internal/upstream"
 )
 
-// eosToken is tests/v1/core/utils.py:43@5df63a72 (EOS_TOKEN_ID), which the oracle's GPU mock
+// eosToken is tests/v1/core/utils.py:49@4ba787ec (EOS_TOKEN_ID), which the oracle's GPU mock
 // samples as each request's last assigned token.
 const eosToken = 50256
 
@@ -68,7 +68,7 @@ type scenario struct {
 		// absent. The Mamba mode and block size are the kv_layers mamba runs' own.
 		CacheConfig struct {
 			// PrefixCacheRetentionInterval is prefix_cache_retention_interval (vllm/config/cache.py:
-			// 160-165@5df63a72): absent is vLLM's default 0 (semantic checkpoints only), a
+			// 170-175@4ba787ec): absent is vLLM's default 0 (semantic checkpoints only), a
 			// positive value a periodic checkpoint, the JSON null dense retention (the raw text
 			// keeps "absent" and "null" apart).
 			PrefixCacheRetentionInterval json.RawMessage `json:"prefix_cache_retention_interval"`
@@ -176,7 +176,7 @@ type trace struct {
 			Refused bool   `json:"refused"`
 			Message string `json:"message"`
 			// MaxConcurrentBatches is vLLM's max_concurrent_batches the check ran at, which
-			// sets max_in_flight_tokens (vllm/config/vllm.py:577-598@5df63a72).
+			// sets max_in_flight_tokens (vllm/config/vllm.py:588-609@4ba787ec).
 			MaxConcurrentBatches int `json:"max_concurrent_batches"`
 		} `json:"startup"`
 	} `json:"kv_pool"`
@@ -247,7 +247,7 @@ func run(t *testing.T, sc scenario) trace {
 			req := &Request{ID: r.ID, Priority: r.Priority, ArrivalTime: float64(r.ArrivalStep),
 				Prompt: r.Prompt, MaxTokens: mt, EOS: eosToken}
 			if r.LoRA != "" {
-				// vLLM's LoRA block key (kv_cache_utils.py:578-595@5df63a72), with the oracle's
+				// vLLM's LoRA block key (kv_cache_utils.py:590-607@4ba787ec), with the oracle's
 				// adapter path.
 				req.LoRA = indexOfString(adapters, r.LoRA) + 1
 				req.LoRAName = r.LoRA
@@ -371,7 +371,7 @@ func run(t *testing.T, sc scenario) trace {
 
 // eventsJSON writes KV events as the oracle does: a block hash is the integer vLLM publishes
 // by default, the low 64 bits of the hash read big-endian (VLLM_KV_EVENTS_USE_INT_BLOCK_HASHES,
-// vllm/envs.py:2033-2035 and kv_cache_utils.py:96-99@5df63a72), in decimal.
+// vllm/envs.py:2024-2026 and kv_cache_utils.py:82-85@4ba787ec), in decimal.
 func eventsJSON(evs []kv.Event) []any {
 	out := []any{}
 	h := func(b kv.BlockHash) any {
@@ -912,7 +912,7 @@ func retentionInterval(t *testing.T, layers []kvLayerRun, raw json.RawMessage) *
 
 // newOrRefusePartialHashHits is New, except for a scenario whose prefix_match_unit puts the hash
 // block below the Mamba block: vLLM enables fine-grained partial hash hits there
-// (kv_cache_coordinator.py:684-706@5df63a72), which blis-vllm refuses by name, so the scenario
+// (kv_cache_coordinator.py:694-716@4ba787ec), which blis-vllm refuses by name, so the scenario
 // is skipped with the refusal asserted.
 func newOrRefusePartialHashHits(t *testing.T, unit int, cfg Config) (*Scheduler, error) {
 	t.Helper()

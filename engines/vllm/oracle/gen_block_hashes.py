@@ -3,10 +3,10 @@
 
 Each case is a token sequence, a block size and the request's extra keys, read from the
 committed file, so a case's inputs never move; its hashes are what
-vLLM v0.32.0's hash_block_tokens returns (vllm/v1/core/kv_cache_utils.py:695-725@5df63a72) with
+vLLM v0.32.0's hash_block_tokens returns (vllm/v1/core/kv_cache_utils.py:707-737@4ba787ec) with
 sha256 (vllm/utils/hashing.py) after init_none_hash, chained block by block with each block's
 extra keys as generate_block_hash_extra_keys gives them: the LoRA key on every block, the cache
-salt on the first (kv_cache_utils.py:592-595, 646-658). No hashing is reimplemented here.
+salt on the first (kv_cache_utils.py:604-607, 658-670). No hashing is reimplemented here.
 
 The large-block cases pickle to more than 64 KiB, which CPython's pickler splits into several
 frames (FRAME_SIZE_TARGET); they pin the Go pickler's framing to vLLM's bytes.

@@ -31,7 +31,7 @@ def scenario(seed: int) -> dict:
     sc["config"]["use_v2_model_runner"] = rng.random() < 0.5
     if sc["config"]["async_scheduling"] and sc["config"]["pipeline_parallel_size"] > 1:
         # The V1 model runner refuses async scheduling with PP
-        # (vllm/config/vllm.py:2970-2974@5df63a72), so that pairing takes the V2 runner.
+        # (vllm/config/vllm.py:3104-3108@4ba787ec), so that pairing takes the V2 runner.
         sc["config"]["use_v2_model_runner"] = True
     sc["max_steps"] = 6000
     return sc

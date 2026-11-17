@@ -14,34 +14,34 @@ type DSAIndexerKVDTypes struct {
 	// Architectures are those that build the indexer's key cache through dsa_indexer_uses_fp4.
 	Architectures map[string]bool
 	// Literal is AttentionConfig.indexer_kv_dtype's type, IndexerKVDType, in order
-	// (vllm/config/attention.py:13@5df63a72): a value outside it is refused when the
+	// (vllm/config/attention.py:13@4ba787ec): a value outside it is refused when the
 	// configuration is built, for every model.
 	Literal []string
-	// Accepted is DSA_INDEXER_KV_DTYPES, in order (vllm/v1/attention/backends/mla/indexer.py:17@5df63a72).
+	// Accepted is DSA_INDEXER_KV_DTYPES, in order (vllm/v1/attention/backends/mla/indexer.py:17@4ba787ec).
 	Accepted []string
 	// Default is the dtype "auto" resolves to, the default dsa_indexer_uses_fp4 passes to
-	// resolve_indexer_kv_dtype (:61).
+	// resolve_indexer_kv_dtype (:62).
 	Default string
 	// FP4 is the member that needs a Blackwell datacenter GPU, and FP4Family that GPU's
-	// compute-capability major: is_device_capability_family(100) is major 10 (:80-84).
+	// compute-capability major: is_device_capability_family(100) is major 10 (:84-88).
 	FP4       string
 	FP4Family int
 }
 
 // MXFP4BlockSize is the values one UE8M0 scale byte covers in MXFP4
-// (vllm/models/deepseek_v4/common/ops/fused_indexer_q.py:20@5df63a72).
+// (vllm/models/deepseek_v4/common/ops/fused_indexer_q.py:20@4ba787ec).
 const MXFP4BlockSize = 32
 
 // IndexerQuantBlockSize is the values one fp32 scale covers in the FP8 indexer cache, 128 in
-// DeepseekV4Indexer (vllm/models/deepseek_v4/attention.py:992@5df63a72) and in V4.1's
-// _indexer_k_cache_head_dim (vllm/models/deepseek_v41/attention.py:100@5df63a72).
+// DeepseekV4Indexer (vllm/models/deepseek_v4/attention.py:1007@4ba787ec) and in V4.1's
+// _indexer_k_cache_head_dim (vllm/models/deepseek_v41/attention.py:109@4ba787ec).
 const IndexerQuantBlockSize = 128
 
 // IndexerRecordBytes is the bytes of one key of the DeepSeek indexer's cache for the dtype that
 // runs (a result of ResolveIndexerKVDType): head_dim fp8 values and head_dim/128 fp32 scales
 // (132 for head_dim 128), or for mxfp4 two values to the byte and one scale byte per 32 values
-// (68). V4 states it inline (deepseek_v4/attention.py:1005-1014@5df63a72) and V4.1 in
-// _indexer_k_cache_head_dim (deepseek_v41/attention.py:92-100@5df63a72), by the same formulas.
+// (68). V4 states it inline (deepseek_v4/attention.py:1020-1029@4ba787ec) and V4.1 in
+// _indexer_k_cache_head_dim (deepseek_v41/attention.py:101-109@4ba787ec), by the same formulas.
 func IndexerRecordBytes(resolved string, headDim int) int {
 	if resolved == "mxfp4" {
 		return headDim/2 + headDim/MXFP4BlockSize

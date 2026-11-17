@@ -218,7 +218,7 @@ func TestBuildsThroughTheRegistry(t *testing.T) {
 		arrivals(req("a", 40, 6), req("b", 70, 3)), enginetest.Options{})
 }
 
-// InFlightLimit is vLLM's max_concurrent_batches (vllm/config/vllm.py:577-588@5df63a72): 1 for a
+// InFlightLimit is vLLM's max_concurrent_batches (vllm/config/vllm.py:588-599@4ba787ec): 1 for a
 // synchronous engine on one pipeline stage, 2 with async scheduling on the V1 runner, and pp + 1
 // with it on the V2 runner. Synchronous PP, pp batches, is refused (TestFactoryRefuses).
 func TestInFlightLimitIsMaxConcurrentBatches(t *testing.T) {
@@ -498,7 +498,7 @@ func TestCompatSeam(t *testing.T) {
 	}
 }
 
-// Input checks are the input processor's (vllm/v1/engine/input_processor.py:565-602@5df63a72):
+// Input checks are the input processor's (vllm/v1/engine/input_processor.py:565-602@4ba787ec):
 // an empty prompt, a prompt that fills the window, an adapter while LoRA is off, and a
 // duplicate ID are refused.
 func TestAddRefuses(t *testing.T) {
@@ -594,7 +594,7 @@ func TestPrefixHitIsReported(t *testing.T) {
 }
 
 // With prefix caching off the engine looks nothing up, so no admission is reported as a lookup
-// (record_prefix_cache_stats counts only a lookup that ran, kv_cache_manager.py:249-262@5df63a72).
+// (record_prefix_cache_stats counts only a lookup that ran, kv_cache_manager.py:251-264@4ba787ec).
 func TestNoPrefixLookupWithoutPrefixCaching(t *testing.T) {
 	e, err := build(t, "enable_prefix_caching: false\n")()
 	if err != nil {

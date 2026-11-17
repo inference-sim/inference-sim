@@ -12,8 +12,8 @@ import (
 // The factory builds an MTP drafter once the engine block states the drafter checkpoint's
 // num_nextn_predict_layers (mtp_nextn_predict_layers), which sets the prefill lookahead vLLM
 // v0.32.0 reserves: num_speculative_tokens for multi-module MTP (more than one layer and K above
-// one), else one (VllmConfig.num_prefill_lookahead_tokens, vllm/config/vllm.py:644-664;
-// use_multi_module_mtp, vllm/config/speculative.py:1982-1988@5df63a72). Without it the
+// one), else one (VllmConfig.num_prefill_lookahead_tokens, vllm/config/vllm.py:655-675;
+// use_multi_module_mtp, vllm/config/speculative.py:2188-2194@4ba787ec). Without it the
 // lookahead is not knowable, and the block is refused naming the field.
 func TestFactoryBuildsMTPWithItsStatedLookahead(t *testing.T) {
 	for _, c := range []struct {
@@ -77,8 +77,8 @@ func mustConfig(t *testing.T, extra string) Config {
 	return c
 }
 
-// Under async scheduling EngineCore.post_step proposes no drafts (vllm/v1/engine/core.py:689-696
-// @5df63a72): when a batch completes, a decoding request's next drafts stay the AsyncScheduler's
+// Under async scheduling EngineCore.post_step proposes no drafts (vllm/v1/engine/core.py:699-706
+// @4ba787ec): when a batch completes, a decoding request's next drafts stay the AsyncScheduler's
 // -1 placeholders, set when the next batch was scheduled, which the worker fills itself.
 func TestAsyncCompleteKeepsThePlaceholderDrafts(t *testing.T) {
 	e, err := build(t, "async_scheduling: true\nspeculative_config: {method: mtp, num_speculative_tokens: 2}\nmtp_nextn_predict_layers: 1\n")()

@@ -307,10 +307,10 @@ func unifyHybrid(layers []Layer) ([]Layer, error) {
 // checkEqualPages refuses what vLLM's uniform-page-size grouping assumes and this port does not
 // unify: the attention layers are of one page in elements per token at the engine's one block
 // size, and a Mamba layer's page, padded to the attention page at start-up
-// (vllm/platforms/interface.py:1118-1126@5df63a72), is that page. Mamba against attention can be
+// (vllm/platforms/interface.py:1130-1138@4ba787ec), is that page. Mamba against attention can be
 // compared only where the engine's block size and every attention layer's element size are
 // known; otherwise the padded page is taken as stated. Unequal pages are unify_kv_cache_spec_page_size's
-// (:1292-1354), which pads a smaller Mamba page and scales an attention block: not modelled.
+// (:1304-1366), which pads a smaller Mamba page and scales an attention block: not modelled.
 func checkEqualPages(layers []Layer, blockSize int) error {
 	var first *Layer
 	known := blockSize > 0
@@ -340,7 +340,7 @@ func checkEqualPages(layers []Layer, blockSize int) error {
 	for _, l := range layers {
 		if l.Spec == LayerMamba && pageBytes(l) != attnPage {
 			return fmt.Errorf("kv: a Mamba layer's page of %d bytes beside attention pages of %d bytes: vLLM unifies "+
-				"them with unify_kv_cache_spec_page_size (vllm/v1/core/kv_cache_utils.py:1292-1354@5df63a72), "+
+				"them with unify_kv_cache_spec_page_size (vllm/v1/core/kv_cache_planning.py:346-408@4ba787ec), "+
 				"which is not modelled", pageBytes(l), attnPage)
 		}
 	}
@@ -375,7 +375,7 @@ func deepseek(layers []Layer) bool {
 
 // uniformType is whether every layer is one spec type: UniformTypeKVCacheSpecs.is_uniform_type
 // at one block size, where full attention takes its indexers and a sliding window only windows
-// of its own size (vllm/v1/kv_cache_interface.py:898-903@5df63a72).
+// of its own size (vllm/v1/kv_cache_interface.py:957-962@4ba787ec).
 func uniformType(layers []Layer) bool {
 	for _, l := range layers {
 		if groupOf(l) != groupOf(layers[0]) {

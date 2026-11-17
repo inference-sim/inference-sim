@@ -108,8 +108,8 @@ class Worker:
     """The worker side (OffloadingConnectorWorker) as the transport mock (oracle/mocks.json): on a
     step's OffloadingConnectorMetadata, when the batch carrying it executes, it follows the
     worker's protocol (handle_preemptions, start_kv_transfers, prepare_store_kv,
-    offloading/worker.py:198-249@5df63a72), and reports the jobs complete by then, as get_finished
-    does at the end of that execute (worker.py:273-309), in that batch's output."""
+    offloading/worker.py:198-249@4ba787ec), and reports the jobs complete by then, as get_finished
+    does at the end of that execute (worker.py:286-322), in that batch's output."""
 
     def __init__(self, by_id, transfer, workers, output_cls, meta_cls):
         self.by_id, self.transfer, self.workers = by_id, transfer, workers
@@ -185,8 +185,8 @@ def build_config(cfg: dict, model: str):
         long_prefill_token_threshold=cfg.get("long_prefill_token_threshold", 0),
         watermark=cfg.get("watermark", 0.0))
     # Dense retention (prefix_cache_retention_interval None), the policy core/kv models: the
-    # Scheduler's KV cache config and the connector (scheduler.py:224) then agree, as at launch,
-    # where both read cache_config (vllm/v1/core/kv_cache_utils.py:1684-1686@5df63a72).
+    # Scheduler's KV cache config and the connector (scheduler.py:233) then agree, as at launch,
+    # where both read cache_config (vllm/v1/core/kv_cache_planning.py:738-740@4ba787ec).
     cache_config = CacheConfig(block_size=cfg["block_size"], gpu_memory_utilization=0.9, cache_dtype="auto",
                                enable_prefix_caching=cfg.get("enable_prefix_caching", True),
                                prefix_cache_retention_interval=None)
@@ -285,7 +285,7 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     v2 = bool(cfg.get("use_v2_model_runner", False)) or (bool(spec) and spec["method"] == "dspark")
     if pp > 1 and async_sched and not v2:
         sys.exit(f"{scenario_path}: the V1 model runner does not support PP with async scheduling "
-                 "(vllm/config/vllm.py:2970-2974@5df63a72)")
+                 "(vllm/config/vllm.py:3104-3108@4ba787ec)")
     from run_enginecore import set_async  # noqa: E402
 
     restore_env = v2_runner_env(v2)

@@ -91,7 +91,7 @@ const (
 	Running
 	Preempted
 	// WaitingForRemoteKVs is a request whose prompt KV a connector is loading
-	// asynchronously (vllm/v1/request.py:375@5df63a72).
+	// asynchronously (vllm/v1/request.py:375@4ba787ec).
 	WaitingForRemoteKVs
 	FinishedStopped
 	FinishedLength
@@ -1074,7 +1074,7 @@ func (s *Scheduler) run(r *Request) kv.StoredRun {
 		SharedPrefixBoundary: r.sharedPrefixBoundary}
 }
 
-// prefillEnd is max(num_prompt_tokens, num_tokens - 1) (kv_cache_manager.py:520@5df63a72).
+// prefillEnd is max(num_prompt_tokens, num_tokens - 1) (kv_cache_manager.py:529@4ba787ec).
 func (r *Request) prefillEnd() int { return max(len(r.Prompt), r.NumTokens()-1) }
 
 // mambaSplitRequest is the request's part of the aligned split's input.
@@ -1241,8 +1241,8 @@ func (s *Scheduler) UpdateWith(out Output, sampled map[string][]int64, o Transfe
 }
 
 // placeholderDrafts are k draft placeholders, -1 each: the AsyncScheduler's
-// _spec_token_placeholders (async_scheduler.py:17, 29-31@5df63a72). The rejection sampler always
-// rejects one, as a real draft it never verified (vllm/v1/sample/rejection_sampler.py:762-763).
+// _spec_token_placeholders (async_scheduler.py:16, 28-30@4ba787ec). The rejection sampler always
+// rejects one, as a real draft it never verified (vllm/v1/sample/rejection_sampler.py:829-830).
 func placeholderDrafts(k int) []int64 {
 	d := make([]int64, k)
 	for i := range d {

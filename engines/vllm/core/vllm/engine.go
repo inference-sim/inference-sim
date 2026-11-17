@@ -48,8 +48,8 @@ import (
 )
 
 // eosToken is the token the engine samples for a request's last assigned output token, which
-// stops it as vLLM's check_stop does (vllm/v1/core/sched/utils.py:104-107@5df63a72). It is the
-// shared GPU mock's (tests/v1/core/utils.py:43@5df63a72) and outside every prompt's
+// stops it as vLLM's check_stop does (vllm/v1/core/sched/utils.py:104-107@4ba787ec). It is the
+// shared GPU mock's (tests/v1/core/utils.py:49@4ba787ec) and outside every prompt's
 // vocabulary an engine.Request can carry, so a prompt token can never stop a request.
 const eosToken = int64(1) << 40
 
@@ -292,7 +292,7 @@ func (e *Engine) placementOf() placement.Placement {
 var _ engine.Placeable = (*Engine)(nil)
 
 // histogramBounds are the bucket bounds vLLM v0.32.0 registers for the request-token,
-// iteration-token, n and preemption histograms (vllm/v1/metrics/buckets.py:107-128,172-240@5df63a72).
+// iteration-token, n and preemption histograms (vllm/v1/metrics/buckets.py:107-128, 172-240@4ba787ec).
 func histogramBounds(maxModelLen int) []metrics.Bucketed {
 	tokens := build125(maxModelLen)
 	out := []metrics.Bucketed{
@@ -308,7 +308,7 @@ func histogramBounds(maxModelLen int) []metrics.Bucketed {
 	return out
 }
 
-// build125 is build_1_2_5_buckets (vllm/v1/metrics/buckets.py:172-203@5df63a72).
+// build125 is build_1_2_5_buckets (vllm/v1/metrics/buckets.py:172-203@4ba787ec).
 func build125(maxValue int) []float64 {
 	var out []float64
 	for scale := 1; ; scale *= 10 {
@@ -333,7 +333,7 @@ func (e *Engine) Add(r engine.Request, now engine.Time) error {
 	}
 	maxLen := e.maxModelLen()
 	// The input processor refuses an empty prompt, and one that leaves no room for an output
-	// token (vllm/v1/engine/input_processor.py:565-602@5df63a72).
+	// token (vllm/v1/engine/input_processor.py:565-602@4ba787ec).
 	if len(r.Prompt) == 0 {
 		return fmt.Errorf("vllm: request %s: the prompt cannot be empty", r.ID)
 	}
@@ -351,7 +351,7 @@ func (e *Engine) Add(r engine.Request, now engine.Time) error {
 	if len(r.Output) == 0 {
 		return fmt.Errorf("vllm: request %s has no assigned output: a generating request samples at least one token", r.ID)
 	}
-	// An unset max_tokens generates up to max_model_len (input_processor.py:476-480@5df63a72).
+	// An unset max_tokens generates up to max_model_len (input_processor.py:476-480@4ba787ec).
 	maxTokens := r.MaxOutputTokens
 	if maxTokens <= 0 {
 		maxTokens = maxLen - len(r.Prompt)
@@ -374,7 +374,7 @@ func (e *Engine) Add(r engine.Request, now engine.Time) error {
 	if r.Adapter != "" {
 		if e.maxLoRAs == 0 {
 			// The input processor refuses an adapter when LoRA is off
-			// (vllm/v1/engine/input_processor.py:278-286@5df63a72).
+			// (vllm/v1/engine/input_processor.py:278-286@4ba787ec).
 			return fmt.Errorf("vllm: request %s names adapter %q but LoRA is not enabled (max_loras unset)", r.ID, r.Adapter)
 		}
 		// The LoRA block key keys the hash on the adapter's name and path (loraExtraKey).
@@ -390,11 +390,11 @@ func (e *Engine) Add(r engine.Request, now engine.Time) error {
 }
 
 // loraExtraKey is the LoRA component of a block's hash key: ("lora", lora_name, lora_path), what
-// _gen_lora_extra_hash_keys returns (vllm/v1/core/kv_cache_utils.py:578-595@5df63a72, the key added
-// to a block's extras at :646). vLLM keys on the name and the path, not on lora_int_id, so
+// _gen_lora_extra_hash_keys returns (vllm/v1/core/kv_cache_utils.py:590-607@4ba787ec, the key added
+// to a block's extras at :658). vLLM keys on the name and the path, not on lora_int_id, so
 // re-pointing a name at another adapter does not hit the blocks computed with the first.
 //
-// A LoRARequest always has a path (vllm/lora/request.py:41-42@5df63a72). An engine.Request from a
+// A LoRARequest always has a path (vllm/lora/request.py:41-42@4ba787ec). An engine.Request from a
 // host that supplies none gets the name in its place: which blocks hit is then unchanged (the key
 // is per adapter either way), but the hash a KV event publishes differs from vLLM's, and
 // docs/feature-matrix.md ("KV events") says so for that case.
@@ -406,7 +406,7 @@ func loraExtraKey(name, path string) []kv.ExtraKey {
 }
 
 // loraID is a stable positive lora_int_id per adapter name, in order of first use
-// (vllm/lora/request.py:25,38-39@5df63a72 requires one above zero).
+// (vllm/lora/request.py:25, 38-39@4ba787ec requires one above zero).
 func (e *Engine) loraID(name string) int {
 	if e.adapters == nil {
 		e.adapters = map[string]int{}
@@ -425,14 +425,14 @@ func (e *Engine) maxModelLen() int {
 
 // Schedule implements engine.Engine.
 //
-// With one batch in flight it is schedule() of EngineCore.step (vllm/v1/engine/core.py:657-687
-// @5df63a72), and the step completes when the simulator completes its batch.
+// With one batch in flight it is schedule() of EngineCore.step (vllm/v1/engine/core.py:667-697
+// @4ba787ec), and the step completes when the simulator completes its batch.
 //
 // With a batch queue (max_concurrent_batches > 1: async scheduling or PP) it is
-// step_with_batch_queue's first half (core.py:698-760@5df63a72), run only where vLLM's busy loop
+// step_with_batch_queue's first half (core.py:708-770@4ba787ec), run only where vLLM's busy loop
 // would run it. That loop schedules a batch, queues it, and returns without blocking unless the
-// queue is full or nothing more can be scheduled (:754-759). A step that would block waits on
-// the oldest batch's output, and no new batch forms until that batch completes (:760-783). So
+// queue is full or nothing more can be scheduled (:764-769). A step that would block waits on
+// the oldest batch's output, and no new batch forms until that batch completes (:770-793). So
 // Schedule returns an empty batch, scheduling nothing, while a step is blocked: the simulator's
 // next Complete ends that step, and its following Schedule call is the loop's next step.
 func (e *Engine) Schedule(now engine.Time) (engine.Batch, error) {
@@ -469,10 +469,10 @@ func (e *Engine) schedule(now engine.Time) (engine.Batch, error) {
 	return e.admit(cb, now)
 }
 
-// scheduleQueued is one step_with_batch_queue (vllm/v1/engine/core.py:698-810@5df63a72) up to the
+// scheduleQueued is one step_with_batch_queue (vllm/v1/engine/core.py:708-820@4ba787ec) up to the
 // point where it waits on a GPU result. The step schedules a batch when the scheduler has
 // requests and queues it. When the queue is then full, or nothing more can be scheduled, it pops
-// the oldest queued batch and waits for that batch's output (:754-766). A schedule that ran no
+// the oldest queued batch and waits for that batch's output (:764-776). A schedule that ran no
 // tokens has no forward pass to wait for, so its output is applied at once and the step ends.
 // A batch in flight is waited on: the engine is blocked until the simulator completes it.
 func (e *Engine) scheduleQueued(now engine.Time) (engine.Batch, error) {
@@ -508,7 +508,7 @@ func (e *Engine) scheduleQueued(now engine.Time) (engine.Batch, error) {
 	e.idleWake = 0
 	if !executed && e.polls() && len(e.pending) == 0 {
 		// A step that ran no model sleeps 1 ms before the loop steps again
-		// (vllm/v1/engine/core.py:1611-1616@5df63a72).
+		// (vllm/v1/engine/core.py:1688-1693@4ba787ec).
 		e.idleWake = now + idlePollUs
 	}
 	return b, nil
@@ -591,7 +591,7 @@ func (e *Engine) batchOf(cb core.Batch) (engine.Batch, error) {
 			sc.CachedTokens = hit
 			// A lookup vLLM's prefix-cache stats count: at the request's admission with no
 			// computed tokens, when prefix caching is on (record_prefix_cache_stats,
-			// vllm/v1/core/sched/scheduler.py:1314-1317 and kv_cache_manager.py:249-262@5df63a72).
+			// vllm/v1/core/sched/scheduler.py:1508-1511 and kv_cache_manager.py:251-264@4ba787ec).
 			sc.PrefixLookup = e.prefixCaching()
 		}
 		b.Reqs = append(b.Reqs, sc)
@@ -659,7 +659,7 @@ type StagePricer interface {
 // StageTimes implements engine.Pipelined: the batch's forward pass split by pipeline stage,
 // one entry per stage of pipeline_parallel_size, summing to StepTime. vLLM's batch queue keeps
 // max_concurrent_batches batches in flight so each stage works on one (vllm/config/vllm.py:
-// 577-588, vllm/v1/engine/core.py:698-810@5df63a72), which a simulator honours by timing each
+// 577-588, vllm/v1/engine/core.py:708-820@4ba787ec), which a simulator honours by timing each
 // batch through the stages. A pricer that does not split gives one stage, the whole step.
 func (e *Engine) StageTimes(b engine.Batch) []engine.Duration {
 	total := e.StepTime(b)
@@ -813,10 +813,10 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 			if trimmed {
 				// Under adaptive verification the rejection sampler runs over the compacted
 				// logits, each request's span of cu_num_logits holding only the drafts the
-				// budget admitted (reallocate_drafts, adaptive_verification.py:430-435@5df63a72),
-				// so it can accept no draft past them (rejection_sampler_utils.py:343-351@5df63a72).
+				// budget admitted (reallocate_drafts, adaptive_verification.py:456-461@4ba787ec),
+				// so it can accept no draft past them (rejection_sampler_utils.py:358-366@4ba787ec).
 				// The scheduler still rolls back the rest of the K it scheduled as rejected
-				// (vllm/v1/core/sched/scheduler.py:2116-2126@5df63a72).
+				// (vllm/v1/core/sched/scheduler.py:2352-2362@4ba787ec).
 				real = min(real, verified[rid])
 			}
 			n += min(max(outcome.Accepted[rid], 0), real)
@@ -839,7 +839,7 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 	// Each verifying request's drafts for the spec_decode counters: the drafts it was scheduled
 	// (placeholders included, as make_spec_decoding_stats counts len(scheduled_spec_token_ids)),
 	// and those the target accepted, the tokens sampled beyond the one the step always samples
-	// (scheduler.py:2116-2119@5df63a72), counted before a stop discards any.
+	// (scheduler.py:2352-2355@4ba787ec), counted before a stop discards any.
 	var drafts []metrics.Draft
 	for _, rid := range pb.b.Out.Order {
 		if d := pb.b.Out.SpecDecode[rid]; len(d) > 0 && len(tokens[rid]) > 0 {
@@ -895,8 +895,8 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 	}
 	// The events since the last applied result: a schedule that ran no tokens can queue some (a
 	// decoder's admission of a remote prefill allocates the pull's blocks, evicting cached ones),
-	// and vLLM publishes them with that step's update_from_output (scheduler.py:2370-2385
-	// @5df63a72). The contract carries KV events only in a Result, so they ride the next one, in
+	// and vLLM publishes them with that step's update_from_output (scheduler.py:2622-2637
+	// @4ba787ec). The contract carries KV events only in a Result, so they ride the next one, in
 	// order, published that much later.
 	res.KVEvents = kvEvents(e.indexable(e.s.TakeKVEvents()))
 	res.Handoffs = e.pd.handoffs(e.s, fins)
@@ -920,7 +920,7 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 		}
 	}
 	if e.specTokens > 0 && !e.async && len(pb.b.Out.Scheduled) > 0 {
-		// EngineCore.post_step (vllm/v1/engine/core.py:689-696@5df63a72): without async
+		// EngineCore.post_step (vllm/v1/engine/core.py:699-706@4ba787ec): without async
 		// scheduling, after a step that ran, the drafter proposes num_speculative_tokens drafts
 		// for every request it ran, as the shared GPU mock does (oracle/mocks.json). Only their
 		// count reaches a decision; their acceptance is the outcome's (#2021 B3). Under async
@@ -956,7 +956,7 @@ func (e *Engine) TransferDone(id engine.TransferID, ok bool, now engine.Time) er
 // not keep the engine polling (the wake protocol's "with no new input").
 //
 // Offload jobs in flight do not keep it polling either: vLLM's loop steps every millisecond while
-// has_pending_push_work holds has_requests true (core.py:1611-1616@5df63a72), but those steps
+// has_pending_push_work holds has_requests true (core.py:1688-1693@4ba787ec), but those steps
 // change nothing until a job's completion is reported, and the simulator steps the engine at the
 // TransferDone that reports it. A schedule's flushed jobs and the completions reported before it
 // are taken by its own applied output, so none waits for a poll.
@@ -998,7 +998,7 @@ func (e *Engine) inFlight(id string) bool {
 // request wait for an instant; the one wake is its engine loop's poll after a schedule that ran
 // nothing while requests remain and no batch is in flight (idlePollUs), such as a schedule whose
 // only running request preempted itself, which skips the WAITING phase
-// (vllm/v1/core/sched/scheduler.py:900@5df63a72) that the next schedule then runs.
+// (vllm/v1/core/sched/scheduler.py:1050@4ba787ec) that the next schedule then runs.
 func (e *Engine) NextWake(now engine.Time) (engine.Time, bool) {
 	if e.idleWake > now && len(e.pending) == 0 {
 		return e.idleWake, true
@@ -1077,7 +1077,7 @@ func (e *Engine) indexable(evs []kv.Event) []kv.Event {
 }
 
 // kvEvents is the scheduler's KV events in the contract's form: a hash is vLLM's published
-// 64-bit integer (maybe_convert_block_hash, vllm/v1/core/kv_cache_utils.py:96-99@5df63a72),
+// 64-bit integer (maybe_convert_block_hash, vllm/v1/core/kv_cache_utils.py:82-85@4ba787ec),
 // written in decimal, one event per block.
 func kvEvents(evs []kv.Event) []engine.KVEvent {
 	var out []engine.KVEvent
