@@ -62,6 +62,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      - uses: ./.github/actions/go-toolchain
       - id: filter
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -72,8 +73,18 @@ jobs:
             for k in contracts kernel catalog ledger registry docs golang apidiff; do echo "$k=true" >> "$GITHUB_OUTPUT"; done
             exit 0
           fi
-          changed=$(git diff --name-only "$BASE" HEAD)
-          has() { if printf '%s\n' "$changed" | grep -Eq "$1"; then echo true; else echo false; fi; }
+          # CHANGED_FILES is set only by tools/changedjobs's test, which runs this step on a chosen list.
+          changed=${CHANGED_FILES-$(git diff --name-only "$BASE" HEAD)}
+          # A job also runs when a changed file lies in a package its commands build or test, or in a
+          # file such a package embeds: tools/changedjobs reads that reach from `go list -deps -test`,
+          # so a package that gains an importer needs no edit here (a change under load/ once skipped
+          # the ledger job, which imports it). The patterns below stay for data that no package imports.
+          reach=$(printf '%s\n' "$changed" | go run ./tools/changedjobs .)
+          has() {
+            local r=false
+            if [ -n "${2:-}" ]; then r=$(printf '%s\n' "$reach" | sed -n "s/^$2=//p"); fi
+            if [ "$r" = true ] || printf '%s\n' "$changed" | grep -Eq "$1"; then echo true; else echo false; fi
+          }
           # A change to go.mod, go.sum, a workflow, a composite action or the root package affects
           # every Go job. Other files under .github/ are data that one job reads (or none): they run
           # only the jobs named below, so a line in .github/tags.lock does not run the cost model.
@@ -86,19 +97,19 @@ jobs:
           github_data='^\.github/(quarantine|check-runs|gates)\.ya?ml$'
           # Any Python file can restate a Go rule, so a Python change runs the X15 lint here. The
           # loader (load/) reads the catalog and the registry, so a data change runs it too.
-          echo "contracts=$(has "$shared|$github_data|^contracts/|^validate/|^tools/|^load/|^catalog/|^registry/|\.py$")" >> "$GITHUB_OUTPUT"
+          echo "contracts=$(has "$shared|$github_data|^contracts/|^validate/|^tools/|^load/|^catalog/|^registry/|\.py$" contracts)" >> "$GITHUB_OUTPUT"
           # The cost model's tests price every embedded catalog model and coefficient set (the
           # loader reads the files data.go embeds), so a change to those files runs it. tools/shard
           # splits its tests across the legs.
           embedded='^catalog/(devices|hardware|models|networks|routers|workloads)/|^catalog/measurements/sources\.yaml$|^registry/(acceptance|coefficients|routing)/'
-          echo "kernel=$(has "$shared|$embedded|^kernel/|^contracts/|^load/|^validate/|^tools/shard/")" >> "$GITHUB_OUTPUT"
+          echo "kernel=$(has "$shared|$embedded|^kernel/|^contracts/|^load/|^validate/|^tools/shard/" kernel)" >> "$GITHUB_OUTPUT"
           # The API-compatibility check compares contracts/ against the last release tag, and
           # reads the review-set file. It reads no other directory, so only those paths, the
           # checker itself and the shared files run it.
-          echo "apidiff=$(has "$shared|^contracts/|^tools/prcheck/|^\.github/contract-review-set$")" >> "$GITHUB_OUTPUT"
-          echo "catalog=$(has "$shared|^catalog/")"                      >> "$GITHUB_OUTPUT"
-          echo "ledger=$(has "$shared|^catalog/ledger/|^ledger/")"       >> "$GITHUB_OUTPUT"
-          echo "registry=$(has "$shared|^\.github/quarantine\.yaml$|^registry/")" >> "$GITHUB_OUTPUT"
+          echo "apidiff=$(has "$shared|^contracts/|^tools/prcheck/|^\.github/contract-review-set$" apidiff)" >> "$GITHUB_OUTPUT"
+          echo "catalog=$(has "$shared|^catalog/" catalog)"                      >> "$GITHUB_OUTPUT"
+          echo "ledger=$(has "$shared|^catalog/ledger/|^ledger/" ledger)"       >> "$GITHUB_OUTPUT"
+          echo "registry=$(has "$shared|^\.github/quarantine\.yaml$|^registry/" registry)" >> "$GITHUB_OUTPUT"
           echo "docs=$(has "$shared|^docs/|^mkdocs\.yml|^catalog/|^registry/|^contracts/example_test\.go")" >> "$GITHUB_OUTPUT"
           # golangci-lint judges Go code only: it needs a Go file, the module files, its own
           # configuration, or a workflow or action that builds it.
