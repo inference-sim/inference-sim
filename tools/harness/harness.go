@@ -295,8 +295,8 @@ func scaled(v int64, factor float64) int64 {
 // warm-up's state with dp copies in place of 2*CONC: the copies are token-for-token the same
 // prompt, so how many ran changes no block the main phase can read
 // (TestThePrimedMainPhaseDoesNotDependOnHowManyCopiesRan). RunCold gives the empty-engine run of
-// such a point, as information only. The exact two-phase protocol, with drain-gated phases in
-// the trace format, is tracked as inference-sim/blis-substrate#156 and inference-sim#1926.
+// such a point, as information only. The protocol is the trace's two drain-gated phases
+// (inference-sim#1926, #2156, #2166), so the main phase starts when the warm-up has drained.
 func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 	if err := RequireBlis(cfg.Blis); err != nil {
 		return Observation{}, err
@@ -328,7 +328,7 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 		run = primedPhase(pl, copies)
 		ignore = func(id string) bool {
 			i, err := requestIndex(id)
-			return err != nil || i >= len(pl.InputLens) // a warm-up copy or its holder round
+			return err != nil || i >= len(pl.InputLens) // a warm-up copy
 		}
 	}
 	out, err := runBlis(cfg, sw.Scenario, engine, run)
@@ -336,7 +336,7 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 		return Observation{}, fmt.Errorf("%s c=%d: %w", sw.Scenario, concurrency, err)
 	}
 	if primed {
-		if err := checkPrimed(out.RequestRows, len(pl.InputLens)); err != nil {
+		if err := checkPrimed(out.RequestRows); err != nil {
 			return Observation{}, fmt.Errorf("%s c=%d: %w", sw.Scenario, concurrency, err)
 		}
 	}
@@ -385,39 +385,29 @@ func RunCold(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 
 // checkPrimed refuses a primed run that is not "the main phase after a drained warm-up":
 //
-//   - a warm-up copy that had not completed before the main phase started;
-//   - a first main request that did not start with the main phase;
-//   - a holder round (which keeps a copy's pool slot) that arrived before the last main
-//     request completed, so that something besides the main phase was in the engine.
-func checkPrimed(rows []result.RequestRow, n int) error {
-	var lastMainEnd, firstHolder float64
-	firstHolder = math.Inf(1)
+//   - a row in neither phase of the primed trace;
+//   - a warm-up copy that did not complete;
+//   - a main request that began before the last warm-up copy ended, so that the main phase did not
+//     start from the drained warm-up's state.
+func checkPrimed(rows []result.RequestRow) error {
+	var warmEnd float64
+	mainStart := math.Inf(1)
 	for _, r := range rows {
 		start := float64(r.ArrivalUs)
-		var end float64
-		if r.E2EUs != nil {
-			end = start + float64(*r.E2EUs)
-		}
-		i, err := requestIndex(r.ID)
-		switch {
-		case err != nil: // a holder round: "session_warmup-<j>_round_1_<k>"
-			firstHolder = math.Min(firstHolder, start)
-		case i >= n:
-			if end >= float64(primeMainStartUs) {
-				return fmt.Errorf("warm-up copy %s ended at %.0f us, not before the main phase at %d us",
-					r.ID, end, primeMainStartUs)
+		switch r.Phase {
+		case primeWarmupPhase:
+			if r.Fate != result.FateCompleted || r.E2EUs == nil {
+				return fmt.Errorf("warm-up copy %s did not complete (fate %q) before the main phase", r.ID, r.Fate)
 			}
+			warmEnd = math.Max(warmEnd, start+float64(*r.E2EUs))
+		case primeMainPhase:
+			mainStart = math.Min(mainStart, start)
 		default:
-			if i == 0 && math.Abs(start-float64(primeMainStartUs)) > 1 {
-				return fmt.Errorf("main request 0 arrived at %.0f us, not with the main phase at %d us",
-					start, primeMainStartUs)
-			}
-			lastMainEnd = math.Max(lastMainEnd, end)
+			return fmt.Errorf("request %s is in phase %q, neither %q nor %q", r.ID, r.Phase, primeWarmupPhase, primeMainPhase)
 		}
 	}
-	if firstHolder <= lastMainEnd {
-		return fmt.Errorf("a warm-up holder round arrived at %.0f us, before the main phase ended at %.0f us",
-			firstHolder, lastMainEnd)
+	if mainStart < warmEnd {
+		return fmt.Errorf("the main phase began at %.0f us, before the last warm-up copy ended at %.0f us", mainStart, warmEnd)
 	}
 	return nil
 }
