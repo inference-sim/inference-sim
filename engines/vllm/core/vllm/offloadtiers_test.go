@@ -310,13 +310,14 @@ func TestAnFSTierItCannotRunIsRefused(t *testing.T) {
 			"bytes_per_block: 4096, secondary_tiers: [{type: fs" + keys + "}]}\n"
 	}
 	for name, c := range map[string]struct{ extra, want string }{
-		"no device":       {tier(", root_dir: /kv"), "device_class"},
-		"no root":         {tier(", device_class: nvme_gen4"), "root_dir"},
-		"unknown key":     {tier(", root_dir: /kv, device_class: nvme_gen4, capacity: 9"), `"capacity"`},
-		"no thread":       {tier(", root_dir: /kv, device_class: nvme_gen4, n_read_threads: 0, n_write_threads: 0"), "no thread"},
-		"bad locality":    {tier(", root_dir: /kv, device_class: nvme_gen4, locality: local"), "local"},
-		"tier pressure":   {tier(", root_dir: /kv, device_class: nvme_gen4, backpressure: {backpressure_cls: EMABackpressureDetector}"), "issues/13"},
-		"global pressure": {strings.Replace(tier(", root_dir: /kv, device_class: nvme_gen4"), "secondary_tiers", "backpressure: {backpressure_cls: EMABackpressureDetector}, secondary_tiers", 1), "issues/13"},
+		"no device":           {tier(", root_dir: /kv"), "device_class"},
+		"no root":             {tier(", device_class: nvme_gen4"), "root_dir"},
+		"unknown key":         {tier(", root_dir: /kv, device_class: nvme_gen4, capacity: 9"), `"capacity"`},
+		"no thread":           {tier(", root_dir: /kv, device_class: nvme_gen4, n_read_threads: 0, n_write_threads: 0"), "no thread"},
+		"bad locality":        {tier(", root_dir: /kv, device_class: nvme_gen4, locality: local"), "local"},
+		"pressure, no class":  {tier(", root_dir: /kv, device_class: nvme_gen4, backpressure: {}"), "backpressure_cls"},
+		"pressure, no policy": {tier(", root_dir: /kv, device_class: nvme_gen4, backpressure: {backpressure_cls: EMABackpressureDetector, policy_cls: DropAccountingPolicy}"), "DropAccountingPolicy"},
+		"pressure, bad mark":  {strings.Replace(tier(", root_dir: /kv, device_class: nvme_gen4"), "secondary_tiers", "backpressure: {backpressure_cls: EMABackpressureDetector, failure_threshold: 0}, secondary_tiers", 1), "failure_threshold"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := build(t, c.extra)()

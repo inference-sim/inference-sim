@@ -82,6 +82,20 @@ type tierSet struct {
 	// inFlight are the tier jobs started as transfers, by transfer; started the jobs reported.
 	inFlight map[engine.TransferID]tierJob
 	started  map[tierJob]bool
+	// now is the engine's virtual time, the last instant a call gave it: the manager's clock
+	// (time.monotonic in vLLM), which stamps a job's submit time and drives each backpressure
+	// detector's moving average, idle decay and cooldown.
+	now engine.Time
+}
+
+// clock is the manager's and the detectors' time.monotonic: the engine's virtual time in seconds.
+func (ts *tierSet) clock() float64 { return float64(ts.now) / 1e6 }
+
+// tick sets the virtual time to the instant of the engine call that follows.
+func (o *offload) tick(now engine.Time) {
+	if o != nil && o.tiers != nil {
+		o.tiers.now = max(o.tiers.now, now)
+	}
 }
 
 type tierJob struct{ tier, id int }
@@ -116,7 +130,7 @@ func buildTiers(c *offloadConfig, bpc, blockSize int, chunkBytes int64, ns kvtie
 	ts := &tierSet{chunkBytes: chunkBytes, blocksPerChunk: bpc, blockSize: blockSize,
 		inFlight: map[engine.TransferID]tierJob{}, started: map[tierJob]bool{}}
 	for i, raw := range c.SecondaryTiers {
-		b, err := buildFS(i, raw, c.Backpressure, chunkBytes, ns)
+		b, err := buildFS(i, raw, c.Backpressure, chunkBytes, ns, ts.clock)
 		if err != nil {
 			return nil, err
 		}
@@ -125,7 +139,7 @@ func buildTiers(c *offloadConfig, bpc, blockSize int, chunkBytes int64, ns kvtie
 	return ts, nil
 }
 
-func buildFS(i int, raw map[string]any, topBackpressure map[string]any, chunkBytes int64, ns kvtier.Namespace) (*builtTier, error) {
+func buildFS(i int, raw map[string]any, topBackpressure map[string]any, chunkBytes int64, ns kvtier.Namespace, clock func() float64) (*builtTier, error) {
 	at := func(format string, a ...any) error {
 		return fmt.Errorf("vllm: kv_offload secondary_tiers[%d] (fs): "+format, append([]any{i}, a...)...)
 	}
@@ -143,10 +157,6 @@ func buildFS(i int, raw map[string]any, topBackpressure map[string]any, chunkByt
 			// (create_secondary_tier, tiering/factory.py:59-96).
 			return nil, at("%q is not a key of the fs tier (fs/manager.py:109-120@4ba787ec)", k)
 		}
-	}
-	if raw["backpressure"] != nil || topBackpressure != nil {
-		// The tier's detector merges the top-level block with its own (tiering/spec.py:329-351@4ba787ec).
-		return nil, at("store backpressure is not modelled (%s)", issueBase+"13")
 	}
 	root, ok := raw["root_dir"].(string)
 	if !ok || root == "" {
@@ -183,9 +193,47 @@ func buildFS(i int, raw map[string]any, topBackpressure map[string]any, chunkByt
 		return nil, at("device_class must name the catalog device the tier's files are on: its moves are priced "+
 			"on that device's offload_tier_<device>_* coefficients, and a tier that names none is not priced (%s)", tierIssue)
 	}
+	detector, err := tierBackpressure(raw, topBackpressure, string(loc), clock)
+	if err != nil {
+		return nil, at("%v", err)
+	}
 	files := &tierFiles{FileStore: kvtier.MemFiles{}}
-	fs := kvtier.NewFSTier(kvtier.FSConfig{RootDir: root, Locality: loc, BlockBytes: chunkBytes, Namespace: ns}, files)
+	cfg := kvtier.FSConfig{RootDir: root, Locality: loc, BlockBytes: chunkBytes, Namespace: ns}
+	if detector != nil {
+		cfg.Backpressure = detector
+	}
+	fs := kvtier.NewFSTier(cfg, files)
 	return &builtTier{label: fmt.Sprintf("%d:fs", i+1), device: device, rootDir: root, fs: fs, files: files}, nil
+}
+
+// tierBackpressure is the tier's detector: the top-level backpressure block and the tier's own merged
+// field by field, the tier's winning (TieringOffloadingSpec.__init__, tiering/spec.py:329-351@4ba787ec),
+// then built as the factory builds it. nil when neither states one; a tier that states
+// "backpressure: {}" has a block of defaults, which still names no class and is refused as vLLM
+// refuses it.
+func tierBackpressure(raw, top map[string]any, locality string, clock func() float64) (*kvtier.EMADetector, error) {
+	own, stated := raw["backpressure"]
+	var tierBlock map[string]any
+	if stated {
+		var ok bool
+		if tierBlock, ok = own.(map[string]any); !ok && own != nil {
+			return nil, fmt.Errorf("backpressure must be a mapping, got %v", own)
+		}
+	}
+	if len(top) == 0 && len(tierBlock) == 0 && !stated {
+		return nil, nil
+	}
+	merged := map[string]any{}
+	for _, src := range []map[string]any{top, tierBlock} {
+		for k, v := range src {
+			merged[k] = v
+		}
+	}
+	d, err := kvtier.NewBackpressure(merged, "fs", locality, clock)
+	if err != nil {
+		return nil, err
+	}
+	return d, nil
 }
 
 // threads is a thread count key, vLLM's default 16 unstated (fs/manager.py:114-115@4ba787ec).
@@ -206,9 +254,7 @@ func (ts *tierSet) manager() func(cpu *offloading.CPUPrimary) (offloading.Manage
 		for i, b := range ts.tiers {
 			tiers[i] = b.fs
 		}
-		// The manager's clock stamps a job's submit time, which only store backpressure reads, and
-		// backpressure is refused (buildFS).
-		ts.mgr = kvtier.New(kvtier.CPU(cpu), tiers, nil)
+		ts.mgr = kvtier.New(kvtier.CPU(cpu), tiers, ts.clock)
 		return kvtier.Connector{M: ts.mgr}, nil
 	}
 }

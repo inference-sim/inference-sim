@@ -192,6 +192,8 @@ type FSConfig struct {
 	// BlockBytes is the primary tier's bytes per chunk (primary_kv_view.strides[0], :168-172).
 	BlockBytes int64
 	Namespace  Namespace
+	// Backpressure is the tier's backpressure_detector (fs/manager.py:119); nil is none.
+	Backpressure Detector
 }
 
 type fsJob struct {
@@ -242,7 +244,7 @@ func (t *FSTier) Medium() Medium                  { return MediumStorage }
 func (t *FSTier) Locality() Locality              { return t.cfg.Locality }
 func (t *FSTier) HitSource() string               { return hitSourceOf(MediumStorage) }
 func (t *FSTier) BlockBytes() int64               { return t.cfg.BlockBytes }
-func (t *FSTier) Backpressure() Detector          { return nil }
+func (t *FSTier) Backpressure() Detector          { return t.cfg.Backpressure }
 func (t *FSTier) OffThreadPolling() bool          { return false }
 func (t *FSTier) HasPendingWork() bool            { return false }
 func (t *FSTier) Touch([]Key, *ReqContext)        {}
