@@ -34,6 +34,7 @@ import argparse
 import fnmatch
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -55,7 +56,8 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "ffn_size": ("intermediate_size", "ffn_hidden_size"),
     "vocab_size": ("vocab_size",),
     "num_experts": ("num_local_experts", "n_routed_experts", "num_experts"),
-    "top_k": ("num_experts_per_tok", "num_experts_per_token", "moe_topk"),
+    # top_k_experts is Gemma 4's spelling (vLLM passes it as top_k, gemma4.py:646-648).
+    "top_k": ("num_experts_per_tok", "num_experts_per_token", "moe_topk", "top_k_experts"),
     "moe_ffn_size": ("moe_intermediate_size", "expert_intermediate_size"),
     "num_shared_experts": ("n_shared_experts", "num_shared_experts"),
     "shared_ffn_size": (
@@ -6090,6 +6092,302 @@ def handler_llama_eagle3(cfg, raw, model):
     return kinds, {"pattern": ["eagle3_layer"], "repeat": layers}, extras
 
 
+# --- Gemma 4 --------------------------------------------------------------------
+# Every citation below is vllm-project/vllm v0.33.0 unless it says otherwise. vLLM builds
+# Gemma4ForConditionalGeneration's text decoder as Gemma4ForCausalLM over text_config
+# (model_executor/models/gemma4_mm.py:1144-1150); the vision and audio towers are not
+# priced, which the graph records as modality text_decoder_of_multimodal.
+GEMMA4_LAYER_TYPES = ("sliding_attention", "full_attention")
+
+# The open issue each refused Gemma 4 feature cites (X28).
+GEMMA4_GAP = "inference-sim/blis-substrate#232"
+
+
+def gemma4_layer_shapes(cfg: dict[str, Any], model: str) -> list[tuple[str, int, int]]:
+    """(layer type, KV heads, head dim) for every decoder layer, as vLLM sizes it.
+
+    vLLM reads each layer's head_dim and num_key_value_heads from per_layer_config
+    (models/gemma4.py:577-580), which transformers fills for the full-attention layers only:
+    head_dim = global_head_dim, and num_key_value_heads = num_global_key_value_heads where
+    attention_k_eq_v is set (configuration_gemma4.py:210-222 in transformers 5.20.2, the
+    version vLLM v0.33.0's requirements admit). A sliding layer keeps the top-level
+    head_dim and num_key_value_heads."""
+    layers = int(require(cfg, "num_layers", model))
+    types = require_key(cfg, "layer_types", model)
+    if len(types) != layers:
+        raise DeriveError(f"{model}: layer_types has {len(types)} entries for {layers} layers")
+    unknown = sorted(set(types) - set(GEMMA4_LAYER_TYPES))
+    if unknown:
+        raise DeriveError(f"{model}: layer_types names {unknown}; a Gemma 4 layer is "
+                          f"sliding_attention or full_attention")
+    sliding_dh = int(require_key(cfg, "head_dim", model))
+    sliding_kv = int(require(cfg, "num_kv_heads", model))
+    full_dh = int(require_key(cfg, "global_head_dim", model))
+    full_kv = sliding_kv
+    if cfg.get("attention_k_eq_v") and cfg.get("num_global_key_value_heads") is not None:
+        full_kv = int(cfg["num_global_key_value_heads"])
+    return [(t, full_kv, full_dh) if t == "full_attention" else (t, sliding_kv, sliding_dh)
+            for t in types]
+
+
+def gemma4_refuse_unpriced(cfg: dict[str, Any], model: str) -> None:
+    """Refuse the Gemma 4 features no node of this handler prices (GEMMA4_GAP)."""
+    if int(cfg.get("hidden_size_per_layer_input") or 0) > 0:
+        # A second vocabulary table, a model-level projection, and a gate, projection and
+        # norm in every layer (gemma4.py:673-706, 1014-1067).
+        raise DeriveError(f"{model}: hidden_size_per_layer_input "
+                          f"{cfg['hidden_size_per_layer_input']} builds per-layer embeddings, "
+                          f"which this handler does not price ({GEMMA4_GAP})")
+    if int(cfg.get("num_kv_shared_layers") or 0) > 0:
+        # The last layers project Q only and read an earlier layer's cache
+        # (gemma4.py:403-418, 471-492); with use_double_wide_mlp their MLP doubles (:595-607).
+        raise DeriveError(f"{model}: num_kv_shared_layers {cfg['num_kv_shared_layers']} "
+                          f"shares KV caches across layers, which this handler does not "
+                          f"price ({GEMMA4_GAP})")
+    if cfg.get("attn_logit_softcapping") is not None:
+        # Passed to the attention kernel (gemma4.py:591); the graph has no field for it.
+        raise DeriveError(f"{model}: attn_logit_softcapping is set, which the attention "
+                          f"node cannot state ({GEMMA4_GAP})")
+    if cfg.get("use_bidirectional_attention") == "all":
+        # transformers halves the sliding window under it (configuration_gemma4.py:185-188).
+        raise DeriveError(f"{model}: use_bidirectional_attention 'all' makes every token "
+                          f"bidirectional and halves the window ({GEMMA4_GAP})")
+
+
+def gemma4_linear_widths(cfg: dict[str, Any], raw: dict[str, Any], model: str):
+    """`quantized(ckpt_module, vllm_module)` -> True where vLLM runs that linear quantized.
+
+    An unquantized checkpoint quantizes nothing. A compressed-tensors checkpoint is read
+    as vLLM reads it: every LinearBase takes the group's scheme unless the ignore list
+    names it (compressed_tensors.py:159-182; should_ignore_layer, utils.py:53-70), and a
+    `Linear` target also covers the routed experts (_add_fused_moe_to_target_scheme_map,
+    compressed_tensors.py:221-232). Only one shape is accepted: one group of 8-bit float
+    weights over `Linear`, per channel or per tensor. Anything else is refused.
+
+    An ignore entry is a module name or a `re:` regex (re.match). vLLM maps exact names to
+    its own module names (apply_vllm_mapper, compressed_tensors.py:129-157) and matches
+    regexes against its names unmapped, so each answer is checked on both names, and a
+    regex that answers differently for the two is refused."""
+    quant = raw_quant(raw, model) or raw_quant(cfg, model)
+    if not quant:
+        return lambda ckpt, vllm: False
+    if str(quant.get("quant_method", "")).lower() != "compressed-tensors":
+        raise DeriveError(f"{model}: quant_method {quant.get('quant_method')!r}; this handler "
+                          f"reads only compressed-tensors")
+    groups = list((quant.get("config_groups") or {}).values())
+    weights = [(g or {}).get("weights") or {} for g in groups]
+    if (len(groups) != 1 or (groups[0] or {}).get("targets") != ["Linear"]
+            or weights[0].get("num_bits") != 8 or weights[0].get("type") != "float"
+            or weights[0].get("strategy") not in ("channel", "tensor")):
+        raise DeriveError(f"{model}: a compressed-tensors layout other than one group of "
+                          f"8-bit float weights over Linear, per channel or tensor")
+    names, regexes = set(), []
+    for entry in quant.get("ignore") or ():
+        text = str(entry)
+        if text.startswith("re:"):
+            regexes.append(re.compile(text[3:]))
+        else:
+            names.add(text)
+
+    def quantized(ckpt: str, vllm: str) -> bool:
+        for r in regexes:
+            if bool(r.match(ckpt)) != bool(r.match(vllm)):
+                raise DeriveError(f"{model}: ignore regex {r.pattern!r} matches {ckpt} and "
+                                  f"{vllm} differently; vLLM reads it against its own names")
+        return not (ckpt in names or any(r.match(ckpt) for r in regexes))
+    return quantized
+
+
+def handler_gemma4(cfg, raw, model):
+    """Gemma 4's text decoder: interleaved sliding-window and full-attention layers, a dense
+    MLP in every layer, and on the MoE checkpoints routed experts beside it.
+
+    Attention (gemma4.py:365-557). One QKVParallelLinear over the layer's own head dim and
+    KV heads (:420-431). On a full-attention layer with attention_k_eq_v the checkpoint ships
+    k_proj only, and vLLM loads it into both the K and the V shard (_gemma4_layer_weights_
+    mapper, :86-127), so the projection it builds, holds and runs is (n_q + 2 n_kv) d_h wide
+    on every layer; the graph prices that. V is then normed without a weight and not rotated
+    while K is (:536-553), so the two cached tensors differ and the cache holds both. Q, K
+    and V are RMS-normed and Q and K rotated, read and written once. A sliding layer is
+    bounded by sliding_window (:449-451, 509).
+
+    Feed-forward (:595-671, 719-776). The dense Gemma4MLP (:256-286) runs on every layer
+    behind pre_feedforward_layernorm. Where num_experts is set -- vLLM keys the MoE block on
+    it, not on enable_moe_block (:630) -- a Gemma4Router (an unweighted norm, two scales and
+    a replicated GateLinear built with no quantization config, :289-362) and
+    FusedMoEFactory(num_experts, top_k_experts, moe_intermediate_size) (:636-656) run on the
+    same residual, each output with its own norm, and the two sums are added. Both reduce
+    their outputs under tensor parallelism (RowParallelLinear; FusedMoEFactory
+    reduce_results=True, fused_moe/layer.py:124).
+
+    The head is tied to the embedding (:1447-1454): lm_head aliases embed_tokens, so the
+    table is held once and read at its own width.
+
+    Not priced: the embedding normalizer multiply (:1089-1098) and the per-layer
+    layer_scalar multiply (:708-709, 774), one hidden-width pass each that the compiled
+    graph fuses into the neighbouring norm; the final logit soft-cap (:1456-1459), which no
+    head node can scope to the sampled rows; RoPE's partial rotary factor on the full
+    layers, which changes no byte count. use_bidirectional_attention 'vision' makes image
+    tokens bidirectional only (gemma4.py:511-517), which a text workload never has.
+    """
+    gemma4_refuse_unpriced(cfg, model)
+    hidden = int(require(cfg, "hidden_size", model))
+    nq = int(require(cfg, "num_q_heads", model))
+    ffn = int(require(cfg, "ffn_size", model))
+    vocab = int(require(cfg, "vocab_size", model))
+    base = base_dtype(cfg, raw, model)
+    act = DTYPE_WIDTHS[base]
+    shapes = gemma4_layer_shapes(cfg, model)
+    window = pick(cfg, "sliding_window")
+    if any(t == "sliding_attention" for t, _, _ in shapes) and not window:
+        raise DeriveError(f"{model}: sliding_attention layers with no sliding_window")
+
+    experts = cfg.get("num_experts")
+    if bool(experts) != bool(cfg.get("enable_moe_block")):
+        raise DeriveError(f"{model}: enable_moe_block {cfg.get('enable_moe_block')!r} with "
+                          f"num_experts {experts!r}; vLLM builds the MoE block on num_experts "
+                          f"alone (gemma4.py:630), and the two disagree")
+    moe = None
+    if experts:
+        top_k = int(require(cfg, "top_k", model))
+        inner = int(require(cfg, "moe_ffn_size", model))
+        if not 0 < top_k <= int(experts):
+            raise DeriveError(f"{model}: top-{top_k} routing over {experts} experts")
+        moe = (int(experts), top_k, inner)
+
+    global_width = weight_dtype(cfg, raw, model)
+    quantized = gemma4_linear_widths(cfg, raw, model)
+
+    def layer_width(i: int, shards: tuple[str, ...], fused: str) -> str:
+        """The width vLLM holds module `fused` of layer i at, from its checkpoint shards."""
+        ckpt = f"model.language_model.layers.{i}."
+        vllm = f"language_model.model.layers.{i}."
+        found = {quantized(ckpt + s, vllm + s) for s in shards}
+        if len(found) != 1:
+            # vLLM refuses a fused linear whose shards differ (utils.py:62-66).
+            raise DeriveError(f"{model}: the ignore list splits layer {i}'s {fused} "
+                              f"{list(shards)}; vLLM requires one scheme for the fused module")
+        return global_width if found.pop() else base
+
+    def width_set(node: dict[str, Any], width: str) -> dict[str, Any]:
+        return dict(node, weight_dtype=width) if width != global_width else node
+
+    roles = {
+        "qkv_proj": lambda i, kv_eq: (("self_attn.q_proj", "self_attn.k_proj")
+                                      if kv_eq else ("self_attn.q_proj", "self_attn.k_proj",
+                                                     "self_attn.v_proj")),
+        "o_proj": lambda i, kv_eq: ("self_attn.o_proj",),
+        "mlp_gate_up": lambda i, kv_eq: ("mlp.gate_proj", "mlp.up_proj"),
+        "mlp_down": lambda i, kv_eq: ("mlp.down_proj",),
+    }
+    if moe:
+        # vLLM asks expert 0's three projections and applies the answer to every expert
+        # (CompressedTensorsMoEMethod.get_moe_method, compressed_tensors_moe.py:36-58).
+        roles["experts"] = lambda i, kv_eq: tuple(f"experts.0.{p}" for p in
+                                                  ("gate_proj", "up_proj", "down_proj"))
+
+    k_eq_v = bool(cfg.get("attention_k_eq_v"))
+    kind_of = {"sliding_attention": "swa", "full_attention": "full"}
+    suffix = "_moe" if moe else "_dense"
+    sequence = [kind_of[t] + suffix for t, _, _ in shapes]
+
+    def widths_for(kid: str, kv_eq: bool) -> dict[str, str]:
+        layers = [i for i, k in enumerate(sequence) if k == kid]
+        out = {}
+        for role, shards_of in roles.items():
+            got = {layer_width(i, shards_of(i, kv_eq), role) for i in layers}
+            if len(got) != 1:
+                raise DeriveError(f"{model}: layer kind {kid!r} holds {role} at "
+                                  f"{sorted(got)} on different layers; one node cannot "
+                                  f"price both")
+            out[role] = got.pop()
+        if moe:
+            for i in layers:
+                ckpt = f"model.language_model.layers.{i}.router.proj"
+                if quantized(ckpt, f"language_model.model.layers.{i}.router.proj"):
+                    raise DeriveError(
+                        f"{model}: the quantization config leaves {ckpt} quantized, and vLLM "
+                        f"builds the router as a GateLinear with no quantization config "
+                        f"(gemma4.py:325-331); the checkpoint would store a width vLLM does "
+                        f"not run")
+                def expert(e: int) -> set[bool]:
+                    return {quantized(f"model.language_model.layers.{i}.experts.{e}.{p}",
+                                      f"language_model.model.layers.{i}.experts.{e}.{p}")
+                            for p in ("gate_proj", "up_proj", "down_proj")}
+                first = expert(0)
+                for e in range(1, moe[0]):
+                    if expert(e) != first:
+                        raise DeriveError(
+                            f"{model}: layer {i} expert {e} is quantized differently from "
+                            f"expert 0, whose scheme vLLM applies to every expert "
+                            f"(compressed_tensors_moe.py:36-58)")
+        return out
+
+    def traffic(role: str, nbytes: int) -> dict[str, Any]:
+        return dict(norm(role), bytes_per_token=int(nbytes))
+
+    def layer(kid: str, kv: int, dh: int, win: int | None, kv_eq: bool) -> dict[str, Any]:
+        w = widths_for(kid, kv_eq)
+        attn: dict[str, Any] = {"op": "Attention", "holds_engine_kv": True,
+                                "kind": "swa" if win else "gqa", "n_q": nq, "n_kv": kv,
+                                "d_h": dh}
+        if win:
+            attn["window"] = int(win)
+        nodes = [
+            norm("input_norm"),
+            width_set(gemm("qkv_proj", (nq + 2 * kv) * dh, hidden), w["qkv_proj"]),
+            # q_norm, k_norm, the weightless v_norm and RoPE: read and write Q, K and V.
+            traffic("qkv_norm_rope", 2 * (nq + 2 * kv) * dh * act),
+            attn,
+            width_set(gemm("o_proj", hidden, nq * dh), w["o_proj"]),
+            collective("AllReduce", "attn_out", EMIT_TENSOR_PARALLEL),
+            norm("post_attn_norm"),
+            norm("pre_ffn_norm"),
+            width_set(gemm("mlp_gate_up", 2 * ffn, hidden), w["mlp_gate_up"]),
+            width_set(gemm("mlp_down", hidden, ffn), w["mlp_down"]),
+            collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL),
+        ]
+        if moe:
+            n_exp, top_k, inner = moe
+            experts_node = {"op": "GroupedGEMM", "shared": False, "role": "experts",
+                            "n": inner, "k": hidden, "experts": n_exp, "top_k": top_k}
+            nodes += [
+                norm("post_mlp_norm"),
+                # RMSNorm with no weight, then the root-size and per-dimension scales.
+                norm("router_norm"),
+                width_set({**gemm("router", n_exp, hidden), "tp": "replicated"}, base),
+                norm("pre_experts_norm"),
+                width_set(experts_node, w["experts"]),
+                collective("All2All", "moe_dispatch_combine", EMIT_EXPERT_PARALLEL),
+                collective("AllReduce", "moe_out", EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE),
+                norm("post_experts_norm"),
+            ]
+        nodes.append(norm("post_ffn_norm"))
+        return {"id": kid, "nodes": nodes, "edges": chain(nodes)}
+
+    kinds = []
+    for t, kv, dh in shapes:
+        kid = kind_of[t] + suffix
+        if kid in {k["id"] for k in kinds}:
+            continue
+        sliding = t == "sliding_attention"
+        kinds.append(layer(kid, kv, dh, int(window) if sliding else None,
+                           k_eq_v and not sliding))
+
+    row = hidden * act
+    embedding = [
+        {"op": "Gather", "role": "embed_tokens", "rows": vocab, "row_bytes": row,
+         "rows_per_token": 1, "out_bytes_per_token": row, "shard": "rows"},
+        collective("AllReduce", "embed_out", EMIT_TENSOR_PARALLEL),
+    ]
+    if cfg.get("tie_word_embeddings", raw.get("tie_word_embeddings")) is False:
+        raise DeriveError(f"{model}: an untied Gemma 4 head, which no committed checkpoint "
+                          f"states; this handler prices the tied one")
+    head = [norm("final_norm"),
+            {**gemm("lm_head", vocab, hidden), "aliases": "embedding.embed_tokens"}]
+    return kinds, compress(sequence), {"embedding": embedding, "head": head}
+
+
 HANDLERS = {
     "LlamaForCausalLM": handler_dense,
     "LlamaForCausalLMEagle3": handler_llama_eagle3,
@@ -6149,6 +6447,9 @@ HANDLERS = {
     # graph records as modality text_decoder_of_multimodal; the corpus's workloads are all
     # text (1024:1024, 1024:8192, 8192:1024), so the tower never runs in these measurements.
     "KimiK25ForConditionalGeneration": handler_kimi_k25,
+    # Gemma 4's text decoder, which vLLM builds as Gemma4ForCausalLM over text_config
+    # (model_executor/models/gemma4_mm.py:1144-1150 at v0.33.0); see handler_gemma4.
+    "Gemma4ForConditionalGeneration": handler_gemma4,
 }
 
 
