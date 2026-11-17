@@ -303,7 +303,7 @@ func TestPrefixCacheAffinityFilterRunsOnTheInFlightLoad(t *testing.T) {
 }
 
 // TestUtilizationFilterRunsOnAPDRouter: a P/D router configuration whose prefill profile filters with a
-// utilization-filter is hosted (#2205); before the filter was audited the router refused it as unaudited.
+// utilization-filter is hosted; before the filter was audited the router refused it as unaudited.
 func TestUtilizationFilterRunsOnAPDRouter(t *testing.T) {
 	dep := testDeployment(4)
 	dep.PrefillInstances, dep.DecodeInstances = 2, 2
