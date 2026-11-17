@@ -253,8 +253,8 @@ Each pool's `engine.scheduling_policy` in the scenario orders the wait queue, as
 `--scheduling-policy` does: `fcfs` (the default) is BLIS `fcfs` queueing with tail-of-batch
 preemption, and `priority` is BLIS `priority-fcfs` queueing with priority preemption (the running
 request with the highest `Request.Priority` value is evicted first; vLLM convention: background=7
-is evicted first). No flag sets it. On 0.32.0 a scenario stating `priority` is refused for now:
-the host does not yet carry request priority across the engine contract. Maps to `PolicyConfig`.
+is evicted first). No flag sets it. The host sends each request's SLO-class priority
+(`priority.slo_priorities` overrides applied) to the engine, which orders by it under `priority`. Maps to `PolicyConfig`.
 
 See [Core Engine: Scheduling](../concepts/core-engine.md#scheduling-policies) for policy details.
 

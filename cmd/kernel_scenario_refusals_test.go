@@ -150,8 +150,8 @@ func TestRunCmd_KernelBackend_RefusesAnEngineVLLMWouldNotStart(t *testing.T) {
 
 // The scenario's engine.scheduling_policy sets the instance scheduler: vLLM's priority is BLIS's
 // priority-fcfs, and an unstated policy leaves the default. No flag overrides it (#2037). The
-// adoption alone is checked here; a run of a priority scenario is refused (the host does not
-// carry priority across the engine contract, TestRunCmd_A032ScenarioStatingPrioritySchedulingIsRefused).
+// adoption alone is checked here; the ordering a priority run produces is
+// TestReplayCmd_PrioritySchedulingServesTheQueueBySLOClass.
 func TestAdoptKernelDeployment_TakesTheScenariosSchedulingPolicy(t *testing.T) {
 	_, catalog, registry := kernelRepos(t)
 	setupKernelTestFixtures(t)
@@ -459,44 +459,20 @@ func TestRunCmd_A032ScenarioTheEngineCannotBuildIsRefusedByName(t *testing.T) {
 	}
 }
 
-// The host does not carry request priority across the engine contract yet (it sends every
-// request to the v0.33.0 engine at priority 0), so a priority policy would silently run as FCFS. A
-// scenario stating engine.scheduling_policy priority is refused at the build site, naming the
-// policy; the same scenario stating fcfs runs.
-func TestRunCmd_A032ScenarioStatingPrioritySchedulingIsRefused(t *testing.T) {
-	priority := func(policy string) []string {
+// vLLM accepts fcfs and priority. sjf and reverse-priority, BLIS's former host schedulers, have no
+// vLLM counterpart: a scenario stating either is refused by name, citing the open issue (X28).
+// Request priority itself reaches the engine, so priority and an SLO priority override run
+// (TestReplayCmd_PriorityScheduling*).
+func TestRunCmd_ScenarioStatingSJFOrReversePriorityIsRefused(t *testing.T) {
+	for _, policy := range []string{"sjf", "reverse-priority"} {
 		dir := writeColocatedVariant(t,
 			"      max_model_len: 32768\n", "      max_model_len: 32768\n      scheduling_policy: "+policy+"\n")
-		return []string{"run", "--scenarios", dir, "--scenario", "variant.yaml",
-			"--rate", "4", "--num-requests", "4", "--seed", "1"}
-	}
-	_, stderr, err := runKernelCLI(t, priority("priority")...)
-	if err == nil || !strings.Contains(stderr, "engine.scheduling_policy priority would run as FCFS") {
-		t.Errorf("a scenario stating priority scheduling: want a refusal naming the policy, got err=%v\n%s",
-			err, lastLines(stderr, 3))
-	}
-	if stdout, stderr, err := runKernelCLI(t, priority("fcfs")...); err != nil || !completedIs(stdout, 4) {
-		t.Errorf("the same scenario stating fcfs must run: %v\n%s", err, lastLines(stderr, 3))
-	}
-}
-
-// An SLO priority override (--policy-config priority.slo_priorities) re-ranks the SLO classes a
-// priority policy orders by, which reaches the v0.33.0 engine as nothing: a run stating one is
-// refused at the build site, naming the setting. The same run without the bundle runs.
-func TestRunCmd_A032ScenarioRefusesAnSLOPriorityOverride(t *testing.T) {
-	bundle := filepath.Join(t.TempDir(), "policy.yaml")
-	if err := os.WriteFile(bundle, []byte("priority:\n  slo_priorities:\n    critical: 9\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	dir := writeColocatedVariant(t)
-	run := []string{"run", "--scenarios", dir, "--scenario", "variant.yaml", "--rate", "4", "--num-requests", "4", "--seed", "1"}
-	_, stderr, err := runKernelCLI(t, append(run, "--policy-config", bundle)...)
-	if err == nil || !strings.Contains(stderr, "priority.slo_priorities override would be ignored") {
-		t.Errorf("a run with an SLO priority override: want a refusal naming the override, got err=%v\n%s",
-			err, lastLines(stderr, 3))
-	}
-	if stdout, stderr, err := runKernelCLI(t, run...); err != nil || !completedIs(stdout, 4) {
-		t.Errorf("the same run without the override must run: %v\n%s", err, lastLines(stderr, 3))
+		_, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml",
+			"--rate", "4", "--num-requests", "4", "--seed", "1")
+		if err == nil || !strings.Contains(stderr, policy+`\", which has no vLLM counterpart`) || !strings.Contains(stderr, "inference-sim/issues/2158") {
+			t.Errorf("scheduling_policy %s: want a refusal naming the policy and the issue, got err=%v\n%s",
+				policy, err, lastLines(stderr, 3))
+		}
 	}
 }
 

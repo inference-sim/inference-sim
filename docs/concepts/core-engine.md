@@ -115,7 +115,7 @@ These are the conceptual timestamps in a request's lifecycle. Some are stored as
 ### Preemption
 
 When KV cache pressure forces eviction, running requests are preempted:
-1. Request is removed from the running batch. Under the pool's `engine.scheduling_policy: fcfs` (the default), the tail of the batch is evicted. `scheduling_policy: priority`, which evicts the least-urgent request, is refused on 0.33.0 for now.
+1. Request is removed from the running batch. Under the pool's `engine.scheduling_policy: fcfs` (the default), the tail of the batch is evicted. `scheduling_policy: priority`, evicts the least-urgent request.
 2. Its KV blocks are freed
 3. It is re-enqueued at the front of the wait queue (not the back)
 4. A debug log is emitted and `PreemptionCount` is incremented
@@ -152,7 +152,7 @@ This matches vLLM, where CPU post-processing runs concurrently with GPU executio
 
 ## Scheduling Policies
 
-Each instance's engine orders its waiting requests by the pool's engine block `scheduling_policy`, as vLLM does. The same field sets the preemption victim. Priority scheduling (`scheduling_policy: priority`) is refused on 0.33.0 for now. See [Scheduling & Priority](../guide/scheduling.md).
+Each instance's engine orders its waiting requests by the pool's engine block `scheduling_policy`, as vLLM does. The same field sets the preemption victim. Under `scheduling_policy: priority` the engine orders by the SLO-class priority the host sends with each request. See [Scheduling & Priority](../guide/scheduling.md).
 
 ## Metrics
 
