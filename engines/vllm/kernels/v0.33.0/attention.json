@@ -52,6 +52,10 @@
         {
           "version": "0.6.13",
           "seen_in": "the trtllm-gen prefill sweep's B300, GB200 and GB300 runs (ai-dynamo/aisimulate 2f0f4cd8606d580567b253d02f3d699fe36db865, systems/data/{b300_sxm,gb200,gb300}/attention/vllm/0.25.0/collection_meta.yaml): images vllm/vllm-openai@sha256:e1c1ff1af9a15921bfa11d1d95047258c1797392cdbfa296e7639da446b23f97 and @sha256:2f726db9babd627fb59addaed2038577fc767108680901271b069d91759d1286, whose build configs set FLASHINFER_VERSION=0.6.13"
+        },
+        {
+          "version": "0.7.0.post1",
+          "seen_in": "the GLM-5.3 sparse-MLA sweep's H200 run (ai-dynamo/aisim 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18, systems/data/h200_sxm/glm53_attention/vllm/0.31.0/collection_meta.yaml): image vllm/vllm-openai@sha256:a4a4c0437bf7240089da5f08aa370c4aee17ae5290f7a3b468825ee26c4c3a6b, whose build config sets FLASHINFER_VERSION=0.7.0.post1"
         }
       ]
     },
