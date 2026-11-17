@@ -7647,12 +7647,23 @@
     {
       "name": "enable_scale_out",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#54"
+        "traces": [
+          "core/vllm/testdata/golden-render/stated-false.json",
+          "core/vllm/testdata/golden-render/stated-true.json",
+          "core/vllm/testdata/golden-render/unset.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {

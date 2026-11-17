@@ -5124,6 +5124,74 @@
     "name": "enable_prefix_caching"
    }
   },
+  "enable_scale_out": {
+   "value_classes": {
+    "type": "boolean",
+    "covered": [
+     "false",
+     "true"
+    ]
+   },
+   "basis": {
+    "kind": "boolean",
+    "classes": [
+     {
+      "values": [
+       false
+      ],
+      "compared_at": [
+       "vllm/entrypoints/cohere/api_router.py:312",
+       "vllm/entrypoints/scale_out/factories.py:99"
+      ],
+      "covered_by": [
+       "core/vllm/testdata/golden-render/stated-false.json"
+      ]
+     },
+     {
+      "values": [
+       true
+      ],
+      "compared_at": [
+       "vllm/entrypoints/cohere/api_router.py:312",
+       "vllm/entrypoints/scale_out/factories.py:99"
+      ],
+      "covered_by": [
+       "core/vllm/testdata/golden-render/stated-true.json"
+      ]
+     }
+    ],
+    "relations": [],
+    "sites": [
+     {
+      "at": "vllm/entrypoints/cohere/api_router.py:312",
+      "expr": "getattr(args, \"enable_scale_out\", False)",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/scale_out/factories.py:99",
+      "expr": "getattr(args, \"enable_scale_out\", False)",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": false,
+      "trace": "core/vllm/testdata/golden-render/stated-false.json"
+     },
+     {
+      "value": true,
+      "trace": "core/vllm/testdata/golden-render/stated-true.json"
+     }
+    ],
+    "name": "enable_scale_out"
+   }
+  },
   "gpu_memory_utilization": {
    "value_classes": {
     "type": "numeric",
