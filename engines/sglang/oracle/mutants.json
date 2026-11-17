@@ -518,7 +518,8 @@
     "lower/lower.go:RequireMLPTPGather:==->!=#1:case a.MoeDenseTpSize == nil:": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
     "lower/lower.go:RequireMLPTPGather:==->!=#1:case b == \"flashinfer\", b == \"flashinfer_megamoe\":": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
     "lower/lower.go:RequireMLPTPGather:==->!=#2:case b == \"flashinfer\", b == \"flashinfer_megamoe\":": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "lower/lower.go:RequireMLPTPGather:>->>=#1:return *a.MoeDenseTpSize > p.TPSize/p.NumDPRanks, nil": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)"
+    "lower/lower.go:RequireMLPTPGather:>->>=#1:return *a.MoeDenseTpSize > p.TPSize/p.NumDPRanks, nil": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
+    "core/cache/full.go:releaseLock:==->!=#1:if cur.lockRef == 0 {": "no test kills this mutant yet; tracked in blis-sglang#112 (M3.1)"
   },
   "equivalent": {
     "core/cache/alloc.go:mergeAndSortFree:>->>=#1:if len(a.release) > 0 {": "with needSort the free list is always sorted (it starts sorted, is only consumed from the front and is replaced by a sorted merge), so merging an empty release list sorts a sorted list: no allocation differs",

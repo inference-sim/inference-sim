@@ -475,14 +475,6 @@
    "issue": "inference-sim/blis-sglang#49"
   },
   {
-   "id": "config/resolve.go:deref:==->!=#1:if *v == nil {",
-   "needs": {
-    "field": "cuda_graph_config"
-   },
-   "stage": "T1 rest",
-   "issue": "inference-sim/blis-sglang#49"
-  },
-  {
    "id": "config/speculative.go:handleSpeculativeDecoding:>=->>#1:case len(d) >= 5 && d[:5] == \"lora_\":",
    "needs": {
     "field": "moe_runner_backend"
