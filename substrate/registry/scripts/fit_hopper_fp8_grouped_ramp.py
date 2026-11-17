@@ -52,12 +52,19 @@ resample rows, each refit searched on a local grid around the full fit (floor st
 eps_max step 0.01, M_half over the fit's grid within a factor of 4), widened by half a step either
 side. Rows of one geometry are correlated, so it is narrower than the data would justify.
 
+KEYED TO THE BUILD (VAL-8). Each value is written twice where the builds differ: `measured`,
+keyed (kernel_impls) to the build the run's image installs -- vLLM v0.30.0's fused_moe_kernel, or
+the FlashInfer 0.6.18.post1 it pins -- and `transferred` to the engine pin's build, with that
+build as measured_on. The builds and their hashes are read from blis-vllm's kernel_impls.json
+(--kernel-impls), the version whose run record names the run's image digest.
+
 LANE. vLLM. Units: `latency` is MILLISECONDS in every AISimulate parquet.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import os
 import sys
@@ -86,6 +93,10 @@ HARNESS = ("AISimulate collector/vllm/collect_moe.py at ai-dynamo/aisim "
 PARTS = [("h200_sxm", "h200"), ("h100_sxm", "h100")]
 
 # backend word -> (AISimulate kernel_source, which rows, vLLM experts class, when v0.33.0 runs it)
+KERNEL_PRIMITIVE = "moe.grouped_gemm"
+# backend word -> (selection, library, variant) of its rows in the engine's kernel_impls.json
+KERNELS = {"triton": ("fp8 moe backend TRITON", "vllm-csrc", "fused_moe_kernel"),
+           "flashinfer_cutlass": ("fp8 moe backend FLASHINFER_CUTLASS", "flashinfer", "cutlass_fused_moe")}
 BACKENDS = {
     "triton": ("vllm_fp8moe_triton_tritonexperts", lambda tp, ep: ep == 1 and tp <= 8,
                "TritonExperts", "moe_tp 1-8 at moe_ep 1",
@@ -196,7 +207,42 @@ def bootstrap(T, F, H, S, peak, eps, mh, floor, n=200, seed=150) -> dict[str, tu
             "floor": (round(q["floor"][0] * 1e6 - 0.5, 1), round(q["floor"][1] * 1e6 + 0.5, 1))}
 
 
-def fit_part(data: Path, catalog: Path, sku: str, chip: str, backend: str) -> dict:
+def run_digest(data: Path, sku: str) -> str:
+    """The image digest of the collection's run."""
+    meta = yaml.safe_load((data / sku / "moe" / COLLECTION / "collection_meta.yaml").read_text())
+    return meta["runtime"].get("image_digest", "")
+
+
+def arch_of(catalog: Path, chip: str) -> str:
+    major, minor = str(yaml.safe_load((catalog / "hardware" / f"{chip}.yaml").read_text())["ComputeCapability"]).split(".")
+    return f"sm_{major}{minor}a"
+
+
+def kernel_builds(table: dict, backend: str, digest: str, arch: str) -> tuple[dict, dict]:
+    """The backend's builds for a part from the engine's kernel_impls.json: the pinned one, and the
+    one of the version whose run record names the run's image digest -- the build the data
+    exercised. Both are required: a coefficient is keyed to the build it was measured on (VAL-8)."""
+    selection, library, variant = KERNELS[backend]
+
+    def build(version):
+        for r in table["implementations"]:
+            if (r["primitive"], r["selection"], r["library"], r["library_version"], r["variant"], r["target_arch"]) == (
+                    KERNEL_PRIMITIVE, selection, library, version, variant, arch):
+                return {"library": library, "variant": variant, "code_hash": r["code_hash"], "version": version}
+        raise SystemExit(f"kernel_impls.json lists no {library} {version} {variant} build for {arch} under {selection}")
+    libs = [l for l in table["libraries"] if l["name"] == library]
+    pinned = build(next(l["version"] for l in libs if l["pinned"]))
+    seen = [l["version"] for l in libs if not l["pinned"] and digest and digest in l["pin"]]
+    if len(seen) != 1:
+        raise SystemExit(f"{library}: {len(seen)} versions cite the run image {digest}; one expected")
+    return pinned, build(seen[0])
+
+
+def impl_yaml(b: dict) -> str:
+    return f"{{library: {b['library']}, variant: {b['variant']}, code_hash: {b['code_hash']}}}"
+
+
+def fit_part(data: Path, catalog: Path, sku: str, chip: str, backend: str, table: dict) -> dict:
     kernel, keep, _, rows, _ = BACKENDS[backend]
     peak, bw_peak = chip_facts(catalog, chip)
     bw = bw_peak * committed("hbm_derate", chip)
@@ -227,10 +273,12 @@ def fit_part(data: Path, catalog: Path, sku: str, chip: str, backend: str) -> di
     return {"sku": sku, "chip": chip, "backend": backend, "eps": eps, "mh": int(mh),
             "floor_us": round(floor * 1e6, 1), "err": err, "signed": signed, "n": n,
             "geoms": geoms, "rows": rows, "holdout": ho, "holdout_n": len(hold["s"]),
-            "before": before, "peak_tf": peak / 1e12, "ci": ci, "span": span}
+            "before": before, "peak_tf": peak / 1e12, "ci": ci, "span": span,
+            "builds": kernel_builds(table, backend, run_digest(data, sku), arch_of(catalog, chip)),
+            "digest": run_digest(data, sku)}
 
 
-def entry_lines(name: str, f: dict) -> list[str]:
+def entry_lines(name: str, f: dict, transferred: bool) -> list[str]:
     kernel, _, cls, rows, when = BACKENDS[f["backend"]]
     b = f["backend"]
     cite = (f"NVIDIA AISimulate systems/data/{f['sku']}/moe/{COLLECTION}/moe_perf.parquet, "
@@ -265,22 +313,45 @@ def entry_lines(name: str, f: dict) -> list[str]:
     key = "eps" if name.startswith("gemm_eps_max") else "mh" if name.startswith("gemm_m_half") else "floor"
     lo, hi = f["ci"][key]
     fmt = (lambda v: f"{v:.3f}") if key == "eps" else (lambda v: f"{v:g}")
+    pinned, run = f["builds"]
+    if transferred:
+        head = [f"      method: transferred",
+               "      fitted: false",
+               f"      scope: {{hardware: [{f['chip']}]}}",
+               f"      kernel_impls: [{impl_yaml(pinned)}]",
+               f"      measured_on: [{impl_yaml(run)}]",
+               f'      transferred_from: "hardware={f["chip"]}"',
+               f'      transfer_rule: "measured on the {run["library"]} {run["version"][:12]} build of {run["variant"]} '
+               f'({run["code_hash"][:12]}) that the run image installs, on this chip, and used for the engine pin\'s '
+               f'build ({pinned["code_hash"][:12]}) on the same chip; the two builds\' sources differ, so the value is moved, '
+               f'not shown, and nothing is moved between chips"']
+        rat += (f" Moved to the pinned build from the {run['library']} {run['version'][:12]} build it was measured on "
+                f"(measured_on); a pool that reports the pinned build reads it at the transferred grade (VAL-8).")
+    else:
+        head = ["      method: measured",
+               "      fitted: true",
+               f"      scope: {{hardware: [{f['chip']}]}}",
+               f"      kernel_impls: [{impl_yaml(run)}]"]
+        rat += (f" Keyed to the build the data exercised: {run['library']} {run['version'][:12]}'s {run['variant']} "
+                f"on this chip, which the run's image (vllm/vllm-openai@{f['digest']}) installs.")
+    table_cite = (f'        - {{kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): '
+                  f'the {run["variant"]} builds {run["version"][:12]} and {pinned["version"][:12]} under {KERNELS[f["backend"]][0]}, '
+                  f'and the run record that names the image", role: supporting}}')
     return [
         f"  - {name}:",
         f"      value: {value}",
         f"      units: {units}",
-        "      method: measured",
-        "      fitted: true",
-        f"      scope: {{hardware: [{f['chip']}]}}",
-        "      measures:",
-        "        time: device",
-        "        execution: captured",
-        f'        harness: "{HARNESS}"',
+        *head,
+        *([] if transferred else ["      measures:",
+                                  "        time: device",
+                                  "        execution: captured",
+                                  f'        harness: "{HARNESS}"']),
         f"      ci95: [{fmt(lo)}, {fmt(hi)}]",
         "      fit_range:",
         *[f"        - {{dim: {d}, low: {a:.1f}, high: {b:.1f}}}" for d, (a, b) in f["span"].items()],
         "      sources:",
         f'        - {{kind: model, cite: "{cite}", role: primary}}',
+        table_cite,
         "      rationale: >",
         f"        {rat}",
     ]
@@ -293,6 +364,12 @@ def names(backend: str) -> tuple[str, ...]:
 def render(text: str, fits: list[dict]) -> str:
     blocks = cb.split(text)
     owned = {(n, cb.scope_key(f"{{hardware: [{f['chip']}]}}")) for f in fits for n in names(f["backend"])}
+    # A pinned build whose hash no longer differs from the measured one leaves no transferred entry.
+    blocks = [b for b in blocks if not (cb.name_of(b) in {n for f in fits for n in names(f["backend"])}
+                                        and cb.method_of(b) == "transferred"
+                                        and any(f["builds"][0]["code_hash"] == f["builds"][1]["code_hash"]
+                                                and cb.scope_key(cb.scope_of(b) or "{}") == cb.scope_key(f"{{hardware: [{f['chip']}]}}")
+                                                and cb.name_of(b) in names(f["backend"]) for f in fits))]
     family = {n for b in BACKENDS for n in names(b)}
     for blk in blocks:
         n = cb.name_of(blk)
@@ -300,10 +377,12 @@ def render(text: str, fits: list[dict]) -> str:
             raise SystemExit(f"{n} {cb.scope_of(blk)} is not an entry this writer maintains")
     for f in fits:
         scope = f"{{hardware: [{f['chip']}]}}"
+        moved = f["builds"][0]["code_hash"] != f["builds"][1]["code_hash"]
         for n in names(f["backend"]):
-            cb.upsert(blocks, entry_lines(n, f),
-                      after=lambda b: (cb.name_of(b) or "").startswith("gemm_")
-                      and cb.scope_key(cb.scope_of(b) or "{}") == cb.scope_key(scope))
+            for transferred in ([False, True] if moved else [False]):
+                cb.upsert(blocks, entry_lines(n, f, transferred),
+                          after=lambda b: (cb.name_of(b) or "").startswith("gemm_")
+                          and cb.scope_key(cb.scope_of(b) or "{}") == cb.scope_key(scope))
     return cb.join(blocks)
 
 
@@ -312,11 +391,18 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--data", default=DEFAULT_DATA)
     ap.add_argument("--catalog", default=DEFAULT_CATALOG)
     ap.add_argument("--check", action="store_true", help="exit 1 if the file would change; write nothing")
+    ap.add_argument("--kernel-impls", default=os.environ.get("BLIS_KERNEL_IMPLS"),
+                    help="the engine release's kernel_impls.json (default $BLIS_KERNEL_IMPLS)")
     args = ap.parse_args(argv[1:])
+    if not args.kernel_impls:
+        print("the engine release's kernel_impls.json is required (--kernel-impls or $BLIS_KERNEL_IMPLS): "
+              "every entry is keyed to the build its data exercised (VAL-8)", file=sys.stderr)
+        return 2
+    table = json.loads(Path(args.kernel_impls).read_text(encoding="utf-8"))
     fits = []
     for sku, chip in PARTS:
         for backend in BACKENDS:
-            f = fit_part(Path(args.data), Path(args.catalog), sku, chip, backend)
+            f = fit_part(Path(args.data), Path(args.catalog), sku, chip, backend, table)
             fits.append(f)
             print(f"{chip:5} {backend:18} eps_max={f['eps']:.2f} m_half={f['mh']:4d} floor={f['floor_us']:5.1f}us "
                   f"train {f['err']:.3f}x signed {f['signed']:.3f} (n={f['n']}, {f['geoms']} geometries)  "

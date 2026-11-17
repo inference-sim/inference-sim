@@ -134,7 +134,8 @@ func perturbationScenarios(t *testing.T, d *load.Data, only ...string) []perturb
 					// Hopper stated (plan.MoEPlan.Experts), on a part and model where the plan
 					// reaches it: block-FP8 routed experts on SM90.
 					if (c == "h100" || c == "h200") && hasGroupedExperts(in) {
-						for _, v := range []plan.KernelImpl{plan.ExpertsTriton, plan.ExpertsFlashInferCutlass} {
+						for _, name := range []string{"gemm_floor_fp8_grouped_triton", "gemm_floor_fp8_grouped_flashinfer_cutlass"} {
+							v := pinnedBuild(t, d, name, c)
 							ex := *in.Lowered
 							ex.Plan.MoE.Experts = v
 							exIn := in

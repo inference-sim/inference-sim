@@ -27,6 +27,25 @@ func experts(impl plan.KernelImpl) func(*plan.Lowered) {
 	return func(l *plan.Lowered) { l.Plan.MoE.Experts = impl }
 }
 
+// pinnedBuild is the engine pin's build of an experts kernel on a part, as the registry keys its
+// transferred entry: what an engine that identifies the build states (plan.MoEPlan.Experts).
+func pinnedBuild(t *testing.T, d *load.Data, name, chip string) plan.KernelImpl {
+	t.Helper()
+	set, err := d.CoefficientSet("cost-model-primitives")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range set.Coefficients {
+		if e.Name == name && string(e.Method) == "transferred" && len(e.Scope.Hardware) == 1 && e.Scope.Hardware[0] == chip &&
+			len(e.KernelImpls) == 1 {
+			k := e.KernelImpls[0]
+			return plan.KernelImpl{Library: k.Library, Variant: k.Variant, CodeHash: k.CodeHash}
+		}
+	}
+	t.Fatalf("the registry carries no transferred %s on %s", name, chip)
+	return plan.KernelImpl{}
+}
+
 func provenanceNames(t *testing.T, in Inputs) string {
 	t.Helper()
 	k, err := New(in)
@@ -44,7 +63,8 @@ func provenanceNames(t *testing.T, in Inputs) string {
 // kernel the plan says the engine runs (blis-substrate#150): Triton's at expert-parallel width
 // 1, FlashInfer's CUTLASS experts above it. A few-token decode then pays each layer's measured
 // floor, which the dense FP8 ramp the routed term was priced on before does not charge, so the
-// step is dearer than with the kernel unstated; and the price reads the backend's own entries.
+// step is dearer than with the kernel unstated; and the price reads the backend's own entries, which
+// are bound to the build the plan states (VAL-8).
 func TestHopperFP8ExpertsArePricedOnTheirBackendsRamp(t *testing.T) {
 	d, err := load.Embedded()
 	if err != nil {
@@ -61,7 +81,17 @@ func TestHopperFP8ExpertsArePricedOnTheirBackendsRamp(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			base := planCase(t, d, "minimax-m2.5", "h200", 1, c.parallel, nil)
-			stated := planCase(t, d, "minimax-m2.5", "h200", 1, c.parallel, experts(c.impl))
+			build := pinnedBuild(t, d, c.entry, "h200")
+			if build.Variant != c.impl.Variant {
+				t.Fatalf("%s is keyed to %+v, not the %s kernel", c.entry, build, c.impl.Variant)
+			}
+			stated := planCase(t, d, "minimax-m2.5", "h200", 1, c.parallel, experts(build))
+			// The kernel named without its build reads no keyed entry (VAL-8) and is priced as unstated
+			// with the fallback recorded.
+			unbuilt := planCase(t, d, "minimax-m2.5", "h200", 1, c.parallel, experts(c.impl))
+			if a, b := decodeStep(t, unbuilt, 4), decodeStep(t, base, 4); a != b {
+				t.Errorf("%v with no build prices 4 decodes at %d ns, unstated at %d: no keyed entry may be read", c.impl, a, b)
+			}
 			for _, n := range []int{1, 4} {
 				if a, b := decodeStep(t, stated, n), decodeStep(t, base, n); a <= b {
 					t.Errorf("%d decodes: %v experts price the step at %d ns, unstated at %d: the measured floor must cost more", n, c.impl, a, b)

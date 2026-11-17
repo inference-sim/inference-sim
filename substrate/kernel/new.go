@@ -174,6 +174,16 @@ func construct(in Inputs) (*Kernel, error) {
 		return nil, err
 	}
 	running := runningImpls(in.Implementations)
+	// The experts kernel the plan states is the implementation the routed term's coefficients
+	// are bound to (VAL-8), where the caller reports none of its own for the primitive.
+	if in.Lowered != nil {
+		if e := in.Lowered.Plan.MoE.Experts; e.CodeHash != "" {
+			prim := string(plan.PrimMoEGroupedGEMM)
+			if _, ok := running[prim]; !ok && len(in.Operations) == 0 {
+				running[prim] = []coefficient.KernelImpl{{Library: e.Library, Variant: e.Variant, CodeHash: e.CodeHash}}
+			}
+		}
+	}
 	if err := coefficient.ValidateRunning(running); err != nil {
 		return nil, fmt.Errorf("the kernel implementations that run: %w", err)
 	}
@@ -1779,16 +1789,18 @@ func (k *Kernel) addFit(c *resolve.Coefficients, f price.Format, grouped bool) e
 
 // groupedExperts is the registry's word for the grouped-expert kernel the plan states the engine
 // runs (plan.MoEPlan.Experts), for a grouped GEMM; "" for a dense one, or where the plan states
-// none or a kernel the registry has no word for. The words are the kernel libraries': Triton's
-// fused experts, and FlashInfer's CUTLASS experts.
+// none or a kernel the registry has no word for. The kernel is matched by its name (the build is
+// the coefficient lookup's to match, by code hash): Triton's fused grouped GEMM, and FlashInfer's
+// CUTLASS fused MoE.
 func (k *Kernel) groupedExperts(grouped bool) string {
 	if !grouped {
 		return ""
 	}
-	switch k.low.MoE.Experts {
-	case plan.ExpertsTriton:
+	e := k.low.MoE.Experts
+	switch {
+	case e.Variant == plan.ExpertsTriton.Variant:
 		return "triton"
-	case plan.ExpertsFlashInferCutlass:
+	case e.Library == plan.ExpertsFlashInferCutlass.Library && e.Variant == plan.ExpertsFlashInferCutlass.Variant:
 		return "flashinfer_cutlass"
 	}
 	return ""
