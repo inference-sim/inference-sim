@@ -76,6 +76,12 @@ type Event struct {
 	// cover the block and its lookahead (_generate_event_extra_keys, :358-366), are not reported:
 	// the LoRA and cache-salt keys this port models do not depend on the window.
 	Lookahead [][]int64
+	// LoRAID is BlockStored's lora_id, the adapter's lora_int_id; 0 for the base model.
+	LoRAID int
+	// Extra are the extra keys that keyed each stored block's hash, one entry per hash: the
+	// LoRA key on every block and the cache salt on the request's first block
+	// (BlockKeys.ExtraFor). A nil entry is a block with none.
+	Extra [][]ExtraKey
 }
 
 // EnableEvents makes the pool record KV cache events (enable_kv_cache_events). Turning them on
@@ -223,6 +229,10 @@ type StoredRun struct {
 	Tokens []int64
 	// LoRA is the request's adapter name, "" for the base model.
 	LoRA string
+	// LoRAID is the adapter's lora_int_id, 0 for the base model.
+	LoRAID int
+	// Keys are the request's hash keys, whose extra keys a BlockStored event reports per block.
+	Keys BlockKeys
 	// NumPromptTokens is request.num_prompt_tokens, which a Mamba align group reads to place its
 	// prompt checkpoint (single_type_kv_cache_manager.py:2033-2040@5df63a72); no event reports it.
 	NumPromptTokens int
@@ -290,9 +300,16 @@ func (p *Pool) CacheFullMaskedIn(g uint32, blocks []*Block, hashes []BlockHash, 
 		if numCached > 0 {
 			parent = hashes[numCached-1]
 		}
+		var extra [][]ExtraKey
+		for i := numCached; i < numFull; i++ {
+			if b := blocks[i]; b.Null || mask != nil && !mask[i-numCached] {
+				continue
+			}
+			extra = append(extra, run.Keys.ExtraFor(i))
+		}
 		*p.events = append(*p.events, Event{Hashes: stored, Parent: parent,
 			Tokens:    append([]int64(nil), run.Tokens[numCached*blockSize:numFull*blockSize]...),
-			BlockSize: blockSize, LoRA: run.LoRA, Group: g, Lookahead: lookahead})
+			BlockSize: blockSize, LoRA: run.LoRA, LoRAID: run.LoRAID, Extra: extra, Group: g, Lookahead: lookahead})
 	}
 }
 
@@ -402,7 +419,8 @@ func (p *Pool) CachePartialBlock(g uint32, b *Block, hashes []BlockHash, numToke
 		start := (n - 1) * hashBlockSize
 		ev := Event{Hashes: []BlockHash{hashes[n-1]}, Parent: parent,
 			Tokens:    append([]int64(nil), run.Tokens[start:numTokens]...),
-			BlockSize: numTokens - start, LoRA: run.LoRA, Group: g}
+			BlockSize: numTokens - start, LoRA: run.LoRA, LoRAID: run.LoRAID,
+			Extra: [][]ExtraKey{run.Keys.ExtraFor(n - 1)}, Group: g}
 		if p.hashLookahead > 0 {
 			// cache_partial_block's one block (block_pool.py:486-603, :598-600@4ba787ec).
 			ev.Lookahead = [][]int64{p.lookaheadAfter(run, numTokens)}

@@ -1071,7 +1071,7 @@ func (s *Scheduler) run(r *Request) kv.StoredRun {
 	if !s.cfg.KVEvents {
 		return kv.StoredRun{NumPromptTokens: len(r.Prompt), SharedPrefixBoundary: r.sharedPrefixBoundary}
 	}
-	return kv.StoredRun{Tokens: r.allTokens(), LoRA: r.LoRAName, NumPromptTokens: len(r.Prompt),
+	return kv.StoredRun{Tokens: r.allTokens(), LoRA: r.LoRAName, LoRAID: r.LoRA, Keys: r.Keys, NumPromptTokens: len(r.Prompt),
 		SharedPrefixBoundary: r.sharedPrefixBoundary}
 }
 

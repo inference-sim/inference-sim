@@ -1075,7 +1075,12 @@ func (e *Engine) indexable(evs []kv.Event) []kv.Event {
 
 // kvEvents is the scheduler's KV events in the contract's form: a hash is vLLM's published
 // 64-bit integer (maybe_convert_block_hash, vllm/v1/core/kv_cache_utils.py:96-99@5df63a72),
-// written in decimal, one event per block.
+// written in decimal, one event per block. Each stored block carries what vLLM's BlockStored
+// reports about it: the adapter's name and id, the extra keys that keyed its hash (the adapter's
+// ("lora", name, path) on every block, the cache salt, a plain string, on the request's first), and
+// its group. Only full-attention groups reach here (indexable), so the kind is always
+// full_attention and no sliding window is named. A salt is reported among the extra keys and not in
+// CacheSalt, which is SGLang's field.
 func kvEvents(evs []kv.Event) []engine.KVEvent {
 	var out []engine.KVEvent
 	h := func(b kv.BlockHash) string {
@@ -1088,6 +1093,18 @@ func kvEvents(evs []kv.Event) []engine.KVEvent {
 		parent := h(ev.Parent)
 		for i, bh := range ev.Hashes {
 			ke := engine.KVEvent{Removed: ev.Removed, Hash: h(bh), Parent: parent}
+			g := int(ev.Group)
+			ke.GroupIdx = &g
+			if !ev.Removed {
+				ke.SpecKind = "full_attention"
+				if ev.LoRA != "" {
+					id := ev.LoRAID
+					ke.LoRAID, ke.LoRAName = &id, ev.LoRA
+				}
+				if i < len(ev.Extra) {
+					ke.ExtraKeys = extraKeys(ev.Extra[i])
+				}
+			}
 			if !ev.Removed && ev.BlockSize > 0 && (i+1)*ev.BlockSize <= len(ev.Tokens) {
 				for _, t := range ev.Tokens[i*ev.BlockSize : (i+1)*ev.BlockSize] {
 					ke.Tokens = append(ke.Tokens, int32(t))
@@ -1095,6 +1112,25 @@ func kvEvents(evs []kv.Event) []engine.KVEvent {
 			}
 			out = append(out, ke)
 			parent = ke.Hash
+		}
+	}
+	return out
+}
+
+// extraKeys is a block's extra keys as vLLM publishes them: the adapter's key as its three
+// strings, the cache salt as a plain string. Nil for none.
+func extraKeys(keys []kv.ExtraKey) []any {
+	var out []any
+	for _, k := range keys {
+		switch {
+		case len(k) == 2 && k[0] == "cache_salt":
+			out = append(out, k[1])
+		default:
+			t := make([]any, len(k))
+			for i, v := range k {
+				t[i] = v
+			}
+			out = append(out, t)
 		}
 	}
 	return out
