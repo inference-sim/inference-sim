@@ -92,7 +92,9 @@ matters when a shared link (e.g. the decode node's NIC in xP1D) runs close to sa
 ### Node pools and multi-node placement
 
 When node pools are configured (`--policy-config` with `node_pools`), every pool's `gpu_type` must
-equal the scenario's `cluster.hardware`, and `gpu_type` must be unique across pools.
+equal the scenario's `cluster.hardware`. Pools may share a `gpu_type` and differ in `cost_per_hour`: each
+instance is billed at the price of the pool its GPUs sit in. The autoscaler treats pools of one chip as one
+variant and prices it at the mean of its replicas' costs.
 
 An instance whose TP group exceeds a pool's `gpus_per_node` can occupy **whole nodes across the same
 pool**. This happens only as a fallback (BLIS first tries a single node in any matching pool) and
