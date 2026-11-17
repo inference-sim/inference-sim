@@ -87,7 +87,7 @@ type EngineDriverConfig struct {
 // chunks is about 20,000 steps).
 const DefaultStallSteps = 1_000_000
 
-// EngineDriver drives one engine.Engine from the host's event loop. It is the 0.32.0 engine's
+// EngineDriver drives one engine.Engine from the host's event loop. It is the 0.33.0 engine's
 // counterpart of Simulator: the same events reach it (arrivals, steps, timeouts), and it records
 // the same report, but every engine decision is the engine's, through the contract only.
 type EngineDriver struct {
@@ -1261,7 +1261,7 @@ func (d *EngineDriver) SetKVEventSink(sink func(at int64, events []KVEvent)) err
 }
 
 // KVEventsRefusal is why a router cannot index the engine's KV events, for an engine that says
-// (a KVEventsRefusal method, blis-vllm's v0.32.0 engine for a full-attention group at a block size
+// (a KVEventsRefusal method, blis-vllm's v0.33.0 engine for a full-attention group at a block size
 // other than its hash block size); nil otherwise.
 func (d *EngineDriver) KVEventsRefusal() error {
 	if q, ok := d.eng.(interface{ KVEventsRefusal() error }); ok {

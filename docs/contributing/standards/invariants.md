@@ -300,7 +300,7 @@ the catalog or the registry. This is design §3.3 at the CLI. Three clauses:
    Deployment file) on both `blis run` and `blis replay`; omitting it is refused. No flag
    restates the model, the hardware or the tensor-parallel width.
 
-**Status at this commit:** clauses 1, 2 and 3 hold, except that the v0.32.0 engine refuses a
+**Status at this commit:** clauses 1, 2 and 3 hold, except that the v0.33.0 engine refuses a
 run with an overlay (`--catalog-overlay` or `--registry-overlay`) until it reads overlays.
 
 **Why this tier:** like INV-9 and INV-A2 this constrains *what the code may do* rather than
@@ -394,7 +394,7 @@ vLLM v0.31.0 sources:
 
 **Enforced:** blis-vllm `compat/kv` `OffloadCache.beginCPULoad` / `cpuLoadPlan` / `PollDeferred` (`deferLoading`), `KVCacheState.allocateLoad`, `OffloadCache.loadReserve` / `admitLoaded`; blis-vllm `compat/engine` `FormBatch` (`LoadHoldingKVStore`); blis-vllm `compat/build` `priceOffload` (called from `cmd/engine_build.go`) installs `KVOffloadConfig.CPULoadTime`.
 
-**Verification:** `TestCPULoad_AHitWaitsAtLeastItsTransfer` (rapid), `TestCPULoad_HalvingBandwidthDelaysOnlyTheHit` (metamorphic), `TestCPULoad_ClearDeferredReleasesThePins`, `TestLoadStart_TheLoadHoldsItsBlocksFromItsStart` (rapid), `TestLoadStart_ALoadLeavesTheInflightPrefillsRoom` (rapid), `TestLoadStart_AHolderThatLeavesFreesItsBlocks`, `TestLoadStart_ALandedLoadIsScheduledAheadOfTheWaitingQueue` (blis-vllm `compat/kv`). No CLI test remains: the compatibility engine, the only engine whose CPU tier served hits, no longer runs (LIF-6), and the v0.32.0 engine's offload tier is blis-vllm's to verify.
+**Verification:** `TestCPULoad_AHitWaitsAtLeastItsTransfer` (rapid), `TestCPULoad_HalvingBandwidthDelaysOnlyTheHit` (metamorphic), `TestCPULoad_ClearDeferredReleasesThePins`, `TestLoadStart_TheLoadHoldsItsBlocksFromItsStart` (rapid), `TestLoadStart_ALoadLeavesTheInflightPrefillsRoom` (rapid), `TestLoadStart_AHolderThatLeavesFreesItsBlocks`, `TestLoadStart_ALandedLoadIsScheduledAheadOfTheWaitingQueue` (blis-vllm `compat/kv`). No CLI test remains: the compatibility engine, the only engine whose CPU tier served hits, no longer runs (LIF-6), and the v0.33.0 engine's offload tier is blis-vllm's to verify.
 
 #### INV-K8: A Loaded Prefix Is Computed, Not In Flight
 
@@ -741,7 +741,7 @@ phase starts (the warm-up's last return); profiling requests are sent only in
 
 **Statement:** An engine that states an admission queue in its plan (`plan.HostPlan.Admission`: `Servers` independent queues of `WorkersPerServer` servers; zero workers is no queue) has each request wait in it before the engine sees the request. The cost model gives the request's demand on it (`env.Environment.HostDemand`): `Service`, the time it holds one server, and `Delay`, the time it waits holding none; `Service + Delay` is the kernel's admission overhead. Arrivals join the queues in turn. Within a queue a request starts at `max(arrival, earliest server free)` in arrival order and holds that server for `Service`, so a queue never runs more than `WorkersPerServer` requests at once and a request waits only while all are busy (FIFO M/G/c). The request enters the engine at `end of service + Delay`. Every arrival is admitted exactly once. A stage with a server per request, or no queue, gives `arrival + Service + Delay`; one request alone always waits its whole overhead. The ranks of a replica behind one balancer share one stage (`sim.ShareAdmissionStage`); an external-balancer rank and a P/D pool rank each have their own. A P/D decode sub-request is not admitted again.
 
-The host knows nothing of what the servers are. The engine resolves its own settings into the shape: for vLLM v0.32.0, `renderer_num_workers` threads on each of `api_server_count` servers, on which the tokenizer and the chat template run (the admission-split page of the blis-vllm documentation).
+The host knows nothing of what the servers are. The engine resolves its own settings into the shape: for vLLM v0.33.0, `renderer_num_workers` threads on each of `api_server_count` servers, on which the tokenizer and the chat template run (the admission-split page of the blis-vllm documentation).
 
 **Assumption:** The kernel's per-request term (40 ms, method `assumed`, a latency of unknown origin) is charged as `Delay`, not as `Service`. Charging it as `Service` caps a one-server queue at 1 / 40 ms = 25 requests a second; charging none of it as `Service` leaves the cap at the per-token term's rate. The truth lies between if part of it is work a server does.
 
@@ -914,7 +914,7 @@ The schedule point requires all of the following:
 - the wait queue ahead is empty;
 - fewer than `max_num_seqs` requests run.
 
-Admission follows the decode engine's own order and stops at the first handoff that does not fit. vLLM v0.32.0 orders a priority pool's waiters by priority (`request_queue.py:202-205`), which is https://github.com/inference-sim/blis-vllm/issues/30. It must leave free the reservation of the other admitted handoffs (pulls in flight, and landed ones not yet run) plus its own first-decode-step blocks.
+Admission follows the decode engine's own order and stops at the first handoff that does not fit. vLLM v0.33.0 orders a priority pool's waiters by priority (`request_queue.py:202-205`), which is https://github.com/inference-sim/blis-vllm/issues/30. It must leave free the reservation of the other admitted handoffs (pulls in flight, and landed ones not yet run) plus its own first-decode-step blocks.
 
 Consequences:
 - A handoff holding transferred KV is never preempted and keeps its whole prompt until its pull lands.

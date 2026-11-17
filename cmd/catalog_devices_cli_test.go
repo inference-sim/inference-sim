@@ -16,7 +16,7 @@ import (
 //	      (R1) — never a silent fall back to zero physics or to a built-in table — and a tier
 //	      naming a device the table does not define is refused naming it.
 //
-// The scenario is the only source of the offload tiers (#2037). The v0.32.0 engine models the
+// The scenario is the only source of the offload tiers (#2037). The v0.33.0 engine models the
 // cpu_dram tier only and refuses a secondary tier (blis-vllm#63), so these legs offload to
 // cpu_dram, except where a refusal of the named device comes first.
 
