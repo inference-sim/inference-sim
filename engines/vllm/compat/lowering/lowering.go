@@ -458,6 +458,14 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 				"runs this layout with no CUDA graphs")
 		graphMode = "NONE"
 	}
+	// enforce_eager turns compilation and CUDA graphs off whatever cudagraph_mode was stated
+	// (vllm/config/vllm.py:1766-1769, :2004-2009 at 4ba787ec9959).
+	if eng.EnforceEager && graphMode != "NONE" {
+		override("cudagraph_mode", graphMode, "NONE",
+			"enforce_eager is stated, so vLLM runs every step eagerly with no CUDA graph "+
+				"(vllm/config/vllm.py:2004-2009 at 4ba787ec9959)")
+		graphMode = "NONE"
+	}
 	switch graphMode {
 	case "PIECEWISE":
 		p.Graphs.Decode, p.Graphs.Other = plan.LaunchPiecewise, plan.LaunchPiecewise

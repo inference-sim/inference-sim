@@ -40,6 +40,10 @@ type Engine struct {
 	AllReduceBackend string `yaml:"allreduce_backend,omitempty"`
 	// CUDAGraphMode selects capture strategy, which sets the host launch term.
 	CUDAGraphMode string `yaml:"cudagraph_mode,omitempty"`
+	// EnforceEager is model_config.enforce_eager: vLLM sets compilation mode NONE and cudagraph
+	// mode NONE whatever was stated (vllm/config/vllm.py:1766-1769, :2004-2009 at 4ba787ec9959),
+	// so no step replays a graph and none is fused by torch.compile. False is the default.
+	EnforceEager bool `yaml:"enforce_eager,omitempty"`
 	// MaxCUDAGraphCaptureSize is compilation_config.max_cudagraph_capture_size: the
 	// largest step, in tokens, a CUDA graph is captured for. A larger step runs eager,
 	// so with DSpark at K=5, where a decode step verifies 6 tokens per request, a size of
