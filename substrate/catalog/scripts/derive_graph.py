@@ -1905,10 +1905,12 @@ HEAD_UNQUANTIZED = {
 # Architectures whose LM head is placed by the rule vLLM v0.33.0 applies to the checkpoint's
 # quantization method, whatever the exclusion list says (head_left_unquantized). Keyed by
 # architecture, as HEAD_UNQUANTIZED is, so adding a family re-derives its graphs on purpose.
-# The GLM DSA family (glm-5, glm-5.1-fp8, glm-5.2-fp8, glm-5.3) has the same error and joins
-# with the re-derivation of those graphs (inference-sim/blis-substrate#255).
+# The GLM DSA family (glm-5, glm-5.1-fp8, glm-5.2-fp8, glm-5.3) is among them. Not yet in:
+# llama-4-scout-17b-16e-instruct-fp8-dynamic, whose ignore list also names every text layer's
+# attention projections (inference-sim/blis-substrate#255, catalog lane).
 HEAD_AT_BASE_ARCHS = frozenset({
     "DeepseekV3ForCausalLM",              # deepseek-v3, deepseek-r1-0528 (fp8)
+    "GlmMoeDsaForCausalLM",               # glm-5, glm-5.1-fp8, glm-5.2-fp8, glm-5.3 (fp8)
     "KimiK25ForConditionalGeneration",    # kimi-k2.5, kimi-k2.6 (int4, lm_head ignored)
     "MiniMaxM2ForCausalLM",               # minimax-m2.5, minimax-m2.7 (fp8)
     "Qwen3_5MoeForConditionalGeneration",  # qwen3.5-397b-a17b-fp8
