@@ -56,10 +56,19 @@ type TierPricer interface {
 	TierTransferTime(t engine.Transfer, bytes int64) engine.Duration
 }
 
+// TierFiles is the file system under one root_dir, as a tier sees it: whether a block file exists, and
+// publishing one. It is written as the interface literal (an alias, not a named type), and TierStorage
+// as a plain func type, so that a host reaches Engine.ShareTierStorage with types of its own and no
+// import of this package's tiers.
+type TierFiles = interface {
+	Exists(path string) bool
+	Publish(path string)
+}
+
 // TierStorage gives each secondary tier the files its root_dir names. Engines that name one
 // root_dir through one TierStorage share its block files, as vLLM instances do over one shared
 // file system (fs/manager.py:86-104@4ba787ec); the caller keeps different models' files apart.
-type TierStorage func(rootDir string) kvtier.FileStore
+type TierStorage = func(rootDir string) TierFiles
 
 // tierSet is an offload's secondary tiers as the engine runs them.
 type tierSet struct {

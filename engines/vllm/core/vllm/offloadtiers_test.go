@@ -19,7 +19,7 @@ const fsTier = "kv_offload: {connector: OffloadingConnector, spec: TieringOffloa
 // sharedFiles is one shared file system: every root_dir's files in one map each.
 type sharedFiles map[string]kvtier.MemFiles
 
-func (s sharedFiles) storage(root string) kvtier.FileStore {
+func (s sharedFiles) storage(root string) TierFiles {
 	if s[root] == nil {
 		s[root] = kvtier.MemFiles{}
 	}
