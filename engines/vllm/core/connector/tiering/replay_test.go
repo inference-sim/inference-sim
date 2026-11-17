@@ -519,7 +519,7 @@ func replay(t *testing.T, scenarioPath, tracePath string) {
 	}
 	mgrs := make([]*tiering.Manager, len(tr.Spec))
 	for i, sp := range tr.Spec {
-		var primary tiering.Primary = tiering.CPU(offloading.NewCPUPrimary(sp.Ret.NumChunks))
+		primary := tiering.CPU(offloading.NewCPUPrimary(sp.Ret.NumChunks))
 		var mclock func() float64
 		if hasP2P {
 			primary, mclock = recPrimary{Primary: primary, poll: poll}, clock
