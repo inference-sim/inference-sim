@@ -198,3 +198,47 @@ jobs:
           set -euo pipefail
           if [ -z "$BASE" ]; then BASE="$(python3 -I oracle/check_goldens.py --stack-base "$HEAD")"; fi
           python3 -I oracle/check_goldens.py "$BASE" "$HEAD"
+
+  # SGL-3: the field list. fields.json, fields/declarations.json and fields/value_classes.json are
+  # regenerated from SGLang's source at the commit provenance.go pins and must equal the committed
+  # files; the generators' tests run their known-bad inputs. Nothing is installed: the generators
+  # read the source with Python's ast module.
+  fields:
+    name: fields
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - id: pin
+        name: the SGLang commit provenance.go pins
+        run: |
+          set -euo pipefail
+          commit="$(sed -n 's/^\tCommit: *"\([0-9a-f]\{40\}\)",$/\1/p' provenance.go)"
+          test -n "$commit"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+      - name: check out SGLang at that commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: sgl-project/sglang
+          ref: ${{ steps.pin.outputs.commit }}
+          path: sglang-source
+          fetch-depth: 1
+          persist-credentials: false
+      - name: the checkout is that commit
+        run: test "$(git -C sglang-source rev-parse HEAD)" = "${{ steps.pin.outputs.commit }}"
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: fields.json is what the generator writes
+        run: python -W ignore::SyntaxWarning -I fields/gen_fields.py sglang-source fields/status.json --value-classes fields/value_classes.json --check fields.json
+      - name: fields/declarations.json is what the generator writes
+        run: python -W ignore::SyntaxWarning -I fields/gen_fields.py sglang-source --declarations --check fields/declarations.json
+      - name: fields/value_classes.json is what the generator writes
+        run: python -W ignore::SyntaxWarning -I fields/gen_classes.py sglang-source fields.json fields/declarations.json --check fields/value_classes.json
+      - name: the generators' tests
+        run: |
+          set -euo pipefail
+          python -I fields/test_gen_fields.py
+          python -I fields/test_classes.py
