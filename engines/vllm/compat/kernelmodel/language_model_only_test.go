@@ -194,8 +194,8 @@ func TestTowerlessMultimodalConfigsNameTheCatalogModels(t *testing.T) {
 			multimodal[e.Name()] = true
 		}
 	}
-	if len(multimodal) < 15 {
-		t.Fatalf("%d catalog models have a vision_config, the pinned catalog has 15", len(multimodal))
+	if len(multimodal) < 18 {
+		t.Fatalf("%d catalog models have a vision_config, the pinned catalog has 18", len(multimodal))
 	}
 	listed := map[string]bool{}
 	for _, table := range []struct {
@@ -251,6 +251,7 @@ func TestTowerlessMultimodalConfigsNameTheCatalogModels(t *testing.T) {
 		}
 	}
 	for _, want := range []string{"minimax-m3", "minimax-m3-mxfp8", "minimax-m3-nvfp4", "kimi-k3", "deepseek-v4.1-flash", "glm-5.3-flash", "inkling",
+		"gemma-4-26b-a4b-it", "gemma-4-26b-a4b-it-fp8-dynamic", "gemma-4-31b-it",
 		"kimi-k2.5", "kimi-k2.6", "llama-4-scout-17b-16e-instruct-fp8-dynamic", "muse-spark-open-816b-a42b",
 		"muse-spark-open-816b-a42b-nvfp4", "qwen3.5-397b-a17b", "qwen3.5-397b-a17b-fp8", "qwen3.6-35b-a3b"} {
 		if !listed[want] {
