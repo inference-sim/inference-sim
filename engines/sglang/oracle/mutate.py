@@ -40,13 +40,18 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 IGNORE = shutil.ignore_patterns(".git", "sglang-source", "oracle-model", "oracle-traces", "__pycache__")
-TIMEOUT_S = 900
+# One mutant's suite gets this long. A mutant that does not terminate (a loop that never advances) is
+# caught by the limit, as a failing test is. The suite runs in its own process group and the whole group
+# is killed, so a hung `go test` and the test binary it started cannot outlive the mutant and hold the
+# runner. The limit is far above a healthy suite (a few seconds); BLIS_MUTANT_TIMEOUT_S overrides it.
+TIMEOUT_S = int(os.environ.get("BLIS_MUTANT_TIMEOUT_S", "240"))
 PORTED = re.compile(r"^// Derived from python/sglang/", re.M)
 FLIPS = {"<": "<=", "<=": "<", ">": ">=", ">=": ">", "==": "!=", "!=": "==", "&&": "||", "||": "&&"}
 OPERATOR = re.compile(r"<<=|>>=|<<|>>|<-|:=|&&|\|\||==|!=|<=|>=|<|>")
@@ -186,6 +191,23 @@ def command(cfg: dict, m: dict, sglang: str) -> list:
             for a in cfg["suites"][m["suite"]]["command"]]
 
 
+def run_suite(cmd: list, cwd: str) -> bool:
+    """Run one mutant's suite; True when it passes (the mutant survived). A suite that outlives TIMEOUT_S is
+    killed with everything it started and counts as failing, so the mutant is caught."""
+    proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                            start_new_session=True)
+    try:
+        proc.communicate(timeout=TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        proc.communicate()
+        return False
+    return proc.returncode == 0
+
+
 def apply(scratch: str, m: dict) -> str:
     """Write the mutant into scratch; return why it could not be, or ""."""
     path = os.path.join(scratch, m["file"])
@@ -318,11 +340,7 @@ def main(argv: list) -> int:
             print(f"BROKEN     {m['id']}: {why}")
             unexpected += 1
             continue
-        try:
-            r = subprocess.run(command(cfg, m, sglang), cwd=scratch, capture_output=True, text=True, timeout=TIMEOUT_S)
-            survived = r.returncode == 0
-        except subprocess.TimeoutExpired:
-            survived = False  # a mutant that hangs the suite is caught by its time limit
+        survived = run_suite(command(cfg, m, sglang), scratch)  # a mutant that hangs the suite is caught by its limit
         if survived and m["id"] in allowed:
             print(f"SURVIVED   {m['id']} (listed: {allowed[m['id']]})")
         elif survived:

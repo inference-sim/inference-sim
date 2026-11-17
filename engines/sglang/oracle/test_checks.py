@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -847,6 +848,33 @@ class MutationSweep(unittest.TestCase):
         r = self.sweep(self.repo([self.mutant("A")]), "--only", "A")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("CAUGHT     A", r.stdout)
+
+    def test_a_mutant_that_never_terminates_is_caught_and_leaves_nothing_running(self):
+        # A mutant can make its suite loop forever. The sweep must give up on it within its limit, count it as
+        # caught, and kill everything the suite started: a grandchild that outlived the mutant held the runner
+        # until the job was killed (shard 3 of the CI sweep).
+        root = self.repo([dict(self.mutant("H"), suite="hang")])
+        marker = os.path.join(root, "grandchild-survived")
+        grandchild = ("import pathlib,sys,time; time.sleep(4); pathlib.Path(sys.argv[1]).write_text('alive')")
+        hang = ("import subprocess,sys,time; subprocess.Popen([sys.executable,'-c',sys.argv[1],sys.argv[2]]); "
+                "time.sleep(600)")
+        path = os.path.join(root, "oracle", "mutants.json")
+        with open(path) as f:
+            cfg = json.load(f)
+        cfg["suites"]["hang"] = {"command": [sys.executable, "-c", hang, grandchild, marker], "tests": []}
+        with open(path, "w") as f:
+            json.dump(cfg, f)
+        scratch = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, scratch, True)
+        t0 = time.monotonic()
+        r = subprocess.run([sys.executable, "-I", os.path.join(HERE, "mutate.py"), "--root", root, "--only", "H",
+                            "nowhere", os.path.join(scratch, "tree")], cwd=root, capture_output=True, text=True,
+                           timeout=60, env={**os.environ, "BLIS_MUTANT_TIMEOUT_S": "2"})
+        self.assertLess(time.monotonic() - t0, 30)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("CAUGHT     H", r.stdout)
+        time.sleep(5)
+        self.assertFalse(os.path.exists(marker), "the suite's grandchild outlived the killed mutant")
 
     def test_a_survivor_a_stale_gap_and_a_broken_mutant_fail(self):
         survivor = self.mutant("B", old="return 1", new="return 2")
