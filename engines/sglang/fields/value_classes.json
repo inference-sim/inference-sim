@@ -357,6 +357,22 @@
     ],
     "stated": [
      {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsa",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsa",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": "flashinfer",
       "trace": "config/testdata/serverargs.json"
      },
@@ -1054,6 +1070,22 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": 32768,
       "trace": "config/testdata/serverargs.json"
      },
@@ -1347,6 +1379,276 @@
     ]
    }
   },
+  "context_length": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0
+    ]
+   },
+   "basis": {
+    "name": "context_length",
+    "kind": "numeric",
+    "sites": [],
+    "stated": [
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 202752,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 202752,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 163840,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 163840,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 202752,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 163840,
+      "trace": "lower/testdata/sglang_lower.json"
+     }
+    ],
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": null,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [],
+      "uncut": true,
+      "covered_by": [
+       "config/testdata/serverargs.json",
+       "lower/testdata/sglang_lower.json"
+      ]
+     }
+    ]
+   }
+  },
   "cuda_graph_max_bs_decode": {
    "value_classes": {
     "type": "numeric",
@@ -1376,6 +1678,22 @@
      }
     ],
     "stated": [
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
      {
       "value": null,
       "trace": "config/testdata/serverargs.json"
@@ -1810,6 +2128,22 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": true,
       "trace": "config/testdata/serverargs.json"
      },
@@ -2203,6 +2537,22 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": 8,
       "trace": "config/testdata/serverargs.json"
      },
@@ -2527,6 +2877,22 @@
      }
     ],
     "stated": [
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
      {
       "value": false,
       "trace": "config/testdata/serverargs.json"
@@ -2993,6 +3359,22 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": 256,
       "trace": "config/testdata/serverargs.json"
      },
@@ -3292,6 +3674,22 @@
      }
     ],
     "stated": [
+     {
+      "value": 0.886,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.886,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.886,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.886,
+      "trace": "config/testdata/serverargs.json"
+     },
      {
       "value": 0.886,
       "trace": "config/testdata/serverargs.json"
@@ -3745,6 +4143,22 @@
      {
       "value": "<model>",
       "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
      }
     ],
     "classes": [
@@ -3798,6 +4212,667 @@
       "covered_by": [
        "oracle/inertness/port.json"
       ]
+     }
+    ]
+   }
+  },
+  "pp_size": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     1
+    ],
+    "thresholds": [
+     {
+      "value": 1,
+      "closed": "above"
+     },
+     {
+      "value": 2,
+      "closed": "above"
+     }
+    ]
+   },
+   "basis": {
+    "name": "pp_size",
+    "kind": "numeric",
+    "sites": [
+     {
+      "at": "python/sglang/srt/arg_groups/cp_tp_group_sharing_hook.py:80",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/cp_tp_group_sharing_hook.py:93",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/cuda_graph_hook.py:150",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:346",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/dllm_hook.py:91",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:542",
+      "op": "Eq",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size == 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/kv_shard_hook.py:40",
+      "op": "NotEq",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size != 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/kv_shard_hook.py:206",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/layernorm_sp_hook.py:64",
+      "op": "NotEq",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size != 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/mega_moe_hook.py:188",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:244",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_hook.py:178",
+      "op": "NotEq",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size != 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_hook.py:402",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_hook.py:998",
+      "op": "NotEq",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size != 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/iquest_q1.py:39",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:73",
+      "op": "NotEq",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size != 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/qwen4_exp.py:31",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1625",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "view.pp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1878",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/parallel_hook.py:178",
+      "op": "Eq",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size == 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/parallel_hook.py:454",
+      "op": "Eq",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size == 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/parallel_hook.py:538",
+      "op": "Eq",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size == 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/parallel_hook.py:681",
+      "op": "Eq",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size == 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/pd_disaggregation_hook.py:174",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "view.pp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/pd_disaggregation_hook.py:206",
+      "op": "NotEq",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size != 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/serving_hook.py:505",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/serving_hook.py:894",
+      "op": "NotEq",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size != 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/speculative_hook.py:319",
+      "op": "NotEq",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size != 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/speculative_hook.py:713",
+      "op": "NotEq",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size != 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:95",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:196",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:250",
+      "op": "Eq",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size == 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:649",
+      "op": "NotEq",
+      "values": [
+       1
+      ],
+      "expr": "getattr(cfg, 'pp_size', 1) != 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:724",
+      "op": "NotEq",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size != 1"
+     },
+     {
+      "at": "python/sglang/srt/dllm/algorithm/gemma4_renoise.py:91",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/layers/cp/bcg/__init__.py:49",
+      "op": "Eq",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size == 1"
+     }
+    ],
+    "stated": [
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "lower/testdata/sglang_lower.json"
+     }
+    ],
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": 1,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:542",
+       "python/sglang/srt/arg_groups/kv_shard_hook.py:40",
+       "python/sglang/srt/arg_groups/layernorm_sp_hook.py:64",
+       "python/sglang/srt/arg_groups/model_hook.py:178",
+       "python/sglang/srt/arg_groups/model_hook.py:998",
+       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:73",
+       "python/sglang/srt/arg_groups/parallel_hook.py:178",
+       "python/sglang/srt/arg_groups/parallel_hook.py:454",
+       "python/sglang/srt/arg_groups/parallel_hook.py:538",
+       "python/sglang/srt/arg_groups/parallel_hook.py:681",
+       "python/sglang/srt/arg_groups/pd_disaggregation_hook.py:206",
+       "python/sglang/srt/arg_groups/serving_hook.py:894",
+       "python/sglang/srt/arg_groups/speculative_hook.py:319",
+       "python/sglang/srt/arg_groups/speculative_hook.py:713",
+       "python/sglang/srt/arg_groups/validation_hook.py:250",
+       "python/sglang/srt/arg_groups/validation_hook.py:649",
+       "python/sglang/srt/arg_groups/validation_hook.py:724",
+       "python/sglang/srt/layers/cp/bcg/__init__.py:49"
+      ],
+      "covered_by": []
+     },
+     {
+      "lo": 1,
+      "hi": 2,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "python/sglang/srt/arg_groups/cp_tp_group_sharing_hook.py:80",
+       "python/sglang/srt/arg_groups/cp_tp_group_sharing_hook.py:93",
+       "python/sglang/srt/arg_groups/cuda_graph_hook.py:150",
+       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:346",
+       "python/sglang/srt/arg_groups/dllm_hook.py:91",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:542",
+       "python/sglang/srt/arg_groups/kv_shard_hook.py:40",
+       "python/sglang/srt/arg_groups/kv_shard_hook.py:206",
+       "python/sglang/srt/arg_groups/layernorm_sp_hook.py:64",
+       "python/sglang/srt/arg_groups/mega_moe_hook.py:188",
+       "python/sglang/srt/arg_groups/memory_hook.py:244",
+       "python/sglang/srt/arg_groups/model_hook.py:178",
+       "python/sglang/srt/arg_groups/model_hook.py:402",
+       "python/sglang/srt/arg_groups/model_hook.py:998",
+       "python/sglang/srt/arg_groups/model_overrides/iquest_q1.py:39",
+       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:73",
+       "python/sglang/srt/arg_groups/model_overrides/qwen4_exp.py:31",
+       "python/sglang/srt/arg_groups/overrides.py:1625",
+       "python/sglang/srt/arg_groups/overrides.py:1878",
+       "python/sglang/srt/arg_groups/parallel_hook.py:178",
+       "python/sglang/srt/arg_groups/parallel_hook.py:454",
+       "python/sglang/srt/arg_groups/parallel_hook.py:538",
+       "python/sglang/srt/arg_groups/parallel_hook.py:681",
+       "python/sglang/srt/arg_groups/pd_disaggregation_hook.py:174",
+       "python/sglang/srt/arg_groups/pd_disaggregation_hook.py:206",
+       "python/sglang/srt/arg_groups/serving_hook.py:505",
+       "python/sglang/srt/arg_groups/serving_hook.py:894",
+       "python/sglang/srt/arg_groups/speculative_hook.py:319",
+       "python/sglang/srt/arg_groups/speculative_hook.py:713",
+       "python/sglang/srt/arg_groups/validation_hook.py:95",
+       "python/sglang/srt/arg_groups/validation_hook.py:196",
+       "python/sglang/srt/arg_groups/validation_hook.py:250",
+       "python/sglang/srt/arg_groups/validation_hook.py:649",
+       "python/sglang/srt/arg_groups/validation_hook.py:724",
+       "python/sglang/srt/dllm/algorithm/gemma4_renoise.py:91",
+       "python/sglang/srt/layers/cp/bcg/__init__.py:49"
+      ],
+      "covered_by": [
+       "config/testdata/serverargs.json",
+       "lower/testdata/sglang_lower.json"
+      ]
+     },
+     {
+      "lo": 2,
+      "hi": null,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "python/sglang/srt/arg_groups/cp_tp_group_sharing_hook.py:80",
+       "python/sglang/srt/arg_groups/cp_tp_group_sharing_hook.py:93",
+       "python/sglang/srt/arg_groups/cuda_graph_hook.py:150",
+       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:346",
+       "python/sglang/srt/arg_groups/dllm_hook.py:91",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:542",
+       "python/sglang/srt/arg_groups/kv_shard_hook.py:40",
+       "python/sglang/srt/arg_groups/kv_shard_hook.py:206",
+       "python/sglang/srt/arg_groups/layernorm_sp_hook.py:64",
+       "python/sglang/srt/arg_groups/mega_moe_hook.py:188",
+       "python/sglang/srt/arg_groups/memory_hook.py:244",
+       "python/sglang/srt/arg_groups/model_hook.py:178",
+       "python/sglang/srt/arg_groups/model_hook.py:402",
+       "python/sglang/srt/arg_groups/model_hook.py:998",
+       "python/sglang/srt/arg_groups/model_overrides/iquest_q1.py:39",
+       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:73",
+       "python/sglang/srt/arg_groups/model_overrides/qwen4_exp.py:31",
+       "python/sglang/srt/arg_groups/overrides.py:1625",
+       "python/sglang/srt/arg_groups/overrides.py:1878",
+       "python/sglang/srt/arg_groups/parallel_hook.py:178",
+       "python/sglang/srt/arg_groups/parallel_hook.py:454",
+       "python/sglang/srt/arg_groups/parallel_hook.py:538",
+       "python/sglang/srt/arg_groups/parallel_hook.py:681",
+       "python/sglang/srt/arg_groups/pd_disaggregation_hook.py:174",
+       "python/sglang/srt/arg_groups/pd_disaggregation_hook.py:206",
+       "python/sglang/srt/arg_groups/serving_hook.py:505",
+       "python/sglang/srt/arg_groups/serving_hook.py:894",
+       "python/sglang/srt/arg_groups/speculative_hook.py:319",
+       "python/sglang/srt/arg_groups/speculative_hook.py:713",
+       "python/sglang/srt/arg_groups/validation_hook.py:95",
+       "python/sglang/srt/arg_groups/validation_hook.py:196",
+       "python/sglang/srt/arg_groups/validation_hook.py:250",
+       "python/sglang/srt/arg_groups/validation_hook.py:649",
+       "python/sglang/srt/arg_groups/validation_hook.py:724",
+       "python/sglang/srt/dllm/algorithm/gemma4_renoise.py:91",
+       "python/sglang/srt/layers/cp/bcg/__init__.py:49"
+      ],
+      "covered_by": []
      }
     ]
    }
@@ -4078,6 +5153,38 @@
       "trace": "config/testdata/serverargs.json"
      },
      {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
       "value": 1,
       "trace": "config/testdata/serverargs.json"
      },
@@ -4412,6 +5519,22 @@
      {
       "value": 1,
       "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
      },
      {
       "value": 8,

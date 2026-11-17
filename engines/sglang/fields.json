@@ -12702,12 +12702,21 @@
     {
       "name": "context_length",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#49"
+        "traces": [
+          "config/testdata/serverargs.json",
+          "lower/testdata/sglang_lower.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -16844,12 +16853,31 @@
     {
       "name": "pp_size",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#8"
+        "traces": [
+          "config/testdata/serverargs.json",
+          "lower/testdata/sglang_lower.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 1,
+            "closed": "above"
+          },
+          {
+            "value": 2,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          1
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {

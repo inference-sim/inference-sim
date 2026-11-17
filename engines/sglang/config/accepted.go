@@ -53,6 +53,8 @@ var acceptedFields = map[string][]any{
 	"served_model_name":                  nil,
 	"tool_call_parser":                   nil,
 	"reasoning_parser":                   nil,
+	"context_length":                     nil,
+	"pp_size":                            {1},
 }
 
 // refusedFieldIssue names, for a field another open issue covers, that issue instead of the

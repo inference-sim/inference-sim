@@ -444,12 +444,15 @@
    }
   },
   "config:context_length": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#49"
+    "traces": [
+     "config/testdata/serverargs.json",
+     "lower/testdata/sglang_lower.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:cp_strategy": {
@@ -3760,12 +3763,15 @@
    }
   },
   "config:pp_size": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/blis-sglang#8"
+    "traces": [
+     "config/testdata/serverargs.json",
+     "lower/testdata/sglang_lower.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:pre_warm_nccl": {
