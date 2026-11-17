@@ -274,7 +274,9 @@ func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 			continue
 		}
 		e2e := m.RequestE2Es[id]
-		completionUs := int64(m.RequestCompletionTimes[id])
+		// The instant the client has the response: its last content chunk, before the completion
+		// overhead (ClientLatencyTicks). The window runs over client instants, as the rows state them.
+		completionUs := int64(m.RequestCompletionTimes[id]) - rm.completionOverheadTicks
 		if rm.timedOut && e2e <= 0 {
 			continue // failed_requests (RecordTimeout)
 		}
@@ -299,7 +301,7 @@ func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 		outputTokens += int64(rm.OutputTokens)
 		inputTokens += int64(rm.NumPrefillTokens)
 		if m.MeasuredWindow == nil {
-			startUs = min(startUs, completionUs-int64(e2e))
+			startUs = min(startUs, completionUs-int64(rm.ClientLatencyTicks(e2e)))
 		}
 		if m.MeasuredWindow == nil || m.MeasuredWindow.EndUs <= 0 {
 			endUs = max(endUs, completionUs)

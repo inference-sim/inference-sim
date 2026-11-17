@@ -20,6 +20,25 @@ type OTelConvertOptions struct {
 	MaxThinkTimeUs int64 // cap on per-round arrival gap; 0 = no cap
 	IncludeErrors  bool  // keep spans with status.code == 2
 	MinRounds      int   // skip sessions with fewer usable calls (default 1)
+	// ThinkFromSpanEnds records each follow-up round's think time as the gap between the
+	// previous span's end and this span's start (#2130). Use it when the spans carry real end
+	// times; a placeholder end_time would state a think time that is nearly the whole gap.
+	// A round whose previous span has no usable end states none, and a replay derives it.
+	ThinkFromSpanEnds bool
+}
+
+// OTelSession is one converted session with what the converter learned about it beyond its
+// records: when it started, and the system message that opened its first call.
+type OTelSession struct {
+	Records []TraceRecord
+	// StartUs is the first call's start, in microseconds since the epoch.
+	StartUs int64
+	// SystemText is the text of the first call's system messages; empty when it has none.
+	SystemText string
+	// SystemShare is the share of the first call's message characters that the system messages
+	// are, from which a prefix length in tokens is estimated (the spans state tokens only for
+	// the whole call).
+	SystemShare float64
 }
 
 // otelSpan is the subset of an OTel span we read. Unknown fields are ignored
@@ -47,6 +66,52 @@ type otelAttributes struct {
 	OutputTokens *int `json:"gen_ai.usage.output_tokens"`
 	// Presence of this key (even empty) marks an LLM chat span when name doesn't.
 	InputMessages *string `json:"gen_ai.input.messages"`
+}
+
+// otelMessage is one input message: a role and its text, as a string or as parts.
+type otelMessage struct {
+	Role    string          `json:"role"`
+	Content json.RawMessage `json:"content"`
+	Parts   []struct {
+		Content string `json:"content"`
+		Text    string `json:"text"`
+	} `json:"parts"`
+}
+
+func (m otelMessage) text() string {
+	var s string
+	if len(m.Content) > 0 && json.Unmarshal(m.Content, &s) == nil {
+		return s
+	}
+	for _, p := range m.Parts {
+		s += p.Content + p.Text
+	}
+	return s
+}
+
+// systemOf returns the text of the system messages in a call's input messages and the share of
+// the messages' characters they are. Unparseable or empty messages give no system text.
+func systemOf(messages *string) (string, float64) {
+	if messages == nil || *messages == "" {
+		return "", 0
+	}
+	var ms []otelMessage
+	if json.Unmarshal([]byte(*messages), &ms) != nil {
+		return "", 0
+	}
+	var sys string
+	total := 0
+	for _, m := range ms {
+		t := m.text()
+		total += len(t)
+		if m.Role == "system" {
+			sys += t
+		}
+	}
+	if sys == "" || total == 0 {
+		return "", 0
+	}
+	return sys, float64(len(sys)) / float64(total)
 }
 
 type otelTrace struct {
@@ -107,6 +172,16 @@ func OTelSessionID(raw []byte) (string, error) {
 // start-time order. RequestID is left 0; the caller assigns global IDs. Returns
 // (nil, nil) when the session has fewer than opts.MinRounds usable LLM calls.
 func ConvertOTelTrace(raw []byte, opts OTelConvertOptions) ([]TraceRecord, error) {
+	sess, err := ConvertOTelSession(raw, opts)
+	if err != nil || sess == nil {
+		return nil, err
+	}
+	return sess.Records, nil
+}
+
+// ConvertOTelSession is ConvertOTelTrace returning the session with its start and its system
+// message. It returns (nil, nil) when the session has fewer than opts.MinRounds usable calls.
+func ConvertOTelSession(raw []byte, opts OTelConvertOptions) (*OTelSession, error) {
 	minRounds := opts.MinRounds
 	if minRounds < 1 {
 		minRounds = 1
@@ -125,9 +200,11 @@ func ConvertOTelTrace(raw []byte, opts OTelConvertOptions) ([]TraceRecord, error
 	// (sp.Attributes.Model) is deliberately NOT captured here — see the
 	// TraceRecord construction below for why it must not reach the record.
 	type parsedSpan struct {
-		startUs int64
-		in, out int
-		isError bool
+		startUs, endUs int64
+		in, out        int
+		isError        bool
+		system         string
+		systemShare    float64
 	}
 	var spans []parsedSpan
 	for i := range tr.Spans {
@@ -145,11 +222,20 @@ func ConvertOTelTrace(raw []byte, opts OTelConvertOptions) ([]TraceRecord, error
 		if err != nil {
 			return nil, fmt.Errorf("session %q span %q: %w", sessionID, sp.SpanID, err)
 		}
+		var endUs int64
+		if sp.EndTime != "" {
+			if e, err := parseOTelTime(sp.EndTime); err == nil && e > startUs {
+				endUs = e
+			}
+		}
+		sys, share := systemOf(sp.Attributes.InputMessages)
 		spans = append(spans, parsedSpan{
 			startUs: startUs,
+			endUs:   endUs,
 			in:      *sp.Attributes.InputTokens,
 			out:     *sp.Attributes.OutputTokens,
 			isError: sp.Status.Code == 2,
+			system:  sys, systemShare: share,
 		})
 	}
 
@@ -182,12 +268,23 @@ func ConvertOTelTrace(raw []byte, opts OTelConvertOptions) ([]TraceRecord, error
 		if sp.isError {
 			status = trace.StatusError
 		}
-		rounds = append(rounds, NormalizedRound{
+		round := NormalizedRound{
 			InputTokensAbs: sp.in,
 			OutputTokens:   sp.out,
 			ArrivalUs:      arrival,
 			Status:         status,
-		})
+		}
+		// The client thinks from the response it received to the next call it sends: the
+		// previous span's end to this span's start (#2130).
+		if i > 0 && opts.ThinkFromSpanEnds && spans[i-1].endUs > 0 && spans[i-1].endUs <= sp.startUs {
+			think := sp.startUs - spans[i-1].endUs
+			if opts.MaxThinkTimeUs > 0 && think > opts.MaxThinkTimeUs {
+				think = opts.MaxThinkTimeUs
+			}
+			round.ThinkUs = &think
+		}
+		rounds = append(rounds, round)
 	}
-	return EncodeSessionToTraceRecords(sessionID, rounds), nil
+	return &OTelSession{Records: EncodeSessionToTraceRecords(sessionID, rounds), StartUs: t0,
+		SystemText: spans[0].system, SystemShare: spans[0].systemShare}, nil
 }

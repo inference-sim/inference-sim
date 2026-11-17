@@ -599,10 +599,10 @@ func (cs *ClusterSimulator) wireInstance(inst *InstanceSimulator) {
 		if cs.sessionCallback == nil {
 			return nil
 		}
-		// The next round follows the response the client has received in full: a completed
-		// request's last chunk reaches it after the post-decode overhead, the same instant the
-		// P/D path releases from (parent.CompletionTime), so think time counts from there (#1913).
-		for _, next := range cs.sessionCallback(req, doneTime(inst, req, tick)) {
+		// The next round follows the response the client has received in full: its last content
+		// chunk, the instant the Result's row states (arrival plus E2E), so think time counts
+		// from there and not from the completion overhead that follows the chunk (#1913, #2130).
+		for _, next := range cs.sessionCallback(req, clientDoneTime(inst, req, tick)) {
 			cs.pushArrival(next, next.ArrivalTime, &cs.workloadSender)
 		}
 		return nil // don't inject locally — route through cluster pipeline
@@ -623,6 +623,17 @@ func doneTime(inst *InstanceSimulator, req *sim.Request, tick int64) int64 {
 	if req.State == sim.StateCompleted {
 		if t, ok := inst.Metrics().RequestCompletionTimes[req.ID]; ok {
 			return max(tick, int64(t))
+		}
+	}
+	return tick
+}
+
+// clientDoneTime is when the client has a request's whole response: for a completed request the
+// last content chunk, before the completion overhead; for any other the instant it ended.
+func clientDoneTime(inst *InstanceSimulator, req *sim.Request, tick int64) int64 {
+	if req.State == sim.StateCompleted {
+		if t, ok := inst.Metrics().ClientCompletionTime(req.ID); ok {
+			return max(tick, t)
 		}
 	}
 	return tick
@@ -1492,7 +1503,8 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 			// the session manager does not.
 			// (blis replay passes onRequestDone=nil, so this code never runs in replay mode.)
 			origCopy.ProgressIndex = parent.DecodeSubReq.ProgressIndex
-			nextReqs := c.sessionCallback(&origCopy, parent.CompletionTime)
+			// The client has the response at its last content chunk, before the overhead.
+			nextReqs := c.sessionCallback(&origCopy, parent.CompletionTime-inst.PostDecodeFixedOverhead())
 			for _, next := range nextReqs {
 				c.pushArrival(next, next.ArrivalTime, &c.workloadSender)
 			}

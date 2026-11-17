@@ -14,9 +14,9 @@ package cmd
 // the run measured. Aggregates can agree while every one of these is wrong, so each check here is
 // per request, read from the Result's request rows.
 //
-// The checks here are the ones a pooled replay passes today: session structure, prompt and output
-// lengths, and the shared prefix. The send-time, in-flight and window checks fail on main and land
-// with their fix (#2130).
+// The checks are: session structure, prompt and output lengths, the shared prefix, the time each
+// round is sent, the sessions the client holds in flight and the order it starts them, and the
+// measured window (#2130).
 //
 // NOTE: these tests mutate package-level CLI vars and MUST NOT use t.Parallel().
 
@@ -191,5 +191,93 @@ func TestReplayFidelity_SharedSystemPromptIsReusedAcrossSessions(t *testing.T) {
 			t.Errorf("session %s round 0 found %d tokens cached; the %d-token system prompt every session shares was sent before",
 				f.sessionID(s), row.CachedLocalTokens, f.prefixLength)
 		}
+	}
+}
+
+// TestReplayFidelity_RoundsFollowCompletionsByTheThinkTime checks the client's think time: a
+// follow-up round is sent exactly the recorded think time after the completion the Result
+// states for the round before it (arrival plus E2E).
+func TestReplayFidelity_RoundsFollowCompletionsByTheThinkTime(t *testing.T) {
+	f := agenticShapeRun()
+	got := fidelityRows(t, f.replayPooled(t))
+	checked := 0
+	for s := range f.newTokens {
+		for r := 1; r < len(f.newTokens[s]); r++ {
+			prev, row := got[f.sessionID(s)][r-1], got[f.sessionID(s)][r]
+			if gap := row.ArrivalUs - (prev.ArrivalUs + *prev.E2EUs); gap != f.thinkUs {
+				t.Errorf("session %s round %d is sent %d us after the completion the Result states for round %d; the client thinks %d us",
+					f.sessionID(s), r, gap, r-1, f.thinkUs)
+			}
+			checked++
+		}
+	}
+	if checked != 15 {
+		t.Fatalf("non-vacuity: %d follow-up rounds checked, want 15", checked)
+	}
+}
+
+// TestReplayFidelity_ClientHoldsItsSessionsInFlight_InCorpusOrder checks the pool: the client
+// starts its first K sessions together, starts the rest in corpus order, each as an earlier
+// session ends, and never has more than K sessions in flight.
+func TestReplayFidelity_ClientHoldsItsSessionsInFlight_InCorpusOrder(t *testing.T) {
+	f := agenticShapeRun()
+	got := fidelityRows(t, f.replayPooled(t))
+	start := make([]int64, len(f.newTokens))
+	end := make([]int64, len(f.newTokens))
+	for s := range f.newTokens {
+		last := len(f.newTokens[s]) - 1
+		start[s] = got[f.sessionID(s)][0].ArrivalUs
+		end[s] = got[f.sessionID(s)][last].ArrivalUs + *got[f.sessionID(s)][last].E2EUs
+	}
+	for s := 1; s < f.concurrent; s++ {
+		if start[s] != start[0] {
+			t.Errorf("session %d starts at %d us, session 0 at %d: the client starts its first %d sessions together", s, start[s], start[0], f.concurrent)
+		}
+	}
+	for s := f.concurrent; s < len(start); s++ {
+		if start[s] < start[s-1] {
+			t.Errorf("session %d starts at %d us, before session %d at %d: sessions start in corpus order", s, start[s], s-1, start[s-1])
+		}
+		freed := false
+		for e := 0; e < s; e++ {
+			freed = freed || end[e] == start[s]
+		}
+		if !freed {
+			t.Errorf("session %d starts at %d us, when no earlier session ended", s, start[s])
+		}
+	}
+	for s := range start {
+		inFlight := 0
+		for o := range start {
+			if start[o] <= start[s] && start[s] < end[o] {
+				inFlight++
+			}
+		}
+		if inFlight > f.concurrent {
+			t.Errorf("%d sessions in flight when session %d starts; the client holds %d", inFlight, s, f.concurrent)
+		}
+	}
+	if start[len(start)-1] == start[0] {
+		t.Fatalf("non-vacuity: every session started together")
+	}
+}
+
+// TestReplayFidelity_WindowIsTheRunsWindow checks the measured window of a replay that measures
+// from its first request to its last completion: it opens at the first arrival and closes at the
+// latest arrival plus E2E among the rows, as the client reads the run's span from its requests.
+func TestReplayFidelity_WindowIsTheRunsWindow(t *testing.T) {
+	f := agenticShapeRun()
+	res := f.replayPooled(t)
+	var first, last int64 = -1, 0
+	for _, row := range res.RequestRows {
+		if first < 0 || row.ArrivalUs < first {
+			first = row.ArrivalUs
+		}
+		if e := row.ArrivalUs + *row.E2EUs; e > last {
+			last = e
+		}
+	}
+	if res.Window.StartUs != first || res.Window.EndUs != last {
+		t.Errorf("window [%d, %d] us, the requests span [%d, %d]", res.Window.StartUs, res.Window.EndUs, first, last)
 	}
 }

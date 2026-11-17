@@ -448,3 +448,14 @@ func sortedRequestIDs(requests map[string]RequestMetrics) []string {
 	sort.Strings(ids)
 	return ids
 }
+
+// ClientCompletionTime is the instant the client has request id's whole response: its arrival
+// plus the latency the Result's row states (ClientLatencyTicks), which is before the completion
+// overhead. ok is false for a request that has not completed.
+func (m *Metrics) ClientCompletionTime(id string) (int64, bool) {
+	t, ok := m.RequestCompletionTimes[id]
+	if !ok {
+		return 0, false
+	}
+	return int64(t) - m.Requests[id].completionOverheadTicks, true
+}
