@@ -1,3 +1,5 @@
+// Original to blis-vllm.
+
 package kernelmodel
 
 import "github.com/inference-sim/blis-substrate/contracts/kernel"
