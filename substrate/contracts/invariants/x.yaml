@@ -196,7 +196,7 @@
   status: new
   target:
     status: ci
-    milestone: 3
+    milestone: 4
 - id: X3
   section: §4
   title: Engine behaviour lives only in its engine repository.
@@ -306,7 +306,7 @@
   status: partial
   target:
     status: ci
-    milestone: 3
+    milestone: 4
 - id: X4
   section: §4
   title: The router is llm-d's own router code, unchanged.
@@ -671,7 +671,7 @@
   status: partial
   target:
     status: ci
-    milestone: 3
+    milestone: 4
   note: compat/kernelmodel imports the cost model until M4 (§3.3)
 - id: X8
   section: §4

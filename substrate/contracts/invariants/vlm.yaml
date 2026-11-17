@@ -47,7 +47,7 @@
   status: partial
   target:
     status: ci
-    milestone: 3
+    milestone: 4
   note: compat/, rules/v0_29 and rules/v0_31 name vLLM 0.29 and 0.31 until M4 (§3.3)
 - id: VLM-3
   section: §5

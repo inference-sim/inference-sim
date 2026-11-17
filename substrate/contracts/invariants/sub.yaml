@@ -121,7 +121,7 @@
   status: partial
   target:
     status: ci
-    milestone: 3
+    milestone: 4
   note: >-
     M1 resolves hardware packaging from the catalog, refusing a scenario that contradicts it; model
     values held in code move to graph fields in M4
@@ -192,7 +192,7 @@
   status: new
   target:
     status: ci
-    milestone: 3
+    milestone: 4
 - id: SUB-7
   section: §5
   statement: >-
@@ -484,7 +484,7 @@
   status: new
   target:
     status: ci
-    milestone: 3
+    milestone: 4
   note: graphs carry emit conditions and engine sharing choices
 - id: SUB-16
   section: §5

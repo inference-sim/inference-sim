@@ -178,7 +178,7 @@
   status: new
   target:
     status: ci
-    milestone: 3
+    milestone: 4
 - id: D7
   section: §10.4
   statement: >-

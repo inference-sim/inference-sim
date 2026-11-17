@@ -90,18 +90,18 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 
 - **X1** (partial; target ci by M3) What a user would hand llm-d, vLLM or SGLang is what they hand BLIS, in the upstream's own field names, types, defaults and errors.
   - `new`, pull_request: Every scenario key outside the engine and router blocks is on a fixed list of environment facts
-- **X2** (new; target ci by M3) Outside its tests, blis-substrate contains no engine name, no engine version and no engine's policy.
+- **X2** (new; target ci by M4) Outside its tests, blis-substrate contains no engine name, no engine version and no engine's policy.
   - `new`, pull_request: No engine identifier in non-test Go identifiers, string literals or registry keys: engine names, engine version strings, upstream source-path citations, and engine-only setting names. The word list is committed in the substrate (invariants/engine-words.txt). A bot regenerates it from each engine release's field list in a pull request, leaving out words the architecture vocabulary also uses, such as dtype or quantization. The count per directory may only go down, measured against the word list of the same version, until it reaches zero
   - `new`, pull_request: The cost model's public functions accept only plans, step shapes, transfers, and catalog and registry handles
   - `new`, pull_request: Coefficient scope keys come from a fixed set with no engine key
   - `new`, pull_request: Model graphs use only architecture vocabulary
-- **X3** (partial; target ci by M3) Scheduling, KV management, KV connectors and tiering decisions, default resolution, and lowering a model to kernel implementations belong to blis-vllm or blis-sglang.
+- **X3** (partial; target ci by M4) Scheduling, KV management, KV connectors and tiering decisions, default resolution, and lowering a model to kernel implementations belong to blis-vllm or blis-sglang.
   - `ci`, pull_request: The cost model imports no engine module (`kernel: TestTheLibraryImportsNoEngineModel`)
   - `new`, pull_request: Scheduler and KV types exist only in engine modules
 - **X6** (partial; target ci by M3) For fixed scenario bytes, seed, module versions, Go toolchain version and catalog and coefficient registry content hashes, the simulator's standard output is identical byte for byte across runs, thread counts and supported platforms.
   - `new`, pull_request: No clock reads and no goroutines in engine or cost-model code
   - `new`, pull_request: No unsorted map iteration on an output path, and no unnamed randomness. In the router fork this lint covers files the fork wrote; upstream code is covered by the differential test in X4
-- **X7** (partial; target ci by M3) Contracts live in blis-substrate/contracts.
+- **X7** (partial; target ci by M4) Contracts live in blis-substrate/contracts.
   - `new`, pull_request: A lower repository refers to accuracy-dashboard only through the harness pin file
   - `new`, pull_request: The module graph across all repositories follows Figure 1
   - `ci`, pull_request: Every generated file matches its generator's output (`tools/docgen: TestGeneratedDocsAreCurrent`)
@@ -177,7 +177,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `ci`, pull_request: Documentation-matches-types test (`contracts: TestDocFieldTablesMatchTypes`)
   - `ci`, pull_request: Strict loaders (`contracts: TestLoadRejectsUnknownFields`)
   - `ci`, pull_request: Examples must validate (`contracts: TestDocExamplesValidate`)
-- **SUB-3** (partial; target ci by M3) The catalog holds declared facts only: figures read from a published source, each with a citation a reader can follow.
+- **SUB-3** (partial; target ci by M4) The catalog holds declared facts only: figures read from a published source, each with a citation a reader can follow.
   - `ci`, pull_request: Deriver --check (`catalog/scripts/derive_graph.py --check`)
   - `new`, pull_request: The validators, including the packaging check and its test pair
   - `new`, pull_request: A test that no runtime package opens config.json
@@ -188,7 +188,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **SUB-5** (partial; target ci by M2) Coefficients obey physics: no compute rate above the chip's dense datasheet peak for that data type; no memory bandwidth above the datasheet peak for a working set larger than the chip's L2 cache; at a fixed algorithm, topology tier and bytes per rank, a collective never gets faster as the group grows; no transfer rate above the catalog peak of the link a leg crosses.
   - `ci`, pull_request: Property tests: no compute rate above the dense datasheet peak, and a collective never gets faster as the group grows (`registry/validator/test_coefficient_properties.py`)
   - `new`, pull_request: Property tests: the per-data-type peak and the L2-bounded memory bandwidth
-- **SUB-6** (new; target ci by M3) The cost model resolves nothing.
+- **SUB-6** (new; target ci by M4) The cost model resolves nothing.
   - `new`, pull_request: A test that the cost model's public functions accept only plans, step shapes, transfers, and catalog and registry handles
 - **SUB-7** (ci; target reached) The cost model has a price for every primitive it can be asked about, and for every move form (§6.1) on every catalog device, link and NIC it can cross.
   - `ci`, pull_request: Completeness test over every primitive and every catalog chip (`kernel: TestEveryValueTheKernelSuppliesItselfIsListed`)
@@ -216,7 +216,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `ci`, pull_request: A check of that uncompressed total (`TestModuleZipIsUnder100MB`)
 - **SUB-14** (new; target ci by M2) The memory breakdown closes.
   - `new`, pull_request: In blis-substrate's error job, a comparison of the total with recorded GPU start-up logs, which are ledger units with role validate
-- **SUB-15** (new; target ci by M3) A model graph holds only what the checkpoint states: the tensors, their shapes and stored data types, scale tensors, and the layer structure.
+- **SUB-15** (new; target ci by M4) A model graph holds only what the checkpoint states: the tensors, their shapes and stored data types, scale tensors, and the layer structure.
   - `new`, pull_request: A test that rederives every graph field from those inputs
   - `new`, pull_request: A check that graph vocabulary has no emit conditions. The deriver records each header's SHA-256 and the revision, under the same licence rule as config.json (X12)
 - **SUB-16** (ci; target reached) Quantities carry units as types.
@@ -303,7 +303,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: A check that each alias table equals the one generated from the merge-base and candidate ingest tools on the same source revision
 - **D5** (new; target ci by M2) A coefficient's fit data exercised the kernel implementation the coefficient is keyed by, meaning the same library, variant and kernel hash (CodeHash).
   - `new`, pull_request: A validator rule that a coefficient's fit units were collected on the kernel implementation it is keyed by
-- **D6** (new; target ci by M3) Only redistributable artefacts are committed.
+- **D6** (new; target ci by M4) Only redistributable artefacts are committed.
   - `new`, pull_request: A check that every committed data file is listed in the ledger as redistributable
   - `new`, nightly: A nightly job comparing fixtures with the full data
 - **D7** (partial; target ci by M3) The role seed is 256 random bits and a CI secret until its partition version is retired.
@@ -331,7 +331,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, nightly: A nightly check that every tag made by a person is annotated and listed in its release notes
 - **LIF-4** (ci; target reached) Release notes are generated (§13.3).
   - `ci`, release: The release bot, which writes the notes from the release's changes (`tools/release: Notes`)
-- **LIF-5** (new; target ci by M3) An engine module, or the router fork, models one upstream release.
+- **LIF-5** (new; target ci by M4) An engine module, or the router fork, models one upstream release.
   - `new`, release: A tag check in the release bot: format, N one above the previous tag on the same upstream release, no plain tag (`tools/release: CheckEngineTag`)
 - **LIF-7** (new; target ci by M1) A deprecated feature is removed by the first release after its deprecation that may break compatibility: a MAJOR release, or a MINOR release while the repository is at v0.
   - `new`, release: The release bot, which refuses a MAJOR release, or a MINOR release at v0, that still contains a feature deprecated in an earlier release (`tools/release: CheckDeprecations`)

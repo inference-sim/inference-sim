@@ -8,7 +8,7 @@
 # changes the registry or the plan (CFG-3: its check is blis-config-search's).
 #
 # Columns: identifier, status here, "In CI by" here, the layer that closes the difference.
-CFG-3	new	M2	open
+CFG-3	new	M4	open
 DEV-8	partial	M2	open
 SUB-18	ci	now	open
 VAL-8	new	M2	open

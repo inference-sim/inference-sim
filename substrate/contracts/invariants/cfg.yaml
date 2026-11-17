@@ -70,7 +70,7 @@
   status: new
   target:
     status: ci
-    milestone: 2
+    milestone: 4
 - id: CFG-4
   section: §5
   statement: >-

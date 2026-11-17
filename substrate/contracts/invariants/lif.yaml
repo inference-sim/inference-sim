@@ -360,7 +360,7 @@
   status: new
   target:
     status: ci
-    milestone: 3
+    milestone: 4
   note: >-
     the router fork follows it; blis-vllm also holds vLLM 0.29 and 0.31 code until M4 (§3.3)
 - id: LIF-6

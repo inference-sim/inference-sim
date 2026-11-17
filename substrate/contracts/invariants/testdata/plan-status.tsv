@@ -1,12 +1,12 @@
 # The release plan's §3.2 status table: identifier, status, In CI by.
 # Written by go run ./tools/invariants snapshot from the published plan; do not edit.
 X1	partial	M3
-X2	new	M3
-X3	partial	M3
+X2	new	M4
+X3	partial	M4
 X4	partial	M3
 X5	partial	M3
 X6	partial	M3
-X7	partial	M3
+X7	partial	M4
 X8	new	M3
 X9	new	M3
 X10	new	M1
@@ -30,10 +30,10 @@ X27	new	M1
 X28	new	M1
 SUB-1	ci	now
 SUB-2	ci	now
-SUB-3	partial	M3
+SUB-3	partial	M4
 SUB-4	partial	M1
 SUB-5	partial	M2
-SUB-6	new	M3
+SUB-6	new	M4
 SUB-7	ci	now
 SUB-8	partial	M1
 SUB-9	ci	now
@@ -42,7 +42,7 @@ SUB-11	new	M2
 SUB-12	partial	M2
 SUB-13	ci	now
 SUB-14	new	M2
-SUB-15	new	M3
+SUB-15	new	M4
 SUB-16	ci	now
 SUB-17	new	M3
 SUB-18	partial	M2
@@ -51,7 +51,7 @@ SUB-20	partial	M2
 SUB-21	new	M3
 SUB-22	new	M3
 VLM-1	ci	now
-VLM-2	partial	M3
+VLM-2	partial	M4
 VLM-3	new	M2
 VLM-4	new	M2
 VLM-5	ci	now
@@ -99,7 +99,7 @@ SIM-17	new	M3
 SIM-18	new	M3
 CFG-1	ci	now
 CFG-2	partial	M3
-CFG-3	partial	M3
+CFG-3	partial	M4
 CFG-4	partial	M3
 CFG-5	new	M3
 FID-1	partial	M2
@@ -143,7 +143,7 @@ D2	new	M1
 D3	ci	now
 D4	partial	M3
 D5	new	M2
-D6	new	M3
+D6	new	M4
 D7	partial	M3
 D8	partial	M2
 COV-1	partial	M1
@@ -162,6 +162,6 @@ LIF-1	new	M1
 LIF-2	partial	M1
 LIF-3	new	M1
 LIF-4	new	M1
-LIF-5	new	M3
+LIF-5	new	M4
 LIF-6	new	M1
 LIF-7	new	M1
