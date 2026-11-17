@@ -9,13 +9,13 @@
   "data": {
     "catalog": {
       "source": "path",
-      "hash": "e619a04df7eee1cb65849b84cfe2979f27624a8efce49c54340e32eee3d72113",
-      "combined_hash": "e619a04df7eee1cb65849b84cfe2979f27624a8efce49c54340e32eee3d72113"
+      "hash": "2d1849fb44540b8af542e6d40dfbde2905784a942567c3470ea1580eaa183e6b",
+      "combined_hash": "2d1849fb44540b8af542e6d40dfbde2905784a942567c3470ea1580eaa183e6b"
     },
     "registry": {
       "source": "path",
-      "hash": "0191c070b66a5699bf2cea6d9e655dbd322ed2bd8d0cc518c3ec08fce984f146",
-      "combined_hash": "0191c070b66a5699bf2cea6d9e655dbd322ed2bd8d0cc518c3ec08fce984f146"
+      "hash": "8988e9e7570e890ecaa0952465eca4c5827e5036dbed2a134b11c3848df1958f",
+      "combined_hash": "8988e9e7570e890ecaa0952465eca4c5827e5036dbed2a134b11c3848df1958f"
     },
     "released_data": false,
     "build": "unreleased"
@@ -887,7 +887,7 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.14.2-0.20261117064636-bfa2cb3b20b0",
+    "substrate": "v0.14.2-0.20261117153501-c48aa81d029a",
     "router": "v1.0.0-blis.4.0.20261117140125-6acd0a87e875",
     "engine_module": "v0.32.1-0.20261117073624-bc5a9a97ee7b"
   },
@@ -2318,6 +2318,15 @@
           {
             "KernelMatch": "",
             "Method": "assumed",
+            "Name": "nontorch_in_budget_bytes_2rank",
+            "Primitive": "",
+            "Running": "",
+            "Scope": "0: no fit-unit group measures the non-torch memory vLLM grows inside the KV budget for this model and part (non_kv_cache_memory, gpu_worker.py:720-756@v0.33.0), so none is charged and the KV budget is overstated by it",
+            "Set": "blis-latency-kernel"
+          },
+          {
+            "KernelMatch": "",
+            "Method": "assumed",
             "Name": "engine_version",
             "Primitive": "",
             "Running": "",
@@ -2681,7 +2690,7 @@
           }
         ],
         "method_counts": {
-          "assumed": 41,
+          "assumed": 42,
           "measured": 105,
           "not_charged": 1,
           "vendor_spec": 14
@@ -2732,7 +2741,7 @@
           "sequence-parallel-architecture-known",
           "sequence-parallel-moe-implied"
         ],
-        "total": 161
+        "total": 162
       }
     }
   },

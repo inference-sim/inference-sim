@@ -127,8 +127,8 @@ github.com/hashicorp/golang-lru/v2 v2.0.7 h1:a+bsQ5rvGLjzHuww6tVxozPZFVghXaHOwFs
 github.com/hashicorp/golang-lru/v2 v2.0.7/go.mod h1:QeFd9opnmA6QUJc5vARoKUSoFhyfM2/ZepoAG6RGpeM=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
-github.com/inference-sim/blis-substrate v0.14.2-0.20261117064636-bfa2cb3b20b0 h1:DyfablI5HAl14IzxqYk9rUEs8QuZliuOBim10S5Lpeg=
-github.com/inference-sim/blis-substrate v0.14.2-0.20261117064636-bfa2cb3b20b0/go.mod h1:vZYEOia6TQOW+HZYbvJXCMDXus85dBj6vAyPr9rJF3A=
+github.com/inference-sim/blis-substrate v0.14.2-0.20261117153501-c48aa81d029a h1:zh7lLPo6y/gBuhCfIYdu5f8JdE1jHlZmstL1oy8p/Io=
+github.com/inference-sim/blis-substrate v0.14.2-0.20261117153501-c48aa81d029a/go.mod h1:vZYEOia6TQOW+HZYbvJXCMDXus85dBj6vAyPr9rJF3A=
 github.com/inference-sim/blis-vllm v0.32.1-0.20261117073624-bc5a9a97ee7b h1:wqbZxuMm1ahVhmMKQIyBCkHOGOUvuGAjT04jjGZ/YRI=
 github.com/inference-sim/blis-vllm v0.32.1-0.20261117073624-bc5a9a97ee7b/go.mod h1:RJWJ82RinE905EvqgjxgZiRakeycPps+FuUvl/bR3Hs=
 github.com/inference-sim/llm-d-router v1.0.0-blis.4.0.20261117140125-6acd0a87e875 h1:wHAlPd3HGaG7+IbGqF5RWFOi4FWqwRlOxlUz644IzCk=

@@ -30,22 +30,22 @@ concurrency:
 jobs:
   pr:
     if: github.event_name == 'pull_request'
-    uses: inference-sim/blis-substrate/.github/workflows/shared-pr-checks.yml@bfa2cb3b20b0beaee1a5caf82e71ff98b202d0b9
+    uses: inference-sim/blis-substrate/.github/workflows/shared-pr-checks.yml@c48aa81d029a5d2b696e5eb3dfe5f3986132b818
     permissions:
       contents: read
       pull-requests: write
       checks: write
     with:
       repo: inference-sim
-      substrate-ref: bfa2cb3b20b0beaee1a5caf82e71ff98b202d0b9
+      substrate-ref: c48aa81d029a5d2b696e5eb3dfe5f3986132b818
 
   nightly:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    uses: inference-sim/blis-substrate/.github/workflows/shared-nightly.yml@bfa2cb3b20b0beaee1a5caf82e71ff98b202d0b9
+    uses: inference-sim/blis-substrate/.github/workflows/shared-nightly.yml@c48aa81d029a5d2b696e5eb3dfe5f3986132b818
     permissions:
       contents: read
       issues: read
     with:
-      substrate-ref: bfa2cb3b20b0beaee1a5caf82e71ff98b202d0b9
+      substrate-ref: c48aa81d029a5d2b696e5eb3dfe5f3986132b818
     secrets:
       INTERNAL_NAME_PATTERNS: ${{ secrets.INTERNAL_NAME_PATTERNS }}

@@ -15,9 +15,9 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 
 - **X1** (partial; target ci by M3) What a user would hand llm-d, vLLM or SGLang is what they hand BLIS, in the upstream's own field names, types, defaults and errors.
   - `ci`, pull_request: The scenario's router flags, configuration file and manifests reach the router unchanged, and the router parses them with its own code (`cmd: TestScenarioRouterInputs_MapsTheRouterBlock`)
-- **X2** (new; target ci by M3) Outside its tests, blis-substrate contains no engine name, no engine version and no engine's policy.
+- **X2** (new; target ci by M4) Outside its tests, blis-substrate contains no engine name, no engine version and no engine's policy.
   - `new`, pull_request: PoolPlan, StepShape and Transfer contain no field whose values come from an engine's vocabulary, and a zero value means "absent" or the field's documented neutral value (such as stage 0), never an engine default (a reflection test). Separately, a scenario both engines support is priced from each engine's plan, and every price difference is traced to a named difference between the plans
-- **X3** (partial; target ci by M3) Scheduling, KV management, KV connectors and tiering decisions, default resolution, and lowering a model to kernel implementations belong to blis-vllm or blis-sglang.
+- **X3** (partial; target ci by M4) Scheduling, KV management, KV connectors and tiering decisions, default resolution, and lowering a model to kernel implementations belong to blis-vllm or blis-sglang.
   - `ci`, pull_request: The simulator reaches engines only through engine.Engine, at one build site (`cmd: TestTheBinaryReachesBlisVLLMOnlyThroughTheBuildSite`)
   - `new`, pull_request: Scheduler and KV types exist only in engine modules
   - `new`, pull_request: The simulator does no resource arithmetic (KV blocks, bytes, tier capacities); it asks the engine or the cost model. The one exception is dividing a link's bandwidth among transfers and the cross-domain traffic of step collectives that overlap in time (SIM-13) (§6.2)
@@ -29,7 +29,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `ci`, pull_request: Identical output across runs and thread counts; a recorded trace replays identically (`sim/llmd: TestDeterminism_AcrossProcesses`)
   - `new`, pull_request: Identical output on linux/amd64, linux/arm64 and darwin/arm64: nightly, and on every pull request that changes kernel/ or an engine's lowering. Two things differ by platform. First, the Go compiler may fuse x*y+z into one fused multiply-add on some architectures and not others, which changes the last bits; so cost-model and engine code writes float64(x*y) + z where fusion must not happen, or calls math.FMA where it must. Second, some functions in Go's math package, such as Exp and Log, use assembly or CPU-dependent code on some platforms, so their last bits can differ between machines; cost-model and engine code calls the pure-Go copies in contracts/check/fmath instead, which use no fused multiply-add. A lint enforces both rules. stack.json records the toolchain version (SIM-3)
   - `new`, pull_request: No unsorted map iteration on an output path, and no unnamed randomness. In the router fork this lint covers files the fork wrote; upstream code is covered by the differential test in X4
-- **X7** (partial; target ci by M3) Contracts live in blis-substrate/contracts.
+- **X7** (partial; target ci by M4) Contracts live in blis-substrate/contracts.
   - `new`, pull_request: A lower repository refers to accuracy-dashboard only through the harness pin file
   - `new`, pull_request: Every generated file matches its generator's output
 - **X8** (new; target ci by M3) Every number records the exact versions and data it came from, and can be regenerated from them.
