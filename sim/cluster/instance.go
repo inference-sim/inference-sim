@@ -586,12 +586,6 @@ func (i *InstanceSimulator) KVEventsRefusal() error {
 	return i.drv.KVEventsRefusal()
 }
 
-// KVEventsCarryIdentity reports whether the engine's KV events name the adapter of the blocks they
-// store (sim.EngineDriver.KVEventsCarryIdentity).
-func (i *InstanceSimulator) KVEventsCarryIdentity() bool {
-	return i.drv != nil && i.drv.KVEventsCarryIdentity()
-}
-
 // HasWork reports whether the engine has running or waiting requests.
 func (i *InstanceSimulator) HasWork() bool {
 	return i.drv.HasWork()

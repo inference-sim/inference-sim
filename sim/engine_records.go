@@ -91,22 +91,6 @@ type KVEvent struct {
 	// tier. A CPU event moves or drops one location of a block the GPU events introduced; it
 	// carries no parent or tokens, as vLLM's offloading events do not.
 	Tier string
-
-	// Cleared marks the engine dropping its whole cache (vLLM's AllBlocksCleared): every block
-	// stored before it is gone. Tier names the one tier cleared, "" for every tier. Nothing else
-	// is set.
-	Cleared bool
-	// LoRAID, LoRAName, ExtraKeys, CacheSalt, GroupIdx, SpecKind and SlidingWindow are the
-	// identity the engine published with a stored block (engine.KVEvent): the adapter, what was
-	// folded into the block's hash besides its tokens, and the KV-cache group. Empty or nil for
-	// an engine that does not say.
-	LoRAID        *int
-	LoRAName      string
-	ExtraKeys     []any
-	CacheSalt     string
-	GroupIdx      *int
-	SpecKind      string
-	SlidingWindow *int
 }
 
 // ServerSeriesOutput is the file-only server_series block.
