@@ -590,6 +590,11 @@ func TestCapabilityExample_PDOverTheP2PTier(t *testing.T) {
 	if got, _ := d.figureOf("peer_messages_dropped"); got != 0 {
 		t.Errorf("%v peer messages dropped", got)
 	}
+	links := map[string]bool{}
+	keysWithPrefix(d.doc, "link_peak_concurrent_transfers_nic-", links)
+	if !links["link_peak_concurrent_transfers_nic-egress-node-0"] || !links["link_peak_concurrent_transfers_nic-ingress-node-2"] {
+		t.Errorf("the prefill node's WRITEs did not cross its NIC to the decode node; NIC links used: %v", links)
+	}
 	if d.completed() != 6 || d.num("breakdowns.pd.disaggregated_requests") != 6 {
 		t.Errorf("completed %d, disaggregated %v, want 6 of each", d.completed(), d.num("breakdowns.pd.disaggregated_requests"))
 	}

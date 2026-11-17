@@ -97,7 +97,7 @@ blis run --scenarios examples/capabilities --scenario pd-p2p.yaml \
   --num-instances 3 --prefill-instances 2 --decode-instances 1 --rate 2 --num-requests 6
 ```
 
-The decode engine loads each prompt from the prefill engine's CPU tier; the Result states `peer_messages_sent`, `peer_messages_delivered` (equal) and `peer_messages_dropped` (zero). The NIXL deployment sends none.
+The decode engine loads each prompt from the prefill engine's CPU tier; the Result states `peer_messages_sent`, `peer_messages_delivered` (equal) and `peer_messages_dropped` (zero). The prefill nodes' WRITEs cross the fabric, and the Result states the NIC links they used (`link_peak_concurrent_transfers_nic-egress-node-<prefill>` and `nic-ingress-node-<decode>`) beside the CPU tiers' links. The example runs one TP8 engine per node. The NIXL deployment sends no peer messages.
 
 ## Prefill/decode with pools of unequal width
 
