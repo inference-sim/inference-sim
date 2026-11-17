@@ -155,12 +155,20 @@ func TestDocExamplesValidate(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer h.Close()
+		t.Cleanup(func() {
+			if err := h.Close(); err != nil {
+				t.Error(err)
+			}
+		})
 		d, err := os.Open(ex("trace-data.csv"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer d.Close()
+		t.Cleanup(func() {
+			if err := d.Close(); err != nil {
+				t.Error(err)
+			}
+		})
 		if _, err := trace.Read(h, d); err != nil {
 			t.Error(err)
 		}

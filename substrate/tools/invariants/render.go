@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/inference-sim/blis-substrate/contracts/invariants"
@@ -14,23 +13,6 @@ const (
 	beginMarker = "<!-- BEGIN GENERATED: invariants (go run ./tools/invariants render; do not edit) -->"
 	endMarker   = "<!-- END GENERATED: invariants -->"
 )
-
-var idNumber = regexp.MustCompile(`[0-9]+$`)
-
-// families groups the registry's records by family, in design order.
-func families(reg *invariants.Registry) [][]invariants.Invariant {
-	var out [][]invariants.Invariant
-	for _, f := range invariants.Families {
-		var g []invariants.Invariant
-		for _, inv := range reg.Invariants {
-			if strings.HasPrefix(inv.ID, f.Prefix) && idNumber.MatchString(strings.TrimPrefix(inv.ID, f.Prefix)) {
-				g = append(g, inv)
-			}
-		}
-		out = append(out, g)
-	}
-	return out
-}
 
 // firstSentence returns the statement up to the first full stop outside parentheses that
 // ends a sentence, with a trailing colon turned into a full stop. It is the plan's rule.
