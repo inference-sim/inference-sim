@@ -588,6 +588,21 @@ class ValueCoverage(unittest.TestCase):
         r = self.check(self.tree(goldens, held))
         self.assertEqual(r.returncode, 0, r.stdout)
 
+    def test_a_subtree_is_held_by_one_entry_that_must_match_a_path(self):
+        goldens = [{"calls": [{"fn": "a", "args": {"x": 1}}]}, {"calls": [{"fn": "a", "args": {"x": 1}}]}]
+        held = {"calls**": {"kind": "gap", "reason": "the calls are records (#33)"}}
+        r = self.check(self.tree(goldens, held))
+        self.assertEqual(r.returncode, 0, r.stdout)
+        r = self.check(self.tree(goldens, {"calls": held["calls**"]}))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("calls[].args.x: takes only 1", r.stdout)
+        r = self.check(self.tree(goldens, {"other**": held["calls**"], **held}))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("other**: is held, but no golden has it", r.stdout)
+        r = self.check(self.tree(goldens, {"calls**": {"kind": "gap", "reason": "later"}}))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("cites the open issue", r.stdout)
+
     def test_the_held_list_stays_true(self):
         two = [{"x": 1}, {"x": 0}]
         for name, goldens, held, text in [

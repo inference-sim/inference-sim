@@ -23,6 +23,11 @@ A path not covered must be listed in `held` in oracle/value_coverage.json, with 
 - `gap`: a scenario could move it and none does yet. The reason cites the open issue that adds the
   scenario (`inference-sim/blis-sglang#N` or `#N`, X28).
 
+A held key ending in `**` holds a whole subtree: the path before it and every path under it. It is for
+a record whose fields mean different things by call (the recorded calls of the cache and HiCache
+interface traces, FID-5), where one path per call argument would restate the same gap hundreds of times.
+It is a `gap` or a `fixed`, with the same reason and issue rules, and it must match some path.
+
 The report fails on a path neither covered nor held, on a held path that is now covered (so the list
 stays true), on a held path no golden has, and on an entry with no reason. No golden at all fails
 too (X16).
@@ -86,6 +91,18 @@ def no_zero(values: set) -> bool:
     return all(kind(v) == "number" for v in parsed) and not any(neutral(v) for v in parsed)
 
 
+def held_by(held: dict, path: str):
+    """The held entry that covers path: its own, or the subtree (`prefix**`) that contains it."""
+    if path in held:
+        return path
+    for key in held:
+        if key.endswith("**"):
+            base = key[:-2]
+            if path == base or path.startswith(base + ".") or path.startswith(base + "[]"):
+                return key
+    return None
+
+
 def golden_traces(root: str) -> list:
     with open(os.path.join(root, "oracle", "harness.json")) as f:
         cfg = json.load(f)
@@ -135,16 +152,20 @@ def main(root: str, report: bool = False) -> int:
         ok = covered(seen[path])
         if report:
             label = ("covered, never 0" if no_zero(seen[path]) else "covered") if ok else \
-                ("held " + held[path].get("kind", "?") if path in held else "ONE VALUE")
+                ("held " + held[held_by(held, path)].get("kind", "?") if held_by(held, path) else "ONE VALUE")
             print(f"{label:16} {path}: "
                   + ", ".join(sorted(seen[path]))[:200])
-        if not ok and path not in held:
+        if not ok and held_by(held, path) is None:
             bad.append(f"{path}: takes only {', '.join(sorted(seen[path]))} in the scenario set, so a comparison "
                        "of it cannot fail; add a scenario that moves it, or hold it in oracle/value_coverage.json")
         elif ok and path in held:
             bad.append(f"{path}: is held as {held[path].get('kind')} but is now covered; remove it from held")
-    for path in sorted(set(held) - set(seen)):
-        bad.append(f"{path}: is held, but no golden has it")
+    for path in sorted(held):
+        if path.endswith("**"):
+            if not any(held_by({path: held[path]}, p) for p in seen):
+                bad.append(f"{path}: is held, but no golden has it")
+        elif path not in seen:
+            bad.append(f"{path}: is held, but no golden has it")
     for b in bad:
         print(b)
     print(f"value_coverage: {len(goldens)} golden(s), {len(seen)} field(s), "
