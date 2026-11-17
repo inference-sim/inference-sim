@@ -9,6 +9,9 @@ outputs:
   python-version:
     description: The exact Python setup-python installed.
     value: ${{ steps.python.outputs.python-version }}
+  model-revision:
+    description: The scenario model's revision, whose configuration files are in oracle-model.
+    value: ${{ steps.model.outputs.revision }}
 runs:
   using: composite
   steps:
@@ -63,11 +66,17 @@ runs:
         python -I oracle/check_lock.py oracle/requirements.lock oracle-env.lock
     # The scenario model, as configuration only (no weights), at a pinned revision, so a change on
     # the Hub cannot change a run.
-    - name: fetch the scenario model's configuration at its pinned revision
+    # The one place the revision is written; the oracle job reads it from this action's output.
+    - id: model
+      name: fetch the scenario model's configuration at its pinned revision
       shell: bash
+      env:
+        REVISION: 7ae557604adf67be50417f59c2c2f167def9a775
       run: |
         python -I - <<'PY'
+        import os
         from huggingface_hub import snapshot_download
-        snapshot_download("Qwen/Qwen2.5-0.5B-Instruct", revision="7ae557604adf67be50417f59c2c2f167def9a775",
+        snapshot_download("Qwen/Qwen2.5-0.5B-Instruct", revision=os.environ["REVISION"],
                           local_dir="oracle-model", allow_patterns=["*.json", "*.txt"])
         PY
+        echo "revision=$REVISION" >> "$GITHUB_OUTPUT"
