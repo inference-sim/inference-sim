@@ -108,7 +108,7 @@ func newDPGroup(st settings, pricer Pricer) (*DPGroup, error) {
 		return nil, fmt.Errorf("vllm: a pricer is required: the latency kernel's, or fixed durations")
 	}
 	n := st.dp.ranks
-	g := &DPGroup{dp: &core.DP{LB: core.NewLoadBalancer(n)}, pricer: pricer, rankOf: map[string]int{}, abortedOn: map[string]int{},
+	g := &DPGroup{dp: &core.DP{LB: core.NewLoadBalancers(n, st.dp.clients)}, pricer: pricer, rankOf: map[string]int{}, abortedOn: map[string]int{},
 		queueSize: max(st.queueSize, 1), statsIntervalUs: max(st.dp.statsIntervalUs, 1), epoch: -1}
 	if st.placement != nil {
 		pl := *st.placement

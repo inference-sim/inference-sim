@@ -458,7 +458,7 @@ func sortedStrings(in []string) []string {
 }
 
 // earliestDivergence compares two traces step by step, field by field, and names the first
-// difference (#2021 B8: report the earliest divergence, not only the final mismatch).
+// difference (inference-sim issue 2021 B8: report the earliest divergence, not only the final mismatch).
 func earliestDivergence(want, got trace) string {
 	for i := 0; i < max(len(want.Steps), len(got.Steps)); i++ {
 		if i >= len(want.Steps) {

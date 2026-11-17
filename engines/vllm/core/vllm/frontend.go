@@ -63,6 +63,10 @@ func (g *DPGroup) SetFrontend(f Frontend) error {
 		return err
 	}
 	g.ranks[0].e.frontend, g.ranks[0].e.dp = f, len(g.ranks)
+	if f.APIServerCount > 0 {
+		// A stated count is the number of balancing clients; unstated leaves the group's own.
+		return g.dp.LB.SetClientCount(f.APIServerCount)
+	}
 	return nil
 }
 

@@ -539,7 +539,7 @@ func (kvc *KVCacheState) sequenceFits(req *sim.Request, startIndex, stateStart, 
 // window. reloadableEnd is the tier's ReloadablePrefixEnd; the result is capped, as batch
 // formation caps the computed baseline, below the prompt's last token and at endIndex.
 // Sizing it from startIndex instead charges the whole loaded prefix as in flight, which on a
-// pool smaller than that charge refuses the request forever, however empty the pool (#1955).
+// pool smaller than that charge refuses the request forever, however empty the pool.
 func (kvc *KVCacheState) loadedStateStart(req *sim.Request, startIndex, endIndex, reloadableEnd int64, ok bool) int64 {
 	if !ok {
 		return startIndex

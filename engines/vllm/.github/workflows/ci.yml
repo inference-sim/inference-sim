@@ -729,6 +729,13 @@ jobs:
       # FID-8). The committed answers must equal what the pinned release gives now.
       - name: the lowering's expected answers are vLLM's own
         run: python -I oracle/lower/extract.py vllm-source check core/lower/testdata/vllm_lower.json
+      # Which of Muse Spark's three fused kernels vLLM builds for a layout, and at which step sizes
+      # (core/lower MuseSparkFusionsFor), from the release's own gating code run on this CPU with
+      # the GPU, FlashInfer's MNNVL workspaces and the process group replaced.
+      - name: the Muse Spark fusion decisions are vLLM's own
+        run: |
+          catalog="$(go list -m -f '{{.Dir}}' github.com/inference-sim/blis-substrate)/catalog/models"
+          BLIS_ORACLE_CATALOG="$catalog" python -I oracle/musefusion/oracle.py vllm-source check core/lower/testdata/muse_fusions.json
       - name: every replacement the lowering oracle makes is listed
         run: |
           python3 -I oracle/lower/check_replacements.py oracle/lower/extract.py oracle/lower/replacements.json
@@ -861,6 +868,18 @@ jobs:
           python -I oracle/run_dp.py vllm-source oracle/scenarios-dp oracle/out/scenarios-dp
           python -I oracle/run_dp.py vllm-source oracle/scenarios-dp-async oracle/out/scenarios-dp-async
           python -I oracle/run_dp.py vllm-source oracle/scenarios-dp-nixl oracle/out/scenarios-dp-nixl
+          # Several load-balancing clients (api_server_count): one DPLBAsyncMPClient each.
+          mkdir -p oracle/out/scenarios-dp-clients
+          python -I oracle/run_dp.py vllm-source oracle/scenarios-dp-clients oracle/out/scenarios-dp-clients
+      # The multi-client routing is compared with the trace vLLM just produced (no committed
+      # golden), and the test must run: a skip would read as a pass (X16).
+      - name: the Go routing through several clients equals vLLM's
+        env:
+          BLIS_VLLM_DP_CLIENTS_DIR: ${{ github.workspace }}/oracle/out/scenarios-dp-clients
+        run: |
+          set -o pipefail
+          go test ./core/engine -run 'TestDPClientsAgainstVLLM' -count=1 -v | tee dpclients.log
+          grep -q -- '--- PASS: TestDPClientsAgainstVLLM/dp4-lb-clients2' dpclients.log
       - name: every tier-3 golden trace is vLLM's own output
         run: |
           python3 -I oracle/compare_goldens_t3.py core/engine/testdata/golden oracle/out/scenarios-t3

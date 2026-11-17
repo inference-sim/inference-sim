@@ -127,8 +127,13 @@ type offload struct {
 	// schedule told the worker to finish, which the next applied output reports done.
 	jobs map[engine.TransferID]int
 	ids  map[int]engine.TransferID
-	// groups are the transfers in flight's GPU blocks in each KV cache group (Job.GroupSizes).
+	// groups are the transfers in flight's GPU blocks in each KV cache group of the engine, in the
+	// scheduler's group order (Job.GroupSizes, which count only the offloaded groups, expanded: a
+	// group that is not offloaded moves no block).
 	groups map[engine.TransferID][]int
+	// kvGroups is the KV cache group of each offloaded group, and numGroups the engine's groups.
+	kvGroups  []int
+	numGroups int
 	// flushed are, by the core batch whose metadata names them, the jobs its worker finishes
 	// before the batch runs (handle_preemptions), which that batch's output reports.
 	flushed map[int][]int
@@ -196,9 +201,15 @@ func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method 
 		}
 		bpc = c.BlockSize / bs
 	}
+	// vLLM offloads only the prefix-cacheable groups (get_offloading_group_ids, offloading/config.py:38-45
+	// at v0.33.0): a ring or a bounded-replay window (DeepSeek V4.1's) is not offloaded.
 	var groups []offloading.Group
+	var kvGroups []int
 	extra := max(0, spec.PrefillLookahead-1)
 	for g := 0; g < s.KV.NumGroups(); g++ {
+		if !s.KV.PrefixCacheable(g) {
+			continue
+		}
 		spec := s.KV.GroupSpec(g)
 		gb := s.KV.GroupBlockSize(g)
 		gr := offloading.Group{BlockSize: gb}
@@ -206,6 +217,11 @@ func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method 
 			gr.Window, gr.ExtraRetained = spec.Window, extra
 		}
 		groups = append(groups, gr)
+		kvGroups = append(kvGroups, g)
+	}
+	if len(groups) == 0 {
+		return nil, fmt.Errorf("vllm: kv_offload finds no eligible KV cache group: none is prefix-cacheable " +
+			"(KV offloading found no eligible cache groups, offloading/config.py:101-102@4ba787ec)")
 	}
 	page := c.PageSize
 	if page == 0 {
@@ -235,21 +251,21 @@ func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method 
 			"cache group, whose offload path is not diff-tested (%s)", offloading.Issue)
 	}
 	// The drafter's groups core/kv flags (DeepSeek V4's), which the connector refuses (offloading.New).
-	eagle := make([]bool, s.KV.NumGroups())
-	for g := range eagle {
-		eagle[g] = spec.EagleBlockDrop && s.KV.GroupSpec(g).Eagle
+	eagle := make([]bool, len(kvGroups))
+	for i, g := range kvGroups {
+		eagle[i] = spec.EagleBlockDrop && s.KV.GroupSpec(g).Eagle
 	}
 	tiers, err := buildTiers(c, bpc, bs, offloading.ChunkBytes(c.BytesPerBlock, copies, bpc, page), chunks, tierNamespace(s, bpc, world))
 	if err != nil {
 		return nil, err
 	}
-	conn, err := offloading.New(offloading.Config{Groups: groups, BlocksPerChunk: bpc, TokensPerHash: s.KV.HashBlockSize(),
+	conn, err := offloading.New(offloading.Config{Groups: groups, KVGroups: kvGroups, BlocksPerChunk: bpc, TokensPerHash: s.KV.HashBlockSize(),
 		NumChunks: chunks, OffloadPromptOnly: promptOnly, PrefixCaching: prefixCaching, Workers: world, EagleGroups: eagle,
 		Manager: tiers.manager()})
 	if err != nil {
 		return nil, fmt.Errorf("vllm: %w", err)
 	}
-	o := &offload{conn: conn, blockSize: bs, at: at, next: new(engine.TransferID), early: map[engine.TransferID]bool{}, jobs: map[engine.TransferID]int{}, ids: map[int]engine.TransferID{},
+	o := &offload{conn: conn, kvGroups: kvGroups, numGroups: s.KV.NumGroups(), blockSize: bs, at: at, next: new(engine.TransferID), early: map[engine.TransferID]bool{}, jobs: map[engine.TransferID]int{}, ids: map[int]engine.TransferID{},
 		groups: map[engine.TransferID][]int{}, flushed: map[int][]int{}, recv: map[string]bool{}, loadReq: map[int]string{}, tiers: tiers}
 	// kv_both: the CPU tier is both stored to and loaded from.
 	if err := install(conn, sched.ConnectorConfig{Consumer: true, Producer: true}); err != nil {
@@ -276,7 +292,11 @@ func (o *offload) started(batch int, cb any) []engine.Transfer {
 		*o.next++
 		id := *o.next
 		o.jobs[id], o.ids[j.ID] = j.ID, id
-		o.groups[id] = append([]int(nil), j.GroupSizes...)
+		sizes := make([]int, o.numGroups)
+		for i, n := range j.GroupSizes {
+			sizes[o.kvGroups[i]] = n
+		}
+		o.groups[id] = sizes
 		// Tokens are the widest group's blocks: every group is at one block size (offloading.New),
 		// and a full-attention group moves every block of the range, a window only its own.
 		widest := 0

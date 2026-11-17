@@ -463,6 +463,240 @@
     "name": "VLLM_USE_V2_MODEL_RUNNER"
    }
   },
+  "api_server_count": {
+   "value_classes": {
+    "type": "numeric",
+    "thresholds": [
+     {
+      "value": 1,
+      "closed": "above"
+     },
+     {
+      "value": 2,
+      "closed": "above"
+     }
+    ],
+    "covered_classes": [
+     1,
+     2
+    ]
+   },
+   "basis": {
+    "kind": "numeric",
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": 1,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [
+       "vllm/entrypoints/cli/serve.py:149",
+       "vllm/entrypoints/cli/serve.py:70",
+       "vllm/entrypoints/cli/snapshot.py:41",
+       "vllm/entrypoints/common/cli_args.py:494",
+       "vllm/entrypoints/launchers/dp_supervisor.py:65",
+       "vllm/snapshot/server.py:191"
+      ],
+      "covered_by": []
+     },
+     {
+      "lo": 1,
+      "hi": 2,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "vllm/entrypoints/cli/serve.py:118",
+       "vllm/entrypoints/cli/serve.py:126",
+       "vllm/entrypoints/cli/serve.py:131",
+       "vllm/entrypoints/cli/serve.py:139",
+       "vllm/entrypoints/cli/serve.py:149",
+       "vllm/entrypoints/cli/serve.py:151",
+       "vllm/entrypoints/cli/serve.py:182",
+       "vllm/entrypoints/cli/serve.py:70",
+       "vllm/entrypoints/cli/snapshot.py:41",
+       "vllm/entrypoints/common/cli_args.py:494",
+       "vllm/entrypoints/launchers/dp_supervisor.py:65",
+       "vllm/snapshot/server.py:191"
+      ],
+      "covered_by": [
+       "core/engine/testdata/golden-dp/dp4-lb.json"
+      ]
+     },
+     {
+      "lo": 2,
+      "hi": null,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "vllm/entrypoints/cli/serve.py:118",
+       "vllm/entrypoints/cli/serve.py:126",
+       "vllm/entrypoints/cli/serve.py:131",
+       "vllm/entrypoints/cli/serve.py:139",
+       "vllm/entrypoints/cli/serve.py:151",
+       "vllm/entrypoints/cli/serve.py:182",
+       "vllm/entrypoints/cli/snapshot.py:41",
+       "vllm/entrypoints/launchers/dp_supervisor.py:65",
+       "vllm/snapshot/server.py:191"
+      ],
+      "covered_by": [
+       "oracle/scenarios-dp-clients/dp2-kv-pressure-clients2.json",
+       "oracle/scenarios-dp-clients/dp4-lb-clients2.json",
+       "oracle/scenarios-dp-clients/dp4-lb-clients3-lag.json"
+      ]
+     }
+    ],
+    "relations": [],
+    "sites": [
+     {
+      "at": "vllm/entrypoints/cli/serve.py:70",
+      "expr": "args.api_server_count > 0",
+      "op": "Gt",
+      "values": [
+       0
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/cli/serve.py:70",
+      "expr": "args.api_server_count is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/cli/serve.py:113",
+      "expr": "args.api_server_count is None",
+      "op": "Is",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/cli/serve.py:118",
+      "expr": "args.api_server_count > 1",
+      "op": "Gt",
+      "values": [
+       1
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/cli/serve.py:126",
+      "expr": "args.api_server_count > 1",
+      "op": "Gt",
+      "values": [
+       1
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/cli/serve.py:131",
+      "expr": "args.api_server_count > 1",
+      "op": "Gt",
+      "values": [
+       1
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/cli/serve.py:139",
+      "expr": "args.api_server_count > 1",
+      "op": "Gt",
+      "values": [
+       1
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/cli/serve.py:149",
+      "expr": "args.api_server_count < 1",
+      "op": "Lt",
+      "values": [
+       1
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/cli/serve.py:151",
+      "expr": "args.api_server_count > 1",
+      "op": "Gt",
+      "values": [
+       1
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/cli/serve.py:182",
+      "expr": "args.api_server_count > 1",
+      "op": "Gt",
+      "values": [
+       1
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/cli/snapshot.py:41",
+      "expr": "args.api_server_count not in (None, 1)",
+      "op": "NotIn",
+      "values": [
+       null,
+       1
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/common/cli_args.py:494",
+      "expr": "args.api_server_count <= 0",
+      "op": "LtE",
+      "values": [
+       0
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/common/cli_args.py:494",
+      "expr": "args.api_server_count is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/launchers/dp_supervisor.py:65",
+      "expr": "args.api_server_count not in (None, 1)",
+      "op": "NotIn",
+      "values": [
+       null,
+       1
+      ]
+     },
+     {
+      "at": "vllm/snapshot/server.py:191",
+      "expr": "args.api_server_count not in (None, 1)",
+      "op": "NotIn",
+      "values": [
+       null,
+       1
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": 1,
+      "trace": "core/engine/testdata/golden-dp/dp4-lb.json",
+      "reviewed": true
+     },
+     {
+      "value": 2,
+      "trace": "oracle/scenarios-dp-clients/dp4-lb-clients2.json",
+      "reviewed": true
+     },
+     {
+      "value": 3,
+      "trace": "oracle/scenarios-dp-clients/dp4-lb-clients3-lag.json",
+      "reviewed": true
+     },
+     {
+      "value": 2,
+      "trace": "oracle/scenarios-dp-clients/dp2-kv-pressure-clients2.json",
+      "reviewed": true
+     }
+    ],
+    "name": "api_server_count"
+   }
+  },
   "async_scheduling": {
    "value_classes": {
     "type": "boolean",
