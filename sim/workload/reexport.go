@@ -65,7 +65,7 @@ func ReExportOpenLoopAccumulateRecords(reqs []*sim.Request) ([]TraceRecord, erro
 		}
 		prev[r.SessionID] = r.ArrivalTime
 	}
-	return reExportRecords(reqs, think, "accumulate", func(r *sim.Request) int { return len(r.OutputTokens) })
+	return reExportRecords(reqs, think, "accumulate", func(r *sim.Request) int { return r.MaxOutputLen })
 }
 
 // reExportRecords is the export both entry points share; emitted is the output length the

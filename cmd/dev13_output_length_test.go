@@ -35,7 +35,7 @@ var declaredOutputLengthReaders = map[string]string{
 	"sim/cluster:ClusterSimulator.dispatchDisaggregated": "the P/D proxy's prefill leg: the engine's stop check at max_tokens 1 samples the first token of the assigned output",
 	"sim/cluster:KVTransferStartedEvent.Execute":         "hands the sampled output to the decode engine's stop check",
 	"sim/workload:RequestsToTraceRecords":                "the trace writer",
-	"sim/workload:ReExportClosedLoopRecords":             "the trace writer",
+	"sim/workload:reExportRecords":                       "the trace writer",
 }
 
 // outputLengthReadersToRemove read the sampled output where the rule gives them only the tokens
