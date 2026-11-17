@@ -5,7 +5,8 @@ name: ci-light
 # mutation shards); a pull request on any other base, a layer of a stack, runs this instead. The full set stays
 # available on any branch by workflow_dispatch (gh workflow run ci.yml --ref <branch>), and it judges the pull
 # request that merges to main: retargeting a layer to main starts it (`edited` is a type of ci.yml and
-# mutation.yml for that reason).
+# mutation.yml for that reason). An edit of a title or body that leaves the base alone runs in a group of its
+# own with every job skipped, so it cancels no run in progress and costs nothing.
 #
 # Nothing here weakens main: no rule requires a check on a layer, and the job names below (all `light - ...`)
 # differ from every required name, so a layer's check list is not read as the required set and no required name
@@ -39,8 +40,10 @@ on:
 permissions:
   contents: read
 
+# An edit of the title or body that does not change the base starts a run in a group of its own, with every
+# job skipped, so it cancels nothing; a change of base (a retarget) is judged like a push.
 concurrency:
-  group: ci-light-${{ github.event.pull_request.number }}
+  group: ci-light-${{ github.event.pull_request.number }}${{ github.event.action == 'edited' && !github.event.changes.base && '-edit' || '' }}
   cancel-in-progress: true
 
 env:
@@ -50,6 +53,7 @@ jobs:
   # What this layer changes, against its own base, and what that reaches.
   select:
     name: light - select
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -109,6 +113,7 @@ jobs:
           go test -count=1 $PACKAGES
 
   light-lint:
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     name: light - golangci-lint
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -130,6 +135,7 @@ jobs:
           args: --new-from-merge-base=${{ github.event.pull_request.base.sha }} ./...
 
   light-goldens:
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     name: light - golden provenance and reviewers
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -238,10 +244,12 @@ jobs:
       - run: go run ./cmd/metricsmanifest -sglang sglang-source -check
 
   # The oracle groups the layer reaches. Each runs the steps of the same-named shard of ci.yml and compares its
-  # traces with the committed goldens. Run after the cheap checks, as the shards of ci.yml do.
+  # traces with the committed goldens. Unlike the shards of ci.yml they do not wait for the cheap checks: a layer
+  # whose goldens are not recorded yet fails the replay tests of its packages and the golden provenance check,
+  # and the traces these groups upload are what the goldens are recorded from.
   light-oracle:
     name: light - oracle (${{ matrix.group }})
-    needs: [select, light-go, light-lint, light-goldens]
+    needs: select
     if: ${{ needs.select.outputs.groups != '[]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
