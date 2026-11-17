@@ -1082,6 +1082,24 @@ coefficients:
         - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the BatchMLAPagedAttentionWrapper[fa3] builds of FlashInfer 0.7.0.post1 and 0.7.2.post1 and the run record that names the image", role: supporting}
       rationale: >
         426,662 B/us over W, a WORK rate: W counts each query's read of its top-k records separately, and the queries of one prefill read overlapping keys, which the kernel serves from shared memory and L2 rather than HBM, so W is not HBM traffic and must not be rescaled by the part's bandwidth. 300.0 ps per (query, 64-token key slot) at glm-5.3-flash's 1024 B record x 8 heads / 64, where it was fitted; glm-5.3's 1152 B record pays 1.125x that. Every query past the top-k reads 2048 keys, so a 2048-key read costs 0.614 us a query. See attention_prefill_floor_sparse_mla (this scope) for the form, the errors and the substitutions.
+  - attention_prefill_work_scale_sparse_mla_kv_fp8:
+      value: 1.848
+      units: dimensionless
+      method: transferred
+      fitted: false
+      scope: {hardware: [h200], model: [glm-5.3, glm-5.3-flash]}
+      transferred_from: "hardware=h200"
+      transfer_rule: "measured on vLLM 0.30.0's FlashMLA sparse (fp8) and FlashAttention sparse (BF16) prefill paths on this chip at GLM-5.2's attention and used for the GLM-5.3 family at the engine's pin; no kernel hash shows the builds run the same kernels, and nothing is moved between chips"
+      ci95: [1.834, 1.862]
+      fit_range:
+        - {dim: tokens, low: 1.0, high: 16384.0}
+        - {dim: requests, low: 1.0, high: 256.0}
+        - {dim: context_tokens, low: 0.0, high: 131072.0}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate (ai-dynamo/aisim 6fdf6fb6) systems/data/h200_sxm/sparse_attention/vllm/0.30.0/dsa_context_module_perf.parquet (NVIDIA H200, sha256 316941f994be), vLLM 0.30.0, zai-org/GLM-5.2, op dsa_context_module_skip_indexer, 8 heads a rank, fp8_block projections: 984 cells above the top-k on each of FLASHMLA_SPARSE (fp8 cache) and FLASH_ATTN_MLA_SPARSE (BF16 cache)", role: primary}
+        - {kind: model, cite: "vLLM v0.32.0 v1/attention/backends/mla/flashmla_sparse.py FlashMLASparseImpl fp8_use_mixed_batch", role: supporting}
+      rationale: >
+        1.848x: a sparse-MLA prefill over an fp8_ds_mla cache costs this many times the BF16 cache's time per (query, 64-token key slot) on H200 at 8 heads a rank, measured on GLM-5.3's attention geometry. The kernel prices W at the 656 B cell as the BF16 record's W times this scale (kernel/prefill_forms.go packedFP8Prefill); without it an fp8 cache was charged 656/1152 = 0.569 of the BF16 cost, an assumption this measurement refutes. WHY DEARER: with fewer than 32 heads a rank vLLM runs an fp8_ds_mla prefill through FlashMLA's FP8 decode kernel in one mixed batch, heads padded (vllm/v1/attention/backends/mla/flashmla_sparse.py:66-75, :443-447 at v0.32.0). THE FIT: latency = a + b x K by ordinary least squares, K = batch x sum over query positions p of 64 x ceil(min(p, 2048) / 64): fp8 a 224.7 us, b 482.68 ps a slot (1.333x); BF16 a 72.8 us, b 261.14 ps a slot (1.064x). The fp8 path's intercept is 152 us above the BF16 one's; this entry does not carry it, and the family's floor stays BF16's. HELD OUT: the scale fitted on prefix <= 16,384 is 1.856 and on >= 32,768 1.786; on new tokens <= 2,048 1.852 and >= 4,096 1.772. The 95% interval is from 200 bootstrap refits over cells. BRIDGE: the BF16 path's 261.14 ps a slot here against the family's fitted FlashInfer SM90 cost, 337.5 ps a slot at GLM-5.3's record (scripts/fit_glm53_attention.py), 0.774x. Named substitutions: GLM-5.2's rows for GLM-5.3 and GLM-5.3-Flash (Flash's BF16 record is 1024 B, so its ratio is moved further), vLLM 0.30.0's kernels for the engine's pin, FLASH_ATTN_MLA_SPARSE's BF16 path as the reference for the family's FlashInfer fit. Reproduce with scripts/fit_glm53_fp8_prefill_scale.py.
   # BEGIN trtllm-gen prefill lane (written by scripts/emit_attention_trtllm_gen.py; do not edit)
   - attention_prefill_floor_trtllm_gen_kv_bf16:
       value: 18.5

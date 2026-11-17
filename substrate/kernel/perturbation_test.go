@@ -130,6 +130,10 @@ func perturbationScenarios(t *testing.T, d *load.Data, only ...string) []perturb
 					if _, err := New(f8In); err == nil {
 						out = append(out, perturbationCase{label + "/trtllm-fp8", f8In})
 					}
+					// And a DSA model at a packed fp8_ds_mla cache (dsa_prefill_fp8_test.go).
+					if pk, ok := packedSparseVariant(in); ok {
+						out = append(out, perturbationCase{label + "/packed", pk})
+					}
 					built = true
 					break
 				}

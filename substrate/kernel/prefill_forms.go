@@ -47,7 +47,7 @@ func (k *Kernel) liftPrefillForms(c *resolve.Coefficients, layers []price.Planne
 		if f, ok := k.prefillFamily(c, suffix,
 			"no measured prefill form for "+suffix+" attention, so its prefill is priced "+
 				"with the part-wide prefill pair on the attention FLOPs"); ok {
-			k.attentionPrefillByKind[kind] = f
+			k.attentionPrefillByKind[kind] = k.packedFP8Prefill(c, f, layers, suffix)
 		}
 	}
 	for role := range roles {
@@ -70,6 +70,57 @@ func (k *Kernel) liftPrefillForms(c *resolve.Coefficients, layers []price.Planne
 			k.mhcPre, k.mhcPost = floorRate{}, floorRate{}
 		}
 	}
+}
+
+// packedFP8Prefill is the sparse-MLA prefill form as it applies to a cache stored in the packed
+// fp8_ds_mla cell, where the registry measures how much dearer that path is than the BF16 one the
+// form was fitted on (attention_prefill_work_scale_<kind>_kv_fp8, time per key slot fp8 over
+// BF16).
+//
+// The form's W counts the layer's record, and a layer that states no cache of its own (a DSA
+// layer) takes the engine's cell for it: 656 B at fp8_ds_mla against 1152 B for GLM-5.3's BF16
+// latent. Without the scale an fp8 cache was charged 656/1152 of the BF16 cost, as if the kernel
+// read and computed per byte. It does not: with fewer than 32 heads a rank, vLLM runs an
+// fp8_ds_mla prefill through FlashMLA's FP8 decode kernel in one mixed batch, its heads padded
+// (MIN_HEADS_FOR_BF16_PREFILL, fp8_use_mixed_batch, vllm/v1/attention/backends/mla/
+// flashmla_sparse.py:66-75 and :443-447 at v0.32.0). So the rate is moved to price W at the
+// cell as the BF16 record's W times the measured scale. Where the entry is absent, or the
+// layers state their own cache records, the form is used as fitted.
+func (k *Kernel) packedFP8Prefill(c *resolve.Coefficients, f prefillForm,
+	layers []price.PlannedLayer, suffix string) prefillForm {
+	cell := k.low.Cache.LatentCellBytes
+	if k.low.Cache.Record != "fp8_ds_mla" || cell <= 0 {
+		return f
+	}
+	name := "attention_prefill_work_scale_" + suffix + "_kv_fp8"
+	bf16 := 0.0
+	for _, l := range layers {
+		if l.AttnQHeads <= 0 || string(l.AttnKind) != suffix {
+			continue
+		}
+		if len(l.AttnCaches) > 0 {
+			// The record is the graph's, not the engine cell, so the cell's ratio is not the
+			// form's.
+			return f
+		}
+		r := price.KVBytesPerToken(l.AttnKVHeads, k.layout.TP, l.AttnHeadDim, 1, 2, true)
+		if bf16 > 0 && r != bf16 {
+			k.assume(name, "not applied", "the "+suffix+" layers' BF16 records differ, so one "+
+				"scale on the cell does not state each layer's ratio")
+			return f
+		}
+		bf16 = r
+	}
+	if bf16 <= 0 {
+		return f
+	}
+	scale := k.optional(c, name, true, "an fp8_ds_mla cache's sparse prefill is charged its "+
+		"cell's share of the BF16 form's work, as if the kernel's time scaled with the record")
+	if scale <= 0 {
+		return f
+	}
+	f.rate *= cell / (bf16 * scale)
+	return f
 }
 
 // prefillFamily reads one prefill family by its suffix, recording the rate's absence as

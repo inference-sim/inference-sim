@@ -101,6 +101,9 @@ WRITERS = [
     # module ($AISIM_GLM53_DATA, a second pin, rederive.yml) net of the generated rest-of-module
     # file, whose own staleness check is kernel/glm53_attention_rest_test.go.
     ("fit_glm53_attention.py", "the GLM-5.3 family's h200 sparse-MLA prefill entries"),
+    # The same family's fp8_ds_mla scale on that form, from aisim's h200 DSA context table at the
+    # same pin ($AISIM_GLM53_DATA), BF16 and fp8 caches measured on one collector.
+    ("fit_glm53_fp8_prefill_scale.py", "the GLM-5.3 family's h200 fp8 sparse-MLA prefill scale"),
 ]
 
 # relane_attention_mla.py is DELIBERATELY ABSENT from both lists, and this records why so

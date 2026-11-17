@@ -110,7 +110,7 @@ jobs:
             python/aisimulate/src/aisimulate_core/systems/data/h100_sxm/comm
             python/aisimulate/src/aisimulate_core/systems/data/h200_sxm/comm
 
-      - name: Check out aisim at the GLM-5.3 pin (the h200 GLM-5.3 attention module only)
+      - name: Check out aisim at the GLM-5.3 pin (the h200 GLM-5.3 attention module and DSA context table only)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ai-dynamo/aisim
@@ -119,6 +119,7 @@ jobs:
           fetch-depth: 1
           sparse-checkout: |
             python/aisim/src/aisim_core/systems/data/h200_sxm/glm53_attention
+            python/aisim/src/aisim_core/systems/data/h200_sxm/sparse_attention/vllm/0.30.0
 
       - name: Check out blis-vllm's kernel_impls.json (pinned)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
