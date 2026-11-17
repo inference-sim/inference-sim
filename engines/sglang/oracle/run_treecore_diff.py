@@ -12,7 +12,8 @@ the KV events it queued (SGL-5: both cores must merge them the same way).
 
 A difference is a known divergence when oracle/treecore-divergences.json lists it, with the
 sequence, the call's position among the driver's calls, what differs and the open issue that
-records it (X28). The run fails on an unlisted difference, on a listed one that no longer occurs,
+records it (X28); that the issue is still open is the nightly X28 job's check, not this run's. The
+run fails on an unlisted difference, on a listed one that no longer occurs,
 and when SGLang builds the Python core where the Rust one was asked for (a fallback,
 tree_core_registry.py:44-120, would compare the Python core with itself).
 

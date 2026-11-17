@@ -206,7 +206,8 @@ jobs:
   # S45 (design §6.4, SGL-1, SGL-5): SGLang's Rust tree core, its production default on Linux,
   # against the Python one the oracle pins, on every cache sequence. The Rust core is built from
   # the pinned checkout (rust/sglang-radix-tree, cargo build --locked) with the toolchain its
-  # rust-toolchain.toml pins. A difference passes only when oracle/treecore-divergences.json lists
+  # rust-toolchain.toml pins: SGLang's default build mode builds from a source checkout
+  # (tree_core_registry.py:75-87), and the runner refuses a fallback to the Python core. A difference passes only when oracle/treecore-divergences.json lists
   # it with an open issue.
   treecore-diff:
     name: treecore-diff
@@ -230,7 +231,6 @@ jobs:
           ORACLE_LOCKFILE: oracle-env.lock
           ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
           HF_HUB_OFFLINE: "1"
-          SGLANG_RUST_BUILD_MODE: force
         run: |
           set -euo pipefail
           export ORACLE_MODEL="$PWD/oracle-model"
