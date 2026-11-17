@@ -43,6 +43,12 @@ layer_kinds:
   - op: Elementwise
     role: input_norm
   - op: GEMM
+    role: router
+    n: 512
+    k: 8192
+    tp: replicated
+    weight_dtype: bf16
+  - op: GEMM
     role: routed_expert_down_proj
     n: 2048
     k: 8192
@@ -53,13 +59,25 @@ layer_kinds:
     k: 8192
     experts: 512
     top_k: 22
-    shared_experts: 1
-    shared_intermediate_size: 10240
     latent_size: 2048
   - op: GEMM
     role: routed_expert_up_proj
     n: 8192
     k: 2048
+  - op: GEMM
+    role: shared_up
+    n: 10240
+    k: 8192
+    tp: column
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 40960
+  - op: GEMM
+    role: shared_down
+    n: 8192
+    k: 10240
+    tp: row
   - op: All2All
     role: moe_dispatch_combine
     emit: expert_parallel
@@ -77,6 +95,14 @@ layer_kinds:
     - 4
   - - 4
     - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
 - id: attention
   nodes:
   - op: Elementwise

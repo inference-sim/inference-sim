@@ -158,6 +158,12 @@ layer_kinds:
     emit: tensor_parallel
   - op: Elementwise
     role: post_attn_norm
+  - op: GEMM
+    role: router
+    n: 256
+    k: 6144
+    tp: replicated
+    weight_dtype: bf16
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -166,14 +172,20 @@ layer_kinds:
     experts: 256
     top_k: 8
     weight_dtype: nvfp4
-  - op: GroupedGEMM
-    shared: true
-    role: shared_experts
-    n: 2048
+  - op: GEMM
+    role: shared_gate_up
+    n: 4096
     k: 6144
-    experts: 1
-    top_k: 1
-    weight_dtype: bf16
+    tp: column
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 12288
+  - op: GEMM
+    role: shared_down
+    n: 6144
+    k: 2048
+    tp: row
   - op: All2All
     role: moe_dispatch_combine
     emit: expert_parallel
@@ -209,6 +221,14 @@ layer_kinds:
     - 13
   - - 13
     - 14
+  - - 14
+    - 15
+  - - 15
+    - 16
+  - - 16
+    - 17
+  - - 17
+    - 18
 - id: attn_moe_noindex
   nodes:
   - op: Elementwise
@@ -246,6 +266,12 @@ layer_kinds:
     emit: tensor_parallel
   - op: Elementwise
     role: post_attn_norm
+  - op: GEMM
+    role: router
+    n: 256
+    k: 6144
+    tp: replicated
+    weight_dtype: bf16
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -254,14 +280,20 @@ layer_kinds:
     experts: 256
     top_k: 8
     weight_dtype: nvfp4
-  - op: GroupedGEMM
-    shared: true
-    role: shared_experts
-    n: 2048
+  - op: GEMM
+    role: shared_gate_up
+    n: 4096
     k: 6144
-    experts: 1
-    top_k: 1
-    weight_dtype: bf16
+    tp: column
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 12288
+  - op: GEMM
+    role: shared_down
+    n: 6144
+    k: 2048
+    tp: row
   - op: All2All
     role: moe_dispatch_combine
     emit: expert_parallel
@@ -291,6 +323,14 @@ layer_kinds:
     - 10
   - - 10
     - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+  - - 14
+    - 15
 - id: mtp_moe
   nodes:
   - op: Elementwise
@@ -344,6 +384,12 @@ layer_kinds:
     emit: tensor_parallel
   - op: Elementwise
     role: post_attn_norm
+  - op: GEMM
+    role: router
+    n: 256
+    k: 6144
+    tp: replicated
+    weight_dtype: bf16
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -351,7 +397,20 @@ layer_kinds:
     k: 6144
     experts: 256
     top_k: 8
-    shared_experts: 1
+  - op: GEMM
+    role: shared_gate_up
+    n: 4096
+    k: 6144
+    tp: column
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 12288
+  - op: GEMM
+    role: shared_down
+    n: 6144
+    k: 2048
+    tp: row
   - op: All2All
     role: moe_dispatch_combine
     emit: expert_parallel
@@ -387,6 +446,14 @@ layer_kinds:
     - 13
   - - 13
     - 14
+  - - 14
+    - 15
+  - - 15
+    - 16
+  - - 16
+    - 17
+  - - 17
+    - 18
 stack:
   prologue:
   - attn_dense_indexed
