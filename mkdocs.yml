@@ -106,6 +106,7 @@ nav:
       - Admission Control: guide/admission.md
       - Scheduling & Priority: guide/scheduling.md
       - "Latency Kernel": guide/latency-models.md
+      - "SGLang Scenarios": guide/sglang.md
       - KV Cache & Memory: guide/kv-cache.md
       - LoRA Adapters: guide/lora.md
       - Workload Specifications: guide/workloads.md

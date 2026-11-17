@@ -6,7 +6,6 @@ import (
 	"io"
 	"math"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -277,16 +276,21 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	// A fresh adoption starts with no scenario facts recorded (tests adopt more than once).
 	scenarioScheduler, scenarioOverrides = "", nil
 	scenarioRouter, scenarioStatesRouter = routerInputs{}, false
-	in := adoptInputs(cmd)
 	// The engine is selected, and a release this build does not run refused (LIF-6), before the
 	// deployment is read: no other check runs on a scenario this build cannot run.
 	if kernelScenario != "" && kernelScenarioDir != "" {
-		ref, err := selectEngine(filepath.Join(kernelScenarioDir, kernelScenario))
+		ref, err := selectEngine(engineScenarioPath())
 		if err != nil {
 			logrus.Fatalf("%v", err)
 		}
 		scenarioEngine = ref
+		if ref.Kind == engineKindSGLang {
+			if err := adoptSGLangTwin(); err != nil {
+				logrus.Fatalf("%v", err)
+			}
+		}
 	}
+	in := adoptInputs(cmd)
 	a, err := adoptScenario(in)
 	if err != nil {
 		logrus.Fatalf("%v", err)
