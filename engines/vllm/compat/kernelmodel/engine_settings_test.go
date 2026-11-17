@@ -550,8 +550,8 @@ func TestIndexerKVDTypeIsReadForMiniMaxM3Only(t *testing.T) {
 // rules/v0_32/testdata/vllm_indexer_kv_dtype.json is that function's output). auto and fp8 are the
 // 132-byte record the catalog graph states, so they are accepted and leave the KV layers unchanged;
 // bf16 and nvfp4 are refused with vLLM's reason, fp8_e4m3 is not a member of the dtype's type, and
-// mxfp4 is vLLM's refusal below SM10x and, on SM10x, the kernel's: its 68-byte record is not what
-// the graph (one cache dtype per index record) prices.
+// mxfp4 is vLLM's refusal below SM10x and, on SM10x, accepted with its 68-byte record in place of
+// every 132-byte one (lowerIndexerKV).
 func TestIndexerKVDTypeOnDeepSeekV4IsVLLMsOwnResolution(t *testing.T) {
 	open := func(fixture, chip, dtype string) ([]KVLayerRun, error) {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "kerneltests", "testdata", fixture))
@@ -585,9 +585,8 @@ func TestIndexerKVDTypeOnDeepSeekV4IsVLLMsOwnResolution(t *testing.T) {
 		return m.KVLayers()
 	}
 	const (
-		kernel = "latency kernel keys the index record by one cache dtype"
-		vllm   = "is not supported by the DeepSeek sparse indexer (expected one of ('fp8', 'mxfp4'))."
-		sm10   = "requires Blackwell datacenter GPUs"
+		vllm = "is not supported by the DeepSeek sparse indexer (expected one of ('fp8', 'mxfp4'))."
+		sm10 = "requires Blackwell datacenter GPUs"
 	)
 	for _, f := range []struct {
 		name, fixture, chip string
@@ -625,8 +624,28 @@ func TestIndexerKVDTypeOnDeepSeekV4IsVLLMsOwnResolution(t *testing.T) {
 				{"bf16", []string{vllm}},
 				{"nvfp4", []string{vllm}},
 				{"fp8_e4m3", []string{"Input should be 'auto', 'bf16', 'fp8', 'mxfp4' or 'nvfp4'"}},
-				{"mxfp4", map[bool][]string{false: {sm10}, true: {kernel, "68 bytes"}}[f.blackwell]},
+				{"mxfp4", []string{sm10}},
 			} {
+				if c.dtype == "mxfp4" && f.blackwell {
+					got, err := open(f.fixture, f.chip, c.dtype)
+					if err != nil {
+						t.Errorf("indexer_kv_dtype mxfp4: %v", err)
+						continue
+					}
+					n68, n132 := 0, 0
+					for _, r := range got {
+						if r.Spec == "mla" && r.HeadSize == 68 {
+							n68++
+						}
+						if r.Spec == "mla" && r.HeadSize == 132 {
+							n132++
+						}
+					}
+					if n68 != index || n132 != 0 {
+						t.Errorf("indexer_kv_dtype mxfp4: %d 68-byte and %d 132-byte index runs, want %d and 0", n68, n132, index)
+					}
+					continue
+				}
 				_, err := open(f.fixture, f.chip, c.dtype)
 				if err == nil {
 					t.Errorf("indexer_kv_dtype %s: accepted", c.dtype)
