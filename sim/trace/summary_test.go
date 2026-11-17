@@ -181,3 +181,35 @@ func TestSummarize_PDFields_EmptyPDRecords_ZeroValues(t *testing.T) {
 		t.Errorf("MeanTransferDuration: expected 0, got %f", summary.MeanTransferDuration)
 	}
 }
+
+func TestSummarize_PrefillPicksAreCountedApartFromRoutingPicks(t *testing.T) {
+	// GIVEN a disaggregated trace: each request has a decode pick (Routings) and a prefill pick
+	st := NewSimulationTrace(TraceConfig{Level: TraceLevelDecisions})
+	for i, pick := range []struct{ prefill, decode string }{{"p_0", "d_0"}, {"p_1", "d_0"}, {"p_0", "d_1"}} {
+		id := string(rune('a' + i))
+		st.RecordAdmission(AdmissionRecord{RequestID: id, Admitted: true})
+		st.RecordDisaggregation(DisaggregationRecord{RequestID: id, Disaggregate: true})
+		st.RecordRouting(RoutingRecord{RequestID: id, ChosenInstance: pick.decode})
+		st.RecordPrefillRouting(PrefillRoutingRecord{ParentRequestID: id, ChosenInstance: pick.prefill})
+	}
+
+	// WHEN summarized
+	summary := Summarize(st)
+
+	// THEN each table counts its own pool's picks, and neither holds the other's instances
+	wantPrefill := map[string]int{"p_0": 2, "p_1": 1}
+	wantDecode := map[string]int{"d_0": 2, "d_1": 1}
+	for id, n := range wantPrefill {
+		if summary.PrefillDistribution[id] != n {
+			t.Errorf("PrefillDistribution[%s] = %d, want %d", id, summary.PrefillDistribution[id], n)
+		}
+	}
+	for id, n := range wantDecode {
+		if summary.TargetDistribution[id] != n {
+			t.Errorf("TargetDistribution[%s] = %d, want %d", id, summary.TargetDistribution[id], n)
+		}
+	}
+	if len(summary.PrefillDistribution) != len(wantPrefill) || len(summary.TargetDistribution) != len(wantDecode) {
+		t.Errorf("tables = prefill %v, decode %v; want %v and %v", summary.PrefillDistribution, summary.TargetDistribution, wantPrefill, wantDecode)
+	}
+}

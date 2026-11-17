@@ -8,7 +8,12 @@ type TraceSummary struct {
 	MeanRegret         float64
 	MaxRegret          float64
 	UniqueTargets      int
-	TargetDistribution map[string]int // instance ID → count of requests routed via standard routing only (not PD pool routing); use PrefillRoutings for prefill-pool counts
+	TargetDistribution map[string]int // instance ID → count of routing picks in Routings: the instance that serves the request, and in a disaggregated run the decode pick (the prefill pick is PrefillDistribution)
+
+	// PrefillDistribution is instance ID → count of prefill-pool picks (PrefillRoutings); empty
+	// when no request was disaggregated. Its counts sum to the number of PrefillRoutings, which
+	// equals DisaggregatedCount unless a request found no routable prefill instance.
+	PrefillDistribution map[string]int
 
 	// PD disaggregation summary (zero when disaggregation is not configured)
 	DisaggregationCount  int     // number of disaggregation decisions recorded (true and false combined)
@@ -21,7 +26,8 @@ type TraceSummary struct {
 // Safe for nil or empty traces (returns zero-value fields).
 func Summarize(st *SimulationTrace) *TraceSummary {
 	summary := &TraceSummary{
-		TargetDistribution: make(map[string]int),
+		TargetDistribution:  make(map[string]int),
+		PrefillDistribution: make(map[string]int),
 	}
 	if st == nil {
 		return summary
@@ -48,7 +54,11 @@ func Summarize(st *SimulationTrace) *TraceSummary {
 		summary.MeanRegret = totalRegret / float64(len(st.Routings))
 	}
 
-	// UniqueTargets counts distinct instances in TargetDistribution (standard routing only, not PD pool routing).
+	for _, r := range st.PrefillRoutings {
+		summary.PrefillDistribution[r.ChosenInstance]++
+	}
+
+	// UniqueTargets counts distinct instances in TargetDistribution (the routing picks, not the prefill picks).
 	summary.UniqueTargets = len(summary.TargetDistribution)
 
 	// PD disaggregation summary
