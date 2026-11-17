@@ -9848,3 +9848,17 @@ def test_qwen4_exp_modelopt_mixed_precision_places_the_experts_and_nothing_else(
     assert width("mtp.layers.0.mlp.experts") == "fp8"
     assert width("language_model.model.layers.0.linear_attn.in_proj_qkvz") is None
     assert width("language_model.model.layers.0.mlp.shared_expert.gate_up_proj") is None
+
+
+def test_qwen4_exp_fused_expert_tensors_are_one_unquantized_module(tmp_path):
+    """RadixArk's NVFP4 conversion leaves the MTP layer's experts as two fused BF16 tensors with no
+    .weight suffix. The module they form is read from the header; a quantized fused tensor is refused."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    fused = {"mtp.layers.0.mlp.experts.gate_up_proj": {"dtype": "BF16", "shape": [16, 64, 256]},
+             "mtp.layers.0.mlp.experts.down_proj": {"dtype": "BF16", "shape": [16, 256, 32]},
+             "mtp.layers.0.mlp.gate.weight": {"dtype": "BF16", "shape": [16, 256]}}
+    assert derive_graph.header_module_widths(fused, "x")["mtp.layers.0.mlp.experts"] is None
+    bad = {"mtp.layers.0.mlp.experts.down_proj": {"dtype": "F8_E4M3", "shape": [16, 256, 32]}}
+    with pytest.raises(deriver().DeriveError, match="fused expert tensor"):
+        derive_graph.header_module_widths(bad, "x")

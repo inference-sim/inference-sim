@@ -402,6 +402,7 @@ MODELOPT_PER_NODE_ARCHS = frozenset({
     "KimiK25ForConditionalGeneration",
     "MiniMaxM2ForCausalLM",
     "Qwen3_5MoeForConditionalGeneration",
+    "Qwen4ExpForConditionalGeneration",
     "GlmMoeDsaForCausalLM",
     "Glm5NextForConditionalGeneration",
     "NemotronHForCausalLM",
@@ -932,6 +933,15 @@ def header_module_widths(headers: dict[str, dict[str, Any]], model: str) -> dict
     BF16, F16 or F32 weight is unquantized. Any other layout is refused, never guessed."""
     out: dict[str, str | None] = {}
     for name, t in headers.items():
+        # A fused routed-expert tensor (gate_up_proj / down_proj of every expert in one tensor,
+        # which Qwen3Next's FusedMoE loads without a .weight suffix) is the module `<...>.experts`.
+        parent, _, leaf = name.rpartition(".")
+        if parent.endswith(".experts") and leaf in ("gate_up_proj", "down_proj"):
+            if t.get("dtype") not in ("BF16", "F16", "F32"):
+                raise DeriveError(f"{model}: {name} is a fused expert tensor stored {t.get('dtype')}; "
+                                  f"this deriver reads one only unquantized")
+            out[parent] = None
+            continue
         if not name.endswith(".weight"):
             continue
         module, dtype = name[:-len(".weight")], t.get("dtype")
