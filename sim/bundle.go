@@ -65,6 +65,12 @@ type AnalyzerBundleConfig struct {
 	AvgInputTokens    float64 `yaml:"avg_input_tokens"`
 	// MinReplicas is the fewest ready replicas scale-down leaves a model; 0 means the default, 1.
 	MinReplicas int `yaml:"min_replicas"`
+	// Kind selects the analyzer: v2-saturation (the default) or threshold (#2063). Signal and Target
+	// belong to threshold: the per-replica signal (in_flight, queue_depth, kv_utilization) and the
+	// value one replica is sized for.
+	Kind   string  `yaml:"kind"`
+	Signal string  `yaml:"signal"`
+	Target float64 `yaml:"target"`
 }
 
 // InstanceLifecycleBundleConfig holds instance lifecycle timing for YAML loading.

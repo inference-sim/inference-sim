@@ -144,6 +144,9 @@ type DeploymentConfig struct {
 	// Zero values are safe: NewClusterSimulator applies WVA reference defaults
 	// (KvCacheThreshold=0.8, ScaleUpThreshold=0.8, ScaleDownBoundary=0.4, AvgInputTokens=512).
 	AutoscalerAnalyzerConfig V2SaturationAnalyzerConfig `yaml:"autoscaler_analyzer,omitempty"`
+	// AutoscalerAnalyzer selects the analyzer (inference-sim#2063): v2-saturation (the default, whose
+	// thresholds are AutoscalerAnalyzerConfig) or threshold, a target-value rule on one signal.
+	AutoscalerAnalyzer AnalyzerSelection `yaml:"autoscaler_analyzer_selection,omitempty"`
 }
 
 // resolveConfigForRole returns the configuration an instance in the given pool role is built

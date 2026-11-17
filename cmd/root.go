@@ -817,6 +817,7 @@ var runCmd = &cobra.Command{
 			bundleHPAScrapeDelayMean             float64
 			bundleHPAScrapeDelayStddev           float64
 			bundleAnalyzerCfg                    cluster.V2SaturationAnalyzerConfig
+			bundleAnalyzerSel                    cluster.AnalyzerSelection
 			bundleNodePools                      []cluster.NodePoolConfig
 			poolChips                            map[string]*poolChip
 			bundleInstanceLifecycle              cluster.InstanceLifecycleConfig
@@ -828,6 +829,11 @@ var runCmd = &cobra.Command{
 				bundleScaleDownStabilizationWindowUs = bundle.Autoscaler.ScaleDownStabilizationWindowUs
 				bundleHPAScrapeDelayMean = bundle.Autoscaler.HPAScrapeDelay.Mean
 				bundleHPAScrapeDelayStddev = bundle.Autoscaler.HPAScrapeDelay.Stddev
+				bundleAnalyzerSel = cluster.AnalyzerSelection{Kind: bundle.Autoscaler.Analyzer.Kind,
+					Signal: bundle.Autoscaler.Analyzer.Signal, Target: bundle.Autoscaler.Analyzer.Target}
+				if err := bundleAnalyzerSel.Validate(); err != nil {
+					logrus.Fatalf("policy bundle: %v", err)
+				}
 				bundleAnalyzerCfg = cluster.V2SaturationAnalyzerConfig{
 					KvCacheThreshold:  bundle.Autoscaler.Analyzer.KVCacheThreshold,
 					ScaleUpThreshold:  bundle.Autoscaler.Analyzer.ScaleUpThreshold,
@@ -964,6 +970,7 @@ var runCmd = &cobra.Command{
 			ScaleDownStabilizationWindowUs: bundleScaleDownStabilizationWindowUs,
 			HPAScrapeDelay:                 cluster.DelaySpec{Mean: bundleHPAScrapeDelayMean, Stddev: bundleHPAScrapeDelayStddev},
 			AutoscalerAnalyzerConfig:       bundleAnalyzerCfg,
+			AutoscalerAnalyzer:             bundleAnalyzerSel,
 			NodePools:                      bundleNodePools,
 			ScenarioEndpointTopology:       cluster.StaticEndpointTopology(scenarioTopology),
 			InstanceLifecycle:              bundleInstanceLifecycle,
