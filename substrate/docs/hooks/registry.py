@@ -48,9 +48,11 @@ REPO_URL = "https://github.com/inference-sim/blis-substrate"
 
 # Column order for parts: by generation, then anything new alphabetically. A part absent
 # from this list still renders; it only sorts last.
-# Scope keys beyond hardware a matrix row can carry as a label: a model-scoped or
-# fabric-scoped entry is a different row from the part-wide one of the same name.
-TAGGED_SCOPES = {"model", "fabric"}
+# Scope keys beyond hardware a matrix row can carry as a label: a model-, fabric- or
+# tensor-parallel-width-scoped entry is a different row from the part-wide one of the same name
+# (the kernel admits it only for that deployment). The memory set scopes its per-model
+# start-up terms by tp, since a rank's graph buffers follow its width.
+TAGGED_SCOPES = {"model", "fabric", "tp"}
 
 PART_ORDER = [
     "l40s", "a100-sxm", "a100-80", "h100", "h200",
@@ -351,7 +353,7 @@ def matrix(s: CoefficientSet):
             raise PluginError(
                 f"registry hook: {s.name}:{e.line} {e.name} is scoped by "
                 f"{sorted(set(e.other_scope) - TAGGED_SCOPES)}; the matrix view shows hardware, "
-                f"model and fabric scopes only. Extend the hook.")
+                f"model, fabric and tp scopes only. Extend the hook.")
         if not e.hardware and set(e.other_scope) == {"fabric"}:
             # A fabric-only entry (cost-model-fabric) belongs to a network, not a part: its
             # columns are the fabrics it names.
