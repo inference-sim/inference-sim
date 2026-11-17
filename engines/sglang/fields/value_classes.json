@@ -5,5 +5,4721 @@
   "version": "0.5.23"
  },
  "limits": "Comparisons are found where the field, or a name the same function assigned from it, is compared with a literal: ==, !=, <, <=, >, >=, in, not in, is None, is not None, and a bare truth test. A value passed to another function, stored in a container or computed before the comparison is not followed, and a ServerArgs field is recognised only through the base names listed in CONFIG_BASES. The classes under-approximate what SGLang does with the field: a field with one class is one no scanned comparison singles out, not one SGLang treats alike at every value.",
- "fields": {}
+ "fields": {
+  "attention_backend": {
+   "value_classes": {
+    "type": "enumerated",
+    "covered": [
+     "dsa",
+     "dsv4",
+     "fa3",
+     "flashinfer",
+     "trtllm_mha"
+    ],
+    "values": [
+     "triton",
+     "torch_native",
+     "flex_attention",
+     "dsa",
+     "nsa",
+     "qsa",
+     "dsv4",
+     "compressed",
+     "fa3",
+     "fa4",
+     "flashinfer",
+     "llada2_cfg_flashinfer",
+     "flashmla",
+     "trtllm_mla",
+     "cutedsl_mla",
+     "tokenspeed_mla",
+     "trtllm_mha",
+     "hpc_ops",
+     "minicpm_flashattn",
+     "minicpm_flashinfer",
+     "aiter",
+     "wave",
+     "intel_amx",
+     "ascend",
+     "intel_xpu"
+    ]
+   },
+   "basis": {
+    "name": "attention_backend",
+    "kind": "enumerated",
+    "sites": [
+     {
+      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:48",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.attention_backend"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/mamba_hook.py:161",
+      "op": "NotEq",
+      "values": [
+       "trtllm_mha"
+      ],
+      "expr": "view.attention_backend != 'trtllm_mha'"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_hook.py:897",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.attention_backend"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_override_base.py:179",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.attention_backend is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/deepseek_v2.py:181",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.attention_backend is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/embedding_gemma2.py:39",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.attention_backend is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/falcon_h1.py:17",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.attention_backend is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/gemma4.py:43",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.attention_backend is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/granitemoehybrid.py:18",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.attention_backend is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/iquest_q1.py:45",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.attention_backend is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/iquest_q1.py:47",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.attention_backend is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/lfm2.py:15",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.attention_backend is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/llama4.py:23",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.attention_backend is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/minicpmv.py:16",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.attention_backend is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/olmo2.py:24",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.attention_backend is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/qwen3_5.py:26",
+      "op": "IsNot",
+      "values": [
+       null
+      ],
+      "expr": "cfg.attention_backend is not None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/qwen3_vl.py:129",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.attention_backend is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/qwen4_exp.py:57",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.attention_backend is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1098",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "view.attention_backend is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1132",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "view.attention_backend is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1148",
+      "op": "Eq",
+      "values": [
+       "flashmla"
+      ],
+      "expr": "view.attention_backend == 'flashmla'"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1156",
+      "op": "Eq",
+      "values": [
+       "trtllm_mla"
+      ],
+      "expr": "view.attention_backend == 'trtllm_mla'"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1165",
+      "op": "Eq",
+      "values": [
+       "cutedsl_mla"
+      ],
+      "expr": "view.attention_backend == 'cutedsl_mla'"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1175",
+      "op": "Eq",
+      "values": [
+       "trtllm_mha"
+      ],
+      "expr": "view.attention_backend == 'trtllm_mha'"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1189",
+      "op": "Eq",
+      "values": [
+       "hpc_ops"
+      ],
+      "expr": "view.attention_backend == 'hpc_ops'"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1207",
+      "op": "Eq",
+      "values": [
+       "trtllm_mla"
+      ],
+      "expr": "view.attention_backend == 'trtllm_mla'"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1236",
+      "op": "Eq",
+      "values": [
+       "cutedsl_mla"
+      ],
+      "expr": "view.attention_backend == 'cutedsl_mla'"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1264",
+      "op": "Eq",
+      "values": [
+       "fa3"
+      ],
+      "expr": "view.attention_backend == 'fa3'"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1277",
+      "op": "Eq",
+      "values": [
+       "fa4"
+      ],
+      "expr": "view.attention_backend == 'fa4'"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1303",
+      "op": "Eq",
+      "values": [
+       "intel_amx"
+      ],
+      "expr": "view.attention_backend == 'intel_amx'"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1312",
+      "op": "Eq",
+      "values": [
+       "intel_xpu"
+      ],
+      "expr": "view.attention_backend == 'intel_xpu'"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1698",
+      "op": "NotIn",
+      "values": [
+       "triton",
+       "aiter"
+      ],
+      "expr": "view.attention_backend not in ['triton', 'aiter']"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1704",
+      "op": "NotEq",
+      "values": [
+       "ascend"
+      ],
+      "expr": "view.attention_backend != 'ascend'"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1710",
+      "op": "NotEq",
+      "values": [
+       "flashinfer"
+      ],
+      "expr": "view.attention_backend != 'flashinfer'"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1776",
+      "op": "NotIn",
+      "values": [
+       null,
+       "triton"
+      ],
+      "expr": "view.attention_backend not in (None, 'triton')"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/platform_hook.py:161",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.attention_backend is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/speculative_hook.py:1359",
+      "op": "NotEq",
+      "values": [
+       "flashinfer"
+      ],
+      "expr": "view.attention_backend != 'flashinfer'"
+     },
+     {
+      "at": "python/sglang/srt/server_args.py:607",
+      "op": "Eq",
+      "values": [
+       "trtllm_mha"
+      ],
+      "expr": "args.attention_backend == 'trtllm_mha'"
+     }
+    ],
+    "stated": [
+     {
+      "value": "flashinfer",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashinfer",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsa",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsa",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashinfer",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashinfer",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashinfer",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashinfer",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsv4",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsv4",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "trtllm_mha",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsa",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsa",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsa",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsv4",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsa",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsv4",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsv4",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsv4",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsv4",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsv4",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsv4",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsv4",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsv4",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsa",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsa",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsa",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsa",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "dsa",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "trtllm_mha",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "flashinfer",
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": "fa3",
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": "flashinfer",
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": "flashinfer",
+      "trace": "lower/testdata/sglang_lower.json"
+     }
+    ],
+    "classes": [
+     {
+      "values": [
+       "triton"
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/overrides.py:1698",
+       "python/sglang/srt/arg_groups/overrides.py:1776"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       "fa3"
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/overrides.py:1264"
+      ],
+      "covered_by": [
+       "config/testdata/serverargs.json",
+       "lower/testdata/sglang_lower.json"
+      ]
+     },
+     {
+      "values": [
+       "fa4"
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/overrides.py:1277"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       "flashinfer"
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/overrides.py:1710",
+       "python/sglang/srt/arg_groups/speculative_hook.py:1359"
+      ],
+      "covered_by": [
+       "config/testdata/serverargs.json",
+       "lower/testdata/sglang_lower.json"
+      ]
+     },
+     {
+      "values": [
+       "flashmla"
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/overrides.py:1148"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       "trtllm_mla"
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/overrides.py:1156",
+       "python/sglang/srt/arg_groups/overrides.py:1207"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       "cutedsl_mla"
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/overrides.py:1165",
+       "python/sglang/srt/arg_groups/overrides.py:1236"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       "trtllm_mha"
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/mamba_hook.py:161",
+       "python/sglang/srt/arg_groups/overrides.py:1175",
+       "python/sglang/srt/server_args.py:607"
+      ],
+      "covered_by": [
+       "config/testdata/serverargs.json"
+      ]
+     },
+     {
+      "values": [
+       "hpc_ops"
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/overrides.py:1189"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       "aiter"
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/overrides.py:1698"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       "intel_amx"
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/overrides.py:1303"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       "ascend"
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/overrides.py:1704"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       "intel_xpu"
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/overrides.py:1312"
+      ],
+      "covered_by": []
+     },
+     {
+      "unset": true,
+      "compared_at": [
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:48",
+       "python/sglang/srt/arg_groups/model_hook.py:897",
+       "python/sglang/srt/arg_groups/model_override_base.py:179",
+       "python/sglang/srt/arg_groups/model_overrides/deepseek_v2.py:181",
+       "python/sglang/srt/arg_groups/model_overrides/embedding_gemma2.py:39",
+       "python/sglang/srt/arg_groups/model_overrides/falcon_h1.py:17",
+       "python/sglang/srt/arg_groups/model_overrides/gemma4.py:43",
+       "python/sglang/srt/arg_groups/model_overrides/granitemoehybrid.py:18",
+       "python/sglang/srt/arg_groups/model_overrides/iquest_q1.py:45",
+       "python/sglang/srt/arg_groups/model_overrides/iquest_q1.py:47",
+       "python/sglang/srt/arg_groups/model_overrides/lfm2.py:15",
+       "python/sglang/srt/arg_groups/model_overrides/llama4.py:23",
+       "python/sglang/srt/arg_groups/model_overrides/minicpmv.py:16",
+       "python/sglang/srt/arg_groups/model_overrides/olmo2.py:24",
+       "python/sglang/srt/arg_groups/model_overrides/qwen3_5.py:26",
+       "python/sglang/srt/arg_groups/model_overrides/qwen3_vl.py:129",
+       "python/sglang/srt/arg_groups/model_overrides/qwen4_exp.py:57",
+       "python/sglang/srt/arg_groups/overrides.py:1098",
+       "python/sglang/srt/arg_groups/overrides.py:1132",
+       "python/sglang/srt/arg_groups/overrides.py:1776",
+       "python/sglang/srt/arg_groups/platform_hook.py:161"
+      ],
+      "covered_by": []
+     }
+    ]
+   }
+  },
+  "chunked_prefill_size": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0,
+     1,
+     2,
+     3
+    ],
+    "thresholds": [
+     {
+      "value": -1,
+      "closed": "above"
+     },
+     {
+      "value": 0,
+      "closed": "above"
+     },
+     {
+      "value": 1,
+      "closed": "above"
+     }
+    ]
+   },
+   "basis": {
+    "name": "chunked_prefill_size",
+    "kind": "numeric",
+    "sites": [
+     {
+      "at": "python/sglang/srt/arg_groups/attention_hook.py:564",
+      "op": "NotEq",
+      "values": [
+       -1
+      ],
+      "expr": "cfg.chunked_prefill_size != -1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:129",
+      "op": "Gt",
+      "values": [
+       0
+      ],
+      "expr": "cfg.chunked_prefill_size > 0"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:129",
+      "op": "IsNot",
+      "values": [
+       null
+      ],
+      "expr": "cfg.chunked_prefill_size is not None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:260",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.chunked_prefill_size"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:904",
+      "op": "NotEq",
+      "values": [
+       -1
+      ],
+      "expr": "cfg.chunked_prefill_size != -1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/kv_shard_hook.py:281",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "chunk_size is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/kv_shard_hook.py:281",
+      "op": "LtE",
+      "values": [
+       0
+      ],
+      "expr": "chunk_size <= 0"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/layernorm_sp_hook.py:74",
+      "op": "LtE",
+      "values": [
+       0
+      ],
+      "expr": "cfg.chunked_prefill_size <= 0"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/mamba_hook.py:143",
+      "op": "IsNot",
+      "values": [
+       null
+      ],
+      "expr": "view.chunked_prefill_size is not None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/mega_moe_hook.py:191",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.chunked_prefill_size is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/mega_moe_hook.py:191",
+      "op": "LtE",
+      "values": [
+       0
+      ],
+      "expr": "cfg.chunked_prefill_size <= 0"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/mega_moe_hook.py:225",
+      "op": "LtE",
+      "values": [
+       0
+      ],
+      "expr": "local_chunked_prefill_size <= 0"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:93",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.chunked_prefill_size is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:107",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.chunked_prefill_size is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:121",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.chunked_prefill_size is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:135",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.chunked_prefill_size is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:149",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.chunked_prefill_size is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:163",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.chunked_prefill_size is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:173",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.chunked_prefill_size is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:304",
+      "op": "Gt",
+      "values": [
+       0
+      ],
+      "expr": "cfg.chunked_prefill_size > 0"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/moe_hook.py:566",
+      "op": "Gt",
+      "values": [
+       0
+      ],
+      "expr": "cfg.chunked_prefill_size > 0"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/moe_hook.py:614",
+      "op": "Gt",
+      "values": [
+       0
+      ],
+      "expr": "cfg.chunked_prefill_size > 0"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/moe_hook.py:755",
+      "op": "LtE",
+      "values": [
+       0
+      ],
+      "expr": "view.chunked_prefill_size <= 0"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:203",
+      "op": "Gt",
+      "values": [
+       0
+      ],
+      "expr": "cfg.chunked_prefill_size > 0"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1851",
+      "op": "LtE",
+      "values": [
+       0
+      ],
+      "expr": "cfg.chunked_prefill_size <= 0"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1874",
+      "op": "Gt",
+      "values": [
+       0
+      ],
+      "expr": "cfg.chunked_prefill_size > 0"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1874",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.chunked_prefill_size"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:243",
+      "op": "Gt",
+      "values": [
+       0
+      ],
+      "expr": "cfg.chunked_prefill_size > 0"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:253",
+      "op": "Eq",
+      "values": [
+       -1
+      ],
+      "expr": "cfg.chunked_prefill_size == -1"
+     },
+     {
+      "at": "python/sglang/srt/hardware_backend/npu/utils.py:108",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.chunked_prefill_size is None"
+     },
+     {
+      "at": "python/sglang/srt/hardware_backend/npu/utils.py:138",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.chunked_prefill_size is None"
+     }
+    ],
+    "stated": [
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1024,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 2048,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4096,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 512,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1024,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": -2,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": -4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": -1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": -1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4096,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1024,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1024,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4096,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4096,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8192,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16,
+      "trace": "core/sched/testdata/golden-sched/chunked-retract.trace.json"
+     },
+     {
+      "value": 16,
+      "trace": "core/sched/testdata/golden-sched/chunked-retract.trace.json"
+     }
+    ],
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": -1,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [
+       "python/sglang/srt/arg_groups/attention_hook.py:564",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:904",
+       "python/sglang/srt/arg_groups/validation_hook.py:253"
+      ],
+      "covered_by": [
+       "config/testdata/serverargs.json"
+      ]
+     },
+     {
+      "lo": -1,
+      "hi": 0,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "python/sglang/srt/arg_groups/attention_hook.py:564",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:904",
+       "python/sglang/srt/arg_groups/validation_hook.py:253"
+      ],
+      "covered_by": [
+       "config/testdata/serverargs.json"
+      ]
+     },
+     {
+      "lo": 0,
+      "hi": 1,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "python/sglang/srt/arg_groups/attention_hook.py:564",
+       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:129",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:904",
+       "python/sglang/srt/arg_groups/kv_shard_hook.py:281",
+       "python/sglang/srt/arg_groups/layernorm_sp_hook.py:74",
+       "python/sglang/srt/arg_groups/mega_moe_hook.py:191",
+       "python/sglang/srt/arg_groups/mega_moe_hook.py:225",
+       "python/sglang/srt/arg_groups/memory_hook.py:304",
+       "python/sglang/srt/arg_groups/moe_hook.py:566",
+       "python/sglang/srt/arg_groups/moe_hook.py:614",
+       "python/sglang/srt/arg_groups/moe_hook.py:755",
+       "python/sglang/srt/arg_groups/overrides.py:203",
+       "python/sglang/srt/arg_groups/overrides.py:1851",
+       "python/sglang/srt/arg_groups/overrides.py:1874",
+       "python/sglang/srt/arg_groups/validation_hook.py:243",
+       "python/sglang/srt/arg_groups/validation_hook.py:253"
+      ],
+      "covered_by": [
+       "config/testdata/serverargs.json"
+      ]
+     },
+     {
+      "lo": 1,
+      "hi": null,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:129",
+       "python/sglang/srt/arg_groups/kv_shard_hook.py:281",
+       "python/sglang/srt/arg_groups/layernorm_sp_hook.py:74",
+       "python/sglang/srt/arg_groups/mega_moe_hook.py:191",
+       "python/sglang/srt/arg_groups/mega_moe_hook.py:225",
+       "python/sglang/srt/arg_groups/memory_hook.py:304",
+       "python/sglang/srt/arg_groups/moe_hook.py:566",
+       "python/sglang/srt/arg_groups/moe_hook.py:614",
+       "python/sglang/srt/arg_groups/moe_hook.py:755",
+       "python/sglang/srt/arg_groups/overrides.py:203",
+       "python/sglang/srt/arg_groups/overrides.py:1851",
+       "python/sglang/srt/arg_groups/overrides.py:1874",
+       "python/sglang/srt/arg_groups/validation_hook.py:243"
+      ],
+      "covered_by": [
+       "config/testdata/serverargs.json",
+       "core/sched/testdata/golden-sched/chunked-retract.trace.json"
+      ]
+     }
+    ]
+   }
+  },
+  "cuda_graph_max_bs_decode": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0
+    ]
+   },
+   "basis": {
+    "name": "cuda_graph_max_bs_decode",
+    "kind": "numeric",
+    "sites": [
+     {
+      "at": "python/sglang/srt/arg_groups/cuda_graph_hook.py:72",
+      "op": "IsNot",
+      "values": [
+       null
+      ],
+      "expr": "cfg.cuda_graph_max_bs_decode is not None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/moe_hook.py:844",
+      "op": "IsNot",
+      "values": [
+       null
+      ],
+      "expr": "cfg.cuda_graph_max_bs_decode is not None"
+     }
+    ],
+    "stated": [
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 256,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 256,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 512,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 512,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 256,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 512,
+      "trace": "lower/testdata/sglang_lower.json"
+     }
+    ],
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": null,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [],
+      "uncut": true,
+      "covered_by": [
+       "config/testdata/serverargs.json",
+       "lower/testdata/sglang_lower.json"
+      ]
+     }
+    ]
+   }
+  },
+  "decode_log_interval": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0
+    ]
+   },
+   "basis": {
+    "name": "decode_log_interval",
+    "kind": "numeric",
+    "sites": [],
+    "stated": [
+     {
+      "value": 1,
+      "trace": "core/metrics/testdata/golden-metrics/k-chunked-retract.trace.json"
+     }
+    ],
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": null,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [],
+      "uncut": true,
+      "covered_by": [
+       "core/metrics/testdata/golden-metrics/k-chunked-retract.trace.json"
+      ]
+     }
+    ]
+   }
+  },
+  "disable_radix_cache": {
+   "value_classes": {
+    "type": "boolean",
+    "covered": [
+     "false",
+     "true"
+    ]
+   },
+   "basis": {
+    "name": "disable_radix_cache",
+    "kind": "boolean",
+    "sites": [
+     {
+      "at": "python/sglang/srt/arg_groups/attention_hook.py:169",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.disable_radix_cache"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/attention_hook.py:556",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.disable_radix_cache"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/dllm_hook.py:66",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.disable_radix_cache"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/hicache_hook.py:45",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.disable_radix_cache"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/hisparse_hook.py:109",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.disable_radix_cache"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:393",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.disable_radix_cache"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:444",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.disable_radix_cache"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:910",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.disable_radix_cache"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/kv_shard_hook.py:139",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.disable_radix_cache"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_override_base.py:262",
+      "op": "Is",
+      "values": [
+       false
+      ],
+      "expr": "cfg.disable_radix_cache is False"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/inkling.py:59",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.disable_radix_cache"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/qwen3_5.py:42",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.disable_radix_cache"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/qwen4_exp.py:66",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.disable_radix_cache"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:272",
+      "op": "Is",
+      "values": [
+       false
+      ],
+      "expr": "cfg.disable_radix_cache is False"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:473",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "view.disable_radix_cache"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1737",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "view.disable_radix_cache"
+     }
+    ],
+    "stated": [
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "oracle/scenarios-sched/chunked-retract.json"
+     },
+     {
+      "value": true,
+      "trace": "oracle/scenarios-sched/nocache-fcfs.json"
+     }
+    ],
+    "classes": [
+     {
+      "values": [
+       false
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/attention_hook.py:169",
+       "python/sglang/srt/arg_groups/attention_hook.py:556",
+       "python/sglang/srt/arg_groups/dllm_hook.py:66",
+       "python/sglang/srt/arg_groups/hicache_hook.py:45",
+       "python/sglang/srt/arg_groups/hisparse_hook.py:109",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:393",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:444",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:910",
+       "python/sglang/srt/arg_groups/kv_shard_hook.py:139",
+       "python/sglang/srt/arg_groups/model_override_base.py:262",
+       "python/sglang/srt/arg_groups/model_overrides/inkling.py:59",
+       "python/sglang/srt/arg_groups/model_overrides/qwen3_5.py:42",
+       "python/sglang/srt/arg_groups/model_overrides/qwen4_exp.py:66",
+       "python/sglang/srt/arg_groups/overrides.py:272",
+       "python/sglang/srt/arg_groups/overrides.py:473",
+       "python/sglang/srt/arg_groups/overrides.py:1737"
+      ],
+      "covered_by": [
+       "config/testdata/serverargs.json",
+       "oracle/scenarios-sched/chunked-retract.json"
+      ]
+     },
+     {
+      "values": [
+       true
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/attention_hook.py:169",
+       "python/sglang/srt/arg_groups/attention_hook.py:556",
+       "python/sglang/srt/arg_groups/dllm_hook.py:66",
+       "python/sglang/srt/arg_groups/hicache_hook.py:45",
+       "python/sglang/srt/arg_groups/hisparse_hook.py:109",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:393",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:444",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:910",
+       "python/sglang/srt/arg_groups/kv_shard_hook.py:139",
+       "python/sglang/srt/arg_groups/model_overrides/inkling.py:59",
+       "python/sglang/srt/arg_groups/model_overrides/qwen3_5.py:42",
+       "python/sglang/srt/arg_groups/model_overrides/qwen4_exp.py:66",
+       "python/sglang/srt/arg_groups/overrides.py:473",
+       "python/sglang/srt/arg_groups/overrides.py:1737"
+      ],
+      "covered_by": [
+       "config/testdata/serverargs.json",
+       "oracle/scenarios-sched/nocache-fcfs.json"
+      ]
+     }
+    ]
+   }
+  },
+  "dp_size": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     1,
+     2
+    ],
+    "thresholds": [
+     {
+      "value": 1,
+      "closed": "above"
+     },
+     {
+      "value": 2,
+      "closed": "above"
+     }
+    ]
+   },
+   "basis": {
+    "name": "dp_size",
+    "kind": "numeric",
+    "sites": [
+     {
+      "at": "python/sglang/srt/arg_groups/cp_tp_group_sharing_hook.py:94",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.dp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_override_base.py:235",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.dp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_override_base.py:240",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.dp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/parallel_hook.py:287",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.dp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:199",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.dp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:650",
+      "op": "NotEq",
+      "values": [
+       1
+      ],
+      "expr": "getattr(cfg, 'dp_size', 1) != 1"
+     },
+     {
+      "at": "python/sglang/srt/layers/cp/bcg/interleave_bcg.py:89",
+      "op": "Eq",
+      "values": [
+       1
+      ],
+      "expr": "cfg.dp_size == 1"
+     }
+    ],
+    "stated": [
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 2,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 2,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 2,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 1,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 1,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 2,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 4,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 2,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 4,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     }
+    ],
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": 1,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [
+       "python/sglang/srt/arg_groups/validation_hook.py:650",
+       "python/sglang/srt/layers/cp/bcg/interleave_bcg.py:89"
+      ],
+      "covered_by": []
+     },
+     {
+      "lo": 1,
+      "hi": 2,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "python/sglang/srt/arg_groups/cp_tp_group_sharing_hook.py:94",
+       "python/sglang/srt/arg_groups/model_override_base.py:235",
+       "python/sglang/srt/arg_groups/model_override_base.py:240",
+       "python/sglang/srt/arg_groups/parallel_hook.py:287",
+       "python/sglang/srt/arg_groups/validation_hook.py:199",
+       "python/sglang/srt/arg_groups/validation_hook.py:650",
+       "python/sglang/srt/layers/cp/bcg/interleave_bcg.py:89"
+      ],
+      "covered_by": [
+       "config/testdata/serverargs.json",
+       "lower/testdata/sglang_lower.json"
+      ]
+     },
+     {
+      "lo": 2,
+      "hi": null,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "python/sglang/srt/arg_groups/cp_tp_group_sharing_hook.py:94",
+       "python/sglang/srt/arg_groups/model_override_base.py:235",
+       "python/sglang/srt/arg_groups/model_override_base.py:240",
+       "python/sglang/srt/arg_groups/parallel_hook.py:287",
+       "python/sglang/srt/arg_groups/validation_hook.py:199",
+       "python/sglang/srt/arg_groups/validation_hook.py:650",
+       "python/sglang/srt/layers/cp/bcg/interleave_bcg.py:89"
+      ],
+      "covered_by": [
+       "config/testdata/serverargs.json",
+       "lower/testdata/sglang_lower.json"
+      ]
+     }
+    ]
+   }
+  },
+  "enable_flashinfer_allreduce_fusion": {
+   "value_classes": {
+    "type": "boolean",
+    "covered": [
+     "false",
+     "true"
+    ]
+   },
+   "basis": {
+    "name": "enable_flashinfer_allreduce_fusion",
+    "kind": "boolean",
+    "sites": [
+     {
+      "at": "python/sglang/srt/arg_groups/serving_hook.py:286",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.enable_flashinfer_allreduce_fusion"
+     }
+    ],
+    "stated": [
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": false,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": true,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": true,
+      "trace": "lower/testdata/sglang_lower.json"
+     }
+    ],
+    "classes": [
+     {
+      "values": [
+       false
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/serving_hook.py:286"
+      ],
+      "covered_by": [
+       "config/testdata/serverargs.json"
+      ]
+     },
+     {
+      "values": [
+       true
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/serving_hook.py:286"
+      ],
+      "covered_by": [
+       "config/testdata/serverargs.json",
+       "lower/testdata/sglang_lower.json"
+      ]
+     }
+    ]
+   }
+  },
+  "max_running_requests": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0,
+     1,
+     2
+    ],
+    "thresholds": [
+     {
+      "value": 1,
+      "closed": "above"
+     },
+     {
+      "value": 400,
+      "closed": "above"
+     },
+     {
+      "value": 513,
+      "closed": "above"
+     }
+    ]
+   },
+   "basis": {
+    "name": "max_running_requests",
+    "kind": "numeric",
+    "sites": [
+     {
+      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:138",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.max_running_requests is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:258",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.max_running_requests is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:259",
+      "op": "LtE",
+      "values": [
+       0
+      ],
+      "expr": "cfg.max_running_requests <= 0"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/mega_moe_hook.py:97",
+      "op": "IsNot",
+      "values": [
+       null
+      ],
+      "expr": "cfg.max_running_requests is not None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/mega_moe_hook.py:117",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.max_running_requests is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:184",
+      "op": "IsNot",
+      "values": [
+       null
+      ],
+      "expr": "cfg.max_running_requests is not None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:300",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.max_running_requests"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/qwen3_vl.py:45",
+      "op": "IsNot",
+      "values": [
+       null
+      ],
+      "expr": "max_running_requests is not None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/qwen3_vl.py:46",
+      "op": "LtE",
+      "values": [
+       512
+      ],
+      "expr": "max_running_requests <= 512"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/qwen3_vl.py:114",
+      "op": "IsNot",
+      "values": [
+       null
+      ],
+      "expr": "cfg.max_running_requests is not None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/qwen3_vl.py:115",
+      "op": "GtE",
+      "values": [
+       400
+      ],
+      "expr": "cfg.max_running_requests >= 400"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/moe_hook.py:668",
+      "op": "IsNot",
+      "values": [
+       null
+      ],
+      "expr": "view.max_running_requests is not None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:198",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.max_running_requests"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/pd_disaggregation_hook.py:135",
+      "op": "IsNot",
+      "values": [
+       null
+      ],
+      "expr": "cfg.max_running_requests is not None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/speculative_hook.py:438",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.max_running_requests is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/speculative_hook.py:852",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.max_running_requests is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/speculative_hook.py:992",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.max_running_requests is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/speculative_hook.py:1086",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.max_running_requests is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/speculative_hook.py:1294",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.max_running_requests is None"
+     },
+     {
+      "at": "python/sglang/srt/dllm/config.py:135",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.max_running_requests is None"
+     },
+     {
+      "at": "python/sglang/srt/layers/attention/deepseek_v4_backend.py:1784",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "max_reqs"
+     }
+    ],
+    "stated": [
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 256,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 256,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 512,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 512,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 256,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 256,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 48,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 300,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 300,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 256,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 256,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 48,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 256,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 256,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 256,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 256,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 256,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 256,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 256,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 48,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 48,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 64,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 64,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": null,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "core/sched/testdata/golden-sched/chunked-retract.trace.json"
+     },
+     {
+      "value": 8,
+      "trace": "core/sched/testdata/golden-sched/chunked-retract.trace.json"
+     }
+    ],
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": 1,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [
+       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:259"
+      ],
+      "covered_by": [
+       "config/testdata/serverargs.json"
+      ]
+     },
+     {
+      "lo": 1,
+      "hi": 400,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:259",
+       "python/sglang/srt/arg_groups/model_overrides/qwen3_vl.py:115"
+      ],
+      "covered_by": [
+       "config/testdata/serverargs.json",
+       "core/sched/testdata/golden-sched/chunked-retract.trace.json"
+      ]
+     },
+     {
+      "lo": 400,
+      "hi": 513,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "python/sglang/srt/arg_groups/model_overrides/qwen3_vl.py:46",
+       "python/sglang/srt/arg_groups/model_overrides/qwen3_vl.py:115"
+      ],
+      "covered_by": [
+       "config/testdata/serverargs.json"
+      ]
+     },
+     {
+      "lo": 513,
+      "hi": null,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "python/sglang/srt/arg_groups/model_overrides/qwen3_vl.py:46"
+      ],
+      "covered_by": []
+     }
+    ]
+   }
+  },
+  "mem_fraction_static": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0
+    ]
+   },
+   "basis": {
+    "name": "mem_fraction_static",
+    "kind": "numeric",
+    "sites": [
+     {
+      "at": "python/sglang/srt/arg_groups/kv_shard_hook.py:302",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.mem_fraction_static is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:281",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.mem_fraction_static is None"
+     }
+    ],
+    "stated": [
+     {
+      "value": 0.886,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.886,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.886,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.896,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.886,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.85,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.85,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.82,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.82,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.82,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.82,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.811,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.852,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.854,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.874,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.696,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.828,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.814,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.655,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.798,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.347,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.848,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.783,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.939,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.906,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.751,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.886,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.944,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.911,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.897,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.852,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.929,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.904,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.897,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.865,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.736,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.886,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.874,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.799,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.799,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.573,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.799,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.7,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.7,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.874,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.874,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.836,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.83,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.83,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.83,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.874,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.854,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.903,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 0.83,
+      "trace": "config/testdata/serverargs.json"
+     }
+    ],
+    "numeric_type": "float",
+    "classes": [
+     {
+      "lo": null,
+      "hi": null,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [],
+      "uncut": true,
+      "covered_by": [
+       "config/testdata/serverargs.json"
+      ]
+     }
+    ]
+   }
+  },
+  "model_path": {
+   "value_classes": {
+    "type": "enumerated",
+    "covered": [
+     "<model>"
+    ]
+   },
+   "basis": {
+    "name": "model_path",
+    "kind": "open",
+    "sites": [
+     {
+      "at": "python/sglang/srt/configs/model_config.py:956",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.model_path"
+     }
+    ],
+    "stated": [
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": "<model>",
+      "trace": "config/testdata/serverargs.json"
+     }
+    ],
+    "classes": [
+     {
+      "unset": true,
+      "compared_at": [
+       "python/sglang/srt/configs/model_config.py:956"
+      ],
+      "covered_by": []
+     },
+     {
+      "other": true,
+      "compared_at": [],
+      "covered_by": [
+       "config/testdata/serverargs.json"
+      ]
+     }
+    ]
+   }
+  },
+  "port": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0
+    ]
+   },
+   "basis": {
+    "name": "port",
+    "kind": "numeric",
+    "sites": [],
+    "stated": [
+     {
+      "value": 8888,
+      "trace": "oracle/inertness/port.json"
+     },
+     {
+      "value": 30000,
+      "trace": "oracle/inertness/port.json"
+     }
+    ],
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": null,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [],
+      "uncut": true,
+      "covered_by": [
+       "oracle/inertness/port.json"
+      ]
+     }
+    ]
+   }
+  },
+  "stream_interval": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0
+    ]
+   },
+   "basis": {
+    "name": "stream_interval",
+    "kind": "numeric",
+    "sites": [],
+    "stated": [
+     {
+      "value": 1,
+      "trace": "oracle/inertness/stream_interval.json"
+     },
+     {
+      "value": 10,
+      "trace": "oracle/inertness/stream_interval.json"
+     },
+     {
+      "value": 64,
+      "trace": "oracle/inertness/stream_interval.json"
+     }
+    ],
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": null,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [],
+      "uncut": true,
+      "covered_by": [
+       "oracle/inertness/stream_interval.json"
+      ]
+     }
+    ]
+   }
+  },
+  "tp_size": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     1,
+     2,
+     4,
+     5
+    ],
+    "thresholds": [
+     {
+      "value": 1,
+      "closed": "above"
+     },
+     {
+      "value": 2,
+      "closed": "above"
+     },
+     {
+      "value": 3,
+      "closed": "above"
+     },
+     {
+      "value": 4,
+      "closed": "above"
+     },
+     {
+      "value": 5,
+      "closed": "above"
+     },
+     {
+      "value": 9,
+      "closed": "above"
+     }
+    ]
+   },
+   "basis": {
+    "name": "tp_size",
+    "kind": "numeric",
+    "sites": [
+     {
+      "at": "python/sglang/srt/arg_groups/attention_hook.py:668",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.tp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:226",
+      "op": "LtE",
+      "values": [
+       8
+      ],
+      "expr": "cfg.tp_size <= 8"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/kv_shard_hook.py:259",
+      "op": "LtE",
+      "values": [
+       1
+      ],
+      "expr": "cfg.tp_size <= 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:114",
+      "op": "Lt",
+      "values": [
+       4
+      ],
+      "expr": "cfg.tp_size < 4"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:128",
+      "op": "Lt",
+      "values": [
+       4
+      ],
+      "expr": "cfg.tp_size < 4"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:142",
+      "op": "Lt",
+      "values": [
+       4
+      ],
+      "expr": "cfg.tp_size < 4"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:156",
+      "op": "Lt",
+      "values": [
+       4
+      ],
+      "expr": "cfg.tp_size < 4"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_hook.py:998",
+      "op": "NotEq",
+      "values": [
+       1
+      ],
+      "expr": "cfg.tp_size != 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/deepseek_v2.py:123",
+      "op": "LtE",
+      "values": [
+       8
+      ],
+      "expr": "cfg.tp_size <= 8"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/moe_hook.py:817",
+      "op": "Gt",
+      "values": [
+       8
+      ],
+      "expr": "cfg.tp_size > 8"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:983",
+      "op": "Eq",
+      "values": [
+       4
+      ],
+      "expr": "view.tp_size == 4"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:992",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "view.tp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1081",
+      "op": "Gt",
+      "values": [
+       2
+      ],
+      "expr": "view.tp_size > 2"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/parallel_hook.py:297",
+      "op": "Eq",
+      "values": [
+       1
+      ],
+      "expr": "cfg.tp_size == 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/parallel_hook.py:589",
+      "op": "LtE",
+      "values": [
+       0
+      ],
+      "expr": "cfg.tp_size <= 0"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/parallel_hook.py:607",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.tp_size"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/parallel_hook.py:654",
+      "op": "Eq",
+      "values": [
+       1
+      ],
+      "expr": "cfg.tp_size == 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:349",
+      "op": "Eq",
+      "values": [
+       1
+      ],
+      "expr": "cfg.tp_size == 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:648",
+      "op": "NotEq",
+      "values": [
+       1
+      ],
+      "expr": "getattr(cfg, 'tp_size', 1) != 1"
+     },
+     {
+      "at": "python/sglang/srt/hardware_backend/npu/utils.py:115",
+      "op": "Lt",
+      "values": [
+       4
+      ],
+      "expr": "cfg.tp_size < 4"
+     },
+     {
+      "at": "python/sglang/srt/hardware_backend/npu/utils.py:145",
+      "op": "Lt",
+      "values": [
+       4
+      ],
+      "expr": "cfg.tp_size < 4"
+     }
+    ],
+    "stated": [
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 2,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 2,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 4,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 2,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 2,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 1,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 1,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 2,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 4,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 4,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 4,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 4,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 8,
+      "trace": "lower/testdata/sglang_lower.json"
+     },
+     {
+      "value": 2,
+      "trace": "lower/testdata/sglang_lower.json"
+     }
+    ],
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": 1,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [
+       "python/sglang/srt/arg_groups/model_hook.py:998",
+       "python/sglang/srt/arg_groups/parallel_hook.py:297",
+       "python/sglang/srt/arg_groups/parallel_hook.py:589",
+       "python/sglang/srt/arg_groups/parallel_hook.py:654",
+       "python/sglang/srt/arg_groups/validation_hook.py:349",
+       "python/sglang/srt/arg_groups/validation_hook.py:648"
+      ],
+      "covered_by": []
+     },
+     {
+      "lo": 1,
+      "hi": 2,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "python/sglang/srt/arg_groups/attention_hook.py:668",
+       "python/sglang/srt/arg_groups/kv_shard_hook.py:259",
+       "python/sglang/srt/arg_groups/model_hook.py:998",
+       "python/sglang/srt/arg_groups/overrides.py:992",
+       "python/sglang/srt/arg_groups/parallel_hook.py:297",
+       "python/sglang/srt/arg_groups/parallel_hook.py:589",
+       "python/sglang/srt/arg_groups/parallel_hook.py:654",
+       "python/sglang/srt/arg_groups/validation_hook.py:349",
+       "python/sglang/srt/arg_groups/validation_hook.py:648"
+      ],
+      "covered_by": [
+       "config/testdata/serverargs.json",
+       "lower/testdata/sglang_lower.json"
+      ]
+     },
+     {
+      "lo": 2,
+      "hi": 3,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "python/sglang/srt/arg_groups/attention_hook.py:668",
+       "python/sglang/srt/arg_groups/kv_shard_hook.py:259",
+       "python/sglang/srt/arg_groups/model_hook.py:998",
+       "python/sglang/srt/arg_groups/overrides.py:992",
+       "python/sglang/srt/arg_groups/overrides.py:1081",
+       "python/sglang/srt/arg_groups/parallel_hook.py:297",
+       "python/sglang/srt/arg_groups/parallel_hook.py:654",
+       "python/sglang/srt/arg_groups/validation_hook.py:349",
+       "python/sglang/srt/arg_groups/validation_hook.py:648"
+      ],
+      "covered_by": [
+       "config/testdata/serverargs.json",
+       "lower/testdata/sglang_lower.json"
+      ]
+     },
+     {
+      "lo": 3,
+      "hi": 4,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "python/sglang/srt/arg_groups/memory_hook.py:114",
+       "python/sglang/srt/arg_groups/memory_hook.py:128",
+       "python/sglang/srt/arg_groups/memory_hook.py:142",
+       "python/sglang/srt/arg_groups/memory_hook.py:156",
+       "python/sglang/srt/arg_groups/overrides.py:983",
+       "python/sglang/srt/arg_groups/overrides.py:1081",
+       "python/sglang/srt/hardware_backend/npu/utils.py:115",
+       "python/sglang/srt/hardware_backend/npu/utils.py:145"
+      ],
+      "covered_by": []
+     },
+     {
+      "lo": 4,
+      "hi": 5,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "python/sglang/srt/arg_groups/memory_hook.py:114",
+       "python/sglang/srt/arg_groups/memory_hook.py:128",
+       "python/sglang/srt/arg_groups/memory_hook.py:142",
+       "python/sglang/srt/arg_groups/memory_hook.py:156",
+       "python/sglang/srt/arg_groups/overrides.py:983",
+       "python/sglang/srt/hardware_backend/npu/utils.py:115",
+       "python/sglang/srt/hardware_backend/npu/utils.py:145"
+      ],
+      "covered_by": [
+       "config/testdata/serverargs.json",
+       "lower/testdata/sglang_lower.json"
+      ]
+     },
+     {
+      "lo": 5,
+      "hi": 9,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:226",
+       "python/sglang/srt/arg_groups/model_overrides/deepseek_v2.py:123",
+       "python/sglang/srt/arg_groups/moe_hook.py:817",
+       "python/sglang/srt/arg_groups/overrides.py:983"
+      ],
+      "covered_by": [
+       "config/testdata/serverargs.json",
+       "lower/testdata/sglang_lower.json"
+      ]
+     },
+     {
+      "lo": 9,
+      "hi": null,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:226",
+       "python/sglang/srt/arg_groups/model_overrides/deepseek_v2.py:123",
+       "python/sglang/srt/arg_groups/moe_hook.py:817"
+      ],
+      "covered_by": []
+     }
+    ]
+   }
+  },
+  "trust_remote_code": {
+   "value_classes": {
+    "type": "boolean",
+    "covered": [
+     "false",
+     "true"
+    ]
+   },
+   "basis": {
+    "name": "trust_remote_code",
+    "kind": "boolean",
+    "sites": [],
+    "stated": [
+     {
+      "value": false,
+      "trace": "oracle/inertness/trust_remote_code.json"
+     },
+     {
+      "value": true,
+      "trace": "oracle/inertness/trust_remote_code.json"
+     }
+    ],
+    "classes": [
+     {
+      "uncut": true,
+      "compared_at": [],
+      "covered_by": [
+       "oracle/inertness/trust_remote_code.json"
+      ]
+     }
+    ]
+   }
+  }
+ }
 }

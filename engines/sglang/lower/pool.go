@@ -29,13 +29,13 @@ type PoolInput struct {
 	Chip       *hardware.Chip
 }
 
-// Resolve resolves the pool's engine block as SGLang resolves a ServerArgs: the block's fields by
-// SGLang's own names, the pool's parallel widths (tensor and data parallelism are the pool's, not
-// the block's: a block that states them must agree), the chip and the model. Anything outside the
-// input space config models is refused by name (config.NotModelled).
-func Resolve(in PoolInput) (*config.Resolved, error) {
-	if in.Deployment == nil || in.Model == nil || in.Chip == nil {
-		return nil, fmt.Errorf("lowering a pool needs its deployment, model graph and chip")
+// Args are the pool's ServerArgs as the lowering and the engine both read them: the engine block's
+// fields by SGLang's own names, with the pool's tensor- and data-parallel widths (they are the
+// pool's, not the block's: a block that states them must agree). A pool with parallelism beyond
+// tensor and data is refused by name.
+func Args(in PoolInput) (map[string]any, error) {
+	if in.Deployment == nil {
+		return nil, fmt.Errorf("lowering a pool needs its deployment")
 	}
 	if in.PoolIndex < 0 || in.PoolIndex >= len(in.Deployment.Pools) {
 		return nil, fmt.Errorf("pool index %d is outside the deployment's %d pool(s)", in.PoolIndex, len(in.Deployment.Pools))
@@ -63,6 +63,24 @@ func Resolve(in PoolInput) (*config.Resolved, error) {
 		}
 		args[name] = want
 	}
+	if _, ok := args["model_path"]; !ok {
+		// The catalog names the model; SGLang's ServerArgs requires a path and the resolution reads
+		// only the model's facts, which the graph supplies.
+		args["model_path"] = "<model>"
+	}
+	return args, nil
+}
+
+// Resolve resolves the pool's engine block as SGLang resolves a ServerArgs (Args, the chip and the
+// model). Anything outside the input space config models is refused by name (config.NotModelled).
+func Resolve(in PoolInput) (*config.Resolved, error) {
+	if in.Model == nil || in.Chip == nil {
+		return nil, fmt.Errorf("lowering a pool needs its model graph and chip")
+	}
+	args, err := Args(in)
+	if err != nil {
+		return nil, err
+	}
 	chip, err := ChipOf(in.Chip)
 	if err != nil {
 		return nil, err
@@ -70,11 +88,6 @@ func Resolve(in PoolInput) (*config.Resolved, error) {
 	facts, err := ModelFactsOf(in.Model)
 	if err != nil {
 		return nil, err
-	}
-	if _, ok := args["model_path"]; !ok {
-		// The catalog names the model; SGLang's ServerArgs requires a path and the resolution reads
-		// only the model's facts, which the graph supplies.
-		args["model_path"] = "<model>"
 	}
 	return config.Resolve(config.Input{Args: args, Chip: chip, Model: facts})
 }
