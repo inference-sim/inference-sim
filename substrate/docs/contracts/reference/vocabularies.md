@@ -155,12 +155,16 @@ which is why their `n_kv` is 1. `sparse_mla` is attention by a sparse kernel ove
 explicit set of positions, bounded by a top-k (`index_topk`), a compressed stream
 (`compress_ratio`), a sliding window (`window`), or a combination: DeepSeek-V4.1's
 window-only layers run the same sparse FlashMLA kernel as its compressed ones.
+`sparse_gqa` is the same idea over per-head K and V: the main node reads `index_topk`
+selected tokens, and an indexer scorer (`holds_engine_kv` false) scores a key cache
+compressed by `compress_ratio`.
 
 --8<-- "docs/contracts/generated/enum/model.AttentionKind.md"
 
 ### Recurrent kinds
 
-A `RecurrentUpdate` node's `recurrent_kind`.
+A `RecurrentUpdate` node's `recurrent_kind`. `short_conv` is a depthwise convolution with a
+per-request window of inputs and no recurrent state.
 
 --8<-- "docs/contracts/generated/enum/model.RecurrentKind.md"
 
