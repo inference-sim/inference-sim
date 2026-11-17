@@ -37,6 +37,8 @@ type Batch struct {
 	// DecodingReqs are the running requests a mixed pass decodes.
 	DecodingReqs             []*Req
 	ContainsLastPrefillChunk bool
+	// Prefill is the adder's accounting, for the metrics reporter (nil for a decode batch).
+	Prefill *PrefillStats
 }
 
 func (b *Batch) Size() int     { return len(b.Reqs) }

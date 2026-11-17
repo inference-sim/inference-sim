@@ -1,0 +1,138 @@
+{
+ "description": "Decode runs the pool out: 6 requests of 10 tokens each generating 50, stopping by length with the new-token estimate in play; page 1. (metrics on, decode log interval 1)",
+ "model": "Qwen/Qwen2.5-0.5B-Instruct",
+ "seed": 0,
+ "vocab_size": 151936,
+ "sampled_token": 13,
+ "device_memory_gib": 80,
+ "step_seconds": 0.01,
+ "page_size": 1,
+ "max_total_tokens": 160,
+ "max_running_requests": 8,
+ "chunked_prefill_size": 64,
+ "schedule_policy": "fcfs",
+ "overlap": false,
+ "disable_radix_cache": false,
+ "max_steps": 600,
+ "server_args": {
+  "enable_metrics": true,
+  "decode_log_interval": 1
+ },
+ "record_server_args": [
+  "chunked_prefill_size",
+  "max_running_requests",
+  "max_total_tokens",
+  "page_size",
+  "schedule_policy"
+ ],
+ "requests": [
+  {
+   "rid": "r0",
+   "arrival_step": 0,
+   "prompt": [
+    3000,
+    3001,
+    3002,
+    3003,
+    3004,
+    3005,
+    3006,
+    3007,
+    3008,
+    3009
+   ],
+   "max_new_tokens": 50,
+   "ignore_eos": false
+  },
+  {
+   "rid": "r1",
+   "arrival_step": 0,
+   "prompt": [
+    3100,
+    3101,
+    3102,
+    3103,
+    3104,
+    3105,
+    3106,
+    3107,
+    3108,
+    3109
+   ],
+   "max_new_tokens": 50,
+   "ignore_eos": false
+  },
+  {
+   "rid": "r2",
+   "arrival_step": 0,
+   "prompt": [
+    3200,
+    3201,
+    3202,
+    3203,
+    3204,
+    3205,
+    3206,
+    3207,
+    3208,
+    3209
+   ],
+   "max_new_tokens": 50,
+   "ignore_eos": false
+  },
+  {
+   "rid": "r3",
+   "arrival_step": 1,
+   "prompt": [
+    3300,
+    3301,
+    3302,
+    3303,
+    3304,
+    3305,
+    3306,
+    3307,
+    3308,
+    3309
+   ],
+   "max_new_tokens": 50,
+   "ignore_eos": false
+  },
+  {
+   "rid": "r4",
+   "arrival_step": 1,
+   "prompt": [
+    3400,
+    3401,
+    3402,
+    3403,
+    3404,
+    3405,
+    3406,
+    3407,
+    3408,
+    3409
+   ],
+   "max_new_tokens": 50,
+   "ignore_eos": false
+  },
+  {
+   "rid": "r5",
+   "arrival_step": 1,
+   "prompt": [
+    3500,
+    3501,
+    3502,
+    3503,
+    3504,
+    3505,
+    3506,
+    3507,
+    3508,
+    3509
+   ],
+   "max_new_tokens": 50,
+   "ignore_eos": false
+  }
+ ]
+}

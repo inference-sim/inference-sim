@@ -45,6 +45,12 @@ SCHED_SERVER_ARGS = ("enable_mixed_chunk", "max_prefill_tokens", "schedule_conse
 
 ORACLE_INPUTS = run_scheduler.ORACLE_INPUTS + ("oracle/run_sched.py",)
 
+# Extensions a runner built on this one (oracle/run_metrics.py) registers by update(): more ServerArgs
+# fields a scenario may set ("server_args"), more input files ("inputs"), a function that extends the
+# run class ("run"), one that extends the recorded configuration ("config"), and one that is called
+# in the scheduler's process before it starts ("setup").
+HOOKS = {"server_args": (), "inputs": (), "run": None, "config": None, "setup": None}
+
 # SGLANG_* variables a scenario may set, by `sglang_env`; the others are removed (run_scheduler.child).
 SCHED_SGLANG_ENV = ("SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP",)
 
@@ -53,7 +59,7 @@ def sched_server_args(scenario: dict):
     from sglang.srt.server_args import ServerArgs
 
     extra = scenario.get("server_args", {})
-    bad = sorted(set(extra) - set(SCHED_SERVER_ARGS))
+    bad = sorted(set(extra) - set(SCHED_SERVER_ARGS) - set(HOOKS["server_args"]))
     if bad:
         raise SystemExit(f"scenario server_args {bad} are not settable by oracle/run_sched.py")
     return ServerArgs(
@@ -119,7 +125,7 @@ def config_of(s) -> dict:
     from sglang.srt.runtime_context import get_memory, get_parallel, get_schedule
 
     t = s.new_token_ratio_tracker
-    return {
+    return _extend_config(s, {
         "pp_max_micro_batch_size": int(get_parallel().pp_max_micro_batch_size),
         "pp_size": int(get_parallel().pp_size),
         "prefill_decode_interval": int(s.prefill_decode_interval),
@@ -157,7 +163,11 @@ def config_of(s) -> dict:
         "abort_on_priority_when_disabled": bool(s.abort_on_priority_when_disabled),
         "max_queued_requests": None if s.max_queued_requests is None else int(s.max_queued_requests),
         "prefill_max_requests": None if get_schedule().prefill_max_requests is None else int(get_schedule().prefill_max_requests),
-    }
+    })
+
+
+def _extend_config(s, cfg: dict) -> dict:
+    return HOOKS["config"](s, cfg) if HOOKS["config"] else cfg
 
 
 def harness_jsonable(x):
@@ -211,7 +221,7 @@ def make_run_class():
                 rec["decoding"] = None if batch.decoding_reqs is None else [r.rid for r in batch.decoding_reqs]
             super().record_forward(rec)
 
-    return SchedRun
+    return HOOKS["run"](SchedRun) if HOOKS["run"] else SchedRun
 
 
 def child(scenario: dict, sglang_root: str, out_path: str) -> None:
@@ -229,6 +239,8 @@ def child(scenario: dict, sglang_root: str, out_path: str) -> None:
     stubs.install()
     import harness
 
+    if HOOKS["setup"]:
+        HOOKS["setup"](scenario)
     run = make_run_class()(scenario, sglang_root)
     harness.install(run)
     from sglang.srt.environ import envs
@@ -269,7 +281,7 @@ def main() -> int:
     sys.path.insert(0, os.path.join(os.path.abspath(sglang_root), "python"))
     with open(scenario_path) as f:
         scenario = json.load(f)
-    prov = traces.provenance(2, sglang_root, scenario_path, scenario, ORACLE_INPUTS)
+    prov = traces.provenance(2, sglang_root, scenario_path, scenario, ORACLE_INPUTS + tuple(HOOKS["inputs"]))
     quit_seen = []
     signal.signal(signal.SIGQUIT, lambda *a: quit_seen.append(True))
     with tempfile.TemporaryDirectory() as tmp:

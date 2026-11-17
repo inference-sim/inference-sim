@@ -6,7 +6,8 @@
     "core/cache/testdata/golden-fid5/",
     "core/cache/testdata/golden-pools/",
     "core/hicache/testdata/golden-fid5/",
-    "core/sched/testdata/golden-sched/"
+    "core/sched/testdata/golden-sched/",
+    "core/metrics/testdata/golden-metrics/"
   ],
   "golden_files": [],
   "harness_files": [

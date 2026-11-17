@@ -209,6 +209,9 @@ class SilentSocket:
 class OutputSocket:
     """A socket the scheduler writes to: each message is recorded."""
 
+    # zmq.Socket.closed: SchedulerKvEventsPublisher.emit_kv_metrics reads it before it sends.
+    closed = False
+
     def __init__(self, run: Run):
         self.run = run
 

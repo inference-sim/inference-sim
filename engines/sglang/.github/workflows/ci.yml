@@ -146,6 +146,12 @@ jobs:
         run: python -I oracle/lower/test_check_replacements.py
       - name: the tree-core comparison fails on what it guards
         run: python -I oracle/test_treecore_diff.py
+      # S15: every sglang:* family the release defines has a class, and the manifest is current.
+      - uses: ./.github/actions/go-setup
+        with:
+          build-cache: build
+      - name: every sglang:* metric family is classified and the manifest is current
+        run: go run ./cmd/metricsmanifest -sglang sglang-source -check
   # The oracle's environment (SGL-1, FID-2): SGLang checked out at the commit provenance.go pins, the
   # locked environment installed by hash and checked against the lock (.github/actions/oracle-env),
   # the manifest check (FID-1, FID-8), and the scheduler importing from the checkout on CPU.
@@ -343,6 +349,30 @@ jobs:
         run: |
           set -euo pipefail
           python -I oracle/compare_goldens.py oracle-traces-sched "$(git -C sglang-source rev-parse HEAD)" oracle/scenarios-sched core/sched/testdata/golden-sched
+      # S15: the metrics registry and the KV-event bytes after each step (oracle/run_metrics.py).
+      - name: trace the metrics and KV events
+        if: ${{ !cancelled() }}
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          export ORACLE_MODEL="$PWD/oracle-model"
+          mkdir -p oracle-traces-metrics
+          for s in oracle/scenarios-metrics/*.json; do
+            python -I oracle/run_metrics.py sglang-source "$s" "oracle-traces-metrics/$(basename "$s" .json).trace.json"
+          done
+      - name: upload the metrics traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: oracle-traces-metrics
+          path: oracle-traces-metrics/
+      - name: every metrics golden is SGLang's own output
+        run: |
+          set -euo pipefail
+          python -I oracle/compare_goldens.py oracle-traces-metrics "$(git -C sglang-source rev-parse HEAD)" oracle/scenarios-metrics core/metrics/testdata/golden-metrics
 
 
   # S45 (design §6.4, SGL-1, SGL-5): SGLang's Rust tree core, its production default on Linux,

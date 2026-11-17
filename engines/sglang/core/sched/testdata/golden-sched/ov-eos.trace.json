@@ -121,17 +121,17 @@
   "max_total_num_tokens": 4096
  },
  "provenance": {
-  "blis_sglang_commit": "3cfcd06c5f9a4fdb19f2b05c0e3daa0ad3c5d0bd",
+  "blis_sglang_commit": "4d104e158413433e6adefd4ffb42e4ad609ef34b",
   "lockfile_sha256": "a3fb4e4773230faee4ffdd89437a96b2f3bfb3082e4be4cef4f44d44c66ed569",
-  "mock_version": "gpu-mock/6+782b6d1d81e3",
+  "mock_version": "gpu-mock/7+d4066f5141b6",
   "model": "Qwen/Qwen2.5-0.5B-Instruct",
   "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
   "oracle_inputs": {
-   "oracle/harness.json": "a2a388e53018a1de271095da41331020c27de7dc036e667d3510bc66952a33d7",
-   "oracle/harness.py": "a1ab29f3421f2a5b504a0096f59cbe38055c8c2615a99d2d7c09bda96b0c5df6",
-   "oracle/mocks.json": "11f3e41bd562100699ab517d4142735a3222956986494b0c33e65b1a5ee853f1",
+   "oracle/harness.json": "a0ba09de183681cbaf7317381f9251101d46fa19d9bb46177e1e3bb854c12f50",
+   "oracle/harness.py": "63b0fae6dae9873d7e876a799ec5de972bed706a113f1c3d09c0b68c5aa1f0ad",
+   "oracle/mocks.json": "df80da2e5dcc300b30300b7d88fd82379d8fe8dbb5b013c2a980d7fa97ab59ba",
    "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
-   "oracle/run_sched.py": "afdd9e8a369a4bc6876db3e5df6f6be0b73b75d5ed67b284d218628f58513eff",
+   "oracle/run_sched.py": "1ecb02ee786a4eaa1c6359c71685e591b8ce7fe4a45fe40a995e3383be33929b",
    "oracle/run_scheduler.py": "28ed3f13aa2d7502a317a0dd1974b7c67f7ee784761605acd54d57e26168f353",
    "oracle/scenarios-sched/ov-eos.json": "912b91813c26cafc4ee4334257199da775e2c6d35a055463d5c97b507f502cac",
    "oracle/stubs.py": "e30a3a770e3a4f91008449145089328ba8fbb83b35bda7082e1c77e323eb1692",

@@ -1,5 +1,5 @@
 {
-  "version": "gpu-mock/8+8e13b6cf1897",
+  "version": "gpu-mock/9+f7e50518d4b2",
   "description": "Every replacement the oracle harness makes in SGLang's code, by kind (gpu, clock, transport, environment, platform, external-service, transcription), with the sites oracle/check_mocks.py finds, and in `covers` the platform reads, clock reads and thread starts each accounts for (oracle/gen_platform_reads.py lists them, FID-1). No entry is a transcription: the event loops run as released.",
   "mocks": [
     {
@@ -632,6 +632,15 @@
       "kind": "environment",
       "how": "oracle/run_cache_iface.py build_cache and oracle/run_hicache.py build_hicache set SGLang's process-global ServerArgs with sglang.srt.server_args.set_global_server_args_for_scheduler before they build the pools and the cache, as Scheduler.__init__ does for its own ServerArgs; run_hicache.py also publishes a one-rank parallel topology (tp, pp of size 1, rank 0) with sglang.srt.runtime_context.get_parallel().override, which a scheduler process would publish at start-up. Both are SGLang's own setters, called with the sequence's settings; they write nothing a harness file names, so they list no site",
       "sites": []
+    },
+    {
+      "symbol": "EventPublisherFactory publisher \"recording\"",
+      "kind": "transport",
+      "how": "the ZMQ PUB socket and its thread are replaced by a publisher of the runner's, registered with EventPublisherFactory under the name \"recording\": publish() sets the batch's timestamp to 0.0 (the wall clock otherwise) and encodes it with the same msgspec.msgpack.Encoder().encode call the ZMQ publisher's thread makes, and keeps the bytes; oracle/run_metrics.py records them",
+      "sites": [
+        "run_metrics.py:events.ts",
+        "run_metrics.py:events.attn_dp_rank"
+      ]
     }
   ]
 }

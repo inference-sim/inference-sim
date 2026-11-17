@@ -45,6 +45,10 @@ type adder struct {
 	preemptList []*Req
 	// reqStates is nil until add_one_req_ignore_eos first runs in this pass.
 	reqStates []reqState
+
+	// The prefill accounting the metrics reporter reads (PrefillAdder.log_*, :664-671). The
+	// reprocessed counts are the part of the totals that retracted requests account for.
+	logHitTokens, logInputTokens, reprocessedHitTokens, reprocessedInputTokens, logDeviceHitTokens int
 }
 
 // newAdder is PrefillAdder.__init__ (:608-743).
@@ -92,7 +96,13 @@ func (a *adder) budgetState() AddResult {
 
 // updatePrefillBudget is _update_prefill_budget (:895-952): the compute budgets take the extend
 // rounded to pages, the KV budget what the extend and the expected decode need.
-func (a *adder) updatePrefillBudget(extendInputLen int, maxNewTokens int) {
+func (a *adder) updatePrefillBudget(prefixLen, extendInputLen int, maxNewTokens int, retractedStain bool) {
+	a.logHitTokens += prefixLen
+	a.logInputTokens += extendInputLen
+	if retractedStain {
+		a.reprocessedHitTokens += prefixLen
+		a.reprocessedInputTokens += extendInputLen
+	}
 	extend := a.ceilPaged(extendInputLen)
 	// reserve() already charges one page; the per-request overhead is one page (no sharding).
 	a.budget.reserve(extend, float64(maxNewTokens), 0)
@@ -121,7 +131,7 @@ func (a *adder) addChunkedReq(r *Req) *Req {
 	if !truncated {
 		maxNew = min(r.MaxNewTokens, a.s.cfg.ClipMaxNewTokens)
 	}
-	a.updatePrefillBudget(r.ExtendLen(), maxNew)
+	a.updatePrefillBudget(0, r.ExtendLen(), maxNew, r.RetractedStain)
 	if truncated {
 		return r
 	}
@@ -197,7 +207,11 @@ func (a *adder) commit(r *Req, adm admission) {
 	if adm.isChunked {
 		a.newChunkedReq = r
 	}
-	a.updatePrefillBudget(adm.extendLen, adm.maxNewTokens)
+	a.updatePrefillBudget(adm.prefixLen, adm.extendLen, adm.maxNewTokens, r.RetractedStain)
+	// _account_prefill_cache_admission (:962-1000): a retraction's reprocessing is not a hit.
+	if !r.RetractedStain {
+		a.logDeviceHitTokens += adm.prefixLen
+	}
 }
 
 // ignoreEOSReserveTokens is IGNORE_EOS_RESERVE_TOKENS (schedule_policy.py:121@297e54fd).
@@ -264,7 +278,7 @@ func (a *adder) addOneReqIgnoreEOS(r *Req) AddResult {
 		// Not chunked, or the last chunk: the whole sequence is committed this pass.
 		r.ExtendEnd = r.InputLen()
 		a.canRunList = append(a.canRunList, r)
-		a.updatePrefillBudget(r.ExtendLen(), min(r.MaxNewTokens, a.s.cfg.ClipMaxNewTokens))
+		a.updatePrefillBudget(0, r.ExtendLen(), min(r.MaxNewTokens, a.s.cfg.ClipMaxNewTokens), r.RetractedStain)
 	} else {
 		if *a.remChunkTokens <= 0 {
 			return Other
@@ -276,7 +290,7 @@ func (a *adder) addOneReqIgnoreEOS(r *Req) AddResult {
 		r.ExtendEnd = r.C.PrefixLen + trunc
 		a.canRunList = append(a.canRunList, r)
 		a.newChunkedReq = r
-		a.updatePrefillBudget(trunc, 0)
+		a.updatePrefillBudget(0, trunc, 0, r.RetractedStain)
 	}
 	return a.budgetState()
 }

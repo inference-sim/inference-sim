@@ -59,6 +59,20 @@ type Config struct {
 	// DisableConsecutivePrefillOverlap is SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP
 	// (environ.py:693@297e54fd, default off): two extend batches in a row do not overlap.
 	DisableConsecutivePrefillOverlap bool `json:"disable_consecutive_prefill_overlap"`
+	// EnableMetrics and DecodeLogInterval are --enable-metrics and --decode-log-interval: the
+	// scheduler makes its Reports only when metrics are on (SchedulerMetricsReporter.
+	// current_scheduler_metrics_enabled), and a decode batch logs every interval-th time.
+	EnableMetrics bool `json:"enable_metrics"`
+	// EnableKVEvents is --kv-events-config naming a publisher on this rank: the scheduler takes the
+	// tree cache's events at the points SchedulerKvEventsPublisher.publish_kv_events is called.
+	EnableKVEvents bool `json:"enable_kv_events"`
+	// KVEventsDynamo is the dynamo event format (KVEventsConfig.format): block hashes carry the
+	// request's extra_key and cache_salt.
+	KVEventsDynamo bool `json:"kv_events_dynamo"`
+	// ContextLen is the model's context length (model_config.context_len), which the context_len
+	// gauge reports; MaxContextLen is the request pool's row length.
+	ContextLen        int `json:"context_len"`
+	DecodeLogInterval int `json:"decode_log_interval"`
 	// RadixEvictionPolicy is the tree's eviction policy; empty is lru, SGLang's default.
 	RadixEvictionPolicy string `json:"radix_eviction_policy"`
 	// RetractionPolicy is --retraction-policy; empty is "length", the default the port models.
@@ -127,6 +141,12 @@ type Scheduler struct {
 	// resultQueue is Scheduler.result_queue (scheduler.py:2064@297e54fd): the launched batches
 	// whose results the overlap loop has not processed. At scheduling time it holds at most one.
 	resultQueue []*Batch
+
+	// reports are the Reports made this step; numRetracted and forwardCtDecode are the
+	// reporter's counters (metrics_reporter.py: num_retracted_reqs, forward_ct_decode).
+	reports         []Report
+	numRetracted    int
+	forwardCtDecode int
 
 	processedTokens  int
 	forwardCt        int
@@ -477,6 +497,7 @@ func (s *Scheduler) getNewBatchPrefill(running *Batch) (*Batch, *Batch) {
 	nb := &Batch{Reqs: a.canRunList, ChunkedReq: s.chunkedReq}
 	nb.ContainsLastPrefillChunk = s.chunkedReq == nil || len(a.canRunList) != 1
 	nb.PrepareForExtend(s)
+	nb.Prefill = s.prefillStats(a, running)
 
 	// Mixed-style chunked prefill.
 	if s.cfg.IsMixedChunk && !running.IsEmpty() {
@@ -516,6 +537,7 @@ func (s *Scheduler) updateRunningBatch(b *Batch) *Batch {
 	}
 	if retract {
 		retracted, ratio := b.RetractDecode(s)
+		s.numRetracted = len(retracted)
 		s.newTokenRatio.current = ratio
 		for _, r := range retracted {
 			s.addRequestToQueue(r)
@@ -576,6 +598,8 @@ type StepRecord struct {
 	Forwards []Forward `json:"forwards"`
 	Finished []string  `json:"finished"`
 	After    State     `json:"after"`
+	// Reports are the calls the metrics reporter received this step, in order (EnableMetrics).
+	Reports []Report `json:"reports,omitempty"`
 }
 
 func ridOrNil(r *Req) *string {
@@ -644,6 +668,9 @@ func (s *Scheduler) processPrefill(b *Batch) {
 		}
 	}
 	s.alloc.FreeGroupEnd()
+	if s.cfg.EnableMetrics || s.cfg.EnableKVEvents {
+		s.reportPrefill(b)
+	}
 }
 
 // processDecode is process_batch_result_decode (batch_result_processor.py:952-1109).
@@ -663,6 +690,16 @@ func (s *Scheduler) processDecode(b *Batch) {
 		}
 	}
 	s.alloc.FreeGroupEnd()
+	if s.cfg.EnableMetrics || s.cfg.EnableKVEvents {
+		s.reportDecode(b)
+	}
+}
+
+// onIdle is on_idle (:5241-5335) when the scheduler is fully idle: the events are published and
+// new_token_ratio resets.
+func (s *Scheduler) onIdle() {
+	s.publishKVEvents(nil)
+	s.newTokenRatio.current = s.cfg.NewTokenRatio.Init
 }
 
 // Step runs one iteration of event_loop_normal (scheduler.py:2026-2059), or of event_loop_overlap
@@ -679,6 +716,7 @@ func (s *Scheduler) Step(arrivals []Arrival) (rec StepRecord, err error) {
 		}
 	}()
 	s.finishedThisStep = nil
+	s.reports = nil
 	for _, a := range arrivals {
 		s.handleGenerateRequest(a)
 	}
@@ -691,12 +729,12 @@ func (s *Scheduler) Step(arrivals []Arrival) (rec StepRecord, err error) {
 			rec.Forwards = append(rec.Forwards, s.runBatch(batch))
 			s.processBatchResult(batch)
 		} else if s.isFullyIdle() {
-			// On idle: new_token_ratio resets (:5318).
-			s.newTokenRatio.current = s.cfg.NewTokenRatio.Init
+			s.onIdle()
 		}
 	}
 	s.last = batch
 	rec.Finished = s.finishedThisStep
+	rec.Reports = s.reports
 	rec.After = s.State()
 	s.step++
 	return rec, nil

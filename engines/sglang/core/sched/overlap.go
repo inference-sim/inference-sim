@@ -16,6 +16,8 @@ package sched
 func (b *Batch) snapshot() *Batch {
 	c := *b
 	c.Reqs = append([]*Req(nil), b.Reqs...)
+	// seq_lens_cpu is rebound, not changed, by the next decode; the port changes it in place.
+	c.SeqLens = append([]int(nil), b.SeqLens...)
 	return &c
 }
 
@@ -57,8 +59,7 @@ func (s *Scheduler) overlapIteration(rec *StepRecord) *Batch {
 			s.popAndProcess()
 		}
 	} else if batch == nil && s.isFullyIdle() {
-		// On idle: new_token_ratio resets (:5318).
-		s.newTokenRatio.current = s.cfg.NewTokenRatio.Init
+		s.onIdle()
 	}
 	return batch
 }
