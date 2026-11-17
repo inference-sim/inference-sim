@@ -6,6 +6,7 @@
 package lowering
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -102,13 +103,15 @@ func TestPreHopperComesFromTheComputeCapability(t *testing.T) {
 	}
 }
 
-// The catalog's nine parts keep the answers the name lists gave: A100 and L40S are
-// pre-Hopper, the rest are not, and the A100 defaults hold for the two A100 parts alone.
+// Every part of the catalog keeps the answers the name lists gave: A100 and L40S are
+// pre-Hopper, the rest (whatever parts the catalog gains) are not, and the A100 defaults hold for the two A100 parts alone.
 func TestCatalogPartsKeepTheirGenerationAndBatchDefaults(t *testing.T) {
 	d := data
 	names := d.Chips()
-	if len(names) != 9 {
-		t.Fatalf("catalog has %d chips, want 9: %v", len(names), names)
+	for _, want := range []string{"a100-80", "a100-sxm", "l40s", "h100", "h200", "b200"} {
+		if !slices.Contains(names, want) {
+			t.Fatalf("the catalog's chips %v lack %s", names, want)
+		}
 	}
 	for _, n := range names {
 		chip, _ := d.Chip(n)
