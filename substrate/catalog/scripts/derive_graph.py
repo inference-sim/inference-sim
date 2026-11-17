@@ -1883,6 +1883,9 @@ def collective(op: str, role: str, emit: str) -> dict[str, Any]:
 # than conventional: derive() prefers it over mirroring a target layer, so a handler that
 # defines it is stating that no target layer has the draft module's structure.
 DRAFT_KIND_ID = "mtp_moe"
+# The draft layer of a dense target (Qwen3.8-27B): its MLP is dense, so it is not the MoE draft layer
+# that DRAFT_KIND_ID names, and it has an id of its own.
+DENSE_DRAFT_KIND_ID = "mtp_dense"
 
 # The architectures whose MTP layer is DeepSeekMultiTokenPredictorLayer's, with an enorm, an hnorm
 # and an eh_proj ahead of its decoder block (see handler_moe's declare_draft).
@@ -5521,7 +5524,22 @@ def gdn_fp8_unconverted(cfg: dict[str, Any], raw: dict[str, Any], model: str, ro
 
 
 def handler_qwen3_5_moe(cfg, raw, model):
-    """Qwen3.5-MoE: a Gated DeltaNet linear-attention layer on most layers, full attention
+    """Qwen3.5-MoE, priced by _handler_qwen3_5 with a routed expert MLP on every layer."""
+    return _handler_qwen3_5(cfg, raw, model, dense=False)
+
+
+def handler_qwen3_5_dense(cfg, raw, model):
+    """The dense Qwen3.5 (Qwen3_5ForConditionalGeneration, Qwen3.8-27B): the same Gated DeltaNet
+    and full-attention layers as the MoE, with a dense gate/up/down MLP on every layer
+    (Qwen3_5DecoderLayer builds a Qwen3NextMLP when the config declares no experts,
+    qwen3_5.py:173-182@v0.33.0). A config that declares experts is the MoE class and is refused here."""
+    if cfg.get("num_experts") or cfg.get("num_local_experts"):
+        raise DeriveError(f"{model}: a dense Qwen3.5 declares no experts")
+    return _handler_qwen3_5(cfg, raw, model, dense=True)
+
+
+def _handler_qwen3_5(cfg, raw, model, dense):
+    """Qwen3.5: a Gated DeltaNet linear-attention layer on most layers, full attention
     on every fourth, and a routed expert MLP with a shared expert on all of them.
 
     The full-attention positions come from the declared layer_types vector rather than
@@ -5577,6 +5595,10 @@ def handler_qwen3_5_moe(cfg, raw, model):
 
     def with_moe(mixer):
         n = list(mixer)
+        if dense:
+            n += [norm("post_attn_norm"), *dense_mlp(cfg, model, hidden),
+                  collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE)]
+            return n
         n += [norm("post_attn_norm"),
               *moe_block(cfg, model, hidden, raw, family="Qwen3_5MoeForConditionalGeneration"),
               collective("All2All", "moe_dispatch_combine", EMIT_EXPERT_PARALLEL),
@@ -5627,11 +5649,12 @@ def handler_qwen3_5_moe(cfg, raw, model):
     ]
     gdn = with_moe(gdn_mixer)
     full = with_moe(attention_block(cfg, model, hidden, raw=raw))
+    gdn_id, attn_id = ("gdn_dense", "attn_dense") if dense else ("gdn_moe", "attn_moe")
     kinds = [
-        {"id": "gdn_moe", "nodes": gdn, "edges": chain(gdn)},
-        {"id": "attn_moe", "nodes": full, "edges": chain(full)},
+        {"id": gdn_id, "nodes": gdn, "edges": chain(gdn)},
+        {"id": attn_id, "nodes": full, "edges": chain(full)},
     ]
-    sequence = ["attn_moe" if t == "full_attention" else "gdn_moe" for t in types]
+    sequence = [attn_id if t == "full_attention" else gdn_id for t in types]
     stack = compress(sequence)
     # The MTP module (Qwen3_5MultiTokenPredictor, model_executor/models/qwen3_5_mtp.py:66-160
     # @4ba787ec) runs, once a draft token, an input stage before its full-attention MoE layer:
@@ -5644,18 +5667,19 @@ def handler_qwen3_5_moe(cfg, raw, model):
     # under ModelOpt it is also placed at its own module names, since the list can leave it at
     # another width than the decoder's (Qwen3.5-NVFP4 excludes mtp.layers.0* whole).
     mtp = int(pick(cfg, "num_spec_tokens") or 0)
+    draft_id = DENSE_DRAFT_KIND_ID if dense else DRAFT_KIND_ID
     if mtp:
         lead = [norm("mtp_pre_fc_norm_embedding"), norm("mtp_pre_fc_norm_hidden"),
                 dict(gemm("mtp_fc", hidden, 2 * hidden), weight_dtype=base_dtype(cfg, raw, model),
                      tp="column"),
                 collective("AllGather", "mtp_fc_out", EMIT_TENSOR_PARALLEL)]
         draft = lead + [dict(n) for n in full]
-        kinds.append({"id": DRAFT_KIND_ID, "nodes": draft, "edges": chain(draft)})
+        kinds.append({"id": draft_id, "nodes": draft, "edges": chain(draft)})
     quant = raw.get("quantization_config") or {}
     if str(quant.get("quant_method", "")).lower() not in MODELOPT_METHODS:
         return kinds, stack
     kinds = modelopt_place_widths(kinds, stack, raw, model,
-                                  draft=(DRAFT_KIND_ID, list(range(mtp))) if mtp else None)
+                                  draft=(draft_id, list(range(mtp))) if mtp else None)
     return kinds, stack
 
 
@@ -7903,6 +7927,7 @@ HANDLERS = {
     "MiniMaxM3SparseForConditionalGeneration": handler_minimax_m3,
     "NemotronHForCausalLM": handler_nemotron_h,
     "Qwen3_5MoeForConditionalGeneration": handler_qwen3_5_moe,
+    "Qwen3_5ForConditionalGeneration": handler_qwen3_5_dense,
     "Qwen4ExpForConditionalGeneration": handler_qwen4_exp,
     "KimiK3ForConditionalGeneration": handler_kimi_k3,
     # The same text decoder plus a DSA indexer on the latent layers (dsa_config); its
@@ -8242,6 +8267,7 @@ TOWER_BUILDERS = {
     "KimiK3ForConditionalGeneration": lambda *a: tower_moonvit(*a, v2=True),
     "KimiK31ForConditionalGeneration": lambda *a: tower_moonvit(*a, v2=True),
     "Qwen3_5MoeForConditionalGeneration": tower_qwen3_vl,
+    "Qwen3_5ForConditionalGeneration": tower_qwen3_vl,
     "Glm5NextForConditionalGeneration": tower_glm5_next,
     "DeepseekV41ForCausalLM": tower_deepseek_v41,
     "Gemma4ForConditionalGeneration": tower_gemma4,
@@ -8596,7 +8622,9 @@ def _derive(config_path: Path, model: str) -> dict[str, Any]:
         # three sources, in order of how much the config actually says.
         defined = {k["id"] for k in kinds}
         mtp_vector = cfg.get("mtp_layers_block_type")
-        if DRAFT_KIND_ID in defined:
+        if DENSE_DRAFT_KIND_ID in defined:
+            pattern = [DENSE_DRAFT_KIND_ID]
+        elif DRAFT_KIND_ID in defined:
             # A handler that priced the draft module itself, because the family gives it
             # a structure no target layer shares. GLM-5.3-Flash is a case in hand
             # (handler_glm5_next): its draft layer is sparse-MLA with its own
@@ -8659,6 +8687,7 @@ SPEC_METHODS = {
     # fallback's.
     "DeepseekV4ForCausalLM": "mtp",
     "Qwen3_5MoeForConditionalGeneration": "qwen3_5_mtp",
+    "Qwen3_5ForConditionalGeneration": "qwen3_5_mtp",
     # config/speculative.py:915-932@v0.33.0 rewrites model_type qwen4_exp to qwen4_exp_mtp.
     "Qwen4ExpForConditionalGeneration": "qwen4_exp_mtp",
     # vLLM rewrites model_type glm5_next to glm5_next_mtp and reads n_predict from
