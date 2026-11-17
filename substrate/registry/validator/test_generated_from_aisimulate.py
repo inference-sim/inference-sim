@@ -323,6 +323,11 @@ def test_no_coefficient_cites_a_non_nvidia_measurement_source():
     no second methodology, so requiring it to name a collection it was not read from would
     force either a false citation or a deleted one.
 
+    A measured entry may also cite, with `role: supporting`, the blis-vllm kernel_impls.json
+    that names the kernel implementation it measured. That source identifies the code the
+    measurement ran (the kernel_impls and measured_on keys carry it), reports no measurement of
+    its own, and so adds no second methodology. Any other supporting source is still a failure.
+
     The distinction is load-bearing rather than a convenience: 186 collective entries are
     extrapolated this way (every rank-width gap closed in a737aff, each holdout-validated
     against the one part with a measured 16-rank value), and all 186 are
@@ -340,6 +345,8 @@ def test_no_coefficient_cites_a_non_nvidia_measurement_source():
                 continue
             for source in body.get("sources", []):
                 cite = source["cite"]
+                if source.get("role") == "supporting" and "kernel_impls.json" in cite:
+                    continue
                 assert "AISimulate" in cite or "aisimulate" in cite, (
                     f"{name}/{key} cites {cite!r}, which is not an AISimulate "
                     f"collection; this set is single-sourced"
