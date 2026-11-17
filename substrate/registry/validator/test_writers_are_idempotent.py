@@ -58,13 +58,16 @@ WRITERS = [
     ("relane_attention_decode.py", "full-attention decode floor and rate"),
     ("relane_attention_prefill.py", "prefill floor and work_scale"),
     # The prefill pair refitted on FlashInfer's trtllm-gen kernel alone, for the chips that run
-    # it; a pool that reports that kernel reads it. `transferred`, so the family-owner map below
-    # does not list it (it lists `fitted: true` entries only).
+    # it, keyed by the engine release's kernel_impls.json ($BLIS_KERNEL_IMPLS); a pool that
+    # reports that kernel reads it. Its measured entries are in the family-owner map below.
     ("emit_attention_trtllm_gen.py", "the trtllm-gen prefill lane"),
     ("relane_attention_swa.py", "sliding-window decode floor and rate"),
     ("relane_gemm_envelope.py", "the GEMM efficiency ramp"),
     ("relane_moe_imbalance.py", "the MoE routing-imbalance median"),
     ("fit_marlin_grouped_ramp.py", "the Marlin W4A16 grouped GEMM ramp"),
+    # Hopper block-FP8 grouped experts per MoE backend, keyed by the engine release's
+    # kernel_impls.json ($BLIS_KERNEL_IMPLS) to the build each was measured on.
+    ("fit_hopper_fp8_grouped_ramp.py", "the Hopper FP8 grouped ramp per MoE backend"),
     # The h100/h200 fp16 all-reduce on vLLM 0.31.0's custom kernel. Needs aisimulate
     # 7980e95 (the 0.31.0 sweep); exits 2, failing, on a tree without it.
     ("relane_allreduce_vllm.py", "the h100/h200 vLLM 0.31.0 all-reduce triples"),
@@ -97,6 +100,17 @@ WRITERS = [
     # (validator/testdata/anchors/v41_h200_tp8_capture_startups.json); emit_memory.py keeps
     # these entries and does not write them.
     ("fit_deepseek_v41_capture.py", "the DeepSeek-V4.1 CUDA-graph capture form"),
+    # The GLM-5.3 family's sparse-MLA prefill form on h200, fitted on aisim's GLM-5.3 attention
+    # module ($AISIM_GLM53_DATA, a second pin, rederive.yml) net of the generated rest-of-module
+    # file, whose own staleness check is kernel/glm53_attention_rest_test.go.
+    ("fit_glm53_attention.py", "the GLM-5.3 family's h200 sparse-MLA prefill and decode entries"),
+    # The same family's fp8_ds_mla scale on that form, from aisim's h200 DSA context table at the
+    # same pin ($AISIM_GLM53_DATA), BF16 and fp8 caches measured on one collector.
+    ("fit_glm53_fp8_prefill_scale.py", "the GLM-5.3 family's h200 fp8 sparse-MLA prefill scale"),
+    # The per-model non-KV memory terms from fit-unit start-up logs
+    # (validator/testdata/anchors/memory_startup_fit_units.json): capture form, activation multiple
+    # and in-budget non-torch per (model, part, tp).
+    ("fit_memory_startup.py", "the per-model non-KV memory terms from start-up logs"),
 ]
 
 # relane_attention_mla.py is DELIBERATELY ABSENT from both lists, and this records why so
@@ -242,6 +256,9 @@ def test_every_fitted_family_has_a_writer():
         "attention_decode_rate_mla": "relane_attention_mla.py",
         "attention_prefill_floor": "relane_attention_prefill.py",
         "attention_prefill_work_scale": "relane_attention_prefill.py",
+        # The trtllm-gen lane's measured entries, keyed to the FlashInfer build their run used.
+        "attention_prefill_floor_trtllm_gen_kv": "emit_attention_trtllm_gen.py",
+        "attention_prefill_work_scale_trtllm_gen_kv": "emit_attention_trtllm_gen.py",
         "recurrent_decode_floor_kda": "relane_recurrent_kda.py",
         "recurrent_decode_rate_kda": "relane_recurrent_kda.py",
         "recurrent_decode_floor_gdn": "relane_recurrent_family.py",
@@ -252,12 +269,19 @@ def test_every_fitted_family_has_a_writer():
         "gemm_m_half": "relane_gemm_envelope.py",
         "moe_routing_imbalance_median": "relane_moe_imbalance.py",
         "host_link_bandwidth": "fit_host_link.py",
+        "gemm_eps_max_fp8_grouped_triton": "fit_hopper_fp8_grouped_ramp.py",
+        "gemm_m_half_fp8_grouped_triton": "fit_hopper_fp8_grouped_ramp.py",
+        "gemm_floor_fp8_grouped_triton": "fit_hopper_fp8_grouped_ramp.py",
+        "gemm_eps_max_fp8_grouped_flashinfer_cutlass": "fit_hopper_fp8_grouped_ramp.py",
+        "gemm_m_half_fp8_grouped_flashinfer_cutlass": "fit_hopper_fp8_grouped_ramp.py",
+        "gemm_floor_fp8_grouped_flashinfer_cutlass": "fit_hopper_fp8_grouped_ramp.py",
         "gemm_eps_max_w4a16_mxfp4_grouped": "fit_marlin_grouped_ramp.py",
         "gemm_m_half_w4a16_mxfp4_grouped": "fit_marlin_grouped_ramp.py",
         "gemm_eps_max_w4a16_nvfp4_grouped": "fit_marlin_nvfp4_grouped_ramp.py",
         "gemm_m_half_w4a16_nvfp4_grouped": "fit_marlin_nvfp4_grouped_ramp.py",
         "attention_decode_rate_sparse_mla": "fit_deepseek_v41_h200.py",
         "attention_decode_floor_block_index_scores": "fit_deepseek_v41_h200.py",
+        "attention_decode_floor_sparse_mla": "fit_glm53_attention.py",
         "attention_prefill_floor_sparse_mla": "fit_deepseek_v41_prefill.py",
         "attention_prefill_per_request_sparse_mla": "fit_deepseek_v41_prefill.py",
         "attention_prefill_per_token_sparse_mla": "fit_deepseek_v41_prefill.py",
@@ -286,6 +310,8 @@ def test_every_fitted_family_has_a_writer():
            for w in ("8rank_gb200_nvl72", "16rank_gb200_nvl72", "16rank_h200")},
         **{f"cudagraph_capture_{t}_full_and_piecewise": "fit_deepseek_v41_capture.py"
            for t in ("floor_bytes", "bytes_per_mixed_token", "bytes_per_decode_token")},
+        **{f"activation_buffer_count_moe_{n}rank": "fit_memory_startup.py" for n in (1, 2, 4, 8)},
+        **{f"nontorch_in_budget_bytes_{n}rank": "fit_memory_startup.py" for n in (1, 2, 4, 8)},
     }
     # Families whose absence of a writer is recorded rather than accidental.
     exempt = {

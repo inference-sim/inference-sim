@@ -11,6 +11,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/check"
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/metrics"
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 )
@@ -333,6 +334,7 @@ func (in Input) validate(p *validate.Problems) {
 			p.Field(at+".source", "%q is not one of command_line, environment, default", o.Source)
 		}
 	}
+	validateFiles(in.Files, p)
 	for i, w := range in.WorkloadProperties {
 		at := fmt.Sprintf("input.workload_properties[%d]", i)
 		switch {
@@ -350,6 +352,25 @@ func (in Input) validate(p *validate.Problems) {
 			p.Field(at+".profile", "is stated exactly when source is profile")
 		}
 		w.validateBorrowing(p, at)
+		switch {
+		case w.RatesSchedule != "" && w.RatesSchedule != "minimum_variance" && w.RatesSchedule != "natural_decay":
+			p.Field(at+".rates_schedule", "%q is not one of minimum_variance, natural_decay", w.RatesSchedule)
+		case (w.RatesSchedule == "natural_decay") != (w.RatesShape != nil):
+			p.Field(at+".rates_shape", "is stated exactly when rates_schedule is natural_decay")
+		case w.RatesShape != nil:
+			s := w.RatesShape
+			if s.Set == "" {
+				p.Field(at+".rates_shape.set", "required: the profile set that holds the shape")
+			}
+			if p.FiniteField(at+".rates_shape.decay_exponent", s.DecayExponent) &&
+				(s.DecayExponent < acceptance.MinDecayExponent || s.DecayExponent > acceptance.MaxDecayExponent) {
+				p.Field(at+".rates_shape.decay_exponent", "must lie in [%v, %v], got %v",
+					acceptance.MinDecayExponent, acceptance.MaxDecayExponent, s.DecayExponent)
+			}
+			if !acceptance.ShapeMethod(s.Method) {
+				p.Field(at+".rates_shape.method", "%q is not calibrated or assumed: a fitted shape is an estimate", s.Method)
+			}
+		}
 		if len(w.Values) == 0 && w.Source != PropertyDefault {
 			p.Field(at+".values", "required: the values %s supplied", w.Source)
 		}
@@ -636,7 +657,7 @@ func (q Requests) validate(p *validate.Problems) {
 	for name, v := range map[string]int{
 		"generated": q.Generated, "completed": q.Completed, "timed_out": q.TimedOut,
 		"in_flight_at_horizon": q.InFlightAtHorizon, "queued_at_horizon": q.QueuedAtHorizon,
-		"not_started": q.NotStarted, "length_capped": q.LengthCapped,
+		"not_started": q.NotStarted, "length_capped": q.LengthCapped, "planned_not_issued": q.PlannedNotIssued,
 	} {
 		if v < 0 {
 			p.Field("requests."+name, "must not be negative")
@@ -667,8 +688,9 @@ func (r *Result) validateRows(p *validate.Problems) {
 	if len(rows) == 0 {
 		return
 	}
-	if len(rows) != r.Requests.Generated {
-		p.Field("request_rows", "has %d rows but requests.generated is %d: one row per generated request", len(rows), r.Requests.Generated)
+	if len(rows) != r.Requests.Generated+r.Requests.PlannedNotIssued {
+		p.Field("request_rows", "has %d rows but requests.generated is %d and requests.planned_not_issued %d: one row per generated request, and one per planned round never issued",
+			len(rows), r.Requests.Generated, r.Requests.PlannedNotIssued)
 	}
 	counts := map[Fate]int{}
 	dropped := map[DropReason]int{}
@@ -724,10 +746,25 @@ func (r *Result) validateRows(p *validate.Problems) {
 			p.Field(at+".tpot_us", "required for a completed request with at least two output tokens")
 		}
 		for f, v := range map[string]*int64{"ttft_us": row.TTFTUs, "e2e_us": row.E2EUs,
-			"scheduling_delay_us": row.SchedulingDelayUs, "gateway_queue_delay_us": row.GatewayQueueDelayUs} {
+			"scheduling_delay_us": row.SchedulingDelayUs, "gateway_queue_delay_us": row.GatewayQueueDelayUs,
+			"queue_entry_us": row.QueueEntryUs, "first_token_us": row.FirstTokenUs} {
 			if v != nil && *v < 0 {
 				p.Field(at+"."+f, "must not be negative")
 			}
+		}
+		// The event times lie on the one simulated clock, in the order a request lives them (#1973).
+		if row.QueueEntryUs != nil && *row.QueueEntryUs < row.ArrivalUs {
+			p.Field(at+".queue_entry_us", "is %d, before the request's arrival_us %d", *row.QueueEntryUs, row.ArrivalUs)
+		}
+		if row.FirstTokenUs != nil && row.OutputTokens < 1 {
+			p.Field(at+".first_token_us", "a request that emitted no token has no first-token time")
+		}
+		if row.FirstTokenUs != nil && row.QueueEntryUs != nil && *row.FirstTokenUs < *row.QueueEntryUs {
+			p.Field(at+".first_token_us", "is %d, before queue_entry_us %d", *row.FirstTokenUs, *row.QueueEntryUs)
+		}
+		if row.FirstTokenUs != nil && row.TTFTUs != nil && *row.FirstTokenUs-row.ArrivalUs != *row.TTFTUs {
+			p.Field(at+".first_token_us", "is %d: ttft_us %d must equal first_token_us - arrival_us (%d)",
+				*row.FirstTokenUs, *row.TTFTUs, *row.FirstTokenUs-row.ArrivalUs)
 		}
 		if row.TPOTUs != nil && (math.IsNaN(*row.TPOTUs) || math.IsInf(*row.TPOTUs, 0) || *row.TPOTUs < 0) {
 			p.Field(at+".tpot_us", "must be a finite number, not negative")
@@ -750,10 +787,10 @@ func (r *Result) validateRows(p *validate.Problems) {
 				p.Field(at+".length_capped", "only a completed request stops at a length limit")
 			}
 		}
-		switch row.Phase {
-		case "", PhaseWarmup, PhaseProfile, PhaseGrace:
-		default:
-			p.Field(at+".phase", "%q is not one of warmup, profile, grace", row.Phase)
+		// A phase is the label the workload gave it (trace.Phase): any lowercase slug. The three
+		// constants name the ones a measured window treats specially.
+		if row.Phase != "" && !phaseSlug.MatchString(string(row.Phase)) {
+			p.Field(at+".phase", "%q is not a lowercase slug (letters, digits, - and _)", row.Phase)
 		}
 		if a := row.Agentic; a != nil {
 			switch a.Kind {
@@ -768,7 +805,7 @@ func (r *Result) validateRows(p *validate.Problems) {
 	}
 	q := r.Requests
 	for f, want := range map[Fate]int{FateCompleted: q.Completed, FateTimedOut: q.TimedOut,
-		FateInFlightAtHorizon: q.InFlightAtHorizon, FateQueuedAtHorizon: q.QueuedAtHorizon, FateNotStarted: q.NotStarted} {
+		FateInFlightAtHorizon: q.InFlightAtHorizon, FateQueuedAtHorizon: q.QueuedAtHorizon, FateNotStarted: q.NotStarted + q.PlannedNotIssued} {
 		if counts[f] != want {
 			p.Field("request_rows", "%d rows have fate %s but requests counts %d", counts[f], f, want)
 		}
@@ -879,9 +916,10 @@ func (w WorkloadProperty) validateBorrowing(p *validate.Problems, at string) {
 	if w.Source != PropertyProfile {
 		p.Field(at+".step", "is stated only when source is profile, because only a profile lookup borrows")
 	}
-	steps := map[string]bool{"exact": true, "same_drafter_other_k": true, "other_drafter": true, "other_target": true}
+	steps := map[string]bool{"exact": true, "same_drafter_other_k": true, "same_drafter_other_settings": true,
+		"other_drafter": true, "other_target": true}
 	if !steps[w.Step] {
-		p.Field(at+".step", "%q is not one of exact, same_drafter_other_k, other_drafter, other_target", w.Step)
+		p.Field(at+".step", "%q is not one of exact, same_drafter_other_k, same_drafter_other_settings, other_drafter, other_target", w.Step)
 	}
 	if len(w.Profiles) == 0 {
 		p.Field(at+".profiles", "required with step: the profiles the value was read from")
@@ -908,12 +946,13 @@ func (w WorkloadProperty) validateBorrowing(p *validate.Problems, at string) {
 	}
 }
 
-var profileKeyFields = []string{"model", "drafter", "speculative_method", "num_spec_tokens"}
+var profileKeyFields = []string{"model", "drafter", "speculative_method", "num_spec_tokens", "draft_sampler", "verifier", "engine"}
 
 // ProfileKeyFields returns the key fields in which a borrowed acceptance profile can differ
-// from the run's (design D8): the target model, the drafter, the speculative method and the
-// number of speculative tokens. A point record's profile substitution names them from the same
-// list.
+// from the run's (design D8): the target model, the drafter, the speculative method, the
+// number of speculative tokens, and the draft sampler and verifier
+// (inference-sim/blis-substrate#174). A point record's profile substitution names them from the
+// same list.
 func ProfileKeyFields() []string { return append([]string(nil), profileKeyFields...) }
 
 // IsProfileKeyField reports whether name is one of ProfileKeyFields.
@@ -994,3 +1033,5 @@ func (c SelectedCoefficient) validatePriced(p *validate.Problems, at string, mar
 		p.Field(at+".kernel_match", "%q is not exact or unkeyed: a lookup does not return an entry whose implementations do not run", c.KernelMatch)
 	}
 }
+
+var phaseSlug = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)

@@ -286,6 +286,9 @@ type Input struct {
 	// and that BLIS does not simulate, such as speculative acceptance or expert routing
 	// imbalance, each with what supplied it (D8). Sorted by name.
 	WorkloadProperties []WorkloadProperty `yaml:"workload_properties,omitempty"`
+	// Files are the small input files the run read, whole (File), sorted by path: what a
+	// reproduction needs that the scenario, deployment, policy and options do not hold.
+	Files []File `yaml:"files,omitempty"`
 }
 
 // Option is one option that changes the Result.
@@ -321,7 +324,8 @@ type WorkloadProperty struct {
 	// PropertyProfile.
 	Profile string `yaml:"profile,omitempty"`
 	// Step is how a profile lookup found its value (D8): "exact" for the run's exact key, or
-	// the borrowing step that supplied it: "same_drafter_other_k", "other_drafter" or
+	// the borrowing step that supplied it: "same_drafter_other_k", "same_drafter_other_settings",
+	// "other_drafter" or
 	// "other_target". Present exactly when Source is PropertyProfile and the property is a
 	// profile lookup that can borrow (speculative acceptance).
 	Step string `yaml:"step,omitempty"`
@@ -335,6 +339,23 @@ type WorkloadProperty struct {
 	// Profiles lists every profile the value was read from, as set and key, the one that sets
 	// it first. An interpolation lists the two it lies between. Present with Step.
 	Profiles []string `yaml:"profiles,omitempty"`
+	// RatesSchedule says how per-position rates the source did not state were derived:
+	// "minimum_variance" (the engine's synthetic schedule) or "natural_decay" (a profile
+	// set's fitted decay, named by RatesShape). It is an estimate the run assumed, so it is
+	// recorded; empty when the rates were stated.
+	RatesSchedule string `yaml:"rates_schedule,omitempty"`
+	// RatesShape is the fitted shape a natural_decay schedule used; nil otherwise.
+	RatesShape *RatesShape `yaml:"rates_shape,omitempty"`
+}
+
+// RatesShape names a fitted decay shape (acceptance.Shape): the set that holds it, the method it
+// was fitted to ("" for every method's), its exponent, and how the exponent was obtained, so a
+// point can name the estimate as a substitution.
+type RatesShape struct {
+	Set               string       `yaml:"set"`
+	SpeculativeMethod string       `yaml:"speculative_method,omitempty"`
+	DecayExponent     float64      `yaml:"decay_exponent"`
+	Method            vocab.Method `yaml:"method"`
 }
 
 // PropertySource is what supplied a workload property, highest precedence first (D8).
@@ -582,10 +603,15 @@ type Figure struct {
 }
 
 // Requests counts each request's fate (DEV-9). Generated is the generator's own count of
-// the requests it created, every round a session planned included; it equals the sum of
-// the fates.
+// the requests it issued; it equals the sum of the fates. A round a session planned and never
+// issued is not a generated request: PlannedNotIssued counts it apart, and it has a request row
+// with the fate not_started.
 type Requests struct {
 	Generated int `yaml:"generated"`
+	// PlannedNotIssued counts the rounds sessions planned and never issued, because the session
+	// ended first by a timeout, a drop, the horizon or a budget. It is not part of Generated or
+	// of the fates; each has a row (inference-sim#2093).
+	PlannedNotIssued int `yaml:"planned_not_issued,omitempty"`
 
 	Completed int `yaml:"completed"`
 	// Dropped counts dropped requests by reason.
@@ -670,6 +696,14 @@ type RequestRow struct {
 	E2EUs  *int64   `yaml:"e2e_us,omitempty"`
 	// SchedulingDelayUs is the time from arrival at an engine to the first scheduled step.
 	SchedulingDelayUs *int64 `yaml:"scheduling_delay_us,omitempty"`
+	// QueueEntryUs is the clock at which the request entered an engine's waiting queue: the
+	// request's arrival at the engine, after the router and any flow-control wait. Present only
+	// for a request that reached an engine (inference-sim#1973).
+	QueueEntryUs *int64 `yaml:"queue_entry_us,omitempty"`
+	// FirstTokenUs is the clock at which the request's first token reached the client, so
+	// that ttft_us is first_token_us - arrival_us. Present exactly where a first token was
+	// delivered, as ttft_us is (inference-sim#1973).
+	FirstTokenUs *int64 `yaml:"first_token_us,omitempty"`
 	// GatewayQueueDelayUs is the time spent in the router's flow-control queue.
 	GatewayQueueDelayUs *int64 `yaml:"gateway_queue_delay_us,omitempty"`
 	// CompletionIndex is the request's 1-based position in the run's order of completion,
@@ -700,7 +734,8 @@ type RequestRow struct {
 	Agentic *AgenticTag `yaml:"agentic,omitempty"`
 }
 
-// Phase is a request's benchmark phase, after aiperf's benchmark_phase tag. Only
+// Phase is a request's benchmark phase: the name of the workload's phase it was sent in
+// (trace.Phase), after aiperf's benchmark_phase tag. Any lowercase slug is valid; only
 // PhaseWarmup is outside the measured window.
 type Phase string
 

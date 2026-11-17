@@ -22,7 +22,8 @@ file's stem and is not a key of the file.
 | `router` | string | yes | The router the run was measured behind, in lower case, for example `dynamo`. Never `llm-d`, which BLIS hosts. |
 | `mode` | string | yes | The router's mode or algorithm as the run's configuration names it. When the configuration sets none, the mode the router's code defaults to, and a citation says so. |
 | `session_affinity_ttl_s` | integer | no | The router's session-affinity idle timeout in seconds, when the configuration sets one. At least 1. Two runs that differ in it are different keys. |
-| `revisions` | list of strings | yes | The builds of the router the run used for which the entry is established, each a full 40-character commit, sorted, each once. A mapping is a claim about the behaviour of a build, so an entry shown for one build is not inherited by another with the same mode: a run on a build not listed has no mapping and stays `router_unsupported` (design §11.4). Every `router`-side citation is at one of them, and each has a citation for the `mode` and one for the `policy`. |
+| `revisions` | list of strings | yes | The builds of the router the run used for which the entry is established, each a full 40-character commit, sorted, each once. A mapping is a claim about the behaviour of a build, so an entry shown for one build is not inherited by another with the same mode: a run on a build not listed has no mapping and stays `router_unsupported` (design §11.4). Every `router`-side citation is at one of them or at a commit of a build, and each has a citation for the `mode` and one for the `policy`. |
+| `builds` | list | no | The builds a recipe names by version, not by commit (a wheel such as `1.3.0.dev20260601`), each with the commits it could have been made from and the files that decide the mode, below. |
 | `policy` | string | yes | A policy llm-d's router offers, or `none`. |
 | `reason` | string | yes | What the router's mode and the policy do alike and differently; for `none`, why no policy is close enough. |
 | `difference` | list | for a policy other than `none`; else no | Each way the mode and the policy differ, one statement per aspect, each citing the code that shows it, below. |
@@ -45,9 +46,58 @@ not shown for this one. `no_entry`: no entry has the key. The last three are G5
 `revision` of its `router_differs`, and `Data.CheckRouterSubstitutions` refuses one whose entry
 is missing, is another router's, does not cover the build, or maps to another policy.
 
-The committed `dynamo-round-robin` entry covers one build of Dynamo, commit
-`1682167d3c97f0fc8cd405dee51f17288eeaeb55` (26 April 2026), the build the April 2026 recipes
-pin. A run on a later Dynamo build stays `router_unsupported` until an entry cites it.
+`routertable.ResolveBuild` (and `Data.LookupRouterBuild`) is the same lookup for a run whose recipe
+names the build by version. A recipe pins Dynamo by a wheel such as `1.3.0.dev20260601`, which is
+no commit, so the entry lists the build under `builds` with every commit it could have been made
+from; the outcomes are the same four, and a version the entry does not list, or a recipe that
+states none, is `revision_not_covered`. `Resolve` by commit also finds a commit that lies in a
+listed build. A point that relies on a build names `Build.Revision()`, the newest commit of its
+window, in the `revision` of its `router_differs`.
+
+#### `builds`
+
+A nightly wheel carries the UTC date it was built on and is made from the head of the main branch
+when the run was triggered; the hour is not in the version. The window of a nightly is therefore
+every first-parent commit of main from the head at the start of that date to the head at its end.
+A release wheel is the one commit of its tag. The entry covers the build only if the files that
+decide the mode have one git blob identifier at every commit of the window (`git rev-parse
+<commit>:<path>`); every `router`-side citation at one of those commits is of one of those files,
+so the passage read at one commit is the passage at all of them. Where a file changes inside a
+window, the build is not listed and a run on it stays `router_unsupported`. To redo a window:
+`git log --first-parent --format='%H %ct' main`, take the commits from the head before the date's
+00:00 UTC to the head before the next date's, and print each file's blob with `git rev-parse`.
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `name` | string | yes | The version as the recipe states it, for example `1.3.0.dev20260601` or `1.2.1`. Each build of an entry once. |
+| `source` | string | yes | `nightly`: a development wheel, made from main on the date in its version. `release`: a release wheel, made from the commit of its tag. |
+| `window` | string | yes | In words, how the commits were found, so a reader can redo it from the router's history. |
+| `commits` | list of strings | yes | Every commit the build could have been made from, each a full 40-character commit, sorted, each once. A release has one. A commit is in one build of an entry only. |
+| `files` | list | yes | The files that decide the mode, each a `path` from the router repository's root and its git `blob` identifier (40 lower-case hex digits), the same at every commit of `commits`. |
+
+The committed `dynamo-round-robin` entry covers Dynamo `1.2.0.dev20260426`, `1.2.0.dev20260526`, `1.2.1`,
+`1.3.0.dev20260601`, `1.3.0.dev20260614`, `1.3.0.dev20260710`, `1.3.0.dev20260713` and
+`1.3.0.dev20260721`, and the commit `1682167d3c97f0fc8cd405dee51f17288eeaeb55`
+(26 April 2026). In the window of `1.3.0.dev20260614` the file `push_router.rs` has two blobs. They
+differ only in what the rule set `rust-logging-only` removes: logging statements, a binding that
+only carries a value to a removed statement, an unread element of a tuple binding, and blank
+lines. A Python file is compared by the rule set `python-routing-statements`: only the statements
+that name a router (with the definitions around them) are compared, so a difference in code that
+names no router, such as an added import or an unrelated option, is not a difference, while a
+difference in any statement that names one is. In the windows of `1.2.0.dev20260526` and
+`1.3.0.dev20260721` the file `frontend/main.py` has two blobs that agree under that rule. The entry lists the
+second blob as a `variant` of the first, each with the SHA-256 of its normal form, and the
+validator requires the digests to be equal and the rule to be the one for the file's kind. The digests are produced by
+`catalog/scripts/router_normal_form.py` on a clone of the router's repository, which anyone can
+rerun; a difference left after the rules is a difference in what the router computes, and the
+build is then not covered. A run on any other Dynamo build stays `router_unsupported` until an
+entry cites it.
+
+The `vllm-router-consistent_hash` entry covers vLLM Router `0.1.14`, a release (the commit of the
+project's tag `v0.1.14`), the build InferenceX installs for its AgentX runs. It maps to `none`, so
+a run behind it resolves to `no_policy`: the table knows the router and says why no policy of
+llm-d's router is close enough. A run on another build of vLLM Router, such as a dated nightly,
+is `revision_not_covered`.
 
 Policies:
 
@@ -126,6 +176,7 @@ allow yet.
 | Key | Type | Required | Meaning |
 |---|---|---|---|
 | `evidence` | mapping | yes | The measurement the ratios come from, below. |
+| `more_evidence` | list of mappings | no | Further measurements, each of the same kind as `evidence` (a CSV of runs with the regime's fields in every row, such as a layout sweep). A ratio names the file it comes from; without one it comes from `evidence`. |
 | `ratios` | list | yes | The limits: at least one, each for one figure, one set of alternatives and one regime. |
 | `not_measured` | list of strings | yes | What the bound does not cover, one sentence each. At least one: a bound that claims to cover everything is not a measured bound. |
 
@@ -143,6 +194,7 @@ allow yet.
 
 | Key | Type | Required | Meaning |
 |---|---|---|---|
+| `evidence` | string | no | The `file` of the measurement this ratio is recomputed from, when it is not the bound's primary one. |
 | `metric` | string | yes | The [metric registry](metrics.md) identifier of the figure, for example `ttft_p50_ms`. |
 | `against` | list of strings | yes | The alternatives the policy was compared with, each by the name of its plugin composition in the evidence file's `policy` column. Sorted, each once, none the entry's own policy. |
 | `regime` | mapping | yes | Where the ratio was measured, below. |

@@ -57,6 +57,66 @@ type PoolPlan struct {
 	// InFlight is the most steps in flight at once; 0 means 1, the value without asynchronous
 	// or overlap scheduling.
 	InFlight int
+
+	// The settings the engine resolved that the cost model prices (resolved.go). Each is stated
+	// in neutral words, and the cost model applies no default to any of them (SUB-6).
+
+	// Batch is the most requests and tokens one step may schedule.
+	Batch BatchLimits
+	// MaxContext is the longest sequence the engine admits, in tokens; 0 when neither the
+	// deployment nor the model states one.
+	MaxContext units.Tokens
+	// PageTokens is the tokens one KV page holds; 0 is not stated.
+	PageTokens units.Tokens
+	// MemoryFraction is the share of each GPU's memory the engine may take, in (0, 1]; 0 is not
+	// stated.
+	MemoryFraction float64
+	// WeightFormat is the format, in the catalog's dtype words (model.DType: bf16, fp8, nvfp4,
+	// ...), that every weight whose graph node states no format of its own is served in; "" is
+	// the checkpoint's own.
+	WeightFormat string
+	// Cache is how the engine stores KV and recurrent state.
+	Cache CacheFormat
+	// MoE is how the engine runs mixture-of-experts layers.
+	MoE MoEPlan
+	// Collectives says which collectives the engine's layers run.
+	Collectives CollectivePlan
+	// DecodeContext is how a decode-context-parallel group combines and stripes; read only when
+	// the layout's decode-context width exceeds one.
+	DecodeContext DecodeContextPlan
+	// Microbatch is true when the engine splits a large enough step into two micro-batches whose
+	// compute and communication overlap.
+	Microbatch bool
+	// Engram is where the model's Engram lookup tables live, for a model that has them.
+	Engram EngramPlacement
+	// Launches is how the engine's own fused kernels change the step's launch count from the
+	// count the model graph's nodes give, by the tokens the step launches. The engine resolves
+	// which fusions run for its version, chip, layout and the step's size, so the cost model
+	// counts launches from the graph and adds what the engine states (SUB-6). Empty is no change.
+	Launches []LaunchChange
+}
+
+// LaunchChange is the change the engine's fused kernels make to each layer's launches in a step
+// whose rank launches between FromTokens and ToTokens tokens, both included: its scheduled tokens
+// and padding (kernel.Batch.PaddedTokens). Ranges do not overlap; a step in none launches the
+// graph's count.
+type LaunchChange struct {
+	FromTokens, ToTokens units.Tokens
+	// PerLayer is the launches each layer of the target's stack makes beyond the graph's count
+	// (positive) or short of it (negative), e.g. -3 where three of a layer's nodes run fused into
+	// kernels the layer already launches. It is never zero (Validate).
+	PerLayer int
+}
+
+// LaunchChangeAt is the per-layer launch change the plan states for a step of n launched tokens,
+// 0 for a step no range covers.
+func (p PoolPlan) LaunchChangeAt(n units.Tokens) int {
+	for _, c := range p.Launches {
+		if n >= c.FromTokens && n <= c.ToTokens {
+			return c.PerLayer
+		}
+	}
+	return 0
 }
 
 // Implementations are the distinct kernel implementations the pool runs: those of Layers and of
@@ -367,6 +427,14 @@ type GraphPolicy struct {
 	Mode GraphMode
 	// Buckets are the captured sizes, in tokens or in requests according to Mode.
 	Buckets []int
+	// Decode is how a uniform decode step launches when its size is captured, and Other how any
+	// other step does: a full graph, a piecewise graph with the attention run eagerly, or eagerly
+	// (LaunchEager, the zero value).
+	Decode Launch
+	Other  Launch
+	// Ceiling is the largest token count a captured graph covers; a step above it launches
+	// eagerly. 0 is none.
+	Ceiling units.Tokens
 }
 
 // GraphMode is how captured graphs are keyed.
@@ -394,15 +462,25 @@ type DraftPolicy struct {
 	Chain     int
 	TreeTopK  int
 	TreeSteps int
-	// FirstPassRows and PassRequests state how an autoregressive drafter's passes run: which
-	// rows its first pass processes, and for which requests the head and the later passes run.
-	// They are the engine's execution decisions, resolved by the engine and stated here in
-	// neutral words, so the cost model prices what it is told and resolves nothing (SUB-6).
-	// Empty means not stated; a pool that speculates through an autoregressive drafter and
-	// leaves either empty is refused by the cost model, and a parallel-block drafter, whose
-	// target-wide work is its context stack, needs neither.
+	// FirstPassRows and PassRequests state how a drafter's passes run: which rows an
+	// autoregressive drafter's first pass processes, and for which requests the head and the
+	// later passes run (a parallel-block drafter's query pass and sequential head). They are the
+	// engine's execution decisions, resolved by the engine and stated here in neutral words, so
+	// the cost model prices what it is told and resolves nothing (SUB-6). Empty means not
+	// stated; the cost model refuses a pool that speculates and leaves PassRequests empty, or
+	// that drafts autoregressively and leaves FirstPassRows empty. A parallel-block drafter,
+	// whose target-wide work is its context stack, needs no FirstPassRows.
 	FirstPassRows FirstPassRows
 	PassRequests  PassRequests
+	// Adaptive is true when the verifier runs a draft budget chosen each step from the expected
+	// acceptance, rather than every drafted token.
+	Adaptive bool
+	// RetainedTokens is the KV tokens a request keeps beyond its context for the drafter to read
+	// ahead; 0 is none.
+	RetainedTokens units.Tokens
+	// OwnWorkspace is true when the drafter's attention runs in a workspace of its own, held
+	// beside the target's, rather than inside the target's.
+	OwnWorkspace bool
 }
 
 // FirstPassRows is which rows an autoregressive drafter's first pass processes. Every pass
@@ -421,7 +499,8 @@ const (
 // Valid reports whether r is a stated word.
 func (r FirstPassRows) Valid() bool { return r == FirstPassPerRequest || r == FirstPassScheduled }
 
-// PassRequests is for which requests an autoregressive drafter's head and later passes run.
+// PassRequests is for which requests a drafter's head and later passes run: an autoregressive
+// drafter's, or a parallel-block drafter's query pass and sequential head.
 type PassRequests string
 
 // The words PassRequests takes. Empty is not stated.
@@ -650,6 +729,13 @@ type DraftShape struct {
 	// the lockstep group, apart from the target's, so a rank's draft pass can be wider than its own
 	// draft rows, and the engine states how wide (the target's padding is PaddedShape).
 	Passes []DraftPass
+	// Skip says the drafter proposes no drafts in this step, because no request on any rank of
+	// the data-parallel group can use them; the engine decides it (vLLM v0.33.0's skip_drafts,
+	// vllm/v1/worker/gpu/model_runner.py:2117-2135@4ba787ec) and the cost model prices the step
+	// without the passes that propose (kernel.Batch.SkipDrafts). The drafter still keeps its KV in
+	// step with the target, which the cost model prices from the requests. A skipped step states
+	// no drafted tokens and no drafter pass (Validate). False is a step that proposes as before.
+	Skip bool
 }
 
 // DraftPass is one rank's drafter launch. The zero value is no drafter pass.

@@ -114,7 +114,7 @@ func TestCitedRefusesUnknownIdentifiers(t *testing.T) {
 		}
 	}
 	for name, body := range map[string]string{
-		"unknown":    "## Invariants\n\n- SUB-21\n",
+		"unknown":    "## Invariants\n\n- SUB-99\n",
 		"no section": "## Summary\n\n- SUB-6\n",
 		"empty":      "## Invariants\n\n<!-- SUB-6 -->\n\n## Tests\n",
 	} {

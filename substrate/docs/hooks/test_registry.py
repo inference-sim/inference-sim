@@ -96,7 +96,20 @@ def test_a_fabric_only_entry_fills_its_fabric_columns():
     assert list(rows["fabric_bandwidth_efficiency"]) == ["ib-400g"]
 
 
-@pytest.mark.parametrize("scope", [{"hardware": ["h200"], "tp": [8]}, {"model": ["m"]}],
+def test_a_tp_scoped_entry_is_its_own_row_labelled_with_its_width():
+    """The memory set scopes a per-model start-up term by tensor-parallel width as well. Entries
+    of one name at two widths must be two rows, not one cell holding two values."""
+    def entry(tp):
+        return registry.Entry("nontorch_in_budget_bytes_4rank",
+                              {"scope": {"hardware": ["b300"], "model": ["m"], "tp": [tp]},
+                               "units": "bytes_per_rank", "method": "measured", "value": 1.0}, 1)
+    rows, _ = registry.matrix(registry.CoefficientSet("s", "s.yaml", [entry(2), entry(4)]))
+    assert sorted(rows) == ["nontorch_in_budget_bytes_4rank ‹model: m› ‹tp: 2›",
+                            "nontorch_in_budget_bytes_4rank ‹model: m› ‹tp: 4›"]
+    assert all(list(cells) == ["b300"] and len(cells["b300"]) == 1 for cells in rows.values())
+
+
+@pytest.mark.parametrize("scope", [{"hardware": ["h200"], "ep": [8]}, {"model": ["m"]}],
                          ids=["unshown-scope-key", "no-hardware"])
 def test_the_matrix_refuses_an_entry_it_cannot_show(scope):
     e = registry.Entry("x", {"scope": scope, "units": "tokens", "method": "measured",

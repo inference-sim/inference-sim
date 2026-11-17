@@ -56,7 +56,7 @@ const (
 func PrimitiveOf(name string) string {
 	has := func(prefix string) bool { return strings.HasPrefix(name, prefix) }
 	switch {
-	case has("gemm_eps_max_"), has("gemm_m_half_"), has("gemm_n_half_"), has("gemm_k_half_"):
+	case has("gemm_eps_max_"), has("gemm_m_half_"), has("gemm_n_half_"), has("gemm_k_half_"), has("gemm_floor_"):
 		if strings.Contains(name, "_grouped") {
 			return "moe.grouped_gemm"
 		}

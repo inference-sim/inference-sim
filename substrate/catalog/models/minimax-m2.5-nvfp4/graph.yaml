@@ -20,6 +20,7 @@ layer_kinds:
     role: qkv_proj
     n: 8192
     k: 3072
+    weight_dtype: bf16
   - op: Attention
     holds_engine_kv: true
     kind: gqa
@@ -30,11 +31,18 @@ layer_kinds:
     role: o_proj
     n: 3072
     k: 6144
+    weight_dtype: bf16
   - op: AllReduce
     role: attn_out
     emit: tensor_parallel
   - op: Elementwise
     role: post_attn_norm
+  - op: GEMM
+    role: router
+    n: 256
+    k: 3072
+    tp: replicated
+    weight_dtype: fp32
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -66,6 +74,8 @@ layer_kinds:
     - 7
   - - 7
     - 8
+  - - 8
+    - 9
 stack:
   pattern:
   - attn_moe
@@ -77,3 +87,4 @@ head:
   role: lm_head
   n: 200064
   k: 3072
+  weight_dtype: bf16

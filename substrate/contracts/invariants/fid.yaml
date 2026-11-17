@@ -8,12 +8,22 @@
 - id: FID-1
   section: §7.7
   statement: >-
-    The manifest lists every replacement. Any write the harness makes outside a listed site fails
-    CI, and a changed list carries a new version. The configuration the oracle resolves equals, outside
-    the fields the manifest lists, what the upstream's CUDA platform would resolve for the chip the
-    scenario names. Restoring a CUDA value that depends on choosing a CUDA attention backend is a
-    transcription (FID-8), checked against recorded CUDA start-up logs. Every read of the current
-    platform reachable from ported code is listed in the manifest.
+    The manifest lists every replacement. Any write the harness makes outside a listed site fails CI,
+    and a changed list carries a new version. The configuration the oracle resolves equals, outside the
+    fields the manifest lists, what the upstream's CUDA platform would resolve for the chip the scenario
+    names. Restoring a CUDA value that depends on choosing a CUDA attention backend is a transcription
+    (FID-8), checked against recorded CUDA start-up logs. Every read of the current platform reachable
+    from ported code is listed in the manifest. Each read counts as one site: every call of a platform
+    predicate, and every read of a platform attribute. A module constant computed from the platform at
+    import, such as _is_cuda = is_cuda(), counts once at its definition and again at every read of the
+    constant, so a read cannot hide behind a constant. Clock reads and thread starts reachable from
+    ported code are listed the same way, one site per read or start. A thread start is not run as a
+    thread. The step-driven runner replaces it: the thread's target, unmodified, runs synchronously, one
+    iteration of its loop at the step boundary its entry declares ("thread body run synchronously at
+    step k"), and the completion of a device stream or event it waits on is reported at that boundary
+    too. Each start site is one listed environment entry naming its target and its boundary. The
+    runner's scheduling rule is stated once, in the manifest, and no thread body is copied into the
+    harness (FID-8).
   scope:
   - blis-sglang
   - blis-vllm
@@ -116,8 +126,10 @@
 - id: FID-5
   section: §7.7
   statement: >-
-    A framework (connector base, offload tiering, HiCache) is marked modelled in the surface list
-    only when its contract has traces of its own, independent of any single connector built on it.
+    A framework (connector base, offload tiering, HiCache) is marked modelled in the surface list only
+    when it has recorded and direct traces at its own interface (§7.6). A feature built on the framework
+    does not supply them. A part of a framework without those traces is a separate item with its own
+    status. It is not marked modelled, whatever the status of the other parts.
   scope:
   - blis-sglang
   - blis-vllm
@@ -300,3 +312,76 @@
   target:
     status: ci
     milestone: 3
+- id: FID-12
+  section: §7.7
+  statement: >-
+    A connector or storage backend in the pinned tree that calls a KV store package runs that package,
+    and every service it calls that makes a decision BLIS models, at the versions the oracle's lock
+    pins, as code under test. The manifest replaces only their clocks and the transport that carries
+    bytes. The outside-service kind is allowed only for a service that makes no decision BLIS models,
+    such as a tokenizer. Each trace records the package's version, and each call the adapter makes at
+    kvstore.Store, with its answer (§6.5).
+  scope:
+  - blis-kvstore
+  - blis-sglang
+  - blis-vllm
+  checks:
+  - repo: blis-vllm
+    check: >-
+      check_mocks.py fails on a replacement inside a store package or its services other than a clock or
+      the byte transport, with a replaced Mooncake store master as its known-bad input
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      check_lock.py fails when the package or a service is missing from the lock or a trace records
+      another version
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      check_goldens.py fails a trace whose number of recorded calls differs from the number the oracle
+      counts at the package's entry points in the same run
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      check_mocks.py fails on a replacement inside a store package or its services other than a clock or
+      the byte transport, with a replaced Mooncake store master as its known-bad input
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      check_lock.py fails when the package or a service is missing from the lock or a trace records
+      another version
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      check_goldens.py fails a trace whose number of recorded calls differs from the number the oracle
+      counts at the package's entry points in the same run
+    runs: pull_request
+    status: new
+  - repo: blis-kvstore
+    check: >-
+      check_mocks.py fails on a replacement inside a store package or its services other than a clock or
+      the byte transport, with a replaced Mooncake store master as its known-bad input
+    runs: pull_request
+    status: new
+  - repo: blis-kvstore
+    check: >-
+      check_lock.py fails when the package or a service is missing from the lock or a trace records
+      another version
+    runs: pull_request
+    status: new
+  - repo: blis-kvstore
+    check: >-
+      check_goldens.py fails a trace whose number of recorded calls differs from the number the oracle
+      counts at the package's entry points in the same run
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 5

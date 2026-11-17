@@ -55,6 +55,9 @@ type Graph struct {
 	// reader comparing a prediction against a measured run of the full model would
 	// have no way to see why.
 	Modality Modality `yaml:"modality,omitempty"`
+
+	// Encoder is the towers the graph prices. See Encoder.
+	Encoder *Encoder `yaml:"encoder,omitempty"`
 }
 
 // Modality states which towers a graph prices.
@@ -69,20 +72,23 @@ const (
 	// graph is valid for text-only requests and understates any request carrying an
 	// image or audio input.
 	ModalityTextDecoderOfMultimodal Modality = "text_decoder_of_multimodal"
+	// ModalityMultimodal: the decoder and every tower the source describes, which Encoder
+	// prices. A source tower the graph does not price is listed in Encoder.Omitted and the
+	// graph states ModalityTextDecoderOfMultimodal instead.
+	ModalityMultimodal Modality = "multimodal"
 )
 
 var modalities = map[Modality]bool{
 	"": true, ModalityTextOnly: true, ModalityTextDecoderOfMultimodal: true,
+	ModalityMultimodal: true,
 }
 
 // Valid reports whether m is a recognized modality. The empty value is valid and
 // means text-only.
 func (m Modality) Valid() bool { return modalities[m] }
 
-// PricesEncoder reports whether the graph accounts for a non-text tower. It is
-// always false today: the primitive set has no encoder term, so a graph can declare
-// that it omits one but cannot declare that it includes one.
-func (m Modality) PricesEncoder() bool { return false }
+// PricesEncoder reports whether the modality says every tower of the source is priced.
+func (m Modality) PricesEncoder() bool { return m == ModalityMultimodal }
 
 // Derivation identifies the vendor artifact a graph came from without adopting its
 // vocabulary. Format names the dialect (for example "hf_config_json") so a reader
@@ -609,7 +615,7 @@ type Node struct {
 	QKRopeHeadDim int `yaml:"qk_rope_head_dim,omitempty"`
 	// SWA window, in tokens; zero for other kinds.
 	Window int `yaml:"window,omitempty"`
-	// SparseMLA top-k index count; zero for other kinds.
+	// Sparse top-k index count (sparse_mla, sparse_gqa); zero for other kinds.
 	IndexTopK int `yaml:"index_topk,omitempty"`
 	// CompressRatio is the integer factor by which a compressed sparse-MLA layer shrinks
 	// its latent KV read -- DeepSeek-V4-Pro's csa4_moe reads 1/4 of the latent cache and
@@ -636,12 +642,16 @@ type Node struct {
 	KVHeadsNotReplicated bool `yaml:"kv_heads_not_replicated,omitempty"`
 
 	// RecurrentUpdate.
-	RecurrentKind    RecurrentKind `yaml:"recurrent_kind,omitempty"`
-	NumHeads         int           `yaml:"n_heads,omitempty"`
-	StateSize        int           `yaml:"state_size,omitempty"`
-	NumGroups        int           `yaml:"n_groups,omitempty"`
-	ConvKernel       int           `yaml:"conv_kernel,omitempty"`
-	IntermediateSize int           `yaml:"intermediate_size,omitempty"`
+	RecurrentKind RecurrentKind `yaml:"recurrent_kind,omitempty"`
+	NumHeads      int           `yaml:"n_heads,omitempty"`
+	StateSize     int           `yaml:"state_size,omitempty"`
+	NumGroups     int           `yaml:"n_groups,omitempty"`
+	ConvKernel    int           `yaml:"conv_kernel,omitempty"`
+	// ConvDilation is the spacing, in tokens, between the inputs a short_conv node's
+	// kernel taps; zero means one. Its state holds (conv_kernel - 1) x conv_dilation
+	// inputs per channel. Refused on any other recurrent kind.
+	ConvDilation     int `yaml:"conv_dilation,omitempty"`
+	IntermediateSize int `yaml:"intermediate_size,omitempty"`
 	// StateDType is the dtype the recurrent state is stored in, which is often
 	// wider than the weight dtype.
 	StateDType DType `yaml:"state_dtype,omitempty"`

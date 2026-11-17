@@ -391,9 +391,22 @@ def capture_entries() -> list[str]:
 
 
 # Entries another writer owns in this file, kept byte for byte where it put them:
-# fit_deepseek_v41_capture.py's model-scoped capture form (blis-latency-kernel captureMemory).
+# fit_deepseek_v41_capture.py's model-scoped capture form (blis-latency-kernel captureMemory), and
+# the per-model terms of fit_memory_startup.py: its activation multiples and in-budget non-torch
+# bytes, whose scope names a model. The family-scoped entries of the same names are this
+# writer's own, so the second kind is told by its scope, not its name.
 FOREIGN = ("cudagraph_capture_floor_bytes_", "cudagraph_capture_bytes_per_mixed_token_",
            "cudagraph_capture_bytes_per_decode_token_")
+FOREIGN_MODEL_SCOPED = ("activation_buffer_count_", "nontorch_in_budget_bytes_")
+
+
+def is_foreign(block: list[str], cb) -> bool:
+    name = cb.name_of(block)
+    if not name:
+        return False
+    if name.startswith(FOREIGN):
+        return True
+    return name.startswith(FOREIGN_MODEL_SCOPED) and "model:" in (cb.scope_of(block) or "")
 
 
 def keep_foreign(text: str) -> str:
@@ -406,8 +419,7 @@ def keep_foreign(text: str) -> str:
     old = cb.split(TARGET.read_text())
     blocks = cb.split(text)
     for i, b in enumerate(old):
-        name = cb.name_of(b)
-        if name and name.startswith(FOREIGN):
+        if is_foreign(b, cb):
             prev = next(cb.name_of(x) for x in reversed(old[:i]) if cb.name_of(x))
             cb.upsert(blocks, b, after=lambda x, p=prev: cb.name_of(x) == p)
     return cb.join(blocks)

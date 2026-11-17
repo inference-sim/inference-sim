@@ -134,6 +134,41 @@ type Cluster struct {
 	// here, rather than reaching it only through a deployment's offload block,
 	// completes the available-hardware picture.
 	Storage []string `yaml:"storage,omitempty"`
+
+	// Pools names the cluster's node pools and the chip each carries, for a cluster built
+	// from more than one chip (SIM-17). A pool that omits its hardware carries Hardware,
+	// which stays the default for every pool. A bundle's node pool refers to a pool here
+	// by name, and an engine prices an instance by the chip of the pool it is placed in.
+	// Read a pool's chip through PoolHardware, never from this field.
+	Pools []Pool `yaml:"pools,omitempty"`
+}
+
+// Pool is one named node pool of a cluster and the chip its nodes carry.
+type Pool struct {
+	// Name identifies the pool; a bundle's node pool of the same name sits in it.
+	Name string `yaml:"name"`
+	// Hardware names the catalog accelerator every node of the pool is populated with.
+	// Omitted, the pool carries the cluster's Hardware.
+	Hardware string `yaml:"hardware,omitempty"`
+}
+
+// PoolHardware returns the chip name of the pool called name: the pool's own Hardware, or
+// the cluster's when the pool omits it. A cluster that declares no pools gives every name
+// the cluster's Hardware. When the cluster declares pools, a name it does not list is not
+// a pool of the cluster and ok is false.
+func (c Cluster) PoolHardware(name string) (chip string, ok bool) {
+	if len(c.Pools) == 0 {
+		return c.Hardware, true
+	}
+	for _, p := range c.Pools {
+		if p.Name == name {
+			if p.Hardware == "" {
+				return c.Hardware, true
+			}
+			return p.Hardware, true
+		}
+	}
+	return "", false
 }
 
 // GPUs returns the cluster's total GPU count, its nodes times the GPUs per node that

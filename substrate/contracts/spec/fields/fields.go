@@ -132,4 +132,25 @@ type Estimation struct {
 	// the rule applies to every value. Only with RuleLeaveUnset or RuleSubstitute. Exact
 	// evaluates it.
 	ValidWhen []Clause `json:"valid_when,omitempty" yaml:"valid_when,omitempty"`
+	// Approximates is an execution-mode substitution for a field that has no exact stand-in:
+	// for the recorded values and parts its clauses cover, the point is priced with Mode in
+	// place of the mode the value selects, and carries that substitution by name (design
+	// §11.3, "an execution mode is substituted"). It is never exact (Exact does not read it),
+	// and is allowed only with rule none. Approximate evaluates it.
+	Approximates *Approximation `json:"approximates,omitempty" yaml:"approximates,omitempty"`
+}
+
+// Approximation is the execution mode a field is priced as where no measured data describes
+// the one its value selects, the evidence the approximation rests on, and what it leaves out.
+type Approximation struct {
+	// Mode is the setting the point is priced with instead, as configuration field names and
+	// values: the execution mode substituted.
+	Mode map[string]any `json:"mode" yaml:"mode"`
+	// Evidence names the measurement that prices Mode, and why it is the nearest one.
+	Evidence string `json:"evidence" yaml:"evidence"`
+	// Differs is a sentence saying what differs between the mode the value selects and Mode.
+	Differs string `json:"differs" yaml:"differs"`
+	// When lists the clauses the approximation covers: a recorded value it applies to holds at
+	// least one. A value no clause covers is not approximated. Required.
+	When []Clause `json:"when" yaml:"when"`
 }

@@ -106,7 +106,7 @@ func sameNode(a, b *yaml.Node) bool {
 
 // UnmarshalYAML holds the node as written. A block with a recursive alias, a repeated key or
 // a non-finite number is refused here (SUB-12): the block is held as a tree, and a recursive
-// alias would make every later walk of it endless (blis-schemas#107).
+// alias would make every later walk of it endless (https://github.com/inference-sim/blis-schemas/issues/107).
 func (b *EngineBlock) UnmarshalYAML(n *yaml.Node) error {
 	if err := validate.CheckNode(n, nil); err != nil {
 		return err

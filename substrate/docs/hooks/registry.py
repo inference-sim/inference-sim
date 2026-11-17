@@ -48,9 +48,11 @@ REPO_URL = "https://github.com/inference-sim/blis-substrate"
 
 # Column order for parts: by generation, then anything new alphabetically. A part absent
 # from this list still renders; it only sorts last.
-# Scope keys beyond hardware a matrix row can carry as a label: a model-scoped or
-# fabric-scoped entry is a different row from the part-wide one of the same name.
-TAGGED_SCOPES = {"model", "fabric"}
+# Scope keys beyond hardware a matrix row can carry as a label: a model-, fabric- or
+# tensor-parallel-width-scoped entry is a different row from the part-wide one of the same name
+# (the kernel admits it only for that deployment). The memory set scopes its per-model
+# start-up terms by tp, since a rank's graph buffers follow its width.
+TAGGED_SCOPES = {"model", "fabric", "tp"}
 
 PART_ORDER = [
     "l40s", "a100-sxm", "a100-80", "h100", "h200",
@@ -351,7 +353,7 @@ def matrix(s: CoefficientSet):
             raise PluginError(
                 f"registry hook: {s.name}:{e.line} {e.name} is scoped by "
                 f"{sorted(set(e.other_scope) - TAGGED_SCOPES)}; the matrix view shows hardware, "
-                f"model and fabric scopes only. Extend the hook.")
+                f"model, fabric and tp scopes only. Extend the hook.")
         if not e.hardware and set(e.other_scope) == {"fabric"}:
             # A fabric-only entry (cost-model-fabric) belongs to a network, not a part: its
             # columns are the fabrics it names.
@@ -613,11 +615,15 @@ def _fmt_al(al: float) -> str:
     return f"{al:.2f}" if round(al, 2) == al else repr(al)
 
 
-def acceptance_grid(a: AcceptanceSet) -> dict[tuple[str, str, str], dict]:
-    """(model, method, category) -> thinking -> K -> (line, profile), in file order."""
+def acceptance_grid(a: AcceptanceSet) -> dict[tuple, dict]:
+    """(model, drafter, method, category, draft sampler, verifier) -> thinking -> K ->
+    (line, profile), in file order. Each of the drafter, sampler and verifier is "" when the
+    profile states none."""
     grid: dict = {}
     for line, p in a.profiles:
-        cell = grid.setdefault((p["model"], p["speculative_method"], p["category"]), {})
+        cell = grid.setdefault((p["model"], p.get("drafter", ""), p["speculative_method"],
+                                p["category"], p.get("draft_sampler", ""), p.get("verifier", ""),
+                                p.get("engine", "")), {})
         slot = cell.setdefault(p["thinking"], {})
         if p["num_spec_tokens"] in slot:
             raise PluginError(f"registry hook: {a.path}:{line} repeats a profile key")
@@ -627,7 +633,7 @@ def acceptance_grid(a: AcceptanceSet) -> dict[tuple[str, str, str], dict]:
 
 def _acceptance_values(a: AcceptanceSet) -> str:
     out = [_legend({p["method"] for _, p in a.profiles})]
-    for (model, method, category), modes in acceptance_grid(a).items():
+    for (model, drafter, method, category, sampler, verifier, engine), modes in acceptance_grid(a).items():
         kmax = max(k for m in modes.values() for k in m)
         rows = []
         for thinking in sorted(modes):
@@ -644,7 +650,10 @@ def _acceptance_values(a: AcceptanceSet) -> str:
                            f'class="reg-v" href="{link}" title="{title}">'
                            f'{_fmt_al(p["acceptance_length"])}</a></span></span>')
             rows.append(row)
-        out.append(f"### `{model}` · `{method}` · `{category}`\n\n"
+        who = f"`{model}` with drafter `{drafter}`" if drafter else f"`{model}`"
+        how = "".join(f" · {n} `{v}`" for n, v in (("draft sampler", sampler), ("verifier", verifier),
+                                                    ("engine", engine)) if v)
+        out.append(f"### {who} · `{method}` · `{category}`{how}\n\n"
                    + _table(["thinking"] + [f"K={k}" for k in range(1, kmax + 1)], rows,
                             numeric_from=1))
     return "\n\n".join(out)

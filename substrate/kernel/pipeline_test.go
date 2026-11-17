@@ -5,9 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/rules"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/load"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
@@ -144,13 +142,13 @@ func TestGroupedNVFP4ReadsItsOwnRamp(t *testing.T) {
 		{hopper, true, "w4a16_nvfp4_grouped", "w4a16_mxfp4_grouped"},
 		{hopper, false, "bf16", ""},
 	} {
-		got := formatFit(nv, c.grouped, c.chip, true)
+		got := formatFit(nv, c.grouped, c.chip, true, false)
 		if got.suffix != c.suffix || got.fallback != c.fallback {
 			t.Errorf("%s grouped=%v: %s (fallback %q), want %s (fallback %q)", c.chip.Name,
 				c.grouped, got.suffix, got.fallback, c.suffix, c.fallback)
 		}
 	}
-	if got := formatFit(price.Format{DType: model.DTypeMXFP4}, true, hopper, true); got.suffix != "w4a16_mxfp4_grouped" {
+	if got := formatFit(price.Format{DType: model.DTypeMXFP4}, true, hopper, true, false); got.suffix != "w4a16_mxfp4_grouped" {
 		t.Errorf("MXFP4 grouped on Hopper moved to %s", got.suffix)
 	}
 }
@@ -209,10 +207,7 @@ pools:
 	build := func(util float64) error {
 		r, name := openRepos(t, d, body)
 		r.Rules = func(string) rules.EngineRules { return inertRules{} }
-		r.EngineSettings = func(*deployment.Deployment, int) (enginesettings.Settings, error) {
-			return enginesettings.Settings{BlockSize: 16, MaxNumSeqs: 64, MaxNumBatchedTokens: 8192,
-				MaxModelLen: 8192, GPUMemoryUtilization: util}, nil
-		}
+		r.DraftModel, r.Lower = noDrafter, lowerTo(8192, 16, util)
 		in, err := OpenInputs(name, r, 0)
 		if err != nil {
 			t.Fatal(err)

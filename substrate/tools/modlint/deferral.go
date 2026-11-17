@@ -53,6 +53,21 @@ func deferrable(finding string, modules []string) bool {
 		}
 		return false
 	}
+	// The router through its one permitted replace, to a pseudo-version of the fork: LIF-2's
+	// selected-version finding for the upstream router path. It is covered when the deferral
+	// lists llm-d-router and the replace target is the fork itself at a commit (a pseudo-version).
+	// A replace to any other module, or to a version that is no pseudo-version, still fails.
+	const routerHead = upstreamRouter + " resolves to " + forkRouter + " "
+	const routerTail = "; it must resolve to " + forkRouter + " at a -blis.N tag (LIF-2)"
+	if strings.HasPrefix(finding, routerHead) && strings.HasSuffix(finding, routerTail) {
+		v := strings.TrimSuffix(strings.TrimPrefix(finding, routerHead), routerTail)
+		for _, m := range modules {
+			if m == "llm-d-router" && isPseudo(v) {
+				return true
+			}
+		}
+		return false
+	}
 	if !strings.Contains(finding, " resolves to ") || !strings.HasSuffix(finding, "which is not a release tag (X11, LIF-2)") {
 		return false
 	}

@@ -49,11 +49,15 @@ the sweep's two cache dtypes (they differ: on b200 the floor is 18.5 us at bf16 
 against 20.0 pooled over both), is `attention_prefill_floor_trtllm_gen_kv_{bf16,fp8}` and
 `attention_prefill_work_scale_trtllm_gen_kv_{bf16,fp8}`. The kernel reads them for the
 non-latent layers when the engine reports that kernel as the implementation of the prefill
-primitive and an entry lists it (VAL-8), and not otherwise. They are `transferred`, not `measured`: no kernel hash shows the
-0.25.0 build runs the kernel of the v0.32.0 pin, and a `measured` entry needs one (D5, VAL-8;
-the hashes are tracked in inference-sim/blis-registry#73). So a lane price grades one rank lower
-than the pooled `measured` pair fitted on the same sweep; that is the label's cost, not the
-data's. Each entry records the range its rows covered, and every row has no cached prefix, so a
+primitive and an entry lists it (VAL-8), and not otherwise. Each is keyed to the build its data
+exercised, through the engine release's kernel-implementation table (blis-vllm's
+`kernel_impls.json`). The b300, gb200-nvl72 and gb300 runs used images whose build sets
+FlashInfer 0.6.13, so each coefficient has a `measured` entry keyed to that version's trtllm-gen
+prefill build on the chip, and a `transferred` entry keyed to the pinned FlashInfer's build, with
+the 0.6.13 build in `measured_on`. The two builds' precompiled kernels differ, so a pool on the
+pin reads the value at the transferred grade, and a pool on 0.6.13 reads it exactly. The b200 run's
+image is a local build that records no FlashInfer version, so its entries state no build and stay
+`transferred`. No lookup reports them as exact. Each entry records the range its rows covered, and every row has no cached prefix, so a
 prefill with cached context is outside the data. The lane replaces the pooled pair for every
 non-latent kind, sliding-window and sparse layers included, as the pooled pair did. Decode has
 no lane, because v0.32.0 decodes with trtllm-gen or XQA wherever the chip supports it.

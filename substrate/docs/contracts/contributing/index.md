@@ -44,6 +44,7 @@ A change that also touches another BLIS repository follows
 | `contracts/rules/` | The interface an engine release's rules implement |
 | `contracts/check/` | The problem list and strict decoding every validator shares |
 | `contracts/conformance/` | The suites implementers run: `enginetest`, `kerneltest`, `embedtest`, `shapetest` |
+| `contracts/harness/` | What every engine repository shares: the `Upstream` record, the provenance and no-clock checks, the golangci-lint settings, and the oracle's lock, manifest and golden-trace checks, which each engine keeps as copies |
 | `contracts/testdata/` | Contract fixtures, such as `connectors/` |
 | `validate/` | The catalog, registry and measurement validators, and their commands under `validate/cmd/` |
 | `tools/docgen/` | The generator for `docs/contracts/generated/` |

@@ -2,8 +2,10 @@ package trace
 
 import (
 	"fmt"
+	"regexp"
 
 	"github.com/inference-sim/blis-substrate/contracts/check"
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 )
 
 // Validate checks the header on its own.
@@ -45,6 +47,18 @@ func (h *Header) Validate() *validate.Problems {
 	case h.MaxNodesSpanned == 1:
 		p.Field("max_nodes_spanned", "is 1: an instance on one node spans none; omit the key")
 	}
+	h.validatePhases(p)
+	if a := h.Acceptance; a != nil {
+		switch {
+		case a.Category == "" && a.Thinking == "" && a.Value == nil:
+			p.Field("acceptance", "states no category, thinking mode or value; omit the key")
+		case a.Thinking != "" && !a.Thinking.Valid():
+			p.Field("acceptance.thinking", "%q is not one of %v", a.Thinking, acceptance.AllThinkingModes())
+		}
+		if a.Value != nil {
+			p.Merge("acceptance.value", a.Value.Validate())
+		}
+	}
 	if r := h.Router; r != nil && len(r.EPPFlags) == 0 {
 		p.Field("router.epp_flags", "required: the router's command-line flags")
 	}
@@ -60,6 +74,40 @@ func (h *Header) Validate() *validate.Problems {
 	}
 	return p
 }
+
+// validatePhases checks the phase list on its own: each name is a lowercase slug, used once;
+// the start is a known one; the numbers are not negative.
+func (h *Header) validatePhases(p *validate.Problems) {
+	seen := map[string]bool{}
+	for i, ph := range h.Phases {
+		at := fmt.Sprintf("phases[%d]", i)
+		switch {
+		case ph.Name == "":
+			p.Field(at+".name", "required: the label the phase's records carry")
+		case !phaseSlug.MatchString(ph.Name):
+			p.Field(at+".name", "%q is not a lowercase slug (letters, digits, - and _)", ph.Name)
+		case seen[ph.Name]:
+			p.Field(at+".name", "%q names two phases", ph.Name)
+		}
+		seen[ph.Name] = true
+		switch ph.Start {
+		case "", StartAfterDrain, StartAt:
+		default:
+			p.Field(at+".start", "%q is not %q or %q", ph.Start, StartAfterDrain, StartAt)
+		}
+		if ph.OffsetUs < 0 {
+			p.Field(at+".offset_us", "must not be negative, got %d", ph.OffsetUs)
+		}
+		if ph.Start == StartAt && i > 0 && ph.OffsetUs < h.Phases[i-1].OffsetUs && h.Phases[i-1].Start == StartAt {
+			p.Field(at+".offset_us", "is %d, before the previous phase's start at %d: phases are in order", ph.OffsetUs, h.Phases[i-1].OffsetUs)
+		}
+		if ph.Concurrency < 0 {
+			p.Field(at+".concurrency", "must not be negative, got %d", ph.Concurrency)
+		}
+	}
+}
+
+var phaseSlug = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
 // Validate checks one SLO class's targets.
 func (t SLODimTargets) Validate() *validate.Problems {
@@ -172,6 +220,11 @@ func (t *Trace) Validate() *validate.Problems {
 	p := &validate.Problems{}
 	p.Merge("header", t.Header.Validate())
 	ids := map[int]bool{}
+	phased := map[string]int{}
+	known := map[string]bool{}
+	for _, ph := range t.Header.Phases {
+		known[ph.Name] = true
+	}
 	rounds := map[string]map[int]bool{}
 	for i, r := range t.Records {
 		at := fmt.Sprintf("records[%d]", i)
@@ -180,6 +233,15 @@ func (t *Trace) Validate() *validate.Problems {
 			p.Field(at+".request_id", "%d appears twice", r.RequestID)
 		}
 		ids[r.RequestID] = true
+		switch {
+		case len(known) == 0 && r.Phase != "":
+			p.Field(at+".phase", "%q: the header lists no phases", r.Phase)
+		case len(known) > 0 && r.Phase == "":
+			p.Field(at+".phase", "required: the header lists phases, so every request names one")
+		case len(known) > 0 && !known[r.Phase]:
+			p.Field(at+".phase", "%q is not a phase of the header", r.Phase)
+		}
+		phased[r.Phase]++
 		if r.SessionID == "" {
 			continue
 		}
@@ -190,6 +252,11 @@ func (t *Trace) Validate() *validate.Problems {
 			p.Field(at+".round_index", "session %q has round %d twice", r.SessionID, r.RoundIndex)
 		}
 		rounds[r.SessionID][r.RoundIndex] = true
+	}
+	for i, ph := range t.Header.Phases {
+		if phased[ph.Name] == 0 {
+			p.Field(fmt.Sprintf("header.phases[%d]", i), "phase %q names no request: a phase without requests is refused", ph.Name)
+		}
 	}
 	return p
 }

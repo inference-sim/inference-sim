@@ -1,17 +1,19 @@
 package result
 
 import (
-	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/metrics"
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
 	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
+	"github.com/inference-sim/blis-substrate/contracts/vocab"
 )
 
 func ptr[T any](v T) *T { return &v }
@@ -86,9 +88,11 @@ func valid() *Result {
 		Requests: Requests{Generated: 4, Completed: 2, InFlightAtHorizon: 1, Dropped: map[DropReason]int{DropRoutingRejected: 1}},
 		RequestRows: []RequestRow{
 			{ID: "request_0", Fate: FateCompleted, ArrivalUs: 0, TTFTUs: ptr(int64(100)), TPOTUs: ptr(20.0),
-				E2EUs: ptr(int64(140)), CompletionIndex: 1, PromptTokens: 10, OutputTokens: 3},
+				E2EUs: ptr(int64(140)), CompletionIndex: 1, PromptTokens: 10, OutputTokens: 3,
+				QueueEntryUs: ptr(int64(10)), FirstTokenUs: ptr(int64(100))},
 			{ID: "request_1", Fate: FateCompleted, ArrivalUs: 5, TTFTUs: ptr(int64(90)), TPOTUs: ptr(20.0),
-				E2EUs: ptr(int64(130)), CompletionIndex: 2, PromptTokens: 10, OutputTokens: 3},
+				E2EUs: ptr(int64(130)), CompletionIndex: 2, PromptTokens: 10, OutputTokens: 3,
+				QueueEntryUs: ptr(int64(8)), FirstTokenUs: ptr(int64(95))},
 			{ID: "request_2", Fate: FateInFlightAtHorizon, ArrivalUs: 7, TTFTUs: ptr(int64(95)), PromptTokens: 10, OutputTokens: 1},
 			{ID: "request_3", Fate: FateDropped, DropReason: DropRoutingRejected, ArrivalUs: 9, PromptTokens: 10},
 		},
@@ -321,6 +325,12 @@ func TestEachFailureModeIsRefused(t *testing.T) {
 		{"more length-capped than completed", func(r *Result) { r.Requests.LengthCapped = 3; r.RequestRows = nil }, "requests.length_capped", "completed"},
 
 		// request rows
+		{"negative planned count", func(r *Result) { r.Requests.PlannedNotIssued = -1 }, "requests.planned_not_issued", "negative"},
+		{"planned rounds without rows", func(r *Result) { r.Requests.PlannedNotIssued = 2 }, "request_rows", "one per planned round never issued"},
+		{"planned count disagrees with the not_started rows", func(r *Result) {
+			r.Requests.PlannedNotIssued = 1
+			r.RequestRows = append(r.RequestRows, RequestRow{ID: "session_s_round_1_unissued", Fate: FateInFlightAtHorizon, PromptTokens: 4})
+		}, "request_rows", "fate not_started"},
 		{"rows short of generated", func(r *Result) {
 			r.RequestRows = r.RequestRows[:3]
 		}, "request_rows", "one row per generated request"},
@@ -337,6 +347,11 @@ func TestEachFailureModeIsRefused(t *testing.T) {
 		{"completed row without tpot", row(0, func(x *RequestRow) { x.TPOTUs = nil }), "request_rows[0].tpot_us", "required"},
 		{"e2e below ttft", row(0, func(x *RequestRow) { x.E2EUs = ptr(int64(50)) }), "request_rows[0].e2e_us", "less than ttft_us"},
 		{"negative scheduling delay", row(0, func(x *RequestRow) { x.SchedulingDelayUs = ptr(int64(-1)) }), "request_rows[0].scheduling_delay_us", "negative"},
+		{"negative queue entry", row(0, func(x *RequestRow) { x.QueueEntryUs = ptr(int64(-1)) }), "request_rows[0].queue_entry_us", "negative"},
+		{"queue entry before arrival", row(1, func(x *RequestRow) { x.QueueEntryUs = ptr(int64(4)) }), "request_rows[1].queue_entry_us", "before the request's arrival_us"},
+		{"first token without a token", row(3, func(x *RequestRow) { x.FirstTokenUs = ptr(int64(20)) }), "request_rows[3].first_token_us", "emitted no token"},
+		{"first token before queue entry", row(0, func(x *RequestRow) { x.QueueEntryUs = ptr(int64(101)) }), "request_rows[0].first_token_us", "before queue_entry_us"},
+		{"first token disagrees with ttft", row(0, func(x *RequestRow) { x.FirstTokenUs = ptr(int64(99)) }), "request_rows[0].first_token_us", "must equal first_token_us - arrival_us"},
 		{"non-finite tpot", row(0, func(x *RequestRow) { x.TPOTUs = ptr(nan) }), "request_rows[0].tpot_us", "finite"},
 		{"negative prompt tokens", row(0, func(x *RequestRow) { x.PromptTokens = -1 }), "request_rows[0].prompt_tokens", "negative"},
 		{"completion index on an unfinished row", row(2, func(x *RequestRow) { x.CompletionIndex = 3 }), "request_rows[2].completion_index", "only a completed"},
@@ -348,7 +363,7 @@ func TestEachFailureModeIsRefused(t *testing.T) {
 		{"row drop reasons disagree with the counts", row(3, func(x *RequestRow) { x.DropReason = DropUnservable }), "request_rows", "dropped for"},
 		{"length-capped row disagrees with the count", row(0, func(x *RequestRow) { x.LengthCapped = true }), "request_rows", "length-capped"},
 		{"length-capped row not completed", row(2, func(x *RequestRow) { x.LengthCapped = true }), "request_rows[2].length_capped", "only a completed"},
-		{"unknown phase", row(0, func(x *RequestRow) { x.Phase = "main" }), "request_rows[0].phase", "is not one of"},
+		{"unknown phase", row(0, func(x *RequestRow) { x.Phase = "Main Phase" }), "request_rows[0].phase", "lowercase slug"},
 		{"agentic tag with unknown kind", row(0, func(x *RequestRow) {
 			x.Agentic = &AgenticTag{TraceID: "t", Stream: "t", Kind: "child"}
 		}), "request_rows[0].agentic.kind", "is not one of"},
@@ -595,5 +610,110 @@ func TestAcceptancePropertyRecordsEveryResolution(t *testing.T) {
 		if pr := r.Validate(); !pr.OK() {
 			t.Errorf("%s builds a property the schema refuses:\n%s", c.name, pr.Error())
 		}
+	}
+}
+
+// A run whose rates were derived records the schedule it assumed, and for a natural decay the
+// fitted shape it took, with the shape's method, so the point can name an estimate
+// (inference-sim/blis-substrate#103); stated rates record none.
+func TestAcceptancePropertyRecordsADerivedSchedule(t *testing.T) {
+	rate := 0.3
+	shaped := &acceptance.ProfileSet{Kind: acceptance.Kind, Name: "s", Shapes: []acceptance.Shape{
+		{SpeculativeMethod: "dspark", DecayExponent: 1.17, FittedFrom: []string{"a.yaml"}, Rule: "fit",
+			Method: vocab.MethodCalibrated}}}
+	req := func(v *acceptance.Value) acceptance.Request {
+		return acceptance.Request{Model: "m", SpeculativeMethod: "dspark", NumSpecTokens: v.NumSpecTokens,
+			Registry: []*acceptance.ProfileSet{shaped}, CLI: v}
+	}
+	fitted := &RatesShape{Set: "s", SpeculativeMethod: "dspark", DecayExponent: 1.17, Method: vocab.MethodCalibrated}
+	for _, c := range []struct {
+		name, schedule string
+		shape          *RatesShape
+		v              *acceptance.Value
+	}{
+		{"natural", "natural_decay", fitted,
+			&acceptance.Value{NumSpecTokens: 7, AcceptanceRate: &rate, Realisation: acceptance.RealisationNatural}},
+		{"synthetic", "minimum_variance", nil,
+			&acceptance.Value{NumSpecTokens: 7, AcceptanceRate: &rate, Realisation: acceptance.RealisationSynthetic}},
+		{"stated rates", "", nil,
+			&acceptance.Value{NumSpecTokens: 2, PerPositionRates: []float64{0.5, 0.2}}},
+	} {
+		res, err := acceptance.Resolve(req(c.v))
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		w := AcceptanceProperty(res)
+		if w.RatesSchedule != c.schedule || !reflect.DeepEqual(w.RatesShape, c.shape) {
+			t.Errorf("%s: rates_schedule %q, rates_shape %+v", c.name, w.RatesSchedule, w.RatesShape)
+		}
+		out := valid()
+		out.Input.WorkloadProperties = []WorkloadProperty{w}
+		if p := out.Validate(); !p.OK() {
+			t.Errorf("%s builds a property the schema refuses:\n%s", c.name, p.Error())
+		}
+	}
+	measured := *fitted
+	measured.Method = vocab.MethodMeasured
+	steep := *fitted
+	steep.DecayExponent = 3
+	noSet := *fitted
+	noSet.Set = ""
+	for _, c := range []struct {
+		name, schedule string
+		shape          *RatesShape
+		field          string
+	}{
+		{"an unknown schedule", "step", nil, "rates_schedule"},
+		{"a decay with no shape", "natural_decay", nil, "rates_shape"},
+		{"a shape with no decay", "minimum_variance", fitted, "rates_shape"},
+		{"a shape called measured", "natural_decay", &measured, "rates_shape.method"},
+		{"an exponent out of range", "natural_decay", &steep, "rates_shape.decay_exponent"},
+		{"a shape with no set", "natural_decay", &noSet, "rates_shape.set"},
+	} {
+		out := valid()
+		out.Input.WorkloadProperties = []WorkloadProperty{{Name: SpeculativeAcceptance, Source: PropertyCommandLine,
+			Values: map[string]float64{"acceptance_length": 2}, RatesSchedule: c.schedule, RatesShape: c.shape}}
+		if p := out.Validate(); p.OK() || !strings.Contains(p.Error(), c.field) {
+			t.Errorf("%s: want a problem at %s, got %v", c.name, c.field, p.Error())
+		}
+	}
+}
+
+// A resolution that derived its rates without naming a schedule is a programming error: it is
+// never recorded as either schedule.
+func TestAPropertyOfARatesDerivedResolutionWithNoScheduleIsRefused(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("a derived resolution with no schedule was recorded")
+		}
+	}()
+	AcceptanceProperty(acceptance.Resolution{AcceptanceLength: 2, PerPositionRates: []float64{1, 0}, RatesDerived: true,
+		Layer: acceptance.LayerCLI})
+}
+
+// A value borrowed across a draft sampler or verifier records the step and names the field that
+// differed (inference-sim/blis-substrate#174).
+func TestAPropertyBorrowedAcrossSettingsValidates(t *testing.T) {
+	for _, differed := range [][]string{{"verifier"}, {"draft_sampler"}, {"draft_sampler", "verifier"}} {
+		r := valid()
+		r.Input.WorkloadProperties = []WorkloadProperty{borrowed("same_drafter_other_settings", differed, "", "s a")}
+		if p := r.Validate(); !p.OK() {
+			t.Errorf("differed %v was refused:\n%s", differed, p.Error())
+		}
+	}
+	r := valid()
+	r.Input.WorkloadProperties = []WorkloadProperty{borrowed("same_drafter_other_settings", []string{"rejection"}, "", "s a")}
+	if p := r.Validate(); p.OK() || !strings.Contains(p.Error(), "differed[0]") {
+		t.Errorf("an unknown differed field was accepted: %v", p.Error())
+	}
+}
+
+// A round planned and never issued is outside generated and the fates, and has a not_started row.
+func TestPlannedNotIssuedRoundsHaveRowsOutsideGenerated(t *testing.T) {
+	r := valid()
+	r.Requests.PlannedNotIssued = 1
+	r.RequestRows = append(r.RequestRows, RequestRow{ID: "session_s_round_1_unissued", Fate: FateNotStarted, PromptTokens: 4})
+	if p := r.Validate(); !p.OK() {
+		t.Fatalf("a planned round with its row is refused:\n%s", p.Error())
 	}
 }

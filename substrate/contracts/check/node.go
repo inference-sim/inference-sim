@@ -15,7 +15,7 @@ import (
 )
 
 // yaml.v3 accepts some documents that say something other than what they decode to
-// (SUB-12, blis-schemas#114, #107):
+// (SUB-12, https://github.com/inference-sim/blis-schemas/issues/114, https://github.com/inference-sim/blis-schemas/issues/107):
 //
 //   - a fraction in an integer field is truncated (seed: 1.5 loads as 1);
 //   - an integer too large for a float64 field to hold exactly is rounded;

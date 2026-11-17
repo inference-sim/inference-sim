@@ -53,7 +53,7 @@ the cost model looks the key up. Search `kernel/` for the name, not `registry/`.
    the committed file would change, and most take `--insert CHIP` to add a part.
 
 3. **Run the derivation tests with the data present.** The `rederive` workflow runs them
-   on every pull request that touches a coefficient, a writer or a test (~20 minutes);
+   on every pull request that touches a coefficient, a writer or a test (~7 minutes, four test processes at once);
    run them locally first. With `COLLECTIVEX_DATA` also set to the CollectiveX run bodies
    (`python -I scripts/fetch_cited_inferencex.py <dir>` fetches and checks them):
 

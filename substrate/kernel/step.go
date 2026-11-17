@@ -307,7 +307,13 @@ func (k *Kernel) priceStep(b, drafted kernel.Batch,
 	}
 	overlapSeconds += k.priceHead(k.plan.Head, &s, &perResource)
 
-	// The drafter's passes, when the deployment speculates (see priceDraft).
+	// The drafter's passes, when the deployment speculates (see priceDraft). In a step that
+	// proposes no drafts (kernel.Batch.SkipDrafts) no request drafts: priceDraft then charges only
+	// the work that keeps the drafter's KV in step, its context stack and a first pass over the
+	// scheduled tokens without its head, and not the passes that propose.
+	if drafted.SkipDrafts {
+		drafted.Reqs, drafted.DraftPaddedTokens = nil, 0
+	}
 	draftKernels := 0
 	if k.speculating && draft {
 		var d float64
@@ -476,7 +482,11 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 			if eff <= 0 {
 				continue
 			}
-			denseShapedSeconds += rows * g.FLOPsPerToken / div / (fit.peak * eff)
+			peak := fit.peak
+			if fit.smallPeak > 0 && rows <= fit.smallRows {
+				peak = fit.smallPeak
+			}
+			denseShapedSeconds += rows * g.FLOPsPerToken / div / (peak * eff)
 		}
 
 		if l.ExpertFLOPsPerTokenPerExpert > 0 {
@@ -537,7 +547,9 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 				// wider tp with each rank's slice of the expert width (blis-registry
 				// scripts/fit_marlin_grouped_ramp.py terms()), which is what vLLM runs; the
 				// cancellation the native ramps rest on was measured on them, not on it.
-				if k.fit(l.RoutedFormat, true).weightOnly {
+				// A grouped ramp per MoE backend (rankOwn) was fitted the same way, on each
+				// rank's own slice at moe_tp 1 to 8 (scripts/fit_hopper_fp8_grouped_ramp.py).
+				if f := k.fit(l.RoutedFormat, true); f.weightOnly || f.rankOwn {
 					dpSlice = k.expertTensorShards
 				}
 			}
@@ -682,10 +694,10 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 				}
 			}
 			if pf, ok := k.attentionPrefillByKind[l.AttnKind]; ok && s.prefillRequests > 0 &&
-				primaryRecord(l) > 0 {
+				sparsePrefillRecord(l, kv[i].perToken) > 0 {
 				// The kind's measured prefill form, over FlashMLA's block reads.
 				read := sparsePrefillReadBytes(s.prefillChunks, l.AttnWindow, l.AttnIndexTopK,
-					l.AttnCompressRatio, primaryRecord(l), heads)
+					l.AttnCompressRatio, sparsePrefillRecord(l, kv[i].perToken), heads)
 				attnSMSeconds += pf.seconds(float64(s.prefillRequests),
 					float64(s.prefillTokens), read)
 			} else if s.prefillRequests > 0 {
@@ -806,7 +818,7 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 				// can matter.
 				if k.layout.DCP > 1 && dcpShardsKV(a.Kind) {
 					tokens = dcpLocalTokens([]int{int(tokens + 0.5)}, k.layout.DCP,
-						k.decodeContext.Interleave)
+						int(k.decodeContext.Interleave))
 				}
 				charge(tokens * perToken)
 			}
@@ -922,6 +934,11 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 			if eff := price.Efficiency(tokensF, fit.epsMax, fit.mHalf); eff > 0 {
 				routedSM = routedFLOPs / (fit.peak * eff) * smDerate
 			}
+			// The grouped kernel's own floor, where the registry measured one: the time a
+			// layer's experts take however few tokens reach them, which the ramp's work term
+			// alone cannot carry (a fit of the ramp without it puts FlashInfer's CUTLASS experts
+			// at 0.62x of their measured time on h200 at expert-parallel width 2 to 16).
+			routedSM += fit.floor
 		}
 		routedHBM := routedWeightBytes / k.hbmBytesPerSecond
 		routed := routedSM + routedHBM

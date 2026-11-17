@@ -12,7 +12,20 @@ inputs:
     description: The directory holding the module's go.mod.
     default: .
 
+  build-cache:
+    description: >-
+      A name for this job's Go build cache. When set, the build cache (compiled packages, race
+      builds, test binaries) of the newest earlier run with the same name is restored, and
+      build-cache-key is the key to save under. Entries are content-addressed, so a stale cache
+      is never wrong, only less useful. Saving is the caller's step (actions/cache/save), and
+      callers save on pushes and manual runs, not on pull requests, so a pull request only reads
+      the cache of main. Empty: no build cache.
+    default: ""
+
 outputs:
+  build-cache-key:
+    description: The key to save the build cache under; empty when build-cache is empty.
+    value: ${{ steps.cachekey.outputs.key }}
   version:
     description: The installed version, as the go command reports it (for example go1.N.M).
     value: ${{ steps.read.outputs.version }}
@@ -60,3 +73,21 @@ runs:
         fi
         echo "GOTOOLCHAIN=local" >> "$GITHUB_ENV"
         echo "go toolchain: $got"
+    - id: cachekey
+      shell: bash
+      env:
+        NAME: ${{ inputs.build-cache }}
+      run: |
+        set -euo pipefail
+        if [ -n "$NAME" ]; then
+          echo "key=gobuild-$NAME-$RUNNER_OS-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "prefix=gobuild-$NAME-$RUNNER_OS-" >> "$GITHUB_OUTPUT"
+        else
+          echo "key=" >> "$GITHUB_OUTPUT"
+        fi
+    - if: inputs.build-cache != ''
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: ~/.cache/go-build
+        key: ${{ steps.cachekey.outputs.key }}
+        restore-keys: ${{ steps.cachekey.outputs.prefix }}

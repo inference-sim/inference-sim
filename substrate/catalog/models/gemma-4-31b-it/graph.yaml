@@ -1,0 +1,247 @@
+kind: ModelGraph
+name: gemma-4-31b-it
+derived_from:
+  format: hf_config_json
+  path: config.json
+  sha256: e967dd38bc5cfd38bd09a995a7bf4a754075df2b46aba68f7fbb5a791e6d8dd1
+  deriver_version: 1
+global:
+  hidden_size: 5376
+  vocab_size: 262144
+  tie_word_embeddings: true
+  weight_dtype: bf16
+  architecture: Gemma4ForConditionalGeneration
+layer_kinds:
+- id: swa_dense
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_proj
+    n: 16384
+    k: 5376
+  - op: Elementwise
+    role: qkv_norm_rope
+    bytes_per_token: 65536
+  - op: Attention
+    holds_engine_kv: true
+    kind: swa
+    n_q: 32
+    n_kv: 16
+    d_h: 256
+    window: 1024
+  - op: GEMM
+    role: o_proj
+    n: 5376
+    k: 8192
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: Elementwise
+    role: pre_ffn_norm
+  - op: GEMM
+    role: mlp_gate_up
+    n: 43008
+    k: 5376
+  - op: GEMM
+    role: mlp_down
+    n: 5376
+    k: 21504
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_ffn_norm
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+- id: full_dense
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_proj
+    n: 20480
+    k: 5376
+  - op: Elementwise
+    role: qkv_norm_rope
+    bytes_per_token: 81920
+  - op: Attention
+    holds_engine_kv: true
+    kind: gqa
+    n_q: 32
+    n_kv: 4
+    d_h: 512
+  - op: GEMM
+    role: o_proj
+    n: 5376
+    k: 16384
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: Elementwise
+    role: pre_ffn_norm
+  - op: GEMM
+    role: mlp_gate_up
+    n: 43008
+    k: 5376
+  - op: GEMM
+    role: mlp_down
+    n: 5376
+    k: 21504
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_ffn_norm
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+stack:
+  pattern:
+  - swa_dense
+  - swa_dense
+  - swa_dense
+  - swa_dense
+  - swa_dense
+  - full_dense
+  repeat: 10
+modality: multimodal
+encoder:
+  towers:
+  - modality: image
+    input:
+      patch_size: 16
+      channels: 3
+      fixed_rows: 2520
+    merge_ratio: 9
+    output_hidden_size: 5376
+    max_output_tokens: 280
+    parallel: replicated
+    weight_dtype: bf16
+    embedding:
+    - op: gemm
+      role: patch_embed
+      n: 1152
+      k: 768
+      tp: replicated
+    - op: elementwise
+      role: pos_embed
+      bytes_per_row: 4608
+      params: 23592960
+    layer_kinds:
+    - id: vit_block
+      nodes:
+      - op: elementwise
+        role: norms
+        bytes_per_row: 18432
+        params: 4752
+        tp: replicated
+      - op: gemm
+        role: qkv
+        n: 3456
+        k: 1152
+        tp: replicated
+      - op: attention
+        role: attention
+        n_heads: 16
+        d_h: 72
+        tp: replicated
+      - op: gemm
+        role: o_proj
+        n: 1152
+        k: 1152
+        tp: replicated
+      - op: gemm
+        role: gate_up
+        n: 8608
+        k: 1152
+        tp: replicated
+      - op: elementwise
+        role: act
+        bytes_per_row: 25824
+        tp: replicated
+      - op: gemm
+        role: down
+        n: 1152
+        k: 4304
+        tp: replicated
+    stack:
+      pattern:
+      - vit_block
+      repeat: 27
+    projector:
+    - op: elementwise
+      role: standardize
+      bytes_per_row: 4608
+      params: 2304
+      rows: output_tokens
+    - op: gemm
+      role: embed_vision
+      n: 5376
+      k: 1152
+      tp: replicated
+      rows: output_tokens
+embedding:
+- op: Gather
+  role: embed_tokens
+  rows: 262144
+  row_bytes: 10752
+  rows_per_token: 1
+  out_bytes_per_token: 10752
+  shard: rows
+- op: AllReduce
+  role: embed_out
+  emit: tensor_parallel
+head:
+- op: Elementwise
+  role: final_norm
+- op: GEMM
+  role: lm_head
+  n: 262144
+  k: 5376
+  aliases: embedding.embed_tokens

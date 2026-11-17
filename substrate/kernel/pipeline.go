@@ -475,7 +475,7 @@ func (k *Kernel) stageHost(b kernel.Batch, st *pipelineStage, draftKernels int) 
 	if k.decodeGraphed(b) {
 		mode = k.graphDecode
 	}
-	kernels := st.kernels
+	kernels := st.kernels + k.fusedLaunches(b)*st.totalLayers
 	if !stepPrefills(b) {
 		kernels -= st.prefillOnlyKernels
 	}
@@ -573,7 +573,7 @@ func (k *Kernel) liftPipelineMemory() error {
 // bindStage picks the binding pipeline stage from the stages' memory (liftPipelineMemory). It
 // refuses a plan whose gpu_memory_utilization is zero: the kernel applies no engine default.
 func (k *Kernel) bindStage() error {
-	util := k.engine.GPUMemoryUtilization
+	util := k.low.MemoryFraction
 	if util <= 0 {
 		return fmt.Errorf("pipeline parallelism (pp %d) needs the deployment's "+
 			"gpu_memory_utilization to compare the stages' KV pools, and the plan states %v (0 is "+

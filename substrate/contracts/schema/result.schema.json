@@ -36,6 +36,13 @@
           },
           "type": "array"
         },
+        "realisation": {
+          "enum": [
+            "natural",
+            "synthetic"
+          ],
+          "type": "string"
+        },
         "source": {
           "type": "string"
         }
@@ -43,6 +50,25 @@
       "required": [
         "num_spec_tokens"
       ],
+      "type": "object"
+    },
+    "acceptance.Workload": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "type": "string"
+        },
+        "thinking": {
+          "enum": [
+            "on",
+            "off"
+          ],
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/acceptance.Value"
+        }
+      },
       "type": "object"
     },
     "coefficient.Bound": {
@@ -431,7 +457,9 @@
             },
             "propertyNames": {
               "enum": [
+                "busy_share",
                 "cache_hit_rate",
+                "decode_busy_share",
                 "e2e_mean_ms",
                 "e2e_p50_ms",
                 "e2e_p90_ms",
@@ -443,6 +471,11 @@
                 "gateway_queue_delay_p95_ms",
                 "gateway_queue_delay_p99_ms",
                 "goodput_rps",
+                "icl_mean_ms",
+                "icl_p50_ms",
+                "icl_p90_ms",
+                "icl_p95_ms",
+                "icl_p99_ms",
                 "interactivity_mean",
                 "interactivity_of_mean_tpot",
                 "interactivity_p50",
@@ -452,10 +485,12 @@
                 "itl_p90_ms",
                 "itl_p95_ms",
                 "itl_p99_ms",
+                "mfu",
                 "output_tok_s",
                 "output_tok_s_per_gpu",
                 "output_tokens_per_second_per_decode_gpu",
                 "preemptions",
+                "prefill_busy_share",
                 "request_throughput",
                 "scheduling_delay_mean_ms",
                 "scheduling_delay_p50_ms",
@@ -493,7 +528,9 @@
             },
             "propertyNames": {
               "enum": [
+                "busy_share",
                 "cache_hit_rate",
+                "decode_busy_share",
                 "e2e_mean_ms",
                 "e2e_p50_ms",
                 "e2e_p90_ms",
@@ -505,6 +542,11 @@
                 "gateway_queue_delay_p95_ms",
                 "gateway_queue_delay_p99_ms",
                 "goodput_rps",
+                "icl_mean_ms",
+                "icl_p50_ms",
+                "icl_p90_ms",
+                "icl_p95_ms",
+                "icl_p99_ms",
                 "interactivity_mean",
                 "interactivity_of_mean_tpot",
                 "interactivity_p50",
@@ -514,10 +556,12 @@
                 "itl_p90_ms",
                 "itl_p95_ms",
                 "itl_p99_ms",
+                "mfu",
                 "output_tok_s",
                 "output_tok_s_per_gpu",
                 "output_tokens_per_second_per_decode_gpu",
                 "preemptions",
+                "prefill_busy_share",
                 "request_throughput",
                 "scheduling_delay_mean_ms",
                 "scheduling_delay_p50_ms",
@@ -555,7 +599,9 @@
             },
             "propertyNames": {
               "enum": [
+                "busy_share",
                 "cache_hit_rate",
+                "decode_busy_share",
                 "e2e_mean_ms",
                 "e2e_p50_ms",
                 "e2e_p90_ms",
@@ -567,6 +613,11 @@
                 "gateway_queue_delay_p95_ms",
                 "gateway_queue_delay_p99_ms",
                 "goodput_rps",
+                "icl_mean_ms",
+                "icl_p50_ms",
+                "icl_p90_ms",
+                "icl_p95_ms",
+                "icl_p99_ms",
                 "interactivity_mean",
                 "interactivity_of_mean_tpot",
                 "interactivity_p50",
@@ -576,10 +627,12 @@
                 "itl_p90_ms",
                 "itl_p95_ms",
                 "itl_p99_ms",
+                "mfu",
                 "output_tok_s",
                 "output_tok_s_per_gpu",
                 "output_tokens_per_second_per_decode_gpu",
                 "preemptions",
+                "prefill_busy_share",
                 "request_throughput",
                 "scheduling_delay_mean_ms",
                 "scheduling_delay_p50_ms",
@@ -768,6 +821,26 @@
       ],
       "type": "object"
     },
+    "result.File": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "content",
+        "path",
+        "sha256"
+      ],
+      "type": "object"
+    },
     "result.Frame": {
       "additionalProperties": false,
       "properties": {
@@ -793,7 +866,9 @@
         "metrics": {
           "items": {
             "enum": [
+              "busy_share",
               "cache_hit_rate",
+              "decode_busy_share",
               "e2e_mean_ms",
               "e2e_p50_ms",
               "e2e_p90_ms",
@@ -805,6 +880,11 @@
               "gateway_queue_delay_p95_ms",
               "gateway_queue_delay_p99_ms",
               "goodput_rps",
+              "icl_mean_ms",
+              "icl_p50_ms",
+              "icl_p90_ms",
+              "icl_p95_ms",
+              "icl_p99_ms",
               "interactivity_mean",
               "interactivity_of_mean_tpot",
               "interactivity_p50",
@@ -814,10 +894,12 @@
               "itl_p90_ms",
               "itl_p95_ms",
               "itl_p99_ms",
+              "mfu",
               "output_tok_s",
               "output_tok_s_per_gpu",
               "output_tokens_per_second_per_decode_gpu",
               "preemptions",
+              "prefill_busy_share",
               "request_throughput",
               "scheduling_delay_mean_ms",
               "scheduling_delay_p50_ms",
@@ -930,6 +1012,12 @@
       "properties": {
         "deployment": {
           "$ref": "#/$defs/deployment.Deployment"
+        },
+        "files": {
+          "items": {
+            "$ref": "#/$defs/result.File"
+          },
+          "type": "array"
         },
         "options": {
           "items": {
@@ -1065,6 +1153,39 @@
       ],
       "type": "object"
     },
+    "result.RatesShape": {
+      "additionalProperties": false,
+      "properties": {
+        "decay_exponent": {
+          "type": "number"
+        },
+        "method": {
+          "enum": [
+            "measured",
+            "calibrated",
+            "transferred",
+            "literature",
+            "vendor_spec",
+            "roofline",
+            "assumed",
+            "not_charged"
+          ],
+          "type": "string"
+        },
+        "set": {
+          "type": "string"
+        },
+        "speculative_method": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "decay_exponent",
+        "method",
+        "set"
+      ],
+      "type": "object"
+    },
     "result.Reference": {
       "additionalProperties": false,
       "properties": {
@@ -1155,6 +1276,9 @@
           ],
           "type": "string"
         },
+        "first_token_us": {
+          "type": "integer"
+        },
         "gateway_queue_delay_us": {
           "type": "integer"
         },
@@ -1182,6 +1306,9 @@
           "type": "string"
         },
         "prompt_tokens": {
+          "type": "integer"
+        },
+        "queue_entry_us": {
           "type": "integer"
         },
         "round_index": {
@@ -1250,6 +1377,9 @@
           "type": "integer"
         },
         "not_started": {
+          "type": "integer"
+        },
+        "planned_not_issued": {
           "type": "integer"
         },
         "queued_at_horizon": {
@@ -1331,7 +1461,9 @@
           },
           "propertyNames": {
             "enum": [
+              "busy_share",
               "cache_hit_rate",
+              "decode_busy_share",
               "e2e_mean_ms",
               "e2e_p50_ms",
               "e2e_p90_ms",
@@ -1343,6 +1475,11 @@
               "gateway_queue_delay_p95_ms",
               "gateway_queue_delay_p99_ms",
               "goodput_rps",
+              "icl_mean_ms",
+              "icl_p50_ms",
+              "icl_p90_ms",
+              "icl_p95_ms",
+              "icl_p99_ms",
               "interactivity_mean",
               "interactivity_of_mean_tpot",
               "interactivity_p50",
@@ -1352,10 +1489,12 @@
               "itl_p90_ms",
               "itl_p95_ms",
               "itl_p99_ms",
+              "mfu",
               "output_tok_s",
               "output_tok_s_per_gpu",
               "output_tokens_per_second_per_decode_gpu",
               "preemptions",
+              "prefill_busy_share",
               "request_throughput",
               "scheduling_delay_mean_ms",
               "scheduling_delay_p50_ms",
@@ -1745,6 +1884,12 @@
           },
           "type": "array"
         },
+        "rates_schedule": {
+          "type": "string"
+        },
+        "rates_shape": {
+          "$ref": "#/$defs/result.RatesShape"
+        },
         "source": {
           "enum": [
             "command_line",
@@ -1822,6 +1967,12 @@
         "nodes": {
           "type": "integer"
         },
+        "pools": {
+          "items": {
+            "$ref": "#/$defs/scenario.Pool"
+          },
+          "type": "array"
+        },
         "storage": {
           "items": {
             "type": "string"
@@ -1893,6 +2044,21 @@
       ],
       "type": "object"
     },
+    "scenario.Pool": {
+      "additionalProperties": false,
+      "properties": {
+        "hardware": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
     "scenario.Scenario": {
       "additionalProperties": false,
       "properties": {
@@ -1942,6 +2108,9 @@
     "trace.Header": {
       "additionalProperties": false,
       "properties": {
+        "acceptance": {
+          "$ref": "#/$defs/acceptance.Workload"
+        },
         "goodput_slo_targets": {
           "additionalProperties": {
             "$ref": "#/$defs/trace.SLODimTargets"
@@ -1961,6 +2130,12 @@
             "converted"
           ],
           "type": "string"
+        },
+        "phases": {
+          "items": {
+            "$ref": "#/$defs/trace.Phase"
+          },
+          "type": "array"
         },
         "router": {
           "$ref": "#/$defs/trace.Router"
@@ -2115,6 +2290,31 @@
       ],
       "type": "object"
     },
+    "trace.Phase": {
+      "additionalProperties": false,
+      "properties": {
+        "concurrency": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "offset_us": {
+          "type": "integer"
+        },
+        "start": {
+          "enum": [
+            "after_drain",
+            "at"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
     "trace.Router": {
       "additionalProperties": false,
       "properties": {
@@ -2177,6 +2377,29 @@
         },
         "trace": {
           "$ref": "#/$defs/workload.TraceRef"
+        }
+      },
+      "type": "object"
+    },
+    "workload.ConstantLoad": {
+      "additionalProperties": false,
+      "properties": {
+        "measured_sessions": {
+          "type": "integer"
+        },
+        "recycling": {
+          "enum": [
+            "sequential",
+            "shuffle",
+            "random"
+          ],
+          "type": "string"
+        },
+        "trace_idle_gap_cap_s": {
+          "type": "number"
+        },
+        "warmup_duration_s": {
+          "type": "number"
         }
       },
       "type": "object"
@@ -2283,6 +2506,9 @@
         "inter_turn_delay_cap_s": {
           "type": "number"
         },
+        "load": {
+          "$ref": "#/$defs/workload.ConstantLoad"
+        },
         "max_context_length": {
           "oneOf": [
             {
@@ -2302,7 +2528,8 @@
         },
         "scenario": {
           "enum": [
-            "inferencex-agentx-mvp"
+            "inferencex-agentx-mvp",
+            "aiperf-constant-load"
           ],
           "type": "string"
         },

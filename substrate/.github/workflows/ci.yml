@@ -6,6 +6,19 @@ name: ci
 # against the data, and the cost model against the data it embeds.
 #
 # Every action is pinned by commit (X21). The comment beside each pin names its release.
+#
+# Speed. The two slow suites, the contracts group and the cost model, run as matrices whose legs
+# partition the tests exactly (tools/shard): the contracts group by package, the cost model by
+# test name, since it is one package. Every leg lists the whole set itself, takes its share by a
+# rule that depends on the list and the weights alone, and then checks that it ran exactly its
+# share. A job named like the old one ("contracts and validators", "cost model") is kept as the
+# aggregate: it passes only if every leg and side check passed, so the check-run names that
+# .github/check-runs.yaml and branch protection use are unchanged. A leg that was skipped by a
+# path filter is a pass; a leg that failed or was cancelled is a failure (job `required`).
+# Independent checks (API compatibility, rule lint, the vet, race and script steps of the cost
+# model) run in jobs beside the legs, not after them. The Go build cache is restored from the
+# last push to main or manual run (actions/cache in .github/actions/go-toolchain) and saved only
+# by those, so pull requests read it and never fill the cache.
 
 on:
   pull_request:
@@ -43,6 +56,8 @@ jobs:
       ledger: ${{ steps.filter.outputs.ledger }}
       registry: ${{ steps.filter.outputs.registry }}
       docs: ${{ steps.filter.outputs.docs }}
+      golang: ${{ steps.filter.outputs.golang }}
+      apidiff: ${{ steps.filter.outputs.apidiff }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -54,21 +69,40 @@ jobs:
           set -euo pipefail
           # On a push with no usable base, or a manual run, every job runs.
           if [ -z "${BASE:-}" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-            for k in contracts kernel catalog ledger registry docs; do echo "$k=true" >> "$GITHUB_OUTPUT"; done
+            for k in contracts kernel catalog ledger registry docs golang apidiff; do echo "$k=true" >> "$GITHUB_OUTPUT"; done
             exit 0
           fi
           changed=$(git diff --name-only "$BASE" HEAD)
           has() { if printf '%s\n' "$changed" | grep -Eq "$1"; then echo true; else echo false; fi; }
-          # A change to go.mod, go.sum, the workflow or the root package affects every Go job.
-          shared='^(go\.mod|go\.sum|[^/]+\.go|\.github/)'
+          # A change to go.mod, go.sum, a workflow, a composite action or the root package affects
+          # every Go job. Other files under .github/ are data that one job reads (or none): they run
+          # only the jobs named below, so a line in .github/tags.lock does not run the cost model.
+          shared='^(go\.mod|go\.sum|[^/]+\.go|\.github/(workflows|actions)/)'
+          # .github/quarantine.yaml: the skip report of the contracts job and the registry job's
+          # skip check read it. .github/check-runs.yaml and .github/gates.yaml: tools/release and
+          # tools/prcheck read them (the contracts job runs their tests). .github/tags.lock is read
+          # only by the nightly tag check; .github/modlint-deferral.yaml only by the format, vet and
+          # build job, which always runs.
+          github_data='^\.github/(quarantine|check-runs|gates)\.ya?ml$'
           # Any Python file can restate a Go rule, so a Python change runs the X15 lint here. The
           # loader (load/) reads the catalog and the registry, so a data change runs it too.
-          echo "contracts=$(has "$shared|^contracts/|^validate/|^tools/|^load/|^catalog/|^registry/|\.py$")" >> "$GITHUB_OUTPUT"
-          echo "kernel=$(has "$shared|^kernel/|^contracts/|^load/|^validate/")" >> "$GITHUB_OUTPUT"
+          echo "contracts=$(has "$shared|$github_data|^contracts/|^validate/|^tools/|^load/|^catalog/|^registry/|\.py$")" >> "$GITHUB_OUTPUT"
+          # The cost model's tests price every embedded catalog model and coefficient set (the
+          # loader reads the files data.go embeds), so a change to those files runs it. tools/shard
+          # splits its tests across the legs.
+          embedded='^catalog/(devices|hardware|models|networks|routers|workloads)/|^catalog/measurements/sources\.yaml$|^registry/(acceptance|coefficients|routing)/'
+          echo "kernel=$(has "$shared|$embedded|^kernel/|^contracts/|^load/|^validate/|^tools/shard/")" >> "$GITHUB_OUTPUT"
+          # The API-compatibility check compares contracts/ against the last release tag, and
+          # reads the review-set file. It reads no other directory, so only those paths, the
+          # checker itself and the shared files run it.
+          echo "apidiff=$(has "$shared|^contracts/|^tools/prcheck/|^\.github/contract-review-set$")" >> "$GITHUB_OUTPUT"
           echo "catalog=$(has "$shared|^catalog/")"                      >> "$GITHUB_OUTPUT"
           echo "ledger=$(has "$shared|^catalog/ledger/|^ledger/")"       >> "$GITHUB_OUTPUT"
-          echo "registry=$(has "$shared|^registry/")"                    >> "$GITHUB_OUTPUT"
+          echo "registry=$(has "$shared|^\.github/quarantine\.yaml$|^registry/")" >> "$GITHUB_OUTPUT"
           echo "docs=$(has "$shared|^docs/|^mkdocs\.yml|^catalog/|^registry/|^contracts/example_test\.go")" >> "$GITHUB_OUTPUT"
+          # golangci-lint judges Go code only: it needs a Go file, the module files, its own
+          # configuration, or a workflow or action that builds it.
+          echo "golang=$(has "$shared|\.go$|^\.golangci\.yml$")" >> "$GITHUB_OUTPUT"
 
   # Formatting, vet and build for the whole module, on every change. They are fast, and a
   # change in one directory can break the build of another.
@@ -78,7 +112,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/go-toolchain
+      - id: toolchain
+        uses: ./.github/actions/go-toolchain
+        with:
+          build-cache: vet
       - name: gofmt
         run: |
           unformatted="$(gofmt -l .)"
@@ -92,6 +129,11 @@ jobs:
       # The root package's tests: one module, no nested go.mod, and the module zip under
       # 100 MB (SUB-13).
       - run: go test -count=1 .
+      - if: github.event_name != 'pull_request'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.cache/go-build
+          key: ${{ steps.toolchain.outputs.build-cache-key }}
 
   # golangci-lint over the Go packages (contracts, kernel, validate, tools, load, ledger and the
   # root), with the default linters and .golangci.yml (X17). It lints changed code only: the
@@ -100,13 +142,18 @@ jobs:
   # and refuses a newer module.
   lint:
     name: golangci-lint
+    needs: changes
+    if: needs.changes.outputs.golang == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: ./.github/actions/go-toolchain
+      - id: toolchain
+        uses: ./.github/actions/go-toolchain
+        with:
+          build-cache: lint
       - name: Build golangci-lint v2.14.0
         run: GOBIN="$RUNNER_TEMP/bin" go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
       - name: Lint what the change touches
@@ -125,20 +172,36 @@ jobs:
           intro="$(git log --diff-filter=A --format=%H -1 -- .golangci.yml)"
           if [ -n "$intro" ] && ! git merge-base --is-ancestor "$intro" "$rev"; then rev="$intro"; fi
           "$RUNNER_TEMP/bin/golangci-lint" run --new-from-rev="$rev" ./...
+      - if: github.event_name != 'pull_request'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.cache/go-build
+          key: ${{ steps.toolchain.outputs.build-cache-key }}
 
-  contracts:
-    name: contracts and validators
+  # The contracts group, in jobs that run side by side. The Go tests (with the race detector)
+  # are split by package across the legs of contracts-tests; the other checks need no test
+  # binary and run in contracts-checks; the job named "contracts and validators" is the
+  # aggregate that the check-run names (.github/check-runs.yaml) and `required` point to.
+  contracts-tests:
+    name: contracts and validators tests (leg ${{ matrix.leg }})
     needs: changes
     if: needs.changes.outputs.contracts == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        # The number of legs is strategy.job-total; add a number here to add a leg.
+        leg: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       # The source-comparison tests re-derive constants from the upstream code they cite.
       # Each checkout is pinned to the commit of the release the test names, and the
-      # *_SOURCE_REQUIRED variables make a missing checkout a failure, not a skip (X16).
+      # *_SOURCE_REQUIRED variables make a missing checkout a failure, not a skip (X16). Only
+      # contracts/kernel, contracts/spec/acceptance and contracts/spec/workload read them, but
+      # a package may move between legs, so every leg has them: two sparse checkouts of ~2 s.
       - name: Check out vLLM v0.31.0 (the files the contracts tests read)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -156,67 +219,211 @@ jobs:
           path: upstream/aiperf
           sparse-checkout: |
             src/aiperf
-      - uses: ./.github/actions/go-toolchain
-      - name: Tests, with every skip reported
+      - id: toolchain
+        uses: ./.github/actions/go-toolchain
+        with:
+          build-cache: contracts-${{ matrix.leg }}
+      - name: Tests of this leg, with every skip reported
         env:
           VLLM_SOURCE: ${{ github.workspace }}/upstream/vllm
           VLLM_SOURCE_REQUIRED: "1"
           AIPERF_SOURCE: ${{ github.workspace }}/upstream/aiperf/src/aiperf
           AIPERF_SOURCE_REQUIRED: "1"
+          LEG: ${{ matrix.leg }}
+          LEGS: ${{ strategy.job-total }}
         run: |
           set -euo pipefail
-          go test -race -count=1 -json ./contracts/... ./validate/... ./tools/... ./load/... > "$RUNNER_TEMP/go-test.json" || {
+          shard="$RUNNER_TEMP/shard"
+          go build -o "$shard" ./tools/shard
+          # Every package that holds a test, listed the same way in every leg. The leg takes its
+          # share, and `verify` below fails unless exactly that share ran (a package with no
+          # result, or one that another leg owns, is an error).
+          go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./contracts/... ./validate/... ./tools/... ./load/... | sed '/^$/d' > "$RUNNER_TEMP/all.txt"
+          "$shard" cover -of "$LEGS" -min-items 30 -weights tools/shard/weights-contracts.txt < "$RUNNER_TEMP/all.txt"
+          "$shard" select -of "$LEGS" -index "$LEG" -weights tools/shard/weights-contracts.txt < "$RUNNER_TEMP/all.txt" > "$RUNNER_TEMP/mine.txt"
+          echo "leg $LEG of $LEGS runs $(wc -l < "$RUNNER_TEMP/mine.txt") of $(wc -l < "$RUNNER_TEMP/all.txt") packages:"
+          cat "$RUNNER_TEMP/mine.txt"
+          results="$RUNNER_TEMP/go-test.json"
+          status=0
+          # shellcheck disable=SC2046
+          go test -race -count=1 -json $(cat "$RUNNER_TEMP/mine.txt") > "$results" || status=$?
+          if [ "$status" -ne 0 ]; then
             # Say why: the failing tests, then the output of each failing package.
             echo "::group::failing tests"
-            jq -r 'select(.Action=="fail" and .Test) | "FAIL \(.Package) \(.Test)"' "$RUNNER_TEMP/go-test.json"
+            jq -r 'select(.Action=="fail" and .Test) | "FAIL \(.Package) \(.Test)"' "$results"
             echo "::endgroup::"
-            for p in $(jq -r 'select(.Action=="fail" and (.Test|not)) | .Package' "$RUNNER_TEMP/go-test.json" | sort -u); do
+            for p in $(jq -r 'select(.Action=="fail" and (.Test|not)) | .Package' "$results" | sort -u); do
               echo "::group::output of $p"
-              jq -r --arg p "$p" 'select(.Package==$p and .Action=="output") | .Output' "$RUNNER_TEMP/go-test.json" | tail -n 300
+              jq -r --arg p "$p" 'select(.Package==$p and .Action=="output") | .Output' "$results" | tail -n 300
               echo "::endgroup::"
             done
-            go run ./tools/prcheck skips -results "$RUNNER_TEMP/go-test.json" -min 1000
+            go run ./tools/prcheck skips -results "$results" -min 1
             exit 1
-          }
-          # A skipped test is a failure unless quarantined (X16, X25); fewer than 1000
-          # results means packages were not run (X22).
-          go run ./tools/prcheck skips -results "$RUNNER_TEMP/go-test.json" -min 1000
-      # Python code that restates a Go rule (X15). TestPythonRuleLint above runs it too;
-      # the step names the command.
+          fi
+          "$shard" verify -results "$results" -mode package < "$RUNNER_TEMP/mine.txt"
+          # A skipped test is a failure unless quarantined (X16, X25); a leg with no result at
+          # all means its packages were not run (X22; the whole group once needed 1000).
+          go run ./tools/prcheck skips -results "$results" -min 1
+      - if: github.event_name != 'pull_request'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.cache/go-build
+          key: ${{ steps.toolchain.outputs.build-cache-key }}
+
+  # The checks of the contracts group that need no test binary. They run beside the test legs.
+  contracts-checks:
+    name: contracts and validators checks
+    needs: changes
+    if: needs.changes.outputs.contracts == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: toolchain
+        uses: ./.github/actions/go-toolchain
+        with:
+          build-cache: contracts-checks
+      # Python code that restates a Go rule (X15). TestPythonRuleLint in the test legs runs it
+      # too; the step names the command.
       - name: Python rule lint (X15)
         run: |
           set -euo pipefail
           go run ./tools/prcheck vocab > "$RUNNER_TEMP/vocab.json"
           python3 -I tools/pyrules/pyrules.py "$RUNNER_TEMP/vocab.json"
       # The AGENTS.md block, the pull-request template and the rendered index match the
-      # invariant registry (design §13.1). The test above also checks this; the step names
+      # invariant registry (design §13.1). A test in the legs also checks this; the step names
       # the command that fixes it.
       - run: go run ./tools/invariants render -check
       # The contracts/ packages change only compatibly since the last release tag (SUB-1,
       # design 12.8). apidiff runs through go run at the version the check pins; it is a step
       # here and not a dependency. A contract-change review set names its issue in
       # .github/contract-review-set, which accepts and prints the incompatible changes; the
-      # file is removed once the release that carries the set is tagged.
+      # file is removed once the release that carries the set is tagged. It reads contracts/,
+      # the tags and the review-set file only, so it runs when the changes job says so (output
+      # `apidiff`).
       - name: API compatibility of contracts/ against the last tag (SUB-1)
+        if: needs.changes.outputs.apidiff == 'true'
         run: |
           set -euo pipefail
           set=""
           if [ -f .github/contract-review-set ]; then set=$(tr -d '[:space:]' < .github/contract-review-set); fi
           go run ./tools/prcheck contracts-apidiff ${set:+-accept-break "$set"}
+      - if: github.event_name != 'pull_request'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.cache/go-build
+          key: ${{ steps.toolchain.outputs.build-cache-key }}
 
-  kernel:
-    name: cost model
+  # The aggregate. It keeps the check-run name the release bot and `required` read, and passes
+  # only if the legs and the side checks all passed. It runs whenever the group was selected,
+  # even when a leg failed or was cancelled, so that the failure is reported under this name.
+  contracts:
+    name: contracts and validators
+    needs: [changes, contracts-tests, contracts-checks]
+    if: always() && needs.changes.outputs.contracts == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          bad=$(printf '%s' "$RESULTS" | python3 -c 'import json,sys; n=json.load(sys.stdin); print(" ".join(k for k,v in n.items() if v["result"]!="success"))')
+          if [ -n "$bad" ]; then echo "not passed: $bad"; exit 1; fi
+          echo "every leg and check of the contracts group passed"
+
+  # The cost model. Its tests are one package, so they are split by test name across the legs of
+  # kernel-tests (tools/shard, weights in tools/shard/weights-kernel.txt). The longest test
+  # (TestEveryCoefficientFamilyChangesSomePriceOrIsListed) prices every scenario on every CPU of
+  # the runner. The steps that are not `go test` of the package run beside the legs.
+  kernel-tests:
+    name: cost model tests (leg ${{ matrix.leg }})
+    needs: changes
+    if: needs.changes.outputs.kernel == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # The number of legs is strategy.job-total; add a number here to add a leg.
+        leg: [0, 1, 2]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: toolchain
+        uses: ./.github/actions/go-toolchain
+        with:
+          build-cache: kernel-${{ matrix.leg }}
+      - name: Tests of this leg
+        env:
+          LEG: ${{ matrix.leg }}
+          LEGS: ${{ strategy.job-total }}
+        run: |
+          set -euo pipefail
+          shard="$RUNNER_TEMP/shard"
+          go build -o "$shard" ./tools/shard
+          # Every top-level test, example and fuzz seed of the package, listed the same way in
+          # every leg. The leg runs its share; `verify` fails unless exactly that share finished.
+          go test -list '.*' ./kernel/ | grep -E '^(Test|Example|Fuzz)' > "$RUNNER_TEMP/all.txt"
+          "$shard" cover -of "$LEGS" -min-items 100 -weights tools/shard/weights-kernel.txt < "$RUNNER_TEMP/all.txt"
+          "$shard" select -of "$LEGS" -index "$LEG" -weights tools/shard/weights-kernel.txt < "$RUNNER_TEMP/all.txt" > "$RUNNER_TEMP/mine.txt"
+          echo "leg $LEG of $LEGS runs $(wc -l < "$RUNNER_TEMP/mine.txt") of $(wc -l < "$RUNNER_TEMP/all.txt") tests"
+          results="$RUNNER_TEMP/kernel-test.json"
+          status=0
+          go test -count=1 -timeout 30m -json -run "^($(paste -sd'|' "$RUNNER_TEMP/mine.txt"))\$" ./kernel/ > "$results" || status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "::group::failing tests"
+            jq -r 'select(.Action=="fail" and .Test) | "FAIL \(.Test)"' "$results"
+            echo "::endgroup::"
+            jq -r 'select(.Action=="output") | .Output' "$results" | tail -n 300
+            exit 1
+          fi
+          "$shard" verify -results "$results" -mode test < "$RUNNER_TEMP/mine.txt"
+      - if: github.event_name != 'pull_request'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.cache/go-build
+          key: ${{ steps.toolchain.outputs.build-cache-key }}
+
+  # The cost model's checks that are not its package tests, in one job beside the legs.
+  kernel-checks:
+    name: cost model vet, sub-packages, race and script tests
     needs: changes
     if: needs.changes.outputs.kernel == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/go-toolchain
+      - id: toolchain
+        uses: ./.github/actions/go-toolchain
+        with:
+          build-cache: kernel-checks
       # The scoring suite needs measurement corpora this repository does not distribute, so it
       # is compiled and vetted here but not run.
       - run: go vet -tags scoring ./kernel/...
-      - run: go test -count=1 -timeout 30m ./kernel/...
+      # The packages under kernel/ other than the root one (kernel/internal/...). The legs of
+      # kernel-tests run the root package; these are the rest of `go test ./kernel/...`, chosen by
+      # listing so that a package added later is run here without an edit.
+      - name: Tests of the packages below kernel/
+        run: |
+          set -euo pipefail
+          shard="$RUNNER_TEMP/shard"
+          go build -o "$shard" ./tools/shard
+          root="$(go list -m)/kernel"
+          go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./kernel/... | awk -v root="$root" 'NF && $0 != root' > "$RUNNER_TEMP/below.txt"
+          echo "packages below kernel/:"; cat "$RUNNER_TEMP/below.txt"
+          # With no package, go test would run the package in the current directory.
+          if [ ! -s "$RUNNER_TEMP/below.txt" ]; then echo "none"; exit 0; fi
+          results="$RUNNER_TEMP/below-test.json"
+          status=0
+          # shellcheck disable=SC2046
+          go test -count=1 -timeout 30m -json $(cat "$RUNNER_TEMP/below.txt") > "$results" || status=$?
+          if [ "$status" -ne 0 ]; then
+            jq -r 'select(.Action=="output") | .Output' "$results" | tail -n 300
+            exit 1
+          fi
+          "$shard" verify -results "$results" -mode package < "$RUNNER_TEMP/below.txt"
       # The race detector reports races between goroutines, and the one place the cost model
       # starts any is the concurrency test: a kernel is safe to call from many goroutines.
       - run: go test -race -count=1 -run TestStepTimeIsPureAndSafeUnderConcurrency ./kernel/
@@ -225,6 +432,27 @@ jobs:
           python3 kernel/scripts/test_extract_inferencex_engine_settings.py
           python3 kernel/scripts/test_gen_aisimulate_scenarios.py
           python3 -I kernel/scripts/test_extract_aisimulate_e2e.py
+      - if: github.event_name != 'pull_request'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.cache/go-build
+          key: ${{ steps.toolchain.outputs.build-cache-key }}
+
+  # The aggregate, as for the contracts group: the check-run name stays "cost model".
+  kernel:
+    name: cost model
+    needs: [changes, kernel-tests, kernel-checks]
+    if: always() && needs.changes.outputs.kernel == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          bad=$(printf '%s' "$RESULTS" | python3 -c 'import json,sys; n=json.load(sys.stdin); print(" ".join(k for k,v in n.items() if v["result"]!="success"))')
+          if [ -n "$bad" ]; then echo "not passed: $bad"; exit 1; fi
+          echo "every leg and check of the cost model passed"
 
   # The mutation check (X13) for the cost model's guarded properties: kernel/mutation_test.go
   # breaks each in turn, in the source, with go test -overlay, and requires the test that guards
@@ -258,6 +486,8 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: catalog/scripts/requirements-dev.txt
       - run: pip install --require-hashes -r catalog/scripts/requirements-dev.txt
       - name: Every graph re-derives from its vendor configuration
         working-directory: catalog
@@ -326,10 +556,18 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            registry/scripts/requirements.txt
+            registry/scripts/requirements-fit.txt
       - run: pip install --require-hashes -r registry/scripts/requirements.txt
       # pyarrow, from the fit lock file: the lane writer's refusal test builds its own sweep and
       # needs no data, only the library, so it runs here instead of skipping on every runner.
       - run: pip install --require-hashes -r registry/scripts/requirements-fit.txt
+      # The acceptance emitter's inputs are not committed (X12): fetch InferenceX's golden
+      # curves at the commit validator/testdata/inferencex/curves.json pins, each checked by hash.
+      - name: Fetch the pinned InferenceX golden curves
+        run: python -I registry/scripts/fetch_inferencex_curves.py
       # Without the AISimulate, CollectiveX and OperatorX data, the tests that re-derive a
       # value from it skip here, and rederive.yml, a gate on the same paths and nightly,
       # runs them with the data present (SUB-4, SUB-8). Every other skip fails this job
@@ -363,6 +601,8 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: docs/requirements.txt
       - run: pip install --require-hashes -r docs/requirements.txt
       - env:
           DOCS_RELEASE: main
@@ -373,7 +613,9 @@ jobs:
         run: mkdocs build --strict
 
   # The one check branch protection requires. A job its paths did not trigger counts as
-  # passed; a job that ran and failed, or was cancelled, fails this one (X16, X17).
+  # passed; a job that ran and failed, or was cancelled, fails this one (X16, X17). The legs
+  # and side checks are listed as well as their aggregates, so a leg that failed or was
+  # cancelled fails this check even if an aggregate were skipped.
   #
   # It is also the aggregator for the path-filtered workflows (rederive.yml,
   # ledger-candidate.yml): a workflow whose trigger lists paths starts no run on a change that
@@ -385,7 +627,7 @@ jobs:
   required:
     name: required
     if: always()
-    needs: [changes, go, lint, contracts, kernel, mutants, catalog, ledger, registry, docs]
+    needs: [changes, go, lint, contracts, contracts-tests, contracts-checks, kernel, kernel-tests, kernel-checks, mutants, catalog, ledger, registry, docs]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:

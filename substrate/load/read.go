@@ -91,6 +91,15 @@ func (d *Data) LookupRouter(router, mode string, affinityTTLS *int, revision str
 	return routertable.Resolve(d.Routers(), router, mode, affinityTTLS, revision)
 }
 
+// LookupRouterBuild is LookupRouter for a run whose recipe names the router build by version, as a
+// wheel such as "1.3.0.dev20260601", not by a commit. The outcome is routertable.OutcomeMapped only
+// when an entry has the key and lists the build; a version it does not list, and a recipe that
+// states none (build ""), are routertable.OutcomeRevisionNotCovered. A point that relies on the
+// entry names the build's commit (routertable.Build.Revision) in its router_differs substitution.
+func (d *Data) LookupRouterBuild(router, mode string, affinityTTLS *int, build string) (*routertable.Entry, routertable.Outcome) {
+	return routertable.ResolveBuild(d.Routers(), router, mode, affinityTTLS, build)
+}
+
 // Models lists the catalog's models, sorted.
 func (d *Data) Models() []string { return sortedKeys(d.catalog.Models) }
 

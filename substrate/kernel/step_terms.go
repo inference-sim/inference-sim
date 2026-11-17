@@ -239,21 +239,46 @@ func (k *Kernel) recurrentSeconds(l *price.PlannedLayer, s *stepShape) float64 {
 	return t
 }
 
-// expertPadding is how much a tensor-parallel slice of the routed experts grows when the
-// kernel that serves them pads it. On a part without a four-bit peak, vLLM v0.31.0 serves
-// MXFP4 (and NVFP4) experts with Marlin W4A16, which pads each partition's intermediate width up to a
-// multiple of 128 (vllm/model_executor/layers/fused_moe/oracle/mxfp4.py:752-757): at TP8
-// with expert parallelism off, DeepSeek-V4.1's 2,304 / 8 = 288 pads to 384, a third more
-// expert weight and work a rank runs. With expert parallelism a rank holds whole experts
-// and nothing is padded.
+// expertPadding is how much a rank's slice of the routed experts grows when the engine
+// allocates it at padded shapes, as weight and as work.
+//
+// MXFP4, on every part: vLLM v0.33.0 rounds the layer's hidden size up to a multiple of 256
+// and each rank's intermediate size up to a multiple of 128 before it creates the weights,
+// for the Marlin and TRTLLM backends that serve MXFP4 experts on Hopper and Blackwell
+// (mxfp4_round_up_hidden_size_and_intermediate_size, vllm/model_executor/layers/fused_moe/
+// oracle/mxfp4.py:837-879@v0.33.0, called from Mxfp4MoEMethod.maybe_roundup_sizes,
+// quantization/mxfp4.py:184-197). The per-rank intermediate is the expert's width over the
+// ranks that split it, the whole width under expert parallelism. gpt-oss-120b's 2,880 hidden
+// pads to 3,072 and its 1,440 at TP2 to 1,536: 13.8% more expert weight and work a rank holds.
+// COVERAGE LIMIT: the CUTLASS and DeepGEMM MXFP4 backends round the hidden size to 128 rather
+// than 256, and the FlashInfer EP megakernel and b12x do not pad; this kernel does not know
+// which backend the engine picked, and prices the Marlin and TRTLLM rule.
+//
+// NVFP4, on a part without a four-bit peak: Marlin W4A16 pads each tensor-parallel slice's
+// intermediate width up to a multiple of 128 (oracle/mxfp4.py:752-757@v0.31.0): at TP8,
+// DeepSeek-V4.1's 2,304 / 8 = 288 pads to 384.
 func (k *Kernel) expertPadding(l *price.PlannedLayer) float64 {
-	d := l.RoutedFormat.DType
-	if k.expertTensorShards <= 1 || l.ExpertInner <= 0 || k.chip.NVFP4Peak > 0 ||
-		(d != model.DTypeMXFP4 && d != model.DTypeNVFP4) {
+	if l.ExpertInner <= 0 {
 		return 1
 	}
-	slice := float64(l.ExpertInner) / k.expertTensorShards
-	return math.Ceil(slice/128) * 128 / slice
+	up := func(x, m float64) float64 { return math.Ceil(x/m) * m }
+	slice := float64(l.ExpertInner) / math.Max(k.expertTensorShards, 1)
+	switch l.RoutedFormat.DType {
+	case model.DTypeMXFP4:
+		// The experts' reduction width, the hidden size or a latent one, from the work the plan
+		// states for one gated expert: 2 FLOPs x 3 matrices x inner x hidden.
+		hidden := l.ExpertFLOPsPerTokenPerExpert / (6 * float64(l.ExpertInner))
+		if hidden <= 0 {
+			return 1
+		}
+		return up(slice, 128) * up(hidden, 256) / (slice * hidden)
+	case model.DTypeNVFP4:
+		if k.expertTensorShards <= 1 || k.chip.NVFP4Peak > 0 {
+			return 1
+		}
+		return up(slice, 128) / slice
+	}
+	return 1
 }
 
 // sparseCausalFLOPs is the prefill attention work of a layer whose query reads a bounded
@@ -390,7 +415,7 @@ func (k *Kernel) shardsAtDecode(g *price.PlannedGEMM, tokens int) bool {
 	d := g.ShardedAtDecode
 	if d == nil || k.layout.TP <= 1 || max(k.layout.DP, 1) > 1 || k.family < d.CapabilityFamily ||
 		k.layout.SequenceParallelMoE || k.layout.ModelSequenceParallel ||
-		k.rules.MegaMoEBackend(k.engine.MoEBackend) || tokens <= 0 || tokens > d.MaxTokens {
+		k.low.MoE.Fused || tokens <= 0 || tokens > d.MaxTokens {
 		return false
 	}
 	// Spanning nodes is the engine's host test (tp_group_spans_nodes, in_the_same_node_as,

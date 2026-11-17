@@ -5,14 +5,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
 	"github.com/inference-sim/blis-substrate/kernel/internal/price"
 )
 
-// Two properties no other test pinned (blis-latency-kernel#66, findings 6): a mutant of either
+// Two properties no other test pinned (https://github.com/inference-sim/blis-latency-kernel/issues/66, findings 6): a mutant of either
 // survived the suite. TestGuardedPropertiesKillTheirMutants (mutation_test.go) breaks each and
 // requires the test named here to fail.
 
@@ -67,7 +67,7 @@ func TestAnMHCNodeRunsOnItsSequenceParallelShard(t *testing.T) {
 func TestTheDrafterCeilingCountsPrefillRows(t *testing.T) {
 	const kSpec = 3
 	k := &Kernel{
-		engine:      enginesettings.Settings{Speculative: &enginesettings.Speculative{Method: "dspark", NumSpecTokens: kSpec}},
+		low:         plan.PoolPlan{Drafts: plan.DraftPolicy{Chain: kSpec, OwnWorkspace: true}},
 		plan:        &price.Plan{Draft: &price.DraftPlan{ContextKernels: 2, Drafting: model.DraftingParallelBlock}},
 		graphDecode: graphModeFull, draftCaptureTokens: 2 * kSpec,
 		launchEager: time.Microsecond, replayPerStep: 5 * time.Microsecond,

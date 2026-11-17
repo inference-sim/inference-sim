@@ -309,7 +309,42 @@ type Requirements struct {
 	// Disaggregates reports whether the configuration splits a request between a prefill
 	// and a decode endpoint. A host whose deployment has both roles needs it.
 	Disaggregates bool
+	// SessionIdentities are the places the configuration's session plugins (the session-affinity
+	// scorer and filter, the session-id producer) read a request's session identifier, one per
+	// source, in configuration order, with the plugins' defaults applied. A host that sends only
+	// x-session-id checks them.
+	SessionIdentities []SessionIdentity
 }
+
+// SessionIdentity is one place a session plugin reads the session identifier, or the pod token it
+// echoes.
+type SessionIdentity struct {
+	// Name and Type are the plugin's name and type.
+	Name string
+	Type string
+	// Strategy is the session-affinity plugin's strategy: SessionStrategyID, or
+	// SessionStrategyEncodedEndpoint (the default), under which the client echoes a token the
+	// router wrote on an earlier response. "" for the session-id producer.
+	Strategy string
+	// Header is the request header read: a session_id source, the producer's headerName, or the
+	// encoded-endpoint token's header. "" when the identifier is not read from a header.
+	Header string
+	// Cookie is the cookie, in the cookie header, the producer reads. "" for none.
+	Cookie string
+	// Attribute is the request attribute a session_id source reads, which a producer publishes.
+	// "" for none.
+	Attribute string
+}
+
+// The session-affinity strategies a SessionIdentity names.
+const (
+	SessionStrategyID              = "session_id"
+	SessionStrategyEncodedEndpoint = "encoded_endpoint_header"
+)
+
+// SessionIDHeader is the request header a host sends a session identifier in
+// (Request.SessionID).
+const SessionIDHeader = "x-session-id"
 
 // MetricsExtractor maps an engine's metric series onto what the router reads. Each endpoint's
 // mapping is chosen by its EngineLabelKey label, or DefaultEngine when it has none.
@@ -447,6 +482,18 @@ type Request struct {
 	// TTL is how long the client waits for the request, sent when positive as
 	// time.Duration.String (x-llm-d-inference-ttl).
 	TTL time.Duration
+
+	// SessionID is the client's session identifier, sent when non-empty as x-session-id, the
+	// header llm-d's session-affinity plugins read by default. It is the opaque string a
+	// multi-turn client would send on every turn of one conversation.
+	SessionID string
+
+	// Headers are further request headers the client sends, by lower-case name, for a plugin that
+	// reads one the fields above do not carry: a session token the client echoes from an earlier
+	// response, a cookie, a header named in the configuration (see Requirements.SessionIdentities).
+	// The router sees them as it sees an HTTP client's. A header the fields above set is not
+	// overridden by one named here.
+	Headers map[string]string
 }
 
 // Decision is where the router sent a request. Endpoints are named by address

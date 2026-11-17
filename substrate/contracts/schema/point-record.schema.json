@@ -85,7 +85,9 @@
         },
         "metric": {
           "enum": [
+            "busy_share",
             "cache_hit_rate",
+            "decode_busy_share",
             "e2e_mean_ms",
             "e2e_p50_ms",
             "e2e_p90_ms",
@@ -97,6 +99,11 @@
             "gateway_queue_delay_p95_ms",
             "gateway_queue_delay_p99_ms",
             "goodput_rps",
+            "icl_mean_ms",
+            "icl_p50_ms",
+            "icl_p90_ms",
+            "icl_p95_ms",
+            "icl_p99_ms",
             "interactivity_mean",
             "interactivity_of_mean_tpot",
             "interactivity_p50",
@@ -106,10 +113,12 @@
             "itl_p90_ms",
             "itl_p95_ms",
             "itl_p99_ms",
+            "mfu",
             "output_tok_s",
             "output_tok_s_per_gpu",
             "output_tokens_per_second_per_decode_gpu",
             "preemptions",
+            "prefill_busy_share",
             "request_throughput",
             "scheduling_delay_mean_ms",
             "scheduling_delay_p50_ms",
@@ -752,6 +761,12 @@
         "evidence": {
           "$ref": "#/$defs/routertable.BoundEvidence"
         },
+        "more_evidence": {
+          "items": {
+            "$ref": "#/$defs/routertable.BoundEvidence"
+          },
+          "type": "array"
+        },
         "not_measured": {
           "items": {
             "type": "string"
@@ -855,7 +870,8 @@
           "enum": [
             "balanced",
             "prefill-bound",
-            "decode-bound"
+            "decode-bound",
+            "long-prompt"
           ],
           "type": "string"
         }
@@ -881,6 +897,9 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "evidence": {
+          "type": "string"
         },
         "max_ratio": {
           "type": "number"
@@ -937,7 +956,8 @@
           "enum": [
             "balanced",
             "prefill-bound",
-            "decode-bound"
+            "decode-bound",
+            "long-prompt"
           ],
           "type": "string"
         }

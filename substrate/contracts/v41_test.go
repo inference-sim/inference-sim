@@ -195,7 +195,7 @@ func TestV41WeightBytes(t *testing.T) {
 	}
 }
 
-// TestV41ArchOverride is #53's case: the same graph serves a 584 B record on SM90 and a
+// TestV41ArchOverride is the case of inference-sim/blis-substrate#155: the same graph serves a 584 B record on SM90 and a
 // 528 B one on SM100, where nvfp4_ds_mla also shrinks the compressed cache to 288 B.
 func TestV41ArchOverride(t *testing.T) {
 	g := v41(t)

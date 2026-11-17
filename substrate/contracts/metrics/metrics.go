@@ -5,15 +5,28 @@
 // carries no definition of its own, so the simulator, the scoring harness and config
 // search read one meaning for each name.
 //
-// Time to first token, time per output token and inter-token latency follow the
-// benchmark client BLIS is compared with: vLLM's `vllm bench serve` at v0.32.0
-// (vllm/benchmarks/serve.py:624-634). Time per output token excludes
-// the first token and is a statistic over requests, each request's own (latency - TTFT) /
-// (output tokens - 1). Inter-token latency is pooled over every gap between consecutive
-// output tokens of every request with at least two output tokens (inference-sim #1894), as
-// `vllm bench serve` pools them. aiperf's inter-token latency is a per-request mean, a
-// different population, so it is not cited for that family. Output tokens per second follows
-// aiperf. interactivity_p50 and interactivity_p90 are 1000 over the time-per-output-token
+// Time to first token, time per output token, inter-token latency and inter-chunk latency
+// follow the benchmark clients BLIS is compared with, and each states the client fields it
+// equals. The clients disagree on what they call ITL, so a definition is never read from a
+// client's field name:
+//
+//   - tpot is per request, each request's own (latency - TTFT) / (output tokens - 1). It is
+//     `vllm bench serve`'s TPOT, aiperf's inter_token_latency (its ITL), and inference-perf's
+//     time_per_output_token.
+//   - itl is pooled over every gap between consecutive output tokens of every request with at
+//     least two output tokens (inference-sim #1894). Tokens that reach the client in one chunk
+//     share its arrival time, so the gaps between them are zero: under speculative decoding,
+//     where one step emits several tokens in one chunk, most gaps are zero. It is
+//     inference-perf's inter_token_latency when inference-perf re-tokenizes the streamed text
+//     (a tokenizer is configured).
+//   - icl is pooled over every gap between consecutive chunks streamed to the client, one gap
+//     per chunk after the first. It is `vllm bench serve`'s ITL, aiperf's inter_chunk_latency,
+//     and inference-perf's inter_token_latency when no tokenizer is configured. With one token
+//     per chunk, icl and itl are the same samples.
+//
+// Time to first token and end-to-end latency follow `vllm bench serve` at v0.32.0
+// (vllm/benchmarks/serve.py:624-634). Output tokens per second follows aiperf.
+// interactivity_p50 and interactivity_p90 are 1000 over the time-per-output-token
 // percentile in milliseconds, and interactivity_of_mean_tpot is 1000 over its mean; neither
 // vllm bench serve nor aiperf reports them, and InferenceX stores them (median_intvty,
 // p90_intvty, mean_intvty). The mean over requests of 1/TPOT, interactivity_mean, is a
@@ -63,8 +76,14 @@ const (
 	// FormulaTPOT is a request's (E2E latency - TTFT) / (output tokens - 1): its mean
 	// time per output token after the first.
 	FormulaTPOT Formula = "tpot"
-	// FormulaITL is one gap between two consecutive output tokens of one request.
+	// FormulaITL is one gap between two consecutive output tokens of one request. Tokens
+	// that reach the client in one chunk share its arrival time, so the gap between them is
+	// zero.
 	FormulaITL Formula = "itl"
+	// FormulaICL is one gap between two consecutive chunks streamed to one request's client:
+	// the time from one chunk's arrival to the next's. A chunk carries every token the server
+	// sends at once, several under speculative decoding.
+	FormulaICL Formula = "icl"
 	// FormulaE2E is a request's time from arrival at the client to its last output token.
 	FormulaE2E Formula = "e2e"
 	// FormulaStepInterval is the time from the end of one engine step to the end of the
@@ -100,6 +119,16 @@ const (
 	// FormulaSLOAttainment is completed requests that met every SLO target of their
 	// class, over requests of the targeted classes that arrived.
 	FormulaSLOAttainment Formula = "slo_attainment"
+	// FormulaBusyShare is the time the engine spent running steps, over the window's length
+	// (and over the instances of the scope, below an instance).
+	FormulaBusyShare Formula = "busy_share"
+	// FormulaPrefillBusyShare is the part of the busy time charged to prefill tokens.
+	FormulaPrefillBusyShare Formula = "prefill_busy_share"
+	// FormulaDecodeBusyShare is the part of the busy time charged to decode tokens.
+	FormulaDecodeBusyShare Formula = "decode_busy_share"
+	// FormulaMFU is the model FLOPs the engine ran over the most it could have run in the window
+	// at the GPUs' datasheet dense peak.
+	FormulaMFU Formula = "mfu"
 )
 
 // Statistic summarises a population.
@@ -138,6 +167,9 @@ const (
 	// PopulationTokens is every gap between consecutive output tokens of every request in
 	// PopulationRequestsTwoTokens, pooled.
 	PopulationTokens Population = "tokens"
+	// PopulationChunks is every gap between consecutive chunks streamed to the client of
+	// every completed request with at least two chunks, pooled.
+	PopulationChunks Population = "chunks"
 	// PopulationSteps is every engine step in the window that emitted a token.
 	PopulationSteps Population = "steps"
 	// PopulationAdmissions is every admission of a request to an engine in the window.
@@ -145,6 +177,10 @@ const (
 	// PopulationGatewayQueued is every request in the window that waited in the router's
 	// flow-control queue.
 	PopulationGatewayQueued Population = "gateway_queued_requests"
+	// PopulationRanSteps is every engine step that ran a batch, clipped to the window: the
+	// time between its start and its end counts, wherever the step began or ended. A step that
+	// ran nothing is not in it.
+	PopulationRanSteps Population = "ran_steps"
 	// PopulationTargeted is every request in the window whose class has an SLO target.
 	PopulationTargeted Population = "targeted_requests"
 )
@@ -328,6 +364,33 @@ func (d Definition) sameMeaning(o Definition) bool {
 
 const (
 	vllmServe = "vllm v0.32.0 vllm/benchmarks/serve.py:624-634"
+
+	// The latency definitions cite every client whose field equals them. aiperf and
+	// inference-perf are read at their release tags: aiperf v0.12.0
+	// (be53bf2953d30e46c500e6a80fc1f8b6f84bc718) and inference-perf v0.7.0
+	// (5804ea6b7ebd2bfceff29cf113311ed3af95146e).
+	//
+	// tpotFollows: vllm's TPOT, (latency - TTFT) / (output_len - 1) per request; aiperf's
+	// inter_token_latency, (request latency - TTFT) / (OSL - 1); inference-perf's
+	// time_per_output_token, (last token time - first token time) / (output tokens - 1).
+	tpotFollows = vllmServe + " (TPOT); aiperf v0.12.0 src/aiperf/metrics/types/inter_token_latency_metric.py:24,55 " +
+		"(inter_token_latency); inference-perf v0.7.0 inference_perf/reportgen/base.py:653-657 (time_per_output_token)"
+	// itlFollows: inference-perf with a tokenizer gives every token of a chunk the chunk's
+	// arrival time (base.py:614-622) and pools the gaps between consecutive token times
+	// (:659-662, :734, :781).
+	itlFollows = "inference-perf v0.7.0 inference_perf/reportgen/base.py:614-622,659-662,734,781 " +
+		"(inter_token_latency, a tokenizer configured)"
+	// iclFollows: vllm appends one gap per streamed chunk after the first
+	// (endpoint_request_func.py:270 for completions, :442 for chat) and pools them
+	// (serve.py:632, :766-769); aiperf's inter_chunk_latency is one gap per content chunk
+	// after the first, pooled; inference-perf without a tokenizer keeps one time per chunk
+	// (apis/chat.py:578) and pools their gaps. aiperf's percentiles of it are t-digest
+	// estimates (src/aiperf/metrics/list_metric_aggregation.py), not numpy_linear; its mean is
+	// exact.
+	iclFollows = "vllm v0.32.0 vllm/benchmarks/lib/endpoint_request_func.py:270,442 and vllm/benchmarks/serve.py:632,766-769 (ITL); " +
+		"aiperf v0.12.0 src/aiperf/metrics/types/inter_chunk_latency_metric.py:31,63-73 (inter_chunk_latency; mean only, " +
+		"its percentiles are t-digest estimates); inference-perf v0.7.0 inference_perf/apis/chat.py:578 and " +
+		"inference_perf/reportgen/base.py:659-662,734,781 (inter_token_latency, no tokenizer)"
 	aiperfTPS = "aiperf 0.12.0 src/aiperf/metrics/types/output_token_throughput_metrics.py:40-78"
 
 	// InferenceX is read at two commits: 08d7a9cd (2026-06-11), where the fixed-sequence
@@ -372,9 +435,11 @@ var latencyFamilies = []latencyFamily{
 	{"ttft", FormulaTTFT, PopulationRequests,
 		"Time to first token", vllmServe, false},
 	{"tpot", FormulaTPOT, PopulationRequestsTwoTokens,
-		"Time per output token, excluding the first, computed per request", vllmServe, false},
+		"Time per output token, excluding the first, computed per request (aiperf's ITL)", tpotFollows, false},
 	{"itl", FormulaITL, PopulationTokens,
-		"Inter-token latency, pooled over every gap between output tokens", vllmServe, false},
+		"Inter-token latency, pooled over every gap between output tokens, zero between tokens of one chunk", itlFollows, false},
+	{"icl", FormulaICL, PopulationChunks,
+		"Inter-chunk latency, pooled over every gap between chunks streamed to the client (vllm bench serve's ITL)", iclFollows, false},
 	{"e2e", FormulaE2E, PopulationRequests,
 		"Request latency, arrival to last output token", vllmServe, false},
 	{"step_interval", FormulaStepInterval, PopulationSteps,
@@ -452,6 +517,18 @@ func build() map[string]Definition {
 		"Completed requests that met every SLO target of their class, over the targeted requests that arrived.", "")
 	rate("cache_hit_rate", FormulaCacheHitRate, PopulationAdmissions, UnitFraction,
 		"Prompt tokens served from the prefix cache over prompt tokens looked up.", "")
+	busy := func(id string, f Formula, desc string) {
+		add(Definition{ID: id, Formula: f, Statistic: StatRate, Population: PopulationRanSteps,
+			Window: WindowMeasured, Unit: UnitFraction, Unfinished: UnfinishedNotApplicable, Description: desc})
+	}
+	busy("busy_share", FormulaBusyShare,
+		"Simulated time an instance's engine spent running steps, over the measured window's length; steps are clipped to the window, and pipeline stages that overlap count once. At a pool or the cluster, the instances' busy time over the window's length times the instance count. It is not a service-level figure: a share near 1 means the engine had work for every moment, not that it served it well.")
+	busy("prefill_busy_share", FormulaPrefillBusyShare,
+		"The part of busy_share charged to prefill: each step's time is split by the step's scheduled tokens, those of requests still computing their prompt against those past it (decode tokens, speculative drafts included).")
+	busy("decode_busy_share", FormulaDecodeBusyShare,
+		"The part of busy_share charged to decode: each step's time is split by the step's scheduled tokens (see prefill_busy_share). prefill_busy_share and decode_busy_share add up to busy_share.")
+	busy("mfu", FormulaMFU,
+		"Estimated model-FLOPs utilization: the model FLOPs of the steps run in the measured window (each step clipped to it, FLOPs in proportion), counted from the model graph as the kernel prices it (dense and expert GEMMs per token, the head over the sampling rows, attention over the keys each query reads; the elementwise work, recurrent mixers, sparse index scoring and drafter passes are not counted), over the window's length times the scope's GPUs times one GPU's datasheet dense peak at the format the linear layers run in. A model that is mostly recurrent therefore reads low.")
 	add(Definition{ID: "interactivity_mean", Formula: FormulaUserTPS, Statistic: StatMean,
 		Population: PopulationRequestsTwoTokens, Window: WindowMeasured, Unit: UnitTokensPerSUser,
 		Unfinished: UnfinishedExcluded, Follows: aiperfTPS,

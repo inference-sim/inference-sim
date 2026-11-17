@@ -12,7 +12,11 @@
 // another tool's capture, which records no BLIS deployment (inference-sim #2067).
 package trace
 
-import "sort"
+import (
+	"sort"
+
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+)
 
 // Version is the trace format this package reads and writes.
 const Version = 4
@@ -44,10 +48,50 @@ type Header struct {
 	// run that wrote the trace, when it exceeded one. A replay refuses a trace whose value
 	// it cannot reproduce. Zero when no instance crossed a node.
 	MaxNodesSpanned int `yaml:"max_nodes_spanned,omitempty"`
+	// Phases are the trace's stages in order, for a trace run in drain-gated stages: a warm-up,
+	// then a measured phase, and so on. Each record names its phase in the phase column. Empty
+	// for a trace of one stage. The format marks phases and does not say which of them count;
+	// that stays with the reader (inference-sim#1926, blis-substrate#156).
+	Phases []Phase `yaml:"phases,omitempty"`
 	// Router records the llm-d router inputs the run routed with, so a replay rebuilds the
 	// same router.
 	Router *Router `yaml:"router,omitempty"`
+	// Acceptance is what the workload that made the trace stated about speculative
+	// acceptance: the category and thinking mode that select a registry profile, and a
+	// value of its own. It is the workload layer of the acceptance resolution
+	// (acceptance.Resolve), so a replay that finds it resolves the profile the run did
+	// (DEV-7, inference-sim#2115). A selector the command line states still overrides it.
+	// Absent when the workload stated none.
+	Acceptance *acceptance.Workload `yaml:"acceptance,omitempty"`
 }
+
+// Phase is one stage of a trace. A phase starts after the previous one drains, or at a stated
+// clock; the engine, KV and prefix-cache state carry across phases.
+type Phase struct {
+	// Name labels the phase's records (the phase column) and the Result's request rows. It is
+	// a lowercase slug and unique within the trace.
+	Name string `yaml:"name"`
+	// Start is when the phase begins: StartAfterDrain (the default) when every request of the
+	// previous phase has reached its end, or StartAt, at the clock OffsetUs.
+	Start PhaseStart `yaml:"start,omitempty"`
+	// OffsetUs is, for StartAfterDrain, the wait after the drain, and for StartAt, the clock
+	// the phase begins at, on the trace's own origin.
+	OffsetUs int64 `yaml:"offset_us,omitempty"`
+	// Concurrency, when positive, limits the phase's requests in flight: a request is sent
+	// when one of the phase's earlier requests ends, as a benchmark client with a fixed
+	// number of workers does. Zero sends each request at its recorded arrival.
+	Concurrency int `yaml:"concurrency,omitempty"`
+}
+
+// PhaseStart is how a phase begins.
+type PhaseStart string
+
+const (
+	// StartAfterDrain: the phase begins once every request of the previous phase has ended.
+	StartAfterDrain PhaseStart = "after_drain"
+	// StartAt: the phase begins at a stated clock, whatever the previous phase is doing.
+	StartAt PhaseStart = "at"
+)
 
 // RecordsDeployment reports whether the trace records a BLIS deployment, whose header a
 // replay must keep authoritative (inference-sim's INV-13). A converted trace records none,
@@ -228,6 +272,9 @@ type Record struct {
 	// previous round's input and output (a compacted context); an accumulating replay
 	// restarts the session's buffer at this length. Nil on every other round.
 	InputTokensReset *int64 `yaml:"input_tokens_reset,omitempty"`
+	// Phase names the header phase the request belongs to. Empty when the header lists no
+	// phases; required when it does.
+	Phase string `yaml:"phase,omitempty"`
 }
 
 // Status is how a request ended in the run or capture that wrote the trace.

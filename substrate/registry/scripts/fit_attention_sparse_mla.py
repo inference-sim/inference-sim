@@ -145,9 +145,12 @@ import yaml
 
 HERE = Path(__file__).resolve().parent
 SET_PATH = HERE.parent / "coefficients" / "cost-model-attention.yaml"
+# The table is a kernel measurement AISimulate retired at e8cbe2dc, so it is read at the last
+# commit that carries it (fit_deepseek_v41_h200.KERNEL_DATA_SHA, rederive.yml's
+# AISIMULATE_DSV4_KERNEL_SHA), not at the main pin.
 DEFAULT_DATA = os.environ.get(
-    "AISIMULATE_DATA",
-    "/tmp/aisim/python/aisimulate/src/aisimulate_core/systems/data")
+    "AISIMULATE_DSV4_KERNEL_DATA",
+    "/tmp/aisim-2f0f4cd8/python/aisimulate/src/aisimulate_core/systems/data")
 DEFAULT_CATALOG = os.environ.get(
     "BLIS_CATALOG", str(Path(__file__).resolve().parents[2] / "catalog"))
 

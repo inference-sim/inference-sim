@@ -23,10 +23,18 @@ reason: >-
   differ from each other by up to 1.70 (balanced) and 1.79 (decode-bound) in median time to first
   token at 64 to 256 clients, default against least-active-requests, so the choice among them
   is not a rounding. It has no prefix shared between requests, which is
-  the term this mode exists for, so no bound on a stand-in for it can be measured with it. The
-  mode stays unsupported until a composition that carries both terms is hosted and measured on a
-  workload with shared prefixes. A run with session affinity configured is a different key and
-  has no entry.
+  the term this mode exists for, so no bound on a stand-in for it can be measured with it.
+  Five hosted compositions were then measured on the agentic replay of the AgentX corpus
+  (four tensor-parallel-8 replicas of DeepSeek-V4.1-Flash on H100, three seeds, a 900 second
+  window, 16, 64 and 256 live sessions): the default policy; precise-prefix overlap with queue
+  depth; the same with a session-affinity term; session affinity with queue depth; and
+  least-active-requests. At 16 sessions the median time to first token of the five spans 1.37
+  (least-active-requests is the outlier; the other four span 1.03). At 64 it spans 1.55. At 256
+  sessions, where the cluster saturates, it spans 9.07, time per output token 1.69 and output
+  token throughput 2.28. Session affinity with queue depth was the fastest of the five at 256
+  sessions. The choice of composition therefore moves BLIS's figures by far more than any bound
+  the table could state, on the one layout measured, so no bound is written. The mode stays
+  unsupported. A run with session affinity configured is a different key and has no entry.
 evidence:
   - side: router
     field: mode

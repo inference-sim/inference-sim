@@ -68,18 +68,19 @@
 - id: SUB-3
   section: §5
   statement: >-
-    The catalog holds declared facts only: figures read from a published source, each with a citation
-    a reader can follow. Each model's graph is generated from its vendor config.json and the safetensors
+    The catalog holds declared facts only: figures read from a published source, each with a citation a
+    reader can follow. Each model's graph is generated from its vendor config.json and the safetensors
     headers of its checkpoint, and never edited by hand. No runtime code reads config.json. No model
     value is hard-coded in the cost model or an engine, and no setting asks the user to copy a value
     from a checkpoint. A scenario's cluster names catalog entries for its chip, fabric and storage
-    devices, and states what the user provisions: the node count, and the GPUs per node, GPUs per
-    rack and host memory per node where the chip's entry leaves them open. Where the entry states
-    them, as GB200 NVL72's does, the scenario may omit them or restate them unchanged, and any other
-    value is refused. On a chip whose entry has no rack tier, the scenario may not state a rack size.
-    On a chip that has one, the cluster's fabric is the network between racks. A different packaging
-    of the same chip is a catalog entry of its own. One function in contracts/spec resolves a cluster's
-    packaging from the scenario and the catalog, and every reader calls it (X15).
+    devices, and states what the user provisions: the node count, which nodes sit under each switch and
+    how oversubscribed each group's uplink is, and the GPUs per node, GPUs per rack and host memory per
+    node where the chip's entry leaves them open. Where the entry states them, as GB200 NVL72's does,
+    the scenario may omit them or restate them unchanged, and any other value is refused. On a chip
+    whose entry has no rack tier, the scenario may not state a rack size. On a chip that has one, the
+    cluster's fabric is the network between racks. A different packaging of the same chip is a catalog
+    entry of its own. One function in contracts/spec resolves a cluster's packaging from the scenario
+    and the catalog, and every reader calls it (X15).
   scope:
   - blis-sglang
   - blis-substrate
@@ -149,10 +150,10 @@
 - id: SUB-5
   section: §5
   statement: >-
-    Coefficients obey physics: no compute rate above the chip's dense datasheet peak for that data
-    type; no memory bandwidth above the datasheet peak for a working set larger than the chip's L2
-    cache; at a fixed algorithm, topology tier and bytes per rank, a collective never gets faster
-    as the group grows.
+    Coefficients obey physics: no compute rate above the chip's dense datasheet peak for that data type;
+    no memory bandwidth above the datasheet peak for a working set larger than the chip's L2 cache; at a
+    fixed algorithm, topology tier and bytes per rank, a collective never gets faster as the group
+    grows; no transfer rate above the catalog peak of the link a leg crosses.
   scope:
   - blis-substrate
   checks:
@@ -195,8 +196,9 @@
 - id: SUB-7
   section: §5
   statement: >-
-    The cost model has a price for every primitive it can be asked about. When no fitted coefficient
-    exists it uses the next source in a fixed order, and records which one it used (§9).
+    The cost model has a price for every primitive it can be asked about, and for every move form (§6.1)
+    on every catalog device, link and NIC it can cross. When no fitted coefficient exists it uses the
+    next source in a fixed order, and records which one it used (§9).
   scope:
   - blis-substrate
   checks:
@@ -299,8 +301,10 @@
   section: §5
   statement: >-
     Every field of PoolPlan, StepShape and Transfer, and every coefficient family, changes some price
-    when it is changed, or is listed as not yet priced with an issue. A setting that the engine resolves
-    but the cost model never reads is a gap, and it is visible.
+    when it is changed, or is listed as not yet priced with an issue. Here Transfer means the
+    plan.Transfer that the cost model receives; the lifecycle fields of engine.Transfer (ID, Request and
+    Blocks) are never priced. A setting that the engine resolves but the cost model never reads is a
+    gap, and it is visible.
   scope:
   - blis-substrate
   checks:
@@ -670,3 +674,90 @@
   target:
     status: ci
     milestone: 2
+- id: SUB-21
+  section: §5
+  statement: >-
+    Every move is priced by the form it states (§6.1), as legs over paths the catalog states, with the
+    coefficients the registry holds for that form, device, link and chip. A move that states no form
+    keeps the price it had before forms existed. A form's price never depends on an engine's name or
+    setting. A move whose form the plan or the catalog cannot make, such as ipc between GPUs in
+    different NVLink domains on different nodes, gpudirect_storage with buffered IO, or a staging buffer
+    that is not among the plan's Buffers, is refused by env.DemandFor with a message that names the form
+    and the reason.
+  scope:
+  - blis-substrate
+  - inference-sim
+  checks:
+  - repo: blis-substrate
+    check: >-
+      The perturbation test of SUB-11 changes each move-form field and expects a price to change
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: >-
+      Every move stated without a form gets the price it got before
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: >-
+      Property tests in kernel/ for pipelined moves, single-chunk buffers, rates that fall, and buffered
+      against unbuffered storage moves
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      A property test of the two advance rules
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      A refusal test pair for each move form (SIM-9)
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: >-
+      The completeness test of SUB-7
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 3
+- id: SUB-22
+  section: §5
+  statement: >-
+    The form a transport library chooses comes from one function in contracts/transport, over a table in
+    catalog/transport keyed on the library, its version, its settings and catalog facts about the two
+    ends (§6.1). Each table entry cites the library's selection code at that version. A setting or
+    combination the table does not cover is refused by name. No engine repository and no cost-model code
+    chooses a library's transport.
+  scope:
+  - blis-substrate
+  checks:
+  - repo: blis-substrate
+    check: >-
+      A table test against what UCX and NCCL report choosing, recorded with ledger units on each catalog
+      chip and NIC
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: >-
+      The catalog validators refuse an entry without a citation (SUB-3)
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: >-
+      A refusal test for a setting the table does not cover
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: >-
+      The review question of X2 for any entry that names an engine
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 3

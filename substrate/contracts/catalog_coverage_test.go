@@ -91,8 +91,34 @@ func hasRecurrent(g *model.Graph, k model.RecurrentKind) bool {
 	return anyNode(g, func(n model.Node) bool { return n.RecurrentKind == k })
 }
 
+// hasSharedExperts reports whether a layer kind runs a shared expert beside its routed ones. A
+// graph states it in one of two forms: folded into the routed node (shared_experts on the
+// GroupedGEMM, as for ROCm AITER's fused path), or as the dense MLP vLLM v0.33.0 runs on its own
+// on NVIDIA parts (its shared_gate_up / shared_up and shared_down GEMMs in the same kind as a
+// routed GroupedGEMM, inference-sim/blis-substrate#228).
 func hasSharedExperts(g *model.Graph) bool {
-	return anyNode(g, func(n model.Node) bool { return n.SharedExperts > 0 })
+	for _, lk := range g.LayerKinds {
+		if kindRunsSharedExperts(lk.Nodes) {
+			return true
+		}
+	}
+	return false
+}
+
+func kindRunsSharedExperts(nodes []model.Node) bool {
+	routed, sharedMLP := false, false
+	for _, n := range nodes {
+		if n.SharedExperts > 0 {
+			return true
+		}
+		if n.Op == model.OpGroupedGEMM && !n.IsSharedExpert() {
+			routed = true
+		}
+		if n.Op == model.OpGEMM && strings.HasPrefix(n.Role, "shared_") && n.Role != "shared_expert_gate" {
+			sharedMLP = true
+		}
+	}
+	return routed && sharedMLP
 }
 
 func hasLatentMoE(g *model.Graph) bool {
@@ -116,8 +142,12 @@ func hasNodeWeightDType(g *model.Graph, d model.DType) bool {
 
 func hasPrologue(g *model.Graph) bool { return len(g.Stack.Prologue) > 0 }
 
+// isMultimodal: the graph describes a model whose source also has a tower, either as the decoder
+// alone (ModalityTextDecoderOfMultimodal) or with the towers it prices (ModalityMultimodal, an
+// Encoder section).
 func isMultimodal(g *model.Graph) bool {
-	return g.Modality == model.ModalityTextDecoderOfMultimodal
+	return g.Modality == model.ModalityTextDecoderOfMultimodal ||
+		(g.Modality == model.ModalityMultimodal && g.Encoder != nil && len(g.Encoder.Towers) > 0)
 }
 
 // TestCatalogArchitectureFamiliesAreExpressible walks every architecture family the
@@ -283,9 +313,6 @@ func TestEveryPrimitiveAndKindIsExercised(t *testing.T) {
 			if n.StateDType != "" {
 				stateDTypes[n.StateDType] = true
 			}
-			if n.SharedExperts > 0 {
-				sawShared = true
-			}
 			if n.LatentSize > 0 {
 				sawLatentMoE = true
 			}
@@ -299,6 +326,9 @@ func TestEveryPrimitiveAndKindIsExercised(t *testing.T) {
 		for _, lk := range g.LayerKinds {
 			for _, n := range lk.Nodes {
 				record(n)
+			}
+			if kindRunsSharedExperts(lk.Nodes) {
+				sawShared = true
 			}
 		}
 		for _, n := range g.Head {

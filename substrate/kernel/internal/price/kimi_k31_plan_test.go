@@ -79,8 +79,9 @@ func TestKimiK31AttentionFrontEndIsPlannedAsTheEnginePacksIt(t *testing.T) {
 }
 
 // The replicated dense weights of the layer are exactly the A-projection (with wk and
-// weights_proj) and wq_index: no other projection of the layer is replicated, and these two
-// are, whatever else changes.
+// weights_proj), wq_index and the MoE router (a GateLinear, a ReplicatedLinear [896 x 7168],
+// vllm/models/kimi_k3/nvidia/model.py:437-443 at v0.33.0): no other projection of the layer is
+// replicated, and these are, whatever else changes.
 func TestKimiK31ReplicatedProjectionsAreExactlyTheOnesVLLMReplicates(t *testing.T) {
 	l := kimiK31Plan(t)
 	var rows float64
@@ -89,8 +90,8 @@ func TestKimiK31ReplicatedProjectionsAreExactlyTheOnesVLLMReplicates(t *testing.
 			rows += float64(g.N * g.K)
 		}
 	}
-	if want := float64(2272*7168 + 4096*1536); rows != want {
-		t.Errorf("replicated dense weights are %v, want %v (A-projection with wk and weights_proj, and wq_index)",
+	if want := float64(2272*7168 + 4096*1536 + 896*7168); rows != want {
+		t.Errorf("replicated dense weights are %v, want %v (A-projection with wk and weights_proj, wq_index and the router)",
 			rows, want)
 	}
 }

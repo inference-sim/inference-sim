@@ -88,7 +88,7 @@ status, and each of its checks here. `ci` means the check runs in CI; `new` mean
 yet, and the target milestone says when it must. A pull request cites the identifiers it
 keeps or introduces; CI refuses an identifier that does not exist (X14).
 
-- **X1** (partial; target ci by M4) What a user would hand llm-d, vLLM or SGLang is what they hand BLIS, in the upstream's own field names, types, defaults and errors.
+- **X1** (partial; target ci by M3) What a user would hand llm-d, vLLM or SGLang is what they hand BLIS, in the upstream's own field names, types, defaults and errors.
   - `new`, pull_request: Every scenario key outside the engine and router blocks is on a fixed list of environment facts
 - **X2** (new; target ci by M4) Outside its tests, blis-substrate contains no engine name, no engine version and no engine's policy.
   - `new`, pull_request: No engine identifier in non-test Go identifiers, string literals or registry keys: engine names, engine version strings, upstream source-path citations, and engine-only setting names. The word list is committed in the substrate (invariants/engine-words.txt). A bot regenerates it from each engine release's field list in a pull request, leaving out words the architecture vocabulary also uses, such as dtype or quantization. The count per directory may only go down, measured against the word list of the same version, until it reaches zero
@@ -105,13 +105,13 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: A lower repository refers to accuracy-dashboard only through the harness pin file
   - `new`, pull_request: The module graph across all repositories follows Figure 1
   - `ci`, pull_request: Every generated file matches its generator's output (`tools/docgen: TestGeneratedDocsAreCurrent`)
-- **X8** (new; target ci by M2) Every number records the exact versions and data it came from, and can be regenerated from them.
+- **X8** (new; target ci by M3) Every number records the exact versions and data it came from, and can be regenerated from them.
   - `new`, pull_request: No ledger unit is cited under two roles by any fit, gate or dashboard point
   - `new`, pull_request: Every data source is pinned to an exact revision
   - `new`, pull_request: Published numbers regenerate: on redistributable fixtures on every pull request, on the full data nightly
   - `new`, pull_request: An accuracy change's success criteria are committed before any commit that reads its held-out data
-- **X10** (new; target ci by M1) Repositories are released bottom-up.
-  - `new`, release: Release bot (§13.6) (`tools/release`)
+- **X10** (ci; target reached) Repositories are released bottom-up.
+  - `ci`, release: Release bot (§13.6) (`tools/release`)
 - **X11** (partial; target ci by M1) Pins are exact release tags.
   - `ci`, pull_request: Selected-version lint (LIF-2), in every repository: no replace outside inference-sim (`tools/modlint: TestEachRuleHasAKnownBadInput`)
   - `ci`, pull_request: No other module requiring github.com/llm-d/llm-d-router (`tools/modlint: TestEachRuleHasAKnownBadInput`)
@@ -148,13 +148,13 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: A workflow lint that refuses an action not pinned by commit (`prcheck workflows`)
   - `new`, pull_request: Pip install --require-hashes in every Python CI job (`prcheck workflows`)
   - `new`, pull_request: A check that LICENSE and any required NOTICE exist
-- **X22** (partial; target ci by M4) Every verdict (a CI result or the review agent's review, including its answers to review questions) names the git tree hash of the exact tree it judged.
+- **X22** (partial; target ci by M3) Every verdict (a CI result or the review agent's review, including its answers to review questions) names the git tree hash of the exact tree it judged.
   - `new`, pull_request: The shared pull-request check in blis-substrate/.github/workflows, called by every repository, which records each review-agent answer with the head tree
   - `new`, pull_request: A workflow lint that refuses ignored exit codes (`prcheck workflows`)
   - `ci`, pull_request: Each job's item count (`ci.yml job required`)
 - **X23** (new; target ci by M1) A version is written in one place.
   - `new`, pull_request: A lint in every repository, over every file type, for version literals of BLIS modules or Go that are not generated (`prcheck versions`)
-- **X24** (new; target ci by M4) Every review finding ends in one of three outcomes before merge: fixed, filed as a linked issue, or rejected with a reason.
+- **X24** (new; target ci by M3) Every review finding ends in one of three outcomes before merge: fixed, filed as a linked issue, or rejected with a reason.
   - `new`, pull_request: A pull-request step that lists each review thread that is open or resolved with no outcome, as a notice and in the job summary; it never fails, so no check waits on a thread (`shared-pr-checks.yml: prcheck threads`)
   - `new`, practice: Branch protection requires every review conversation to be resolved before a merge; the author agent resolves each thread with its outcome
   - `new`, nightly: A nightly job that reopens an issue closed any other way
@@ -164,8 +164,8 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: A required check that fails while main is failing and the pull request does not name the failing test's issue
 - **X26** (new; target ci by M1) In documentation, every source path, symbol, issue or pull-request reference, and every statement that a feature is supported, is either generated (from surface.json, stack.json or the code) or checked against the pinned tree.
   - `new`, pull_request: A documentation reference check in every repository (`prcheck docrefs`)
-- **X27** (new; target ci by M1) An open bug labelled as breaking an invariant blocks a release of the repository where the bug lives, and of each repository that ships that code, unless the release fixes only that bug or a security issue, or a release owner records a waiver in the release notes.
-  - `new`, release: The release bot (`tools/release: CheckBugs`)
+- **X27** (ci; target reached) An open bug labelled as breaking an invariant blocks a release of the repository where the bug lives, and of each repository that ships that code, unless the release fixes only that bug or a security issue, or a release owner records a waiver in the release notes.
+  - `ci`, release: The release bot (`tools/release: CheckBugs`)
 - **X28** (new; target ci by M1) An issue in a BLIS repository that is cited as the reason for a refusal, for a refused or not-modelled item in a field or surface list, or in a code comment that marks a gap or a divergence, stays open.
   - `new`, nightly: A nightly job in every repository that resolves each cited issue and fails on a closed one (`shared-nightly.yml: prcheck issues -resolve`)
   - `new`, pull_request: A pull-request check that refuses a change closing an issue still cited elsewhere (`shared-pr-checks.yml: prcheck issues -closes`)
@@ -185,12 +185,12 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **SUB-4** (partial; target ci by M1) Every coefficient is generated by its family's writer script, never edited by hand.
   - `new`, pull_request: Writers --check on fixtures per pull request, on full data nightly
   - `ci`, pull_request: Provenance rules (`go run ./validate/cmd/validate-registry registry`)
-- **SUB-5** (partial; target ci by M2) Coefficients obey physics: no compute rate above the chip's dense datasheet peak for that data type; no memory bandwidth above the datasheet peak for a working set larger than the chip's L2 cache; at a fixed algorithm, topology tier and bytes per rank, a collective never gets faster as the group grows.
+- **SUB-5** (partial; target ci by M2) Coefficients obey physics: no compute rate above the chip's dense datasheet peak for that data type; no memory bandwidth above the datasheet peak for a working set larger than the chip's L2 cache; at a fixed algorithm, topology tier and bytes per rank, a collective never gets faster as the group grows; no transfer rate above the catalog peak of the link a leg crosses.
   - `ci`, pull_request: Property tests: no compute rate above the dense datasheet peak, and a collective never gets faster as the group grows (`registry/validator/test_coefficient_properties.py`)
   - `new`, pull_request: Property tests: the per-data-type peak and the L2-bounded memory bandwidth
 - **SUB-6** (new; target ci by M4) The cost model resolves nothing.
   - `new`, pull_request: A test that the cost model's public functions accept only plans, step shapes, transfers, and catalog and registry handles
-- **SUB-7** (ci; target reached) The cost model has a price for every primitive it can be asked about.
+- **SUB-7** (ci; target reached) The cost model has a price for every primitive it can be asked about, and for every move form (§6.1) on every catalog device, link and NIC it can cross.
   - `ci`, pull_request: Completeness test over every primitive and every catalog chip (`kernel: TestEveryValueTheKernelSuppliesItselfIsListed`)
 - **SUB-8** (partial; target ci by M1) A change to the substrate never breaks the data it releases: validators, deriver and writers all pass on the tree being released.
   - `ci`, pull_request: The validators run on every pull request (`ci.yml jobs catalog, registry`)
@@ -234,6 +234,21 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **SUB-20** (partial; target ci by M2) No price, size or engine decision depends on a free-text label.
   - `ci`, pull_request: A syntax-tree lint in blis-substrate and each engine repository that refuses a comparison on a documentation-only string field outside tests (`contracts: TestNoPriceDependsOnAFreeTextLabel`)
   - `ci`, pull_request: A perturbation test (SUB-11) that changing such a label changes no price (`kernel: TestChangingALabelChangesNoPriceOrIsListed`)
+- **SUB-21** (new; target ci by M3) Every move is priced by the form it states (§6.1), as legs over paths the catalog states, with the coefficients the registry holds for that form, device, link and chip.
+  - `new`, pull_request: The perturbation test of SUB-11 changes each move-form field and expects a price to change
+  - `new`, pull_request: Every move stated without a form gets the price it got before
+  - `new`, pull_request: Property tests in kernel/ for pipelined moves, single-chunk buffers, rates that fall, and buffered against unbuffered storage moves
+  - `new`, pull_request: The completeness test of SUB-7
+- **SUB-22** (new; target ci by M3) The form a transport library chooses comes from one function in contracts/transport, over a table in catalog/transport keyed on the library, its version, its settings and catalog facts about the two ends (§6.1).
+  - `new`, pull_request: A table test against what UCX and NCCL report choosing, recorded with ledger units on each catalog chip and NIC
+  - `new`, pull_request: The catalog validators refuse an entry without a citation (SUB-3)
+  - `new`, pull_request: A refusal test for a setting the table does not cover
+  - `new`, pull_request: The review question of X2 for any entry that names an engine
+- **VLM-8** (new; target ci by M3) A step that consumes a layered transfer follows the timing rule of §6.2.
+  - `new`, pull_request: The shared suite in contracts/conformance for the layered-transfer timing rule (§6.2), with its property tests
+  - `new`, pull_request: The perturbation test of SUB-11 covers layered_transfer_compute_efficiency
+- **SGL-7** (new; target ci by M3) A step that consumes a layered transfer follows the timing rule of §6.2.
+  - `new`, pull_request: The shared suite in contracts/conformance for the layered-transfer timing rule (§6.2), with its property tests
 - **DEV-8** (partial; target ci by M2) Every reported metric names its definition and scope (§8.7), and a comparison is refused unless both sides have the same definition, scope and aggregate.
   - `ci`, pull_request: The metric registry in contracts/ states each metric's scopes and aggregates and refuses a comparison unless metric, scope and aggregate are the same (`contracts/metrics: TestComparableFiguresRefusesEachDifference`)
 - **DEV-12** (new; target ci by M1) Each change is a verification change or a validation change by what it does (§8.9), and is judged as such.
@@ -280,7 +295,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `ci`, pull_request: A ledger check that refuses latest, main and unknown as revisions (`ledger: TestUnpinnedRevisionsRefused`)
   - `ci`, pull_request: A workflow artifact a tool reads is pinned by run id, attempt, evaluated commit and the SHA-256 of its zip and file, and a revision of latest is refused (`ledger: TestWorkflowArtifactPinIsExact`)
   - `ci`, pull_request: The extractor's pin file equals the ledger's entry for the artifact (`ledger: TestExtractorPinEqualsTheLedgerEntry`)
-- **D4** (partial; target ci by M1) Roles are drawn by the keyed rule, per role key, so every unit sharing a role key has the same role, except a legacy unit, which keeps its legacy side even where units of its role key fall on both sides.
+- **D4** (partial; target ci by M3) Roles are drawn by the keyed rule, per role key, so every unit sharing a role key has the same role, except a legacy unit, which keeps its legacy side even where units of its role key fall on both sides.
   - `ci`, pull_request: A check against the ledger at the pull request's merge base (`ledger: TestCheckAgainstBase`)
   - `ci`, pull_request: A check that no committed file lists roles, other than the three published lists that the release job writes and the legacy labels in legacy-map.yaml (`ledger: TestNoCommittedRoles`)
   - `new`, pull_request: A check that the committed unit list equals the ingest tool's output for the pinned source
@@ -291,7 +306,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **D6** (new; target ci by M4) Only redistributable artefacts are committed.
   - `new`, pull_request: A check that every committed data file is listed in the ledger as redistributable
   - `new`, nightly: A nightly job comparing fixtures with the full data
-- **D7** (partial; target ci by M1) The role seed is 256 random bits and a CI secret until its partition version is retired.
+- **D7** (partial; target ci by M3) The role seed is 256 random bits and a CI secret until its partition version is retired.
   - `new`, pull_request: The seed is stored in one CI environment per repository (blis-substrate and accuracy-dashboard) whose branch policy allows only main, available only to the release, select, error and gate jobs
   - `ci`, pull_request: A workflow lint that those jobs check out only main (`ledger: TestLintWorkflows`)
   - `ci`, pull_request: The three published lists are read back and checked against the ledger that drew them: the seed hash and partition version it records, units that exist, one role per unit (`ledger: TestPublishedListsAreCheckedAgainstTheLedger`)
@@ -314,8 +329,8 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, practice: Repository settings that let only the release bot and people with write access create tags
   - `new`, pull_request: The bot's own check of every ci invariant (`tools/release: CheckInvariants`)
   - `new`, nightly: A nightly check that every tag made by a person is annotated and listed in its release notes
-- **LIF-4** (new; target ci by M1) Release notes are generated (§13.3).
-  - `new`, release: The release bot, which writes the notes from the release's changes (`tools/release: Notes`)
+- **LIF-4** (ci; target reached) Release notes are generated (§13.3).
+  - `ci`, release: The release bot, which writes the notes from the release's changes (`tools/release: Notes`)
 - **LIF-5** (new; target ci by M4) An engine module, or the router fork, models one upstream release.
   - `new`, release: A tag check in the release bot: format, N one above the previous tag on the same upstream release, no plain tag (`tools/release: CheckEngineTag`)
 - **LIF-7** (new; target ci by M1) A deprecated feature is removed by the first release after its deprecation that may break compatibility: a MAJOR release, or a MINOR release while the repository is at v0.

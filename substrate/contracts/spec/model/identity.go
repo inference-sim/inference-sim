@@ -31,7 +31,7 @@ import (
 // is a verbatim vendor file whose keys the derived graph — not this schema — interprets.
 // Between that structural check and this identity, the command reproduces validate_models'
 // model-entry checks in full, so it can stand in for them when blis-catalog wires it into CI
-// (#22, catalog#14).
+// (https://github.com/inference-sim/blis-schemas/issues/22, https://github.com/inference-sim/blis-catalog/issues/14).
 //
 // Field values aside, the loader (LoadModelIdentity) decodes strict: an unknown key is
 // rejected, where the catalog's Python gate reads model.yaml leniently and ignores extra
@@ -51,6 +51,18 @@ type Identity struct {
 	// allow-list: such a model commits only this hash and the source revision, and the
 	// deriver fetches the file in a nightly job that holds the access token (X12).
 	Config *ConfigPin `yaml:"config,omitempty"`
+	// Headers pins the safetensors headers the deriver reads stored widths from, for a
+	// checkpoint whose config.json does not state its quantization (SUB-15: a graph field is
+	// computed from config.json and the safetensors header of every shard, the header only).
+	// Each names a shard and the SHA-256 of its header, the JSON that follows the 8-byte
+	// length at the start of the file. The headers are fetched by range request and never
+	// committed (X12); pull-request and nightly jobs check each against its pin.
+	Headers []HeaderPin `yaml:"headers,omitempty"`
+	// ShardIndex pins the checkpoint's shard index (model.safetensors.index.json), whose
+	// weight_map names the shards the engine loads. A model that pins headers pins it too, and
+	// the pinned headers must be exactly the shards it names (checked when the files are fetched):
+	// "every shard" in SUB-15 is every shard the index names, not every file in the repository.
+	ShardIndex *HeaderPin `yaml:"shard_index,omitempty"`
 	// Drafters lists what can draft tokens for this target (design D8): the word
 	// "speculator" for the in-graph speculator its graph.yaml states (its MTP layers, say), and
 	// the catalog name of each separate drafter checkpoint. The catalog check requires every
@@ -77,11 +89,22 @@ type Licence struct {
 	// no licence, or names only "other", the ID names the licence file read at the pinned
 	// revision instead (LicenseRef-deepseek for DeepSeek-V3's LICENSE-MODEL), never a
 	// placeholder such as LicenseRef-other or LicenseRef-none-stated, which names no text.
+	// When the card names no licence and the repository holds no licence file, the ID is
+	// SPDX's NONE (no licence is present), and the evidence is the provider's API record of
+	// the pinned revision, which shows both. NONE is not on the allow-list, so such a model
+	// commits only its config.json's hash and revision (X12).
 	ID string `yaml:"id"`
 	// Evidence is the URL the licence was read from, at the pinned revision: the model
 	// card's front matter, the provider's API record of that revision, or, when the ID
 	// names a licence file because the card does not, that file.
 	Evidence string `yaml:"evidence"`
+}
+
+// HeaderPin is one shard's safetensors header, by the shard's path in the repository and the
+// SHA-256 of the header bytes; as ShardIndex, the index file and the SHA-256 of the whole file.
+type HeaderPin struct {
+	Path   string `yaml:"path"`
+	SHA256 string `yaml:"sha256"`
 }
 
 // ConfigPin is the SHA-256 of a vendor config.json that is not committed.
@@ -137,6 +160,35 @@ func (id *Identity) validateStructure(p *validate.Problems) {
 	p.Merge("source", id.Source.Validate())
 	if id.Config != nil && !validate.IsSHA256(id.Config.SHA256) {
 		p.Field("config.sha256", "%q is not a lowercase hex SHA-256", id.Config.SHA256)
+	}
+	shards := map[string]bool{}
+	for i, h := range id.Headers {
+		at := fmt.Sprintf("headers[%d]", i)
+		if err := checkShardPath(h.Path); err != "" {
+			p.Field(at+".path", "%q %s", h.Path, err)
+		}
+		if !validate.IsSHA256(h.SHA256) {
+			p.Field(at+".sha256", "%q is not a lowercase hex SHA-256", h.SHA256)
+		}
+		if shards[h.Path] {
+			p.Field(at+".path", "%q is pinned twice", h.Path)
+		}
+		shards[h.Path] = true
+	}
+	switch {
+	case len(id.Headers) > 0 && id.ShardIndex == nil:
+		p.Field("shard_index", "required with headers: pin the index whose weight_map names the shards")
+	case len(id.Headers) == 0 && id.ShardIndex != nil:
+		p.Field("shard_index", "is pinned with no headers; pin the headers it names, or remove it")
+	case id.ShardIndex != nil:
+		if !strings.HasSuffix(id.ShardIndex.Path, ".safetensors.index.json") {
+			p.Field("shard_index.path", "%q must name a .safetensors.index.json file", id.ShardIndex.Path)
+		} else if err := checkRepoPath(id.ShardIndex.Path); err != "" {
+			p.Field("shard_index.path", "%q %s", id.ShardIndex.Path, err)
+		}
+		if !validate.IsSHA256(id.ShardIndex.SHA256) {
+			p.Field("shard_index.sha256", "%q is not a lowercase hex SHA-256", id.ShardIndex.SHA256)
+		}
 	}
 	seen := map[string]bool{}
 	for i, d := range id.Drafters {
@@ -200,7 +252,15 @@ func (id *Identity) validateLicence(p *validate.Problems) {
 		return
 	}
 	p.Merge("licence", id.Licence.Validate(id.Source))
+	if id.Licence.ID == NoLicence && (id.Config == nil || id.Config.SHA256 == "") {
+		p.Field("licence", "id %s states that no licence is present, so the config.json is not on the "+
+			"allow-list: pin it by config.sha256 and commit only the hash (X12)", NoLicence)
+	}
 }
+
+// NoLicence is SPDX's identifier for "no licence is present": the model card names none and
+// the repository holds no licence file.
+const NoLicence = "NONE"
 
 var licenceRef = regexp.MustCompile(`^(LicenseRef-[A-Za-z0-9.-]+|[A-Za-z0-9][A-Za-z0-9.+-]*)$`)
 
@@ -221,7 +281,7 @@ func (l *Licence) Validate(src *Source) *validate.Problems {
 	case !licenceRef.MatchString(l.ID):
 		p.Field("id", "%q is not an SPDX identifier or LicenseRef-<name>", l.ID)
 	case placeholderLicences[l.ID]:
-		p.Field("id", "%q names no licence text; name the licence file read at the pinned revision, and cite that file as the evidence", l.ID)
+		p.Field("id", "%q names no licence text; name the licence file read at the pinned revision, and cite that file as the evidence, or, when the revision states no licence at all, write %s", l.ID, NoLicence)
 	}
 	if !strings.HasPrefix(l.Evidence, "https://") {
 		p.Field("evidence", "%q is not an https URL", l.Evidence)
@@ -259,8 +319,27 @@ func (s *Source) ConfigPath() string {
 	return s.Path
 }
 
+// checkShardPath returns why a path cannot name a safetensors shard in the repository, or "".
+func checkShardPath(p string) string {
+	if !strings.HasSuffix(p, ".safetensors") {
+		return "must name a .safetensors shard"
+	}
+	return checkRepoPath(p)
+}
+
 // checkConfigPath returns why a path cannot name a file in the repository, or "".
 func checkConfigPath(p string) string {
+	if err := checkRepoPath(p); err != "" {
+		return err
+	}
+	if !strings.HasSuffix(p, ".json") {
+		return "must name a .json file"
+	}
+	return ""
+}
+
+// checkRepoPath returns why a path cannot name a file inside the repository, or "".
+func checkRepoPath(p string) string {
 	if strings.HasPrefix(p, "/") || strings.Contains(p, "\\") {
 		return "must be relative to the repository root, with / separators"
 	}
@@ -275,9 +354,6 @@ func checkConfigPath(p string) string {
 		if !letter && (r < '0' || r > '9') && !strings.ContainsRune("._-/", r) {
 			return "may contain only letters, digits and . _ - /"
 		}
-	}
-	if !strings.HasSuffix(p, ".json") {
-		return "must name a .json file"
 	}
 	return ""
 }

@@ -25,9 +25,11 @@
 - id: VLM-2
   section: §5
   statement: >-
-    Every Go file states where it came from: derived from a vLLM path at a release and commit, moved
-    from another repository, or original. At a tag v<release>-blis.N, every ported file names that
-    vLLM release, and no file names another.
+    Every Go file states where it came from: derived from a vLLM path at a release and commit; derived
+    from a path in a package the oracle's lock pins, naming that package and version, for an adapter a
+    connector imports from it (§6.5); moved from another repository; or original. At a tag
+    v<release>-blis.N, every ported file names that vLLM release, and no file names another. An adapter
+    file derived from a package names both the vLLM release and the package version.
   scope:
   - blis-vllm
   checks:
@@ -193,3 +195,35 @@
     MLA, circular buffer); a kv_layers name outside the six known names is rejected (core/kv/layers.go
     ParseLayerSpec), but no check yet maps a model's layers to spec types, and no surface list names
     them
+- id: VLM-8
+  section: §5
+  statement: >-
+    A step that consumes a layered transfer follows the timing rule of §6.2. Its wait points are the
+    connector's per-layer calls: wait_for_layer_load before each attention layer, and save_kv_layer
+    after it.
+  scope:
+  - blis-substrate
+  - blis-vllm
+  checks:
+  - repo: blis-substrate
+    check: >-
+      The shared suite in contracts/conformance for the layered-transfer timing rule (§6.2), with its
+      property tests
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      The oracle run for FID-11 hooks the per-layer calls and compares the port's stated wait points with
+      them, with a run without a connector as its known-bad input
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: >-
+      The perturbation test of SUB-11 covers layered_transfer_compute_efficiency
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 3

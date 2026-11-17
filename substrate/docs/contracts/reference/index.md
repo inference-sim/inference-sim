@@ -25,12 +25,13 @@ source; each page links to it.
 | [Measured run](measurement.md) | `MeasuredRun`, the licence registry | [`spec/measurement`](https://github.com/inference-sim/blis-substrate/tree/main/contracts/spec/measurement) |
 | [Result](result.md) | `Result` | [`spec/result`](https://github.com/inference-sim/blis-substrate/tree/main/contracts/spec/result) |
 | [Field list](fields.md) | `FieldList`, an engine release's `fields.json` | [`spec/fields`](https://github.com/inference-sim/blis-substrate/tree/main/contracts/spec/fields) |
+| [Kernel-implementation table](kernel-impls.md) | `KernelImplTable`, an engine release's `kernel_impls.json` | [`spec/kernelimpls`](https://github.com/inference-sim/blis-substrate/tree/main/contracts/spec/kernelimpls) |
 | [Kernel interface](kernel.md) | the `Kernel` a cost model implements | [`kernel`](https://github.com/inference-sim/blis-substrate/tree/main/contracts/kernel) |
 | [Engine interface](engine.md) | the `Engine` an inference-engine model implements, its `Spec` envelope and its contract checks | [`engine`](https://github.com/inference-sim/blis-substrate/tree/main/contracts/engine) |
 | [Router contract](embed.md) | the `Runtime` a simulator implements, and the `Router` a hosted router implements | [`embed`](https://github.com/inference-sim/blis-substrate/tree/main/contracts/embed) |
 | [Vocabularies](vocabularies.md) | units, methods, scope keys, dtypes, and the rest | [`vocab`](https://github.com/inference-sim/blis-substrate/tree/main/contracts/vocab) and `spec/` |
 | [Engine rules](rules.md) | the interface an engine release's rules implement | [`rules`](https://github.com/inference-sim/blis-substrate/tree/main/contracts/rules) |
-| [Command line](cli.md) | `validate-catalog`, `validate-registry`, `validate-measurements` | [`validate/cmd`](https://github.com/inference-sim/blis-substrate/tree/main/validate/cmd) |
+| [Command line](cli.md) | `validate-catalog`, `validate-registry`, `validate-measurements`, `unselected-entries` | [`validate/cmd`](https://github.com/inference-sim/blis-substrate/tree/main/validate/cmd) |
 
 In the key tables, **Type** is the YAML type. *Required* means that if the key is absent,
 the validator reports an error or the loader fails. A key marked *no* may be omitted, and

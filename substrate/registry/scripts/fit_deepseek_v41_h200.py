@@ -12,7 +12,7 @@ AISimulate rows, catalog descriptor and committed siblings, never from another p
 values. Run fit_marlin_grouped_ramp.py first: the W8A16 rationale cites the part's grouped
 Marlin ramp.
 
-Owns six entries per part, two fitted and four assumed (inference-sim/blis-registry#37,
+Owns six entries per part, two fitted and four assumed (https://github.com/inference-sim/blis-registry/issues/37,
 #38, #39):
 
   cost-model-attention.yaml, scoped {hardware: [<part>], model: [deepseek-v4.1-flash]}
@@ -121,7 +121,7 @@ PARTS = {
              "e2e": ("NO END-TO-END CHECK EXISTS FOR vLLM: AISimulate FPM (revision "
                      "03e006de) carries DeepSeek-V4.1-Flash on h200 under SGLang only -- "
                      "another engine, MoE kernel and checkpoint revision -- so it cannot "
-                     "arbitrate vLLM v0.31.0 pricing; blis-registry#42 has no arbiter until "
+                     "arbitrate vLLM v0.31.0 pricing; inference-sim/blis-substrate#130 has no arbiter until "
                      "a vLLM V4.1 forward-pass measurement exists, see methodology section "
                      "10.5.")},
     "h100": {"sku": "h100_sxm", "name": "H100", "sibling": "h200",
@@ -140,6 +140,20 @@ def part_scope(chip: str) -> str:
     return f"{{hardware: [{chip}]}}"
 
 FLASHMLA_TABLE = "dsv4_hca_attn_module_perf.parquet"
+# The FlashMLA sparse decode table is a kernel measurement: the flash_mla_with_kvcache call
+# alone, isolated from the attention module. AISimulate retired that sidecar op at e8cbe2dc
+# ("the retired DSV4 hca_attn / csa_attn sidecar ops are removed end to end") and deleted the
+# table. Its successor, dsv4_hca_generation_module_perf, times the whole DeepseekV4Attention
+# forward (projections, compressor, indexer and the sparse call), so at 64 heads, batch 1 it
+# reads 68 us where the kernel read 10 us: a different measurement boundary (VAL-9), which
+# would charge the projections BLIS prices as separate GEMM nodes a second time. So the
+# kernel rows are read at the last AISimulate commit that carries them, KERNEL_DATA_SHA
+# (rederive.yml's AISIMULATE_DSV4_KERNEL_SHA), and every other table at the main pin.
+KERNEL_DATA_SHA = "2f0f4cd8606d580567b253d02f3d699fe36db865"
+KERNEL_TABLES = {FLASHMLA_TABLE}
+KERNEL_DATA = Path(os.environ.get(
+    "AISIMULATE_DSV4_KERNEL_DATA",
+    f"/tmp/aisim-{KERNEL_DATA_SHA[:8]}/python/aisimulate/src/aisimulate_core/systems/data"))
 FLASHMLA_LANE = "FLASHMLA_SPARSE_DSV4"
 FLASHMLA_FIT_MODEL = "sgl-project/DeepSeek-V4-Flash-FP8"
 INDEXER_TABLE = "dsv4_paged_mqa_logits_module_perf.parquet"
@@ -194,8 +208,16 @@ def catalog_facts(catalog: Path, chip: str) -> tuple[float, float]:
     return float(facts["BwPeakTBs"]) * 1e6, float(facts["TFlopsFP8"])
 
 
+def table_cite(sku: str, table: str) -> str:
+    """The source line's path for one table: the kernel tables name their own commit."""
+    at = f"@{KERNEL_DATA_SHA[:8]} " if table in KERNEL_TABLES else ""
+    return f"NVIDIA AISimulate {at}systems/data/{sku}/sparse_attention/{COLLECTION}/{table}"
+
+
 def read(data: Path, sku: str, table: str) -> dict:
-    path = data / sku / "sparse_attention" / COLLECTION / table
+    """One table of the pinned collection; a kernel table from KERNEL_DATA (see above)."""
+    root = KERNEL_DATA if table in KERNEL_TABLES else data
+    path = root / sku / "sparse_attention" / COLLECTION / table
     if not path.is_file():
         raise SystemExit(f"{path} is absent; the pinned collection is required")
     return pq.read_table(path).to_pydict()
@@ -458,7 +480,7 @@ def entries(chip: str, g: dict, fm: dict, ix: dict, peak: float, fp8_tflops: flo
     attn = [
         lines("attention_decode_rate_sparse_mla", f"{fm['rate']}.0", "bytes_per_us",
               "measured", True, MODEL_SCOPE,
-              [("model", f"{aisim}{FLASHMLA_TABLE} (NVIDIA {name}), {FLASHMLA_LANE}, "
+              [("model", f"{table_cite(sku, FLASHMLA_TABLE)} (NVIDIA {name}), {FLASHMLA_LANE}, "
                 f"{FLASHMLA_FIT_MODEL} (64 query heads, the h64 kernel), "
                 f"{fm['n']} decode points", "primary"),
                ("model", "vLLM v0.31.0 models/deepseek_v41/nvidia/flashmla.py "
@@ -608,7 +630,7 @@ def entries(chip: str, g: dict, fm: dict, ix: dict, peak: float, fp8_tflops: flo
               f"for compute-bound GEMMs. TO REPLACE IT: an {chip} GEMM sweep with "
               f"MarlinMxfp8LinearKernel forced (AISimulate's vLLM GEMM collector has no "
               f"Marlin path). Read by no consumer until blis-latency-kernel selects a ramp "
-              f"by weight format and chip (blis-latency-kernel#34)."),
+              f"by weight format and chip (https://github.com/inference-sim/blis-latency-kernel/issues/34)."),
         lines("gemm_m_half_w8a16_mxfp8", bf16_mh, "tokens", "assumed", False, PART_SCOPE,
               [("model", f"NVIDIA AISimulate systems/data/{sku}/gemm/vllm/0.25.0/"
                 "gemm_perf.parquet via gemm_m_half_bf16", "primary")],
@@ -653,7 +675,7 @@ def entries(chip: str, g: dict, fm: dict, ix: dict, peak: float, fp8_tflops: flo
               f"ParallelEngramEmbedding.lookup(background=True) with cpu_offload on an {name} "
               f"host over 1-8,192 tokens at TP 1 and 8, and fit floor + bytes / rate. Read "
               f"by no consumer until the schema can state a host-resident gather "
-              f"(blis-schemas#48, blis-latency-kernel#38). NOT host_link_bandwidth, which is now "
+              f"(https://github.com/inference-sim/blis-schemas/issues/48, https://github.com/inference-sim/blis-latency-kernel/issues/38). NOT host_link_bandwidth, which is now "
               f"the measured copy-engine payload rate (fit_host_link.py); re-deriving this bound "
               f"from a measured SM-driven ceiling (vLLM PR #42212, ~51 GB/s on H100) was tried and "
               f"failed its held-out gate (h100 capped-replay ITL worse), so it is parked."),

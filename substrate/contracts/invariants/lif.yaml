@@ -291,23 +291,24 @@
   - repo: blis-substrate
     check: The release bot, which writes the notes from the release's changes
     runs: release
-    status: new
+    status: ci
     test: 'tools/release: Notes'
     known_bad: 'tools/release: TestReviewSetIsPlannedBottomUp'
   review: null
-  status: new
+  status: ci
   target:
     status: ci
-    milestone: 1
+    milestone: null
 - id: LIF-5
   section: §14.2
   statement: >-
     An engine module, or the router fork, models one upstream release. Its tags are v<upstream>-blis.N,
     v<upstream>-post.K.blis.N for a post release, or v<upstream>-rev.W.blis.N for a four-part version,
-    with N from 1. No new plain upstream tag is made; older tags stay (LIF-1). In an engine module,
-    the Upstream record names that release and commit, every ported file names that same release,
-    and no code for another release remains. Release candidates are not modelled. The package that
-    runs the modelled release depends on no package that exists only for another release.
+    with N from 1. No new plain upstream tag is made; older tags stay (LIF-1). In an engine module, the
+    Upstream record names that release and commit, every ported file names that same release, and no
+    code for another release remains. An adapter file derived from a package the oracle's lock pins also
+    names that package's version (VLM-2). Release candidates are not modelled. The package that runs the
+    modelled release depends on no package that exists only for another release.
   scope:
   - blis-sglang
   - blis-substrate
@@ -365,11 +366,11 @@
 - id: LIF-6
   section: §14.2
   statement: >-
-    Each inference-sim release runs exactly one upstream release of each engine and of llm-d, and
-    lists them in stack.json. A scenario whose engine.version names a different upstream release is
-    refused, with a message naming the release it asked for, the one this build runs, and the newest
-    inference-sim release that runs the one it asked for, or says that none does. The llm-d release
-    is not stated by scenarios; it is the one stack.json lists.
+    Each inference-sim release runs exactly one upstream release of each engine, of llm-d and of each KV
+    store blis-kvstore models, and lists them in stack.json. A scenario whose engine.version names a
+    different upstream release is refused, with a message naming the release it asked for, the one this
+    build runs, and the newest inference-sim release that runs the one it asked for, or says that none
+    does. The llm-d release is not stated by scenarios; it is the one stack.json lists.
   scope:
   - inference-sim
   checks:

@@ -23,6 +23,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/evaluation"
 	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
+	"github.com/inference-sim/blis-substrate/contracts/spec/kernelimpls"
 	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/contracts/spec/pointrecord"
@@ -148,6 +149,11 @@ func TestDocExamplesValidate(t *testing.T) {
 			t.Error(err)
 		}
 	})
+	t.Run("kernel-implementation table", func(t *testing.T) {
+		if _, err := LoadKernelImplTable(ex("kernel-impl-table.json")); err != nil {
+			t.Error(err)
+		}
+	})
 	t.Run("trace", func(t *testing.T) {
 		requireSilent(t, "trace", Validate(Bundle{Rules: openAnyEngine,
 			Scenario: fixture(LoadScenario(ex("trace-binding.yaml"))),
@@ -193,6 +199,7 @@ func TestDocExamplesValidate(t *testing.T) {
 		"connector-registry.yaml": true,
 		"result.json":             true,
 		"field-list.json":         true,
+		"kernel-impl-table.json":  true,
 		"trace-header.yaml":       true, "trace-data.csv": true, "workload-spec.yaml": true, "point-record.json": true,
 	}
 	all, err := filepath.Glob(ex("*"))
@@ -231,6 +238,7 @@ var documented = map[string]struct {
 	"scenario.Cluster":   {typ: reflect.TypeOf(scenario.Cluster{})},
 	"scenario.Packaging": {typ: reflect.TypeOf(scenario.Packaging{})},
 	"scenario.Engine":    {typ: reflect.TypeOf(scenario.Engine{})},
+	"scenario.Pool":      {typ: reflect.TypeOf(scenario.Pool{})},
 	"workload.Binding":   {typ: reflect.TypeOf(workload.Binding{})},
 	"workload.TraceRef":  {typ: reflect.TypeOf(workload.TraceRef{})},
 	"workload.Replay": {typ: reflect.TypeOf(workload.Replay{}),
@@ -240,11 +248,13 @@ var documented = map[string]struct {
 	"workload.CorpusSource":       {typ: reflect.TypeOf(workload.CorpusSource{})},
 	"workload.TrajectoryStart":    {typ: reflect.TypeOf(workload.TrajectoryStart{})},
 	"workload.Warmup":             {typ: reflect.TypeOf(workload.Warmup{})},
+	"workload.ConstantLoad":       {typ: reflect.TypeOf(workload.ConstantLoad{})},
 	"trace.Header":                {typ: reflect.TypeOf(trace.Header{})},
 	"trace.KVOffload":             {typ: reflect.TypeOf(trace.KVOffload{})},
 	"trace.KVOffloadTier":         {typ: reflect.TypeOf(trace.KVOffloadTier{})},
 	"trace.Router":                {typ: reflect.TypeOf(trace.Router{})},
 	"trace.Record":                {typ: reflect.TypeOf(trace.Record{})},
+	"trace.Phase":                 {typ: reflect.TypeOf(trace.Phase{})},
 	"workload.TokenBlocks":        {typ: reflect.TypeOf(workload.TokenBlocks{})},
 	"trace.SLODimTargets":         {typ: reflect.TypeOf(trace.SLODimTargets{})},
 	"workload.Spec":               {typ: reflect.TypeOf(workload.Spec{})},
@@ -277,6 +287,7 @@ var documented = map[string]struct {
 	"model.Graph":                 {typ: reflect.TypeOf(model.Graph{})},
 	"model.Licence":               {typ: reflect.TypeOf(model.Licence{})},
 	"model.ConfigPin":             {typ: reflect.TypeOf(model.ConfigPin{})},
+	"model.HeaderPin":             {typ: reflect.TypeOf(model.HeaderPin{})},
 	"model.Derivation":            {typ: reflect.TypeOf(model.Derivation{})},
 	"model.GlobalShape":           {typ: reflect.TypeOf(model.GlobalShape{})},
 	"model.LayerKind":             {typ: reflect.TypeOf(model.LayerKind{})},
@@ -287,6 +298,12 @@ var documented = map[string]struct {
 	"model.ContextWork":           {typ: reflect.TypeOf(model.ContextWork{})},
 	"model.WeightScale":           {typ: reflect.TypeOf(model.WeightScale{})},
 	"model.ShardedAtDecode":       {typ: reflect.TypeOf(model.ShardedAtDecode{})},
+	"model.Encoder":               {typ: reflect.TypeOf(model.Encoder{})},
+	"model.Tower":                 {typ: reflect.TypeOf(model.Tower{})},
+	"model.TowerInput":            {typ: reflect.TypeOf(model.TowerInput{})},
+	"model.EncoderNode":           {typ: reflect.TypeOf(model.EncoderNode{})},
+	"model.EncoderLayerKind":      {typ: reflect.TypeOf(model.EncoderLayerKind{})},
+	"model.OmittedTower":          {typ: reflect.TypeOf(model.OmittedTower{})},
 	"model.ArchOverride":          {typ: reflect.TypeOf(model.ArchOverride{})},
 	"model.NodeOverride":          {typ: reflect.TypeOf(model.NodeOverride{})},
 	"model.CacheOverride":         {typ: reflect.TypeOf(model.CacheOverride{})},
@@ -308,8 +325,10 @@ var documented = map[string]struct {
 	"acceptance.Profile":          {typ: reflect.TypeOf(acceptance.Profile{})},
 	"acceptance.Provenance":       {typ: reflect.TypeOf(acceptance.Provenance{})},
 	"acceptance.Sampling":         {typ: reflect.TypeOf(acceptance.Sampling{})},
+	"acceptance.Shape":            {typ: reflect.TypeOf(acceptance.Shape{})},
 	"acceptance.Value":            {typ: reflect.TypeOf(acceptance.Value{})},
 	"acceptance.Pin":              {typ: reflect.TypeOf(acceptance.Pin{})},
+	"acceptance.Workload":         {typ: reflect.TypeOf(acceptance.Workload{})},
 	"routing.ProfileSet":          {typ: reflect.TypeOf(routing.ProfileSet{})},
 	"routing.Profile":             {typ: reflect.TypeOf(routing.Profile{})},
 	"routing.Point":               {typ: reflect.TypeOf(routing.Point{})},
@@ -346,6 +365,7 @@ var documented = map[string]struct {
 	"fields.Field":                {typ: reflect.TypeOf(fields.Field{})},
 	"fields.Evidence":             {typ: reflect.TypeOf(fields.Evidence{})},
 	"fields.Estimation":           {typ: reflect.TypeOf(fields.Estimation{})},
+	"fields.Approximation":        {typ: reflect.TypeOf(fields.Approximation{})},
 	"fields.ValueClasses":         {typ: reflect.TypeOf(fields.ValueClasses{})},
 	"fields.Threshold":            {typ: reflect.TypeOf(fields.Threshold{})},
 	"fields.Clause":               {typ: reflect.TypeOf(fields.Clause{})},
@@ -376,6 +396,11 @@ var documented = map[string]struct {
 	"pointrecord.Facets":          {typ: reflect.TypeOf(pointrecord.Facets{})},
 	"pointrecord.Parallelism":     {typ: reflect.TypeOf(pointrecord.Parallelism{})},
 	"pointrecord.Note":            {typ: reflect.TypeOf(pointrecord.Note{})},
+	"kernelimpls.Table":           {typ: reflect.TypeOf(kernelimpls.Table{})},
+	"kernelimpls.Engine":          {typ: reflect.TypeOf(kernelimpls.Engine{})},
+	"kernelimpls.Gap":             {typ: reflect.TypeOf(kernelimpls.Gap{})},
+	"kernelimpls.Library":         {typ: reflect.TypeOf(kernelimpls.Library{})},
+	"kernelimpls.Implementation":  {typ: reflect.TypeOf(kernelimpls.Implementation{})},
 	"result.Result":               {typ: reflect.TypeOf(result.Result{})},
 	"result.Engine":               {typ: reflect.TypeOf(result.Engine{})},
 	"result.Data":                 {typ: reflect.TypeOf(result.Data{})},
@@ -387,6 +412,8 @@ var documented = map[string]struct {
 	"result.Input":                {typ: reflect.TypeOf(result.Input{})},
 	"result.Option":               {typ: reflect.TypeOf(result.Option{})},
 	"result.WorkloadProperty":     {typ: reflect.TypeOf(result.WorkloadProperty{})},
+	"result.RatesShape":           {typ: reflect.TypeOf(result.RatesShape{})},
+	"result.File":                 {typ: reflect.TypeOf(result.File{})},
 	"result.Frame":                {typ: reflect.TypeOf(result.Frame{})},
 	"result.Generator":            {typ: reflect.TypeOf(result.Generator{})},
 	"result.InitialState":         {typ: reflect.TypeOf(result.InitialState{})},

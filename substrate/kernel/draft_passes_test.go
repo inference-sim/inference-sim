@@ -1,13 +1,12 @@
 package latencykernel
 
 import (
-	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/load"
 	"gopkg.in/yaml.v3"
@@ -22,9 +21,6 @@ import (
 // stating both is refused with draft_passes_unstated. The kernel names no engine and no method:
 // the in-graph MTP speculators and a named EAGLE3 head are refused alike. A parallel-block
 // drafter (DSpark) states its target-wide work as its context stack and needs neither.
-//
-// The facts are not engine settings: enginesettings.Speculative has no field for them, so the
-// cost model never reads them from the settings it is given.
 
 // namedEagle3 builds the catalog pair of a target with no speculator of its own and a named
 // EAGLE3 head, with the engine's speculative block and the pool plan's statement as given.
@@ -42,9 +38,8 @@ func namedEagle3(t *testing.T, name string, rows plan.FirstPassRows, reqs plan.P
 	in := c.in
 	in.Model = withoutSpeculator(t, in.Model)
 	in.Draft = draft
-	eng := *in.Engine
-	eng.Speculative = &enginesettings.Speculative{Method: "eagle3", NumSpecTokens: 3, DraftModel: name}
-	in.Engine = &eng
+	in = withPlan(in, func(l *plan.Lowered) { l.Drafter = draft.Name })
+	in = drafting(in, 3)
 	return New(passesOf(in, rows, reqs))
 }
 
@@ -97,16 +92,12 @@ func TestAnInGraphAutoregressiveSpeculatorWithUnstatedPassesIsRefused(t *testing
 	if c.in.Model.Speculator == nil {
 		t.Fatal("minimax-m3 states no speculator")
 	}
-	run := func(sp *enginesettings.Speculative, rows plan.FirstPassRows, reqs plan.PassRequests) error {
-		in := c.in
-		eng := *in.Engine
-		eng.Speculative = sp
-		in.Engine = &eng
-		_, err := New(passesOf(in, rows, reqs))
+	run := func(n int, rows plan.FirstPassRows, reqs plan.PassRequests) error {
+		_, err := New(passesOf(drafting(c.in, n), rows, reqs))
 		return err
 	}
 	for _, n := range []int{1, 3, 7} {
-		sp := &enginesettings.Speculative{Method: "mtp", NumSpecTokens: n}
+		sp := n
 		err := run(sp, "", "")
 		if err == nil || !strings.Contains(err.Error(), "draft_passes_unstated") {
 			t.Errorf("K=%d: err %v, want draft_passes_unstated", n, err)
@@ -115,7 +106,7 @@ func TestAnInGraphAutoregressiveSpeculatorWithUnstatedPassesIsRefused(t *testing
 			t.Errorf("K=%d: stated passes refused: %v", n, err)
 		}
 	}
-	if err := run(nil, "", ""); err != nil {
+	if err := run(0, "", ""); err != nil {
 		t.Errorf("no speculation was refused: %v", err)
 	}
 }
@@ -124,9 +115,7 @@ func TestAnInGraphAutoregressiveSpeculatorWithUnstatedPassesIsRefused(t *testing
 func TestTheDraftPassesRefusalNamesNoEngineOrMethod(t *testing.T) {
 	c := typedRoleCase(t, "minimax-m3")
 	in := c.in
-	eng := *in.Engine
-	eng.Speculative = &enginesettings.Speculative{Method: "mtp", NumSpecTokens: 3}
-	in.Engine = &eng
+	in = drafting(in, 3)
 	_, err := New(in)
 	if err == nil {
 		t.Fatal("not refused")
@@ -138,9 +127,46 @@ func TestTheDraftPassesRefusalNamesNoEngineOrMethod(t *testing.T) {
 	}
 }
 
-// A parallel-block drafter needs neither fact, and a deployment that does not speculate is
-// unaffected whatever the plan says.
-func TestAParallelBlockDrafterNeedsNoPassStatement(t *testing.T) {
+// A parallel-block drafter states no first pass, but it states for which requests its query pass
+// and sequential head run: without it the deployment is refused, and with it alone it builds.
+func TestAParallelBlockDrafterStatesOnlyForWhichRequestsItProposes(t *testing.T) {
+	in := parallelBlockCase(t)
+	in.DraftFirstPassRows, in.DraftPassRequests = "", ""
+	if _, err := New(in); err == nil || !strings.Contains(err.Error(), "draft_passes_unstated") ||
+		!strings.Contains(err.Error(), "DraftPassRequests") {
+		t.Errorf("a parallel-block drafter stating no pass requests: %v, want draft_passes_unstated naming DraftPassRequests", err)
+	}
+	in.DraftPassRequests = plan.PassRequestsAll
+	if _, err := New(in); err != nil {
+		t.Errorf("a parallel-block drafter stating its pass requests and no first pass was refused: %v", err)
+	}
+}
+
+// A parallel-block drafter whose engine runs its query pass for every request (vLLM's DFlash and
+// DSpark, num_reqs * num_query_per_req tokens, dflash/speculator.py:463-467@4ba787ec9959e566d3b587a796dff07673324da5)
+// pays for it over a request still in the middle of its prompt; one that runs it for the
+// sampling requests does not. A step of decodes alone costs the same under both.
+func TestAParallelBlockDrafterProposesForTheRequestsTheEngineStates(t *testing.T) {
+	in := parallelBlockCase(t)
+	price := func(r plan.PassRequests, reqs ...kernel.ReqShape) float64 {
+		c := in
+		c.DraftPassRequests = r
+		return mustKernel(t, c).StepTime(kernel.Batch{DecodeThreshold: 8, Reqs: reqs}).Overlap.Seconds()
+	}
+	chunk := kernel.ReqShape{Scheduled: 2048, PromptLen: 8192}
+	decode := kernel.ReqShape{Scheduled: 8, Computed: 4088, PromptLen: 4096}
+	if all, sampling := price(plan.PassRequestsAll, chunk, decode), price(plan.PassRequestsSampling, chunk, decode); all <= sampling {
+		t.Errorf("a chunk mid-prompt beside a decode: %.9g s proposing for every request, %.9g s for the sampling ones; "+
+			"the chunk's query pass must be charged", all, sampling)
+	}
+	if all, sampling := price(plan.PassRequestsAll, decode, decode), price(plan.PassRequestsSampling, decode, decode); all != sampling {
+		t.Errorf("two decodes: %.9g s proposing for every request, %.9g s for the sampling ones; they must match", all, sampling)
+	}
+}
+
+// parallelBlockCase is kimi-k3 drafting 7 tokens through its DSpark drafter.
+func parallelBlockCase(t *testing.T) Inputs {
+	t.Helper()
 	d, err := load.Embedded()
 	if err != nil {
 		t.Fatal(err)
@@ -149,27 +175,10 @@ func TestAParallelBlockDrafterNeedsNoPassStatement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c := typedRoleCase(t, "kimi-k3")
-	in := c.in
+	in := typedRoleCase(t, "kimi-k3").in
 	in.Draft = draft
-	eng := *in.Engine
-	eng.Speculative = &enginesettings.Speculative{Method: "dspark", NumSpecTokens: 7, DraftModel: "kimi-k3-dspark"}
-	in.Engine = &eng
-	if _, err := New(in); err != nil {
-		t.Errorf("a parallel-block drafter with no pass statement was refused: %v", err)
-	}
-}
-
-// The facts are the plan's, not the engine settings': the settings type has no such field, so a
-// cost model that read them from settings would have nothing to read (X2, SUB-6).
-func TestTheEngineSettingsCarryNoDraftPassFacts(t *testing.T) {
-	for _, typ := range []reflect.Type{reflect.TypeOf(enginesettings.Settings{}), reflect.TypeOf(enginesettings.Speculative{})} {
-		for i := 0; i < typ.NumField(); i++ {
-			if n := typ.Field(i).Name; strings.Contains(n, "FirstPass") || strings.Contains(n, "PassRequests") {
-				t.Errorf("%s.%s: the draft passes are stated in the pool plan (plan.DraftPolicy), not in the engine settings", typ.Name(), n)
-			}
-		}
-	}
+	in = withPlan(in, func(l *plan.Lowered) { l.Drafter = draft.Name })
+	return drafting(in, 7)
 }
 
 // withoutSpeculator returns a copy of g with its speculator and the layer kinds only the

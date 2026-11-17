@@ -24,6 +24,7 @@ layer_kinds:
     role: qkv_gate_proj
     n: 18432
     k: 8192
+    weight_dtype: bf16
   - op: Elementwise
     role: qk_norm_rope
     bytes_per_token: 36864
@@ -42,6 +43,7 @@ layer_kinds:
     role: o_proj
     n: 8192
     k: 8192
+    weight_dtype: bf16
   - op: AllReduce
     role: attn_out
     emit: tensor_parallel
@@ -63,6 +65,7 @@ layer_kinds:
     sharded_at_decode: &id001
       capability_family: 10
       max_tokens: 256
+    weight_dtype: bf16
   - op: Elementwise
     role: pre_expert_norm
     bytes_per_token: 16384
@@ -75,6 +78,7 @@ layer_kinds:
     experts: 256
     top_k: 8
     latent_size: 4096
+    weight_dtype: bf16
   - op: All2All
     role: moe_dispatch_combine
     emit: expert_parallel
@@ -99,6 +103,7 @@ layer_kinds:
       capability_family: 10
       max_tokens: 256
       min_tokens_across_nodes: 32
+    weight_dtype: bf16
   edges:
   - - 0
     - 1
@@ -142,6 +147,7 @@ layer_kinds:
     role: qkv_gate_proj
     n: 18432
     k: 8192
+    weight_dtype: bf16
   - op: Elementwise
     role: qk_norm_rope
     bytes_per_token: 36864
@@ -159,6 +165,7 @@ layer_kinds:
     role: o_proj
     n: 8192
     k: 8192
+    weight_dtype: bf16
   - op: AllReduce
     role: attn_out
     emit: tensor_parallel
@@ -178,6 +185,7 @@ layer_kinds:
     k: 8192
     tp: replicated
     sharded_at_decode: *id001
+    weight_dtype: bf16
   - op: Elementwise
     role: pre_expert_norm
     bytes_per_token: 16384
@@ -215,6 +223,7 @@ layer_kinds:
       capability_family: 10
       max_tokens: 256
       min_tokens_across_nodes: 32
+    weight_dtype: bf16
   edges:
   - - 0
     - 1
@@ -258,6 +267,7 @@ layer_kinds:
     role: qkv_gate_proj
     n: 18432
     k: 8192
+    weight_dtype: bf16
   - op: Elementwise
     role: qk_norm_rope
     bytes_per_token: 36864
@@ -276,6 +286,7 @@ layer_kinds:
     role: o_proj
     n: 8192
     k: 8192
+    weight_dtype: bf16
   - op: AllReduce
     role: attn_out
     emit: tensor_parallel
@@ -295,6 +306,7 @@ layer_kinds:
     k: 8192
     tp: replicated
     sharded_at_decode: *id001
+    weight_dtype: bf16
   - op: Elementwise
     role: pre_expert_norm
     bytes_per_token: 16384
@@ -332,6 +344,7 @@ layer_kinds:
       capability_family: 10
       max_tokens: 256
       min_tokens_across_nodes: 32
+    weight_dtype: bf16
   edges:
   - - 0
     - 1
@@ -375,6 +388,7 @@ layer_kinds:
     role: qkv_gate_proj
     n: 18432
     k: 8192
+    weight_dtype: bf16
   - op: Elementwise
     role: qk_norm_rope
     bytes_per_token: 36864
@@ -392,6 +406,7 @@ layer_kinds:
     role: o_proj
     n: 8192
     k: 8192
+    weight_dtype: bf16
   - op: AllReduce
     role: attn_out
     emit: tensor_parallel
@@ -411,6 +426,7 @@ layer_kinds:
     k: 8192
     tp: replicated
     sharded_at_decode: *id001
+    weight_dtype: bf16
   - op: Elementwise
     role: pre_expert_norm
     bytes_per_token: 16384
@@ -423,6 +439,7 @@ layer_kinds:
     experts: 256
     top_k: 8
     latent_size: 4096
+    weight_dtype: bf16
   - op: All2All
     role: moe_dispatch_combine
     emit: expert_parallel
@@ -447,6 +464,7 @@ layer_kinds:
       capability_family: 10
       max_tokens: 256
       min_tokens_across_nodes: 32
+    weight_dtype: bf16
   edges:
   - - 0
     - 1
@@ -492,6 +510,203 @@ stack:
   epilogue:
   - full_moe_bf16
 modality: text_decoder_of_multimodal
+encoder:
+  towers:
+  - modality: image
+    input:
+      patch_size: 14
+      channels: 3
+      temporal_patch_size: 2
+    merge_ratio: 4
+    output_hidden_size: 8192
+    parallel: tensor
+    weight_dtype: bf16
+    embedding:
+    - op: gemm
+      role: patch_embed
+      n: 1536
+      k: 1176
+      tp: column
+    - op: elementwise
+      role: pos_embed
+      bytes_per_row: 12288
+      params: 1572864
+    - op: elementwise
+      role: ln_pre
+      bytes_per_row: 6144
+      params: 3072
+      tp: replicated
+    layer_kinds:
+    - id: window_block
+      nodes:
+      - op: elementwise
+        role: norms
+        bytes_per_row: 12288
+        params: 6144
+        tp: replicated
+      - op: gemm
+        role: qkv
+        n: 4608
+        k: 1536
+        bias: true
+        tp: column
+      - op: attention
+        role: attention
+        n_heads: 16
+        d_h: 96
+        window: 1024
+        tp: sharded
+      - op: gemm
+        role: o_proj
+        n: 1536
+        k: 1536
+        bias: true
+        tp: row
+      - op: gemm
+        role: fc1
+        n: 8960
+        k: 1536
+        bias: true
+        tp: column
+      - op: elementwise
+        role: act
+        bytes_per_row: 35840
+        tp: sharded
+      - op: gemm
+        role: fc2
+        n: 1536
+        k: 8960
+        bias: true
+        tp: row
+    - id: full_block
+      nodes:
+      - op: elementwise
+        role: norms
+        bytes_per_row: 12288
+        params: 6144
+        tp: replicated
+      - op: gemm
+        role: qkv
+        n: 4608
+        k: 1536
+        bias: true
+        tp: column
+      - op: attention
+        role: attention
+        n_heads: 16
+        d_h: 96
+        tp: sharded
+      - op: gemm
+        role: o_proj
+        n: 1536
+        k: 1536
+        bias: true
+        tp: row
+      - op: gemm
+        role: fc1
+        n: 8960
+        k: 1536
+        bias: true
+        tp: column
+      - op: elementwise
+        role: act
+        bytes_per_row: 35840
+        tp: sharded
+      - op: gemm
+        role: fc2
+        n: 1536
+        k: 8960
+        bias: true
+        tp: row
+    stack:
+      pattern:
+      - window_block
+      - window_block
+      - window_block
+      - full_block
+      - window_block
+      - window_block
+      - window_block
+      - full_block
+      - window_block
+      - window_block
+      - window_block
+      - full_block
+      - window_block
+      - window_block
+      - window_block
+      - full_block
+      - window_block
+      - window_block
+      - window_block
+      - full_block
+      - window_block
+      - window_block
+      - window_block
+      - full_block
+      - window_block
+      - window_block
+      - window_block
+      - full_block
+      - window_block
+      - window_block
+      - window_block
+      - full_block
+      - window_block
+      - window_block
+      - window_block
+      - full_block
+      - window_block
+      - window_block
+      - window_block
+      - full_block
+      - window_block
+      - window_block
+      - window_block
+      - full_block
+      - window_block
+      - window_block
+      - window_block
+      - full_block
+      - window_block
+      - full_block
+      repeat: 1
+    projector:
+    - op: elementwise
+      role: ln_post
+      bytes_per_row: 6144
+      params: 3072
+      tp: replicated
+    - op: gemm
+      role: adapter_fc
+      n: 4096
+      k: 6144
+      tp: replicated
+      rows: output_tokens
+    - op: elementwise
+      role: adapter_act
+      bytes_per_row: 16384
+      rows: output_tokens
+    - op: gemm
+      role: adapter_proj
+      n: 4096
+      k: 4096
+      tp: replicated
+      rows: output_tokens
+    - op: elementwise
+      role: adapter_act2
+      bytes_per_row: 16384
+      rows: output_tokens
+    - op: gemm
+      role: vision_projection
+      n: 8192
+      k: 4096
+      tp: row
+      rows: output_tokens
+  omitted:
+  - modality: audio
+    reason: a ConvNeXt-style stack with depthwise convolutions, which have no primitive
+    issue: inference-sim/blis-substrate#275
 embedding:
 - op: Gather
   role: embed_tokens
@@ -513,3 +728,4 @@ head:
   n: 202048
   k: 8192
   tp: column
+  weight_dtype: bf16

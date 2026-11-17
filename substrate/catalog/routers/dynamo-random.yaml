@@ -54,6 +54,12 @@ bound:
     producer: inference-sim/inference-sim
     commit: 780f661ef9c18a2a9928acf8a63a67667cd597c0
     command: python3 -I registry/docs/router-sensitivity/sweep.py --blis <blis built from the commit> --work <scratch directory> --out runs.csv
+  more_evidence:
+    - file: registry/docs/router-sensitivity/layouts.csv
+      sha256: d3947852232619c499efee0d50e095e87fc747abe70c945519769d4b05f266d0
+      producer: inference-sim/inference-sim
+      commit: 1465b06a7104be16476e5cd224b09042912cca77
+      command: python3 -I registry/docs/router-sensitivity/sweep.py --blis <blis built from the commit> --work <scratch directory> --out layouts-stage1.csv --layouts registry/docs/router-sensitivity/layouts.json --stage 1 --jobs 2 --keep-going, then the same with --stage 2 and --out layouts-stage2.csv, then the two files joined under one header row into layouts.csv
   ratios:
     - metric: ttft_p50_ms
       against: [round-robin]
@@ -367,10 +373,3600 @@ bound:
         decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
         shapes: [1P3D, 2P3D, 3P2D, 4P1D]
       max_ratio: 1.07
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P2D, 1P3D, 2P3D]
+      max_ratio: 1.11
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P2D, 1P3D, 2P3D]
+      max_ratio: 1.04
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P2D, 1P3D, 2P3D]
+      max_ratio: 1.02
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P2D, 1P3D, 2P3D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P2D, 1P3D, 2P3D]
+      max_ratio: 1.47
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P2D, 1P3D, 2P3D]
+      max_ratio: 1.24
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P2D, 1P3D, 2P3D]
+      max_ratio: 1.07
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P2D, 1P3D, 2P3D]
+      max_ratio: 1.02
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P2D, 1P3D, 2P3D]
+      max_ratio: 1.09
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P2D, 1P3D, 2P3D]
+      max_ratio: 1.03
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P2D, 1P3D, 2P3D]
+      max_ratio: 1.02
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P2D, 1P3D, 2P3D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P2D, 1P3D, 2P3D]
+      max_ratio: 1.39
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P2D, 1P3D, 2P3D]
+      max_ratio: 1.19
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P2D, 1P3D, 2P3D]
+      max_ratio: 1.03
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P2D, 1P3D, 2P3D]
+      max_ratio: 1.02
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.10
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.04
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.03
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.60
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.13
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.06
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.03
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.07
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.07
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.03
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.51
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.16
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.06
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.03
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.05
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.07
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.58
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.20
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.03
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.07
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.39
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.19
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m3-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 2P1D, 3P1D]
+      max_ratio: 1.29
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m3-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 2P1D, 3P1D]
+      max_ratio: 1.17
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m3-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 2P1D, 3P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m3-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 2P1D, 3P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m3-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 2P1D, 3P1D]
+      max_ratio: 1.50
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m3-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 2P1D, 3P1D]
+      max_ratio: 1.36
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m3-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 2P1D, 3P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m3-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 2P1D, 3P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P3D]
+      max_ratio: 1.09
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P3D]
+      max_ratio: 1.05
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P3D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P3D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P3D]
+      max_ratio: 1.35
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P3D]
+      max_ratio: 1.07
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P3D]
+      max_ratio: 1.04
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P3D]
+      max_ratio: 1.02
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P3D]
+      max_ratio: 1.08
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P3D]
+      max_ratio: 1.02
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P3D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P3D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P3D]
+      max_ratio: 1.48
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P3D]
+      max_ratio: 1.06
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P3D]
+      max_ratio: 1.04
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 1P3D]
+      max_ratio: 1.03
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.06
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.04
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.02
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.22
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.27
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.04
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.02
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.05
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.03
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.02
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.24
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.24
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.04
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.02
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.05
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.08
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.70
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.20
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.03
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.03
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.02
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.21
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.22
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.03
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.02
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.04
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.09
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.68
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.24
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D, 2P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m3-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 8, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m3-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 8, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m3-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 8, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m3-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 8, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m3-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 8, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m3-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 8, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m3-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 8, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m3-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 8, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.04
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.07
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.02
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.24
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.15
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.04
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D, 1P2D]
+      max_ratio: 1.02
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b200
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P2D]
+      max_ratio: 1.15
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P2D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P2D]
+      max_ratio: 1.03
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P2D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P2D]
+      max_ratio: 1.37
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P2D]
+      max_ratio: 1.11
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P2D]
+      max_ratio: 1.07
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P2D]
+      max_ratio: 1.04
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: gb200-nvl72
+        engine_version: "0.33.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P2D]
+      max_ratio: 1.06
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P2D]
+      max_ratio: 1.04
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P2D]
+      max_ratio: 1.03
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P2D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P2D]
+      max_ratio: 1.64
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P2D]
+      max_ratio: 1.12
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P2D]
+      max_ratio: 1.06
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [1P2D]
+      max_ratio: 1.04
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 8, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 8, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 8, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 8, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 8, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 8, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 8, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 8, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 8, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 8, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 8, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 8, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 8, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 8, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 8, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 8, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P1D]
+      max_ratio: 1.00
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 2, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [2P1D]
+      max_ratio: 1.03
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 2, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [2P1D]
+      max_ratio: 1.08
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 2, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [2P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 2, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [2P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 2, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [2P1D]
+      max_ratio: 1.33
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 2, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [2P1D]
+      max_ratio: 1.37
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 2, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [2P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 2, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [2P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [3P1D]
+      max_ratio: 1.03
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [3P1D]
+      max_ratio: 1.17
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [3P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [3P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [3P1D]
+      max_ratio: 1.24
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [3P1D]
+      max_ratio: 1.17
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [3P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [3P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 2, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [2P1D]
+      max_ratio: 1.05
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 2, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [2P1D]
+      max_ratio: 1.27
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 2, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [2P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 2, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [2P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 2, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [2P1D]
+      max_ratio: 1.31
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 2, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [2P1D]
+      max_ratio: 1.25
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 2, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [2P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 2, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [2P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [3P1D]
+      max_ratio: 1.03
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [3P1D]
+      max_ratio: 1.20
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [3P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [3P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [3P1D]
+      max_ratio: 1.25
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [3P1D]
+      max_ratio: 1.20
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [3P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m2.5
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [3P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m3-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [4P1D]
+      max_ratio: 1.09
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m3-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [4P1D]
+      max_ratio: 1.10
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m3-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [4P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m3-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [4P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m3-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [4P1D]
+      max_ratio: 1.58
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m3-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [4P1D]
+      max_ratio: 1.88
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m3-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [4P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: minimax-m3-nvfp4
+        hardware: b300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        shapes: [4P1D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: deepseek-v4-pro-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P9D]
+      max_ratio: 1.06
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: deepseek-v4-pro-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P9D]
+      max_ratio: 1.12
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: deepseek-v4-pro-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P9D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [round-robin]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: deepseek-v4-pro-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P9D]
+      max_ratio: 1.01
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: deepseek-v4-pro-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P9D]
+      max_ratio: 1.43
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: deepseek-v4-pro-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P9D]
+      max_ratio: 1.19
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: deepseek-v4-pro-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P9D]
+      max_ratio: 1.36
+    - evidence: registry/docs/router-sensitivity/layouts.csv
+      metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: long-prompt
+        concurrencies: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
+        model: deepseek-v4-pro-nvfp4
+        hardware: gb300
+        engine_version: "0.33.0"
+        fabric: ib-800g
+        prefill: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: false}
+        shapes: [1P9D]
+      max_ratio: 1.04
   not_measured:
-    - One model (minimax-m2.5) on one part (gb200-nvl72) over NIXL on ib-400g, served by vLLM 0.32.0. Another model or part moves where the pools saturate, and with it where the large ratios sit.
+    - >-
+      The layout sweep (layouts.csv): 32 layout classes of the Dynamo vLLM prefill/decode runs whose pools carry no data-parallel attention, 52 of the 188 topologies and 167 of the 445 artifact points, at the pool shapes those points use. Pools with data-parallel attention have no bound, and neither does kimik2.5 on gb300 at 1P7D (its recipe states no chunked prefill with a connector, which the engine refuses, blis-vllm#214).
+    - >-
+      The layout sweep simulates each layout with the engine settings the frozen recipes state (flags the engine does not model are listed per shape in layouts.json), on the catalog fabric of the chip: ib-400g for b200 and gb200-nvl72, ib-800g for b300 and gb300 (b300 is documented as RoCE 800G, so its fabric is an estimated substitution), and 8 GPUs per node (4 on gb200-nvl72 and gb300). The build's kernel encodes vLLM v0.31.0 behaviour though the scenario declares 0.33.0 (inference-sim#150); the bound names the release difference.
+    - >-
+      In runs.csv (the first evidence file): one model (minimax-m2.5) on one part (gb200-nvl72) over NIXL on ib-400g, served by vLLM 0.32.0. Another model or part moves where the pools saturate, and with it where the large ratios sit.
     - Closed-loop clients with fixed prompt and output lengths. No run had a prefix shared between requests, a session of several turns, a spread of lengths, or an open-loop arrival rate.
-    - Concurrency 16, 64, 256 and 1024 only, and the pool shapes 1P3D, 2P3D, 3P2D and 4P1D only, with one-GPU prefill instances and four-GPU decode instances (tensor parallel 4 with expert parallelism). Counts between the swept points, and larger pools, were not run.
+    - >-
+      In runs.csv: concurrency 16, 64, 256 and 1024 only, and the pool shapes 1P3D, 2P3D, 3P2D and 4P1D only, with one-GPU prefill instances and four-GPU decode instances (tensor parallel 4 with expert parallelism). Counts between the swept points, and larger pools, were not run.
     - The ratios are policy sensitivity, not substitution error. They say how far BLIS's own figures move when the policy changes, between policies inside BLIS. No run behind Dynamo was compared with a run of BLIS, so how far Dynamo's real behaviour is from either policy is not measured.
     - The regime is exact. A point whose client count is not one of those listed, or whose model, part, engine release, fabric, instance layout or pool shape is not the one named, has no bound for this regime and stays router_unsupported; nothing is interpolated between the sampled counts, and time to first token has a sharp knee between them.
     - Time to first token, at 64 to 256 clients, is where the ratios against the policies that read load are large. The bound does not hold tightly there, and a ranking by TTFT p50 or p99 in that regime should not rest on this substitution. Time per output token and throughput move far less, except at the extremes of concurrency.

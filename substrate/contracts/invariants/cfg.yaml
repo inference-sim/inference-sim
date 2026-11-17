@@ -62,15 +62,25 @@
   checks:
   - repo: blis-config-search
     check: >-
-      A check that every settings list is read from inference-sim fields at the pinned release, and
-      that the repository holds no copy
+      The checks workflow fetches the pinned engine field list (scripts/fetch_fields.py) and runs
+      validate_experiment.py --fields on every experiment; scripts/test_experiment.py asserts that
+      settings come from `blis fields` and fails on a copied settings list
+    runs: pull_request
+    status: ci
+    test: scripts/test_experiment.py
+    known_bad: scripts/test_experiment.py
+  - repo: blis-config-search
+    check: >-
+      The engine-block name table in scripts/settings.py is removed, so the repository holds no copy
+      of any settings list (#103)
     runs: pull_request
     status: new
   review: null
-  status: new
+  status: partial
   target:
     status: ci
-    milestone: 2
+    milestone: 4
+  note: the field list is read from the simulator today; the engine-block name table in scripts/settings.py (#103, open) is the copy that remains
 - id: CFG-4
   section: §5
   statement: >-

@@ -29,20 +29,27 @@ func TestEveryDefinitionIsComplete(t *testing.T) {
 	}
 }
 
-// TestBenchmarkClientDefinitions pins the three definitions design §8.7 names: TPOT
-// excludes the first token and is per request; ITL is pooled over tokens of requests with
-// at least two output tokens (inference-sim #1894).
+// TestBenchmarkClientDefinitions pins the definitions design §8.7 names: TPOT excludes the
+// first token and is per request; ITL is pooled over tokens of requests with at least two
+// output tokens (inference-sim #1894); and the inter-chunk latency the clients call ITL when
+// they time chunks (inference-sim #2128) is pooled over chunks. Each cites the client code
+// whose field it equals.
 func TestBenchmarkClientDefinitions(t *testing.T) {
 	for _, c := range []struct {
-		id  string
-		f   Formula
-		pop Population
+		id    string
+		f     Formula
+		pop   Population
+		cites []string
 	}{
-		{"ttft_mean_ms", FormulaTTFT, PopulationRequests},
-		{"tpot_mean_ms", FormulaTPOT, PopulationRequestsTwoTokens},
-		{"tpot_p99_ms", FormulaTPOT, PopulationRequestsTwoTokens},
-		{"itl_mean_ms", FormulaITL, PopulationTokens},
-		{"itl_p90_ms", FormulaITL, PopulationTokens},
+		{"ttft_mean_ms", FormulaTTFT, PopulationRequests, []string{"vllm/benchmarks/serve.py"}},
+		{"tpot_mean_ms", FormulaTPOT, PopulationRequestsTwoTokens,
+			[]string{"vllm/benchmarks/serve.py", "aiperf v0.12.0 src/aiperf/metrics/types/inter_token_latency_metric.py", "inference-perf v0.7.0"}},
+		{"tpot_p99_ms", FormulaTPOT, PopulationRequestsTwoTokens, []string{"inter_token_latency_metric.py"}},
+		{"itl_mean_ms", FormulaITL, PopulationTokens, []string{"inference-perf v0.7.0 inference_perf/reportgen/base.py"}},
+		{"itl_p90_ms", FormulaITL, PopulationTokens, []string{"inference-perf v0.7.0 inference_perf/reportgen/base.py"}},
+		{"icl_mean_ms", FormulaICL, PopulationChunks,
+			[]string{"vllm/benchmarks/lib/endpoint_request_func.py", "inter_chunk_latency_metric.py", "inference-perf v0.7.0"}},
+		{"icl_p50_ms", FormulaICL, PopulationChunks, []string{"vllm/benchmarks/serve.py"}},
 	} {
 		d, ok := Lookup(c.id)
 		if !ok {
@@ -51,18 +58,48 @@ func TestBenchmarkClientDefinitions(t *testing.T) {
 		if d.Formula != c.f || d.Population != c.pop {
 			t.Errorf("%s: formula %s over %s, want %s over %s", c.id, d.Formula, d.Population, c.f, c.pop)
 		}
-		if !strings.Contains(d.Follows, "vllm/benchmarks/serve.py") {
-			t.Errorf("%s does not cite the benchmark client it follows", c.id)
+		for _, want := range c.cites {
+			if !strings.Contains(d.Follows, want) {
+				t.Errorf("%s does not cite %q, the benchmark client code it follows", c.id, want)
+			}
 		}
 	}
 }
 
-// aiperf's inter-token latency is a mean taken per request; the registry pools gaps as
-// `vllm bench serve` does, so the ITL family must not claim to follow aiperf.
+// aiperf's inter-token latency is a mean taken per request, the registry's tpot; the pooled
+// families (itl over tokens, icl over chunks) must not claim it. aiperf's inter-chunk latency
+// is icl's.
 func TestITLDoesNotFollowAiperf(t *testing.T) {
 	for _, d := range All() {
-		if d.Formula == FormulaITL && strings.Contains(d.Follows, "aiperf") {
-			t.Errorf("%s follows %q, but aiperf's ITL is a different population", d.ID, d.Follows)
+		if (d.Formula == FormulaITL || d.Formula == FormulaICL) && strings.Contains(d.Follows, "inter_token_latency_metric.py") {
+			t.Errorf("%s follows %q, but aiperf's ITL is a per-request mean (tpot)", d.ID, d.Follows)
+		}
+	}
+}
+
+// Under speculative decoding one chunk carries several tokens, so the clients' "ITL" is three
+// different figures: per-request TPOT (aiperf), the gap per token with zeros inside a chunk
+// (inference-perf with a tokenizer) and the gap per chunk (vllm bench serve). The registry
+// keeps them three metrics, and Compare refuses every pair of them, at every statistic (DEV-8,
+// inference-sim #2128).
+func TestTheThreeClientITLsAreNotComparable(t *testing.T) {
+	for _, st := range []string{"mean", "p50", "p90", "p99"} {
+		ids := []string{"tpot_" + st + "_ms", "itl_" + st + "_ms", "icl_" + st + "_ms"}
+		for i, a := range ids {
+			for _, b := range ids[i+1:] {
+				da, okA := Lookup(a)
+				db, okB := Lookup(b)
+				if !okA || !okB {
+					t.Fatalf("%s or %s is not in the registry", a, b)
+				}
+				if _, err := Compare(at(da, 10), at(db, 10)); err == nil {
+					t.Errorf("Compare(%s, %s) succeeded; the figures have different definitions", a, b)
+				}
+			}
+		}
+		icl, _ := Lookup("icl_" + st + "_ms")
+		if _, err := Compare(at(icl, 4), at(icl, 5)); err != nil {
+			t.Errorf("icl_%s_ms against itself: %v", st, err)
 		}
 	}
 }
@@ -474,5 +511,38 @@ func TestThroughputAndInteractivityFormsAreNotComparable(t *testing.T) {
 	d := mustLookup(t, "output_tokens_per_second_per_decode_gpu")
 	if diff, err := Compare(at(d, 100), at(d, 130)); err != nil || diff != 30 {
 		t.Errorf("same form: diff %v, err %v", diff, err)
+	}
+}
+
+// The busy-time figures are defined at every scope, so a worst instance can be named, and a
+// share of the engine's time is not comparable to another metric's fraction (a hit rate, an
+// attainment) nor are the prefill and decode parts comparable to the whole (inference-sim#2081).
+func TestBusyShareDefinitions(t *testing.T) {
+	ids := []string{"busy_share", "prefill_busy_share", "decode_busy_share", "mfu"}
+	for _, id := range ids {
+		d, ok := Lookup(id)
+		if !ok {
+			t.Fatalf("%s is not in the registry", id)
+		}
+		if d.Unit != UnitFraction || d.Window != WindowMeasured {
+			t.Errorf("%s: unit %s, window %s; want a fraction of the measured window", id, d.Unit, d.Window)
+		}
+		if !hasScope(d.Scopes, ScopeInstance) || len(d.Aggregates) == 0 {
+			t.Errorf("%s: scopes %v, aggregates %v; want an instance figure a worst can be taken over", id, d.Scopes, d.Aggregates)
+		}
+	}
+	for i, a := range ids {
+		for _, b := range ids[i+1:] {
+			da, _ := Lookup(a)
+			db, _ := Lookup(b)
+			if err := Comparable(da, db); err == nil {
+				t.Errorf("%s and %s compare; they are different quantities", a, b)
+			}
+		}
+	}
+	busy, _ := Lookup("busy_share")
+	hit, _ := Lookup("cache_hit_rate")
+	if err := Comparable(busy, hit); err == nil {
+		t.Error("busy_share compares with cache_hit_rate")
 	}
 }

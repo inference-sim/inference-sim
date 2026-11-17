@@ -151,6 +151,7 @@ state none of the three, so most coefficients are not evaluated until the regist
 | `policy` | mapping | no | The simulator's policy bundle, verbatim, when one was given. |
 | `options` | list | no | Every option that changes a byte of the Result (SIM-10), sorted by name. |
 | `workload_properties` | list | no | Each workload property and what supplied it (D8), sorted by name. |
+| `files` | list | no | The small input files the run read, whole, sorted by `path`: the router's endpoint-picker configuration and manifests, and each configuration file an option names. Each is `path`, `sha256` (of `content`) and `content`. A trace or a corpus is never held here; `options` names it by sha256. |
 
 <!-- fields: scenario.Packaging -->
 
@@ -180,10 +181,41 @@ simulate, such as speculative acceptance or expert routing imbalance (D8).
 | `values` | mapping | unless `default` | The property's figures, by name. Finite. |
 | `source` | string | yes | What supplied the values, highest precedence first: `command_line`, `scenario`, `workload` (stated by or derived from it), `profile` (the substrate's profile for the workload), `default` (none stated). |
 | `profile` | string | with `profile` | The profile, as set and key. |
-| `step` | string | for a profile lookup that can borrow | How the lookup found its value (D8): `exact`, `same_drafter_other_k`, `other_drafter` or `other_target`. |
+| `step` | string | for a profile lookup that can borrow | How the lookup found its value (D8): `exact`, `same_drafter_other_k`, `same_drafter_other_settings`, `other_drafter` or `other_target`. |
 | `differed` | list of strings | with a borrowing step | Each key field in which a borrowed profile differs from the run's: `model`, `drafter`, `speculative_method` or `num_spec_tokens`. None for `exact`. |
 | `k_rule` | string | with `same_drafter_other_k` | How the borrowed value was brought to the run's K: `interpolated`, `above_largest`, `below_smallest_rates` or `below_smallest_proportional`. |
 | `profiles` | list of strings | with `step` | Every profile the value was read from, as set and key, the one that sets it first; an interpolation lists both it lies between. |
+| `rates_schedule` | string | no | How per-position rates the source did not state were derived, an estimate the run assumed: `minimum_variance` (the engine's synthetic schedule) or `natural_decay` (a profile set's fitted decay). Left out when the rates were stated. |
+| `rates_shape` | mapping | with `natural_decay` | The fitted shape the decay used, below. |
+
+### `rates_shape`
+
+A fitted decay is an estimate, not a measurement, and the shape says how it was obtained, so a
+point can name it as a substitution.
+
+<!-- fields: result.RatesShape -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `set` | string | yes | The profile set that holds the shape. |
+| `speculative_method` | string | no | The method it was fitted to; left out for the shape fitted to every method. |
+| `decay_exponent` | number | yes | Its exponent, in [0.5, 2]. |
+| `method` | string | yes | How the exponent was obtained: `calibrated` or `assumed`, never `measured`. |
+
+### `files`
+
+A small input file the run read, held whole, so that `--from-result` reproduces the run without
+it (DEV-7): the endpoint-picker configuration and manifests the deployment's router names, and each
+configuration file an option names. A trace or a corpus is bulk data and is never held here; its
+option records its sha256 (Principle 6 of blis-substrate#154).
+
+<!-- fields: result.File -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `path` | string | yes | The file as the input names it: the router's path, or the option's name. Listed once each, sorted. |
+| `sha256` | string | yes | The lowercase hex sha256 of `content`. |
+| `content` | string | yes | The file's bytes. |
 
 ## `frame`
 
@@ -338,13 +370,14 @@ is the generator's own count, and equals the sum of the fates.
 
 | Key | Type | Required | Meaning |
 |---|---|---|---|
-| `generated` | integer | yes | Requests the workload created, every planned session round included. |
+| `generated` | integer | yes | Requests the workload issued; the cap on a run counts these. |
+| `planned_not_issued` | integer | no | Session rounds planned and never issued. Not generated and not a fate; each has a request row with fate `not_started`. |
 | `completed` | integer | yes | Finished. |
 | `dropped` | mapping | no | Dropped, by reason: `admission_rejected`, `routing_rejected`, `encode_routing_rejected`, `gateway_queue_rejected`, `gateway_evicted`, `gateway_expired`, `unservable`, `context_overflow`, `decode_kv_unavailable`. Each count positive. |
 | `timed_out` | integer | yes | Cancelled by the client's timeout. |
 | `in_flight_at_horizon` | integer | yes | Running when the run stopped. |
 | `queued_at_horizon` | integer | yes | Waiting when the run stopped. |
-| `not_started` | integer | yes | Planned, such as a later session round, but never issued. |
+| `not_started` | integer | yes | Generated, but its arrival had not happened when the run ended. |
 | `length_capped` | integer | yes | Completed requests that stopped at a length limit. Not a fate. |
 
 ## `request_rows`
@@ -367,6 +400,8 @@ has `e2e_us`. The rows' fates agree with `requests`.
 | `tpot_us` | number | when sampled | (E2E - TTFT) / (output tokens - 1). |
 | `e2e_us` | integer | when sampled | Request latency; at least `ttft_us`. |
 | `scheduling_delay_us` | integer | no | Arrival at an engine to the first scheduled step. |
+| `queue_entry_us` | integer | no | Clock at which the request entered an engine's waiting queue; not before `arrival_us`. |
+| `first_token_us` | integer | when sampled | Clock at which the first token reached the client; `ttft_us` is this less `arrival_us`. |
 | `gateway_queue_delay_us` | integer | no | Time in the router's flow-control queue. |
 | `completion_index` | integer | completed | The 1-based position in the run's order of completion. |
 | `prompt_tokens` | integer | yes | Prompt tokens. |
@@ -375,7 +410,7 @@ has `e2e_us`. The rows' fates agree with `requests`.
 | `computed_tokens` | integer | no | Prompt tokens the engine computed. |
 | `output_tokens` | integer | yes | Tokens emitted. |
 | `length_capped` | boolean | no | Completed at a length limit. |
-| `phase` | string | no | `warmup`, `profile` or `grace`, when the workload marks phases. |
+| `phase` | string | no | The workload phase the request was sent in, a lowercase slug (`warmup` is outside the measured window), when the workload marks phases. |
 | `instance` | string | no | The engine instance that served it. |
 | `model` | string | no | The model tag. |
 | `adapter` | string | no | The LoRA adapter. |

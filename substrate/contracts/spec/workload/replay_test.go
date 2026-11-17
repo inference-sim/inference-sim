@@ -268,7 +268,7 @@ func TestReplayReference(t *testing.T) {
 	}
 }
 
-// blis-schemas#91: a reference that states a routing imbalance used to validate and then resolve
+// https://github.com/inference-sim/blis-schemas/issues/91: a reference that states a routing imbalance used to validate and then resolve
 // without it, so the resolved workload described different traffic than the binding stated.
 // Routing is a run choice: it is applied over the catalog entry's, validated, and never dropped.
 func TestReplayReferenceRoutingIsAppliedOrRefused(t *testing.T) {

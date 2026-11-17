@@ -1,0 +1,53 @@
+name: llama-3.3-70b-instruct-fp8
+# config.json states no quantization: ModelOpt states it in hf_quant_config.json, which vLLM
+# reads and the deriver does not. The layout is in each shard's safetensors header, which the
+# deriver reads (SUB-15): every linear in the decoder layers is
+# FP8 (F8_E4M3 weights with F32 scales), and the embedding, norms and lm_head
+# are BF16. The headers are fetched by range request and not
+# committed; each is pinned here by the SHA-256 of its header bytes. The card's licences are the
+# NVIDIA Open Model License and the Llama 3.3 Community License, neither on the allow-list, so
+# only the config's hash and the derived graph are committed (X12).
+source:
+  provider: huggingface
+  repo: nvidia/Llama-3.3-70B-Instruct-FP8
+  revision: fde04ee76a27704c88f569542ef023b57d4d0362
+  retrieved: 2026-11-16
+licence:
+  id: LicenseRef-nvidia-open-model-license
+  evidence: https://huggingface.co/nvidia/Llama-3.3-70B-Instruct-FP8/raw/fde04ee76a27704c88f569542ef023b57d4d0362/README.md
+config:
+  sha256: 76bea1c34b224053cd5706a916d2fdc3c40f332d9f79bd8dd7965e436869c795
+shard_index:
+  path: model.safetensors.index.json
+  sha256: 6398071a55c63422e6607f3a2e5b9a28a90f51090aca7a2313386f42a3d957ec
+headers:
+  - path: model-00001-of-00015.safetensors
+    sha256: 94cd02893eacffed63d334ebaeb399eeaad8786032884d5e6c319c8568428aaa
+  - path: model-00002-of-00015.safetensors
+    sha256: 7a2b451b205910a6ec3e1e8de8544f05ae163f4e117316684d217ce483ac1d5b
+  - path: model-00003-of-00015.safetensors
+    sha256: c1921e59e377a805c39bebbfea9145e1d6326bd30f811c6405a3366d9332baf1
+  - path: model-00004-of-00015.safetensors
+    sha256: 559ed0e4f78fe16f180e341e4d6047b4a4a860d4d81b4fb2b178f2df9e028859
+  - path: model-00005-of-00015.safetensors
+    sha256: a7305691fc57c842162a39e52eec80890fde8669fe397a6c38562c23b43fc5c5
+  - path: model-00006-of-00015.safetensors
+    sha256: 1f6895cb9b4903dd03843edd7865e8de75a3750912f2ec51252e015f804ee623
+  - path: model-00007-of-00015.safetensors
+    sha256: 1b8b79ad20e10344188a8eb453b5515d7a9f8180c04c85f9f100f61fa54d972a
+  - path: model-00008-of-00015.safetensors
+    sha256: 5a80ca015906fb18cd3dae05bb8835e0fbdc9ae7fb0023890cc73034fdfca9a1
+  - path: model-00009-of-00015.safetensors
+    sha256: 3d56e433fac9368f0e8ca14e66f82da797aa6430723aba83fca5b137efc8ea9f
+  - path: model-00010-of-00015.safetensors
+    sha256: 051148582c7903615c69d8412c1e36127f4777c45d66cf9661394042fdcf078a
+  - path: model-00011-of-00015.safetensors
+    sha256: dbf9de0d5365f32238fffd94c36d93d9e760ad3c45218276b298c67df91d0c3f
+  - path: model-00012-of-00015.safetensors
+    sha256: aad805845897db74d8d3761dd3f1eabc8dc8c01a2928d35d62556b4b4800dc29
+  - path: model-00013-of-00015.safetensors
+    sha256: 86b5b42e9758676c8094dead9bb45ae6d32af70f4e5501dd8735c481cd576806
+  - path: model-00014-of-00015.safetensors
+    sha256: 4dc612e86fc50780d8f403b72c56c9e175e8954bbaf5e0520de6e168bcd73801
+  - path: model-00015-of-00015.safetensors
+    sha256: fee37f5da066b15849f48978ba0837f1c750dc45fa81a6c2f22b24064e67aaed

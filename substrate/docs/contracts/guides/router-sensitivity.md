@@ -15,6 +15,7 @@ hash, the commands, the expected output, the cost, and what the sweep does not s
 - [Where the bound is large](#where-the-bound-is-large)
 - [The prefill-pool check](#the-prefill-pool-check)
 - [Cost](#cost)
+- [The layout sweep](#the-layout-sweep)
 - [What it does not show](#what-it-does-not-show)
 - [Where the data came from](#where-the-data-came-from)
 
@@ -291,9 +292,39 @@ also using (load average above 100), one run finished every 3.3 seconds on avera
 run writes a Result of 0.6 to 2 MB that the script deletes after reading six figures from it, so the scratch directory stays small. The
 committed evidence is `runs.csv` (98 KB) and `alternation.csv` (6 KB). Run it with `--jobs 3` or fewer on a shared machine.
 
+## The layout sweep
+
+The first sweep (above) ran one model on one part. `layouts.csv` extends it to the Dynamo vLLM prefill/decode points the dashboard scores:
+32 layout classes (a layout is a model, part, precision, input and output length and the parallelism of each pool; `layouts.json` lists them
+with the engine settings the frozen recipes state for each pool shape), at the pool shapes those points use, 11 client counts (1 to 1,024), the
+five policies and three seeds, 8,580 runs. Ratios in the table are rounded up to two decimals, as the entries state them. The classes cover 52 of the 188 topologies and 167 of the 445 artifact points. Pools with data-parallel
+attention are not in it, and neither is kimik2.5 on gb300 at 1P7D, which the engine refuses (blis-vllm#214). The sweep was pre-registered before any run
+(the router lane's `PREREG-sweeps.md`); the largest ratio over all cells of all layouts, by figure:
+
+| Class of pool shape | Against | TTFT p50 | TTFT p99 | TPOT p50 | Output tok/s |
+|---|---|---:|---:|---:|---:|
+| one prefill, one decode (1P1D, 264 cells) | any policy | 1.00 | 1.00 | 1.00 | 1.00 |
+| one prefill, several decode | `random-picker` | 1.15 | 1.12 | 1.03 | 1.01 |
+| one prefill, several decode | the load-reading policies | 1.65 | 1.27 | 1.36 | 1.04 |
+| several prefill | `random-picker` | 1.29 | 1.27 | 1.01 | 1.01 |
+| several prefill | the load-reading policies | 1.85 | 1.76 | 1.03 | 1.03 |
+
+Against the predictions: a single prefill and a single decode instance leave nothing to choose, and every ratio is exactly 1 (P1 holds). With
+one prefill and several decode instances, round-robin and the random picker are not equivalent: 33 of 165 cells differ by more than 2 percent
+and 2 by more than 10 percent in time to first token (P6 fails; the prediction that the decode pick alone leaves TTFT within 1.10, part of P2, fails
+by 0.05). With several prefill instances the ratios against `random-picker` exceed the pre-registered ceiling for TTFT p50 by 0.13 and for the load-reading
+group by 0.24 (P3 fails on TTFT; TPOT and throughput stay inside it). The ratio does not grow with the longer prompt: in 6 matched layout pairs the 8k-input class has
+the larger TTFT ratio in 3 and the mean difference is -0.003 (P4 fails). It does not depend on the part within a generation: across 132 matched
+b200/b300 and gb200/gb300 cells the largest difference between the two is 0.08 (P5 holds, which is what lets one class cover both parts).
+
+Each emitted ratio is the largest over the layout's shapes and client counts, and the entries state one regime per layout (`dynamo-round-robin` and
+`dynamo-random`, the `more_evidence` file `layouts.csv`). Every layout runs the engine the scenario declares, vLLM 0.33.0, but the kernel set of this
+build encodes vLLM v0.31.0 behaviour (inference-sim#150); the entries' `not_measured` names the difference. The fabric is the part's catalog fabric
+(ib-400g for b200 and gb200-nvl72, ib-800g for b300 and gb300; the b300 fabric is an estimate).
+
 ## What it does not show
 
-- **One model, one part, one engine.** MiniMax-M2.5 on GB200 with vLLM 0.32.0 over NIXL. Another model or part moves where the pools
+- **One model, one part, one engine in the first sweep.** MiniMax-M2.5 on GB200 with vLLM 0.32.0 over NIXL; the layout sweep adds the layouts above, on a kernel set that encodes v0.31.0. Another model or part moves where the pools
   saturate, and with it where the large ratios sit.
 - **Closed-loop clients, fixed lengths, no shared prefix.** Nothing here has sessions of several turns, a spread of lengths, an
   open-loop arrival rate, or requests that share a prefix. The `kv` mode of Dynamo exists for shared prefixes, which is why its entry maps no policy.

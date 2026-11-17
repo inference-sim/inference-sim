@@ -1,0 +1,10 @@
+name: qwen3.5-397b-a17b-nvfp4
+source:
+  provider: huggingface
+  repo: nvidia/Qwen3.5-397B-A17B-NVFP4
+  revision: 12b28061efd8145b11226e4fab2528ee4f39ef09
+  retrieved: 2026-11-16
+licence:
+  id: Apache-2.0
+  evidence: https://huggingface.co/nvidia/Qwen3.5-397B-A17B-NVFP4/raw/12b28061efd8145b11226e4fab2528ee4f39ef09/README.md
+drafters: [speculator]

@@ -11,6 +11,9 @@ global:
   tie_word_embeddings: false
   weight_dtype: fp8
   architecture: GlmMoeDsaForCausalLM
+  weight_scale:
+    elements: 16384
+    bytes: 4
 layer_kinds:
 - id: attn_dense_indexed
   nodes:
@@ -20,6 +23,7 @@ layer_kinds:
     role: qkv_a_proj
     n: 2624
     k: 6144
+    tp: replicated
   - op: Elementwise
     role: qkv_a_layernorm
     bytes_per_token: 10752
@@ -35,11 +39,13 @@ layer_kinds:
     role: index_wq_b
     n: 4096
     k: 2048
+    tp: replicated
   - op: GEMM
     role: index_wk_weights_proj
     n: 160
     k: 6144
     weight_dtype: bf16
+    tp: replicated
   - op: Attention
     holds_engine_kv: false
     role: block_index_scores
@@ -47,6 +53,7 @@ layer_kinds:
     n_q: 32
     n_kv: 1
     d_h: 128
+    tp: replicated
   - op: Attention
     holds_engine_kv: true
     kind: sparse_mla
@@ -113,6 +120,7 @@ layer_kinds:
     role: qkv_a_proj
     n: 2624
     k: 6144
+    tp: replicated
   - op: Elementwise
     role: qkv_a_layernorm
     bytes_per_token: 10752
@@ -128,11 +136,13 @@ layer_kinds:
     role: index_wq_b
     n: 4096
     k: 2048
+    tp: replicated
   - op: GEMM
     role: index_wk_weights_proj
     n: 160
     k: 6144
     weight_dtype: bf16
+    tp: replicated
   - op: Attention
     holds_engine_kv: false
     role: block_index_scores
@@ -140,6 +150,7 @@ layer_kinds:
     n_q: 32
     n_kv: 1
     d_h: 128
+    tp: replicated
   - op: Attention
     holds_engine_kv: true
     kind: sparse_mla
@@ -158,6 +169,12 @@ layer_kinds:
     emit: tensor_parallel
   - op: Elementwise
     role: post_attn_norm
+  - op: GEMM
+    role: router
+    n: 256
+    k: 6144
+    tp: replicated
+    weight_dtype: bf16
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -165,7 +182,20 @@ layer_kinds:
     k: 6144
     experts: 256
     top_k: 8
-    shared_experts: 1
+  - op: GEMM
+    role: shared_gate_up
+    n: 4096
+    k: 6144
+    tp: column
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 12288
+  - op: GEMM
+    role: shared_down
+    n: 6144
+    k: 2048
+    tp: row
   - op: All2All
     role: moe_dispatch_combine
     emit: expert_parallel
@@ -201,6 +231,14 @@ layer_kinds:
     - 13
   - - 13
     - 14
+  - - 14
+    - 15
+  - - 15
+    - 16
+  - - 16
+    - 17
+  - - 17
+    - 18
 - id: attn_moe_noindex
   nodes:
   - op: Elementwise
@@ -209,6 +247,7 @@ layer_kinds:
     role: qkv_a_proj
     n: 2624
     k: 6144
+    tp: replicated
   - op: Elementwise
     role: qkv_a_layernorm
     bytes_per_token: 10240
@@ -238,96 +277,12 @@ layer_kinds:
     emit: tensor_parallel
   - op: Elementwise
     role: post_attn_norm
-  - op: GroupedGEMM
-    shared: false
-    role: experts
-    n: 2048
+  - op: GEMM
+    role: router
+    n: 256
     k: 6144
-    experts: 256
-    top_k: 8
-    shared_experts: 1
-  - op: All2All
-    role: moe_dispatch_combine
-    emit: expert_parallel
-  - op: AllReduce
-    role: mlp_out
-    emit: tensor_parallel_unless_sp_moe
-  edges:
-  - - 0
-    - 1
-  - - 1
-    - 2
-  - - 2
-    - 3
-  - - 3
-    - 4
-  - - 4
-    - 5
-  - - 5
-    - 6
-  - - 6
-    - 7
-  - - 7
-    - 8
-  - - 8
-    - 9
-  - - 9
-    - 10
-  - - 10
-    - 11
-- id: mtp_moe
-  nodes:
-  - op: Elementwise
-    role: input_norm
-  - op: GEMM
-    role: qkv_a_proj
-    n: 2624
-    k: 6144
-  - op: Elementwise
-    role: qkv_a_layernorm
-    bytes_per_token: 10752
-  - op: GEMM
-    role: q_b_proj
-    n: 16384
-    k: 2048
-  - op: GEMM
-    role: kv_b_proj
-    n: 28672
-    k: 512
-  - op: GEMM
-    role: index_wq_b
-    n: 4096
-    k: 2048
-  - op: GEMM
-    role: index_wk_weights_proj
-    n: 160
-    k: 6144
+    tp: replicated
     weight_dtype: bf16
-  - op: Attention
-    holds_engine_kv: false
-    role: block_index_scores
-    kind: gqa
-    n_q: 32
-    n_kv: 1
-    d_h: 128
-  - op: Attention
-    holds_engine_kv: true
-    kind: sparse_mla
-    n_q: 64
-    n_kv: 1
-    d_h: 576
-    kv_lora_rank: 512
-    qk_rope_head_dim: 64
-    index_topk: 2048
-  - op: GEMM
-    role: o_proj
-    n: 6144
-    k: 16384
-  - op: AllReduce
-    role: attn_out
-    emit: tensor_parallel
-  - op: Elementwise
-    role: post_attn_norm
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -335,7 +290,20 @@ layer_kinds:
     k: 6144
     experts: 256
     top_k: 8
-    shared_experts: 1
+  - op: GEMM
+    role: shared_gate_up
+    n: 4096
+    k: 6144
+    tp: column
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 12288
+  - op: GEMM
+    role: shared_down
+    n: 6144
+    k: 2048
+    tp: row
   - op: All2All
     role: moe_dispatch_combine
     emit: expert_parallel
@@ -371,6 +339,151 @@ layer_kinds:
     - 13
   - - 13
     - 14
+  - - 14
+    - 15
+- id: mtp_moe
+  nodes:
+  - op: Elementwise
+    role: mtp_enorm
+  - op: Elementwise
+    role: mtp_hnorm
+  - op: GEMM
+    role: mtp_eh_proj
+    n: 6144
+    k: 12288
+    weight_dtype: bf16
+    tp: replicated
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_a_proj
+    n: 2624
+    k: 6144
+    tp: replicated
+  - op: Elementwise
+    role: qkv_a_layernorm
+    bytes_per_token: 10752
+  - op: GEMM
+    role: q_b_proj
+    n: 16384
+    k: 2048
+  - op: GEMM
+    role: kv_b_proj
+    n: 28672
+    k: 512
+  - op: GEMM
+    role: index_wq_b
+    n: 4096
+    k: 2048
+    tp: replicated
+  - op: GEMM
+    role: index_wk_weights_proj
+    n: 160
+    k: 6144
+    weight_dtype: bf16
+    tp: replicated
+  - op: Attention
+    holds_engine_kv: false
+    role: block_index_scores
+    kind: gqa
+    n_q: 32
+    n_kv: 1
+    d_h: 128
+    tp: replicated
+  - op: Attention
+    holds_engine_kv: true
+    kind: sparse_mla
+    n_q: 64
+    n_kv: 1
+    d_h: 576
+    kv_lora_rank: 512
+    qk_rope_head_dim: 64
+    index_topk: 2048
+  - op: GEMM
+    role: o_proj
+    n: 6144
+    k: 16384
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GEMM
+    role: router
+    n: 256
+    k: 6144
+    tp: replicated
+    weight_dtype: bf16
+  - op: GroupedGEMM
+    shared: false
+    role: experts
+    n: 2048
+    k: 6144
+    experts: 256
+    top_k: 8
+  - op: GEMM
+    role: shared_gate_up
+    n: 4096
+    k: 6144
+    tp: column
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 12288
+  - op: GEMM
+    role: shared_down
+    n: 6144
+    k: 2048
+    tp: row
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+  - - 14
+    - 15
+  - - 15
+    - 16
+  - - 16
+    - 17
+  - - 17
+    - 18
+  - - 18
+    - 19
+  - - 19
+    - 20
+  - - 20
+    - 21
 stack:
   prologue:
   - attn_dense_indexed

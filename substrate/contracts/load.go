@@ -20,6 +20,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/evaluation"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
+	"github.com/inference-sim/blis-substrate/contracts/spec/kernelimpls"
 	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/contracts/spec/pointrecord"
@@ -394,6 +395,10 @@ func LoadResult(path string) (*result.Result, error) {
 	}
 	return &r, nil
 }
+
+// LoadKernelImplTable reads and validates an engine release's kernel-implementation table
+// (kernel_impls.json, package kernelimpls).
+func LoadKernelImplTable(path string) (*kernelimpls.Table, error) { return kernelimpls.Load(path) }
 
 // LoadPointRecord reads a per-point record, JSON or YAML, refusing an unknown key in
 // either. It does not validate; call Validate.

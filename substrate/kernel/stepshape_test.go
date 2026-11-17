@@ -6,9 +6,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/rules"
-	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/units"
 	"github.com/inference-sim/blis-substrate/load"
 )
@@ -40,9 +38,7 @@ pools:
 `
 	r, name := openRepos(t, d, body)
 	r.Rules = func(string) rules.EngineRules { return inertRules{} }
-	r.EngineSettings = func(*deployment.Deployment, int) (enginesettings.Settings, error) {
-		return enginesettings.Settings{BlockSize: 16, MaxNumSeqs: 64, MaxNumBatchedTokens: 8192, MaxModelLen: 8192}, nil
-	}
+	r.DraftModel, r.Lower = noDrafter, lowerTo(8192, 16, 0)
 	k, err := OpenPool(name, r, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -162,10 +158,7 @@ func specKernel(t *testing.T) *Kernel {
 		t.Fatal(err)
 	}
 	for _, c := range perturbationScenarios(t, d, "muse-spark-open-dspark") {
-		in := c.in
-		st := in.Engine
-		st.Speculative = &enginesettings.Speculative{Method: "dspark", NumSpecTokens: 7}
-		in.Engine = st
+		in := withPlan(c.in, func(l *plan.Lowered) { l.Plan.Drafts.Chain, l.Plan.Drafts.OwnWorkspace = 7, true })
 		k, err := New(in)
 		if err != nil {
 			continue
@@ -233,5 +226,29 @@ func TestADrafterPassIsReadFromTheRankItBelongsTo(t *testing.T) {
 	}
 	if one, _ := BatchOf(shape(2, 1), 0); one.DraftPaddedTokens != 0 {
 		t.Errorf("a step with no drafter pass carries %d", one.DraftPaddedTokens)
+	}
+}
+
+// SUB-11: DraftShape.Skip changes a price. The engine decides that a step's drafter proposes
+// nothing (vLLM v0.33.0's skip_drafts); BatchOf carries that to the kernel, which prices the step
+// without the passes that propose, so the same requests cost less skipped than proposing.
+func TestAStepShapeThatSkipsItsDraftsIsPricedSkipped(t *testing.T) {
+	k := specKernel(t)
+	step := func(skip bool) plan.StepShape {
+		s := shape(8, 8)
+		s.Mode = plan.StepVerify
+		s.Drafts = plan.DraftShape{Verified: 7, Skip: skip}
+		return s
+	}
+	b, err := BatchOf(step(true), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !b.SkipDrafts {
+		t.Errorf("a step shape that skips its drafts gives a batch that does not")
+	}
+	skipped, proposing := priceOf(t, k, step(true)), priceOf(t, k, step(false))
+	if skipped.NoOverlap >= proposing.NoOverlap || skipped.Overlap >= proposing.Overlap {
+		t.Errorf("skipped %v, proposing %v: a step that proposes no drafts must cost less", skipped, proposing)
 	}
 }

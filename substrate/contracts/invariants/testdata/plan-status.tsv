@@ -1,13 +1,13 @@
 # The release plan's §3.2 status table: identifier, status, In CI by.
 # Written by go run ./tools/invariants snapshot from the published plan; do not edit.
-X1	partial	M4
+X1	partial	M3
 X2	new	M4
 X3	partial	M4
 X4	partial	M3
 X5	partial	M3
 X6	partial	M3
 X7	partial	M4
-X8	new	M2
+X8	new	M3
 X9	new	M3
 X10	new	M1
 X11	partial	M1
@@ -21,9 +21,9 @@ X18	new	M2
 X19	new	M2
 X20	new	after M4
 X21	new	M1
-X22	partial	M4
+X22	partial	M3
 X23	new	M1
-X24	new	M4
+X24	new	M3
 X25	new	M1
 X26	new	M1
 X27	new	M1
@@ -45,9 +45,11 @@ SUB-14	new	M2
 SUB-15	new	M4
 SUB-16	ci	now
 SUB-17	new	M3
-SUB-18	ci	now
+SUB-18	partial	M2
 SUB-19	partial	M1
 SUB-20	partial	M2
+SUB-21	new	M3
+SUB-22	new	M3
 VLM-1	ci	now
 VLM-2	partial	M4
 VLM-3	new	M2
@@ -55,36 +57,49 @@ VLM-4	new	M2
 VLM-5	ci	now
 VLM-6	new	M2
 VLM-7	new	M2
+VLM-8	new	M3
 SGL-1	new	M3
 SGL-2	new	M3
 SGL-3	new	M3
 SGL-4	new	M3
 SGL-5	new	M3
 SGL-6	new	M3
+SGL-7	new	M3
+KVS-1	new	after M4
+KVS-2	new	after M4
+KVS-3	new	after M4
+KVS-4	new	after M4
+KVS-5	new	after M4
+KVS-6	new	after M4
+KVS-7	new	after M4
 RTR-1	new	M1
 RTR-2	new	M3
 RTR-3	new	M1
 RTR-4	partial	M1
-RTR-5	new	M4
+RTR-5	new	M3
 RTR-6	new	M3
 RTR-7	new	M3
-SIM-1	new	M4
+SIM-1	new	M3
 SIM-2	ci	now
 SIM-3	new	M1
 SIM-4	new	M1
 SIM-5	new	M3
 SIM-6	new	M1
 SIM-7	new	M2
-SIM-8	new	M2
+SIM-8	new	M3
 SIM-9	partial	M2
 SIM-10	new	M1
 SIM-11	new	M1
 SIM-12	new	M2
 SIM-13	partial	M3
 SIM-14	new	M2
+SIM-15	new	M3
+SIM-16	new	M3
+SIM-17	new	M3
+SIM-18	new	M3
 CFG-1	ci	now
 CFG-2	partial	M3
-CFG-3	partial	M2
+CFG-3	partial	M4
 CFG-4	partial	M3
 CFG-5	new	M3
 FID-1	partial	M2
@@ -98,8 +113,9 @@ FID-8	new	M2
 FID-9	new	M2
 FID-10	new	M2
 FID-11	new	M3
+FID-12	new	after M4
 DEV-1	new	M2
-DEV-2	new	M2
+DEV-2	new	M3
 DEV-3	new	M2
 DEV-4	new	M2
 DEV-5	new	M2
@@ -118,17 +134,17 @@ VAL-4	partial	M2
 VAL-5	partial	M2
 VAL-6	partial	M1
 VAL-7	new	M2
-VAL-8	new	M2
+VAL-8	partial	M3
 VAL-9	new	M2
 VAL-10	partial	M2
 VAL-11	new	M2
 D1	partial	M2
 D2	new	M1
 D3	ci	now
-D4	partial	M1
+D4	partial	M3
 D5	new	M2
 D6	new	M4
-D7	partial	M1
+D7	partial	M3
 D8	partial	M2
 COV-1	partial	M1
 COV-2	new	M2
@@ -138,7 +154,7 @@ COV-5	new	M1
 COV-6	new	M1
 COV-7	new	M1
 COV-8	ci	now
-COV-9	new	M2
+COV-9	new	M3
 COV-10	new	M3
 COV-11	partial	M1
 COV-12	partial	M3

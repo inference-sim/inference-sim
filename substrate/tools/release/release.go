@@ -463,7 +463,7 @@ func previousTag(tags []string, kind Kind, upstream string) string {
 func deprecationsAt(dir, commit string) ([]Deprecation, error) {
 	// One git grep over the commit's tree finds every candidate line; FindDeprecations
 	// applies the exact rule to each. git grep exits 1 when nothing matches.
-	cmd := exec.Command("git", "grep", "-n", "-I", "-E", `Deprecated:|MarkDeprecated\(|DEPRECATED`, commit, "--", "*.go", ":!*_test.go")
+	cmd := exec.Command("git", "grep", "-n", "-I", "-E", `Deprecated:|MarkDeprecated\(|DEPRECATE[D]`, commit, "--", "*.go", ":!*_test.go")
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {

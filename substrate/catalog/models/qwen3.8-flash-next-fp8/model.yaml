@@ -1,0 +1,281 @@
+name: qwen3.8-flash-next-fp8
+# Qwen3.8-Flash-Next-FP8: the routed experts are FP8 (128x128 blocks); everything else is BF16. The licence, qwen-community-1.0, is not on the allow-list, so only the config's hash and
+# the derived graph are committed (X12). The shard headers are fetched by range request and not
+# committed; each is pinned by the SHA-256 of its header bytes.
+source:
+  provider: huggingface
+  repo: Qwen/Qwen3.8-Flash-Next-FP8
+  revision: 7fb48d708ca6cd8eeed8f4db0433be18af96984f
+  retrieved: 2026-11-17
+licence:
+  id: LicenseRef-qwen-community-1.0
+  evidence: https://huggingface.co/Qwen/Qwen3.8-Flash-Next-FP8/raw/7fb48d708ca6cd8eeed8f4db0433be18af96984f/LICENSE
+config:
+  sha256: c22eb0a053eed62e18f0184d3ca62d3798f208c3e00b9feee939fc3dbacdc8ca
+shard_index:
+  path: model.safetensors.index.json
+  sha256: 0419e2c2dfbb925257d7409405433a793cf7ff7d96f3eba882a815ec6d9fe7a6
+headers:
+  - path: model-00001-of-00131.safetensors
+    sha256: 946614d09a8b62d170a3d872b3dadf40343ee7814f9d0cc27595b380951807a5
+  - path: model-00002-of-00131.safetensors
+    sha256: 46fce270ed46b03c3219e6f11109aceff0440fa14beba4b09349de5a9e99eb01
+  - path: model-00003-of-00131.safetensors
+    sha256: b114b2ea646bcade5694638cd36f3f678b6cd8fc432d2ee39ed07b2272196967
+  - path: model-00004-of-00131.safetensors
+    sha256: 50277ae7b9f220b3b88be3e9e261900a353b886201916085dbeb43916265eae2
+  - path: model-00005-of-00131.safetensors
+    sha256: bfacd68a8e8620880b1cc05e0a9ab8139edaf0eb044443b23a3344873da5457d
+  - path: model-00006-of-00131.safetensors
+    sha256: 5a24e639c48859a091b5ae502f913fec2676855447057282969180272bfe3d83
+  - path: model-00007-of-00131.safetensors
+    sha256: 8f42c9c75387dc3cdf33352d3b490450607641b726970d08a73a8302df536f4f
+  - path: model-00008-of-00131.safetensors
+    sha256: a706fd938ae361086112e848bab940fb88fde2718359258c5c852aab9258d724
+  - path: model-00009-of-00131.safetensors
+    sha256: 60d84ef23a1f1db59dd2315aa87ac57b9e47e30dafd8e77571c71627363b0fd0
+  - path: model-00010-of-00131.safetensors
+    sha256: 0b1b34cef825d0572027045789faa11aa7e926a69e752434153cfe9d6ea360af
+  - path: model-00011-of-00131.safetensors
+    sha256: 70777095b8d07a3b7c77e13863d5158ff638d1ee4dec28fac5ae17eb963b4b3d
+  - path: model-00012-of-00131.safetensors
+    sha256: 077b2e3322b90e2671d7cd46b9a3574ee9ee124082deb1bed4bf59cb287347a0
+  - path: model-00013-of-00131.safetensors
+    sha256: ebba480239cb4804592141ea130f4943295d695f26b12eca0a082c44e4098f54
+  - path: model-00014-of-00131.safetensors
+    sha256: 45bad62302d32d7dded23954df23a36c51401f17f54ba50e58303fdfa7449ff6
+  - path: model-00015-of-00131.safetensors
+    sha256: 9bcf4e4ca96dc6a6dfb9d838e769f11f04cff435e72b7d4ab0445847387caa4a
+  - path: model-00016-of-00131.safetensors
+    sha256: f8bb0672758d575f81df8875ef5179561891841baaa58284f9eaf671f38527b0
+  - path: model-00017-of-00131.safetensors
+    sha256: d103d97f178eb5684d40de61fe1e648f4865e0e260121461bcb5c0e85b5ea770
+  - path: model-00018-of-00131.safetensors
+    sha256: f57d3a8adab54f5bbd12055453e7beb3a53b172d1e43b4df82cbb07f4d2fabd4
+  - path: model-00019-of-00131.safetensors
+    sha256: 6af481684d861b21f65bad77c8538780db86a24452a3c1deb96381b994617d7d
+  - path: model-00020-of-00131.safetensors
+    sha256: 13d78b90fece30045046a46a42eeb922f181596b760b76e8f7bb3b8e394e606b
+  - path: model-00021-of-00131.safetensors
+    sha256: 07da72250244fcc697330a1f5a63267d2a27d3ed4504678b6b7f8c29cbc8e935
+  - path: model-00022-of-00131.safetensors
+    sha256: 85c7c2cf05f148cbdf25f39e2b07072cb0c7535ad332de35b8d66b1083d7b320
+  - path: model-00023-of-00131.safetensors
+    sha256: 8cbe3eff5aa6ef55447bfb528f8c194d6fcda73de02fd2d6888b707037193591
+  - path: model-00024-of-00131.safetensors
+    sha256: 6244b9c688065d80388085075aac670f4891dace4fc696d9977014dd94243fa0
+  - path: model-00025-of-00131.safetensors
+    sha256: d0166f4b217b19abaf664f517873faf6c86c45ef5b313f854cffe5657895abed
+  - path: model-00026-of-00131.safetensors
+    sha256: 04214a3824d5c3af1e77dad4bda5ab5bb10bc5a48e6f0c0606f5b4c01dd049bf
+  - path: model-00027-of-00131.safetensors
+    sha256: 4acbcaa632d208d20afcf5f383555e2d7611ff65f34ff77af44f86e0d629cbed
+  - path: model-00028-of-00131.safetensors
+    sha256: df9c28ca7179fff4da42756d555cefdd72d88dfc6c9ddc0c80189c32f1f38966
+  - path: model-00029-of-00131.safetensors
+    sha256: 9b32ca2ebae17fb472b1e6d683bf4f2ae9033ce072ebc20407a8253ef1cf808c
+  - path: model-00030-of-00131.safetensors
+    sha256: f43a54d5c877ce6940a119e4598e36072ce1aabf8c27b96953742bf8122bfac6
+  - path: model-00031-of-00131.safetensors
+    sha256: fcdb7c49c03a1e0e9b14ed96a8905e439ac1536f3706a129732a11e20cb00b81
+  - path: model-00032-of-00131.safetensors
+    sha256: b2fe9eaf0f23671a7ac2b1ec140afb39677d4fc71681aea6f1227b4763446457
+  - path: model-00033-of-00131.safetensors
+    sha256: 9b392b554d9dafc624f6a5cd092336f210b0ab1e79f5e1573ee7ff800ded50fb
+  - path: model-00034-of-00131.safetensors
+    sha256: 2a66775c90680433b5cf4942c270e4da7b1bb91b5a40532c1ab306abe8b15a78
+  - path: model-00035-of-00131.safetensors
+    sha256: ab0db134d95f58babe0d0eb09d7b8edeb24946d91c66dab24c6cb07a41bbab0a
+  - path: model-00036-of-00131.safetensors
+    sha256: 8c61ead024bbcfd50285d2da313478e301889231b527f2f41a589ac7598ef489
+  - path: model-00037-of-00131.safetensors
+    sha256: bd27e0e94510660ced0daaaa78a60e9aefee5f7463a4e278e758db201f841934
+  - path: model-00038-of-00131.safetensors
+    sha256: a53bfd99e0d0d317df2c8aa01678ecf665df0a233879d66e1b073ec16a7a9db2
+  - path: model-00039-of-00131.safetensors
+    sha256: da849da21cb5e3138934bdfae0e3217ce4575851b3cc52f6674b7bbd67b91b5e
+  - path: model-00040-of-00131.safetensors
+    sha256: 466584f56b66cdbaa3bb83725c5f6ce7accbd7f6b1764920339a0e0524520071
+  - path: model-00041-of-00131.safetensors
+    sha256: 4c4f6ebe64cf90f60fba37d8dbe1dbcdd992d27acff270cecb65cf52dbfcfd50
+  - path: model-00042-of-00131.safetensors
+    sha256: e20b5ccbb0218a69201470aa5bd216b376b51738b86187f56eff6e29572e39a6
+  - path: model-00043-of-00131.safetensors
+    sha256: 20ca305499bca2d13432c34100f8b68dab603f7338071e13699f71335e6b0a94
+  - path: model-00044-of-00131.safetensors
+    sha256: 2bfc4bfcda9bd2d4c37bca97cd95dd735c33965c34f6a987bd54da06f571c205
+  - path: model-00045-of-00131.safetensors
+    sha256: d8df00e73ac7e40a728a2dd2e004322b751bf6df7c16a2265253b3b7e6ee1de4
+  - path: model-00046-of-00131.safetensors
+    sha256: 5094d234f08731ebc5f16197acb1601ae518e20dd04c45cd9f474f8771b5d9f9
+  - path: model-00047-of-00131.safetensors
+    sha256: 5f7c2f0cd7f7c66001edae5b3a67fd80700bc389bfd4f612537e30ebdf1cd84f
+  - path: model-00048-of-00131.safetensors
+    sha256: 1291e5d51f5b88c07be071248154a2771b26c136183fae913b2923c11f3a0af8
+  - path: model-00049-of-00131.safetensors
+    sha256: 783736f6add181630a3346ad2f555c57b26fb81402591e9f7cb8a7bb30422bc0
+  - path: model-00050-of-00131.safetensors
+    sha256: 245a952921f4e011363d9bb6b1cf832838c5ead233c7a6636fa2798f2b454de0
+  - path: model-00051-of-00131.safetensors
+    sha256: 8ebdc8e3a0040bde8000fb82fed4c70132e182ef75384121a91d5388ec45e2f5
+  - path: model-00052-of-00131.safetensors
+    sha256: 3de589930aa02c3e4d2c598358fa07641b3108524fe27f12b390d885ee901f57
+  - path: model-00053-of-00131.safetensors
+    sha256: 844bdacdd5bcdcf8dd390183f0c279ba35ba8e64f34da5fea244650b584e4dae
+  - path: model-00054-of-00131.safetensors
+    sha256: ecccb70c44a089e21e2cb19689633efad8f81544b7dfa9e1b31d5b94fcd61e9d
+  - path: model-00055-of-00131.safetensors
+    sha256: cfba2feaffa2bd397d68ffa77ebe98d2762b1e1ed9c3a412866e25b1bd685bfc
+  - path: model-00056-of-00131.safetensors
+    sha256: 34898fadc19951e51770edcb7d068637cff742660cd89e6f3b7908b1c9c94409
+  - path: model-00057-of-00131.safetensors
+    sha256: 0f21a7c64065998dbfbee9724b0fb4379d6cd0b245bccdf42884edc95c07a5bb
+  - path: model-00058-of-00131.safetensors
+    sha256: c47f74b285500f049810d2953b764689a0188aeb0c4c435e9dc2d34d12140085
+  - path: model-00059-of-00131.safetensors
+    sha256: 52f7225facd907df7742abfbb38c32e3bc6744d26b37ce2de419c4dd01c6ba40
+  - path: model-00060-of-00131.safetensors
+    sha256: 5843436e533535d1559477338dc99b143b077c51550c2142c297e53fb87713b7
+  - path: model-00061-of-00131.safetensors
+    sha256: b7b0c93b7d47a8567b8dbc84ab923f3d30b6eb9298174b57afb3df5a517967f9
+  - path: model-00062-of-00131.safetensors
+    sha256: 6b7093225eef991d03edacac4080eb3a7ac3431d3ec1224bcef9f8936c458aa8
+  - path: model-00063-of-00131.safetensors
+    sha256: f817fa28cef9f67b68e5810c485b7c04bcc4bc908de05f13b4cad3cccbaac403
+  - path: model-00064-of-00131.safetensors
+    sha256: b4cde4c67f8fb265825bc24b2ebf9499a8628d8b85ab763e92d7cf7b802226ef
+  - path: model-00065-of-00131.safetensors
+    sha256: bb1e33f6631b2c2359ff4481ed01024a2af630c366506606be7c98a08a8c85cb
+  - path: model-00066-of-00131.safetensors
+    sha256: c8f5312a03d39ee42e48a6a8c2f692c238b47128105d64e52a80e18735adc2d1
+  - path: model-00067-of-00131.safetensors
+    sha256: 762338eaf97b35c895a7ec0ee06284a49ccdfead49b8820e59a116b6d5aec577
+  - path: model-00068-of-00131.safetensors
+    sha256: 49b98b680b7b2f9f16838e801dfe9318e005b821d6ff6182e033d1817833de21
+  - path: model-00069-of-00131.safetensors
+    sha256: 028806e0ef226ec4f573b92b0ddbd2b29a06ce65aec886d23e548c601549745c
+  - path: model-00070-of-00131.safetensors
+    sha256: 6cc14969bd44eddb878313a5b9cd4a1f6fa7982ce25640deb685c773c7374b73
+  - path: model-00071-of-00131.safetensors
+    sha256: 551b294a8a65ef1d19c35a1fec9026997b62ea7664e261fe735edeb92c508734
+  - path: model-00072-of-00131.safetensors
+    sha256: 284333b3da2526abd19986f5ae30c720f8544558440c178d00dcb2286d4fbace
+  - path: model-00073-of-00131.safetensors
+    sha256: a3f8b288eb5253bb7d7a55bc1c7beba59a5122f1dd53a3d93e83a1cb8ea8ae64
+  - path: model-00074-of-00131.safetensors
+    sha256: 014aa58857631093e56eaeb7e2f19202df5ea9fe46874d3529862a41d73acbac
+  - path: model-00075-of-00131.safetensors
+    sha256: 9a08db4dd4337799e040e5f030e7c66531f03b14c78648b2ba1166344c224b9d
+  - path: model-00076-of-00131.safetensors
+    sha256: 3cd8f9f2337d7ee47f201ccf434cc880a91c7f80c0dd8b8307949164af54a6c1
+  - path: model-00077-of-00131.safetensors
+    sha256: b628a32a3b6ecec7e93d2f292e9abd881c2ad77e05b257252056e2ffc5b0de03
+  - path: model-00078-of-00131.safetensors
+    sha256: f65a722ada67d4b41e8f800a50db6d651bafc869459822c643ed124c95e17b50
+  - path: model-00079-of-00131.safetensors
+    sha256: b1ad373149c3328e86d257ab8e87150b328a58a901ff5ed3ed82f08a8606a2a0
+  - path: model-00080-of-00131.safetensors
+    sha256: 7a33947eaaddc931fa458afaa17236db22ce8ced5fbe0019cf57b9726ab29f86
+  - path: model-00081-of-00131.safetensors
+    sha256: dea9853dbbda7f9ba7f4f652cd1577f02f1bf716cc1de6c094675f018a5c1c6c
+  - path: model-00082-of-00131.safetensors
+    sha256: a4885cf829c44cf4305ceaf1bd2435b762a50194d99fe9ce6cfdd9a26b85ff62
+  - path: model-00083-of-00131.safetensors
+    sha256: c2d26c5425e261f4a08377f4996307d106bc7e4c61f8c526e24559cab5e89d4e
+  - path: model-00084-of-00131.safetensors
+    sha256: 98e66f8c06d28f3cec9129b9037de443360db227094afe90e312c0da386b0ea4
+  - path: model-00085-of-00131.safetensors
+    sha256: d6beba344e276b9348e2d6bf347481ea18261c557348e181fe4d26adee24f7a5
+  - path: model-00086-of-00131.safetensors
+    sha256: e3fc2d4452fa67e9eee18df3c934528fd6babe6480cde2d55341fe8f56ac1aeb
+  - path: model-00087-of-00131.safetensors
+    sha256: f2f651a284692390d4b525e8554de37402b08b700019d2eedb43d91662538ee5
+  - path: model-00088-of-00131.safetensors
+    sha256: 9ed900b37348d33bea3b3996daa90505a86918a1cc7efc41b4233c3cd01d984d
+  - path: model-00089-of-00131.safetensors
+    sha256: 192c40b8369bc6ba49a51fa170eb0522723042550c9334e66f371dffa99e0900
+  - path: model-00090-of-00131.safetensors
+    sha256: ff86422af4b662366ca388f50392a014a6944a8ce6d50cd34532d989cda34050
+  - path: model-00091-of-00131.safetensors
+    sha256: 28bc5c6e79ef506643350b6306ff2ea44faea4690f15c64e5a02c47baa6c6de2
+  - path: model-00092-of-00131.safetensors
+    sha256: bbb1fba34a7968c170517f043342f385491b4052b7ca2112ba329695aabaf6d7
+  - path: model-00093-of-00131.safetensors
+    sha256: 5c343343ad7293fe874cee0f3f8abb7820ec6e0edbf638e87b94aba0186a76f6
+  - path: model-00094-of-00131.safetensors
+    sha256: 1b6e4c43bab2b134a93fffbf0f4bcc50e6fa798931c2a2540d12d7f6a7ad3d4c
+  - path: model-00095-of-00131.safetensors
+    sha256: 520833078752d079e58443095d3a4544d2048c12fa917a8e3b744db55c4158c5
+  - path: model-00096-of-00131.safetensors
+    sha256: e63862cbe450b6ea43cbf639bebab14bc4c18108e9ba307da91ed215222700b1
+  - path: model-00097-of-00131.safetensors
+    sha256: a978be912fb096be8ed57febabda40440d8cc5a3b626e81f2d6c728df67c1867
+  - path: model-00098-of-00131.safetensors
+    sha256: a2c83cf594ddac72aa6ff0179b71f4599ca438bf3dc109ed3a961c88635a8305
+  - path: model-00099-of-00131.safetensors
+    sha256: d550e035f56b1d593d7eb61a486ed6843f353b38cbacaf1284cf0de5fd13678d
+  - path: model-00100-of-00131.safetensors
+    sha256: 81ea742dfe162d92bb24b1407fd7abb360298545433830dd4f6f7f8b3c1c1f73
+  - path: model-00101-of-00131.safetensors
+    sha256: f38b53e7157efea736dbadded77b47e47b7b919e223fea56e5fab905bcd3cd8f
+  - path: model-00102-of-00131.safetensors
+    sha256: b295976b9014391d0cb6dd071dcacb00a98eabc4188e7aa9e8fe8c1336ca887f
+  - path: model-00103-of-00131.safetensors
+    sha256: 0cc316abed3ab34a30c381c448522c734147e8a84dc469a8a35ae7ec5a88f47e
+  - path: model-00104-of-00131.safetensors
+    sha256: dd01d661109267b5c1cec736129b0ee5f9094c1a05984f9a35d50acc32da7395
+  - path: model-00105-of-00131.safetensors
+    sha256: 8243b679183ea3e05e74298a62754aa2bcdf5ef74377da10b6f808efc68a817d
+  - path: model-00106-of-00131.safetensors
+    sha256: 1394e58dcb37e159f91d5e47ab1359bbd4eb4cc249c3fc815cb019f54e37af9d
+  - path: model-00107-of-00131.safetensors
+    sha256: d8ab023072de5e5ba5dbfc8617fa1e6fecd58719bab276c14737ec67fd595e87
+  - path: model-00108-of-00131.safetensors
+    sha256: 614f89b7bdfbb921fd1ba709c20f0c185d0129e7c80b3e3a4f926a709d4db497
+  - path: model-00109-of-00131.safetensors
+    sha256: fc986762a1fe6070650e2bbe85e825cea125e01d6dd882b5c1e686dacc6f8d6f
+  - path: model-00110-of-00131.safetensors
+    sha256: f875d5eb6562af075cb2c28575b8a7cdb137e0d827c8a1d06b8a63c87caba286
+  - path: model-00111-of-00131.safetensors
+    sha256: c71838a54e626aaa3d0731addab70409b912d54ca50933191ca3fdd17d6380ae
+  - path: model-00112-of-00131.safetensors
+    sha256: 4f2ec713be1aed3e3535da9d606a63e6b31bb000ed768c53440a191199b3ebee
+  - path: model-00113-of-00131.safetensors
+    sha256: 2b6d1c202fb168bcdf221d2ff6f94928a6b268ec83ab674aeba90a06ecd71e64
+  - path: model-00114-of-00131.safetensors
+    sha256: 2fd079c066611616a0e301e764f2950e43db957ca40229fefa07780f39cf9b0f
+  - path: model-00115-of-00131.safetensors
+    sha256: 6f5f8d091b3bed9fc6ac3e85388e0748e2302f548453d9deae1d46022405a36a
+  - path: model-00116-of-00131.safetensors
+    sha256: 12dfa176a06d5e6eb6145412032c9ac64d96c4e347400dde439668c037401578
+  - path: model-00117-of-00131.safetensors
+    sha256: 6662640a84960e07e93bf7dec22b3b062d16ae42f90dc7b768d20259413d9d3f
+  - path: model-00118-of-00131.safetensors
+    sha256: fef87d4d9937f3db5c2272935979b1f310d2eab6bcdc21be57175f671b7adbda
+  - path: model-00119-of-00131.safetensors
+    sha256: de63ba42d191c5a40504502c443d473f53cb79899ec86274fa03e368c7a2e5a8
+  - path: model-00120-of-00131.safetensors
+    sha256: cb941bc2146bc473b366bc0c02fcf95389e57d33b4a5e98173216a72a3628826
+  - path: model-00121-of-00131.safetensors
+    sha256: 0d8c0b73ffb902683173f79329aa2b5e31b48f420333012d3a3ec1602ecf6c96
+  - path: model-00122-of-00131.safetensors
+    sha256: f21b49963878410dc9f84d2ba40c8cb547e83fec0188fc1af46b9c7c76d54a06
+  - path: model-00123-of-00131.safetensors
+    sha256: 5cf45f5b65dacb1d5056ae09ed42a906c87b3d191467df2dc8aec53179fc7a59
+  - path: model-00124-of-00131.safetensors
+    sha256: 6eeddb4a8803d939edd59f973acda0f7383111fe40bd917733829491c1330533
+  - path: model-00125-of-00131.safetensors
+    sha256: 1ba83763e35c90b9ce147f2986af8109ddc24beea3f9771275055927f79b0c03
+  - path: model-00126-of-00131.safetensors
+    sha256: 4871648fe5253a8770b46a2185c8911cb16e6de0af36c0dccad580eade15b6d1
+  - path: model-00127-of-00131.safetensors
+    sha256: 0007f05015a7fd992ec6aea17bf0adfc08eed6f27a779f90a4908a8d0c3f5aee
+  - path: model-00128-of-00131.safetensors
+    sha256: 9f7626e4d6e87d4347b898b4963091b2a6c5491f780fcb8f59b864a7f353c09e
+  - path: model-00129-of-00131.safetensors
+    sha256: ea5c7820aada533e1e10bd5f128315e05a20a2fe19de5e29b0f2ede2117c42d5
+  - path: model-00130-of-00131.safetensors
+    sha256: adb69dbecbf2a81653426551b2877ccad0ecff5738773339011507c3773b3f5d
+  - path: model-00131-of-00131.safetensors
+    sha256: 3cf90c4933cd7e71529912c6e1d4bb3de96d8279ac545d17cb8d9e0206328a57
+drafters: [speculator]

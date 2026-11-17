@@ -156,6 +156,40 @@ func (e Estimation) validate(p *validate.Problems) {
 			RuleNone, e.Rule)
 	}
 	e.validateExactness(p)
+	if a := e.Approximates; a != nil {
+		if e.Rule != RuleNone {
+			p.Field("approximates", "only with rule %q: an approximation is for a field with no exact stand-in, got rule %q",
+				RuleNone, e.Rule)
+		}
+		ap := &validate.Problems{}
+		a.validate(ap)
+		p.Merge("approximates", ap)
+	}
+}
+
+func (a Approximation) validate(p *validate.Problems) {
+	if len(a.Mode) == 0 {
+		p.Field("mode", "required: the setting the point is priced with instead")
+	}
+	for k := range a.Mode {
+		if k == "" {
+			p.Field("mode", "a mode needs a field name, got an empty key")
+		}
+	}
+	if a.Evidence == "" {
+		p.Field("evidence", "required: the measurement that prices the mode")
+	}
+	if a.Differs == "" {
+		p.Field("differs", "required: the sentence saying what differs from the mode the value selects")
+	}
+	if len(a.When) == 0 {
+		p.Field("when", "must list at least one clause: an approximation covers named values and parts, never every value")
+	}
+	for i, c := range a.When {
+		cp := &validate.Problems{}
+		c.validate(cp)
+		p.Merge(fmt.Sprintf("when[%d]", i), cp)
+	}
 }
 
 // validateExactness checks preserves and valid_when: only a rule with a stand-in states when

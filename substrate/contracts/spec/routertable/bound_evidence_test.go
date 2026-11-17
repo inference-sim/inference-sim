@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/csv"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"math"
@@ -20,6 +21,7 @@ import (
 // run is one row of a sweep's CSV.
 type run struct {
 	shape, workload, policy string
+	regime                  string // the regime fields of a layout sweep's row, empty for the original sweep
 	concurrency             int
 	seed                    string
 	requests, completed     string
@@ -29,6 +31,7 @@ type run struct {
 // cell is one (shape, workload, concurrency): the runs of each policy.
 type cell struct {
 	shape, workload string
+	regime          string
 	concurrency     int
 	by              map[string][]run
 }
@@ -63,9 +66,12 @@ func readRuns(t *testing.T, path string, complete bool) []*cell {
 		}
 		x := run{shape: r[col["shape"]], workload: r[col["workload"]], policy: r[col["policy"]], concurrency: conc,
 			seed: r[col["seed"]], requests: r[col["requests"]], completed: r[col["completed"]], fig: map[string]float64{}}
+		if _, ok := col["layout"]; ok {
+			x.regime = strings.Join([]string{r[col["model"]], r[col["hardware"]], r[col["engine_version"]], r[col["fabric"]], r[col["prefill"]], r[col["decode"]]}, "|")
+		}
 		for _, h := range head {
 			switch h {
-			case "shape", "workload", "concurrency", "policy", "seed", "requests", "completed":
+			case "shape", "workload", "concurrency", "policy", "seed", "requests", "completed", "layout", "model", "hardware", "engine_version", "fabric", "prefill", "decode":
 			default:
 				v, err := strconv.ParseFloat(r[col[h]], 64)
 				if err != nil || math.IsNaN(v) || math.IsInf(v, 0) || v <= 0 {
@@ -77,10 +83,10 @@ func readRuns(t *testing.T, path string, complete bool) []*cell {
 		if complete && x.requests != x.completed {
 			t.Fatalf("%s: %s of %s requests completed in %v; a run that did not finish has no row", path, x.completed, x.requests, r)
 		}
-		k := fmt.Sprintf("%s/%s/%d", x.shape, x.workload, x.concurrency)
+		k := fmt.Sprintf("%s/%s/%s/%d", x.regime, x.shape, x.workload, x.concurrency)
 		c := cells[k]
 		if c == nil {
-			c = &cell{shape: x.shape, workload: x.workload, concurrency: conc, by: map[string][]run{}}
+			c = &cell{shape: x.shape, workload: x.workload, regime: x.regime, concurrency: conc, by: map[string][]run{}}
 			cells[k] = c
 			order = append(order, c)
 		}
@@ -109,6 +115,30 @@ func readRuns(t *testing.T, path string, complete bool) []*cell {
 	return order
 }
 
+// regimeKey is the regime fields of a layout sweep's row, as readRuns joins them: model, hardware,
+// engine release, fabric, prefill and decode instance.
+func regimeKey(g Regime) string {
+	par := func(p Parallel) string {
+		ep := 0
+		if p.ExpertParallel {
+			ep = 1
+		}
+		return fmt.Sprintf("tp%d.pp%d.dp%d.ep%d", p.TP, p.PP, p.DP, ep)
+	}
+	return strings.Join([]string{g.Model, g.Hardware, g.EngineVersion, g.Fabric, par(g.Prefill), par(g.Decode)}, "|")
+}
+
+// inRegime says whether a cell can belong to the regime's cells: the same workload, a listed
+// client count and shape and, for a layout sweep, the same model, hardware, engine release,
+// fabric and instance layouts. A cell of the original sweep has no regime fields and is matched
+// on the first three only, as the original sweep ran one deployment.
+func inRegime(g Regime, c *cell) bool {
+	if string(g.Workload) != c.workload || !slices.Contains(g.Concurrencies, c.concurrency) || !slices.Contains(g.Shapes, c.shape) {
+		return false
+	}
+	return c.regime == "" || c.regime == regimeKey(g)
+}
+
 func mean(rs []run, metric string) float64 {
 	s := 0.0
 	for _, r := range rs {
@@ -124,15 +154,7 @@ func recompute(cells []*cell, policy string, r Ratio) (ratio float64, n int, sha
 	have := map[string]bool{}
 	worst := 1.0
 	for _, c := range cells {
-		g := r.Regime
-		if string(g.Workload) != c.workload || !slices.Contains(g.Concurrencies, c.concurrency) {
-			continue
-		}
-		in := false
-		for _, s := range g.Shapes {
-			in = in || s == c.shape
-		}
-		if !in {
+		if !inRegime(r.Regime, c) {
 			continue
 		}
 		n++
@@ -200,8 +222,23 @@ func TestTheCommittedBoundsAreTheirEvidences(t *testing.T) {
 			if got := hex.EncodeToString(sum[:]); got != e.Bound.Evidence.SHA256 {
 				t.Fatalf("%s has sha256 %s, but the bound names %s", e.Bound.Evidence.File, got, e.Bound.Evidence.SHA256)
 			}
-			cells := readRuns(t, e.Bound.Evidence.File, true)
+			files := map[string][]*cell{e.Bound.Evidence.File: readRuns(t, e.Bound.Evidence.File, true)}
+			for _, m := range e.Bound.MoreEvidence {
+				mb, err := os.ReadFile(filepath.Join(repoRoot, m.File))
+				if err != nil {
+					t.Fatal(err)
+				}
+				msum := sha256.Sum256(mb)
+				if got := hex.EncodeToString(msum[:]); got != m.SHA256 {
+					t.Fatalf("%s has sha256 %s, but the bound names %s", m.File, got, m.SHA256)
+				}
+				files[m.File] = readRuns(t, m.File, true)
+			}
 			for i, r := range e.Bound.Ratios {
+				cells := files[r.evidenceFile(e.Bound)]
+				if cells == nil {
+					t.Fatalf("ratios[%d] names evidence %q, which the bound does not list", i, r.Evidence)
+				}
 				got, n, shapes, err := recompute(cells, string(e.Policy), r)
 				if err != nil {
 					t.Fatalf("ratios[%d]: %v", i, err)
@@ -220,7 +257,7 @@ func TestTheCommittedBoundsAreTheirEvidences(t *testing.T) {
 				// workload and shapes, all of them and no other, so a count between two is not covered.
 				sampled := map[int]bool{}
 				for _, c := range cells {
-					if string(r.Regime.Workload) == c.workload && slices.Contains(r.Regime.Shapes, c.shape) {
+					if string(r.Regime.Workload) == c.workload && slices.Contains(r.Regime.Shapes, c.shape) && (c.regime == "" || c.regime == regimeKey(r.Regime)) {
 						sampled[c.concurrency] = true
 					}
 				}
@@ -307,6 +344,9 @@ func TestTheBoundsNameTheDeploymentTheSweepRan(t *testing.T) {
 		}
 		for i, r := range e.Bound.Ratios {
 			g := r.Regime
+			if r.Evidence != "" {
+				continue // a layout sweep: TestTheLayoutBoundsNameALayoutTheSweepRan
+			}
 			if !strings.Contains(text, "\nmodel: "+g.Model+"\n") || !strings.Contains(text, "  hardware: "+g.Hardware+"\n") {
 				t.Errorf("%s ratios[%d]: the regime names %s on %s, which scenario.yaml does not run", name, i, g.Model, g.Hardware)
 			}
@@ -454,5 +494,84 @@ func TestTheDynamoModesMapToTheirNearestPolicy(t *testing.T) {
 		if len(r.Against) != 1 || r.Against[0] != "round-robin" {
 			t.Errorf("ratios[%d] is against %v, want round-robin", i, r.Against)
 		}
+	}
+}
+
+// A ratio measured by a layout sweep names a layout of layouts.json: the sweep wrote its scenarios
+// from that layout, so the model, part, engine release, fabric, instance layouts, workload and pool
+// shapes of the regime are the ones the layout runs, and no ratio claims a deployment the sweep
+// did not write.
+func TestTheLayoutBoundsNameALayoutTheSweepRan(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join(repoRoot, "registry", "docs", "router-sensitivity", "layouts.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		Layouts []struct {
+			ID, Model, Hardware, Fabric, Workload string
+			EngineVersion                         string `json:"engine_version"`
+			Shapes                                []string
+			Prefill, Decode                       struct {
+				TP, PP, DP     int
+				ExpertParallel bool `json:"expert_parallel"`
+			}
+		}
+	}
+	if err := json.Unmarshal(b, &f); err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	for name, e := range loadCommitted(t) {
+		if e.Bound == nil {
+			continue
+		}
+		for i, r := range e.Bound.Ratios {
+			if r.Evidence == "" {
+				continue
+			}
+			checked++
+			g, found := r.Regime, false
+			for _, l := range f.Layouts {
+				found = found || (l.Model == g.Model && l.Hardware == g.Hardware && l.Fabric == g.Fabric && l.EngineVersion == g.EngineVersion &&
+					l.Workload == string(g.Workload) && slices.Equal(l.Shapes, g.Shapes) &&
+					g.Prefill == Parallel{TP: l.Prefill.TP, PP: l.Prefill.PP, DP: l.Prefill.DP, ExpertParallel: l.Prefill.ExpertParallel} &&
+					g.Decode == Parallel{TP: l.Decode.TP, PP: l.Decode.PP, DP: l.Decode.DP, ExpertParallel: l.Decode.ExpertParallel})
+			}
+			if !found {
+				t.Errorf("%s ratios[%d]: no layout of layouts.json runs the regime %+v", name, i, g)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Skip("no committed ratio comes from a layout sweep yet")
+	}
+}
+
+// A bound may rest on several measurements. A point carries only the measurement its ratios come
+// from, and a ratio cannot name a file the bound does not list.
+func TestABoundWithSeveralEvidencesGivesAPointOnlyItsOwn(t *testing.T) {
+	ev := func(f string) BoundEvidence {
+		return BoundEvidence{File: f, SHA256: strings.Repeat("a", 64), Producer: "inference-sim/inference-sim", Commit: strings.Repeat("b", 40), Command: "sweep"}
+	}
+	regime := func(model string) Regime {
+		return Regime{Workload: WorkloadLongPrompt, Concurrencies: []int{1, 2}, Model: model, Hardware: "b300", EngineVersion: "0.33.0", Fabric: "ib-800g",
+			Prefill: Parallel{TP: 1, PP: 1, DP: 1}, Decode: Parallel{TP: 4, PP: 1, DP: 1, ExpertParallel: true}, Shapes: []string{"1P1D"}}
+	}
+	b := &Bound{Evidence: ev("runs.csv"), MoreEvidence: []BoundEvidence{ev("layouts.csv")}, NotMeasured: []string{"x"},
+		Ratios: []Ratio{
+			{Metric: "ttft_p50_ms", Against: []string{"random-picker"}, Regime: regime("m-a"), MaxRatio: 1.01},
+			{Evidence: "layouts.csv", Metric: "ttft_p50_ms", Against: []string{"random-picker"}, Regime: regime("m-b"), MaxRatio: 1.02},
+		}}
+	if p := b.Validate(PolicyRoundRobin); len(p.All()) > 0 {
+		t.Fatalf("a bound with two evidences is refused: %v", p.All())
+	}
+	got := b.For(Point{Workload: WorkloadLongPrompt, Concurrency: 2, Model: "m-b", Hardware: "b300", EngineVersion: "0.33.0", Fabric: "ib-800g", Shape: "1P1D",
+		Prefill: Parallel{TP: 1, PP: 1, DP: 1}, Decode: Parallel{TP: 4, PP: 1, DP: 1, ExpertParallel: true}})
+	if got == nil || len(got.Ratios) != 1 || got.Evidence.File != "layouts.csv" || len(got.MoreEvidence) != 0 {
+		t.Fatalf("the point carries %+v, want the one ratio and only layouts.csv", got)
+	}
+	b.Ratios[1].Evidence = "other.csv"
+	if p := b.Validate(PolicyRoundRobin); len(p.All()) == 0 {
+		t.Error("a ratio naming a file the bound does not list was accepted")
 	}
 }

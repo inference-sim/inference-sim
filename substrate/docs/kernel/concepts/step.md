@@ -117,7 +117,8 @@ before. With `PassRequests all` the head and the later passes run for every requ
 a request still in the middle of its prompt included; with `sampling`, only for the requests that
 complete their prompt. A deployment that speculates through an autoregressive drafter and states
 either word as empty is refused as `draft_passes_unstated`, and an unknown word as
-`draft_passes_unknown`. A parallel-block drafter needs neither.
+`draft_passes_unknown`. A parallel-block drafter needs no `FirstPassRows`, and its query pass and
+sequential head run for the requests `PassRequests` names, which it must state.
 
 **Experts.** In a mixture-of-experts layer each token is routed to a few experts. The kernel
 estimates how many distinct experts a batch touches, reads their weights, and prices their
