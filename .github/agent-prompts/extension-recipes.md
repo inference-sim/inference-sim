@@ -4,7 +4,7 @@ Step-by-step guides for extending BLIS. Each recipe lists the exact files to tou
 
 ## Routing, Admission and Flow Control
 
-BLIS has no routing, admission or flow-control code of its own: every cluster run uses the llm-d router embedded in-process ([Routing](../guide/routing.md)). New routing, admission or flow-control behavior belongs in [llm-d-router](https://github.com/llm-d/llm-d-router), as a plugin or configuration, not in this repository.
+BLIS has no routing, admission or flow-control code of its own: every cluster run uses the llm-d router embedded in-process (see the design, https://inference-sim.github.io/blis-design/). New routing, admission or flow-control behavior belongs in [llm-d-router](https://github.com/llm-d/llm-d-router), as a plugin or configuration, not in this repository.
 
 A new llm-d plugin type becomes usable in BLIS once the fork has audited it for hosting and BLIS's signal policy allows it (the supported list in `sim/llmd/support.go`, passed to the router as `embed.Config.Allow`): in the fork, read every clock read, goroutine, blocking wait, random draw and map iteration it makes and route the decision-relevant ones through the hosting runtime; in BLIS, check that every signal it consumes is produced by the simulated engines, allow it, and add a test in `sim/llmd`. Until then it is refused at startup with its reason. See [The llm-d router fork](llm-d-router-fork.md).
 
@@ -64,7 +64,7 @@ Latency pricing is not extended in this repository. BLIS takes every step time, 
 - **A new model, chip, fabric or storage device** → add it to blis-substrate's `catalog/`.
 - **A new scenario or engine-setting field** → change the format in `blis-schemas` first.
 
-On the BLIS side, a new kernel capability usually needs only the adapter in blis-vllm `compat/kernelmodel` and the scenario-to-`SimConfig` wiring (blis-vllm `compat/build`, called from `cmd/engine_build.go`). See [Latency models](../guide/latency-models.md).
+On the BLIS side, a new kernel capability usually needs only the adapter in blis-vllm `compat/kernelmodel` and the scenario-to-`SimConfig` wiring (blis-vllm `compat/build`, called from `cmd/engine_build.go`). See the design (https://inference-sim.github.io/blis-design/).
 
 ## Adding New Batch Formation Strategies
 

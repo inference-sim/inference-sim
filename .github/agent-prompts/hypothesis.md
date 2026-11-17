@@ -81,7 +81,7 @@ cd .worktrees/h-<hypothesis-name>
 This creates `.worktrees/h-<name>/` with a new branch. All subsequent steps happen in the worktree.
 
 !!! tip "Automation"
-    `/superpowers:using-git-worktrees h-<name>` creates the worktree and switches your shell into it. See [Skills & Plugins](../guide/skills-and-plugins.md).
+    `/superpowers:using-git-worktrees h-<name>` creates the worktree and switches your shell into it. 
 
 ---
 

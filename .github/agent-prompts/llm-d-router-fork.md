@@ -1,6 +1,6 @@
 # The llm-d Router Fork
 
-BLIS routes with the real llm-d router (see [Routing](../guide/routing.md)). It imports the
+BLIS routes with the real llm-d router (see the design, https://inference-sim.github.io/blis-design/). It imports the
 router from the [inference-sim fork of llm-d-router](https://github.com/inference-sim/llm-d-router),
 branch `llm-d-r`, through a `replace` directive in `go.mod`:
 
