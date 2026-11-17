@@ -3,6 +3,7 @@
 package vllm
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 
@@ -356,4 +357,33 @@ func tierTransferTime(p Pricer, t engine.Transfer, bytes int64) (engine.Duration
 		return 0, false
 	}
 	return max(tp.TierTransferTime(t, bytes), 1), true
+}
+
+// TagKVTransferParams is the engine.Request.Tags key whose value is the JSON object of the request's
+// kv_transfer_params, as the client gave them (Request.kv_transfer_params, from
+// SamplingParams.extra_args): the offloading connector hands it to its tiers (ReqContext), which
+// read their keys from it. An engine with no kv_offload ignores it. Of the offload connector's keys
+// the engine models kv_load_tiers (which tiers the request may load from); max_load_tokens and
+// max_offload_tokens are refused (blis-vllm#203), and a key vLLM's offload connector does not read is
+// ignored, as vLLM ignores it.
+const TagKVTransferParams = "kv_transfer_params"
+
+// requestParams is the request's kv_transfer_params for the scheduler's request; nil with none, or
+// with no offload.
+func (o *offload) requestParams(r engine.Request) (map[string]any, error) {
+	raw, ok := r.Tags[TagKVTransferParams]
+	if o == nil || !ok {
+		return nil, nil
+	}
+	var params map[string]any
+	if err := json.Unmarshal([]byte(raw), &params); err != nil {
+		return nil, fmt.Errorf("vllm: request %s: tag %s must be a JSON object: %w", r.ID, TagKVTransferParams, err)
+	}
+	for _, k := range []string{"max_load_tokens", "max_offload_tokens"} {
+		if _, stated := params[k]; stated {
+			return nil, fmt.Errorf("vllm: request %s: kv_transfer_params %q is not modelled: the offloading connector "+
+				"would drop it (%s)", r.ID, k, issueBase+"203")
+		}
+	}
+	return params, nil
 }
