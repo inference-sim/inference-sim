@@ -49,7 +49,9 @@ type DPGroup struct {
 	// engine keeps only its own endpoint, so PlaceAt starts from this and not from a rank's.
 	pool   *placement.Placement
 	pricer Pricer
-	rankOf map[string]int
+	// servesRender is whether the server answers the router's render calls (ServesRender).
+	servesRender bool
+	rankOf       map[string]int
 	// abortedOn are the requests Finish aborted, or that finished, while an iteration in flight
 	// scheduled them, by rank: their rankOf entries go once no iteration in flight does.
 	abortedOn map[string]int
@@ -108,7 +110,7 @@ func newDPGroup(st settings, pricer Pricer) (*DPGroup, error) {
 		return nil, fmt.Errorf("vllm: a pricer is required: the latency kernel's, or fixed durations")
 	}
 	n := st.dp.ranks
-	g := &DPGroup{dp: &core.DP{LB: core.NewLoadBalancer(n)}, pricer: pricer, rankOf: map[string]int{}, abortedOn: map[string]int{},
+	g := &DPGroup{dp: &core.DP{LB: core.NewLoadBalancer(n)}, pricer: pricer, servesRender: st.servesRender, rankOf: map[string]int{}, abortedOn: map[string]int{},
 		queueSize: max(st.queueSize, 1), statsIntervalUs: max(st.dp.statsIntervalUs, 1), epoch: -1}
 	if st.placement != nil {
 		pl := *st.placement

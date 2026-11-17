@@ -135,6 +135,17 @@ type Engine struct {
 	// Only DeepSeek-V4.1 reads it.
 	SWABoundedReplay *bool `yaml:"swa_bounded_replay,omitempty"`
 
+	// EnableScaleOut is the frontend's --enable-scale-out (FrontendArgs.enable_scale_out,
+	// vllm/entrypoints/common/cli_args.py:216). It does not change a step. It decides whether the
+	// model server answers the router's render, derender and token-in/token-out endpoints:
+	// without it (the default, false) every one returns HTTP 403 PermissionDeniedError
+	// (vllm/entrypoints/scale_out/factories.py register_scale_out_api_routers), so a router that
+	// asks the server to render a prompt gets no token IDs. A router's token producer therefore
+	// needs it true. The engine reports the result through engine.RenderServing.
+	//
+	// Tri-state in form only: nil is false, vLLM's default.
+	EnableScaleOut *bool `yaml:"enable_scale_out,omitempty"`
+
 	BlockSize           int `yaml:"block_size,omitempty"`
 	MaxNumBatchedTokens int `yaml:"max_num_batched_tokens,omitempty"`
 	MaxNumSeqs          int `yaml:"max_num_seqs,omitempty"`
