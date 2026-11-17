@@ -208,8 +208,14 @@ func (g *DPGroup) Schedule(now engine.Time) (engine.Batch, error) {
 	it := &dpIter{rank: map[int]core.Batch{}}
 	open := &dpOpen{steps: steps, waits: make([]bool, len(steps))}
 	waiting := false
+	// skip_drafts across the group: the drafters propose nothing only when every rank allows it
+	// (dp_utils.py:75-88@4ba787ec). A rank that runs a dummy batch passes an empty scheduler
+	// output, whose skip_drafts is false (SchedulerOutput.make_empty,
+	// vllm/v1/worker/gpu/model_runner.py:897-929), so it keeps the group drafting.
+	skipDrafts := true
 	for i, st := range steps {
 		e := g.ranks[i].e
+		executed := false
 		if st.Step.Scheduled != nil {
 			cb := *st.Step.Scheduled
 			rb, err := e.batchOf(cb)
@@ -220,6 +226,8 @@ func (g *DPGroup) Schedule(now engine.Time) (engine.Batch, error) {
 			if core.Executed(cb) {
 				it.batch.Reqs = append(it.batch.Reqs, rb.Reqs...)
 				it.rank[i] = cb
+				executed = true
+				skipDrafts = skipDrafts && rb.SkipDrafts
 			}
 			it.batch.Preempted = append(it.batch.Preempted, rb.Preempted...)
 			// The pulls this rank's schedule began, in rank order, whether or not it ran tokens: a
@@ -227,6 +235,7 @@ func (g *DPGroup) Schedule(now engine.Time) (engine.Batch, error) {
 			// runs none.
 			it.batch.TransfersStarted = append(it.batch.TransfersStarted, rb.TransfersStarted...)
 		}
+		skipDrafts = skipDrafts && executed
 		if !st.Block {
 			continue
 		}
@@ -244,6 +253,7 @@ func (g *DPGroup) Schedule(now engine.Time) (engine.Batch, error) {
 		it.batch.Finished = append(it.batch.Finished, fins...)
 		g.retire(fins)
 	}
+	it.batch.SkipDrafts = skipDrafts && !it.batch.Empty()
 	if !it.batch.Empty() {
 		g.nextID++
 		it.id, it.batch.ID = g.nextID, g.nextID
@@ -339,6 +349,9 @@ func (g *DPGroup) inFlight(r int, id string) bool {
 // rankBatches splits an iteration's batch into the ranks' own batches.
 func (g *DPGroup) rankBatches(b engine.Batch) []engine.Batch {
 	per := make([]engine.Batch, len(g.ranks))
+	for r := range per {
+		per[r].SkipDrafts = b.SkipDrafts
+	}
 	for _, s := range b.Reqs {
 		r := g.rankOf[s.ID]
 		per[r].Reqs = append(per[r].Reqs, s)
