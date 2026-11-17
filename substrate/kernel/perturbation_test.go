@@ -130,6 +130,14 @@ func perturbationScenarios(t *testing.T, d *load.Data, only ...string) []perturb
 					if _, err := New(f8In); err == nil {
 						out = append(out, perturbationCase{label + "/trtllm-fp8", f8In})
 					}
+					// The GLM-5.3 family's sparse-MLA decode entries are keyed to the FlashInfer
+					// decode build the engine pin runs; this case reports it running, so they are
+					// read and perturbed (keyedSparseDecode).
+					if sdIn, ok := keyedSparseDecode(in); ok {
+						if _, err := New(sdIn); err == nil {
+							out = append(out, perturbationCase{label + "/sparse-decode", sdIn})
+						}
+					}
 					built = true
 					break
 				}

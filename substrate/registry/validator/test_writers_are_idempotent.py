@@ -100,7 +100,7 @@ WRITERS = [
     # The GLM-5.3 family's sparse-MLA prefill form on h200, fitted on aisim's GLM-5.3 attention
     # module ($AISIM_GLM53_DATA, a second pin, rederive.yml) net of the generated rest-of-module
     # file, whose own staleness check is kernel/glm53_attention_rest_test.go.
-    ("fit_glm53_attention.py", "the GLM-5.3 family's h200 sparse-MLA prefill entries"),
+    ("fit_glm53_attention.py", "the GLM-5.3 family's h200 sparse-MLA prefill and decode entries"),
 ]
 
 # relane_attention_mla.py is DELIBERATELY ABSENT from both lists, and this records why so
@@ -265,6 +265,7 @@ def test_every_fitted_family_has_a_writer():
         "gemm_m_half_w4a16_nvfp4_grouped": "fit_marlin_nvfp4_grouped_ramp.py",
         "attention_decode_rate_sparse_mla": "fit_deepseek_v41_h200.py",
         "attention_decode_floor_block_index_scores": "fit_deepseek_v41_h200.py",
+        "attention_decode_floor_sparse_mla": "fit_glm53_attention.py",
         "attention_prefill_floor_sparse_mla": "fit_deepseek_v41_prefill.py",
         "attention_prefill_per_request_sparse_mla": "fit_deepseek_v41_prefill.py",
         "attention_prefill_per_token_sparse_mla": "fit_deepseek_v41_prefill.py",

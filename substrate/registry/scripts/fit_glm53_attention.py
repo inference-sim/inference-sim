@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""GLM-5.3 and GLM-5.3-Flash on H200: the sparse-MLA PREFILL form, fitted on AISimulate's
+"""GLM-5.3 and GLM-5.3-Flash on H200: the sparse-MLA PREFILL and DECODE forms, fitted on AISimulate's
 GLM-5.3 attention-module table, net of what BLIS charges for the rest of that module.
 
     python scripts/fit_glm53_attention.py            # print the fit, rewrite the entries
@@ -12,6 +12,16 @@ which run the same kernel; not single-model entries, VAL-7), in cost-model-atten
     attention_prefill_rate_sparse_mla         measured + transferred  (rate_basis: work)
     attention_prefill_per_request_sparse_mla  not_charged  (fitted free, no gain; see TERMS)
     attention_prefill_per_token_sparse_mla    not_charged
+    attention_decode_floor_sparse_mla         measured + transferred
+    attention_decode_rate_sparse_mla          measured + transferred  (a memory rate)
+
+DECODE. The same table's 107 TP8 decode rows (one query token a request) fit
+t = floor + read / rate, read being the bytes the kernel's decode form counts (decodeReadBytes),
+against registry/docs/glm53-attention-decode-rest-h200-tp8.csv, which carries both the rest and
+the read per row. That rest INCLUDES the probe's launches at host_launch_per_kernel (LAUNCH_US, its
+committed value): the table is GPU busy time and the kernel charges every launch on top, and at
+decode the module's launches are about a third of it (at prefill under 2%, so the prefill rest
+leaves them out). Held out by context and by batch.
 
 THE DATA. $AISIM_GLM53_DATA is the systems/data directory of ai-dynamo/aisim at AISIM_GLM53_SHA
 (.github/workflows/rederive.yml), which holds h200_sxm/glm53_attention/vllm/0.31.0/
@@ -88,6 +98,7 @@ import coefficient_blocks as cb  # noqa: E402
 
 ATTN_PATH = REG / "coefficients" / "cost-model-attention.yaml"
 REST_PATH = REG / "docs" / "glm53-attention-rest-h200-tp8.csv"
+DECODE_REST_PATH = REG / "docs" / "glm53-attention-decode-rest-h200-tp8.csv"
 CATALOG = Path(os.environ.get("BLIS_CATALOG", REG.parent / "catalog"))
 TABLE = Path("h200_sxm/glm53_attention/vllm/0.31.0/glm53_attention_module_perf.parquet")
 TABLE_SHA256 = "14821edd06a88d9ee67c88b810c1031d460abb54b89ef1f2ab3d4686a0f6d7ef"
@@ -98,6 +109,9 @@ BLOCK = 64
 MODELS = ("glm-5.3", "glm-5.3-flash")
 MIN_GAIN = 0.005
 PRIMITIVE = "attention.prefill"
+DECODE_PRIMITIVE = "attention.decode"
+# host_launch_per_kernel's committed value, which the decode rest file nets (see DECODE below).
+LAUNCH_US = 3.2
 SELECTION = "attention backend FLASHINFER_MLA_SPARSE_SM90"
 LIBRARY = "flashinfer"
 VARIANT = "BatchMLAPagedAttentionWrapper[fa3]"
@@ -129,7 +143,7 @@ def impl_yaml(b: dict) -> str:
     return f'{{library: {b["library"]}, variant: "{b["variant"]}", code_hash: {b["code_hash"]}}}'
 
 
-def builds(table: dict, data: Path) -> dict | None:
+def builds(table: dict, data: Path, primitive: str = PRIMITIVE) -> dict | None:
     """The SM90 sparse-MLA prefill builds: the run's (the FlashInfer version whose run record names the
     table's image digest) and the engine pin's; None when the table names no version for the run."""
     meta = yaml.safe_load((data / META).read_text(encoding="utf-8"))
@@ -141,9 +155,9 @@ def builds(table: dict, data: Path) -> dict | None:
     def build(version):
         for r in table["implementations"]:
             if (r["primitive"], r["selection"], r["library"], r["library_version"], r["variant"],
-                    r["target_arch"]) == (PRIMITIVE, SELECTION, LIBRARY, version, VARIANT, arch):
+                    r["target_arch"]) == (primitive, SELECTION, LIBRARY, version, VARIANT, arch):
                 return {"library": LIBRARY, "variant": VARIANT, "code_hash": r["code_hash"], "version": version}
-        raise SystemExit(f"kernel_impls.json lists no {LIBRARY} {version} {VARIANT} build for {arch}")
+        raise SystemExit(f"kernel_impls.json lists no {LIBRARY} {version} {VARIANT} {primitive} build for {arch}")
     libs = [lib for lib in table["libraries"] if lib["name"] == LIBRARY]
     pinned = build(next(lib["version"] for lib in libs if lib["pinned"]))
     seen = [lib["version"] for lib in libs if not lib["pinned"] and digest in lib["pin"]]
@@ -421,6 +435,184 @@ def entries(f: dict) -> list[list[str]]:
     return out
 
 
+def decode_rows(data: Path, flash: dict) -> dict:
+    """The table's TP8 decode rows (one query token a request, x the sequence length), with the
+    generated decode rest and the bytes the kernel's decode form reads at each."""
+    path = data / TABLE
+    rest = {}
+    with DECODE_REST_PATH.open(encoding="utf-8") as f:
+        for r in csv.DictReader(f):
+            rest[(int(r["batch"]), int(r["context"]))] = (float(r["rest_us"]), float(r["read_bytes"]))
+    cols = {k: [] for k in ("b", "x", "read", "rest", "y")}
+    for r in pq.read_table(path).to_pylist():
+        g = json.loads(r["geometry"])
+        if g["tp_size"] != TP or g["is_context"]:
+            continue
+        if (LANE not in r["kernel_source"] or g["kv_cache_dtype"] != "bfloat16"
+                or g["num_heads"] != flash["heads"] or str(r["used_cuda_graph"]) != "True"):
+            raise SystemExit(f"unexpected decode row: {r['kernel_source']}, {g}")
+        b, x = int(r["batch_size"]), int(r["x"])
+        if (b, x) not in rest:
+            raise SystemExit(f"{DECODE_REST_PATH.name} has no row {b},{x}: regenerate it")
+        cols["b"].append(b)
+        cols["x"].append(x)
+        cols["rest"].append(rest[(b, x)][0])
+        cols["read"].append(rest[(b, x)][1])
+        cols["y"].append(float(r["latency"]) * 1000.0)
+    out = {k: np.asarray(v, float) for k, v in cols.items()}
+    if len(out["y"]) != 107:
+        raise SystemExit(f"{len(out['y'])} TP8 decode rows, expected 107")
+    return out
+
+
+def fit_decode(r: dict) -> tuple[float, float]:
+    """(floor us, us per byte) minimising mean |log((rest + floor + read x c) / y)|, non-negative,
+    by the same deterministic coordinate search as fit()."""
+    y, rest, read = r["y"], r["rest"], r["read"]
+    X = np.stack([np.ones_like(y), read], 1)
+    t0, *_ = np.linalg.lstsq(X / y[:, None], 1 - rest / y, rcond=None)
+    scale = np.median(np.maximum(y - rest, 1e-3)) / np.maximum(np.median(X, axis=0), 1e-30)
+    lt = np.log(np.where(t0 > 0, t0, 1e-2 * scale))
+
+    def obj(v):
+        return float(np.mean(np.abs(np.log((rest + X @ np.exp(v)) / y))))
+
+    best, step = obj(lt), 2.0
+    while step > 1e-7:
+        improved = False
+        for j in range(2):
+            for d in (step, -step):
+                trial = lt.copy()
+                trial[j] += d
+                v = obj(trial)
+                if v < best - 1e-15:
+                    lt, best, improved = trial, v, True
+        if not improved:
+            step /= 2
+    return float(np.exp(lt[0])), float(np.exp(lt[1]))
+
+
+def run_decode(data: Path, table: dict) -> dict:
+    flash = model_geometry("glm-5.3-flash")
+    r = decode_rows(data, flash)
+    fl, c = fit_decode(r)
+    floor = round(fl, 2)
+    rate = int(round(1.0 / c))
+    p = lambda q: q["rest"] + floor + q["read"] / rate  # noqa: E731
+    out = {"keyed": builds(table, data, DECODE_PRIMITIVE), "n": len(r["y"]), "floor": floor, "rate": rate,
+           "fit": geo(p(r), r["y"])}
+    holds = {}
+    for name, tr, te in (("context", r["x"] <= 16384, r["x"] >= 32768),
+                         ("batch", r["b"] <= 4, r["b"] >= 8)):
+        f2, c2 = fit_decode(sub(r, tr))
+        q = sub(r, te)
+        holds[name] = (int(te.sum()), *geo(q["rest"] + f2 + q["read"] * c2, q["y"]))
+    out["holds"] = holds
+    out["by_batch"] = {int(b): geo(p(sub(r, r["b"] == b)), r["y"][r["b"] == b])[1] for b in sorted(set(r["b"]))}
+    out["share"] = float(np.median((r["y"] - r["rest"]) / r["y"]))
+    out["rest_med"] = float(np.median(r["rest"]))
+    out["y_med"] = float(np.median(r["y"]))
+    rng = np.random.RandomState(20261117)
+    fls, rts = [], []
+    for _ in range(200):
+        i = rng.randint(0, len(r["y"]), len(r["y"]))
+        f2, c2 = fit_decode(sub(r, i))
+        fls.append(f2)
+        rts.append(1.0 / c2)
+    out["ci_floor"] = (round(float(np.percentile(fls, 2.5)), 2), round(float(np.percentile(fls, 97.5)), 2))
+    out["ci_rate"] = (float(round(np.percentile(rts, 2.5))), float(round(np.percentile(rts, 97.5))))
+    out["range"] = {"tokens": (float(r["b"].min()), float(r["b"].max())),
+                    "requests": (float(r["b"].min()), float(r["b"].max())),
+                    "context_tokens": (float(r["x"].min()), float(r["x"].max()))}
+    return out
+
+
+def decode_entries(f: dict) -> list[list[str]]:
+    scope = f"{{hardware: [h200], model: [{', '.join(MODELS)}]}}"
+    keyed = f["keyed"]
+    src_table = (f"NVIDIA AISimulate (ai-dynamo/aisim {AISIM_SHA[:8]}) systems/data/{TABLE} (NVIDIA H200, "
+                 f"sha256 {TABLE_SHA256[:12]}), vLLM 0.31.0 Glm5NextMLAAttention with {LANE}, "
+                 f"GLM-5.3-Flash geometry, the {f['n']} TP8 decode rows")
+    src_rest = ("registry/docs/glm53-attention-decode-rest-h200-tp8.csv (generated by "
+                "kernel/glm53_attention_rest_test.go): BLIS's price of the rest of the module, launches "
+                f"included at host_launch_per_kernel {LAUNCH_US} us, subtracted; and the form's bytes")
+    src_vllm = ("vLLM v0.31.0 v1/attention/backends/mla/flashinfer_mla_sparse_sm90.py "
+                "FlashInferMLASparseSM90Impl, decode")
+    if keyed is None:
+        rule = ("measured on vLLM 0.31.0's FlashInfer SM90 sparse-MLA decode kernel on this chip and used for "
+                "the engine's pin; no kernel hash shows the two builds run the same kernel, and nothing is "
+                "moved between chips")
+    else:
+        rule = (f"measured on FlashInfer {keyed['run']['version']}'s {VARIANT} decode build "
+                f"({keyed['run']['code_hash'][:12]}), which the run's image ran, and used for the pinned FlashInfer "
+                f"{keyed['pinned']['version']}'s build ({keyed['pinned']['code_hash'][:12]}) on the same chip; the two "
+                f"builds' hashes differ, so the value is moved, not shown, and nothing is moved between chips")
+    rg = f["range"]
+    fit_range = [f"        - {{dim: {d}, low: {lo}, high: {hi}}}" for d, (lo, hi) in rg.items()]
+    srcs = ["      sources:",
+            f'        - {{kind: model, cite: "{src_table}", role: primary}}',
+            f'        - {{kind: model, cite: "{src_rest}", role: supporting}}',
+            f'        - {{kind: model, cite: "{src_vllm}", role: supporting}}']
+    if keyed is not None:
+        t = keyed["table"]
+        srcs.append(f'        - {{kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM '
+                    f'{t["engine"]["version"]} ({t["engine"]["commit"][:12]}): the {VARIANT} decode builds of FlashInfer '
+                    f'{keyed["run"]["version"]} and {keyed["pinned"]["version"]} and the run record that names '
+                    f'the image", role: supporting}}')
+    h = f["holds"]
+    why = (
+        f"THE FORM: t = attention_decode_floor_sparse_mla + read / attention_decode_rate_sparse_mla, per layer "
+        f"per rank per step with decode, read as the kernel counts it (decodeReadBytes: FlashMLA's 64-token blocks "
+        f"of the stated caches over the top-k, one read per query token, so a verify step's 1 + num_spec_tokens "
+        f"queries a request read it that many times). Before it, GLM's sparse decode was priced on the part-wide "
+        f"attention pair, which prices the module at about half what the table measures. NET OF THE REST INCLUDING "
+        f"ITS LAUNCHES: the table is GPU busy time and this kernel charges host_launch_per_kernel ({LAUNCH_US} us, "
+        f"its committed value; refit if it changes) on every launch, so the rest subtracted is the module's whole "
+        f"price but this form, launches included (median {f['rest_med']:.1f} us of a measured {f['y_med']:.1f} us). "
+        f"Fitted on all {f['n']} TP8 decode rows, batch {int(rg['requests'][0])}-{int(rg['requests'][1])}, context "
+        f"{int(rg['context_tokens'][0])}-{int(rg['context_tokens'][1])}: {f['fit'][0]:.3f}x, signed {f['fit'][1]:.3f}. "
+        f"Signed by batch: " + ", ".join(f"{b}: {v:.2f}" for b, v in f["by_batch"].items()) +
+        f". HELD OUT: trained on context <= 16,384, predicting >= 32,768, {h['context'][1]:.3f}x (signed "
+        f"{h['context'][2]:.3f}, n={h['context'][0]}); trained on batch <= 4, predicting >= 8, {h['batch'][1]:.3f}x "
+        f"(signed {h['batch'][2]:.3f}, n={h['batch'][0]}). THE TABLE TIMES AN INDEXED LAYER: GLM-5.3's layers that "
+        f"reuse the indexer's top-k drop the scorer node, whose price is in the rest, so they are right only as far "
+        f"as BLIS's scorer price is. Named substitutions: GLM-5.3-Flash's geometry for GLM-5.3 (the same 8 heads a "
+        f"rank at TP8 and top-k 2048; the kernel reads each model's own record); a BF16 cache (the kernel's read "
+        f"scales with the record, so an fp8 cache is charged its record's share, an assumption); one query token a "
+        f"request (a verify step's 4 is read 4 times, as vLLM gathers them). The 95% interval is from 200 bootstrap "
+        f"refits over rows, narrower than the data justify.")
+
+    def head(name, value, units, method, extra=()):
+        ls = [f"  - {name}:", f"      value: {value}", f"      units: {units}",
+              f"      method: {method}", "      fitted: false"]
+        return ls + list(extra) + [f"      scope: {scope}"]
+
+    def fitted(name, value, units, extra, ci, rationale):
+        tail = [f"      ci95: [{ci[0]}, {ci[1]}]", "      fit_range:", *fit_range, *srcs,
+                "      rationale: >", "        " + rationale]
+        transfer = ([f"      kernel_impls: [{impl_yaml(keyed['pinned'])}]",
+                     f"      measured_on: [{impl_yaml(keyed['run'])}]"] if keyed else [])
+        transfer += ["      transferred_from: \"hardware=h200\"", f"      transfer_rule: \"{rule}\""]
+        ents = []
+        if keyed is not None:
+            m = head(name, value, units, "measured", extra)
+            m[4] = "      fitted: true"
+            ents.append(m + [f"      kernel_impls: [{impl_yaml(keyed['run'])}]", "      measures:",
+                             "        time: device", "        execution: captured",
+                             f'        harness: "{HARNESS}"'] + tail)
+        ents.append(head(name, value, units, "transferred", extra) + transfer + tail)
+        return ents
+
+    out = fitted("attention_decode_floor_sparse_mla", f["floor"], "us_per_transfer", (), f["ci_floor"], (
+        f"The per-call floor of the GLM-5.3 family's sparse-MLA DECODE on H200, {f['floor']} us a layer a rank "
+        f"in a step with decode. " + why))
+    rate_extra = ["      rate_basis: work"] if f["rate"] > 4.8e6 else []
+    out += fitted("attention_decode_rate_sparse_mla", float(f["rate"]), "bytes_per_us", rate_extra, f["ci_rate"], (
+        f"{f['rate']:,} B/us over the bytes the kernel's decode form counts. See attention_decode_floor_sparse_mla "
+        f"(this scope) for the form, the errors and the substitutions."))
+    return out
+
+
 def render(text: str, new: list[list[str]]) -> str:
     blocks = cb.split(text)
     ours = {(cb.name_of(e), cb.scope_key(cb.scope_of(e))) for e in new}
@@ -456,8 +648,13 @@ def main(argv: list[str]) -> int:
     print(f"floor {f['floor']} us, per slot {f['per_slot']:.4e} us, rates {f['rates']}, fit "
           f"{f['fit'][0]:.3f}x signed {f['fit'][1]:.3f}, gains {f['gains']}, held out {f['holds']}, "
           f"below top-k {f['below']}, ci floor {f['ci_floor']} slot {f['ci_slot']}")
+    table = json.loads(Path(args.kernel_impls).read_text(encoding="utf-8"))
+    fd = run_decode(Path(args.data), table)
+    print(f"decode: floor {fd['floor']} us, rate {fd['rate']} B/us, fit {fd['fit'][0]:.3f}x signed "
+          f"{fd['fit'][1]:.3f}, held out {fd['holds']}, by batch {fd['by_batch']}, ci floor {fd['ci_floor']} "
+          f"rate {fd['ci_rate']}, rest median {fd['rest_med']:.1f} of {fd['y_med']:.1f} us")
     a0 = ATTN_PATH.read_text(encoding="utf-8")
-    a1 = render(a0, entries(f))
+    a1 = render(a0, entries(f) + decode_entries(fd))
     if args.check:
         if a0 != a1:
             print(f"would change: {ATTN_PATH.name}", file=sys.stderr)
