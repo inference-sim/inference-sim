@@ -1,0 +1,20 @@
+{
+ "description": "Everything oracle/lower/extract.py replaces (FID-1). The lowering oracle calls SGLang's own functions as released; it records no trace, so this list is separate from oracle/mocks.json, whose digest every golden trace records. Its answers are lower/testdata/sglang_lower.json, regenerated and compared in CI.",
+ "replacements": [
+  {
+   "symbol": "run_serverargs.restore_cuda",
+   "kind": "platform",
+   "how": "the chip's CUDA platform, restored exactly as for the resolution oracle; every site it patches is listed in oracle/mocks.json under oracle/run_serverargs.py"
+  },
+  {
+   "symbol": "PoolOnlyRunner",
+   "kind": "gpu",
+   "how": "the model runner get_batch_sizes_to_capture is given: it holds only server_args and req_to_token_pool.size, the two members that function reads of it (python/sglang/srt/model_executor/runner/base_cuda_graph_runner.py:77-84). The pool size, which the KV pool sizing sets on a GPU, is the case's input, swept over POOL_SIZES."
+  },
+  {
+   "symbol": "stubs.STUBBED",
+   "kind": "environment",
+   "how": "the CUDA-only kernel packages SGLang imports once the CUDA platform is restored are stubbed, as oracle/run_serverargs.py stubs them (CUDA_STUBBED, listed in oracle/mocks.json); none of the functions this oracle calls reads them"
+  }
+ ]
+}
