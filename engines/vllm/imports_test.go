@@ -31,7 +31,6 @@ import (
 var declaredSubstrateExceptions = []string{
 	"github.com/inference-sim/blis-substrate/kernel compat/kernelmodel",
 	"github.com/inference-sim/blis-substrate/kernel kerneltests/cmd/worked-table",
-	"github.com/inference-sim/blis-substrate/kernel kerneltests/internal/docgen",
 	"github.com/inference-sim/blis-substrate/kernel kerneltests/internal/harness",
 	"github.com/inference-sim/blis-substrate/load compat/build",
 	"github.com/inference-sim/blis-substrate/load compat/kernelmodel",

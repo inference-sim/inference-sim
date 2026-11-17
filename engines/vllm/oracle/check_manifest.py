@@ -1,5 +1,5 @@
 # Original to blis-vllm.
-"""Cross-check docs/metrics-manifest.json against the families vLLM registers at runtime.
+"""Cross-check oracle/metrics/manifest.json against the families vLLM registers at runtime.
 
 cmd/metricsmanifest reads the families from the release's source. This builds vLLM's own
 PrometheusStatLogger (with the speculative-decoding and KV-cache metrics on) on CPU, collects
@@ -13,7 +13,7 @@ It also writes, with --buckets <path>, the bucket upper bounds of every histogra
 registry holds (max_model_len 256 for the request-token series), so the histogram buckets
 the tier compares are vLLM's own, read from the objects it built rather than from its source.
 
-Usage: python -I oracle/check_manifest.py <vllm checkout> docs/metrics-manifest.json [--buckets <path>]
+Usage: python -I oracle/check_manifest.py <vllm checkout> oracle/metrics/manifest.json [--buckets <path>]
 """
 import json
 import os

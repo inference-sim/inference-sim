@@ -32,8 +32,8 @@ the registry. Leave out what a run produced at the old release, since its citati
 run's evidence and move only when the run is repeated at the new one: the oracle's scenarios and
 goldens (oracle/scenarios*/, */testdata/; a scenario's bytes are recorded in its golden), the
 inertness proofs (oracle/inertness/*.json, oracle/inertness.py --write), dated reports
-(docs/evidence/), and generated files (fields.json, surface.json, docs/generated/,
-docs/metrics-manifest.json), which are regenerated. Leave out, too, every path another change
+and generated files (fields.json, surface.json, docs/generated/,
+oracle/metrics/manifest.json), which are regenerated. Leave out, too, every path another change
 has claimed (--skip).
 
 Without --write it only reports. The report has one row per citation: file, line, the cited

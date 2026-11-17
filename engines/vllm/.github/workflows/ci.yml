@@ -535,7 +535,7 @@ jobs:
           key: ${{ steps.go.outputs.build-key }}
 
   # Tier 5: every vllm:* family vLLM v0.32.0 defines, read from its source and classified
-  # exact / derived / unavailable (docs/metrics-manifest.json). A family the release adds or
+  # exact / derived / unavailable (oracle/metrics/manifest.json). A family the release adds or
   # drops, or a manifest that is not current, fails here; so does a field list, a kernel table
   # (kernel_impls.json) or a surface.json (X9) that is not current. Runs when fields/, fields.json,
   # kernels/, kernel_impls.json, the manifest, its generator, the connector registry, the surface list,
@@ -753,8 +753,8 @@ jobs:
           ORACLE_MODEL: ${{ github.workspace }}/oracle-model
           HF_HUB_OFFLINE: "1"
         run: |
-          python -I oracle/check_manifest.py vllm-source docs/metrics-manifest.json --buckets oracle/out-buckets.json
-          diff -u docs/metrics-buckets.json oracle/out-buckets.json
+          python -I oracle/check_manifest.py vllm-source oracle/metrics/manifest.json --buckets oracle/out-buckets.json
+          diff -u oracle/metrics/buckets.json oracle/out-buckets.json
       - name: run every tier-2 scenario
         env:
           ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock

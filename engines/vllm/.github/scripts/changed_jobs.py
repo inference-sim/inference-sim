@@ -47,7 +47,7 @@ REST_EXTRA = [
     r"^kerneltests/testdata/",
     r"^testdata/",
     r"^oracle/(scenarios[^/]*/|mocks\.json$|drafts/)",
-    r"^docs/metrics-(manifest|buckets)\.json$",
+    r"^oracle/metrics/(manifest|buckets)\.json$",
     r"^fields\.json$",
     r"^surface\.json$",
     r"^kernel_impls\.json$",
@@ -61,9 +61,9 @@ HARNESS_COPIES = [r"^oracle/check_(mocks|goldens|lock)\.py$", r"^oracle/harness\
 # The census reads kerneltests/testdata (REST_EXTRA); the race legs of other packages read what REST_EXTRA names.
 RACE_EXTRA = REST_EXTRA
 
-# kerneltests/docs is read by the examples package (its documents' code blocks); the other directories under
-# kerneltests/ are packages or testdata inside packages.
-KERNELTESTS_PATHS = [r"^kerneltests/docs/"]
+# The directories under kerneltests/ are packages or testdata inside packages; none holds data that only
+# the job reads, so the list is empty.
+KERNELTESTS_PATHS = []
 # run-inpackage.sh copies the blis-substrate this module pins, the tests under _inpackage and the fixtures under testdata.
 INPACKAGE_PATHS = [r"^kerneltests/(testdata|scripts)/"]
 
@@ -73,7 +73,7 @@ ORACLE_PATHS = [
     r"^\.github/actions/oracle-(fuzz|env)/",
     r"^\.github/scripts/shard\.py$",
     r"^\.github/shards/weights-inertness\.txt$",
-    r"^docs/metrics-(manifest|buckets)\.json$",
+    r"^oracle/metrics/(manifest|buckets)\.json$",
     r"^core/kv/testdata/",
     r"^core/vllm/testdata/golden-render/",
     r"^compat/quantization/resolved\.json$",
@@ -86,7 +86,7 @@ METRICS_GO = ["./cmd/metricsmanifest", "./registry"]
 # The surface list (tools/surface/gen_surface.py) reads its status file, the committed list, and the
 # repository paths a modelled item names as its evidence: the oracle scenarios and the golden traces.
 # The kernel table (kernels/gen_kernel_impls.py) reads kernels/ and the committed kernel_impls.json.
-METRICS_PATHS = [r"^fields/", r"^fields\.json$", r"^docs/metrics-manifest\.json$", r"^tools/surface/",
+METRICS_PATHS = [r"^fields/", r"^fields\.json$", r"^oracle/metrics/manifest\.json$", r"^tools/surface/",
                  r"^surface\.json$", r"^oracle/scenarios", r"^core/.*/testdata/golden",
                  r"^kernels/", r"^kernel_impls\.json$"]
 GOLDEN_PATHS = [r"^oracle/", r"^core/.*/testdata/", r"^tools/migrateengineblock/"]

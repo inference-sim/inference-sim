@@ -1,7 +1,7 @@
 # Oracle
 
 vLLM v0.32.0's own classes, driven through a scenario on CPU, with only the GPU replaced. See
-[docs/testing.md](../docs/testing.md).
+[README.md](../README.md).
 
 ```sh
 # A vLLM checkout at the pinned tag (for its test helpers) and a Python with vLLM 0.32.0:
