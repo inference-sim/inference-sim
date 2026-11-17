@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/vocab"
 	"github.com/inference-sim/blis-substrate/ledger"
 	"github.com/inference-sim/blis-substrate/load"
@@ -21,7 +22,8 @@ var generations = map[string]string{
 	"h100": "Hopper", "h200": "Hopper",
 	"b200": "Blackwell", "b300": "Blackwell", "gb200-nvl72": "Blackwell", "gb300": "Blackwell",
 	"a100-sxm": "Ampere", "a100-80": "Ampere",
-	"l40s": "Ada",
+	"l40s":              "Ada",
+	"rtx6000pro-server": "RTXBlackwell",
 }
 
 // nearCopies groups chips whose measured values are the same parts' values under two names, so
@@ -30,11 +32,20 @@ var generations = map[string]string{
 var nearCopies = map[string]string{"a100-80": "a100", "a100-sxm": "a100"}
 
 var (
-	chipSuffix  = regexp.MustCompile(`_(a100_80|a100_sxm|b200|b300|gb200_nvl72|gb300|h100|h200|l40s)$`)
+	chipSuffix  = regexp.MustCompile(`_(a100_80|a100_sxm|b200|b300|gb200_nvl72|gb300|h100|h200|l40s|rtx6000pro_server)$`)
 	rankInName  = regexp.MustCompile(`_\d+rank`)
 	formatSufix = regexp.MustCompile(`_(fp16|int8|bf16|fp8_block|fp8|nvfp4|mxfp4|w4a16_[a-z0-9_]+|w8a16_[a-z0-9_]+)$`)
-	hardwareKey = regexp.MustCompile(`hardware=\S*\s*`)
+	// The hardware term of a scope key (coefficient.Scope.Key: "label=v1,v2;" terms), and only it:
+	// the model and the other terms stay in the series key.
+	hardwareKey = regexp.MustCompile(`hardware=[^;]*;?`)
 )
+
+// seriesKey is the series one coefficient's points belong to: its set, its name without the chip,
+// and its scope without the hardware, so the same quantity on different chips is one series and
+// the same name scoped to different models is two.
+func seriesKey(set string, e coefficient.Entry) string {
+	return set + "|" + chipSuffix.ReplaceAllString(e.Name, "") + "|" + hardwareKey.ReplaceAllString(e.Scope.Describe(), "")
+}
 
 // registryPoints reads every measured, positive coefficient of the named sets as one point per
 // chip in its scope. The primitive family is the name without its chip, rank count and data
@@ -51,7 +62,7 @@ func registryPoints(d *load.Data, sets []string) ([]ledger.Point, error) {
 				continue
 			}
 			fam := formatSufix.ReplaceAllString(rankInName.ReplaceAllString(chipSuffix.ReplaceAllString(e.Name, ""), ""), "")
-			key := hardwareKey.ReplaceAllString(set+"|"+chipSuffix.ReplaceAllString(e.Name, "")+"|"+e.Scope.Describe(), "")
+			key := seriesKey(set, e)
 			for _, h := range e.Scope.Hardware {
 				pts = append(pts, ledger.Point{Family: fam, Chip: h, Key: key, Value: e.Value})
 			}

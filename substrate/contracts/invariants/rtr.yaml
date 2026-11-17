@@ -149,7 +149,7 @@
   status: new
   target:
     status: ci
-    milestone: 4
+    milestone: 3
   note: inference-sim models the legs itself (sim/cluster/gateway.go:381)
 - id: RTR-6
   section: §5

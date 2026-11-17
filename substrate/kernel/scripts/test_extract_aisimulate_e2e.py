@@ -55,8 +55,10 @@ def write_catalog(root: Path) -> None:
 def point(c, status="success"):
     """One point as the renamed simulator's artifact states it: its block is `aisim`."""
     return {"concurrency": c, "status": status,
-            "measured": {"tpot_relative": 1.0 + c / 100, "ttft_relative": 1.0 + c / 50},
-            "aisim": {"tpot_relative": 1.0 + c / 90, "tpot_error_pct": 1.5,
+            "measured": {"tpot_relative": 1.0 + c / 100, "ttft_relative": 1.0 + c / 50,
+                         "tpot_ms": 10.0 * c, "ttft_ms": 5.0 * c},
+            "aisim_error": "boom: engine failed" if status == "failed" else None,
+            "aisim": {"tpot_ms": 9.0 * c, "ttft_ms": 2.0 * c, "tpot_relative": 1.0 + c / 90, "tpot_error_pct": 1.5,
                       "ttft_relative": 1.0 + c / 40, "ttft_error_pct": 2.5},
             "aic": {"tpot_relative": None, "ttft_relative": None}}
 
@@ -157,7 +159,9 @@ def main() -> int:
     def mixed(s):
         tops = s["models"][0]["workloads"][0]["gpus"][0]["topologies"]
         tops[0]["points"].append(point(32, status="failed"))
-        tops += [topology("pd", serving="disaggregated"), topology("mtp", spec="mtp"),
+        pd = topology("pd", serving="disaggregated")
+        pd["points"][2] = point(16, status="failed")
+        tops += [pd, topology("mtp", spec="mtp"),
                  topology("pp", pp=2), topology("short", points=(1, 2))]
         s["models"].append(copy.deepcopy(s["models"][0]))
         s["models"][1]["model"] = "nvidia/gpt-oss-120b-NVFP4"
@@ -165,12 +169,30 @@ def main() -> int:
     ck("each skipped point is counted once, under its reason",
        code == 0 and c["selection"]["skipped"] == {
            "failed point in a kept sweep": 1,
-           "serving=disaggregated spec=none": 3,
            "serving=aggregated spec=mtp": 3,
            "pp_size>1": 3,
            "fewer than three successful points": 2,
-           "checkpoint not in catalog": 15,
+           "checkpoint not in catalog": 12,
        }, f"exit {code}: {err.strip()[:200]} {c and c['selection']['skipped']}")
+
+    # Prefill/decode topologies are carried whole beside the aggregated sweeps, not skipped: the
+    # estimator's points over all of them are the denominator of its coverage, and a failed point
+    # is kept as failed. The one under an unknown checkpoint is kept too, with no catalog model.
+    ck("disaggregated topologies are kept, one record each, with their absolute figures",
+       code == 0 and [d["topology_id"] for d in c["disaggregated"]] == ["pd", "pd"]
+       and [d["model"] for d in c["disaggregated"]] == [None, "gpt-oss-120b"]
+       and c["disaggregated"][1]["serving"] == "disaggregated"
+       and c["disaggregated"][1]["points"][1]["measured_tpot_ms"] == 40.0
+       and c["disaggregated"][1]["points"][1]["aisimulate_ttft_ms"] == 8.0,
+       str(c and c["disaggregated"]))
+    ck("a disaggregated point that failed is kept, with the estimator's error",
+       code == 0 and c["disaggregated"][1]["points"][2]["status"] == "failed"
+       and "boom" in c["disaggregated"][1]["points"][2]["aisimulate_error"],
+       str(c and c["disaggregated"][1]["points"]))
+    refused("a pin whose disaggregated counts differ from the artifact's is refused",
+            edit(mixed), "disaggregated topologies",
+            mutate_pin=lambda p: p["expected"].update(disaggregated={"topologies": 9, "points": 9}),
+            sweeps=1, points=3)
 
     # A changed byte: the digest no longer matches the pin.
     refused("a summary with another SHA-256 is refused",

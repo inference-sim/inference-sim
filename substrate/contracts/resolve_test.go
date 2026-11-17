@@ -277,3 +277,22 @@ func TestResolveAgainstCatalogChecksPackaging(t *testing.T) {
 		})
 	}
 }
+
+// TestResolvePoolChips is SIM-17's reference check: a pool that states its own chip
+// resolves against the catalog, and a pool whose chip has no entry is refused with the
+// chip's name.
+func TestResolvePoolChips(t *testing.T) {
+	s := scenarioRef()
+	s.Cluster.Pools = []scenario.Pool{{Name: "fast"}, {Name: "older", Hardware: "h100"}}
+	if rep := ValidateAgainstCatalog(Bundle{Scenario: s}, catalogFixtures, ""); !rep.OK() {
+		t.Fatalf("pools naming real chips failed to resolve:\n%s", rep.Field.Error())
+	}
+	s.Cluster.Pools[1].Hardware = "z999"
+	rep := ValidateAgainstCatalog(Bundle{Scenario: s}, catalogFixtures, "")
+	if rep.OK() {
+		t.Fatal("a pool whose chip has no catalog entry resolved clean")
+	}
+	if msg := rep.Field.Error(); !strings.Contains(msg, "z999") || !strings.Contains(msg, "pools[1]") {
+		t.Errorf("refusal does not name the pool and its chip:\n%s", msg)
+	}
+}

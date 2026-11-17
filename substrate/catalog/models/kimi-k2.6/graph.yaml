@@ -23,6 +23,7 @@ layer_kinds:
     role: qkv_a_proj
     n: 2112
     k: 7168
+    tp: replicated
     weight_dtype: bf16
   - op: Elementwise
     role: q_a_layernorm
@@ -62,10 +63,12 @@ layer_kinds:
     role: mlp_gate_up
     n: 36864
     k: 7168
+    weight_dtype: bf16
   - op: GEMM
     role: mlp_down
     n: 7168
     k: 18432
+    weight_dtype: bf16
   - op: AllReduce
     role: mlp_out
     emit: tensor_parallel_unless_sp_moe
@@ -102,6 +105,7 @@ layer_kinds:
     role: qkv_a_proj
     n: 2112
     k: 7168
+    tp: replicated
     weight_dtype: bf16
   - op: Elementwise
     role: q_a_layernorm
@@ -137,6 +141,12 @@ layer_kinds:
     emit: tensor_parallel
   - op: Elementwise
     role: post_attn_norm
+  - op: GEMM
+    role: router
+    n: 384
+    k: 7168
+    tp: replicated
+    weight_dtype: bf16
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -144,7 +154,22 @@ layer_kinds:
     k: 7168
     experts: 384
     top_k: 8
-    shared_experts: 1
+  - op: GEMM
+    role: shared_gate_up
+    n: 4096
+    k: 7168
+    weight_dtype: bf16
+    tp: column
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 12288
+  - op: GEMM
+    role: shared_down
+    n: 7168
+    k: 2048
+    weight_dtype: bf16
+    tp: row
   - op: All2All
     role: moe_dispatch_combine
     emit: expert_parallel
@@ -176,6 +201,14 @@ layer_kinds:
     - 11
   - - 11
     - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+  - - 14
+    - 15
+  - - 15
+    - 16
 stack:
   prologue:
   - attn_dense
@@ -190,3 +223,4 @@ head:
   role: lm_head
   n: 163840
   k: 7168
+  weight_dtype: bf16

@@ -22,7 +22,6 @@ import latencykernel "github.com/inference-sim/blis-substrate/kernel"
 | `Inputs` | The documents a kernel is built from: scenario, deployment, pool index, model graph, chip, fabric, storage devices, coefficient sets, engine rules, `Lowered`, the pool's plan with every engine setting the engine's lowering resolved (`plan.Lowered`), which the kernel prices and applies no default to, `Operations`, the pool's lowered operations with the kernel that executes each (`plan.PoolPlan.Operations()`), which a coefficient that lists implementations is matched against, for the operations that read it, and `Implementations`, the same by lowered primitive when a caller cannot say which operation runs which ([VAL-8](provenance.md#kernel-implementations)). |
 | `Repos` | The scenario directory and the data (`*load.Data`) a scenario's names resolve against, and the engine's part, which the caller supplies: `Rules`, the engine rules for a release, `RulesKind`, the engine kind those rules are for (empty means `vllm`; `Open` refuses a scenario whose engine block names another kind), `DraftModel`, which names the drafter a pool's engine block names, and `Lower`, the engine's lowering of a pool into `Inputs.Lowered`. |
 | `RulesFrom(lookup)` | Adapts a lookup returning a concrete rules type, such as blis-vllm/rules' `Lookup`, to `Repos.Rules`. |
-| `LoadBundle(path)` | **Deprecated:** use `contracts.LoadBundle`, which this calls. Reads a scenario and its deployment from one file of two YAML documents. |
 
 [Price a batch from Go](../guides/go.md) shows each in use.
 

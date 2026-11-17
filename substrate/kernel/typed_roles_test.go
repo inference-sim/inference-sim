@@ -116,6 +116,7 @@ func TestFlippingHoldsEngineKVOnAScorerMovesThePrice(t *testing.T) {
 // shared field does.
 func TestSharedDecidesTheSharedExpertGroup(t *testing.T) {
 	c := typedRoleCase(t, "nemotron-3-ultra-550b-a55b-nvfp4")
+	c.in.Model = withSharedGroup(t, c.in.Model)
 	want := priceWith(t, c, func(*model.Node) {})
 	var shared int
 	got := priceWith(t, c, func(n *model.Node) {
@@ -138,4 +139,37 @@ func TestSharedDecidesTheSharedExpertGroup(t *testing.T) {
 	if flipped == want {
 		t.Error("stating shared false on the shared-expert group moved no price")
 	}
+}
+
+// withSharedGroup restates a copy of g's shared-expert MLP (the shared_up or shared_gate_up,
+// shared_act and shared_down nodes the deriver emits, blis-substrate#228) as one shared
+// GroupedGEMM, the form the schema also accepts and no committed graph now uses, so the field
+// that decides it can still be exercised against a real model.
+func withSharedGroup(t *testing.T, g *model.Graph) *model.Graph {
+	t.Helper()
+	b, err := yaml.Marshal(*g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c model.Graph
+	if err := yaml.Unmarshal(b, &c); err != nil {
+		t.Fatal(err)
+	}
+	for i := range c.LayerKinds {
+		var kept []model.Node
+		for _, n := range c.LayerKinds[i].Nodes {
+			switch n.Role {
+			case "shared_up", "shared_gate_up", "shared_act":
+				continue
+			case "shared_down":
+				kept = append(kept, model.Node{Op: model.OpGroupedGEMM, Role: "shared_experts",
+					Shared: model.Bool(true), N: n.K, K: n.N, Experts: 1, TopK: 1,
+					WeightDType: n.WeightDType})
+				continue
+			}
+			kept = append(kept, n)
+		}
+		c.LayerKinds[i].Nodes, c.LayerKinds[i].Edges = kept, nil
+	}
+	return &c
 }

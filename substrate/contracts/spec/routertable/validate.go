@@ -173,7 +173,8 @@ func (c Citation) validate(p *validate.Problems, at string) {
 // validateRevisions checks the builds an entry is established for, and that the evidence is at
 // them: a passage of the router's code shows the behaviour of the build it is read at, so a
 // router-side citation at a commit the entry does not list proves nothing about the builds it
-// does, and a listed build with no citation has none of its own.
+// does, and a listed build with no citation has none of its own. A build named by version
+// (Builds) has its own checks, in validateBuilds.
 func (e *Entry) validateRevisions(p *validate.Problems) {
 	if len(e.Revisions) == 0 {
 		p.Field("revisions", "required: the builds of the router the entry is established for, each a full commit. A mapping shown for one build is not inherited by another")
@@ -192,13 +193,14 @@ func (e *Entry) validateRevisions(p *validate.Problems) {
 		}
 		listed[r] = true
 	}
+	inBuild := e.validateBuilds(p)
 	mode, policy := map[string]bool{}, map[string]bool{}
 	for i, c := range e.Evidence {
 		if c.Side != SideRouter {
 			continue
 		}
-		if !listed[c.Commit] {
-			p.Field(fmt.Sprintf("evidence[%d].commit", i), "the router-side citation is of %s, which is not among the entry's revisions: it shows another build than the ones the entry covers", c.Commit)
+		if !listed[c.Commit] && !inBuild[c.Commit] {
+			p.Field(fmt.Sprintf("evidence[%d].commit", i), "the router-side citation is of %s, which is not among the entry's revisions or the commits of its builds: it shows another build than the ones the entry covers", c.Commit)
 			continue
 		}
 		switch c.Field {
@@ -211,6 +213,16 @@ func (e *Entry) validateRevisions(p *validate.Problems) {
 	for _, r := range e.Revisions {
 		if listed[r] && commit.MatchString(r) && (!mode[r] || !policy[r]) {
 			p.Field("evidence", "revision %s has no router-side citation for %s: each build the entry covers needs its own", r, missing(mode[r], policy[r]))
+		}
+	}
+	for i, b := range e.Builds {
+		hasMode, hasPolicy := false, false
+		for _, c := range b.Commits {
+			hasMode = hasMode || mode[c]
+			hasPolicy = hasPolicy || policy[c]
+		}
+		if !hasMode || !hasPolicy {
+			p.Field(fmt.Sprintf("builds[%d]", i), "build %q has no router-side citation at one of its commits for %s: each build the entry covers needs its own", b.Name, missing(hasMode, hasPolicy))
 		}
 	}
 }

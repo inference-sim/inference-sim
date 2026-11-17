@@ -85,7 +85,9 @@
         },
         "metric": {
           "enum": [
+            "busy_share",
             "cache_hit_rate",
+            "decode_busy_share",
             "e2e_mean_ms",
             "e2e_p50_ms",
             "e2e_p90_ms",
@@ -111,10 +113,12 @@
             "itl_p90_ms",
             "itl_p95_ms",
             "itl_p99_ms",
+            "mfu",
             "output_tok_s",
             "output_tok_s_per_gpu",
             "output_tokens_per_second_per_decode_gpu",
             "preemptions",
+            "prefill_busy_share",
             "request_throughput",
             "scheduling_delay_mean_ms",
             "scheduling_delay_p50_ms",

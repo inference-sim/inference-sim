@@ -20,13 +20,14 @@ func sample() *Trace {
 				TokensPerHash: 16, EvictionPolicy: "lru",
 				Tiers: []KVOffloadTier{{Type: "nvme", RootDir: "/x", ReadBandwidth: 3000, SaturationQueueDepth: 1, SingleTransferFraction: 1}}},
 			Router: &Router{EPPFlags: []string{"--pool-name=p"}, Seed: i64(7)},
+			Phases: []Phase{{Name: "warmup", Concurrency: 2}, {Name: "measured", Start: StartAfterDrain, OffsetUs: 10}},
 		},
 		Records: []Record{
 			{RequestID: 0, ClientID: "c", SessionID: "s", RoundIndex: 0, PrefixGroup: "g", PrefixLength: 8,
 				Streaming: true, InputTokens: 10, OutputTokens: 4, ReasonRatio: 0.25, ArrivalTimeUs: 0,
-				FirstChunkTimeUs: 100, LastChunkTimeUs: 160, Status: StatusOK, ThinkTimeUs: i64(0)},
+				FirstChunkTimeUs: 100, LastChunkTimeUs: 160, Status: StatusOK, ThinkTimeUs: i64(0), Phase: "warmup"},
 			{RequestID: 1, SessionID: "s", RoundIndex: 1, InputTokens: 3, OutputTokens: 2, ArrivalTimeUs: 500,
-				DeadlineUs: 9000, Status: StatusIncomplete, Adapter: "lora-a", SLOTargetUs: 300, InputTokensReset: i64(9)},
+				DeadlineUs: 9000, Status: StatusIncomplete, Adapter: "lora-a", SLOTargetUs: 300, InputTokensReset: i64(9), Phase: "measured"},
 		},
 	}
 }
@@ -162,6 +163,20 @@ func TestEachFailureModeIsRefused(t *testing.T) {
 		{"unknown status", func(t *Trace) { t.Records[0].Status = "aborted" }, "records[0].status", "is not one of"},
 		{"negative think time", func(t *Trace) { t.Records[0].ThinkTimeUs = i64(-1) }, "records[0].think_time_us", "negative"},
 		{"negative reset", func(t *Trace) { t.Records[1].InputTokensReset = i64(-1) }, "records[1].input_tokens_reset", "negative"},
+		{"phase without a name", func(t *Trace) { t.Header.Phases[0].Name = "" }, "header.phases[0].name", "required"},
+		{"phase name not a slug", func(t *Trace) { t.Header.Phases[0].Name = "Warm Up" }, "header.phases[0].name", "lowercase slug"},
+		{"two phases of one name", func(t *Trace) { t.Header.Phases[1].Name = "warmup" }, "header.phases[1].name", "names two phases"},
+		{"unknown phase start", func(t *Trace) { t.Header.Phases[1].Start = "when_idle" }, "header.phases[1].start", "is not"},
+		{"negative phase offset", func(t *Trace) { t.Header.Phases[1].OffsetUs = -1 }, "header.phases[1].offset_us", "negative"},
+		{"negative phase concurrency", func(t *Trace) { t.Header.Phases[0].Concurrency = -1 }, "header.phases[0].concurrency", "negative"},
+		{"phases out of order", func(t *Trace) {
+			t.Header.Phases[0].Start, t.Header.Phases[0].OffsetUs = StartAt, 500
+			t.Header.Phases[1].Start, t.Header.Phases[1].OffsetUs = StartAt, 100
+		}, "header.phases[1].offset_us", "phases are in order"},
+		{"phase with no request", func(t *Trace) { t.Header.Phases = append(t.Header.Phases, Phase{Name: "cooldown"}) }, "header.phases[2]", "names no request"},
+		{"record in an unknown phase", func(t *Trace) { t.Records[1].Phase = "soak" }, "records[1].phase", "not a phase of the header"},
+		{"record with no phase", func(t *Trace) { t.Records[1].Phase = "" }, "records[1].phase", "every request names one"},
+		{"record phase without header phases", func(t *Trace) { t.Header.Phases = nil }, "records[0].phase", "lists no phases"},
 		{"repeated request id", func(t *Trace) { t.Records[1].RequestID = 0 }, "records[1].request_id", "twice"},
 		{"repeated round", func(t *Trace) { t.Records[1].RoundIndex = 0 }, "records[1].round_index", "twice"},
 	}

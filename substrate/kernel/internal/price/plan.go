@@ -105,6 +105,10 @@ type PlannedGEMM struct {
 	// A-projection, compressor, indexer projections, router and mHC are such, and dividing
 	// them by tp priced a tp-th of the work.
 	Replicated bool
+	// Router is a routed MoE layer's gate: the GEMM from the hidden state to one score per routed expert,
+	// found by that shape and not by its label (SUB-20). vLLM runs an fp32 gate on its own kernels
+	// (GateLinear), which is not the rate an fp32 mHC projection runs at.
+	Router bool
 	// TokenSharded is under_sequence_parallel: token_sharded. With the model's own
 	// sequence parallelism on, the GEMM runs on ceil(tokens / tp) rows with its whole
 	// weight; with it off, the layout above applies over every token.
@@ -149,6 +153,9 @@ type PlanOptions struct {
 	EntryBytes func(model.Cache) int
 	// StateBytes is the recurrent state's element width.
 	StateBytes float64
+	// RoutingLaunch is true when expert selection is a launch of its own in each routed MoE
+	// layer (plan.RoutingSeparate): every routed GroupedGEMM then counts one more kernel.
+	RoutingLaunch bool
 }
 
 // PlannedLayer is one layer kind with its multiplicity and its pre-summed work.
@@ -311,6 +318,14 @@ type PlannedMHC struct {
 
 // mhcFn matches a hyper-connection mixing GEMM's role.
 var mhcFn = regexp.MustCompile(`^hc_.*fn`)
+
+// ownModule matches the roles of projections the engine builds as modules of their own, so that
+// consecutive column-parallel GEMMs over one hidden state are still separate launches. Gated
+// DeltaNet's in_proj_qkvz and in_proj_ba are two ColumnParallelLinear/MergedColumnParallelLinear
+// modules called one after the other (QwenGatedDeltaNetAttention,
+// vllm/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py:803-851, forward_cuda :1134-1148
+// at v0.33.0), not one matmul with the widths summed.
+var ownModule = regexp.MustCompile(`^recurrent_in_proj`)
 
 // PlannedCache is one cache an attention node names, with its record resolved.
 type PlannedCache struct {
@@ -712,6 +727,14 @@ func planNodes(nodes []model.Node, em Emitter, o PlanOptions,
 	// model.py:450-457, 597-601, 922-928@0f6b2619). Read off every node first, so the order
 	// the graph states the All2All and the GroupedGEMM in does not matter.
 	dispatchWidth := hidden
+	// routedExperts is the expert count of the layer's routed GroupedGEMM. A GEMM that writes one score per
+	// routed expert is the layer's gate; it is found by that shape and not by its Role label (SUB-20).
+	routedExperts := 0
+	for _, n := range nodes {
+		if !n.IsSharedExpert() && n.Op == model.OpGroupedGEMM {
+			routedExperts = n.Experts
+		}
+	}
 	for _, n := range nodes {
 		if !n.IsSharedExpert() && n.Op == model.OpGroupedGEMM &&
 			n.LatentSize > 0 && (n.Emit == model.EmitAlways || em.Emits(n.Emit)) {
@@ -735,6 +758,9 @@ func planNodes(nodes []model.Node, em Emitter, o PlanOptions,
 		launches, ok := kernelsPerPrimitive[n.Op]
 		if !ok {
 			launches = 1
+		}
+		if o.RoutingLaunch && n.Op == model.OpGroupedGEMM && !n.IsSharedExpert() {
+			launches++
 		}
 		pl.Kernels += launches
 		if n.Context != nil && n.Context.Phase == model.PhasePrefill {
@@ -774,6 +800,7 @@ func planNodes(nodes []model.Node, em Emitter, o PlanOptions,
 				Replicated: n.TP == model.TPReplicated, TokenSharded: tokenSharded,
 				WeightBytes: resident, WeightReadBytes: read, Format: o.Format(n),
 				MHCFn: mhcFn.MatchString(n.Role), ShardedAtDecode: n.ShardedAtDecode,
+				Router: routedExperts > 0 && n.N == routedExperts && n.K == hidden,
 			}
 			// Fuse into the previous GEMM when the engine would. vLLM concatenates
 			// column-parallel projections that share an input ALONG THE OUTPUT
@@ -795,7 +822,8 @@ func planNodes(nodes []model.Node, em Emitter, o PlanOptions,
 			// own kernel costs far more than the same work folded into a 9216-wide one --
 			// and sharded over 8 ranks that 640 becomes 80.
 			merged := false
-			if wasFusable >= 0 {
+			separate := ownModule.MatchString(n.Role)
+			if wasFusable >= 0 && !separate {
 				prev := &pl.DenseGEMMs[wasFusable]
 				if prev.ShardN && g.ShardN && prev.K == g.K && prev.Format == g.Format &&
 					prev.Replicated == g.Replicated && prev.TokenSharded == g.TokenSharded {
@@ -810,6 +838,9 @@ func planNodes(nodes []model.Node, em Emitter, o PlanOptions,
 			if !merged {
 				pl.DenseGEMMs = append(pl.DenseGEMMs, g)
 				fusable = len(pl.DenseGEMMs) - 1
+				if separate {
+					fusable = -1
+				}
 			}
 			// Weight bytes are per node whether or not the launches fuse: fusing changes
 			// how many kernels read the parameters, not how many parameters there are.
@@ -901,7 +932,14 @@ func planNodes(nodes []model.Node, em Emitter, o PlanOptions,
 		case model.OpRecurrentUpdate:
 			pl.RecurrentKind = n.RecurrentKind
 			pl.RecurrentStateBytes += recurrentBytes(n, o.StateBytes)
-			pl.RecurrentHeads = max(pl.RecurrentHeads, n.NumHeads)
+			heads := n.NumHeads
+			if n.RecurrentKind == model.RecurrentShortConv {
+				// One unsplittable unit: the engine builds its state at tensor-parallel
+				// width 1 and replicates it (is_kv_cache_tp_replicated, ple_layer.py:169-175
+				// at v0.33.0), so no rank holds a share of it.
+				heads = 1
+			}
+			pl.RecurrentHeads = max(pl.RecurrentHeads, heads)
 			pl.RecurrentStateSize = max(pl.RecurrentStateSize, n.StateSize)
 			pl.RecurrentHeadDim = max(pl.RecurrentHeadDim, n.HeadDim)
 		case model.OpElementwise:
@@ -1001,6 +1039,11 @@ func recurrentBytes(n model.Node, stateBytes float64) float64 {
 			temporal = float64(n.NumHeads) * float64(n.StateSize) * float64(n.StateSize)
 		}
 		return (conv + temporal) * stateBytes
+	case model.RecurrentShortConv:
+		// The window of inputs the dilated kernel reaches back over, per channel: no
+		// temporal state.
+		return float64(n.IntermediateSize) * float64(maxInt(n.ConvKernel-1, 1)) *
+			float64(maxInt(n.ConvDilation, 1)) * stateBytes
 	case model.RecurrentKDA, model.RecurrentGDN:
 		// A matrix-valued state per head.
 		return float64(n.NumHeads) * float64(n.StateSize) * float64(n.StateSize) * stateBytes

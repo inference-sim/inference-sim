@@ -42,8 +42,10 @@ GraphPolicy.Ceiling # kernel: TestEachResolvedPlanSettingMovesAPrice
 GraphPolicy.Decode # kernel: TestEachResolvedPlanSettingMovesAPrice
 GraphPolicy.Other # kernel: TestEachResolvedPlanSettingMovesAPrice
 MoEPlan.Dispatch # kernel: TestEachResolvedPlanSettingMovesAPrice
+MoEPlan.Experts # kernel: TestEachResolvedPlanSettingMovesAPrice
 MoEPlan.Fused # kernel: TestEachResolvedPlanSettingMovesAPrice
 MoEPlan.RedundantExperts # kernel: TestEachResolvedPlanSettingMovesAPrice
+MoEPlan.Routing # kernel: TestEachResolvedPlanSettingMovesAPrice
 PoolPlan.Batch # kernel: TestEachResolvedPlanSettingMovesAPrice
 PoolPlan.Cache # kernel: TestEachResolvedPlanSettingMovesAPrice
 PoolPlan.Collectives # kernel: TestEachResolvedPlanSettingMovesAPrice
@@ -61,3 +63,7 @@ PoolPlan.WeightFormat # kernel: TestEachResolvedPlanSettingMovesAPrice
 DraftPolicy.Adaptive # kernel: TestAnAdaptiveVerifierThePlanStatesVerifiesFewerDrafts
 HostPlan.NativeFrontend # kernel: TestTheCompiledFrontendIsPricedAtItsOwnRate
 PoolPlan.Host # kernel: TestTheCompiledFrontendIsPricedAtItsOwnRate
+PoolPlan.Launches # kernel: TestTheLaunchesTheEnginesFusedKernelsRemoveAreNotCharged
+LaunchChange.FromTokens # kernel: TestTheLaunchesTheEnginesFusedKernelsRemoveAreNotCharged
+LaunchChange.ToTokens # kernel: TestTheLaunchesTheEnginesFusedKernelsRemoveAreNotCharged
+LaunchChange.PerLayer # kernel: TestTheLaunchesTheEnginesFusedKernelsRemoveAreNotCharged

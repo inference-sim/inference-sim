@@ -84,9 +84,41 @@ type MoEPlan struct {
 	Dispatch KernelImpl
 	// Fused is true when the dispatch, the expert GEMMs and the combine run as one fused kernel.
 	Fused bool
+	// Experts is the kernel the engine runs the routed experts' grouped GEMMs with, as its MoE
+	// backend selection resolves it (a stated backend, or the engine's own choice for the weight
+	// format, part and parallelism), with the build it runs where the engine's kernel table
+	// identifies it (CodeHash, Toolkit). The cost model prices the routed term on the ramp
+	// measured for that kernel (ExpertsTriton, ExpertsFlashInferCutlass name the kernels) where the
+	// registry carries one, and binds the coefficients to the build (VAL-8). The zero value is not
+	// stated, and the routed term is then priced by weight format alone.
+	Experts KernelImpl
 	// RedundantExperts is how many extra copies of experts the engine places beside the model's
 	// own to balance the load; 0 is none.
 	RedundantExperts int
+	// Routing is whether expert selection (top-k, or grouped top-k with a score-correction
+	// bias) is a launch of its own in each routed MoE layer. It depends on the experts backend
+	// the engine resolves, not on the checkpoint: a modular backend runs router.select_experts
+	// first, a monolithic one takes the router logits and selects inside its kernel. The zero
+	// value is not stated, and no selection launch is counted.
+	Routing MoERouting
+}
+
+// MoERouting says where an MoE layer's expert selection runs.
+type MoERouting string
+
+const (
+	// RoutingNotStated counts no launch for expert selection.
+	RoutingNotStated MoERouting = ""
+	// RoutingSeparate runs expert selection as its own kernel before the experts, one launch a
+	// routed MoE layer.
+	RoutingSeparate MoERouting = "separate"
+	// RoutingFused selects experts inside a monolithic experts kernel: no launch of its own.
+	RoutingFused MoERouting = "fused"
+)
+
+// Valid reports whether r is a known word.
+func (r MoERouting) Valid() bool {
+	return r == RoutingNotStated || r == RoutingSeparate || r == RoutingFused
 }
 
 // The MoE dispatch kernels a cost model prices by name (MoEPlan.Dispatch): the three kernel
@@ -95,6 +127,16 @@ var (
 	DispatchDeepEPHighThroughput = KernelImpl{Library: "deepep", Variant: "high_throughput"}
 	DispatchDeepEPLowLatency     = KernelImpl{Library: "deepep", Variant: "low_latency"}
 	DispatchDeepEPV2             = KernelImpl{Library: "deepep", Variant: "v2"}
+)
+
+// The grouped-expert kernels a cost model prices by name (MoEPlan.Experts), by the kernel's own
+// name: Triton's fused grouped GEMM (fused_moe_kernel) and FlashInfer's CUTLASS fused MoE. An
+// engine states the build it runs in full (library, code hash, toolkit), and the cost model binds a
+// coefficient to that build (design VAL-8); these name the kernels its ramps are measured for. Any
+// other experts kernel is priced by its weight format.
+var (
+	ExpertsTriton            = KernelImpl{Variant: "fused_moe_kernel"}
+	ExpertsFlashInferCutlass = KernelImpl{Library: "flashinfer", Variant: "cutlass_fused_moe"}
 )
 
 // CollectivePlan says which collectives a layer runs, where the engine decides it.
@@ -172,6 +214,7 @@ func (p PoolPlan) ValidateResolved() error {
 	width("Cache.LatentCellBytes", p.Cache.LatentCellBytes)
 	width("Cache.StateElementBytes", p.Cache.StateElementBytes)
 	negative("MoE.RedundantExperts", int64(p.MoE.RedundantExperts))
+	word("MoE.Routing", string(p.MoE.Routing), p.MoE.Routing.Valid())
 	word("DecodeContext.Combine", string(p.DecodeContext.Combine), p.DecodeContext.Combine.Valid())
 	negative("DecodeContext.Interleave", int64(p.DecodeContext.Interleave))
 	negative("Engram.Shards", int64(p.Engram.Shards))
@@ -180,6 +223,23 @@ func (p PoolPlan) ValidateResolved() error {
 	negative("Graphs.Ceiling", int64(p.Graphs.Ceiling))
 	negative("Drafts.RetainedTokens", int64(p.Drafts.RetainedTokens))
 	negative("InFlight", int64(p.InFlight))
+	for i, c := range p.Launches {
+		switch {
+		case c.FromTokens < 1 || c.ToTokens < c.FromTokens:
+			bad = append(bad, fmt.Sprintf("Launches[%d] covers %d to %d tokens; a range starts at 1 "+
+				"token or more and ends at or after its start", i, c.FromTokens, c.ToTokens))
+		case c.PerLayer == 0:
+			bad = append(bad, fmt.Sprintf("Launches[%d] changes no launch; a range the engine "+
+				"fuses nothing in is left out", i))
+		}
+		for j := range i {
+			if o := p.Launches[j]; c.FromTokens <= o.ToTokens && o.FromTokens <= c.ToTokens {
+				bad = append(bad, fmt.Sprintf("Launches[%d] (%d to %d tokens) overlaps Launches[%d] "+
+					"(%d to %d); a step's launches change one way", i, c.FromTokens, c.ToTokens, j,
+					o.FromTokens, o.ToTokens))
+			}
+		}
+	}
 	if len(bad) > 0 {
 		return fmt.Errorf("the plan's resolved settings: %s", strings.Join(bad, "; "))
 	}

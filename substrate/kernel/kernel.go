@@ -34,6 +34,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
 	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
+	"github.com/inference-sim/blis-substrate/contracts/units"
 
 	"github.com/inference-sim/blis-substrate/kernel/internal/price"
 	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
@@ -1722,10 +1723,18 @@ func (k *Kernel) launchSeconds(b kernel.Batch, draftKernels int) float64 {
 // (price.PlannedLayer.PrefillOnlyKernels). A request prefills on the rule shapeOf uses:
 // more scheduled tokens than the batch's decode threshold.
 func (k *Kernel) stepKernels(b kernel.Batch) int {
+	fused := k.fusedLaunches(b) * k.plan.TotalLayers
 	if stepPrefills(b) {
-		return k.plan.TotalKernels
+		return k.plan.TotalKernels + fused
 	}
-	return k.plan.TotalKernels - k.plan.PrefillOnlyKernels
+	return k.plan.TotalKernels - k.plan.PrefillOnlyKernels + fused
+}
+
+// fusedLaunches is the change the engine states its fused kernels make to each layer's launches
+// in a step of b's launched tokens (plan.PoolPlan.Launches): the graph's nodes give the count,
+// and the engine says which of them run fused (SUB-6).
+func (k *Kernel) fusedLaunches(b kernel.Batch) int {
+	return k.low.LaunchChangeAt(units.Tokens(b.PaddedTokens()))
 }
 
 // stepPrefills reports whether a request in the batch prefills, on the rule shapeOf uses.

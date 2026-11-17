@@ -37,6 +37,28 @@ func Exact(e Estimation, f Facts) bool {
 	return false
 }
 
+// ExecutionModeSubstituted is the substitution kind a point an approximation covers carries:
+// design §11.3's "an execution mode is substituted" (the point-record kind execution_mode).
+const ExecutionModeSubstituted = "execution_mode"
+
+// Approximate reports whether the estimation's approximation covers the recorded value: at
+// least one of its clauses holds. An estimation with no approximation covers nothing. A covered
+// point is priced with the approximation's mode and carries the substitution
+// ExecutionModeSubstituted with the approximation's sentence; it is never exact.
+func Approximate(e Estimation, f Facts) (*Approximation, bool) {
+	a := e.Approximates
+	if a == nil {
+		return nil, false
+	}
+	v := strings.ToLower(strings.TrimSpace(f.Value))
+	for _, c := range a.When {
+		if c.holds(v, f) {
+			return a, true
+		}
+	}
+	return nil, false
+}
+
 func (c Clause) holds(v string, f Facts) bool {
 	var items map[string]bool
 	if c.ValueListHasAny != nil || c.ValueListHasNone != nil {

@@ -103,6 +103,12 @@
         "nodes": {
           "type": "integer"
         },
+        "pools": {
+          "items": {
+            "$ref": "#/$defs/scenario.Pool"
+          },
+          "type": "array"
+        },
         "storage": {
           "items": {
             "type": "string"
@@ -141,6 +147,21 @@
       "required": [
         "kind",
         "version"
+      ],
+      "type": "object"
+    },
+    "scenario.Pool": {
+      "additionalProperties": false,
+      "properties": {
+        "hardware": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
       ],
       "type": "object"
     },
@@ -212,6 +233,12 @@
             "converted"
           ],
           "type": "string"
+        },
+        "phases": {
+          "items": {
+            "$ref": "#/$defs/trace.Phase"
+          },
+          "type": "array"
         },
         "router": {
           "$ref": "#/$defs/trace.Router"
@@ -366,6 +393,31 @@
       ],
       "type": "object"
     },
+    "trace.Phase": {
+      "additionalProperties": false,
+      "properties": {
+        "concurrency": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "offset_us": {
+          "type": "integer"
+        },
+        "start": {
+          "enum": [
+            "after_drain",
+            "at"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
     "trace.Router": {
       "additionalProperties": false,
       "properties": {
@@ -428,6 +480,29 @@
         },
         "trace": {
           "$ref": "#/$defs/workload.TraceRef"
+        }
+      },
+      "type": "object"
+    },
+    "workload.ConstantLoad": {
+      "additionalProperties": false,
+      "properties": {
+        "measured_sessions": {
+          "type": "integer"
+        },
+        "recycling": {
+          "enum": [
+            "sequential",
+            "shuffle",
+            "random"
+          ],
+          "type": "string"
+        },
+        "trace_idle_gap_cap_s": {
+          "type": "number"
+        },
+        "warmup_duration_s": {
+          "type": "number"
         }
       },
       "type": "object"
@@ -527,6 +602,9 @@
         "inter_turn_delay_cap_s": {
           "type": "number"
         },
+        "load": {
+          "$ref": "#/$defs/workload.ConstantLoad"
+        },
         "max_context_length": {
           "oneOf": [
             {
@@ -546,7 +624,8 @@
         },
         "scenario": {
           "enum": [
-            "inferencex-agentx-mvp"
+            "inferencex-agentx-mvp",
+            "aiperf-constant-load"
           ],
           "type": "string"
         },

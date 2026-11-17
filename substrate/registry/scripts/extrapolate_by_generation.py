@@ -78,6 +78,8 @@ GENERATION = {
     "gb200-nvl72": "Blackwell", "gb300": "Blackwell",
     "a100-sxm": "Ampere", "a100-80": "Ampere",
     "l40s": "Ada",
+    # GB202 (SM120, GDDR7): a Blackwell-branded die of its own, not B200 -- nothing transfers from SM100.
+    "rtx6000pro-server": "RTXBlackwell",
 }
 
 # The attention kernel vLLM actually dispatches on each part, read from the sweeps'
