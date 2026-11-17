@@ -1133,7 +1133,7 @@ func (e *Engine) indexable(evs []kv.Event) []kv.Event {
 }
 
 // kvEvents is the scheduler's KV events in the contract's form: a hash is vLLM's published
-// 64-bit integer (maybe_convert_block_hash, vllm/v1/core/kv_cache_utils.py:96-99@5df63a72),
+// 64-bit integer (maybe_convert_block_hash, vllm/v1/core/kv_cache_utils.py:82-85@4ba787ec),
 // written in decimal, one event per block. Each stored block carries what vLLM's BlockStored
 // reports about it: the adapter's name and id, the extra keys that keyed its hash (the adapter's
 // ("lora", name, path) on every block, the cache salt, a plain string, on the request's first), and
