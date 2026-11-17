@@ -99,7 +99,7 @@ func TestScaleRecords_ClusterDecisionsAreTraced(t *testing.T) {
 	d.TraceLevel = "decisions"
 	d.ModelAutoscalerIntervalUs = 1_000_000
 	d.NodePools = []NodePoolConfig{{Name: "p", GPUType: "A100", GPUsPerNode: 2, InitialNodes: 1, MaxNodes: 2,
-		GPUMemoryGiB: 80, ProvisioningDelay: DelaySpec{Mean: 1_000_000}}}
+		GPUMemoryGiB: 80, ProvisioningDelay: DelaySpec{Mean: 1}}}
 	d.ClusterAutoscaler = ClusterAutoscalerConfig{Policy: ClusterAutoscalerPendingDriven,
 		PendingDrivenConfig: PendingDrivenConfig{PendingThresholdUs: 500_000}}
 	cs := newTestCluster(d, NewSliceRequestSource(newTestRequests(4)), nil)
