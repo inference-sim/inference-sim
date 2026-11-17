@@ -40,6 +40,28 @@ blis run --scenarios examples/capabilities --scenario cpu-tier.yaml --num-instan
 
 The coefficient set `cost-model-offload-tiers` prices each tier transfer from the catalog's storage device. Blocks evicted from HBM are found in the CPU tier on the prompt's next request: the cache hit rate rises and TTFT falls against the same run without the `offload` block. Tier details: [KV Cache & Memory](kv-cache.md).
 
+## KV tier: file system (fs)
+
+`fs-tier.yaml` is the same deployment with an 8 GiB CPU tier and an NVMe device below it. The device is a catalog storage device (`nvme_gen4`, `nvme_gen3`, `sata_ssd`, `nvme_gen4_raid0_8x`), priced by the registry's `offload_tier_<device>_*` entries:
+
+```yaml
+offload:
+  connector: OffloadingConnector
+  spec: TieringOffloadingSpec
+  tiers:
+    - {tier: cpu_dram, bytes: 8589934592}
+    - {tier: nvme_gen4, bytes: 4398046511104}
+```
+
+```bash
+blis run --scenarios examples/capabilities --scenario fs-tier.yaml --num-instances 1 \
+  --workload-spec examples/capabilities/spill-workload.yaml --horizon 25000000
+```
+
+Blocks the CPU tier evicts spill to the device and are read back later: against the same run without the device the hit rate is higher and more requests complete by the horizon. Tier copies share the device's link with each other and with P/D pulls, and the Result states each link's peak concurrent copies under `breakdowns.pd.link_peak_concurrent_transfers_tier-<device>-<to|from>-node-<n>`. `cpu_dram` must come first. Engines of one model that name one `root_dir` share one file system.
+
+Not yet runnable from a scenario in this build: the object-store tier (`tier: s3`, refused by name, blis-vllm#63) and the peer-to-peer tier (`connector_options.secondary_tiers`, not accepted by the engine pin). Both wait on blis-vllm#222 and inference-sim#2209.
+
 ## Prefill/decode with pools of unequal width
 
 `pd-unequal-tp.yaml` runs four TP4 prefill engines and one TP8 decode engine. Each pool is sized and priced by its own layout:

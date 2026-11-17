@@ -541,3 +541,30 @@ func TestCapabilityExample_InstancesStateTheirMeasuredWindow(t *testing.T) {
 		t.Errorf("cluster busy_share %v, want the instances' mean %v", got, sum/4)
 	}
 }
+
+// KV tier, file system (fs): blocks the 8 GiB CPU tier evicts spill to the NVMe device and are
+// read back on the prompt's next request. Against the same deployment without the device the run
+// hits the cache more and completes more requests by the horizon, and the Result states the device
+// link's concurrent copies (copies share link capacity with each other and with P/D pulls).
+func TestCapabilityExample_FSTierKeepsWhatTheCPUTierEvicts(t *testing.T) {
+	t.Parallel()
+	args := []string{"run", "--scenario", "fs-tier.yaml", "--num-instances", "1", "--horizon", "25000000",
+		"--workload-spec", filepath.Join(capExamplesDir, "spill-workload.yaml")}
+	with := capExampleRun(t, capExamplesDir, args...)
+	raw := readFile(t, filepath.Join(capExamplesDir, "fs-tier.yaml"))
+	line := "\n    - {tier: nvme_gen4, bytes: 4398046511104}"
+	without := capExampleRun(t, exampleVariant(t, "fs-tier.yaml", line, ""), args...)
+	if !strings.Contains(raw, line) {
+		t.Fatal("fixture: the example states no fs tier")
+	}
+	if a, b := with.num("engine.cluster.cache_hit_rate"), without.num("engine.cluster.cache_hit_rate"); a <= b+0.02 {
+		t.Errorf("cache hit rate %.3f with the fs tier, %.3f without: the device keeps nothing", a, b)
+	}
+	if with.completed() <= without.completed() {
+		t.Errorf("%d requests completed with the fs tier, %d without", with.completed(), without.completed())
+	}
+	pd, _ := with.doc["breakdowns"].(map[string]any)["pd"].(map[string]any)
+	if _, ok := pd["link_peak_concurrent_transfers_tier-nvme_gen4-to-node-0"]; !ok {
+		t.Errorf("the Result states no copy on the NVMe device's link: %v", pd)
+	}
+}

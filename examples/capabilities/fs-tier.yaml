@@ -1,0 +1,44 @@
+# KV tiers: a file-system (fs) tier below the CPU tier. The CPU tier here is only 8 GiB, so
+# blocks it evicts spill to a 4 TiB NVMe device (catalog device nvme_gen4, priced by the registry's
+# offload_tier_nvme_gen4_* entries) and a later request for the same prompt reads them back. Tier
+# copies share the device's link with each other and with P/D pulls. cpu_dram must come first.
+#
+#   blis run --scenarios examples/capabilities --scenario fs-tier.yaml --num-instances 1 \
+#     --workload-spec examples/capabilities/spill-workload.yaml --horizon 25000000
+kind: Scenario
+name: fs-tier
+engine: {kind: vllm, version: "0.33.0"}
+
+model: llama-3.1-70b-instruct
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-offload-tiers]
+
+cluster:
+  hardware: h200
+  fabric: ib-400g
+  nodes: 2
+  gpus_per_node: 8
+---
+kind: Deployment
+name: fs-tier
+
+pools:
+  - role: colocated
+    nodes: 2
+    parallel: {tp: 4, pp: 1, dp: 1, enable_expert_parallel: false}
+    engine:
+      quantization: fp8
+      kv_cache_dtype: fp8
+      block_size: 16
+      max_num_batched_tokens: 8192
+      max_num_seqs: 256
+      max_model_len: 32768
+      gpu_memory_utilization: 0.2
+      compilation_config: {cudagraph_mode: PIECEWISE}
+
+offload:
+  connector: OffloadingConnector
+  spec: TieringOffloadingSpec
+  eviction_policy: lru
+  tiers:
+    - {tier: cpu_dram, bytes: 8589934592}
+    - {tier: nvme_gen4, bytes: 4398046511104}
