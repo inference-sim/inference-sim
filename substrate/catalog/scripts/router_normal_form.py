@@ -14,8 +14,14 @@ the commit of the tag vX.Y.Z. For each file it prints the distinct git blobs, th
 each, and the sha256 of each blob's normal form, then a verdict: `identical` (one blob),
 `equivalent` (several blobs, one normal form) or `differs`.
 
-The normal form (rule set `rust-logging-only`) applies to Rust files only; any other file is its own
-normal form, so a Python file that differs is `differs`. For a Rust file the rules run in this order,
+Two rule sets exist. `python-routing-statements` applies to Python files; `rust-logging-only` applies to
+Rust files; any other file is its own normal form. The Python rule keeps, in source order, each statement
+whose own text (its whole text for a simple statement; its header, which is the test, the iterator, the
+signature or the context managers, for a compound one) names a router, case-insensitively, together with the
+names of the functions and classes around it, and drops every other statement. The dropped statements are
+assumed not to change which router mode runs or what it does, because none of them names a router (`check
+--show-kept` prints what is kept, so a reader can see what the digest covers). A difference in code that names
+no router is therefore not a difference; a difference in any line that names one is. For a Rust file the rules run in this order,
 each a mechanical rewrite that changes no value the function computes:
 
   1. strip-logging-statements: delete a statement that is a `tracing::<level>!(...)` or
@@ -38,6 +44,7 @@ A rule never fires on anything else, and a difference that remains after the rul
 from __future__ import annotations
 
 import argparse
+import ast
 import datetime
 import hashlib
 import re
@@ -181,8 +188,64 @@ def ignore_blank_lines(src: str) -> str:
     return "\n".join(line for line in src.split("\n") if line.strip())
 
 
+PY_RULE_SET = "python-routing-statements"
+_ROUTER = re.compile(r"router", re.I)
+
+
+def _head(node: ast.stmt) -> str:
+    """The text of a statement that decides whether it names a router: the header of a compound statement."""
+    if isinstance(node, (ast.If, ast.While)):
+        return ast.unparse(node.test)
+    if isinstance(node, (ast.For, ast.AsyncFor)):
+        return ast.unparse(node.target) + " in " + ast.unparse(node.iter)
+    if isinstance(node, (ast.With, ast.AsyncWith)):
+        return ", ".join(ast.unparse(i) for i in node.items)
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return node.name + "(" + ast.unparse(node.args) + ")"
+    if isinstance(node, ast.ClassDef):
+        return node.name
+    if isinstance(node, (ast.Import, ast.ImportFrom)):  # only the imported names that name a router
+        names = sorted(a.name for a in node.names if _ROUTER.search(a.name))
+        return (getattr(node, "module", None) or "") + ": " + ", ".join(names) if names else ""
+    if isinstance(node, ast.Try) or (hasattr(ast, "TryStar") and isinstance(node, ast.TryStar)):
+        return ""
+    if hasattr(ast, "Match") and isinstance(node, ast.Match):
+        return ast.unparse(node.subject)
+    return ast.unparse(node)
+
+
+def python_routing_statements(src: str, kept: list[str] | None = None) -> str:
+    """The Python rule: the statements that name a router, in source order, each with its enclosing definitions."""
+    out: list[str] = []
+
+    def visit(body: list[ast.stmt], where: str) -> None:
+        for node in body:
+            head = _head(node)
+            here = where
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                here = where + "/" + node.name
+            if _ROUTER.search(head):
+                line = f"{here or '<module>'}: {type(node).__name__}: {head}"
+                out.append(line)
+                if kept is not None:
+                    kept.append(line)
+            for field in ("body", "orelse", "finalbody"):
+                inner = getattr(node, field, None)
+                if isinstance(inner, list) and inner and isinstance(inner[0], ast.stmt):
+                    visit(inner, here)
+            for h in getattr(node, "handlers", []) or []:
+                visit(h.body, here)
+            for case in getattr(node, "cases", []) or []:
+                visit(case.body, here)
+
+    visit(ast.parse(src).body, "")
+    return "\n".join(out)
+
+
 def normal_form(path: str, text: str, removed: list[str] | None = None) -> str:
-    """The text a file is compared by. Only Rust files are rewritten."""
+    """The text a file is compared by. Rust files are rewritten by rust-logging-only; Python files reduced by python-routing-statements."""
+    if path.endswith(".py"):
+        return python_routing_statements(text, removed)
     if not path.endswith(".rs"):
         return text
     text = strip_logging(text, removed)
@@ -228,7 +291,7 @@ def check(git_dir: str, commits: list[str], paths: list[str], show_removed: bool
             text = _git(git_dir, "show", f"{cs[0]}:{p}") if b != "missing" else ""
             removed: list[str] = []
             rows[b] = {"commits": sorted(cs), "sha256": digest(p, text) if b != "missing" else None}
-            if show_removed and p.endswith(".rs"):
+            if show_removed and p.endswith((".rs", ".py")):
                 normal_form(p, text, removed)
                 rows[b]["removed"] = removed
         digests = {r["sha256"] for r in rows.values()}
@@ -245,17 +308,17 @@ def main(argv: list[str]) -> int:
     c.add_argument("git_dir")
     c.add_argument("version")
     c.add_argument("--path", action="append", help="a deciding file (default: Dynamo's five)")
-    c.add_argument("--show-removed", action="store_true", help="print every logging statement the rules removed")
+    c.add_argument("--show-removed", action="store_true", help="print every logging statement the Rust rules removed, and every statement the Python rule kept")
     args = ap.parse_args(argv)
     commits = window(args.git_dir, args.version)
-    print(f"{args.version}: {len(commits)} commit(s), rule set {RULE_SET}: {', '.join(RULES)}")
+    print(f"{args.version}: {len(commits)} commit(s), rule sets {RULE_SET}: {', '.join(RULES)}; {PY_RULE_SET}")
     for p, r in check(args.git_dir, commits, args.path or DYNAMO_PATHS, args.show_removed).items():
         print(f"{r['verdict']:10} {p}")
         for b, row in r["blobs"].items():
             print(f"    blob {b} normal-form sha256 {row['sha256']} at {len(row['commits'])} commit(s): "
                   f"{', '.join(row['commits'])}")
             for s in row.get("removed", []):
-                print(f"        removed: {s}")
+                print(f"        {'kept' if p.endswith('.py') else 'removed'}: {s}")
     return 0
 
 

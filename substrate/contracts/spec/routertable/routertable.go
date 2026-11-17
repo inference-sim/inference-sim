@@ -121,7 +121,7 @@ type BuildFile struct {
 	// <commit>:<path>` prints it at every commit of the build.
 	Blob string `yaml:"blob"`
 	// Rule names the rewrite set that makes the file's other blobs the same code, when it has
-	// more than one blob in the window: NormalFormLoggingOnly. Absent when Blob is the file's
+	// more than one blob in the window: NormalFormLoggingOnly for a Rust file, NormalFormPythonRouting for a Python file. Absent when Blob is the file's
 	// only blob at every commit.
 	Rule string `yaml:"rule,omitempty"`
 	// NormalForm is the SHA-256 (64 lowercase hex digits) of Blob's normal form under Rule, as
@@ -146,6 +146,12 @@ type BuildVariant struct {
 // drop an unread element of a tuple binding, ignore blank lines. A difference left after these is
 // a difference in what the code computes, and the build is not covered.
 const NormalFormLoggingOnly = "rust-logging-only"
+
+// NormalFormPythonRouting is the rule set "python-routing-statements" of the same script, for a
+// Python deciding file: compare only the statements that name a router (with the definitions
+// around them), so a difference in code that names no router is not a difference. A difference
+// in a statement that names one is, and the build is not covered.
+const NormalFormPythonRouting = "python-routing-statements"
 
 // Citation is one passage of one router's code or documentation at a pinned revision.
 type Citation struct {
