@@ -418,7 +418,7 @@ func (k *Kernel) liftStepTerms(c *resolve.Coefficients, g *model.Graph) error {
 	}
 	if len(usedRec) > 0 {
 		bf16 := price.Format{DType: model.DTypeBF16}
-		if err := k.addFit(c, bf16, false); err != nil {
+		if err := k.addFit(c, bf16, false, false); err != nil {
 			return fmt.Errorf("a recurrent prefill is priced on the BF16 ramp: %w", err)
 		}
 		k.prefillFit = k.fit(bf16, false)

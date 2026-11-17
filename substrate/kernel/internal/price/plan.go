@@ -105,6 +105,10 @@ type PlannedGEMM struct {
 	// A-projection, compressor, indexer projections, router and mHC are such, and dividing
 	// them by tp priced a tp-th of the work.
 	Replicated bool
+	// Router is a routed MoE layer's gate: the GEMM from the hidden state to one score per routed expert,
+	// found by that shape and not by its label (SUB-20). vLLM runs an fp32 gate on its own kernels
+	// (GateLinear), which is not the rate an fp32 mHC projection runs at.
+	Router bool
 	// TokenSharded is under_sequence_parallel: token_sharded. With the model's own
 	// sequence parallelism on, the GEMM runs on ceil(tokens / tp) rows with its whole
 	// weight; with it off, the layout above applies over every token.
@@ -712,6 +716,14 @@ func planNodes(nodes []model.Node, em Emitter, o PlanOptions,
 	// model.py:450-457, 597-601, 922-928@0f6b2619). Read off every node first, so the order
 	// the graph states the All2All and the GroupedGEMM in does not matter.
 	dispatchWidth := hidden
+	// routedExperts is the expert count of the layer's routed GroupedGEMM. A GEMM that writes one score per
+	// routed expert is the layer's gate; it is found by that shape and not by its Role label (SUB-20).
+	routedExperts := 0
+	for _, n := range nodes {
+		if !n.IsSharedExpert() && n.Op == model.OpGroupedGEMM {
+			routedExperts = n.Experts
+		}
+	}
 	for _, n := range nodes {
 		if !n.IsSharedExpert() && n.Op == model.OpGroupedGEMM &&
 			n.LatentSize > 0 && (n.Emit == model.EmitAlways || em.Emits(n.Emit)) {
@@ -774,6 +786,7 @@ func planNodes(nodes []model.Node, em Emitter, o PlanOptions,
 				Replicated: n.TP == model.TPReplicated, TokenSharded: tokenSharded,
 				WeightBytes: resident, WeightReadBytes: read, Format: o.Format(n),
 				MHCFn: mhcFn.MatchString(n.Role), ShardedAtDecode: n.ShardedAtDecode,
+				Router: routedExperts > 0 && n.N == routedExperts && n.K == hidden,
 			}
 			// Fuse into the previous GEMM when the engine would. vLLM concatenates
 			// column-parallel projections that share an input ALONG THE OUTPUT

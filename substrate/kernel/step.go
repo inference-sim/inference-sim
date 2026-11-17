@@ -476,7 +476,11 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 			if eff <= 0 {
 				continue
 			}
-			denseShapedSeconds += rows * g.FLOPsPerToken / div / (fit.peak * eff)
+			peak := fit.peak
+			if fit.smallPeak > 0 && rows <= fit.smallRows {
+				peak = fit.smallPeak
+			}
+			denseShapedSeconds += rows * g.FLOPsPerToken / div / (peak * eff)
 		}
 
 		if l.ExpertFLOPsPerTokenPerExpert > 0 {
