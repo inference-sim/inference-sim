@@ -2,7 +2,7 @@
 <figure class="diagram chart" markdown="0">
 <svg viewBox="0 0 760 350" role="img" aria-labelledby="fig-step-title fig-step-desc">
 <title id="fig-step-title">Where a decode step's time goes, by batch size</title>
-<desc id="fig-step-desc">Two panels against the number of requests in a decode batch, from 1 to 256 on a log scale, each request decoding one token against a 4096-token context. The model deepseek-v3, served in fp8 on 8 H200 GPUs at tensor-parallel width 8. Left: the time each resource needs over the step. Right, on the same scale: the Overlap and NoOverlap estimates, which run from 8.4 and 9.3 ms at one request to 44.2 and 50.1 ms at 256. The bottleneck is host from 1 to 2 requests and HBM from 4 to 256 requests.</desc>
+<desc id="fig-step-desc">Two panels against the number of requests in a decode batch, from 1 to 256 on a log scale, each request decoding one token against a 4096-token context. The model deepseek-v3, served in fp8 on 8 H200 GPUs at tensor-parallel width 8. Left: the time each resource needs over the step. Right, on the same scale: the Overlap and NoOverlap estimates, which run from 8.6 and 9.5 ms at one request to 44.4 and 50.3 ms at 256. The bottleneck is host from 1 to 4 requests and HBM from 8 to 256 requests.</desc>
 <text class="panel-title" x="52.0" y="28.0">Time on each resource</text>
 <line class="grid" x1="52.0" y1="292.0" x2="302.0" y2="292.0"/>
 <text class="tick" x="46.0" y="296.0" text-anchor="end">0</text>
@@ -37,9 +37,9 @@
 <line class="tick-mark" x1="302.0" y1="292.0" x2="302.0" y2="296.0"/>
 <text class="tick" x="302.0" y="309.0" text-anchor="middle">256</text>
 <text class="axis-title" x="177.0" y="330.0" text-anchor="middle">requests in the batch (log scale)</text>
-<line class="rule" x1="98.9" y1="44.0" x2="98.9" y2="292.0"/>
-<text class="note" x="93.9" y="54.0" text-anchor="end">host-bound</text>
-<text class="note" x="103.9" y="54.0">HBM-bound</text>
+<line class="rule" x1="130.1" y1="44.0" x2="130.1" y2="292.0"/>
+<text class="note" x="125.1" y="54.0" text-anchor="end">host-bound</text>
+<text class="note" x="135.1" y="54.0">HBM-bound</text>
 <path class="series s-hbm" d="M52.0,283.4 L83.2,280.8 L114.5,275.9 L145.8,267.0 L177.0,251.9 L208.2,230.3 L239.5,206.4 L270.8,185.7 L302.0,160.9"/>
 <circle class="point s-hbm" cx="52.0" cy="283.4" r="2.2"/>
 <circle class="point s-hbm" cx="83.2" cy="280.8" r="2.2"/>
@@ -70,20 +70,20 @@
 <circle class="point s-nvlink" cx="239.5" cy="286.5" r="2.2"/>
 <circle class="point s-nvlink" cx="270.8" cy="282.5" r="2.2"/>
 <circle class="point s-nvlink" cx="302.0" cy="274.4" r="2.2"/>
-<path class="series s-host" d="M52.0,276.3 L83.2,276.3 L114.5,276.3 L145.8,276.3 L177.0,276.3 L208.2,276.3 L239.5,276.3 L270.8,276.3 L302.0,276.3"/>
-<circle class="point s-host" cx="52.0" cy="276.3" r="2.2"/>
-<circle class="point s-host" cx="83.2" cy="276.3" r="2.2"/>
-<circle class="point s-host" cx="114.5" cy="276.3" r="2.2"/>
-<circle class="point s-host" cx="145.8" cy="276.3" r="2.2"/>
-<circle class="point s-host" cx="177.0" cy="276.3" r="2.2"/>
-<circle class="point s-host" cx="208.2" cy="276.3" r="2.2"/>
-<circle class="point s-host" cx="239.5" cy="276.3" r="2.2"/>
-<circle class="point s-host" cx="270.8" cy="276.3" r="2.2"/>
-<circle class="point s-host" cx="302.0" cy="276.3" r="2.2"/>
+<path class="series s-host" d="M52.0,275.6 L83.2,275.6 L114.5,275.6 L145.8,275.6 L177.0,275.6 L208.2,275.6 L239.5,275.6 L270.8,275.6 L302.0,275.6"/>
+<circle class="point s-host" cx="52.0" cy="275.6" r="2.2"/>
+<circle class="point s-host" cx="83.2" cy="275.6" r="2.2"/>
+<circle class="point s-host" cx="114.5" cy="275.6" r="2.2"/>
+<circle class="point s-host" cx="145.8" cy="275.6" r="2.2"/>
+<circle class="point s-host" cx="177.0" cy="275.6" r="2.2"/>
+<circle class="point s-host" cx="208.2" cy="275.6" r="2.2"/>
+<circle class="point s-host" cx="239.5" cy="275.6" r="2.2"/>
+<circle class="point s-host" cx="270.8" cy="275.6" r="2.2"/>
+<circle class="point s-host" cx="302.0" cy="275.6" r="2.2"/>
 <text class="label s-hbm" x="310.0" y="164.9">HBM</text>
-<text class="label s-sm" x="310.0" y="263.4">SM</text>
-<text class="label s-nvlink" x="310.0" y="278.4">NVLink</text>
-<text class="label s-host" x="310.0" y="293.4">host</text>
+<text class="label s-sm" x="310.0" y="263.2">SM</text>
+<text class="label s-nvlink" x="310.0" y="278.2">NVLink</text>
+<text class="label s-host" x="310.0" y="293.2">host</text>
 <text class="panel-title" x="452.0" y="28.0">The step's two estimates</text>
 <line class="grid" x1="452.0" y1="292.0" x2="672.0" y2="292.0"/>
 <text class="tick" x="446.0" y="296.0" text-anchor="end">0</text>
@@ -118,29 +118,29 @@
 <line class="tick-mark" x1="672.0" y1="292.0" x2="672.0" y2="296.0"/>
 <text class="tick" x="672.0" y="309.0" text-anchor="middle">256</text>
 <text class="axis-title" x="562.0" y="330.0" text-anchor="middle">requests in the batch (log scale)</text>
-<polygon class="band" points="452.0,258.0 479.5,255.4 507.0,250.3 534.5,240.9 562.0,225.0 589.5,201.6 617.0,174.3 644.5,146.8 672.0,108.2 672.0,129.9 644.5,159.3 617.0,182.2 589.5,207.2 562.0,229.4 534.5,244.6 507.0,253.7 479.5,258.6 452.0,261.2"/>
-<path class="series s-nooverlap" d="M452.0,258.0 L479.5,255.4 L507.0,250.3 L534.5,240.9 L562.0,225.0 L589.5,201.6 L617.0,174.3 L644.5,146.8 L672.0,108.2"/>
-<circle class="point s-nooverlap" cx="452.0" cy="258.0" r="2.2"/>
-<circle class="point s-nooverlap" cx="479.5" cy="255.4" r="2.2"/>
-<circle class="point s-nooverlap" cx="507.0" cy="250.3" r="2.2"/>
-<circle class="point s-nooverlap" cx="534.5" cy="240.9" r="2.2"/>
-<circle class="point s-nooverlap" cx="562.0" cy="225.0" r="2.2"/>
-<circle class="point s-nooverlap" cx="589.5" cy="201.6" r="2.2"/>
-<circle class="point s-nooverlap" cx="617.0" cy="174.3" r="2.2"/>
-<circle class="point s-nooverlap" cx="644.5" cy="146.8" r="2.2"/>
-<circle class="point s-nooverlap" cx="672.0" cy="108.2" r="2.2"/>
-<path class="series s-overlap" d="M452.0,261.2 L479.5,258.6 L507.0,253.7 L534.5,244.6 L562.0,229.4 L589.5,207.2 L617.0,182.2 L644.5,159.3 L672.0,129.9"/>
-<circle class="point s-overlap" cx="452.0" cy="261.2" r="2.2"/>
-<circle class="point s-overlap" cx="479.5" cy="258.6" r="2.2"/>
-<circle class="point s-overlap" cx="507.0" cy="253.7" r="2.2"/>
-<circle class="point s-overlap" cx="534.5" cy="244.6" r="2.2"/>
-<circle class="point s-overlap" cx="562.0" cy="229.4" r="2.2"/>
-<circle class="point s-overlap" cx="589.5" cy="207.2" r="2.2"/>
-<circle class="point s-overlap" cx="617.0" cy="182.2" r="2.2"/>
-<circle class="point s-overlap" cx="644.5" cy="159.3" r="2.2"/>
-<circle class="point s-overlap" cx="672.0" cy="129.9" r="2.2"/>
-<text class="label s-nooverlap" x="680.0" y="112.2">NoOverlap</text>
-<text class="label s-overlap" x="680.0" y="133.9">Overlap</text>
+<polygon class="band" points="452.0,257.3 479.5,254.7 507.0,249.6 534.5,240.2 562.0,224.3 589.5,200.9 617.0,173.6 644.5,146.1 672.0,107.5 672.0,129.2 644.5,158.6 617.0,181.5 589.5,206.5 562.0,228.7 534.5,244.0 507.0,253.0 479.5,257.9 452.0,260.5"/>
+<path class="series s-nooverlap" d="M452.0,257.3 L479.5,254.7 L507.0,249.6 L534.5,240.2 L562.0,224.3 L589.5,200.9 L617.0,173.6 L644.5,146.1 L672.0,107.5"/>
+<circle class="point s-nooverlap" cx="452.0" cy="257.3" r="2.2"/>
+<circle class="point s-nooverlap" cx="479.5" cy="254.7" r="2.2"/>
+<circle class="point s-nooverlap" cx="507.0" cy="249.6" r="2.2"/>
+<circle class="point s-nooverlap" cx="534.5" cy="240.2" r="2.2"/>
+<circle class="point s-nooverlap" cx="562.0" cy="224.3" r="2.2"/>
+<circle class="point s-nooverlap" cx="589.5" cy="200.9" r="2.2"/>
+<circle class="point s-nooverlap" cx="617.0" cy="173.6" r="2.2"/>
+<circle class="point s-nooverlap" cx="644.5" cy="146.1" r="2.2"/>
+<circle class="point s-nooverlap" cx="672.0" cy="107.5" r="2.2"/>
+<path class="series s-overlap" d="M452.0,260.5 L479.5,257.9 L507.0,253.0 L534.5,244.0 L562.0,228.7 L589.5,206.5 L617.0,181.5 L644.5,158.6 L672.0,129.2"/>
+<circle class="point s-overlap" cx="452.0" cy="260.5" r="2.2"/>
+<circle class="point s-overlap" cx="479.5" cy="257.9" r="2.2"/>
+<circle class="point s-overlap" cx="507.0" cy="253.0" r="2.2"/>
+<circle class="point s-overlap" cx="534.5" cy="244.0" r="2.2"/>
+<circle class="point s-overlap" cx="562.0" cy="228.7" r="2.2"/>
+<circle class="point s-overlap" cx="589.5" cy="206.5" r="2.2"/>
+<circle class="point s-overlap" cx="617.0" cy="181.5" r="2.2"/>
+<circle class="point s-overlap" cx="644.5" cy="158.6" r="2.2"/>
+<circle class="point s-overlap" cx="672.0" cy="129.2" r="2.2"/>
+<text class="label s-nooverlap" x="680.0" y="111.5">NoOverlap</text>
+<text class="label s-overlap" x="680.0" y="133.2">Overlap</text>
 </svg>
-<figcaption>The model <code>deepseek-v3</code>, served in fp8 on 8 H200 GPUs at tensor-parallel width 8 (<code>testdata/aisimulate/deepseek-v3-h200-fp8-sglang-tp8.yaml</code>), every request decoding one token against a 4,096-token context. <b>Left:</b> the time each resource needs over one step. The bottleneck, the resource with the most time, is host from 1 to 2 requests and HBM from 4 to 256 requests. No collective leaves the node, so NIC carries nothing and is not drawn. <b>Right:</b> the step's two estimates, on the same scale: NoOverlap is the sum of the lines on the left, and Overlap lets each layer's resources work at once. Going from one request to 256 multiplies the step by about 5, and divides the time per request by about 47. Computed by this kernel at batch sizes that are powers of two, joined by straight lines.</figcaption>
+<figcaption>The model <code>deepseek-v3</code>, served in fp8 on 8 H200 GPUs at tensor-parallel width 8 (<code>testdata/aisimulate/deepseek-v3-h200-fp8-sglang-tp8.yaml</code>), every request decoding one token against a 4,096-token context. <b>Left:</b> the time each resource needs over one step. The bottleneck, the resource with the most time, is host from 1 to 4 requests and HBM from 8 to 256 requests. No collective leaves the node, so NIC carries nothing and is not drawn. <b>Right:</b> the step's two estimates, on the same scale: NoOverlap is the sum of the lines on the left, and Overlap lets each layer's resources work at once. Going from one request to 256 multiplies the step by about 5, and divides the time per request by about 48. Computed by this kernel at batch sizes that are powers of two, joined by straight lines.</figcaption>
 </figure>
