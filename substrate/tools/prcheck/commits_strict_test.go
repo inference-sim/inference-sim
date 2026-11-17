@@ -99,9 +99,18 @@ func TestCommitsStrictReadsSignaturesFromGit(t *testing.T) {
 	g("commit", "-q", "--allow-empty", "-m", "base")
 	g("commit", "-q", "--allow-empty", "-S", "--signoff", "-m", "good\n\nAssisted-by: Claude Code")
 	run1 := func(base string) (string, error) {
-		wd, _ := os.Getwd()
-		defer os.Chdir(wd)
-		os.Chdir(repo)
+		wd, err := os.Getwd()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			if err := os.Chdir(wd); err != nil {
+				t.Error(err)
+			}
+		}()
+		if err := os.Chdir(repo); err != nil {
+			t.Fatal(err)
+		}
 		// git reads the signers file through its own -c, so the check is given the same config
 		// by the environment.
 		t.Setenv("GIT_CONFIG_COUNT", "2")
@@ -116,7 +125,9 @@ func TestCommitsStrictReadsSignaturesFromGit(t *testing.T) {
 	if out, err := run1("HEAD~1"); err != nil {
 		t.Fatalf("a signed, signed-off commit by the maintainer failed the strict check: %v\n%s", err, out)
 	}
-	exec.Command("git", "-C", repo, "-c", "user.name=x", "-c", "user.email=a@b", "commit", "-q", "--allow-empty", "-m", "wip").Run()
+	if o, err := exec.Command("git", "-C", repo, "-c", "user.name=x", "-c", "user.email=a@b", "commit", "-q", "--allow-empty", "-m", "wip").CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v: %s", err, o)
+	}
 	out, err := run1("HEAD~1")
 	if err == nil {
 		t.Fatalf("an unsigned commit by x <a@b> passed the strict check:\n%s", out)
