@@ -102,6 +102,13 @@ const (
 	// compressed- or windowed-MLA kinds that would duplicate the MLA shape and sharding
 	// rules. DeepSeek-V4.1's window-only layers are sparse_mla with a window alone.
 	AttentionSparseMLA AttentionKind = "sparse_mla"
+	// AttentionSparseGQA is grouped-query attention whose read is narrowed to a budget of
+	// selected tokens: per-KV-head K and V, not a latent vector, so tensor parallelism
+	// shards its KV heads as it does for gqa. The main node (holds_engine_kv true) reads
+	// index_topk tokens chosen by an indexer. The indexer's scorer (holds_engine_kv false)
+	// states its own heads, key heads and dimension, and scores a key cache compressed by
+	// compress_ratio. Qwen3.8-Flash-Next's full-attention layers are this kind.
+	AttentionSparseGQA AttentionKind = "sparse_gqa"
 	// AttentionSWA is sliding-window attention, whose per-token read is bounded by
 	// the window rather than by context length.
 	AttentionSWA AttentionKind = "swa"
@@ -109,7 +116,7 @@ const (
 
 var attentionKinds = map[AttentionKind]bool{
 	AttentionGQA: true, AttentionMLA: true, AttentionSparseMLA: true,
-	AttentionSWA: true,
+	AttentionSparseGQA: true, AttentionSWA: true,
 }
 
 // Valid reports whether k is a recognized attention kind.
@@ -121,6 +128,10 @@ func (k AttentionKind) Valid() bool { return attentionKinds[k] }
 func (k AttentionKind) LatentKV() bool {
 	return k == AttentionMLA || k == AttentionSparseMLA
 }
+
+// Sparse reports whether the kind narrows its read to an indexer's selection or a
+// compressed stream, so index_topk and compress_ratio apply to it.
+func (k AttentionKind) Sparse() bool { return k == AttentionSparseMLA || k == AttentionSparseGQA }
 
 // RecurrentKind selects a cost structure within OpRecurrentUpdate. Every member
 // keeps constant-size state per sequence; they differ in what that state contains
@@ -134,10 +145,15 @@ const (
 	RecurrentKDA RecurrentKind = "kda"
 	// RecurrentGDN is Gated DeltaNet, the same shape family as KDA.
 	RecurrentGDN RecurrentKind = "gdn"
+	// RecurrentShortConv is a depthwise causal convolution over the last conv_kernel
+	// inputs, spaced conv_dilation tokens apart, with no recurrent (SSM) state: the only
+	// per-request state is the window of inputs, channels x (conv_kernel - 1) x
+	// conv_dilation values. Qwen3.8-Flash-Next's per-layer embedding branch is one.
+	RecurrentShortConv RecurrentKind = "short_conv"
 )
 
 var recurrentKinds = map[RecurrentKind]bool{
-	RecurrentMamba2: true, RecurrentKDA: true, RecurrentGDN: true,
+	RecurrentMamba2: true, RecurrentKDA: true, RecurrentGDN: true, RecurrentShortConv: true,
 }
 
 // Valid reports whether k is a recognized recurrent kind.

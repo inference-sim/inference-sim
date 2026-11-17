@@ -199,13 +199,13 @@ Common to every node:
 | `holds_engine_kv` | boolean | yes | `true` for the attention that reads the KV cache the engine sizes; `false` for the scorer of a block-index (lightning) indexer, which keeps a narrower cache of its own and does not size the engine's pages. The model-graph deriver sets it from the checkpoint. Stated on every `Attention` and refused on any other primitive; the `role` label decides nothing. |
 | `kind` | string | yes | One of the [attention kinds](vocabularies.md#attention-kinds). |
 | `n_q` | integer | yes | Query heads. |
-| `n_kv` | integer | yes | KV heads, at most `n_q`. Exactly 1 for `mla` and `sparse_mla`, which store one latent vector per token. |
+| `n_kv` | integer | yes | KV heads, at most `n_q`. Exactly 1 for `mla` and `sparse_mla`, which store one latent vector per token. `sparse_gqa` keeps K and V per head. |
 | `d_h` | integer | yes | Head dimension. |
 | `kv_lora_rank` | integer | no | MLA latent rank. |
 | `qk_rope_head_dim` | integer | no | MLA rotary head dimension. |
 | `window` | integer | for `swa` | Sliding window in tokens. On `sparse_mla`, one of its three bounds. |
-| `index_topk` | integer | for `sparse_mla`, unless `compress_ratio` or `window` is set | Cache entries a sparse layer selects. |
-| `compress_ratio` | integer | for `sparse_mla`, unless `index_topk` or `window` is set | Factor by which a sparse layer compresses its latent read. |
+| `index_topk` | integer | for `sparse_mla`, unless `compress_ratio` or `window` is set; for a `sparse_gqa` node with `holds_engine_kv` true | Cache entries a sparse layer selects. Refused on a `sparse_gqa` indexer scorer. |
+| `compress_ratio` | integer | for `sparse_mla`, unless `index_topk` or `window` is set; for a `sparse_gqa` node with `holds_engine_kv` false | Factor by which a sparse layer compresses its latent read, or a `sparse_gqa` indexer compresses its key cache. Refused on the main `sparse_gqa` node. |
 | `caches` | list | no | The per-request caches the node reads and which its layer owns, [below](#caches). Omitted means one cache inferred from the read shape. |
 | `kv_heads_not_replicated` | boolean | no | On an `Attention` node: its projection cannot replicate a KV head across tensor-parallel ranks, so the tensor-parallel width must divide `n_kv`. A fused projection that slices by head group is one, as Muse Spark's fused QKV and output-gate projection is. Omitted means the standard projection, which replicates a head where `tp` exceeds `n_kv`. Not on a latent attention. |
 
@@ -216,11 +216,12 @@ Common to every node:
 | Key | Type | Required | Meaning |
 |---|---|---|---|
 | `recurrent_kind` | string | yes | One of the [recurrent kinds](vocabularies.md#recurrent-kinds). |
-| `n_heads` | integer | yes | Heads. |
-| `state_size` | integer | yes | State dimension. |
-| `n_groups` | integer | for `mamba2` | Groups. |
-| `conv_kernel` | integer | for `mamba2` | Convolution kernel width. |
-| `intermediate_size` | integer | for `mamba2` | Inner dimension. |
+| `n_heads` | integer | yes, except `short_conv` | Heads. Refused on `short_conv`. |
+| `state_size` | integer | yes, except `short_conv` | State dimension. Refused on `short_conv`, which keeps no recurrent state. |
+| `n_groups` | integer | for `mamba2` | Groups. Refused on `short_conv`. |
+| `conv_kernel` | integer | for `mamba2` and `short_conv` | Convolution kernel width. |
+| `conv_dilation` | integer | no, `short_conv` only | Tokens between the inputs the kernel taps. Omitted means 1. State holds `conv_kernel - 1` times this many inputs per channel. |
+| `intermediate_size` | integer | for `mamba2` and `short_conv` | Inner dimension; for `short_conv`, the channels. |
 | `state_dtype` | string | no | Format the state is stored in, often wider than the weights. |
 
 `Elementwise`, and the payload of a collective:
@@ -615,9 +616,15 @@ A node is invalid if
   outside `[0, max_tokens]`;
 - `bytes_per_token` is set on a primitive other than `Elementwise`, `AllReduce`,
   `AllGather` or `ReduceScatter`;
-- `index_topk` or `compress_ratio` is set on anything other than a `sparse_mla` attention
-  node, or is negative, or a `sparse_mla` node has none of `index_topk`, `compress_ratio`
-  and `window`;
+- `index_topk` or `compress_ratio` is set on anything other than a `sparse_mla` or
+  `sparse_gqa` attention node, or is negative, or a `sparse_mla` node has none of
+  `index_topk`, `compress_ratio` and `window`;
+- a `sparse_gqa` node that holds the engine's KV has no `index_topk` or states a
+  `compress_ratio`, or one that does not (the indexer scorer) has no `compress_ratio` or
+  states an `index_topk`;
+- `conv_dilation` is set on anything other than a `short_conv` node, or is negative; a
+  `short_conv` node lacks `conv_kernel` or `intermediate_size`, or states `n_heads`,
+  `state_size` or `n_groups`;
 - it carries one of the keys its primitive rejects, such as `n_q` on a `GEMM`.
 
 Two problems are warnings: a layer kind that neither the stack nor the speculator uses,
