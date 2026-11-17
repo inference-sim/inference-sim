@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -11,8 +10,8 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 )
 
-// #1910: the scenario's Deployment.offload block is the run's KV offload configuration; a
-// --kv-offload-config file may only restate it.
+// #1910, #2037: the scenario's Deployment.offload block is the run's KV offload configuration,
+// and the only one.
 
 // writeOffloadScenario writes scenario file name from dir with the offload block inserted
 // before the marker (appended when the marker is ""), into a fresh directory.
@@ -46,16 +45,14 @@ func writeOffloadScenario(t *testing.T, dir, name, marker, offload string) strin
 	return out
 }
 
-// A scenario stating its CPU tier runs byte-identically to the same scenario without the
-// block given the equivalent --kv-offload-config; the exported trace headers, which record the
-// resolved kv_offload config, match too. Stating both, agreeing, is accepted; disagreeing is refused naming the field. The scenario's
-// 0-byte tier is refused by the schema. A scenario-offload run replays byte-identically.
+// A scenario stating its CPU tier runs, and the exported trace header records the resolved
+// kv_offload config. A scenario-offload run replays byte-identically; a replay under a scenario
+// whose tier differs from the trace's is refused; the scenario's 0-byte tier is refused by the
+// schema.
 func TestRunCmd_ScenarioOffloadBlock(t *testing.T) {
 	scenarios, _, _ := kernelRepos(t)
 	scenarios = scenarioWithOffloadSet(t, scenarios, "llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml")
 	const tier = "offload:\n  connector: OffloadingConnector\n  spec: TieringOffloadingSpec\n  eviction_policy: lru\n  tiers:\n    - tier: cpu_dram\n      bytes: 1099511627776\n"
-	file := writeOffloadYAML(t, "kv_offload:\n  cpu_bytes_to_use: 1099511627776\n")
-	other := writeOffloadYAML(t, "kv_offload:\n  cpu_bytes_to_use: 2199023255552\n")
 	for _, tc := range []struct {
 		name, src, scenario, marker string
 		args                        []string
@@ -77,41 +74,8 @@ func TestRunCmd_ScenarioOffloadBlock(t *testing.T) {
 			if err != nil {
 				t.Fatalf("scenario offload run: %v\n%s", err, lastLines(stderr, 3))
 			}
-			flag, stderr, err := run(tc.src, filepath.Join(tmp, "flag"), "--kv-offload-config", file)
-			if err != nil {
-				t.Fatalf("flag offload run: %v\n%s", err, lastLines(stderr, 3))
-			}
-			if withoutTierLinkFigures(simulatedFigures(t, scen)) != withoutTierLinkFigures(simulatedFigures(t, flag)) {
-				t.Errorf("the scenario's offload block and the equivalent --kv-offload-config differ\n--- scenario\n%s\n--- flag\n%s", scen, flag)
-			}
-			hs, hf := readFile(t, filepath.Join(tmp, "scen.yaml")), readFile(t, filepath.Join(tmp, "flag.yaml"))
-			if !strings.Contains(hs, "cpu_bytes_to_use: 1099511627776") || hs != hf {
-				t.Errorf("trace headers differ or carry no kv_offload:\n--- scenario\n%s\n--- flag\n%s", hs, hf)
-			}
-			both, stderr, err := run(withBlock, filepath.Join(tmp, "both"), "--kv-offload-config", file)
-			if err != nil || simulatedFigures(t, both) != simulatedFigures(t, scen) {
-				t.Errorf("an agreeing flag beside the scenario block must change nothing: err=%v\n%s", err, lastLines(stderr, 3))
-			}
-			// The scenario cannot state blocks_per_chunk (no blis-schemas field), so a flag beside
-			// the block supplies it, exactly as the flag alone does; it runs and replays.
-			chunked := writeOffloadYAML(t, "kv_offload:\n  cpu_bytes_to_use: 1099511627776\n  blocks_per_chunk: 4\n")
-			c4, stderr, err := run(withBlock, filepath.Join(tmp, "c4"), "--kv-offload-config", chunked)
-			if err != nil {
-				t.Fatalf("blocks_per_chunk 4 beside the scenario block: %v\n%s", err, lastLines(stderr, 3))
-			}
-			if h := readFile(t, filepath.Join(tmp, "c4.yaml")); !strings.Contains(h, "blocks_per_chunk: 4") {
-				t.Errorf("the trace header does not record blocks_per_chunk 4:\n%s", h)
-			}
-			if alone, _, err := run(tc.src, filepath.Join(tmp, "c4flag"), "--kv-offload-config", chunked); err != nil || withoutTierLinkFigures(simulatedFigures(t, alone)) != withoutTierLinkFigures(simulatedFigures(t, c4)) {
-				t.Errorf("blocks_per_chunk 4 from the flag alone differs from the flag beside the scenario block: err=%v", err)
-			}
-			if rep, stderr, err := runKernelCLI(t, append(append([]string{"replay", "--trace-header", filepath.Join(tmp, "c4.yaml"),
-				"--trace-data", filepath.Join(tmp, "c4.csv")}, tc.replayArgs...), "--scenarios", withBlock, "--scenario", tc.scenario, "--kv-offload-config", chunked)...); err != nil || inv13View(t, rep) != inv13View(t, c4) {
-				t.Errorf("the blocks_per_chunk 4 run's replay differs: err=%v\n%s", err, lastLines(stderr, 3))
-			}
-			if _, stderr, err := run(withBlock, filepath.Join(tmp, "bad"), "--kv-offload-config", other); err == nil ||
-				!strings.Contains(stderr, "disagrees with scenario") || !strings.Contains(stderr, "CPUBytesToUse") {
-				t.Errorf("a disagreeing flag must be refused naming the field: err=%v\n%s", err, lastLines(stderr, 3))
+			if h := readFile(t, filepath.Join(tmp, "scen.yaml")); !strings.Contains(h, "cpu_bytes_to_use: 1099511627776") {
+				t.Errorf("the trace header carries no kv_offload with the scenario's CPU tier:\n%s", h)
 			}
 			rep, stderr, err := runKernelCLI(t, append(append([]string{"replay", "--trace-header", filepath.Join(tmp, "scen.yaml"),
 				"--trace-data", filepath.Join(tmp, "scen.csv")}, tc.replayArgs...), "--scenarios", withBlock, "--scenario", tc.scenario)...)
@@ -165,39 +129,4 @@ func TestKVOffloadFromDeployment_TheSimpleConnector(t *testing.T) {
 			t.Fatalf("%+v must be refused", o)
 		}
 	}
-}
-
-// withoutTierLinkFigures drops the link_peak_concurrent_transfers_* figures, which state the links the
-// run's tier copies shared (#2108): the run that takes the offload block from the scenario reports
-// them, and the one that takes it from --kv-offload-config does not, though its figures otherwise
-// equal the scenario's.
-func withoutTierLinkFigures(figures string) string {
-	var v any
-	if err := json.Unmarshal([]byte(figures), &v); err != nil {
-		return figures
-	}
-	// drop removes the figures, and the maps they leave empty, as a run that never had them has none.
-	var drop func(any)
-	drop = func(x any) {
-		switch m := x.(type) {
-		case map[string]any:
-			for k, e := range m {
-				if strings.HasPrefix(k, "link_peak_concurrent_transfers_") {
-					delete(m, k)
-					continue
-				}
-				drop(e)
-				if c, ok := e.(map[string]any); ok && len(c) == 0 {
-					delete(m, k)
-				}
-			}
-		case []any:
-			for _, e := range m {
-				drop(e)
-			}
-		}
-	}
-	drop(v)
-	out, _ := json.MarshalIndent(v, "", "  ")
-	return string(out)
 }
