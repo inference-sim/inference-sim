@@ -613,11 +613,13 @@ def _fmt_al(al: float) -> str:
     return f"{al:.2f}" if round(al, 2) == al else repr(al)
 
 
-def acceptance_grid(a: AcceptanceSet) -> dict[tuple[str, str, str], dict]:
-    """(model, method, category) -> thinking -> K -> (line, profile), in file order."""
+def acceptance_grid(a: AcceptanceSet) -> dict[tuple[str, str, str, str], dict]:
+    """(model, drafter, method, category) -> thinking -> K -> (line, profile), in file order.
+    The drafter is "" for the model's own speculator."""
     grid: dict = {}
     for line, p in a.profiles:
-        cell = grid.setdefault((p["model"], p["speculative_method"], p["category"]), {})
+        cell = grid.setdefault((p["model"], p.get("drafter", ""), p["speculative_method"],
+                                p["category"]), {})
         slot = cell.setdefault(p["thinking"], {})
         if p["num_spec_tokens"] in slot:
             raise PluginError(f"registry hook: {a.path}:{line} repeats a profile key")
@@ -627,7 +629,7 @@ def acceptance_grid(a: AcceptanceSet) -> dict[tuple[str, str, str], dict]:
 
 def _acceptance_values(a: AcceptanceSet) -> str:
     out = [_legend({p["method"] for _, p in a.profiles})]
-    for (model, method, category), modes in acceptance_grid(a).items():
+    for (model, drafter, method, category), modes in acceptance_grid(a).items():
         kmax = max(k for m in modes.values() for k in m)
         rows = []
         for thinking in sorted(modes):
@@ -644,7 +646,8 @@ def _acceptance_values(a: AcceptanceSet) -> str:
                            f'class="reg-v" href="{link}" title="{title}">'
                            f'{_fmt_al(p["acceptance_length"])}</a></span></span>')
             rows.append(row)
-        out.append(f"### `{model}` · `{method}` · `{category}`\n\n"
+        who = f"`{model}` with drafter `{drafter}`" if drafter else f"`{model}`"
+        out.append(f"### {who} · `{method}` · `{category}`\n\n"
                    + _table(["thinking"] + [f"K={k}" for k in range(1, kmax + 1)], rows,
                             numeric_from=1))
     return "\n\n".join(out)

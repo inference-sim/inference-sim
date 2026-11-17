@@ -16,6 +16,7 @@ func i(x int) *int         { return &x }
 func measuredProvenance() *Provenance {
 	return &Provenance{
 		Source:      "https://github.com/SemiAnalysisAI/InferenceX/blob/main/inferencex-e2e/infx/golden_al_distribution/dsv41flash_dspark.yaml",
+		SHA256:      "30dccc016e224cba504dcbf8c4f79a322785d3c4312d5ea2fa5950487f09bea5",
 		Run:         "https://github.com/SemiAnalysisAI/InferenceX/actions/runs/34493175056",
 		Hardware:    "b300",
 		EngineImage: "vllm/vllm-openai:deepseekv41-flash-0909",
@@ -134,6 +135,9 @@ func TestProfileSetRejects(t *testing.T) {
 		}},
 		{"provenance without source", "profiles[0].provenance.source", func(s *ProfileSet) {
 			s.Profiles[0].Provenance.Source = ""
+		}},
+		{"sha256 not hex", "profiles[0].provenance.sha256", func(s *ProfileSet) {
+			s.Profiles[0].Provenance.SHA256 = "4D2D6ACF"
 		}},
 		{"measured without hardware", "profiles[0].provenance.hardware", func(s *ProfileSet) {
 			s.Profiles[0].Provenance.Hardware = ""
