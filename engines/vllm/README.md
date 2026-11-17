@@ -261,6 +261,10 @@ fields and environment variables are the field list's, above.
   includes an oracle scenario or a golden trace; `refused`, naming the blis-vllm issue; or
   `out_of_scope`, for one of §7.5's three reasons, with a citation of the upstream code. A
   framework part is `modelled` only with recorded and direct traces at its interface (FID-5).
+- **Code BLIS does not have.** An item with `refusal: code_not_visible` (each `path_loader` item) is
+  refused at start-up by the setting that names it, with `vllm.CodeNotVisibleError`, whose `G5Code`
+  is design §11.4's `code_not_visible` (`core/vllm/notvisible.go`). A component name the release does
+  not register is refused the same way: only out-of-tree code could have run it.
 - **Checked in CI** by the `metrics-manifest` job:
   `python3 -I tools/surface/gen_surface.py vllm-source tools/surface/status.json --check surface.json`
   fails when the regenerated list differs from the committed one, when an item has no status, when a
