@@ -49,12 +49,16 @@ func checkout(t *testing.T, published map[string][]byte) string {
 			t.Fatal(err)
 		}
 	}
-	// Eight units of the real list, so a check reads kilobytes, not the 82,331-line file.
+	// Eight units of every real list the substrate pins (one per source in sources.yaml), so a
+	// check reads kilobytes, not the tens of thousands of lines, and a source the substrate adds
+	// is present in the fixture without this test naming it.
 	if err := os.MkdirAll(filepath.Join(led, "units"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(led, "units", "inferencex.jsonl.gz"), firstUnits(t, 8), 0o644); err != nil {
-		t.Fatal(err)
+	for _, name := range unitListNames(t) {
+		if err := os.WriteFile(filepath.Join(led, "units", name), firstUnitsOf(t, name, 8), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	for role, raw := range published {
 		if err := os.WriteFile(filepath.Join(led, "published", role+".yaml"), raw, 0o644); err != nil {
@@ -64,10 +68,32 @@ func checkout(t *testing.T, published map[string][]byte) string {
 	return dir
 }
 
-// firstUnits is the real unit list cut to its first n lines, gzipped.
-func firstUnits(t *testing.T, n int) []byte {
+// unitListNames are the file names of the unit lists the pinned substrate carries, one per source.
+func unitListNames(t *testing.T) []string {
 	t.Helper()
-	f, err := os.Open(filepath.Join(substrateModuleDir(t), "catalog", "ledger", "units", "inferencex.jsonl.gz"))
+	ents, err := os.ReadDir(filepath.Join(substrateModuleDir(t), "catalog", "ledger", "units"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, e := range ents {
+		if strings.HasSuffix(e.Name(), ".jsonl.gz") {
+			names = append(names, e.Name())
+		}
+	}
+	if len(names) == 0 {
+		t.Fatal("the pinned substrate carries no unit list")
+	}
+	return names
+}
+
+// firstUnits is the real InferenceX unit list cut to its first n lines, gzipped.
+func firstUnits(t *testing.T, n int) []byte { return firstUnitsOf(t, "inferencex.jsonl.gz", n) }
+
+// firstUnitsOf is the named real unit list cut to its first n lines, gzipped.
+func firstUnitsOf(t *testing.T, name string, n int) []byte {
+	t.Helper()
+	f, err := os.Open(filepath.Join(substrateModuleDir(t), "catalog", "ledger", "units", name))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,16 +389,47 @@ func TestLedgerUnits_PrintsEveryUnitWithItsIdentifier(t *testing.T) {
 	if err := printUnits(&out, filepath.Join(cat, "ledger")); err != nil {
 		t.Fatal(err)
 	}
-	want := readUnitIDs(t, filepath.Join(cat, "ledger", "units", "inferencex.jsonl.gz"))
+	// Each unit list the substrate carries, read without the ledger package, is one source: its
+	// units must appear, sorted, in one block tagged with the source's name.
 	lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
-	if len(want) < 1000 || len(lines) != len(want) {
-		t.Fatalf("printed %d units, the file holds %d (non-vacuity: at least 1000)", len(lines), len(want))
-	}
-	for i, l := range lines {
-		id, src, ok := strings.Cut(l, "\t")
-		if !ok || src != "inferencex" || id != want[i] {
-			t.Fatalf("line %d is %q, want %s\\tinferencex", i, l, want[i])
+	total := 0
+	pos := 0
+	blocks := map[string]bool{}
+	for _, name := range unitListNames(t) {
+		src := strings.TrimSuffix(name, ".jsonl.gz")
+		want := readUnitIDs(t, filepath.Join(cat, "ledger", "units", name))
+		sort.Strings(want)
+		total += len(want)
+		if len(want) < 1 {
+			t.Fatalf("%s: the unit list is empty (non-vacuity)", src)
 		}
+		// The block of this source starts at its first printed line.
+		start := -1
+		for i, l := range lines {
+			if _, s2, _ := strings.Cut(l, "\t"); s2 == src {
+				start = i
+				break
+			}
+		}
+		if start < 0 || blocks[src] {
+			t.Fatalf("%s: no block of lines tagged with this source", src)
+		}
+		blocks[src] = true
+		for i, id := range want {
+			if start+i >= len(lines) {
+				t.Fatalf("%s: printed fewer than the file's %d units", src, len(want))
+			}
+			if got, s2, ok := strings.Cut(lines[start+i], "\t"); !ok || s2 != src || got != id {
+				t.Fatalf("%s: line %d is %q, want %s\t%s", src, start+i, lines[start+i], id, src)
+			}
+		}
+		pos += len(want)
+	}
+	if len(lines) != total || pos != total {
+		t.Fatalf("printed %d units, the files hold %d", len(lines), total)
+	}
+	if total < 1000 {
+		t.Fatalf("the files hold %d units (non-vacuity: at least 1000)", total)
 	}
 }
 
