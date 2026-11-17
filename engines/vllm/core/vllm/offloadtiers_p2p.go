@@ -794,3 +794,15 @@ func (d *p2pData) PeerEnd(id int) plan.Endpoint {
 
 // ResolveLookups is the fs and obj tiers' lookup worker, which the p2p tier does not have.
 func (d *p2pData) ResolveLookups() {}
+
+// PeerWriteBytes is the bytes a WRITE to a peer moves, for the simulator to price it: its chunks of
+// the CPU tier, each the primary view's stride over every worker's copy, which is the region
+// NixlTransport registers and writes from (tiering/p2p/data/nixl.py:171-213@4ba787ec9959e566d3b587a796dff07673324da5). False for a transfer that is
+// not a WRITE to a peer. A simulator reads it by type-asserting
+// interface{ PeerWriteBytes(engine.Transfer) (int64, bool) } on the engine.Engine.
+func (e *Engine) PeerWriteBytes(t engine.Transfer) (int64, bool) {
+	if !e.off.isPeerWrite(t.ID) {
+		return 0, false
+	}
+	return int64(t.Blocks/e.off.tiers.blocksPerChunk) * e.off.tiers.chunkBytes, true
+}

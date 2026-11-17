@@ -88,6 +88,10 @@ type p2pAdd struct {
 type startedTransfer struct {
 	addr string
 	tr   engine.Transfer
+	// bytes is what the engine states the transfer moves when it starts (PeerWriteBytes); ok false
+	// for a transfer that is not a WRITE to a peer.
+	bytes int64
+	ok    bool
 }
 
 // p2pWorld is a hand-run simulator for engines with a p2p tier: it delivers each engine's outbox
@@ -260,7 +264,8 @@ func (w *p2pWorld) run(limit engine.Time) {
 				if err := n.e.Plan().CheckTransfer(tr.Move); err != nil {
 					w.t.Fatal(err)
 				}
-				w.started = append(w.started, startedTransfer{n.addr, tr})
+				bytes, ok := n.e.PeerWriteBytes(tr)
+				w.started = append(w.started, startedTransfer{n.addr, tr, bytes, ok})
 				n.xfers = append(n.xfers, p2pDue{now + w.xfer, tr.ID})
 			}
 			for _, f := range b.Finished {
@@ -362,6 +367,20 @@ func TestAP2PDecoderLoadsItsPromptFromThePrefiller(t *testing.T) {
 	}
 	if _, priced := p.TransferTime(w.writes()[0].tr); priced {
 		t.Error("the engine priced a WRITE to a peer; the simulator prices it from its Move")
+	}
+	// Each WRITE moves its chunks of the CPU tier: one 4 KiB block a chunk, one worker.
+	bytes := int64(0)
+	for _, s := range w.writes() {
+		if !s.ok {
+			t.Fatalf("the engine stated no bytes for its WRITE %+v when it started", s.tr)
+		}
+		bytes += s.bytes
+	}
+	if bytes != 96/16*4096 {
+		t.Errorf("the WRITEs move %d bytes, want the prompt's 6 chunks of 4096", bytes)
+	}
+	if _, ok := p.PeerWriteBytes(engine.Transfer{ID: 1 << 40}); ok {
+		t.Error("the engine states bytes for a transfer that is not a WRITE to a peer")
 	}
 }
 
