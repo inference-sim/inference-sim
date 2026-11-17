@@ -81,7 +81,7 @@ All internal timestamps in the DES (arrival time, schedule time, completion time
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout 958d845ea670808ab3607e5eaee3a314d64c2694
+git -C blis-substrate checkout 01cbd6dbe0fbaa9bdf9361fe3267a17e7078f624
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
@@ -118,7 +118,7 @@ These settings come from the scenario (and the kernel), and no CLI flag sets the
 | Speculative decoding | Pool `engine.speculative_config.method` / `num_speculative_tokens` (acceptance is resolved from the registry's profiles, the workload, the scenario's `acceptance` pin or the CLI; see [Latency Models](../guide/latency-models.md#speculative-acceptance-1939)) |
 | Step time, memory, P/D KV transfer, offload tier transfer, host overheads | Priced by blis-latency-kernel with the scenario's registry coefficients |
 
-**Data parallelism (MoE only).** A pool with `dp > 1` becomes one engine per data-parallel rank, each sized as one vLLM EngineCore. The ranks of one instance step in lockstep and the router sees them as one endpoint, balanced across ranks by vLLM's internal DP load balancer; `parallel.data_parallel_load_balancing: external` (blis-schemas#76, per pool; under P/D every rank is already its own endpoint, so a P/D pool's mode is resolved but changes no routing) instead makes every rank its own endpoint, as vLLM's external-LB modes do ([Latency Models](../guide/latency-models.md#data-and-expert-parallelism-moe), #1909). `dp > 1` on a dense model is refused.
+**Data parallelism (MoE only).** A pool with `dp > 1` becomes one engine per data-parallel rank, each sized as one vLLM EngineCore. The ranks of one instance step in lockstep and the router sees them as one endpoint, balanced across ranks by vLLM's internal DP load balancer; `parallel.data_parallel_load_balancing: external` (blis-schemas#76, per pool; under P/D every rank is already its own endpoint, so a P/D pool's mode is resolved but changes no routing) instead makes every rank its own endpoint, as vLLM's external-LB modes do ([Latency Models](../guide/latency-models.md#data-and-expert-parallelism-moe)). `dp > 1` on a dense model is refused.
 
 **Node pools.** When `node_pools` are configured in `--policy-config`, every pool's `gpu_type` must equal the scenario's `cluster.hardware`.
 
@@ -176,7 +176,7 @@ Every run, `--num-instances 1` (the default) included, passes each request throu
 
 ## Router
 
-Every cluster run routes with the llm-d router (the Endpoint Picker, EPP) embedded in-process. Its inputs are the deployment's, so the `--scenario` states them (#1950): the deployment's `router:` block and each pool's `labels`. Each input is parsed by the router's own code; a value the real router rejects is rejected with the router's message. See [Routing](../guide/routing.md#the-routers-inputs) for the mapping, the supported plugins, what is refused at startup, and the mapping from removed BLIS routing and admission flags to llm-d configuration.
+Every cluster run routes with the llm-d router (the Endpoint Picker, EPP) embedded in-process. Its inputs are the deployment's, so the `--scenario` states them: the deployment's `router:` block and each pool's `labels`. Each input is parsed by the router's own code; a value the real router rejects is rejected with the router's message. See [Routing](../guide/routing.md#the-routers-inputs) for the mapping, the supported plugins, what is refused at startup, and the mapping from removed BLIS routing and admission flags to llm-d configuration.
 
 | Scenario field | Description |
 |----------------|-------------|

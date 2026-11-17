@@ -38,7 +38,7 @@ var traceHeaderFields = map[string]FieldEntry{
 	"SessionContextGrowth": {FieldConsumed, "accumulate builds each round's input on the previous round's; an unknown value is refused by the session loaders"},
 	"GoodputSLOTargets":    {FieldConsumed, "the goodput targets when no --slo-* flag states them; a non-positive or non-finite target is refused (check.LatencyTargetMs)"},
 	"KVOffload":            {FieldConsumed, "the resolved offload configuration the run used; replay rebuilds it, and refuses one it cannot reproduce"},
-	"MaxNodesSpanned":      {FieldRefused, "a value above 1 is refused: replay cannot rebuild a multi-node fleet (#1530); negative is refused (check.Count); 0 and 1 change nothing"},
+	"MaxNodesSpanned":      {FieldRefused, "a value above 1 is refused: replay cannot rebuild a multi-node fleet (#2146); negative is refused (check.Count); 0 and 1 change nothing"},
 	"Router":               {FieldConsumed, "the router the run routed with; replay rebuilds it (INV-13)"},
 }
 

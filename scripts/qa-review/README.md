@@ -36,7 +36,7 @@ the LiteLLM proxy over its OpenAI-compatible `/chat/completions` surface.
 > `workflows`-scoped push (the delivery agent's token lacks the permission);
 > `scripts/deliver_qa_adjudicate_test.go` holds the contract over the live workflow.
 >
-> #1792 closes the round-0 completeness gap that the epic surfaced: the answerer had none of the
+> The answerer's issue and diff access closes the round-0 completeness gap that the epic surfaced: the answerer had none of the
 > tools needed to see the closing issue or the diff, so fixed policy question F1 ("does this fully
 > implement the issue?") was always a blocking `CANNOT_ANSWER` and the loop's qa-review could
 > never `PASS` from round 0. The answerer now carries the **same read-only `gh_issue`/`pr_diff`

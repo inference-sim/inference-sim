@@ -213,7 +213,7 @@ func TestDeliverSeedRefs(t *testing.T) {
 			// would then resolve a plan path the author only quoted as an example.
 			// plan_seen is computed on the STRIPPED body, so a quoted example is NOT reported as a
 			// declaration. It used to be, on the raw body, and the caller turned that into a hard
-			// error that refused a perfectly legitimate delivery (#1723 review, F2).
+			// error that refused a perfectly legitimate delivery.
 			name:        "a fenced archon-plan declaration is ignored and NOT reported as seen",
 			body:        "Example:\n\n```\narchon-plan: specs/000-example/x.plan.json\n```\n",
 			wantBranch:  "",

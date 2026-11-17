@@ -82,7 +82,7 @@ func TestRunCmd_MoEDP1_ByteIdentical(t *testing.T) {
 }
 
 // TestRunCmd_MoEDPPlacement_GuardedCombo_Rejected: the autoscaler over a data-parallel group is
-// refused (#1553 decision), and the refusal terminates the run naming the autoscaler rather than
+// refused (#2147), and the refusal terminates the run naming the autoscaler rather than
 // being returned and ignored.
 func TestRunCmd_MoEDPPlacement_GuardedCombo_Rejected(t *testing.T) {
 	_, stderr, err := runKernelCLI(t, dpRunArgs(1, "--model-autoscaler-interval-us", "1000000")...)
@@ -90,8 +90,8 @@ func TestRunCmd_MoEDPPlacement_GuardedCombo_Rejected(t *testing.T) {
 	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
 		t.Fatalf("expected exit 1 (logrus.Fatalf) for the autoscaler + dp>1, got %v\n%s", err, lastLines(stderr, 3))
 	}
-	if !strings.Contains(stderr, "autoscaler") || !strings.Contains(stderr, "#1553") {
-		t.Errorf("the refusal must name the autoscaler and the #1553 decision:\n%s", lastLines(stderr, 3))
+	if !strings.Contains(stderr, "autoscaler") || !strings.Contains(stderr, "#2147") {
+		t.Errorf("the refusal must name the autoscaler and its issue #2147:\n%s", lastLines(stderr, 3))
 	}
 }
 

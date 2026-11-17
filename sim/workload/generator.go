@@ -227,7 +227,7 @@ func validateAndExpandSpec(spec *WorkloadSpec) error {
 // generators run (e.g., cmd/root.go pre-populates spec.Clients so that
 // applyTimeoutToSpec covers every client even when the original spec
 // only set InferencePerf — fixes the streaming + inference-perf
-// timeout divergence found in PR #1453 review).
+// timeout divergence found in review).
 //
 // After expansion, the consumed marker (spec.InferencePerf or
 // spec.ServeGenData) is cleared so the generators' subsequent

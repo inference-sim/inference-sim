@@ -144,7 +144,7 @@ var (
 	prefillDecodeInstances int  // Number of shared-role instances (both prefill and decode), issue #1276
 	pdTransferContention   bool // concurrent P/D handoffs share the links they cross (#1922)
 
-	// E/P/D disaggregation config (GAP-4, issue #1264)
+	// E/P/D disaggregation config
 	encodeInstances int // Number of instances dedicated to encoding multimodal input (0 = disabled)
 
 	// Autoscaler config (Phase 1C)
@@ -225,8 +225,8 @@ type latencyResolution struct {
 	ModelConfig modelConfig
 }
 
-// refuseDPAutoscaler refuses the model autoscaler on an MoE scenario at dp > 1 (#1553
-// decision): the engine is the whole data-parallel group behind one endpoint, and the
+// refuseDPAutoscaler refuses the model autoscaler on an MoE scenario at dp > 1
+// (#2147): the engine is the whole data-parallel group behind one endpoint, and the
 // autoscaler places single-role instances with no DP-group awareness, so whether it would add
 // one rank or one whole group is undefined. Dense dp > 1 is refused earlier
 // (resolveLatencyConfig).
@@ -234,7 +234,7 @@ func refuseDPAutoscaler(isMoE bool, dp int, autoscalerActive bool) error {
 	if !isMoE || dp <= 1 || !autoscalerActive {
 		return nil
 	}
-	return fmt.Errorf("scenario dp %d (MoE) is not supported with the model autoscaler (#1553 decision): the "+
+	return fmt.Errorf("scenario dp %d (MoE) is not supported with the model autoscaler (#2147): the "+
 		"engine is the whole data-parallel group behind one endpoint, and the autoscaler places single-role "+
 		"instances with no DP-group awareness. Use a scenario that states dp 1 with the autoscaler, or "+
 		"disable the autoscaler", dp)
@@ -464,7 +464,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().IntVar(&prefillDecodeInstances, "prefill-decode-instances", 0, "Number of shared-role instances serving both prefill and decode (llm-d 'prefill-decode'/'both' parity; 0 = disabled). Must satisfy --prefill-instances + --decode-instances + --prefill-decode-instances <= --num-instances.")
 	cmd.Flags().BoolVar(&pdTransferContention, "pd-transfer-contention", false, "Concurrent P/D KV handoffs share the fabric links they cross (#1922): each link's bandwidth is divided max-min fairly among the handoffs on it, from the demand the cost model states for it, and re-divided as handoffs start and finish. A handoff alone takes exactly that demand's alone time. Default off: every handoff is priced as if alone.")
 
-	// E/P/D disaggregation (GAP-4, issue #1264). Registered on both run and replay.
+	// E/P/D disaggregation. Registered on both run and replay.
 	cmd.Flags().IntVar(&encodeInstances, "encode-instances", 0, "Number of instances dedicated to encoding multimodal input (0 = encode pool disabled, default)")
 
 	// LoRA control-plane config (#1464). Registered on both run and replay (INV-13
@@ -1080,7 +1080,7 @@ var runCmd = &cobra.Command{
 			// the install branch was dropped or moved without updating this
 			// site — refuse to write a silent empty trace.
 			if traceArrivals == nil {
-				logrus.Fatalf("Trace export: arrival hook was not installed but --trace-output=%q is set — install/export branches diverged (issue #1440)", traceOutput)
+				logrus.Fatalf("Trace export: arrival hook was not installed but --trace-output=%q is set — install/export branches diverged", traceOutput)
 			}
 			records := workload.RequestsToTraceRecords(traceArrivals)
 			// #1914 (INV-13): accumulate sessions export as per-round deltas under a header that
@@ -1103,7 +1103,7 @@ var runCmd = &cobra.Command{
 				WorkloadSeed:         &spec.Seed,
 				GoodputSLOTargets:    goodputTargets,                   // #1413, BC-7: persist resolved targets for downstream replay
 				KVOffload:            simToHeaderOffload(kvOffloadCfg), // #1587, BC-G6: nil when inert (omitted); round-trips resolved config
-				// #1530: record multi-node placement so replay can refuse a trace whose
+				// #2146: record multi-node placement so replay can refuse a trace whose
 				// step times it cannot reproduce. 0/1 (no span) is omitted, so a run
 				// without multi-node placement writes a byte-identical header (INV-6).
 				MaxNodesSpanned: crossNodeSpanForTrace(cs.MaxNodesSpanned()),
