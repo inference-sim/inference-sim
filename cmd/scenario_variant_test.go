@@ -62,7 +62,7 @@ func walkScenario(t *testing.T, docs []*yaml.Node, kind string, path []string) *
 	var cur *yaml.Node
 	for _, d := range docs {
 		m := d.Content[0]
-		if mappingValue(m, "kind") != nil && mappingValue(m, "kind").Value == kind {
+		if variantMappingValue(m, "kind") != nil && variantMappingValue(m, "kind").Value == kind {
 			cur = m
 		}
 	}
@@ -76,7 +76,7 @@ func walkScenario(t *testing.T, docs []*yaml.Node, kind string, path []string) *
 			}
 			var found *yaml.Node
 			for _, item := range cur.Content {
-				if r := mappingValue(item, "role"); r != nil && r.Value == role {
+				if r := variantMappingValue(item, "role"); r != nil && r.Value == role {
 					found = item
 				}
 			}
@@ -86,7 +86,7 @@ func walkScenario(t *testing.T, docs []*yaml.Node, kind string, path []string) *
 			cur = found
 			continue
 		}
-		next := mappingValue(cur, seg)
+		next := variantMappingValue(cur, seg)
 		if next == nil {
 			t.Fatalf("path segment %q: no such field", seg)
 		}
@@ -95,7 +95,7 @@ func walkScenario(t *testing.T, docs []*yaml.Node, kind string, path []string) *
 	return cur
 }
 
-func mappingValue(m *yaml.Node, key string) *yaml.Node {
+func variantMappingValue(m *yaml.Node, key string) *yaml.Node {
 	if m.Kind != yaml.MappingNode {
 		return nil
 	}
