@@ -244,10 +244,12 @@ jobs:
       - run: go run ./cmd/metricsmanifest -sglang sglang-source -check
 
   # The oracle groups the layer reaches. Each runs the steps of the same-named shard of ci.yml and compares its
-  # traces with the committed goldens. Run after the cheap checks, as the shards of ci.yml do.
+  # traces with the committed goldens. Unlike the shards of ci.yml they do not wait for the cheap checks: a layer
+  # whose goldens are not recorded yet fails the replay tests of its packages and the golden provenance check,
+  # and the traces these groups upload are what the goldens are recorded from.
   light-oracle:
     name: light - oracle (${{ matrix.group }})
-    needs: [select, light-go, light-lint, light-goldens]
+    needs: select
     if: ${{ needs.select.outputs.groups != '[]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
