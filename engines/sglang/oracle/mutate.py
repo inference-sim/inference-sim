@@ -36,6 +36,7 @@ Modes:
 
 Usage: python3 -I oracle/mutate.py [--changed <base>] [--list] [--only ID,...] [--shard I/N] [--root <repository>] <sglang checkout> <scratch dir>
 """
+import collections
 import json
 import os
 import re
@@ -342,6 +343,9 @@ def main(argv: list) -> int:
     picked = select(cfg, generated, base)
     if only:
         picked = [m for m in picked if m["id"] in only]
+    # The generator can emit several mutants under one id (identical lines in one function). A listed id
+    # then stands for the copies that survive; the others being caught is not a stale listing.
+    shared_ids = {i for i, n in collections.Counter(m["id"] for m in picked).items() if n > 1}
     if shard:
         picked = [m for k, m in enumerate(picked) if k % shard[1] == shard[0]]
     if list_only:
@@ -366,6 +370,9 @@ def main(argv: list) -> int:
         elif survived:
             print(f"SURVIVED   {m['id']}  guards {m['guards']}")
             unexpected += 1
+        elif m["id"] in allowed and m["id"] in shared_ids:
+            print(f"CAUGHT     {m['id']} (one of several mutants with this id; the listed copy survives)")
+            caught += 1
         elif m["id"] in allowed:
             print(f"NOW CAUGHT {m['id']}: remove it from known_gaps or equivalent")
             unexpected += 1

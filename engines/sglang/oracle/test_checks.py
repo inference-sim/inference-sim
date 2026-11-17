@@ -899,6 +899,38 @@ class MutationSweep(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("CAUGHT     M", r.stdout)
 
+    def test_a_listed_id_shared_by_a_caught_and_a_surviving_mutant_passes(self):
+        # The generator gives two methods of one name, with the same line, one id. Listing that id as a known gap
+        # covers the copy that survives; the copy that is caught must not turn the listing into a stale-gap finding.
+        go = ("// SPDX-License-Identifier: Apache-2.0\n// Derived from python/sglang/srt/y.py at SGLang v0.5.23.\n\n"
+              "package core\n\nfunc (a A) Nil(x *int) bool {\n\tif x == nil {\n\t\treturn true\n\t}\n\treturn false\n}\n\n"
+              "func (b B) Nil(x *int) bool {\n\tif x == nil {\n\t\treturn true\n\t}\n\treturn false\n}\n")
+        root = self.repo([])
+        with open(os.path.join(root, "core", "y.go"), "w") as f:
+            f.write(go)
+        for cmd in (["add", "core/y.go"], ["-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false",
+                                           "commit", "-q", "-m", "ported file"]):
+            subprocess.run(["git", "-C", root, *cmd], check=True, capture_output=True)
+        path = os.path.join(root, "oracle", "mutants.json")
+        with open(path) as f:
+            cfg = json.load(f)
+        # The suite passes (the mutant survives) only when the second method's copy was mutated.
+        check = "import sys; t = open('core/y.go').read(); sys.exit(0 if t.index('x != nil') > t.index('func (b B)') else 1)"
+        cfg["suites"]["go"] = {"command": [sys.executable, "-c", check], "tests": []}
+        with open(path, "w") as f:
+            json.dump(cfg, f)
+        mu = import_oracle("mutate")
+        ids = [m["id"] for m in mu.generated_mutants("core/y.go", go) if "==->!=" in m["id"]]
+        self.assertEqual(len(ids), 2, ids)
+        self.assertEqual(ids[0], ids[1], "the two copies must share one id for this test to mean anything")
+        cfg["known_gaps"] = {ids[0]: "no test kills this mutant yet (#32)"}
+        with open(path, "w") as f:
+            json.dump(cfg, f)
+        r = self.sweep(root, "--only", ids[0])
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("NOW CAUGHT", r.stdout)
+        self.assertIn("SURVIVED   " + ids[0] + " (listed", r.stdout)
+
     def test_a_survivor_a_stale_gap_and_a_broken_mutant_fail(self):
         survivor = self.mutant("B", old="return 1", new="return 2")
         for name, mutants, gaps, text in [
