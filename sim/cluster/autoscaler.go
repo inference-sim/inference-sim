@@ -65,6 +65,10 @@ type ModelSignals struct {
 	Replicas                     []ReplicaMetrics // may be empty
 	PendingReplicaCount          int              // Loading instances with positive KV capacity, not yet routable
 	PendingTotalKvCapacityTokens int64            // sum of TotalKvCapacityTokens for all Loading instances of this model (zero-capacity instances excluded)
+	// Window is the last CollectorWindowSize ticks of this model's replica readings, oldest first,
+	// each with its time and sequence number (the WindowedCollector). Empty with no window; existing
+	// analyzers ignore it.
+	Window []WindowSample
 }
 
 // VariantCapacity is one variant's share of a model's total supply and demand.
