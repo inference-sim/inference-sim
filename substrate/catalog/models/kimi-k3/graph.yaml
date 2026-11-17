@@ -82,6 +82,7 @@ layer_kinds:
     role: routed_expert_down_proj
     n: 3584
     k: 7168
+    weight_dtype: bf16
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -103,6 +104,7 @@ layer_kinds:
     role: routed_expert_up_proj
     n: 7168
     k: 3584
+    weight_dtype: bf16
   - op: All2All
     role: moe_dispatch_combine
     emit: expert_parallel
@@ -191,6 +193,7 @@ layer_kinds:
     role: routed_expert_down_proj
     n: 3584
     k: 7168
+    weight_dtype: bf16
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -212,6 +215,7 @@ layer_kinds:
     role: routed_expert_up_proj
     n: 7168
     k: 3584
+    weight_dtype: bf16
   - op: All2All
     role: moe_dispatch_combine
     emit: expert_parallel
@@ -268,10 +272,12 @@ layer_kinds:
     role: mlp_gate_up
     n: 67584
     k: 7168
+    weight_dtype: bf16
   - op: GEMM
     role: mlp_down
     n: 7168
     k: 33792
+    weight_dtype: bf16
   - op: AllReduce
     role: mlp_out
     emit: tensor_parallel_unless_sp_moe
@@ -318,7 +324,96 @@ stack:
   - kda_moe
   - mla_moe
   - mla_moe
-modality: text_decoder_of_multimodal
+modality: multimodal
+encoder:
+  towers:
+  - modality: image
+    input:
+      patch_size: 14
+      channels: 3
+    merge_ratio: 4
+    output_hidden_size: 7168
+    parallel: tensor
+    weight_dtype: bf16
+    embedding:
+    - op: gemm
+      role: patch_embed
+      n: 1024
+      k: 588
+      tp: replicated
+    - op: elementwise
+      role: pos_embed
+      bytes_per_row: 8192
+      params: 4194304
+    layer_kinds:
+    - id: vit_block
+      nodes:
+      - op: elementwise
+        role: norms
+        bytes_per_row: 8192
+        params: 2048
+        tp: replicated
+      - op: gemm
+        role: qkv
+        n: 4608
+        k: 1024
+        tp: column
+      - op: attention
+        role: attention
+        n_heads: 12
+        d_h: 128
+        tp: sharded
+      - op: gemm
+        role: o_proj
+        n: 1024
+        k: 1536
+        tp: row
+      - op: gemm
+        role: fc1
+        n: 4096
+        k: 1024
+        tp: column
+      - op: elementwise
+        role: act
+        bytes_per_row: 16384
+        tp: sharded
+      - op: gemm
+        role: fc2
+        n: 1024
+        k: 4096
+        tp: row
+    stack:
+      pattern:
+      - vit_block
+      repeat: 27
+    projector:
+    - op: elementwise
+      role: final_norm
+      bytes_per_row: 4096
+      params: 1024
+      tp: replicated
+    - op: gemm
+      role: merge_fc1
+      n: 4096
+      k: 4096
+      tp: replicated
+      rows: output_tokens
+    - op: elementwise
+      role: merge_act
+      bytes_per_row: 16384
+      rows: output_tokens
+    - op: gemm
+      role: merge_fc2
+      n: 7168
+      k: 4096
+      tp: replicated
+      rows: output_tokens
+    - op: elementwise
+      role: post_norm
+      bytes_per_row: 28672
+      params: 7168
+      tp: replicated
+      rows: output_tokens
 head:
 - op: Elementwise
   role: final_norm
@@ -326,3 +421,4 @@ head:
   role: lm_head
   n: 163840
   k: 7168
+  weight_dtype: bf16

@@ -258,6 +258,203 @@ stack:
   - swa_moe
   - full_moe
 modality: text_decoder_of_multimodal
+encoder:
+  towers:
+  - modality: image
+    input:
+      patch_size: 14
+      channels: 3
+      temporal_patch_size: 2
+    merge_ratio: 4
+    output_hidden_size: 8192
+    parallel: tensor
+    weight_dtype: bf16
+    embedding:
+    - op: gemm
+      role: patch_embed
+      n: 1536
+      k: 1176
+      tp: column
+    - op: elementwise
+      role: pos_embed
+      bytes_per_row: 12288
+      params: 1572864
+    - op: elementwise
+      role: ln_pre
+      bytes_per_row: 6144
+      params: 3072
+      tp: replicated
+    layer_kinds:
+    - id: window_block
+      nodes:
+      - op: elementwise
+        role: norms
+        bytes_per_row: 12288
+        params: 6144
+        tp: replicated
+      - op: gemm
+        role: qkv
+        n: 4608
+        k: 1536
+        bias: true
+        tp: column
+      - op: attention
+        role: attention
+        n_heads: 16
+        d_h: 96
+        window: 1024
+        tp: sharded
+      - op: gemm
+        role: o_proj
+        n: 1536
+        k: 1536
+        bias: true
+        tp: row
+      - op: gemm
+        role: fc1
+        n: 8960
+        k: 1536
+        bias: true
+        tp: column
+      - op: elementwise
+        role: act
+        bytes_per_row: 35840
+        tp: sharded
+      - op: gemm
+        role: fc2
+        n: 1536
+        k: 8960
+        bias: true
+        tp: row
+    - id: full_block
+      nodes:
+      - op: elementwise
+        role: norms
+        bytes_per_row: 12288
+        params: 6144
+        tp: replicated
+      - op: gemm
+        role: qkv
+        n: 4608
+        k: 1536
+        bias: true
+        tp: column
+      - op: attention
+        role: attention
+        n_heads: 16
+        d_h: 96
+        tp: sharded
+      - op: gemm
+        role: o_proj
+        n: 1536
+        k: 1536
+        bias: true
+        tp: row
+      - op: gemm
+        role: fc1
+        n: 8960
+        k: 1536
+        bias: true
+        tp: column
+      - op: elementwise
+        role: act
+        bytes_per_row: 35840
+        tp: sharded
+      - op: gemm
+        role: fc2
+        n: 1536
+        k: 8960
+        bias: true
+        tp: row
+    stack:
+      pattern:
+      - window_block
+      - window_block
+      - window_block
+      - full_block
+      - window_block
+      - window_block
+      - window_block
+      - full_block
+      - window_block
+      - window_block
+      - window_block
+      - full_block
+      - window_block
+      - window_block
+      - window_block
+      - full_block
+      - window_block
+      - window_block
+      - window_block
+      - full_block
+      - window_block
+      - window_block
+      - window_block
+      - full_block
+      - window_block
+      - window_block
+      - window_block
+      - full_block
+      - window_block
+      - window_block
+      - window_block
+      - full_block
+      - window_block
+      - window_block
+      - window_block
+      - full_block
+      - window_block
+      - window_block
+      - window_block
+      - full_block
+      - window_block
+      - window_block
+      - window_block
+      - full_block
+      - window_block
+      - window_block
+      - window_block
+      - full_block
+      - window_block
+      - full_block
+      repeat: 1
+    projector:
+    - op: elementwise
+      role: ln_post
+      bytes_per_row: 6144
+      params: 3072
+      tp: replicated
+    - op: gemm
+      role: adapter_fc
+      n: 4096
+      k: 6144
+      tp: replicated
+      rows: output_tokens
+    - op: elementwise
+      role: adapter_act
+      bytes_per_row: 16384
+      rows: output_tokens
+    - op: gemm
+      role: adapter_proj
+      n: 4096
+      k: 4096
+      tp: replicated
+      rows: output_tokens
+    - op: elementwise
+      role: adapter_act2
+      bytes_per_row: 16384
+      rows: output_tokens
+    - op: gemm
+      role: vision_projection
+      n: 8192
+      k: 4096
+      tp: row
+      rows: output_tokens
+  omitted:
+  - modality: audio
+    reason: a ConvNeXt-style stack with depthwise convolutions, which have no primitive
+    issue: inference-sim/blis-substrate#275
 embedding:
 - op: Gather
   role: embed_tokens

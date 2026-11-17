@@ -20,6 +20,7 @@ layer_kinds:
     role: qkv_a_proj
     n: 2112
     k: 7168
+    tp: replicated
   - op: Elementwise
     role: q_a_layernorm
     bytes_per_token: 6144
@@ -95,6 +96,7 @@ layer_kinds:
     role: qkv_a_proj
     n: 2112
     k: 7168
+    tp: replicated
   - op: Elementwise
     role: q_a_layernorm
     bytes_per_token: 6144
@@ -183,6 +185,7 @@ layer_kinds:
     role: qkv_a_proj
     n: 2112
     k: 7168
+    tp: replicated
   - op: Elementwise
     role: q_a_layernorm
     bytes_per_token: 6144
@@ -274,6 +277,7 @@ head:
   role: lm_head
   n: 129280
   k: 7168
+  weight_dtype: bf16
 speculator:
   method: deepseek_mtp
   num_spec_tokens: 1

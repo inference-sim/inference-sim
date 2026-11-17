@@ -27,41 +27,49 @@ layer_kinds:
     role: kda_q_proj
     n: 8192
     k: 4096
+    weight_dtype: bf16
   - &id002
     op: GEMM
     role: kda_k_proj
     n: 8192
     k: 4096
+    weight_dtype: bf16
   - &id003
     op: GEMM
     role: kda_v_proj
     n: 8192
     k: 4096
+    weight_dtype: bf16
   - &id004
     op: GEMM
     role: kda_f_a_proj
     n: 128
     k: 4096
+    weight_dtype: bf16
   - &id005
     op: GEMM
     role: kda_f_b_proj
     n: 8192
     k: 128
+    weight_dtype: bf16
   - &id006
     op: GEMM
     role: kda_b_proj
     n: 64
     k: 4096
+    weight_dtype: bf16
   - &id007
     op: GEMM
     role: kda_g_a_proj
     n: 128
     k: 4096
+    weight_dtype: bf16
   - &id008
     op: GEMM
     role: kda_g_b_proj
     n: 8192
     k: 128
+    weight_dtype: bf16
   - &id009
     op: RecurrentUpdate
     recurrent_kind: kda
@@ -74,6 +82,7 @@ layer_kinds:
     role: kda_o_proj
     n: 4096
     k: 8192
+    weight_dtype: bf16
   - &id011
     op: AllReduce
     role: mixer_out
@@ -251,6 +260,7 @@ layer_kinds:
     role: kv_b_proj
     n: 32768
     k: 512
+    weight_dtype: bf16
   - &id016
     op: GEMM
     role: index_wq_b
@@ -393,6 +403,7 @@ layer_kinds:
     role: mtp_eh_proj
     n: 4096
     k: 8192
+    weight_dtype: bf16
   - op: Elementwise
     role: input_norm
   - *id012
@@ -419,6 +430,7 @@ layer_kinds:
     experts: 288
     top_k: 8
     shared_experts: 1
+    weight_dtype: bf16
   - op: All2All
     role: moe_dispatch_combine
     emit: expert_parallel
@@ -486,7 +498,117 @@ stack:
   epilogue:
   - mla_moe
   - kda_moe
-modality: text_decoder_of_multimodal
+modality: multimodal
+encoder:
+  towers:
+  - modality: image
+    input:
+      patch_size: 14
+      channels: 3
+      temporal_patch_size: 2
+    merge_ratio: 4
+    output_hidden_size: 4096
+    parallel: tensor
+    weight_dtype: bf16
+    embedding:
+    - op: gemm
+      role: patch_embed
+      n: 1024
+      k: 1176
+      bias: true
+      tp: replicated
+    layer_kinds:
+    - id: vit_block
+      nodes:
+      - op: elementwise
+        role: norms
+        bytes_per_row: 8192
+        params: 2048
+        tp: replicated
+      - op: gemm
+        role: qkv
+        n: 3072
+        k: 1024
+        bias: true
+        tp: column
+      - op: elementwise
+        role: qk_norm
+        bytes_per_row: 8192
+        params: 128
+        tp: sharded
+      - op: attention
+        role: attention
+        n_heads: 16
+        d_h: 64
+        tp: sharded
+      - op: gemm
+        role: o_proj
+        n: 1024
+        k: 1024
+        bias: true
+        tp: row
+      - op: gemm
+        role: gate_up
+        n: 8192
+        k: 1024
+        bias: true
+        tp: column
+      - op: elementwise
+        role: act
+        bytes_per_row: 24576
+        tp: sharded
+      - op: gemm
+        role: down
+        n: 1024
+        k: 4096
+        bias: true
+        tp: row
+    stack:
+      pattern:
+      - vit_block
+      repeat: 24
+    projector:
+    - op: elementwise
+      role: post_norm
+      bytes_per_row: 4096
+      params: 1024
+      tp: replicated
+    - op: gemm
+      role: downsample
+      n: 4096
+      k: 4096
+      bias: true
+      tp: replicated
+      rows: output_tokens
+    - op: gemm
+      role: merge_proj
+      n: 4096
+      k: 4096
+      tp: replicated
+      rows: output_tokens
+    - op: elementwise
+      role: merge_norm
+      bytes_per_row: 16384
+      params: 8192
+      tp: replicated
+      rows: output_tokens
+    - op: gemm
+      role: merge_gate_up
+      n: 20480
+      k: 4096
+      tp: column
+      rows: output_tokens
+    - op: elementwise
+      role: merge_act
+      bytes_per_row: 61440
+      rows: output_tokens
+      tp: sharded
+    - op: gemm
+      role: merge_down
+      n: 4096
+      k: 10240
+      tp: row
+      rows: output_tokens
 head:
 - op: Elementwise
   role: final_norm
@@ -494,6 +616,7 @@ head:
   role: lm_head
   n: 154880
   k: 4096
+  weight_dtype: bf16
 speculator:
   method: glm5_next_mtp
   num_spec_tokens: 1

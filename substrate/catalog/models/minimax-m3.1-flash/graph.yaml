@@ -166,7 +166,110 @@ stack:
   pattern:
   - sparse_attn_moe
   repeat: 57
-modality: text_decoder_of_multimodal
+modality: multimodal
+encoder:
+  towers:
+  - modality: image
+    input:
+      patch_size: 14
+      channels: 3
+      temporal_patch_size: 2
+    merge_ratio: 4
+    output_hidden_size: 6144
+    parallel: tensor
+    weight_dtype: bf16
+    embedding:
+    - op: gemm
+      role: patch_embed
+      n: 1280
+      k: 1176
+      tp: replicated
+    - op: elementwise
+      role: pre_norm
+      bytes_per_row: 5120
+      params: 2560
+      tp: replicated
+    layer_kinds:
+    - id: vit_block
+      nodes:
+      - op: elementwise
+        role: norms
+        bytes_per_row: 10240
+        params: 5120
+        tp: replicated
+      - op: gemm
+        role: qkv
+        n: 3840
+        k: 1280
+        bias: true
+        tp: column
+      - op: attention
+        role: attention
+        n_heads: 16
+        d_h: 80
+        tp: sharded
+      - op: gemm
+        role: o_proj
+        n: 1280
+        k: 1280
+        bias: true
+        tp: row
+      - op: gemm
+        role: fc1
+        n: 5120
+        k: 1280
+        bias: true
+        tp: column
+      - op: elementwise
+        role: act
+        bytes_per_row: 20480
+        tp: sharded
+      - op: gemm
+        role: fc2
+        n: 1280
+        k: 5120
+        bias: true
+        tp: row
+    stack:
+      pattern:
+      - vit_block
+      repeat: 32
+    projector:
+    - op: gemm
+      role: projector_fc1
+      n: 6144
+      k: 1280
+      bias: true
+      tp: column
+    - op: elementwise
+      role: projector_act
+      bytes_per_row: 24576
+      tp: sharded
+    - op: gemm
+      role: projector_fc2
+      n: 6144
+      k: 6144
+      bias: true
+      tp: row
+    - op: gemm
+      role: merger_fc1
+      n: 6144
+      k: 24576
+      bias: true
+      tp: column
+      rows: output_tokens
+    - op: elementwise
+      role: merger_act
+      bytes_per_row: 24576
+      rows: output_tokens
+      tp: sharded
+    - op: gemm
+      role: merger_fc2
+      n: 6144
+      k: 6144
+      bias: true
+      tp: row
+      rows: output_tokens
 embedding:
 - op: Gather
   role: embed_tokens

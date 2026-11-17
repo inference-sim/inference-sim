@@ -2503,6 +2503,12 @@ stack:
   - csa1_moe
   - csa1_moe
 modality: text_decoder_of_multimodal
+encoder:
+  towers: []
+  omitted:
+  - modality: image
+    reason: the tower's stored dtype is not stated by config.json and no safetensors headers are pinned
+    issue: inference-sim/blis-substrate#277
 embedding:
 - op: Gather
   role: embed_tokens

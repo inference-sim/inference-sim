@@ -74,6 +74,7 @@ layer_kinds:
     role: qkv_proj
     n: 4608
     k: 2688
+    weight_dtype: bf16
   - op: Attention
     holds_engine_kv: true
     kind: gqa
@@ -84,6 +85,7 @@ layer_kinds:
     role: o_proj
     n: 2688
     k: 4096
+    weight_dtype: bf16
   - op: AllReduce
     role: attn_out
     emit: tensor_parallel
@@ -146,6 +148,7 @@ head:
   role: lm_head
   n: 131072
   k: 2688
+  weight_dtype: bf16
 speculator:
   method: nemotron_h_mtp
   num_spec_tokens: 1

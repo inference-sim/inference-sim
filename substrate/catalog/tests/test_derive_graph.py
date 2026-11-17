@@ -2411,7 +2411,7 @@ def test_nemotron_nvfp4_keeps_its_declared_mixed_precision_layout():
     for role in ("qkv_proj", "o_proj", "routed_expert_down_proj",
                  "routed_expert_up_proj"):
         if role in by_role:
-            assert by_role[role] is None, (
+            assert (by_role[role] or g["global"]["weight_dtype"]) == "bf16", (
                 f"{role} is in the checkpoint's ignore list and must keep the bf16 "
                 f"base, not {by_role[role]!r}")
 
@@ -5905,7 +5905,8 @@ def test_muse_spark_nvfp4_quantizes_only_the_experts_it_names():
         e = _node(_kind_of(g, i), "experts")
         named = f"model.language_model.layers.{i}.mlp.experts" in excluded
         assert e.get("weight_dtype", "bf16") == ("bf16" if named else "nvfp4"), i
-    assert {i for i in range(62) if "weight_dtype" not in _node(_kind_of(g, i), "experts")} == {0, 61}
+    assert {i for i in range(62)
+            if _node(_kind_of(g, i), "experts").get("weight_dtype", "bf16") == "bf16"} == {0, 61}
     for k in g["layer_kinds"]:
         for n in k["nodes"]:
             if n["op"] == "GEMM":
@@ -5998,7 +5999,8 @@ def test_muse_spark_nvfp4_reads_the_list_vllm_reads(tmp_path):
     moved["quantization_config"]["exclude_modules"] = [
         "layers.1", "self_attn", "lm_head"]
     g = _derive_raw(moved, tmp_path, MUSE_NVFP4.name)
-    bf16 = {i for i in range(62) if "weight_dtype" not in _node(_kind_of(g, i), "experts")}
+    bf16 = {i for i in range(62)
+            if _node(_kind_of(g, i), "experts").get("weight_dtype", "bf16") == "bf16"}
     assert bf16 == {1, *range(10, 20)}
     for drop, why in (("self_attn", "attention"), ("lm_head", "lm_head")):
         bad = json.loads(json.dumps(raw))
@@ -6524,12 +6526,13 @@ def _strip_identity(g: dict) -> dict:
 
 
 def _nodes_by_role(g: dict) -> dict[str, set]:
-    """Role -> the weight_dtype values it carries across all layer kinds ('-' for none)."""
+    """Role -> the widths it is stored at across all layer kinds: its own weight_dtype, or the
+    global width it takes where it states none."""
     out: dict[str, set] = {}
     for k in g["layer_kinds"]:
         for n in k["nodes"]:
             if n["op"] in ("GEMM", "GroupedGEMM"):
-                out.setdefault(n["role"], set()).add(n.get("weight_dtype", "-"))
+                out.setdefault(n["role"], set()).add(n.get("weight_dtype") or g["global"]["weight_dtype"])
     return out
 
 
@@ -6540,7 +6543,7 @@ def test_kimi_k25_nvfp4_graph_is_what_its_configuration_derives_to(tmp_path):
     g = graph_of(KIMI_K25_NVFP4)
     assert g["global"]["weight_dtype"] == "bf16"
     assert _nodes_by_role(g) == {
-        "qkv_a_proj": {"-"}, "q_b_proj": {"-"}, "kv_b_proj": {"-"}, "o_proj": {"-"},
+        "qkv_a_proj": {"bf16"}, "q_b_proj": {"bf16"}, "kv_b_proj": {"bf16"}, "o_proj": {"bf16"},
         "mlp_gate_up": {"nvfp4"}, "mlp_down": {"nvfp4"}, "experts": {"nvfp4"}}
     derived = _derive_raw(_kimi_k25_nvfp4_raw(), tmp_path, "kimi-k2.5-nvfp4")
     assert _strip_identity(derived) == _strip_identity(g)
@@ -6560,10 +6563,10 @@ def test_kimi_k25_nvfp4_differs_from_the_int4_entry_in_widths_only():
 def test_minimax_m25_nvfp4_quantizes_only_the_experts():
     g = graph_of(MINIMAX_M25_NVFP4)
     assert g["global"]["weight_dtype"] == "bf16"
-    assert _nodes_by_role(g) == {"qkv_proj": {"-"}, "o_proj": {"-"}, "experts": {"nvfp4"}}
+    assert _nodes_by_role(g) == {"qkv_proj": {"bf16"}, "o_proj": {"bf16"}, "experts": {"nvfp4"}}
     base = graph_of(MINIMAX_M25)
     assert base["global"]["weight_dtype"] == "fp8"
-    assert _nodes_by_role(base)["experts"] == {"-"}
+    assert _nodes_by_role(base)["experts"] == {"fp8"}
 
 
 # The classes of tensors in the pinned safetensors headers, from the 119 shards of
@@ -6661,7 +6664,7 @@ def test_minimax_m25_nvfp4_resident_parameters_equal_the_header_totals():
     assert emb == h["embed_tokens"][1]
     assert sum(got.values()) + emb + h["norms"][1] + h["router"][1] == sum(v[1] for v in h.values())
     assert (h["experts"][0], _nodes_by_role(g)["experts"]) == ("U8", {"nvfp4"})
-    assert _nodes_by_role(g)["qkv_proj"] == {"-"}
+    assert _nodes_by_role(g)["qkv_proj"] == {"bf16"}
 
 
 def test_modelopt_legacy_prefix_spelling_reads_as_the_modern_one(tmp_path):
@@ -6695,7 +6698,7 @@ def test_modelopt_names_vllms_modules_not_the_checkpoints(tmp_path):
     assert _nodes_by_role(g)["experts"] == {"nvfp4"}
     # Naming vLLM's module does exclude it, and the experts then stay at the base width.
     raw["quantization_config"]["ignore"] += [f"model.layers.{i}.mlp*" for i in range(62)]
-    assert _nodes_by_role(_derive_raw(raw, tmp_path, "minimax-m2.5-nvfp4"))["experts"] == {"-"}
+    assert _nodes_by_role(_derive_raw(raw, tmp_path, "minimax-m2.5-nvfp4"))["experts"] == {"bf16"}
 
 
 @pytest.mark.parametrize("make,edit,why", [
@@ -6764,7 +6767,7 @@ def test_kimi_k3_quantizes_its_routed_experts_and_nothing_else():
     assert widths["experts"] == {"mxfp4"}
     assert widths["shared_experts"] == {"bf16"}
     for role in ("routed_expert_down_proj", "routed_expert_up_proj", "mlp_gate_up", "mlp_down"):
-        assert widths[role] <= {"-", "bf16"}, role
+        assert widths[role] == {"bf16"}, role
     assert all(n.get("weight_dtype", "bf16") == "bf16" for n in g["head"])
     assert not any(n.get("shared_experts") for k in g["layer_kinds"] for n in k["nodes"])
 
@@ -8000,7 +8003,7 @@ def test_modelopt_stacked_loader_rename_excludes_the_fused_projection(tmp_path):
                    f"model.layers.{i}.self_attn.o_proj"]
     raw["quantization_config"]["ignore"] = ignore
     by = _nodes_by_role(_derive_raw(raw, tmp_path, "minimax-m2.5-nvfp4"))
-    assert by["qkv_proj"] == {"-"} and by["o_proj"] == {"-"} and by["experts"] == {"nvfp4"}
+    assert by["qkv_proj"] == {"bf16"} and by["o_proj"] == {"bf16"} and by["experts"] == {"nvfp4"}
     # Without the q_proj entry the fused projection is quantized.
     raw["quantization_config"]["ignore"] = [p for p in ignore if not p.endswith("q_proj")]
     assert _nodes_by_role(_derive_raw(raw, tmp_path, "minimax-m2.5-nvfp4"))["qkv_proj"] == {"nvfp4"}
@@ -9140,3 +9143,111 @@ def test_every_catalog_model_with_a_vision_config_states_its_tower_or_why_not():
         assert enc["towers"] or enc["omitted"], d.name
         for o in enc.get("omitted", []):
             assert re.fullmatch(r"[\w.-]+/[\w.-]+#\d+", o["issue"]), (d.name, o)
+
+# ---- Resident widths and splits vLLM v0.33.0 builds (inference-sim/blis-substrate#254, #255, #107)
+
+def _derived(tmp_path, name: str, edit=None) -> dict:
+    """The graph derive() gives for a committed config, edited by `edit` first where given."""
+    raw = config_of(MODELS / name)
+    if edit:
+        edit(raw)
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(raw))
+    return _dg().derive(path, name)
+
+
+def _resident_bytes(g: dict, node: dict, served: str | None = None) -> float:
+    """One node's stored bytes as blis-schemas Graph.WeightBytesPerParam reads them, where a
+    served format replaces the global width of a node that states none (the kernel's
+    weightBytesPerParam): payload plus the scale the format or the graph states."""
+    per = {"bf16": 2, "fp16": 2, "fp32": 4, "fp8": 1, "int8": 1, "int4": 0.5,
+           "nvfp4": 0.5 + 1 / 16, "mxfp4": 0.5 + 1 / 32}
+    d = node.get("weight_dtype")
+    if d is None:
+        d = served or g["global"]["weight_dtype"]
+        scale = g["global"].get("weight_scale") if d == g["global"]["weight_dtype"] else None
+    else:
+        scale = node.get("weight_scale")
+    b = per[d] + (scale["bytes"] / scale["elements"] if scale and d not in ("nvfp4", "mxfp4") else 0)
+    return node["n"] * node["k"] * b
+
+
+@pytest.mark.parametrize("name,roles", [
+    ("deepseek-v3", ("qkv_a_proj",)),
+    ("kimi-k2.5", ("qkv_a_proj",)),
+    ("deepseek-v2-lite", ("kv_a_proj",)),
+])
+def test_mla_a_projections_are_whole_on_every_rank(tmp_path, name, roles):
+    """vLLM replicates the A-projections of DeepSeek-V2/V3's latent attention: the fused one is
+    a MergedColumnParallelLinear with disable_tp=True, the KV one without a q_lora_rank a
+    ReplicatedLinear (deepseek_v2.py:953-968, 1059@4ba787ec). Split over the ranks, Kimi-K2.5's
+    1.72 GiB of them was planned at a quarter on a TP4 rank. The up-projections after them do
+    split."""
+    g = _derived(tmp_path, name)
+    nodes = [n for k in g["layer_kinds"] for n in k["nodes"]]
+    a = [n for n in nodes if n.get("role") in roles]
+    assert a and all(n.get("tp") == "replicated" for n in a), [n.get("tp") for n in a]
+    for n in nodes:
+        if n.get("role") in ("q_b_proj", "kv_b_proj", "o_proj", "q_proj"):
+            assert n.get("tp") != "replicated", n
+
+
+@pytest.mark.parametrize("name", ["minimax-m2.5", "deepseek-v3", "kimi-k2.5", "qwen3.5-397b-a17b-fp8"])
+def test_a_quantized_checkpoints_head_holds_its_bf16_bytes(tmp_path, name):
+    """vLLM builds the head of an fp8 checkpoint unquantized (Fp8Config quantizes LinearBase and
+    routed experts only, fp8.py:177-209@4ba787ec), and of a compressed-tensors one wherever no
+    scheme reaches it; MiniMax-M2.5's header stores it BF16. Priced at the global fp8 width it
+    held half its bytes, at int4 under a third."""
+    g = _derived(tmp_path, name)
+    head = next(n for n in g["head"] if n.get("role") == "lm_head")
+    assert g["global"]["weight_dtype"] in ("fp8", "int4")
+    assert _resident_bytes(g, head) == 2 * g["global"]["vocab_size"] * g["global"]["hidden_size"]
+
+
+def test_a_compressed_tensors_head_a_scheme_targets_keeps_the_quantized_width(tmp_path):
+    """The other direction of the same rule: where a config group targets lm_head and the
+    ignore list does not name it, vLLM quantizes the head (compressed_tensors.py:186-193)."""
+    def target_head(raw):
+        q = text_config(raw)["quantization_config"]
+        q["ignore"] = [e for e in q["ignore"] if "lm_head" not in e]
+        for grp in q["config_groups"].values():
+            grp["targets"] = list(grp["targets"]) + ["re:.*lm_head"]
+    g = _derived(tmp_path, "kimi-k2.5", target_head)
+    head = next(n for n in g["head"] if n.get("role") == "lm_head")
+    assert head.get("weight_dtype") in (None, "int4")
+
+
+def test_kimi_int4_dense_mlp_holds_its_bf16_bytes_and_follows_the_ignore_list(tmp_path):
+    """Kimi-K2.5's ignore list names re:.*mlp\\.(gate|up|gate_up|down)_proj.*, so vLLM builds
+    layer 0's MLP unquantized (should_ignore_layer, compressed_tensors/utils.py:53-71); without
+    that entry it is int4 with its group scale."""
+    def dense_bytes(g):
+        return sum(_resident_bytes(g, n) for k in g["layer_kinds"] for n in k["nodes"]
+                   if n.get("role") in ("mlp_gate_up", "mlp_down"))
+    g = _derived(tmp_path, "kimi-k2.5")
+    t = text_config(config_of(MODELS / "kimi-k2.5"))
+    params = 3 * t["intermediate_size"] * t["hidden_size"]
+    assert dense_bytes(g) == 2 * params
+
+    def keep_mlp(raw):
+        q = text_config(raw)["quantization_config"]
+        q["ignore"] = [e for e in q["ignore"] if "mlp" not in e]
+    assert dense_bytes(_derived(tmp_path, "kimi-k2.5", keep_mlp)) == params * (0.5 + 2 / 32)
+
+
+def test_a_served_format_does_not_reprice_what_a_partial_checkpoint_left_unquantized(tmp_path):
+    """gpt-oss-120b's MXFP4 reaches its routed experts only, and a deployment states the
+    checkpoint's own method (quantization: mxfp4). Every module but the experts keeps its BF16
+    bytes under that served format, as vLLM builds them (Mxfp4Config gives LinearBase
+    UnquantizedLinearMethod); before, the 1.78 GiB of attention and the 1.08 GiB head were
+    priced at 0.53 B a parameter. A wholly unquantized checkpoint is still repriced by a served
+    format, as a BF16 model served fp8 is."""
+    g = _derived(tmp_path, "gpt-oss-120b")
+    weights = [n for k in g["layer_kinds"] for n in k["nodes"] if n["op"] in ("GEMM", "GroupedGEMM")]
+    weights += [n for n in g["head"] if n["op"] == "GEMM"]
+    for n in weights:
+        if n["op"] == "GEMM":
+            assert _resident_bytes(g, n, served="mxfp4") == 2 * n["n"] * n["k"], n["role"]
+    plain = _derived(tmp_path, "qwen3-14b")
+    head = next(n for n in plain["head"] if n.get("role") == "lm_head")
+    assert _resident_bytes(plain, head, served="fp8") == head["n"] * head["k"]

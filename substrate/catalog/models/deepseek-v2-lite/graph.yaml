@@ -20,6 +20,7 @@ layer_kinds:
     role: kv_a_proj
     n: 576
     k: 2048
+    tp: replicated
   - op: Elementwise
     role: kv_a_layernorm
     bytes_per_token: 2048
@@ -90,6 +91,7 @@ layer_kinds:
     role: kv_a_proj
     n: 576
     k: 2048
+    tp: replicated
   - op: Elementwise
     role: kv_a_layernorm
     bytes_per_token: 2048
