@@ -22,7 +22,7 @@ import (
 // (offloading.Config.Manager). buildOffload refuses every other registered type by name; a type
 // vLLM does not register is refused first, as code_not_visible. surface.json marks exactly these
 // modelled.
-var modelledTiers = map[string]bool{"fs": true, "obj": true}
+var modelledTiers = map[string]bool{"fs": true, "obj": true, "p2p": true}
 
 // The secondary tiers through engine.Engine.
 //
