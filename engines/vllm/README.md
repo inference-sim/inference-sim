@@ -136,8 +136,7 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   - not a key of the engine block, so a deployment that states it is refused when the block
     is decoded (an unknown key), and a run that does not state it runs vLLM's default: `attention_backend`,
     `attention_config.backend` (blis-vllm#80), `attention_config.indexer_sparse_logits` (#84),
-    `api_server_count` (#105; the engine's data-parallel group is one client, which is vLLM's internal-load-balancing count for
-    every value recorded runs state, so a scorer drops a recorded value and leaves it unset), `kv_offloading_backend` (#87) and the
+    `kv_offloading_backend` (#87) and the
     environment variable `VLLM_USE_SIMPLE_KV_OFFLOAD` (#87, refused by the block's `env`);
   - a deployment field, not a key of the engine block, that the engine reads from the deployment:
     `data_parallel_external_lb` (#86) and `data_parallel_hybrid_lb` (#64), both stated as the pool's
@@ -234,13 +233,17 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   grouping its client saw, and the field is not G1-eligible until that stage reads it.
 - **Narrower issues.** Part of what some `not_modelled` fields need is now its own issue; the fields keep
   the citations they had (the fields.json entry and its status are unchanged here):
-  `api_server_count` (blis-vllm#105),
   `default_chat_template_kwargs` and thinking mode (#107), `enable_eplb` (#108), and decode context
-  parallelism and `prefix_match_unit` (#109). `api_server_count` has the estimation rule `none` and is
-  not delivered: stating it changes nothing the engine simulates only for the single-client data-parallel
-  case, because vLLM scales the in-flight routing score, the optimistic increment and each client's scan
-  start by the client count (`vllm/v1/engine/core_client.py:1639-1640,1671,1685@5df63a72`); #105 asks for
-  that model.
+  parallelism and `prefix_match_unit` (#109).
+- **`api_server_count` is `modelled` (#105).** It is the number of load-balancing clients of a data-parallel
+  group: each API server holds its own `DPLBAsyncMPClient`, which scales its in-flight count and its optimistic
+  waiting bump by the client count and starts its scan at `n * client_index / client_count`
+  (`vllm/v1/engine/core_client.py:1747-1750,1786,1800@4ba787ec`); requests reach the clients in turn, the even
+  spread the kernel's hash of connections gives in expectation (`serve.py:298@4ba787ec`, SO_REUSEPORT). An unstated
+  count is one client, not vLLM's default for an internal balancer, which is the group's size
+  (`serve.py:123-126`), so the rule is `none`: a caller states the count it ran. Its evidence is
+  `oracle/scenarios-dp-clients` (vLLM's `DPLBAsyncMPClient` objects, one per client, compared with the Go routing by
+  `TestDPClientsAgainstVLLM` in CI; vLLM's trace for them is produced by CI and not committed).
 - **`inert_unproven` is a transition status**, allowed only until M2 (release plan §3.3). The
   perturbation test over every `modelled` field, VLM-3's other check, is not here yet.
 - `TestTheFieldListLoadsAndNamesThisRelease` loads the file with the substrate's strict loader,

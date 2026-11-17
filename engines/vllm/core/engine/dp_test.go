@@ -28,6 +28,7 @@ type dpScenario struct {
 		StatsInterval             int    `json:"stats_interval"`
 		StatsLag                  int    `json:"stats_lag"`
 		AsyncScheduling           bool   `json:"async_scheduling"`
+		ClientCount               int    `json:"client_count"`
 	} `json:"config"`
 	Requests []struct {
 		ID          string  `json:"id"`
@@ -36,6 +37,7 @@ type dpScenario struct {
 		Output      []int64 `json:"output"`
 		MaxTokens   int     `json:"max_tokens"`
 		Priority    int     `json:"priority"`
+		Client      *int    `json:"client"`
 	} `json:"requests"`
 	MaxSteps int `json:"max_steps"`
 }
@@ -84,7 +86,7 @@ func runDP(t *testing.T, sc dpScenario) dpTrace {
 		maxLen = c.MaxNumBatchedTokens
 	}
 	gpu := &mockGPU{outputs: map[string][]int64{}, sampled: map[string]int{}, async: c.AsyncScheduling}
-	d := &DP{LB: NewLoadBalancer(n)}
+	d := &DP{LB: NewLoadBalancers(n, c.ClientCount)}
 	// With async scheduling every rank runs the AsyncScheduler and step_with_batch_queue with a
 	// queue of max_concurrent_batches (oracle/run_dp_async.py); otherwise step() (run_dp.py).
 	queue := MaxConcurrentBatches(1, c.AsyncScheduling, false)
@@ -142,7 +144,12 @@ func runDP(t *testing.T, sc dpScenario) dpTrace {
 			if mt == 0 {
 				mt = 1 << 20
 			}
-			rank := d.Add(r.ID)
+			var rank int
+			if r.Client != nil {
+				rank = d.AddVia(*r.Client, r.ID)
+			} else {
+				rank = d.Add(r.ID)
+			}
 			if err := d.Ranks[rank].Sched.Add(&sched.Request{ID: r.ID, Priority: r.Priority, ArrivalTime: float64(r.ArrivalStep),
 				Prompt: r.Prompt, MaxTokens: mt, EOS: eosToken}); err != nil {
 				t.Fatal(err)
@@ -266,6 +273,38 @@ func TestDPAgainstVLLM(t *testing.T) {
 			checkDPProvenance(t, path, want)
 			if d := dpDivergence(want, runDP(t, sc)); d != "" {
 				t.Fatalf("earliest divergence from vLLM v0.33.0: %s", d)
+			}
+		})
+	}
+}
+
+// TestDPClientsAgainstVLLM runs every scenario of oracle/scenarios-dp-clients, several load-balancing
+// clients (api_server_count) over one data-parallel group, and compares the routing and every
+// rank's steps with vLLM's own DPLBAsyncMPClient objects, one per client. BLIS_VLLM_DP_CLIENTS_DIR
+// names the fresh traces oracle/run_dp.py wrote from CI's pinned environment (no trace of vLLM's
+// is committed for these scenarios: CI produces it, as the DP fuzz corpus does).
+func TestDPClientsAgainstVLLM(t *testing.T) {
+	dir := os.Getenv("BLIS_VLLM_DP_CLIENTS_DIR")
+	if dir == "" {
+		t.Skip("BLIS_VLLM_DP_CLIENTS_DIR is unset: the multi-client routing was NOT checked against vLLM (CI's oracle job sets it)")
+	}
+	scenarios, err := filepath.Glob("../../oracle/scenarios-dp-clients/*.json")
+	if err != nil || len(scenarios) == 0 {
+		t.Fatalf("no multi-client scenarios (%v)", err)
+	}
+	for _, path := range scenarios {
+		name := strings.TrimSuffix(filepath.Base(path), ".json")
+		t.Run(name, func(t *testing.T) {
+			var sc dpScenario
+			readJSON(t, path, &sc)
+			if sc.Config.ClientCount < 2 {
+				t.Fatalf("%s states client_count %d: a multi-client scenario states at least 2", name, sc.Config.ClientCount)
+			}
+			var want dpTrace
+			readJSON(t, filepath.Join(dir, name+".trace.json"), &want)
+			checkDPProvenance(t, path, want)
+			if d := dpDivergence(want, runDP(t, sc)); d != "" {
+				t.Fatalf("earliest divergence from vLLM: %s", d)
 			}
 		})
 	}

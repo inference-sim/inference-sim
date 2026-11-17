@@ -67,7 +67,7 @@ func New(children []Child) (*Connector, error) {
 			"(kv_connector_extra_config connectors, multi_connector.py:235-258@4ba787ec)")
 	}
 	c := &Connector{children: append([]Child(nil), children...), chosen: map[string]int{}, hma: true,
-		caps: sched.Capabilities{HybridGroups: true, Drafters: true, ConcurrentBatches: true}}
+		caps: sched.Capabilities{HybridGroups: true, Drafters: true, ConcurrentBatches: true, PackedGroups: true}}
 	for _, ch := range children {
 		if ch.Conn == nil {
 			return nil, fmt.Errorf("multi: child %q is nil", ch.Name)
@@ -79,6 +79,7 @@ func New(children []Child) (*Connector, error) {
 		c.caps.HybridGroups = c.caps.HybridGroups && caps.HybridGroups
 		c.caps.Drafters = c.caps.Drafters && caps.Drafters
 		c.caps.ConcurrentBatches = c.caps.ConcurrentBatches && caps.ConcurrentBatches
+		c.caps.PackedGroups = c.caps.PackedGroups && caps.PackedGroups
 		if _, ok := ch.Conn.(sched.SupportsHMA); !ok {
 			c.hma = false
 		}
@@ -92,6 +93,21 @@ func New(children []Child) (*Connector, error) {
 // ConnectorModels implements sched.ConnectorCapabilities: what every child is diff-tested
 // beside.
 func (c *Connector) ConnectorModels() sched.Capabilities { return c.caps }
+
+// LoadedGroups implements sched.GroupLoader: the groups the chosen child's load restores
+// (MultiConnector.get_loaded_kv_cache_group_ids, multi_connector.py:447-449@4ba787ec). A child that
+// states none restores the prefix-cacheable groups (base.py:505-515), which no bounded-replay window
+// is, so it restores none of the groups the scheduler asks about (sched.GroupLoader's only use).
+func (c *Connector) LoadedGroups(r *sched.Request, all []int) []int {
+	i, ok := c.chosen[r.ID]
+	if !ok {
+		return nil
+	}
+	if gl, ok := c.children[i].Conn.(sched.GroupLoader); ok {
+		return gl.LoadedGroups(r, all)
+	}
+	return nil
+}
 
 // Len is the number of children; Name is child i's name.
 func (c *Connector) Len() int                    { return len(c.children) }

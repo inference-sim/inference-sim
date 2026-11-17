@@ -2,7 +2,7 @@
 
 // The engine's admission of remote-KV pulls (a P/D decode engine's handoffs): which of the
 // waiting handoffs start their pull, and what each admitted pull reserves until its KV lands.
-// It moved here from inference-sim's cluster (serveDecodeKVWaiters, #2021 B2 verification gap
+// It moved here from inference-sim's cluster (serveDecodeKVWaiters, inference-sim issue 2021 B2 verification gap
 // 5), which keeps the waiting queue, the transfer events and the drops.
 package engine
 
@@ -24,7 +24,7 @@ type RemoteKVAdmission struct {
 //
 // waiting is the handoffs in the order they reached this engine; a P/D host holds them and
 // delivers them in that order. Which of them start, and in what order, is the engine's rule
-// (#2021 B2, verification pass 4, gap 2).
+// (inference-sim issue 2021 B2, verification pass 4, gap 2).
 func (sim *EngineCore) AdmitRemoteKV(waiting []*Request) []RemoteKVAdmission {
 	var admitted []RemoteKVAdmission
 	for _, req := range sim.remoteKVOrder(waiting) {

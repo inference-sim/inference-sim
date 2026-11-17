@@ -179,7 +179,7 @@ EQUIVALENT = {
     # table up to num_tokens_need_slot, which covers the external tokens' blocks (a prompt is
     # at most max_model_len), from the same free-queue head, so allocating the external
     # blocks first gives the same blocks in the same order. With several groups the order
-    # across groups differs (issue #33775), but a NIXL load reporting invalid blocks refuses
+    # across groups differs (vllm-project/vllm#33775), but a NIXL load reporting invalid blocks refuses
     # several groups (scheduler.py:3365-3374).
     "N16": "the slot allocation covers the external blocks with the same pool pops",
     # A full-attention hit is whole blocks (find_longest_cache_hit,

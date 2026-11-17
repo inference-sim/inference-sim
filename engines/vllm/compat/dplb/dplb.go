@@ -14,12 +14,13 @@ import "math"
 // (vllm/v1/engine/coordinator.py:154-162, :267-269 at v0.31.0).
 const StatsIntervalUs int64 = 100_000
 
-// clientCount is the number of front-ends one balancer stands for. vLLM starts
-// api_server_count front-ends, dp by default under the internal balancer
-// (vllm/entrypoints/cli/serve.py:105-127), each scaling its own in-flight count by the client
-// count to estimate the total. BLIS models one front-end that sees every in-flight request,
-// which is the quantity that scaling estimates, so the count is 1.
-const clientCount = 1
+// A balancer is one front-end process's client. vLLM starts api_server_count front-ends, dp by
+// default under the internal balancer (vllm/entrypoints/cli/serve.py:105-127), and each has its
+// own DPLBAsyncMPClient: its own copy of the published counts, its own exact in-flight count of
+// the requests it routed, and its own rotating scan start, n*client_index/client_count at the
+// outset (vllm/v1/engine/core_client.py:1747-1750@4ba787ec). A client scales its in-flight count
+// by the client count to estimate the group's total, and raises the chosen rank's waiting count by
+// the client count (:1786, :1800).
 
 // Counts are one rank's published load: waiting and running requests, and KV cache usage.
 type Counts struct {
@@ -46,10 +47,18 @@ type Balancer struct {
 	epoch int64
 	// start is the balancer's rotating scan start (eng_start_index, :1629-1634).
 	start int
+	// clientCount is the number of front-ends in the group, which scales the in-flight count.
+	clientCount int
 }
 
 // New is the balancer of a replica of n ranks, before any publish.
-func New(n int) *Balancer { return &Balancer{epoch: -1, counts: make([]Counts, n)} }
+func New(n int) *Balancer { return NewClient(n, 1, 0) }
+
+// NewClient is the balancer of front-end clientIndex of clientCount, for a replica of n ranks.
+func NewClient(n, clientCount, clientIndex int) *Balancer {
+	clientCount = max(clientCount, 1)
+	return &Balancer{epoch: -1, counts: make([]Counts, n), clientCount: clientCount, start: n * clientIndex / clientCount}
+}
 
 // Pick assigns a request that reached the replica's endpoint at now to a rank, as vLLM
 // v0.31.0's internal DP load balancer does (DPLBAsyncMPClient.get_core_engine_for_request,
@@ -76,7 +85,7 @@ func (b *Balancer) Pick(ranks []Rank, now int64) int {
 	for i := 0; i < n; i++ {
 		k := (b.start + i) % n
 		c := b.counts[k]
-		score := float64(max(clientCount*ranks[k].InFlight(), c.Waiting+c.Running))
+		score := float64(max(b.clientCount*ranks[k].InFlight(), c.Waiting+c.Running))
 		if c.Waiting > 0 {
 			score += float64(c.Waiting) * 6.0 * math.Max(0, c.KVUsage-0.5)
 		}
@@ -84,7 +93,7 @@ func (b *Balancer) Pick(ranks []Rank, now int64) int {
 			best, bestScore = k, score
 		}
 	}
-	b.counts[best].Waiting += clientCount
+	b.counts[best].Waiting += b.clientCount
 	b.start = (b.start + 1) % n
 	return best
 }
