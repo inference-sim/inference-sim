@@ -436,6 +436,7 @@ func (e *Engine) maxModelLen() int {
 // Schedule returns an empty batch, scheduling nothing, while a step is blocked: the simulator's
 // next Complete ends that step, and its following Schedule call is the loop's next step.
 func (e *Engine) Schedule(now engine.Time) (engine.Batch, error) {
+	e.off.tick(now)
 	b, err := e.schedule(now)
 	if err == nil {
 		// Requests this decision ended without running them (Batch.Finished): a failed load under
@@ -743,6 +744,7 @@ func (e *Engine) RecordSelected(d *load.Data) {
 
 // Complete implements engine.Engine: the batch's output and update_from_output.
 func (e *Engine) Complete(id engine.BatchID, outcome engine.Outcome, end engine.Time) (engine.Result, error) {
+	e.off.tick(end)
 	res, _, err := e.complete(id, outcome, end)
 	return res, err
 }
@@ -941,6 +943,7 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 // is unknown. The simulator steps the engine after a transfer completion at the same instant
 // (the engine package's same-instant order), and that step's output carries it.
 func (e *Engine) TransferDone(id engine.TransferID, ok bool, now engine.Time) error {
+	e.off.tick(now)
 	if e.off != nil {
 		// The offload's and the P/D connector's transfers are one sequence of IDs (newEngine).
 		if err := e.off.done(id, ok); !errors.Is(err, engine.ErrUnknownTransfer) {
