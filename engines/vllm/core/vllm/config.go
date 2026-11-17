@@ -429,6 +429,11 @@ func resolve(c Config) (settings, error) {
 	}
 	s.connector, s.pp = c.KVTransfer, pp
 	s.offload, s.specMethod = c.KVOffload, method
+	if s.offload != nil {
+		o := *s.offload
+		o.env = e.Env
+		s.offload = &o
+	}
 	if c.Placement != nil {
 		if err := c.Placement.Validate(); err != nil {
 			return settings{}, fmt.Errorf("vllm: placement: %w", err)
@@ -770,7 +775,7 @@ func refuseUnreadSettings(e engineconfig.Engine) error {
 }
 
 // readEnv are the engine environment variables this engine reads (resolveV2Runner).
-var readEnv = []string{"PYTHONHASHSEED", "VLLM_USE_V2_MODEL_RUNNER", "UCX_CUDA_IPC_ENABLE_MNNVL"}
+var readEnv = append([]string{"PYTHONHASHSEED", "VLLM_USE_V2_MODEL_RUNNER", "UCX_CUDA_IPC_ENABLE_MNNVL"}, p2pEnvNames...)
 
 // inertEnv are the environment variables the engine accepts without reading: fields.json proves each
 // inert (oracle/inertness/<name>.json), so stating one changes nothing the engine decides. Python

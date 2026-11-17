@@ -86,6 +86,14 @@ type offloadConfig struct {
 	CachePolicyModulePath string           `yaml:"cache_policy_module_path,omitempty"`
 	SecondaryTiers        []map[string]any `yaml:"secondary_tiers,omitempty"`
 	Backpressure          map[string]any   `yaml:"backpressure,omitempty"`
+	// TierPollIntervalS is the extra config's tier_poll_interval_s: the pause between rounds of the
+	// tier-poll thread, 1 ms unstated; zero or negative runs no thread (tiering/manager.py:65-70,
+	// 312-314@4ba787ec). Only a tier that asks for polling (p2p) reads it.
+	TierPollIntervalS *float64 `yaml:"tier_poll_interval_s,omitempty"`
+
+	// env is the engine's environment (the engine block's env:), which the p2p tier reads its
+	// VLLM_P2P_* limits and the hash seed from. It is not a key of the block.
+	env map[string]string
 }
 
 // offloadKeys are the block's code-choosing keys.
@@ -217,7 +225,7 @@ func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method 
 	for g := range eagle {
 		eagle[g] = spec.EagleBlockDrop && s.KV.GroupSpec(g).Eagle
 	}
-	tiers, err := buildTiers(c, bpc, bs, offloading.ChunkBytes(c.BytesPerBlock, copies, bpc, page), tierNamespace(s, bpc, world))
+	tiers, err := buildTiers(c, bpc, bs, offloading.ChunkBytes(c.BytesPerBlock, copies, bpc, page), chunks, tierNamespace(s, bpc, world))
 	if err != nil {
 		return nil, err
 	}

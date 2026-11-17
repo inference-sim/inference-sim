@@ -98,6 +98,7 @@ type childExtra struct {
 	CachePolicyModulePath string           `yaml:"cache_policy_module_path,omitempty"`
 	SecondaryTiers        []map[string]any `yaml:"secondary_tiers,omitempty"`
 	Backpressure          map[string]any   `yaml:"backpressure,omitempty"`
+	TierPollIntervalS     *float64         `yaml:"tier_poll_interval_s,omitempty"`
 }
 
 // offloadKeys are the child's code-choosing keys.
@@ -208,7 +209,8 @@ func checkConnectorPair(c *connectorConfig, off *offloadConfig) (*offloadConfig,
 	}{{"cpu_bytes", off.CPUBytes != 0}, {"block_size", off.BlockSize != 0}, {"eviction_policy", off.EvictionPolicy != ""},
 		{"offload_prompt_only", off.OffloadPromptOnly != nil}, {"spec", off.Spec != ""},
 		{"spec_module_path", off.SpecModulePath != ""}, {"cache_policy_module_path", off.CachePolicyModulePath != ""},
-		{"secondary_tiers", off.SecondaryTiers != nil}, {"backpressure", off.Backpressure != nil}} {
+		{"secondary_tiers", off.SecondaryTiers != nil}, {"backpressure", off.Backpressure != nil},
+		{"tier_poll_interval_s", off.TierPollIntervalS != nil}} {
 		if d.stated {
 			return nil, fmt.Errorf("vllm: kv_offload.%s beside a MultiConnector: the offloading child's own "+
 				"kv_connector_extra_config states it as vLLM does; state it there once", d.key)
@@ -222,6 +224,7 @@ func checkConnectorPair(c *connectorConfig, off *offloadConfig) (*offloadConfig,
 	merged.EvictionPolicy, merged.OffloadPromptOnly = x.EvictionPolicy, x.OffloadPromptOnly
 	merged.SpecModulePath, merged.CachePolicyModulePath = x.SpecModulePath, x.CachePolicyModulePath
 	merged.SecondaryTiers, merged.Backpressure = x.SecondaryTiers, x.Backpressure
+	merged.TierPollIntervalS = x.TierPollIntervalS
 	return &merged, nil
 }
 
