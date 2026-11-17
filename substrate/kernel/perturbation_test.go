@@ -155,7 +155,7 @@ func perturbationScenariosFor(t *testing.T, d *load.Data, m, c, offload, sets st
 			out = append(out, perturbationCase{label, in})
 			// The lowered plans these scenarios state no all-reduce kernel, which prices the NCCL
 			// lane; the same scenario with the engine's custom kernel prices the other lane.
-			if tp > 1 {
+			if tp > 1 && dp == 1 && !ep && lay.dcp == 0 && lay.pcp == 0 {
 				cu := *in.Lowered
 				cu.Reported.SMAllReduce, cu.Plan.Collectives.AllReduce = true, plan.AllReduceCustom
 				cuIn := in
