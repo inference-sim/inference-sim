@@ -173,3 +173,35 @@ func TestTheHostTierResolvesAndRefusesItsSettingsAsSGLangDoes(t *testing.T) {
 		}
 	}
 }
+
+// A setting the host tier accepts but does not trace is named in the result, with the SGLang
+// source that shows it changes no decision; the direct backend with layer_first names none.
+func TestTheHostTierNamesWhatItAcceptsButDoesNotTrace(t *testing.T) {
+	base := L2Config{WritePolicy: "write_through", IOBackend: "direct", Layout: "layer_first"}
+	if got := base.Substitutions(); len(got) != 0 {
+		t.Errorf("the traced settings name substitutions: %+v", got)
+	}
+	for _, tc := range []struct {
+		io, layout string
+		want       []string
+	}{
+		{"kernel", "layer_first", []string{"--hicache-io-backend kernel"}},
+		{"kernel", "page_first", []string{"--hicache-io-backend kernel", "--hicache-mem-layout page_first"}},
+		{"direct", "page_first", []string{"--hicache-mem-layout page_first"}},
+		{"kernel", "page_head", []string{"--hicache-io-backend kernel", "--hicache-mem-layout page_head"}},
+		{"kernel", "page_unified", []string{"--hicache-io-backend kernel", "--hicache-mem-layout page_unified"}},
+	} {
+		c := base
+		c.IOBackend, c.Layout = tc.io, tc.layout
+		var got []string
+		for _, s := range c.Substitutions() {
+			if s.Traced == "" || !strings.Contains(s.Reason, "python") && !strings.Contains(s.Reason, ".py") {
+				t.Errorf("%+v: substitution %q names no SGLang source", c, s.Setting)
+			}
+			got = append(got, s.Setting)
+		}
+		if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+			t.Errorf("%s+%s names %v, want %v", tc.io, tc.layout, got, tc.want)
+		}
+	}
+}
