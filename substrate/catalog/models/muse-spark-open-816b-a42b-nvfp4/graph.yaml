@@ -28,6 +28,11 @@ layer_kinds:
   - op: Elementwise
     role: qk_norm_rope
     bytes_per_token: 36864
+  - op: Gather
+    role: rope_cos_sin_cache
+    rows: 1048576
+    row_bytes: 256
+    resident_only: true
   - op: Attention
     holds_engine_kv: true
     kind: swa
@@ -137,6 +142,8 @@ layer_kinds:
     - 15
   - - 15
     - 16
+  - - 16
+    - 17
 - id: full_moe
   nodes:
   - op: Elementwise
@@ -271,6 +278,11 @@ layer_kinds:
   - op: Elementwise
     role: qk_norm_rope
     bytes_per_token: 36864
+  - op: Gather
+    role: rope_cos_sin_cache
+    rows: 1048576
+    row_bytes: 256
+    resident_only: true
   - op: Attention
     holds_engine_kv: true
     kind: swa
@@ -378,6 +390,8 @@ layer_kinds:
     - 15
   - - 15
     - 16
+  - - 16
+    - 17
 - id: full_moe_bf16
   nodes:
   - op: Elementwise
