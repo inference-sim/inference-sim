@@ -210,6 +210,38 @@ jobs:
           python -I oracle/compare_goldens.py oracle-traces-fid5/t2 "$commit" oracle/scenarios/cache core/cache/testdata/golden-fid5/t2
           python -I oracle/compare_goldens.py oracle-traces-fid5/dfs "$commit" oracle/scenarios-dfs-order core/cache/testdata/golden-fid5/dfs
           python -I oracle/compare_goldens.py oracle-traces-fid5/direct "$commit" oracle/scenarios-cache-iface core/cache/testdata/golden-fid5/direct
+      # FID-5 (design §7.6) for HiCache: the controller, layer counter, L2 transfer, host pool and
+      # storage interfaces traced as SGLang's own classes answer them, the controller's threads and
+      # device events run by the step-driven runner (oracle/step_runner.py, FID-1). Recorded: each
+      # HiCache scheduler scenario; direct: the driver's own sequences (oracle/run_hicache.py).
+      - name: trace the HiCache framework's interfaces
+        if: ${{ !cancelled() }}
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          export ORACLE_MODEL="$PWD/oracle-model"
+          mkdir -p oracle-traces-hicache/recorded oracle-traces-hicache/direct
+          for s in oracle/scenarios/hicache/recorded/*.json; do
+            python -I oracle/run_hicache.py recorded sglang-source "$s" "oracle-traces-hicache/recorded/$(basename "$s" .json).trace.json"
+          done
+          for s in oracle/scenarios/hicache/direct/*.json; do
+            python -I oracle/run_hicache.py direct sglang-source "$s" "oracle-traces-hicache/direct/$(basename "$s" .json).trace.json"
+          done
+      - name: upload the HiCache interface traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: oracle-traces-hicache
+          path: oracle-traces-hicache/
+      - name: every HiCache interface golden is SGLang's own output
+        run: |
+          set -euo pipefail
+          commit="$(git -C sglang-source rev-parse HEAD)"
+          python -I oracle/compare_goldens.py oracle-traces-hicache/recorded "$commit" oracle/scenarios/hicache/recorded core/hicache/testdata/golden-fid5/recorded
+          python -I oracle/compare_goldens.py oracle-traces-hicache/direct "$commit" oracle/scenarios/hicache/direct core/hicache/testdata/golden-fid5/direct
 
   # FID-3: a golden trace's decisions change only in a commit with a golden-reviewed trailer, and a
   # new golden was recorded on CI's platform from the committed lock.

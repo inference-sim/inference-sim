@@ -100,13 +100,16 @@ def code_of(value):
 class Monitor:
     """Records the calls at the six interfaces while it is entered."""
 
-    def __init__(self):
+    # The attributes a constructed object of an interface is recorded by (its sizing).
+    sizing_names = SIZING
+
+    def __init__(self, interfaces=INTERFACES, implementations=IMPLEMENTATIONS):
         import importlib
 
-        for mod in IMPLEMENTATIONS:
+        for mod in implementations:
             importlib.import_module(mod)
         self.codes = {}  # code object -> (interface, method)
-        for iface, mod, cls_name, extra in INTERFACES:
+        for iface, mod, cls_name, extra in interfaces:
             base = getattr(importlib.import_module(mod), cls_name)
             methods = interface_methods(base) | set(extra)
             for cls in subclasses(base):
@@ -205,7 +208,7 @@ class Monitor:
         return {k: self.enc(loc[k]) for k in names if k not in ("self", "cls") and k in loc}
 
     def sizing(self, obj):
-        return {k: self.enc(getattr(obj, k)) for k in SIZING if hasattr(obj, k)
+        return {k: self.enc(getattr(obj, k)) for k in self.sizing_names if hasattr(obj, k)
                 and not callable(getattr(type(obj), k, None))}
 
     # --- events ---
@@ -223,9 +226,10 @@ class Monitor:
                 return rec["seq"]
         return None
 
-    def _start(self, code, offset):
+    def _start(self, code, offset, f=None):
         iface, m = self.codes[code]
-        f = sys._getframe(2)
+        if f is None:
+            f = sys._getframe(2)
         rec = None
         if self._top(iface):
             rec = {"seq": len(self.calls), "i": iface, "m": m}
