@@ -396,23 +396,7 @@
       "suite": "platform-reads"
     }
   ],
-  "known_gaps": {
-    "lower/lower.go:Alignment:!=->==#1:if alignment%p.AttnCPSize != 0 {": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "lower/lower.go:AttentionBackends:!=->==#2:if a.DecodeAttentionBackend != nil && *a.DecodeAttentionBackend != \"\" {": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "lower/lower.go:AttentionBackends:!=->==#2:if a.PrefillAttentionBackend != nil && *a.PrefillAttentionBackend != \"\" {": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "lower/lower.go:CaptureBatchSizes:>->>=#1:if largest > numMax {": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "lower/lower.go:CaptureBatchSizes:||->&&#1:if a.CudaGraphConfig == nil || len(a.CudaGraphConfig.Decode.Bs) == 0 {": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "lower/lower.go:ParallelOf:==->!=#1:AttnDPEnabled: a.AttnDpSize > 1 || (a.EpJoinMode != nil && *a.EpJoinMode == \"scale\"),": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "lower/lower.go:RequireMLPTPGather:<=-><#1:if p.NumDPRanks <= 1 {": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "lower/lower.go:RequireMLPTPGather:==->!=#1:case a.MoeDenseTpSize == nil:": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "lower/lower.go:RequireMLPTPGather:==->!=#1:case b == \"flashinfer\", b == \"flashinfer_megamoe\":": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "lower/lower.go:RequireMLPTPGather:==->!=#2:case b == \"flashinfer\", b == \"flashinfer_megamoe\":": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "lower/lower.go:RequireMLPTPGather:>->>=#1:return *a.MoeDenseTpSize > p.TPSize/p.NumDPRanks, nil": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "core/cache/full.go:releaseLock:==->!=#1:if cur.lockRef == 0 {": "no test kills this mutant yet; tracked in blis-sglang#112 (M3.1)",
-    "config/resolve.go:deref:==->!=#1:if *v == nil {": "no test kills this mutant yet; tracked in blis-sglang#114 (M3.1)",
-    "lower/lower.go:RequireMLPTPGather:==->!=#1:case b == \"none\":": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "lower/lower.go:CaptureBatchSizes:>->>=#1:if bs > largest {": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)"
-  },
+  "known_gaps": {},
   "equivalent": {
     "core/sched/scheduler.go:getNextBatchToRun:!=->==#1:if last.ChunkedReq != nil {": "the last extend batch was formed by the previous call of getNewBatchPrefill, which ends by storing s.chunkedReq into that batch's ChunkedReq, and nothing assigns s.chunkedReq between two calls; so when last.ChunkedReq is not nil it is s.chunkedReq, which getNextBatchToRun has just put in exclude, and when it is nil exclude[nil] filters no request: with the test flipped the same set of requests is excluded",
     "core/sched/scheduler.go:getNextBatchToRun:>->>=#1:if s.chunkedReq.ExtendEnd > s.chunkedReq.C.PrefixLen {": "the guard is always true when a chunked request exists, so > and >= take the same branch: a chunked request's ExtendEnd is set by the previous pass, by commit (extend > 0) or by addChunkedReq (PrefixLen plus min(remaining prompt, chunk budget), and the budget is at least one token: the running requests mixed in and the shorter requests admitted before the chunk each take a token of the chunk size, and the chunk was admitted only because one was left), and the stash that follows sets PrefixLen to ExtendEnd only after this test; a 28000-scenario search with tiny chunk sizes under mixed chunking and shortest-prefill-first never reached ExtendEnd == PrefixLen",
@@ -484,6 +468,10 @@
     "core/metrics/metrics.go:Series:<-><=#1:return labelKey(out[i].Labels) < labelKey(out[j].Labels)": "no two series share both name and labels (a test asserts it), so the labels of two series of one name are never equal and < and <= agree",
     "core/metrics/metrics.go:Series:<-><=#1:return out[i].Name < out[j].Name": "this return is reached only when the names differ, and for different names a < b and a <= b are the same test",
     "core/metrics/metrics.go:prefillReport:>->>=#1:if d > 0 {": "effective holds input and device_hit from start-up, so adding a d of 0 to either adds 0.0 to a value that already exists and changes nothing",
-    "core/hicache/host.go:Alloc:>->>=#1:if needSize > len(p.freeSlots) {": "Alloc takes from the front of free ++ release_1 .. release_k, and Free only ever appends a run to the release list, so merging early (needSize equal to the free count) or late changes only which private list holds the slots: the order of that queue, the slots handed out, AvailableSize and the double-free check are the same either way, and an Alloc of zero slots takes none. No call of the port can tell them apart."
+    "core/hicache/host.go:Alloc:>->>=#1:if needSize > len(p.freeSlots) {": "Alloc takes from the front of free ++ release_1 .. release_k, and Free only ever appends a run to the release list, so merging early (needSize equal to the free count) or late changes only which private list holds the slots: the order of that queue, the slots handed out, AvailableSize and the double-free check are the same either way, and an Alloc of zero slots takes none. No call of the port can tell them apart.",
+    "lower/lower.go:Alignment:!=->==#1:if alignment%p.AttnCPSize != 0 {": "Alignment first calls RequireGatheredBuffer, which calls check, and check refuses every ServerArgs whose attn_cp_size is not 1 (contextParallel, lower/cp.go) before this line is reached; with attn_cp_size 1, alignment%1 is always 0, so the original never multiplies, and the mutant multiplies by attn_cp_size = 1, which leaves alignment unchanged. No input that reaches the line tells them apart.",
+    "lower/lower.go:CaptureBatchSizes:>->>=#1:if largest > numMax {": "when largest equals numMax the mutant appends numMax to a capture list that already holds that value (largest is an element of it); the next loop drops repeated sizes through the seen set and the result is sorted, so the returned sizes are the same either way.",
+    "lower/lower.go:CaptureBatchSizes:>->>=#1:if bs > largest {": "the loop computes the maximum of the capture list; when bs equals largest the mutant assigns largest = bs, the value it already holds, so largest is the same after every iteration.",
+    "core/cache/full.go:releaseLock:==->!=#1:if cur.lockRef == 0 {": "releaseLock has one caller, treeCore.DecLockRef, which calls updateLeaves on the released node right after it returns, so the node's own call here is redundant. For the ancestors reached, every node in the tree other than the root holds a non-nil device value (nodes are created with one and eviction deletes them from the tree: there is no host tier, so no tombstone), so an ancestor of a locked node always has a child with a value and is never a device leaf; updateLeaves(ancestor) with lockRef 0 only deletes an entry that is not in leaves. With lockRef above 0 (the mutant's branch) isDeviceLeaf is false and updateLeaves deletes an entry that acquireLock already removed and no path re-adds while locked. So leaves, evictable and protected are identical after either version."
   }
 }
