@@ -1,0 +1,3 @@
+{"name": "lora-cache-one-slot-three-cached", "config": {"max_loras": 1, "max_cpu_loras": 3},
+ "steps": [{"adapters": ["a"]}, {"adapters": ["b"]}, {"adapters": ["a"]}, {"adapters": ["c"]},
+           {"adapters": ["d"]}, {"adapters": ["b"]}, {"adapters": ["a"]}]}

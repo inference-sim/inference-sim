@@ -784,6 +784,20 @@ jobs:
           python -I oracle/run_swa_layout.py vllm-source oracle/scenarios/swa oracle/out/scenarios-swa
       - name: the swa_bounded_replay goldens are vLLM's own output
         run: python3 -I oracle/compare_goldens.py core/sched/testdata/golden-swa oracle/out/scenarios-swa
+      # The worker's LoRA adapter cache (max_cpu_loras): vLLM's own LRUCacheWorkerLoRAManager driven
+      # through the dummy LoRA model of its test suite (oracle/run_lora_cache.py).
+      - name: run the LoRA adapter-cache scenarios
+        env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
+          ORACLE_MODEL: ${{ github.workspace }}/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+        run: |
+          mkdir -p oracle/out/lora-cache
+          python -I oracle/run_lora_cache.py vllm-source oracle/scenarios/lora-cache oracle/out/lora-cache
+      - name: the LoRA adapter-cache goldens are vLLM's own output
+        run: python3 -I oracle/compare_goldens_lora.py core/lora/testdata/golden oracle/out/lora-cache
       # Whether the server answers the router's render calls (enable_scale_out): vLLM's own
       # register_scale_out_api_routers decision, run as written (oracle/run_render.py).
       - name: run the render-endpoint scenarios
