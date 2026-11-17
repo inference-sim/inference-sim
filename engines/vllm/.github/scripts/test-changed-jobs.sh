@@ -36,6 +36,8 @@ case_ "the harness configuration"               "goldens oracle rest" "-" -- ora
 case_ "a fields generator"                      "metrics" "-" -- fields/gen_fields.py
 case_ "the surface list's status file"           "metrics" "-" -- tools/surface/status.json
 case_ "an oracle golden only"                   "bench goldens metrics oracle race rest" "core" -- core/sched/testdata/golden/dashboard-deepseek-v4-pro-layers.json
+case_ "an adapter-cache golden only"            "goldens metrics oracle rest" "-" -- core/lora/testdata/golden/eviction-and-reload.json
+case_ "the adapter cache's source"              "bench go inpackage kerneltests lint oracle race race_guard rest" "core $CENSUS $ENGINE" -- core/lora/cache.go
 case_ "an oracle scenario"                      "goldens metrics oracle race rest" "$EVERY_LEG" -- oracle/scenarios/connector/nixl-d-abort-waiting.json
 case_ "a rules pack's source"                   "bench go inpackage kerneltests lint oracle packs_v0_33 race race_guard rest" "core $ENGINE $CENSUS" -- rules/v0_33/pack.go
 case_ "a rules pack's test"                     "go lint packs_v0_33 rest" "-" -- rules/v0_33/source_test.go

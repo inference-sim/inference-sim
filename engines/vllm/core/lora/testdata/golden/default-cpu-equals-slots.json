@@ -1,0 +1,274 @@
+{
+ "adapter_ids": {
+  "a": 1,
+  "b": 2,
+  "c": 3,
+  "d": 4
+ },
+ "config": {
+  "max_cpu_loras": 3,
+  "max_loras": 3
+ },
+ "provenance": {
+  "blis_vllm_commit": "0e64151389b7c4fd4dde33fb1369191d1860a174+dirty",
+  "lockfile_sha256": "unrecorded",
+  "mock_version": "gpu-mock/7+f4274aa648c4",
+  "mocks": [
+   "vllm.v1.outputs.ModelRunnerOutput",
+   "tests.v1.core.utils.create_scheduler",
+   "sampled token stream",
+   "vllm.v1.core.sched.scheduler.time",
+   "vllm.v1.metrics.stats.time",
+   "vllm.v1.engine.time",
+   "vllm.v1.outputs.DraftTokenIds",
+   "spec-decode acceptance",
+   "tests.v1.core.utils.VllmConfig",
+   "tests.v1.core.utils.SchedulerConfig",
+   "vllm.config.vllm.HAS_TRITON",
+   "KV event publisher",
+   "tests.v1.core.utils.KVCacheConfig",
+   "tests.v1.core.utils.CacheConfig",
+   "vllm.v1.executor.abstract.Executor",
+   "EngineCore construction",
+   "vllm.platforms.cpu async override",
+   "use_v2_model_runner (CPU wheel without Triton)",
+   "vllm.config.ParallelConfig.sync_dp_state",
+   "DP coordinator stats transport",
+   "DPLBAsyncMPClient construction",
+   "DPEngineCoreProc construction",
+   "DP wave loop (harness copy of DPEngineCoreProc.run_busy_loop)",
+   "NIXL connector scheduler config",
+   "KV-transfer parameters on a request",
+   "OffloadingConnector scheduler config",
+   "OffloadingConnector worker (OffloadingWorkerMetadata transport)",
+   "finished_req_ids iteration order (per-process hash seed)"
+  ],
+  "model": "facebook/opt-125m",
+  "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+  "oracle_inputs": {
+   "oracle/mocks.json": "afd576782c5322ce4c6aa4cdb72fb513e3e78cd8ea54dd6043af0cdf5680a658",
+   "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+   "oracle/run_lora_cache.py": "edbeb58174a2a9ca17c57726a72299662a6b1214cdc838dbd306d6ae1ed9b055",
+   "oracle/run_scheduler.py": "3d7c19e49cf40785a73bb8947df9288b26464ae93bfc59f64bb36da40c1a8c33",
+   "oracle/scenarios/lora-cache/default-cpu-equals-slots.json": "a08a6d23f2e8bc212edbc1e241a75ecb6ca3629866e37f8b6590a6e36584c4b0"
+  },
+  "platform": "darwin-arm64",
+  "python": "3.12.16",
+  "requirements_lock_sha256": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+  "scenario_sha256": "a08a6d23f2e8bc212edbc1e241a75ecb6ca3629866e37f8b6590a6e36584c4b0",
+  "seed": null,
+  "tier": 2,
+  "vllm_commit": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "vllm_distribution": "0.33.0+cpu",
+  "vllm_version": "0.33.0"
+ },
+ "steps": [
+  {
+   "active": [
+    1,
+    2,
+    3
+   ],
+   "error": null,
+   "events": [
+    [
+     "load",
+     1
+    ],
+    [
+     "activate",
+     1
+    ],
+    [
+     "load",
+     2
+    ],
+    [
+     "activate",
+     2
+    ],
+    [
+     "load",
+     3
+    ],
+    [
+     "activate",
+     3
+    ]
+   ],
+   "registered": [
+    1,
+    2,
+    3
+   ],
+   "requested": [
+    1,
+    2,
+    3
+   ],
+   "slots": [
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "active": [
+    2,
+    3,
+    4
+   ],
+   "error": null,
+   "events": [
+    [
+     "load",
+     4
+    ],
+    [
+     "deactivate",
+     1
+    ],
+    [
+     "evict",
+     1
+    ],
+    [
+     "activate",
+     4
+    ]
+   ],
+   "registered": [
+    2,
+    3,
+    4
+   ],
+   "requested": [
+    4
+   ],
+   "slots": [
+    4,
+    2,
+    3
+   ]
+  },
+  {
+   "active": [
+    4,
+    2,
+    1
+   ],
+   "error": null,
+   "events": [
+    [
+     "load",
+     1
+    ],
+    [
+     "deactivate",
+     3
+    ],
+    [
+     "evict",
+     3
+    ],
+    [
+     "activate",
+     1
+    ]
+   ],
+   "registered": [
+    4,
+    2,
+    1
+   ],
+   "requested": [
+    2,
+    1
+   ],
+   "slots": [
+    4,
+    2,
+    1
+   ]
+  },
+  {
+   "active": [
+    3,
+    4,
+    1
+   ],
+   "error": null,
+   "events": [
+    [
+     "load",
+     3
+    ],
+    [
+     "deactivate",
+     4
+    ],
+    [
+     "evict",
+     4
+    ],
+    [
+     "activate",
+     3
+    ],
+    [
+     "load",
+     4
+    ],
+    [
+     "deactivate",
+     2
+    ],
+    [
+     "evict",
+     2
+    ],
+    [
+     "activate",
+     4
+    ]
+   ],
+   "registered": [
+    3,
+    4,
+    1
+   ],
+   "requested": [
+    3,
+    4,
+    1
+   ],
+   "slots": [
+    3,
+    4,
+    1
+   ]
+  },
+  {
+   "active": [
+    3,
+    4,
+    1
+   ],
+   "error": null,
+   "events": [],
+   "registered": [
+    3,
+    4,
+    1
+   ],
+   "requested": [
+    1
+   ],
+   "slots": [
+    3,
+    4,
+    1
+   ]
+  }
+ ]
+}

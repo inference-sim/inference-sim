@@ -6667,6 +6667,114 @@
     "name": "long_prefill_token_threshold_adaptive"
    }
   },
+  "max_cpu_loras": {
+   "value_classes": {
+    "type": "numeric",
+    "thresholds": [
+     {
+      "value": 1,
+      "closed": "above"
+     }
+    ],
+    "covered_classes": [
+     1
+    ]
+   },
+   "basis": {
+    "kind": "numeric",
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": 1,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [
+       "vllm/engine/arg_utils.py:2705"
+      ],
+      "covered_by": []
+     },
+     {
+      "lo": 1,
+      "hi": null,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "vllm/engine/arg_utils.py:2705"
+      ],
+      "covered_by": [
+       "core/lora/testdata/golden/eviction-and-reload.json",
+       "core/lora/testdata/golden/more-adapters-than-slots.json",
+       "core/lora/testdata/golden/one-slot-three-cached.json"
+      ]
+     },
+     {
+      "unset": true,
+      "compared_at": [
+       "vllm/config/lora.py:121",
+       "vllm/lora/model_manager.py:344"
+      ],
+      "covered_by": []
+     }
+    ],
+    "relations": [
+     {
+      "at": "vllm/config/lora.py:123",
+      "expr": "self.max_cpu_loras < self.max_loras",
+      "with": "self.max_loras"
+     }
+    ],
+    "sites": [
+     {
+      "at": "vllm/config/lora.py:121",
+      "expr": "self.max_cpu_loras is None",
+      "op": "Is",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/engine/arg_utils.py:2705",
+      "expr": "self.max_cpu_loras",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/engine/arg_utils.py:2705",
+      "expr": "self.max_cpu_loras > 0",
+      "op": "Gt",
+      "values": [
+       0
+      ]
+     },
+     {
+      "at": "vllm/lora/model_manager.py:344",
+      "expr": "self.lora_config.max_cpu_loras is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": 2,
+      "trace": "core/lora/testdata/golden/eviction-and-reload.json"
+     },
+     {
+      "value": 4,
+      "trace": "core/lora/testdata/golden/more-adapters-than-slots.json"
+     },
+     {
+      "value": 3,
+      "trace": "core/lora/testdata/golden/one-slot-three-cached.json"
+     }
+    ],
+    "name": "max_cpu_loras"
+   }
+  },
   "max_cudagraph_capture_size": {
    "value_classes": {
     "type": "numeric",

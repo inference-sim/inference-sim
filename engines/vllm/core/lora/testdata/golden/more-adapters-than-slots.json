@@ -1,0 +1,212 @@
+{
+ "adapter_ids": {
+  "a": 1,
+  "b": 2,
+  "c": 3,
+  "d": 4,
+  "e": 5
+ },
+ "config": {
+  "max_cpu_loras": 4,
+  "max_loras": 2
+ },
+ "provenance": {
+  "blis_vllm_commit": "0e64151389b7c4fd4dde33fb1369191d1860a174+dirty",
+  "lockfile_sha256": "unrecorded",
+  "mock_version": "gpu-mock/7+f4274aa648c4",
+  "mocks": [
+   "vllm.v1.outputs.ModelRunnerOutput",
+   "tests.v1.core.utils.create_scheduler",
+   "sampled token stream",
+   "vllm.v1.core.sched.scheduler.time",
+   "vllm.v1.metrics.stats.time",
+   "vllm.v1.engine.time",
+   "vllm.v1.outputs.DraftTokenIds",
+   "spec-decode acceptance",
+   "tests.v1.core.utils.VllmConfig",
+   "tests.v1.core.utils.SchedulerConfig",
+   "vllm.config.vllm.HAS_TRITON",
+   "KV event publisher",
+   "tests.v1.core.utils.KVCacheConfig",
+   "tests.v1.core.utils.CacheConfig",
+   "vllm.v1.executor.abstract.Executor",
+   "EngineCore construction",
+   "vllm.platforms.cpu async override",
+   "use_v2_model_runner (CPU wheel without Triton)",
+   "vllm.config.ParallelConfig.sync_dp_state",
+   "DP coordinator stats transport",
+   "DPLBAsyncMPClient construction",
+   "DPEngineCoreProc construction",
+   "DP wave loop (harness copy of DPEngineCoreProc.run_busy_loop)",
+   "NIXL connector scheduler config",
+   "KV-transfer parameters on a request",
+   "OffloadingConnector scheduler config",
+   "OffloadingConnector worker (OffloadingWorkerMetadata transport)",
+   "finished_req_ids iteration order (per-process hash seed)"
+  ],
+  "model": "facebook/opt-125m",
+  "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+  "oracle_inputs": {
+   "oracle/mocks.json": "afd576782c5322ce4c6aa4cdb72fb513e3e78cd8ea54dd6043af0cdf5680a658",
+   "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+   "oracle/run_lora_cache.py": "edbeb58174a2a9ca17c57726a72299662a6b1214cdc838dbd306d6ae1ed9b055",
+   "oracle/run_scheduler.py": "3d7c19e49cf40785a73bb8947df9288b26464ae93bfc59f64bb36da40c1a8c33",
+   "oracle/scenarios/lora-cache/more-adapters-than-slots.json": "d91c88c7e5bb15ae4954226379f9341acfc9661684aca3376db9492c154ededb"
+  },
+  "platform": "darwin-arm64",
+  "python": "3.12.16",
+  "requirements_lock_sha256": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+  "scenario_sha256": "d91c88c7e5bb15ae4954226379f9341acfc9661684aca3376db9492c154ededb",
+  "seed": null,
+  "tier": 2,
+  "vllm_commit": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "vllm_distribution": "0.33.0+cpu",
+  "vllm_version": "0.33.0"
+ },
+ "steps": [
+  {
+   "active": [
+    1,
+    2
+   ],
+   "error": null,
+   "events": [
+    [
+     "load",
+     1
+    ],
+    [
+     "activate",
+     1
+    ],
+    [
+     "load",
+     2
+    ],
+    [
+     "activate",
+     2
+    ]
+   ],
+   "registered": [
+    1,
+    2
+   ],
+   "requested": [
+    1,
+    2
+   ],
+   "slots": [
+    1,
+    2
+   ]
+  },
+  {
+   "active": [
+    1,
+    2
+   ],
+   "error": "Number of requested LoRAs (3) is greater than the number of GPU LoRA slots (2).",
+   "events": [],
+   "registered": [
+    1,
+    2
+   ],
+   "requested": [
+    3,
+    4,
+    1
+   ],
+   "slots": [
+    1,
+    2
+   ]
+  },
+  {
+   "active": [
+    3,
+    5
+   ],
+   "error": null,
+   "events": [
+    [
+     "load",
+     3
+    ],
+    [
+     "deactivate",
+     1
+    ],
+    [
+     "activate",
+     3
+    ],
+    [
+     "load",
+     5
+    ],
+    [
+     "deactivate",
+     2
+    ],
+    [
+     "activate",
+     5
+    ]
+   ],
+   "registered": [
+    1,
+    2,
+    3,
+    5
+   ],
+   "requested": [
+    3,
+    5
+   ],
+   "slots": [
+    3,
+    5
+   ]
+  },
+  {
+   "active": [
+    1,
+    2
+   ],
+   "error": null,
+   "events": [
+    [
+     "deactivate",
+     3
+    ],
+    [
+     "activate",
+     1
+    ],
+    [
+     "deactivate",
+     5
+    ],
+    [
+     "activate",
+     2
+    ]
+   ],
+   "registered": [
+    3,
+    5,
+    1,
+    2
+   ],
+   "requested": [
+    1,
+    2
+   ],
+   "slots": [
+    1,
+    2
+   ]
+  }
+ ]
+}

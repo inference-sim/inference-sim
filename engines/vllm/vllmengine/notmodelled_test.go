@@ -80,7 +80,6 @@ var engineKeys = map[string][]string{
 	"kv_events.publisher":                      {"kv_events_config.publisher"},
 	"kv_events.topic":                          {"kv_events_config.topic"},
 	"max_loras":                                {"max_loras"},
-	"max_cpu_loras":                            {"max_cpu_loras"},
 	"quantization":                             {"quantization"},
 	"cache_dtype":                              {"kv_cache_dtype"},
 	"mamba_cache_dtype":                        {"mamba_cache_dtype"},
@@ -130,7 +129,6 @@ var refused = map[string]string{
 	"eplb_config.step_interval":             "enable_eplb: true\neplb_config: {step_interval: 100}\n",
 	"prefix_match_unit":                     "prefix_match_unit: 8\n",
 	"prefix_cache_retention_interval":       "prefix_cache_retention_interval: 256\n",
-	"max_cpu_loras":                         "max_loras: 2\nmax_cpu_loras: 4\n",
 	"mamba_cache_mode":                      "mamba_cache_mode: align\n",
 }
 
@@ -151,7 +149,6 @@ var atDefault = map[string]string{
 	"eplb_config.window_size":         "enable_eplb: true\neplb_config: {window_size: 1000}\n",
 	"eplb_config.step_interval":       "enable_eplb: true\neplb_config: {step_interval: 3000}\n",
 	"prefix_cache_retention_interval": "prefix_cache_retention_interval: 0\n",
-	"max_cpu_loras":                   "max_loras: 2\nmax_cpu_loras: 2\n",
 	"mamba_cache_mode":                "mamba_cache_mode: none\n",
 }
 

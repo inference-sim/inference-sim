@@ -175,6 +175,8 @@ type settings struct {
 	// request's block-hash chain (resolve_none_hash_seed, vllm/v1/core/kv_cache_utils.py:131-146
 	// @5df63a72). It changes the hashes a KV-event stream publishes, never which blocks hit.
 	hashSeed *string
+	// maxCPULoRAs is the capacity of the worker's adapter cache (max_cpu_loras, resolved); 0 when LoRA is off.
+	maxCPULoRAs int
 }
 
 // dpSettings are a data-parallel group's settings.
@@ -441,6 +443,11 @@ func resolve(c Config) (settings, error) {
 		o.env = e.Env
 		s.offload = &o
 	}
+	// max_cpu_loras: None resolves to max_loras (vllm/config/lora.py:120-121@4ba787ec); the worker's
+	// adapter cache (core/lora) has that capacity. Validate has refused a value below max_loras.
+	if maxLoRAs > 0 {
+		s.maxCPULoRAs = max(e.MaxCPULoRAs, maxLoRAs)
+	}
 	if c.Placement != nil {
 		if err := c.Placement.Validate(); err != nil {
 			return settings{}, fmt.Errorf("vllm: placement: %w", err)
@@ -671,10 +678,13 @@ func refuseUnmodelled(e engineconfig.Engine, dataParallel bool) error {
 		// @4ba787ec). That cadence is not ported, so stating it is refused rather than dropped.
 		return fmt.Errorf("vllm: prefill_schedule_interval %d without a data-parallel group is the scheduler's local "+
 			"prefill cadence, which is not modelled (%s172)", e.PrefillScheduleInterval, issueBase)
-	case e.MaxCPULoRAs != 0 && e.MaxCPULoRAs != max(e.MaxLoRAs, 1):
-		// LoRAConfig.max_cpu_loras: None, which becomes max_loras (vllm/config/lora.py:42, 120-121@5df63a72),
-		// and max_loras defaults to 1 (:35); a stated value equal to that is the default.
-		return fmt.Errorf("vllm: max_cpu_loras is not modelled (https://github.com/inference-sim/blis-vllm/issues/5)")
+	case e.MaxCPULoRAs > 0 && e.MaxCPULoRAs < max(e.MaxLoRAs, 1):
+		// LoRAConfig._validate_lora_config (vllm/config/lora.py:123-126@4ba787ec).
+		return fmt.Errorf("vllm: max_cpu_loras (%d) must be >= max_loras (%d)", e.MaxCPULoRAs, max(e.MaxLoRAs, 1))
+	case e.MaxCPULoRAs > 1 && e.MaxLoRAs == 0:
+		// LoRAConfig exists only when LoRA is on (max_loras stated); without it the cache the field
+		// sizes does not exist. A 1 is what an unset max_loras resolves to (core/lora, vllm/config/lora.py).
+		return fmt.Errorf("vllm: max_cpu_loras %d sizes the adapter cache of a LoRA engine; set max_loras", e.MaxCPULoRAs)
 	}
 	// mamba_cache_mode and mamba_ssm_cache_dtype are checked on their resolved values (checkMambaCache),
 	// and swa_bounded_replay after the model runner is resolved (resolve).
