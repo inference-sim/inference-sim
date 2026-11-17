@@ -391,7 +391,12 @@ func TestKVPoolBlocksAreVLLMsOverTheKVCacheGroups(t *testing.T) {
 		// budget no longer has: 52667592213 bytes instead of 52846898709. vLLM's own
 		// get_kv_cache_config_from_groups on those bytes and the same layers sizes 72645 blocks
 		// (oracle/run_scheduler.py on the probe scenario with kv_available_bytes 52667592213).
-		{"d106-fp8kv-032.yaml", func(kernelmodel.KVBudget) int64 { return 72645 }},
+		// The graph now also prices MiniMax-M3's vision tower, resident unless language_model_only
+		// is true (compat/lowering/encoder.go): 867238911 bytes more off a rank's budget, 51800353302
+		// bytes. The pool is those bytes over the 724992 bytes of a block over the group's layers
+		// (the law the two figures above obey: 72893 blocks at 52846898709 bytes, 72645 at
+		// 52667592213), floored: 71449 blocks. Re-run the oracle probe at that budget to confirm.
+		{"d106-fp8kv-032.yaml", func(kernelmodel.KVBudget) int64 { return 71449 }},
 	} {
 		t.Run(c.scenario, func(t *testing.T) {
 			t.Parallel()
@@ -784,34 +789,42 @@ func TestOneBuildWritesOneReport(t *testing.T) {
 	}
 }
 
-// A MiniMax-M3 deployment that does not state language_model_only builds, and the engine discloses
-// that the cost model prices the text decoder alone while vLLM keeps the vision tower resident.
-// Stating true is what is priced, so it discloses nothing about it. d116 is minimax-m3 on a b200.
+// A multimodal deployment that does not state language_model_only builds. Where the catalog graph
+// prices the vision tower (minimax-m3, d116, on a b200) the tower is resident or not as the key says
+// and no value is a gap, so the engine discloses nothing. Where the graph holds the text decoder alone
+// (deepseek-v4.1-flash, d027) vLLM keeps a tower the cost model does not price, and the engine discloses
+// that for an unset or false key and not for true.
 func TestEngineDisclosesWhatLanguageModelOnlyLeavesUnpriced(t *testing.T) {
 	Register()
-	raw, err := os.ReadFile(filepath.Join("testdata", "d116-032.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, c := range []struct {
-		stated    string
-		disclosed bool
-	}{{"", true}, {"      language_model_only: false\n", true}, {"      language_model_only: true\n", false}} {
-		body := strings.Replace(string(raw), "      gpu_memory_utilization: 0.92\n", "      gpu_memory_utilization: 0.92\n"+c.stated, 1)
-		path := filepath.Join(t.TempDir(), "v.yaml")
-		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+	for _, f := range []struct {
+		fixture    string
+		towerless  bool
+		memoryLine string
+	}{{"d116-032.yaml", false, "      gpu_memory_utilization: 0.92\n"}, {"d027-032.yaml", true, "      gpu_memory_utilization: 0.92\n"}} {
+		raw, err := os.ReadFile(filepath.Join("testdata", f.fixture))
+		if err != nil {
 			t.Fatal(err)
 		}
-		e, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: map[string]string{RootScenario: path}})
-		if err != nil {
-			t.Fatalf("%q: %v", c.stated, err)
-		}
-		found := false
-		for _, a := range e.(interface{ Assumptions() []string }).Assumptions() {
-			found = found || strings.HasPrefix(a, "language_model_only = ")
-		}
-		if found != c.disclosed {
-			t.Errorf("%q: language_model_only assumption disclosed: %t, want %t", c.stated, found, c.disclosed)
+		for _, c := range []struct {
+			stated string
+			gap    bool
+		}{{"", true}, {"      language_model_only: false\n", true}, {"      language_model_only: true\n", false}} {
+			body := strings.Replace(string(raw), f.memoryLine, f.memoryLine+c.stated, 1)
+			path := filepath.Join(t.TempDir(), "v.yaml")
+			if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			e, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.33.0", Roots: map[string]string{RootScenario: path}})
+			if err != nil {
+				t.Fatalf("%s %q: %v", f.fixture, c.stated, err)
+			}
+			found := false
+			for _, a := range e.(interface{ Assumptions() []string }).Assumptions() {
+				found = found || strings.HasPrefix(a, "language_model_only = ")
+			}
+			if want := c.gap && f.towerless; found != want {
+				t.Errorf("%s %q: language_model_only assumption disclosed: %t, want %t", f.fixture, c.stated, found, want)
+			}
 		}
 	}
 }

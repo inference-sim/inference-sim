@@ -22,13 +22,23 @@ import (
 // is_vit_use_data_parallel forces the data mode then (model_executor/models/vision.py:149-155@v0.33.0),
 // every rank holding the whole tower and encoding its share of the images. The deployment cannot state
 // mm_encoder_tp_mode today, so the default is what runs.
-func encoderRun(eng vllmsettings.Settings, g *model.Graph, tp int) *plan.EncoderRun {
+//
+// Under pipeline parallelism (pp above 1) a resident tower sits on the first stage only, and the
+// kernel prices a resident tower at pp 1 only (it refuses the other, kernel/new.go). The lowering
+// then states nothing about the tower rather than a falsehood: not Resident: true, which the kernel
+// refuses, and not Resident: false, which says no tower is built. The kernel records that it prices
+// none, and compat/kernelmodel names the language_model_only substitution
+// (languageModelOnlySubstitution), so such a deployment is priced as before, with the gap disclosed.
+func encoderRun(eng vllmsettings.Settings, g *model.Graph, tp, pp int) *plan.EncoderRun {
 	t, ok := g.ImageTower()
 	if !ok {
 		return nil
 	}
 	if eng.LanguageModelOnly != nil && *eng.LanguageModelOnly {
 		return &plan.EncoderRun{Resident: false}
+	}
+	if pp > 1 {
+		return nil
 	}
 	mode := plan.EncoderWeightsSharded
 	for _, k := range t.LayerKinds {

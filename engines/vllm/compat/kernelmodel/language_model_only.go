@@ -3,6 +3,8 @@
 package kernelmodel
 
 import (
+	"strconv"
+
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
@@ -23,6 +25,8 @@ var towerlessMultimodalConfigs = map[string]string{
 	"58720f145bcecef9a7ab2b419ab346e7c634af8d2f3e7362e900d00f789ea46c": "inkling",
 	"889658f2508e8c61d409b02e70e0d78d8d4452ec65aaafbe129805d213d2e74b": "qwen3.8-flash-next",
 	"c22eb0a053eed62e18f0184d3ca62d3798f208c3e00b9feee939fc3dbacdc8ca": "qwen3.8-flash-next-fp8",
+	"deef67a61f3311faf051b23dc4192f442c7fee4f9cd2f38cbcbe4da55c763a80": "qwen3.8-flash-next-nvfp4",
+	"e765305daba0951974308f4d32c075b52a6a45974730d273f2216718a994d624": "qwen3.8-flash-next-nvfp4-radixark",
 }
 
 // pricedTowerConfigs is the partner list: catalog models whose graph prices a vision tower. The
@@ -77,17 +81,26 @@ var pricedTowerConfigs = map[string]string{
 // setting, what the deployment states and the mode that is priced, which a grade reads (the free text of
 // EngineAssumptions reaches only the host's stderr). State language_model_only: true for the deployment
 // the cost model prices.
-func languageModelOnlySubstitution(g *model.Graph, e engineconfig.Engine) *sim.Substitution {
-	if g == nil {
-		return nil
-	}
-	name, ok := towerlessMultimodalConfigs[g.DerivedFrom.SHA256]
-	if g.PricesEncoder() || !ok || (e.LanguageModelOnly != nil && *e.LanguageModelOnly) {
+func languageModelOnlySubstitution(g *model.Graph, e engineconfig.Engine, pp int) *sim.Substitution {
+	if g == nil || (e.LanguageModelOnly != nil && *e.LanguageModelOnly) {
 		return nil
 	}
 	stated := "unset"
 	if e.LanguageModelOnly != nil {
 		stated = "false"
+	}
+	if _, towered := g.ImageTower(); towered && pp > 1 {
+		// vLLM builds the tower on the first pipeline stage only; the kernel prices a resident tower at
+		// pipeline-parallel width 1 only (kernel/new.go refuses the other), so the lowering states none
+		// (compat/lowering/encoder.go) and the tower is the gap.
+		return &sim.Substitution{Setting: "language_model_only", Stated: stated, Priced: "true",
+			Reason: "vLLM keeps the vision tower resident on the first of the " + strconv.Itoa(pp) + " pipeline stages, and the " +
+				"cost model prices a resident tower at pipeline-parallel width 1 only; the weights, KV blocks and step time are " +
+				"those of language_model_only: true"}
+	}
+	name, ok := towerlessMultimodalConfigs[g.DerivedFrom.SHA256]
+	if g.PricesEncoder() || !ok {
+		return nil
 	}
 	return &sim.Substitution{Setting: "language_model_only", Stated: stated, Priced: "true",
 		Reason: name + " is a multimodal checkpoint, so vLLM keeps its vision tower and projector resident and profiles the " +
@@ -96,8 +109,8 @@ func languageModelOnlySubstitution(g *model.Graph, e engineconfig.Engine) *sim.S
 }
 
 // languageModelOnlyAssumptions is the substitution as the human-readable assumption the host reports.
-func languageModelOnlyAssumptions(g *model.Graph, e engineconfig.Engine) []string {
-	s := languageModelOnlySubstitution(g, e)
+func languageModelOnlyAssumptions(g *model.Graph, e engineconfig.Engine, pp int) []string {
+	s := languageModelOnlySubstitution(g, e, pp)
 	if s == nil {
 		return nil
 	}

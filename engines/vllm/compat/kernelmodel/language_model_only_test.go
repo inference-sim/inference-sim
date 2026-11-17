@@ -155,6 +155,44 @@ func TestLanguageModelOnlyTrueDropsThePricedTowerFromResidentWeights(t *testing.
 	}
 }
 
+// The kernel prices a resident vision tower at pipeline-parallel width 1 only (the tower sits on the
+// first stage). A Muse Spark deployment at PP2 x TP8 that leaves language_model_only unset therefore
+// still builds, is priced as language_model_only true (the same KV budget and step times), and says so
+// in its provenance, naming the setting as unset; stating true discloses nothing, because then no tower
+// is built.
+func TestPipelineParallelMuseSparkIsPricedWithoutItsTowerAndSaysSo(t *testing.T) {
+	pp2 := filepath.Join("kerneltests", "testdata", "muse-h100-pp2tp8.yaml")
+	unset, on := openWithLanguageModelOnly(t, pp2, "", ""), openWithLanguageModelOnly(t, pp2, "", "true")
+	bu, err := unset.KVBudget()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bt, err := on.KVBudget()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(bu, bt) {
+		t.Errorf("at pp 2 the tower is not priced, so unset must price as true:\n unset %+v\n true  %+v", bu, bt)
+	}
+	var subs []string
+	for _, sub := range unset.Provenance().Substitutions {
+		if sub.Setting == "language_model_only" {
+			if sub.Stated != "unset" || sub.Priced != "true" {
+				t.Errorf("substitution %+v, want unset priced as true", sub)
+			}
+			subs = append(subs, sub.Reason)
+		}
+	}
+	if len(subs) != 1 || !strings.Contains(subs[0], "2 pipeline stages") {
+		t.Errorf("provenance substitutions %q, want one naming the 2 pipeline stages", subs)
+	}
+	for _, sub := range on.Provenance().Substitutions {
+		if sub.Setting == "language_model_only" {
+			t.Errorf("language_model_only: true was given a substitution %+v", sub)
+		}
+	}
+}
+
 // A catalog graph that prices at least one vision tower is in pricedTowerConfigs; one that lists its
 // only tower as omitted is in towerlessMultimodalConfigs and is disclosed when the key is unset or
 // false. Both lists are keyed by the digest of the config the graph was derived from, and every catalog
@@ -194,9 +232,9 @@ func TestPricedAndTowerlessConfigsFollowTheCatalogGraphs(t *testing.T) {
 			if g.PricesEncoder() != table.priced {
 				t.Errorf("%s: the graph prices a tower: %t, the list says %t", name, g.PricesEncoder(), table.priced)
 			}
-			unset := languageModelOnlyAssumptions(g, engineconfig.Engine{})
+			unset := languageModelOnlyAssumptions(g, engineconfig.Engine{}, 1)
 			f := false
-			stated := languageModelOnlyAssumptions(g, engineconfig.Engine{LanguageModelOnly: &f})
+			stated := languageModelOnlyAssumptions(g, engineconfig.Engine{LanguageModelOnly: &f}, 1)
 			if table.priced && (unset != nil || stated != nil) {
 				t.Errorf("%s: a graph that prices its tower was given assumptions %q %q", name, unset, stated)
 			}
@@ -208,7 +246,7 @@ func TestPricedAndTowerlessConfigsFollowTheCatalogGraphs(t *testing.T) {
 					t.Errorf("%s: false gives assumptions %q, want one stating false", name, stated)
 				}
 			}
-			if got := languageModelOnlyAssumptions(g, engineconfigStating(true)); got != nil {
+			if got := languageModelOnlyAssumptions(g, engineconfigStating(true), 1); got != nil {
 				t.Errorf("%s: true gives assumptions %q, want none", name, got)
 			}
 		}
@@ -249,7 +287,7 @@ func TestPricedAndTowerlessConfigsFollowTheCatalogGraphs(t *testing.T) {
 			t.Errorf("%s is not in towerlessMultimodalConfigs", want)
 		}
 	}
-	if languageModelOnlyAssumptions(nil, engineconfigStating(true)) != nil {
+	if languageModelOnlyAssumptions(nil, engineconfigStating(true), 1) != nil {
 		t.Error("a nil graph was given an assumption")
 	}
 }
