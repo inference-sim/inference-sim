@@ -1,22 +1,28 @@
 name: ci
 
-# The repository's own checks. Every pull request runs them, whatever its base, so each layer of a
-# stack is judged on its own head. The checks branch protection requires are `go`, `lint`,
-# `oracle-checks`, `oracle` and `goldens-reviewed`.
+# The repository's own checks, in full. They judge a pull request whose base is main (the pull request that
+# merges), a push to main, and a run by hand. A pull request on any other base, a layer of a stack, runs
+# ci-light.yml instead, so the oracle shards and the mutation shards do not run on every layer. The checks
+# branch protection requires are `go`, `lint`, `oracle-checks`, `oracle` and `goldens-reviewed`.
+#
+# `edited` is listed so that retargeting a pull request to main (GitHub reports a change of base as `edited`,
+# which is not a default type) starts this set. It also starts it when a title or body is edited.
 
 on:
   push:
     branches: [main]
   pull_request:
-    # Not `edited`: no job here reads the pull request's text (blis.yml and private-names.yml do).
-    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# An edit that does not change the base starts a run in a group of its own with every job skipped, so it
+# cancels nothing; a change of base (a retarget to main) is judged like a push.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}${{ github.event.action == 'edited' && !github.event.changes.base && '-edit' || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -29,6 +35,7 @@ jobs:
   # the exact upstream pin.
   go:
     name: go
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -64,6 +71,7 @@ jobs:
 
   lint:
     name: lint
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -95,6 +103,7 @@ jobs:
   # provenance.go pins; nothing is installed.
   oracle-checks:
     name: oracle-checks
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -372,7 +381,7 @@ jobs:
   oracle:
     name: oracle
     needs: [go, lint, oracle-checks, goldens-reviewed, fields, oracle-run]
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && (github.event.action != 'edited' || github.event.changes.base) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -513,6 +522,7 @@ jobs:
   # new golden was recorded on CI's platform from the committed lock.
   goldens-reviewed:
     name: goldens-reviewed
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -535,6 +545,7 @@ jobs:
   # read the source with Python's ast module.
   fields:
     name: fields
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
