@@ -2,6 +2,7 @@ package llmd
 
 import (
 	"fmt"
+	"math/rand"
 	"strings"
 	"testing"
 
@@ -132,19 +133,56 @@ func TestSessionAffinity_IsDeterministic(t *testing.T) {
 	}
 }
 
-// TestSessionAffinity_RefusesIdentitiesTheClientDoesNotSend: the default encoded_endpoint_header strategy
-// needs the client to echo a token, a cookie and another header are not sent; each is refused at startup
-// naming what is read, rather than running with a plugin that never sees a session.
-func TestSessionAffinity_RefusesIdentitiesTheClientDoesNotSend(t *testing.T) {
-	for name, tc := range map[string]struct{ plugin, want string }{
-		"default strategy": {"- type: session-affinity-scorer\n", "encoded_endpoint_header"},
-		"other header":     {sessionIDScorer + "    sessionIdConfig:\n      sources:\n      - header: x-tenant\n", `header "x-tenant"`},
-		"cookie":           {"- type: session-id-producer\n  parameters:\n    cookieName: sid\n- type: session-affinity-scorer\n  parameters:\n    strategy: session_id\n", `cookie "sid"`},
+// TestSessionAffinity_EncodedEndpointHeaderSticks: under the scorer's default strategy the router writes
+// base64(pod) into x-session-token on each response (util/sessionaffinity WriteResponseHeader) and the
+// client sends it back on the session's next request, so every turn of a session after the first goes to
+// the endpoint its previous turn was served by. A request of no session echoes nothing and is spread.
+func TestSessionAffinity_EncodedEndpointHeaderSticks(t *testing.T) {
+	const encoded = "- type: session-affinity-scorer\n"
+	for seed := int64(1); seed <= 3; seed++ {
+		tagged := sessionRequests(8, 6, 20_000, true)
+		runSessions(t, tagged, encoded, seed)
+		for s, set := range endpointsBySession(tagged) {
+			if len(set) != 1 {
+				t.Errorf("seed %d: session %s was served by %d endpoints, want 1", seed, s, len(set))
+			}
+		}
+		plain := sessionRequests(8, 6, 20_000, false)
+		runSessions(t, plain, encoded, seed)
+		moved := 0
+		for _, set := range endpointsBySession(plain) {
+			if len(set) > 1 {
+				moved++
+			}
+		}
+		if moved == 0 {
+			t.Errorf("seed %d: no session moved without identifiers; the check proves nothing", seed)
+		}
+	}
+}
+
+// TestSessionAffinity_StaleTokenFallsBack: a token naming an endpoint that is gone scores no candidate
+// (DecodePodName names a pod no candidate has), so the session is routed by the other scorers, and the
+// response then carries the new endpoint's token, which the client echoes from then on.
+func TestSessionAffinity_StaleTokenFallsBack(t *testing.T) {
+	rebindsOnceAfterRemoval(t, "- type: session-affinity-scorer\n")
+}
+
+// TestSessionAffinity_CookieAndNamedHeaderAreSent: the session-id producer reading a cookie, and a
+// session_id source naming another header, both receive the session's identifier from the client; the
+// sessions stick.
+func TestSessionAffinity_CookieAndNamedHeaderAreSent(t *testing.T) {
+	for name, plugin := range map[string]string{
+		"cookie": "- type: session-id-producer\n  parameters:\n    cookieName: sid\n" +
+			"- type: session-affinity-scorer\n  parameters:\n    strategy: session_id\n    sessionIdConfig:\n      sources:\n      - attribute: SessionIDDataKey\n        producer: session-id-producer\n",
+		"named header": sessionIDScorer + "    sessionIdConfig:\n      sources:\n      - header: x-tenant-session\n",
 	} {
-		cs := newCluster(testDeployment(2), cluster.NewSliceRequestSource(sessionRequests(2, 2, 1000, true)), nil)
-		cs.SetGateway(New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--allow-experimental-plugins", "--config-text="+sessionConfig(tc.plugin))}))
-		if err := cs.Run(); err == nil || !strings.Contains(err.Error(), tc.want) {
-			t.Errorf("%s: Run() = %v, want a refusal naming %s", name, err, tc.want)
+		tagged := sessionRequests(8, 6, 20_000, true)
+		runSessions(t, tagged, plugin, 2)
+		for s, set := range endpointsBySession(tagged) {
+			if len(set) != 1 {
+				t.Errorf("%s: session %s was served by %d endpoints, want 1", name, s, len(set))
+			}
 		}
 	}
 }
@@ -153,10 +191,15 @@ func TestSessionAffinity_RefusesIdentitiesTheClientDoesNotSend(t *testing.T) {
 // terminates, the session's later turns go to a surviving endpoint and stay there; no turn is sent to
 // the removed one.
 func TestSessionAffinity_RebindsAfterItsEndpointIsRemoved(t *testing.T) {
+	rebindsOnceAfterRemoval(t, sessionIDScorer)
+}
+
+func rebindsOnceAfterRemoval(t *testing.T, plugin string) {
+	t.Helper()
 	reqs := sessionRequests(4, 8, 100_000, true)
 	cs := newCluster(testDeployment(4), cluster.NewSliceRequestSource(reqs), nil)
 	seed := int64(5)
-	gw := New(Options{Model: "test-model", Seed: &seed, EPPFlags: append(DefaultEPPFlags(), "--allow-experimental-plugins", "--config-text="+sessionConfig(sessionIDScorer))})
+	gw := New(Options{Model: "test-model", Seed: &seed, EPPFlags: append(DefaultEPPFlags(), "--allow-experimental-plugins", "--config-text="+sessionConfig(plugin))})
 	var victim string
 	removedAt := 0
 	gw.observe = func(kind, detail string) {
@@ -193,5 +236,45 @@ func TestSessionAffinity_RebindsAfterItsEndpointIsRemoved(t *testing.T) {
 	}
 	if len(after) != 1 {
 		t.Errorf("session 0 used %d endpoints after the removal, want one new binding: %v", len(after), after)
+	}
+}
+
+// TestSessionAffinity_ReplayRoutesAsTheRun (INV-13): a replayed trace carries the run's lengths, sessions and
+// shared prefixes but draws new placeholder token values. Under session affinity composed with the precise
+// prefix scorer (which reads the prompt's content and the engines' KV events), every request goes to the
+// endpoint it went to in the run.
+func TestSessionAffinity_ReplayRoutesAsTheRun(t *testing.T) {
+	plugins := "- type: token-producer\n  parameters:\n    modelName: test-model\n    vllm:\n      url: http://render.blis.local:8000\n" +
+		"- type: precise-prefix-cache-producer\n  parameters:\n    tokenProcessorConfig:\n      blockSizeTokens: 16\n    kvEventsConfig:\n      zmqEndpoint: tcp://0.0.0.0:5557\n" +
+		"- type: prefix-cache-scorer\n  parameters:\n    prefixMatchInfoProducerName: precise-prefix-cache-producer\n" +
+		"- type: session-affinity-scorer\n  parameters:\n    strategy: session_id\n"
+	config := "apiVersion: llm-d.ai/v1\nkind: EndpointPickerConfig\nplugins:\n" + plugins +
+		"- type: queue-scorer\n- type: max-score-picker\n- type: single-profile-handler\nschedulingProfiles:\n- name: default\n  plugins:\n" +
+		"  - pluginRef: session-affinity-scorer\n    weight: 100\n  - pluginRef: prefix-cache-scorer\n    weight: 10\n  - pluginRef: queue-scorer\n  - pluginRef: max-score-picker\n"
+	route := func(tokenSeed int64) []string {
+		reqs := sessionRequests(8, 5, 30_000, true)
+		rng := rand.New(rand.NewSource(tokenSeed))
+		shared := sim.GenerateRandomTokenIDs(rng, 32)
+		for _, r := range reqs {
+			n := len(r.InputTokens)
+			r.InputTokens = append(append([]sim.TokenID{}, shared...), sim.GenerateRandomTokenIDs(rng, n-len(shared))...)
+		}
+		cs := newCluster(testDeployment(4), cluster.NewSliceRequestSource(reqs), nil)
+		seed := int64(9)
+		cs.SetGateway(New(Options{Model: "test-model", Seed: &seed, EPPFlags: append(DefaultEPPFlags(), "--allow-experimental-plugins", "--config-text="+config)}))
+		if err := cs.Run(); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		out := make([]string, len(reqs))
+		for i, r := range reqs {
+			out[i] = r.AssignedInstance
+		}
+		return out
+	}
+	run, replay := route(1), route(2)
+	for i := range run {
+		if run[i] != replay[i] {
+			t.Fatalf("request %d went to %s in the run and %s in its replay", i, run[i], replay[i])
+		}
 	}
 }

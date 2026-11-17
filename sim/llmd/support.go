@@ -58,8 +58,8 @@ var supported = map[string]bool{
 	// The engines publish vLLM's KV-cache events, ingested synchronously by the hosted producer
 	// (sim/llmd/kvevents.go); checkPrecisePrefix refuses the configurations it cannot host.
 	"precise-prefix-cache-producer": true,
-	// Session affinity: a multi-turn request sends its session in x-session-id (Request.SessionID);
-	// checkEngineSignals refuses a configuration that reads the identifier anywhere else.
+	// Session affinity: a multi-turn client sends its session id as the plugins read it, and echoes the
+	// token the router writes on its responses (session.go).
 	"session-affinity-scorer": true,
 	"session-affinity-filter": true,
 	"session-id-producer":     true,
@@ -213,11 +213,6 @@ func checkEngineSignals(req embed.Requirements, podLabels []map[string]string, e
 			return fmt.Errorf("plugin %q reads %s KV events; the simulated engines publish vLLM's", p.Name, p.EngineType)
 		}
 	}
-	for _, id := range req.SessionIdentities {
-		if err := checkSessionIdentity(id); err != nil {
-			return err
-		}
-	}
 	for _, m := range req.MetricsSources {
 		if m.Path != "" && m.Path != "/metrics" {
 			return fmt.Errorf("plugin %q scrapes %q; the simulated vLLM servers serve their metrics at /metrics", m.Name, m.Path)
@@ -227,27 +222,6 @@ func checkEngineSignals(req embed.Requirements, podLabels []map[string]string, e
 		if err := checkExtractor(x, podLabels); err != nil {
 			return err
 		}
-	}
-	return nil
-}
-
-// checkSessionIdentity refuses a session plugin that reads the session identifier from anywhere the
-// simulated client does not put it. A multi-turn request sends its session id in x-session-id and
-// nothing else: it keeps no cookies and does not echo the token the encoded_endpoint_header strategy
-// has the router write on a response, so under that strategy (the scorer's and filter's default) the
-// plugin would never see a session and silently pin nothing.
-func checkSessionIdentity(id embed.SessionIdentity) error {
-	switch {
-	case id.Strategy == embed.SessionStrategyEncodedEndpoint:
-		return fmt.Errorf("plugin %q uses the %s strategy, which needs the client to echo the endpoint token the router "+
-			"wrote on an earlier response (header %q); the simulated client sends only %s. Set strategy: %s",
-			id.Name, embed.SessionStrategyEncodedEndpoint, id.Header, embed.SessionIDHeader, embed.SessionStrategyID)
-	case id.Cookie != "":
-		return fmt.Errorf("plugin %q reads the session from cookie %q; the simulated client sends no cookies, only the %s header",
-			id.Name, id.Cookie, embed.SessionIDHeader)
-	case id.Header != "" && id.Header != embed.SessionIDHeader:
-		return fmt.Errorf("plugin %q reads the session from header %q; the simulated client sends it in %s",
-			id.Name, id.Header, embed.SessionIDHeader)
 	}
 	return nil
 }
