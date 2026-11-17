@@ -827,6 +827,22 @@ class MutationSweep(unittest.TestCase):
     def mutant(i, file="lib.py", old="return x > 0", new="return x >= 0"):
         return {"id": i, "guards": "g", "file": file, "old": old, "new": new, "suite": "unit"}
 
+    def test_shards_partition_the_selection(self):
+        # CI runs the sweep as N shards side by side: every selected mutant runs in exactly one.
+        root = self.repo([self.mutant(f"M{i}") for i in range(7)])
+        whole = [ln for ln in self.sweep(root, "--list").stdout.splitlines() if ln.startswith("listed")]
+        self.assertEqual(len(whole), 7)
+        seen = []
+        for i in range(3):
+            r = self.sweep(root, "--list", "--shard", f"{i}/3")
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            seen += [ln for ln in r.stdout.splitlines() if ln.startswith("listed")]
+        self.assertEqual(sorted(seen), sorted(whole))
+
+    def test_a_shard_outside_the_count_is_refused(self):
+        r = self.sweep(self.repo([self.mutant("A")]), "--list", "--shard", "3/3")
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+
     def test_a_caught_mutant_passes(self):
         r = self.sweep(self.repo([self.mutant("A")]), "--only", "A")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
