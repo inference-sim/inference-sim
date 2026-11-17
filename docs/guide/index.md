@@ -10,6 +10,7 @@ Task-oriented guides for using BLIS effectively. Each guide covers a specific fe
 | [Admission Control](admission.md) | The router's admission, flow control and request priorities |
 | [Scheduling & Priority](scheduling.md) | Controlling request processing order within each instance |
 | [Latency Model](latency-models.md) | blis-latency-kernel: what it prices, scenario structure, P/D, DP/EP, speculation, offload, LoRA |
+| [LoRA Adapters](lora.md) | Declaring adapters, capacity and eviction, cold-load and step overhead, HBM reservation, routing |
 | [KV Cache & Memory](kv-cache.md) | Tuning GPU/CPU memory allocation, prefix caching, and chunked prefill |
 | [Workload Specifications](workloads.md) | Defining multi-client traffic patterns with YAML |
 | [Cluster Simulation](cluster.md) | Running multi-instance simulations with the full pipeline |

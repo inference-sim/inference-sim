@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -21,6 +22,9 @@ type PolicyBundle struct {
 	NodePools         []NodePoolBundleConfig        `yaml:"node_pools"`         // nil = no node pools
 	Autoscaler        AutoscalerBundleConfig        `yaml:"autoscaler"`         // IntervalUs=0 = disabled
 	InstanceLifecycle InstanceLifecycleBundleConfig `yaml:"instance_lifecycle"` // zero = instant loading
+	// ClusterAutoscaler decides how many nodes each pool needs (inference-sim#740); absent, no node
+	// is provisioned beyond the pools' initial nodes.
+	ClusterAutoscaler ClusterAutoscalerBundleConfig `yaml:"cluster_autoscaler"`
 }
 
 // PriorityConfig holds priority policy configuration.
@@ -61,6 +65,12 @@ type AnalyzerBundleConfig struct {
 	AvgInputTokens    float64 `yaml:"avg_input_tokens"`
 	// MinReplicas is the fewest ready replicas scale-down leaves a model; 0 means the default, 1.
 	MinReplicas int `yaml:"min_replicas"`
+	// Kind selects the analyzer: v2-saturation (the default) or threshold (#2063). Signal and Target
+	// belong to threshold: the per-replica signal (in_flight, queue_depth, kv_utilization) and the
+	// value one replica is sized for.
+	Kind   string  `yaml:"kind"`
+	Signal string  `yaml:"signal"`
+	Target float64 `yaml:"target"`
 }
 
 // InstanceLifecycleBundleConfig holds instance lifecycle timing for YAML loading.
@@ -68,6 +78,26 @@ type AnalyzerBundleConfig struct {
 type InstanceLifecycleBundleConfig struct {
 	LoadingDelay              DelayBundleSpec `yaml:"loading_delay"`
 	WarmStartInitialInstances bool            `yaml:"warm_start_initial_instances"`
+	// WeightSource names the catalog storage tier an instance's weights are read from when it
+	// loads (#1215), such as nvme_gen4 or s3. The loading time then has two parts: the time to
+	// read the instance's resident weights from that tier, priced from the registry's
+	// offload_tier_<tier>_* entries for the instance's chip, and loading_delay, which is what
+	// remains (process start, CUDA context, graph capture). Empty keeps loading_delay as the
+	// whole loading time.
+	WeightSource string `yaml:"weight_source"`
+	// DrainPolicy is how a scale-down drains an instance (#910): IMMEDIATE, WAIT or REDIRECT. Empty is WAIT.
+	DrainPolicy string `yaml:"drain_policy"`
+}
+
+// ClusterAutoscalerBundleConfig is the policy bundle's cluster_autoscaler block
+// (cluster.ClusterAutoscalerConfig).
+type ClusterAutoscalerBundleConfig struct {
+	Policy             string  `yaml:"policy"`
+	PendingThresholdUs float64 `yaml:"pending_threshold_us"`
+	MaxNodesPerPool    int     `yaml:"max_nodes_per_pool"`
+	ScaleDown          string  `yaml:"scale_down"`
+	LowWaterMark       float64 `yaml:"low_water_mark"`
+	MinNodesPerPool    int     `yaml:"min_nodes_per_pool"`
 }
 
 // AutoscalerBundleConfig holds autoscaler pipeline configuration.
@@ -81,6 +111,13 @@ type AutoscalerBundleConfig struct {
 	ScaleDownStabilizationWindowUs float64              `yaml:"scale_down_stabilization_window_us"`
 	HPAScrapeDelay                 DelayBundleSpec      `yaml:"hpa_scrape_delay"`
 	Analyzer                       AnalyzerBundleConfig `yaml:"analyzer"`
+	// CollectorWindowSize keeps that many ticks of readings for the analyzer (#1141); 0 = none.
+	CollectorWindowSize int `yaml:"collector_window_size"`
+	// ScaleToZeroIdleUs drains all of a model's replicas after that long without a request (#909); 0 = never.
+	ScaleToZeroIdleUs float64 `yaml:"scale_to_zero_idle_us"`
+	// ScaleFromZeroHoldUs: a request for a model with no replica starts one and waits up to this long (#908); 0 = reject.
+	ScaleFromZeroHoldUs float64 `yaml:"scale_from_zero_hold_us"`
+	ScaleFromZeroPollUs float64 `yaml:"scale_from_zero_poll_us"`
 }
 
 // removedBundleKeys are the top-level keys a bundle no longer takes, each with what states its
@@ -160,7 +197,7 @@ func (b *PolicyBundle) Validate() error {
 		return fmt.Errorf("autoscaler.analyzer.avg_input_tokens must be > 0, got %v", a.AvgInputTokens)
 	}
 	if a.MinReplicas < 0 {
-		return fmt.Errorf("autoscaler.analyzer.min_replicas must be >= 1 (0 or absent = 1; scale-to-zero is not modelled, #909), got %d", a.MinReplicas)
+		return fmt.Errorf("autoscaler.analyzer.min_replicas must be >= 1 (0 or absent = 1; a model scales to zero through autoscaler.scale_to_zero_idle_us), got %d", a.MinReplicas)
 	}
 	// Cross-check scale_down_boundary < scale_up_threshold using effective (post-default) values.
 	// A one-sided override (e.g. scale_down_boundary: 0.9, scale_up_threshold unset → default 0.8)
@@ -234,6 +271,9 @@ func (b *PolicyBundle) Validate() error {
 	}
 	if ls < 0 {
 		return fmt.Errorf("instance_lifecycle.loading_delay.stddev must be >= 0, got %v", ls)
+	}
+	if ws := b.InstanceLifecycle.WeightSource; ws != strings.TrimSpace(ws) || strings.ContainsAny(ws, " \t\n") {
+		return fmt.Errorf("instance_lifecycle.weight_source must be a storage tier name such as nvme_gen4, got %q", ws)
 	}
 	return nil
 }

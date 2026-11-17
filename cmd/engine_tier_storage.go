@@ -23,12 +23,57 @@ type memoryFiles map[string]bool
 func (m memoryFiles) Exists(path string) bool { return m[path] }
 func (m memoryFiles) Publish(path string)     { m[path] = true }
 
-// tierStorage is a run's shared file systems, one per (model, root_dir).
-type tierStorage struct {
-	stores map[[2]string]memoryFiles
+// tierBucket is the shape of an obj tier's bucket as the engine declares it (blis-vllm core/vllm
+// TierBucket): a transfer writes or reads whole sets of objects, and ends in error when it cannot.
+type tierBucket = interface {
+	Exists(key string) bool
+	Write(keys []string) bool
+	Read(keys []string) bool
 }
 
-func newTierStorage() *tierStorage { return &tierStorage{stores: map[[2]string]memoryFiles{}} }
+// memoryBucket is an object store held in memory: the simulated bucket every engine of a model that
+// names it reads and writes. A READ of a set with a missing object ends in error, as NIXL's OBJ
+// backend reports a transfer whole.
+type memoryBucket map[string]bool
+
+func (b memoryBucket) Exists(key string) bool { return b[key] }
+func (b memoryBucket) Write(keys []string) bool {
+	for _, k := range keys {
+		b[k] = true
+	}
+	return true
+}
+func (b memoryBucket) Read(keys []string) bool {
+	for _, k := range keys {
+		if !b[k] {
+			return false
+		}
+	}
+	return true
+}
+
+// tierStorage is a run's shared file systems, one per (model, root_dir), and shared buckets, one
+// per (model, bucket).
+type tierStorage struct {
+	stores  map[[2]string]memoryFiles
+	buckets map[[2]string]memoryBucket
+}
+
+func newTierStorage() *tierStorage {
+	return &tierStorage{stores: map[[2]string]memoryFiles{}, buckets: map[[2]string]memoryBucket{}}
+}
+
+// bucketsOf is the buckets func an engine serving model takes: each bucket it names is the run's one
+// bucket for the pair, since the objects of two models are not interchangeable.
+func (s *tierStorage) bucketsOf(model string) func(bucket string) tierBucket {
+	return func(bucket string) tierBucket {
+		k := [2]string{model, bucket}
+		if s.buckets[k] == nil {
+			s.buckets[k] = memoryBucket{}
+		}
+		return s.buckets[k]
+	}
+}
 
 // of is the storage func an engine serving model takes: each root_dir it names is the run's one
 // store for the pair.
@@ -49,5 +94,10 @@ func (s *tierStorage) share(eng engine.Engine, model string) {
 		ShareTierStorage(func(rootDir string) tierFiles)
 	}); ok {
 		sh.ShareTierStorage(s.of(model))
+	}
+	if sh, ok := eng.(interface {
+		ShareTierBuckets(func(bucket string) tierBucket)
+	}); ok {
+		sh.ShareTierBuckets(s.bucketsOf(model))
 	}
 }

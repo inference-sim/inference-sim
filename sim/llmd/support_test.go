@@ -269,14 +269,14 @@ func TestCheckMetricFlags(t *testing.T) {
 }
 
 // TestSignalPolicyRefusesThroughTheRouter: a type the fork can host but BLIS's signal policy
-// refuses (session affinity: the simulated workload sends no session header) is refused at startup
+// refuses (agent identity: the simulated workload carries none) is refused at startup
 // with BLIS's reason; that the router consults the policy before the plugin's constructor runs is
 // the fork's guarantee (its pkg/embed tests and blis-schemas embedtest).
 func TestSignalPolicyRefusesThroughTheRouter(t *testing.T) {
-	config := "apiVersion: llm-d.ai/v1\nkind: EndpointPickerConfig\nplugins:\n- type: session-affinity-scorer\n- type: max-score-picker\n- type: single-profile-handler\nschedulingProfiles:\n- name: default\n  plugins:\n  - pluginRef: session-affinity-scorer\n  - pluginRef: max-score-picker\n"
+	config := "apiVersion: llm-d.ai/v1\nkind: EndpointPickerConfig\nplugins:\n- type: agent-identity\n- type: max-score-picker\n- type: single-profile-handler\nschedulingProfiles:\n- name: default\n  plugins:\n  - pluginRef: max-score-picker\n"
 	err := refusal(t, testDeployment(2), config, nil)
-	if err == nil || !strings.Contains(err.Error(), `plugin "session-affinity-scorer" (type session-affinity-scorer): the simulated workload sends no session header`) {
-		t.Fatalf("want session-affinity-scorer refused by BLIS's signal policy, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), `plugin "agent-identity" (type agent-identity): the simulated workload carries no agent identity`) {
+		t.Fatalf("want agent-identity refused by BLIS's signal policy, got %v", err)
 	}
 }
 

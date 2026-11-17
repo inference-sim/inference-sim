@@ -60,6 +60,10 @@ type AgentXReplay struct {
 	// them has finished, including its idle-cap check.
 	released []*agxDispatch
 
+	// constant is the constant-load mode's state (AgentXReplayConfig.Constant); nil for the
+	// agentic scenario.
+	constant *agxConstant
+
 	instances []*agxInstance
 	laneInst  []*agxInstance // the tree currently holding each lane's slot
 	nextReqID int64
@@ -91,6 +95,10 @@ type AgentXReplayConfig struct {
 	WarmupRequestsPerLane int
 	MinRatio              float64 // trajectory start window
 	MaxRatio              float64
+	// Constant, when set, runs aiperf without --scenario (see agentx_constant.go): Concurrency
+	// session slots, sessions from the start of each root, the per-trace idle cap applied to
+	// the loaded traces. IdleCapUs, MinRatio, MaxRatio and WarmupRequestsPerLane are unused.
+	Constant *AgentXConstantLoad
 	// RequestTimeoutUs is the client's per-request timeout: aiperf's
 	// --request-timeout-seconds default, 6 h (config/endpoint.py:52). A timed-out request
 	// is an error record. 0 disables it.
@@ -142,6 +150,9 @@ const (
 	agxProfile
 	agxClosed // sending window over; in-flight requests may finish until the grace end
 	agxDone
+	// agxWarmDrain is the constant-load mode's warmup after its sending window: no new send,
+	// and the measured phase starts when the last warmup request has returned.
+	agxWarmDrain
 )
 
 type agxDispatchState int
@@ -162,6 +173,7 @@ type agxDispatch struct {
 	lane      int // recycle only
 	recycle   bool
 	windowEnd bool // the sending window's duration timeout
+	warmupEnd bool // the constant-load warmup's sending window ends
 	// refusal, when set, is the client receiving the error response for that send.
 	refusal   *agxDispatch
 	outcome   string
@@ -191,6 +203,7 @@ type agxInstance struct {
 	// profiling handoff places each surviving turn at max(0, ts[next] - originMs).
 	originMs float64
 
+	recycled    bool // constant load: the slot was freed when the root's final turn returned
 	open        bool // slot acquired (open_tree)
 	rootPending bool
 	outstanding int // descendants live or registered
@@ -280,13 +293,32 @@ func NewAgentXReplay(c *AgentXCorpus, cfg AgentXReplayConfig) (*AgentXReplay, er
 	if len(c.Traces) == 0 {
 		return nil, fmt.Errorf("empty trace pool")
 	}
+	pool := c.Traces
+	if cfg.Constant != nil && cfg.TraceIdleCapUs > 0 {
+		pool = make([]*AgentXTrace, len(c.Traces))
+		for i, t := range c.Traces {
+			pool[i] = agxWarpTrace(t, float64(cfg.TraceIdleCapUs)/1000)
+		}
+		// The cap is spent on the loaded traces; the runtime watchdog is the agentic scenario's.
+		cfg.TraceIdleCapUs = 0
+	}
 	x := &AgentXReplay{
 		cfg:           cfg,
-		sampler:       &agxSampler{pool: c.Traces},
+		sampler:       &agxSampler{pool: pool},
 		byPlaceholder: map[*sim.Request]*agxDispatch{},
 		byID:          map[string]*agxDispatch{},
 		idleSinceUs:   -1,
 		completeUs:    -1,
+	}
+	if cfg.Constant != nil {
+		var err error
+		if x.constant, err = newAgxConstant(*cfg.Constant, pool, cfg.Seed); err != nil {
+			return nil, err
+		}
+		x.lanes = make([]*agxLane, cfg.Concurrency)
+		x.stats.Lanes = cfg.Concurrency
+		x.laneInst = make([]*agxInstance, cfg.Concurrency)
+		return x, nil
 	}
 	x.lanes, x.stats.UnspawnableSkipped = agxBuildLanes(x.sampler, cfg.Concurrency, cfg.Seed, cfg.MinRatio, cfg.MaxRatio)
 	if len(x.lanes) == 0 {
@@ -385,6 +417,12 @@ func (x *AgentXReplay) schedule(d *agxDispatch, due int64, shiftable bool) {
 // returns the requests to inject, in non-decreasing arrival order.
 func (x *AgentXReplay) Start() []*sim.Request {
 	x.nowUs = 0
+	if x.constant != nil {
+		x.startConstant()
+		out := x.flush()
+		sort.SliceStable(out, func(i, j int) bool { return out[i].ArrivalTime < out[j].ArrivalTime })
+		return out
+	}
 	type prep struct {
 		d    *agxDispatch
 		lead float64
@@ -554,7 +592,10 @@ func (x *AgentXReplay) startProfiling(now int64) {
 	// phase's duration timeout, not a scheduler timer.
 	x.push(&agxDispatch{state: agxTimer, windowEnd: true}, x.windowEndUs)
 
-	if x.accelOn {
+	if x.constant != nil {
+		x.constant.measured = 0
+		x.seedConstant()
+	} else if x.accelOn {
 		// The accelerated substage already seeded every lane and advanced its streams, so
 		// profiling resumes from those advanced positions (the deferred quota turns) rather
 		// than re-seeding the snapshot.
@@ -753,7 +794,7 @@ func (x *AgentXReplay) issue(d *agxDispatch) {
 		return
 	}
 	in := d.inst
-	if d.start && d.stream == in.root && !in.open && x.phase != agxWarmup {
+	if d.start && d.stream == in.root && !in.open && (x.phase != agxWarmup || x.constant != nil) {
 		in.open = true // acquire_session_slot + open_tree(root_pending=True)
 		in.rootPending = true
 	}
@@ -767,12 +808,16 @@ func (x *AgentXReplay) issue(d *agxDispatch) {
 	if d.warmup && !d.accel {
 		return
 	}
+	constantWarm := x.constant != nil && x.phase == agxWarmup
+	if constantWarm {
+		x.stats.WarmupRequests++
+	}
 	if d.stream.child {
-		if !d.accel {
+		if !d.accel && !constantWarm {
 			x.stats.SubagentRequests++
 		}
 	} else {
-		if !d.accel {
+		if !d.accel && !constantWarm {
 			x.stats.MainRequests++
 		}
 		x.overlapSpawn(d)
@@ -851,7 +896,9 @@ func (x *AgentXReplay) removeTimer(d *agxDispatch) {
 func (x *AgentXReplay) fire(d *agxDispatch) {
 	switch {
 	case d.windowEnd:
-		x.closeWindow()
+		x.closeWindow(agxClosed)
+	case d.warmupEnd:
+		x.endWarmup()
 	case d.refusal != nil:
 		x.end(d.refusal, d.outcome, x.nowUs)
 	case d.recycle:
@@ -869,8 +916,8 @@ func (x *AgentXReplay) fire(d *agxDispatch) {
 // closeWindow is the sending-window timeout (phase/runner._wait_for_sending_complete):
 // pending scheduler timers are cancelled, and barrier-held sends are cancelled with
 // child refusal cleanup (cancel_pending(notify_refused=True)).
-func (x *AgentXReplay) closeWindow() {
-	x.phase = agxClosed
+func (x *AgentXReplay) closeWindow(next agxPhase) {
+	x.phase = next
 	for _, t := range x.timers {
 		t.state = agxDropped
 		if t.ph != nil {
@@ -878,6 +925,9 @@ func (x *AgentXReplay) closeWindow() {
 		}
 	}
 	x.timers = nil
+	if next == agxWarmDrain {
+		x.dropSleepingSends()
+	}
 	for _, in := range x.instances {
 		held := in.held
 		in.held = nil
@@ -890,9 +940,41 @@ func (x *AgentXReplay) closeWindow() {
 	}
 }
 
+// dropSleepingSends cancels the sends still asleep when the constant-load warmup's window
+// closes (a delayed child spawn is an asyncio sleep, which the scheduler's cancel does not
+// reach): left to fire, they would send the warmup's sessions' requests into the measured
+// phase. Each is refused as a send after the window, in a fixed order (INV-6).
+func (x *AgentXReplay) dropSleepingSends() {
+	var asleep []*agxDispatch
+	for _, d := range x.byPlaceholder {
+		if d.state == agxTimer && d.inst != nil && d.stream != nil && !d.windowEnd && !d.warmupEnd && d.refusal == nil {
+			asleep = append(asleep, d)
+		}
+	}
+	sort.Slice(asleep, func(i, j int) bool {
+		a, b := asleep[i], asleep[j]
+		if a.dueUs != b.dueUs {
+			return a.dueUs < b.dueUs
+		}
+		if a.stream.id != b.stream.id {
+			return a.stream.id < b.stream.id
+		}
+		return a.turn < b.turn
+	})
+	for _, d := range asleep {
+		delete(x.byPlaceholder, d.ph)
+		d.ph = nil
+		d.state = agxDropped
+		x.refused(d)
+	}
+}
+
 // dispatchRecycle is _dispatch_recycled_on_lane: the lane's next root at turn 0, a fresh
 // tree with a fresh cache-bust marker.
 func (x *AgentXReplay) dispatchRecycle(lane int) {
+	if x.constant != nil {
+		return // constant load recycles through releaseSlot
+	}
 	if !x.canSend() {
 		return
 	}
@@ -1003,6 +1085,9 @@ func (x *AgentXReplay) spawn(in *agxInstance, branches []int32, originMs float64
 		if k.offset <= 0 {
 			x.submit(&agxDispatch{inst: in, stream: k.s, turn: 0, childPath: true, first: true})
 		}
+	}
+	if x.phase == agxWarmDrain {
+		x.dropSleepingSends() // spawned after the constant-load warmup's window closed
 	}
 }
 
@@ -1196,6 +1281,9 @@ func (x *AgentXReplay) onReturn(d *agxDispatch, overflow bool) {
 	if (final || overflowTerminal) && !s.child {
 		in.rootPending = false // on_root_terminal
 		x.maybeDrain(in)
+		if x.constant != nil {
+			x.releaseSlot(in)
+		}
 	}
 	if !s.child {
 		if !x.canSend() {
@@ -1341,6 +1429,9 @@ func (x *AgentXReplay) maybeDrain(in *agxInstance) {
 	in.drained = true
 	in.barrierOn = false
 	x.stats.TreesCompleted++
+	if x.constant != nil {
+		return // the slot was freed when the root's final turn returned (releaseSlot)
+	}
 	if x.laneInst[in.lane] == in {
 		x.schedule(&agxDispatch{recycle: true, lane: in.lane}, x.nowUs, true)
 	}
@@ -1469,6 +1560,12 @@ func (x *AgentXReplay) enforceTraceIdleCap(in *agxInstance, afterReturn bool) {
 // _wait_for_returning_complete with BranchOrchestrator.has_pending_branch_work); otherwise
 // the phase completes at the grace end.
 func (x *AgentXReplay) maybeComplete() {
+	// The warmup drains when nothing is in flight and nothing is scheduled: a parent left
+	// suspended on children the closed window refused can never resume, so it is not waited on.
+	if x.phase == agxWarmDrain && x.inFlight == 0 && len(x.byPlaceholder) == 0 {
+		x.startProfiling(x.nowUs)
+		return
+	}
 	if x.phase != agxClosed || x.inFlight > 0 || x.completeUs >= 0 || x.pendingBranchWork() {
 		return
 	}
@@ -1506,7 +1603,7 @@ func (x *AgentXReplay) Finish(stopUs int64) {
 		}
 	}
 	x.stats.Cancelled += cancelled
-	if x.completeUs < 0 && x.phase >= agxProfile {
+	if x.completeUs < 0 && x.phase >= agxProfile && x.phase != agxWarmDrain {
 		// The grace period ran out (PhaseRunner._wait_for_returning_complete): aiperf
 		// cancels what is in flight and, when branch work is still pending, waits out
 		// CANCEL_DRAIN_TIMEOUT (10 s) for the all-returned signal the pending work keeps
@@ -1554,7 +1651,7 @@ func (x *AgentXReplay) fillRequest(d *agxDispatch, req *sim.Request, now int64) 
 	req.SessionID = fmt.Sprintf("%s#%d", tr.convs[s.conv].sessionID, in.id)
 	req.RoundIndex = int(d.turn)
 	req.Phase = sim.PhaseProfile
-	if d.warmup {
+	if d.warmup || (x.constant != nil && x.phase == agxWarmup) {
 		req.Phase = sim.PhaseWarmup
 	}
 	if x.cfg.RequestTimeoutUs > 0 {

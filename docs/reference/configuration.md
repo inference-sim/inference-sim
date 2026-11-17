@@ -81,7 +81,7 @@ All internal timestamps in the DES (arrival time, schedule time, completion time
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout 7794a6c6277b370874fb188e1bfa8d1ae597aea1
+git -C blis-substrate checkout c48aa81d029a5d2b696e5eb3dfe5f3986132b818
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
@@ -120,7 +120,7 @@ These settings come from the scenario (and the kernel), and no CLI flag sets the
 
 **Data parallelism (MoE only).** A pool with `dp > 1` becomes one engine per data-parallel rank, each sized as one vLLM EngineCore. The ranks of one instance step in lockstep and the router sees them as one endpoint, balanced across ranks by vLLM's internal DP load balancer; `parallel.data_parallel_load_balancing: external` (blis-schemas#76, per pool; under P/D every rank is already its own endpoint, so a P/D pool's mode is resolved but changes no routing) instead makes every rank its own endpoint, as vLLM's external-LB modes do ([Latency Models](../guide/latency-models.md#data-and-expert-parallelism-moe)). `dp > 1` on a dense model is refused.
 
-**Node pools.** When `node_pools` are configured in `--policy-config`, every pool's `gpu_type` must equal the scenario's `cluster.hardware`.
+**Node pools.** When `node_pools` are configured in `--policy-config`, every pool's `gpu_type` must equal the chip the scenario states for that pool (`cluster.pools[].hardware`, else `cluster.hardware`), and each instance is priced and sized for its pool's chip ([Cluster](../guide/cluster.md#node-pools-and-multi-node-placement)).
 
 ## Simulation Control
 
@@ -365,11 +365,12 @@ priority:
 # scheduler or preemption is refused.
 
 # Node pool infrastructure (optional; omit for single-pool mode)
-# Every pool's gpu_type must equal the scenario's cluster.hardware, and gpu_type must be
-# unique across pools (#1537). See docs/guide/cluster.md.
+# Every pool's gpu_type must equal the chip the scenario states for that pool
+# (cluster.pools, else cluster.hardware). Pools may share a gpu_type (#1549).
+# See docs/guide/cluster.md.
 node_pools:
   - name: "gpu-pool-1"
-    gpu_type: "h200"      # must equal the scenario's cluster.hardware
+    gpu_type: "h200"      # must equal the scenario's chip for this pool
     gpus_per_node: 8
     gpu_memory_gib: 141.0
     initial_nodes: 2
@@ -387,8 +388,50 @@ instance_lifecycle:
   warm_up_request_count: 5    # requests served before leaving WarmingUp state
   warm_up_ttft_factor: 2.0    # TTFT multiplier applied to warm-up requests (≥ 1.0)
   drain_policy: "WAIT"        # IMMEDIATE | WAIT | REDIRECT
+  weight_source: nvme_gen4    # optional storage tier the weights load from (#1215): an instance loads in loading_delay plus the time to read its per-rank weights from this tier (registry offload_tier_<tier>_* entries; the scenario lists cost-model-offload-tiers). Empty = loading_delay is the whole delay
   warm_start_initial_instances: false  # true = startup instances skip loading_delay (model pre-deployed); autoscaler-added instances always pay loading_delay
 ```
+
+### Cluster autoscaler
+
+The cluster autoscaler decides how many nodes each pool needs. It is separate from the model autoscaler: when the model autoscaler asks for a replica and no Ready node has room, the replica waits in a pending-placement queue, and the cluster autoscaler reads that queue.
+
+```yaml
+cluster_autoscaler:
+  policy: pending-driven        # empty = none: no node is provisioned beyond initial_nodes
+  pending_threshold_us: 60000000  # a placement must wait this long before a node is added for it
+  max_nodes_per_pool: 8         # 0 = only each pool's own max_nodes
+  scale_down: bin-pack          # empty = nodes are never removed
+  low_water_mark: 0.3
+  min_nodes_per_pool: 1
+```
+
+`scale_down: bin-pack` removes nodes of an underused pool: with `low_water_mark` (for example 0.3) and `min_nodes_per_pool`, on each scaling tick it takes one node from the most expensive pool whose GPU utilization is below the mark, if the allocated GPUs would still fit on the other nodes, the pool keeps its floor, and no placement is waiting. Only a node with no instance on it is removed; moving instances off a busy node is the drain policies' work.
+
+`pending-driven` adds one node to a pool when a placement for its GPU type has waited the threshold, unless a node of the pool is already on its way or the pool is at its ceiling. The node is ready after the pool's `provisioning_delay`, and its arrival places the waiting replicas in arrival order.
+
+### Model autoscaler analyzer
+
+The model autoscaler (`autoscaler.interval_us` above 0) reads each model's replicas through an analyzer. The default, `v2-saturation`, is llm-d's workload-variant-autoscaler saturation model (`kv_cache_threshold`, `scale_up_threshold`, `scale_down_boundary`, `avg_input_tokens`). `threshold` is a target-value rule on one per-replica signal, the shape of llm-d's KEDA path (`desired = ceil(sum(signal) / target)`):
+
+```yaml
+autoscaler:
+  interval_us: 15000000
+  analyzer:
+    kind: threshold        # default: v2-saturation
+    signal: in_flight      # in_flight | queue_depth | kv_utilization
+    target: 16             # the value one replica is sized for
+    min_replicas: 1
+```
+
+`collector_window_size` (under `autoscaler`, default 0) keeps that many ticks of each model's replica readings for the analyzer, each stamped with its time and sequence number, and fills the replicas' TTFT, ITL, dispatch rate and token averages from the requests completed since the previous tick (the plain collector leaves them zero). The shipped analyzers ignore the window.
+
+Replicas still loading count as supply when scaling up, so a slow load is not asked for again. This is not the Kubernetes HPA: its tolerance, `behavior` policies and the metrics pipeline's lags (KEDA polling, Prometheus scrape windows, the HPA sync period) are not modelled; only `hpa_scrape_delay` exists.
+### Scale to zero
+
+`autoscaler.scale_to_zero_idle_us` (default 0 = never) drains all of a model's replicas once the model has had no request for that long and nothing is in flight, using the configured `drain_policy`. The node a model leaves empty is flagged as idle (`ClusterSimulator.IdleNodes`) and the cluster autoscaler's `bin-pack` scale-down may remove it. The scaling tick keeps running past the end of the workload until the idle models are drained.
+
+`autoscaler.scale_from_zero_hold_us` (default 0 = reject) brings a model back: a request for a model with no replica starts one of the variant the model last ran (through the actuator, so a full pool queues the placement for the cluster autoscaler) and is held at the cluster, polling every `scale_from_zero_poll_us` (default 100 ms), for up to the hold. Its wait counts in its latency. A model that never had a replica has no variant to start, and its request is not held. A held request after the hold goes to the gateway, which rejects it if nothing serves.
 
 !!! note "Node pools and instance lifecycle are YAML-only"
     `node_pools` and `instance_lifecycle` have no corresponding CLI flags. They must be set via `--policy-config`. Omitting them is safe — the simulator falls back to single-pool, no-lifecycle mode for full backward compatibility.
@@ -427,7 +470,7 @@ lora:
 ```
 
 !!! note "Node pools and the scenario's hardware"
-    When `node_pools` are configured (via `--policy-config`), every pool's `gpu_type` must equal the scenario's `cluster.hardware`. KV capacity and step time for every placed instance come from the kernel for the scenario's hardware. `gpu_type` must also be unique across pools (#1537).
+    When `node_pools` are configured (via `--policy-config`), every pool's `gpu_type` must equal the chip the scenario states for that pool. KV capacity and step time for every placed instance come from the kernel for its pool's chip. Pools may share a `gpu_type`; each instance is billed at the `cost_per_hour` of its own pool (#1549).
 
 ---
 

@@ -3,8 +3,12 @@
 package cluster
 
 import (
-	"github.com/inference-sim/inference-sim/sim"
+	"fmt"
+	"time"
+
 	"github.com/sirupsen/logrus"
+
+	"github.com/inference-sim/inference-sim/sim"
 )
 
 // Event priority constants for lifecycle events.
@@ -49,22 +53,16 @@ func (e *NodeReadyEvent) Execute(cs *ClusterSimulator) {
 		// Deferred construction: set pool's GPU type (authoritative per SC-003).
 		p.simCfg.GPU = p.gpuType
 
-		// Phase 1C: look up CostPerHour for this GPU type (mirrors cluster.go startup path).
-		var poolCostPerHour float64
-		for i := range cs.config.NodePools {
-			if cs.config.NodePools[i].GPUType == p.gpuType {
-				poolCostPerHour = cs.config.NodePools[i].CostPerHour
-				break
-			}
-		}
 		// Record the instance's node span (mirrors the startup path).
 		cs.recordNodeSpan(p.gpuIDs)
 
-		// #1529: cost = distinct-nodes-spanned × pool cost_per_hour (mirrors startup path).
-		instCost := cs.placement.InstanceCostPerHour(p.gpuIDs, poolCostPerHour)
-		if !cs.addLiveInstance(p.id, cs.config.Model, p.simCfg, p.nodeID, p.gpuIDs, p.tpDegree, instCost) {
-			continue // GPU release already handled by addLiveInstance
+		// #1529: cost = distinct-nodes-spanned × the cost_per_hour of the pool the GPUs sit in (mirrors startup path).
+		instCost := cs.placement.PlacedInstanceCostPerHour(p.gpuIDs)
+		model := p.model
+		if model == "" {
+			model = cs.config.Model
 		}
+		cs.addLiveInstance(p.id, model, p.simCfg, p.nodeID, p.gpuIDs, p.tpDegree, instCost)
 	}
 }
 
@@ -123,7 +121,7 @@ func (e *InstanceLoadedEvent) Execute(cs *ClusterSimulator) {
 // the configured loading delay. If the delay is zero, transitions immediately to
 // Loading → WarmingUp (or Active).
 func (cs *ClusterSimulator) scheduleInstanceLoadedEvent(inst *InstanceSimulator) {
-	delay := cs.placement.SampleLoadingDelay(&cs.config.InstanceLifecycle)
+	delay := cs.placement.SampleLoadingDelay(&cs.config.InstanceLifecycle) + cs.weightLoadDelay(inst)
 	readyTime := cs.clock + delay
 
 	if delay == 0 {
@@ -175,32 +173,28 @@ func NewDrainPolicy(name DrainPolicyName) DrainPolicy {
 	}
 }
 
-// drainImmediate terminates the instance immediately.
-// In-flight requests receive no further steps; they complete with whatever progress
-// they have made. New requests are no longer routed to the instance.
+// drainImmediate terminates the instance at once. Every request it holds, waiting or running, is
+// dropped as unservable (the instance's DroppedUnservable counts them, and each request's fate is
+// written, SIM-8); new requests are no longer routed to it, and its GPUs are released.
 type drainImmediate struct{}
 
 func (d *drainImmediate) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 	inst.TransitionTo(sim.InstanceStateDraining)
 
-	// C1/I2: Decrement inFlightRequests for all requests that will never complete —
-	// both queued (WaitQ) and in-flight (running batch). Drain the WaitQ so those
-	// requests don't continue processing on the terminated instance.
 	if cs != nil && inst.HasSim() {
-		instID := string(inst.ID())
-		abandoned := inst.QueueDepth() + inst.BatchSize()
-		_ = inst.DrainWaitQueue() // discard queued requests; they won't be re-routed
-		if abandoned > 0 {
-			cs.inFlightRequests[instID] -= abandoned
-			if cs.inFlightRequests[instID] < 0 {
-				cs.inFlightRequests[instID] = 0
-			}
-		}
+		// The drops are counted on the instance, and the cluster's books follow its counters as
+		// they do after any instance event (in-flight decrement, then the drain-completion check
+		// that terminates an empty draining instance and releases its GPUs).
+		before := countersOf(inst)
+		inst.Abandon(cs.clock)
+		cs.afterInstanceEvent(inst, before)
 	}
 
-	inst.TransitionTo(sim.InstanceStateTerminated)
-	if cs != nil {
-		cs.releaseInstanceGPUs(inst)
+	if inst.State != sim.InstanceStateTerminated {
+		inst.TransitionTo(sim.InstanceStateTerminated)
+		if cs != nil {
+			cs.releaseInstanceGPUs(inst)
+		}
 	}
 }
 
@@ -281,4 +275,22 @@ func (cs *ClusterSimulator) releaseInstanceGPUs(inst *InstanceSimulator) {
 		// Log at debug level so placement bugs surface during investigation.
 		logrus.Debugf("[cluster] releaseInstanceGPUs %s: %v", inst.ID(), err)
 	}
+}
+
+// weightLoadDelay is the time, in ticks, to read inst's resident weights from the configured
+// weight source (#1215), 0 when none is configured. A weight source the build site cannot price
+// for the instance's chip was refused at startup, so an error here is a bug and panics (R1).
+func (cs *ClusterSimulator) weightLoadDelay(inst *InstanceSimulator) int64 {
+	tier := cs.config.InstanceLifecycle.WeightSource
+	if tier == "" {
+		return 0
+	}
+	if cs.config.WeightLoadTime == nil {
+		panic(fmt.Sprintf("ClusterSimulator: instance %s: weight_source %q is set, but the host supplies no WeightLoadTime", inst.ID(), tier))
+	}
+	d, err := cs.config.WeightLoadTime(inst.GPU(), tier, inst.TPDegree)
+	if err != nil {
+		panic(fmt.Sprintf("ClusterSimulator: instance %s: %v", inst.ID(), err))
+	}
+	return int64((d + time.Microsecond - 1) / time.Microsecond)
 }

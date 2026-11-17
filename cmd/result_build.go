@@ -53,8 +53,9 @@ type resultInputs struct {
 	DecodeGPUs int
 	// GoodputTargets are the resolved SLO targets, nil without.
 	GoodputTargets map[string]workload.SLODimTargets
-	// Saturation is the final label per detector, nil when no detector ran.
-	Saturation map[string]string
+	// Saturation is the detector's block: "final" (detector to label) and "detail", nil when no
+	// detector ran.
+	Saturation map[string]any
 	// Artifacts are the bulk outputs the run wrote, by role.
 	Artifacts map[string]result.Artifact
 	// Engine is the engine the run used (SIM-1); Revisions the versions it was built from.
@@ -134,7 +135,7 @@ func buildResult(in resultInputs, out resultMetrics) *result.Result {
 	r.Breakdowns = breakdownsOf(m, sum, r.Metrics, out.PD, out.TierLinks, out.Peer)
 	r.Goodput = goodputOf(m, in.GoodputTargets, out.InjectedByClass, r.Metrics)
 	if len(in.Saturation) > 0 {
-		r.Reports.Saturation = map[string]any{"final": stringMapAny(in.Saturation)}
+		r.Reports.Saturation = in.Saturation
 	}
 	return r
 }
@@ -523,16 +524,6 @@ func slugPart(s string) string {
 	out := strings.Trim(b.String(), "-._")
 	if out == "" {
 		return "x"
-	}
-	return out
-}
-
-// stringMapAny copies a string map into a generic one, in sorted key order (the encoder
-// sorts anyway; the copy is for the type).
-func stringMapAny(in map[string]string) map[string]any {
-	out := make(map[string]any, len(in))
-	for _, k := range sortedMapKeys(in) {
-		out[k] = in[k]
 	}
 	return out
 }

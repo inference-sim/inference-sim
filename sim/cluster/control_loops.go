@@ -42,6 +42,14 @@ type ControlLoop struct {
 // ControlLoops returns the list, in name order.
 func ControlLoops() []ControlLoop {
 	return []ControlLoop{{
+		Name:        "cluster-autoscaler",
+		PolicyField: "ClusterAutoscaler",
+		Component:   "ClusterAutoscaler (PendingDrivenProvisioner) over the pending-placement queue, run when a placement is queued and when one reaches its threshold (cluster_autoscaler.go)",
+		Published:   "a read-only snapshot of each node pool (nodes, nodes provisioning, GPUs, cost) and the pending placements in arrival order (model, variant, time requested)",
+		Upstream:    "Kubernetes Cluster Autoscaler's reaction to unschedulable pods (it adds a node when a pod has waited); it models no particular release",
+		Status:      ValidationVerified,
+		Evidence:    "the policy and the loop are tested against their written contracts (cluster_autoscaler_test.go); no measured node-scaling run has been compared with it",
+	}, {
 		Name:        "model-autoscaler",
 		PolicyField: "Autoscaler",
 		Component:   "Collector, Analyzer, Engine and Actuator, run by the scaling tick (autoscaler.go)",

@@ -102,11 +102,13 @@ nav:
       - Core Engine: concepts/core-engine.md
   - User Guide:
       - guide/index.md
+      - Capabilities Guide: guide/capabilities.md
       - Routing (llm-d router): guide/routing.md
       - Admission Control: guide/admission.md
       - Scheduling & Priority: guide/scheduling.md
       - "Latency Kernel": guide/latency-models.md
       - KV Cache & Memory: guide/kv-cache.md
+      - LoRA Adapters: guide/lora.md
       - Workload Specifications: guide/workloads.md
       - Cluster Simulation: guide/cluster.md
       - Metrics & Results: guide/results.md

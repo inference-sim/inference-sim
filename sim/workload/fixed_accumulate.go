@@ -304,6 +304,7 @@ func buildFixedAccumulateRequest(rec TraceRecord, sessionID string, inputTokens,
 		ClientID:         rec.ClientID,
 		Streaming:        rec.Streaming,
 		Adapter:          rec.Adapter,
+		Phase:            sim.Phase(rec.Phase),
 	}
 	// Prefix metadata parity with the other loaders (router prefix-affinity scoring
 	// reads PrefixGroup/PrefixLength; the tokens themselves are already baked into

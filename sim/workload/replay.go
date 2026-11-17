@@ -89,6 +89,7 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 			PrefixLength:     rec.PrefixLength,
 			Streaming:        rec.Streaming,
 			Adapter:          rec.Adapter, // #1464: adapter identity from trace; "" = base-model-only
+			Phase:            sim.Phase(rec.Phase),
 		}
 		requests = append(requests, req)
 	}

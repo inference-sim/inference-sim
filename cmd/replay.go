@@ -339,6 +339,23 @@ Example:
 			}
 		}
 
+		// Drain-gated phases (#1926, blis-substrate#156): the first phase is sent now, each later
+		// one when the one before it drains. allRequests is every request the trace holds, for the
+		// run controls and the re-export; requests is what is sent first.
+		allRequests := requests
+		var phaseGate *workload.PhaseGate
+		if len(traceData.Header.Phases) > 0 {
+			if agx != nil || (replaySessionMode != "fixed" && replaySessionMode != "fixed-accumulate") {
+				logrus.Fatalf("a trace with phases replays with --session-mode fixed or fixed-accumulate; closed-loop, pooled and agentic replays do not run drain-gated phases yet (inference-sim#1926)")
+			}
+			g, initial, gErr := workload.NewPhaseGate(traceData.Header.Phases, requests)
+			if gErr != nil {
+				logrus.Fatalf("trace phases: %v", gErr)
+			}
+			phaseGate, requests = g, initial
+			logrus.Infof("Phased replay: %d phases, %d of %d requests sent at the start", len(traceData.Header.Phases), len(initial), len(allRequests))
+		}
+
 		// Compute horizon (BC-3)
 		// #1615 (INV-13): with no --horizon the replay runs until the requests drain, as a run
 		// with no horizon does; the former twice-the-last-arrival default truncated the tail.
@@ -414,7 +431,13 @@ Example:
 					Stddev: bundle.InstanceLifecycle.LoadingDelay.Stddev,
 				},
 				WarmStartInitialInstances: bundle.InstanceLifecycle.WarmStartInitialInstances,
+				WeightSource:              bundle.InstanceLifecycle.WeightSource,
+				DrainPolicy:               bundle.InstanceLifecycle.DrainPolicy,
 			}
+			if p := bundle.InstanceLifecycle.DrainPolicy; p != "" && !cluster.IsValidDrainPolicy(p) {
+				logrus.Fatalf("policy bundle instance_lifecycle.drain_policy %q is not one of IMMEDIATE, WAIT, REDIRECT", p)
+			}
+			requireWeightSource(bundleInstanceLifecycle.WeightSource, kernelOpened, nil)
 		}
 
 		// PD disaggregation validation (same as runCmd, R3) — INV-13 Track A.
@@ -482,7 +505,8 @@ Example:
 			ScenarioEndpointTopology:   cluster.StaticEndpointTopology(scenarioTopology),
 			// A contract-built release replays on the engine it ran on, built the same way as in
 			// run (INV-13); a compatibility release keeps the compatibility engine.
-			NewEngine: engineDriverFactory(scenarioEngine, replayHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
+			WeightLoadTime: weightLoader(kernelOpened, nil),
+			NewEngine:      engineDriverFactory(scenarioEngine, replayHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
 		}
 
 		// Run simulation — wire SessionManager for closed-loop, nil for fixed mode
@@ -547,6 +571,9 @@ Example:
 		if csErr != nil {
 			logrus.Fatalf("%v", csErr)
 		}
+		if phaseGate != nil {
+			cs.SetGate(phaseGate)
+		}
 		// INV-13: the router the trace was recorded with, unless the command line names one.
 		router := reconcileReplayRouter(cmd, traceData.Header.Router)
 		gw := newGateway(router, model, adapterIDsOf(loraCfg)...)
@@ -557,6 +584,9 @@ Example:
 			agx.driver.BindHorizon(cs.SetHorizon)
 		} else if unservedHook != nil {
 			cs.SetUnservedHook(unservedHook)
+		}
+		if sessionMgr != nil {
+			cs.SetPlannedRounds(sessionMgr.PlannedUnissued)
 		}
 
 		// Resolve the saturation tracer BEFORE the run so a bad flag / config /
@@ -612,14 +642,14 @@ Example:
 		// document is computed from it.
 		agx.setMeasuredWindow(cs.AggregatedMetrics())
 		emitRunResult(postRun{
-			cs: cs, gateway: gw, run: replayRunControls(agx, traceData, requests, cs.Horizon()), goodputTargets: goodputTargets,
+			cs: cs, gateway: gw, run: replayRunControls(agx, traceData, allRequests, cs.Horizon()), goodputTargets: goodputTargets,
 			satTracer: satTracer, agentic: agx.resultSummary(), started: startTime,
 			frame: replayFrameGenerator(agx),
 			// A replay stops when its requests are exhausted or its horizon is reached: the
 			// frame's stop rule states the count it replays (the trace's records, or the
 			// agentic scenario's requests), which is what a pooled replay without a horizon
 			// stops on.
-			numRequestsCap: len(requests),
+			numRequestsCap: len(allRequests),
 		})
 
 		// Export trace if requested (runs LAST, after all primary metrics are emitted —
@@ -652,7 +682,7 @@ Example:
 					logrus.Infof("--trace-output in pool mode: re-exported %d captured records as a complete closed-loop session corpus; replay with --session-mode closed-loop (not re-cloned).", len(records))
 				}
 			} else {
-				records = workload.RequestsToTraceRecords(requests)
+				records = workload.RequestsToTraceRecords(allRequests)
 			}
 			header := &workload.TraceHeader{
 				Version:              workload.TraceVersion,
@@ -662,6 +692,7 @@ Example:
 				GoodputSLOTargets:    goodputTargets,                   // #1413, BC-7
 				KVOffload:            simToHeaderOffload(kvOffloadCfg), // #1587, BC-G6: carry the offload config forward
 				Router:               router.header(gw.Seed()),
+				Phases:               traceData.Header.Phases, // #1926: the stages the run ran in
 			}
 			if err := workload.ExportTraceV2(header, records, replayTraceOutput+".yaml", replayTraceOutput+".csv"); err != nil {
 				logrus.Fatalf("Trace export failed: %v", err)
@@ -679,7 +710,7 @@ func init() {
 	replayCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "Path to TraceV2 data CSV file (required)")
 	replayCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "Export replay results as TraceV2 files (<prefix>.yaml + <prefix>.csv); header mode is \"replayed\". Under --session-mode fixed-accumulate the export records reconstructed ABSOLUTE per-round inputs (no session_context_growth header) — re-replay it with --session-mode fixed, not fixed-accumulate.")
 
-	// Saturation trace flags (#1516): --detectors + --saturation-config + --saturation-report.
+	// Saturation trace flags (#1516): --detectors + --saturation-report.
 	registerDetectorFlags(replayCmd)
 	registerAgentXReplayFlags(replayCmd)
 	// The Result document's encoding, file and summary view (#1871).

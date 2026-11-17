@@ -508,6 +508,22 @@ See [Lifecycle Normalization](../reference/workload-spec.md#lifecycle-normalizat
 
 **Arrival spacing inside a window.** Each window generates exactly N = `ceil(rate x window_duration_seconds)` arrivals. Every arrival lands **strictly before** `end_us`; that upper bound is unconditional, and it is what keeps a window's arrivals from colliding with the next window's start instant, where they would be attributed to the wrong window's parameters. Because N arrivals inside a window of length D have N+1 surrounding gaps, the effective mean gap is `D/(N+1)`, not `D/N` — the window closes with a gap rather than with an arrival. The lower bound is deliberately **not** symmetric: the sampled gaps are rescaled to sum to the window duration exactly and the rounding residual is added only to the trailing gap, so the *leading* gap can round down to zero and the first arrival can land exactly on `start_us`. That is legal — a window is half-open, `[start_us, end_us)` — and rare (measured at roughly one draw in 13,000 for a 100 req/s, 1 s window). It is not the boundary thundering herd that motivated interior placement: that came from putting every co-active client's first arrival on the start instant deterministically, not from one client occasionally landing there. Note that a window whose expected count is fractional still rounds **up**, so any window with a non-zero rate produces at least one arrival.
 
+### Drain-gated phases (warm-up, then measured)
+
+A benchmark runs in stages: a warm-up, then the measured phase, each starting when the one before it has drained. Lifecycle windows are time-based and cannot say that. A `phases` list can. Each phase sends its own `num_requests`, from the clients that name it with `phase`, and the engine, KV and prefix-cache state carry across phases, so the measured phase hits the prefix the warm-up left.
+
+```yaml
+aggregate_rate: 20
+phases:
+  - { name: warmup,   num_requests: 20,  concurrency: 10 }
+  - { name: measured, num_requests: 100, concurrency: 10 }   # starts when the warm-up has drained
+clients:
+  - { id: w, phase: warmup,   rate_fraction: 1, prefix_group: sys, prefix_length: 512, ... }
+  - { id: m, phase: measured, rate_fraction: 1, prefix_group: sys, prefix_length: 512, ... }
+```
+
+A phase has `start` (`after_drain`, the default, or `at` a clock), `offset_us` (the wait after the drain, or the clock), `concurrency` (requests in flight; each is sent when one of the phase's earlier requests ends) and an optional `aggregate_rate`. Every row of the Result and every record of the exported trace carries the phase name, and the exported trace's header lists the phases, so `blis replay` sends the same stages. The format is the trace header's (blis-substrate#156). A phased workload cannot also use `--num-requests`, per-client `concurrency`, lifecycle windows or closed-loop sessions; those are refused by name.
+
 ## Advanced Features
 
 ### Multimodal Requests

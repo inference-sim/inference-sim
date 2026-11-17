@@ -29,8 +29,21 @@ defines (`trace_version: 4`). The data CSV's columns are read by name: `request_
 `prefix_length`, `streaming`, `input_tokens`, `output_tokens`, `text_tokens`, `image_tokens`,
 `audio_tokens`, `video_tokens`, `reason_ratio`, `model`, `deadline_us`, `arrival_time_us`,
 `first_chunk_time_us`, `last_chunk_time_us` and `status`, then `slo_target_us`, `adapter`,
-`think_time_us` and `input_tokens_reset` when some row carries one. A request is injected at
+`think_time_us`, `input_tokens_reset` and `phase` when some row carries one. A request is injected at
 its `arrival_time_us` with a prompt of `prefix_length` plus `input_tokens` tokens.
+
+### Phases
+
+A header `phases` list runs the trace in drain-gated stages, as a benchmark does: a warm-up, then
+the measured requests. Each row's `phase` column names its phase. The first phase is sent at
+the start; each later phase is sent when the one before it has drained (every request has its
+fate), `offset_us` later, or at the clock `offset_us` when it says `start: at`. A phase with a
+`concurrency` sends that many requests and one more each time one of its own ends; its requests
+arrive when sent. Without one, a request arrives at the phase's start plus its recorded arrival
+less the phase's earliest. The engines, KV caches and prefix cache run on across phases, so the
+measured phase starts from the state the warm-up left. Each result row carries its `phase`, and
+`warmup` rows are outside the measured window. Phases replay with `--session-mode fixed` or
+`fixed-accumulate`; a request the run ends before sending has the fate `not_started`.
 
 Version 3, which v0.15.0 wrote, is refused. Convert a version 3 (or 2) trace with
 
@@ -297,7 +310,7 @@ the max-context filter, chain splitting and the build), later runs load it in we
 second instead of re-parsing the JSON, and a missing, damaged or mismatched snapshot is
 ignored, logged and rewritten -- output is byte-identical either way.
 
-Not supported: the accelerated cache-pressure warm-up (`warmup: cache_pressure`, refused),
+Not supported (inferencex-agentx-mvp): the accelerated cache-pressure warm-up (`warmup: cache_pressure`, refused),
 `--synthesis-max-osl` (no such cap is applied; the descriptor has no field for it),
 `--trace-output` (refused), a trace-idle or per-turn delay cap (forbidden by the scenario),
 and model mapping (every request goes to the scenario's model). A warm-up request that ends
@@ -307,6 +320,33 @@ The workload can also be given as `--workload-spec <file>` with a blis-schemas r
 flags override; the descriptor is validated as aiperf's scenario validator validates the
 scenario (a window under 900 s, another cache bust or idle cap, a missing corpus digest are
 refused). The corpus is streamed once and refused on a digest mismatch.
+
+#### Constant load: `--agentic-scenario aiperf-constant-load` (#2124)
+
+aiperf run **without** `--scenario` over the same corpus holds a fixed number of live root
+sessions rather than agentic lanes. The workload is a replay descriptor with a `load:` block
+(`--workload-spec`). A run can name the substrate catalog's `agentx-constant-load-256k` or
+`agentx-constant-load-uncapped` (`workload: <name>` with `concurrency`, a window and
+`load.measured_sessions`), which supplies the corpus, warmup, grace and idle cap. `--concurrency` is then the number of session slots, and the rules
+below are aiperf 0.12.0's (blis-substrate `contracts/spec/workload/replay.go` cites each to its
+file and line):
+
+- A session holds one slot from its root's first request until the root's **final turn
+  returns**; sub-agent requests take no slot, so requests in flight exceed `--concurrency`
+  while sub-agents run, and fall below it while a session is in a think-time gap. The freed
+  slot starts the next session at once.
+- A session always starts at its root's first turn. There is no snapshot, no primer, no replay
+  barrier and no global idle cap.
+- The next root is the dataset sampler's next: `load.recycling` is `sequential` (corpus order,
+  wrapping, exact), or `shuffle`/`random`, which draw from the named stream
+  `workload/agentx|session-recycle` (the rule is aiperf's, the draws are not numpy's).
+- `load.trace_idle_gap_cap_s` cuts every gap between a trace's request starts, root and
+  sub-agents together, to that many seconds when the corpus is loaded; delays are rederived from
+  the cut timeline.
+- `load.warmup_duration_s` runs the same load as an unmeasured warmup (rows are tagged
+  `warmup`), stops sending, and starts the measured phase, with fresh sessions, when the last
+  warmup request has returned. `load.measured_sessions` bounds the measured phase's session
+  starts (`--num-sessions`). The measured window has no 900 s floor, but must be stated.
 
 What is replayed, each step a port of aiperf's code and checked send for send against
 aiperf's own runtime (`TestAgentXRuntimeMatchesAiperf`):

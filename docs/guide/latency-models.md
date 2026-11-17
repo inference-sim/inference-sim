@@ -31,7 +31,7 @@ To read a checkout instead, pass `--catalog` or set `BLIS_CATALOG`:
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout 7794a6c6277b370874fb188e1bfa8d1ae597aea1
+git -C blis-substrate checkout c48aa81d029a5d2b696e5eb3dfe5f3986132b818
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
@@ -492,7 +492,7 @@ tier's in-service queue depth. See [KV Cache & Memory](kv-cache.md).
 The per-step adapter compute overhead is applied to the kernel's step time, and the static
 adapter HBM reservation is set aside from the kernel's KV budget before blocks are counted.
 The LoRA cost coefficients come from `--defaults-filepath` (the `lora:` block of
-`defaults.yaml`) or `--lora-config`.
+`defaults.yaml`) or `--lora-config`. See [LoRA Adapters](lora.md).
 
 ## What it does not yet do
 

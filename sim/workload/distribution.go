@@ -34,7 +34,7 @@ func (s *GaussianSampler) Sample(rng *rand.Rand) int {
 	if s.min == s.max {
 		return s.min
 	}
-	val := rng.NormFloat64()*s.stdDev + s.mean
+	val := float64(rng.NormFloat64()*s.stdDev) + s.mean
 	clamped := math.Min(float64(s.max), math.Max(float64(s.min), val))
 	result := int(math.Round(clamped))
 	if result < 1 {
@@ -87,7 +87,7 @@ func (s *ParetoLogNormalSampler) Sample(rng *rand.Rand) int {
 	} else {
 		// LogNormal: X = exp(mu + sigma * Z)
 		z := rng.NormFloat64()
-		val = math.Exp(s.mu + s.sigma*z)
+		val = math.Exp(s.mu + float64(s.sigma*z))
 	}
 	// Guard against +Inf from extreme u or sigma values
 	if math.IsInf(val, 0) || math.IsNaN(val) {
@@ -113,7 +113,7 @@ type LognormalSampler struct {
 
 func (s *LognormalSampler) Sample(rng *rand.Rand) int {
 	z := rng.NormFloat64()
-	val := math.Exp(s.mu + s.sigma*z)
+	val := math.Exp(s.mu + float64(s.sigma*z))
 	if math.IsInf(val, 0) || math.IsNaN(val) {
 		if s.min > 0 {
 			return s.min

@@ -1,0 +1,40 @@
+# Open-loop accumulate sessions: 4-round chat sessions whose rounds carry the context of the rounds
+# before them (context_growth: accumulate) and whose arrival times are all stamped before the run
+# (closed_loop: false), so the spacing between rounds does not adapt to the server's latency. The
+# run exports as per-round deltas (session_context_growth: accumulate), and
+# `blis replay --session-mode fixed-accumulate` sends each round at its recorded arrival with the
+# context rebuilt, row for row.
+#
+#   blis run --scenarios examples/capabilities --scenario session-load-only.yaml --num-instances 4 \
+#     --workload-spec examples/capabilities/open-loop-sessions.yaml --trace-output /tmp/open-loop
+#   blis replay --scenarios examples/capabilities --scenario session-load-only.yaml --num-instances 4 \
+#     --trace-header /tmp/open-loop.yaml --trace-data /tmp/open-loop.csv --session-mode fixed-accumulate
+version: "2"
+seed: 42
+category: reasoning
+aggregate_rate: 100.0
+num_requests: 160
+
+clients:
+  - id: "chat"
+    tenant_id: "chat-users"
+    slo_class: "standard"
+    rate_fraction: 1.0
+    streaming: true
+    closed_loop: false
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params: {mean: 256, std_dev: 30, min: 64, max: 512}
+    output_distribution:
+      type: gaussian
+      params: {mean: 64, std_dev: 20, min: 16, max: 256}
+    reasoning:
+      reason_ratio_distribution:
+        type: gaussian
+        params: {mean: 0, std_dev: 0, min: 0, max: 0}
+      multi_turn:
+        max_rounds: 4
+        think_time_us: 500000
+        context_growth: accumulate

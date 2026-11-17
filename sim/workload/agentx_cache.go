@@ -19,15 +19,16 @@ import (
 // The parsed-corpus cache (--corpus-cache): a binary snapshot of a rebuilt AgentXCorpus,
 // so a sweep that replays the same corpus at many concurrencies parses its JSON once.
 // A snapshot is keyed by everything the rebuilt corpus depends on -- the corpus digest,
-// the max-context filter, chain splitting, this schema version and the build that wrote
-// it -- and carries the sha256 of its own payload. Any mismatch or damage makes the
+// the max-context filter, chain splitting and this schema version -- and carries the sha256 of its own payload. Any mismatch or damage makes the
 // reader ignore the file and parse afresh, so a cached and an uncached run are
 // byte-identical (INV-6). Writes go to a temporary file in the cache directory, then
 // rename onto the final name, so a concurrent reader sees either nothing or a whole file.
 
-// agxCacheSchema versions the snapshot layout and the rebuild it records; bump it when
-// either changes.
-const agxCacheSchema = 2
+// agxCacheSchema versions the snapshot layout and the rebuild it records. BUMP IT whenever the
+// AgentX parser, the corpus rebuild, or encode/decodeAgentXSnapshot changes what a corpus
+// becomes: the key no longer names the build that wrote a snapshot (#2086), so this number is
+// the only thing that retires a snapshot the new code would read differently.
+const agxCacheSchema = 3
 
 var agxCacheMagic = []byte("BLISAGXC")
 
@@ -41,17 +42,16 @@ type AgentXCacheResult struct {
 	WriteErr error
 }
 
-// LoadAgentXCorpusCached is LoadAgentXCorpus with a snapshot cache in cacheDir. buildKey
-// identifies the build (e.g. a digest of the executable): a snapshot written by another
-// build is ignored.
+// LoadAgentXCorpusCached is LoadAgentXCorpus with a snapshot cache in cacheDir. Any build reads
+// a snapshot any other wrote when the corpus, the settings and agxCacheSchema agree.
 //
 // The corpus file is read exactly once either way. A snapshot is located by the corpus
-// file's path, size and modification time (plus the filter, split, build and schema), and
+// file's path, size and modification time (plus the filter, split and schema), and
 // its key states the corpus sha256 it was built from: on a hit the file is only hashed, and
 // the snapshot is used only if that digest matches; on a miss it is parsed and hashed in
 // one pass. Snapshots are never evicted: delete the directory to reclaim the space (one
 // snapshot per corpus file and setting, about an eighth of the corpus's size).
-func LoadAgentXCorpusCached(path, wantSHA256 string, maxContextLength int, split bool, cacheDir, buildKey string) (*AgentXCorpus, AgentXCacheResult, error) {
+func LoadAgentXCorpusCached(path, wantSHA256 string, maxContextLength int, split bool, cacheDir string) (*AgentXCorpus, AgentXCacheResult, error) {
 	var res AgentXCacheResult
 	st, err := os.Stat(path)
 	if err != nil {
@@ -61,7 +61,7 @@ func LoadAgentXCorpusCached(path, wantSHA256 string, maxContextLength int, split
 	if err != nil {
 		return nil, res, err
 	}
-	setting := fmt.Sprintf("schema=%d max_context_length=%d split=%t build=%s", agxCacheSchema, maxContextLength, split, buildKey)
+	setting := fmt.Sprintf("schema=%d max_context_length=%d split=%t", agxCacheSchema, maxContextLength, split)
 	loc := sha256.Sum256([]byte(fmt.Sprintf("%s path=%s size=%d mtime=%d", setting, abs, st.Size(), st.ModTime().UnixNano())))
 	res.Path = filepath.Join(cacheDir, "agentx-corpus-"+hex.EncodeToString(loc[:8])+".bin")
 	keyFor := func(sum string) string { return setting + " corpus=" + sum }

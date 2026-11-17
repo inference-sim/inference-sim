@@ -421,6 +421,7 @@ func (cs *ClusterSimulator) dispatchDisaggregated(req *sim.Request, p Placement)
 	}
 	parent.PrefillSubReq = prefillSubReq
 	cs.pendingPrefillCompletions[prefillSubReq.ID] = parent.ID
+	cs.advanceRequest(req, sim.LifecyclePrefillQueued)
 	cs.schedule(&PrefillRoutingEvent{time: cs.clock, request: prefillSubReq, parentReq: parent}, &cs.routerSender)
 	cs.gateway.OnDispatched(req, cs.clock)
 }

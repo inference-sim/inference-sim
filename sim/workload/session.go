@@ -6,6 +6,7 @@ package workload
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/sirupsen/logrus"
 
@@ -228,12 +229,7 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 	rs := roundStreams(bp.Streams, sess.currentRound+1)
 
 	// Horizon guard (BC-19): don't generate follow-ups past horizon
-	var thinkTime int64
-	if bp.ThinkTimeSampler != nil {
-		thinkTime = int64(bp.ThinkTimeSampler.Sample(rs.Stream(purposeThinkTime)))
-	} else {
-		thinkTime = bp.ThinkTimeUs
-	}
+	thinkTime := bp.plannedThinkUs(sess.currentRound + 1)
 	arrivalTime := tick + thinkTime
 	if arrivalTime > bp.Horizon {
 		sess.state = sessionHorizonInterrupted
@@ -453,4 +449,41 @@ func (sm *SessionManager) CancelledSessions() int {
 		}
 	}
 	return n
+}
+
+// PlannedUnissued returns the rounds the sessions planned and never issued: for each session
+// with a fixed round count, the rounds after the last one generated. Every one of them ends not
+// started (SIM-8). A session with unlimited rounds planned none beyond those it generated. The
+// order is by session, then round, so a run's rows do not depend on map order (INV-6).
+func (sm *SessionManager) PlannedUnissued() []sim.PlannedRound {
+	ids := make([]string, 0, len(sm.sessions))
+	for id := range sm.sessions {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	var out []sim.PlannedRound
+	for _, id := range ids {
+		sess := sm.sessions[id]
+		bp := sess.blueprint
+		if bp.UnlimitedRounds {
+			continue
+		}
+		var think int64
+		for r := sess.currentRound + 1; r < bp.MaxRounds; r++ {
+			think += bp.plannedThinkUs(r)
+			out = append(out, sim.PlannedRound{ThinkUs: think, ID: fmt.Sprintf("session_%s_round_%d_unissued", bp.SessionID, r),
+				SessionID: bp.SessionID, RoundIndex: r, Model: bp.Model, Adapter: bp.Adapter,
+				SLOClass: bp.SLOClass, TenantID: bp.TenantID})
+		}
+	}
+	return out
+}
+
+// plannedThinkUs is the think time the plan gives the client before round r: the draw the round
+// would have made from its own stream, or the constant.
+func (bp *SessionBlueprint) plannedThinkUs(r int) int64 {
+	if bp.ThinkTimeSampler != nil {
+		return int64(bp.ThinkTimeSampler.Sample(roundStreams(bp.Streams, r).Stream(purposeThinkTime)))
+	}
+	return bp.ThinkTimeUs
 }

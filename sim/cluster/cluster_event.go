@@ -284,6 +284,9 @@ func (e *ClusterArrivalEvent) Priority() int    { return 0 }
 // decision so that drops and timeouts count against goodput (issue #1409, BC-5).
 func (e *ClusterArrivalEvent) Execute(cs *ClusterSimulator) {
 	cs.pendingArrivals--
+	if cs.holdForColdStart(e) {
+		return
+	}
 	if !cs.gateArrival(e.request, e.time) {
 		return
 	}

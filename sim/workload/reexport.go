@@ -45,6 +45,32 @@ import (
 // error if any session's rounds are non-consecutive (a "should never happen" guard on
 // the captured run; R1 — surface rather than silently emit a corrupt corpus).
 func ReExportClosedLoopRecords(reqs []*sim.Request, thinkUsByReqID map[string]int64, contextGrowth string) ([]TraceRecord, error) {
+	return reExportRecords(reqs, thinkUsByReqID, contextGrowth, accumulatedOutputLen)
+}
+
+// ReExportOpenLoopAccumulateRecords exports open-loop accumulate sessions (every round
+// pre-generated, #1914) as the per-round deltas an accumulate trace states. The generator built
+// each round's prompt on the previous round's oracle output, so the delta law runs over the
+// output the round was planned with, not over what it emitted: a round the run cut short
+// would otherwise encode a wrong delta. The think of a follow-up is its arrival gap.
+func ReExportOpenLoopAccumulateRecords(reqs []*sim.Request) ([]TraceRecord, error) {
+	prev := map[string]int64{}
+	think := map[string]int64{}
+	for _, r := range reqs {
+		if r.SessionID == "" {
+			continue
+		}
+		if at, ok := prev[r.SessionID]; ok {
+			think[r.ID] = r.ArrivalTime - at
+		}
+		prev[r.SessionID] = r.ArrivalTime
+	}
+	return reExportRecords(reqs, think, "accumulate", func(r *sim.Request) int { return r.MaxOutputLen })
+}
+
+// reExportRecords is the export both entry points share; emitted is the output length the
+// accumulate delta law subtracts for a round.
+func reExportRecords(reqs []*sim.Request, thinkUsByReqID map[string]int64, contextGrowth string, emitted func(*sim.Request) int) ([]TraceRecord, error) {
 	// Partition into session groups (insertion order preserved for determinism) and
 	// non-session single-shot requests (order preserved).
 	type sessionGroup struct {
@@ -112,7 +138,7 @@ func ReExportClosedLoopRecords(reqs []*sim.Request, thinkUsByReqID map[string]in
 				// actualOutput → exact abs).
 				rounds[i] = NormalizedRound{
 					InputTokensAbs: int(r.InputLen()),
-					OutputTokens:   accumulatedOutputLen(r),
+					OutputTokens:   emitted(r),
 					ArrivalUs:      r.ArrivalTime,
 					ThinkUs:        think,
 					Status:         reexportStatus(r.State),

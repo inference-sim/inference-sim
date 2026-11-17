@@ -163,7 +163,7 @@ var (
 	// output file paths
 	serverSeriesIntervalS float64 // --server-series-interval-s: bin width of the file-only server_series block; 0 = off
 	// saturationReport (--saturation-report): per-event verdict trace file (#1516).
-	// Declared in saturation.go alongside --detectors / --saturation-config.
+	// Declared in saturation.go alongside --detectors.
 
 	// trace export
 	traceOutput string // File prefix for TraceV2 export (<prefix>.yaml + <prefix>.csv)
@@ -731,6 +731,14 @@ var runCmd = &cobra.Command{
 			maxRequests = int64(numRequests)
 		}
 
+		// A phased workload is the sum of its phases' requests (#1926).
+		if len(spec.Phases) > 0 {
+			maxRequests = 0
+			for _, ph := range spec.Phases {
+				maxRequests += ph.NumRequests
+			}
+		}
+
 		// Guard against unbounded generation
 		if maxRequests <= 0 && simulationHorizon == math.MaxInt64 {
 			logrus.Fatalf("Workload requires either num_requests or --horizon to bound generation")
@@ -740,9 +748,38 @@ var runCmd = &cobra.Command{
 		// including multi-session reasoning (#1458), concurrency clients (#1459) and
 		// time-varying / per-window workloads (#1460). The source's Err surfaces a terminal
 		// sampler or generator error recorded during the run (PR #1453 review round 3).
-		requestSource, sessions, followUpBudget, err := workload.GenerateWorkloadLazy(spec, simulationHorizon, maxRequests)
-		if err != nil {
-			logrus.Fatalf("Failed to build the workload: %v", err)
+		var (
+			requestSource  requestStream
+			sessions       []workload.SessionBlueprint
+			followUpBudget int64 = -1
+			phaseGate      *workload.PhaseGate
+		)
+		if len(spec.Phases) > 0 {
+			// Drain-gated phases (#1926): the first phase is sent now, each later one when the
+			// one before it drains. The count is the phases' own.
+			if cmd.Flags().Changed("num-requests") {
+				logrus.Fatalf("--num-requests cannot be used with a phased workload: each phase states its num_requests")
+			}
+			phased, gErr := workload.GeneratePhased(spec)
+			if gErr != nil {
+				logrus.Fatalf("Failed to build the phased workload: %v", gErr)
+			}
+			var initial []*sim.Request
+			phaseGate, initial, gErr = workload.NewPhaseGate(spec.TracePhases(), phased)
+			if gErr != nil {
+				logrus.Fatalf("Failed to build the phased workload: %v", gErr)
+			}
+			maxRequests = int64(len(phased))
+			requestSource = phasedSource{cluster.NewSliceRequestSource(initial)}
+			logrus.Infof("Phased workload: %d phases, %d of %d requests sent at the start", len(spec.Phases), len(initial), len(phased))
+		} else {
+			var lazy requestStream
+			var gErr error
+			lazy, sessions, followUpBudget, gErr = workload.GenerateWorkloadLazy(spec, simulationHorizon, maxRequests)
+			if gErr != nil {
+				logrus.Fatalf("Failed to build the workload: %v", gErr)
+			}
+			requestSource = lazy
 		}
 		wl := &workload.GeneratedWorkload{Sessions: sessions, FollowUpBudget: followUpBudget}
 		// Apply the timeout to the session blueprints, which expansion inside the generator may
@@ -780,16 +817,31 @@ var runCmd = &cobra.Command{
 			bundleHPAScrapeDelayMean             float64
 			bundleHPAScrapeDelayStddev           float64
 			bundleAnalyzerCfg                    cluster.V2SaturationAnalyzerConfig
+			bundleAnalyzerSel                    cluster.AnalyzerSelection
+			bundleCollectorWindow                int
+			bundleScaleToZeroIdleUs              float64
+			bundleScaleFromZeroHoldUs            float64
+			bundleScaleFromZeroPollUs            float64
 			bundleNodePools                      []cluster.NodePoolConfig
+			poolChips                            map[string]*poolChip
 			bundleInstanceLifecycle              cluster.InstanceLifecycleConfig
 		)
 		if bundle != nil {
 			if bundle.Autoscaler.IntervalUs > 0 {
 				bundleAutoscalerIntervalUs = bundle.Autoscaler.IntervalUs
+				bundleScaleToZeroIdleUs = bundle.Autoscaler.ScaleToZeroIdleUs
+				bundleScaleFromZeroHoldUs = bundle.Autoscaler.ScaleFromZeroHoldUs
+				bundleScaleFromZeroPollUs = bundle.Autoscaler.ScaleFromZeroPollUs
 				bundleScaleUpStabilizationWindowUs = bundle.Autoscaler.ScaleUpStabilizationWindowUs
 				bundleScaleDownStabilizationWindowUs = bundle.Autoscaler.ScaleDownStabilizationWindowUs
 				bundleHPAScrapeDelayMean = bundle.Autoscaler.HPAScrapeDelay.Mean
 				bundleHPAScrapeDelayStddev = bundle.Autoscaler.HPAScrapeDelay.Stddev
+				bundleCollectorWindow = bundle.Autoscaler.CollectorWindowSize
+				bundleAnalyzerSel = cluster.AnalyzerSelection{Kind: bundle.Autoscaler.Analyzer.Kind,
+					Signal: bundle.Autoscaler.Analyzer.Signal, Target: bundle.Autoscaler.Analyzer.Target}
+				if err := bundleAnalyzerSel.Validate(); err != nil {
+					logrus.Fatalf("policy bundle: %v", err)
+				}
 				bundleAnalyzerCfg = cluster.V2SaturationAnalyzerConfig{
 					KvCacheThreshold:  bundle.Autoscaler.Analyzer.KVCacheThreshold,
 					ScaleUpThreshold:  bundle.Autoscaler.Analyzer.ScaleUpThreshold,
@@ -798,32 +850,10 @@ var runCmd = &cobra.Command{
 					MinReplicas:       bundle.Autoscaler.Analyzer.MinReplicas,
 				}
 			}
+			// Each pool's chip is the scenario's (cluster.pools, SIM-17); a pool of a chip other
+			// than the scenario's own opens a variant of the scenario for it.
+			poolChips = openPoolChips(bundle.NodePools)
 			for _, np := range bundle.NodePools {
-				// Every instance is priced by the kernel for the scenario's chip, so a node
-				// pool of another GPU would simulate hardware the kernel never priced.
-				if !strings.EqualFold(np.GPUType, gpu) {
-					logrus.Fatalf("policy bundle node pool %q is %q GPUs, but scenario %q runs on %q; every "+
-						"instance is priced for the scenario's hardware, so node pools must match it (heterogeneous "+
-						"fleets: #1925)",
-						np.Name, np.GPUType, kernelScenario, gpu)
-				}
-				// The kernel sizes every instance's KV from the catalog chip's memory; a pool
-				// stating other memory would describe a device the run does not simulate.
-				if chip := kernelOpened.Deployment().DeviceMemoryGiB; np.GPUMemoryGiB > 0 &&
-					math.Abs(np.GPUMemoryGiB-chip) > 1e-9 {
-					logrus.Fatalf("policy bundle node pool %q states gpu_memory_gib %g, but the catalog "+
-						"chip %q has %g GiB, from which the kernel sizes every instance's KV; state %g",
-						np.Name, np.GPUMemoryGiB, gpu, chip, chip)
-				}
-				// A node pool's gpus_per_node is the node the kernel places and prices ranks
-				// on: the cluster's packaging, resolved from the scenario and the chip's
-				// catalog entry (blis-substrate scenario.Cluster.Packaging). A pool stating
-				// another node size would host ranks on nodes the kernel never priced.
-				if gpn := kernelOpened.Packaging().GPUsPerNode; np.GPUsPerNode != gpn {
-					logrus.Fatalf("policy bundle node pool %q states gpus_per_node %d, but scenario %q resolves "+
-						"to %d GPUs per node (%s), on which the kernel places and prices every rank; state %d",
-						np.Name, np.GPUsPerNode, kernelScenario, gpn, kernelOpened.Packaging(), gpn)
-				}
 				bundleNodePools = append(bundleNodePools, cluster.NodePoolConfig{
 					Name:         np.Name,
 					GPUType:      np.GPUType,
@@ -845,7 +875,13 @@ var runCmd = &cobra.Command{
 					Stddev: bundle.InstanceLifecycle.LoadingDelay.Stddev,
 				},
 				WarmStartInitialInstances: bundle.InstanceLifecycle.WarmStartInitialInstances,
+				WeightSource:              bundle.InstanceLifecycle.WeightSource,
+				DrainPolicy:               bundle.InstanceLifecycle.DrainPolicy,
 			}
+			if p := bundle.InstanceLifecycle.DrainPolicy; p != "" && !cluster.IsValidDrainPolicy(p) {
+				logrus.Fatalf("policy bundle instance_lifecycle.drain_policy %q is not one of IMMEDIATE, WAIT, REDIRECT", p)
+			}
+			requireWeightSource(bundleInstanceLifecycle.WeightSource, kernelOpened, poolChips)
 		}
 		// CLI flag overrides bundle value when explicitly set.
 		if cmd.Flags().Changed("model-autoscaler-interval-us") {
@@ -940,14 +976,22 @@ var runCmd = &cobra.Command{
 			PDPrefillSamplesFirstToken:     true,
 			Roles:                          rolesOf(runEngine, prefillOverrides, decodeOverrides),
 			ModelAutoscalerIntervalUs:      bundleAutoscalerIntervalUs,
+			ScaleToZeroIdleUs:              bundleScaleToZeroIdleUs,
+			ScaleFromZeroHoldUs:            bundleScaleFromZeroHoldUs,
+			ScaleFromZeroPollUs:            bundleScaleFromZeroPollUs,
 			ScaleUpStabilizationWindowUs:   bundleScaleUpStabilizationWindowUs,
 			ScaleDownStabilizationWindowUs: bundleScaleDownStabilizationWindowUs,
 			HPAScrapeDelay:                 cluster.DelaySpec{Mean: bundleHPAScrapeDelayMean, Stddev: bundleHPAScrapeDelayStddev},
 			AutoscalerAnalyzerConfig:       bundleAnalyzerCfg,
+			AutoscalerAnalyzer:             bundleAnalyzerSel,
+			CollectorWindowSize:            bundleCollectorWindow,
 			NodePools:                      bundleNodePools,
 			ScenarioEndpointTopology:       cluster.StaticEndpointTopology(scenarioTopology),
 			InstanceLifecycle:              bundleInstanceLifecycle,
-			NewEngine:                      engineDriverFactory(scenarioEngine, simulationHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
+			WeightLoadTime:                 weightLoader(kernelOpened, poolChips),
+			ClusterAutoscaler:              clusterAutoscalerOf(bundle),
+			NewEngine: withPoolChips(engineDriverFactory(scenarioEngine, simulationHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
+				poolChips, scenarioEngine, simulationHorizon, seed, ec.Speculative.Acceptance),
 		}
 		// Session callback installation (Constraint 3 fix):
 		// Follow-up collection must be UNCONDITIONAL for saturation analysis correctness.
@@ -994,6 +1038,12 @@ var runCmd = &cobra.Command{
 		if unservedHook != nil {
 			cs.SetUnservedHook(unservedHook)
 		}
+		if sessionMgr != nil {
+			cs.SetPlannedRounds(sessionMgr.PlannedUnissued)
+		}
+		if phaseGate != nil {
+			cs.SetGate(phaseGate)
+		}
 		router := resolveRouterInputs()
 		gw := newGateway(router, model, adapterIDsOf(loraCfg)...)
 		cs.SetGateway(gw)
@@ -1028,7 +1078,7 @@ var runCmd = &cobra.Command{
 			})
 		}
 
-		// Resolve the saturation tracer from --detectors / --saturation-config /
+		// Resolve the saturation tracer from --detectors /
 		// --saturation-report BEFORE the run so an unknown name, bad config, or
 		// unwritable report path fails fast (#1516 single detector, #1519 bank).
 		satTracer, satErr := resolveSaturation()
@@ -1097,6 +1147,16 @@ var runCmd = &cobra.Command{
 				}
 				growth = tracespec.ContextGrowth("accumulate")
 			}
+			if growth == "" && workload.OpenLoopAccumulate(spec) {
+				// Open-loop accumulate sessions export as deltas too: absolute rounds would
+				// replay without the previous round's context (#1914).
+				var rErr error
+				records, rErr = workload.ReExportOpenLoopAccumulateRecords(traceArrivals)
+				if rErr != nil {
+					logrus.Fatalf("Trace export of open-loop accumulate sessions: %v", rErr)
+				}
+				growth = tracespec.ContextGrowth("accumulate")
+			}
 			header := &workload.TraceHeader{
 				SessionContextGrowth: growth,
 				Version:              workload.TraceVersion,
@@ -1111,6 +1171,8 @@ var runCmd = &cobra.Command{
 				MaxNodesSpanned: crossNodeSpanForTrace(cs.MaxNodesSpanned()),
 				// INV-13: the router the run routed with, so a replay rebuilds it.
 				Router: router.header(gw.Seed()),
+				// #1926: the stages the run ran in, so a replay sends them drain-gated too.
+				Phases: spec.TracePhases(),
 			}
 			if err := workload.ExportTraceV2(header, records, traceOutput+".yaml", traceOutput+".csv"); err != nil {
 				logrus.Fatalf("Trace export failed: %v", err)
@@ -1414,7 +1476,7 @@ func init() {
 	// Run-specific export
 	runCmd.Flags().StringVar(&traceOutput, "trace-output", "", "Export workload as TraceV2 files (<prefix>.yaml + <prefix>.csv)")
 
-	// Saturation trace flags (#1516): --detectors + --saturation-config + --saturation-report.
+	// Saturation trace flags (#1516): --detectors + --saturation-report.
 	registerDetectorFlags(runCmd)
 	// The Result document's encoding, file and summary view (#1871).
 	registerResultFlags(runCmd)
@@ -1455,3 +1517,15 @@ func allSessionsAccumulate(wl *workload.GeneratedWorkload) bool {
 	}
 	return true
 }
+
+// requestStream is a request source that reports a terminal generator error after the run.
+type requestStream interface {
+	cluster.RequestSource
+	Err() error
+}
+
+// phasedSource is the first requests of a phased workload; the drain gate sends the rest.
+type phasedSource struct{ *cluster.SliceRequestSource }
+
+// Err is nil: a phased workload is generated whole before the run.
+func (phasedSource) Err() error { return nil }

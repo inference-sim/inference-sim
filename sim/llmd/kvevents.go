@@ -75,6 +75,13 @@ func chainEvents(chains map[string]*engineChain, events []sim.KVEvent) []sim.KVE
 	}
 	out := make([]sim.KVEvent, len(events))
 	for i, e := range events {
+		if e.Cleared {
+			if e.Tier == "" {
+				clear(chains)
+			}
+			out[i] = sim.KVEvent{Cleared: true, Tier: e.Tier}
+			continue
+		}
 		parent := ""
 		if c := chains[e.Parent]; c != nil {
 			parent = c.chain
@@ -89,16 +96,24 @@ func chainEvents(chains map[string]*engineChain, events []sim.KVEvent) []sim.KVE
 			if c.stores--; c.stores == 0 {
 				delete(chains, e.Hash)
 			}
-			out[i] = sim.KVEvent{Removed: true, Hash: c.chain, Tier: e.Tier}
+			out[i] = sim.KVEvent{Removed: true, Hash: c.chain, Tier: e.Tier, GroupIdx: e.GroupIdx}
 			continue
 		}
-		chain := hashBlock(parent, e.Tokens)
+		// A prefix's first block is keyed under the extra keys the engine folded into it (the
+		// adapter, a cache salt), and the blocks after it inherit them through their parent.
+		root := parent
+		if e.Parent == "" {
+			root = identityRoot(e.LoRAName, e.ExtraKeys)
+		}
+		chain := hashBlock(root, e.Tokens)
 		if c == nil {
 			c = &engineChain{chain: chain}
 			chains[e.Hash] = c
 		}
 		c.stores++
-		out[i] = sim.KVEvent{Hash: c.chain, Parent: parent, Tokens: e.Tokens, Tier: e.Tier}
+		kept := e
+		kept.Hash, kept.Parent = c.chain, parent
+		out[i] = kept
 	}
 	return out
 }
@@ -183,10 +198,11 @@ func (g *Gateway) clearKVEvents(ep *endpoint) {
 // canonical tokens; a run of CPU stores one location-only BlockStored (Tier "cpu", no tokens, as
 // vLLM's offloading events); a run of removals on one tier one BlockRemoved.
 func (g *Gateway) kvEventBatch(at int64, events []sim.KVEvent) embed.KVBatch {
-	batch := embed.KVBatch{Timestamp: toTime(at)}
+	batch := embed.KVBatch{Timestamp: toTime(at), Engine: embed.EngineVLLM}
 	var stored *embed.BlockStored
 	var removed *embed.BlockRemoved
 	last, runTier := "", ""
+	var runID sim.KVEvent // the first block of the stored run being built
 	flush := func() {
 		if stored != nil {
 			batch.Events = append(batch.Events, *stored)
@@ -198,29 +214,45 @@ func (g *Gateway) kvEventBatch(at int64, events []sim.KVEvent) embed.KVBatch {
 		}
 	}
 	for _, e := range events {
+		if e.Cleared {
+			flush()
+			batch.Events = append(batch.Events, embed.AllBlocksCleared{Tier: e.Tier})
+			continue
+		}
 		if e.Removed {
-			if stored != nil || (removed != nil && runTier != e.Tier) {
+			if stored != nil || (removed != nil && (runTier != e.Tier || !intPtrEq(removed.GroupIdx, e.GroupIdx))) {
 				flush()
 			}
 			if removed == nil {
-				removed = &embed.BlockRemoved{Tier: e.Tier}
+				// The router counts a grouped store apart from an ungrouped one, so a removal must name the
+				// group the store did, or the block stays indexed after the engine has evicted it.
+				removed = &embed.BlockRemoved{Tier: e.Tier, GroupIdx: e.GroupIdx}
 				runTier = e.Tier
 			}
 			removed.Hashes = append(removed.Hashes, engineKey(e.Hash))
 			continue
 		}
 		gpu := e.Tier == ""
-		if removed != nil || (stored != nil && (runTier != e.Tier || (gpu && e.Parent != last))) {
+		if removed != nil || (stored != nil && (runTier != e.Tier || (gpu && e.Parent != last) || !sameIdentity(runID, e))) {
 			flush()
 		}
 		if stored == nil {
-			stored = &embed.BlockStored{BlockSize: g.canon.blockSize, Tier: e.Tier}
+			stored = &embed.BlockStored{BlockSize: g.canon.blockSize, Tier: e.Tier,
+				LoRAID: e.LoRAID, LoRAName: e.LoRAName, CacheSalt: e.CacheSalt, GroupIdx: e.GroupIdx,
+				SpecKind: embed.KVCacheSpecKind(e.SpecKind), SlidingWindow: e.SlidingWindow}
+			runID = e
 			runTier = e.Tier
 			if gpu && e.Parent != "" {
 				stored.Parent = engineKey(e.Parent)
 			}
 		}
 		stored.Hashes = append(stored.Hashes, engineKey(e.Hash))
+		if e.ExtraKeys != nil && stored.ExtraKeys == nil {
+			stored.ExtraKeys = make([][]any, len(stored.Hashes)-1, len(stored.Hashes))
+		}
+		if stored.ExtraKeys != nil {
+			stored.ExtraKeys = append(stored.ExtraKeys, e.ExtraKeys)
+		}
 		if gpu {
 			stored.Tokens = append(stored.Tokens, g.canon.canonicalBlock(e.Hash, len(e.Tokens))...)
 		}
@@ -243,3 +275,12 @@ func engineKey(h string) uint64 {
 	}
 	return 1
 }
+
+// sameIdentity reports whether event e continues a stored run that began with event first: one
+// BlockStored names one adapter, salt, group and kind, so a block of another starts a new run.
+func sameIdentity(first, e sim.KVEvent) bool {
+	return first.LoRAName == e.LoRAName && first.CacheSalt == e.CacheSalt && first.SpecKind == e.SpecKind &&
+		intPtrEq(first.LoRAID, e.LoRAID) && intPtrEq(first.GroupIdx, e.GroupIdx) && intPtrEq(first.SlidingWindow, e.SlidingWindow)
+}
+
+func intPtrEq(a, b *int) bool { return a == nil && b == nil || a != nil && b != nil && *a == *b }

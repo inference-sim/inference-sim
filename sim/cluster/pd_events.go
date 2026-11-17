@@ -139,6 +139,7 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 		// prefill engine's transfers. The cluster's handoff moves nothing and ends at once.
 		decodeSubReq.KVTransferParams = params
 		e.parentReq.DecodeSubReq = decodeSubReq
+		cs.advanceRequest(e.parentReq.OriginalRequest, sim.LifecycleTransferring)
 		cs.transfersInitiated++
 		e.parentReq.TransferStartTime = e.time
 		cs.schedule(&KVTransferCompletedEvent{time: e.time, parentReq: e.parentReq}, &cs.kvConnectorSender)
@@ -186,6 +187,7 @@ func (cs *ClusterSimulator) startPull(req *sim.Request, _, blocks int64, demand 
 		return
 	}
 	parent.DecodeSubReq = req
+	cs.advanceRequest(parent.OriginalRequest, sim.LifecycleTransferring)
 	// The blocks are the engine's own count of what the pull moves (engine.Transfer.Blocks): the
 	// simulator does no KV block arithmetic.
 	parent.PulledKVBlocks = blocks
@@ -465,6 +467,7 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	// ParentRequest.CompletionTime and read DecodeSubReq.State/ProgressIndex
 	// for timeout detection and context accumulation.
 	cs.pendingDecodeCompletions[decodeSubReq.ID] = e.parentReq.ID
+	cs.advanceRequest(e.parentReq.OriginalRequest, sim.LifecycleDecodeQueued)
 	if decodeSubReq.KVTransferParams != "" {
 		// A p2p handoff's decode is an ordinary request to its engine (p2pDecodeParams).
 		decodeInst.InjectRequestOnline(decodeSubReq, e.time)

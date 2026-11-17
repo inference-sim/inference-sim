@@ -1,0 +1,26 @@
+# The policy bundle for node-pools.yaml: one 8-GPU node in each pool. Each pool's gpu_type must be
+# the chip the scenario states for that pool (cluster.pools). Instances are placed pool by pool, so
+# the first two of four live in "fast" and the last two in "older".
+node_pools:
+  - name: fast
+    gpu_type: h200
+    gpus_per_node: 8
+    gpu_memory_gib: 139.80072021
+    initial_nodes: 1
+    min_nodes: 1
+    max_nodes: 1
+    cost_per_hour: 32
+  - name: older
+    gpu_type: h100
+    gpus_per_node: 8
+    gpu_memory_gib: 79.1895752
+    initial_nodes: 1
+    min_nodes: 1
+    max_nodes: 1
+    cost_per_hour: 20
+
+# The four instances the run starts with are pre-deployed (warm_start_initial_instances), so they
+# serve from time zero. A run that scales (autoscale-bundle.yaml) pays loading_delay for each
+# instance it adds.
+instance_lifecycle:
+  warm_start_initial_instances: true

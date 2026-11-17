@@ -13,12 +13,14 @@ import (
 )
 
 var (
-	wekaInputPath     string
-	wekaTraceOutput   string
-	wekaContextGrowth string
-	wekaMaxThinkTime  time.Duration
-	wekaMinRounds     int
-	wekaDropSubagents bool
+	wekaInputPath      string
+	wekaTraceOutput    string
+	wekaContextGrowth  string
+	wekaMaxThinkTime   time.Duration
+	wekaMinRounds      int
+	wekaDropSubagents  bool
+	wekaMaxContext     int
+	wekaMaxContextMode string
 )
 
 var convertWekaCmd = &cobra.Command{
@@ -54,7 +56,12 @@ token counts) rather than 'blis run' (distribution sampling).`,
 		if wekaMaxThinkTime < 0 {
 			logrus.Fatalf("--max-think-time must be >= 0, got %s", wekaMaxThinkTime)
 		}
+		if err := workload.ValidateMaxContext(wekaMaxContext, workload.MaxContextMode(wekaMaxContextMode)); err != nil {
+			logrus.Fatalf("%v", err)
+		}
 		opts := workload.WekaConvertOptions{
+			MaxContext:     wekaMaxContext,
+			MaxContextMode: workload.MaxContextMode(wekaMaxContextMode),
 			ContextGrowth:  wekaContextGrowth,
 			MaxThinkTimeUs: wekaMaxThinkTime.Microseconds(),
 			MinRounds:      wekaMinRounds,
@@ -150,6 +157,8 @@ func init() {
 	convertWekaCmd.Flags().StringVar(&wekaContextGrowth, "context-growth", "accumulate", "Prefix model: \"accumulate\" (strict growing shared prefix) or \"independent\"")
 	convertWekaCmd.Flags().DurationVar(&wekaMaxThinkTime, "max-think-time", 0, "Cap on the recomputed per-round think gap; 0 = no cap (Weka gaps are genuine away-from-keyboard times)")
 	convertWekaCmd.Flags().IntVar(&wekaMinRounds, "min-rounds", 1, "Skip sessions with fewer than N usable main-agent turns")
+	convertWekaCmd.Flags().IntVar(&wekaMaxContext, "max-context", 0, "Ceiling on a round's prompt plus output tokens; 0 = none. A session with a round over it is handled as --max-context-mode says")
+	convertWekaCmd.Flags().StringVar(&wekaMaxContextMode, "max-context-mode", "", "With --max-context: \"drop-session\" discards a session with a round over the ceiling; \"truncate\" keeps it up to the first such round (no default: they bias the corpus differently)")
 	convertWekaCmd.Flags().BoolVar(&wekaDropSubagents, "drop-subagents", false, "Convert sessions with sub-agent groups by dropping the groups (their nested requests then offer no load); by default such a session is refused, since sub-agent fan-out is not modelled (#1928 item 12)")
 	_ = convertWekaCmd.MarkFlagRequired("input")
 	_ = convertWekaCmd.MarkFlagRequired("trace-output")

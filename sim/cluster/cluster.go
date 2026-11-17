@@ -49,7 +49,16 @@ type ClusterSimulator struct {
 	routerSender      eventSender
 	kvConnectorSender eventSender
 	autoscalerSender  eventSender
-	instanceSenders   map[InstanceID]*eventSender
+	// clusterAutoscaler decides node counts from the pending-placement queue (cluster_autoscaler.go);
+	// nil for none.
+	clusterAutoscaler ClusterAutoscaler
+	// lastDemandAt is when each model last had a request arrive (scale to zero, #909).
+	lastDemandAt map[string]int64
+	// heldSince is when each request held for a cold start was first held, and coldStarted the
+	// models a request has started a replica for and that have none serving yet (scale from zero, #908).
+	heldSince       map[string]int64
+	coldStarted     map[string]bool
+	instanceSenders map[InstanceID]*eventSender
 	// testSender is the sender of events tests schedule by hand (senderTest).
 	testSender *eventSender
 	// permuteSchedule, set only by the permutation test, gives every queued event a random
@@ -160,6 +169,12 @@ type ClusterSimulator struct {
 	// request (which carries SessionID). Separate from the per-instance closure to
 	// avoid double-notifying tenantTracker (issue #884). Nil for non-session workloads.
 	sessionCallback func(*sim.Request, int64) []*sim.Request
+	// plannedRounds names the session rounds planned and never issued (SetPlannedRounds).
+	plannedRounds func() []sim.PlannedRound
+	// gate sends the later phases of a phased workload (SetGate).
+	gate RequestGate
+	// horizonReached is set when the horizon ends the requests still held.
+	horizonReached bool
 
 	// Data-parallel lockstep replicas (#1909). replicaOf maps each rank's instance ID to
 	// its replica; both nil when every instance is an independent engine.
@@ -360,25 +375,6 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 	// Phase 1A: initialize PlacementManager when node pools are configured.
 	// Must happen BEFORE the unified construction loop so cs.placement is set.
 	if len(config.NodePools) > 0 {
-		// #1529: placement uses the GLOBAL config.TP to decide single-node vs
-		// whole-node spanning and to bill nodes-spanned × cost. A per-role TP
-		// (a P/D pool's own, from its scenario pool's parallelism) would make the simulated TP diverge
-		// from the placed/billed TP — wrong span decision, wrong cost, wrong KV
-		// capacity. Per-role placement does not exist yet, so reject the combination
-		// loudly rather than produce silently-wrong numbers (mirrors the INV-13
-		// Fatalf-on-unsupported-combination policy). Lifting this guard (a per-role
-		// placement path) is tracked by #1543.
-		for _, ov := range []struct {
-			name string
-			cfg  *sim.InstanceConfig
-		}{{"prefill", config.Roles.Prefill}, {"decode", config.Roles.Decode}} {
-			if ov.cfg != nil && ov.cfg.TP != config.TP {
-				panic(fmt.Sprintf("ClusterSimulator: per-role tensor parallelism (%s pool TP=%d) is not supported with "+
-					"node_pools (global TP=%d): placement, node-span, and cost use the global TP, so a differing per-role "+
-					"TP would be simulated at one degree but placed/billed at another. Use a uniform TP across pools, or drop node_pools.",
-					ov.name, ov.cfg.TP, config.TP))
-			}
-		}
 		provisionRng := sim.NewStream(config.Seed, streamNodeProvisioning)
 		loadingRng := sim.NewStream(config.Seed, streamInstanceLoading)
 		cs.placement = NewPlacementManager(config.NodePools, provisionRng, loadingRng, 0)
@@ -387,10 +383,8 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 	// Unified construction+placement loop: construct each InstanceSimulator AFTER placement
 	// so the pool's GPU type (authoritative) is used instead of the CLI flag (SC-004).
 	// TP=0 in ModelHardwareConfig means "not configured" — treat as 1 GPU per instance.
-	tpDegree := config.TP
-	if tpDegree < 1 {
-		tpDegree = 1 // default to TP=1 when not explicitly set (R3: defensive correction with comment)
-	}
+	// Each instance is placed, billed and sized at its own role's TP (#1543): a P/D pool's
+	// tensor-parallel degree may differ from the global one.
 	// Deferral accounting (#1529): count instances that fail startup placement so we
 	// warn once after the loop instead of once per instance. NodeReadyEvent (the only
 	// path that retries pending instances) has no production caller in blis run, so a
@@ -404,6 +398,7 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 			role = prePoolMembership[string(id)]
 		}
 		simCfg := config.resolveConfigForRole(role)
+		tpDegree := max(simCfg.TP, 1) // R3: TP unset (0) means one GPU per instance
 
 		if cs.placement != nil {
 			// NodePools path: placement determines GPU type (authoritative).
@@ -427,14 +422,6 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 			}
 			// Placement succeeded: use pool's GPU type (SC-004: pool-authoritative, not CLI flag).
 			simCfg.GPU = matchedGPUType
-			// Phase 1C: look up CostPerHour for this matched GPU type (issue #692).
-			var poolCostPerHour float64
-			for i := range config.NodePools {
-				if config.NodePools[i].GPUType == matchedGPUType {
-					poolCostPerHour = config.NodePools[i].CostPerHour
-					break
-				}
-			}
 			// Record how many nodes this instance spans, for the trace header (#1530).
 			cs.recordNodeSpan(gpuIDs)
 			inst, err := cs.buildInstance(idx, id, simCfg)
@@ -450,7 +437,7 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 			inst.TPDegree = tpDegree
 			// #1529: cost = distinct-nodes-spanned × pool cost_per_hour. Single-node
 			// instances are 1× (unchanged); a multi-node TP instance is billed per node.
-			inst.CostPerHour = cs.placement.InstanceCostPerHour(gpuIDs, poolCostPerHour)
+			inst.CostPerHour = cs.placement.PlacedInstanceCostPerHour(gpuIDs)
 			inst.warmUpRemaining = config.InstanceLifecycle.WarmUpRequestCount
 			if config.InstanceLifecycle.WarmStartInitialInstances {
 				// Pre-deployed cluster: startup instances skip loading delay and start Active.
@@ -533,14 +520,31 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 		// effectiveAnalyzerConfig fills zero fields with WVA reference defaults so callers only need interval_us.
 		// Tests that need custom components (stubs, nopActuator) replace cs.autoscaler after construction (same-package access).
 		analyzerCfg := effectiveAnalyzerConfig(config.AutoscalerAnalyzerConfig)
+		var analyzer Analyzer = NewV2SaturationAnalyzer(analyzerCfg)
+		if err := config.AutoscalerAnalyzer.Validate(); err != nil {
+			cs.startupErr = err
+		} else if config.AutoscalerAnalyzer.Kind == AnalyzerKindThreshold {
+			analyzer = NewThresholdAnalyzer(config.AutoscalerAnalyzer, analyzerCfg.MinReplicas)
+		}
+		var collector Collector = &DefaultCollector{}
+		if config.CollectorWindowSize < 0 {
+			cs.startupErr = fmt.Errorf("autoscaler collector_window_size must be >= 0, got %d", config.CollectorWindowSize)
+		} else if config.CollectorWindowSize > 0 {
+			collector = NewWindowedCollector(collector, config.CollectorWindowSize, cs.instanceTotals)
+		}
 		cs.autoscaler = newAutoscalerPipeline(
-			&DefaultCollector{},
-			NewV2SaturationAnalyzer(analyzerCfg),
+			collector,
+			analyzer,
 			&UnlimitedEngine{},
 			NewDirectActuator(cs),
 			sim.NewStream(config.Seed, streamAutoscaler),
 		)
 	}
+
+	if err := config.ClusterAutoscaler.Validate(); err != nil && cs.startupErr == nil {
+		cs.startupErr = err
+	}
+	cs.clusterAutoscaler = newClusterAutoscaler(config.ClusterAutoscaler)
 
 	// Store raw callback for PD session follow-up (issue #884).
 	cs.sessionCallback = onRequestDone
@@ -571,6 +575,10 @@ func (cs *ClusterSimulator) buildInstance(index int, id InstanceID, cfg sim.Inst
 
 // wireInstance connects an instance's request lifecycle to the gateway and to session
 // follow-ups. Follow-ups route through the cluster pipeline, never injected locally (BC-9).
+//
+// NOTE: When ClusterSubsystem hooks are introduced (see discussion #1033 PR D), the
+// OnRequestDone wiring here is the one site to replace with the subsystem dispatch; the startup
+// loop and addLiveInstance both call it, so it cannot be dispatched twice.
 func (cs *ClusterSimulator) wireInstance(inst *InstanceSimulator) {
 	onFirstToken := func(req *sim.Request, at int64) {
 		if parent := cs.parentOf(req); parent != nil {
@@ -605,15 +613,16 @@ func (cs *ClusterSimulator) wireInstance(inst *InstanceSimulator) {
 		if cs.sessionCallback == nil {
 			return nil
 		}
-		// The next round follows the response the client has received in full: a completed
-		// request's last chunk reaches it after the post-decode overhead, the same instant the
-		// P/D path releases from (parent.CompletionTime), so think time counts from there (#1913).
-		for _, next := range cs.sessionCallback(req, doneTime(inst, req, tick)) {
+		// The next round follows the response the client has received in full: its last content
+		// chunk, the instant the Result's row states (arrival plus E2E), so think time counts
+		// from there and not from the completion overhead that follows the chunk (#1913, #2130).
+		for _, next := range cs.sessionCallback(req, clientDoneTime(inst, req, tick)) {
 			cs.pushArrival(next, next.ArrivalTime, &cs.workloadSender)
 		}
 		return nil // don't inject locally — route through cluster pipeline
 	}
 	inst.SetCallbacks(onFirstToken, onRequestDone)
+	inst.SetRunStateHook(cs.noteRunState)
 	inst.setPullPriced(cs.startPull)
 	inst.setTierPriced(func(id engine.TransferID, demand kernel.TransferDemand, at int64) {
 		cs.startTierCopy(inst, id, demand, at)
@@ -636,6 +645,17 @@ func doneTime(inst *InstanceSimulator, req *sim.Request, tick int64) int64 {
 	if req.State == sim.StateCompleted {
 		if t, ok := inst.Metrics().RequestCompletionTimes[req.ID]; ok {
 			return max(tick, int64(t))
+		}
+	}
+	return tick
+}
+
+// clientDoneTime is when the client has a request's whole response: for a completed request the
+// last content chunk, before the completion overhead; for any other the instant it ended.
+func clientDoneTime(inst *InstanceSimulator, req *sim.Request, tick int64) int64 {
+	if req.State == sim.StateCompleted {
+		if t, ok := inst.Metrics().ClientCompletionTime(req.ID); ok {
+			return max(tick, t)
 		}
 	}
 	return tick
@@ -982,8 +1002,11 @@ func (c *ClusterSimulator) Run() error {
 	// drained without reaching its horizon leaves no request without a fate.
 	if stoppedAtHorizon {
 		c.endAtHorizon()
+		c.endUnissuedRounds(c.config.Horizon)
 	} else if err := c.stalled(); err != nil {
 		return err
+	} else {
+		c.endUnissuedRounds(c.clock)
 	}
 	if err := c.checkFates(); err != nil {
 		return err
@@ -1314,9 +1337,8 @@ func (c *ClusterSimulator) preemptionsTotal() int64 {
 // (autoscaler direct placement). NOT used by the NewClusterSimulator startup path,
 // which builds its instances in one pass.
 //
-// simCfg must already have GPU set (pool-authoritative, SC-004).
-// Returns true on success. On false, GPU allocations have been released — callers
-// must not touch the instance and should skip/continue.
+// simCfg must already have GPU set (pool-authoritative, SC-004). It cannot fail: a build
+// refusal here is an invariant break and panics.
 //
 // Maintenance note: if you add a new field to instance initialisation here, also
 // check NewClusterSimulator's construction loop (which does NOT call this method).
@@ -1328,7 +1350,7 @@ func (cs *ClusterSimulator) addLiveInstance(
 	gpuIDs []string,
 	tpDegree int,
 	costPerHour float64,
-) bool {
+) {
 	// A live instance's engine is built as a startup one's is, at the next index past every
 	// instance the cluster has built.
 	cs.liveBuilt++
@@ -1356,8 +1378,6 @@ func (cs *ClusterSimulator) addLiveInstance(
 	if cs.gateway != nil {
 		cs.gateway.OnInstanceChange(inst)
 	}
-
-	return true
 }
 
 // poolsConfigured returns true if PD disaggregation pool topology is active.
@@ -1429,6 +1449,7 @@ func (c *ClusterSimulator) detectPrefillCompletions(inst *InstanceSimulator) {
 		// the step event (#1903): the handoff cannot begin before the KV it moves exists.
 		parent.PrefillCompleteTime = parent.PrefillSubReq.DepartureTime
 		delete(c.pendingPrefillCompletions, subReqID)
+		c.advanceRequest(parent.OriginalRequest, sim.LifecycleWaitingDecodeKV)
 		c.pdPrefillCompletedCount++
 		c.pdPrefillOutputTokens += parent.PrefillSubReq.GeneratedTokens
 		c.startPrefillHold(parent)
@@ -1501,7 +1522,8 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 			// the session manager does not.
 			// (blis replay passes onRequestDone=nil, so this code never runs in replay mode.)
 			origCopy.ProgressIndex = parent.DecodeSubReq.ProgressIndex
-			nextReqs := c.sessionCallback(&origCopy, parent.CompletionTime)
+			// The client has the response at its last content chunk, before the overhead.
+			nextReqs := c.sessionCallback(&origCopy, parent.CompletionTime-inst.PostDecodeFixedOverhead())
 			for _, next := range nextReqs {
 				c.pushArrival(next, next.ArrivalTime, &c.workloadSender)
 			}

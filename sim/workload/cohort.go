@@ -44,6 +44,7 @@ func ExpandCohorts(cohorts []CohortSpec) []ClientSpec {
 				OutputDist:   cohort.OutputDist,
 				PrefixGroup:  prefixGroup,
 				Streaming:    cohort.Streaming,
+				Phase:        cohort.Phase,
 				PrefixLength: cohort.PrefixLength,
 				// Pointer fields shared across all expanded clients.
 				// Safe: workload generation reads but never mutates these fields.
@@ -110,7 +111,7 @@ func diurnalWindows(d *DiurnalSpec) []ActiveWindow {
 		// Cosine modulation: peak at peakHour, trough at peakHour ± 12
 		angle := 2.0 * math.Pi * float64(h-d.PeakHour) / float64(hoursPerDay)
 		// multiplier ranges from 1/R (trough) to 1.0 (peak)
-		multiplier := (1.0+math.Cos(angle))/2.0*(1.0-1.0/R) + 1.0/R
+		multiplier := float64((1.0+math.Cos(angle))/2.0*(1.0-1.0/R)) + 1.0/R
 
 		// Use multiplier to scale the window duration within each hour.
 		// A full hour is the maximum; reduced hours model lower rates.

@@ -223,6 +223,10 @@ func TestSIM11_TraceFieldsConsumedChangeTheResult(t *testing.T) {
 		"TraceHeader.KVOffload": true, "TraceHeader.Mode": true, "TraceHeader.SessionContextGrowth": true,
 		"TraceRecord.ThinkTimeUs": true, "TraceRecord.InputTokensReset": true, "TraceRecord.ImageTokens": true,
 		"TraceRecord.AudioTokens": true, "TraceRecord.VideoTokens": true, "TraceRecord.Streaming": true,
+		// Phases and the phase column are consumed together; a header with phases needs every row to
+		// name one, so one toggle cannot change either alone. TestResult_PhasedTraceReplaysDrainGated...
+		// shows the pair changes the run.
+		"TraceHeader.Phases": true, "TraceRecord.Phase": true,
 	}
 	var consumed []string
 	for _, typ := range []string{"TraceHeader", "TraceRouterConfig", "TraceKVOffloadConfig", "TraceKVOffloadTier",
