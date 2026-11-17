@@ -188,6 +188,8 @@ type kernelPools struct {
 	prefill, decode *kernelmodel.Model
 	// connector is the scenario's pd_transfer.connector.
 	connector string
+	// p2p is whether the handoff is vLLM's p2p tier's (build.Pools.P2P).
+	p2p bool
 }
 
 // pools is p as the engine's pools (nil for a colocated run).
@@ -195,7 +197,7 @@ func (p *kernelPools) pools() *build.Pools {
 	if p == nil {
 		return nil
 	}
-	return &build.Pools{Prefill: p.prefill, Decode: p.decode, Connector: p.connector}
+	return &build.Pools{Prefill: p.prefill, Decode: p.decode, Connector: p.connector, P2P: p.p2p}
 }
 
 // runTopology is the run's instance counts as they stand.
@@ -239,7 +241,7 @@ func openKernelPools() *kernelPools {
 		kernelPDOpened = nil
 		return nil
 	}
-	p := &kernelPools{prefill: bp.Prefill, decode: bp.Decode, connector: bp.Connector}
+	p := &kernelPools{prefill: bp.Prefill, decode: bp.Decode, connector: bp.Connector, p2p: bp.P2P}
 	kernelPDOpened = p
 	return p
 }
