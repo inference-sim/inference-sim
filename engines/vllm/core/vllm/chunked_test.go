@@ -86,7 +86,6 @@ func TestChunkedPrefillOffRefusals(t *testing.T) {
 		{"speculative decoding", "speculative_config: {method: eagle3, num_speculative_tokens: 3}\n",
 			"enable_chunked_prefill false with speculative decoding", ""},
 		{"LoRA", "max_loras: 2\n", "enable_chunked_prefill false with max_loras", "max_loras: 0\n"},
-		{"a KV transfer connector", producer, "enable_chunked_prefill false with a KV transfer connector", ""},
 		{"a KV offload tier", cpuTier, "enable_chunked_prefill false with a KV offload tier", ""},
 		{"data parallelism", "data_parallel_size: 2\n", "enable_chunked_prefill false with data parallelism", "data_parallel_size: 1\n"},
 		{"the adaptive long-prefill cap", "long_prefill_token_threshold: 16\nlong_prefill_token_threshold_adaptive: true\n",
@@ -117,6 +116,41 @@ func TestChunkedPrefillOffRefusals(t *testing.T) {
 				if err := buildErr(t, merge(off, c.ok)); err != nil {
 					t.Errorf("the closest configuration, %q, is refused: %v", c.ok, err)
 				}
+			}
+		})
+	}
+}
+
+// A KV transfer connector no longer refuses chunked prefill off (inference-sim/blis-vllm#214): the scheduler's
+// decision does not depend on the connector, and the NIXL scenarios run with it off match vLLM
+// (core/connector/nixl, nixl-chunked-off-*). A prefiller, a decoder and kv_both all build, and the
+// first step is the one without a connector: the prompt that fits is scheduled whole, the one that does not
+// waits (vllm/v1/core/sched/scheduler.py:1334-1343@4ba787ec).
+func TestChunkedPrefillOffRunsWithAKVConnector(t *testing.T) {
+	for name, conn := range map[string]string{
+		"producer": producer, "consumer": consumer,
+		"kv_both": "kv_transfer: {connector: NixlConnector, kv_role: kv_both}\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			e, err := build(t, merge(chunkedBase, "enable_chunked_prefill: false\n", conn))()
+			if err != nil {
+				t.Fatalf("chunked prefill off with a %s connector is refused: %v", name, err)
+			}
+			for _, id := range []string{"c0", "c1"} {
+				if err := e.Add(req(id, 40, 3), 0); err != nil {
+					t.Fatal(err)
+				}
+			}
+			b, err := e.Schedule(0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := map[string]int{}
+			for _, s := range b.Reqs {
+				got[s.ID] = s.Tokens
+			}
+			if want := map[string]int{"c0": 40}; !reflect.DeepEqual(got, want) {
+				t.Errorf("first step %v, want %v (c1's 40 do not fit the 24 left)", got, want)
 			}
 		})
 	}
