@@ -9669,9 +9669,11 @@ def test_qwen35_nvfp4_v2_places_each_module_at_the_width_its_map_states(tmp_path
     assert g["global"]["weight_dtype"] == "bf16"
     assert _qwen_role_widths(g, "gdn_moe") == {
         "recurrent_in_proj_qkvz": "fp8", "recurrent_in_proj_ba": "bf16", "mixer_out": "fp8",
-        "experts": "nvfp4", "shared_experts": "fp8"}
+        "experts": "nvfp4", "shared_gate_up": "fp8", "shared_down": "fp8",
+        "router": "bf16", "shared_expert_gate": "bf16"}
     assert _qwen_role_widths(g, "attn_moe") == {
-        "qkv_proj": "fp8", "o_proj": "fp8", "experts": "nvfp4", "shared_experts": "fp8"}
+        "qkv_proj": "fp8", "o_proj": "fp8", "experts": "nvfp4", "shared_gate_up": "fp8",
+        "shared_down": "fp8", "router": "bf16", "shared_expert_gate": "bf16"}
     assert [n.get("weight_dtype", "bf16") for n in g["head"] if n["op"] == "GEMM"] == ["bf16"]
     assert g["speculator"]["stack"]["pattern"] == ["mtp_moe"]
     assert set(_qwen_role_widths(g, "mtp_moe").values()) == {"bf16"}
