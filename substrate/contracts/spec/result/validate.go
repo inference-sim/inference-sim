@@ -334,6 +334,7 @@ func (in Input) validate(p *validate.Problems) {
 			p.Field(at+".source", "%q is not one of command_line, environment, default", o.Source)
 		}
 	}
+	validateFiles(in.Files, p)
 	for i, w := range in.WorkloadProperties {
 		at := fmt.Sprintf("input.workload_properties[%d]", i)
 		switch {

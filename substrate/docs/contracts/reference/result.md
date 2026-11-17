@@ -151,6 +151,7 @@ state none of the three, so most coefficients are not evaluated until the regist
 | `policy` | mapping | no | The simulator's policy bundle, verbatim, when one was given. |
 | `options` | list | no | Every option that changes a byte of the Result (SIM-10), sorted by name. |
 | `workload_properties` | list | no | Each workload property and what supplied it (D8), sorted by name. |
+| `files` | list | no | The small input files the run read, whole, sorted by `path`: the router's endpoint-picker configuration and manifests, and each configuration file an option names. Each is `path`, `sha256` (of `content`) and `content`. A trace or a corpus is never held here; `options` names it by sha256. |
 
 <!-- fields: scenario.Packaging -->
 
@@ -200,6 +201,21 @@ point can name it as a substitution.
 | `speculative_method` | string | no | The method it was fitted to; left out for the shape fitted to every method. |
 | `decay_exponent` | number | yes | Its exponent, in [0.5, 2]. |
 | `method` | string | yes | How the exponent was obtained: `calibrated` or `assumed`, never `measured`. |
+
+### `files`
+
+A small input file the run read, held whole, so that `--from-result` reproduces the run without
+it (DEV-7): the endpoint-picker configuration and manifests the deployment's router names, and each
+configuration file an option names. A trace or a corpus is bulk data and is never held here; its
+option records its sha256 (Principle 6 of blis-substrate#154).
+
+<!-- fields: result.File -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `path` | string | yes | The file as the input names it: the router's path, or the option's name. Listed once each, sorted. |
+| `sha256` | string | yes | The lowercase hex sha256 of `content`. |
+| `content` | string | yes | The file's bytes. |
 
 ## `frame`
 
