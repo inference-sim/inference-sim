@@ -1,0 +1,42 @@
+# Session affinity through the hosted llm-d router. Four TP4 engines on four H200 nodes behind the
+# router configured by router/session-affinity-epp.yaml: every round of a multi-turn session carries
+# the session's x-session-id header, and the session-affinity scorer sends it back to the endpoint
+# that served the session's first round, so the engine's prefix cache holds the earlier rounds'
+# context. session-load-only.yaml is the control.
+#
+#   blis run --scenarios examples/capabilities --scenario session-affinity.yaml --num-instances 4 \
+#     --workload-spec examples/capabilities/multiturn-sessions.yaml
+kind: Scenario
+name: session-affinity
+engine: {kind: vllm, version: "0.33.0"}
+
+model: llama-3.1-70b-instruct
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+
+cluster:
+  hardware: h200
+  fabric: ib-400g
+  nodes: 4
+  gpus_per_node: 8
+---
+kind: Deployment
+name: session-affinity
+
+pools:
+  - role: colocated
+    nodes: 4
+    parallel: {tp: 4, pp: 1, dp: 1, enable_expert_parallel: false}
+    engine:
+      quantization: fp8
+      kv_cache_dtype: fp8
+      block_size: 16
+      max_num_batched_tokens: 8192
+      max_num_seqs: 256
+      max_model_len: 32768
+      gpu_memory_utilization: 0.9
+      compilation_config: {cudagraph_mode: PIECEWISE}
+
+router:
+  epp_flags: [--pool-name=blis-pool, --pool-namespace=default, --allow-experimental-plugins]
+  endpoint_picker_config: router/session-affinity-epp.yaml
+  manifests: [router/inferencepool.yaml]

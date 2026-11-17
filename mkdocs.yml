@@ -102,6 +102,7 @@ nav:
       - Core Engine: concepts/core-engine.md
   - User Guide:
       - guide/index.md
+      - Capabilities Guide: guide/capabilities.md
       - Routing (llm-d router): guide/routing.md
       - Admission Control: guide/admission.md
       - Scheduling & Priority: guide/scheduling.md

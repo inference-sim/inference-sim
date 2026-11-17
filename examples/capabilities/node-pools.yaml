@@ -1,0 +1,40 @@
+# Per-pool hardware (SIM-17): a cluster of two node pools of different chips. The scenario names
+# the pools and the chip each carries; the policy bundle (node-pools-bundle.yaml) gives each pool
+# its node count, GPU memory and price. An instance is sized and priced by the chip of the pool it
+# is placed in: the H200 pool's engines hold more KV and step faster than the H100 pool's, and the
+# bundle bills each at its own pool's cost_per_hour.
+#
+#   blis run --scenarios examples/capabilities --scenario node-pools.yaml --num-instances 4 \
+#     --policy-config examples/capabilities/node-pools-bundle.yaml --rate 4 --num-requests 40
+kind: Scenario
+name: node-pools
+engine: {kind: vllm, version: "0.33.0"}
+
+model: llama-3.1-70b-instruct
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+
+cluster:
+  hardware: h200
+  fabric: ib-400g
+  nodes: 2
+  gpus_per_node: 8
+  pools:
+    - {name: fast, hardware: h200}
+    - {name: older, hardware: h100}
+---
+kind: Deployment
+name: node-pools
+
+pools:
+  - role: colocated
+    nodes: 2
+    parallel: {tp: 4, pp: 1, dp: 1, enable_expert_parallel: false}
+    engine:
+      quantization: fp8
+      kv_cache_dtype: fp8
+      block_size: 16
+      max_num_batched_tokens: 8192
+      max_num_seqs: 256
+      max_model_len: 32768
+      gpu_memory_utilization: 0.9
+      compilation_config: {cudagraph_mode: PIECEWISE}

@@ -329,7 +329,7 @@ only through a reference such as a flow-control `fairnessPolicyRef`.
 | `burst-prefix-cache-producer` | It blocks a request on a sealing timer the hosting runtime does not model. |
 | `predicted-latency-producer`, `latency-scorer`, `latency-slo-admitter`, `slo-headroom-tier-filter`, and `prefix-cache-affinity-filter` with `ttftSource: latencyPredictor` | They call or consume an external latency-predictor service. |
 | `latency-observer-producer-hub`, `latency-observation-scorer-hub`, `session-state-producer`, `program-aware-fairness`, `disaggregatedset-rollout-screener`, `utilization-filter`, `request-attribute-reporter` | Not yet audited for, or not yet moved onto, the hosting runtime. |
-| `session-affinity-*`, `session-id-producer`, `agent-identity`, `outlen-bucket`, `header-profile-handler`, `header-label-affinity-scorer`, `endpoint-pin-screener` | The simulated workload does not send the headers they read. |
+| `agent-identity`, `outlen-bucket`, `header-profile-handler`, `header-label-affinity-scorer`, `endpoint-pin-screener` | The simulated workload does not send the headers they read. |
 | `mm-embeddings-*` | The simulated media have no content of their own, so there is no embedding to cache. |
 | `p2p-source-producer`, `selective-kv-policy` | Peer KV pulls are not modeled by the simulated engines. |
 | `peerTopologyHeader` across separate EPPs | BLIS runs one EPP and does not model a coordinator forwarding stamped topology to a second EPP; the stamp handler’s response-header output is supported. |
