@@ -246,7 +246,7 @@ func TestDirectActuatorApply(t *testing.T) {
 		}
 	})
 
-	t.Run("scale_up_no_capacity_returns_error", func(t *testing.T) {
+	t.Run("scale_up_no_capacity_queues_the_rest", func(t *testing.T) {
 		// GIVEN: node has 2 GPU slots; NumInstances=1 consumes 1 at startup, leaving 1 available.
 		// Requesting Delta=2 means: first placement succeeds, second exhausts capacity.
 		base := newTestDeploymentConfig(1)
@@ -262,9 +262,13 @@ func TestDirectActuatorApply(t *testing.T) {
 			{ModelID: "test-model", Variant: NewVariantSpec("A100-80", 1), Delta: 2},
 		})
 
-		// THEN: first succeeds, second fails — Apply returns error.
-		if err == nil {
-			t.Error("Apply should return error when placement capacity is exhausted")
+		// THEN: first succeeds; the second waits for a node in the pending queue (#741) and is
+		// not reported as a failure.
+		if err != nil {
+			t.Errorf("Apply returned %v; a replica with no room waits in the pending queue", err)
+		}
+		if n := len(cs.placement.Pending()); n != 1 {
+			t.Errorf("%d pending placement(s), want the one replica that did not fit", n)
 		}
 		// And 1 instance was created (first iteration succeeded).
 		if len(cs.instances) != 1 {
