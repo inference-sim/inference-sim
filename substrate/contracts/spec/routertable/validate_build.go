@@ -2,6 +2,7 @@ package routertable
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	validate "github.com/inference-sim/blis-substrate/contracts/check"
@@ -68,6 +69,7 @@ func (e *Entry) validateBuilds(p *validate.Problems) map[string]bool {
 			if !commit.MatchString(f.Blob) {
 				p.Field(fat+".blob", "must be a 40-character lowercase git blob identifier, got %q", f.Blob)
 			}
+			validateVariants(p, fat, f)
 		}
 		// A citation inside the window is of a file the build vouches for.
 		in := map[string]bool{}
@@ -91,4 +93,40 @@ func (e *Entry) validateBuilds(p *validate.Problems) map[string]bool {
 		}
 	}
 	return covered
+}
+
+var sha256hex = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// validateVariants checks a deciding file that has more than one blob in the window: the rule is
+// the known one, every blob is distinct, and every variant has the normal form of the first blob.
+// The data cannot be recomputed here (the router's source is third-party text and is not kept),
+// so the check is that the claim is complete and consistent; the script that produced it is run
+// on a clone of the router to redo it.
+func validateVariants(p *validate.Problems, at string, f BuildFile) {
+	if len(f.Variants) == 0 {
+		if f.Rule != "" || f.NormalForm != "" {
+			p.Field(at+".variants", "rule and normal_form are for a file with other blobs in the window; list them or drop both")
+		}
+		return
+	}
+	if f.Rule != NormalFormLoggingOnly {
+		p.Field(at+".rule", "must be %q when the file has other blobs, got %q", NormalFormLoggingOnly, f.Rule)
+	}
+	if !sha256hex.MatchString(f.NormalForm) {
+		p.Field(at+".normal_form", "must be the 64-digit lowercase SHA-256 of the blob's normal form, got %q", f.NormalForm)
+	}
+	seen := map[string]bool{f.Blob: true}
+	for i, v := range f.Variants {
+		vat := fmt.Sprintf("%s.variants[%d]", at, i)
+		switch {
+		case !commit.MatchString(v.Blob):
+			p.Field(vat+".blob", "must be a 40-character lowercase git blob identifier, got %q", v.Blob)
+		case seen[v.Blob]:
+			p.Field(vat+".blob", "repeats blob %s", v.Blob)
+		}
+		seen[v.Blob] = true
+		if v.NormalForm != f.NormalForm {
+			p.Field(vat+".normal_form", "%s has a different normal form from blob %s, so the file differs in more than %s removes", v.Blob, f.Blob, f.Rule)
+		}
+	}
 }

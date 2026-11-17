@@ -120,7 +120,32 @@ type BuildFile struct {
 	// Blob is the file's git blob identifier (40 lower-case hex digits), as `git rev-parse
 	// <commit>:<path>` prints it at every commit of the build.
 	Blob string `yaml:"blob"`
+	// Rule names the rewrite set that makes the file's other blobs the same code, when it has
+	// more than one blob in the window: NormalFormLoggingOnly. Absent when Blob is the file's
+	// only blob at every commit.
+	Rule string `yaml:"rule,omitempty"`
+	// NormalForm is the SHA-256 (64 lowercase hex digits) of Blob's normal form under Rule, as
+	// catalog/scripts/router_normal_form.py prints it. Present exactly when Variants is.
+	NormalForm string `yaml:"normal_form,omitempty"`
+	// Variants are the file's other blobs in the window, each with the SHA-256 of its normal
+	// form, which equals NormalForm. The file then differs between the window's commits only in
+	// what Rule removes, which changes no value the router computes.
+	Variants []BuildVariant `yaml:"variants,omitempty"`
 }
+
+// BuildVariant is another blob a deciding file has inside a build's window.
+type BuildVariant struct {
+	// Blob is the git blob identifier (40 lowercase hex digits).
+	Blob string `yaml:"blob"`
+	// NormalForm is the SHA-256 of the blob's normal form under the file's Rule.
+	NormalForm string `yaml:"normal_form"`
+}
+
+// NormalFormLoggingOnly is the rule set "rust-logging-only" of catalog/scripts/router_normal_form.py:
+// delete logging statements, inline a binding that only carries a value to a deleted statement,
+// drop an unread element of a tuple binding, ignore blank lines. A difference left after these is
+// a difference in what the code computes, and the build is not covered.
+const NormalFormLoggingOnly = "rust-logging-only"
 
 // Citation is one passage of one router's code or documentation at a pinned revision.
 type Citation struct {

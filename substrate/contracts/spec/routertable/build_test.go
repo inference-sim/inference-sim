@@ -46,7 +46,7 @@ func TestADynamoWheelVersionResolvesToItsCommits(t *testing.T) {
 		{"1.2.0.dev20260426", OutcomeMapped},
 		{"1.3.0.dev20260601", OutcomeMapped},
 		{"1.2.1", OutcomeMapped},
-		{"1.3.0.dev20260614", OutcomeRevisionNotCovered},
+		{"1.3.0.dev20260614", OutcomeMapped},
 		{"", OutcomeRevisionNotCovered}, // 121 recipes state no version
 		{"1.6.0.dev20261010", OutcomeRevisionNotCovered},
 	} {
@@ -64,20 +64,21 @@ func TestADynamoWheelVersionResolvesToItsCommits(t *testing.T) {
 }
 
 // A commit that lies in a covered build's window is covered without being listed in revisions, and
-// the commit that changed the round-robin function inside the 14 June window is not: a build is
-// covered only as a whole, so the other commits of that day are not covered either. This test uses
-// only the lookup by commit.
+// every commit of the 14 June window is, though one of them changed push_router.rs: it changed
+// logging only (the normal form of both blobs is the same). This test uses only the lookup by
+// commit.
 func TestACommitOfACoveredWindowIsCoveredWithoutBeingListed(t *testing.T) {
 	entries := committed(t)
 	for name, c := range map[string]struct {
 		commit string
 		want   Outcome
 	}{
-		"the other commit of the 26 April window":               {"55a639e2808ee86fb077fa993c2aded37eba6f0f", OutcomeMapped},
-		"the head of the 1 June window":                         {"bed9f269312151481cd67a8d21b70e0f52424c2b", OutcomeMapped},
-		"the commit of tag v1.2.1":                              {"919682da679aa699d5bca9c872f4c1d9a530bbc0", OutcomeMapped},
-		"the 14 June commit that changed push_router.rs":        {"789736997696e0a874e07a70b507ffaffd1069b3", OutcomeRevisionNotCovered},
-		"an earlier commit of that day with no citation for it": {"9336dce0081207503b6435afcdcb4c02e4f57f7f", OutcomeRevisionNotCovered},
+		"the other commit of the 26 April window":                         {"55a639e2808ee86fb077fa993c2aded37eba6f0f", OutcomeMapped},
+		"the head of the 1 June window":                                   {"bed9f269312151481cd67a8d21b70e0f52424c2b", OutcomeMapped},
+		"the commit of tag v1.2.1":                                        {"919682da679aa699d5bca9c872f4c1d9a530bbc0", OutcomeMapped},
+		"the 14 June commit that changed push_router.rs, in logging only": {"789736997696e0a874e07a70b507ffaffd1069b3", OutcomeMapped},
+		"an earlier commit of that day":                                   {"9336dce0081207503b6435afcdcb4c02e4f57f7f", OutcomeMapped},
+		"a commit of the next day, outside every window":                  {"0000000000000000000000000000000000000001", OutcomeRevisionNotCovered},
 	} {
 		if _, got := Resolve(entries, "dynamo", "round-robin", nil, c.commit); got != c.want {
 			t.Errorf("%s (%s): %s, want %s", name, c.commit, got, c.want)
@@ -137,6 +138,22 @@ func TestABuildMustVouchForWhatItCites(t *testing.T) {
 		"an unknown source":                                 {func(e *Entry) { e.Builds[0].Source = "weekly" }, "source"},
 		"a release of two commits":                          {func(e *Entry) { e.Builds[0].Source = BuildRelease }, "one commit of its tag"},
 		"two builds of one name":                            {func(e *Entry) { e.Builds = append(e.Builds, e.Builds[0]) }, "repeats the build"},
+		"a variant whose normal form differs (the file differs in what it computes)": {func(e *Entry) {
+			f := &e.Builds[0].Files[0]
+			f.Rule, f.NormalForm = NormalFormLoggingOnly, strings.Repeat("a", 64)
+			f.Variants = []BuildVariant{{Blob: strings.Repeat("b", 40), NormalForm: strings.Repeat("c", 64)}}
+		}, "differs in more than"},
+		"other blobs under an unknown rule": {func(e *Entry) {
+			f := &e.Builds[0].Files[0]
+			f.Rule, f.NormalForm = "whitespace", strings.Repeat("a", 64)
+			f.Variants = []BuildVariant{{Blob: strings.Repeat("b", 40), NormalForm: strings.Repeat("a", 64)}}
+		}, "must be \"rust-logging-only\""},
+		"a variant that repeats the blob": {func(e *Entry) {
+			f := &e.Builds[0].Files[0]
+			f.Rule, f.NormalForm = NormalFormLoggingOnly, strings.Repeat("a", 64)
+			f.Variants = []BuildVariant{{Blob: f.Blob, NormalForm: strings.Repeat("a", 64)}}
+		}, "repeats blob"},
+		"a rule with no variants": {func(e *Entry) { e.Builds[0].Files[0].Rule = NormalFormLoggingOnly }, "list them or drop both"},
 		"a commit in two builds": {func(e *Entry) {
 			o := e.Builds[0]
 			o.Name = "1.0.0.dev20260102"

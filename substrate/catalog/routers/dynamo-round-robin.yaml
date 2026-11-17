@@ -86,6 +86,37 @@ builds:
         blob: 4afc05117d5395496aec89084e5817ae0bc3a9b8
       - path: lib/runtime/src/pipeline/network/egress/push_router.rs
         blob: cbe2e8ee5723452d59e02ff75d6322c0b5a9bd0b
+  - name: "1.3.0.dev20260614"
+    source: nightly
+    window: >-
+      The nightly of 2026-06-14 (UTC), found as for 1.3.0.dev20260601: every first-parent commit of main from the
+      head at 2026-06-14T00:00Z to the head at 2026-06-15T00:00Z, 3 in all. Each has version = "1.3.0" in
+      pyproject.toml. Four deciding files have one blob at all three commits. lib/runtime/src/pipeline/network/egress/push_router.rs
+      has two: the last commit (789736997696e0a874e07a70b507ffaffd1069b3, "unified structured Selected-worker INFO log
+      across all router modes", #10554) differs from the first two only by logging statements, a binding that
+      carries a value to them and a blank line. Both blobs have the same normal form under rust-logging-only
+      (catalog/scripts/router_normal_form.py check <clone> 1.3.0.dev20260614 prints the digests); the round-robin and random
+      index expression, the counter and the free list are the same.
+    commits:
+      - 789736997696e0a874e07a70b507ffaffd1069b3
+      - 9336dce0081207503b6435afcdcb4c02e4f57f7f
+      - dd667fbbbb22f22255fe9a25d97a80dafc91deca
+    files:
+      - path: components/src/dynamo/common/configuration/groups/router_args.py
+        blob: c2788f6b34147faf868b2619451279d3425659d5
+      - path: components/src/dynamo/frontend/main.py
+        blob: 875dae99aaae50a259e67fe44594098f7cf46d1b
+      - path: lib/llm/src/kv_router/prefill_router/mod.rs
+        blob: b252b922c5cc92d353cdd0661a23552f0c03200a
+      - path: lib/runtime/src/component/client.rs
+        blob: 2e5bea89b2dc75135ac5f6c313f6c5c39a4a99ae
+      - path: lib/runtime/src/pipeline/network/egress/push_router.rs
+        blob: 9901120b1168d62cf60847ec6638227ac92de41b
+        rule: rust-logging-only
+        normal_form: 49d070c6d43a40d27872147e017885177a6eaca3f20a2c312f22796716bc194b
+        variants:
+          - blob: 3ed2c551e98fa3e0cc9b861066765a10cb1fbc4a
+            normal_form: 49d070c6d43a40d27872147e017885177a6eaca3f20a2c312f22796716bc194b
 policy: round-robin
 reason: >-
   Dynamo's round-robin mode rotates strictly per request: it takes the next value of a counter
@@ -624,6 +655,41 @@ evidence:
     field: policy
     repository: ai-dynamo/dynamo
     commit: 919682da679aa699d5bca9c872f4c1d9a530bbc0
+    path: lib/llm/src/kv_router/prefill_router/mod.rs
+    lines: "44-49"
+    claim: The prefill router is an object of its own, with its own inner router and the router mode it was built with, so the prefill workers have a router object separate from the decode workers'.
+  - side: router
+    field: mode
+    repository: ai-dynamo/dynamo
+    commit: dd667fbbbb22f22255fe9a25d97a80dafc91deca
+    path: components/src/dynamo/common/configuration/groups/router_args.py
+    lines: "204-206"
+    claim: The router-mode argument (environment variable DYN_ROUTER_MODE) defaults to round-robin, so a run that sets no router mode runs it. The file is the same at every commit of build 1.3.0.dev20260614.
+  - side: router
+    field: mode
+    repository: ai-dynamo/dynamo
+    commit: dd667fbbbb22f22255fe9a25d97a80dafc91deca
+    path: lib/runtime/src/pipeline/network/egress/push_router.rs
+    lines: "507-518"
+    claim: Round-robin takes the next value of the router's counter and selects the instance at that value modulo the number of free instances. The window's last commit changes this function only by logging and by a binding that carries the count to it (the normal form is the same).
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: dd667fbbbb22f22255fe9a25d97a80dafc91deca
+    path: lib/runtime/src/pipeline/network/egress/push_router.rs
+    lines: "133"
+    claim: The counter is a field of the router object, so each router keeps its own.
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: dd667fbbbb22f22255fe9a25d97a80dafc91deca
+    path: lib/runtime/src/component/client.rs
+    lines: "284-294"
+    claim: The free list the counter indexes is the routable instances when none is reported overloaded, and otherwise the routable instances without the overloaded ones.
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: dd667fbbbb22f22255fe9a25d97a80dafc91deca
     path: lib/llm/src/kv_router/prefill_router/mod.rs
     lines: "44-49"
     claim: The prefill router is an object of its own, with its own inner router and the router mode it was built with, so the prefill workers have a router object separate from the decode workers'.
