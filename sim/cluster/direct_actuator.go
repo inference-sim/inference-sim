@@ -60,8 +60,9 @@ func (a *DirectActuator) scaleUp(d ScaleDecision) error {
 
 	var lastErr error
 	for i := 0; i < d.Delta; i++ {
-		a.nextInstSeq++
-		id := InstanceID(fmt.Sprintf("autoscale-%s-%06d", d.ModelID, a.nextInstSeq))
+		// The sequence number is committed only once the placement succeeds, so a refused
+		// placement leaves no gap in the autoscale-<model>-NNNNNN IDs.
+		id := InstanceID(fmt.Sprintf("autoscale-%s-%06d", d.ModelID, a.nextInstSeq+1))
 
 		// Reserve GPU slots. GPUType comes from the scale decision (variant-authoritative).
 		nodeID, gpuIDs, matchedGPU, err := a.cluster.placement.PlaceInstance(
@@ -72,6 +73,7 @@ func (a *DirectActuator) scaleUp(d ScaleDecision) error {
 			lastErr = err
 			continue
 		}
+		a.nextInstSeq++
 
 		// Build simCfg: start from the cluster default, then apply the pool-authoritative GPU
 		// type (SC-004, mirrors NewClusterSimulator startup path).
@@ -90,10 +92,7 @@ func (a *DirectActuator) scaleUp(d ScaleDecision) error {
 
 		// Construct, register, and activate the instance; the gateway sees its pod when it
 		// becomes ready.
-		if !a.cluster.addLiveInstance(id, d.ModelID, simCfg, nodeID, gpuIDs, d.Variant.TPDegree, instCost) {
-			lastErr = fmt.Errorf("scale-up for model %q: instance %s could not be registered", d.ModelID, id)
-			continue
-		}
+		a.cluster.addLiveInstance(id, d.ModelID, simCfg, nodeID, gpuIDs, d.Variant.TPDegree, instCost)
 
 		logrus.Infof("[actuator] scale-up: placed instance %s for model %q on node %s (gpu=%s, tp=%d)",
 			id, d.ModelID, nodeID, matchedGPU, d.Variant.TPDegree)

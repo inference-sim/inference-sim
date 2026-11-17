@@ -444,7 +444,11 @@ vLLM v0.31.0 sources:
 
 ### Gateway queue
 
-#### INV-16, INV-17: retired
+#### INV-16: Gateway queue counter consistency (retired)
+
+See INV-17 below for the shared reason.
+
+#### INV-17: The shed victim is the flow tail (retired)
 
 BLIS's own gateway queue (the former gateway-queue file of the cluster package) is gone: flow control is the embedded llm-d router's, whose flow registry and processor own their queue accounting and are tested upstream. INV-16 (gateway queue counter consistency) and INV-17 (the shed victim is the flow tail) protected code that no longer exists, and llm-d never sheds a queued request to admit another. The IDs are not reused.
 
@@ -762,7 +766,7 @@ BLIS prices every step with `blis-latency-kernel`; the in-repo roofline and trai
 
 ### LoRA control plane
 
-The LoRA control-plane invariants are stated in full in `docs/plans/2026-07-15-lora-control-plane-design.md` §9, which stays **authoritative**. They are listed here as pointer lines so an `INV-L*` citation in code can be resolved (the resolution rule at the top of this document).
+The LoRA control-plane invariants are stated in full in §9 of the LoRA control-plane design, which remains **authoritative**. The design document is no longer tracked; the last commit that holds it is `0045b726`, and `specs/007-lora-control-plane/` keeps the durable record. They are listed here as pointer lines so an `INV-L*` citation in code can be resolved (the resolution rule at the top of this document).
 
 | ID | Statement (abbreviated — the plan is authoritative) | Relationship | Code citations |
 |---|---|---|---|
@@ -772,7 +776,7 @@ The LoRA control-plane invariants are stated in full in `docs/plans/2026-07-15-l
 | **INV-L4** | Memory conservation: per instance, `allocated_blocks + free_blocks + adapter_reserved == total`, with `adapter_reserved` fixed at startup. | extends INV-4 | 11 |
 | **INV-L5** | No eviction of in-use: an adapter is *in use* from the moment a request referencing it enters the running batch until that request completes; an in-use adapter is never evicted, and this persists through preemption (a preempted request has not completed). Also covers the victim reserved at load-start, which is never in use. | — | 7 |
 | **INV-L6** | Oracle boundary: adapter-aware routing/servability reads adapter id, rank and resident sets only — never `Request.OutputTokens`. | specializes INV-9 | 0 |
-| **INV-L7** | *Retired* — see [Retired latency-model invariants](#retired-latency-model-invariants). | — | 0 |
+| INV-L7 (retired) | *Retired* — see [Retired latency-model invariants](#retired-latency-model-invariants). | — | 0 |
 
 Counts are a snapshot over `sim/` and `cmd/` together with blis-vllm `compat/`, where the engine's citations moved (#2021). Re-derive any row with (and the same over `compat/**` in blis-vllm):
 

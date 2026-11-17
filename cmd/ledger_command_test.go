@@ -17,6 +17,8 @@ import (
 	"testing/fstest"
 
 	substrate "github.com/inference-sim/blis-substrate"
+
+	"github.com/inference-sim/inference-sim/internal/substratedata"
 )
 
 const (
@@ -295,62 +297,63 @@ func TestLedgerList_AgreesWithTheEmbeddedRelease(t *testing.T) {
 	}
 }
 
-// publishedFilesMissedBy returns the files under catalog/ledger/published/ that no pattern of
-// patterns (path.Match syntax, relative to catalog/) selects. A published list the embedded
-// patterns miss would be left out of the binary while the loader read it from a checkout.
-func publishedFilesMissedBy(files, patterns []string) []string {
-	var missed []string
-	for _, f := range files {
-		hit := false
-		for _, p := range patterns {
-			if ok, _ := path.Match(p, f); ok {
-				hit = true
+// unembedded returns the data files of a checkout that the binary's embedded tree lacks: every
+// file of checkout that one of patterns (path.Match syntax) selects, which the loader reads from
+// a checkout, must also be in embedded, or `ledger --list` would print less offline than from a
+// checkout (D7, SUB-9).
+func unembedded(checkout, embedded fs.FS, patterns []string) []string {
+	var missing []string
+	_ = fs.WalkDir(checkout, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		for _, pat := range patterns {
+			if ok, _ := path.Match(pat, p); ok {
+				if _, err := fs.Stat(embedded, p); err != nil {
+					missing = append(missing, p)
+				}
 				break
 			}
 		}
-		if !hit {
-			missed = append(missed, f)
-		}
-	}
-	sort.Strings(missed)
-	return missed
+		return nil
+	})
+	sort.Strings(missing)
+	return missing
 }
 
-// publishedFilesMissedBy is the guard behind SUB-9 for the lists: a file under
-// catalog/ledger/published/ that the patterns the loader and the go:embed line share do not
-// select is left out of the binary while a checkout loads it. The substrate's own test compares
-// its go:embed directive with its patterns; this checks the patterns of the release pinned here
-// against the published files of the same release, and has its known-bad input. At the pinned
-// release no list is published, so the second half checks nothing yet (it logs 0 files).
-func TestPublishedListsAreSelectedByTheReleasesPatterns(t *testing.T) {
-	// Known-bad: the three files, against the patterns of a release that has not added them.
-	files := []string{"ledger/published/anchor.yaml", "ledger/published/fit.yaml", "ledger/published/report.yaml"}
-	if missed := publishedFilesMissedBy(files, []string{"devices/*.yaml", "models/*/graph.yaml"}); len(missed) != 3 {
-		t.Fatalf("patterns that omit ledger/published/ missed %v; want all three", missed)
+// The release pinned here embeds every data file its loader reads (D7, SUB-9): the checkout of
+// the pinned module and the binary's embedded tree agree on the catalog and on the registry.
+// The known-bad input is an embedded tree that leaves a published list out.
+func TestEmbeddedTreeHoldsEveryFileTheLoaderReads(t *testing.T) {
+	checkout := fstest.MapFS{
+		"devices/h100.yaml":            {Data: []byte("x")},
+		"ledger/published/anchor.yaml": {Data: []byte("x")},
+		"models/m/config.json":         {Data: []byte("not data")},
 	}
-	if missed := publishedFilesMissedBy(files, append([]string{"devices/*.yaml"}, "ledger/published/*.yaml")); len(missed) != 0 {
-		t.Fatalf("patterns that include ledger/published/*.yaml missed %v", missed)
+	leftOut := fstest.MapFS{"devices/h100.yaml": {Data: []byte("x")}}
+	if got := unembedded(checkout, leftOut, substrate.CatalogPatterns); len(got) != 1 || got[0] != "ledger/published/anchor.yaml" {
+		t.Fatalf("an embedded tree without the published list: missing %v, want exactly ledger/published/anchor.yaml", got)
 	}
-	// The release pinned here: every published file it ships must be selected.
-	dir := substrateModuleDir(t)
-	matches, _ := filepath.Glob(filepath.Join(dir, "catalog", "ledger", "published", "*"))
-	var shipped []string
-	for _, m := range matches {
-		shipped = append(shipped, "ledger/published/"+filepath.Base(m))
+
+	dir, err := substratedata.Dir()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if missed := publishedFilesMissedBy(shipped, substrate.CatalogPatterns); len(missed) != 0 {
-		t.Errorf("the pinned release ships %v under catalog/ledger/published/, which its patterns do not select", missed)
+	if got := unembedded(os.DirFS(filepath.Join(dir, "catalog")), substrate.Catalog(), substrate.CatalogPatterns); len(got) != 0 {
+		t.Errorf("the pinned release's catalog files the loader reads but the binary does not embed: %v", got)
 	}
-	t.Logf("the pinned release ships %d published list file(s)", len(shipped))
+	if got := unembedded(os.DirFS(filepath.Join(dir, "registry")), substrate.Registry(), substrate.RegistryPatterns); len(got) != 0 {
+		t.Errorf("the pinned release's registry files the loader reads but the binary does not embed: %v", got)
+	}
 }
 
 func substrateModuleDir(t *testing.T) string {
 	t.Helper()
-	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/inference-sim/blis-substrate").Output()
+	dir, err := substratedata.Dir()
 	if err != nil {
-		t.Fatalf("go list -m: %v", err)
+		t.Fatal(err)
 	}
-	return strings.TrimSpace(string(out))
+	return dir
 }
 
 // readUnitIDs reads a unit list without the ledger package: gunzip, one JSON object a line, the
@@ -469,68 +472,5 @@ func TestLedgerUnits_NeedsACheckout(t *testing.T) {
 	cmd.Stdout = &out
 	if err := cmd.Run(); err == nil || out.Len() != 0 {
 		t.Errorf("ledger units with no catalog: err %v, output %d bytes; want a refusal and no output", err, out.Len())
-	}
-}
-
-// goEmbedPatterns returns the patterns of the //go:embed lines of a Go source file.
-func goEmbedPatterns(src string) []string {
-	var out []string
-	for _, line := range strings.Split(src, "\n") {
-		if rest, ok := strings.CutPrefix(line, "//go:embed "); ok {
-			out = append(out, strings.Fields(rest)...)
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-// embedPatternsDiffer names the first difference between the go:embed patterns of a data.go and
-// the loader's two pattern lists (the directory prefixed), or "" when they agree.
-func embedPatternsDiffer(dataGo string, catalog, registry []string) string {
-	var want []string
-	for _, p := range catalog {
-		want = append(want, "catalog/"+p)
-	}
-	for _, p := range registry {
-		want = append(want, "registry/"+p)
-	}
-	sort.Strings(want)
-	got := goEmbedPatterns(dataGo)
-	in := map[string]bool{}
-	for _, p := range got {
-		in[p] = true
-	}
-	for _, p := range want {
-		if !in[p] {
-			return "the loader reads " + p + ", which the go:embed line does not embed"
-		}
-		delete(in, p)
-	}
-	for p := range in {
-		return "the go:embed line embeds " + p + ", which the loader does not read"
-	}
-	return ""
-}
-
-// The patterns that decide what the pinned release embeds equal the patterns its loader reads
-// (D7, SUB-9): a published list the loader reads from a checkout but the binary left out would
-// make `ledger --list` print less offline than a checkout prints. The known-bad case is a data.go
-// whose go:embed line leaves the published lists out of the loader's patterns.
-func TestEmbedPatternsEqualTheLoadersPatterns(t *testing.T) {
-	dataGo, err := os.ReadFile(filepath.Join(substrateModuleDir(t), "data.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if why := embedPatternsDiffer(string(dataGo), substrate.CatalogPatterns, substrate.RegistryPatterns); why != "" {
-		t.Errorf("the pinned release's embed patterns differ from its loader's: %s", why)
-	}
-	bad := strings.Replace(string(dataGo), " catalog/workloads/*.yaml", "", 1)
-	if why := embedPatternsDiffer(bad, substrate.CatalogPatterns, substrate.RegistryPatterns); !strings.Contains(why, "workloads") {
-		t.Errorf("a go:embed line that omits a loader pattern was not found: %q", why)
-	}
-	// A pattern no loader reads, so the known-bad case holds whatever the release embeds.
-	extra := strings.Replace(string(dataGo), "//go:embed registry/", "//go:embed catalog/not-a-loader-pattern/*.yaml registry/", 1)
-	if why := embedPatternsDiffer(extra, substrate.CatalogPatterns, substrate.RegistryPatterns); !strings.Contains(why, "not-a-loader-pattern") {
-		t.Errorf("a go:embed line with a pattern the loader lacks was not found: %q", why)
 	}
 }

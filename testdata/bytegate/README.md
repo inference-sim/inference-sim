@@ -13,4 +13,6 @@ A change that moves a golden file is a behaviour change, not a refactor. Regener
 
     go test ./internal/bytegate -update
 
-and state the diff, the reason and the price-change report in the pull request.
+and state the diff, the reason and the price-change report in the pull request. The pull request body
+must carry a `Golden change:` line saying what moved and why; the `golden-change` workflow
+(`scripts/golden-change-check.sh`) fails a pull request that moves a golden without one.

@@ -524,7 +524,7 @@ A typical PR from an RFC sub-issue:
 
 1. **Create worktree:** `git worktree add .worktrees/pr8-routing -b pr8-routing && cd .worktrees/pr8-routing`
 2. **Audit source:** Scan source document for ambiguities, contradictions, missing info. Record clarifications.
-3. **Write plan:** Write plan, save under `docs/plans/` (for example as `pr8-routing-plan.md`)
+3. **Write plan:** Write plan, save in your local, gitignored plans directory (for example as `pr8-routing-plan.md`)
 4. **Review plan:** For Medium/Large PRs, run holistic pre-pass first. Then run all 10 perspectives in convergence rounds. Fix issues, re-run until converged. (Small PRs skip the pre-pass.)
 5. **Human review:** Read plan — contracts, tasks, appendix. Approve to proceed.
 6. **Implement:** Execute TDD tasks: test → fail → implement → pass → lint → commit.
