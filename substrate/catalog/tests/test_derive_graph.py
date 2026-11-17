@@ -8474,3 +8474,22 @@ def test_qwen35_nvfp4_refuses_a_quantized_deltanet_input_projection(tmp_path):
     q["ignore"] = [p for p in q["ignore"] if p != "model.language_model.layers.0.linear_attn*"]
     with pytest.raises(derive_graph.DeriveError, match="in_proj_qkvz"):
         _derive_raw(raw, tmp_path, "qwen-nvfp4-test")
+
+
+GLM51_NVFP4 = MODELS / "glm-5.1-nvfp4"
+
+
+def test_glm51_nvfp4_quantizes_the_routed_experts_and_nothing_else():
+    """nvidia/GLM-5.1-NVFP4's ModelOpt list excludes the three dense layers and the MTP layer 78
+    whole, every attention module and shared expert, and the head: only the routed experts store
+    NVFP4. The shared experts are a node of their own at bf16, the dense layers and the attention
+    projections are bf16, and the draft layer is bf16 throughout rather than a mirror of the
+    decoder's NVFP4 experts."""
+    g = graph_of(GLM51_NVFP4)
+    assert g["global"]["weight_dtype"] == "bf16"
+    moe = _widths(g, "attn_moe")
+    assert moe["experts"][0] == "nvfp4" and moe["shared_experts"][0] == "bf16"
+    assert {w for r, (w, _) in moe.items() if r not in ("experts", "shared_experts")} == {"bf16"}
+    assert {w for w, _ in _widths(g, "attn_dense").values()} == {"bf16"}
+    assert g["speculator"]["method"] == "deepseek_mtp"
+    assert {w for w, _ in _widths(g, "mtp_moe").values()} == {"bf16"}
