@@ -3137,6 +3137,285 @@
     ]
    }
   },
+  "max_prefill_tokens": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0
+    ]
+   },
+   "basis": {
+    "name": "max_prefill_tokens",
+    "kind": "numeric",
+    "sites": [
+     {
+      "at": "python/sglang/srt/arg_groups/moe_hook.py:644",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "view.max_prefill_tokens"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1879",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.max_prefill_tokens"
+     }
+    ],
+    "stated": [
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 32768,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 16384,
+      "trace": "config/testdata/serverargs.json"
+     },
+     {
+      "value": 100,
+      "trace": "core/sched/testdata/golden-sched/max-prefill-tokens.trace.json"
+     },
+     {
+      "value": 100,
+      "trace": "core/sched/testdata/golden-sched/max-prefill-tokens.trace.json"
+     }
+    ],
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": null,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [],
+      "uncut": true,
+      "covered_by": [
+       "config/testdata/serverargs.json",
+       "core/sched/testdata/golden-sched/max-prefill-tokens.trace.json"
+      ]
+     }
+    ]
+   }
+  },
   "max_running_requests": {
    "value_classes": {
     "type": "numeric",

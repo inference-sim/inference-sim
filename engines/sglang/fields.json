@@ -16201,12 +16201,21 @@
     {
       "name": "max_prefill_tokens",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#4"
+        "traces": [
+          "config/testdata/serverargs.json",
+          "core/sched/testdata/golden-sched/max-prefill-tokens.trace.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -18143,12 +18152,12 @@
     {
       "name": "tokenizer_worker_num",
       "source": "config",
-      "status": "not_modelled",
+      "status": "inert_unproven",
       "evidence": {
-        "issue": "inference-sim/blis-sglang#9"
+        "note": "No proof file: the field is an integer cut at 1 by SGLang's own tests (arg_groups/serving_hook.py:89 and :423, parallel_hook.py:624), so a proof lists a probe below 1, which no accepted pool can state. The field sets how many tokenizer processes the HTTP front end runs. At more than one, requests reach the scheduler through a MultiTokenizerRouter and each worker owns a share of the multimodal feature pool (managers/tokenizer_manager.py:681-690, detokenizer_manager.py:132 and :560, scheduler_components/ipc_channels.py:57, load_snapshot.py:88-100, utils/cuda_vmm_transport_utils.py:1016): that changes which process tokenizes and routes a request, and no batch, admission or price. ServerArgs resolution reads it only to refuse combinations (arg_groups/serving_hook.py:89 and :423, parallel_hook.py:624: the HTTP worker reuseport option, native gRPC, elastic EP), none of which the accepted fields can state, and to log the multimodal pool split (serving_hook.py:908 and :926), which an accepted text-only pool does not reach. lower.TestInertFieldsChangeNoDecision (the probes 4 and 8) resolves and lowers the DeepSeek-R1 and GLM-5 pools of the h200 recipes with the field at each probe value and finds every other resolved ServerArgs field and the lowered plan equal to the unset pool's; the oracle case dsr1-h200-tp8-tokenizer-workers records SGLang's own resolution with the field at 8."
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
