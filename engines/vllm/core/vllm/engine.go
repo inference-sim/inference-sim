@@ -325,6 +325,10 @@ func (e *Engine) Add(r engine.Request, now engine.Time) error {
 	if err := r.Validate(); err != nil {
 		return err
 	}
+	if p := e.off.peer(); p != nil {
+		p.advance(now)
+		defer p.arm()
+	}
 	if _, dup := e.reqs[r.ID]; dup {
 		return fmt.Errorf("vllm: request %s added twice", r.ID)
 	}
@@ -436,8 +440,19 @@ func (e *Engine) maxModelLen() int {
 // Schedule returns an empty batch, scheduling nothing, while a step is blocked: the simulator's
 // next Complete ends that step, and its following Schedule call is the loop's next step.
 func (e *Engine) Schedule(now engine.Time) (engine.Batch, error) {
+	if p := e.off.peer(); p != nil {
+		// The p2p tier's poll thread runs a round when its interval has passed (offloadtiers_p2p.go).
+		p.advance(now)
+		defer p.arm()
+		p.round()
+	}
 	b, err := e.schedule(now)
 	if err == nil {
+		// A WRITE a round started is reported by the first schedule after it, whatever that
+		// schedule ran; a transfer already reported is not reported again.
+		if e.off.peer() != nil {
+			b.TransfersStarted = append(b.TransfersStarted, e.off.peerTransfers()...)
+		}
 		// Requests this decision ended without running them (Batch.Finished): a failed load under
 		// kv_load_failure_policy "fail", finished in update_from_output of a step that ran nothing.
 		b.Finished = append(b.Finished, e.takeEmptyFinished()...)
@@ -696,6 +711,10 @@ type GroupTransferPricer interface {
 // when the pricer prices none. A simulator reads it by type-asserting
 // interface{ TransferTime(engine.Transfer) (engine.Duration, bool) } on the engine.Engine.
 func (e *Engine) TransferTime(t engine.Transfer) (engine.Duration, bool) {
+	if e.off.isPeerWrite(t.ID) {
+		// A WRITE to a peer is a move between pools: the simulator prices it from its Move.
+		return 0, false
+	}
 	if bytes, tier := e.off.tierBytes(t); tier {
 		return tierTransferTime(e.pricer, t, bytes)
 	}
@@ -743,6 +762,10 @@ func (e *Engine) RecordSelected(d *load.Data) {
 
 // Complete implements engine.Engine: the batch's output and update_from_output.
 func (e *Engine) Complete(id engine.BatchID, outcome engine.Outcome, end engine.Time) (engine.Result, error) {
+	if p := e.off.peer(); p != nil {
+		p.advance(end)
+		defer p.arm()
+	}
 	res, _, err := e.complete(id, outcome, end)
 	return res, err
 }
@@ -941,6 +964,10 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 // is unknown. The simulator steps the engine after a transfer completion at the same instant
 // (the engine package's same-instant order), and that step's output carries it.
 func (e *Engine) TransferDone(id engine.TransferID, ok bool, now engine.Time) error {
+	if p := e.off.peer(); p != nil {
+		p.advance(now)
+		defer p.arm()
+	}
 	if e.off != nil {
 		// The offload's and the P/D connector's transfers are one sequence of IDs (newEngine).
 		if err := e.off.done(id, ok); !errors.Is(err, engine.ErrUnknownTransfer) {
@@ -964,7 +991,11 @@ func (e *Engine) polls() bool { return e.s.HasUnfinished() || e.pd.pending() }
 
 // Finish implements engine.Engine: finish_requests(FINISHED_ABORTED), a no-op for an unknown
 // or finished request, as vLLM's is.
-func (e *Engine) Finish(id string, _ engine.FinishReason, _ engine.Time) error {
+func (e *Engine) Finish(id string, _ engine.FinishReason, now engine.Time) error {
+	if p := e.off.peer(); p != nil {
+		p.advance(now)
+		defer p.arm()
+	}
 	st, ok := e.reqs[id]
 	if !ok || st.finished {
 		return nil
@@ -1000,10 +1031,18 @@ func (e *Engine) inFlight(id string) bool {
 // only running request preempted itself, which skips the WAITING phase
 // (vllm/v1/core/sched/scheduler.py:900@5df63a72) that the next schedule then runs.
 func (e *Engine) NextWake(now engine.Time) (engine.Time, bool) {
+	at, ok := engine.Time(0), false
 	if e.idleWake > now && len(e.pending) == 0 {
-		return e.idleWake, true
+		at, ok = e.idleWake, true
 	}
-	return 0, false
+	// The p2p tier's next poll round, while it has work and the batch queue has room for the
+	// schedule the wake steps (offloadtiers_p2p.go).
+	if p := e.off.peer(); p != nil && len(e.pending) < e.InFlightLimit() {
+		if w, has := p.wake(now); has && (!ok || w < at) {
+			at, ok = w, true
+		}
+	}
+	return at, ok
 }
 
 // InFlightLimit implements engine.Engine: max_concurrent_batches.
