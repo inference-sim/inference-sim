@@ -37,12 +37,6 @@ type fid5Trace struct {
 	Manager []fid5Call `json:"manager"`
 }
 
-// statsCalls are the manager calls whose answers are the metrics the tiering manager and its
-// CPU tier report (get_stats, manager.py:1205-1229; config_info, :1231-1248). The port has no
-// TieringMetricsTracker yet (vllm/v1/kv_offload/tiering/metrics.py), so they are not compared
-// here: https://github.com/inference-sim/blis-vllm/issues/189.
-var statsCalls = map[string]bool{"get_stats": true, "config_info": true}
-
 func TestTheTieringManagerWithNoTierAnswersAsVLLMDoes(t *testing.T) {
 	paths, err := filepath.Glob(filepath.Join(fid5Dir, "direct-tiering-*.fid5.json"))
 	if err != nil {
@@ -80,8 +74,17 @@ func replayFID5(t *testing.T, tr fid5Trace) {
 		t.Fatal(err)
 	}
 	var built struct {
-		Manager   string `json:"manager"`
-		NumChunks int    `json:"num_chunks"`
+		Manager         string `json:"manager"`
+		NumChunks       int    `json:"num_chunks"`
+		KVBytesPerChunk int64  `json:"kv_bytes_per_chunk"`
+	}
+	var sizing struct {
+		BlocksPerChunk int                       `json:"blocks_per_chunk"`
+		MaxModelLen    int                       `json:"max_model_len"`
+		Groups         []offloading.OffloadGroup `json:"groups"`
+	}
+	if err := json.Unmarshal(specArgs, &sizing); err != nil {
+		t.Fatal(err)
 	}
 	if err := json.Unmarshal(tr.Spec[0].Ret, &built); err != nil {
 		t.Fatal(err)
@@ -90,7 +93,9 @@ func replayFID5(t *testing.T, tr fid5Trace) {
 		t.Fatalf("spec %s with %d tiers built %s, want TieringOffloadingSpec with none building TieringOffloadingManager",
 			spec.Spec, spec.Tiers, built.Manager)
 	}
-	m := tiering.New(tiering.CPU(offloading.NewCPUPrimary(built.NumChunks)), nil, nil)
+	cpu := offloading.NewCPUPrimary(built.NumChunks)
+	cpu.SetConfigInfo(offloading.ConfigInfo(built.NumChunks, sizing.BlocksPerChunk, built.KVBytesPerChunk, sizing.MaxModelLen, sizing.Groups))
+	m := tiering.New(tiering.CPU(cpu), nil, nil)
 	ctxs := map[string]*tiering.ReqContext{}
 	arg := func(c fid5Call, k string, v any) {
 		t.Helper()
@@ -199,12 +204,16 @@ func replayFID5(t *testing.T, tr fid5Trace) {
 			m.ResetCache()
 		case "on_reset_flushed":
 			m.OnResetFlushed()
+		case "get_stats":
+			// A nil payload is vLLM's None.
+			if st := m.Stats(); st != nil {
+				got = st.Values()
+			}
+		case "config_info":
+			got = m.ConfigInfo()
 		case "shutdown":
 			// The port holds no thread or file to release.
 		default:
-			if statsCalls[c.M] {
-				continue
-			}
 			t.Fatalf("call %d: the replay does not drive %q", i, c.M)
 		}
 		g, err := json.Marshal(got)

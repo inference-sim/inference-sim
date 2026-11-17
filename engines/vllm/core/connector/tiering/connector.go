@@ -137,3 +137,20 @@ func (c Connector) OnScheduleEnd(e offloading.ScheduleEnd) {
 }
 
 func (c Connector) HasPendingWork() bool { return c.M.HasPendingWork() }
+
+// Stats is the CPU tier's get_stats (cpu/manager.py:486-519@4ba787ec): its usage, the allocation sizes
+// since the last call, and the write and read shares of the usage.
+func (c cpuPrimary) Stats() *Stats {
+	st := c.p.Stats()
+	s := NewStats()
+	s.SetGauge(MetricCPUUsage, st.Usage)
+	for _, a := range st.Allocations {
+		s.ObserveHistogram(MetricCPUAllocation, float64(a))
+	}
+	s.SetGauge(MetricCPUWriteUsage, st.Write)
+	s.SetGauge(MetricCPUReadUsage, st.Read)
+	return s
+}
+
+// ConfigInfo is the CPU tier's config_info series.
+func (c cpuPrimary) ConfigInfo() map[string]any { return c.p.ConfigInfo() }

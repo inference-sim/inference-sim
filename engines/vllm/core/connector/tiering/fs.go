@@ -379,7 +379,7 @@ func (t *FSTier) PendingLookupBatches() int { return t.lookup.submitted() }
 func (t *FSTier) FinishedJobs() []JobResult {
 	var out []JobResult
 	for _, j := range t.ran {
-		res := JobResult{ID: j.id, Success: j.loaded == len(j.paths)}
+		res := JobResult{ID: j.id, Success: j.loaded == len(j.paths), HasTransferTime: true}
 		if n := int64(len(j.keys)); n > 0 {
 			res.TransferBytes = n * t.cfg.BlockBytes
 		}

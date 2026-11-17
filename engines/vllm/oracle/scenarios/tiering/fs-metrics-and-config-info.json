@@ -1,0 +1,204 @@
+{
+ "description": "The tiering manager's get_stats and config_info beside a cascade, an eviction and a promotion from the fs tier: the CPU tier's gauges and allocation sizes, chunk queries and hits by tier label, the tier's read and write bytes, active jobs, the promotion latency, and one config_info series for each tier.",
+ "spec": {
+  "name": "TieringOffloadingSpec",
+  "cpu_bytes_to_use": 49152,
+  "worker_kv_bytes_per_block": 16384,
+  "world_size": 1,
+  "blocks_per_chunk": 1,
+  "extra": {
+   "secondary_tiers": [
+    {
+     "type": "fs",
+     "root_dir": "@root",
+     "n_read_threads": 1,
+     "n_write_threads": 0
+    }
+   ]
+  }
+ },
+ "calls": [
+  {
+   "m": "config_info"
+  },
+  {
+   "m": "on_new_request",
+   "ctx": "a"
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "a",
+   "keys": [
+    "k1",
+    "k2"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "ctx": "a",
+   "keys": [
+    "k1",
+    "k2"
+   ]
+  },
+  {
+   "m": "get_stats"
+  },
+  {
+   "m": "has_pending_work"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": [
+    "a"
+   ]
+  },
+  {
+   "m": "get_stats"
+  },
+  {
+   "m": "on_request_finished",
+   "ctx": "a"
+  },
+  {
+   "m": "on_new_request",
+   "ctx": "b"
+  },
+  {
+   "m": "prepare_store",
+   "ctx": "b",
+   "keys": [
+    "k3",
+    "k4",
+    "k5"
+   ]
+  },
+  {
+   "m": "complete_store",
+   "ctx": "b",
+   "keys": [
+    "k3",
+    "k4",
+    "k5"
+   ]
+  },
+  {
+   "m": "get_stats"
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k1"
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k2"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": [
+    "b"
+   ]
+  },
+  {
+   "m": "get_stats"
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k1"
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k2"
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k6"
+  },
+  {
+   "m": "has_pending_work"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": []
+  },
+  {
+   "m": "get_stats"
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k1"
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k2"
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k6"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": []
+  },
+  {
+   "m": "get_stats"
+  },
+  {
+   "m": "lookup",
+   "ctx": "b",
+   "key": "k6"
+  },
+  {
+   "m": "get_load_source",
+   "ctx": "b",
+   "key": "k1"
+  },
+  {
+   "m": "prepare_load",
+   "ctx": "b",
+   "keys": [
+    "k1",
+    "k2"
+   ]
+  },
+  {
+   "m": "complete_load",
+   "ctx": "b",
+   "keys": [
+    "k1",
+    "k2"
+   ]
+  },
+  {
+   "m": "get_stats"
+  },
+  {
+   "m": "has_pending_work"
+  },
+  {
+   "m": "on_schedule_end",
+   "new": []
+  },
+  {
+   "m": "get_stats"
+  },
+  {
+   "m": "on_request_finished",
+   "ctx": "b"
+  },
+  {
+   "m": "take_events"
+  },
+  {
+   "m": "config_info"
+  }
+ ]
+}
