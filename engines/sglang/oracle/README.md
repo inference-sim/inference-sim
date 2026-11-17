@@ -38,6 +38,19 @@ lock fails. `python -I oracle/run_import.py <sglang checkout>` imports the sched
 runners drive. CI runs it, together with the manifest check
 `python -I oracle/check_mocks.py oracle/mocks.json`.
 
+`oracle/gen_platform_reads.py` lists every platform read, clock read and thread start reachable
+from the decision modules the scheduler's files import, in `oracle/platform_reads.json`, and each
+`mocks.json` entry names in `covers` the reads it accounts for (FID-1, FID-8; the site reading is
+blis-design#15). A read of a module constant computed from the platform counts again at each read,
+covered by the reads that compute it. CI, in `oracle-checks`, regenerates the list at the pinned
+checkout and fails on a site the list lacks or no longer has, and on a site no entry covers. After
+an SGLang pin change, regenerate the list and name each new read in `mocks.json`:
+
+```sh
+python -I oracle/gen_platform_reads.py --write <sglang checkout>
+python -I oracle/gen_platform_reads.py <sglang checkout>
+```
+
 `oracle/peers.json` pins the KV-transfer and KV-store clients SGLang drives (Mooncake, NIXL,
 LMCache) and gives the source of each pin. None is in the lock yet, so a scenario that selects one
 is refused by name. When a store package enters the lock, it runs as code under test at its pin
