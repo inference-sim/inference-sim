@@ -130,8 +130,8 @@ func pointTrace(pl PointLengths) (*workload.TraceHeader, []workload.TraceRecord)
 type replayRun struct {
 	header   *workload.TraceHeader
 	records  []workload.TraceRecord
-	sessions int // --total-sessions: the trace's session count
-	pool     int // --concurrent-sessions
+	sessions int  // --total-sessions: the trace's session count
+	pool     int  // --concurrent-sessions
 	phased   bool // the header's drain-gated phases gate it: no pool flags
 }
 
