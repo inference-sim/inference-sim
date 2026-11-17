@@ -20,6 +20,18 @@
         "{package}"
       ],
       "tests": []
+    },
+    "platform-reads": {
+      "command": [
+        "python3",
+        "-I",
+        "oracle/test_checks.py",
+        "{sglang}",
+        "PlatformReads"
+      ],
+      "tests": [
+        "oracle/test_checks.py"
+      ]
     }
   },
   "mutants": [
@@ -270,6 +282,118 @@
       "old": "    if not result[\"shutdown_sent\"]:",
       "new": "    if False:",
       "suite": "oracle-checks"
+    },
+    {
+      "id": "P1",
+      "guards": "FID-1: a reachable site the listing lacks fails",
+      "file": "oracle/gen_platform_reads.py",
+      "old": "for site in sorted(set(found) - set(listed)):",
+      "new": "for site in []:",
+      "suite": "platform-reads"
+    },
+    {
+      "id": "P2",
+      "guards": "FID-1: a listed site that is no longer at the checkout fails",
+      "file": "oracle/gen_platform_reads.py",
+      "old": "for site in sorted(set(listed) - set(found)):",
+      "new": "for site in []:",
+      "suite": "platform-reads"
+    },
+    {
+      "id": "P3",
+      "guards": "FID-1: a listed site whose record changed fails",
+      "file": "oracle/gen_platform_reads.py",
+      "old": "        if found[site] != listed[site]:",
+      "new": "        if False:",
+      "suite": "platform-reads"
+    },
+    {
+      "id": "P4",
+      "guards": "FID-1: the listing is of the checkout's commit",
+      "file": "oracle/gen_platform_reads.py",
+      "old": "if listing.get(\"sglang_commit\") != commit:",
+      "new": "if False:",
+      "suite": "platform-reads"
+    },
+    {
+      "id": "P5",
+      "guards": "FID-1: a site no manifest entry covers fails",
+      "file": "oracle/gen_platform_reads.py",
+      "old": "        if missing:",
+      "new": "        if False:",
+      "suite": "platform-reads"
+    },
+    {
+      "id": "P6",
+      "guards": "FID-1: a covers item that covers no site fails",
+      "file": "oracle/gen_platform_reads.py",
+      "old": "        if item not in used:",
+      "new": "        if False:",
+      "suite": "platform-reads"
+    },
+    {
+      "id": "P7",
+      "guards": "FID-1: one entry accounts for a read",
+      "file": "oracle/gen_platform_reads.py",
+      "old": "            if item in owner:",
+      "new": "            if False:",
+      "suite": "platform-reads"
+    },
+    {
+      "id": "P8",
+      "guards": "FID-1: a read of a constant is covered by what computes it",
+      "file": "oracle/gen_platform_reads.py",
+      "old": "keys = [covers_key(\"platform\", v) for v in rec[\"via\"]] if \"via\" in rec else [covers_key(kind, reads)]",
+      "new": "keys = [covers_key(kind, reads)]",
+      "suite": "platform-reads"
+    },
+    {
+      "id": "P9",
+      "guards": "FID-1 (blis-design#15): a module constant computed from the platform counts at each read",
+      "file": "oracle/gen_platform_reads.py",
+      "old": "                    constants.add(c)",
+      "new": "                    pass",
+      "suite": "platform-reads"
+    },
+    {
+      "id": "P10",
+      "guards": "FID-1 (blis-design#15): a predicate or helper of a non-decision module is a site where it is called",
+      "file": "oracle/gen_platform_reads.py",
+      "old": "                    known[kind].setdefault(f\"{m}.{parts[0]}\", set()).add(name)",
+      "new": "                    pass",
+      "suite": "platform-reads"
+    },
+    {
+      "id": "P11",
+      "guards": "FID-1: a clock read is a site",
+      "file": "oracle/gen_platform_reads.py",
+      "old": "    if under(name, CLOCK_ROOTS) and name not in CLOCK_ROOTS or name in CLOCK_NAMES:",
+      "new": "    if False:",
+      "suite": "platform-reads"
+    },
+    {
+      "id": "P12",
+      "guards": "FID-1: a thread start is a site",
+      "file": "oracle/gen_platform_reads.py",
+      "old": "    if name in THREAD_NAMES:",
+      "new": "    if False:",
+      "suite": "platform-reads"
+    },
+    {
+      "id": "P13",
+      "guards": "FID-1: a platform attribute read is a site",
+      "file": "oracle/gen_platform_reads.py",
+      "old": "    if under(name, PLATFORM_ROOTS):",
+      "new": "    if False:",
+      "suite": "platform-reads"
+    },
+    {
+      "id": "P14",
+      "guards": "FID-1: a module imported only for type checking is not reachable",
+      "file": "oracle/gen_platform_reads.py",
+      "old": "        if isinstance(n, ast.If) and is_type_checking(n.test):\n            skip.update",
+      "new": "        if False:\n            skip.update",
+      "suite": "platform-reads"
     }
   ],
   "known_gaps": {},

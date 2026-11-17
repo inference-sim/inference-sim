@@ -607,6 +607,173 @@ class ValueCoverage(unittest.TestCase):
         self.assertIn("no golden trace", r.stdout)
 
 
+class PlatformReads(unittest.TestCase):
+    """oracle/gen_platform_reads.py: every platform read, clock read and thread start reachable from
+    the decision modules is listed, and covered by the manifest (FID-1, FID-8). CI runs the
+    generator itself on the pinned checkout; these cases run it on scratch checkouts."""
+
+    # A scratch SGLang: the scheduler imports a decision module that reads the platform through a
+    # predicate and through a constant computed from it, reads the clock, starts a thread directly
+    # and through a helper of a non-decision module, and imports for type checking only a module
+    # whose read is not reachable.
+    FILES = {
+        "python/sglang/srt/managers/scheduler.py": "from sglang.srt.mem_cache import pool\n",
+        "python/sglang/srt/utils/__init__.py": "from sglang.srt.utils.common import *\n",
+        "python/sglang/srt/utils/common.py": (
+            "import threading\nimport torch\n\n\ndef is_cuda():\n    return torch.cuda.is_available()\n\n\n"
+            "def start_helper():\n    threading.Thread(target=print).start()\n"),
+        "python/sglang/srt/mem_cache/pool.py": (
+            "import threading\nimport time\nfrom typing import TYPE_CHECKING\n\n"
+            "from sglang.srt.utils import is_cuda, start_helper\n\nif TYPE_CHECKING:\n"
+            "    from sglang.srt.mem_cache import typed\n\n_is_cuda = is_cuda()\n\n\n"
+            "def step():\n    if _is_cuda:\n        return time.monotonic()\n    start_helper()\n"
+            "    threading.Thread(target=step).start()\n"),
+        "python/sglang/srt/mem_cache/typed.py": "import time\nNOW = time.time()\n",
+    }
+    PREFIXES = ["sglang.srt.managers.scheduler.", "sglang.srt.mem_cache."]
+    COVERS = {
+        "platform": ["platform:sglang.srt.utils.common.is_cuda"],
+        "clock": ["clock:time.monotonic"],
+        "thread": ["thread:threading.Thread", "thread:sglang.srt.utils.common.start_helper"],
+    }
+
+    def checkout(self, files=None):
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root)
+        for rel, text in (files or self.FILES).items():
+            path = os.path.join(root, rel)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as f:
+                f.write(text)
+        with open(os.path.join(root, "harness.json"), "w") as f:
+            json.dump({"decision_prefixes": self.PREFIXES}, f)
+        self.manifest(root, self.COVERS)
+        self.commit(root)
+        return root
+
+    @staticmethod
+    def commit(root):
+        # The listing records the checkout's commit; the files may change after it.
+        for cmd in (["init", "-q"], ["-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false", "-c",
+                                     "core.hooksPath=/dev/null", "commit", "-q", "--allow-empty", "-m", "x"]):
+            subprocess.run(["git", "-C", root, *cmd], check=True, capture_output=True)
+
+    @staticmethod
+    def manifest(root, covers):
+        mocks = [{"symbol": kind, "kind": "environment", "how": "h", "sites": [], "covers": items}
+                 for kind, items in covers.items()]
+        with open(os.path.join(root, "mocks.json"), "w") as f:
+            json.dump({"version": "gpu-mock/1+" + digest(mocks), "mocks": mocks}, f)
+
+    def gen(self, root, *flags):
+        return run([sys.executable, "-I", os.path.join(HERE, "gen_platform_reads.py"), *flags, root,
+                    os.path.join(root, "harness.json"), os.path.join(root, "mocks.json"),
+                    os.path.join(root, "platform_reads.json")], root)
+
+    def listed(self, root):
+        r = self.gen(root, "--write")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        with open(os.path.join(root, "platform_reads.json")) as f:
+            return json.load(f)["sites"]
+
+    def edit(self, root, rel, text):
+        with open(os.path.join(root, rel), "a") as f:
+            f.write(text)
+
+    def test_each_kind_of_read_is_a_site(self):
+        root = self.checkout()
+        sites = self.listed(root)
+        m = "sglang.srt.mem_cache.pool"
+        self.assertEqual(sorted(sites), sorted([
+            f"platform:{m}:<module>:sglang.srt.utils.common.is_cuda#1",  # the constant's definition
+            f"platform:{m}:step:{m}._is_cuda#1",  # and its read
+            f"clock:{m}:step:time.monotonic#1",
+            f"thread:{m}:step:sglang.srt.utils.common.start_helper#1",
+            f"thread:{m}:step:threading.Thread#1",
+        ]))
+        self.assertEqual(sites[f"platform:{m}:step:{m}._is_cuda#1"]["via"], ["sglang.srt.utils.common.is_cuda"])
+        r = self.gen(root)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_an_unlisted_platform_read_clock_read_and_thread_start_fail(self):
+        m = "sglang.srt.mem_cache.pool"
+        for name, text, site, cover in [
+                ("platform", "\n\ndef sync():\n    import torch\n    torch.cuda.synchronize()\n",
+                 f"platform:{m}:sync:torch.cuda.synchronize#1", "platform:torch.cuda.synchronize"),
+                ("constant", "\n\ndef again():\n    return _is_cuda\n",
+                 f"platform:{m}:again:{m}._is_cuda#1", None),
+                ("clock", "\n\ndef nap():\n    time.sleep(1)\n", f"clock:{m}:nap:time.sleep#1", "clock:time.sleep"),
+                ("thread", "\n\ndef pool():\n    import concurrent.futures\n"
+                           "    return concurrent.futures.ThreadPoolExecutor(1)\n",
+                 f"thread:{m}:pool:concurrent.futures.ThreadPoolExecutor#1",
+                 "thread:concurrent.futures.ThreadPoolExecutor")]:
+            with self.subTest(name):
+                root = self.checkout()
+                self.listed(root)
+                self.edit(root, "python/sglang/srt/mem_cache/pool.py", text)
+                r = self.gen(root)
+                self.assertEqual(r.returncode, 1, r.stdout)
+                self.assertIn(f"{site} (line", r.stdout)
+                self.assertIn("not in oracle/platform_reads.json", r.stdout)
+                # Listed, the read still needs the manifest to name it; a constant's read is
+                # covered by what computes it.
+                self.listed(root)
+                r = self.gen(root)
+                if cover is None:
+                    self.assertEqual(r.returncode, 0, r.stdout)
+                    continue
+                self.assertEqual(r.returncode, 1, r.stdout)
+                self.assertIn(f"{site} (line", r.stdout)
+                self.assertIn("no mocks.json entry covers", r.stdout)
+                covers = {k: list(v) for k, v in self.COVERS.items()}
+                covers[name].append(cover)
+                self.manifest(root, covers)
+                r = self.gen(root)
+                self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_a_read_behind_a_constant_needs_what_computes_it(self):
+        root = self.checkout()
+        self.listed(root)
+        covers = {k: list(v) for k, v in self.COVERS.items()}
+        covers["platform"] = []
+        self.manifest(root, covers)
+        r = self.gen(root)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("platform:sglang.srt.mem_cache.pool:step:sglang.srt.mem_cache.pool._is_cuda#1 (line 14): a read "
+                      "of a constant computed from platform:sglang.srt.utils.common.is_cuda", r.stdout)
+
+    def test_a_gone_site_a_moved_site_and_another_commit_fail(self):
+        root = self.checkout()
+        sites = self.listed(root)
+        path = os.path.join(root, "platform_reads.json")
+        with open(path) as f:
+            listing = json.load(f)
+        listing["sites"]["clock:sglang.srt.mem_cache.pool:gone:time.monotonic#1"] = {"line": 1}
+        listing["sites"]["clock:sglang.srt.mem_cache.pool:step:time.monotonic#1"] = {"line": 99}
+        listing["sglang_commit"] = "0" * 40
+        with open(path, "w") as f:
+            json.dump(listing, f)
+        r = self.gen(root)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("clock:sglang.srt.mem_cache.pool:gone:time.monotonic#1: listed in oracle/platform_reads.json, "
+                      "and no longer at the checkout", r.stdout)
+        self.assertIn("clock:sglang.srt.mem_cache.pool:step:time.monotonic#1: listed as {'line': 99}", r.stdout)
+        self.assertIn(f"lists the sites of {'0' * 40}", r.stdout)
+        self.assertEqual(len(sites), 5)
+
+    def test_a_stale_or_doubled_cover_fails(self):
+        root = self.checkout()
+        self.listed(root)
+        covers = {k: list(v) for k, v in self.COVERS.items()}
+        covers["clock"].append("clock:time.sleep")
+        covers["other"] = ["thread:threading.Thread"]
+        self.manifest(root, covers)
+        r = self.gen(root)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("clock: covers clock:time.sleep, which no reachable site reads", r.stdout)
+        self.assertIn("thread:threading.Thread: covered by both 'thread' and 'other'", r.stdout)
+
+
 class MutationSweep(unittest.TestCase):
     """oracle/mutate.py, the mutation sweep (T7), on scratch repositories."""
 
