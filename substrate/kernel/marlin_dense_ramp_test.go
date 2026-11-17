@@ -12,7 +12,7 @@ import (
 // `transferred` pair moved from the same part's measured Marlin grouped GEMM, beside the `assumed`
 // BF16-envelope pair that is its named upper bound (design VAL-4: the most trusted rank is used).
 // Only h200 selects it: h100 has no held-out unit, so the landing criteria give it no verdict and
-// the bound prices it (h100 has no held-out unit: the only withheld series that reads the ramp is the h200 MiniMax-M3 FP8 MTP one). These tests price MiniMax-M3 MXFP8 on the registry as committed and on the same registry with
+// the bound prices it (registry/gates/criteria/hopper-dense-mxfp8-ramp.md). These tests price MiniMax-M3 MXFP8 on the registry as committed and on the same registry with
 // the transferred entries removed, which is the bound alone.
 
 func isDenseMarlinMXFP8(e coefficient.Entry) bool {

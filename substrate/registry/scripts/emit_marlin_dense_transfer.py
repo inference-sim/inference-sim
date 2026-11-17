@@ -17,7 +17,7 @@ WHAT. Four entries, an asymptote and a half-max on each of h100 and h200, with m
 `transferred`. Only the h200 pair is ACTIVE, in coefficients/cost-model-primitives.yaml, where the
 lookup reads it. The h100 pair is a CANDIDATE, written to candidates/ where the
 loader, the embed patterns and the validators do not look: the landing criteria
-(the only withheld series that reads the ramp is the h200 MiniMax-M3 FP8 MTP one) give h100 no held-out unit, so it has no
+(registry/gates/criteria/hopper-dense-mxfp8-ramp.md) give h100 no held-out unit, so it has no
 verdict and the assumed bound keeps pricing it. To select it, a held-out verdict for h100 must
 exist; then move h100 from CANDIDATE_PARTS to ACTIVE_PARTS and re-run this script.
 
@@ -77,7 +77,7 @@ CANDIDATE_HEADER = """\
 # CANDIDATE entries, NOT READ by the lookup: this directory is outside the registry's data
 # directories (acceptance, coefficients, routing), so the loader and the validators skip it.
 # The h100 dense Marlin W8A16 MXFP8 ramp is recorded here because it has no held-out unit and
-# so no verdict (the only withheld series that reads the ramp is the h200 MiniMax-M3 FP8 MTP one); the `assumed` bound in cost-model-primitives.yaml keeps pricing h100.
+# so no verdict (registry/gates/criteria/hopper-dense-mxfp8-ramp.md); the `assumed` bound in cost-model-primitives.yaml keeps pricing h100.
 # WRITTEN by scripts/emit_marlin_dense_transfer.py, which checks it. Do not edit by hand.
 coefficients:
 """
