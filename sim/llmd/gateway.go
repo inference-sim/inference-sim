@@ -593,7 +593,7 @@ func (g *Gateway) handleRequest(f *flight) {
 	// the request's context from it, and cancellation propagates synchronously only through stdlib
 	// cancel contexts, so a client deadline reaches the router at its simulated instant (INV-6).
 	f.ctx, f.cancel = context.WithCancel(g.ctx)
-	f.prompt = g.canon.canonical(f.req.InputTokens)
+	f.prompt = g.canon.canonicalUnder(identityRoot(f.req.Adapter, nil), f.req.InputTokens)
 	if g.observe != nil {
 		g.observe("request", f.req.ID)
 	}
@@ -1107,10 +1107,11 @@ func (g *Gateway) checkLatePod(inst *cluster.InstanceSimulator) error {
 // checkPreciseLoRA refuses a precise-prefix-cache-producer over an engine serving LoRA adapters, and a
 // router indexing KV events over an engine that says it cannot be indexed (KVEventsRefusal).
 func (g *Gateway) checkPreciseLoRA(inst *cluster.InstanceSimulator) error {
-	if len(g.req.PrefixIndexes) > 0 && inst.AdapterCapacity() > 0 {
+	if len(g.req.PrefixIndexes) > 0 && inst.AdapterCapacity() > 0 && !inst.KVEventsCarryIdentity() {
 		return errors.New("the router configuration cannot be simulated faithfully: precise-prefix-cache-producer " +
 			"keys blocks by LoRA adapter, but the compatibility engine this simulator runs keys its prefix cache " +
-			"without the adapter, so its KV events cannot name the adapter a block belongs to")
+			"without the adapter, so its KV events cannot name the adapter a block belongs to; only an engine " +
+			"that publishes the stored block's identity, as vLLM's does, can be indexed by adapter")
 	}
 	if g.router.WantsKVEvents() {
 		// An engine whose KV events the router cannot key (a full-attention group at another

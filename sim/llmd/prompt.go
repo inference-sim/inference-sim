@@ -50,9 +50,14 @@ func newPromptCanon(seed int64, blockSize, capacity int) *promptCanon {
 
 // canonical returns the router's view of prompt. It records the prompt's chains, so it must be
 // called once per request, in the order requests reach the router.
-func (c *promptCanon) canonical(prompt []sim.TokenID) []uint32 {
+func (c *promptCanon) canonical(prompt []sim.TokenID) []uint32 { return c.canonicalUnder("", prompt) }
+
+// canonicalUnder is canonical for a prompt whose blocks an engine keys with extra keys: root is
+// identityRoot of those keys, the chain's start, so the same tokens under another adapter or
+// salt name another chain, as they name another block in the engine's prefix cache.
+func (c *promptCanon) canonicalUnder(root string, prompt []sim.TokenID) []uint32 {
 	out := make([]uint32, len(prompt))
-	chain := ""
+	chain := root
 	for start := 0; start < len(prompt); start += c.blockSize {
 		end := min(start+c.blockSize, len(prompt))
 		// The engines' prefix caches key a block the same way (blis-vllm compat/prefix), so a KV event's
