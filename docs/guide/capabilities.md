@@ -97,7 +97,7 @@ blis run --scenarios examples/capabilities --scenario pd-p2p.yaml \
   --num-instances 3 --prefill-instances 2 --decode-instances 1 --rate 2 --num-requests 6
 ```
 
-The decode engine loads each prompt from the prefill engine's CPU tier; the Result states `peer_messages_sent`, `peer_messages_delivered` (equal) and `peer_messages_dropped` (zero). The prefill nodes' WRITEs cross the fabric, and the Result states the NIC links they used (`link_peak_concurrent_transfers_nic-egress-node-<prefill>` and `nic-ingress-node-<decode>`) beside the CPU tiers' links. The example runs one TP8 engine per node. The NIXL deployment sends no peer messages.
+The decode engine loads each prompt from the prefill engine's CPU tier; the Result states `peer_messages_sent`, `peer_messages_delivered` (equal) and `peer_messages_dropped` (zero). The prefill nodes' WRITEs cross the fabric, and the Result states the NIC links they used (`link_peak_concurrent_transfers_nic-egress-node-<prefill>` and `nic-ingress-node-<decode>`) beside the CPU tiers' links. The example runs one TP8 engine per node. With prefill and decode pools of unequal TP the run still completes every request as disaggregated, but its Result shows no NIC link and no decode-side tier load, so the handoff's fabric cost is not stated; that is a known gap ([inference-sim#2214](https://github.com/inference-sim/inference-sim/issues/2214)), and the example keeps equal TP. The NIXL deployment sends no peer messages.
 
 ## Prefill/decode with pools of unequal width
 
