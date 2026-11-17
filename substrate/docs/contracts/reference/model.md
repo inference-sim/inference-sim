@@ -332,6 +332,7 @@ Common to every node:
 | `residency` | string | no | Where the table lives by default: `device` (the default) or `host`. See [residency](vocabularies.md#gather-residency). |
 | `residency_control` | string | no | The engine setting that can move the table, which a deployment states. `residency` is then that setting's default for the release, which the rules pack checks. |
 | `shard` | string | no | How the table divides across tensor-parallel ranks. One of the [shards](vocabularies.md#gather-shards); omitted means `replicated`. |
+| `resident_only` | boolean | no | The engine holds the table on every rank (divided by `shard`) but no kernel of the layer reads it as a lookup of its own, as the RoPE cos/sin table a fused QK-norm and RoPE kernel indexes: it adds resident bytes, no launch and no per-token traffic. Then `rows_per_token` and `out_bytes_per_token` are absent. Omitted means a lookup that launches. |
 
 A matrix multiply charges its whole weight as reads and compute every step. For a gather
 that is wrong by the ratio of the table to the rows read. DeepSeek-V4.1 reads 24 rows of
@@ -686,8 +687,9 @@ A node is invalid if
   layer does not own states `block_size` or `page_alignment`, or is a `state` cache; or a
   cache disagrees with the node's `window` or `compress_ratio`;
 - a `Gather` lacks a positive `rows`, `row_bytes`, `rows_per_token` or
-  `out_bytes_per_token`, reads more rows per token than it has, or is split by `heads` with
-  fewer than two; a `Gather` key is set on another primitive;
+  `out_bytes_per_token` (a `resident_only` one states neither of the last two), reads more
+  rows per token than it has, or is split by `heads` with fewer than two; a `Gather` key,
+  or `resident_only`, is set on another primitive;
 - `per_tokens`, `context` or `writes_cache` is set on anything other than an
   `Elementwise` node; a `context` lacks a positive `bytes_per_entry` (or a non-negative
   one with `reads_cache`) or a recognized `per`, states a `decode_extent` on prefill-only
