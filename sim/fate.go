@@ -81,14 +81,20 @@ const (
 type PlannedRound struct {
 	// ThinkUs is the sum of the planned think times from the session's last issued round to this
 	// round, each drawn from its own round's stream as the round would have drawn it (DEV-6).
-	ThinkUs    int64
-	ID         string
-	SessionID  string
-	RoundIndex int
-	Model      string
-	Adapter    string
-	SLOClass   string
-	TenantID   string
+	ThinkUs int64
+	// ArrivalUs, when HasArrival, is the arrival the planner states itself; otherwise the row's
+	// arrival is its session's last issued round's end plus ThinkUs.
+	ArrivalUs    int64
+	HasArrival   bool
+	PromptTokens int
+	Phase        Phase
+	ID           string
+	SessionID    string
+	RoundIndex   int
+	Model        string
+	Adapter      string
+	SLOClass     string
+	TenantID     string
 }
 
 // FateRecord is one request's fate: what it was, why (for a drop), and when it was written.

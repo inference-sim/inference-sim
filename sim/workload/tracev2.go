@@ -92,7 +92,7 @@ var traceColumns = []string{
 
 // traceOptionalColumns follow traceColumns, in this order, each written only when some
 // record carries a value for it, so a trace that uses none has exactly traceColumns.
-var traceOptionalColumns = []string{"slo_target_us", "adapter", "think_time_us", "input_tokens_reset"}
+var traceOptionalColumns = []string{"slo_target_us", "adapter", "think_time_us", "input_tokens_reset", "phase"}
 
 // traceV3OnlyColumns are the version 3 columns version 4 does not have. Each is named in a
 // refusal, so a version 3 data file read as version 4 is pointed at the conversion.
@@ -160,6 +160,7 @@ func writeTraceV2Rows(w io.Writer, _ *TraceHeader, records []TraceRecord) error 
 		has["slo_target_us"] = has["slo_target_us"] || r.SLOTargetUs != 0
 		has["adapter"] = has["adapter"] || r.Adapter != ""
 		has["think_time_us"] = has["think_time_us"] || r.ThinkTimeUs != nil
+		has["phase"] = has["phase"] || r.Phase != ""
 		has["input_tokens_reset"] = has["input_tokens_reset"] || r.InputTokensReset != nil
 	}
 	columns := append([]string{}, traceColumns...)
@@ -202,6 +203,8 @@ func writeTraceV2Rows(w io.Writer, _ *TraceHeader, records []TraceRecord) error 
 				row = append(row, ptr(r.ThinkTimeUs))
 			case "input_tokens_reset":
 				row = append(row, ptr(r.InputTokensReset))
+			case "phase":
+				row = append(row, r.Phase)
 			}
 		}
 		if err := writer.Write(row); err != nil {
@@ -266,7 +269,29 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 	if err != nil {
 		return nil, fmt.Errorf("trace data %s: %w", dataPath, err)
 	}
-	return &TraceV2{Header: *header, Records: records}, nil
+	tr := &TraceV2{Header: *header, Records: records}
+	if err := checkTracePhases(tr); err != nil {
+		return nil, err
+	}
+	return tr, nil
+}
+
+// checkTracePhases refuses a trace whose phases and phase column disagree, with the contract's
+// own validator (blis-substrate#156): a phase that names no request, a request in an unknown
+// phase, a request with no phase when the header lists some. A trace with no phases is not
+// checked further, so a single-phase trace loads as it did.
+func checkTracePhases(tr *TraceV2) error {
+	phased := len(tr.Header.Phases) > 0
+	for _, r := range tr.Records {
+		phased = phased || r.Phase != ""
+	}
+	if !phased {
+		return nil
+	}
+	if p := (&trace.Trace{Header: tr.Header, Records: tr.Records}).Validate(); !p.OK() {
+		return fmt.Errorf("trace phases: %w", p)
+	}
+	return nil
 }
 
 // readTraceRecords reads the data CSV. Columns are found by name in the header row, so their
@@ -409,6 +434,7 @@ func parseTraceRecord(row []string, at map[string]int) (*TraceRecord, error) {
 		Model:       t.row[at["model"]],
 		Status:      trace.Status(t.row[at["status"]]),
 		Adapter:     t.str("adapter"),
+		Phase:       t.str("phase"),
 	}
 	rec.RequestID = t.integer("request_id")
 	rec.RoundIndex = t.integer("round_index")
@@ -536,6 +562,7 @@ func RequestsToTraceRecords(requests []*sim.Request) []TraceRecord {
 			SLOClass:         req.SLOClass,
 			SessionID:        req.SessionID,
 			RoundIndex:       req.RoundIndex,
+			Phase:            string(req.Phase),
 			PrefixGroup:      req.PrefixGroup,
 			PrefixLength:     prefixLen,
 			Streaming:        req.Streaming,

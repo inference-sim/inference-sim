@@ -32,6 +32,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/metrics"
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
@@ -1230,5 +1231,78 @@ clients:
 	}
 	if scheduled == 0 {
 		t.Errorf("non-vacuity: no request was scheduled")
+	}
+}
+
+// #1926: a trace with phases replays drain-gated. The measured phase is sent after the warm-up
+// drained, hits the prefix the warm-up left in the cache, and every row names its phase; the
+// replay's own trace export keeps the phases, and replaying it gives the same rows (INV-13).
+func TestResult_PhasedTraceReplaysDrainGatedAndKeepsItsPhasesThroughTheExport(t *testing.T) {
+	dir := t.TempDir()
+	var recs []workload.TraceRecord
+	add := func(phase string, n int) {
+		for i := 0; i < n; i++ {
+			recs = append(recs, workload.TraceRecord{RequestID: len(recs), ClientID: "c", PrefixGroup: "sys",
+				PrefixLength: 512, Streaming: true, InputTokens: 64, OutputTokens: 24, Status: trace.StatusOK,
+				ArrivalTimeUs: int64(i) * 1000, Phase: phase})
+		}
+	}
+	add("warmup", 3)
+	add("measured", 4)
+	header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: trace.ModeConverted,
+		Phases: []trace.Phase{{Name: "warmup"}, {Name: "measured"}}}
+	prefix := filepath.Join(dir, "ph")
+	if err := workload.ExportTraceV2(header, recs, prefix+".yaml", prefix+".csv"); err != nil {
+		t.Fatal(err)
+	}
+	replay := func(in, out string) *result.Result {
+		args := []string{"replay", "--scenario", kernelTestScenario, "--seed", "5", "--trace-header", in + ".yaml", "--trace-data", in + ".csv"}
+		if out != "" {
+			args = append(args, "--trace-output", out)
+		}
+		stdout, stderr, err := runKernelCLI(t, args...)
+		if err != nil {
+			t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 5))
+		}
+		return parseResult(t, stdout)
+	}
+	first := replay(prefix, filepath.Join(dir, "again"))
+	var lastWarmEnd, firstMeasured int64 = 0, -1
+	measuredCached := 0
+	for _, row := range first.RequestRows {
+		switch row.Phase {
+		case "warmup":
+			if row.E2EUs == nil {
+				t.Fatalf("%s: a warm-up request did not complete", row.ID)
+			}
+			lastWarmEnd = max(lastWarmEnd, row.ArrivalUs+*row.E2EUs)
+		case "measured":
+			if firstMeasured < 0 || row.ArrivalUs < firstMeasured {
+				firstMeasured = row.ArrivalUs
+			}
+			measuredCached += row.CachedLocalTokens
+		default:
+			t.Errorf("%s: phase %q, want warmup or measured", row.ID, row.Phase)
+		}
+	}
+	if len(first.RequestRows) != 7 || firstMeasured < 0 {
+		t.Fatalf("non-vacuity: %d rows, first measured arrival %d", len(first.RequestRows), firstMeasured)
+	}
+	if firstMeasured < lastWarmEnd {
+		t.Errorf("the measured phase starts at %d, before the warm-up drained at %d", firstMeasured, lastWarmEnd)
+	}
+	if measuredCached == 0 {
+		t.Errorf("the measured requests hit no cached token: the warm-up's state did not carry across")
+	}
+	second := replay(filepath.Join(dir, "again"), "")
+	if len(second.RequestRows) != len(first.RequestRows) {
+		t.Fatalf("INV-13: the re-exported trace replays %d rows, the first replay %d", len(second.RequestRows), len(first.RequestRows))
+	}
+	for i, a := range first.RequestRows {
+		b := second.RequestRows[i]
+		if a.Phase != b.Phase || a.ArrivalUs != b.ArrivalUs || a.CachedLocalTokens != b.CachedLocalTokens {
+			t.Errorf("INV-13: row %d is phase %q arrival %d cached %d, then %q %d %d", i, a.Phase, a.ArrivalUs,
+				a.CachedLocalTokens, b.Phase, b.ArrivalUs, b.CachedLocalTokens)
+		}
 	}
 }

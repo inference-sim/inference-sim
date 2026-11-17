@@ -81,7 +81,7 @@ func (c *ClusterSimulator) SetPlannedRounds(f func() []sim.PlannedRound) {
 // endUnissuedRounds creates each round the sessions planned and never issued, and ends it not
 // started at the instant the run ended (the horizon, or the clock of a run that drained first).
 func (c *ClusterSimulator) endUnissuedRounds(at int64) {
-	if c.plannedRounds == nil {
+	if c.plannedRounds == nil && c.gate == nil {
 		return
 	}
 	// A planned round arrives, by its session's plan, its think times after the clock its
@@ -100,7 +100,14 @@ func (c *ClusterSimulator) endUnissuedRounds(at int64) {
 			last[f.SessionID] = tail{f.RoundIndex, rec.At}
 		}
 	}
-	for _, r := range c.plannedRounds() {
+	var planned []sim.PlannedRound
+	if c.plannedRounds != nil {
+		planned = c.plannedRounds()
+	}
+	if c.gate != nil {
+		planned = append(planned, c.gate.Unsent(at)...)
+	}
+	for _, r := range planned {
 		c.noteFateErr(c.fates.CreatePlanned(r.ID))
 		c.noteFateErr(c.fates.End(r.ID, sim.FateNotStarted, "", at))
 		if c.requestFacts == nil {
@@ -108,7 +115,10 @@ func (c *ClusterSimulator) endUnissuedRounds(at int64) {
 		}
 		c.requestFacts[r.ID] = RequestFact{Model: r.Model, Adapter: r.Adapter, SLOClass: r.SLOClass,
 			TenantID: r.TenantID, SessionID: r.SessionID, RoundIndex: r.RoundIndex,
-			ArrivalUs: last[r.SessionID].endedAt + r.ThinkUs}
+			ArrivalUs: last[r.SessionID].endedAt + r.ThinkUs, PromptTokens: r.PromptTokens, Phase: r.Phase}
+		if r.HasArrival {
+			c.requestFacts[r.ID] = withArrival(c.requestFacts[r.ID], r.ArrivalUs)
+		}
 	}
 }
 
@@ -148,6 +158,34 @@ func (c *ClusterSimulator) endRequest(req *sim.Request, f sim.Fate, reason strin
 	}
 	c.noteFateErr(c.fates.End(req.ID, f, reason, at))
 	delete(c.liveRequests, req.ID)
+	if c.gate != nil && !c.horizonReached {
+		// A phase drains when every request of it has its fate; the next phase is sent from that
+		// clock. A request cannot arrive before the clock it is sent at.
+		for _, next := range c.gate.Ended(req, at) {
+			c.pushArrival(next, max(next.ArrivalTime, c.clock), &c.workloadSender)
+		}
+	}
+}
+
+// withArrival returns f with its arrival set.
+func withArrival(f RequestFact, at int64) RequestFact {
+	f.ArrivalUs = at
+	return f
+}
+
+// RequestGate sequences a workload's phases: it hears each request end and returns the requests
+// to send as a result (sim/workload.PhaseGate).
+type RequestGate interface {
+	Ended(req *sim.Request, at int64) []*sim.Request
+	Unsent(at int64) []sim.PlannedRound
+}
+
+// SetGate installs the gate that sends the later phases. Must be called before Run().
+func (c *ClusterSimulator) SetGate(g RequestGate) {
+	if c.hasRun {
+		panic("ClusterSimulator: SetGate must be called before Run()")
+	}
+	c.gate = g
 }
 
 // endByOutcome writes the fate a DoneOutcome names; reason is the drop reason for DoneDropped.
@@ -195,6 +233,7 @@ func (c *ClusterSimulator) noteFateErr(err error) {
 // one created whose arrival never ran is not started; one the cluster holds has the fate its
 // state gives (sim.HorizonFate).
 func (c *ClusterSimulator) endAtHorizon() {
+	c.horizonReached = true // the requests the horizon ends release nothing
 	at := c.config.Horizon
 	for _, id := range c.fates.Unended(sim.LifecycleCreated) {
 		c.noteFateErr(c.fates.End(id, sim.FateNotStarted, "", at))
