@@ -275,7 +275,36 @@ type Lowered struct {
 	// at its base record only when the cache runs under a record other than this one; it prices
 	// nothing from it.
 	DefaultCacheRecord string
+	// Encoder states what the engine does with the graph's towers. Nil states nothing: the cost
+	// model prices the decoder alone, holds no tower weights and refuses an encode step. It is
+	// read only for a graph that prices an encoder.
+	Encoder *EncoderRun
 }
+
+// EncoderRun is what an engine does with a graph's towers for one pool.
+type EncoderRun struct {
+	// Resident is true when the engine builds the towers and runs them for a request with
+	// images. False is a deployment that serves the decoder only: no tower weights are held
+	// and no image can be encoded.
+	Resident bool
+	// Mode is how a resident tower divides over the pool's tensor-parallel ranks.
+	Mode EncoderMode
+}
+
+// EncoderMode is how the engine divides a tower over the tensor-parallel ranks.
+type EncoderMode string
+
+const (
+	// EncoderWeightsSharded: the tower's column- and row-parallel linears are sharded over
+	// the ranks and every rank encodes every image.
+	EncoderWeightsSharded EncoderMode = "weights_sharded"
+	// EncoderBatchSplit: every rank holds the whole tower and encodes its share of the images,
+	// after which the output tokens are gathered.
+	EncoderBatchSplit EncoderMode = "batch_split"
+)
+
+// Valid reports whether m is a recognized mode.
+func (m EncoderMode) Valid() bool { return m == EncoderWeightsSharded || m == EncoderBatchSplit }
 
 // ReportedSettings are settings the engine resolved that the cost model reports and does not
 // price.

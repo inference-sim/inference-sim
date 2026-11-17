@@ -91,6 +91,11 @@ type Kernel struct {
 	layerFits [][]gemmFit
 	// prefillFit is the BF16 fit a recurrent prefill with no measured form is priced on.
 	prefillFit gemmFit
+	// encoder is what the engine says it does with the graph's towers (plan.Lowered.Encoder), nil
+	// when it says nothing.
+	encoder *plan.EncoderRun
+	// encoderFit is the BF16 ramp the tower's GEMMs run on.
+	encoderFit gemmFit
 
 	// layerKV is each target layer's cache view, caches every cache a layer owns with its
 	// paging resolved (caches.go), and draftLayerKV the drafter's layers' views.
