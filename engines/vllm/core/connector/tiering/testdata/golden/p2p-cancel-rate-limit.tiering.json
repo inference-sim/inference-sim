@@ -1,0 +1,2927 @@
+{
+ "files": {},
+ "manager": [
+  {
+   "args": {
+    "ctx": "c1",
+    "req": "dc1"
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "key": "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000",
+    "req": "dc1"
+   },
+   "m": "lookup",
+   "ret": "HIT_PENDING"
+  },
+  {
+   "args": {
+    "new": [
+     "dc1"
+    ],
+    "preempted": []
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "req": "pc1"
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "REQUEST_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "keys": [
+     "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000"
+    ],
+    "positions": {},
+    "req": "pc1"
+   },
+   "m": "prepare_store",
+   "ret": {
+    "evicted": [],
+    "ids": [
+     0
+    ],
+    "keys_to_store": [
+     "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000"
+    ]
+   }
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "keys": [
+     "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000"
+    ],
+    "req": "pc1",
+    "success": true
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "pc1"
+    ],
+    "preempted": []
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "keys": [
+     "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000"
+    ],
+    "req": "pc1"
+   },
+   "m": "complete_load",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000"
+    ],
+    "req": "dc1",
+    "success": false
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "positions": {},
+    "req": "pc1"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "positions": {},
+    "req": "dc1"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c3",
+    "req": "dc2"
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c3",
+    "key": "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000",
+    "req": "dc2"
+   },
+   "m": "lookup",
+   "ret": "HIT_PENDING"
+  },
+  {
+   "args": {
+    "new": [
+     "dc2"
+    ],
+    "preempted": []
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c4",
+    "req": "pc2"
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "REQUEST_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c4",
+    "keys": [
+     "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000"
+    ],
+    "positions": {},
+    "req": "pc2"
+   },
+   "m": "prepare_store",
+   "ret": {
+    "evicted": [],
+    "ids": [
+     1
+    ],
+    "keys_to_store": [
+     "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000"
+    ]
+   }
+  },
+  {
+   "args": {
+    "ctx": "c4",
+    "keys": [
+     "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000"
+    ],
+    "req": "pc2",
+    "success": true
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "pc2"
+    ],
+    "preempted": []
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c4",
+    "keys": [
+     "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000"
+    ],
+    "req": "pc2"
+   },
+   "m": "complete_load",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c3",
+    "keys": [
+     "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000"
+    ],
+    "req": "dc2",
+    "success": false
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c4",
+    "positions": {},
+    "req": "pc2"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c3",
+    "positions": {},
+    "req": "dc2"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c5",
+    "req": "dc3"
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c5",
+    "key": "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000",
+    "req": "dc3"
+   },
+   "m": "lookup",
+   "ret": "HIT_PENDING"
+  },
+  {
+   "args": {
+    "new": [
+     "dc3"
+    ],
+    "preempted": []
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c6",
+    "req": "pc3"
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "REQUEST_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c6",
+    "keys": [
+     "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000"
+    ],
+    "positions": {},
+    "req": "pc3"
+   },
+   "m": "prepare_store",
+   "ret": {
+    "evicted": [],
+    "ids": [
+     2
+    ],
+    "keys_to_store": [
+     "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000"
+    ]
+   }
+  },
+  {
+   "args": {
+    "ctx": "c6",
+    "keys": [
+     "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000"
+    ],
+    "req": "pc3",
+    "success": true
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "pc3"
+    ],
+    "preempted": []
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c6",
+    "keys": [
+     "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000"
+    ],
+    "req": "pc3"
+   },
+   "m": "complete_load",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c5",
+    "keys": [
+     "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000"
+    ],
+    "req": "dc3",
+    "success": false
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c6",
+    "positions": {},
+    "req": "pc3"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c5",
+    "positions": {},
+    "req": "dc3"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c7",
+    "req": "pq"
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "REQUEST_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c7",
+    "keys": [
+     "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+    ],
+    "positions": {},
+    "req": "pq"
+   },
+   "m": "prepare_store",
+   "ret": {
+    "evicted": [],
+    "ids": [
+     3
+    ],
+    "keys_to_store": [
+     "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+    ]
+   }
+  },
+  {
+   "args": {
+    "ctx": "c7",
+    "keys": [
+     "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+    ],
+    "req": "pq",
+    "success": true
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "pq"
+    ],
+    "preempted": []
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "req": "dq"
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000",
+    "req": "dq"
+   },
+   "m": "lookup",
+   "ret": "HIT_PENDING"
+  },
+  {
+   "args": {
+    "new": [
+     "dq"
+    ],
+    "preempted": []
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000",
+    "req": "dq"
+   },
+   "m": "lookup",
+   "ret": "HIT_PENDING"
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000",
+    "req": "dq"
+   },
+   "m": "lookup",
+   "ret": "HIT_PENDING"
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000",
+    "req": "dq"
+   },
+   "m": "lookup",
+   "ret": "HIT_PENDING"
+  },
+  {
+   "args": {
+    "ctx": "c7",
+    "keys": [
+     "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+    ],
+    "req": "pq"
+   },
+   "m": "complete_load",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "keys": [
+     "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+    ],
+    "req": "dq",
+    "success": false
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000",
+    "req": "dq"
+   },
+   "m": "lookup",
+   "ret": "MISS"
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000",
+    "req": "dq"
+   },
+   "m": "lookup",
+   "ret": "MISS"
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000",
+    "req": "dq"
+   },
+   "m": "lookup",
+   "ret": "MISS"
+  },
+  {
+   "args": {
+    "ctx": "c7",
+    "positions": {},
+    "req": "pq"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "positions": {},
+    "req": "dq"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {},
+   "m": "shutdown",
+   "ret": null
+  },
+  {
+   "args": {},
+   "m": "shutdown",
+   "ret": null
+  }
+ ],
+ "policy": [
+  {
+   "args": {
+    "key": "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000"
+    ],
+    "req": "dc1"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000"
+    ],
+    "positions": {},
+    "req": "dc1"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 0,
+     "ref": -1
+    },
+    "ctx": "c1",
+    "key": "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000",
+    "positions": {},
+    "req": "dc1"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "keys": [
+     "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000"
+    ],
+    "req": "pc1"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "keys": [
+     "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000"
+    ],
+    "positions": {},
+    "req": "pc1"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 0,
+     "ref": -1
+    },
+    "ctx": "c2",
+    "key": "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000",
+    "positions": {},
+    "req": "pc1"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 0,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 0,
+    "ref": 0
+   }
+  },
+  {
+   "args": {
+    "key": "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000"
+   },
+   "m": "mark_non_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 0,
+    "ref": 1
+   }
+  },
+  {
+   "args": {
+    "key": "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 0,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000"
+   },
+   "m": "remove",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "groups": [
+     [
+      "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000"
+     ]
+    ],
+    "positions": {},
+    "req": "pc1"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "groups": [
+     [
+      "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000"
+     ]
+    ],
+    "positions": {},
+    "req": "dc1"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c3",
+    "keys": [
+     "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000"
+    ],
+    "req": "dc2"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c3",
+    "keys": [
+     "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000"
+    ],
+    "positions": {},
+    "req": "dc2"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 1,
+     "ref": -1
+    },
+    "ctx": "c3",
+    "key": "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000",
+    "positions": {},
+    "req": "dc2"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c4",
+    "keys": [
+     "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000"
+    ],
+    "req": "pc2"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c4",
+    "keys": [
+     "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000"
+    ],
+    "positions": {},
+    "req": "pc2"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 1,
+     "ref": -1
+    },
+    "ctx": "c4",
+    "key": "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000",
+    "positions": {},
+    "req": "pc2"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 1,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 1,
+    "ref": 0
+   }
+  },
+  {
+   "args": {
+    "key": "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000"
+   },
+   "m": "mark_non_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 1,
+    "ref": 1
+   }
+  },
+  {
+   "args": {
+    "key": "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 1,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000"
+   },
+   "m": "remove",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c4",
+    "groups": [
+     [
+      "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000"
+     ]
+    ],
+    "positions": {},
+    "req": "pc2"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c3",
+    "groups": [
+     [
+      "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000"
+     ]
+    ],
+    "positions": {},
+    "req": "dc2"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c5",
+    "keys": [
+     "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000"
+    ],
+    "req": "dc3"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c5",
+    "keys": [
+     "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000"
+    ],
+    "positions": {},
+    "req": "dc3"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 2,
+     "ref": -1
+    },
+    "ctx": "c5",
+    "key": "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000",
+    "positions": {},
+    "req": "dc3"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c6",
+    "keys": [
+     "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000"
+    ],
+    "req": "pc3"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c6",
+    "keys": [
+     "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000"
+    ],
+    "positions": {},
+    "req": "pc3"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 2,
+     "ref": -1
+    },
+    "ctx": "c6",
+    "key": "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000",
+    "positions": {},
+    "req": "pc3"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 2,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 2,
+    "ref": 0
+   }
+  },
+  {
+   "args": {
+    "key": "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000"
+   },
+   "m": "mark_non_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 2,
+    "ref": 1
+   }
+  },
+  {
+   "args": {
+    "key": "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 2,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000"
+   },
+   "m": "remove",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c6",
+    "groups": [
+     [
+      "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000"
+     ]
+    ],
+    "positions": {},
+    "req": "pc3"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c5",
+    "groups": [
+     [
+      "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000"
+     ]
+    ],
+    "positions": {},
+    "req": "dc3"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c7",
+    "keys": [
+     "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+    ],
+    "req": "pq"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c7",
+    "keys": [
+     "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+    ],
+    "positions": {},
+    "req": "pq"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 3,
+     "ref": -1
+    },
+    "ctx": "c7",
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000",
+    "positions": {},
+    "req": "pq"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 3,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 3,
+    "ref": 0
+   }
+  },
+  {
+   "args": {
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+   },
+   "m": "mark_non_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "keys": [
+     "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+    ],
+    "req": "dq"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "keys": [
+     "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+    ],
+    "positions": {},
+    "req": "dq"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 3,
+     "ref": -1
+    },
+    "ctx": "c8",
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000",
+    "positions": {},
+    "req": "dq"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 3,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 3,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 3,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 3,
+    "ref": 1
+   }
+  },
+  {
+   "args": {
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 3,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+   },
+   "m": "remove",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c7",
+    "groups": [
+     [
+      "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+     ]
+    ],
+    "positions": {},
+    "req": "pq"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "groups": [
+     [
+      "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+     ]
+    ],
+    "positions": {},
+    "req": "dq"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  }
+ ],
+ "provenance": {
+  "dev": true,
+  "kind": "direct"
+ },
+ "spec": [
+  {
+   "args": {
+    "alignment": 16384,
+    "blocks_per_chunk": 1,
+    "cpu_bytes_to_use": 65536,
+    "eviction_policy": "lru",
+    "groups": [
+     {
+      "tokens_per_block": 16,
+      "window_chunks": null
+     }
+    ],
+    "max_model_len": 0,
+    "offload_prompt_only": true,
+    "replicated_layout": false,
+    "secondary_tiers": 1,
+    "spec": "TieringOffloadingSpec",
+    "worker_kv_bytes_per_block": 16384,
+    "world_size": 1
+   },
+   "m": "get_manager",
+   "ret": {
+    "kv_bytes_per_chunk": 16384,
+    "manager": "TieringOffloadingManager",
+    "num_chunks": 4
+   }
+  },
+  {
+   "args": {
+    "alignment": 16384,
+    "blocks_per_chunk": 1,
+    "cpu_bytes_to_use": 65536,
+    "eviction_policy": "lru",
+    "groups": [
+     {
+      "tokens_per_block": 16,
+      "window_chunks": null
+     }
+    ],
+    "max_model_len": 0,
+    "offload_prompt_only": true,
+    "replicated_layout": false,
+    "secondary_tiers": 1,
+    "spec": "TieringOffloadingSpec",
+    "worker_kv_bytes_per_block": 16384,
+    "world_size": 1
+   },
+   "m": "get_manager",
+   "ret": {
+    "kv_bytes_per_chunk": 16384,
+    "manager": "TieringOffloadingManager",
+    "num_chunks": 4
+   }
+  }
+ ],
+ "tier": [
+  {
+   "args": {
+    "ctx": "c1",
+    "req": "dc1",
+    "tier": 1
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "key": "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000",
+    "req": "dc1",
+    "tier": 1
+   },
+   "m": "lookup",
+   "ret": "HIT"
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      0
+     ],
+     "ctx": "c1",
+     "id": 0,
+     "keys": [
+      "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000"
+     ],
+     "promotion": true,
+     "req": "dc1"
+    },
+    "tier": 1
+   },
+   "m": "submit_load",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "dc1"
+    ],
+    "preempted": [],
+    "tier": 1
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "req": "pc1",
+    "tier": 0
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "REQUEST_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      0
+     ],
+     "ctx": "c2",
+     "id": 0,
+     "keys": [
+      "1deb28d48c2019c0b35169cccecdda8a105057c27089d1fd1012b1a1b21b935700000000"
+     ],
+     "promotion": false,
+     "req": "pc1"
+    },
+    "tier": 0
+   },
+   "m": "submit_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "pc1"
+    ],
+    "preempted": [],
+    "tier": 0
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": [
+    {
+     "id": 0,
+     "success": false,
+     "successful_keys": null,
+     "transfer_bytes": null
+    }
+   ]
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": [
+    {
+     "id": 0,
+     "success": false,
+     "successful_keys": null,
+     "transfer_bytes": null
+    }
+   ]
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c2",
+    "req": "pc1",
+    "tier": 0
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "req": "dc1",
+    "tier": 1
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c3",
+    "req": "dc2",
+    "tier": 1
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "ctx": "c3",
+    "key": "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000",
+    "req": "dc2",
+    "tier": 1
+   },
+   "m": "lookup",
+   "ret": "HIT"
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      1
+     ],
+     "ctx": "c3",
+     "id": 1,
+     "keys": [
+      "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000"
+     ],
+     "promotion": true,
+     "req": "dc2"
+    },
+    "tier": 1
+   },
+   "m": "submit_load",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "dc2"
+    ],
+    "preempted": [],
+    "tier": 1
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c4",
+    "req": "pc2",
+    "tier": 0
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "REQUEST_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      1
+     ],
+     "ctx": "c4",
+     "id": 1,
+     "keys": [
+      "93cc12c679ad56c3b3335cf8c9dbe6a9307e4dc2bbdaa985ec5c76aa941f9f2300000000"
+     ],
+     "promotion": false,
+     "req": "pc2"
+    },
+    "tier": 0
+   },
+   "m": "submit_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "pc2"
+    ],
+    "preempted": [],
+    "tier": 0
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": [
+    {
+     "id": 1,
+     "success": false,
+     "successful_keys": null,
+     "transfer_bytes": null
+    }
+   ]
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": [
+    {
+     "id": 1,
+     "success": false,
+     "successful_keys": null,
+     "transfer_bytes": null
+    }
+   ]
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c4",
+    "req": "pc2",
+    "tier": 0
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c3",
+    "req": "dc2",
+    "tier": 1
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c5",
+    "req": "dc3",
+    "tier": 1
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "ctx": "c5",
+    "key": "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000",
+    "req": "dc3",
+    "tier": 1
+   },
+   "m": "lookup",
+   "ret": "HIT"
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      2
+     ],
+     "ctx": "c5",
+     "id": 2,
+     "keys": [
+      "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000"
+     ],
+     "promotion": true,
+     "req": "dc3"
+    },
+    "tier": 1
+   },
+   "m": "submit_load",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "dc3"
+    ],
+    "preempted": [],
+    "tier": 1
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c6",
+    "req": "pc3",
+    "tier": 0
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "REQUEST_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      2
+     ],
+     "ctx": "c6",
+     "id": 2,
+     "keys": [
+      "922957104c7edc67fd1b0b523e8b046473e7e7a329df24d0b01318468b5f441700000000"
+     ],
+     "promotion": false,
+     "req": "pc3"
+    },
+    "tier": 0
+   },
+   "m": "submit_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "pc3"
+    ],
+    "preempted": [],
+    "tier": 0
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": [
+    {
+     "id": 2,
+     "success": false,
+     "successful_keys": null,
+     "transfer_bytes": null
+    }
+   ]
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": [
+    {
+     "id": 2,
+     "success": false,
+     "successful_keys": null,
+     "transfer_bytes": null
+    }
+   ]
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c6",
+    "req": "pc3",
+    "tier": 0
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c5",
+    "req": "dc3",
+    "tier": 1
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c7",
+    "req": "pq",
+    "tier": 0
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "REQUEST_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      3
+     ],
+     "ctx": "c7",
+     "id": 3,
+     "keys": [
+      "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+     ],
+     "promotion": false,
+     "req": "pq"
+    },
+    "tier": 0
+   },
+   "m": "submit_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "pq"
+    ],
+    "preempted": [],
+    "tier": 0
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "req": "dq",
+    "tier": 1
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000",
+    "req": "dq",
+    "tier": 1
+   },
+   "m": "lookup",
+   "ret": "HIT"
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      3
+     ],
+     "ctx": "c8",
+     "id": 3,
+     "keys": [
+      "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000"
+     ],
+     "promotion": true,
+     "req": "dq"
+    },
+    "tier": 1
+   },
+   "m": "submit_load",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "dq"
+    ],
+    "preempted": [],
+    "tier": 1
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": [
+    {
+     "id": 3,
+     "success": false,
+     "successful_keys": null,
+     "transfer_bytes": null
+    }
+   ]
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": [
+    {
+     "id": 3,
+     "success": false,
+     "successful_keys": null,
+     "transfer_bytes": null
+    }
+   ]
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000",
+    "req": "dq",
+    "tier": 1
+   },
+   "m": "lookup",
+   "ret": "MISS"
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000",
+    "req": "dq",
+    "tier": 1
+   },
+   "m": "lookup",
+   "ret": "MISS"
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "key": "ee68759e9670e5201c197a2f2b0b3dc4cc7d8c3762ad942df8a125d4cc8aa03100000000",
+    "req": "dq",
+    "tier": 1
+   },
+   "m": "lookup",
+   "ret": "MISS"
+  },
+  {
+   "args": {
+    "ctx": "c7",
+    "req": "pq",
+    "tier": 0
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c8",
+    "req": "dq",
+    "tier": 1
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  }
+ ],
+ "tiers": [
+  {
+   "block_size_bytes": 16384,
+   "fingerprint": "4f261524c4e3275e",
+   "local_id": "127.0.0.1:5710",
+   "locality": null,
+   "num_blocks": 4,
+   "type": "p2p",
+   "unbound_store_timeout_s": 60.0
+  },
+  {
+   "block_size_bytes": 16384,
+   "fingerprint": "4f261524c4e3275e",
+   "local_id": "127.0.0.1:5711",
+   "locality": null,
+   "num_blocks": 4,
+   "type": "p2p",
+   "unbound_store_timeout_s": 60.0
+  }
+ ]
+}
