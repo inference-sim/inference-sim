@@ -31,6 +31,9 @@ VECTORS = os.path.join(HERE, "stand_in_vectors.json")
 # the autodetection with the same choice; NVLS defaults to 2 and 1 differs only in failing when allocation fails.
 CUMEM = [("1", True), ("0", False), ("", False), ("2", False)]
 NVLS = [("1", True), ("2", True), ("0", False), ("", False)]
+# NCCL_MNNVL_ENABLE (NCCL user guide): 2 is the default (use multi-node NVLink where the system has it, else the network);
+# 1 differs only in failing communicator initialization when MNNVL is unsupported, which a completed run did not do.
+MNNVL = [("1", True), ("2", True), ("0", False), ("", False)]
 TLS = [("cuda_copy,rc", True), ("cuda_copy,cuda_ipc,rc", True), ("all", True), ("cuda_copy,cuda_ipc,tcp", False),
        ("tcp", False), ("^rc", False), ("sm,self", False)]
 
@@ -88,7 +91,7 @@ def vectors_from_upstream():
                      "exact": value == rcache_final()})
     for value, exact in TLS:
         rows.append({"field": "UCX_TLS", "value": value, "owner": "ucx-faq", "exact": exact})
-    for field, values in (("NCCL_CUMEM_ENABLE", CUMEM), ("NCCL_NVLS_ENABLE", NVLS)):
+    for field, values in (("NCCL_CUMEM_ENABLE", CUMEM), ("NCCL_NVLS_ENABLE", NVLS), ("NCCL_MNNVL_ENABLE", MNNVL)):
         for value, exact in values:
             rows.append({"field": field, "value": value, "owner": "nccl-user-guide", "exact": exact})
     return rows

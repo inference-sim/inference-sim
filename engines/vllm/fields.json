@@ -813,6 +813,26 @@
       }
     },
     {
+      "name": "NCCL_MNNVL_ENABLE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#62"
+      },
+      "estimation": {
+        "rule": "leave_unset",
+        "preserves": "NCCL's own choice: the default is 2, use multi-node NVLink where the system supports it and fall back to the network where it does not, and 1 differs only in failing communicator initialization when MNNVL is unsupported or cannot be enabled (NCCL user guide, NCCL_MNNVL_ENABLE), which a run that completed did not do. The latency kernel prices every collective from the NCCL sweep at NCCL's defaults, and a stated cluster's NVLink domain is a catalog fact, not a setting",
+        "valid_when": [
+          {
+            "value_in": [
+              "1",
+              "2"
+            ]
+          }
+        ]
+      }
+    },
+    {
       "name": "NCCL_NO_CACHE",
       "source": "env",
       "status": "not_modelled",
@@ -1421,6 +1441,26 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "UCX_CUDA_IPC_ENABLE_MNNVL",
+      "source": "env",
+      "status": "modelled",
+      "evidence": {
+        "traces": [
+          "compat/kernelmodel/packaging_test.go",
+          "compat/kernelmodel/group_placement_test.go"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "covered": [
+          "y"
+        ]
       },
       "estimation": {
         "rule": "none"

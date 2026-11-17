@@ -592,5 +592,29 @@
   "value": "",
   "owner": "nccl-user-guide",
   "exact": false
+ },
+ {
+  "field": "NCCL_MNNVL_ENABLE",
+  "value": "1",
+  "owner": "nccl-user-guide",
+  "exact": true
+ },
+ {
+  "field": "NCCL_MNNVL_ENABLE",
+  "value": "2",
+  "owner": "nccl-user-guide",
+  "exact": true
+ },
+ {
+  "field": "NCCL_MNNVL_ENABLE",
+  "value": "0",
+  "owner": "nccl-user-guide",
+  "exact": false
+ },
+ {
+  "field": "NCCL_MNNVL_ENABLE",
+  "value": "",
+  "owner": "nccl-user-guide",
+  "exact": false
  }
 ]

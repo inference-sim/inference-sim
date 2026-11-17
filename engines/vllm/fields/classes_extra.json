@@ -24,6 +24,17 @@
    }
   ]
  },
+ "UCX_CUDA_IPC_ENABLE_MNNVL": {
+  "stated": [
+   {
+    "trace": "compat/kernelmodel/packaging_test.go",
+    "values": [
+     "y"
+    ],
+    "why": "withMNNVL states y in both pools of the P/D and DP fixture and the test asserts the handoff between two nodes of one NVLink rack is priced over NVLink; group_placement_test.go holds the same variable to the pull's placement. Any other value prices the handoff over the NIC, as unset does"
+   }
+  ]
+ },
  "PYTHONNOUSERSITE": {
   "kind": "numeric",
   "why": "no file of the serving process names the variable, so nothing compares it: one class holds every value"

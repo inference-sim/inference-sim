@@ -243,6 +243,36 @@
     "name": "PYTHONUNBUFFERED"
    }
   },
+  "UCX_CUDA_IPC_ENABLE_MNNVL": {
+   "value_classes": {
+    "type": "enumerated",
+    "covered": [
+     "y"
+    ]
+   },
+   "basis": {
+    "kind": "open",
+    "classes": [
+     {
+      "other": true,
+      "compared_at": [],
+      "covered_by": [
+       "compat/kernelmodel/packaging_test.go"
+      ]
+     }
+    ],
+    "relations": [],
+    "sites": [],
+    "stated": [
+     {
+      "value": "y",
+      "trace": "compat/kernelmodel/packaging_test.go",
+      "reviewed": true
+     }
+    ],
+    "name": "UCX_CUDA_IPC_ENABLE_MNNVL"
+   }
+  },
   "VLLM_USE_RUST_FRONTEND": {
    "value_classes": {
     "type": "boolean",
