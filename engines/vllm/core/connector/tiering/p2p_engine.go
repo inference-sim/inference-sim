@@ -2,6 +2,8 @@
 
 package tiering
 
+import "fmt"
+
 // The p2p tier's view for an engine that drives it from outside (core/vllm). The tier decides and
 // the engine's transports move: the engine needs to know which request a WRITE serves, and
 // whether the tier has anything left to poll.
@@ -61,4 +63,16 @@ func (s *p2pSession) busy() bool {
 		}
 	}
 	return false
+}
+
+// SetLocalID gives the tier the control identity peers dial back, before it has a session: a host
+// that runs several instances of one engine block assigns each its own (the side channel's host
+// and port, P2PConfig.LocalID, :348). An error once any session exists, since a peer may already
+// know the old identity.
+func (t *P2PTier) SetLocalID(id string) error {
+	if t.sessions.len() > 0 {
+		return fmt.Errorf("tiering: the p2p tier's identity cannot change once it has a session (it is %q)", t.cfg.LocalID)
+	}
+	t.cfg.LocalID = id
+	return nil
 }
