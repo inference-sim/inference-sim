@@ -1956,10 +1956,10 @@
     "rule": "none",
     "approximates": {
      "mode": {
-      "compilation_config.mode": "VLLM_COMPILE"
+      "enforce_eager": true
      },
-     "evidence": "the engine prices the step with no CUDA graph, as vLLM runs it under enforce_eager (vllm/config/vllm.py:2004-2009 at 4ba787ec9959: cudagraph_mode NONE), and the registry's per-kernel rates, fitted on AISimulate kernel timings of single operators, which compilation does not change",
-     "differs": "enforce_eager also sets compilation_config.mode NONE (vllm/config/vllm.py:1766-1769), so no torch.compile fusion runs and the step launches more, smaller kernels than the lowering counts for the default VLLM_COMPILE mode; the lowering's launch counts and elementwise fusions are those of the compiled model, so the step is under-priced by the fusion saving that eager mode loses",
+     "evidence": "the engine prices the step with no CUDA graph, as vLLM runs it under enforce_eager (vllm/config/vllm.py:2004-2009 at 4ba787ec9959: cudagraph_mode NONE), from the registry's per-kernel rates, fitted on AISimulate kernel timings of single operators, which compilation does not change",
+     "differs": "enforce_eager also sets compilation_config.mode NONE (vllm/config/vllm.py:1766-1769), so no torch.compile fusion runs and the step launches more, smaller kernels than the lowering counts, whose launch counts and elementwise fusions are those of the default VLLM_COMPILE mode; the step is priced faster than eager runs by the fusion saving that eager mode loses",
      "when": [
       {
        "value_in": [

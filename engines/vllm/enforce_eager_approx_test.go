@@ -10,7 +10,7 @@ import (
 
 // enforce_eager makes vLLM run every step with no CUDA graph, which the lowering prices (a stated
 // cudagraph_mode NONE), and also turns torch.compile off, which the lowering's launch counts do not
-// follow (blis-vllm#59). The field list prices a stated true as the default compile mode, an execution
+// follow (blis-vllm#59). The field list prices a stated true with no graph and the compiled model's fusions, an execution
 // mode substituted, never as an exact stand-in; false and any other value stay unapproximated.
 func TestEnforceEagerIsPricedAsAnExecutionModeSubstituted(t *testing.T) {
 	l, err := fields.Load("fields.json")
@@ -35,8 +35,8 @@ func TestEnforceEagerIsPricedAsAnExecutionModeSubstituted(t *testing.T) {
 		if ok != c.covered {
 			t.Errorf("enforce_eager=%q: approximated %v, want %v", c.value, ok, c.covered)
 		}
-		if ok && a.Mode["compilation_config.mode"] != "VLLM_COMPILE" {
-			t.Errorf("enforce_eager=%q: priced as %v, want the default compile mode", c.value, a.Mode)
+		if ok && a.Mode["enforce_eager"] != true {
+			t.Errorf("enforce_eager=%q: priced as %v, want enforce_eager true (no graph)", c.value, a.Mode)
 		}
 		if fields.Exact(f.Estimation, facts) {
 			t.Errorf("enforce_eager=%q: called an exact stand-in", c.value)
