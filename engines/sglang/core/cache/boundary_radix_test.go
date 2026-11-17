@@ -239,6 +239,9 @@ func TestLocksOnTheRootAndDoubleReleases(t *testing.T) {
 		t.Errorf("the root lock protects %d tokens", r.cache.ProtectedSize())
 	}
 	r.cache.Unlock(l)
+	if got := r.cache.Evict(EvictParams{NumTokens: 4}).NumTokensEvicted; got != 0 || r.cache.EvictableSize() != 0 {
+		t.Errorf("after a lock and unlock of the empty root, evicting took %d tokens: the root is not a leaf", got)
+	}
 	req := r.finished([]int64{1, 2, 3}, 3)
 	if r.cache.ProtectedSize() != 3 {
 		t.Errorf("protected %d, want 3 under the request's lock", r.cache.ProtectedSize())
