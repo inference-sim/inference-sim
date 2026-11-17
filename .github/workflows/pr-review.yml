@@ -126,9 +126,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
-        with:
-          go-version-file: go.mod
+      - uses: inference-sim/blis-substrate/.github/actions/go-toolchain@04ffd2b8d9a96fa9026e31f7f3895853966f46d0 # blis-substrate commit this build pins (stack.json)
 
       # Assert the key really is absent from this job's environment (BC-3). The
       # litellm-proxy holds it; the workflow holds only the dummy. Fails loud if a
