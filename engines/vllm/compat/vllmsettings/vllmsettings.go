@@ -233,15 +233,18 @@ func Decode(pool deployment.Pool) (engineconfig.Engine, error) {
 	return engineconfig.Decode(pool.Engine)
 }
 
-// DraftPasses states how vLLM v0.32.0 runs the passes of an autoregressive drafter, in the plan's
-// neutral words, for the kernel to price (latencykernel.Inputs.DraftFirstPassRows, DraftPassRequests).
+// DraftPasses states how vLLM runs a drafter's passes, in the plan's neutral words, for the kernel
+// to price (latencykernel.Inputs.DraftFirstPassRows, DraftPassRequests).
 // EAGLE, EAGLE3 and MTP share one speculator class
 // (vllm/v1/worker/gpu/spec_decode/target_dependent_ar/speculator.py): its first pass runs over every
 // token the target scheduled this step, prefill tokens included (`_prefill` over `num_tokens`,
 // :432-478), and the head and later passes run for every request of the step (`propose`, :165-364).
-// A method that does not share the class, or no speculation, is left unstated, so the kernel refuses
-// an autoregressive drafter this engine model has not read (draft_passes_unstated); a parallel-block
-// drafter ignores both fields.
+// DFlash, and DSpark which subclasses it, are parallel-block drafters with no first pass to state;
+// their query pass, and DSpark's sequential head, run for every request of the input batch, a
+// request mid-prompt included (num_query_tokens = num_reqs * num_query_per_req,
+// vllm/v1/worker/gpu/spec_decode/dflash/speculator.py:463-467 at v0.33.0; dspark/speculator.py:40).
+// A method that does neither, or no speculation, is left unstated, so the kernel refuses a drafter
+// this engine model has not read (draft_passes_unstated).
 func DraftPasses(e engineconfig.Engine) (plan.FirstPassRows, plan.PassRequests) {
 	if e.Speculative == nil {
 		return "", ""
@@ -249,6 +252,8 @@ func DraftPasses(e engineconfig.Engine) (plan.FirstPassRows, plan.PassRequests) 
 	switch e.Speculative.Method {
 	case "eagle", "eagle3", "mtp":
 		return plan.FirstPassScheduled, plan.PassRequestsAll
+	case "dflash", "dspark":
+		return "", plan.PassRequestsAll
 	}
 	return "", ""
 }

@@ -100,7 +100,7 @@ type Capture struct {
 	Sizes []int
 }
 
-// CaptureSizes is VllmConfig._set_cudagraph_sizes (vllm/config/vllm.py:2292-2548@5df63a72).
+// CaptureSizes is VllmConfig._set_cudagraph_sizes (vllm/config/vllm.py:2398-2654@4ba787ec).
 // Where it asserts or raises, it returns an error with the same condition.
 func CaptureSizes(in CaptureInput) (Capture, error) {
 	if in.EnforceEager || in.Mode == GraphNone {
@@ -118,7 +118,7 @@ func CaptureSizes(in CaptureInput) (Capture, error) {
 		dql := 1 + in.SpecTokens
 		ceiling = min(in.MaxNumSeqs*dql*2, platform)
 		if dql > 1 {
-			// request_counts (:2392-2402): a request-count ladder, scaled by the query length.
+			// request_counts (:2498-2508): a request-count ladder, scaled by the query length.
 			counts := func(maxReqs int) []int {
 				maxReqs = min(maxReqs, platform)
 				var c []int
@@ -148,13 +148,13 @@ func CaptureSizes(in CaptureInput) (Capture, error) {
 	ceiling = min(in.MaxNumBatchedTokens, ceiling)
 	if ceiling < 1 {
 		return Capture{}, fmt.Errorf("lower: the maximum cudagraph size is %d; it is at least 1 when graphs are on "+
-			"(vllm/config/vllm.py:2448)", ceiling)
+			"(vllm/config/vllm.py:2554)", ceiling)
 	}
 	var sizes []int
 	if in.Sizes != nil {
 		if len(in.Sizes) == 0 {
 			return Capture{}, fmt.Errorf("lower: cudagraph_capture_sizes is empty; it holds at least one size when graphs are on " +
-				"(vllm/config/vllm.py:2455)")
+				"(vllm/config/vllm.py:2561)")
 		}
 		for _, s := range dedupSorted(append([]int(nil), in.Sizes...)) {
 			if s <= in.MaxNumBatchedTokens {
@@ -199,7 +199,7 @@ func CaptureSizes(in CaptureInput) (Capture, error) {
 	}
 	if in.MaxCaptureSize != nil && *in.MaxCaptureSize != valid && in.Sizes != nil {
 		return Capture{}, fmt.Errorf("lower: max_cudagraph_capture_size %d is not the largest of cudagraph_capture_sizes (%d); "+
-			"vLLM refuses the pair at start-up (vllm/config/vllm.py:2511-2517)", *in.MaxCaptureSize, valid)
+			"vLLM refuses the pair at start-up (vllm/config/vllm.py:2617-2623)", *in.MaxCaptureSize, valid)
 	}
 	if sizes == nil {
 		sizes = []int{}

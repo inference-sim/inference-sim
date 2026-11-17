@@ -160,7 +160,7 @@ func TestPDConformanceDeepSeekV41Groups(t *testing.T) {
 
 // What vLLM refuses stays refused beside V4.1's layout, each with the reason it gives: the NIXL
 // pull worker does not take a hybrid layout (this one needs the hybrid manager) under pipeline
-// parallelism (nixl/base_worker.py:760-765@5df63a72).
+// parallelism (nixl/base_worker.py:871-876@4ba787ec).
 func TestPDRefusalsBesideDeepSeekV41Layers(t *testing.T) {
 	for _, c := range []struct{ name, extra, want string }{
 		{"producer at pp 2", producer + dsv41Layers + "pipeline_parallel_size: 2\nasync_scheduling: true\nuse_v2_model_runner: true\n", ""},

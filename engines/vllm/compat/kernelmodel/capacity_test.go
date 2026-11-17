@@ -249,7 +249,7 @@ func TestRaisingMemoryUtilizationNeverLowersTheSequenceCeiling(t *testing.T) {
 	})
 }
 
-// GOLDEN, from the engine's own log (#1941, blis-latency-kernel#46): DeepSeek-V4.1-Flash on 8x
+// GOLDEN, from the engine's own log (#1941, https://github.com/inference-sim/blis-latency-kernel/issues/46): DeepSeek-V4.1-Flash on 8x
 // H200 under vLLM v0.31.0 -- tp 8, expert parallelism off, DSpark K=5, a 1,048,576-token
 // context, 8,192 batched tokens, gpu_memory_utilization 0.80 -- reported 61.18 GiB of KV cache
 // and "GPU KV cache size: 28,706,997 tokens": the pool's blocks over one request's blocks at

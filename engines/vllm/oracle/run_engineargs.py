@@ -9,7 +9,7 @@ pack gets wrong, or states from a misreading of the source, shows as a differenc
 (core/vllm TestEngineArgsAgainstVLLM) resolves the same cases with the factory.
 
 async_scheduling is not recorded as a resolved value: the CPU platform turns it off after the
-configuration resolves it (vllm/platforms/cpu.py:329-331@5df63a72, listed in oracle/mocks.json),
+configuration resolves it (vllm/platforms/cpu.py:346-348@4ba787ec, listed in oracle/mocks.json),
 so the CPU answer is the platform's and not the engine's. Its refusals are recorded.
 
 Usage: python -I oracle/run_engineargs.py <vllm checkout> <cases.json> > trace.json

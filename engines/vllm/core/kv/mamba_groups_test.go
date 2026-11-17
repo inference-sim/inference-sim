@@ -11,8 +11,8 @@ import (
 
 // The numbers below are worked by hand from vLLM v0.32.0's source: a layer of 2 KV heads of 8
 // elements at 2 bytes, 16-token blocks, has the page 2 x 16 x 2 x 8 x 2 = 1024 bytes
-// (AttentionSpec.page_size_bytes, vllm/v1/kv_cache_interface.py:546-563@5df63a72), and a Mamba
-// state of 600 bytes is padded to that page at start-up (vllm/platforms/interface.py:1118-1126).
+// (AttentionSpec.page_size_bytes, vllm/v1/kv_cache_interface.py:587-604@4ba787ec), and a Mamba
+// state of 600 bytes is padded to that page at start-up (vllm/platforms/interface.py:1130-1138).
 const hybridBlock = 16
 
 func hybridAttn() Layer { return Layer{Spec: LayerFull, KVHeads: 2, HeadSize: 8, ElemBytes: 2} }
@@ -65,8 +65,8 @@ func TestHybridMambaAttentionGroupsAtAnEqualPage(t *testing.T) {
 }
 
 // A model of nothing but Mamba layers of one spec is one group (UniformTypeKVCacheSpecs,
-// kv_cache_utils.py:2189-2193@5df63a72); Mamba layers of two specs (here, two speculative-block
-// counts) are two types (MambaSpec.is_uniform_with_collection, kv_cache_interface.py:1093-1103),
+// kv_cache_planning.py:1143-1147@4ba787ec); Mamba layers of two specs (here, two speculative-block
+// counts) are two types (MambaSpec.is_uniform_with_collection, kv_cache_interface.py:1152-1162),
 // each its own group beside the attention layers.
 func TestMambaLayersOfOneSpecAreOneType(t *testing.T) {
 	pure := []Layer{hybridMamba("none", 64), hybridMamba("none", 64), hybridMamba("none", 64)}
@@ -86,7 +86,7 @@ func TestMambaLayersOfOneSpecAreOneType(t *testing.T) {
 }
 
 // A Mamba page that differs from the attention page, where both are known, is
-// unify_kv_cache_spec_page_size's to pad or scale (kv_cache_utils.py:1292-1354@5df63a72): refused
+// unify_kv_cache_spec_page_size's to pad or scale (kv_cache_planning.py:346-408@4ba787ec): refused
 // by name, not grouped as if equal.
 func TestMambaPageUnequalToAttentionIsRefused(t *testing.T) {
 	m := hybridMamba("align", 16)

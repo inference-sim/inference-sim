@@ -3,7 +3,7 @@ module github.com/inference-sim/blis-vllm
 go 1.27.2
 
 require (
-	github.com/inference-sim/blis-substrate v0.14.2-0.20261117022851-33fa3d9219f2 // TEMPORARY: inference-sim/blis-substrate PR 264, branch m3/kvevent-identity (33fa3d9219f2e3fa95206ca7c98e95e35a6f3032), until it is released
+	github.com/inference-sim/blis-substrate v0.14.2-0.20261116235528-52f8fbbd1cfa // TEMPORARY: the pushed head of inference-sim/blis-substrate branch m3/parallel-block-requests, until it is released
 	github.com/sirupsen/logrus v1.9.4
 	github.com/stretchr/testify v1.12.1
 	gopkg.in/yaml.v3 v3.0.1

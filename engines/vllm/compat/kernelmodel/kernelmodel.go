@@ -198,7 +198,7 @@ type Model struct {
 // the model's name, the chip, and the routed expert geometry.
 //
 // It is NOT configuration the kernel resolved, so it is not read from the kernel: the
-// kernel deliberately does not re-export identity (blis-schemas#36 draws that line --
+// kernel deliberately does not re-export identity (https://github.com/inference-sim/blis-schemas/issues/36 draws that line --
 // identity for comparison is the harness's concern, not the cost model's). It is taken
 // from the same Inputs the kernel was built from, so it describes the chip and graph the
 // kernel priced rather than a second load of files that could resolve differently.
@@ -438,8 +438,8 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 		return nil, err
 	}
 	in.Lowered = low
-	// How an autoregressive drafter's passes run is the engine's to state (SUB-6): vLLM v0.32.0's
-	// speculator for eagle, eagle3 and mtp; any other method is left unstated and the kernel refuses it.
+	// How a drafter's passes run is the engine's to state (SUB-6): vLLM's speculator for eagle,
+	// eagle3 and mtp, and DFlash and DSpark; any other method is left unstated and the kernel refuses it.
 	in.DraftFirstPassRows, in.DraftPassRequests = vllmsettings.DraftPasses(engine)
 	// The indexer cache's record under the indexer_kv_dtype stated (lowerIndexerKV).
 	in.Model = lowerIndexerKV(in.Model, engine.IndexerKVDType)
@@ -1055,7 +1055,7 @@ func shapeOf(req *sim.Request) kernel.ReqShape {
 func ticks(d interface{ Microseconds() int64 }) int64 { return d.Microseconds() }
 
 // DPLoadBalancing is the pool's parallel.data_parallel_load_balancing as stated ("" is
-// internal; blis-schemas#76).
+// internal; https://github.com/inference-sim/blis-schemas/issues/76).
 func (m *Model) DPLoadBalancing() deployment.DPLoadBalancing {
 	return m.k.Deployment().Parallel.DataParallelLoadBalancing
 }
@@ -1163,7 +1163,7 @@ type Shape struct {
 	// Offload is the deployment's offload block, nil when it states none.
 	Offload *deployment.Offload
 	// LongPrefillTokenThresholds and DPLoadBalancings are each pool's
-	// engine.long_prefill_token_threshold (blis-schemas#75; 0 = unstated) and
+	// engine.long_prefill_token_threshold (https://github.com/inference-sim/blis-schemas/issues/75; 0 = unstated) and
 	// parallel.data_parallel_load_balancing (#76; "" = unstated), in pool order.
 	LongPrefillTokenThresholds []int
 	DPLoadBalancings           []deployment.DPLoadBalancing
@@ -1187,7 +1187,7 @@ type Shape struct {
 }
 
 // unmodelledSettings are the engine settings a deployment states that the compatibility engine
-// does not model: the ones blis-schemas added with the v0.32.0 engine (blis-schemas#102), which
+// does not model: the ones blis-schemas added with the v0.32.0 engine (https://github.com/inference-sim/blis-schemas/issues/102), which
 // core/vllm reads. It returns their scenario field names, in declaration order.
 func unmodelledSettings(e engineconfig.Engine) []string {
 	var out []string

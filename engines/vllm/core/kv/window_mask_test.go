@@ -11,7 +11,7 @@ import (
 // boundary can reach: each 256-token segment's last cdiv(window - 1, block) blocks, one block
 // later and one longer with the EAGLE peek. Each row is vLLM v0.32.0's own
 // SlidingWindowManager.reachable_block_mask over two segments at alignment 256 with dense
-// retention (single_type_kv_cache_manager.py:1054-1133@5df63a72); "" is its None, every block.
+// retention (single_type_kv_cache_manager.py:1067-1146@4ba787ec); "" is its None, every block.
 func TestReachableWindowBlocksAreVLLMs(t *testing.T) {
 	for _, c := range []struct {
 		blockSize, window int
@@ -46,8 +46,8 @@ func TestReachableWindowBlocksAreVLLMs(t *testing.T) {
 
 // A drafter's EAGLE block drop reaches the target groups that share the drafter group's spec,
 // and no other: vLLM v0.32.0's coordinator flags the drafter's group (eagle_group_ids,
-// kv_cache_coordinator.py:127-133@5df63a72), merges groups of one spec, and gives every member of
-// a merged group holding a drafter's group use_eagle (:726-736, 761-765). The groups are
+// kv_cache_coordinator.py:129-135@4ba787ec), merges groups of one spec, and gives every member of
+// a merged group holding a drafter's group use_eagle (:736-746, 771-775). The groups are
 // deepseek-v4-pro's with its MTP layer, as get_kv_cache_groups packs them (group 1 holds the MTP
 // layer), and want is each manager's use_eagle as vLLM's own scheduler sets it
 // (dashboard-deepseek-v4-pro-mtp-layers): the window groups of the drafter's spec drop the

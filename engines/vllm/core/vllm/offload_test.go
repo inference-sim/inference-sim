@@ -255,7 +255,7 @@ func TestOffloadSizesTheCPUTierPerWorkerCopy(t *testing.T) {
 
 // A job the scheduler tells the worker to flush (a preempted request's, or one reading a block the
 // step reallocated) is done when that step's output returns, as vLLM's worker waits for it
-// before the step runs (handle_preemptions, offloading/worker.py:198-224@5df63a72): it never waits
+// before the step runs (handle_preemptions, offloading/worker.py:198-224@4ba787ec): it never waits
 // for a TransferDone, and the one that arrives later is accepted once and changes nothing.
 func TestOffloadFlushedJobsCompleteWithTheStep(t *testing.T) {
 	e := mustEngine(t, cpuTier+"num_gpu_blocks: 9\nmax_model_len: 128\n")

@@ -2,7 +2,7 @@
 """Re-derive core/kv/testdata/seeded_block_hashes.json: block hashes under a stated PYTHONHASHSEED.
 
 vLLM derives NONE_HASH, the parent of every prefix's first block, from PYTHONHASHSEED when it is
-set (resolve_none_hash_seed, vllm/v1/core/kv_cache_utils.py:131-146@5df63a72); a hash then
+set (resolve_none_hash_seed, vllm/v1/core/kv_cache_utils.py:117-132@4ba787ec); a hash then
 differs from the default-seed hash of the same tokens. Each case sets the variable, runs vLLM's
 own init_none_hash(sha256) and hash_block_tokens, and records the seed, NONE_HASH and the hashes.
 The variable is set in this process before the call, one case at a time, and restored.
