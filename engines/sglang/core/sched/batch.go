@@ -340,7 +340,7 @@ func (b *Batch) RetractDecode(s *Scheduler) (retracted []*Req, ratio float64) {
 		retracted = append(retracted, r)
 	}
 	if len(sorted) <= 1 && !b.CheckDecodeMem(s, sorted) {
-		panic(refused("aborting the last request when it cannot fit after retraction"))
+		panic(refusedAt("aborting the last request when it cannot fit after retraction", RetractionRefusal))
 	}
 	b.keepIndices(sorted)
 	return retracted, estimateNewTokenRatioAfterRetract(b.Reqs, s.cfg.RetractDecodeSteps)

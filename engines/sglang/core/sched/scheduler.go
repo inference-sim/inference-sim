@@ -58,6 +58,8 @@ type Config struct {
 	EnableOverlap                      bool   `json:"enable_overlap"`
 	// RadixEvictionPolicy is the tree's eviction policy; empty is lru, SGLang's default.
 	RadixEvictionPolicy string `json:"radix_eviction_policy"`
+	// RetractionPolicy is --retraction-policy; empty is "length", the default the port models.
+	RetractionPolicy string `json:"retraction_policy"`
 	// RandomSeed seeds the random policy's stream (server_args.random_seed).
 	RandomSeed int `json:"random_seed"`
 	// ScheduleLowPriorityValuesFirst, PriorityPreemptionThreshold and EnablePriorityPreemption are
@@ -79,12 +81,18 @@ func (c Config) radixEvictionPolicy() string {
 	return c.RadixEvictionPolicy
 }
 
-type refusal struct{ what string }
+type refusal struct{ what, issue string }
 
-func refused(what string) refusal { return refusal{what} }
+func refused(what string) refusal { return refusal{what, Refusal} }
+
+// RetractionRefusal is the open issue the priority retraction policy and the abort of the last
+// request cite (X28).
+const RetractionRefusal = "inference-sim/blis-sglang#77"
+
+func refusedAt(what, issue string) refusal { return refusal{what, issue} }
 
 func (r refusal) Error() string {
-	return fmt.Sprintf("sched: %s is not modelled (%s)", r.what, Refusal)
+	return fmt.Sprintf("sched: %s is not modelled (%s)", r.what, r.issue)
 }
 
 // ErrRefused is wrapped by every error that names a feature the port refuses.
@@ -125,6 +133,8 @@ type Scheduler struct {
 // what the normal loop does not model.
 func New(cfg Config, tree cache.PrefixCache, alloc cache.Allocator, pool cache.ReqToTokenPool, sampledToken int64) (*Scheduler, error) {
 	switch {
+	case cfg.RetractionPolicy != "" && cfg.RetractionPolicy != "length":
+		return nil, fmt.Errorf("sched: the %s retraction policy is not modelled (%s)", cfg.RetractionPolicy, RetractionRefusal)
 	case cfg.EnableOverlap:
 		return nil, fmt.Errorf("sched: the overlap loop is S14 and is not in the normal loop (%s)", Refusal)
 	case cfg.DisaggregationMode != "null" && cfg.DisaggregationMode != "":
