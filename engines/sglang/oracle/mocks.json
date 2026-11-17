@@ -1,5 +1,5 @@
 {
-  "version": "gpu-mock/5+822ba32009f4",
+  "version": "gpu-mock/5+00be9c34ae0c",
   "description": "Every replacement the oracle harness makes in SGLang's code, by kind (gpu, clock, transport, environment, platform, external-service, transcription), with the sites oracle/check_mocks.py finds. No entry is a transcription: the event loops run as released.",
   "mocks": [
     {
@@ -242,6 +242,12 @@
       "symbol": "SGLANG_HICACHE_FILE_BACKEND_STORAGE_DIR in a direct HiCache sequence",
       "kind": "environment",
       "how": "the file storage backend (HiCacheFile, mem_cache/hicache_storage.py:728@297e54fd) writes under a fresh temporary directory per sequence, which the driver names in this variable, so no sequence reads pages another run stored",
+      "sites": []
+    },
+    {
+      "symbol": "set_global_server_args_for_scheduler and get_parallel().override in the direct drivers",
+      "kind": "environment",
+      "how": "oracle/run_cache_iface.py build_cache and oracle/run_hicache.py build_hicache set SGLang's process-global ServerArgs with sglang.srt.server_args.set_global_server_args_for_scheduler before they build the pools and the cache, as Scheduler.__init__ does for its own ServerArgs; run_hicache.py also publishes a one-rank parallel topology (tp, pp of size 1, rank 0) with sglang.srt.runtime_context.get_parallel().override, which a scheduler process would publish at start-up. Both are SGLang's own setters, called with the sequence's settings; they write nothing a harness file names, so they list no site",
       "sites": []
     }
   ]
