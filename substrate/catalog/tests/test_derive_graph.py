@@ -8799,3 +8799,19 @@ def test_dsr1_fp4_refuses_a_draft_layer_its_one_node_cannot_price(tmp_path):
         h[m + ".weight_scale"] = {"dtype": "F8_E4M3", "shape": [2048, 7168 // 16]}
     with pytest.raises(derive_graph.DeriveError, match="one node cannot price both"):
         _derive_dsr1_fp4(_dsr1_fp4_headers(edit), tmp_path)
+
+
+KIMI_K26_NVFP4 = MODELS / "kimi-k2.6-nvfp4"
+
+
+def test_kimi_k26_nvfp4_quantizes_the_routed_experts_and_nothing_else():
+    """nvidia/Kimi-K2.6-NVFP4's ModelOpt list excludes every attention module
+    (`*.self_attn*`), every shared expert, the dense layer 0 whole and the head, so only the
+    routed experts store NVFP4: the shared experts are a node of their own at bf16, and the
+    dense layer and every attention projection are bf16."""
+    g = graph_of(KIMI_K26_NVFP4)
+    assert g["global"]["weight_dtype"] == "bf16"
+    moe = _widths(g, "attn_moe")
+    assert moe["experts"][0] == "nvfp4" and moe["shared_experts"][0] == "bf16"
+    assert {w for r, (w, _) in moe.items() if r not in ("experts", "shared_experts")} == {"bf16"}
+    assert {w for w, _ in _widths(g, "attn_dense").values()} == {"bf16"}
