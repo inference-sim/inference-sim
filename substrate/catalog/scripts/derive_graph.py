@@ -5649,9 +5649,19 @@ def handler_qwen4_exp(cfg, raw, model):
                 collective("ReduceScatter", role, EMIT_SEQUENCE_PARALLEL)]
 
     key_dim, value_dim = k_heads * k_dim, v_heads * v_dim
+    # The input projections are the Qwen3.5 handler's (QwenGatedDeltaNetAttention, the same class):
+    # in_proj_ba is replicated under the quantization methods that need 64 output columns a rank,
+    # and an fp8 checkpoint that leaves a projection unconverted states its base width.
+    ba_tp = "replicated" if str(quant.get("quant_method", "")).lower() in GDN_BA_REPLICATED_METHODS else "column"
+    in_proj = [dict(gemm("recurrent_in_proj_qkvz", 2 * key_dim + 2 * value_dim, hidden), tp="column"),
+               dict(gemm("recurrent_in_proj_ba", 2 * v_heads, hidden), tp=ba_tp)]
+    gdn_layers = [i for i, t in enumerate(types) if t == "linear_attention"]
+    for node in in_proj:
+        kept = gdn_fp8_unconverted(cfg, raw, model, node["role"], gdn_layers)
+        if kept:
+            node["weight_dtype"] = kept
     gdn = [
-        dict(gemm("recurrent_in_proj_qkvz", 2 * key_dim + 2 * value_dim, hidden), tp="column"),
-        dict(gemm("recurrent_in_proj_ba", 2 * v_heads, hidden), tp="column"),
+        *in_proj,
         {"op": "RecurrentUpdate", "recurrent_kind": "gdn", "n_heads": v_heads, "state_size": k_dim,
          "conv_kernel": conv, "intermediate_size": 2 * key_dim + value_dim,
          "state_dtype": DTYPES.get(str(cfg.get("mamba_ssm_dtype", "float32")).lower(), "fp32")},
