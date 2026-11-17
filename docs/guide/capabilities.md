@@ -60,7 +60,44 @@ blis run --scenarios examples/capabilities --scenario fs-tier.yaml --num-instanc
 
 Blocks the CPU tier evicts spill to the device and are read back later: against the same run without the device the hit rate is higher and more requests complete by the horizon. Tier copies share the device's link with each other and with P/D pulls, and the Result states each link's peak concurrent copies under `breakdowns.pd.link_peak_concurrent_transfers_tier-<device>-<to|from>-node-<n>`. `cpu_dram` must come first. Engines of one model that name one `root_dir` share one file system.
 
-Not yet runnable from a scenario in this build: the object-store tier (`tier: s3`, refused by name, blis-vllm#63) and the peer-to-peer tier (`connector_options.secondary_tiers`, not accepted by the engine pin). Both wait on blis-vllm#222 and inference-sim#2209.
+## KV tier: object store (obj)
+
+`obj-tier.yaml` is the same deployment with a bucket of the catalog's `s3` device class below the CPU tier; `bytes` is the bucket's size, and the registry's `offload_tier_s3_*` entries price it. Engines of one model share the bucket.
+
+```yaml
+    - {tier: cpu_dram, bytes: 8589934592}
+    - {tier: s3, bytes: 1099511627776}
+```
+
+```bash
+blis run --scenarios examples/capabilities --scenario obj-tier.yaml --num-instances 1 \
+  --workload-spec examples/capabilities/spill-workload.yaml --horizon 25000000
+```
+
+The hit rate rises against the run without the bucket, and the Result states the bucket's link (`link_peak_concurrent_transfers_tier-s3-to-node-0`).
+
+## KV tier: peer-to-peer (p2p) and P/D
+
+`pd-p2p.yaml` replaces NIXL with vLLM's p2p tier. The tier has no device, so it is an option of the offload connector, as in vLLM's `kv_connector_extra_config.secondary_tiers`:
+
+```yaml
+pd_transfer:
+  connector: OffloadingConnector
+offload:
+  connector: OffloadingConnector
+  spec: TieringOffloadingSpec
+  tiers:
+    - {tier: cpu_dram, bytes: 549755813888}
+  connector_options:
+    secondary_tiers: [{type: p2p, port: 5710}]
+```
+
+```bash
+blis run --scenarios examples/capabilities --scenario pd-p2p.yaml \
+  --num-instances 3 --prefill-instances 2 --decode-instances 1 --rate 2 --num-requests 6
+```
+
+The decode engine loads each prompt from the prefill engine's CPU tier; the Result states `peer_messages_sent`, `peer_messages_delivered` (equal) and `peer_messages_dropped` (zero). The prefill nodes' WRITEs cross the fabric, and the Result states the NIC links they used (`link_peak_concurrent_transfers_nic-egress-node-<prefill>` and `nic-ingress-node-<decode>`) beside the CPU tiers' links. The example runs one TP8 engine per node. With prefill and decode pools of unequal TP the run still completes every request as disaggregated, but its Result shows no NIC link and no decode-side tier load, so the handoff's fabric cost is not stated; that is a known gap ([inference-sim#2214](https://github.com/inference-sim/inference-sim/issues/2214)), and the example keeps equal TP. The NIXL deployment sends no peer messages.
 
 ## Prefill/decode with pools of unequal width
 
@@ -84,6 +121,15 @@ blis run --scenarios examples/capabilities --scenario pd-unequal-tp.yaml \
 ```
 
 Every request is handed off once (`breakdowns.pd.kv_transfers`), and the TP8 decode engine steps faster than a TP4 one on the same model. Pools of different data-parallel width are in `pd-unequal-dp.yaml` once the engine pin carries blis-vllm#206; until then the run is refused ("their dp must match").
+
+### Unequal data-parallel width
+
+`pd-unequal-dp.yaml`: MiniMax-M2.5 (a routed MoE, so dp is placement) with one-rank prefill pods and decode pods of dp 2. The engine builds one instance per data-parallel group and sizes and prices each pool by its own layout.
+
+```bash
+blis run --scenarios examples/capabilities --scenario pd-unequal-dp.yaml \
+  --num-instances 6 --prefill-instances 4 --decode-instances 2 --rate 5 --num-requests 20
+```
 
 ## Per-pool hardware
 
@@ -170,7 +216,7 @@ A replica the autoscaler adds loads in `loading_delay` plus the time to read its
 
 ## Measurement outputs
 
-Every instance states, under `reports.engine.instances.<id>.measured_window`, its busy share, the prefill and decode parts of it, and the window it measured over (`window_start_us`, `window_end_us`). The cluster's `busy_share` is the instances' mean. Any example shows them; see [Metrics & Results](results.md).
+Every instance also states `mfu`, the model-FLOPs utilization over the window (never above the busy share; more load per weight read raises it). Every instance states, under `reports.engine.instances.<id>.measured_window`, its busy share, the prefill and decode parts of it, and the window it measured over (`window_start_us`, `window_end_us`). The cluster's `busy_share` is the instances' mean. Any example shows them; see [Metrics & Results](results.md).
 
 ## Not yet exercisable from a scenario
 
