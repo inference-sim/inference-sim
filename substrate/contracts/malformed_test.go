@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 
@@ -189,6 +190,9 @@ func TestEveryLoaderReadsEveryFieldItsExampleStates(t *testing.T) {
 			if filepath.Ext(l.valid) == ".json" {
 				valid = jsonToYAML(t, valid)
 			}
+			if l.name == "LoadRouterEntry" {
+				valid = oneOfEachShape(t, valid)
+			}
 			dropped, err := doctest.Dropped(valid, func(b []byte) (any, error) { return l.load(file(b)) })
 			if err != nil {
 				t.Fatal(err)
@@ -198,6 +202,64 @@ func TestEveryLoaderReadsEveryFieldItsExampleStates(t *testing.T) {
 			}
 		})
 	}
+}
+
+// oneOfEachShape keeps, in every list of a document, the first element of each distinct shape (the
+// nested set of mapping keys) and drops the repeats. The dropped-field probe reloads the whole
+// document once per scalar, so its cost grows with the square of the document; a router entry with
+// hundreds of builds and citations took over nine minutes. A repeat of a shape has the same fields
+// as the element kept, so every declared field is still probed.
+func oneOfEachShape(t *testing.T, doc []byte) []byte {
+	t.Helper()
+	var n yaml.Node
+	if err := yaml.Unmarshal(doc, &n); err != nil {
+		t.Fatal(err)
+	}
+	var shape func(*yaml.Node) string
+	shape = func(x *yaml.Node) string {
+		switch x.Kind {
+		case yaml.MappingNode:
+			parts := make([]string, 0, len(x.Content)/2)
+			for i := 0; i+1 < len(x.Content); i += 2 {
+				parts = append(parts, x.Content[i].Value+":"+shape(x.Content[i+1]))
+			}
+			sort.Strings(parts)
+			return "{" + strings.Join(parts, ",") + "}"
+		case yaml.SequenceNode:
+			seen, parts := map[string]bool{}, []string{}
+			for _, c := range x.Content {
+				if sh := shape(c); !seen[sh] {
+					seen[sh] = true
+					parts = append(parts, sh)
+				}
+			}
+			sort.Strings(parts)
+			return "[" + strings.Join(parts, ",") + "]"
+		}
+		return "."
+	}
+	var prune func(*yaml.Node)
+	prune = func(x *yaml.Node) {
+		if x.Kind == yaml.SequenceNode {
+			seen, kept := map[string]bool{}, x.Content[:0:0]
+			for _, c := range x.Content {
+				if sh := shape(c); !seen[sh] {
+					seen[sh] = true
+					kept = append(kept, c)
+				}
+			}
+			x.Content = kept
+		}
+		for _, c := range x.Content {
+			prune(c)
+		}
+	}
+	prune(&n)
+	out, err := yaml.Marshal(&n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
 }
 
 // blis-schemas#107: an engine block with a recursive alias is refused when it is decoded,
