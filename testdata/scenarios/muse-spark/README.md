@@ -63,6 +63,12 @@ llm-d router configuration of internal deployment measurements,
 The deployment's pod discovery and service URL are replaced by the simulated pool. Run them
 with `--num-instances 2`.
 
+The router renders each prompt through the model server (`token-producer`), which vLLM answers
+only when it runs with `--enable-scale-out`; without it every render call is a 403 and routing
+falls to the load scorers alone (inference-sim#2129). The H200 file states
+`enable_scale_out: true`, so its router sees token IDs and routes by prefix. The H100 and GB200
+files state nothing, so their routers route on load alone.
+
 | File | Layout |
 |---|---|
 | `muse-h100-roce-armC-routed.yaml` | arm C (PP2 x TP8 + DSpark), two replicas on four nodes |

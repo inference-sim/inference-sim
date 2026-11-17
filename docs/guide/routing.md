@@ -174,7 +174,15 @@ Everything the router reads comes from the simulated engines, with real engine s
   travels the same delayed stream, after every batch the instance published. A chain's
   canonical tokens stay fixed until the router has received the last removal of its block.
 - **Prompt rendering.** The `token-producer` plugin's vLLM backend calls a render endpoint; the
-  simulated model server answers it with the request's token IDs.
+  simulated model server answers it with the request's token IDs when its engine serves the
+  render endpoints. vLLM serves them only with `--enable-scale-out` (the engine block's
+  `enable_scale_out`, off by default); without it every render call is a 403 `PermissionDeniedError`,
+  the token producer counts a render failure, and the request has no token IDs, so the prefix
+  producers have nothing to match and the scorers rank on load alone. State `enable_scale_out:
+  true` on the engine of any deployment whose router renders prompts through it. A pool whose
+  servers differ is answered as its least capable server. An engine that states nothing
+  (the 0.29 and 0.31 compatibility engines; vLLM 0.31 has the flag too, which they do not model)
+  serves them.
 - **Responses.** The router sees the response headers when the engine accepts a streaming
   request, the first chunk when the first token is delivered, and the final chunk, with
   `usage` (prompt tokens and the tokens actually generated), when the response completes. A

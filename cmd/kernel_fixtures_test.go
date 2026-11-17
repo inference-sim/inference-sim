@@ -77,6 +77,27 @@ func kernelScenariosDir(t *testing.T) string {
 	return dir
 }
 
+// kernelScenariosServingRender is kernelScenariosDir with the test scenario's engine stating
+// enable_scale_out: its model server then answers the router's render calls (vLLM refuses them
+// with 403 otherwise, inference-sim#2129), so a router that renders prompts through it sees token IDs.
+func kernelScenariosServingRender(t *testing.T) string {
+	t.Helper()
+	dir := kernelScenariosDir(t)
+	path := filepath.Join(dir, kernelTestScenario)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const anchor = "    engine:\n"
+	if !strings.Contains(string(raw), anchor) {
+		t.Fatalf("%s has no pool engine block", kernelTestScenario)
+	}
+	if err := os.WriteFile(path, []byte(strings.Replace(string(raw), anchor, anchor+"      enable_scale_out: true\n", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 func kernelRegistryDir(t *testing.T) string {
 	t.Helper()
 	_, _, registry := kernelRepos(t)
