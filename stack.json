@@ -4,17 +4,18 @@
   "modules": [
     {
       "path": "github.com/inference-sim/blis-substrate",
-      "version": "v0.14.2-0.20261117011026-7794a6c6277b",
-      "commit": "7794a6c6277b370874fb188e1bfa8d1ae597aea1"
+      "version": "v0.14.2-0.20261117064636-bfa2cb3b20b0",
+      "commit": "bfa2cb3b20b0beaee1a5caf82e71ff98b202d0b9"
     },
     {
       "path": "github.com/inference-sim/blis-vllm",
-      "version": "v0.32.1-0.20261117021439-0f211731f4fe",
-      "commit": "0f211731f4fe361cc67f4ebdeb8eea42b050af92"
+      "version": "v0.32.1-0.20261117073624-bc5a9a97ee7b",
+      "commit": "bc5a9a97ee7b06e1adc84ae54bd7f95c70034872"
     },
     {
       "path": "github.com/inference-sim/llm-d-router",
-      "version": "v1.0.0-blis.4",
+      "version": "v1.0.0-blis.4.0.20261117140125-6acd0a87e875",
+      "commit": "6acd0a87e875515e7ad54df1f0ce5bd170bd7f90",
       "replaces": "github.com/llm-d/llm-d-router"
     }
   ],
