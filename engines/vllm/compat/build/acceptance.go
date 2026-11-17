@@ -9,6 +9,7 @@ import (
 	"github.com/inference-sim/blis-substrate/load"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 // Speculative acceptance (#1939): how far a verification step advances a request is resolved
@@ -36,6 +37,9 @@ type AcceptanceFlags struct {
 	ThinkingSet, CategorySet             bool
 	// FallbackSet records that --speculative-fallback-category was given.
 	FallbackSet bool
+	// Realisation is how the run the rate or length describes realised its acceptance
+	// (natural or synthetic); empty leaves it unstated, which keeps the engine's schedule.
+	Realisation acceptance.Realisation
 }
 
 // AcceptanceInputs are the resolution's inputs: the scenario (its name, shape and pin), the
@@ -52,6 +56,39 @@ type AcceptanceInputs struct {
 	// (speculative.draft_model), or "" for the model's own in-graph speculator. A profile measured
 	// with a drafter matches only a run that names the same one.
 	Drafter string
+	// DraftSampler and Verifier are the run's draft sampler and verifier as the engine resolves
+	// them (speculative.draft_sample_method and rejection_sample_method, each defaulted as vLLM
+	// defaults it: kernelmodel.ResolvedSampling, which VLLMInputs applies), or "" for unstated
+	// (design D8, inference-sim/blis-substrate#174).
+	DraftSampler acceptance.DraftSampler
+	Verifier     acceptance.Verifier
+	// Engine is the lower-case name of the engine serving the run (Engine, "vllm"). A profile
+	// measured on another engine does not match the run exactly.
+	Engine string
+	// DefaultDraftSampler and DefaultVerifier are the engine's own defaults for those settings
+	// (DefaultDraftSampler, DefaultVerifier). A profile whose source left a setting at its
+	// default states the marker "default", which the lookup reads as these when the profile's
+	// engine is the run's.
+	DefaultDraftSampler acceptance.DraftSampler
+	DefaultVerifier     acceptance.Verifier
+}
+
+// Engine is the engine name this module models, as acceptance profiles record it.
+const Engine = kernelmodel.Engine
+
+// vLLM's defaults for the drafting and verification settings (kernelmodel.DefaultDraftSampler,
+// kernelmodel.DefaultVerifier).
+const (
+	DefaultDraftSampler = kernelmodel.DefaultDraftSampler
+	DefaultVerifier     = kernelmodel.DefaultVerifier
+)
+
+// VLLMInputs fills in the engine's part of the inputs for a pool whose speculative block is sp:
+// the engine, its defaults, and the resolved draft sampler and verifier.
+func (in AcceptanceInputs) VLLMInputs(sp *engineconfig.Speculative) AcceptanceInputs {
+	in.Engine, in.DefaultDraftSampler, in.DefaultVerifier = Engine, DefaultDraftSampler, DefaultVerifier
+	in.DraftSampler, in.Verifier = kernelmodel.ResolvedSampling(sp)
+	return in
 }
 
 // Acceptance is a run's resolved acceptance.
@@ -87,15 +124,20 @@ func ResolveAcceptance(in AcceptanceInputs, k int, method string) (Acceptance, b
 	}
 
 	req := acceptance.Request{
-		Model:             in.Shape.Model,
-		SpeculativeMethod: method,
-		NumSpecTokens:     k,
-		Hardware:          in.Hardware,
-		Drafter:           in.Drafter,
-		Architecture:      targetArchitecture(in.Data, in.Shape.Model),
-		Workload:          acceptanceWorkloadTerms(in),
-		Scenario:          in.Shape.Acceptance,
-		FallbackCategory:  f.FallbackCategory,
+		Model:               in.Shape.Model,
+		SpeculativeMethod:   method,
+		NumSpecTokens:       k,
+		Hardware:            in.Hardware,
+		Drafter:             in.Drafter,
+		DraftSampler:        in.DraftSampler,
+		Verifier:            in.Verifier,
+		Engine:              in.Engine,
+		DefaultDraftSampler: in.DefaultDraftSampler,
+		DefaultVerifier:     in.DefaultVerifier,
+		Architecture:        targetArchitecture(in.Data, in.Shape.Model),
+		Workload:            acceptanceWorkloadTerms(in),
+		Scenario:            in.Shape.Acceptance,
+		FallbackCategory:    f.FallbackCategory,
 	}
 	var out Acceptance
 	switch {
@@ -106,6 +148,9 @@ func ResolveAcceptance(in AcceptanceInputs, k int, method string) (Acceptance, b
 	case f.LengthSet:
 		l := f.Length
 		req.CLI = &acceptance.Value{NumSpecTokens: k, AcceptanceLength: &l, Source: "--" + AcceptanceLengthFlag}
+	}
+	if req.CLI != nil {
+		req.CLI.Realisation = f.Realisation
 	}
 	if in.Data == nil {
 		return Acceptance{}, false, fmt.Errorf("scenario %q drafts %d %q tokens: no catalog and registry to "+
