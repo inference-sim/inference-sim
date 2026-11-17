@@ -37,9 +37,11 @@ var traceHeaderFields = map[string]FieldEntry{
 	"WorkloadSeed":         {FieldInert, "recorded in the Result's input; replay draws its token IDs from --seed, not from the seed that generated the trace"},
 	"SessionContextGrowth": {FieldConsumed, "accumulate builds each round's input on the previous round's; an unknown value is refused by the session loaders"},
 	"GoodputSLOTargets":    {FieldConsumed, "the goodput targets when no --slo-* flag states them; a non-positive or non-finite target is refused (check.LatencyTargetMs)"},
+	"Acceptance":           {FieldInert, "recorded as the workload layer of the acceptance resolution (DEV-7); replay in this build does not read it, so the profile comes from the command line and the registry, as before. The reader is inference-sim#2200, which waits on blis-substrate#300"},
 	"KVOffload":            {FieldConsumed, "the resolved offload configuration the run used; replay rebuilds it, and refuses one it cannot reproduce"},
-	"MaxNodesSpanned":      {FieldRefused, "a value above 1 is refused: replay cannot rebuild a multi-node fleet (#1530); negative is refused (check.Count); 0 and 1 change nothing"},
+	"MaxNodesSpanned":      {FieldRefused, "a value above 1 is refused: replay cannot rebuild a multi-node fleet (#2146); negative is refused (check.Count); 0 and 1 change nothing"},
 	"Router":               {FieldConsumed, "the router the run routed with; replay rebuilds it (INV-13)"},
+	"Phases":               {FieldConsumed, "the drain-gated stages the run ran in; replay sends them in turn (PhaseGate)"},
 }
 
 // traceRouterFields is TraceRouterConfig's table.
@@ -119,6 +121,7 @@ var traceRecordFields = map[string]FieldEntry{
 	"LastChunkTimeUs":  {FieldInert, "a measured outcome, carried to a re-export"},
 	"Status":           {FieldInert, "a measured outcome, carried to a re-export"},
 	"Adapter":          {FieldConsumed, "the LoRA adapter the request names"},
+	"Phase":            {FieldConsumed, "the phase the request is sent in (PhaseGate)"},
 	"ThinkTimeUs":      {FieldConsumed, "closed-loop think time before the round; negative is refused (check.DurationUs)"},
 	"InputTokensReset": {FieldConsumed, "accumulate replay re-seeds the session's context to this length; negative is refused"},
 }

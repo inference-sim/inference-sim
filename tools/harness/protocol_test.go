@@ -154,10 +154,10 @@ func TestAReplayedPointIsTheBenchmarksMainPhase(t *testing.T) {
 	}
 }
 
-// The primed trace states request 0's prompt cached, with existing trace features only: each
-// warm-up copy's prompt is token-for-token main request 0's; the pool starts the copies at t=0
-// and the first CONC main requests together, in order, at the main-phase start; and a copy's
-// completion admits no main request (its session holds the slot for a far-later holder round).
+// The primed trace states request 0's prompt cached with two drain-gated phases: each warm-up copy's
+// prompt is token-for-token main request 0's; the copies are sent at t=0; the main phase is held until
+// every copy has ended, then its first CONC requests are sent together, in order, and each later one
+// when a main request ends (the client's semaphore of CONC).
 func TestThePrimedTraceCachesRequestZerosPromptAndNothingElse(t *testing.T) {
 	const conc, n, copies = 3, 7, 2
 	pl := PointLengths{ISL: 64, OSL: 64, Concurrency: conc}
@@ -166,51 +166,54 @@ func TestThePrimedTraceCachesRequestZerosPromptAndNothingElse(t *testing.T) {
 		pl.OutputLens = append(pl.OutputLens, 60+i)
 	}
 	run := primedPhase(pl, copies)
-	if run.pool != conc+copies || run.sessions != n+copies {
-		t.Fatalf("pool %d of %d sessions, want %d of %d", run.pool, run.sessions, conc+copies, n+copies)
+	if !run.phased || len(run.records) != n+copies {
+		t.Fatalf("phased=%v with %d records, want a phased trace of %d", run.phased, len(run.records), n+copies)
 	}
-	r0, bps, err := workload.LoadTraceV2SessionBlueprints(&workload.TraceV2{Header: *run.header, Records: run.records},
-		42, nil, 1<<62)
+	reqs, err := workload.LoadTraceV2Requests(&workload.TraceV2{Header: *run.header, Records: run.records}, 42)
 	if err != nil {
 		t.Fatal(err)
 	}
-	driver, initial, err := workload.BuildSessionPool(bps, r0, run.pool, run.sessions, 42)
+	gate, initial, err := workload.NewPhaseGate(run.header.Phases, reqs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(initial) != conc+copies {
-		t.Fatalf("%d initial requests, want %d", len(initial), conc+copies)
+	if len(initial) != copies {
+		t.Fatalf("%d requests sent at the start, want only the %d warm-up copies", len(initial), copies)
 	}
-	main0 := initial[copies]
-	if main0.ID != "request_0" || int(main0.InputLen()) != pl.InputLens[0] {
-		t.Fatalf("first main request is %s with %d tokens", main0.ID, main0.InputLen())
-	}
-	for j := 0; j < copies; j++ {
-		w := initial[j]
-		if w.ArrivalTime != 0 || !slices.Equal(w.InputTokens, main0.InputTokens) || len(w.OutputTokens) != pl.OutputLens[0] {
-			t.Errorf("warm-up copy %d (%s) at %d is not request 0's prompt and output", j, w.ID, w.ArrivalTime)
+	var main0 *sim.Request
+	for _, r := range reqs {
+		if r.ID == "request_0" {
+			main0 = r
 		}
 	}
-	for i, r := range initial[copies:] {
-		if r.ID != "request_"+strconv.Itoa(i) || r.ArrivalTime != primeMainStartUs {
-			t.Errorf("main request %d is %s at %d, want request_%d at %d", i, r.ID, r.ArrivalTime, i, primeMainStartUs)
+	if main0 == nil || int(main0.InputLen()) != pl.InputLens[0] {
+		t.Fatalf("main request 0 is %+v", main0)
+	}
+	for _, w := range initial {
+		if w.ArrivalTime != 0 || !slices.Equal(w.InputTokens, main0.InputTokens) || len(w.OutputTokens) != pl.OutputLens[0] {
+			t.Errorf("warm-up copy %s at %d is not request 0's prompt and output", w.ID, w.ArrivalTime)
+		}
+	}
+	// The first copy ending releases nothing; the last one ending (at 5000) sends the first CONC main
+	// requests together, in order, at that clock.
+	if got := gate.Ended(initial[0], 4000); len(got) != 0 {
+		t.Fatalf("one copy ending sent %d request(s) before the warm-up drained", len(got))
+	}
+	sent := gate.Ended(initial[1], 5000)
+	if len(sent) != conc {
+		t.Fatalf("the drained warm-up sent %d main requests, want %d", len(sent), conc)
+	}
+	for i, r := range sent {
+		if r.ID != "request_"+strconv.Itoa(i) || r.ArrivalTime != 5000 {
+			t.Errorf("main request %d is %s at %d, want request_%d at 5000", i, r.ID, r.ArrivalTime, i)
 		}
 		if i > 0 && slices.Equal(r.InputTokens[:16], main0.InputTokens[:16]) {
 			t.Errorf("main request %d shares request 0's first block", i)
 		}
 	}
-	// A warm-up copy completing yields only its holder round, far after the main phase, and
-	// admits no main request. (A completion reaches the pool in state completed; a queued
-	// request reaching it means a drop, which cancels the session.)
-	initial[0].State = sim.StateCompleted
-	next := driver.OnComplete(initial[0], 5000)
-	if len(next) != 1 || next[0].SessionID != "warmup-0" || next[0].ArrivalTime != 5000+primeHoldUs {
-		t.Fatalf("a warm-up copy's completion produced %+v, want only its holder round at %d", next, 5000+primeHoldUs)
-	}
-	// A main completion admits the next main request, in order.
-	main0.State = sim.StateCompleted
-	if got := driver.OnComplete(main0, primeMainStartUs+7); len(got) != 1 || got[0].ID != "request_"+strconv.Itoa(conc) {
-		t.Fatalf("a main completion admitted %+v, want request_%d", got, conc)
+	// A main completion sends the next main request, in order.
+	if got := gate.Ended(sent[0], 5007); len(got) != 1 || got[0].ID != "request_"+strconv.Itoa(conc) || got[0].ArrivalTime != 5007 {
+		t.Fatalf("a main completion sent %+v, want request_%d at 5007", got, conc)
 	}
 }
 
@@ -313,7 +316,7 @@ func TestThePrimedMainPhaseDoesNotDependOnHowManyCopiesRan(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%d copies: %v", copies, err)
 		}
-		if err := checkPrimed(out.RequestRows, len(pl.InputLens)); err != nil {
+		if err := checkPrimed(out.RequestRows); err != nil {
 			t.Fatalf("%d copies: %v", copies, err)
 		}
 		o, err := summarize(out.RequestRows, pl, ignore)
@@ -368,29 +371,27 @@ func TestADrainedCopyLeavesOnlyRequestZerosPromptReadable(t *testing.T) {
 }
 
 // checkPrimed refuses each way a primed run could fail to be "the main phase after a drained
-// warm-up": a copy still running when the main phase starts, main request 0 not starting with
-// the main phase, or a holder round entering the engine before the main phase has finished.
+// warm-up": a copy that did not complete, a main request sent before the last copy ended, or a row
+// in neither phase.
 func TestCheckPrimedRefusesAnUndrainedWarmup(t *testing.T) {
-	const n = 2
-	T := int64(primeMainStartUs) // microseconds, as the rows state them
+	const T = int64(10_000_000) // the clock the warm-up drained at, microseconds, as the rows state them
 	e2e := func(v int64) *int64 { return &v }
 	good := []result.RequestRow{
-		{ID: "request_2", ArrivalUs: 0, E2EUs: e2e(5_000_000)},                          // the copy: ends at 5 s
-		{ID: "request_0", ArrivalUs: T, E2EUs: e2e(3_000_000)},                          // main 0
-		{ID: "request_1", ArrivalUs: T, E2EUs: e2e(4_000_000)},                          // main 1
-		{ID: "session_warmup-0_round_1_1", ArrivalUs: T + 3_600_000_000, E2EUs: e2e(1)}, // holder
+		{ID: "request_2", Phase: primeWarmupPhase, Fate: result.FateCompleted, ArrivalUs: 0, E2EUs: e2e(T)}, // the copy
+		{ID: "request_0", Phase: primeMainPhase, Fate: result.FateCompleted, ArrivalUs: T, E2EUs: e2e(3_000_000)},
+		{ID: "request_1", Phase: primeMainPhase, Fate: result.FateCompleted, ArrivalUs: T + 10, E2EUs: e2e(4_000_000)},
 	}
-	if err := checkPrimed(good, n); err != nil {
+	if err := checkPrimed(good); err != nil {
 		t.Fatalf("a drained warm-up is refused: %v", err)
 	}
 	for name, mutate := range map[string]func([]result.RequestRow){
-		"a copy still running at the main-phase start": func(r []result.RequestRow) { r[0].E2EUs = e2e(T + 1) },
-		"main request 0 starting late":                 func(r []result.RequestRow) { r[1].ArrivalUs = T + 1_000_000 },
-		"a holder round inside the main phase":         func(r []result.RequestRow) { r[3].ArrivalUs = T + 2 },
+		"a copy still running when the main phase is sent": func(r []result.RequestRow) { r[0].E2EUs = e2e(T + 1) },
+		"a copy that did not complete":                     func(r []result.RequestRow) { r[0].Fate = result.FateTimedOut },
+		"a row in no phase of the trace":                   func(r []result.RequestRow) { r[1].Phase = "" },
 	} {
 		r := append([]result.RequestRow(nil), good...)
 		mutate(r)
-		if checkPrimed(r, n) == nil {
+		if checkPrimed(r) == nil {
 			t.Errorf("checkPrimed accepted %s", name)
 		}
 	}

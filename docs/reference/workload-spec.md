@@ -10,6 +10,7 @@ Complete YAML schema reference for BLIS workload specifications (`--workload-spe
 | `seed` | int64 | No | RNG seed (overridden by CLI `--seed` if set) |
 | `category` | string | No | `language`, `multimodal`, `reasoning`, or empty |
 | `aggregate_rate` | float64 | **Yes** | Total arrival rate in requests/second |
+| `phases` | list | No | Drain-gated stages: `name`, `num_requests`, `aggregate_rate`, `start`, `offset_us`, `concurrency` (see [Drain-gated phases](../guide/workloads.md#drain-gated-phases-warm-up-then-measured)) |
 | `num_requests` | int64 | No | Total requests to generate (0 = unlimited, use horizon) |
 | `horizon` | int64 | No | Simulation time limit in ticks (overridden by CLI `--horizon` if set) |
 | `clients` | list | **Yes*** | Client specifications (see below) |
@@ -38,6 +39,7 @@ Each entry in the `clients` list defines a traffic source:
 | `streaming` | bool | No | Whether to simulate streaming output |
 | `network` | object | No | Client-side network characteristics |
 | `lifecycle` | object | No | Activity window configuration |
+| `phase` | string | With `phases` | The workload phase the client sends in (see [Drain-gated phases](../guide/workloads.md#drain-gated-phases-warm-up-then-measured)) |
 | `multimodal` | object | No | Multimodal token generation |
 | `reasoning` | object | No | Reasoning multi-turn behavior |
 | `timeout` | int64 | No | Per-request timeout in µs. nil = default (300s for sessions). 0 = no timeout |

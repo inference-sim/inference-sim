@@ -1,0 +1,31 @@
+# Constant-load replay (aiperf 0.12.0 without --scenario): hold a fixed number of live root
+# sessions over an agentic corpus. A session keeps its slot from its root's first request until
+# the root's final turn returns, and the freed slot starts the next session at once. The load block
+# gives the rule for the next root (recycling), a warm-up that runs the same load unmeasured, and
+# the idle-gap cap. --concurrency is the number of session slots.
+#
+# The corpus here is the small slice the repository commits; a real run names the full corpus
+# (the substrate catalog's agentx-constant-load-256k preset supplies it).
+#
+#   blis replay --agentic-scenario aiperf-constant-load --scenarios examples \
+#     --scenario agentx-dsv41-flash-h100-2x-tp8-dspark5.yaml --speculative-acceptance-rate 0.5 \
+#     --corpus sim/workload/testdata/agentx/weka_v7_slice.jsonl \
+#     --workload-spec examples/capabilities/constant-load-workload.yaml \
+#     --concurrency 3 --benchmark-duration 60s
+replay:
+  scenario: aiperf-constant-load
+  harness_version: 0.12.0
+  corpus:
+    loader: semianalysis_cc_traces_weka_062126_256k
+    format: weka-trace-v7
+    encoding: jsonl
+    source:
+      huggingface: semianalysisai/cc-traces-weka-062126-256k
+      revision: slice
+    sha256: 7996c04f9b3012b87f45789a5ab3b4f53c5d8b5ea032b2bf1ac77df832fb2047
+  concurrency: 3
+  benchmark_duration_s: 60
+  max_context_length: max_model_len
+  load:
+    warmup_duration_s: 10
+    trace_idle_gap_cap_s: 2

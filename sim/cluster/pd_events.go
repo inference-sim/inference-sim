@@ -5,6 +5,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/inference-sim/blis-substrate/contracts/engine"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -46,6 +47,9 @@ func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 		panic(fmt.Sprintf("PrefillRoutingEvent: gateway chose unknown prefill instance %q", target))
 	}
 	cs.inFlightRequests[target]++
+	if params, ok := cs.p2pPrefillParams(e.parentReq); ok {
+		e.request.KVTransferParams = params
+	}
 	inst.InjectRequestOnline(e.request, e.time)
 }
 
@@ -128,6 +132,19 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 		e.dropAtStart(cs, NIXLDecodeNeverReceived)
 		return
 	}
+	if params, ok := cs.p2pDecodeParams(e.parentReq); ok {
+		// A p2p handoff (blis-vllm#204): the decode engine admits the request by its own scheduler (the
+		// P/D connector's rule below does not apply) and loads the prompt through its own p2p tier,
+		// from the prefill instance's CPU tier, whose stores wait for its fetch; the WRITEs are the
+		// prefill engine's transfers. The cluster's handoff moves nothing and ends at once.
+		decodeSubReq.KVTransferParams = params
+		e.parentReq.DecodeSubReq = decodeSubReq
+		cs.advanceRequest(e.parentReq.OriginalRequest, sim.LifecycleTransferring)
+		cs.transfersInitiated++
+		e.parentReq.TransferStartTime = e.time
+		cs.schedule(&KVTransferCompletedEvent{time: e.time, parentReq: e.parentReq}, &cs.kvConnectorSender)
+		return
+	}
 	// Whether the decode engine can ever take the prompt is the connector's rule
 	// (NIXLDecodeAccepts); one it cannot is rejected.
 	if !NIXLDecodeAccepts(e.parentReq.NumKVBlocks, decodeInst.TotalKVBlocks()) {
@@ -170,6 +187,7 @@ func (cs *ClusterSimulator) startPull(req *sim.Request, _, blocks int64, demand 
 		return
 	}
 	parent.DecodeSubReq = req
+	cs.advanceRequest(parent.OriginalRequest, sim.LifecycleTransferring)
 	// The blocks are the engine's own count of what the pull moves (engine.Transfer.Blocks): the
 	// simulator does no KV block arithmetic.
 	parent.PulledKVBlocks = blocks
@@ -227,7 +245,7 @@ func scheduleTransferCompletion(cs *ClusterSimulator, parentReq *ParentRequest, 
 	numBlocks := parentReq.PulledKVBlocks
 	duration := AloneTicks(flow)
 	parentReq.TransferAloneTicks = duration
-	if cs.pdLinks != nil {
+	if cs.pdContention {
 		cs.pdLinkFlows[cs.pdLinks.Start(startTime, flow)] = parentReq
 		logrus.Debugf("[cluster] KV transfer started for %s at %d: %d blocks, %d μs alone, sharing links with %d others",
 			parentReq.ID, startTime, numBlocks, duration, cs.pdLinks.InFlight()-1)
@@ -237,6 +255,31 @@ func scheduleTransferCompletion(cs *ClusterSimulator, parentReq *ParentRequest, 
 	logrus.Debugf("[cluster] KV transfer started for %s: %d blocks, duration=%d μs (priced by the Environment)",
 		parentReq.ID, numBlocks, duration)
 	cs.schedule(&KVTransferCompletedEvent{time: startTime + duration, parentReq: parentReq}, &cs.kvConnectorSender)
+}
+
+// tierCopy is an offload-tier copy in the link arbiter: the transfer and the instance that started it.
+type tierCopy struct {
+	// land reports the copy landed at the given tick.
+	land func(at int64)
+}
+
+// startTierCopy admits an offload-tier copy the instance's engine started at now to the link arbiter,
+// where it shares the links it crosses (the tier's device link and node, "tier/<device>/<direction>/
+// <node>") with the handoffs and the other copies in flight; it lands when the arbiter completes it.
+// A copy alone on its links takes its demand alone, as it does without the arbiter, to a whole tick
+// rounded up as a handoff's is (AloneTicks) rather than truncated (sim.TierTicks).
+func (cs *ClusterSimulator) startTierCopy(inst *InstanceSimulator, id engine.TransferID, demand kernel.TransferDemand, now int64) {
+	cs.admitTierFlow(demand, now, func(at int64) { inst.tierLanded(id, at) })
+}
+
+// admitTierFlow puts a tier copy's demand in the link arbiter at now; land is called when it completes.
+func (cs *ClusterSimulator) admitTierFlow(demand kernel.TransferDemand, now int64, land func(at int64)) {
+	cs.tierCopies++
+	if cs.tierLinkFlows == nil {
+		cs.tierLinkFlows = make(map[FlowID]tierCopy)
+	}
+	cs.tierLinkFlows[cs.pdLinks.Start(now, FlowOf(demand))] = tierCopy{land: land}
+	cs.scheduleLinkWake()
 }
 
 // scheduleLinkWake schedules the link arbiter's next drain or completion, superseding any wake
@@ -268,6 +311,11 @@ func (e *PDLinkWakeEvent) Execute(cs *ClusterSimulator) {
 		return
 	}
 	for _, id := range cs.pdLinks.Advance(e.time) {
+		if tc, ok := cs.tierLinkFlows[id]; ok {
+			delete(cs.tierLinkFlows, id)
+			tc.land(e.time)
+			continue
+		}
 		parent := cs.pdLinkFlows[id]
 		delete(cs.pdLinkFlows, id)
 		cs.schedule(&KVTransferCompletedEvent{time: e.time, parentReq: parent}, &cs.kvConnectorSender)
@@ -278,7 +326,16 @@ func (e *PDLinkWakeEvent) Execute(cs *ClusterSimulator) {
 // PDLinkPeakConcurrent is, per link, the most handoffs ever in flight on it together; nil when
 // contention is off.
 func (cs *ClusterSimulator) PDLinkPeakConcurrent() map[string]int {
-	if cs.pdLinks == nil {
+	if !cs.pdContention {
+		return nil
+	}
+	return cs.pdLinks.PeakConcurrent()
+}
+
+// TierLinkPeakConcurrent is, per link, the most transfers (tier copies and, with contention, handoffs)
+// ever in flight on it together; nil when no engine started a tier copy.
+func (cs *ClusterSimulator) TierLinkPeakConcurrent() map[string]int {
+	if cs.tierCopies == 0 {
 		return nil
 	}
 	return cs.pdLinks.PeakConcurrent()
@@ -410,5 +467,11 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	// ParentRequest.CompletionTime and read DecodeSubReq.State/ProgressIndex
 	// for timeout detection and context accumulation.
 	cs.pendingDecodeCompletions[decodeSubReq.ID] = e.parentReq.ID
+	cs.advanceRequest(e.parentReq.OriginalRequest, sim.LifecycleDecodeQueued)
+	if decodeSubReq.KVTransferParams != "" {
+		// A p2p handoff's decode is an ordinary request to its engine (p2pDecodeParams).
+		decodeInst.InjectRequestOnline(decodeSubReq, e.time)
+		return
+	}
 	decodeInst.InjectDecodeOnline(decodeSubReq, e.time)
 }

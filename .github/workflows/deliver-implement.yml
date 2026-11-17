@@ -155,7 +155,7 @@ jobs:
               core.setFailed(`#${here} looks like a tracking issue (${why})`);
               return;
             }
-            // AC-7 of #1654 lists the blocked-dependency refusal as an invariant enforced by
+            // The delivery design's AC-7 lists the blocked-dependency refusal as an invariant enforced by
             // WORKFLOW LOGIC, not only by a prompt. It was prompt-only, which meant a model that
             // overlooked or misread a `Depends on:` line could implement a blocked issue after
             // the expensive self-hosted agent job had already started. Checked here, before

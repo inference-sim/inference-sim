@@ -235,6 +235,9 @@ type capRequest struct {
 	HandledBy string  `json:"handled_by"`
 	TTFT      float64 `json:"ttft_ms"`
 	E2E       float64 `json:"e2e_ms"`
+	// Planned is a session round that was planned and never issued: it has a row but no prompt,
+	// and is not a generated request.
+	Planned bool
 }
 
 // capRunRows is capRun, returning the Result's per-request rows too.
@@ -247,7 +250,8 @@ func capRunRows(t *testing.T, args ...string) (capOut, []capRequest) {
 	var rows []capRequest
 	for _, r := range parseResult(t, stdout).RequestRows {
 		c := capRequest{SLOClass: r.SLOClass, TenantID: r.TenantID, SessionID: r.SessionID, Round: r.RoundIndex,
-			ArrivedAt: float64(r.ArrivalUs) / 1e6, Prompt: r.PromptTokens, HandledBy: r.Instance}
+			ArrivedAt: float64(r.ArrivalUs) / 1e6, Prompt: r.PromptTokens, HandledBy: r.Instance,
+			Planned: r.Fate == result.FateNotStarted && r.PromptTokens == 0}
 		if r.TTFTUs != nil {
 			c.TTFT = float64(*r.TTFTUs) / 1e3
 		}
@@ -332,32 +336,21 @@ func TestCapabilityMatrix_Policies(t *testing.T) {
 		}
 	})
 
-	t.Run("saturation detectors/each labels an overload and not a light load", func(t *testing.T) {
+	t.Run("saturation detector/labels an overload and not a light load", func(t *testing.T) {
 		t.Parallel()
-		label := func(rate string) map[string]string {
-			// Seed 13: composite also false-alarms on this light load at seed 11 (one of eight
-			// seeds checked, 1, 2, 3, 5, 11, 13, 17, 23), which DEV-10's stated false-alarm rate
-			// is to account for; this law checks the label, not that rate.
-			o := capRun(t, runArgs(colocated(1), "--seed", "13", "--num-requests", "600", "--rate", rate, "--prompt-tokens", "2000",
-				"--output-tokens", "200", "--detectors", "all")...)
-			o.conserves(t, 600)
-			labels := map[string]string{}
-			if r := parseResult(t, o.stdout); r.Reports.Saturation != nil {
-				for d, l := range r.Reports.Saturation["final"].(map[string]any) {
-					labels[d] = l.(string)
-				}
+		label := func(rate, n string) string {
+			o := capRun(t, runArgs(colocated(1), "--seed", "13", "--num-requests", n, "--rate", rate, "--prompt-tokens", "2000",
+				"--output-tokens", "200", "--detectors", "settle")...)
+			r := parseResult(t, o.stdout)
+			if r.Reports.Saturation == nil {
+				t.Fatalf("rate %s: no saturation block", rate)
 			}
-			return labels
+			return r.Reports.Saturation["final"].(map[string]any)["settle"].(string)
 		}
-		light, heavy := label("1"), label("60")
-		// backlog-drift is not held to this law, because it fails it: through this overload's
-		// whole arrival phase its in-flight count grows from 59 to 569 while its running slope
-		// stays 0 and every event reads STABLE, and a light 120-request run (1-5 in flight)
-		// reads OVERLOADED in two of three seeds -- a detector defect, recorded as a known gap.
-		for _, d := range []string{"composite", "threshold", "peak-rate"} {
-			if light[d] != "STABLE" || heavy[d] == "STABLE" || heavy[d] == "" {
-				t.Errorf("%s labels a light load %q and a 12x overload %q", d, light[d], heavy[d])
-			}
+		// The overload's backlog grows through its whole arrival phase (inference-sim#1927: the
+		// roster's backlog-drift read it STABLE); the light load's does not.
+		if light, heavy := label("1", "600"), label("60", "1200"); light != "SETTLED" || heavy != "OVERLOADED" {
+			t.Errorf("a light load reads %s and a 12x overload %s; want SETTLED and OVERLOADED", light, heavy)
 		}
 	})
 
@@ -391,25 +384,6 @@ func capRawCLI(t *testing.T, args ...string) string {
 		t.Fatalf("blis %s: %v\n%s", strings.Join(args, " "), err, lastLines(errBuf.String(), 5))
 	}
 	return out.String()
-}
-
-// capVariant writes the kernel module's scenario file, edited by each old->new pair, into a fresh
-// directory as variant.yaml.
-func capVariant(t *testing.T, file string, edits ...string) string {
-	t.Helper()
-	scenarios, _, _ := kernelRepos(t)
-	body := readFile(t, filepath.Join(scenarios, file))
-	for i := 0; i+1 < len(edits); i += 2 {
-		if !strings.Contains(body, edits[i]) {
-			t.Fatalf("%s has no %q to edit", file, edits[i])
-		}
-		body = strings.Replace(body, edits[i], edits[i+1], 1)
-	}
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "variant.yaml"), []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return dir
 }
 
 // pdBase is the committed 3P1D scenario's topology, with dir/file naming the scenario.
@@ -506,7 +480,9 @@ func TestCapabilityMatrix_Compositions(t *testing.T) {
 		t.Parallel()
 		// One data-parallel group per logical instance, and its run/replay parity, are proven by
 		// TestINV13_RunReplayParity_MoEDP.
-		off := capVariant(t, dpScenario, "enable_expert_parallel: true", "enable_expert_parallel: false")
+		scenarios, _, _ := kernelRepos(t)
+		off := writeVariant(t, filepath.Join(scenarios, dpScenario),
+			setField("Deployment", "false", "pools", "role=colocated", "parallel", "enable_expert_parallel"))
 		args := burst(40, 10, 512, 256)
 		ep := capRun(t, runArgs(append([]string{"--scenario", dpScenario, "--num-instances", "1", "--seed", "3"}, args...))...)
 		noEP := capRun(t, runArgs(append([]string{"--scenarios", off, "--scenario", "variant.yaml", "--num-instances", "1", "--seed", "3"}, args...))...)
@@ -622,7 +598,12 @@ func TestCapabilityMatrix_Compositions(t *testing.T) {
 			t.Fatal("no request rows")
 		}
 		rounds := map[int]int{}
+		issued := 0
 		for _, r := range rows {
+			if r.Planned {
+				continue
+			}
+			issued++
 			rounds[r.Round]++
 			if r.Prompt != want[r.Round] {
 				t.Errorf("session %s round %d: prompt %d tokens, want %d", r.SessionID, r.Round, r.Prompt, want[r.Round])
@@ -631,8 +612,8 @@ func TestCapabilityMatrix_Compositions(t *testing.T) {
 		if rounds[1] == 0 || rounds[2] == 0 {
 			t.Errorf("rounds seen %v: the run must reach rounds 1 and 2 for the table to be tested", rounds)
 		}
-		if got := o.num("total_output_tokens"); got != float64(len(rows)*50) {
-			t.Errorf("total output tokens = %v, want %d: %d requests of 50", got, len(rows)*50, len(rows))
+		if got := o.num("total_output_tokens"); got != float64(issued*50) {
+			t.Errorf("total output tokens = %v, want %d: %d requests of 50", got, issued*50, issued)
 		}
 	})
 

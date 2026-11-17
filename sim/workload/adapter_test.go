@@ -26,7 +26,7 @@ func adapterTestSpec(model, adapter string) *WorkloadSpec {
 // metrics depend on.
 func TestGenerateRequests_ThreadsAdapter(t *testing.T) {
 	spec := adapterTestSpec("llama-3.1-8b", "adapter_0")
-	reqs, err := GenerateRequests(spec, int64(1e6), 50)
+	reqs, err := generateRequests(spec, int64(1e6), 50)
 	if err != nil {
 		t.Fatalf("GenerateRequests: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestGenerateRequests_ThreadsAdapter(t *testing.T) {
 // no adapter yields base-model-only requests (Request.Adapter == "").
 func TestGenerateRequests_OmittedAdapterIsEmpty(t *testing.T) {
 	spec := adapterTestSpec("llama-3.1-8b", "")
-	reqs, err := GenerateRequests(spec, int64(1e6), 50)
+	reqs, err := generateRequests(spec, int64(1e6), 50)
 	if err != nil {
 		t.Fatalf("GenerateRequests: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestGenerateRequests_ThreadsCohortAdapter(t *testing.T) {
 	if err := ExpandClientsAndCohorts(spec); err != nil {
 		t.Fatalf("ExpandClientsAndCohorts: %v", err)
 	}
-	reqs, err := GenerateRequests(spec, int64(1e6), 50)
+	reqs, err := generateRequests(spec, int64(1e6), 50)
 	if err != nil {
 		t.Fatalf("GenerateRequests: %v", err)
 	}

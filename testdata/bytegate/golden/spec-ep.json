@@ -4,18 +4,18 @@
   "name": "muse-h200-ib-tep8-dspark.r4-s2",
   "engine": {
     "kind": "vllm",
-    "version": "0.32.0"
+    "version": "0.33.0"
   },
   "data": {
     "catalog": {
       "source": "path",
-      "hash": "db74e4bb49f75d658e5d0850934da60daf513274b937a03b7ab994760bd6d21f",
-      "combined_hash": "db74e4bb49f75d658e5d0850934da60daf513274b937a03b7ab994760bd6d21f"
+      "hash": "2d1849fb44540b8af542e6d40dfbde2905784a942567c3470ea1580eaa183e6b",
+      "combined_hash": "2d1849fb44540b8af542e6d40dfbde2905784a942567c3470ea1580eaa183e6b"
     },
     "registry": {
       "source": "path",
-      "hash": "8dbcf3b85eed842f2bc798b34d2b95716fc58117750f4164d869b26770353fe0",
-      "combined_hash": "8dbcf3b85eed842f2bc798b34d2b95716fc58117750f4164d869b26770353fe0"
+      "hash": "8988e9e7570e890ecaa0952465eca4c5827e5036dbed2a134b11c3848df1958f",
+      "combined_hash": "8988e9e7570e890ecaa0952465eca4c5827e5036dbed2a134b11c3848df1958f"
     },
     "released_data": false,
     "build": "unreleased"
@@ -297,7 +297,8 @@
             "gb300",
             "h100",
             "h200",
-            "l40s"
+            "l40s",
+            "rtx6000pro-server"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
@@ -317,7 +318,8 @@
             "gb300",
             "h100",
             "h200",
-            "l40s"
+            "l40s",
+            "rtx6000pro-server"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
@@ -337,7 +339,8 @@
             "gb300",
             "h100",
             "h200",
-            "l40s"
+            "l40s",
+            "rtx6000pro-server"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
@@ -357,7 +360,8 @@
             "gb300",
             "h100",
             "h200",
-            "l40s"
+            "l40s",
+            "rtx6000pro-server"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
@@ -377,7 +381,8 @@
             "gb300",
             "h100",
             "h200",
-            "l40s"
+            "l40s",
+            "rtx6000pro-server"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
@@ -401,7 +406,8 @@
             "gb300",
             "h100",
             "h200",
-            "l40s"
+            "l40s",
+            "rtx6000pro-server"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
@@ -421,7 +427,8 @@
             "gb300",
             "h100",
             "h200",
-            "l40s"
+            "l40s",
+            "rtx6000pro-server"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
@@ -441,7 +448,8 @@
             "gb300",
             "h100",
             "h200",
-            "l40s"
+            "l40s",
+            "rtx6000pro-server"
           ]
         },
         "file": "coefficients/cost-model-memory.yaml",
@@ -461,7 +469,8 @@
             "gb300",
             "h100",
             "h200",
-            "l40s"
+            "l40s",
+            "rtx6000pro-server"
           ]
         },
         "file": "coefficients/cost-model-memory.yaml",
@@ -481,7 +490,8 @@
             "gb300",
             "h100",
             "h200",
-            "l40s"
+            "l40s",
+            "rtx6000pro-server"
           ]
         },
         "file": "coefficients/cost-model-memory.yaml",
@@ -717,7 +727,10 @@
           "source": "internal deployment measurements: 1.84 accepted tokens per DSpark draft at c16 on H100 PP2xTP8, fixed 7-token verify (AL = 1 + accepted)"
         }
       },
-      "engine_version": "0.32.0",
+      "engine": {
+        "kind": "vllm",
+        "version": "0.33.0"
+      },
       "cluster": {
         "hardware": "h200",
         "nodes": 1,
@@ -814,6 +827,11 @@
       "e2e_p90_ms",
       "e2e_p95_ms",
       "e2e_p99_ms",
+      "icl_mean_ms",
+      "icl_p50_ms",
+      "icl_p90_ms",
+      "icl_p95_ms",
+      "icl_p99_ms",
       "interactivity_mean",
       "interactivity_of_mean_tpot",
       "interactivity_p50",
@@ -846,64 +864,89 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.14.0",
-    "router": "v1.0.0-blis.4",
-    "engine_module": "v0.32.0-blis.3"
+    "substrate": "v0.15.0",
+    "router": "v1.0.0-blis.5",
+    "engine_module": "v0.33.0-blis.1"
   },
   "window": {
     "start_us": 250000,
-    "end_us": 17127993,
-    "duration_s": 16.877993,
+    "end_us": 17296218,
+    "duration_s": 17.046218,
     "requests": 30
   },
   "metrics": {
     "e2e_mean_ms": {
-      "value": 6134.865400000001,
+      "value": 6260.582866666667,
       "samples": 30,
       "scope": "cluster"
     },
     "e2e_p50_ms": {
-      "value": 6118.1855000000005,
+      "value": 6276.938,
       "samples": 30,
       "scope": "cluster"
     },
     "e2e_p90_ms": {
-      "value": 10384.849200000002,
+      "value": 10571.372100000002,
       "samples": 30,
       "scope": "cluster"
     },
     "e2e_p95_ms": {
-      "value": 11539.97265,
+      "value": 11733.333849999999,
       "samples": 30,
       "scope": "cluster"
     },
     "e2e_p99_ms": {
-      "value": 13087.813100000001,
+      "value": 13261.04533,
       "samples": 30,
       "scope": "cluster"
     },
+    "icl_mean_ms": {
+      "value": 39.128329197860964,
+      "samples": 4675,
+      "scope": "cluster"
+    },
+    "icl_p50_ms": {
+      "value": 37.745,
+      "samples": 4675,
+      "scope": "cluster"
+    },
+    "icl_p90_ms": {
+      "value": 42.063,
+      "samples": 4675,
+      "scope": "cluster"
+    },
+    "icl_p95_ms": {
+      "value": 79.123,
+      "samples": 4675,
+      "scope": "cluster"
+    },
+    "icl_p99_ms": {
+      "value": 91.147,
+      "samples": 4675,
+      "scope": "cluster"
+    },
     "interactivity_mean": {
-      "value": 72.47036309261532,
+      "value": 70.9857504429818,
       "samples": 30,
       "scope": "cluster"
     },
     "interactivity_of_mean_tpot": {
-      "value": 68.6052732086082,
+      "value": 67.13466200447718,
       "samples": 30,
       "scope": "cluster"
     },
     "interactivity_p50": {
-      "value": 71.61505183178471,
+      "value": 70.19541457864021,
       "samples": 30,
       "scope": "cluster"
     },
     "interactivity_p90": {
-      "value": 63.6395999320008,
+      "value": 62.091363658746644,
       "samples": 30,
       "scope": "cluster"
     },
     "itl_mean_ms": {
-      "value": 13.528779413985804,
+      "value": 13.81399629965262,
       "samples": 13242,
       "scope": "cluster"
     },
@@ -913,27 +956,27 @@
       "scope": "cluster"
     },
     "itl_p90_ms": {
-      "value": 38.873,
+      "value": 39.627,
       "samples": 13242,
       "scope": "cluster"
     },
     "itl_p95_ms": {
-      "value": 40.112,
+      "value": 41.4519,
       "samples": 13242,
       "scope": "cluster"
     },
     "itl_p99_ms": {
-      "value": 81.974,
+      "value": 86.06137000000041,
       "samples": 13242,
       "scope": "cluster"
     },
     "output_tok_s": {
-      "value": 786.3494196258998,
+      "value": 778.5891275120382,
       "samples": 30,
       "scope": "cluster"
     },
     "output_tok_s_per_gpu": {
-      "value": 98.29367745323748,
+      "value": 97.32364093900478,
       "samples": 30,
       "scope": "cluster"
     },
@@ -943,82 +986,82 @@
       "scope": "cluster"
     },
     "request_throughput": {
-      "value": 1.777462521758363,
+      "value": 1.7599211743038838,
       "samples": 30,
       "scope": "cluster"
     },
     "step_interval_mean_ms": {
-      "value": 38.320448556149735,
+      "value": 39.128329197860964,
       "samples": 4675,
       "scope": "cluster"
     },
     "step_interval_p50_ms": {
-      "value": 37.106,
+      "value": 37.745,
       "samples": 4675,
       "scope": "cluster"
     },
     "step_interval_p90_ms": {
-      "value": 41.254,
+      "value": 42.063,
       "samples": 4675,
       "scope": "cluster"
     },
     "step_interval_p95_ms": {
-      "value": 76.943,
+      "value": 79.123,
       "samples": 4675,
       "scope": "cluster"
     },
     "step_interval_p99_ms": {
-      "value": 88.462,
+      "value": 91.147,
       "samples": 4675,
       "scope": "cluster"
     },
     "total_tokens_per_second_per_gpu": {
-      "value": 220.91637317304256,
+      "value": 218.73620295129396,
       "samples": 30,
       "scope": "cluster"
     },
     "tpot_mean_ms": {
-      "value": 14.576139023006263,
+      "value": 14.895435087366799,
       "samples": 30,
       "scope": "cluster"
     },
     "tpot_p50_ms": {
-      "value": 13.963545014934596,
+      "value": 14.245944781474234,
       "samples": 30,
       "scope": "cluster"
     },
     "tpot_p90_ms": {
-      "value": 15.713486588044308,
+      "value": 16.1052993697479,
       "samples": 30,
       "scope": "cluster"
     },
     "tpot_p99_ms": {
-      "value": 31.32722000000002,
+      "value": 31.91269000000002,
       "samples": 30,
       "scope": "cluster"
     },
     "ttft_mean_ms": {
-      "value": 163.26216666666664,
+      "value": 163.0849,
       "samples": 30,
       "scope": "cluster"
     },
     "ttft_p50_ms": {
-      "value": 165.197,
+      "value": 165.22199999999998,
       "samples": 30,
       "scope": "cluster"
     },
     "ttft_p90_ms": {
-      "value": 190.2586,
+      "value": 189.1541,
       "samples": 30,
       "scope": "cluster"
     },
     "ttft_p95_ms": {
-      "value": 193.90375,
+      "value": 193.5297,
       "samples": 30,
       "scope": "cluster"
     },
     "ttft_p99_ms": {
-      "value": 197.57675,
+      "value": 202.96442,
       "samples": 30,
       "scope": "cluster"
     }
@@ -1037,12 +1080,13 @@
       "id": "request_0",
       "fate": "completed",
       "arrival_us": 250000,
-      "ttft_us": 97175,
-      "tpot_us": 7405.569230769231,
-      "e2e_us": 578537,
+      "ttft_us": 98797,
+      "tpot_us": 7408.292307692308,
+      "e2e_us": 580336,
       "scheduling_delay_us": 40162,
       "completion_index": 1,
       "prompt_tokens": 464,
+      "computed_tokens": 464,
       "output_tokens": 66,
       "instance": "instance_0"
     },
@@ -1050,12 +1094,13 @@
       "id": "request_1",
       "fate": "completed",
       "arrival_us": 500000,
-      "ttft_us": 141524,
-      "tpot_us": 13563.512195121952,
-      "e2e_us": 6258668,
-      "scheduling_delay_us": 52864,
+      "ttft_us": 144068,
+      "tpot_us": 13957.662971175167,
+      "e2e_us": 6438974,
+      "scheduling_delay_us": 53543,
       "completion_index": 7,
       "prompt_tokens": 568,
+      "computed_tokens": 568,
       "output_tokens": 452,
       "instance": "instance_0"
     },
@@ -1063,12 +1108,13 @@
       "id": "request_2",
       "fate": "completed",
       "arrival_us": 750000,
-      "ttft_us": 160482,
-      "tpot_us": 13484.957894736843,
-      "e2e_us": 5284766,
-      "scheduling_delay_us": 55112,
+      "ttft_us": 164874,
+      "tpot_us": 13915.034210526315,
+      "e2e_us": 5452587,
+      "scheduling_delay_us": 56994,
       "completion_index": 6,
       "prompt_tokens": 786,
+      "computed_tokens": 786,
       "output_tokens": 381,
       "instance": "instance_0"
     },
@@ -1076,12 +1122,13 @@
       "id": "request_3",
       "fate": "completed",
       "arrival_us": 1000000,
-      "ttft_us": 133282,
-      "tpot_us": 13364.542635658914,
-      "e2e_us": 3581334,
-      "scheduling_delay_us": 53688,
+      "ttft_us": 138728,
+      "tpot_us": 13870.550387596899,
+      "e2e_us": 3717330,
+      "scheduling_delay_us": 57500,
       "completion_index": 3,
       "prompt_tokens": 481,
+      "computed_tokens": 481,
       "output_tokens": 259,
       "instance": "instance_0"
     },
@@ -1089,12 +1136,13 @@
       "id": "request_4",
       "fate": "completed",
       "arrival_us": 1250000,
-      "ttft_us": 157546,
-      "tpot_us": 14671.505112474437,
-      "e2e_us": 7331912,
-      "scheduling_delay_us": 45313,
+      "ttft_us": 165087,
+      "tpot_us": 15030.513292433538,
+      "e2e_us": 7515008,
+      "scheduling_delay_us": 50150,
       "completion_index": 13,
       "prompt_tokens": 847,
+      "computed_tokens": 847,
       "output_tokens": 490,
       "instance": "instance_0"
     },
@@ -1102,12 +1150,13 @@
       "id": "request_5",
       "fate": "completed",
       "arrival_us": 1500000,
-      "ttft_us": 154866,
-      "tpot_us": 13919.018796992481,
-      "e2e_us": 11262243,
-      "scheduling_delay_us": 59762,
+      "ttft_us": 138323,
+      "tpot_us": 14197.02380952381,
+      "e2e_us": 11467548,
+      "scheduling_delay_us": 41468,
       "completion_index": 21,
       "prompt_tokens": 509,
+      "computed_tokens": 509,
       "output_tokens": 799,
       "instance": "instance_0"
     },
@@ -1115,12 +1164,13 @@
       "id": "request_6",
       "fate": "completed",
       "arrival_us": 1750000,
-      "ttft_us": 116883,
-      "tpot_us": 14503.024096385541,
-      "e2e_us": 3728136,
-      "scheduling_delay_us": 40905,
+      "ttft_us": 131599,
+      "tpot_us": 14864.253012048193,
+      "e2e_us": 3832798,
+      "scheduling_delay_us": 54016,
       "completion_index": 5,
       "prompt_tokens": 276,
+      "computed_tokens": 276,
       "output_tokens": 250,
       "instance": "instance_0"
     },
@@ -1128,12 +1178,13 @@
       "id": "request_7",
       "fate": "completed",
       "arrival_us": 2000000,
-      "ttft_us": 186442,
-      "tpot_us": 15349.340482573727,
-      "e2e_us": 5911746,
-      "scheduling_delay_us": 68172,
-      "completion_index": 10,
+      "ttft_us": 178199,
+      "tpot_us": 15725.152815013405,
+      "e2e_us": 6043681,
+      "scheduling_delay_us": 56701,
+      "completion_index": 11,
       "prompt_tokens": 826,
+      "computed_tokens": 826,
       "output_tokens": 374,
       "instance": "instance_0"
     },
@@ -1141,12 +1192,13 @@
       "id": "request_8",
       "fate": "completed",
       "arrival_us": 2250000,
-      "ttft_us": 167840,
-      "tpot_us": 15370.007936507936,
-      "e2e_us": 5977703,
-      "scheduling_delay_us": 56805,
+      "ttft_us": 164234,
+      "tpot_us": 15742.507936507936,
+      "e2e_us": 6114902,
+      "scheduling_delay_us": 50370,
       "completion_index": 12,
       "prompt_tokens": 671,
+      "computed_tokens": 671,
       "output_tokens": 379,
       "instance": "instance_0"
     },
@@ -1154,12 +1206,13 @@
       "id": "request_9",
       "fate": "completed",
       "arrival_us": 2500000,
-      "ttft_us": 158905,
-      "tpot_us": 14366.7046875,
-      "e2e_us": 9353596,
-      "scheduling_delay_us": 42847,
+      "ttft_us": 160235,
+      "tpot_us": 14664.6109375,
+      "e2e_us": 9545586,
+      "scheduling_delay_us": 41141,
       "completion_index": 19,
       "prompt_tokens": 727,
+      "computed_tokens": 727,
       "output_tokens": 641,
       "instance": "instance_0"
     },
@@ -1167,12 +1220,13 @@
       "id": "request_10",
       "fate": "completed",
       "arrival_us": 2750000,
-      "ttft_us": 184496,
-      "tpot_us": 13390.416184971098,
-      "e2e_us": 11767206,
-      "scheduling_delay_us": 70321,
+      "ttft_us": 158436,
+      "tpot_us": 13632.784971098266,
+      "e2e_us": 11950795,
+      "scheduling_delay_us": 41350,
       "completion_index": 27,
       "prompt_tokens": 668,
+      "computed_tokens": 668,
       "output_tokens": 866,
       "instance": "instance_0"
     },
@@ -1180,12 +1234,13 @@
       "id": "request_11",
       "fate": "completed",
       "arrival_us": 3000000,
-      "ttft_us": 180558,
-      "tpot_us": 14863.03870967742,
-      "e2e_us": 7091871,
-      "scheduling_delay_us": 67313,
+      "ttft_us": 159421,
+      "tpot_us": 15186.898924731182,
+      "e2e_us": 7221329,
+      "scheduling_delay_us": 43337,
       "completion_index": 16,
       "prompt_tokens": 627,
+      "computed_tokens": 627,
       "output_tokens": 466,
       "instance": "instance_0"
     },
@@ -1193,12 +1248,13 @@
       "id": "request_12",
       "fate": "completed",
       "arrival_us": 3250000,
-      "ttft_us": 182686,
-      "tpot_us": 13804.20081967213,
-      "e2e_us": 10287361,
-      "scheduling_delay_us": 66742,
+      "ttft_us": 166670,
+      "tpot_us": 14078.042349726777,
+      "e2e_us": 10471797,
+      "scheduling_delay_us": 47778,
       "completion_index": 23,
       "prompt_tokens": 649,
+      "computed_tokens": 649,
       "output_tokens": 733,
       "instance": "instance_0"
     },
@@ -1206,12 +1262,13 @@
       "id": "request_13",
       "fate": "completed",
       "arrival_us": 3500000,
-      "ttft_us": 191866,
-      "tpot_us": 11085.272277227723,
-      "e2e_us": 13627216,
-      "scheduling_delay_us": 71987,
+      "ttft_us": 181237,
+      "tpot_us": 11233.482673267326,
+      "e2e_us": 13796218,
+      "scheduling_delay_us": 58238,
       "completion_index": 30,
       "prompt_tokens": 693,
+      "computed_tokens": 693,
       "output_tokens": 1213,
       "instance": "instance_0"
     },
@@ -1219,12 +1276,13 @@
       "id": "request_14",
       "fate": "completed",
       "arrival_us": 3750000,
-      "ttft_us": 165932,
-      "tpot_us": 14968.876712328767,
-      "e2e_us": 1258660,
-      "scheduling_delay_us": 48528,
+      "ttft_us": 196218,
+      "tpot_us": 15303.917808219177,
+      "e2e_us": 1313404,
+      "scheduling_delay_us": 75829,
       "completion_index": 4,
       "prompt_tokens": 629,
+      "computed_tokens": 629,
       "output_tokens": 74,
       "instance": "instance_0"
     },
@@ -1232,12 +1290,13 @@
       "id": "request_15",
       "fate": "completed",
       "arrival_us": 4000000,
-      "ttft_us": 183132,
-      "tpot_us": 15694.973214285714,
-      "e2e_us": 3698806,
-      "scheduling_delay_us": 60936,
+      "ttft_us": 182196,
+      "tpot_us": 16085.607142857143,
+      "e2e_us": 3785372,
+      "scheduling_delay_us": 56799,
       "completion_index": 8,
       "prompt_tokens": 689,
+      "computed_tokens": 689,
       "output_tokens": 225,
       "instance": "instance_0"
     },
@@ -1245,12 +1304,13 @@
       "id": "request_16",
       "fate": "completed",
       "arrival_us": 4250000,
-      "ttft_us": 134417,
-      "tpot_us": 37601,
-      "e2e_us": 172018,
-      "scheduling_delay_us": 43872,
+      "ttft_us": 137413,
+      "tpot_us": 38259,
+      "e2e_us": 175672,
+      "scheduling_delay_us": 44842,
       "completion_index": 2,
       "prompt_tokens": 263,
+      "computed_tokens": 263,
       "output_tokens": 2,
       "instance": "instance_0"
     },
@@ -1258,12 +1318,13 @@
       "id": "request_17",
       "fate": "completed",
       "arrival_us": 4500000,
-      "ttft_us": 195571,
-      "tpot_us": 14187.05304518664,
-      "e2e_us": 7416781,
-      "scheduling_delay_us": 69679,
+      "ttft_us": 205720,
+      "tpot_us": 14478.347740667976,
+      "e2e_us": 7575199,
+      "scheduling_delay_us": 75874,
       "completion_index": 20,
       "prompt_tokens": 740,
+      "computed_tokens": 740,
       "output_tokens": 510,
       "instance": "instance_0"
     },
@@ -1271,12 +1332,13 @@
       "id": "request_18",
       "fate": "completed",
       "arrival_us": 4750000,
-      "ttft_us": 142660,
-      "tpot_us": 15880.106951871658,
-      "e2e_us": 3112240,
-      "scheduling_delay_us": 56362,
+      "ttft_us": 157193,
+      "tpot_us": 16282.529411764706,
+      "e2e_us": 3202026,
+      "scheduling_delay_us": 69078,
       "completion_index": 9,
       "prompt_tokens": 190,
+      "computed_tokens": 190,
       "output_tokens": 188,
       "instance": "instance_0"
     },
@@ -1284,12 +1346,13 @@
       "id": "request_19",
       "fate": "completed",
       "arrival_us": 5000000,
-      "ttft_us": 164462,
-      "tpot_us": 15967.275862068966,
-      "e2e_us": 2942768,
-      "scheduling_delay_us": 42905,
-      "completion_index": 11,
+      "ttft_us": 185446,
+      "tpot_us": 16375.172413793103,
+      "e2e_us": 3034726,
+      "scheduling_delay_us": 60074,
+      "completion_index": 10,
       "prompt_tokens": 657,
+      "computed_tokens": 657,
       "output_tokens": 175,
       "instance": "instance_0"
     },
@@ -1297,12 +1360,13 @@
       "id": "request_20",
       "fate": "completed",
       "arrival_us": 5250000,
-      "ttft_us": 140565,
-      "tpot_us": 13523.166112956811,
-      "e2e_us": 8281511,
-      "scheduling_delay_us": 64736,
+      "ttft_us": 127265,
+      "tpot_us": 13796.996677740864,
+      "e2e_us": 8433057,
+      "scheduling_delay_us": 50115,
       "completion_index": 22,
       "prompt_tokens": 2,
+      "computed_tokens": 2,
       "output_tokens": 603,
       "instance": "instance_0"
     },
@@ -1310,12 +1374,13 @@
       "id": "request_21",
       "fate": "completed",
       "arrival_us": 5500000,
-      "ttft_us": 134108,
-      "tpot_us": 12590.668010752688,
-      "e2e_us": 9501565,
-      "scheduling_delay_us": 42645,
+      "ttft_us": 165705,
+      "tpot_us": 12792.495967741936,
+      "e2e_us": 9683322,
+      "scheduling_delay_us": 71548,
       "completion_index": 28,
       "prompt_tokens": 258,
+      "computed_tokens": 258,
       "output_tokens": 745,
       "instance": "instance_0"
     },
@@ -1323,12 +1388,13 @@
       "id": "request_22",
       "fate": "completed",
       "arrival_us": 5750000,
-      "ttft_us": 190080,
-      "tpot_us": 13153.939102564103,
-      "e2e_us": 8398138,
-      "scheduling_delay_us": 74991,
+      "ttft_us": 189033,
+      "tpot_us": 13410.4375,
+      "e2e_us": 8557146,
+      "scheduling_delay_us": 71129,
       "completion_index": 26,
       "prompt_tokens": 507,
+      "computed_tokens": 507,
       "output_tokens": 625,
       "instance": "instance_0"
     },
@@ -1336,12 +1402,13 @@
       "id": "request_23",
       "fate": "completed",
       "arrival_us": 6000000,
-      "ttft_us": 179954,
-      "tpot_us": 12139.305039787798,
-      "e2e_us": 9332990,
-      "scheduling_delay_us": 56417,
+      "ttft_us": 185487,
+      "tpot_us": 12344.159151193633,
+      "e2e_us": 9492983,
+      "scheduling_delay_us": 57481,
       "completion_index": 29,
       "prompt_tokens": 651,
+      "computed_tokens": 651,
       "output_tokens": 755,
       "instance": "instance_0"
     },
@@ -1349,12 +1416,13 @@
       "id": "request_24",
       "fate": "completed",
       "arrival_us": 6250000,
-      "ttft_us": 163149,
-      "tpot_us": 14008.071232876713,
-      "e2e_us": 5276095,
-      "scheduling_delay_us": 46264,
+      "ttft_us": 174320,
+      "tpot_us": 14294.865753424658,
+      "e2e_us": 5391946,
+      "scheduling_delay_us": 54542,
       "completion_index": 18,
       "prompt_tokens": 518,
+      "computed_tokens": 518,
       "output_tokens": 366,
       "instance": "instance_0"
     },
@@ -1362,12 +1430,13 @@
       "id": "request_25",
       "fate": "completed",
       "arrival_us": 6500000,
-      "ttft_us": 198396,
-      "tpot_us": 14580.122549019608,
-      "e2e_us": 3172741,
-      "scheduling_delay_us": 70636,
+      "ttft_us": 175772,
+      "tpot_us": 14922.45588235294,
+      "e2e_us": 3219953,
+      "scheduling_delay_us": 44602,
       "completion_index": 15,
       "prompt_tokens": 683,
+      "computed_tokens": 683,
       "output_tokens": 205,
       "instance": "instance_0"
     },
@@ -1375,12 +1444,13 @@
       "id": "request_26",
       "fate": "completed",
       "arrival_us": 6750000,
-      "ttft_us": 184379,
-      "tpot_us": 14669.83734939759,
-      "e2e_us": 2619572,
-      "scheduling_delay_us": 67691,
+      "ttft_us": 168679,
+      "tpot_us": 15016.981927710844,
+      "e2e_us": 2661498,
+      "scheduling_delay_us": 47908,
       "completion_index": 14,
       "prompt_tokens": 495,
+      "computed_tokens": 495,
       "output_tokens": 167,
       "instance": "instance_0"
     },
@@ -1388,12 +1458,13 @@
       "id": "request_27",
       "fate": "completed",
       "arrival_us": 7000000,
-      "ttft_us": 147339,
-      "tpot_us": 12799.509293680298,
-      "e2e_us": 7033475,
-      "scheduling_delay_us": 54244,
+      "ttft_us": 136591,
+      "tpot_us": 13060.46654275093,
+      "e2e_us": 7163122,
+      "scheduling_delay_us": 41404,
       "completion_index": 25,
       "prompt_tokens": 207,
+      "computed_tokens": 207,
       "output_tokens": 539,
       "instance": "instance_0"
     },
@@ -1401,12 +1472,13 @@
       "id": "request_28",
       "fate": "completed",
       "arrival_us": 7250000,
-      "ttft_us": 170444,
-      "tpot_us": 12837.599597585513,
-      "e2e_us": 6550731,
-      "scheduling_delay_us": 59470,
+      "ttft_us": 165357,
+      "tpot_us": 13101.79476861167,
+      "e2e_us": 6676949,
+      "scheduling_delay_us": 51810,
       "completion_index": 24,
       "prompt_tokens": 359,
+      "computed_tokens": 359,
       "output_tokens": 498,
       "instance": "instance_0"
     },
@@ -1414,12 +1486,13 @@
       "id": "request_29",
       "fate": "completed",
       "arrival_us": 7500000,
-      "ttft_us": 188726,
-      "tpot_us": 13541.555555555555,
-      "e2e_us": 3235576,
-      "scheduling_delay_us": 43756,
+      "ttft_us": 190244,
+      "tpot_us": 13831.013333333334,
+      "e2e_us": 3302222,
+      "scheduling_delay_us": 41053,
       "completion_index": 17,
       "prompt_tokens": 917,
+      "computed_tokens": 917,
       "output_tokens": 226,
       "instance": "instance_0"
     }
@@ -1439,60 +1512,63 @@
               0
             ],
             "rates_derived": true,
+            "rates_schedule": "minimum_variance",
             "source": "internal deployment measurements: 1.84 accepted tokens per DSpark draft at c16 on H100 PP2xTP8, fixed 7-token verify (AL = 1 + accepted)"
           },
           "length": 2.84,
           "rate": 0.26285714285714284,
           "source_layer": "scenario"
         },
+        "busy_share": 0.9954457346491755,
         "cache_hit_rate": 0,
         "cache_hit_rate_whole_run": 0,
         "cpu_tier_hit_rate": 0,
+        "decode_busy_share": 0.8822295891994736,
         "engine_admissions": 30,
         "gateway_queue_delay_mean_ms": 0,
         "gateway_queue_delay_p90_ms": 0,
         "in_flight_requests_max": 23,
-        "in_flight_requests_mean": 10.869107600648963,
+        "in_flight_requests_mean": 10.983095839792734,
         "kv_allocation_failures": 0,
         "kv_capacity_tokens_per_replica": 6890960,
         "kv_thrashing_rate": 0,
         "measured_cancelled_requests": 0,
         "measured_context_overflow_requests": 0,
         "measured_failed_requests": 0,
+        "mfu": 0.035819387140168565,
         "preemption_rate": 0,
         "preemptions": 0,
-        "scheduling_delay_p99_ms": 74.11984,
-        "simulated_duration_s": 17.089823,
-        "step_interval_mean_ms": 38.320448556149735,
-        "step_interval_p50_ms": 37.106,
-        "step_interval_p90_ms": 41.254,
-        "step_interval_p95_ms": 76.943,
-        "step_interval_p99_ms": 88.462,
+        "prefill_busy_share": 0.11321614544970197,
+        "scheduling_delay_p99_ms": 75.86094999999999,
+        "simulated_duration_s": 17.258747,
+        "step_interval_mean_ms": 39.128329197860964,
+        "step_interval_p50_ms": 37.745,
+        "step_interval_p90_ms": 42.063,
+        "step_interval_p95_ms": 79.123,
+        "step_interval_p99_ms": 91.147,
         "step_interval_percentile_method": "numpy_linear",
         "total_input_tokens": 16557,
         "total_output_tokens": 13272,
         "whole_run": {
-          "e2e_mean_ms": 6135.642400000001,
-          "e2e_p90_ms": 10385.626200000002,
-          "e2e_p95_ms": 11540.74965,
-          "e2e_p99_ms": 13088.590100000001,
-          "responses_per_sec": 1.7554307028223757,
-          "step_interval_mean_ms": 38.320448556149735,
-          "step_interval_p90_ms": 41.254,
-          "step_interval_p95_ms": 76.943,
-          "step_interval_p99_ms": 88.462,
-          "tokens_per_sec": 776.6025429286191,
-          "ttft_mean_ms": 163.26216666666664,
-          "ttft_p90_ms": 190.2586,
-          "ttft_p95_ms": 193.90375,
-          "ttft_p99_ms": 197.57675
+          "e2e_mean_ms": 6261.359866666667,
+          "e2e_p90_ms": 10572.149100000002,
+          "e2e_p95_ms": 11734.11085,
+          "e2e_p99_ms": 13261.82233,
+          "responses_per_sec": 1.7382490165711335,
+          "step_interval_mean_ms": 39.128329197860964,
+          "step_interval_p90_ms": 42.063,
+          "step_interval_p95_ms": 79.123,
+          "step_interval_p99_ms": 91.147,
+          "tokens_per_sec": 769.0013649310695,
+          "ttft_mean_ms": 163.0849,
+          "ttft_p90_ms": 189.1541,
+          "ttft_p95_ms": 193.5297,
+          "ttft_p99_ms": 202.96442
         }
       },
       "colocated": {
         "prefix_cache": {
-          "layout": {
-            "full_eagle": true
-          },
+          "layout": {},
           "model_runner": "v2"
         }
       }
@@ -1515,6 +1591,7 @@
         "MetricFlags": null,
         "MetricsSources": null,
         "PrefixIndexes": null,
+        "SessionIdentities": null,
         "Topology": {
           "Extractors": null,
           "Requested": false
@@ -1524,24 +1601,6 @@
     "kernel": {
       "colocated": {
         "assumptions": [
-          {
-            "KernelMatch": "",
-            "Method": "assumed",
-            "Name": "modality",
-            "Primitive": "",
-            "Running": "",
-            "Scope": "text_decoder_of_multimodal: the graph prices the text decoder of a multimodal model: its vision or audio tower, and the encoder work a multimodal request adds, are not priced",
-            "Set": "blis-latency-kernel"
-          },
-          {
-            "KernelMatch": "",
-            "Method": "assumed",
-            "Name": "compute_rate_fp32",
-            "Primitive": "",
-            "Running": "",
-            "Scope": "bf16: FP32 weights run at the TF32 tensor-core rate, taken as half the dense BF16 peak as NVIDIA's datasheets state it for every catalog part; the catalog states no TF32 peak, and the ramp is BF16's",
-            "Set": "blis-latency-kernel"
-          },
           {
             "KernelMatch": "",
             "Method": "assumed",
@@ -1563,6 +1622,51 @@
           {
             "KernelMatch": "",
             "Method": "assumed",
+            "Name": "moe_routing",
+            "Primitive": "",
+            "Running": "",
+            "Scope": ": the experts class vLLM resolves for mixed routed experts (moe_backend \"marlin\") is not resolved here, so no selection launch is counted",
+            "Set": "blis-latency-kernel"
+          },
+          {
+            "KernelMatch": "",
+            "Method": "assumed",
+            "Name": "modality",
+            "Primitive": "",
+            "Running": "",
+            "Scope": "text_decoder_of_multimodal: the graph prices a vision tower, but the engine states none resident, so the tower's weights and any encode step are not priced",
+            "Set": "blis-latency-kernel"
+          },
+          {
+            "KernelMatch": "",
+            "Method": "assumed",
+            "Name": "modality",
+            "Primitive": "",
+            "Running": "",
+            "Scope": "text_decoder_of_multimodal: the graph prices the text decoder of a multimodal model: its vision or audio tower, and the encoder work a multimodal request adds, are not priced",
+            "Set": "blis-latency-kernel"
+          },
+          {
+            "KernelMatch": "",
+            "Method": "assumed",
+            "Name": "compute_rate_fp32",
+            "Primitive": "",
+            "Running": "",
+            "Scope": "bf16: an fp32 router gate above 32 tokens runs F.linear on the fp32 weight (gate_linear.py:116-136), SGEMM on CUDA cores at the datasheet FP32 rate since VLLM_FLOAT32_MATMUL_PRECISION defaults to highest (envs.py:92), on the BF16 ramp",
+            "Set": "blis-latency-kernel"
+          },
+          {
+            "KernelMatch": "",
+            "Method": "assumed",
+            "Name": "nontorch_in_budget_bytes_8rank",
+            "Primitive": "",
+            "Running": "",
+            "Scope": "0: no fit-unit group measures the non-torch memory vLLM grows inside the KV budget for this model and part (non_kv_cache_memory, gpu_worker.py:720-756@v0.33.0), so none is charged and the KV budget is overstated by it",
+            "Set": "blis-latency-kernel"
+          },
+          {
+            "KernelMatch": "",
+            "Method": "assumed",
             "Name": "routing_imbalance",
             "Primitive": "",
             "Running": "",
@@ -1575,7 +1679,7 @@
             "Name": "engine_version",
             "Primitive": "",
             "Running": "",
-            "Scope": "0.31.0: the scenario declares vLLM 0.32.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
+            "Scope": "0.31.0: the scenario declares vLLM 0.33.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
             "Set": "blis-latency-kernel"
           }
         ],
@@ -1935,7 +2039,7 @@
           }
         ],
         "method_counts": {
-          "assumed": 43,
+          "assumed": 46,
           "measured": 101,
           "not_charged": 1,
           "transferred": 2,
@@ -1977,6 +2081,7 @@
           "moonep-requirements",
           "offload-spec-known",
           "quantization-known",
+          "qwen4-exp-qsa-backend",
           "sequence-parallel-architecture-known",
           "sequence-parallel-moe-implied"
         ],
@@ -1988,7 +2093,7 @@
             "stated": "unset"
           }
         ],
-        "total": 161
+        "total": 164
       }
     }
   },

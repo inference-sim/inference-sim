@@ -228,6 +228,7 @@ func resultLedger(cs *cluster.ClusterSimulator) result.Requests {
 	t := cs.Fates().Tally()
 	q := result.Requests{
 		Generated:         t.Created,
+		PlannedNotIssued:  t.PlannedNotIssued,
 		Completed:         t.ByFate[sim.FateCompleted],
 		TimedOut:          t.ByFate[sim.FateTimedOut],
 		InFlightAtHorizon: t.ByFate[sim.FateInFlightAtHorizon],
@@ -262,12 +263,26 @@ func runDecodeGPUs(cs *cluster.ClusterSimulator, dep *deployment.Deployment) int
 
 // runGPUsByRole is runGPUs, and the part of it the decode instances occupy.
 func runGPUsByRole(cs *cluster.ClusterSimulator, dep *deployment.Deployment) (all, decode int) {
+	gpus, isDecode := instanceGPUs(cs, dep)
+	for id, g := range gpus {
+		all += g
+		if isDecode[id] {
+			decode += g
+		}
+	}
+	return all, decode
+}
+
+// instanceGPUs is the GPUs each instance occupies, by instance id, and which of them are
+// decode instances.
+func instanceGPUs(cs *cluster.ClusterSimulator, dep *deployment.Deployment) (gpus map[string]int, decode map[string]bool) {
 	perRole := map[deployment.Role]int{}
 	if dep != nil {
 		for _, p := range dep.Pools {
 			perRole[p.Role] = max(p.Parallel.TP, 1) * max(p.Parallel.PP, 1) * max(p.Parallel.PCP, 1)
 		}
 	}
+	gpus, decode = map[string]int{}, map[string]bool{}
 	membership := cs.PoolMembership()
 	for _, inst := range cs.Instances() {
 		role := deployment.RoleColocated
@@ -283,12 +298,10 @@ func runGPUsByRole(cs *cluster.ClusterSimulator, dep *deployment.Deployment) (al
 		if !ok {
 			g = max(inst.TPDegree, 1)
 		}
-		all += g
-		if role == deployment.RoleDecode {
-			decode += g
-		}
+		gpus[string(inst.ID())] = g
+		decode[string(inst.ID())] = role == deployment.RoleDecode
 	}
-	return all, decode
+	return gpus, decode
 }
 
 // engineSection is what the engine side of the run reported: under "cluster" the aggregate
@@ -332,7 +345,7 @@ func engineSection(m *sim.Metrics, sum sim.MeasuredSummary, raw *cluster.RawMetr
 	if len(whole.Adapters) > 0 {
 		c["adapters"] = toGeneric(whole.Adapters)
 	}
-	// The whole-run figures stdout printed before the Result (blis-schemas#41 section A: "whole-run
+	// The whole-run figures stdout printed before the Result (inference-sim/blis-substrate#154 section A: "whole-run
 	// values, when wanted, are a second named window"; schema v1 states one window, so they are
 	// the engine's): latencies over every completed request, the per-decode-step interval the
 	// legacy itl_* keys held, and the rates over the simulated run.
@@ -362,16 +375,33 @@ func engineSection(m *sim.Metrics, sum sim.MeasuredSummary, raw *cluster.RawMetr
 	return out
 }
 
-// instanceSections are each engine instance's own whole-run figures, keyed by instance id,
-// as a multi-instance run printed them: the MetricsOutput of that instance.
-func instanceSections(cs *cluster.ClusterSimulator) map[string]any {
+// instanceSections are each engine instance's own figures, keyed by instance id, as a
+// multi-instance run printed them: the whole-run MetricsOutput of that instance, and under
+// "measured_window" the same instance's figures over the run's measured window, so a consumer can
+// judge the worst instance on the window and not on the warmup-inflated whole run (#2087). The
+// window is the aggregate's (sum), and the figures are the definitions of the cluster's, taken
+// over the requests this instance served (Metrics.SummaryOver, as the breakdowns do). A run with
+// no measured window states none.
+func instanceSections(cs *cluster.ClusterSimulator, sum sim.MeasuredSummary) map[string]any {
 	insts := cs.Instances()
 	if len(insts) <= 1 {
 		return nil
 	}
 	out := make(map[string]any, len(insts))
 	for _, inst := range insts {
-		out[string(inst.ID())] = toGeneric(inst.Metrics().BuildOutput(string(inst.ID())))
+		id := string(inst.ID())
+		block := toGeneric(inst.Metrics().BuildOutput(id))
+		if m, ok := block.(map[string]any); ok && sum.MeasuredWindowS > 0 {
+			w := inst.Metrics().SummaryOver(func(sim.RequestMetrics) bool { return true }, sum.WindowStartUs, sum.WindowEndUs)
+			m["measured_window"] = map[string]any{
+				"window_start_us": sum.WindowStartUs, "window_end_us": sum.WindowEndUs,
+				"measured_completed_requests": w.MeasuredCompletedRequests,
+				"ttft_mean_ms":                w.TTFTMeanMs, "ttft_p90_ms": w.TTFTP90Ms, "ttft_p95_ms": w.TTFTP95Ms, "ttft_p99_ms": w.TTFTP99Ms,
+				"e2e_mean_ms": w.E2EMeanMs, "e2e_p90_ms": w.E2EP90Ms, "e2e_p95_ms": w.E2EP95Ms, "e2e_p99_ms": w.E2EP99Ms,
+				"output_tok_s": w.OutputThroughputTokS,
+			}
+		}
+		out[id] = block
 	}
 	return out
 }

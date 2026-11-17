@@ -1,6 +1,6 @@
 package cmd
 
-// Behavioral contracts of the Result document (#1871, blis-schemas#41 sections A and D):
+// Behavioral contracts of the Result document (#1871, inference-sim/blis-substrate#154 sections A and D):
 //
 //	BC-R1 stdout of run and replay is exactly one Result that blis-schemas validates: JSON by
 //	      default, YAML with --format yaml, the same document in both.
@@ -32,6 +32,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/metrics"
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
@@ -204,10 +205,19 @@ func TestResult_TPOTIsPerTokenAndTheStepIntervalIsPerStep(t *testing.T) {
 	if want := r.Metrics["tpot_mean_ms"].Value; n == 0 || math.Abs(sum/float64(n)-want) > 1e-6*want {
 		t.Errorf("tpot_mean_ms %v, want the mean %v of the %d rows' tpot_us", want, sum/float64(max(n, 1)), n)
 	}
-	step := metric(t, stdout, "step_interval_p90_ms")
-	// Non-vacuity: with drafts accepted, a step emits more than one token, so the two differ.
-	if tpot := r.Metrics["tpot_p90_ms"].Value; step <= tpot {
-		t.Errorf("under speculation the step interval %v must exceed the per-token TPOT %v", step, tpot)
+	// Non-vacuity: with drafts accepted, a step emits more than one token, so the median request's
+	// TPOT is below the median step interval. The comparison is at the median, not in the tail. A
+	// request with two output tokens has one decode step, which accepts no draft, so its TPOT is
+	// that step's interval. The step samples the request's last token, so vLLM v0.33.0 proposes no
+	// drafts after it (Scheduler._drafts_unused, vllm/v1/core/sched/scheduler.py:502-544@4ba787ec).
+	// DSpark then stores its context K/V with eager launches and replays no graph
+	// (vllm/v1/worker/gpu/spec_decode/dflash/speculator.py:546-553@4ba787ec), where a drafting step
+	// stores it inside its captured graph (:190-206, replayed at :617-619). The eager launches cost
+	// more than the skipped query pass, so that step can take longer than a drafting one, and such
+	// requests can put the TPOT tail above the step-interval tail.
+	step := metric(t, stdout, "step_interval_p50_ms")
+	if tpot := r.Metrics["tpot_p50_ms"].Value; step <= tpot {
+		t.Errorf("under speculation the median step interval %v must exceed the median per-token TPOT %v", step, tpot)
 	}
 }
 
@@ -273,7 +283,7 @@ func TestResult_ViewSummaryRendersToStderrOnly(t *testing.T) {
 // --policy-config bundle verbatim.
 func TestResult_InputRecordsWhatTheRunWasGiven(t *testing.T) {
 	bundle := filepath.Join(t.TempDir(), "policy.yaml")
-	if err := os.WriteFile(bundle, []byte("scheduler: fcfs\n"), 0o644); err != nil {
+	if err := os.WriteFile(bundle, []byte("priority:\n  policy: constant\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	stdout, stderr, err := runKernelCLI(t, resultRunArgs("--policy-config", bundle)...)
@@ -289,7 +299,7 @@ func TestResult_InputRecordsWhatTheRunWasGiven(t *testing.T) {
 	if g.Load.RequestRate != 10 || stop.Requests != 30 || g.Seed != 7 || stop.HorizonS == nil || *stop.HorizonS != 600 {
 		t.Errorf("frame generator %+v, stop %+v; want rate 10, 30 requests, seed 7, horizon 600 s", g, stop)
 	}
-	if in.Policy["scheduler"] != "fcfs" {
+	if p, ok := in.Policy["priority"].(map[string]any); !ok || p["policy"] != "constant" {
 		t.Errorf("input.policy = %v, want the bundle verbatim", in.Policy)
 	}
 	if r.Revisions.Simulator == "" || r.Revisions.Substrate == "" || r.Engine.Kind != "vllm" ||
@@ -814,8 +824,23 @@ func TestResult_FromResultRefusesAChangedFileAndTheOtherCommand(t *testing.T) {
 	if err := os.WriteFile(file, []byte(out), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, stderr, err := runKernelCLI(t, "run", "--from-result", file); err == nil || !strings.Contains(stderr, "pass the file again") {
-		t.Errorf("a missing file option was not refused: %v\n%s", err, lastLines(stderr, 3))
+	// The Result holds the spec (input.files), so the reproduction needs it not passed again;
+	// a Result that does not hold it, such as one written before input.files, is refused.
+	if _, stderr, err := runKernelCLI(t, "run", "--from-result", file); err != nil {
+		t.Errorf("the Result holds the spec, but the reproduction failed without it: %v\n%s", err, lastLines(stderr, 3))
+	}
+	r := parseResult(t, out)
+	r.Input.Files = nil
+	bare, err := result.Marshal(r, result.FormatJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bareFile := filepath.Join(dir, "bare.json")
+	if err := os.WriteFile(bareFile, bare, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, stderr, err := runKernelCLI(t, "run", "--from-result", bareFile); err == nil || !strings.Contains(stderr, "pass the file again") {
+		t.Errorf("a missing file the Result does not hold was not refused: %v\n%s", err, lastLines(stderr, 3))
 	}
 	other := filepath.Join(dir, "other.yaml")
 	if err := os.WriteFile(other, []byte(strings.Replace(body, "seed: 3", "seed: 4", 1)), 0o644); err != nil {
@@ -1148,5 +1173,315 @@ clients:
 	}
 	if a, b := run.Metrics["ttft_mean_ms"].Value, rep.Metrics["ttft_mean_ms"].Value; math.Abs(a-b) > 1e-9*a {
 		t.Errorf("INV-13: ttft_mean_ms is %v in the replay, %v in the run", b, a)
+	}
+}
+
+// SIM-8 (#2093) and #1973: a session round planned and never issued has a not_started row, in
+// the session's own index; a scheduled request states the prompt tokens its engine computed
+// itself, which are the prompt less the cached tokens.
+func TestResult_UnissuedSessionRoundsHaveRowsAndScheduledRequestsStateComputedTokens(t *testing.T) {
+	dir := t.TempDir()
+	spec := filepath.Join(dir, "spec.yaml")
+	if err := os.WriteFile(spec, []byte(`version: "2"
+seed: 5
+category: reasoning
+aggregate_rate: 40
+num_requests: 40
+clients:
+  - id: r
+    rate_fraction: 1.0
+    arrival: {process: poisson}
+    prefix_group: sys
+    prefix_length: 256
+    input_distribution: {type: gaussian, params: {mean: 200, std_dev: 20, min: 100, max: 300}}
+    output_distribution: {type: gaussian, params: {mean: 40, std_dev: 5, min: 20, max: 60}}
+    reasoning:
+      multi_turn: {max_rounds: 4, think_time_us: 400000, context_growth: accumulate}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, stderr, err := runKernelCLI(t, "run", "--scenario", kernelTestScenario, "--seed", "5",
+		"--workload-spec", spec, "--horizon", "2000000")
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+	}
+	res := parseResult(t, out)
+	notStarted, scheduled := 0, 0
+	for _, row := range res.RequestRows {
+		if row.Fate == result.FateNotStarted && row.SessionID != "" && row.RoundIndex > 0 {
+			notStarted++
+			if row.ArrivalUs <= 0 {
+				t.Errorf("%s: a planned round states arrival_us %d, want the plan's arrival after its session's last issued round", row.ID, row.ArrivalUs)
+			}
+		}
+		if row.SchedulingDelayUs != nil {
+			scheduled++
+			if want := row.PromptTokens - row.CachedLocalTokens - row.CachedExternalTokens; row.ComputedTokens != want {
+				t.Errorf("%s: computed_tokens %d, want the prompt %d less cached %d+%d", row.ID,
+					row.ComputedTokens, row.PromptTokens, row.CachedLocalTokens, row.CachedExternalTokens)
+			}
+		}
+	}
+	if got := len(res.RequestRows) - res.Requests.Generated; got != res.Requests.PlannedNotIssued || got != notStarted {
+		t.Errorf("rows beyond generated %d, requests.planned_not_issued %d, planned not_started rows %d: want all equal",
+			got, res.Requests.PlannedNotIssued, notStarted)
+	}
+	if notStarted == 0 {
+		t.Errorf("no row for an unissued session round: the horizon cuts sessions that planned 4 rounds")
+	}
+	if scheduled == 0 {
+		t.Errorf("non-vacuity: no request was scheduled")
+	}
+}
+
+// #1926: a trace with phases replays drain-gated. The measured phase is sent after the warm-up
+// drained, hits the prefix the warm-up left in the cache, and every row names its phase; the
+// replay's own trace export keeps the phases, and replaying it gives the same rows (INV-13).
+func TestResult_PhasedTraceReplaysDrainGatedAndKeepsItsPhasesThroughTheExport(t *testing.T) {
+	dir := t.TempDir()
+	var recs []workload.TraceRecord
+	add := func(phase string, n int) {
+		for i := 0; i < n; i++ {
+			recs = append(recs, workload.TraceRecord{RequestID: len(recs), ClientID: "c", PrefixGroup: "sys",
+				PrefixLength: 512, Streaming: true, InputTokens: 64, OutputTokens: 24, Status: trace.StatusOK,
+				ArrivalTimeUs: int64(i) * 1000, Phase: phase})
+		}
+	}
+	add("warmup", 3)
+	add("measured", 4)
+	header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: trace.ModeConverted,
+		Phases: []trace.Phase{{Name: "warmup"}, {Name: "measured"}}}
+	prefix := filepath.Join(dir, "ph")
+	if err := workload.ExportTraceV2(header, recs, prefix+".yaml", prefix+".csv"); err != nil {
+		t.Fatal(err)
+	}
+	replay := func(in, out string) *result.Result {
+		args := []string{"replay", "--scenario", kernelTestScenario, "--seed", "5", "--trace-header", in + ".yaml", "--trace-data", in + ".csv"}
+		if out != "" {
+			args = append(args, "--trace-output", out)
+		}
+		stdout, stderr, err := runKernelCLI(t, args...)
+		if err != nil {
+			t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 5))
+		}
+		return parseResult(t, stdout)
+	}
+	first := replay(prefix, filepath.Join(dir, "again"))
+	var lastWarmEnd, firstMeasured int64 = 0, -1
+	measuredCached := 0
+	for _, row := range first.RequestRows {
+		switch row.Phase {
+		case "warmup":
+			if row.E2EUs == nil {
+				t.Fatalf("%s: a warm-up request did not complete", row.ID)
+			}
+			lastWarmEnd = max(lastWarmEnd, row.ArrivalUs+*row.E2EUs)
+		case "measured":
+			if firstMeasured < 0 || row.ArrivalUs < firstMeasured {
+				firstMeasured = row.ArrivalUs
+			}
+			measuredCached += row.CachedLocalTokens
+		default:
+			t.Errorf("%s: phase %q, want warmup or measured", row.ID, row.Phase)
+		}
+	}
+	if len(first.RequestRows) != 7 || firstMeasured < 0 {
+		t.Fatalf("non-vacuity: %d rows, first measured arrival %d", len(first.RequestRows), firstMeasured)
+	}
+	if firstMeasured < lastWarmEnd {
+		t.Errorf("the measured phase starts at %d, before the warm-up drained at %d", firstMeasured, lastWarmEnd)
+	}
+	if measuredCached == 0 {
+		t.Errorf("the measured requests hit no cached token: the warm-up's state did not carry across")
+	}
+	second := replay(filepath.Join(dir, "again"), "")
+	if len(second.RequestRows) != len(first.RequestRows) {
+		t.Fatalf("INV-13: the re-exported trace replays %d rows, the first replay %d", len(second.RequestRows), len(first.RequestRows))
+	}
+	for i, a := range first.RequestRows {
+		b := second.RequestRows[i]
+		if a.Phase != b.Phase || a.ArrivalUs != b.ArrivalUs || a.CachedLocalTokens != b.CachedLocalTokens {
+			t.Errorf("INV-13: row %d is phase %q arrival %d cached %d, then %q %d %d", i, a.Phase, a.ArrivalUs,
+				a.CachedLocalTokens, b.Phase, b.ArrivalUs, b.CachedLocalTokens)
+		}
+	}
+}
+
+// #1926: blis run generates a phased workload (WorkloadSpec phases and a per-client phase),
+// sends the measured phase when the warm-up drained, hits the prefix the warm-up left, labels
+// every row, and exports a trace whose replay gives the same arrivals, phases and cache hits
+// (INV-13, DEV-7).
+func TestResult_RunOfAPhasedWorkloadDrainsGatesAndReplaysToTheSameRows(t *testing.T) {
+	dir := t.TempDir()
+	client := func(id, phase string) string {
+		return "  - id: " + id + "\n    phase: " + phase + "\n    tenant_id: t\n    slo_class: standard\n    rate_fraction: 1\n" +
+			"    arrival: {process: poisson}\n    prefix_group: sys\n    prefix_length: 512\n" +
+			"    input_distribution: {type: constant, params: {value: 600}}\n" +
+			"    output_distribution: {type: constant, params: {value: 24}}\n"
+	}
+	spec := filepath.Join(dir, "spec.yaml")
+	body := "version: \"2\"\nseed: 7\ncategory: language\naggregate_rate: 20\nphases:\n" +
+		"  - {name: warmup, num_requests: 4, concurrency: 2}\n  - {name: measured, num_requests: 6, concurrency: 2}\nclients:\n" +
+		client("w", "warmup") + client("m", "measured")
+	if err := os.WriteFile(spec, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "run")
+	stdout, stderr, err := runKernelCLI(t, "run", "--scenario", kernelTestScenario, "--seed", "5", "--workload-spec", spec, "--trace-output", out)
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+	}
+	first := parseResult(t, stdout)
+	var lastWarmEnd, firstMeasured int64 = 0, -1
+	measuredCached, warm, meas := 0, 0, 0
+	for _, row := range first.RequestRows {
+		switch row.Phase {
+		case "warmup":
+			warm++
+			if row.E2EUs == nil {
+				t.Fatalf("%s: a warm-up request did not complete", row.ID)
+			}
+			lastWarmEnd = max(lastWarmEnd, row.ArrivalUs+*row.E2EUs)
+		case "measured":
+			meas++
+			if firstMeasured < 0 || row.ArrivalUs < firstMeasured {
+				firstMeasured = row.ArrivalUs
+			}
+			measuredCached += row.CachedLocalTokens
+		default:
+			t.Errorf("%s: phase %q, want warmup or measured", row.ID, row.Phase)
+		}
+	}
+	if warm != 4 || meas != 6 {
+		t.Fatalf("rows: %d warm-up and %d measured, want 4 and 6", warm, meas)
+	}
+	if firstMeasured < lastWarmEnd {
+		t.Errorf("the measured phase starts at %d, before the warm-up drained at %d", firstMeasured, lastWarmEnd)
+	}
+	if measuredCached == 0 {
+		t.Errorf("the measured requests hit no cached token: the warm-up's prefix did not carry across")
+	}
+	rstdout, rstderr, err := runKernelCLI(t, "replay", "--scenario", kernelTestScenario, "--seed", "5",
+		"--trace-header", out+".yaml", "--trace-data", out+".csv")
+	if err != nil {
+		t.Fatalf("replay: %v\n%s", err, lastLines(rstderr, 5))
+	}
+	second := parseResult(t, rstdout)
+	if len(second.RequestRows) != len(first.RequestRows) {
+		t.Fatalf("INV-13: the replay has %d rows, the run %d", len(second.RequestRows), len(first.RequestRows))
+	}
+	for i, a := range first.RequestRows {
+		b := second.RequestRows[i]
+		if a.Phase != b.Phase || a.ArrivalUs != b.ArrivalUs || a.CachedLocalTokens != b.CachedLocalTokens {
+			t.Errorf("INV-13: row %d is phase %q arrival %d cached %d in the run, %q %d %d in the replay", i, a.Phase,
+				a.ArrivalUs, a.CachedLocalTokens, b.Phase, b.ArrivalUs, b.CachedLocalTokens)
+		}
+	}
+}
+
+// #1914 (INV-13): accumulate sessions replay to the run's own Result, row by row, for every
+// session mode that reads their trace: closed-loop sessions replayed closed-loop, and open-loop
+// sessions (every round pre-generated) replayed as fixed-accumulate. The default mode refuses the
+// trace at startup, naming the modes that read it (TestReplay_AccumulateTraceRefusesFixedMode).
+func TestResult_AccumulateSessionsReplayRowForRowInEverySessionMode(t *testing.T) {
+	cases := []struct {
+		name, closedLoop, mode string
+	}{
+		{"closed-loop sessions, closed-loop replay", "true", "closed-loop"},
+		{"open-loop sessions, fixed-accumulate replay", "false", "fixed-accumulate"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			spec := filepath.Join(dir, "ss.yaml")
+			body := `version: "2"
+seed: 7
+category: reasoning
+aggregate_rate: 5.0
+num_requests: 60
+cohorts:
+  - id: agents
+    population: 10
+    rate_fraction: 1.0
+    arrival: {process: poisson}
+    input_distribution: {type: gaussian, params: {mean: 256, std_dev: 64, min: 64, max: 1024}}
+    output_distribution: {type: exponential, params: {mean: 64}}
+    reasoning:
+      reason_ratio_distribution: {type: constant, params: {value: 0}}
+      multi_turn: {max_rounds: 4, think_time_us: 500000, context_growth: accumulate, single_session: true}
+    closed_loop: ` + c.closedLoop + "\n"
+			if err := os.WriteFile(spec, []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			prefix := filepath.Join(dir, "tr")
+			runOut, stderr, err := runKernelCLI(t, "run", "--scenario", kernelTestScenario, "--seed", "7",
+				"--workload-spec", spec, "--trace-output", prefix)
+			if err != nil {
+				t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+			}
+			args := []string{"replay", "--scenario", kernelTestScenario, "--seed", "7",
+				"--trace-header", prefix + ".yaml", "--trace-data", prefix + ".csv"}
+			if c.mode != "" {
+				args = append(args, "--session-mode", c.mode)
+			}
+			repOut, stderr, err := runKernelCLI(t, args...)
+			if err != nil {
+				t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 5))
+			}
+			run, rep := parseResult(t, runOut), parseResult(t, repOut)
+			if run.Requests.Completed < 40 {
+				t.Fatalf("non-vacuity: the run completed %d requests", run.Requests.Completed)
+			}
+			if !jsonEqual(t, run.Requests, rep.Requests) || !jsonEqual(t, run.Metrics, rep.Metrics) {
+				t.Errorf("INV-13: replay differs from run\nrequests %+v\n         %+v\nmetrics %v\n        %v", run.Requests, rep.Requests, run.Metrics, rep.Metrics)
+			}
+			if len(run.RequestRows) != len(rep.RequestRows) {
+				t.Fatalf("INV-13: %d rows in the run, %d in the replay", len(run.RequestRows), len(rep.RequestRows))
+			}
+			for i, a := range run.RequestRows {
+				b := rep.RequestRows[i]
+				if a.ArrivalUs != b.ArrivalUs || a.PromptTokens != b.PromptTokens || a.Fate != b.Fate ||
+					a.CachedLocalTokens != b.CachedLocalTokens || !jsonEqual(t, a.TTFTUs, b.TTFTUs) || !jsonEqual(t, a.E2EUs, b.E2EUs) {
+					t.Errorf("INV-13: row %d differs: run %+v, replay %+v", i, a, b)
+					break
+				}
+			}
+		})
+	}
+}
+
+// A replay that cannot reproduce an accumulate trace refuses it at startup and names the
+// session modes that can, rather than replaying it without the cross-round prefix reuse.
+func TestReplay_AccumulateTraceRefusesFixedMode(t *testing.T) {
+	dir := t.TempDir()
+	spec := filepath.Join(dir, "ss.yaml")
+	if err := os.WriteFile(spec, []byte(`version: "2"
+seed: 7
+category: reasoning
+aggregate_rate: 5.0
+num_requests: 20
+cohorts:
+  - id: agents
+    population: 4
+    rate_fraction: 1.0
+    arrival: {process: poisson}
+    input_distribution: {type: constant, params: {value: 200}}
+    output_distribution: {type: constant, params: {value: 30}}
+    reasoning:
+      reason_ratio_distribution: {type: constant, params: {value: 0}}
+      multi_turn: {max_rounds: 3, think_time_us: 500000, context_growth: accumulate, single_session: true}
+    closed_loop: false
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prefix := filepath.Join(dir, "tr")
+	if _, stderr, err := runKernelCLI(t, "run", "--scenario", kernelTestScenario, "--seed", "7", "--workload-spec", spec, "--trace-output", prefix); err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+	}
+	_, stderr, err := runKernelCLI(t, "replay", "--scenario", kernelTestScenario, "--seed", "7",
+		"--trace-header", prefix+".yaml", "--trace-data", prefix+".csv")
+	if err == nil || !strings.Contains(stderr, "fixed-accumulate") {
+		t.Fatalf("replay in the default mode: err %v, stderr %q; want a refusal naming fixed-accumulate", err, lastLines(stderr, 3))
 	}
 }

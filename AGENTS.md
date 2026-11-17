@@ -13,7 +13,7 @@ status, and each of its checks here. `ci` means the check runs in CI; `new` mean
 yet, and the target milestone says when it must. A pull request cites the identifiers it
 keeps or introduces; CI refuses an identifier that does not exist (X14).
 
-- **X1** (partial; target ci by M4) What a user would hand llm-d, vLLM or SGLang is what they hand BLIS, in the upstream's own field names, types, defaults and errors.
+- **X1** (partial; target ci by M3) What a user would hand llm-d, vLLM or SGLang is what they hand BLIS, in the upstream's own field names, types, defaults and errors.
   - `ci`, pull_request: The scenario's router flags, configuration file and manifests reach the router unchanged, and the router parses them with its own code (`cmd: TestScenarioRouterInputs_MapsTheRouterBlock`)
 - **X2** (new; target ci by M4) Outside its tests, blis-substrate contains no engine name, no engine version and no engine's policy.
   - `new`, pull_request: PoolPlan, StepShape and Transfer contain no field whose values come from an engine's vocabulary, and a zero value means "absent" or the field's documented neutral value (such as stage 0), never an engine default (a reflection test). Separately, a scenario both engines support is priced from each engine's plan, and every price difference is traced to a named difference between the plans
@@ -32,7 +32,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **X7** (partial; target ci by M4) Contracts live in blis-substrate/contracts.
   - `new`, pull_request: A lower repository refers to accuracy-dashboard only through the harness pin file
   - `new`, pull_request: Every generated file matches its generator's output
-- **X8** (new; target ci by M2) Every number records the exact versions and data it came from, and can be regenerated from them.
+- **X8** (new; target ci by M3) Every number records the exact versions and data it came from, and can be regenerated from them.
   - `new`, pull_request: Every Result records the module versions, the source and content hash of the catalog and the registry, any overlay hashes, and whether the run used released data
   - `new`, pull_request: An accuracy change's success criteria are committed before any commit that reads its held-out data
 - **X9** (new; target ci by M3) For every pinned upstream release, each feature the upstream offers has exactly one status in a generated list.
@@ -67,14 +67,14 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: Pip install --require-hashes in every Python CI job
   - `new`, release: The release job, which fails without provenance and a bill of materials
   - `new`, pull_request: A check that LICENSE and any required NOTICE exist
-- **X22** (partial; target ci by M4) Every verdict (a CI result or the review agent's review, including its answers to review questions) names the git tree hash of the exact tree it judged.
+- **X22** (partial; target ci by M3) Every verdict (a CI result or the review agent's review, including its answers to review questions) names the git tree hash of the exact tree it judged.
   - `new`, pull_request: The shared pull-request check in blis-substrate/.github/workflows, called by every repository, which records each review-agent answer with the head tree
   - `new`, pull_request: A workflow lint that refuses ignored exit codes
   - `new`, pull_request: Each job's item count
 - **X23** (new; target ci by M1) A version is written in one place.
   - `new`, pull_request: A lint in every repository, over every file type, for version literals of BLIS modules or Go that are not generated
-- **X24** (new; target ci by M4) Every review finding ends in one of three outcomes before merge: fixed, filed as a linked issue, or rejected with a reason.
-  - `new`, pull_request: A pull-request check that refuses a review thread with no outcome
+- **X24** (new; target ci by M3) Every review finding ends in one of three outcomes before merge: fixed, filed as a linked issue, or rejected with a reason.
+  - `new`, pull_request: A pull-request step that lists each review thread that is open or resolved with no outcome, as a notice and in the job summary; it never fails, so no check waits on a thread
 - **X25** (new; target ci by M1) Tests read only their declared inputs, never sibling checkouts, ignored directories or the user's environment.
   - `new`, pull_request: CI in a clean container with no sibling checkouts
   - `new`, pull_request: The quarantine list, which fails CI when an entry expires
@@ -85,15 +85,27 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, nightly: A nightly job in every repository that resolves each cited issue and fails on a closed one
   - `new`, pull_request: A pull-request check that refuses a change closing an issue still cited elsewhere
   - `new`, nightly: The nightly job also reports an issue closed outside a merge
+- **SUB-12** (partial; target ci by M2) Every loader of a BLIS document refuses unknown keys, duplicate keys, numbers that do not convert exactly, non-finite numbers and recursive aliases.
+  - `new`, pull_request: The shared set of malformed documents, run against the repository's loaders
 - **SUB-14** (new; target ci by M2) The memory breakdown closes.
   - `new`, pull_request: A start-up refusal in inference-sim when a node's host-memory figures exceed its host memory
 - **SUB-17** (new; target ci by M3) A transfer or collective names its endpoints by rank, and the cost model prices it over the path between them through the catalog's links: the NVLink domain, the NIC and each switch tier.
   - `new`, pull_request: The link-capacity test of SIM-13
+- **SUB-21** (new; target ci by M3) Every move is priced by the form it states (§6.1), as legs over paths the catalog states, with the coefficients the registry holds for that form, device, link and chip.
+  - `new`, pull_request: A property test of the two advance rules
+  - `new`, pull_request: A refusal test pair for each move form (SIM-9)
+- **KVS-2** (new; target ci by after M4) The repository imports only packages under contracts/.
+  - `new`, pull_request: A test that every kvstore.Store the simulator builds comes from blis-kvstore
+- **KVS-4** (new; target ci by after M4) For each store, the release that each engine's oracle lock pins equals the release its store package models.
+  - `new`, pull_request: A build check that imports both engines and blis-kvstore and compares each engine's surface.json record with the store package's Upstream record
+  - `new`, pull_request: A refusal test with a mismatched release
+- **KVS-7** (new; target ci by after M4) Each store package's fields.json classifies every setting its pinned release reads, from the engine process (configuration passed through the connector, environment variables, configuration files) and from the stores block, under the rules of VLM-3.
+  - `new`, pull_request: A check that every setting an engine marks as read by a store package has an entry in that package's list
 - **RTR-4** (partial; target ci by M1) A plugin type runs in BLIS only after an audit.
   - `ci`, pull_request: TestSupportedTypesAreHostedByTheFork in inference-sim, against the fork's audited list (`sim/llmd: TestSupportedTypesAreHostedByTheFork`)
-- **RTR-5** (new; target ci by M4) The llm-d P/D sidecar is hosted under the same runtime interface, so P/D leg handling is llm-d's code rather than a re-implementation in inference-sim.
+- **RTR-5** (new; target ci by M3) The llm-d P/D sidecar is hosted under the same runtime interface, so P/D leg handling is llm-d's code rather than a re-implementation in inference-sim.
   - `new`, pull_request: A test in inference-sim that P/D runs go through the hosted sidecar's code, and that the simulator holds no P/D leg logic of its own
-- **SIM-1** (new; target ci by M4) The engine is chosen by the scenario's engine: {kind, version}.
+- **SIM-1** (new; target ci by M3) The engine is chosen by the scenario's engine: {kind, version}.
   - `new`, pull_request: Tests that build two engine kinds in one binary, and that refuse any scenario using engine_version with a message naming engine: {kind, version}
 - **SIM-2** (ci; target reached) No silent degradation: unsupported or ambiguous input is refused with a message; library code returns errors and never exits the process.
   - `ci`, pull_request: Refusal tests (`cmd: TestRunCmd_KernelBackend_ScenarioRefusals`)
@@ -109,14 +121,14 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **SIM-7** (new; target ci by M2) Every run makes progress.
   - `new`, pull_request: A progress watchdog that fails a run when no request changes state for a set number of engine steps while work is waiting
   - `new`, pull_request: A seeded property test over random pools and prompts, including the exact-fit case and the one-block-over case. The capacity boundary cases are also oracle scenarios in each engine repository
-- **SIM-8** (new; target ci by M2) Requests and sessions follow one written state machine, whose end states are the fates of §8.7 (DEV-9).
+- **SIM-8** (new; target ci by M3) Requests and sessions follow one written state machine, whose end states are the fates of §8.7 (DEV-9).
   - `new`, pull_request: A transition-table test
   - `new`, pull_request: The arrival-count check of DEV-9
 - **SIM-9** (partial; target ci by M2) Each refusal has two tests: the smallest configuration that triggers it, and the closest one that does not.
   - `ci`, pull_request: The refusal test pairs in inference-sim, each engine repository and the router fork (`sim/llmd: TestStartupRefusalMessages`)
 - **SIM-10** (new; target ci by M1) Any option that changes a byte of the Result is recorded in the Result's inputs.
   - `new`, pull_request: A test per command-line option that toggles it and compares the recorded inputs
-- **SIM-11** (new; target ci by M1) Every field the simulator itself reads (scenario keys outside the engine and router blocks, trace headers, replay descriptors) is consumed, refused or inert, and says which.
+- **SIM-11** (new; target ci by M1) Every field the simulator itself reads (scenario keys outside the engine, router and stores blocks, trace headers, replay descriptors) is consumed, refused or inert, and says which.
   - `new`, pull_request: A reflection test over every input schema that toggles each consumed field
   - `new`, pull_request: A parity test that the same invalid value is refused through every input
 - **SIM-12** (new; target ci by M2) Each request's tokens are counted once, in a token record the engine emits: prompt tokens, tokens served from the local and external caches, tokens computed, and tokens emitted.
@@ -128,13 +140,23 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **SIM-14** (new; target ci by M2) Every cluster control loop that runs beside the router, such as an autoscaler or the placement of LoRA adapters, is a component (§8.1): it acts only on published values (DEV-1, DEV-4).
   - `new`, pull_request: A reflection test that every configurable control policy has an entry in the list of control loops
   - `new`, pull_request: A Result test that each active loop is named with its validation status
+- **SIM-15** (new; target ci by M3) For each part of a layered transfer (§6.2), the simulator sends the engine one transfer-complete message, timestamped when the part's last byte arrives under the link sharing of SIM-13.
+  - `new`, pull_request: A test that each part of a layered transfer produces exactly one message at its arrival time, and that a step's end is taken only from the engine's own time advance
+  - `new`, pull_request: The coupled replay test (FID-9)
+- **SIM-16** (new; target ci by M3) A scenario may state several deployments, each with its own model and pools.
+  - `new`, pull_request: A test with two models in two pools: each request reaches its own pool; changing the second router's configuration leaves the first model's routing byte-identical; an endpoint removed from one pool is unknown to the other router; a request for an undeployed model is refused with its message; a run and its replay agree
+  - `new`, pull_request: The two tests of SIM-9 for the refusal of a request that names no deployed model
+- **SIM-17** (new; target ci by M3) A cluster may hold node pools of different chips.
+  - `new`, pull_request: A test with an H100 pool and an A100 pool under one workload: an instance in each reports its own pool's KV budget, step time and price, and a pool with no variant is refused with its name
+- **SIM-18** (new; target ci by M3) Engines that run a file-system secondary tier (fs) and name one root_dir for the same model read and write one file system, as vLLM instances over one shared file system do: a block file one engine publishes is a hit for every other engine of that model on that root_dir.
+  - `new`, pull_request: A test with engines of two models and two root_dir values: a block file published by one engine is found by the engines of its model on its root_dir and by no other
 - **FID-9** (new; target ci by M2) The engine is tested as the simulator drives it, not only on its own.
   - `new`, pull_request: The coupled replay test in inference-sim's CI, over every engine repository's recorded traces
 - **DEV-1** (new; target ci by M2) Components interact only through timestamped messages.
   - `new`, pull_request: In the router fork and inference-sim, unexported constructors for the router's view types, so only the message-delivery code can build them
   - `new`, pull_request: An import-graph test that finds no import of engine-internal packages from router-side packages
   - `new`, pull_request: The coupled replay test (FID-9)
-- **DEV-2** (new; target ci by M2) Each instant is processed in the three phases of §8.2, and messages are ordered by (time, class, sender, sender's send count).
+- **DEV-2** (new; target ci by M3) Each instant is processed in the three phases of §8.2, and messages are ordered by (time, class, sender, sender's send count).
   - `new`, pull_request: In inference-sim, a test that permutes the scheduling order of same-instant events from different components and compares the Result
   - `new`, pull_request: An assertion that no two queued messages share a key
   - `new`, pull_request: A run of the corpus under a second priority-queue implementation
@@ -152,7 +174,8 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **DEV-7** (new; target ci by M1) Every run records its experimental frame (§8.6).
   - `new`, pull_request: In inference-sim, a round-trip property test over every workload feature (closed loop, sessions, accumulated context, P/D, deadlines)
   - `new`, pull_request: Two-sample tests for each converter against its source
-- **DEV-8** (new; target ci by M2) Every reported metric names its definition and scope (§8.7), and a comparison is refused unless both sides have the same definition, scope and aggregate.
+- **DEV-8** (partial; target ci by M2) Every reported metric names its definition and scope (§8.7), and a comparison is refused unless both sides have the same definition, scope and aggregate.
+  - `new`, pull_request: inference-sim metrics prints the registry with each metric's scopes and aggregates, which the dashboard and config search read
   - `new`, pull_request: A test that they compare only figures with matching definitions, scopes and aggregates
 - **DEV-9** (partial; target ci by M1) Each request's fate is written once, at one site, and every latency sample is derived from it.
   - `new`, pull_request: In inference-sim, the fate type, which fails on a second write
@@ -179,7 +202,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **LIF-3** (new; target ci by M1) Only the release bot cuts releases, and only from a commit where every ci invariant passed.
   - `new`, practice: Repository settings that let only the release bot and people with write access create tags
   - `new`, nightly: A nightly check that every tag made by a person is annotated and listed in its release notes
-- **LIF-6** (new; target ci by M1) Each inference-sim release runs exactly one upstream release of each engine and of llm-d, and lists them in stack.json.
+- **LIF-6** (new; target ci by M1) Each inference-sim release runs exactly one upstream release of each engine, of llm-d and of each KV store blis-kvstore models, and lists them in stack.json.
   - `new`, pull_request: A refusal test per engine kind
   - `new`, pull_request: A check that the message's release names match stack.json history
 - **LIF-7** (new; target ci by M1) A deprecated feature is removed by the first release after its deprecation that may break compatibility: a MAJOR release, or a MINOR release while the repository is at v0.
@@ -200,17 +223,17 @@ repository as a whole and confirms it when the repository's settings change (des
 Follow these on every change you write or review. They are not checked by a program
 (design §4.2).
 
-- **X24** Answer each review thread with its commit or its issue, and resolve the thread once the reviewer is satisfied.
+- **X24** After each fix, reply on the thread with "Outcome: fixed" and the commit, "Outcome: filed" and the issue, or "Outcome: rejected:" and the reason, and resolve the thread. The author agent does this; no check waits for it and no person has to.
 
 ### Review questions
 
-CI lists each question below in the description of a pull request that changes one of
-its paths. It is guidance for the review agent (design §13.2): the agent answers it yes or
-no in a review comment, with the files and lines that support the answer. No check waits
-on a question.
+Each question below is guidance for the review agent (design §13.2). When a pull request
+changes one of its paths, the agent answers it yes or no in a review comment, with the
+files and lines that support the answer. No CI job lists, records or waits on a question,
+and no person has to answer one.
 
 - **X3** Is engine behaviour, such as scheduling, admission or KV accounting, being added to the simulator instead of an engine repository? Expertise: inference-sim expertise. Applies when: a change to the simulator's request-lifecycle or capacity code. Paths: `sim/engine_driver*.go`, `sim/instance_state.go`, `sim/request.go`, `sim/event_queue.go`, `sim/engine_records.go`, `sim/dp_modes.go`, `sim/cluster/**`, except `**/*_test.go`.
-- **X6** Could this floating-point reduction give a different result on another platform? Expertise: expertise in the changed repository. Applies when: a parallel or floating-point reduction is added, or the cross-platform check fails. Added by a reviewer with the label `review:X6`.
-- **X7** Does this change give a second home to a fact another repository owns? Expertise: expertise in the changed repository. Applies when: a pull request adds a literal list or table, or a constant that cites another repository. Added by a reviewer with the label `review:X7`.
-- **DEV-12** Does this change alter what is modelled? Expertise: expertise in the changed directory. Applies when: a pull request is declared a verification change but moves a Result outside the byte gate. Added by a reviewer with the label `review:DEV-12`.
+- **X6** Could this floating-point reduction give a different result on another platform? Expertise: expertise in the changed repository. Applies when: a parallel or floating-point reduction is added, or the cross-platform check fails. The review agent decides whether it applies, and may mark it with the label `review:X6`.
+- **X7** Does this change give a second home to a fact another repository owns? Expertise: expertise in the changed repository. Applies when: a pull request adds a literal list or table, or a constant that cites another repository. The review agent decides whether it applies, and may mark it with the label `review:X7`.
+- **DEV-12** Does this change alter what is modelled? Expertise: expertise in the changed directory. Applies when: a pull request is declared a verification change but moves a Result outside the byte gate. The review agent decides whether it applies, and may mark it with the label `review:DEV-12`.
 <!-- END GENERATED: invariants -->

@@ -65,6 +65,10 @@ type ModelSignals struct {
 	Replicas                     []ReplicaMetrics // may be empty
 	PendingReplicaCount          int              // Loading instances with positive KV capacity, not yet routable
 	PendingTotalKvCapacityTokens int64            // sum of TotalKvCapacityTokens for all Loading instances of this model (zero-capacity instances excluded)
+	// Window is the last CollectorWindowSize ticks of this model's replica readings, oldest first,
+	// each with its time and sequence number (the WindowedCollector). Empty with no window; existing
+	// analyzers ignore it.
+	Window []WindowSample
 }
 
 // VariantCapacity is one variant's share of a model's total supply and demand.
@@ -103,6 +107,9 @@ type ScaleDecision struct {
 	ModelID string
 	Variant VariantSpec
 	Delta   int // +N = scale up by N replicas, -N = scale down by N replicas; never 0
+	// Utilization, RequiredCapacity and SpareCapacity are the analyzer's signals for the model at the
+	// tick that made the decision, filled in by the pipeline for the trace (#743).
+	Utilization, RequiredCapacity, SpareCapacity float64
 }
 
 // GPUInventory is a read-only view of available GPU capacity, passed to Engine.Optimize().
@@ -248,6 +255,15 @@ func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 	// Stage 3: Optimize — ask Engine for scale decisions.
 	inventory := cs.gpuInventory()
 	decisions := p.engine.Optimize(results, inventory)
+	for i := range decisions {
+		for _, r := range results {
+			if r.ModelID == decisions[i].ModelID {
+				decisions[i].Utilization, decisions[i].RequiredCapacity, decisions[i].SpareCapacity =
+					r.Utilization, r.RequiredCapacity, r.SpareCapacity
+				break
+			}
+		}
+	}
 
 	// Stage 4: Stabilization window gate — pass a decision only once its signal has been
 	// continuously present for ScaleUp/DownStabilizationWindowUs. Reset timer on signal loss.
@@ -349,6 +365,12 @@ func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 		cs.schedule(&ScaleActuationEvent{At: actuationAt, Decisions: filtered}, &cs.autoscalerSender)
 	}
 
+	// The cluster autoscaler looks at the pools on every scaling tick (it also runs when a
+	// placement is queued): its scale-down policy needs a look when nothing is pending.
+	cs.runClusterAutoscaler()
+	// A model idle for the scale-to-zero period is drained (#909).
+	cs.checkScaleToZero()
+
 	// Stage 6: Schedule next ScalingTickEvent.
 	p.scheduleNextTick(cs, nowUs)
 }
@@ -366,7 +388,7 @@ func (p *autoscalerPipeline) scheduleNextTick(cs *ClusterSimulator, nowUs int64)
 		for _, v := range cs.inFlightRequests {
 			inFlight += v
 		}
-		if inFlight == 0 {
+		if inFlight == 0 && !cs.scaleToZeroPending() {
 			return // no more work; don't self-schedule
 		}
 	}

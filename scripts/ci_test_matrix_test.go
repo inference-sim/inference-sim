@@ -84,7 +84,7 @@ func uncovered(patterns, pkgs []string) []string {
 
 // The test matrix lists packages explicitly rather than ./..., so a package whose tests no entry
 // names never runs in CI, and nothing says so. sim/vendored's lock test was such a package for a
-// time (verification pass 8 of #2021, gap 1). Every package with tests must be run by some entry.
+// time. Every package with tests must be run by some entry.
 func TestEveryPackageWithTestsRunsInCI(t *testing.T) {
 	if testing.Short() {
 		t.Skip("lists the module's packages with go list")

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/inference-sim/blis-substrate/contracts/engine"
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 
@@ -279,26 +280,59 @@ func (i *InstanceSimulator) LatencyStats() InstanceLatencyStats {
 	// Compute ITL from RequestITLs (per-request average ITL in µs).
 	// Sort keys before accumulating to satisfy INV-6 determinism (R2).
 	// ITLSum is never populated by the simulator; RequestITLs is the authoritative source.
-	reqIDs := make([]string, 0, len(m.RequestITLs))
-	for id := range m.RequestITLs {
+	reqIDs := make([]string, 0, len(m.RequestE2Es))
+	for id := range m.RequestE2Es {
 		reqIDs = append(reqIDs, id)
 	}
 	sort.Strings(reqIDs)
 	// TTFT is derived from the same per-request samples (DEV-9): each completed request's
 	// entry in RequestTTFTs, which has no separate accumulator to drift from it (#2093 states P/D preemption as a machine state).
 	var itlSum, ttftSum float64
+	itlCount := 0
 	for _, id := range reqIDs {
-		itlSum += m.RequestITLs[id]
+		if itl, ok := m.RequestITLs[id]; ok {
+			itlSum += itl
+			itlCount++
+		}
 		ttftSum += m.RequestTTFTs[id]
+	}
+	// A request with fewer than two output tokens has no ITL (#1894): the mean is over those
+	// that do.
+	itlMean := 0.0
+	if itlCount > 0 {
+		itlMean = itlSum / float64(itlCount)
 	}
 
 	return InstanceLatencyStats{
 		TTFT:         ttftSum / n,
-		ITL:          itlSum / n,
+		ITL:          itlMean,
 		DispatchRate: dispatchRate,
 		AvgInTokens:  float64(m.TotalInputTokens) / n,
 		AvgOutTokens: float64(m.TotalOutputTokens) / n,
 	}
+}
+
+// LatencyTotals returns the instance's cumulative completed-request totals (the windowed collector
+// differences them between ticks). The per-request samples are summed in sorted order (R2).
+func (i *InstanceSimulator) LatencyTotals() LatencyTotals {
+	if i.drv == nil {
+		return LatencyTotals{}
+	}
+	m := i.Metrics()
+	if m == nil || m.CompletedRequests == 0 {
+		return LatencyTotals{}
+	}
+	ids := make([]string, 0, len(m.RequestITLs))
+	for id := range m.RequestITLs {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	t := LatencyTotals{Completed: m.CompletedRequests, InTokens: int64(m.TotalInputTokens), OutTokens: int64(m.TotalOutputTokens)}
+	for _, id := range ids {
+		t.ITLSumUs += m.RequestITLs[id]
+		t.TTFTSumUs += m.RequestTTFTs[id]
+	}
+	return t
 }
 
 // MaxBatchSize returns the simulator's configured maximum number of concurrent requests
@@ -463,6 +497,10 @@ func (i *InstanceSimulator) DrainWaitQueue() []*sim.Request {
 	return i.drv.DrainWaiting(i.drv.Clock)
 }
 
+// Abandon drops every request this instance holds, for an IMMEDIATE drain (sim.EngineDriver.Abandon),
+// and returns how many.
+func (i *InstanceSimulator) Abandon(now int64) int { return i.drv.Abandon(now) }
+
 // EvictRequest removes a request from this instance due to gateway-level eviction.
 // Searches WaitQ first, then RunningBatch. Frees KV blocks if allocated.
 // Sets req.State to StateCompleted to prevent dangling TimeoutEvents from double-counting.
@@ -492,6 +530,24 @@ func (i *InstanceSimulator) setPullPriced(f func(req *sim.Request, pulledTokens,
 		i.drv.OnPullPriced = f
 	}
 }
+
+// setTierPriced installs the cluster's handling of an offload-tier copy the instance's engine starts:
+// the copy joins the cluster's link arbiter, and the instance is told when it lands (TierLanded).
+func (i *InstanceSimulator) setTierPriced(f func(id engine.TransferID, demand kernel.TransferDemand, at int64)) {
+	if i.drv != nil {
+		i.drv.OnTierPriced = f
+	}
+}
+
+// setPeerWritePriced installs the cluster's handling of a WRITE to a peer: it joins the link arbiter.
+func (i *InstanceSimulator) setPeerWritePriced(f func(id engine.TransferID, demand kernel.TransferDemand, at int64)) {
+	if i.drv != nil {
+		i.drv.OnPeerWritePriced = f
+	}
+}
+
+// tierLanded reports that the instance's tier copy id landed at now.
+func (i *InstanceSimulator) tierLanded(id engine.TransferID, now int64) { i.drv.TierLanded(id, now) }
 
 // UsedKVBlocks returns the KV blocks the instance's engine has allocated.
 func (i *InstanceSimulator) UsedKVBlocks() int64 {
@@ -537,6 +593,12 @@ func (i *InstanceSimulator) KVEventsRefusal() error {
 	return i.drv.KVEventsRefusal()
 }
 
+// KVEventsCarryIdentity reports whether the engine's KV events name the adapter of the blocks they
+// store (sim.EngineDriver.KVEventsCarryIdentity).
+func (i *InstanceSimulator) KVEventsCarryIdentity() bool {
+	return i.drv != nil && i.drv.KVEventsCarryIdentity()
+}
+
 // HasWork reports whether the engine has running or waiting requests.
 func (i *InstanceSimulator) HasWork() bool {
 	return i.drv.HasWork()
@@ -551,6 +613,12 @@ func (i *InstanceSimulator) BusyUntil() int64 {
 func (i *InstanceSimulator) SetCallbacks(onFirstToken func(*sim.Request, int64), onRequestDone func(*sim.Request, int64) []*sim.Request) {
 	i.drv.OnFirstToken = onFirstToken
 	i.drv.OnRequestDone = onRequestDone
+}
+
+// SetRunStateHook installs the callback that hears each time the engine starts running a
+// request or preempts it back to its queue (sim.EngineDriver.OnRunState).
+func (i *InstanceSimulator) SetRunStateHook(h func(req *sim.Request, running bool)) {
+	i.drv.OnRunState = h
 }
 
 // ForgetRequest drops a request's per-request record from the engine's metrics, for a request

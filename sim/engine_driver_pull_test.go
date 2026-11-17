@@ -13,7 +13,7 @@ import (
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
 )
 
-// decoder is blis-vllm's v0.32.0 engine as a NIXL kv_consumer under policy, at a fixed step price.
+// decoder is blis-vllm's v0.33.0 engine as a NIXL kv_consumer under policy, at a fixed step price.
 func decoder(t *testing.T, policy string) *vllm.Engine {
 	t.Helper()
 	src := "block_size: 16\nmax_num_seqs: 4\nmax_num_batched_tokens: 64\nmax_model_len: 512\nnum_gpu_blocks: 64\n" +

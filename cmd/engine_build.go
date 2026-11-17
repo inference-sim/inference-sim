@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/engine/env"
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
@@ -44,15 +46,14 @@ import (
 )
 
 // The one place inference-sim builds blis-vllm (#2021 B2). The engine's configuration -- the
-// scenario's engine-side blocks and the command line's restatements of them -- is decoded and
-// resolved by blis-vllm's compat/build, which cmd calls only from here, handing the inputs over
-// unread. A refusal comes back as an error; the CLI boundary turns it into the fatal exit.
+// scenario's engine-side blocks -- is decoded and resolved by blis-vllm's compat/build, which cmd
+// calls only from here, handing the inputs over unread. A refusal comes back as an error; the CLI boundary turns it into the fatal exit.
 
-// resolveKVOffloadConfig resolves the run's KV offload: the scenario's offload block (#1910)
-// and the --kv-offload-config file, which may only restate it (build.ResolveKVOffloadConfig).
+// resolveKVOffloadConfig resolves the run's KV offload from the scenario's offload block
+// (#1910), the only source (#2037): build.ResolveKVOffloadConfig is given no file.
 // Single construction site (R4), shared by run and replay for INV-13 parity.
-func resolveKVOffloadConfig(cmd *cobra.Command) kvOffloadConfig {
-	cfg, err := build.ResolveKVOffloadConfig(kernelScenario, scenarioOffload, kvOffloadConfigPath,
+func resolveKVOffloadConfig() kvOffloadConfig {
+	cfg, err := build.ResolveKVOffloadConfig(kernelScenario, scenarioOffload, "",
 		blockSizeTokens, mustRunData())
 	if err != nil {
 		logrus.Fatalf("%v", err)
@@ -87,13 +88,12 @@ const (
 // for diagnostics that name it.
 const catalogStorageDevicesRelPath = build.CatalogStorageDevicesRelPath
 
-// engineKnobFlags gathers the command line's restatements of the scenario's per-pool engine
-// knobs, unread, for the engine to check against the scenario.
+// engineKnobFlags are the command line's restatements of the scenario's per-pool engine knobs:
+// none (#2021 B6, #2037). Every pool runs the long_prefill_token_threshold and
+// data_parallel_load_balancing it states; the zero value tells the engine no flag was given,
+// so a pool that states no mode runs vLLM's default.
 func engineKnobFlags() build.EngineKnobFlags {
-	return build.EngineKnobFlags{
-		// long_prefill_token_threshold has no flag (#2021 B6): every pool runs what it states.
-		DPLoadBalancing: dpLoadBalancing, DPLoadBalancingFromFlag: dpLoadBalancingFromFlag,
-	}
+	return build.EngineKnobFlags{DPLoadBalancing: defaultDPLoadBalancing}
 }
 
 // runEngineKnobs is the run-wide long-prefill threshold and DP load-balancing mode
@@ -131,7 +131,10 @@ const (
 // given to a run that does not speculate is warned about and ignored.
 func resolveAcceptance(cmd *cobra.Command, k int, method string) (build.Acceptance, bool) {
 	fl := cmd.Flags()
-	a, speculating, err := build.ResolveAcceptance(build.AcceptanceInputs{
+	if err := checkRealisationFlag(fl); err != nil {
+		logrus.Fatalf("%v", err)
+	}
+	a, speculating, err := build.ResolveAcceptance(poolAcceptanceInputs(build.AcceptanceInputs{
 		Scenario: kernelScenario, Shape: scenarioShape, Data: mustRunData(), Hardware: gpu,
 		Workload: workloadAcceptance,
 		Flags: build.AcceptanceFlags{
@@ -140,8 +143,9 @@ func resolveAcceptance(cmd *cobra.Command, k int, method string) (build.Acceptan
 			Thinking: speculativeThinking, Category: speculativeCategory, FallbackCategory: speculativeFallbackCategory,
 			ThinkingSet: fl.Changed(build.AcceptanceThinkingFlag), CategorySet: fl.Changed(build.AcceptanceCategoryFlag),
 			FallbackSet: fl.Changed(build.AcceptanceFallbackFlag),
+			Realisation: acceptance.Realisation(speculativeRealisation),
 		},
-	}, k, method)
+	}), k, method)
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
@@ -150,10 +154,31 @@ func resolveAcceptance(cmd *cobra.Command, k int, method string) (build.Acceptan
 	}
 	// The command line's and the workload's acceptance layers reach the engine's kernel too: a
 	// pool verifying adaptively sizes its draft budget from the run's acceptance
-	// (kernelmodel.SetAcceptanceOverrides, blis-latency-kernel#89), which must be the one the run
+	// (kernelmodel.SetAcceptanceOverrides, https://github.com/inference-sim/blis-latency-kernel/issues/89), which must be the one the run
 	// resolved here. The engines are built after this (engineDriverFactory).
 	setAcceptanceOverrides(fl, k)
 	return a, speculating
+}
+
+// poolAcceptanceInputs is in with the first pool's part of the lookup's key, from the speculative
+// block of the engine it opened (none when no pool is open): the drafter it names
+// (speculative_config.model, the catalog drafter; inference-sim/inference-sim#2142), its draft
+// sampler and verifier as vLLM resolves them, defaults included, the engine "vllm" and vLLM's own
+// defaults (build.AcceptanceInputs.VLLMInputs). A pool that names no drafter drafts with the
+// target's own speculator.
+func poolAcceptanceInputs(in build.AcceptanceInputs) build.AcceptanceInputs {
+	if kernelOpened == nil {
+		return in.VLLMInputs(nil)
+	}
+	e, err := kernelOpened.Engine()
+	if err != nil {
+		logrus.Fatalf("reading the first pool's speculative settings: %v", err)
+	}
+	in = in.VLLMInputs(e.Speculative)
+	if e.Speculative != nil {
+		in.Drafter = e.Speculative.DraftModel
+	}
+	return in
 }
 
 // The P/D pools (build.OpenPools and its pricing), as the run uses them.
@@ -163,6 +188,8 @@ type kernelPools struct {
 	prefill, decode *kernelmodel.Model
 	// connector is the scenario's pd_transfer.connector.
 	connector string
+	// p2p is whether the handoff is vLLM's p2p tier's (build.Pools.P2P).
+	p2p bool
 }
 
 // pools is p as the engine's pools (nil for a colocated run).
@@ -170,7 +197,7 @@ func (p *kernelPools) pools() *build.Pools {
 	if p == nil {
 		return nil
 	}
-	return &build.Pools{Prefill: p.prefill, Decode: p.decode, Connector: p.connector}
+	return &build.Pools{Prefill: p.prefill, Decode: p.decode, Connector: p.connector, P2P: p.p2p}
 }
 
 // runTopology is the run's instance counts as they stand.
@@ -214,7 +241,7 @@ func openKernelPools() *kernelPools {
 		kernelPDOpened = nil
 		return nil
 	}
-	p := &kernelPools{prefill: bp.Prefill, decode: bp.Decode, connector: bp.Connector}
+	p := &kernelPools{prefill: bp.Prefill, decode: bp.Decode, connector: bp.Connector, p2p: bp.P2P}
 	kernelPDOpened = p
 	return p
 }
@@ -362,6 +389,10 @@ func (p *kernelPools) environmentOf(c sim.InstanceConfig, colocated *kernelmodel
 	if err != nil {
 		logrus.Fatalf("scenario %q: %v", kernelScenario, err)
 	}
+	if p != nil && own == p.prefill {
+		// A prefill engine pulls from no one (its peer is its own pool), and its WRITEs land in the decode pool.
+		e.across = p.decode
+	}
 	return wrapEnvironment(e)
 }
 
@@ -370,18 +401,10 @@ func (p *kernelPools) environmentOf(c sim.InstanceConfig, colocated *kernelmodel
 // Environment and through nothing else.
 var wrapEnvironment = func(e env.Environment) env.Environment { return e }
 
-// defaultDPLoadBalancing is vLLM's default DP load-balancing mode, the --dp-load-balancing
-// flag's default (sim.DPLoadBalancingInternal, from blis-vllm compat/dplb).
+// defaultDPLoadBalancing is vLLM's default DP load-balancing mode, which a pool that states no
+// parallel.data_parallel_load_balancing runs (sim.DPLoadBalancingInternal, from blis-vllm
+// compat/dplb).
 const defaultDPLoadBalancing = sim.DPLoadBalancingInternal
-
-// requireDPLoadBalancingMode refuses a --dp-load-balancing value that names no vLLM mode
-// (sim.ValidDPLoadBalancing).
-func requireDPLoadBalancingMode(mode string) {
-	if !sim.ValidDPLoadBalancing(mode) {
-		logrus.Fatalf("--dp-load-balancing must be %s, %s or %s, got %q", sim.DPLoadBalancingInternal,
-			sim.DPLoadBalancingHybrid, sim.DPLoadBalancingExternal, mode)
-	}
-}
 
 // adoptFirstPoolEngine takes the run's engine from the first pool's kernel
 // (build.FirstPoolSettingsOf): the caps, pages and pool the kernel priced, so the simulated
@@ -431,11 +454,11 @@ func applyKernelLoRAReservation() {
 	totalKVBlocks = blocks
 }
 
-// prefixHitOf is how the pool's KV cache groups cut a prefix hit (build.PrefixHitOf), with the
-// run's --swa-bounded-replay override. It records the resolution for the results file and logs
-// when the model's layout is not one BLIS maps.
+// prefixHitOf is how the pool's KV cache groups cut a prefix hit (build.PrefixHitOf), from the
+// pool's engine.swa_bounded_replay or its resolution; no flag overrides it (#2037). It records
+// the resolution for the results file and logs when the model's layout is not one BLIS maps.
 func prefixHitOf(what string, m *engineModel) kvPrefixHit {
-	r, warning := build.PrefixHitOf(what, m, swaBoundedReplay.v)
+	r, warning := build.PrefixHitOf(what, m, nil)
 	if warning != "" {
 		logrus.Warnf("%s", warning)
 	}
@@ -457,8 +480,7 @@ func (p *kernelPools) overrides() (prefill, decode poolOverrides) {
 
 // poolOverridesOf is a P/D pool's engine as the cluster takes it: the settings blis-vllm
 // resolves for the pool (build.PoolSettingsOf), copied into the cluster's per-pool overrides.
-// The pool runs its own engine's scheduling policy unless a flag or policy bundle chose one for
-// the run, which then applies to every pool and is recorded where it departs.
+// The pool runs its own engine's scheduling policy.
 func poolOverridesOf(m *engineModel) poolOverrides {
 	hit := prefixHitOf(string(m.Role())+" pool", m)
 	ps, err := build.PoolSettingsOf(kernelScenario, m, loraReservedBytesForKV, hit, engineKnobFlags())
@@ -473,16 +495,7 @@ func poolOverridesOf(m *engineModel) poolOverrides {
 		MaxNumSeqs: &ps.MaxNumSeqs, MaxNumBatchedTokens: &ps.MaxNumBatchedTokens,
 		PrefixCachingDisabled: &ps.PrefixCachingDisabled, SequenceState: &ps.SequenceState, PrefixHit: &ps.PrefixHit,
 		LongPrefillTokenThreshold: &ps.LongPrefillTokenThreshold, DPLoadBalancing: ps.DPLoadBalancing,
-	}
-	if schedulerSource != "" {
-		recordPolicyOverride("scheduler", string(m.Role()), ps.Policy.Scheduler, scheduler, schedulerSource)
-	} else {
-		o.Scheduler = ps.Policy.Scheduler
-	}
-	if preemptionSource != "" {
-		recordPolicyOverride("preemption_policy", string(m.Role()), ps.Policy.Preemption, preemptionPolicy, preemptionSource)
-	} else {
-		o.PreemptionPolicy = ps.Policy.Preemption
+		Scheduler: ps.Policy.Scheduler, PreemptionPolicy: ps.Policy.Preemption,
 	}
 	return o
 }
@@ -502,8 +515,7 @@ func requireKernelCapacity(p *kernelPools) {
 
 // offloadPricing is what the engine's offload pricing reads from the run.
 func offloadPricing() build.OffloadPricing {
-	return build.OffloadPricing{BlockSizeTokens: blockSizeTokens, KVCPUBlocks: kvCPUBlocks,
-		MaxNumBatchedTokens: maxNumBatchedTokens}
+	return build.OffloadPricing{BlockSizeTokens: blockSizeTokens, MaxNumBatchedTokens: maxNumBatchedTokens}
 }
 
 // sizeOffloadBlocks records the kernel's per-rank bytes of one GPU block on an enabled offload
@@ -516,14 +528,12 @@ func sizeOffloadBlocks(cfg *kvOffloadConfig, keepStated bool) {
 }
 
 // applyKernelOffloadPricing has the kernel price every KV-offload transfer of a colocated
-// run (build.PriceColocatedOffload). It returns the legacy per-block charge. Shared by run and
-// replay.
-func applyKernelOffloadPricing(cfg *kvOffloadConfig) int64 {
-	ticks, err := build.PriceColocatedOffload(kernelOpened, cfg, offloadPricing(), fatalf)
-	if err != nil {
+// run (build.PriceColocatedOffload). Shared by run and replay. The run has no legacy CPU tier
+// (the scenario's offload block states the tiers), so there is no per-block charge to keep.
+func applyKernelOffloadPricing(cfg *kvOffloadConfig) {
+	if _, err := build.PriceColocatedOffload(kernelOpened, cfg, offloadPricing(), fatalf); err != nil {
 		logrus.Fatalf("%v", err)
 	}
-	return ticks
 }
 
 // applyOffload prices the run's KV offload once per pool, each by that pool's own kernel
@@ -537,8 +547,7 @@ func (p *kernelPools) applyOffload(cfg kvOffloadConfig, prefill, decode *poolOve
 	if !ok {
 		return
 	}
-	prefill.KVOffload, prefill.KVTransferTicksPerBlock = &pre.Config, &pre.TicksPerBlock
-	decode.KVOffload, decode.KVTransferTicksPerBlock = &dec.Config, &dec.TicksPerBlock
+	prefill.KVOffload, decode.KVOffload = &pre.Config, &dec.Config
 }
 
 // adoptInputs are the scenario and roots the command line names, handed over unread, with the
@@ -566,6 +575,19 @@ func openModel() (*kernelmodel.Model, error) {
 		return nil, err
 	}
 	return build.OpenModel(kernelScenario, kernelScenarioDir, data)
+}
+
+// openChipModel opens the pool of the scenario file name in dir and sizes it, so a chip the
+// scenario cannot run on is refused when the model is opened (a node pool's variant).
+func openChipModel(name, dir string) (*engineModel, error) {
+	m, err := build.OpenModel(name, dir, mustRunData())
+	if err != nil {
+		return nil, err
+	}
+	if _, err := m.Settings(); err != nil {
+		return nil, fmt.Errorf("the scenario does not run on this chip: %w", err)
+	}
+	return m, nil
 }
 
 // expertModelConfig is the engine's model configuration as the scenario's graph states it: its
@@ -629,6 +651,9 @@ func acceptanceOverridesOf(fl *pflag.FlagSet, k int) kernelmodel.AcceptanceOverr
 		l := speculativeAcceptanceLength
 		cli = &acceptance.Value{NumSpecTokens: k, AcceptanceLength: &l, Source: "--" + build.AcceptanceLengthFlag}
 	}
+	if cli != nil {
+		cli.Realisation = acceptance.Realisation(speculativeRealisation)
+	}
 	var terms *acceptance.Workload
 	if workloadAcceptance != nil || fl.Changed(build.AcceptanceThinkingFlag) || fl.Changed(build.AcceptanceCategoryFlag) {
 		var w acceptance.Workload
@@ -648,14 +673,6 @@ func acceptanceOverridesOf(fl *pflag.FlagSet, k int) kernelmodel.AcceptanceOverr
 
 // currentRoutingOverridesOf is the routing layer the pools will open with.
 func currentRoutingOverridesOf() routingOverrides { return kernelmodel.CurrentRoutingOverrides() }
-
-// checkPolicyNames refuses a scheduler or preemption policy the engine does not run
-// (build.CheckPolicyNames), at the CLI boundary.
-func checkPolicyNames(scheduler, preemption string) {
-	if err := build.CheckPolicyNames(scheduler, preemption); err != nil {
-		logrus.Fatalf("%v", err)
-	}
-}
 
 // resolveLoRAConfig assembles the run's LoRA configuration (build.ResolveLoRAConfig) from
 // defaults.yaml's cost coefficients, the optional --lora-config file and the scalar --lora-*
@@ -692,8 +709,7 @@ func resolveLoRAConfig(cmd *cobra.Command) loraConfig {
 // batchConfigFromCLI is the run's batch configuration, the part of engineConfigFor's the
 // prefix-caching toggle reaches (build.BatchConfigOf).
 func batchConfigFromCLI() batchConfig {
-	return build.BatchConfigOf(engineSettings(modelConfig{}, 1, kvOffloadConfig{}, 0, loraConfig{},
-		speculativeConfig{}))
+	return build.BatchConfigOf(engineSettings(modelConfig{}, 1, kvOffloadConfig{}, loraConfig{}, speculativeConfig{}))
 }
 
 // engineConfigFor is the engine's configuration for this run or replay (build.EngineConfigOf),
@@ -701,8 +717,8 @@ func batchConfigFromCLI() batchConfig {
 // commands assemble it (INV-13). dp is the scenario's data parallelism.
 // It resolves the speculative configuration, which records the acceptance for the results file.
 func engineConfigFor(cmd *cobra.Command, m modelConfig, dp int, offload kvOffloadConfig,
-	cpuTierTicks int64, lora loraConfig) build.EngineConfig {
-	return build.EngineConfigOf(engineSettings(m, dp, offload, cpuTierTicks, lora, resolveSpeculativeConfig(cmd)))
+	lora loraConfig) build.EngineConfig {
+	return build.EngineConfigOf(engineSettings(m, dp, offload, lora, resolveSpeculativeConfig(cmd)))
 }
 
 // engineConfigOfRun is the run's engine configuration both commands build every instance's
@@ -846,12 +862,11 @@ func rolesOf(global engineConfig, prefill, decode poolOverrides) cluster.PoolRol
 }
 
 // engineSettings gathers the run's resolved engine settings, unread, for build.EngineConfigOf.
-func engineSettings(m modelConfig, perRankDP int, offload kvOffloadConfig, cpuTierTicks int64,
+func engineSettings(m modelConfig, perRankDP int, offload kvOffloadConfig,
 	lora loraConfig, spec speculativeConfig) build.EngineSettings {
 	return build.EngineSettings{
-		TotalKVBlocks: totalKVBlocks, BlockSizeTokens: blockSizeTokens, KVCPUBlocks: kvCPUBlocks,
-		KVOffloadThreshold: kvOffloadThreshold, KVTransferBandwidth: kvTransferBandwidth,
-		KVTransferBaseLatency: kvTransferBaseLatency, KVOffload: offload, KVTransferTicksPerBlock: cpuTierTicks,
+		TotalKVBlocks: totalKVBlocks, BlockSizeTokens: blockSizeTokens,
+		KVOffload:     offload,
 		SequenceState: sequenceState, PrefixHit: prefixHit,
 		MaxNumSeqs: maxNumSeqs, MaxNumBatchedTokens: maxNumBatchedTokens,
 		LongPrefillTokenThreshold: longPrefillTokenThreshold, PrefixCachingDisabled: noEnablePrefixCaching,
@@ -915,20 +930,20 @@ type (
 func kvOffloadOfRecord(r *offloadRecord) kvOffloadConfig { return build.KVOffloadOfRecord(r) }
 
 // reconcileReplayKVOffload is replay's KV-offload config: the trace header's, authoritative
-// (BC-G6), reconciled with the scenario's offload block and --kv-offload-config, which may
-// only restate it (build.ReconcileReplayKVOffload); fatal on a conflict or an unreproducible
-// record. allowFlagAdd is for a converted trace or an agentic replay, which record no BLIS
-// deployment (replayRecordsDeployment).
-func reconcileReplayKVOffload(cmd *cobra.Command, headerBlock *workload.TraceKVOffloadConfig, allowFlagAdd bool) kvOffloadConfig {
-	// The scenario's offload block is a source on replay as on run: it and the flag resolve
-	// together (resolveKVOffloadConfig), and the result must match the header.
-	flagChanged := cmd.Flags().Changed("kv-offload-config") || scenarioOffload != nil
-	var flagCfg kvOffloadConfig
-	if flagChanged {
-		// resolveKVOffloadConfig itself logrus.Fatalf's on a malformed flag file.
-		flagCfg = resolveKVOffloadConfig(cmd)
+// (BC-G6), reconciled with the scenario's offload block, which may only restate it
+// (build.ReconcileReplayKVOffload); fatal on a conflict or an unreproducible record.
+// allowScenarioAdd is for a converted trace or an agentic replay, which record no BLIS
+// deployment (replayRecordsDeployment), so the scenario's block states their tiers.
+func reconcileReplayKVOffload(headerBlock *workload.TraceKVOffloadConfig, allowScenarioAdd bool) kvOffloadConfig {
+	// The scenario's offload block is a source on replay as on run (resolveKVOffloadConfig),
+	// and the result must match the header.
+	stated := scenarioOffload != nil
+	var scenarioCfg kvOffloadConfig
+	if stated {
+		// resolveKVOffloadConfig itself logrus.Fatalf's on a block the engine refuses.
+		scenarioCfg = resolveKVOffloadConfig()
 	}
-	cfg, err := resolveReplayKVOffload(headerBlock, flagChanged, flagCfg, allowFlagAdd)
+	cfg, err := resolveReplayKVOffload(headerBlock, stated, scenarioCfg, allowScenarioAdd)
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
@@ -937,16 +952,8 @@ func reconcileReplayKVOffload(cmd *cobra.Command, headerBlock *workload.TraceKVO
 
 // resolveReplayKVOffload is reconcileReplayKVOffload's error-returning core, over the trace
 // header's record (build.ReconcileReplayKVOffload).
-func resolveReplayKVOffload(headerBlock *workload.TraceKVOffloadConfig, flagChanged bool, flagCfg kvOffloadConfig, allowFlagAdd bool) (kvOffloadConfig, error) {
-	return build.ReconcileReplayKVOffload(headerToSimOffload(headerBlock), flagChanged, flagCfg, allowFlagAdd)
-}
-
-// requireOneOffloadModel refuses the offload chain together with --kv-cpu-blocks (#1590 H1;
-// build.RequireOneOffloadModel), fatal at the CLI boundary.
-func requireOneOffloadModel(offloadEnabled bool, onReplay bool) {
-	if err := build.RequireOneOffloadModel(offloadEnabled, kvCPUBlocks, onReplay); err != nil {
-		logrus.Fatalf("%v", err)
-	}
+func resolveReplayKVOffload(headerBlock *workload.TraceKVOffloadConfig, stated bool, scenarioCfg kvOffloadConfig, allowScenarioAdd bool) (kvOffloadConfig, error) {
+	return build.ReconcileReplayKVOffload(headerToSimOffload(headerBlock), stated, scenarioCfg, allowScenarioAdd)
 }
 
 // frontendConfigFromCLI is the engine's front-end config from --renderer-num-workers and
@@ -961,7 +968,7 @@ func frontendConfigFromCLI() cengine.FrontendConfig {
 }
 
 // registerContractEngines registers the engine kind a contract-built release is built by:
-// blis-vllm's translated v0.32.0 engine, with the latency kernel's step pricing and KV sizing
+// blis-vllm's translated v0.33.0 engine, with the latency kernel's step pricing and KV sizing
 // (its Register). It is the one place this binary links an engine the contract reaches;
 // later calls are no-ops.
 func registerContractEngines() { coreengine.Register() }
@@ -1001,13 +1008,13 @@ func engineFieldList(scenarioPath string, data *load.Data, seed int64) (fields.F
 	}
 	registerContractEngines()
 	eng, err := newContractEngine(engine.Spec{
-		Kind:            sel.Ref.Kind,
-		UpstreamVersion: sel.Ref.Version,
+		Kind:            sel.Kind,
+		UpstreamVersion: sel.Version,
 		Roots:           contractRoots(scenarioPath),
 		Seed:            seed,
 	}, data)
 	if err != nil {
-		return fields.FieldList{}, fmt.Errorf("scenario %s: engine %s: %w", scenarioPath, sel.Ref, err)
+		return fields.FieldList{}, fmt.Errorf("scenario %s: engine %s: %w", scenarioPath, sel, err)
 	}
 	return eng.Fields(), nil
 }
@@ -1043,11 +1050,10 @@ type poolOverrides struct {
 	MaxNumBatchedTokens   *int64
 	PrefixCachingDisabled *bool
 
-	// KVOffload and KVTransferTicksPerBlock are the pool's own KV offload (nil = use global):
-	// the run's one tier description, sized by the pool's bytes per block and priced by its
-	// own kernel, since pools of different widths hold different bytes per block.
-	KVOffload               *kvOffloadConfig
-	KVTransferTicksPerBlock *int64
+	// KVOffload is the pool's own KV offload (nil = use global): the run's one tier
+	// description, sized by the pool's bytes per block and priced by its own kernel, since
+	// pools of different widths hold different bytes per block.
+	KVOffload *kvOffloadConfig
 	// SequenceState is the pool's bounded per-sequence state (nil = use global): pools of
 	// different widths hold different state per sequence and per block (#1941).
 	SequenceState *kvSequenceState
@@ -1061,7 +1067,7 @@ type poolOverrides struct {
 	PreemptionPolicy string
 
 	// LongPrefillTokenThreshold is the pool engine's long_prefill_token_threshold (nil = use
-	// global; blis-schemas#75), and DPLoadBalancing its data_parallel_load_balancing mode
+	// global; https://github.com/inference-sim/blis-schemas/issues/75), and DPLoadBalancing its data_parallel_load_balancing mode
 	// ("" = use global; #76): vLLM sets both per engine, so prefill and decode pools may differ.
 	LongPrefillTokenThreshold *int64
 	DPLoadBalancing           string
@@ -1087,9 +1093,6 @@ func (o poolOverrides) Validate(name string) error {
 	if o.MaxNumBatchedTokens != nil && *o.MaxNumBatchedTokens <= 0 {
 		return fmt.Errorf("%s: poolOverrides.MaxNumBatchedTokens must be > 0 when set, got %d", name, *o.MaxNumBatchedTokens)
 	}
-	if o.KVTransferTicksPerBlock != nil && *o.KVTransferTicksPerBlock < 0 {
-		return fmt.Errorf("%s: poolOverrides.KVTransferTicksPerBlock must be >= 0 when set, got %d", name, *o.KVTransferTicksPerBlock)
-	}
 	if o.SequenceState != nil && (o.SequenceState.Hold == nil) != (o.SequenceState.Gate == nil) {
 		return fmt.Errorf("%s: poolOverrides.SequenceState needs both Hold and Gate, or neither", name)
 	}
@@ -1110,7 +1113,7 @@ func (o poolOverrides) IsEmpty() bool {
 	return o.TP == nil && o.GPU == "" &&
 		o.MaxModelLen == nil && o.TotalKVBlocks == nil &&
 		o.LatencyModel == nil && o.MaxNumSeqs == nil && o.MaxNumBatchedTokens == nil &&
-		o.PrefixCachingDisabled == nil && o.KVOffload == nil && o.KVTransferTicksPerBlock == nil &&
+		o.PrefixCachingDisabled == nil && o.KVOffload == nil &&
 		o.SequenceState == nil && o.PrefixHit == nil && o.Scheduler == "" && o.PreemptionPolicy == "" &&
 		o.LongPrefillTokenThreshold == nil && o.DPLoadBalancing == ""
 }
@@ -1151,9 +1154,6 @@ func resolvePoolConfig(global engineConfig, overrides poolOverrides) engineConfi
 	}
 	if overrides.KVOffload != nil {
 		resolved.Offload = *overrides.KVOffload
-	}
-	if overrides.KVTransferTicksPerBlock != nil {
-		resolved.KVTransferTicksPerBlock = *overrides.KVTransferTicksPerBlock
 	}
 	if overrides.SequenceState != nil {
 		resolved.SequenceState = *overrides.SequenceState
@@ -1200,6 +1200,9 @@ type transferEnvironment struct {
 	// own is the pool of the engine that asks, peer the pool its pulls read from (nil when
 	// there is no other pool).
 	own, peer *kernelmodel.Model
+	// across is the pool a peer WRITE of this engine lands in when it leaves its own pool: the other
+	// pool of a disaggregated run, nil in a colocated one (PeerWriteDemand).
+	across *kernelmodel.Model
 	// blockSize is the tokens in one KV block; the pools of a disaggregated run page alike.
 	blockSize int64
 	// rates are the tier links' rates, by tier and direction, recovered once (tierDemand).
@@ -1220,8 +1223,12 @@ func newTransferEnvironment(own, peer *kernelmodel.Model) (*transferEnvironment,
 	if err != nil {
 		return nil, err
 	}
-	return &transferEnvironment{own: own, peer: peer, blockSize: int64(e.BlockSize),
-		rates: map[tierKey]float64{}}, nil
+	te := &transferEnvironment{own: own, peer: peer, blockSize: int64(e.BlockSize),
+		rates: map[tierKey]float64{}}
+	if peer != own {
+		te.across = peer
+	}
+	return te, nil
 }
 
 // poolOrigin is where the pool's own numbering starts in the cluster's: the lowest node and the
@@ -1337,6 +1344,76 @@ func (e *transferEnvironment) pullDemand(p plan.PoolPlan, t plan.Transfer) (kern
 	return d, nil
 }
 
+// PeerWriteDemand prices a p2p WRITE (sim.PeerWritePricer) of the bytes the engine states. The WRITE
+// leaves the engine's own pool (from = placement(own, Move.From)). Its destination is in the
+// peer's pool numbering: in a colocated run the engine's own pool, in a disaggregated run the
+// other pool (placement of the opposite pool).
+//
+// Named limit (blis-vllm#204): a WRITE between two instances of one pool in a disaggregated run
+// is read as crossing to the other pool, because a Move names an endpoint and not its pool.
+//
+// Between different global nodes the WRITE crosses the fabric: the kernel's PDTransferDemand links
+// and floor (NIC egress and ingress, and uplinks across switch groups) with Bytes set to the
+// WRITE's. Within one global node it is a copy between two places in host memory over one host
+// link, "host/node/<node>", at the rate of the CPU tier's link recovered as tierDemand recovers
+// it. That is a named substitution for design 6.1's host_copy_rate, which the registry does not
+// hold at this pin (inference-sim#2203). A WRITE of no bytes, or one whose ends do not resolve,
+// is refused.
+func (e *transferEnvironment) PeerWriteDemand(p plan.PoolPlan, t engine.Transfer, bytes int64) (kernel.TransferDemand, error) {
+	if bytes <= 0 {
+		return kernel.TransferDemand{}, fmt.Errorf("a peer WRITE of %d bytes", bytes)
+	}
+	if err := ownEndpoint(p, t.Move.From); err != nil {
+		return kernel.TransferDemand{}, fmt.Errorf("peer WRITE source: %w", err)
+	}
+	dest := e.own
+	if e.peer != nil {
+		dest = e.across
+	}
+	if dest == nil {
+		return kernel.TransferDemand{}, fmt.Errorf("a peer WRITE in a disaggregated run, and this engine has no other pool to write to")
+	}
+	if t.Move.To.Node < 0 || t.Move.To.Rack < 0 || t.Move.From.Node < 0 || t.Move.From.Rack < 0 {
+		return kernel.TransferDemand{}, fmt.Errorf("peer WRITE ends %+v -> %+v do not resolve", t.Move.From, t.Move.To)
+	}
+	from, to := placement(e.own, t.Move.From), placement(dest, t.Move.To)
+	k := e.own.Kernel()
+	if from.Node == to.Node {
+		rate := e.hostRate()
+		if rate <= 0 {
+			return kernel.TransferDemand{}, fmt.Errorf("the CPU tier's link states no rate, so a same-node peer WRITE cannot be priced")
+		}
+		d := kernel.TransferDemand{Bytes: bytes, Floor: k.TierTime(cpuTierDevice, kernel.DirectionFromTier, 0, 1),
+			Links: []kernel.LinkUse{{Link: kernel.LinkID(fmt.Sprintf("host/node/%d", from.Node)), BytesPerSecond: rate}}}
+		return d, d.Check()
+	}
+	tokens := e.blocksOf(int64(t.Move.Tokens)) * e.blockSize
+	d := k.PDTransferDemand(int(tokens), from, to)
+	d.Bytes = bytes
+	if err := d.Check(); err != nil {
+		return kernel.TransferDemand{}, fmt.Errorf("the kernel's demand for a peer WRITE from %+v to %+v is malformed: %w", from, to, err)
+	}
+	if at := d.AloneTime(); at < 0 || at >= time.Duration(math.MaxInt64/2) {
+		return kernel.TransferDemand{}, fmt.Errorf("the kernel cannot price a peer WRITE of %d bytes from %+v to %+v "+
+			"(it reports %v): the link between them states no bandwidth", bytes, from, to, at)
+	}
+	return d, nil
+}
+
+// cpuTierDevice is the catalog device of the CPU tier.
+const cpuTierDevice = build.OffloadCPUTier
+
+// hostRate is the bytes per second of the CPU tier's link, recovered once as tierDemand does.
+func (e *transferEnvironment) hostRate() float64 {
+	key := tierKey{cpuTierDevice, kernel.DirectionFromTier}
+	rate, ok := e.rates[key]
+	if !ok {
+		rate = tierRate(e.own.Kernel(), cpuTierDevice, kernel.DirectionFromTier)
+		e.rates[key] = rate
+	}
+	return rate
+}
+
 // tierDemand is an offload copy to or from the catalog device t.Tier on the node that holds it:
 // the whole blocks' bytes over one link at the rate the kernel prices the device. Alone, the
 // demand costs exactly Kernel.TierTime of the same bytes (the kernel prices a copy at the
@@ -1359,7 +1436,13 @@ func (e *transferEnvironment) tierDemand(t plan.Transfer) (kernel.TransferDemand
 	key := tierKey{t.Tier, dir}
 	rate, ok := e.rates[key]
 	if !ok {
-		rate = tierRate(k, t.Tier, dir)
+		// One rate for the link, which every copy over it states (the link arbiter refuses a link
+		// stated at two). The recovered rate is a float that rounds once more than the kernel's
+		// (tierRate's probe is 2^50 bytes priced in whole nanoseconds, so it is off by under one
+		// part in 10^14), so it is raised by one part in 10^12: a copy alone then never drains later
+		// than the kernel's price, and sooner by a nanosecond per 1000 s of copy at most, which
+		// the copy's floor takes up below.
+		rate = tierRate(k, t.Tier, dir) * (1 + 1e-12)
 		e.rates[key] = rate
 	}
 	d := kernel.TransferDemand{
@@ -1370,16 +1453,14 @@ func (e *transferEnvironment) tierDemand(t plan.Transfer) (kernel.TransferDemand
 			BytesPerSecond: rate,
 		}},
 	}
+	if d.AloneTime() < price {
+		// The copy drains a little before the kernel's price: its floor is the price, so alone it
+		// costs exactly that, and a copy that shares the link still drains at the link's one rate.
+		d.Floor = price
+	}
 	if d.AloneTime() != price {
-		// The recovered rate is a float that rounds once more than the kernel's, so a copy that
-		// lands on the edge of a nanosecond can differ by one. State the rate this copy was
-		// priced at instead: the bytes over the price, widened by half a nanosecond so the
-		// truncation lands on the price itself.
-		d.Links[0].BytesPerSecond = float64(bytes) / ((float64(price) + 0.5) / float64(time.Second))
-		if d.AloneTime() != price {
-			return kernel.TransferDemand{}, fmt.Errorf("the demand of a copy of %d bytes %s tier %q costs %v alone but "+
-				"the kernel prices it at %v", bytes, dirName(dir), t.Tier, d.AloneTime(), price)
-		}
+		return kernel.TransferDemand{}, fmt.Errorf("the demand of a copy of %d bytes %s tier %q costs %v alone but "+
+			"the kernel prices it at %v", bytes, dirName(dir), t.Tier, d.AloneTime(), price)
 	}
 	if err := d.Check(); err != nil {
 		return kernel.TransferDemand{}, err
@@ -1404,4 +1485,120 @@ func tierRate(k kernel.Kernel, tier string, dir kernel.Direction) float64 {
 		}
 	}
 	return 0
+}
+
+// Instance loading time from the instance's weights (#1215).
+//
+// A policy bundle's instance_lifecycle.weight_source names a catalog storage tier. An instance
+// then loads in loading_delay (what does not depend on its weights) plus the time to read its
+// resident weights from that tier. The weights are the cost model's own per-rank figure (the bytes
+// it sizes KV against, design SUB-14), so a larger model, a wider tensor
+// parallelism or a quantised checkpoint changes the delay with no extra input. The rate is the
+// registry's offload_tier_<tier>_* entries for the instance's chip, read through the kernel's
+// TierTime, so a faster chip or tier loads faster and a chip the registry has no entry for is
+// refused by name.
+
+// weightLoadTime is the time for an instance of tpDegree ranks to read its resident weights
+// from tier on kernel k. The weights are the kernel's per-rank figure (FixedBytes, the bytes the
+// cost model itself sizes KV against); every rank on a node reads at once and shares the tier
+// (TierTime's queue depth), and the nodes of a multi-node instance read in parallel, so one
+// node's time is the instance's. At this pin the engine's PoolPlan does not yet state resident
+// weights (https://github.com/inference-sim/blis-latency-kernel/issues/84), so the kernel is the one source; when the plan does, this is
+// the figure to replace. Weights kept in host memory are not in the kernel's figure and are not
+// priced here.
+func weightLoadTime(k kernel.Kernel, gpusPerNode int, tier string, tpDegree int) (time.Duration, error) {
+	ranksOnNode := max(1, min(tpDegree, gpusPerNode))
+	bytes := k.FixedBytes().Weights
+	d := k.TierTime(tier, kernel.DirectionFromTier, bytes, ranksOnNode)
+	if d < 0 || d >= time.Duration(math.MaxInt64/4) {
+		return 0, fmt.Errorf("weight_source %q: the kernel cannot price a read of %d bytes from it", tier, bytes)
+	}
+	return d, nil
+}
+
+// weightLoader returns DeploymentConfig.WeightLoadTime: it prices an instance on the kernel of
+// its pool's chip, the variant for a chip other than the scenario's own (withPoolChips) and the
+// scenario's opened kernel otherwise.
+func weightLoader(def *engineModel, variants map[string]*poolChip) func(gpu, tier string, tpDegree int) (time.Duration, error) {
+	return func(gpu, tier string, tpDegree int) (time.Duration, error) {
+		m := def
+		if v, ok := variants[strings.ToLower(gpu)]; ok {
+			m = v.model
+		}
+		return weightLoadTime(m.Kernel(), m.Packaging().GPUsPerNode, tier, tpDegree)
+	}
+}
+
+// requireWeightSource refuses, before the run starts, a weight source that the kernel of any
+// chip the run places instances on cannot price. The refusal names the chip and the registry
+// entries the tier needs (the TierTime of a tier with no entry is unbounded, never zero).
+func requireWeightSource(tier string, def *engineModel, variants map[string]*poolChip) {
+	if tier == "" {
+		return
+	}
+	chips := map[string]*engineModel{gpu: def}
+	for _, v := range variants {
+		chips[v.chip] = v.model
+	}
+	names := make([]string, 0, len(chips))
+	for c := range chips {
+		names = append(names, c)
+	}
+	slices.Sort(names)
+	for _, c := range names {
+		if d := chips[c].Kernel().TierTime(tier, kernel.DirectionFromTier, 1, 1); d < 0 || d >= time.Duration(math.MaxInt64/4) {
+			logrus.Fatalf("policy bundle instance_lifecycle.weight_source %q cannot be priced on chip %q: the coefficient sets "+
+				"of the scenario carry no %s, %s and %s for it (the registry set cost-model-offload-tiers; the catalog's "+
+				"storage tiers are in catalog/devices/storage.yaml)", tier, c, coefficient.OffloadTierReadRate(tier),
+				coefficient.OffloadTierWriteRate(tier), coefficient.OffloadTierBaseLatency(tier))
+		}
+	}
+}
+
+// Peer endpoints: where each instance sits, for the engines that send it KV (blis-vllm#204). They are
+// here, with every other use of blis-vllm, because only this file reaches it.
+
+// peerEndpoint is where each instance's workers sit, in the numbering of its own pool, for an
+// engine that sends it KV directly (engine.PeerPlaced; a p2p tier's WRITE ends there). A
+// disaggregated run's instances are where instanceEndpoint puts them. A colocated run's instance n
+// is the pool's n-th group, as the run's endpoint topology places it (build.EndpointGroupPlacements):
+// the node holding the group's first GPU, counted from the pool's lowest node and rack
+// (poolOrigin). Two instances on one node get one endpoint, and a WRITE between them is a move
+// within the node. Nil when no kernel is open.
+func peerEndpoint(pd *kernelPools, colocated *kernelmodel.Model) func(cluster.InstanceID) plan.Endpoint {
+	if pd != nil {
+		return pd.instanceEndpoint()
+	}
+	if colocated == nil {
+		return nil
+	}
+	origin := poolOrigin(colocated)
+	return func(id cluster.InstanceID) plan.Endpoint {
+		n, err := strconv.Atoi(strings.TrimPrefix(string(id), "instance_"))
+		if err != nil || n < 0 || n >= colocated.GroupCapacity() {
+			panic(fmt.Sprintf("peer endpoint: instance %q is not one of the pool's %d groups", id, colocated.GroupCapacity()))
+		}
+		at := colocated.GroupPlacementOf(n)
+		local, err := origin.Local(plan.Endpoint{Node: at.Node, Rack: at.Rack})
+		if err != nil {
+			panic(fmt.Sprintf("peer endpoint: instance %q: %v", id, err))
+		}
+		return local
+	}
+}
+
+// placePeerInstance states where a colocated run's instance sits when its engine exchanges KV with
+// peers (engine.Peered with an address): such an engine states its WRITEs from its own endpoint, so
+// left as built every instance would state the pool's first node. Other colocated engines are left as
+// built (placeInstance), and a disaggregated run's are placed there.
+func placePeerInstance(eng engine.Engine, colocated *kernelmodel.Model, index int) error {
+	p, ok := eng.(engine.Peered)
+	if !ok || p.PeerAddr() == "" || colocated == nil {
+		return nil
+	}
+	at := peerEndpoint(nil, colocated)(cluster.InstanceID(fmt.Sprintf("instance_%d", index)))
+	if err := engine.Place(eng, at, colocated.EnginePlacement().Nodes); err != nil {
+		return fmt.Errorf("instance_%d: %w", index, err)
+	}
+	return nil
 }

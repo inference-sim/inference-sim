@@ -13,7 +13,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 BLIS (Blackbox Inference Simulator) is a discrete-event simulator for LLM inference serving systems. It models multi-instance clusters with configurable admission control, request routing, KV-cache dynamics (including tiered GPU+CPU offloading), scheduling policies, and token generation. Every step time and memory figure is priced by blis-substrate's cost model (`kernel/`, the only latency backend; adapter blis-vllm `compat/kernelmodel`).
 
-This repo holds no vLLM code: it keeps the clock, event loop, cluster, router, workloads and reports, and drives every engine through blis-substrate's `contracts/engine.Engine` interface (`sim.EngineDriver`, `sim/engine_driver.go`). The engine is **blis-vllm** (`github.com/inference-sim/blis-vllm`), which non-test code under `sim/` and `cmd/` imports at one build site, `cmd/engine_build.go`. Dependencies run one way: blis-substrate ← blis-vllm and the router fork ← inference-sim; the exact versions are in `stack.json`. Every scenario states `engine_version: "0.32.0"` (no default), which runs blis-vllm's translated vLLM v0.32.0 engine.
+This repo holds no vLLM code: it keeps the clock, event loop, cluster, router, workloads and reports, and drives every engine through blis-substrate's `contracts/engine.Engine` interface (`sim.EngineDriver`, `sim/engine_driver.go`). The engine is **blis-vllm** (`github.com/inference-sim/blis-vllm`), which non-test code under `sim/` and `cmd/` imports at one build site, `cmd/engine_build.go`. Dependencies run one way: blis-substrate ← blis-vllm and the router fork ← inference-sim; the exact versions are in `stack.json`. Every scenario states `engine: {kind: vllm, version: "0.33.0"}` (no default), which runs blis-vllm's translated vLLM v0.33.0 engine.
 
 The simulator is CPU-only, deterministic, and designed for capacity planning, policy optimization research, and performance prediction across deployments without requiring real GPUs.
 
@@ -26,7 +26,7 @@ Every `blis run` / `blis replay` obeys these; see `docs/getting-started/` and `d
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout v0.14.0
+git -C blis-substrate checkout v0.15.0
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
@@ -40,7 +40,7 @@ One canonical form per command. `--help` and the guides carry the full flag surf
 
 - routing, admission, flow control: the embedded llm-d router (the scenario's `router:` block) → `docs/guide/routing.md`, `docs/guide/admission.md`; the router fork → `docs/contributing/llm-d-router-fork.md`
 - the latency kernel, scenarios, P/D, DP/EP, speculative decoding → `docs/guide/latency-models.md` (+ `docs/reference/models.md`)
-- KV-offload (`--kv-offload-config`) → `docs/guide/kv-cache.md`
+- KV-offload (the scenario's `offload` block) → `docs/guide/kv-cache.md`
 - `replay`, trace header modes, closed-loop/corpus sessions → `docs/guide/replay.md`
 - workloads & `convert` → `docs/guide/workloads.md`
 - saturation detectors → `docs/contributing/saturation-analyzer-extension.md`
@@ -159,7 +159,7 @@ The cost model (blis-substrate `kernel/`, adapter blis-vllm `compat/kernelmodel`
 
 ## Post-Hoc Saturation Detection
 
-Analyzes completed runs (distinct from the real-time flow-control detector). Package `sim/saturation/`; streaming detectors `composite`, `threshold`, `backlog-drift`, `peak-rate`, each with a false-alarm calibration knob. CLI (on `run` and `replay`): `--detectors <name|comma-list|all>`, `--saturation-config <yaml>`, `--saturation-report <path>` (writes `{"final":{...},"trace":[...]}`), `--saturation-final-window <duration>`. run→replay is byte-identical (INV-13). Full mechanism, tuning knobs, and migration from the pre-#1516 flags: `docs/contributing/saturation-analyzer-extension.md`.
+Analyzes completed runs (distinct from the real-time flow-control detector). Package `sim/saturation/`: one steady-state detector (DEV-10), `settle`, classifying the measured window SETTLED, OVERLOADED or INCOMPLETE from the trend of the backlog; the earlier roster (composite, threshold, backlog-drift, peak-rate) is gone. CLI (on `run` and `replay`): `--detectors settle`, `--saturation-report <path>` (writes the verdict). Statistic and measured false-alarm rate and power: `docs/contributing/saturation-analyzer-extension.md`.
 
 ## File Organization
 
@@ -188,7 +188,7 @@ Request pipeline: Arrival → Admission → Routing → WaitQueue → Batch Form
 ### Templates & Plans
 
 - `docs/contributing/templates/design-guidelines.md` — start here when designing anything new.
-- Active plans: `docs/plans/` (gitignored). Archived design docs are gone.
+- Active plans: a local plans directory, gitignored. Archived design docs are gone.
 
 ## Active Technologies
 

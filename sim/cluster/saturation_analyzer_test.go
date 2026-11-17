@@ -680,3 +680,29 @@ func TestV2SaturationAnalyzer_SafeRemovals(t *testing.T) {
 		})
 	}
 }
+
+// TestV2SaturationAnalyzer_CostPerReplicaIsOrderInvariantMean (#1536): replicas of one
+// variant may cost different amounts (a single-node instance bills one node, a spanning one
+// several). The variant's CostPerReplica is the mean over its replicas, whatever order the
+// replicas arrive in.
+func TestV2SaturationAnalyzer_CostPerReplicaIsOrderInvariantMean(t *testing.T) {
+	analyzer := NewV2SaturationAnalyzer(V2SaturationAnalyzerConfig{
+		KvCacheThreshold: 0.8, ScaleUpThreshold: 0.8, ScaleDownBoundary: 0.4, AvgInputTokens: 512, MinReplicas: 1,
+	})
+	v := NewVariantSpec("H100", 8)
+	mk := func(id string, cost float64) ReplicaMetrics {
+		return ReplicaMetrics{InstanceID: id, Variant: v, TotalKvCapacityTokens: 10000, KvTokensInUse: 100, CostPerHour: cost}
+	}
+	for name, order := range map[string][]ReplicaMetrics{
+		"single first": {mk("a", 10), mk("b", 10), mk("c", 40)},
+		"span first":   {mk("c", 40), mk("a", 10), mk("b", 10)},
+	} {
+		res := analyzer.Analyze(ModelSignals{ModelID: "m", Replicas: order})
+		if len(res.VariantCapacities) != 1 {
+			t.Fatalf("%s: want one variant, got %d", name, len(res.VariantCapacities))
+		}
+		if got := res.VariantCapacities[0].CostPerReplica; math.Abs(got-20) > 1e-9 {
+			t.Errorf("%s: CostPerReplica = %v, want 20 (mean of 10, 10, 40)", name, got)
+		}
+	}
+}

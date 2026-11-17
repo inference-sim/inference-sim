@@ -415,3 +415,94 @@ func TestAgxRequestTimeoutUs_HonorsFlag(t *testing.T) {
 		t.Errorf("--timeout -1: got %d, want 0 (disabled)", got)
 	}
 }
+
+// TestReplayAgentX_ConstantLoad: aiperf-constant-load (inference-sim#2124) end to end over the
+// committed slice. The descriptor's load block gives a warmup and a recycling rule; the
+// measured window is short (no 900 s floor under this scenario), starts after the warmup, and
+// the sub-agents of the corpus are replayed and counted.
+func TestReplayAgentX_ConstantLoad(t *testing.T) {
+	spec := filepath.Join(t.TempDir(), "constant.yaml")
+	doc := "replay:\n  scenario: aiperf-constant-load\n  harness_version: 0.12.0\n" +
+		"  corpus:\n    loader: semianalysis_cc_traces_weka_062126_256k\n    format: weka-trace-v7\n    encoding: jsonl\n" +
+		"    source:\n      huggingface: semianalysisai/cc-traces-weka-062126-256k\n      revision: test\n" +
+		"    sha256: " + agentXSliceSHA(t) + "\n" +
+		"  concurrency: 3\n  benchmark_duration_s: 60\n  max_context_length: max_model_len\n" +
+		"  load:\n    warmup_duration_s: 10\n    trace_idle_gap_cap_s: 2\n"
+	if err := os.WriteFile(spec, []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, f := runAgentXReplay(t, "--workload-spec", spec, "--agentic-scenario", "aiperf-constant-load", "--benchmark-duration", "60s")
+	var m agentXFile
+	if err := json.Unmarshal(f, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m.Agentic.Lanes != 3 {
+		t.Errorf("slots = %d, want 3", m.Agentic.Lanes)
+	}
+	if m.Agentic.WarmupRequests == 0 || m.Agentic.ProfileStartUs < 10_000_000 {
+		t.Errorf("warmup requests %d, measured phase starts at %d µs: want a 10 s warmup first", m.Agentic.WarmupRequests, m.Agentic.ProfileStartUs)
+	}
+	if m.Agentic.MainRequests == 0 {
+		t.Error("no measured request")
+	}
+	if got := m.Agentic.ProfileCompleteUs - m.Agentic.ProfileStartUs; got < 60_000_000 {
+		t.Errorf("measured window %d µs, want at least the 60 s sending window", got)
+	}
+	warm := 0
+	for _, r := range m.Requests {
+		if r.Phase == "warmup" {
+			warm++
+		}
+	}
+	if warm == 0 {
+		t.Error("no warmup row in the Result")
+	}
+}
+
+// The substrate's constant-load presets load through the strict replay reader and resolve with
+// a run's session slots, so a run can start from one.
+func TestReplayAgentX_ConstantLoadPresetsLoad(t *testing.T) {
+	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/inference-sim/blis-substrate").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"agentx-constant-load-256k", "agentx-constant-load-uncapped"} {
+		r, err := loadReplaySpec(filepath.Join(strings.TrimSpace(string(out)), "catalog/workloads", name+".yaml"))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		r.Concurrency = 256
+		if p := r.Validate(); !p.OK() || string(r.Scenario) != "aiperf-constant-load" || r.Load == nil {
+			t.Errorf("%s: scenario %s, load %+v, problems %s", name, r.Scenario, r.Load, p.Error())
+		}
+	}
+}
+
+// A run names the catalog's constant-load preset and states only its own choices (session
+// slots, the window, the measured session count); the preset supplies the corpus, the warmup
+// and the recycling rule (inference-sim#2124).
+func TestReplayAgentX_RunNamesTheConstantLoadPreset(t *testing.T) {
+	spec := filepath.Join(t.TempDir(), "ref.yaml")
+	doc := "workload: agentx-constant-load-256k\nconcurrency: 3\nbenchmark_duration_s: 60\nload:\n  measured_sessions: 4\n"
+	if err := os.WriteFile(spec, []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, f := runAgentXReplay(t, "--workload-spec", spec, "--agentic-scenario", "aiperf-constant-load", "--benchmark-duration", "60s", "--max-context-length", "max_model_len")
+	var m agentXFile
+	if err := json.Unmarshal(f, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m.Agentic.Lanes != 3 || m.Agentic.ProfileStartUs < 900_000_000 || m.Agentic.WarmupRequests == 0 {
+		t.Errorf("slots %d, measured phase at %d µs, %d warmup requests: want 3 slots after the preset's 900 s warmup",
+			m.Agentic.Lanes, m.Agentic.ProfileStartUs, m.Agentic.WarmupRequests)
+	}
+	measured := 0
+	for _, r := range m.Requests {
+		if r.Phase == "profile" {
+			measured++
+		}
+	}
+	if measured == 0 {
+		t.Error("no measured request")
+	}
+}

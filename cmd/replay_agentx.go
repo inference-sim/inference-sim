@@ -2,10 +2,7 @@ package cmd
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"io"
 	"math"
 	"os"
 	"sort"
@@ -25,7 +22,7 @@ import (
 
 // `blis replay --agentic-scenario inferencex-agentx-mvp` (#1937): replay aiperf 0.12.0's
 // AgentX scenario from the raw Weka v7 corpus instead of a TraceV2 file. The workload is
-// described by blis-schemas' Replay descriptor (blis-schemas#71), given whole with
+// described by blis-schemas' Replay descriptor (https://github.com/inference-sim/blis-schemas/issues/71), given whole with
 // --workload-spec or assembled from the flags below; the flags override the file.
 
 var (
@@ -41,14 +38,14 @@ var (
 )
 
 func registerAgentXReplayFlags(c *cobra.Command) {
-	c.Flags().StringVar(&agxScenarioFlag, "agentic-scenario", "", `Replay an agentic harness scenario from its raw corpus instead of a TraceV2 file. One value: "inferencex-agentx-mvp" (aiperf 0.12.0 --scenario inferencex-agentx-mvp). Excludes --trace-header/--trace-data/--session-mode`)
+	c.Flags().StringVar(&agxScenarioFlag, "agentic-scenario", "", `Replay an agentic harness scenario from its raw corpus instead of a TraceV2 file. "inferencex-agentx-mvp" (aiperf 0.12.0 --scenario inferencex-agentx-mvp) or "aiperf-constant-load" (aiperf 0.12.0 without --scenario: --concurrency live root sessions, recycled as they end; its load block comes from --workload-spec). Excludes --trace-header/--trace-data/--session-mode`)
 	c.Flags().StringVar(&agxWorkloadSpec, "workload-spec", "", "With --agentic-scenario: a blis-schemas replay workload YAML (a Replay, or a document whose workload.replay is one); the flags below override it")
 	c.Flags().StringVar(&agxCorpusPath, "corpus", "", "With --agentic-scenario: the Weka v7 corpus file (JSONL, one trace per line), read once and streamed")
 	c.Flags().StringVar(&agxCorpusSHA256, "corpus-sha256", "", "With --agentic-scenario: the corpus file's sha256; the replay refuses a corpus that does not match (defaults to the descriptor's corpus.sha256)")
-	c.Flags().IntVar(&agxConcurrency, "concurrency", 0, "With --agentic-scenario: session-tree lanes (live trees, not requests)")
-	c.Flags().DurationVar(&agxBenchmarkDur, "benchmark-duration", 0, "With --agentic-scenario: the profiling sending window (at least 900s; scenario default 1800s)")
+	c.Flags().IntVar(&agxConcurrency, "concurrency", 0, "With --agentic-scenario: session-tree lanes (live trees, not requests); under aiperf-constant-load, session slots (live root sessions)")
+	c.Flags().DurationVar(&agxBenchmarkDur, "benchmark-duration", 0, "With --agentic-scenario: the profiling sending window (inferencex-agentx-mvp: at least 900s, default 1800s; aiperf-constant-load: required, no floor)")
 	c.Flags().StringVar(&agxGracePeriod, "grace-period", "", `With --agentic-scenario: how long requests in flight at the end of the window may finish before they are cancelled without a record (a duration or "inf"; default 30s)`)
-	c.Flags().StringVar(&agxCorpusCache, "corpus-cache", "", "With --agentic-scenario: a directory for parsed-corpus snapshots, keyed by the corpus sha256, the max-context filter, chain splitting and this build. A run that finds a valid snapshot skips the JSON parse; a missing, damaged or mismatched one is ignored (and logged) and rewritten. Output is identical with or without it")
+	c.Flags().StringVar(&agxCorpusCache, "corpus-cache", "", "With --agentic-scenario: a directory for parsed-corpus snapshots, keyed by the corpus sha256, the max-context filter, chain splitting and the snapshot schema (any build reuses a snapshot another wrote). A run that finds a valid snapshot skips the JSON parse; a missing, damaged or mismatched one is ignored (and logged) and rewritten. Output is identical with or without it")
 	c.Flags().StringVar(&agxMaxContextLength, "max-context-length", "", `With --agentic-scenario: drop every trace whose peak prompt + max(output, 1) exceeds this ("max_model_len" = the deployment's resolved max_model_len, or a token count; default no filter)`)
 }
 
@@ -63,8 +60,9 @@ type agentXRun struct {
 }
 
 // loadReplaySpec reads a replay workload document: a bare Replay or a document with a
-// replay: or workload.replay: key. A reference to a catalog replay workload is refused:
-// the replay must be stated inline.
+// replay: or workload.replay: key. It may be a reference to a catalog replay workload
+// (workload: <name>, with the run's choices), which resolveAgentXSpec resolves against the
+// catalog in use.
 func loadReplaySpec(path string) (*workload.Replay, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -93,11 +91,6 @@ func loadReplaySpec(path string) (*workload.Replay, error) {
 				return nil, err
 			}
 			node = r
-		}
-	}
-	if m, ok := node.(map[string]any); ok {
-		if name, ok := m["workload"]; ok {
-			return nil, fmt.Errorf("%s names catalog replay workload %v; state the replay inline", path, name)
 		}
 	}
 	raw, err := yaml.Marshal(node)
@@ -153,6 +146,27 @@ func resolveAgentXSpec(cmd *cobra.Command) (*workload.Replay, error) {
 	if agxWorkloadSpec != "" {
 		var err error
 		if r, err = loadReplaySpec(agxWorkloadSpec); err != nil {
+			return nil, err
+		}
+	}
+	if r.Workload != "" {
+		// A reference to a catalog replay workload: the run's own choices (flags included)
+		// go over the entry's definition (Replay.Resolve), which the flags may not restate.
+		if err := applyReplayRunFlags(cmd, r); err != nil {
+			return nil, err
+		}
+		entry, err := mustRunData().Workload(r.Workload)
+		if err != nil {
+			return nil, fmt.Errorf("replay workload %q: %w", r.Workload, err)
+		}
+		if entry.Replay == nil {
+			return nil, fmt.Errorf("catalog workload %q is a traffic shape, not a replay workload", r.Workload)
+		}
+		if agxScenarioFlag != "" && agxScenarioFlag != string(entry.Replay.Scenario) {
+			return nil, fmt.Errorf("--agentic-scenario %s disagrees with catalog replay workload %q, which is %s",
+				agxScenarioFlag, r.Workload, entry.Replay.Scenario)
+		}
+		if r, err = r.Resolve(entry.Replay); err != nil {
 			return nil, err
 		}
 	}
@@ -218,6 +232,33 @@ func resolveAgentXSpec(cmd *cobra.Command) (*workload.Replay, error) {
 	return r, nil
 }
 
+// applyReplayRunFlags puts the flags that state a run's own choices (a reference may state
+// exactly these) onto r.
+func applyReplayRunFlags(cmd *cobra.Command, r *workload.Replay) error {
+	if cmd.Flags().Changed("concurrency") {
+		r.Concurrency = agxConcurrency
+	}
+	if cmd.Flags().Changed("seed") {
+		s := seed
+		r.RandomSeed = &s
+	}
+	if cmd.Flags().Changed("benchmark-duration") {
+		r.BenchmarkDurationS = agxBenchmarkDur.Seconds()
+	}
+	if agxGracePeriod != "" {
+		g := math.Inf(1)
+		if agxGracePeriod != "inf" && agxGracePeriod != ".inf" {
+			d, err := time.ParseDuration(agxGracePeriod)
+			if err != nil {
+				return fmt.Errorf("--grace-period: %w", err)
+			}
+			g = d.Seconds()
+		}
+		r.GracePeriodS = &g
+	}
+	return nil
+}
+
 // buildAgentXRun resolves the descriptor against the deployment, loads the corpus once,
 // and builds the driver. It returns the initial requests.
 func buildAgentXRun(cmd *cobra.Command) (*agentXRun, []*sim.Request) {
@@ -247,7 +288,7 @@ func buildAgentXRun(cmd *cobra.Command) (*agentXRun, []*sim.Request) {
 		corpus, err = simworkload.LoadAgentXCorpus(agxCorpusPath, spec.Corpus.SHA256, limit, spec.SplitsFlattenedAgents())
 	} else {
 		var res simworkload.AgentXCacheResult
-		corpus, res, err = simworkload.LoadAgentXCorpusCached(agxCorpusPath, spec.Corpus.SHA256, limit, spec.SplitsFlattenedAgents(), agxCorpusCache, agentXBuildKey())
+		corpus, res, err = simworkload.LoadAgentXCorpusCached(agxCorpusPath, spec.Corpus.SHA256, limit, spec.SplitsFlattenedAgents(), agxCorpusCache)
 		switch {
 		case res.Hit:
 			logrus.Infof("agentic replay: corpus snapshot %s", res.Path)
@@ -269,7 +310,7 @@ func buildAgentXRun(cmd *cobra.Command) (*agentXRun, []*sim.Request) {
 	if !math.IsInf(grace, 1) {
 		graceUs = int64(math.Round(grace * 1e6))
 	}
-	drv, err := simworkload.NewAgentXReplay(corpus, simworkload.AgentXReplayConfig{
+	cfg := simworkload.AgentXReplayConfig{
 		Concurrency:           spec.Concurrency,
 		Seed:                  spec.Seed(),
 		DurationUs:            int64(math.Round(spec.Duration() * 1e6)),
@@ -282,7 +323,12 @@ func buildAgentXRun(cmd *cobra.Command) (*agentXRun, []*sim.Request) {
 		RequestTimeoutUs:      agxRequestTimeoutUs(cmd),
 		MaxModelLen:           maxModelLen,
 		HorizonCapUs:          horizonCap(cmd),
-	})
+	}
+	if spec.Scenario == workload.ScenarioAIPerfConstantLoad {
+		cfg.Constant = agxConstantLoad(spec)
+		cfg.IdleCapUs = 0 // the global idle cap is the agentic strategy's
+	}
+	drv, err := simworkload.NewAgentXReplay(corpus, cfg)
 	if err != nil {
 		logrus.Fatalf("agentic replay: %v", err)
 	}
@@ -317,6 +363,17 @@ func agxTraceIdleCapUs(spec *workload.Replay) int64 {
 	return 0
 }
 
+// agxConstantLoad is the constant-load mode's settings from a validated aiperf-constant-load
+// replay: the recycling rule, the measured session count and the warmup length.
+func agxConstantLoad(spec *workload.Replay) *simworkload.AgentXConstantLoad {
+	l := spec.Load
+	return &simworkload.AgentXConstantLoad{
+		Recycling:        string(spec.SessionRecycling()),
+		MeasuredSessions: l.MeasuredSessions,
+		WarmupUs:         int64(math.Round(l.WarmupDurationS * 1e6)),
+	}
+}
+
 // agxWarmupRequestsPerLane is the request-bounded cache-pressure warmup count, 0 unless a
 // cache_pressure warmup states requests_per_lane.
 func agxWarmupRequestsPerLane(spec *workload.Replay) int {
@@ -335,25 +392,6 @@ func (a *agentXRun) setMeasuredWindow(m *sim.Metrics) {
 	}
 	ps, pe := a.driver.Window()
 	m.MeasuredWindow = &sim.MeasuredWindow{StartUs: ps, EndUs: pe}
-}
-
-// agentXBuildKey identifies this build for the corpus cache: the digest of the running
-// executable, so a snapshot written by any other build -- including an uncommitted edit
-// with the same VCS revision -- is never used.
-func agentXBuildKey() string {
-	exe, err := os.Executable()
-	if err == nil {
-		var f *os.File
-		if f, err = os.Open(exe); err == nil {
-			defer func() { _ = f.Close() }()
-			h := sha256.New()
-			if _, err = io.Copy(h, f); err == nil {
-				return hex.EncodeToString(h.Sum(nil))
-			}
-		}
-	}
-	// Unknown build: a key no other process shares, so the cache is never reused.
-	return fmt.Sprintf("unknown-%d-%d", os.Getpid(), time.Now().UnixNano())
 }
 
 // horizonCap is a user --horizon the replay must not run past, or 0.

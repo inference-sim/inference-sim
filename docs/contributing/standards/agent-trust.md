@@ -138,7 +138,7 @@ The tiers above are about trusting an agent's *output*. This is the mirror image
 allowed to *read*.
 
 *Who* may trigger the AI flows (`@claude`, `/blis-pr-review`, `/approve-issue-for-pr-delivery`) is
-gated to `admin`/`maintain`/`write`, and #1813 further refuses a flow whose PR/issue *author* lacks
+gated to `admin`/`maintain`/`write`, and the author gate further refuses a flow whose PR/issue *author* lacks
 that access. *What* they read was still not gated: on a PR or issue authored by a trusted maintainer,
 this repository is public, so any GitHub user can add a comment or a review — and an agent cannot
 reliably separate "context" from "instruction". So comment text is a prompt-injection surface into
@@ -186,7 +186,7 @@ thread cannot silently drop its newest findings. `scripts/deliver_trusted_commen
 pins that verify/correct assemble the digest in a workflow step and read it by file path (producer +
 consumer + ordering), and `scripts/qa_review_filter_test.go` pins the Python routing.
 
-**`claude.yml` is OUT OF SCOPE for #1806 — a documented limitation, not a gap to be filled here.**
+**`claude.yml` is OUT OF SCOPE for the comment filter — a documented limitation, tracked by #2149.**
 Both its agent jobs invoke `claude-code-action` in **tag mode** (triggered by the `@claude` /
 `/blis-pr-review` comment, with no `prompt:` we control): the action assembles the PR/issue context —
 comments included — *itself*, before any workflow step could substitute a filtered digest. There is
@@ -212,7 +212,7 @@ Three consequences worth stating, because each is a decision rather than a fallo
 untrusted text is": the **PR body**. `deliver-verify.yml` copies a PR's `.body` into
 `scripts/qa-review/questioner.py`, and tag-mode `claude-code-action` assembles PR context itself. A
 *delivery* PR is opened by the automation, so its body is as trusted as the flow that wrote it; a
-*community* PR's body is untrusted, but a community PR is refused up front by the author gate (#1813),
+*community* PR's body is untrusted, but a community PR is refused up front by the author gate,
 and the residual body axis is #1812. This filter covers comments only.
 
 ## Known Failure Modes

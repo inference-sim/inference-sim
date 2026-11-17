@@ -35,15 +35,11 @@ CLI flags only override YAML values when explicitly set. BLIS checks whether eac
 !!! note
     `--seed`, `--horizon`, and `--num-requests` are exceptions — they override the workload-spec YAML values even when `--workload-spec` is set. `--rate` does NOT override `aggregate_rate` in the YAML (see [Common Pitfalls](#common-pitfalls)).
 
-**Scheduling and preemption** (`--scheduler`, `--preemption-policy`):
-
-1. Explicit CLI flags
-2. `--policy-config` YAML bundle
-3. The scenario's engine settings, then the default `fcfs`
+**Scheduling and preemption** come from the scenario alone: each pool's `engine.scheduling_policy` (`fcfs` or `priority`), and `fcfs` when a pool states none. No flag or policy-bundle key sets them.
 
 **Routing, admission and flow control** are the embedded llm-d router's, configured by the scenario's `router:` block and pool labels ([Router](#router)). See [Routing](../guide/routing.md).
 
-**Batch formation** — `max_num_seqs` and `max_num_batched_tokens` come from the scenario's pool `engine` block. `long_prefill_token_threshold` comes from the same block, per pool (blis-schemas#75): each P/D pool runs its own. It has no flag: an engine setting is the scenario's (inference-sim#2021 B6). `--preemption-policy` remains on the CLI.
+**Batch formation** — `max_num_seqs` and `max_num_batched_tokens` come from the scenario's pool `engine` block. `long_prefill_token_threshold` comes from the same block, per pool (https://github.com/inference-sim/blis-schemas/issues/75): each P/D pool runs its own. It has no flag: an engine setting is the scenario's (inference-sim#2021 B6).
 
 ### Known Unit Gotchas
 
@@ -85,7 +81,7 @@ All internal timestamps in the DES (arrival time, schedule time, completion time
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout v0.14.0
+git -C blis-substrate checkout v0.15.0
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
@@ -102,7 +98,7 @@ The checkout above is optional; without it the run below reads the embedded cata
 
 A scenario file holds two YAML documents in the blis-schemas format:
 
-- **Scenario** — `name`, `engine_version`, `model` (a catalog model), `coefficients` (the registry coefficient sets that price it), and `cluster` (`hardware`, `fabric`, `nodes`, `gpus_per_node`). The engine is named `engine: {kind: vllm, version: "0.32.0"}`, or by the deprecated `engine_version: "0.32.0"` (accepted with a warning until M4; blis-schemas v0.10.0's scenario type has only this field, so `engine:` is read by the simulator until the scenario type carries it). This build runs vLLM 0.32.0; a scenario naming another release is refused with the release it asked for, the one this build runs, and the newest inference-sim release that runs the one asked for (v0.15.0 for vLLM 0.29.0 and 0.31.0). See [latency models](../guide/latency-models.md).
+- **Scenario** — `name`, `engine`, `model` (a catalog model), `coefficients` (the registry coefficient sets that price it), and `cluster` (`hardware`, `fabric`, `nodes`, `gpus_per_node`). The engine is named `engine: {kind: vllm, version: "0.33.0"}`. A scenario that states `engine_version` is refused with a message naming `engine: {kind, version}`; the field was removed in v0.18.0. This build runs vLLM 0.32.0; a scenario naming another release is refused with the release it asked for, the one this build runs, and the newest inference-sim release that runs the one asked for (v0.15.0 for vLLM 0.29.0 and 0.31.0). See [latency models](../guide/latency-models.md).
 - **Deployment** — `pools`, each with a `role` (`colocated`, `prefill` or `decode`), `nodes`, a `parallel` block (`tp`, `pp`, `dp`, `enable_expert_parallel`) and an `engine` block (`block_size`, `max_num_seqs`, `max_num_batched_tokens`, `max_model_len`, `quantization`, `kv_cache_dtype`, `compilation_config.cudagraph_mode`, `gpu_memory_utilization`, `enable_prefix_caching`, `speculative: {method, num_spec_tokens}`); plus optional `offload` and `pd_transfer`.
 
 These settings come from the scenario (and the kernel), and no CLI flag sets them:
@@ -122,9 +118,9 @@ These settings come from the scenario (and the kernel), and no CLI flag sets the
 | Speculative decoding | Pool `engine.speculative_config.method` / `num_speculative_tokens` (acceptance is resolved from the registry's profiles, the workload, the scenario's `acceptance` pin or the CLI; see [Latency Models](../guide/latency-models.md#speculative-acceptance-1939)) |
 | Step time, memory, P/D KV transfer, offload tier transfer, host overheads | Priced by blis-latency-kernel with the scenario's registry coefficients |
 
-**Data parallelism (MoE only).** A pool with `dp > 1` becomes one engine per data-parallel rank, each sized as one vLLM EngineCore. The ranks of one instance step in lockstep and the router sees them as one endpoint, balanced across ranks by vLLM's internal DP load balancer; `parallel.data_parallel_load_balancing: external` (blis-schemas#76, per pool; `--dp-load-balancing`, deprecated in v0.16.0 and removed in v0.19.0, is a run-wide override that must agree with every mode a pool states; under P/D every rank is already its own endpoint, so a P/D pool's mode is resolved but changes no routing) instead makes every rank its own endpoint, as vLLM's external-LB modes do ([Latency Models](../guide/latency-models.md#data-and-expert-parallelism-moe), #1909). `dp > 1` on a dense model is refused.
+**Data parallelism (MoE only).** A pool with `dp > 1` becomes one engine per data-parallel rank, each sized as one vLLM EngineCore. The ranks of one instance step in lockstep and the router sees them as one endpoint, balanced across ranks by vLLM's internal DP load balancer; `parallel.data_parallel_load_balancing: external` (blis-schemas#76, per pool; under P/D every rank is already its own endpoint, so a P/D pool's mode is resolved but changes no routing) instead makes every rank its own endpoint, as vLLM's external-LB modes do ([Latency Models](../guide/latency-models.md#data-and-expert-parallelism-moe)). `dp > 1` on a dense model is refused.
 
-**Node pools.** When `node_pools` are configured in `--policy-config`, every pool's `gpu_type` must equal the scenario's `cluster.hardware`.
+**Node pools.** When `node_pools` are configured in `--policy-config`, every pool's `gpu_type` must equal the chip the scenario states for that pool (`cluster.pools[].hardware`, else `cluster.hardware`), and each instance is priced and sized for its pool's chip ([Cluster](../guide/cluster.md#node-pools-and-multi-node-placement)).
 
 ## Simulation Control
 
@@ -142,13 +138,7 @@ Top-level settings that control the simulation run.
 
 ## KV Cache Configuration
 
-The GPU-tier block budget and block size come from the scenario and the kernel (see [Scenario and Deployment](#scenario-and-deployment)). The remaining flags configure CPU / storage offload tiers. Maps to `KVCacheConfig`.
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--kv-cpu-blocks` | int64 | 0 | Legacy CPU-tier blocks. 0 disables tiered caching. The GPU↔CPU transfer is priced by the kernel from the catalog's `cpu_dram` storage device. |
-| `--kv-offload-threshold` | float64 | 0.9 | GPU utilization fraction above which blocks are offloaded to CPU on the legacy `--kv-cpu-blocks` path. Range [0, 1]. |
-| `--kv-offload-config` | string | "" | **Deprecated in v0.16.0, removed in v0.19.0** ([#2037](https://github.com/inference-sim/inference-sim/issues/2037)): state the scenario's `offload` block instead. Path to a YAML file with a top-level `kv_offload:` block (multi-tier offload). Each tier must name a catalog storage `device_class`; the kernel prices every tier transfer (its `TierTime`). An explicit `read_bandwidth` / `write_bandwidth` / `base_latency` on a tier is refused. Under P/D every pool gets its own tier of this size (a MultiConnector of NIXL and the OffloadingConnector). When the scenario states an `offload` block, that block is the configuration and this flag may only restate it: a file that resolves differently is refused (#1910). See [KV Cache Management](../guide/kv-cache.md). |
+The GPU-tier block budget and block size come from the scenario and the kernel (see [Scenario and Deployment](#scenario-and-deployment)). CPU and storage offload tiers come from the scenario deployment's `offload` block (`connector`, `spec`, `eviction_policy`, `tiers`), and no flag sets them. Each tier is `{tier: cpu_dram, bytes: N}` or `{tier: <storage device class>, bytes: N}`; the kernel prices every tier transfer (its `TierTime`) from the catalog's storage device. Under P/D every pool gets its own tier of this size (a MultiConnector of NIXL and the OffloadingConnector). On replay the trace header's offload configuration is authoritative, and a scenario `offload` block may only restate it. Maps to `KVCacheConfig`. See [KV Cache Management](../guide/kv-cache.md).
 
 ## Batch Formation
 
@@ -158,7 +148,6 @@ The GPU-tier block budget and block size come from the scenario and the kernel (
 |------|------|---------|-------------|
 | `--renderer-num-workers` | int | 1 | Render threads per API server (vLLM `renderer_num_workers`). The engine states the admission queue they make; a request holds a thread for its per-token admission time and waits the per-request term without one (INV-R1). 0 = no queue, the whole admission time a delay. |
 | `--api-server-count` | int | 0 | API servers per endpoint (vLLM `--api-server-count`). 0 = vLLM's default: dp behind an internal or hybrid DP replica, else 1. |
-| `--preemption-policy` | string | "fcfs" | **Deprecated in v0.16.0, removed in v0.19.0** ([#2037](https://github.com/inference-sim/inference-sim/issues/2037)): state `engine.scheduling_policy` in the scenario's pool engine block instead. Preemption victim selection: `fcfs` (tail-of-batch, default) or `priority` (least-urgent SLO tier evicted first, matching vLLM `--scheduling-policy priority`). Priority mode uses `priority.slo_priorities` from the policy bundle when set. |
 
 ## Latency Model
 
@@ -183,11 +172,11 @@ Every run, `--num-instances 1` (the default) included, passes each request throu
 | `--decode-instances` | int | 0 | Decode instances for P/D disaggregation. Same rules, against the decode pool. |
 | `--pd-transfer-contention` | bool | false | Concurrent P/D KV handoffs share the fabric links they cross: each link is divided max-min fairly among the handoffs on it, from the demand the cost model states for the handoff. A handoff alone takes exactly that demand's `AloneTime`. Run and replay alike (INV-13). |
 
-**P/D disaggregation.** Whether a request is disaggregated is the router's decision: the EndpointPickerConfig needs a `disagg-profile-handler` with a P/D decider (`always-disagg-pd-decider` or `prefix-based-pd-decider`); prefill and decode pods carry `llm-d.ai/role` labels automatically. See [Routing](../guide/routing.md). A scenario with `prefill` and `decode` pools runs one kernel per pool; the KV handoff is priced by the kernel's `PDTransferTime` over the scenario's fabric between the two instances' placements. Refused: P/D topology over a colocated scenario; a disaggregated scenario without `--prefill-instances`/`--decode-instances`; pools that differ in block size, `dp` or draft configuration; a `pd_transfer.connector` other than NIXL's (`NixlConnector`, `NixlPullConnector`, `NixlPushConnector`, `MultiConnector`); shared (`--prefill-decode-instances`) or encode instances. The scenario's `offload` block (or `--kv-offload-config`) gives each pool its own tier; see [Latency models](../guide/latency-models.md#prefilldecode-disaggregation) for the handoff (decode-side load, prefill KV hold, contention).
+**P/D disaggregation.** Whether a request is disaggregated is the router's decision: the EndpointPickerConfig needs a `disagg-profile-handler` with a P/D decider (`always-disagg-pd-decider` or `prefix-based-pd-decider`); prefill and decode pods carry `llm-d.ai/role` labels automatically. See [Routing](../guide/routing.md). A scenario with `prefill` and `decode` pools runs one kernel per pool; the KV handoff is priced by the kernel's `PDTransferTime` over the scenario's fabric between the two instances' placements. Refused: P/D topology over a colocated scenario; a disaggregated scenario without `--prefill-instances`/`--decode-instances`; pools that differ in block size, `dp` or draft configuration; a `pd_transfer.connector` other than NIXL's (`NixlConnector`, `NixlPullConnector`, `NixlPushConnector`, `MultiConnector`); shared (`--prefill-decode-instances`) or encode instances. The scenario's `offload` block gives each pool its own tier; see [Latency models](../guide/latency-models.md#prefilldecode-disaggregation) for the handoff (decode-side load, prefill KV hold, contention).
 
 ## Router
 
-Every cluster run routes with the llm-d router (the Endpoint Picker, EPP) embedded in-process. Its inputs are the deployment's, so the `--scenario` states them (#1950): the deployment's `router:` block and each pool's `labels`. Each input is parsed by the router's own code; a value the real router rejects is rejected with the router's message. See [Routing](../guide/routing.md#the-routers-inputs) for the mapping, the supported plugins, what is refused at startup, and the mapping from removed BLIS routing and admission flags to llm-d configuration.
+Every cluster run routes with the llm-d router (the Endpoint Picker, EPP) embedded in-process. Its inputs are the deployment's, so the `--scenario` states them: the deployment's `router:` block and each pool's `labels`. Each input is parsed by the router's own code; a value the real router rejects is rejected with the router's message. See [Routing](../guide/routing.md#the-routers-inputs) for the mapping, the supported plugins, what is refused at startup, and the mapping from removed BLIS routing and admission flags to llm-d configuration.
 
 | Scenario field | Description |
 |----------------|-------------|
@@ -214,7 +203,7 @@ Paths are relative to the scenario file; a file that cannot be read is refused a
 
 ### SLO Tier Priorities
 
-Each SLO class has an integer priority. Engine-side, the mapping drives priority scheduling (`--scheduler priority-fcfs`) and, with `--preemption-policy priority`, preemption victim selection. It follows the GAIE convention where **negative priority = sheddable**. Router-side priorities come from `InferenceObjective` objects (above), not from this mapping.
+Each SLO class has an integer priority. Engine-side, the mapping drives priority scheduling and preemption victim selection under `engine.scheduling_policy: priority`. It follows the GAIE convention where **negative priority = sheddable**. Router-side priorities come from `InferenceObjective` objects (above), not from this mapping.
 
 **Default priorities:**
 
@@ -237,31 +226,35 @@ priority:
 
 The mapping lives in the vLLM compatibility engine, in blis-vllm's `compat/engine/slo_priority.go` (`SLOPriorityMap`); `InvertForVLLM` converts it to the instance convention (lower = more urgent) when a request is enqueued.
 
-## Deprecated Flags
+## Removed Flags
 
-v0.16.0 deprecates these flags of `blis run` and `blis replay`, and v0.19.0 removes them. The
-first five restate an engine setting the scenario states, in vLLM's own field (X1,
-[#2037](https://github.com/inference-sim/inference-sim/issues/2037)). They still work in v0.16.0
-through v0.18.0. Giving one prints a notice on standard error that names its replacement; the
-Result document on standard output is unchanged.
+v0.18.0 removes these flags of `blis run` and `blis replay` (X1,
+[#2037](https://github.com/inference-sim/inference-sim/issues/2037)); v0.16.0 deprecated them.
+A command line that passes one is refused with `--<flag> was removed in v0.18.0: <what to do>`.
+The command line keeps paths and the overrides the Result records.
 
 | Flag | State instead |
 |------|---------------|
-| `--scheduler` | `engine.scheduling_policy` (`fcfs` or `priority`) in the scenario's pool engine block. `sjf` and `reverse-priority` have no vLLM equivalent. |
-| `--preemption-policy` | `engine.scheduling_policy`, which decides the preemption victim as vLLM does |
-| `--dp-load-balancing` | `parallel.data_parallel_load_balancing` in the scenario's pool |
-| `--swa-bounded-replay` | `engine.swa_bounded_replay` in the scenario's pool engine block |
-| `--kv-offload-config` | the scenario's `offload` block |
-| `--lazy-generation` | nothing: requests are streamed by default, and the eager generator that `--lazy-generation=false` selects is removed with the flag ([#1451](https://github.com/inference-sim/inference-sim/issues/1451)) |
+| `--scheduler` | `engine.scheduling_policy` (`fcfs` or `priority`) in each pool's engine block of the scenario. `sjf` and `reverse-priority` have no vLLM equivalent. |
+| `--preemption-policy` | `engine.scheduling_policy`, which sets the preemption victim as vLLM does |
+| `--dp-load-balancing` | `parallel.data_parallel_load_balancing` in each pool of the scenario |
+| `--swa-bounded-replay` | `engine.swa_bounded_replay` in the pool's engine block |
+| `--kv-offload-config` | the scenario deployment's `offload` block |
+| `--kv-cpu-blocks` | a `cpu_dram` tier in the `offload` block |
+| `--kv-offload-threshold` | nothing: the engine never read it |
+| `--lazy-generation` | nothing: requests are always streamed from the workload generator, and the eager generator is deleted ([#1451](https://github.com/inference-sim/inference-sim/issues/1451)) |
+
+A policy bundle (`--policy-config`) that states the top-level key `scheduler` or `preemption` is
+refused with a message naming `engine.scheduling_policy`.
 
 ## Scheduling and Priority
 
-Per-instance policies that control request ordering within the wait queue. Maps to `PolicyConfig`.
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--scheduler` | string | "fcfs" | **Deprecated in v0.16.0, removed in v0.19.0** ([#2037](https://github.com/inference-sim/inference-sim/issues/2037)): state `engine.scheduling_policy` (`fcfs` or `priority`) in the scenario's pool engine block instead. Scheduler: `fcfs`, `priority-fcfs`, `sjf`, `reverse-priority`. |
-| `--preemption-policy` | string | "fcfs" | **Deprecated in v0.16.0, removed in v0.19.0** ([#2037](https://github.com/inference-sim/inference-sim/issues/2037)): state `engine.scheduling_policy` in the scenario's pool engine block instead. Preemption victim selection: `fcfs` (tail-of-batch, default) or `priority` (least-urgent SLO tier evicted first, matching vLLM `--scheduling-policy priority`). Priority mode evicts the running request with the highest `Request.Priority` value (vLLM convention: background=7 is evicted first). |
+Each pool's `engine.scheduling_policy` in the scenario orders the wait queue, as vLLM's
+`--scheduling-policy` does: `fcfs` (the default) is BLIS `fcfs` queueing with tail-of-batch
+preemption, and `priority` is BLIS `priority-fcfs` queueing with priority preemption (the running
+request with the highest `Request.Priority` value is evicted first; vLLM convention: background=7
+is evicted first). No flag sets it. On 0.32.0 a scenario stating `priority` is refused for now:
+the host does not yet carry request priority across the engine contract. Maps to `PolicyConfig`.
 
 See [Core Engine: Scheduling](../concepts/core-engine.md#scheduling-policies) for policy details.
 
@@ -358,7 +351,6 @@ When `--workload-spec` is set, CLI `--seed`, `--horizon`, and `--num-requests` s
 | `--workload-spec` | string | "" | Path to workload-spec YAML. |
 | `--defaults-filepath` | string | "defaults.yaml" | Path to `defaults.yaml` (the LoRA cost block; see [defaults.yaml](#defaultsyaml)). |
 | `--trace-output` | string | "" | Export workload as TraceV2 files (`<prefix>.yaml` + `<prefix>.csv`). |
-| `--lazy-generation` | bool | true | **Deprecated in v0.16.0, removed in v0.19.0** ([#1451](https://github.com/inference-sim/inference-sim/issues/1451)). `blis run` streams requests from the workload generator by default. `--lazy-generation=false` selects the eager generator, which builds every request before the run starts and produces the same requests (INV-6); it goes with the flag. On `blis replay` the flag has no effect. |
 
 ## Policy Bundle
 
@@ -369,17 +361,16 @@ priority:
   slo_priorities:       # optional: override engine-level SLO class priorities
     batch: 0            # defaults: critical=4, standard=3, batch=-1, sheddable=-2, background=-3
 
-scheduler: "fcfs"
-
-preemption:
-  policy: "priority"    # fcfs (default) or priority (least-urgent SLO tier evicted first)
+# Scheduling and preemption are the scenario's engine.scheduling_policy; a bundle stating
+# scheduler or preemption is refused.
 
 # Node pool infrastructure (optional; omit for single-pool mode)
-# Every pool's gpu_type must equal the scenario's cluster.hardware, and gpu_type must be
-# unique across pools (#1537). See docs/guide/cluster.md.
+# Every pool's gpu_type must equal the chip the scenario states for that pool
+# (cluster.pools, else cluster.hardware). Pools may share a gpu_type (#1549).
+# See docs/guide/cluster.md.
 node_pools:
   - name: "gpu-pool-1"
-    gpu_type: "h200"      # must equal the scenario's cluster.hardware
+    gpu_type: "h200"      # must equal the scenario's chip for this pool
     gpus_per_node: 8
     gpu_memory_gib: 141.0
     initial_nodes: 2
@@ -397,10 +388,50 @@ instance_lifecycle:
   warm_up_request_count: 5    # requests served before leaving WarmingUp state
   warm_up_ttft_factor: 2.0    # TTFT multiplier applied to warm-up requests (≥ 1.0)
   drain_policy: "WAIT"        # IMMEDIATE | WAIT | REDIRECT
+  weight_source: nvme_gen4    # optional storage tier the weights load from (#1215): an instance loads in loading_delay plus the time to read its per-rank weights from this tier (registry offload_tier_<tier>_* entries; the scenario lists cost-model-offload-tiers). Empty = loading_delay is the whole delay
   warm_start_initial_instances: false  # true = startup instances skip loading_delay (model pre-deployed); autoscaler-added instances always pay loading_delay
 ```
 
-CLI flags override policy bundle values when explicitly set. For example, `--scheduler sjf` overrides the bundle's `scheduler` setting.
+### Cluster autoscaler
+
+The cluster autoscaler decides how many nodes each pool needs. It is separate from the model autoscaler: when the model autoscaler asks for a replica and no Ready node has room, the replica waits in a pending-placement queue, and the cluster autoscaler reads that queue.
+
+```yaml
+cluster_autoscaler:
+  policy: pending-driven        # empty = none: no node is provisioned beyond initial_nodes
+  pending_threshold_us: 60000000  # a placement must wait this long before a node is added for it
+  max_nodes_per_pool: 8         # 0 = only each pool's own max_nodes
+  scale_down: bin-pack          # empty = nodes are never removed
+  low_water_mark: 0.3
+  min_nodes_per_pool: 1
+```
+
+`scale_down: bin-pack` removes nodes of an underused pool: with `low_water_mark` (for example 0.3) and `min_nodes_per_pool`, on each scaling tick it takes one node from the most expensive pool whose GPU utilization is below the mark, if the allocated GPUs would still fit on the other nodes, the pool keeps its floor, and no placement is waiting. Only a node with no instance on it is removed; moving instances off a busy node is the drain policies' work.
+
+`pending-driven` adds one node to a pool when a placement for its GPU type has waited the threshold, unless a node of the pool is already on its way or the pool is at its ceiling. The node is ready after the pool's `provisioning_delay`, and its arrival places the waiting replicas in arrival order.
+
+### Model autoscaler analyzer
+
+The model autoscaler (`autoscaler.interval_us` above 0) reads each model's replicas through an analyzer. The default, `v2-saturation`, is llm-d's workload-variant-autoscaler saturation model (`kv_cache_threshold`, `scale_up_threshold`, `scale_down_boundary`, `avg_input_tokens`). `threshold` is a target-value rule on one per-replica signal, the shape of llm-d's KEDA path (`desired = ceil(sum(signal) / target)`):
+
+```yaml
+autoscaler:
+  interval_us: 15000000
+  analyzer:
+    kind: threshold        # default: v2-saturation
+    signal: in_flight      # in_flight | queue_depth | kv_utilization
+    target: 16             # the value one replica is sized for
+    min_replicas: 1
+```
+
+`collector_window_size` (under `autoscaler`, default 0) keeps that many ticks of each model's replica readings for the analyzer, each stamped with its time and sequence number, and fills the replicas' TTFT, ITL, dispatch rate and token averages from the requests completed since the previous tick (the plain collector leaves them zero). The shipped analyzers ignore the window.
+
+Replicas still loading count as supply when scaling up, so a slow load is not asked for again. This is not the Kubernetes HPA: its tolerance, `behavior` policies and the metrics pipeline's lags (KEDA polling, Prometheus scrape windows, the HPA sync period) are not modelled; only `hpa_scrape_delay` exists.
+### Scale to zero
+
+`autoscaler.scale_to_zero_idle_us` (default 0 = never) drains all of a model's replicas once the model has had no request for that long and nothing is in flight, using the configured `drain_policy`. The node a model leaves empty is flagged as idle (`ClusterSimulator.IdleNodes`) and the cluster autoscaler's `bin-pack` scale-down may remove it. The scaling tick keeps running past the end of the workload until the idle models are drained.
+
+`autoscaler.scale_from_zero_hold_us` (default 0 = reject) brings a model back: a request for a model with no replica starts one of the variant the model last ran (through the actuator, so a full pool queues the placement for the cluster autoscaler) and is held at the cluster, polling every `scale_from_zero_poll_us` (default 100 ms), for up to the hold. Its wait counts in its latency. A model that never had a replica has no variant to start, and its request is not held. A held request after the hold goes to the gateway, which rejects it if nothing serves.
 
 !!! note "Node pools and instance lifecycle are YAML-only"
     `node_pools` and `instance_lifecycle` have no corresponding CLI flags. They must be set via `--policy-config`. Omitting them is safe — the simulator falls back to single-pool, no-lifecycle mode for full backward compatibility.
@@ -439,7 +470,7 @@ lora:
 ```
 
 !!! note "Node pools and the scenario's hardware"
-    When `node_pools` are configured (via `--policy-config`), every pool's `gpu_type` must equal the scenario's `cluster.hardware`. KV capacity and step time for every placed instance come from the kernel for the scenario's hardware. `gpu_type` must also be unique across pools (#1537).
+    When `node_pools` are configured (via `--policy-config`), every pool's `gpu_type` must equal the chip the scenario states for that pool. KV capacity and step time for every placed instance come from the kernel for its pool's chip. Pools may share a `gpu_type`; each instance is billed at the `cost_per_hour` of its own pool (#1549).
 
 ---
 
@@ -448,10 +479,10 @@ lora:
 | Sub-Config | Flags |
 |------------|-------|
 | **Deployment** | `--scenario`, `--scenarios` (required); `--catalog` (or `BLIS_CATALOG`), `--registry` (or `BLIS_REGISTRY`), `--catalog-overlay`, `--registry-overlay` (optional) |
-| **KVCacheConfig** | `--kv-cpu-blocks`, `--kv-offload-threshold`, `--kv-offload-config` (block budget and block size: scenario + kernel) |
+| **KVCacheConfig** | scenario (block budget and block size: scenario + kernel; offload tiers: the deployment's `offload` block) |
 | **BatchConfig** | scenario (`max_num_seqs`, `max_num_batched_tokens`, `long_prefill_token_threshold`) |
 | **Latency** | `--speculative-acceptance-rate` / `--speculative-acceptance-length` and the acceptance selectors (everything else: scenario + registry, priced by blis-latency-kernel) |
-| **PolicyConfig** | `--scheduler`, `--preemption-policy` |
+| **PolicyConfig** | scenario (`engine.scheduling_policy`); `--policy-config` (`priority.slo_priorities`) |
 | **WorkloadConfig** | `--workload` (preset read from `<catalog>/workloads/<name>.yaml`, #1769), `--workload-spec`, `--rate`, `--concurrency`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
 | **DeploymentConfig** | `--num-instances`, `--prefill-instances`, `--decode-instances`, `--pd-transfer-contention`, `--trace-level`, `--counterfactual-k`. YAML-only (no CLI flag): `node_pools`, `instance_lifecycle` |
 | **Router** | the scenario's `router:` block and `pools[].labels`; `--gateway-latency`, `--epp-scrape-jitter`, `--kv-event-delay` |

@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 
+	tracespec "github.com/inference-sim/blis-substrate/contracts/spec/trace"
 	"gopkg.in/yaml.v3"
 
 	"github.com/inference-sim/inference-sim/sim/check"
@@ -42,6 +43,29 @@ type WorkloadSpec struct {
 	// CLI > trace header > workload spec precedence. Distinct from the
 	// dispatch-ordering --slo-targets flag.
 	GoodputSLOTargets map[string]SLODimTargets `yaml:"goodput_slo_targets,omitempty"`
+	// Phases runs the workload in drain-gated stages (inference-sim#1926, blis-substrate#156): a
+	// warm-up, then the measured phase, with the engine, KV and prefix-cache state carried across.
+	// Each client names its phase; see PhaseSpec. Empty runs the workload as one stage.
+	Phases []PhaseSpec `yaml:"phases,omitempty"`
+}
+
+// PhaseSpec is one stage of a phased workload. The trace header's phase fields (name, start,
+// offset_us, concurrency) mean here what they mean there (blis-substrate trace.Phase), and the
+// run writes them to the exported trace's header. A phase sends NumRequests requests drawn from
+// its own clients; the first starts the run, and each later one starts when the one before it
+// drains (every request has its fate), or at a stated clock.
+type PhaseSpec struct {
+	Name string `yaml:"name"`
+	// NumRequests is the number of requests the phase sends. Required: a phase is a count of
+	// requests, as a benchmark's warm-up and measured stages are.
+	NumRequests int64 `yaml:"num_requests"`
+	// AggregateRate is the phase's request rate, split among its clients by rate_fraction.
+	// Zero takes the workload's aggregate_rate. Unused when the phase has a concurrency limit,
+	// which sends each request when a slot frees.
+	AggregateRate float64              `yaml:"aggregate_rate,omitempty"`
+	Start         tracespec.PhaseStart `yaml:"start,omitempty"`
+	OffsetUs      int64                `yaml:"offset_us,omitempty"`
+	Concurrency   int                  `yaml:"concurrency,omitempty"`
 }
 
 // CohortSpec describes a population of clients that share arrival behavior
@@ -73,6 +97,7 @@ type CohortSpec struct {
 	SLOTargetUs   *int64          `yaml:"slo_target_us,omitempty"` // Per-request SLO TTFT target in µs. nil/0 = no target. (R9: pointer)
 	Network       *NetworkSpec    `yaml:"network,omitempty"`
 	Multimodal    *MultimodalSpec `yaml:"multimodal,omitempty"`
+	Phase         string          `yaml:"phase,omitempty"` // the workload phase the members send in (WorkloadSpec.Phases)
 }
 
 // DiurnalSpec configures sinusoidal rate modulation over a 24-hour cycle.
@@ -118,6 +143,7 @@ type ClientSpec struct {
 	Reasoning    *ReasoningSpec  `yaml:"reasoning,omitempty"`
 	Timeout      *int64          `yaml:"timeout,omitempty"`       // Per-request timeout in µs. nil = default (300s). 0 = no timeout. (R9: pointer for zero-value)
 	SLOTargetUs  *int64          `yaml:"slo_target_us,omitempty"` // Per-request SLO TTFT target in µs. nil/0 = no target. (R9: pointer)
+	Phase        string          `yaml:"phase,omitempty"`         // the workload phase the client sends in (WorkloadSpec.Phases); required when the workload has phases
 	ClosedLoop   *bool           `yaml:"closed_loop,omitempty"`   // nil = default (true for reasoning/multi-turn). false = open-loop (all rounds pre-generated).
 	// CustomSamplerFactory allows programmatic injection of arrival sampler factories,
 	// bypassing the factory-based construction from Arrival.Process.
@@ -131,7 +157,7 @@ type ClientSpec struct {
 	// This ensures input/output token distributions remain stable regardless of request count.
 	//
 	// When CustomSamplerFactory is set, Arrival.Process validation is skipped.
-	// The factory is called once per GenerateRequests invocation, ensuring workload reusability.
+	// The factory is called once per generation run, ensuring workload reusability.
 	// Callers MUST handle zero-IAT as exhaustion signal if the sampler is stateful.
 	// Not exposed in YAML (yaml:"-" tag).
 	CustomSamplerFactory func(*rand.Rand) ArrivalSampler `yaml:"-"`
@@ -354,6 +380,10 @@ func (s *WorkloadSpec) Validate() error {
 		}
 	}
 
+	if err := s.validatePhases(); err != nil {
+		return err
+	}
+
 	// Empty slo_class normalizes to "standard" in metrics; mixed specs corrupt per-tier capacity planning signals.
 	hasExplicitSLO := false
 	hasEmptySLO := false
@@ -501,11 +531,10 @@ func validateClient(c *ClientSpec, idx int) error {
 			// Validate per-window distribution overrides up front (#1460). These
 			// are consumed by generateRequestsForWindow only when a window is built,
 			// so an invalid override would otherwise surface as a generation-time
-			// error — and under the lazy generator with a binding maxRequests cap a
-			// late malformed window may never be built, so eager (which builds every
-			// window) would abort while lazy silently completed. Validating here
-			// closes that parity gap: both paths reject a malformed spec at the same
-			// point, independent of cap or horizon.
+			// error — and with a binding maxRequests cap the streaming source may
+			// never build a late malformed window, so the run would silently
+			// complete on an invalid spec. Validating here rejects a malformed
+			// spec at the same point, independent of cap or horizon.
 			//
 			// We attempt NewLengthSampler (the exact constructor
 			// generateRequestsForWindow calls) rather than the weaker

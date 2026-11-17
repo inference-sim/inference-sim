@@ -65,19 +65,19 @@ func gammaRand(rng *rand.Rand, shape, scale float64) float64 {
 		var x, v float64
 		for {
 			x = rng.NormFloat64()
-			v = 1.0 + c*x
+			v = 1.0 + float64(c*x)
 			if v > 0 {
 				break
 			}
 		}
-		v = v * v * v
+		v = float64(v * v * v)
 		u := rng.Float64()
 
 		// Squeeze test
-		if u < 1.0-0.0331*(x*x)*(x*x) {
+		if u < 1.0-float64(0.0331*(x*x)*(x*x)) {
 			return d * v * scale
 		}
-		if math.Log(u) < 0.5*x*x+d*(1.0-v+math.Log(v)) {
+		if math.Log(u) < float64(0.5*x*x)+float64(d*(1.0-v+math.Log(v))) {
 			return d * v * scale
 		}
 	}
@@ -199,7 +199,7 @@ func NewNormalizedExponentialSampler(rng *rand.Rand, count int64, durationUs int
 //
 // This is the only ArrivalSampler implementation that returns 0.
 // Callers using CustomSampler must handle zero-IAT as exhaustion signal;
-// see GenerateRequests for the zero-IAT guard pattern in all request generation loops.
+// see clientStreamState.produceNextSingleShot (stream.go) for the zero-IAT guard pattern.
 func (s *NormalizedExponentialSampler) SampleIAT(_ *rand.Rand) int64 {
 	if s.index >= len(s.intervals) {
 		return 0 // Exhausted

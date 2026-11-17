@@ -29,6 +29,8 @@ type resultInputs struct {
 	Deployment *deployment.Deployment
 	// Options are the command-line options that set the run, sorted by name (SIM-10).
 	Options []result.Option
+	// Files are the small input files the run read, whole, sorted by path (resultFiles).
+	Files []result.File
 	// Packaging is the cluster's packaging the kernel resolved (blis-substrate
 	// scenario.Cluster.Packaging), recorded when a value came from the chip's catalog entry
 	// rather than the scenario (SIM-10). Nil when the scenario states every value, which
@@ -51,8 +53,9 @@ type resultInputs struct {
 	DecodeGPUs int
 	// GoodputTargets are the resolved SLO targets, nil without.
 	GoodputTargets map[string]workload.SLODimTargets
-	// Saturation is the final label per detector, nil when no detector ran.
-	Saturation map[string]string
+	// Saturation is the detector's block: "final" (detector to label) and "detail", nil when no
+	// detector ran.
+	Saturation map[string]any
 	// Artifacts are the bulk outputs the run wrote, by role.
 	Artifacts map[string]result.Artifact
 	// Engine is the engine the run used (SIM-1); Revisions the versions it was built from.
@@ -72,6 +75,12 @@ type resultMetrics struct {
 	Ledger result.Requests
 	// PD is the disaggregation block, nil for a colocated run.
 	PD *cluster.PDMetrics
+	// TierLinks is, per link, the most transfers in flight on it together when an engine started
+	// offload-tier copies, which share link capacity with each other and with handoffs (#2108).
+	TierLinks map[string]int
+	// Peer is the peer network's counts and its stated delivery latency; all zero when no engine
+	// of the run exchanged peer messages.
+	Peer cluster.PeerStats
 	// Engine, Router and Kernel are each component's report, already keyed as the
 	// document carries them.
 	Engine map[string]any
@@ -112,6 +121,7 @@ func buildResult(in resultInputs, out resultMetrics) *result.Result {
 	r.Input.Packaging = in.Packaging
 	r.Input.Policy = in.Policy
 	r.Input.Options = in.Options
+	r.Input.Files = in.Files
 	r.Frame.Generator = in.Generator // buildFrame sets the seed and RNG from the same generator
 	for _, o := range in.Overrides {
 		r.Overrides = append(r.Overrides, result.Override{Setting: o.Setting, Input: o.Scenario, Run: o.Run, Source: o.Source})
@@ -122,10 +132,10 @@ func buildResult(in resultInputs, out resultMetrics) *result.Result {
 
 	r.Window = windowOf(m, sum, out.ClockUs, out.HorizonUs)
 	r.Metrics = standardMetrics(sum, m, in.GPUs, in.DecodeGPUs, r.Window.DurationS)
-	r.Breakdowns = breakdownsOf(m, sum, r.Metrics, out.PD)
+	r.Breakdowns = breakdownsOf(m, sum, r.Metrics, out.PD, out.TierLinks, out.Peer)
 	r.Goodput = goodputOf(m, in.GoodputTargets, out.InjectedByClass, r.Metrics)
 	if len(in.Saturation) > 0 {
-		r.Reports.Saturation = map[string]any{"final": stringMapAny(in.Saturation)}
+		r.Reports.Saturation = in.Saturation
 	}
 	return r
 }
@@ -247,6 +257,17 @@ func standardMetrics(sum sim.MeasuredSummary, m *sim.Metrics, gpus, decodeGPUs i
 			put("itl_p95_ms", sum.ClientITLP95Ms, k)
 			put("itl_p99_ms", sum.ClientITLP99Ms, k)
 		}
+		// icl: the gaps between the chunks streamed to the client (Request.ClientITL), one per
+		// chunk after the first, over the whole run and unsplit as itl is. It is vllm bench
+		// serve's ITL; under speculative decoding a chunk carries a step's tokens, so it is the
+		// step interval as the client sees it while itl's gaps inside a chunk are zero (#2128).
+		if k := sum.ClientICLCount; k > 0 {
+			put("icl_mean_ms", sum.ClientICLMeanMs, k)
+			put("icl_p50_ms", sum.ClientICLP50Ms, k)
+			put("icl_p90_ms", sum.ClientICLP90Ms, k)
+			put("icl_p95_ms", sum.ClientICLP95Ms, k)
+			put("icl_p99_ms", sum.ClientICLP99Ms, k)
+		}
 		if steps := sum.StepIntervalCount; steps > 0 {
 			put("step_interval_mean_ms", sum.StepIntervalMeanMs, steps)
 			put("step_interval_p50_ms", sum.StepIntervalP50Ms, steps)
@@ -273,7 +294,7 @@ func splitMetrics(sum sim.MeasuredSummary, defined map[string]result.Figure) map
 
 // breakdownsOf splits the run along the axes it exercised: per model, tenant and adapter
 // (each the whole's metrics over the requests of that key), P/D, and sessions.
-func breakdownsOf(m *sim.Metrics, sum sim.MeasuredSummary, defs map[string]result.Figure, pd *cluster.PDMetrics) *result.Breakdowns {
+func breakdownsOf(m *sim.Metrics, sum sim.MeasuredSummary, defs map[string]result.Figure, pd *cluster.PDMetrics, tierLinks map[string]int, peer cluster.PeerStats) *result.Breakdowns {
 	b := &result.Breakdowns{}
 	split := func(key func(sim.RequestMetrics) string) map[string]map[string]float64 {
 		keys := map[string]bool{}
@@ -300,7 +321,7 @@ func breakdownsOf(m *sim.Metrics, sum sim.MeasuredSummary, defs map[string]resul
 	b.PerModel = split(func(rm sim.RequestMetrics) string { return rm.Model })
 	b.PerTenant = split(func(rm sim.RequestMetrics) string { return rm.TenantID })
 	b.PerAdapter = split(func(rm sim.RequestMetrics) string { return rm.Adapter })
-	b.PD = pdBreakdown(pd)
+	b.PD = pdBreakdown(pd, tierLinks, peer)
 	b.Sessions = sessionBreakdown(cluster.ComputeSessionMetrics(m))
 	if b.PerModel == nil && b.PerTenant == nil && b.PerAdapter == nil && b.PD == nil && b.Sessions == nil {
 		return nil
@@ -309,9 +330,18 @@ func breakdownsOf(m *sim.Metrics, sum sim.MeasuredSummary, defs map[string]resul
 }
 
 // pdBreakdown is the prefill/decode split, in ms (the cluster reports microseconds).
-func pdBreakdown(pd *cluster.PDMetrics) map[string]float64 {
+func pdBreakdown(pd *cluster.PDMetrics, tierLinks map[string]int, peer cluster.PeerStats) map[string]float64 {
 	if pd == nil {
-		return nil
+		if len(tierLinks) == 0 && peer.Sent == 0 {
+			return nil
+		}
+		// A colocated run whose engines copied KV between tiers states the sharing of the links alone.
+		out := map[string]float64{}
+		for _, link := range sortedMapKeys(tierLinks) {
+			putUnique(out, "link_peak_concurrent_transfers_"+slugPart(link), float64(tierLinks[link]))
+		}
+		putPeer(out, peer)
+		return out
 	}
 	out := map[string]float64{
 		"disaggregated_requests":         float64(pd.DisaggregatedCount),
@@ -346,10 +376,30 @@ func pdBreakdown(pd *cluster.PDMetrics) map[string]float64 {
 			putUnique(out, "link_peak_concurrent_transfers_"+slugPart(link), float64(pd.LinkPeakConcurrent[link]))
 		}
 	}
+	if pd.LinkPeakConcurrent == nil {
+		// Handoffs priced alone: the links tier copies shared still state it.
+		for _, link := range sortedMapKeys(tierLinks) {
+			putUnique(out, "link_peak_concurrent_transfers_"+slugPart(link), float64(tierLinks[link]))
+		}
+	}
+	putPeer(out, peer)
 	for _, pool := range sortedMapKeys(pd.CPUTierHitRate) {
 		putUnique(out, "cpu_tier_hit_rate_"+slugPart(pool), pd.CPUTierHitRate[pool])
 	}
 	return out
+}
+
+// putPeer states the peer network of a run whose engines exchanged messages: the delivery latency
+// is a named substitution (peer_message_delivery_latency) until the ZMQ round trip is measured, and
+// the counts say how many messages it carried and how many it dropped (peer_messages_dropped).
+func putPeer(out map[string]float64, peer cluster.PeerStats) {
+	if peer.Sent == 0 {
+		return
+	}
+	putUnique(out, "peer_message_delivery_latency_us", float64(peer.LatencyTicks))
+	putUnique(out, "peer_messages_sent", float64(peer.Sent))
+	putUnique(out, "peer_messages_delivered", float64(peer.Delivered))
+	putUnique(out, "peer_messages_dropped", float64(peer.Dropped))
 }
 
 // putUnique sets out[key], panicking when two names reduced to the same slug: the second would
@@ -474,16 +524,6 @@ func slugPart(s string) string {
 	out := strings.Trim(b.String(), "-._")
 	if out == "" {
 		return "x"
-	}
-	return out
-}
-
-// stringMapAny copies a string map into a generic one, in sorted key order (the encoder
-// sorts anyway; the copy is for the type).
-func stringMapAny(in map[string]string) map[string]any {
-	out := make(map[string]any, len(in))
-	for _, k := range sortedMapKeys(in) {
-		out[k] = in[k]
 	}
 	return out
 }

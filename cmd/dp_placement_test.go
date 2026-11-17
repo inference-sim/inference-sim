@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -10,7 +12,7 @@ import (
 )
 
 // A data-parallel deployment runs as one instance per logical --num-instances, whose engine is
-// the whole data-parallel group (blis-vllm's v0.32.0 engine): its ranks, waves and balancer are
+// the whole data-parallel group (blis-vllm's v0.33.0 engine): its ranks, waves and balancer are
 // the engine's, and the host places no rank replicas.
 
 // dpFixtureNumRequests is the --num-requests every DP fixture in cmd/ passes. Kept as
@@ -80,7 +82,7 @@ func TestRunCmd_MoEDP1_ByteIdentical(t *testing.T) {
 }
 
 // TestRunCmd_MoEDPPlacement_GuardedCombo_Rejected: the autoscaler over a data-parallel group is
-// refused (#1553 decision), and the refusal terminates the run naming the autoscaler rather than
+// refused (#2147), and the refusal terminates the run naming the autoscaler rather than
 // being returned and ignored.
 func TestRunCmd_MoEDPPlacement_GuardedCombo_Rejected(t *testing.T) {
 	_, stderr, err := runKernelCLI(t, dpRunArgs(1, "--model-autoscaler-interval-us", "1000000")...)
@@ -88,40 +90,59 @@ func TestRunCmd_MoEDPPlacement_GuardedCombo_Rejected(t *testing.T) {
 	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
 		t.Fatalf("expected exit 1 (logrus.Fatalf) for the autoscaler + dp>1, got %v\n%s", err, lastLines(stderr, 3))
 	}
-	if !strings.Contains(stderr, "autoscaler") || !strings.Contains(stderr, "#1553") {
-		t.Errorf("the refusal must name the autoscaler and the #1553 decision:\n%s", lastLines(stderr, 3))
+	if !strings.Contains(stderr, "autoscaler") || !strings.Contains(stderr, "#2147") {
+		t.Errorf("the refusal must name the autoscaler and its issue #2147:\n%s", lastLines(stderr, 3))
 	}
 }
 
-// --dp-load-balancing (#1909): the internal and hybrid modes run the dp=2 scenario
-// deterministically and conserve its requests, and hybrid on a group within one node is the
-// internal balancer, byte for byte. The external balancer, one endpoint per rank with the
-// router picking the rank, is refused naming the mode, and an unknown mode is refused naming
-// the flag.
+// dpScenarioBalanced is a directory holding the dp=2 scenario with its pool stating
+// parallel.data_parallel_load_balancing: mode.
+func dpScenarioBalanced(t *testing.T, mode string) string {
+	t.Helper()
+	scenarios, _, _ := kernelRepos(t)
+	body := readFile(t, filepath.Join(scenarios, dpScenario))
+	const anchor = "      enable_expert_parallel: true\n"
+	if !strings.Contains(body, anchor) {
+		t.Fatalf("fixture %s has no %q to edit", dpScenario, anchor)
+	}
+	body = strings.Replace(body, anchor, anchor+"      data_parallel_load_balancing: "+mode+"\n", 1)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, dpScenario), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// parallel.data_parallel_load_balancing (#1909), the scenario's and the only source (#2037): the
+// internal and hybrid modes run the dp=2 scenario deterministically and conserve its requests,
+// and hybrid on a group within one node is the internal balancer, byte for byte. The external
+// balancer, one endpoint per rank with the router picking the rank, is refused naming the mode,
+// and an unknown mode is refused naming the field.
 func TestRunCmd_DPLoadBalancingModes(t *testing.T) {
 	outs := map[string]string{}
 	for _, mode := range []string{"internal", "hybrid"} {
-		out, stderr, err := runKernelCLI(t, dpRunArgs(1, "--dp-load-balancing", mode)...)
+		args := dpRunArgs(1, "--scenarios", dpScenarioBalanced(t, mode))
+		out, stderr, err := runKernelCLI(t, args...)
 		if err != nil {
-			t.Fatalf("--dp-load-balancing %s: %v\n%s", mode, err, lastLines(stderr, 3))
+			t.Fatalf("data_parallel_load_balancing %s: %v\n%s", mode, err, lastLines(stderr, 3))
 		}
 		clusterConservationHolds(t, out, dpFixtureNumRequests)
-		again, _, err := runKernelCLI(t, dpRunArgs(1, "--dp-load-balancing", mode)...)
+		again, _, err := runKernelCLI(t, args...)
 		if err != nil || withoutRuntime(t, again) != withoutRuntime(t, out) {
-			t.Errorf("INV-6: two --dp-load-balancing %s runs differ (err %v)", mode, err)
+			t.Errorf("INV-6: two data_parallel_load_balancing %s runs differ (err %v)", mode, err)
 		}
 		outs[mode] = out
 	}
-	if inv13View(t, outs["hybrid"]) != inv13View(t, outs["internal"]) {
+	if simulatedFigures(t, outs["hybrid"]) != simulatedFigures(t, outs["internal"]) {
 		t.Error("hybrid on a group within one node must equal the internal balancer")
 	}
-	if _, stderr, err := runKernelCLI(t, dpRunArgs(1, "--dp-load-balancing", "external")...); err == nil ||
-		!strings.Contains(stderr, "--dp-load-balancing external") {
+	if _, stderr, err := runKernelCLI(t, dpRunArgs(1, "--scenarios", dpScenarioBalanced(t, "external"))...); err == nil ||
+		!strings.Contains(stderr, "data_parallel_load_balancing external") {
 		t.Errorf("the external balancer must be refused naming the mode: %v\n%s", err, lastLines(stderr, 3))
 	}
-	_, stderr, err := runKernelCLI(t, dpRunArgs(1, "--dp-load-balancing", "random")...)
+	_, stderr, err := runKernelCLI(t, dpRunArgs(1, "--scenarios", dpScenarioBalanced(t, "random"))...)
 	var exitErr *exec.ExitError
-	if !errors.As(err, &exitErr) || !strings.Contains(stderr, "--dp-load-balancing") {
-		t.Errorf("an unknown mode must be refused naming the flag: %v\n%s", err, lastLines(stderr, 3))
+	if !errors.As(err, &exitErr) || !strings.Contains(stderr, "data_parallel_load_balancing") {
+		t.Errorf("an unknown mode must be refused naming the field: %v\n%s", err, lastLines(stderr, 3))
 	}
 }

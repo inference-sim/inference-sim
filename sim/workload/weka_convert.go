@@ -24,6 +24,10 @@ type WekaConvertOptions struct {
 	MaxThinkTimeUs int64
 	// MinRounds skips sessions with fewer usable main-agent turns (default 1).
 	MinRounds int
+	// MaxContext bounds every round's recorded prompt plus output; 0 = no ceiling. MaxContextMode
+	// says what a session with a round over it becomes (max_context.go).
+	MaxContext     int
+	MaxContextMode MaxContextMode
 	// DropSubagents converts a session containing type:"subagent" groups by dropping
 	// them (their wall-clock folds into the next main turn's think gap). Unset, such a
 	// session is refused (ErrWekaSubagentFanOut): the dropped child requests would put
@@ -33,8 +37,8 @@ type WekaConvertOptions struct {
 
 // ErrWekaSubagentFanOut is returned for a session with sub-agent groups when
 // DropSubagents is unset: their nested, concurrent requests are not modelled yet
-// (#1477), and dropping them silently would under-represent the offered load.
-var ErrWekaSubagentFanOut = errors.New("weka session contains sub-agent fan-out, which is not modelled (#1477)")
+// (#1928 item 12), and dropping them silently would under-represent the offered load.
+var ErrWekaSubagentFanOut = errors.New("weka session contains sub-agent fan-out, which is not modelled (#1928 item 12)")
 
 // CountWekaSubagents returns the number of type:"subagent" groups in one Weka session
 // and the nested requests they carry.
@@ -72,7 +76,7 @@ type wekaSession struct {
 
 // wekaRequest is one entry in a session's requests[]: a main-agent request
 // (type "n" non-streaming / "s" streaming) or a sub-agent group (type
-// "subagent"), which this converter refuses, or drops when asked to (#1477).
+// "subagent"), which this converter refuses, or drops when asked to (#1928 item 12).
 type wekaRequest struct {
 	Type string  `json:"type"`     // "n", "s", or "subagent"
 	T    float64 `json:"t"`        // seconds since trace start (arrival); a subagent's spawn time
@@ -149,7 +153,7 @@ func ConvertWekaSession(raw []byte, opts WekaConvertOptions) ([]TraceRecord, err
 	for i := range s.Requests {
 		r := &s.Requests[i]
 		if r.Type == "subagent" {
-			continue // opts.DropSubagents: refused above otherwise (#1477)
+			continue // opts.DropSubagents: refused above otherwise (#1928 item 12)
 		}
 		if r.In == nil || r.Out == nil {
 			// No ground-truth token counts → unusable. Real Weka main turns always
@@ -169,7 +173,7 @@ func ConvertWekaSession(raw []byte, opts WekaConvertOptions) ([]TraceRecord, err
 	// Build the source-agnostic normalized session; the shared encoder
 	// (EncodeSessionToTraceRecords) computes per-round input deltas and leaves
 	// TraceRecord.Model empty (no phantom per-model metrics). ThinkUs carries the recomputed
-	// pure client think (#1478), preferred over arrival-gap think at replay.
+	// pure client think, preferred over arrival-gap think at replay.
 	rounds := make([]NormalizedRound, 0, len(turns))
 	for i, tn := range turns {
 		// Round 0 has no predecessor → think is not recorded (nil, #1608). Rounds
@@ -202,6 +206,9 @@ func ConvertWekaSession(raw []byte, opts WekaConvertOptions) ([]TraceRecord, err
 			ThinkUs:   thinkUs,
 			Status:    "ok", // Weka errors are filtered at source
 		})
+	}
+	if rounds = boundContext(rounds, opts.MaxContext, opts.MaxContextMode); len(rounds) < minRounds {
+		return nil, nil
 	}
 	return EncodeSessionToTraceRecords(s.ID, rounds), nil
 }

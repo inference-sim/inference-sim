@@ -4,18 +4,18 @@
   "name": "gpt-oss-120b-h100-fp4-vllm-tp2.r8-s3",
   "engine": {
     "kind": "vllm",
-    "version": "0.32.0"
+    "version": "0.33.0"
   },
   "data": {
     "catalog": {
       "source": "path",
-      "hash": "db74e4bb49f75d658e5d0850934da60daf513274b937a03b7ab994760bd6d21f",
-      "combined_hash": "db74e4bb49f75d658e5d0850934da60daf513274b937a03b7ab994760bd6d21f"
+      "hash": "2d1849fb44540b8af542e6d40dfbde2905784a942567c3470ea1580eaa183e6b",
+      "combined_hash": "2d1849fb44540b8af542e6d40dfbde2905784a942567c3470ea1580eaa183e6b"
     },
     "registry": {
       "source": "path",
-      "hash": "8dbcf3b85eed842f2bc798b34d2b95716fc58117750f4164d869b26770353fe0",
-      "combined_hash": "8dbcf3b85eed842f2bc798b34d2b95716fc58117750f4164d869b26770353fe0"
+      "hash": "8988e9e7570e890ecaa0952465eca4c5827e5036dbed2a134b11c3848df1958f",
+      "combined_hash": "8988e9e7570e890ecaa0952465eca4c5827e5036dbed2a134b11c3848df1958f"
     },
     "released_data": false,
     "build": "unreleased"
@@ -297,7 +297,8 @@
             "gb300",
             "h100",
             "h200",
-            "l40s"
+            "l40s",
+            "rtx6000pro-server"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
@@ -317,7 +318,8 @@
             "gb300",
             "h100",
             "h200",
-            "l40s"
+            "l40s",
+            "rtx6000pro-server"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
@@ -337,7 +339,8 @@
             "gb300",
             "h100",
             "h200",
-            "l40s"
+            "l40s",
+            "rtx6000pro-server"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
@@ -357,7 +360,8 @@
             "gb300",
             "h100",
             "h200",
-            "l40s"
+            "l40s",
+            "rtx6000pro-server"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
@@ -377,7 +381,8 @@
             "gb300",
             "h100",
             "h200",
-            "l40s"
+            "l40s",
+            "rtx6000pro-server"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
@@ -401,7 +406,8 @@
             "gb300",
             "h100",
             "h200",
-            "l40s"
+            "l40s",
+            "rtx6000pro-server"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
@@ -421,7 +427,8 @@
             "gb300",
             "h100",
             "h200",
-            "l40s"
+            "l40s",
+            "rtx6000pro-server"
           ]
         },
         "file": "coefficients/cost-model-host-overheads.yaml",
@@ -441,7 +448,8 @@
             "gb300",
             "h100",
             "h200",
-            "l40s"
+            "l40s",
+            "rtx6000pro-server"
           ]
         },
         "file": "coefficients/cost-model-memory.yaml",
@@ -461,7 +469,8 @@
             "gb300",
             "h100",
             "h200",
-            "l40s"
+            "l40s",
+            "rtx6000pro-server"
           ]
         },
         "file": "coefficients/cost-model-memory.yaml",
@@ -481,7 +490,8 @@
             "gb300",
             "h100",
             "h200",
-            "l40s"
+            "l40s",
+            "rtx6000pro-server"
           ]
         },
         "file": "coefficients/cost-model-memory.yaml",
@@ -738,7 +748,10 @@
         "cost-model-recurrent",
         "cost-model-memory"
       ],
-      "engine_version": "0.32.0",
+      "engine": {
+        "kind": "vllm",
+        "version": "0.33.0"
+      },
       "cluster": {
         "hardware": "h100",
         "nodes": 1,
@@ -832,6 +845,11 @@
       "e2e_p90_ms",
       "e2e_p95_ms",
       "e2e_p99_ms",
+      "icl_mean_ms",
+      "icl_p50_ms",
+      "icl_p90_ms",
+      "icl_p95_ms",
+      "icl_p99_ms",
       "interactivity_mean",
       "interactivity_of_mean_tpot",
       "interactivity_p50",
@@ -864,94 +882,119 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.14.0",
-    "router": "v1.0.0-blis.4",
-    "engine_module": "v0.32.0-blis.3"
+    "substrate": "v0.15.0",
+    "router": "v1.0.0-blis.5",
+    "engine_module": "v0.33.0-blis.1"
   },
   "window": {
     "start_us": 125000,
-    "end_us": 11440884,
-    "duration_s": 11.315884,
+    "end_us": 12352797,
+    "duration_s": 12.227797,
     "requests": 40
   },
   "metrics": {
     "e2e_mean_ms": {
-      "value": 5145.471875,
+      "value": 5757.908,
       "samples": 40,
       "scope": "cluster"
     },
     "e2e_p50_ms": {
-      "value": 5684.1894999999995,
+      "value": 6408.2474999999995,
       "samples": 40,
       "scope": "cluster"
     },
     "e2e_p90_ms": {
-      "value": 7701.3334,
+      "value": 8608.1573,
       "samples": 40,
       "scope": "cluster"
     },
     "e2e_p95_ms": {
-      "value": 7950.9100499999995,
+      "value": 8842.087249999999,
       "samples": 40,
       "scope": "cluster"
     },
     "e2e_p99_ms": {
-      "value": 8232.28314,
+      "value": 9198.409679999999,
       "samples": 40,
       "scope": "cluster"
     },
+    "icl_mean_ms": {
+      "value": 11.006327062930282,
+      "samples": 20626,
+      "scope": "cluster"
+    },
+    "icl_p50_ms": {
+      "value": 10.703,
+      "samples": 20626,
+      "scope": "cluster"
+    },
+    "icl_p90_ms": {
+      "value": 13.193,
+      "samples": 20626,
+      "scope": "cluster"
+    },
+    "icl_p95_ms": {
+      "value": 13.197,
+      "samples": 20626,
+      "scope": "cluster"
+    },
+    "icl_p99_ms": {
+      "value": 31.835,
+      "samples": 20626,
+      "scope": "cluster"
+    },
     "interactivity_mean": {
-      "value": 102.72264575632876,
+      "value": 91.33173909992719,
       "samples": 40,
       "scope": "cluster"
     },
     "interactivity_of_mean_tpot": {
-      "value": 100.48465560809707,
+      "value": 89.60681002198288,
       "samples": 40,
       "scope": "cluster"
     },
     "interactivity_p50": {
-      "value": 97.95574298721186,
+      "value": 88.26575445692441,
       "samples": 40,
       "scope": "cluster"
     },
     "interactivity_p90": {
-      "value": 86.61460380077479,
+      "value": 78.0318344395212,
       "samples": 40,
       "scope": "cluster"
     },
     "itl_mean_ms": {
-      "value": 9.826448317657325,
+      "value": 11.006327062930282,
       "samples": 20626,
       "scope": "cluster"
     },
     "itl_p50_ms": {
-      "value": 9.731,
+      "value": 10.703,
       "samples": 20626,
       "scope": "cluster"
     },
     "itl_p90_ms": {
-      "value": 12.08,
+      "value": 13.193,
       "samples": 20626,
       "scope": "cluster"
     },
     "itl_p95_ms": {
-      "value": 12.084,
+      "value": 13.197,
       "samples": 20626,
       "scope": "cluster"
     },
     "itl_p99_ms": {
-      "value": 29.89,
+      "value": 31.835,
       "samples": 20626,
       "scope": "cluster"
     },
     "output_tok_s": {
-      "value": 1826.2824185896568,
+      "value": 1690.083667564975,
       "samples": 40,
       "scope": "cluster"
     },
     "output_tok_s_per_gpu": {
-      "value": 913.1412092948284,
+      "value": 845.0418337824875,
       "samples": 40,
       "scope": "cluster"
     },
@@ -961,82 +1004,82 @@
       "scope": "cluster"
     },
     "request_throughput": {
-      "value": 3.5348541925668377,
+      "value": 3.2712352028742377,
       "samples": 40,
       "scope": "cluster"
     },
     "step_interval_mean_ms": {
-      "value": 9.826448317657325,
+      "value": 11.006327062930282,
       "samples": 20626,
       "scope": "cluster"
     },
     "step_interval_p50_ms": {
-      "value": 9.731,
+      "value": 10.703,
       "samples": 20626,
       "scope": "cluster"
     },
     "step_interval_p90_ms": {
-      "value": 12.08,
+      "value": 13.193,
       "samples": 20626,
       "scope": "cluster"
     },
     "step_interval_p95_ms": {
-      "value": 12.084,
+      "value": 13.197,
       "samples": 20626,
       "scope": "cluster"
     },
     "step_interval_p99_ms": {
-      "value": 29.89,
+      "value": 31.835,
       "samples": 20626,
       "scope": "cluster"
     },
     "total_tokens_per_second_per_gpu": {
-      "value": 1796.015229565803,
+      "value": 1662.0737161403645,
       "samples": 40,
       "scope": "cluster"
     },
     "tpot_mean_ms": {
-      "value": 9.951768197326835,
+      "value": 11.159866083333108,
       "samples": 40,
       "scope": "cluster"
     },
     "tpot_p50_ms": {
-      "value": 10.208691900081348,
+      "value": 11.329422222160028,
       "samples": 40,
       "scope": "cluster"
     },
     "tpot_p90_ms": {
-      "value": 11.545397151502698,
+      "value": 12.81528247006743,
       "samples": 40,
       "scope": "cluster"
     },
     "tpot_p99_ms": {
-      "value": 12.25590944476723,
+      "value": 13.502159929915026,
       "samples": 40,
       "scope": "cluster"
     },
     "ttft_mean_ms": {
-      "value": 78.4638,
+      "value": 82.49544999999999,
       "samples": 40,
       "scope": "cluster"
     },
     "ttft_p50_ms": {
-      "value": 78.344,
+      "value": 82.548,
       "samples": 40,
       "scope": "cluster"
     },
     "ttft_p90_ms": {
-      "value": 88.07490000000001,
+      "value": 93.602,
       "samples": 40,
       "scope": "cluster"
     },
     "ttft_p95_ms": {
-      "value": 88.5309,
+      "value": 94.75874999999999,
       "samples": 40,
       "scope": "cluster"
     },
     "ttft_p99_ms": {
-      "value": 89.65411,
+      "value": 97.06506999999999,
       "samples": 40,
       "scope": "cluster"
     }
@@ -1055,12 +1098,13 @@
       "id": "request_0",
       "fate": "completed",
       "arrival_us": 125000,
-      "ttft_us": 70839,
-      "tpot_us": 9342.001176470589,
-      "e2e_us": 8011540,
+      "ttft_us": 72812,
+      "tpot_us": 10553.651764705883,
+      "e2e_us": 9043416,
       "scheduling_delay_us": 40237,
       "completion_index": 22,
       "prompt_tokens": 679,
+      "computed_tokens": 679,
       "output_tokens": 851,
       "instance": "instance_0"
     },
@@ -1068,12 +1112,13 @@
       "id": "request_1",
       "fate": "completed",
       "arrival_us": 250000,
-      "ttft_us": 64391,
-      "tpot_us": 5368.6138613861385,
-      "e2e_us": 606621,
-      "scheduling_delay_us": 41946,
+      "ttft_us": 68569,
+      "tpot_us": 6376.514851485149,
+      "e2e_us": 712597,
+      "scheduling_delay_us": 44079,
       "completion_index": 1,
       "prompt_tokens": 199,
+      "computed_tokens": 199,
       "output_tokens": 102,
       "instance": "instance_0"
     },
@@ -1081,12 +1126,13 @@
       "id": "request_2",
       "fate": "completed",
       "arrival_us": 375000,
-      "ttft_us": 76368,
-      "tpot_us": 9555.432384341637,
-      "e2e_us": 5446521,
-      "scheduling_delay_us": 42594,
-      "completion_index": 12,
+      "ttft_us": 77271,
+      "tpot_us": 10955.539145907473,
+      "e2e_us": 6234284,
+      "scheduling_delay_us": 40940,
+      "completion_index": 14,
       "prompt_tokens": 641,
+      "computed_tokens": 641,
       "output_tokens": 563,
       "instance": "instance_0"
     },
@@ -1094,12 +1140,13 @@
       "id": "request_3",
       "fate": "completed",
       "arrival_us": 500000,
-      "ttft_us": 83733,
-      "tpot_us": 9727.60447761194,
-      "e2e_us": 5297729,
-      "scheduling_delay_us": 43811,
-      "completion_index": 9,
+      "ttft_us": 86723,
+      "tpot_us": 11123.873134328358,
+      "e2e_us": 6049119,
+      "scheduling_delay_us": 44053,
+      "completion_index": 12,
       "prompt_tokens": 952,
+      "computed_tokens": 952,
       "output_tokens": 537,
       "instance": "instance_0"
     },
@@ -1107,12 +1154,13 @@
       "id": "request_4",
       "fate": "completed",
       "arrival_us": 625000,
-      "ttft_us": 68256,
-      "tpot_us": 9893.646034816247,
-      "e2e_us": 5183271,
-      "scheduling_delay_us": 41038,
+      "ttft_us": 74751,
+      "tpot_us": 11288.976789168279,
+      "e2e_us": 5911152,
+      "scheduling_delay_us": 45310,
       "completion_index": 11,
       "prompt_tokens": 392,
+      "computed_tokens": 392,
       "output_tokens": 518,
       "instance": "instance_0"
     },
@@ -1120,12 +1168,13 @@
       "id": "request_5",
       "fate": "completed",
       "arrival_us": 750000,
-      "ttft_us": 70396,
-      "tpot_us": 8190.640926640926,
-      "e2e_us": 2191772,
-      "scheduling_delay_us": 41859,
-      "completion_index": 3,
+      "ttft_us": 75834,
+      "tpot_us": 9681.258687258687,
+      "e2e_us": 2583280,
+      "scheduling_delay_us": 45025,
+      "completion_index": 4,
       "prompt_tokens": 443,
+      "computed_tokens": 443,
       "output_tokens": 260,
       "instance": "instance_0"
     },
@@ -1133,12 +1182,13 @@
       "id": "request_6",
       "fate": "completed",
       "arrival_us": 875000,
-      "ttft_us": 68475,
-      "tpot_us": 10256.69978858351,
-      "e2e_us": 4919894,
-      "scheduling_delay_us": 41166,
-      "completion_index": 8,
+      "ttft_us": 70382,
+      "tpot_us": 11607.615221987315,
+      "e2e_us": 5560784,
+      "scheduling_delay_us": 40444,
+      "completion_index": 10,
       "prompt_tokens": 376,
+      "computed_tokens": 376,
       "output_tokens": 474,
       "instance": "instance_0"
     },
@@ -1146,12 +1196,13 @@
       "id": "request_7",
       "fate": "completed",
       "arrival_us": 1000000,
-      "ttft_us": 78271,
-      "tpot_us": 10432.91592920354,
-      "e2e_us": 4793949,
-      "scheduling_delay_us": 43769,
-      "completion_index": 7,
+      "ttft_us": 78818,
+      "tpot_us": 11766.772123893805,
+      "e2e_us": 5397399,
+      "scheduling_delay_us": 41687,
+      "completion_index": 9,
       "prompt_tokens": 596,
+      "computed_tokens": 596,
       "output_tokens": 453,
       "instance": "instance_0"
     },
@@ -1159,12 +1210,13 @@
       "id": "request_8",
       "fate": "completed",
       "arrival_us": 1125000,
-      "ttft_us": 72439,
-      "tpot_us": 10211.270805812417,
-      "e2e_us": 7802371,
-      "scheduling_delay_us": 43130,
+      "ttft_us": 74119,
+      "tpot_us": 11337.227212681639,
+      "e2e_us": 8656400,
+      "scheduling_delay_us": 42491,
       "completion_index": 25,
       "prompt_tokens": 445,
+      "computed_tokens": 445,
       "output_tokens": 758,
       "instance": "instance_0"
     },
@@ -1172,12 +1224,13 @@
       "id": "request_9",
       "fate": "completed",
       "arrival_us": 1250000,
-      "ttft_us": 76527,
-      "tpot_us": 10738.909523809523,
-      "e2e_us": 4586869,
-      "scheduling_delay_us": 42542,
-      "completion_index": 13,
+      "ttft_us": 79284,
+      "tpot_us": 12063.511904761905,
+      "e2e_us": 5145959,
+      "scheduling_delay_us": 42664,
+      "completion_index": 8,
       "prompt_tokens": 529,
+      "computed_tokens": 529,
       "output_tokens": 421,
       "instance": "instance_0"
     },
@@ -1185,12 +1238,13 @@
       "id": "request_10",
       "fate": "completed",
       "arrival_us": 1375000,
-      "ttft_us": 81885,
-      "tpot_us": 9174.941860465116,
-      "e2e_us": 1659975,
-      "scheduling_delay_us": 45458,
-      "completion_index": 4,
+      "ttft_us": 84694,
+      "tpot_us": 10504.25,
+      "e2e_us": 1891425,
+      "scheduling_delay_us": 45551,
+      "completion_index": 3,
       "prompt_tokens": 643,
+      "computed_tokens": 643,
       "output_tokens": 173,
       "instance": "instance_0"
     },
@@ -1198,12 +1252,13 @@
       "id": "request_11",
       "fate": "completed",
       "arrival_us": 1500000,
-      "ttft_us": 78487,
-      "tpot_us": 10702.183501683501,
-      "e2e_us": 6435584,
-      "scheduling_delay_us": 42315,
+      "ttft_us": 79425,
+      "tpot_us": 11869.63468013468,
+      "e2e_us": 7129988,
+      "scheduling_delay_us": 40533,
       "completion_index": 21,
       "prompt_tokens": 611,
+      "computed_tokens": 611,
       "output_tokens": 595,
       "instance": "instance_0"
     },
@@ -1211,12 +1266,13 @@
       "id": "request_12",
       "fate": "completed",
       "arrival_us": 1625000,
-      "ttft_us": 74470,
-      "tpot_us": 10410.112696148359,
-      "e2e_us": 7371959,
-      "scheduling_delay_us": 42830,
+      "ttft_us": 80523,
+      "tpot_us": 11542.252496433666,
+      "e2e_us": 8171642,
+      "scheduling_delay_us": 46456,
       "completion_index": 26,
       "prompt_tokens": 498,
+      "computed_tokens": 498,
       "output_tokens": 702,
       "instance": "instance_0"
     },
@@ -1224,12 +1280,13 @@
       "id": "request_13",
       "fate": "completed",
       "arrival_us": 1750000,
-      "ttft_us": 71646,
-      "tpot_us": 10478.841201716737,
-      "e2e_us": 2513216,
-      "scheduling_delay_us": 42609,
+      "ttft_us": 74693,
+      "tpot_us": 11967.935622317596,
+      "e2e_us": 2863222,
+      "scheduling_delay_us": 43293,
       "completion_index": 5,
       "prompt_tokens": 339,
+      "computed_tokens": 339,
       "output_tokens": 234,
       "instance": "instance_0"
     },
@@ -1237,12 +1294,13 @@
       "id": "request_14",
       "fate": "completed",
       "arrival_us": 1875000,
-      "ttft_us": 88586,
-      "tpot_us": 7773,
-      "e2e_us": 96359,
-      "scheduling_delay_us": 43464,
+      "ttft_us": 88899,
+      "tpot_us": 8624,
+      "e2e_us": 97523,
+      "scheduling_delay_us": 40772,
       "completion_index": 2,
       "prompt_tokens": 1044,
+      "computed_tokens": 1044,
       "output_tokens": 2,
       "instance": "instance_0"
     },
@@ -1250,12 +1308,13 @@
       "id": "request_15",
       "fate": "completed",
       "arrival_us": 2000000,
-      "ttft_us": 72984,
-      "tpot_us": 11166.78125,
-      "e2e_us": 5075702,
-      "scheduling_delay_us": 45789,
+      "ttft_us": 76511,
+      "tpot_us": 12411.622767857143,
+      "e2e_us": 5636918,
+      "scheduling_delay_us": 46998,
       "completion_index": 17,
       "prompt_tokens": 222,
+      "computed_tokens": 222,
       "output_tokens": 449,
       "instance": "instance_0"
     },
@@ -1263,12 +1322,13 @@
       "id": "request_16",
       "fate": "completed",
       "arrival_us": 2125000,
-      "ttft_us": 59190,
-      "tpot_us": 10540.651840490798,
-      "e2e_us": 6931695,
-      "scheduling_delay_us": 40653,
+      "ttft_us": 66224,
+      "tpot_us": 11687.731595092024,
+      "e2e_us": 7686625,
+      "scheduling_delay_us": 45805,
       "completion_index": 27,
       "prompt_tokens": 13,
+      "computed_tokens": 13,
       "output_tokens": 653,
       "instance": "instance_0"
     },
@@ -1276,12 +1336,13 @@
       "id": "request_17",
       "fate": "completed",
       "arrival_us": 2250000,
-      "ttft_us": 75825,
-      "tpot_us": 11687.107266435985,
-      "e2e_us": 3453399,
-      "scheduling_delay_us": 46021,
-      "completion_index": 6,
+      "ttft_us": 79688,
+      "tpot_us": 12984.401384083045,
+      "e2e_us": 3832180,
+      "scheduling_delay_us": 47474,
+      "completion_index": 7,
       "prompt_tokens": 332,
+      "computed_tokens": 332,
       "output_tokens": 290,
       "instance": "instance_0"
     },
@@ -1289,12 +1350,13 @@
       "id": "request_18",
       "fate": "completed",
       "arrival_us": 2375000,
-      "ttft_us": 73592,
-      "tpot_us": 10206.112994350282,
-      "e2e_us": 7299520,
-      "scheduling_delay_us": 41541,
+      "ttft_us": 80516,
+      "tpot_us": 11321.617231638418,
+      "e2e_us": 8096221,
+      "scheduling_delay_us": 45981,
       "completion_index": 29,
       "prompt_tokens": 439,
+      "computed_tokens": 439,
       "output_tokens": 709,
       "instance": "instance_0"
     },
@@ -1302,12 +1364,13 @@
       "id": "request_19",
       "fate": "completed",
       "arrival_us": 2500000,
-      "ttft_us": 73536,
-      "tpot_us": 10823.927175843695,
-      "e2e_us": 6167407,
-      "scheduling_delay_us": 42089,
+      "ttft_us": 83415,
+      "tpot_us": 12000.262877442274,
+      "e2e_us": 6839563,
+      "scheduling_delay_us": 49492,
       "completion_index": 23,
       "prompt_tokens": 391,
+      "computed_tokens": 391,
       "output_tokens": 564,
       "instance": "instance_0"
     },
@@ -1315,12 +1378,13 @@
       "id": "request_20",
       "fate": "completed",
       "arrival_us": 2625000,
-      "ttft_us": 81949,
-      "tpot_us": 10787.777580071175,
-      "e2e_us": 6144680,
-      "scheduling_delay_us": 44733,
+      "ttft_us": 85373,
+      "tpot_us": 11963.362989323843,
+      "e2e_us": 6808783,
+      "scheduling_delay_us": 45337,
       "completion_index": 24,
       "prompt_tokens": 539,
+      "computed_tokens": 539,
       "output_tokens": 563,
       "instance": "instance_0"
     },
@@ -1328,12 +1392,13 @@
       "id": "request_21",
       "fate": "completed",
       "arrival_us": 2750000,
-      "ttft_us": 87899,
-      "tpot_us": 11866.896797153026,
-      "e2e_us": 3422497,
-      "scheduling_delay_us": 46789,
-      "completion_index": 14,
+      "ttft_us": 93629,
+      "tpot_us": 13230.782918149465,
+      "e2e_us": 3811479,
+      "scheduling_delay_us": 49580,
+      "completion_index": 13,
       "prompt_tokens": 736,
+      "computed_tokens": 736,
       "output_tokens": 282,
       "instance": "instance_0"
     },
@@ -1341,12 +1406,13 @@
       "id": "request_22",
       "fate": "completed",
       "arrival_us": 2875000,
-      "ttft_us": 87674,
-      "tpot_us": 8918.988159311088,
-      "e2e_us": 8373414,
-      "scheduling_delay_us": 45850,
+      "ttft_us": 94714,
+      "tpot_us": 9906.124865446716,
+      "e2e_us": 9297504,
+      "scheduling_delay_us": 49897,
       "completion_index": 38,
       "prompt_tokens": 762,
+      "computed_tokens": 762,
       "output_tokens": 930,
       "instance": "instance_0"
     },
@@ -1354,12 +1420,13 @@
       "id": "request_23",
       "fate": "completed",
       "arrival_us": 3000000,
-      "ttft_us": 77048,
-      "tpot_us": 11593.627565982404,
-      "e2e_us": 4030475,
-      "scheduling_delay_us": 45172,
+      "ttft_us": 77419,
+      "tpot_us": 12868.557184750733,
+      "e2e_us": 4465597,
+      "scheduling_delay_us": 42504,
       "completion_index": 16,
       "prompt_tokens": 385,
+      "computed_tokens": 385,
       "output_tokens": 342,
       "instance": "instance_0"
     },
@@ -1367,12 +1434,13 @@
       "id": "request_24",
       "fate": "completed",
       "arrival_us": 3125000,
-      "ttft_us": 82942,
-      "tpot_us": 9092.22774566474,
-      "e2e_us": 7947719,
-      "scheduling_delay_us": 44225,
+      "ttft_us": 90229,
+      "tpot_us": 10105.505202312139,
+      "e2e_us": 8831491,
+      "scheduling_delay_us": 48111,
       "completion_index": 37,
       "prompt_tokens": 592,
+      "computed_tokens": 592,
       "output_tokens": 866,
       "instance": "instance_0"
     },
@@ -1380,12 +1448,13 @@
       "id": "request_25",
       "fate": "completed",
       "arrival_us": 3250000,
-      "ttft_us": 71331,
-      "tpot_us": 10522.530575539568,
-      "e2e_us": 5921858,
-      "scheduling_delay_us": 42934,
+      "ttft_us": 71625,
+      "tpot_us": 11709.687050359713,
+      "e2e_us": 6582211,
+      "scheduling_delay_us": 40554,
       "completion_index": 28,
       "prompt_tokens": 169,
+      "computed_tokens": 169,
       "output_tokens": 557,
       "instance": "instance_0"
     },
@@ -1393,12 +1462,13 @@
       "id": "request_26",
       "fate": "completed",
       "arrival_us": 3375000,
-      "ttft_us": 84211,
-      "tpot_us": 9549.144399460189,
-      "e2e_us": 7160127,
-      "scheduling_delay_us": 42956,
+      "ttft_us": 86529,
+      "tpot_us": 10640.182186234817,
+      "e2e_us": 7970904,
+      "scheduling_delay_us": 42309,
       "completion_index": 32,
       "prompt_tokens": 703,
+      "computed_tokens": 703,
       "output_tokens": 742,
       "instance": "instance_0"
     },
@@ -1406,12 +1476,13 @@
       "id": "request_27",
       "fate": "completed",
       "arrival_us": 3500000,
-      "ttft_us": 80614,
-      "tpot_us": 9691.871757925072,
-      "e2e_us": 6806773,
-      "scheduling_delay_us": 48096,
+      "ttft_us": 83462,
+      "tpot_us": 10806.50288184438,
+      "e2e_us": 7583175,
+      "scheduling_delay_us": 48396,
       "completion_index": 31,
       "prompt_tokens": 366,
+      "computed_tokens": 366,
       "output_tokens": 695,
       "instance": "instance_0"
     },
@@ -1419,12 +1490,13 @@
       "id": "request_28",
       "fate": "completed",
       "arrival_us": 3625000,
-      "ttft_us": 78417,
-      "tpot_us": 11540.03821656051,
-      "e2e_us": 3701989,
-      "scheduling_delay_us": 46364,
+      "ttft_us": 81681,
+      "tpot_us": 12809.363057324841,
+      "e2e_us": 4103821,
+      "scheduling_delay_us": 47087,
       "completion_index": 18,
       "prompt_tokens": 328,
+      "computed_tokens": 328,
       "output_tokens": 315,
       "instance": "instance_0"
     },
@@ -1432,12 +1504,13 @@
       "id": "request_29",
       "fate": "completed",
       "arrival_us": 3750000,
-      "ttft_us": 88043,
-      "tpot_us": 8428.0088691796,
-      "e2e_us": 7690107,
-      "scheduling_delay_us": 45979,
+      "ttft_us": 92085,
+      "tpot_us": 9435.379157427938,
+      "e2e_us": 8602797,
+      "scheduling_delay_us": 47013,
       "completion_index": 40,
       "prompt_tokens": 709,
+      "computed_tokens": 709,
       "output_tokens": 903,
       "instance": "instance_0"
     },
@@ -1445,12 +1518,13 @@
       "id": "request_30",
       "fate": "completed",
       "arrival_us": 3875000,
-      "ttft_us": 87411,
-      "tpot_us": 11156.474719101123,
-      "e2e_us": 4059116,
-      "scheduling_delay_us": 46894,
+      "ttft_us": 91071,
+      "tpot_us": 12384.022471910112,
+      "e2e_us": 4499783,
+      "scheduling_delay_us": 47584,
       "completion_index": 20,
       "prompt_tokens": 613,
+      "computed_tokens": 613,
       "output_tokens": 357,
       "instance": "instance_0"
     },
@@ -1458,12 +1532,13 @@
       "id": "request_31",
       "fate": "completed",
       "arrival_us": 4000000,
-      "ttft_us": 88362,
-      "tpot_us": 9556.910355486862,
-      "e2e_us": 6271683,
-      "scheduling_delay_us": 47793,
+      "ttft_us": 91536,
+      "tpot_us": 10700.412673879444,
+      "e2e_us": 7014703,
+      "scheduling_delay_us": 47991,
       "completion_index": 30,
       "prompt_tokens": 604,
+      "computed_tokens": 604,
       "output_tokens": 648,
       "instance": "instance_0"
     },
@@ -1471,12 +1546,13 @@
       "id": "request_32",
       "fate": "completed",
       "arrival_us": 4125000,
-      "ttft_us": 83551,
-      "tpot_us": 9124.853185595568,
-      "e2e_us": 6671695,
-      "scheduling_delay_us": 50235,
-      "completion_index": 33,
+      "ttft_us": 85755,
+      "tpot_us": 10234.094182825485,
+      "e2e_us": 7474771,
+      "scheduling_delay_us": 49839,
+      "completion_index": 34,
       "prompt_tokens": 349,
+      "computed_tokens": 349,
       "output_tokens": 723,
       "instance": "instance_0"
     },
@@ -1484,12 +1560,13 @@
       "id": "request_33",
       "fate": "completed",
       "arrival_us": 4250000,
-      "ttft_us": 85473,
-      "tpot_us": 9069.357643758765,
-      "e2e_us": 6551925,
-      "scheduling_delay_us": 46146,
-      "completion_index": 34,
+      "ttft_us": 87885,
+      "tpot_us": 10184.405329593268,
+      "e2e_us": 7349366,
+      "scheduling_delay_us": 45396,
+      "completion_index": 33,
       "prompt_tokens": 525,
+      "computed_tokens": 525,
       "output_tokens": 714,
       "instance": "instance_0"
     },
@@ -1497,12 +1574,13 @@
       "id": "request_34",
       "fate": "completed",
       "arrival_us": 4375000,
-      "ttft_us": 90337,
-      "tpot_us": 11081.295918367347,
-      "e2e_us": 3348238,
-      "scheduling_delay_us": 48796,
+      "ttft_us": 93599,
+      "tpot_us": 12354.833333333334,
+      "e2e_us": 3725920,
+      "scheduling_delay_us": 48833,
       "completion_index": 19,
       "prompt_tokens": 634,
+      "computed_tokens": 634,
       "output_tokens": 295,
       "instance": "instance_0"
     },
@@ -1510,12 +1588,13 @@
       "id": "request_35",
       "fate": "completed",
       "arrival_us": 4500000,
-      "ttft_us": 75188,
-      "tpot_us": 12504.622448979591,
-      "e2e_us": 1300641,
-      "scheduling_delay_us": 43850,
-      "completion_index": 10,
+      "ttft_us": 77453,
+      "tpot_us": 13675.663265306122,
+      "e2e_us": 1417668,
+      "scheduling_delay_us": 43355,
+      "completion_index": 6,
       "prompt_tokens": 219,
+      "computed_tokens": 219,
       "output_tokens": 99,
       "instance": "instance_0"
     },
@@ -1523,12 +1602,13 @@
       "id": "request_36",
       "fate": "completed",
       "arrival_us": 4625000,
-      "ttft_us": 81419,
-      "tpot_us": 8169.976744186047,
-      "e2e_us": 6756290,
-      "scheduling_delay_us": 41286,
+      "ttft_us": 95609,
+      "tpot_us": 9228.899632802937,
+      "e2e_us": 7635620,
+      "scheduling_delay_us": 52491,
       "completion_index": 39,
       "prompt_tokens": 536,
+      "computed_tokens": 536,
       "output_tokens": 818,
       "instance": "instance_0"
     },
@@ -1536,12 +1616,13 @@
       "id": "request_37",
       "fate": "completed",
       "arrival_us": 4750000,
-      "ttft_us": 85133,
-      "tpot_us": 8803.948755490483,
-      "e2e_us": 6098230,
-      "scheduling_delay_us": 48854,
+      "ttft_us": 85408,
+      "tpot_us": 9945.194729136165,
+      "e2e_us": 6877976,
+      "scheduling_delay_us": 46423,
       "completion_index": 35,
       "prompt_tokens": 467,
+      "computed_tokens": 467,
       "output_tokens": 684,
       "instance": "instance_0"
     },
@@ -1549,12 +1630,13 @@
       "id": "request_38",
       "fate": "completed",
       "arrival_us": 4875000,
-      "ttft_us": 73126,
-      "tpot_us": 8742.128698224851,
-      "e2e_us": 5982805,
-      "scheduling_delay_us": 42144,
+      "ttft_us": 83609,
+      "tpot_us": 9882.08875739645,
+      "e2e_us": 6763901,
+      "scheduling_delay_us": 50069,
       "completion_index": 36,
       "prompt_tokens": 169,
+      "computed_tokens": 169,
       "output_tokens": 677,
       "instance": "instance_0"
     },
@@ -1562,12 +1644,13 @@
       "id": "request_39",
       "fate": "completed",
       "arrival_us": 5000000,
-      "ttft_us": 88528,
-      "tpot_us": 11188.65306122449,
-      "e2e_us": 1733260,
-      "scheduling_delay_us": 43115,
+      "ttft_us": 97996,
+      "tpot_us": 12660.931972789116,
+      "e2e_us": 1959153,
+      "scheduling_delay_us": 49434,
       "completion_index": 15,
       "prompt_tokens": 792,
+      "computed_tokens": 792,
       "output_tokens": 148,
       "instance": "instance_0"
     }
@@ -1575,47 +1658,51 @@
   "reports": {
     "engine": {
       "cluster": {
+        "busy_share": 0.9933862166668289,
         "cache_hit_rate": 0,
         "cache_hit_rate_whole_run": 0,
         "cpu_tier_hit_rate": 0,
+        "decode_busy_share": 0.9058589272568975,
         "engine_admissions": 40,
         "gateway_queue_delay_mean_ms": 0,
         "gateway_queue_delay_p90_ms": 0,
         "in_flight_requests_max": 35,
-        "in_flight_requests_mean": 18.106310121241965,
+        "in_flight_requests_mean": 18.759417579470774,
         "kv_allocation_failures": 0,
-        "kv_capacity_tokens_per_replica": 4665488,
+        "kv_capacity_tokens_per_replica": 4307920,
         "kv_thrashing_rate": 0,
         "measured_cancelled_requests": 0,
         "measured_context_overflow_requests": 0,
         "measured_failed_requests": 0,
+        "mfu": 0.008301308444278207,
         "preemption_rate": 0,
         "preemptions": 0,
-        "scheduling_delay_p99_ms": 49.69641,
-        "simulated_duration_s": 11.399472,
-        "step_interval_mean_ms": 9.826448317657325,
-        "step_interval_p50_ms": 9.731,
-        "step_interval_p90_ms": 12.08,
-        "step_interval_p95_ms": 12.084,
-        "step_interval_p99_ms": 29.89,
+        "prefill_busy_share": 0.08752728940993118,
+        "scheduling_delay_p99_ms": 51.54642,
+        "simulated_duration_s": 12.312162,
+        "step_interval_mean_ms": 11.006327062930282,
+        "step_interval_p50_ms": 10.703,
+        "step_interval_p90_ms": 13.193,
+        "step_interval_p95_ms": 13.197,
+        "step_interval_p99_ms": 31.835,
         "step_interval_percentile_method": "numpy_linear",
         "total_input_tokens": 19981,
         "total_output_tokens": 20666,
         "whole_run": {
-          "e2e_mean_ms": 5146.248875,
-          "e2e_p90_ms": 7702.1104000000005,
-          "e2e_p95_ms": 7951.6870499999995,
-          "e2e_p99_ms": 8233.06014,
-          "responses_per_sec": 3.5089344488937737,
-          "step_interval_mean_ms": 9.826448317657325,
-          "step_interval_p90_ms": 12.08,
-          "step_interval_p95_ms": 12.084,
-          "step_interval_p99_ms": 29.89,
-          "tokens_per_sec": 1812.8909830209682,
-          "ttft_mean_ms": 78.4638,
-          "ttft_p90_ms": 88.07490000000001,
-          "ttft_p95_ms": 88.5309,
-          "ttft_p99_ms": 89.65411
+          "e2e_mean_ms": 5758.685,
+          "e2e_p90_ms": 8608.9343,
+          "e2e_p95_ms": 8842.864249999999,
+          "e2e_p99_ms": 9199.186679999999,
+          "responses_per_sec": 3.2488201503521474,
+          "step_interval_mean_ms": 11.006327062930282,
+          "step_interval_p90_ms": 13.193,
+          "step_interval_p95_ms": 13.197,
+          "step_interval_p99_ms": 31.835,
+          "tokens_per_sec": 1678.502930679437,
+          "ttft_mean_ms": 82.49544999999999,
+          "ttft_p90_ms": 93.602,
+          "ttft_p95_ms": 94.75874999999999,
+          "ttft_p99_ms": 97.06506999999999
         }
       },
       "colocated": {
@@ -1643,6 +1730,7 @@
         "MetricFlags": null,
         "MetricsSources": null,
         "PrefixIndexes": null,
+        "SessionIdentities": null,
         "Topology": {
           "Extractors": null,
           "Requested": false
@@ -1664,10 +1752,28 @@
           {
             "KernelMatch": "",
             "Method": "assumed",
+            "Name": "moe_routing",
+            "Primitive": "",
+            "Running": "",
+            "Scope": ": the experts class vLLM resolves for mxfp4 routed experts (moe_backend \"\") is not resolved here, so no selection launch is counted",
+            "Set": "blis-latency-kernel"
+          },
+          {
+            "KernelMatch": "",
+            "Method": "assumed",
+            "Name": "nontorch_in_budget_bytes_2rank",
+            "Primitive": "",
+            "Running": "",
+            "Scope": "0: no fit-unit group measures the non-torch memory vLLM grows inside the KV budget for this model and part (non_kv_cache_memory, gpu_worker.py:720-756@v0.33.0), so none is charged and the KV budget is overstated by it",
+            "Set": "blis-latency-kernel"
+          },
+          {
+            "KernelMatch": "",
+            "Method": "assumed",
             "Name": "engine_version",
             "Primitive": "",
             "Running": "",
-            "Scope": "0.31.0: the scenario declares vLLM 0.32.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
+            "Scope": "0.31.0: the scenario declares vLLM 0.33.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
             "Set": "blis-latency-kernel"
           }
         ],
@@ -2027,7 +2133,7 @@
           }
         ],
         "method_counts": {
-          "assumed": 41,
+          "assumed": 43,
           "measured": 105,
           "not_charged": 1,
           "vendor_spec": 14
@@ -2038,7 +2144,7 @@
         },
         "skipped_rule_findings": [
           {
-            "message": "pools[0].engine.quantization: \"nvfp4\" is not an in-tree method of engine 0.32.0; if it is an out-of-tree method this is expected, otherwise check the spelling. In-tree methods are [auto_awq auto_gptq awq awq_marlin compressed-tensors deepseek_v4_fp8 experts_int8 fbgemm_fp8 fp8 fp8_per_block fp8_per_channel fp8_per_tensor fp_quant gpt_oss_mxfp4 gptq gptq_marlin humming inc int8_per_channel_weight_only modelopt modelopt_fp4 modelopt_mixed modelopt_mxfp8 moe_wna16 mxfp4 mxfp8 nvfp4_per_token online quark torchao]",
+            "message": "pools[0].engine.quantization: \"nvfp4\" is not an in-tree method of engine 0.33.0; if it is an out-of-tree method this is expected, otherwise check the spelling. In-tree methods are [auto_awq auto_gptq awq awq_marlin compressed-tensors deepseek_v4_fp8 experts_int8 fbgemm_fp8 fp8 fp8_per_block fp8_per_channel fp8_per_tensor fp_quant gpt_oss_mxfp4 gptq gptq_marlin humming inc int8_per_channel_weight_only modelopt modelopt_fp4 modelopt_mixed modelopt_mxfp8 moe_wna16 mxfp4 mxfp8 nvfp4_per_token online quark torchao]",
             "rule": "quantization-known",
             "severity": "warning"
           }
@@ -2074,10 +2180,11 @@
           "moonep-requirements",
           "offload-spec-known",
           "quantization-known",
+          "qwen4-exp-qsa-backend",
           "sequence-parallel-architecture-known",
           "sequence-parallel-moe-implied"
         ],
-        "total": 161
+        "total": 163
       }
     }
   },

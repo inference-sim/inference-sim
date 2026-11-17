@@ -72,22 +72,6 @@ func emitRunResult(p postRun) {
 	cs := p.cs
 	aggregated := cs.AggregatedMetrics()
 
-	// Saturation: the detectors stream over the completed requests and write their report
-	// (--saturation-report) as before; the final label goes into the document.
-	var satFinal map[string]string
-	if p.satTracer != nil {
-		final, err := p.satTracer.run(aggregated.CompletedRequestMetrics())
-		if err != nil {
-			logrus.Fatalf("Saturation: %v", err)
-		}
-		if len(final) > 0 {
-			satFinal = make(map[string]string, len(final))
-			for k, v := range final {
-				satFinal[k] = v.String()
-			}
-		}
-	}
-
 	raw := cluster.CollectRawMetrics(aggregated, cs.PerInstanceMetrics(), cs.RejectedRequests(), scheduler,
 		cs.RoutingRejections(), cs.InjectedByClass())
 	pdMetrics := cs.PDMetrics()
@@ -109,7 +93,34 @@ func emitRunResult(p postRun) {
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
+	files, err := resultFiles(docs.Deployment)
+	if err != nil {
+		logrus.Fatalf("%v", err)
+	}
 	sum := aggregated.Summary()
+	// Saturation (DEV-10): the steady-state detector classifies the measured window, or the
+	// whole run when it has none.
+	var satFinal map[string]any
+	if p.satTracer != nil {
+		start, end := sum.WindowStartUs, sum.WindowEndUs
+		if sum.MeasuredWindowS <= 0 {
+			start, end = 0, cs.Clock()
+		}
+		jobs := saturationJobs(cs, aggregated, cs.Clock())
+		// The load is applied until the last arrival; the drain after it is not steady state.
+		var lastArrival int64
+		for _, j := range jobs {
+			lastArrival = max(lastArrival, j.ArrivalUs)
+		}
+		if lastArrival > start {
+			end = min(end, lastArrival)
+		}
+		v, err := p.satTracer.run(jobs, start, end)
+		if err != nil {
+			logrus.Fatalf("Saturation: %v", err)
+		}
+		satFinal = map[string]any{"final": map[string]any{settleDetector: string(v.State)}, "detail": toGeneric(v)}
+	}
 	routerReq := p.gateway.Requirements()
 	artifacts, err := resultArtifacts(p.artifacts)
 	if err != nil {
@@ -122,6 +133,7 @@ func emitRunResult(p postRun) {
 		Packaging:      resultPackaging(kernelOpened),
 		Policy:         policy,
 		Options:        resultInputOptions,
+		Files:          files,
 		Generator:      result.Generator{Workload: p.run.Binding, Load: p.run.Load, Seed: p.frame.Seed},
 		NumRequests:    p.run.NumRequests,
 		Overrides:      runOverrides(p.extraOverrides...),
@@ -134,11 +146,15 @@ func emitRunResult(p postRun) {
 		Revisions:      resultRevisions(),
 		Data:           resultData(data),
 	}
+	eng := engineSection(aggregated, sum, raw, series, prefixCacheRecords, acceptanceRecord, instanceSections(cs, sum), p.agentic)
+	addBusy(eng, cs, docs.Deployment, sum)
 	out := resultMetrics{
 		Aggregated:      aggregated,
 		Ledger:          resultLedger(cs),
 		PD:              pdMetrics,
-		Engine:          engineSection(aggregated, sum, raw, series, prefixCacheRecords, acceptanceRecord, instanceSections(cs), p.agentic),
+		TierLinks:       cs.TierLinkPeakConcurrent(),
+		Peer:            cs.PeerStats(),
+		Engine:          eng,
 		Router:          routerSection(routerReq, raw.ShedByTier, raw),
 		Kernel:          kernelSection(kernelProvenance(kernelOpened, kernelPDOpened)),
 		InjectedByClass: cs.InjectedByClass(),

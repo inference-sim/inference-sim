@@ -3,8 +3,10 @@ package cmd
 // run --from-result and replay --from-result (#2054, SIM-10, DEV-7): reproduce a Result from
 // the input it embeds. The Result records its scenario, its deployment, its policy bundle and
 // every command-line option that set the run (input.options), so the command rebuilds the
-// invocation from the document. The files the options name are not in the document, only their
-// sha256: the caller supplies each again and it is checked against the digest. The new Result
+// invocation from the document. It holds the small files the run read whole (input.files): the
+// router's and the configuration files the options name, so none is passed again. A trace or a
+// corpus is bulk data, held by sha256 only: the caller supplies it again and it is checked
+// against the digest, as is any held file the caller chooses to pass. The new Result
 // names the one it reproduces (rerun_of) and each component whose revision differs
 // (revision_changes), and is otherwise the same document outside runtime (SIM-10).
 
@@ -95,16 +97,28 @@ func applyFromResult(command string, cmd *cobra.Command) func() {
 	}
 	if r := doc.Input.Deployment.Router; r != nil {
 		files := append(append([]string{}, r.Manifests...), r.EndpointPickerConfig)
+		for _, f := range r.EPPFlags {
+			if p, ok := strings.CutPrefix(f, "--config-file="); ok {
+				files = append(files, p)
+			}
+		}
 		for _, f := range files {
-			if f == "" {
+			if f == "" || filepath.IsAbs(f) {
 				continue
 			}
-			if srcDir == "" {
-				logrus.Fatalf("--from-result: the deployment's router names %s; pass --scenarios, the directory it is read from", f)
-			}
-			data, err := os.ReadFile(filepath.Join(srcDir, f))
-			if err != nil {
-				logrus.Fatalf("--from-result: router file %s: %v", f, err)
+			// The Result holds the file it was produced with (input.files); an older Result
+			// that holds none reads it from the caller's --scenarios.
+			var data []byte
+			if held, ok := heldFile(&doc, f); ok {
+				data = []byte(held.Content)
+			} else {
+				if srcDir == "" {
+					logrus.Fatalf("--from-result: the deployment's router names %s, which the Result does not hold; pass --scenarios, the directory it is read from", f)
+				}
+				var err error
+				if data, err = os.ReadFile(filepath.Join(srcDir, f)); err != nil {
+					logrus.Fatalf("--from-result: router file %s: %v", f, err)
+				}
 			}
 			if err := os.MkdirAll(filepath.Dir(filepath.Join(tmp, f)), 0o755); err != nil {
 				logrus.Fatalf("--from-result: %v", err)
@@ -131,12 +145,24 @@ func applyFromResult(command string, cmd *cobra.Command) func() {
 	// supplied it again. A file option is checked by digest.
 	for _, o := range doc.Input.Options {
 		f := cmd.Flags().Lookup(o.Name)
+		if _, removed := removedFlags[o.Name]; removed && f == nil {
+			logrus.Fatalf("--from-result: the Result records the option --%s: %v", o.Name, removedFlagError(o.Name))
+		}
 		if f == nil {
 			logrus.Fatalf("--from-result: the Result records the option --%s, which `blis %s` of this build does not have", o.Name, command)
 		}
 		if optionFileFlags[o.Name] {
 			if !cmd.Flags().Changed(o.Name) {
-				logrus.Fatalf("--from-result: the Result was produced with --%s (%s); pass the file again", o.Name, o.Value)
+				held, ok := heldFile(&doc, o.Name)
+				if !ok || "sha256:"+held.SHA256 != o.Value {
+					logrus.Fatalf("--from-result: the Result was produced with --%s (%s) and does not hold the file; pass the file again", o.Name, o.Value)
+				}
+				p := filepath.Join(tmp, "option-"+o.Name)
+				if err := os.WriteFile(p, []byte(held.Content), 0o644); err != nil {
+					logrus.Fatalf("--from-result: %v", err)
+				}
+				setFlag(cmd, o.Name, p)
+				continue
 			}
 			d, err := fileDigest(f.Value.String())
 			if err != nil || "sha256:"+d != o.Value {

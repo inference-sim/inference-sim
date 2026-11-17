@@ -1271,7 +1271,7 @@ func TestGenerateWorkload_OpenLoopMultiTurnFollowUpsAreBudgeted(t *testing.T) {
 			OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 64}},
 			Reasoning: &ReasoningSpec{ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
 				MultiTurn: &MultiTurnSpec{MaxRounds: 4, ThinkTimeUs: 1_000_000, ContextGrowth: "accumulate"}}}}}
-	wl, err := GenerateWorkload(spec, 3_600_000_000, spec.NumRequests)
+	wl, err := generateWorkload(spec, 3_600_000_000, spec.NumRequests)
 	if err != nil {
 		t.Fatal(err)
 	}

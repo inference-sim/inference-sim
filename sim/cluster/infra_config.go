@@ -35,7 +35,7 @@ func (d DelaySpec) Sample(rng *rand.Rand) int64 {
 	if d.Stddev <= 0 {
 		secs = d.Mean
 	} else {
-		secs = rng.NormFloat64()*d.Stddev + d.Mean
+		secs = float64(rng.NormFloat64()*d.Stddev) + d.Mean
 		if secs < 0 {
 			secs = 0
 		}
@@ -153,6 +153,12 @@ type InstanceLifecycleConfig struct {
 	// always use LoadingDelay regardless of this flag. Set true when modeling a
 	// pre-deployed cluster where the initial replicas are already serving.
 	WarmStartInitialInstances bool `yaml:"warm_start_initial_instances"`
+
+	// WeightSource, when set, names the catalog storage tier an instance's weights are read
+	// from (#1215). An instance's loading time is then LoadingDelay (the part that does not
+	// depend on its weights) plus the time to read its resident weights from the tier, priced
+	// by DeploymentConfig.WeightLoadTime for the instance's chip.
+	WeightSource string `yaml:"weight_source"`
 }
 
 // IsValid validates all fields in the InstanceLifecycleConfig.

@@ -448,7 +448,7 @@ def post_chat_completion(base_url, api_key, model, messages, tools=None, validat
 
     if unusable is not None:
         # The last attempt was answered, but not usably. Name that, with the request
-        # size (#1895: on blis-schemas#100 three empty replies in a row tracked an
+        # size (#1895: on https://github.com/inference-sim/blis-schemas/issues/100 three empty replies in a row tracked an
         # unusually large input), instead of re-raising a parse error that reads as
         # a crash with no cause.
         failure = UnparseableReply(made, len(data), str(unusable))

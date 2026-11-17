@@ -87,7 +87,7 @@ type EngineDriverConfig struct {
 // chunks is about 20,000 steps).
 const DefaultStallSteps = 1_000_000
 
-// EngineDriver drives one engine.Engine from the host's event loop. It is the 0.32.0 engine's
+// EngineDriver drives one engine.Engine from the host's event loop. It is the 0.33.0 engine's
 // counterpart of Simulator: the same events reach it (arrivals, steps, timeouts), and it records
 // the same report, but every engine decision is the engine's, through the contract only.
 type EngineDriver struct {
@@ -122,6 +122,12 @@ type EngineDriver struct {
 	// direction: vLLM's CPU offload worker runs stores and loads on separate handlers, each
 	// chaining its own transfers (startTierTransfer).
 	tierFreeAt map[engine.TransferKind]int64
+	// tierQueue, tierRunning and tierOf serve a host that shares link capacity among tier copies
+	// (OnTierPriced): the copies waiting for their kind's stream, the copy each stream runs, and the
+	// kind of each copy in flight.
+	tierQueue   map[engine.TransferKind][]queuedTier
+	tierRunning map[engine.TransferKind]bool
+	tierOf      map[engine.TransferID]engine.TransferKind
 	// recentStages are the last pipelined runner steps, newest last, at most one per stage: each
 	// one's sampling requests, the requests its schedule freed and when it leaves the last stage
 	// (timeBatch's T-pp dependency). Through an engine that counts its runner steps (RunnerSteps)
@@ -154,6 +160,10 @@ type EngineDriver struct {
 	// OnRequestDone and OnFirstToken are the cluster's callbacks, as on Simulator.
 	OnRequestDone func(req *Request, tick int64) []*Request
 	OnFirstToken  func(req *Request, at int64)
+	// OnRunState tells the cluster each time the engine starts running a request (running true)
+	// or preempts it back to its queue (running false), the transitions of SIM-8's machine that
+	// only the engine sees. Nil for a driver used without a cluster.
+	OnRunState func(req *Request, running bool)
 
 	stepIdx int
 	// preEventClock is the clock before the event running now (a group's dummy-only step restores
@@ -172,6 +182,19 @@ type EngineDriver struct {
 	pulls        map[string]engine.TransferID
 	holds        map[string]engine.Handoff
 	OnPullPriced func(req *Request, pulledTokens, blocks int64, demand kernel.TransferDemand, at int64)
+	// OnTierPriced, when set, receives an offload-tier copy at the instant it starts moving, with
+	// its demand on the fabric: the host shares link capacity among the copies and the pulls in
+	// flight, and reports the copy landed (TierLanded). Copies of one kind still move one after
+	// another, as the engine's stream does. Unset, a copy takes its demand alone (TierTicks).
+	OnTierPriced func(id engine.TransferID, demand kernel.TransferDemand, at int64)
+	// OnPeerWritePriced, when set, receives an engine's WRITE to a peer at the instant it starts,
+	// with its demand: the host shares link capacity with it and reports it landed
+	// (PeerWriteLanded). Unset, a WRITE takes its demand alone (TierTicks).
+	OnPeerWritePriced func(id engine.TransferID, demand kernel.TransferDemand, at int64)
+	// peerRouter carries the engine's peer messages (engine.Peered); peerWrites are the WRITEs in
+	// flight through OnPeerWritePriced.
+	peerRouter PeerRouter
+	peerWrites map[engine.TransferID]bool
 
 	// stalledSteps counts the steps since one last emitted a token or finished a request, and
 	// stallErr is the watchdog's error once the count passes the limit (SIM-7).
@@ -302,6 +325,7 @@ func (d *EngineDriver) ProcessNextEvent() Event {
 	d.preEventClock = d.Clock
 	d.Clock = shim.Timestamp()
 	shim.ev.run(d)
+	d.drainPeer(d.Clock)
 	return entry.event
 }
 
@@ -501,6 +525,10 @@ func (e *driverQueuedEvent) run(d *EngineDriver) {
 	d.stepAfterArrivals(e.at)
 }
 
+// KVTransferParamsTag is the engine.Request tag that carries a request's kv_transfer_params
+// (blis-vllm core/vllm TagKVTransferParams).
+const KVTransferParamsTag = "kv_transfer_params"
+
 // engineRequest is req as the engine is told it.
 func (d *EngineDriver) engineRequest(req *Request) engine.Request {
 	er := engine.Request{
@@ -514,6 +542,13 @@ func (d *EngineDriver) engineRequest(req *Request) engine.Request {
 	if req.SLOClass != "" {
 		// The request's SLO class, an opaque fact for an engine whose priority policy reads it.
 		er.Tags = map[string]string{"slo_class": req.SLOClass}
+	}
+	if req.KVTransferParams != "" {
+		// The request's kv_transfer_params, as the P/D gateway sets them for a p2p handoff.
+		if er.Tags == nil {
+			er.Tags = map[string]string{}
+		}
+		er.Tags[KVTransferParamsTag] = req.KVTransferParams
 	}
 	return er
 }
@@ -590,7 +625,7 @@ func (d *EngineDriver) outcome(b engine.Batch) engine.Outcome {
 		if r == nil || s.Drafts <= 0 {
 			continue
 		}
-		r.acceptCarry += d.cfg.Acceptance * float64(s.Drafts)
+		r.acceptCarry += float64(d.cfg.Acceptance * float64(s.Drafts))
 		n := min(int(r.acceptCarry), s.Drafts)
 		r.acceptCarry -= float64(n)
 		if n > 0 {
@@ -677,6 +712,7 @@ func (d *EngineDriver) kick(now int64) {
 			break
 		}
 		start, end := d.timeBatch(b, now)
+		d.Metrics.Busy.Record(d.eng, b, start, end)
 		// The worker submits a step's offload copies after its forward pass, and each copy's
 		// stream waits on the compute stream (startTierTransfer): they start when the step ends.
 		d.startTransfersAfter(b.TransfersStarted, now, end)
@@ -891,6 +927,9 @@ func (d *EngineDriver) admit(b engine.Batch, now, start int64) {
 				r.lastEnd = start
 			}
 			r.req.State = StateRunning
+			if d.OnRunState != nil {
+				d.OnRunState(r.req, true)
+			}
 			r.scheduledIdx = d.stepIdx
 			d.Metrics.RequestSchedulingDelays[s.ID] = now - r.req.ArrivalTime
 			if s.PrefixLookup && !r.lookedUp {
@@ -918,6 +957,9 @@ func (d *EngineDriver) notePreempted(b engine.Batch) {
 		d.Metrics.PreemptionCount++
 		if r := d.reqs[id]; r != nil {
 			r.req.State = StateQueued
+			if d.OnRunState != nil {
+				d.OnRunState(r.req, false)
+			}
 			r.resumed = r.emitted > 0
 		}
 	}
@@ -949,7 +991,9 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 	if d.kvEventSink != nil && len(res.KVEvents) > 0 {
 		events := make([]KVEvent, len(res.KVEvents))
 		for i, e := range res.KVEvents {
-			events[i] = KVEvent{Removed: e.Removed, Hash: e.Hash, Parent: e.Parent, Tokens: tokenIDs(e.Tokens), Tier: e.Tier}
+			events[i] = KVEvent{Removed: e.Removed, Hash: e.Hash, Parent: e.Parent, Tokens: tokenIDs(e.Tokens), Tier: e.Tier,
+				Cleared: e.Cleared, LoRAID: e.LoRAID, LoRAName: e.LoRAName, ExtraKeys: e.ExtraKeys,
+				CacheSalt: e.CacheSalt, GroupIdx: e.GroupIdx, SpecKind: e.SpecKind, SlidingWindow: e.SlidingWindow}
 		}
 		d.kvEventSink(end, events)
 	}
@@ -1209,6 +1253,7 @@ func (d *EngineDriver) done(req *Request, at int64) {
 // gateway-evicted request does on the compatibility path (counted by the cluster). It reports
 // whether the instance held req.
 func (d *EngineDriver) Evict(req *Request, now int64) bool {
+	defer d.drainPeer(now)
 	r := d.reqs[req.ID]
 	if r == nil || req.State == StateCompleted || req.State == StateTimedOut {
 		return false
@@ -1260,8 +1305,16 @@ func (d *EngineDriver) SetKVEventSink(sink func(at int64, events []KVEvent)) err
 	return nil
 }
 
+// KVEventsCarryIdentity reports whether the engine's stored-block events name the adapter and the
+// extra keys that keyed each block's hash (a KVEventsCarryIdentity method on the engine). An engine
+// that does not say publishes events a router cannot tell an adapter's blocks apart by.
+func (d *EngineDriver) KVEventsCarryIdentity() bool {
+	q, ok := d.eng.(interface{ KVEventsCarryIdentity() bool })
+	return ok && q.KVEventsCarryIdentity()
+}
+
 // KVEventsRefusal is why a router cannot index the engine's KV events, for an engine that says
-// (a KVEventsRefusal method, blis-vllm's v0.32.0 engine for a full-attention group at a block size
+// (a KVEventsRefusal method, blis-vllm's v0.33.0 engine for a full-attention group at a block size
 // other than its hash block size); nil otherwise.
 func (d *EngineDriver) KVEventsRefusal() error {
 	if q, ok := d.eng.(interface{ KVEventsRefusal() error }); ok {

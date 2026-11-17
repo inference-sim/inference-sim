@@ -126,7 +126,7 @@ func TestScenarioVariantStatesTheRouterBlock(t *testing.T) {
 // places dp replicas from the scenario) and no engine setting (the scenario states them).
 func TestTheCommandLineIsAUsersBlisReplay(t *testing.T) {
 	cfg := Config{Repos: testRepos(), Catalog: "/c", Registry: "/r", Seed: 7}
-	args := blisArgs(cfg, "s.yaml", "/d", "/d/t.yaml", "/d/t.csv", 40, 4)
+	args := blisArgs(cfg, "s.yaml", "/d", "/d/t.yaml", "/d/t.csv", 40, 4, false)
 	if args[0] != "replay" {
 		t.Fatalf("first argument %q, want replay", args[0])
 	}
@@ -207,5 +207,15 @@ func TestSummarizeIsTheClientsMetricOverTheMainPhase(t *testing.T) {
 		if _, err := summarize(bad, pl, nil); err == nil {
 			t.Errorf("summarize accepted %s", name)
 		}
+	}
+}
+
+// A phased trace replays with --session-mode fixed and no pool flags: the replay refuses pooled phases.
+func TestAPhasedReplayIsNotPooled(t *testing.T) {
+	cfg := Config{Repos: testRepos(), Catalog: "/c", Registry: "/r", Seed: 7}
+	line := strings.Join(blisArgs(cfg, "s.yaml", "/d", "/d/t.yaml", "/d/t.csv", 40, 4, true), " ")
+	if !strings.Contains(line, "--session-mode fixed") || strings.Contains(line, "--concurrent-sessions") ||
+		strings.Contains(line, "--total-sessions") {
+		t.Errorf("a phased replay is %q", line)
 	}
 }
