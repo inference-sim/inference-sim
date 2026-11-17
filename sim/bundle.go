@@ -85,6 +85,9 @@ type AutoscalerBundleConfig struct {
 	Analyzer                       AnalyzerBundleConfig `yaml:"analyzer"`
 	// ScaleToZeroIdleUs drains all of a model's replicas after that long without a request (#909); 0 = never.
 	ScaleToZeroIdleUs float64 `yaml:"scale_to_zero_idle_us"`
+	// ScaleFromZeroHoldUs: a request for a model with no replica starts one and waits up to this long (#908); 0 = reject.
+	ScaleFromZeroHoldUs float64 `yaml:"scale_from_zero_hold_us"`
+	ScaleFromZeroPollUs float64 `yaml:"scale_from_zero_poll_us"`
 }
 
 // removedBundleKeys are the top-level keys a bundle no longer takes, each with what states its

@@ -392,7 +392,9 @@ instance_lifecycle:
 
 ### Scale to zero
 
-`autoscaler.scale_to_zero_idle_us` (default 0 = never) drains all of a model's replicas once the model has had no request for that long and nothing is in flight, using the configured `drain_policy`. The node a model leaves empty is flagged as idle (`ClusterSimulator.IdleNodes`) and the cluster autoscaler's `bin-pack` scale-down may remove it. The scaling tick keeps running past the end of the workload until the idle models are drained. A request for a model with no replica is not served: bringing a model back from zero is scale-from-zero (#908).
+`autoscaler.scale_to_zero_idle_us` (default 0 = never) drains all of a model's replicas once the model has had no request for that long and nothing is in flight, using the configured `drain_policy`. The node a model leaves empty is flagged as idle (`ClusterSimulator.IdleNodes`) and the cluster autoscaler's `bin-pack` scale-down may remove it. The scaling tick keeps running past the end of the workload until the idle models are drained.
+
+`autoscaler.scale_from_zero_hold_us` (default 0 = reject) brings a model back: a request for a model with no replica starts one of the variant the model last ran (through the actuator, so a full pool queues the placement for the cluster autoscaler) and is held at the cluster, polling every `scale_from_zero_poll_us` (default 100 ms), for up to the hold. Its wait counts in its latency. A model that never had a replica has no variant to start, and its request is not held. A held request after the hold goes to the gateway, which rejects it if nothing serves.
 
 !!! note "Node pools and instance lifecycle are YAML-only"
     `node_pools` and `instance_lifecycle` have no corresponding CLI flags. They must be set via `--policy-config`. Omitting them is safe — the simulator falls back to single-pool, no-lifecycle mode for full backward compatibility.
