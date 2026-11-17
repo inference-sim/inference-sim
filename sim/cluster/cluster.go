@@ -1902,7 +1902,7 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 		merged.MeasuredFailures += m.MeasuredFailures
 		merged.StillQueued += m.StillQueued
 		merged.StillRunning += m.StillRunning
-		if kv := inst.TotalKvCapacityTokens(); kv > 0 &&
+		if kv := inst.ReportedKVCapacityTokens(); kv > 0 &&
 			(merged.KVCapacityTokensPerReplica == 0 || kv < merged.KVCapacityTokensPerReplica) {
 			merged.KVCapacityTokensPerReplica = kv
 		}

@@ -105,8 +105,10 @@ type Metrics struct {
 	// yet completed, summed over instances) as a step function: each sample holds from its
 	// time until the next. Set by the cluster on the aggregate; empty per instance.
 	InFlightSamples []InFlightSample
-	// KVCapacityTokensPerReplica is the smallest instance's GPU KV pool in tokens. Set by
-	// the cluster on the aggregate.
+	// KVCapacityTokensPerReplica is the smallest instance's GPU KV cache size in tokens, in the
+	// engine's own definition when it reports one (vLLM's start-up figure: the pool's requests at
+	// max_model_len times max_model_len, not blocks x block size; inference-sim#1969). Set by the
+	// cluster on the aggregate.
 	KVCapacityTokensPerReplica int64
 
 	// completions counts completions on this instance, so each completed request's
