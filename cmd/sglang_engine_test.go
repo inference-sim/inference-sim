@@ -63,11 +63,17 @@ func TestSGLangScenarioRunsEndToEnd(t *testing.T) {
 // blis run adopts an SGLang scenario: the Result names the sglang engine, every request completes,
 // and a scenario that omits context_length (the catalog graph carries none) is refused by name.
 func TestRunCmd_ASGLangScenarioRuns(t *testing.T) {
+	for _, name := range []string{"glm-5-h200-fp8-sglang-tp8.yaml", "deepseek-r1-h200-fp8-sglang-tp8.yaml"} {
+		t.Run(name, func(t *testing.T) { runSGLangScenario(t, name) })
+	}
+}
+
+func runSGLangScenario(t *testing.T, name string) {
 	dir, err := filepath.Abs(filepath.Join("..", "testdata", "kernel", "sglang"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	stdout, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "glm-5-h200-fp8-sglang-tp8.yaml",
+	stdout, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", name,
 		"--rate", "4", "--num-requests", "4", "--seed", "1")
 	if err != nil {
 		t.Fatalf("an SGLang scenario must run: %v\n%s", err, lastLines(stderr, 5))
