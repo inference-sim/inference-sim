@@ -141,5 +141,17 @@ func (c Cluster) Validate() *validate.Problems {
 		}
 		seen[dev] = true
 	}
+	// A pool is named once: a bundle's node pool refers to it by name, so a blank or
+	// repeated name would leave that reference ambiguous.
+	pools := map[string]bool{}
+	for i, pool := range c.Pools {
+		at := fmt.Sprintf("pools[%d]", i)
+		if pool.Name == "" {
+			p.Field(at+".name", "names a node pool and must not be empty")
+		} else if pools[pool.Name] {
+			p.Field(at+".name", "duplicate node pool %q", pool.Name)
+		}
+		pools[pool.Name] = true
+	}
 	return p
 }

@@ -238,6 +238,7 @@ var documented = map[string]struct {
 	"scenario.Cluster":   {typ: reflect.TypeOf(scenario.Cluster{})},
 	"scenario.Packaging": {typ: reflect.TypeOf(scenario.Packaging{})},
 	"scenario.Engine":    {typ: reflect.TypeOf(scenario.Engine{})},
+	"scenario.Pool":      {typ: reflect.TypeOf(scenario.Pool{})},
 	"workload.Binding":   {typ: reflect.TypeOf(workload.Binding{})},
 	"workload.TraceRef":  {typ: reflect.TypeOf(workload.TraceRef{})},
 	"workload.Replay": {typ: reflect.TypeOf(workload.Replay{}),

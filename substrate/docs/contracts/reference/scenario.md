@@ -48,7 +48,17 @@ them.</p>
 | `gpus_per_rack` | integer | no | GPUs per rack, an NVLink domain that spans nodes. Only a chip's entry states a rack: omit it or state the entry's `GPUsPerRack`. See [Packaging](#packaging). |
 | `switch_groups` | list of lists of integers | no | A partition of the nodes `0` to `nodes - 1` into the groups that sit under one leaf switch, each group a list of node numbers. Needs `uplink_oversubscription`. See [Switch groups](../../kernel/concepts/switch-groups.md). |
 | `uplink_oversubscription` | number | with `switch_groups` | The ratio r of a group's aggregate NIC rate to its uplink's rate, at least 1. Refused without `switch_groups`. |
+| `pools` | list of mappings | no | The cluster's node pools and the chip each carries, for a cluster of more than one chip. An instance is priced and sized by the chip of the pool it is placed in. `hardware` stays the default for a pool that states none. See the table below. |
 | `storage` | list of strings | no | Storage classes from the catalog's `devices/storage.yaml` that the cluster provides. If any are listed, a deployment's offload tiers must use them. |
+
+Each entry of `pools` is a node pool of the cluster:
+
+<!-- fields: scenario.Pool -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `name` | string | yes | The pool's name, listed once. A bundle's node pool of the same name sits in it. |
+| `hardware` | string | no | A chip under `hardware/` in the catalog that every node of the pool carries. Omitted, the pool carries `cluster.hardware`. |
 
 ### Packaging
 
@@ -90,6 +100,7 @@ A scenario is invalid if
   is stated for a one-node cluster; `uplink_oversubscription` is missing with groups, not a finite
   number, not positive, below 1, or stated without groups (each refused under its own rule name);
 - a `storage` entry is empty or appears twice;
+- a `pools` entry has an empty name or repeats another's;
 - `workload` is present and is not a valid [binding](workload.md#binding).
 - `acceptance` is present and is not a valid [pin](acceptance.md#scenario-pin).
 
