@@ -5,4 +5,4 @@ package latencykernel
 // Resident weights and the rates their GEMMs run at, checked as relations between
 // deployments and graphs rather than as figures.
 
-const gib = 1 << 30
+const vllmGiB = 1 << 30

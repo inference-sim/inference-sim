@@ -54,8 +54,8 @@ func dep8(t *testing.T, backend, mode string, mnbt int, entries map[string]float
 	return build(t, in)
 }
 
-// moeLayers counts the MoE layers a step runs, the drafter's included while it speculates.
-func moeLayers(k *Kernel) int {
+// vllmMoeLayers counts the MoE layers a step runs, the drafter's included while it speculates.
+func vllmMoeLayers(k *Kernel) int {
 	n := 0
 	layers := k.plan.Layers
 	if d := k.plan.Draft; d != nil && k.speculating {
@@ -85,11 +85,11 @@ func TestDeepEPDispatchIsPricedFromItsOwnMeasurement(t *testing.T) {
 		priced("deepep_low_latency", 100, 1e5))
 	hi := dep8(t, "deepep_low_latency", "FULL_AND_PIECEWISE", 256,
 		priced("deepep_low_latency", 200, 1e5))
-	want := time.Duration(moeLayers(lo)) * 100 * time.Microsecond
+	want := time.Duration(vllmMoeLayers(lo)) * 100 * time.Microsecond
 	got := hi.StepTime(b).NoOverlap - lo.StepTime(b).NoOverlap
 	if d := got - want; d < -time.Microsecond || d > time.Microsecond {
 		t.Errorf("100 us more floor moved the step by %v; %d MoE layers want %v",
-			got, moeLayers(lo), want)
+			got, vllmMoeLayers(lo), want)
 	}
 }
 
@@ -208,7 +208,7 @@ func TestDeepEPLowLatencyTakesTheGraphPriceWhenTheStepIsCaptured(t *testing.T) {
 		return dep8(t, "deepep_low_latency", mode, 256, e)
 	}
 	lo, hi := with("FULL_AND_PIECEWISE", 50), with("FULL_AND_PIECEWISE", 150)
-	want := time.Duration(moeLayers(lo)) * 100 * time.Microsecond
+	want := time.Duration(vllmMoeLayers(lo)) * 100 * time.Microsecond
 	if got := hi.StepTime(b).NoOverlap - lo.StepTime(b).NoOverlap; got < want-time.Microsecond ||
 		got > want+time.Microsecond {
 		t.Errorf("100 us more graph floor moved a captured decode step by %v; want %v", got, want)
