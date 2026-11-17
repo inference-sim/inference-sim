@@ -42,7 +42,7 @@ import warnings
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "blocksize"))
 
-COMMIT = "5df63a7203cdb9328d824a27b682e77c7b9928be"
+COMMIT = "4ba787ec9959e566d3b587a796dff07673324da5"
 CATALOG = os.environ.get("BLIS_ORACLE_CATALOG", "")
 # None is a deployment that states no quantization. deepseek_v4_fp8 is the value the dashboard's
 # points state; the rest are values a user could name for the same checkpoint.

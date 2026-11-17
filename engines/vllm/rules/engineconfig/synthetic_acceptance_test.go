@@ -38,7 +38,7 @@ func loadSyntheticAcceptance(t *testing.T) syntheticAcceptanceRecord {
 	if err := json.Unmarshal(raw, &r); err != nil {
 		t.Fatal(err)
 	}
-	if r.Commit != "5df63a7203cdb9328d824a27b682e77c7b9928be" {
+	if r.Commit != "4ba787ec9959e566d3b587a796dff07673324da5" {
 		t.Fatalf("the record is for commit %s, not the pinned release", r.Commit)
 	}
 	return r

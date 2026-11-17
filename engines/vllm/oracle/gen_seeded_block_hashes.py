@@ -44,7 +44,7 @@ def main() -> None:
                         **({"extra": extra} if extra else {}),
                         "none_hash_seed": kcu._NONE_HASH_SEED, "none_hash": bytes(kcu.NONE_HASH).hex(),
                         "hashes": hashes})
-    json.dump({"vllm_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be", "cases": out}, sys.stdout, indent=1)
+    json.dump({"vllm_commit": "4ba787ec9959e566d3b587a796dff07673324da5", "cases": out}, sys.stdout, indent=1)
     sys.stdout.write("\n")
 
 

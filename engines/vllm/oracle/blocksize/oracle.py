@@ -297,7 +297,7 @@ def run(vllm_dir):
 
 def render_table(v, fact_names, rows):
     out = []
-    out.append("# Block-size resolution oracle: vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be)")
+    out.append("# Block-size resolution oracle: vLLM v0.33.0 (4ba787ec9959e566d3b587a796dff07673324da5)")
     out.append("#")
     out.append("# Runs vLLM's own CudaPlatform.get_valid_backends and _preferred_block_size_for_backends on a CPU.")
     out.append("# Facts the CPU cannot discover. Each combination is run under every setting of them; it resolves")
@@ -333,7 +333,7 @@ def render_table(v, fact_names, rows):
 
 def as_json(v, fact_names, rows):
     return json.dumps({
-        "vllm": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+        "vllm": "4ba787ec9959e566d3b587a796dff07673324da5",
         "facts": {f: v.stubs.FACT_DOC[f] for f in fact_names},
         "replacements": [{"what": a, "why": b} for a, b in v.stubs.REPLACEMENTS],
         "assumptions": {f"{cap[0]}.{cap[1]}": {f: {"value": want, "evidence": ev} for f, (want, ev) in facts.items()}

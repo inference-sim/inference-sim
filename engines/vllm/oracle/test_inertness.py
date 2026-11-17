@@ -98,11 +98,13 @@ class Controls(unittest.TestCase):
     def test_a_disposition_the_harness_does_not_check_is_refused(self):
         spec = copy.deepcopy(proof("stream_interval"))
         spec["runs"] = []
-        for rd in spec["readers"]:
-            if rd["at"] == "vllm/v1/engine/async_llm.py:174":
-                rd["disposition"] = {"kind": "gpu_replaced"}
+        # The reader is the proof's own async_llm.py read, at whatever line the pinned release has it.
+        readers = [rd for rd in spec["readers"] if rd["at"].startswith("vllm/v1/engine/async_llm.py:")]
+        self.assertEqual(len(readers), 1, [rd["at"] for rd in spec["readers"]])
+        readers[0]["disposition"] = {"kind": "gpu_replaced"}
         r = self.h.evaluate(ROOT, spec)
-        self.assertTrue([p for p in r["problems"] if "async_llm.py:174: unknown disposition 'gpu_replaced'" in p], r["problems"])
+        want = "%s: unknown disposition 'gpu_replaced'" % readers[0]["at"]
+        self.assertTrue([p for p in r["problems"] if want in p], r["problems"])
 
     def test_a_file_that_names_the_field_and_the_proof_does_not_list_fails(self):
         spec = copy.deepcopy(proof("stream_interval"))

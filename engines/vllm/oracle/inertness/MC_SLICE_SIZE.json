@@ -1,7 +1,7 @@
 {
  "field": "MC_SLICE_SIZE",
  "kind": "unread",
- "release": "v0.32.0 5df63a7203cdb9328d824a27b682e77c7b9928be",
+ "release": "v0.33.0 4ba787ec9959e566d3b587a796dff07673324da5",
  "claim": "Reviewed static fact, not a run of vLLM's code: no file of vLLM v0.32.0's serving process (vllm/, csrc/, rust/) names MC_SLICE_SIZE; the result lists the files the scan read. It is a variable of the Mooncake transfer-engine library, which vLLM loads only through a Mooncake connector. A deployment can select one in two ways, and the engine refuses both: by connector name (MooncakeConnector, MooncakeStoreConnector; the engine models NixlConnector and NixlPullConnector and the registry serves those and OffloadingConnector), and through NIXL's kv_connector_extra_config backends (the engine block's kv_transfer has no such key and is decoded with KnownFields(true)). refusal_tests are the Go tests that pin both; the day the engine accepts either, the field is classified again.",
  "argument": "reviewed_static_fact",
  "names": [
@@ -28,8 +28,8 @@
   }
  ],
  "result": {
-  "vllm_commit": "v0.32.0 5df63a7203cdb9328d824a27b682e77c7b9928be",
-  "files_scanned": 4120,
+  "vllm_commit": "v0.33.0 4ba787ec9959e566d3b587a796dff07673324da5",
+  "files_scanned": 4528,
   "occurrences": {
    "MC_SLICE_SIZE": []
   },

@@ -1,6 +1,6 @@
 {
  "field": "stream_interval",
- "release": "v0.32.0 5df63a7203cdb9328d824a27b682e77c7b9928be",
+ "release": "v0.33.0 4ba787ec9959e566d3b587a796dff07673324da5",
  "claim": "The engine (scheduler, KV cache, engine core, cost model) makes no decision from stream_interval. It sets how many new tokens the front end groups into one delivery to the client: in the Python front end the OutputProcessor (vllm/v1/engine/output_processor.py:324-340@5df63a72), in the Rust front end the per-request output channel (rust/src/engine-core-client/src/client/output_channel.rs:65-74@5df63a72), whose source says the engine core ignores the value (rust/src/engine-core-client/src/protocol/sampling.rs:166-168@5df63a72). Scope of the evidence. The read scan (readers) is of Python. The Rust front end reads the setting too (rust/src/cmd/src/cli.rs:277-278, rust/src/llm/src/lib.rs:97-102, rust/src/engine-core-client/src/client.rs:639-646 and the files named_in lists): those reads are listed by file and reviewed, and the harness does not run Rust. named_in lists every file of vllm/ and rust/ (tests excluded for rust) that names the field at all, and the check fails when the tree names it anywhere else, so no file of the engine (vllm/v1/core, vllm/v1/engine/core.py, the workers) reads it. What the runs show: the scheduler traces, the whole resolved scheduler, cache, parallel and compilation config except the field itself, and the requests the OutputProcessor hands back to the engine core to abort are identical at every probe. The delivery to the client differs (frontend_effect_differs), as it should. output_processor.py:255, the request's own interval, runs only for the one scripted request that states 4. What this does not give. The simulator's delivery stage does not read stream_interval yet (inference-sim#2035 is open). The field is inert for the engine, and is not G1-eligible until that stage reads it: a recorded point that states 20 or 32 is simulated without the grouping its client saw (inter-token latency and chunk timing).",
  "probes": [
   {
@@ -207,14 +207,14 @@
  ],
  "readers": [
   {
-   "at": "vllm/engine/arg_utils.py:2641",
+   "at": "vllm/engine/arg_utils.py:2682",
    "disposition": {
     "kind": "run",
     "run": "config"
    }
   },
   {
-   "at": "vllm/v1/engine/async_llm.py:174",
+   "at": "vllm/v1/engine/async_llm.py:183",
    "disposition": {
     "kind": "pass_through",
     "callee": "OutputProcessor",
@@ -230,7 +230,7 @@
    }
   },
   {
-   "at": "vllm/v1/engine/output_processor.py:198",
+   "at": "vllm/v1/engine/output_processor.py:245",
    "reviewed": true,
    "expr": "self.stream_interval = stream_interval",
    "disposition": {
@@ -239,7 +239,7 @@
    }
   },
   {
-   "at": "vllm/v1/engine/output_processor.py:255",
+   "at": "vllm/v1/engine/output_processor.py:302",
    "reviewed": true,
    "expr": "stream_interval = max(sampling_params.stream_interval, stream_interval)",
    "disposition": {
@@ -248,7 +248,7 @@
    }
   },
   {
-   "at": "vllm/v1/engine/output_processor.py:298",
+   "at": "vllm/v1/engine/output_processor.py:345",
    "reviewed": true,
    "expr": "stream_interval=stream_interval,",
    "disposition": {
@@ -258,7 +258,7 @@
    }
   },
   {
-   "at": "vllm/v1/engine/output_processor.py:324",
+   "at": "vllm/v1/engine/output_processor.py:379",
    "reviewed": true,
    "expr": "if self.stream_interval > 1:",
    "disposition": {
@@ -267,7 +267,7 @@
    }
   },
   {
-   "at": "vllm/v1/engine/output_processor.py:335",
+   "at": "vllm/v1/engine/output_processor.py:390",
    "reviewed": true,
    "expr": ">= self.stream_interval",
    "disposition": {
@@ -276,7 +276,7 @@
    }
   },
   {
-   "at": "vllm/v1/engine/output_processor.py:518",
+   "at": "vllm/v1/engine/output_processor.py:565",
    "reviewed": true,
    "expr": "self.stream_interval = stream_interval",
    "disposition": {
@@ -285,7 +285,7 @@
    }
   },
   {
-   "at": "vllm/v1/engine/output_processor.py:638",
+   "at": "vllm/v1/engine/output_processor.py:685",
    "reviewed": true,
    "expr": "stream_interval=self.stream_interval,",
    "disposition": {
@@ -336,7 +336,7 @@
   "compat/kernelmodel/kernelmodel.go"
  ],
  "result": {
-  "vllm_commit": "v0.32.0 5df63a7203cdb9328d824a27b682e77c7b9928be",
+  "vllm_commit": "v0.33.0 4ba787ec9959e566d3b587a796dff07673324da5",
   "problems": [],
   "named_in": {
    "rust": 18,
@@ -345,17 +345,17 @@
   "runs": {
    "sched-prefix-cache": {
     "decisions": {
-     "default (1: every token is delivered)": "2cf33fa5ced4f2fbd226d8ece878f3245e856673d0eec143b6780a951cbc8495",
-     "20 (580 InferenceX points)": "2cf33fa5ced4f2fbd226d8ece878f3245e856673d0eec143b6780a951cbc8495",
-     "32 (186 points)": "2cf33fa5ced4f2fbd226d8ece878f3245e856673d0eec143b6780a951cbc8495"
+     "default (1: every token is delivered)": "c46ce92567ca312879e23fd6925f008ce153389839eb2bdb1ec42cf4a171f7c7",
+     "20 (580 InferenceX points)": "c46ce92567ca312879e23fd6925f008ce153389839eb2bdb1ec42cf4a171f7c7",
+     "32 (186 points)": "c46ce92567ca312879e23fd6925f008ce153389839eb2bdb1ec42cf4a171f7c7"
     },
     "identical": true
    },
    "config": {
     "decisions": {
-     "default (1: every token is delivered)": "58a827a9587a61c0ce5e38eaf6f011864975d6bca6e975d67b4c2c409d835004",
-     "20 (580 InferenceX points)": "58a827a9587a61c0ce5e38eaf6f011864975d6bca6e975d67b4c2c409d835004",
-     "32 (186 points)": "58a827a9587a61c0ce5e38eaf6f011864975d6bca6e975d67b4c2c409d835004"
+     "default (1: every token is delivered)": "3a5ff2fb321e4f6a17e16bbccc377f9ca1432bbef3fbccd81852b699cf852906",
+     "20 (580 InferenceX points)": "3a5ff2fb321e4f6a17e16bbccc377f9ca1432bbef3fbccd81852b699cf852906",
+     "32 (186 points)": "3a5ff2fb321e4f6a17e16bbccc377f9ca1432bbef3fbccd81852b699cf852906"
     },
     "identical": true,
     "compared_sections": [
@@ -369,19 +369,19 @@
       "scheduler_config.max_num_seqs": 128,
       "scheduler_config.max_num_batched_tokens": 2048,
       "scheduler_config.enable_chunked_prefill": true,
-      "cache_config.block_size": 128
+      "cache_config.block_size": 16
      },
      "20 (580 InferenceX points)": {
       "scheduler_config.max_num_seqs": 128,
       "scheduler_config.max_num_batched_tokens": 2048,
       "scheduler_config.enable_chunked_prefill": true,
-      "cache_config.block_size": 128
+      "cache_config.block_size": 16
      },
      "32 (186 points)": {
       "scheduler_config.max_num_seqs": 128,
       "scheduler_config.max_num_batched_tokens": 2048,
       "scheduler_config.enable_chunked_prefill": true,
-      "cache_config.block_size": 128
+      "cache_config.block_size": 16
      }
     },
     "echo": {
@@ -407,14 +407,14 @@
   },
   "readers": [
    {
-    "at": "vllm/engine/arg_utils.py:2641",
+    "at": "vllm/engine/arg_utils.py:2682",
     "disposition": "run",
     "ran_in": [
      "config"
     ]
    },
    {
-    "at": "vllm/v1/engine/async_llm.py:174",
+    "at": "vllm/v1/engine/async_llm.py:183",
     "disposition": "pass_through"
    },
    {
@@ -422,46 +422,46 @@
     "disposition": "pass_through"
    },
    {
-    "at": "vllm/v1/engine/output_processor.py:198",
+    "at": "vllm/v1/engine/output_processor.py:245",
     "disposition": "run",
     "ran_in": [
      "outputproc"
     ]
    },
    {
-    "at": "vllm/v1/engine/output_processor.py:255",
+    "at": "vllm/v1/engine/output_processor.py:302",
     "disposition": "run",
     "ran_in": [
      "outputproc"
     ]
    },
    {
-    "at": "vllm/v1/engine/output_processor.py:298",
+    "at": "vllm/v1/engine/output_processor.py:345",
     "disposition": "pass_through"
    },
    {
-    "at": "vllm/v1/engine/output_processor.py:324",
+    "at": "vllm/v1/engine/output_processor.py:379",
     "disposition": "run",
     "ran_in": [
      "outputproc"
     ]
    },
    {
-    "at": "vllm/v1/engine/output_processor.py:335",
+    "at": "vllm/v1/engine/output_processor.py:390",
     "disposition": "run",
     "ran_in": [
      "outputproc"
     ]
    },
    {
-    "at": "vllm/v1/engine/output_processor.py:518",
+    "at": "vllm/v1/engine/output_processor.py:565",
     "disposition": "run",
     "ran_in": [
      "outputproc"
     ]
    },
    {
-    "at": "vllm/v1/engine/output_processor.py:638",
+    "at": "vllm/v1/engine/output_processor.py:685",
     "disposition": "pass_through"
    }
   ],
