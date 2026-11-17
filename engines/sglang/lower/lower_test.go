@@ -34,6 +34,13 @@ type lowerAnswers struct {
 			Prefill string `json:"prefill"`
 			Decode  string `json:"decode"`
 		} `json:"attention"`
+		// CaptureRefused is SGLang's own refusal to lower the case: it asserts there is a decode
+		// batch size to capture.
+		CaptureRefused *struct {
+			PoolSize int    `json:"pool_size"`
+			ReqWidth int    `json:"req_width"`
+			Message  string `json:"message"`
+		} `json:"capture_refused"`
 		Capture []struct {
 			PoolSize  int   `json:"pool_size"`
 			ReqWidth  int   `json:"req_width"`
@@ -93,6 +100,13 @@ func TestLowerAgainstSGLang(t *testing.T) {
 			moe, err := MoEOf(a)
 			if err != nil || moe.A2ABackend != c.MoE.A2A || moe.RunnerBackend != c.MoE.Runner {
 				t.Errorf("MoE %+v (%v), SGLang's %+v", moe, err, c.MoE)
+			}
+			if r := c.CaptureRefused; r != nil {
+				// SGLang cannot lower this case (a decode CUDA graph of size 0): so must the Go lowering.
+				if bs, err := CaptureBatchSizes(a, r.PoolSize, r.ReqWidth); err == nil {
+					t.Errorf("SGLang refuses to capture (%s); the Go lowering captured %v", r.Message, bs)
+				}
+				return
 			}
 			for _, cp := range c.Capture {
 				bs, err := CaptureBatchSizes(a, cp.PoolSize, cp.ReqWidth)

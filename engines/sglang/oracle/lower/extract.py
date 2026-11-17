@@ -85,7 +85,15 @@ def lower_case(case, chip, models):
         widths.append(k)
     for w in widths:
         for size in POOL_SIZES:
-            bs, _ = get_batch_sizes_to_capture(PoolOnlyRunner(sa, size), captured_req_width=w)
+            try:
+                bs, _ = get_batch_sizes_to_capture(PoolOnlyRunner(sa, size), captured_req_width=w)
+            except AssertionError as e:
+                # SGLang itself cannot lower this case: it asserts there is a decode batch size to
+                # capture (a decode CUDA graph of size 0, as max_running_requests 0 leaves). The
+                # answer records the refusal, and the Go lowering must refuse the same case.
+                out["capture"] = []
+                out["capture_refused"] = {"pool_size": size, "req_width": w, "message": str(e)}
+                return out
             pads = [BaseCudaGraphRunner._pad_to_bucket(raw, bs) for raw in range(1, bs[-1] + 1)]
             out["capture"].append({"pool_size": size, "req_width": w, "capture_bs": bs, "padded": pads})
     return out
