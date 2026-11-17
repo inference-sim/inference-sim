@@ -33,6 +33,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
+	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 	"github.com/inference-sim/blis-vllm/kerneltests/internal/harness"
 )
 
@@ -237,8 +238,9 @@ func stepAnatomy() ([]byte, error) {
 func deploymentPhrase(in latencykernel.Inputs, model string) string {
 	pool := in.Deployment.Pools[in.PoolIndex]
 	gpus := max(pool.Parallel.TP, 1) * max(pool.Parallel.DP, 1)
+	e, _ := vllmsettings.Decode(pool)
 	return fmt.Sprintf("The model %s, served in %s on %d %s GPUs at tensor-parallel width %d",
-		model, in.Engine.Quantization, gpus, strings.ToUpper(in.Chip.Name),
+		model, e.Quantization, gpus, strings.ToUpper(in.Chip.Name),
 		max(pool.Parallel.TP, 1))
 }
 

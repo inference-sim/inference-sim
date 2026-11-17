@@ -4,6 +4,7 @@ package latencykernel
 
 import (
 	"fmt"
+	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 	"math"
 	"path/filepath"
 	"strings"
@@ -200,7 +201,27 @@ func TestAnUnstatedTokenBudgetIsTheEnginesDefaultForThePart(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := defaultMaxNumBatchedTokens(*chip); got != budget {
+		on := fixtureInputs(t, memoryFixture)
+		editEngine(t, &on, func(e *engineconfig.Engine) { e.MaxNumBatchedTokens = 0 })
+		on.Chip = chip
+		sc := *on.Scenario
+		sc.Cluster.Hardware = name
+		if chip.GPUsPerNode > 0 {
+			sc.Cluster.GPUsPerNode = 0 // the catalog entry fixes it
+		}
+		if chip.GPUsPerRack > 0 {
+			sc.Cluster.GPUsPerRack = 0
+		}
+		on.Scenario = &sc
+		eng, err := vllmsettings.OfPool(on.Deployment, on.PoolIndex)
+		if err != nil {
+			t.Fatal(err)
+		}
+		low, err := lower(on, eng)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if got := int(low.Plan.Batch.Tokens); got != budget {
 			t.Errorf("%s (%.1f GiB): default budget %d, want %d", name, chip.MemoryGiB, got,
 				budget)
 		}
@@ -258,7 +279,7 @@ func TestASparseMLALayersIndexerIsAPiecewiseSplitPoint(t *testing.T) {
 // head), a 64-token page -- the block a DSA model runs -- must hold exactly that times its
 // layers.
 //
-// A plain "fp8" is whatever the chosen backend makes of it (sparseMLABackend): on h200,
+// A plain "fp8" is whatever the chosen backend makes of it (blis-vllm's compat/lowering): on h200,
 // FlashMLA-sparse serves it as fp8_ds_mla, 656; on the same chip marked data-center
 // Blackwell, FlashInfer serves it as stated, 576. "fp8_e4m3" stays 576 on h200, because
 // FlashMLA-sparse does not list it and FlashInfer's SM90 sparse MLA does.
@@ -279,7 +300,7 @@ func TestAPackedSparseMLACacheIsItsOwnSize(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return k.SequenceVariableBytes(dsaBlockSize)
+		return k.SequenceVariableBytes(dsaPage)
 	}
 	layers := int64(fixture(t, dcpSparseFixture).kvLayers)
 	for _, c := range []struct {
@@ -293,7 +314,7 @@ func TestAPackedSparseMLACacheIsItsOwnSize(t *testing.T) {
 		{"fp8", true, 576},
 		{"fp8_e4m3", false, 576},
 	} {
-		if got, want := page(c.cache, c.blackwell), dsaBlockSize*c.cell*layers; got != want {
+		if got, want := page(c.cache, c.blackwell), dsaPage*c.cell*layers; got != want {
 			t.Errorf("%s (blackwell %v): a 64-token page holds %d bytes, want %d (%d a "+
 				"token per layer)", c.cache, c.blackwell, got, want, c.cell)
 		}
@@ -588,3 +609,6 @@ func TestTheDrafterCeilingIsTheLargestRoundedSize(t *testing.T) {
 		}
 	}
 }
+
+// dsaPage is the 64-token page a DSA deployment's indexer runs on.
+const dsaPage = 64
