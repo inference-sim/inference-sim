@@ -111,6 +111,91 @@ class DecisionPrefixes(unittest.TestCase):
                 self.assertIn(f"{sym}: replaces decision code", r.stdout)
 
 
+class Stubs(unittest.TestCase):
+    """oracle/stubs.py: a stubbed module must be named by an environment entry of mocks.json."""
+
+    def test_an_unlisted_stub_fails_and_a_listed_one_passes(self):
+        sys.path.insert(0, HERE)
+        try:
+            import stubs
+        finally:
+            sys.path.remove(HERE)
+        self.assertEqual(stubs.problems(("sgl_kernel",), {"mocks": []}),
+                         ["stubs.py stubs sgl_kernel, which no environment entry of oracle/mocks.json names (FID-1)"])
+        self.assertTrue(stubs.problems(("sgl_kernel",), {"mocks": [{"symbol": "sgl_kernel", "kind": "gpu"}]}))
+        self.assertEqual(stubs.problems(("sgl_kernel",), {"mocks": [{"symbol": "sgl_kernel", "kind": "environment"}]}), [])
+
+    def test_the_stub_finder_is_a_site_of_the_manifest(self):
+        # check_mocks.py counts the import hook as a site: drop its entry and the check fails.
+        with open(os.path.join(HERE, "mocks.json")) as f:
+            spec = json.load(f)
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d)
+        for name in os.listdir(HERE):
+            if name.endswith(".py"):
+                shutil.copy(os.path.join(HERE, name), d)
+        spec["mocks"] = [m for m in spec["mocks"] if "stubs.py:sys.meta_path" not in m.get("sites", [])]
+        spec["version"] = f"gpu-mock/9+{digest(spec['mocks'])}"
+        with open(os.path.join(d, "mocks.json"), "w") as f:
+            json.dump(spec, f)
+        r = run([sys.executable, "-I", os.path.join(HERE, "check_mocks.py"), "--config",
+                 os.path.join(HERE, "harness.json"), os.path.join(d, "mocks.json")], d)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("stubs.py", r.stdout)
+        self.assertIn("writes sys.meta_path", r.stdout)
+
+
+class RunImport(unittest.TestCase):
+    """oracle/run_import.py fails unless the scheduler module it imports is the checkout's."""
+
+    def fake_checkout(self, link):
+        top = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, top)
+        pkg = os.path.join(top, "elsewhere" if link else "checkout/python", "sglang")
+        mgr = os.path.join(pkg, "srt", "managers")
+        os.makedirs(mgr)
+        for d in (pkg, os.path.join(pkg, "srt"), mgr):
+            open(os.path.join(d, "__init__.py"), "w").close()
+        with open(os.path.join(mgr, "scheduler.py"), "w") as f:
+            f.write("class Scheduler:\n" + "".join(f"    def {n}(self): pass\n" for n in (
+                "event_loop_normal", "event_loop_overlap", "get_next_batch_to_run", "process_batch_result",
+                "ingest_requests")))
+        if link:
+            os.makedirs(os.path.join(top, "checkout/python"))
+            os.symlink(pkg, os.path.join(top, "checkout/python/sglang"))
+        return os.path.join(top, "checkout")
+
+    def test_the_checkouts_scheduler_passes(self):
+        r = run([sys.executable, "-I", os.path.join(HERE, "run_import.py"), self.fake_checkout(False)], HERE)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_a_scheduler_from_outside_the_checkout_fails(self):
+        r = run([sys.executable, "-I", os.path.join(HERE, "run_import.py"), self.fake_checkout(True)], HERE)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("was imported from", r.stderr)
+
+
+class CheckPeers(unittest.TestCase):
+    """oracle/check_peers.py: a peer in the lock is at its peers.json version."""
+
+    def check(self, lock):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d)
+        with open(os.path.join(d, "lock"), "w") as f:
+            f.write(lock)
+        return run([sys.executable, "-I", os.path.join(HERE, "check_peers.py"), os.path.join(HERE, "peers.json"),
+                    os.path.join(d, "lock")], d)
+
+    def test_a_peer_at_another_version_fails(self):
+        r = self.check("numpy==2.0.0\nLMCache==0.5.7\n")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("LMCache==0.5.7; oracle/peers.json pins it at 0.5.6", r.stdout)
+
+    def test_a_peer_at_its_pin_or_absent_passes(self):
+        self.assertEqual(self.check("numpy==2.0.0\nlmcache==0.5.6\n").returncode, 0)
+        self.assertEqual(self.check("numpy==2.0.0\n").returncode, 0)
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         sys.exit(__doc__.split("Usage:", 1)[1].strip())

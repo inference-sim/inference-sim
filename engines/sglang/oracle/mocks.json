@@ -1,5 +1,20 @@
 {
-  "version": "gpu-mock/0+4f53cda18c2b",
-  "description": "Every replacement the oracle harness makes in SGLang's code, by kind (gpu, clock, transport, environment, platform, external-service, transcription), with the sites oracle/check_mocks.py finds. Empty until the oracle harness exists.",
-  "mocks": []
+  "version": "gpu-mock/1+3a6ee6547d10",
+  "description": "Every replacement the oracle harness makes in SGLang's code, by kind (gpu, clock, transport, environment, platform, external-service, transcription), with the sites oracle/check_mocks.py finds.",
+  "mocks": [
+    {
+      "symbol": "oracle/stubs.py STUBBED",
+      "kind": "environment",
+      "how": "an import hook that makes each module named in stubs.STUBBED, and its submodules, import as a module whose every attribute is a MagicMock, as SGLang's own CPU tests stub sgl_kernel (python/sglang/test/test_utils.py:2042-2077@297e54fd). STUBBED is empty: the scheduler imports and starts with nothing stubbed. oracle/run_import.py fails unless each stubbed name is also the symbol of an environment entry here.",
+      "sites": [
+        "stubs.py:sys.meta_path"
+      ]
+    },
+    {
+      "symbol": "the CUDA-only packages the lock leaves out",
+      "kind": "environment",
+      "how": "cuda-python, flash-attn-4, flashinfer_python, humming-kernels, nvidia-cutlass-dsl, nvidia-mathdx, nvshmem4py-cu13, quack-kernels, sgl-deep-ep, sgl-deep-gemm, sgl-flash-mla, sglang-kernel, tilelang and torch_memory_saver are not installed (oracle/requirements.txt). SGLang reads their absence: is_flashinfer_available uses find_spec(\"flashinfer\") (python/sglang/srt/utils/common.py:388-395@297e54fd) and _is_intel_amx_backend_available try-imports sgl_kernel (:353-360). On the CUDA platform FID-1 restores, both would differ; restoring them is listed with that work.",
+      "sites": []
+    }
+  ]
 }
