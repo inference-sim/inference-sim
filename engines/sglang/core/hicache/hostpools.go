@@ -7,7 +7,10 @@
 
 package hicache
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
 
 // Layouts are the five host layouts the CUDA host pools build (pool_host/mha.py:305-360
 // @297e54fd): the axis order of the host buffer, which decides how a copy is cut into runs.
@@ -28,6 +31,10 @@ func ResolveLayoutIO(layout, io string) (string, string) {
 
 // HostShape is one host pool's geometry: what its buffer holds per token, per layer.
 type HostShape struct {
+	// Pool is the SGLang host pool class the shape is: MHATokenToKVPoolHost,
+	// AsymmetricMHATokenToKVPoolHost (K and V of different widths), MLATokenToKVPoolHost or
+	// DSAIndexerPoolHost. It decides which layouts the pool can lay out (CheckLayout).
+	Pool string
 	// Components is 2 for K and V (MHA), 1 for MLA's latent cache and DSA's index keys.
 	Components int
 	// HeadNum and HeadDim are the per-layer row of one component; MLA and DSA have one head of
@@ -47,7 +54,12 @@ type HostShape struct {
 // MHAHost is MHATokenToKVPoolHost's geometry (pool_host/mha.py:135-240): K and V rows of
 // head_num heads, over the target layers and any packed draft layers.
 func MHAHost(headNum, headDim, vHeadDim, layerNum, itemSize, headGroupNum int) HostShape {
-	return HostShape{Components: 2, HeadNum: headNum, HeadDim: headDim, VHeadDim: vHeadDim, LayerNum: layerNum,
+	pool := "MHATokenToKVPoolHost"
+	if headDim != vHeadDim {
+		// get_mha_host_pool_cls (mha.py:1684-1699).
+		pool = "AsymmetricMHATokenToKVPoolHost"
+	}
+	return HostShape{Pool: pool, Components: 2, HeadNum: headNum, HeadDim: headDim, VHeadDim: vHeadDim, LayerNum: layerNum,
 		ItemSize: itemSize, HeadGroupNum: max(1, headGroupNum)}
 }
 
@@ -59,7 +71,7 @@ func MLAHost(kvLoraRank, qkRopeHeadDim, overrideDim, layerNum, itemSize int) Hos
 	if overrideDim > 0 {
 		dim = overrideDim
 	}
-	return HostShape{Components: 1, HeadNum: 1, HeadDim: dim, VHeadDim: 0, LayerNum: layerNum, ItemSize: itemSize, HeadGroupNum: 1}
+	return HostShape{Pool: "MLATokenToKVPoolHost", Components: 1, HeadNum: 1, HeadDim: dim, VHeadDim: 0, LayerNum: layerNum, ItemSize: itemSize, HeadGroupNum: 1}
 }
 
 // DSAIndexerBytesPerTokenPerLayer is dsa_indexer_bytes_per_token_per_layer (pool_host/dsa.py:71-76):
@@ -80,7 +92,7 @@ func DSAIndexerHost(indexHeadDim, quantBlockSize, pageSize, indexKPool, ownedLay
 	if indexPageBytes%pageSize != 0 {
 		return HostShape{}, fmt.Errorf("index page of %d bytes does not split over page_size=%d tokens", indexPageBytes, pageSize)
 	}
-	return HostShape{Components: 1, HeadNum: 1, RowBytes: indexPageBytes / pageSize, LayerNum: ownedLayers, ItemSize: 1,
+	return HostShape{Pool: "DSAIndexerPoolHost", Components: 1, HeadNum: 1, RowBytes: indexPageBytes / pageSize, LayerNum: ownedLayers, ItemSize: 1,
 		HeadGroupNum: 1}, nil
 }
 
@@ -116,6 +128,34 @@ type TransferPrice struct {
 	// Runs is the contiguous host spans; RunBytes their mean size (K and V rows may differ).
 	Runs     int64
 	RunBytes int64
+}
+
+// CheckLayout is the host pool's own refusal of a layout it cannot lay out, raised when HiCache
+// builds it at start-up: init_kv_buffer (mha.py:305-352, 1358-1381; mla.py:307-430;
+// dsa.py:280-320@297e54fd) and PageUnifiedLayout's checks (page_unified.py:63-89).
+func (s HostShape) CheckLayout(layout string) error {
+	allowed := map[string][]string{
+		"MHATokenToKVPoolHost":           Layouts,
+		"AsymmetricMHATokenToKVPoolHost": {"page_first", "page_first_direct"},
+		"MLATokenToKVPoolHost":           {"layer_first", "page_first", "page_first_direct", "page_unified"},
+		"DSAIndexerPoolHost":             {"layer_first", "page_first", "page_first_direct"},
+	}[s.Pool]
+	if !slices.Contains(allowed, layout) {
+		if s.Pool == "AsymmetricMHATokenToKVPoolHost" {
+			return fmt.Errorf("Unsupported layout for models with head_dim != v_head_dim: %s; expected 'page_first' or 'page_first_direct'.", layout)
+		}
+		return fmt.Errorf("Unsupported layout: %s", layout)
+	}
+	if layout == "page_unified" {
+		g := max(1, s.HeadGroupNum)
+		if s.HeadNum%g != 0 {
+			return fmt.Errorf("head_group_num=%d must divide the pool's %d kv heads", g, s.HeadNum)
+		}
+		if group := s.componentRow(0) / int64(g); group%16 != 0 {
+			return fmt.Errorf("one head group's token row is %d bytes, which the page_unified transfer kernels cannot move: they require a multiple of 16", group)
+		}
+	}
+	return nil
 }
 
 // hostRun is the contiguous host span, in bytes, that one copy unit of the layout covers when
@@ -171,6 +211,9 @@ func (s HostShape) LoadLayer(layout string, pageSize, tokens int) (TransferPrice
 func (s HostShape) price(layout string, pageSize, tokens, layers int) (TransferPrice, error) {
 	if pageSize <= 0 || tokens%pageSize != 0 {
 		return TransferPrice{}, fmt.Errorf("hicache: %d tokens are not whole pages of %d", tokens, pageSize)
+	}
+	if err := s.CheckLayout(layout); err != nil {
+		return TransferPrice{}, err
 	}
 	_, perPage, err := s.hostRun(layout, pageSize, layers)
 	if err != nil {
