@@ -897,9 +897,9 @@ func GenerateWorkloadLazy(spec *WorkloadSpec, horizon int64, maxRequests int64) 
 
 	// Time-varying dispatch. Clients with per-window parameter overrides
 	// (trace_rate/arrival/input_distribution/output_distribution) take a distinct
-	// generation path, generateTimeVaryingWorkloadLazy. As of #1460 there is NO remaining
-	// unsupported class — multi-session reasoning (#1458), concurrency clients
-	// (#1459), and time-varying workloads (#1460) are all streamed.
+	// generation path, generateTimeVaryingWorkloadLazy. There is NO remaining
+	// unsupported class — multi-session reasoning, concurrency clients
+	// and time-varying workloads are all streamed.
 	if hasPerWindowParameters(allClients) {
 		return generateTimeVaryingWorkloadLazy(spec, horizon, maxRequests, allClients)
 	}

@@ -283,7 +283,7 @@ func TestSignalPolicyRefusesThroughTheRouter(t *testing.T) {
 // TestPrefixCacheAffinityFilterRunsOnTheInFlightLoad: the filter's default TTFT source (the
 // in-flight load) runs, and is deterministic across processes (TestLLMDGuides runs the guides
 // that use it; determinism_test.go the same simulation in separate processes); its
-// latency-predictor source is refused at startup, naming the service (#1991).
+// latency-predictor source is refused at startup, naming the service (#2148).
 func TestPrefixCacheAffinityFilterRunsOnTheInFlightLoad(t *testing.T) {
 	config := func(source string) string {
 		return "apiVersion: llm-d.ai/v1\nkind: EndpointPickerConfig\nplugins:\n- type: approx-prefix-cache-producer\n" +

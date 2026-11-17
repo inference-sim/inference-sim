@@ -346,7 +346,7 @@ func TestLoadTraceV2SessionBlueprints_PrefersRecordedThinkTime(t *testing.T) {
 func TestLoadTraceV2SessionBlueprints_RecordedThinkTime_CLIOverrides(t *testing.T) {
 	// GIVEN a session with recorded think_time_us AND a caller-provided sampler
 	// WHEN blueprints are built
-	// THEN the caller sampler wins (#1478 precedence: CLI > recorded > gap).
+	// THEN the caller sampler wins (precedence: CLI > recorded > gap).
 	trace := &TraceV2{
 		Records: []TraceRecord{
 			{RequestID: 1, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0, ThinkTimeUs: nil},

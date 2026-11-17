@@ -386,7 +386,7 @@ func TestPrReviewBlisWriteIsBareWithHook(t *testing.T) {
 		if tool == "Write" {
 			hasBareWrite = true
 		} else if strings.HasPrefix(tool, "Write(") {
-			t.Errorf("blis must grant a BARE Write, not a path-qualified %q (it refuses silently in the action, #1888)", tool)
+			t.Errorf("blis must grant a BARE Write, not a path-qualified %q (it refuses silently in the action)", tool)
 		}
 	}
 	if !hasBareWrite {
