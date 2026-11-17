@@ -78,3 +78,4 @@ head:
   role: lm_head
   n: 128256
   k: 8192
+  weight_dtype: bf16

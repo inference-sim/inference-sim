@@ -88,6 +88,7 @@ layer_kinds:
     role: routed_expert_down_proj
     n: 3584
     k: 7168
+    weight_dtype: bf16
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -101,6 +102,7 @@ layer_kinds:
     role: routed_expert_up_proj
     n: 7168
     k: 3584
+    weight_dtype: bf16
   - op: GEMM
     role: shared_gate_up
     n: 12288
@@ -192,6 +194,7 @@ layer_kinds:
     n: 4096
     k: 1536
     tp: replicated
+    weight_dtype: bf16
   - op: GEMM
     role: kv_b_proj
     n: 24576
@@ -237,6 +240,7 @@ layer_kinds:
     role: routed_expert_down_proj
     n: 3584
     k: 7168
+    weight_dtype: bf16
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -250,6 +254,7 @@ layer_kinds:
     role: routed_expert_up_proj
     n: 7168
     k: 3584
+    weight_dtype: bf16
   - op: GEMM
     role: shared_gate_up
     n: 12288
@@ -334,10 +339,12 @@ layer_kinds:
     role: mlp_gate_up
     n: 67584
     k: 7168
+    weight_dtype: bf16
   - op: GEMM
     role: mlp_down
     n: 7168
     k: 33792
+    weight_dtype: bf16
   - op: AllReduce
     role: mlp_out
     emit: tensor_parallel_unless_sp_moe
@@ -392,3 +399,4 @@ head:
   role: lm_head
   n: 163840
   k: 7168
+  weight_dtype: bf16

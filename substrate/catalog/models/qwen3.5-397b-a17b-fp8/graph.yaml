@@ -356,6 +356,7 @@ head:
   role: lm_head
   n: 248320
   k: 4096
+  weight_dtype: bf16
 speculator:
   method: qwen3_5_mtp
   num_spec_tokens: 1

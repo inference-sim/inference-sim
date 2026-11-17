@@ -21,11 +21,13 @@ layer_kinds:
     n: 20480
     k: 4096
     tp: column
+    weight_dtype: bf16
   - op: GEMM
     role: recurrent_in_proj_ba
     n: 128
     k: 4096
     tp: column
+    weight_dtype: bf16
   - op: RecurrentUpdate
     recurrent_kind: gdn
     n_heads: 64
@@ -37,6 +39,7 @@ layer_kinds:
     role: mixer_out
     n: 4096
     k: 8192
+    weight_dtype: bf16
   - op: AllReduce
     role: mixer_out
     emit: tensor_parallel
@@ -61,6 +64,7 @@ layer_kinds:
     n: 2048
     k: 4096
     tp: column
+    weight_dtype: bf16
   - op: Elementwise
     role: shared_act
     tp: sharded
@@ -70,6 +74,7 @@ layer_kinds:
     n: 4096
     k: 1024
     tp: row
+    weight_dtype: bf16
   - op: GEMM
     role: shared_expert_gate
     n: 1
@@ -125,6 +130,7 @@ layer_kinds:
     role: qkv_proj
     n: 17408
     k: 4096
+    weight_dtype: bf16
   - op: Attention
     holds_engine_kv: true
     kind: gqa
@@ -138,6 +144,7 @@ layer_kinds:
     role: o_proj
     n: 4096
     k: 8192
+    weight_dtype: bf16
   - op: AllReduce
     role: attn_out
     emit: tensor_parallel
@@ -162,6 +169,7 @@ layer_kinds:
     n: 2048
     k: 4096
     tp: column
+    weight_dtype: bf16
   - op: Elementwise
     role: shared_act
     tp: sharded
@@ -171,6 +179,7 @@ layer_kinds:
     n: 4096
     k: 1024
     tp: row
+    weight_dtype: bf16
   - op: GEMM
     role: shared_expert_gate
     n: 1
@@ -239,6 +248,7 @@ layer_kinds:
     role: qkv_proj
     n: 17408
     k: 4096
+    weight_dtype: bf16
   - op: Attention
     holds_engine_kv: true
     kind: gqa
@@ -252,6 +262,7 @@ layer_kinds:
     role: o_proj
     n: 4096
     k: 8192
+    weight_dtype: bf16
   - op: AllReduce
     role: attn_out
     emit: tensor_parallel
@@ -270,11 +281,13 @@ layer_kinds:
     k: 4096
     experts: 512
     top_k: 10
+    weight_dtype: bf16
   - op: GEMM
     role: shared_gate_up
     n: 2048
     k: 4096
     tp: column
+    weight_dtype: bf16
   - op: Elementwise
     role: shared_act
     tp: sharded
@@ -284,6 +297,7 @@ layer_kinds:
     n: 4096
     k: 1024
     tp: row
+    weight_dtype: bf16
   - op: GEMM
     role: shared_expert_gate
     n: 1
@@ -354,6 +368,7 @@ head:
   role: lm_head
   n: 248320
   k: 4096
+  weight_dtype: bf16
 speculator:
   method: qwen3_5_mtp
   num_spec_tokens: 1

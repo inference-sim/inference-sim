@@ -20,6 +20,7 @@ layer_kinds:
     role: qkv_proj
     n: 8192
     k: 3072
+    weight_dtype: bf16
   - op: Attention
     holds_engine_kv: true
     kind: gqa
@@ -30,6 +31,7 @@ layer_kinds:
     role: o_proj
     n: 3072
     k: 6144
+    weight_dtype: bf16
   - op: AllReduce
     role: attn_out
     emit: tensor_parallel
@@ -85,3 +87,4 @@ head:
   role: lm_head
   n: 200064
   k: 3072
+  weight_dtype: bf16
