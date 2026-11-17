@@ -105,6 +105,9 @@ type PlannedGEMM struct {
 	// A-projection, compressor, indexer projections, router and mHC are such, and dividing
 	// them by tp priced a tp-th of the work.
 	Replicated bool
+	// Router is a routed MoE layer's gate (role router). vLLM runs an fp32 gate on its own kernels
+	// (GateLinear), which is not the rate an fp32 mHC projection runs at.
+	Router bool
 	// TokenSharded is under_sequence_parallel: token_sharded. With the model's own
 	// sequence parallelism on, the GEMM runs on ceil(tokens / tp) rows with its whole
 	// weight; with it off, the layout above applies over every token.
@@ -774,6 +777,7 @@ func planNodes(nodes []model.Node, em Emitter, o PlanOptions,
 				Replicated: n.TP == model.TPReplicated, TokenSharded: tokenSharded,
 				WeightBytes: resident, WeightReadBytes: read, Format: o.Format(n),
 				MHCFn: mhcFn.MatchString(n.Role), ShardedAtDecode: n.ShardedAtDecode,
+				Router: n.Role == "router",
 			}
 			// Fuse into the previous GEMM when the engine would. vLLM concatenates
 			// column-parallel projections that share an input ALONG THE OUTPUT

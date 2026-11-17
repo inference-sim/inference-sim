@@ -178,7 +178,7 @@ func priceFormatOf(f units.QuantFormat) (price.Format, bool) {
 // gemmChain is the ramps a GEMM of the format is priced from, in the kernel's order: the one
 // formatFit chooses, then the one addFit falls back to when the registry carries none.
 func gemmChain(f price.Format, grouped bool, chip hardware.Chip, hopper bool) []string {
-	spec := formatFit(f, grouped, chip, hopper && f.DType == model.DTypeFP8 && f.MX())
+	spec := formatFit(f, grouped, chip, hopper && f.DType == model.DTypeFP8 && f.MX(), false)
 	chain := []string{spec.suffix}
 	if spec.fallback != "" {
 		chain = append(chain, spec.fallback)
