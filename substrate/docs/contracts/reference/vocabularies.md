@@ -232,6 +232,26 @@ A graph's `modality`. An omitted `modality` means `text_only`.
 
 --8<-- "docs/contracts/generated/enum/model.Modality.md"
 
+### Tower modalities
+
+An `encoder` tower's `modality`, and an `omitted` tower's. Only `image` towers are priced.
+
+--8<-- "docs/contracts/generated/enum/model.TowerModality.md"
+
+### Tower parallel modes
+
+An `encoder` tower's `parallel`.
+
+--8<-- "docs/contracts/generated/enum/model.EncoderParallel.md"
+
+### Tower ops and row counts
+
+An `encoder` node's `op` and `rows`.
+
+--8<-- "docs/contracts/generated/enum/model.EncoderOp.md"
+
+--8<-- "docs/contracts/generated/enum/model.EncoderRows.md"
+
 ### Tensor-parallel layouts
 
 A node's `tp`. An omitted `tp` leaves the layout to the cost model's inference. A `GEMM`

@@ -32,6 +32,7 @@ func (g *Graph) Validate() *validate.Problems {
 	g.validateLayerKinds(p)
 	g.validateStack(p)
 	g.validateSpeculator(p)
+	g.validateEncoder(p)
 
 	for i, n := range g.Embedding {
 		n.validate(p, fmt.Sprintf("embedding[%d]", i))

@@ -57,7 +57,8 @@ head:
 | `speculator` | mapping | no | A draft module, as its own stack. |
 | `arch_overrides` | list | no | Facts about the served model that differ by GPU architecture, [below](#arch_overrides). |
 | `base_capability_families` | list of integers | with `arch_overrides` | The compute-capability major versions the base graph describes as served. A family listed neither here nor in an override is refused by `ForCapability`. |
-| `modality` | string | no | What the graph covers. Omitted means `text_only`. `text_decoder_of_multimodal` marks the decoder of a model whose encoder the graph does not price. See [modalities](vocabularies.md#modalities). |
+| `modality` | string | no | What the graph covers. Omitted means `text_only`. `text_decoder_of_multimodal` marks the decoder of a model with a tower the graph does not price (with an `encoder`, the towers listed under `omitted`). `multimodal` marks a graph whose `encoder` prices every tower of the source. See [modalities](vocabularies.md#modalities). |
+| `encoder` | mapping | no | The towers the graph prices, [below](#encoder). Omitted means the graph prices the decoder alone. |
 
 ### `derived_from`
 
@@ -112,6 +113,88 @@ head:
 A uniform model is a one-entry pattern with a repeat. A model with no period puts its
 whole layer sequence in `prologue` and leaves `repeat` at zero. The stack must expand to at
 least one layer.
+
+### `encoder`
+
+A vision tower runs once per image over the image's patches, with bidirectional attention and
+no KV cache, and its output tokens join the prompt. It is not a layer of the decoder stack, so
+it has a section of its own, with its own layer kinds and stack. A request with no image runs no tower.
+
+<!-- fields: model.Encoder -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `towers` | list | with no `omitted` | The priced towers. Only `image` towers are priced. A graph that prices none lists every tower of the source under `omitted`. |
+| `omitted` | list | no | A tower of the source the graph does not price, below. A request carrying that input is refused. |
+
+<!-- fields: model.OmittedTower -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `modality` | string | yes | `image` or `audio`. |
+| `reason` | string | yes | One sentence on what the kernels cannot express. |
+| `issue` | string | yes | The open issue that tracks the gap, as `owner/repo#N`. |
+
+<!-- fields: model.Tower -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `modality` | string | yes | `image`. |
+| `input` | mapping | yes | How pixels become the tower's rows, below. |
+| `merge_ratio` | integer | yes | The rows that become one output token: the spatial merge squared (2x2 is 4), a pooling window (3x3 is 9), or 1. |
+| `output_hidden_size` | integer | yes | The width of each output token. It equals `global.hidden_size`, because the decoder reads the tokens as embeddings. |
+| `max_output_tokens` | integer | no | The most tokens one image yields when the processor shrinks a larger image to fit. Omitted means the checkpoint states none. |
+| `parallel` | string | yes | `tensor`: the tower's linears are tensor-parallel by default (the engine replicates them when the head count does not divide the width, or when the deployment asks for data mode). `replicated`: the model code builds every linear replicated. |
+| `weight_dtype` | string | yes | The dtype the tower's tensors are stored in, from the checkpoint's headers. A node may override it. |
+| `embedding` | list of nodes | no | Run once before the stack: the patch projection and position embedding. |
+| `layer_kinds` | list | yes | The distinct tower layers, below. |
+| `stack` | mapping | yes | The order the tower layers run in, as the decoder's `stack`. |
+| `projector` | list of nodes | no | Run after the stack: the merger or projector that ends at `output_hidden_size`. |
+
+The tower's evaluation functions are pure: `Patches(height, width, frames)` is the rows the
+tower encodes for an image the processor has already resized, `OutputTokens(height, width,
+frames)` the tokens it adds to the prompt, and `OutputBytes(tokens)` the bf16 embeddings an
+encoder-to-prefill handoff moves.
+
+<!-- fields: model.TowerInput -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `patch_size` | integer | yes | Pixels on one side of a patch. |
+| `temporal_patch_size` | integer | no | Frames one patch spans. Omitted means 1. A still image is one temporal patch. |
+| `channels` | integer | yes | Input channels. |
+| `tile_pixels` | integer | no | The image is cut into square tiles of this many pixels, each its own attention sequence, plus one tile of the whole image when there are several. A multiple of `patch_size`. |
+| `class_tokens` | integer | no | Rows a tile or grid adds beyond its patches. They are encoded and yield no output token. |
+| `fixed_rows` | integer | no | The rows the tower encodes for every image, because the processor pads to it. Not with `tile_pixels`. |
+
+<!-- fields: model.EncoderLayerKind -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `id` | string | yes | The layer kind's name, unique in the tower and used by its `stack`. |
+| `nodes` | list of tower nodes | yes | The primitives of one layer, at least one. |
+
+<!-- fields: model.EncoderNode -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `op` | string | yes | `gemm`, `attention` or `elementwise`. |
+| `role` | string | no | A label for people; it decides nothing. |
+| `rows` | string | no | `patches` (the default) or `output_tokens`, the row count the node runs over. |
+| `tp` | string | no | How the node divides when the tower is `tensor`: `column` or `row` for a `gemm`, `sharded` for an `attention`, `sharded` or `replicated` for an `elementwise`. Omitted means replicated. |
+| `weight_dtype` | string | no | Overrides the tower's dtype for this node. |
+| `n` | integer | `gemm` | Output width. |
+| `k` | integer | `gemm` | Input width. |
+| `bias` | boolean | no | A `gemm` with an `n`-long bias. |
+| `n_heads` | integer | `attention` | Heads. Tower attention is multi-head, with as many KV heads. |
+| `d_h` | integer | `attention` | Head dimension. |
+| `window` | integer | no | Limits an attention sequence to blocks of this many rows. |
+| `bytes_per_row` | integer | `elementwise` | Traffic per row, read plus write. |
+| `params` | integer | no | The stored elements an `elementwise` node owns: norm scales, a position table. |
+
+A graph with an `encoder` and no `omitted` tower states `modality: multimodal`; one that omits a
+tower states `text_decoder_of_multimodal`. A node carrying a parameter its op does not price is
+invalid, as for decoder nodes.
 
 ### `speculator`
 
@@ -553,6 +636,11 @@ A graph is invalid if
 - an edge indexes a node that does not exist, joins a node to itself, or closes a cycle;
 - the stack expands to no layers, `repeat` is negative, a pattern has no repeat or a repeat
   no pattern, or the stack names a layer kind that is not declared;
+- an `encoder` has neither a tower nor an omitted tower, prices a tower that is not an image tower, has a `merge_ratio` below 1, an
+  `output_hidden_size` other than `global.hidden_size`, an unknown `parallel` or `weight_dtype`, no stack layers,
+  a stack that names an undefined layer kind, a layer kind outside the stack, a node carrying parameters its op
+  does not price, or an `omitted` tower without a reason and an `owner/repo#N` issue; or `modality` disagrees with
+  `omitted` (`multimodal` with one, `text_decoder_of_multimodal` with an `encoder` and none);
 - a `speculator` lacks a `method`, a `pattern`, at least one draft token or a repeat of at
   least 1, has an unrecognized `drafting`, a `sequential_head` without `parallel_block`,
   a `stack` or `context_stack` naming a layer kind that is not declared, or an

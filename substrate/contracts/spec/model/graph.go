@@ -55,6 +55,9 @@ type Graph struct {
 	// reader comparing a prediction against a measured run of the full model would
 	// have no way to see why.
 	Modality Modality `yaml:"modality,omitempty"`
+
+	// Encoder is the towers the graph prices. See Encoder.
+	Encoder *Encoder `yaml:"encoder,omitempty"`
 }
 
 // Modality states which towers a graph prices.
@@ -69,20 +72,23 @@ const (
 	// graph is valid for text-only requests and understates any request carrying an
 	// image or audio input.
 	ModalityTextDecoderOfMultimodal Modality = "text_decoder_of_multimodal"
+	// ModalityMultimodal: the decoder and every tower the source describes, which Encoder
+	// prices. A source tower the graph does not price is listed in Encoder.Omitted and the
+	// graph states ModalityTextDecoderOfMultimodal instead.
+	ModalityMultimodal Modality = "multimodal"
 )
 
 var modalities = map[Modality]bool{
 	"": true, ModalityTextOnly: true, ModalityTextDecoderOfMultimodal: true,
+	ModalityMultimodal: true,
 }
 
 // Valid reports whether m is a recognized modality. The empty value is valid and
 // means text-only.
 func (m Modality) Valid() bool { return modalities[m] }
 
-// PricesEncoder reports whether the graph accounts for a non-text tower. It is
-// always false today: the primitive set has no encoder term, so a graph can declare
-// that it omits one but cannot declare that it includes one.
-func (m Modality) PricesEncoder() bool { return false }
+// PricesEncoder reports whether the modality says every tower of the source is priced.
+func (m Modality) PricesEncoder() bool { return m == ModalityMultimodal }
 
 // Derivation identifies the vendor artifact a graph came from without adopting its
 // vocabulary. Format names the dialect (for example "hf_config_json") so a reader
