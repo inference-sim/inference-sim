@@ -148,8 +148,6 @@ cudagraph_capture_bytes_full # never read
 cudagraph_capture_bytes_full_decode_only # never read
 cudagraph_capture_bytes_piecewise # never read
 engine_workspace_bytes # read but changes no price
-gemm_eps_max_fp8_block # never read
-gemm_m_half_fp8_block # never read
 host_admission_per_token_rust_frontend # never read
 moe_a2a_floor_deepep_high_throughput_<R>rank_gb300 # never read
 moe_a2a_floor_deepep_low_latency_<R>rank_b200 # never read
