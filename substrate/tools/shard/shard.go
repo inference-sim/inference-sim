@@ -38,7 +38,7 @@ func main() {
 
 func run(args []string, in io.Reader, out io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: shard select|cover|verify ...")
+		return errors.New("usage: shard select, cover or verify, with its flags")
 	}
 	fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	of := fs.Int("of", 0, "number of legs")
@@ -66,7 +66,7 @@ func run(args []string, in io.Reader, out io.Writer) error {
 				return err
 			}
 			for _, s := range sel {
-				fmt.Fprintln(out, s)
+				_, _ = fmt.Fprintln(out, s)
 			}
 			return nil
 		}
@@ -77,19 +77,19 @@ func run(args []string, in io.Reader, out io.Writer) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(out, "%d items are split across %d legs, each in exactly one\n", n, *of)
+		_, _ = fmt.Fprintf(out, "%d items are split across %d legs, each in exactly one\n", n, *of)
 		return nil
 	case "verify":
 		f, err := os.Open(*results)
 		if err != nil {
 			return err
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		n, err := Verify(items, f, *mode)
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(out, "all %d assigned items ran, and nothing else\n", n)
+		_, _ = fmt.Fprintf(out, "all %d assigned items ran, and nothing else\n", n)
 		return nil
 	}
 	return fmt.Errorf("unknown command %q", args[0])
