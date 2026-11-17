@@ -835,6 +835,30 @@ class MutationSweep(unittest.TestCase):
         r = self.sweep(self.repo([self.mutant("B", old="return 1", new="return 2")], {"B": "no test yet (#32)"}), "--only", "B")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
+    def package_list(self, root, entries, key="pending"):
+        os.makedirs(os.path.join(root, "core", "testdata"))
+        with open(os.path.join(root, "core", "testdata", "pending_mutants.json"), "w") as f:
+            json.dump({key: entries}, f)
+
+    def test_a_package_lists_its_pending_survivor(self):
+        survivor = self.mutant("B", old="return 1", new="return 2")
+        for name, key, entry, want in [
+                ("pending, with its issue", "pending", {"id": "B", "stage": "S17", "issue": "x/y#53"}, 0),
+                ("pending, without an issue", "pending", {"id": "B", "stage": "S17", "issue": "soon"}, 1),
+                ("equivalent, with a reason", "equivalent", {"id": "B", "why": "the value is unused"}, 0)]:
+            with self.subTest(name):
+                root = self.repo([survivor])
+                self.package_list(root, [entry], key)
+                r = self.sweep(root, "--only", "B")
+                self.assertEqual(r.returncode, want, r.stdout + r.stderr)
+
+    def test_a_package_entry_that_a_test_now_catches_fails(self):
+        root = self.repo([self.mutant("A")])
+        self.package_list(root, [{"id": "A", "stage": "S17", "issue": "x/y#53"}])
+        r = self.sweep(root, "--only", "A")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("NOW CAUGHT A", r.stdout)
+
     def test_generated_mutants_flip_code_operators_only(self):
         mu = import_oracle("mutate")
         got = mu.generated_mutants("core/x.go", self.GO)
