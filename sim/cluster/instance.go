@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/inference-sim/blis-substrate/contracts/engine"
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 
@@ -492,6 +493,17 @@ func (i *InstanceSimulator) setPullPriced(f func(req *sim.Request, pulledTokens,
 		i.drv.OnPullPriced = f
 	}
 }
+
+// setTierPriced installs the cluster's handling of an offload-tier copy the instance's engine starts:
+// the copy joins the cluster's link arbiter, and the instance is told when it lands (TierLanded).
+func (i *InstanceSimulator) setTierPriced(f func(id engine.TransferID, demand kernel.TransferDemand, at int64)) {
+	if i.drv != nil {
+		i.drv.OnTierPriced = f
+	}
+}
+
+// tierLanded reports that the instance's tier copy id landed at now.
+func (i *InstanceSimulator) tierLanded(id engine.TransferID, now int64) { i.drv.TierLanded(id, now) }
 
 // UsedKVBlocks returns the KV blocks the instance's engine has allocated.
 func (i *InstanceSimulator) UsedKVBlocks() int64 {
