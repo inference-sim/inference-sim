@@ -5698,7 +5698,25 @@
         "issue": "inference-sim/blis-vllm#80"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "none",
+        "approximates": {
+          "mode": {
+            "attention_config.use_trtllm_attention": null
+          },
+          "evidence": "the registry's attention lanes, fitted on AISimulate attention timings on b200 and b300 of vLLM's FlashInfer kernels, among them the trtllm-gen prefill rows (vllm_flashinfer_trtllmprefill, 12360 of the 27574 prefill rows the pooled pair is fitted on), with the engine's attention implementation unreported so the pooled pair prices",
+          "differs": "a stated true forces FlashInfer's trtllm-gen kernels for prefill and decode (vllm/utils/flashinfer.py:724-812 at 4ba787ec9959); auto uses trtllm-gen for decode when the query is fp8-quantised (an fp8 KV cache) but for prefill only with an auto KV dtype, so on the fp8-KV recipes the prefill kernel differs; the pooled prefill pair averages the trtllm-gen and the other rows, so the prefill is priced at their mean speed, not trtllm-gen's",
+          "when": [
+            {
+              "value_in": [
+                "true"
+              ],
+              "compute_capability": {
+                "gte": "10.0",
+                "lt": "11.0"
+              }
+            }
+          ]
+        }
       }
     },
     {
