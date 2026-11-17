@@ -210,12 +210,13 @@ def test_curves_that_claim_one_key_are_both_refused(tmp_path):
     out = generated(golden)
     carried = {stem_of(p) for p in out["profiles"]}
     assert GLM52 not in carried and new not in carried
-    assert any(c.startswith(f"Not carried: {new}.yaml") and f"{GLM52}.yaml" in c for c in out["caveats"])
+    assert any(c.startswith(f"Not carried: {new}.yaml") and f"{GLM52}.yaml" in c
+               and "#207" not in c for c in out["caveats"])
 
 
 def test_a_verifier_the_key_has_no_word_for_refuses_the_curve(tmp_path):
     """InferenceX's `relaxed` is no verifier the key states (vLLM v0.33.0 has standard, block and
-    fly): the curve is refused, naming the issue that would carry it."""
+    fly): the curve is refused, and the reason names the engine release that lacks it."""
     golden = copy_golden(tmp_path)
     ids = yaml.safe_load((golden / emit.IDENTITIES).read_text())
     ids[GQA_BLOCK]["collection"]["verify"] = {"value": "relaxed", "source": "explicit"}
@@ -223,7 +224,7 @@ def test_a_verifier_the_key_has_no_word_for_refuses_the_curve(tmp_path):
     out = generated(golden)
     assert GQA_BLOCK not in {stem_of(p) for p in out["profiles"]}
     assert any(c.startswith(f"Not carried: {GQA_BLOCK}.yaml") and "relaxed" in c
-               and "inference-sim/blis-substrate#207" in c for c in out["caveats"])
+               and "vLLM v0.33.0" in c and "#207" not in c for c in out["caveats"])
 
 
 def test_a_default_setting_is_stated_as_the_marker_and_the_engine_is_stated():

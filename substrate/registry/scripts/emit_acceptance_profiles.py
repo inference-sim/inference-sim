@@ -623,8 +623,10 @@ def collect(golden: Path = GOLDEN, catalog: Path = CATALOG):
             skipped.append((k.curve.stem, k.curve.model_key,
                             f"its profile keys are also claimed by {others}, measured with the "
                             "same target, drafter, method, draft sampler and verifier, so "
-                            "nothing a profile's key states tells them apart "
-                            "(inference-sim/blis-substrate#207)"))
+                            "nothing a profile's key states tells them apart: a lookup matches "
+                            "the run's engine, draft sampler and verifier, and a run states no "
+                            "sampling temperature to match a key field against (methodology "
+                            "12.3)"))
         else:
             kept.append(k)
     skipped.sort()
@@ -641,6 +643,15 @@ VERIFIERS = ("standard", "block", "fly")
 ENGINE_DEFAULT = "default"
 
 
+# Verifiers InferenceX's vocabulary lists that no engine release the catalog models implements,
+# each with the release that lacks it. A curve measured with one is refused with this reason.
+UNIMPLEMENTED = {
+    "relaxed": "InferenceX lists it without defining it, and vLLM v0.33.0's RejectionSampleMethod "
+               "is standard, synthetic, block or fly (vllm/config/speculative.py:83), so no engine "
+               "release this repository models implements it",
+}
+
+
 def key_value(facts: dict, name: str) -> str:
     """The key value of identities.yaml fact `name`, as the source states it: an explicit or
     documented value as stated; a value left at the engine's default as the marker "default";
@@ -651,8 +662,8 @@ def key_value(facts: dict, name: str) -> str:
         return ENGINE_DEFAULT if source == "default" else ""
     allowed = DRAFT_SAMPLERS if name == "draft_sample" else VERIFIERS
     if value not in allowed:
-        raise Refused(f"its {name} {value!r} is not one of {allowed}, which a profile key states "
-                      "(inference-sim/blis-substrate#207)")
+        raise Refused(f"its {name} {value!r} is not one of {allowed}, which a profile key states: "
+                      f"{UNIMPLEMENTED.get(value, 'no engine release this repository models names it')}")
     return str(value)
 
 
