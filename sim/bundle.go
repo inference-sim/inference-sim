@@ -21,6 +21,9 @@ type PolicyBundle struct {
 	NodePools         []NodePoolBundleConfig        `yaml:"node_pools"`         // nil = no node pools
 	Autoscaler        AutoscalerBundleConfig        `yaml:"autoscaler"`         // IntervalUs=0 = disabled
 	InstanceLifecycle InstanceLifecycleBundleConfig `yaml:"instance_lifecycle"` // zero = instant loading
+	// ClusterAutoscaler decides how many nodes each pool needs (inference-sim#740); absent, no node
+	// is provisioned beyond the pools' initial nodes.
+	ClusterAutoscaler ClusterAutoscalerBundleConfig `yaml:"cluster_autoscaler"`
 }
 
 // PriorityConfig holds priority policy configuration.
@@ -68,6 +71,14 @@ type AnalyzerBundleConfig struct {
 type InstanceLifecycleBundleConfig struct {
 	LoadingDelay              DelayBundleSpec `yaml:"loading_delay"`
 	WarmStartInitialInstances bool            `yaml:"warm_start_initial_instances"`
+}
+
+// ClusterAutoscalerBundleConfig is the policy bundle's cluster_autoscaler block
+// (cluster.ClusterAutoscalerConfig).
+type ClusterAutoscalerBundleConfig struct {
+	Policy             string  `yaml:"policy"`
+	PendingThresholdUs float64 `yaml:"pending_threshold_us"`
+	MaxNodesPerPool    int     `yaml:"max_nodes_per_pool"`
 }
 
 // AutoscalerBundleConfig holds autoscaler pipeline configuration.
