@@ -228,3 +228,27 @@ func TestADrafterPassIsReadFromTheRankItBelongsTo(t *testing.T) {
 		t.Errorf("a step with no drafter pass carries %d", one.DraftPaddedTokens)
 	}
 }
+
+// SUB-11: DraftShape.Skip changes a price. The engine decides that a step's drafter proposes
+// nothing (vLLM v0.33.0's skip_drafts); BatchOf carries that to the kernel, which prices the step
+// without the passes that propose, so the same requests cost less skipped than proposing.
+func TestAStepShapeThatSkipsItsDraftsIsPricedSkipped(t *testing.T) {
+	k := specKernel(t)
+	step := func(skip bool) plan.StepShape {
+		s := shape(8, 8)
+		s.Mode = plan.StepVerify
+		s.Drafts = plan.DraftShape{Verified: 7, Skip: skip}
+		return s
+	}
+	b, err := BatchOf(step(true), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !b.SkipDrafts {
+		t.Errorf("a step shape that skips its drafts gives a batch that does not")
+	}
+	skipped, proposing := priceOf(t, k, step(true)), priceOf(t, k, step(false))
+	if skipped.NoOverlap >= proposing.NoOverlap || skipped.Overlap >= proposing.Overlap {
+		t.Errorf("skipped %v, proposing %v: a step that proposes no drafts must cost less", skipped, proposing)
+	}
+}

@@ -8,6 +8,7 @@ DraftPass.Padded # kernel: TestADrafterPaddedByItsGroupIsPricedAsPadded
 DraftPolicy.FirstPassRows # kernel: TestAnEagle3FirstPassIsChargedOverTheScheduledTokens
 DraftPolicy.PassRequests # kernel: TestTheHeadAndLaterPassesAreChargedForRequestsStillInTheirPrompt
 DraftShape.Passes # kernel: TestADrafterPassIsReadFromTheRankItBelongsTo
+DraftShape.Skip # kernel: TestAStepShapeThatSkipsItsDraftsIsPricedSkipped
 KernelImpl.CodeHash # kernel: TestTheKernelImplementationThatRunsDecidesWhichCoefficientPrices
 KernelImpl.Library # kernel: TestTheKernelImplementationThatRunsDecidesWhichCoefficientPrices
 KernelImpl.Variant # kernel: TestTheKernelImplementationThatRunsDecidesWhichCoefficientPrices
