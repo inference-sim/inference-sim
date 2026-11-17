@@ -1,0 +1,1 @@
+{"name": "render-unset", "description": "enable_scale_out not stated: the field keeps its default and the scale-out routes answer 403", "config": {"supported_tasks": ["generate"]}}
