@@ -1,0 +1,248 @@
+{
+ "config": {
+  "block_size": 4,
+  "connector": {
+   "extra_config": {
+    "connectors": [
+     {
+      "kv_connector": "NixlConnector",
+      "kv_role": "kv_consumer"
+     },
+     {
+      "kv_connector": "OffloadingConnector",
+      "kv_connector_extra_config": {
+       "cpu_bytes_to_use": 131072,
+       "offload_prompt_only": false
+      },
+      "kv_role": "kv_both"
+     }
+    ]
+   },
+   "kv_load_failure_policy": "fail",
+   "kv_role": "kv_consumer",
+   "name": "MultiConnector"
+  },
+  "enable_prefix_caching": true,
+  "kv_page": {
+   "head_size": 512,
+   "num_kv_heads": 1
+  },
+  "long_prefill_token_threshold": 0,
+  "max_model_len": 64,
+  "max_num_batched_tokens": 16,
+  "max_num_seqs": 4,
+  "num_blocks": 21,
+  "scheduling_policy": "priority",
+  "transfer": {
+   "load_delay": 0,
+   "store_delay": 1
+  }
+ },
+ "max_steps": 400,
+ "name": "multi-fuzz-priority-self-preempt",
+ "requests": [
+  {
+   "arrival_step": 12,
+   "id": "q00",
+   "output": [
+    30989,
+    41650,
+    3886,
+    5970,
+    44538,
+    12057,
+    22475,
+    32674
+   ],
+   "priority": 3,
+   "prompt": [
+    3156,
+    1798
+   ],
+   "store_delay": 2
+  },
+  {
+   "arrival_step": 0,
+   "id": "q01",
+   "output": [
+    6246,
+    13535,
+    28459,
+    45885,
+    13934,
+    42511,
+    5394,
+    32039,
+    26148,
+    17046
+   ],
+   "priority": 2,
+   "prompt": [
+    3156,
+    1798,
+    3899,
+    3335,
+    2403,
+    2660,
+    2055,
+    2597,
+    5228,
+    5609,
+    11085,
+    27731,
+    35383,
+    12237,
+    39878,
+    32888,
+    4949,
+    47459,
+    22845,
+    40826,
+    4195,
+    20893,
+    12910,
+    44234,
+    44618,
+    29177,
+    18611,
+    29353
+   ],
+   "recv_delay": 2,
+   "remote_prefill": true
+  },
+  {
+   "arrival_step": 25,
+   "id": "q02",
+   "load_delay": 2,
+   "output": [
+    15653,
+    43246
+   ],
+   "priority": 1,
+   "prompt": [
+    3156,
+    1798,
+    3899,
+    3335,
+    2403,
+    2660,
+    2055,
+    2597,
+    37950,
+    45414,
+    24331,
+    40915,
+    26744
+   ]
+  },
+  {
+   "arrival_step": 1,
+   "id": "q03",
+   "load_delay": 1,
+   "output": [
+    20984,
+    25694,
+    3446,
+    7694,
+    41324,
+    23502,
+    49531,
+    45505,
+    40771,
+    5947,
+    16534
+   ],
+   "priority": 3,
+   "prompt": [
+    27127,
+    13263,
+    42587,
+    42831,
+    12817,
+    34052,
+    10886,
+    12697,
+    36145,
+    47755,
+    27339,
+    40503,
+    45407,
+    20895,
+    37512,
+    31152,
+    24928,
+    9842,
+    2268,
+    14839
+   ],
+   "recv_delay": 1,
+   "remote_prefill": true
+  },
+  {
+   "arrival_step": 14,
+   "id": "q04",
+   "output": [
+    25837,
+    24355
+   ],
+   "priority": 0,
+   "prompt": [
+    3156,
+    1798,
+    3899,
+    3335,
+    2403,
+    2660,
+    2055,
+    2597,
+    33756,
+    8319,
+    45300,
+    24093,
+    42055
+   ],
+   "recv_delay": 4,
+   "remote_prefill": true,
+   "store_delay": 3
+  },
+  {
+   "arrival_step": 3,
+   "id": "q05",
+   "output": [
+    26319,
+    32316,
+    39774,
+    3297,
+    37691,
+    888
+   ],
+   "priority": 0,
+   "prompt": [
+    3156,
+    1798,
+    3899,
+    3335,
+    2403,
+    2660,
+    2055,
+    2597,
+    30014,
+    25607,
+    20865,
+    34160,
+    19644,
+    22451,
+    44485,
+    8697,
+    49702,
+    24375,
+    11422,
+    20150,
+    3450,
+    12428,
+    34825
+   ]
+  }
+ ],
+ "seed": 159
+}
