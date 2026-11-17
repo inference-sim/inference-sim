@@ -29,8 +29,21 @@ defines (`trace_version: 4`). The data CSV's columns are read by name: `request_
 `prefix_length`, `streaming`, `input_tokens`, `output_tokens`, `text_tokens`, `image_tokens`,
 `audio_tokens`, `video_tokens`, `reason_ratio`, `model`, `deadline_us`, `arrival_time_us`,
 `first_chunk_time_us`, `last_chunk_time_us` and `status`, then `slo_target_us`, `adapter`,
-`think_time_us` and `input_tokens_reset` when some row carries one. A request is injected at
+`think_time_us`, `input_tokens_reset` and `phase` when some row carries one. A request is injected at
 its `arrival_time_us` with a prompt of `prefix_length` plus `input_tokens` tokens.
+
+### Phases
+
+A header `phases` list runs the trace in drain-gated stages, as a benchmark does: a warm-up, then
+the measured requests. Each row's `phase` column names its phase. The first phase is sent at
+the start; each later phase is sent when the one before it has drained (every request has its
+fate), `offset_us` later, or at the clock `offset_us` when it says `start: at`. A phase with a
+`concurrency` sends that many requests and one more each time one of its own ends; its requests
+arrive when sent. Without one, a request arrives at the phase's start plus its recorded arrival
+less the phase's earliest. The engines, KV caches and prefix cache run on across phases, so the
+measured phase starts from the state the warm-up left. Each result row carries its `phase`, and
+`warmup` rows are outside the measured window. Phases replay with `--session-mode fixed` or
+`fixed-accumulate`; a request the run ends before sending has the fate `not_started`.
 
 Version 3, which v0.15.0 wrote, is refused. Convert a version 3 (or 2) trace with
 
