@@ -226,6 +226,7 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 	p.Collectives = plan.CollectivePlan{SequenceParallelMoE: lay.SequenceParallelMoE,
 		SequenceParallelModel: lay.ModelSequenceParallel}
 	out.Reported.SMAllReduce = lay.CustomAllReduce
+	out.Encoder = encoderRun(eng, g, pl.TP, pl.PP)
 
 	// The served weight format.
 	quantization := eng.Quantization

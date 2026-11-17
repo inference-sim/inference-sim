@@ -97,6 +97,8 @@ type Engine struct {
 	// hashSeed is the deployment's PYTHONHASHSEED (nil: unset), the root of every request's
 	// block-hash chain.
 	hashSeed *string
+	// servesRender is whether the server answers the router's render calls (ServesRender).
+	servesRender bool
 	// aborted are the requests Finish aborted, or that finished, while a batch in flight scheduled
 	// them: their entries in reqs go once no batch in flight does.
 	aborted map[string]bool
@@ -167,6 +169,8 @@ type reqState struct {
 	// preemptions and emitted are what the finish record reports.
 	preemptions int
 	emitted     int
+	// lookup is the request's last admission lookup, which its batch reports once it runs.
+	lookup lookupInfo
 }
 
 // pendingBatch is one in-flight batch: the contract's ID and core/engine's batch.
@@ -205,7 +209,7 @@ func newEngine(st settings, pricer Pricer) (*Engine, error) {
 		s: s, pricer: pricer, reqs: map[string]*reqState{}, aborted: map[string]bool{},
 		metrics:  metrics.New(histogramBounds(st.sched.MaxModelLen)),
 		maxLoRAs: st.sched.MaxLoRAs, specTokens: st.sched.Spec.NumTokens, async: st.sched.Async,
-		pp: max(st.sched.DecodeStagger, 1), hashSeed: st.hashSeed,
+		pp: max(st.sched.DecodeStagger, 1), hashSeed: st.hashSeed, servesRender: st.servesRender,
 	}
 	if st.maxCPULoRAs > 0 {
 		if e.adapterCache, err = lora.New(st.sched.MaxLoRAs, st.maxCPULoRAs); err != nil {
@@ -634,18 +638,22 @@ func (e *Engine) takeEmptyFinished() []engine.Finished {
 // batchOf is a scheduled batch in the contract's terms.
 func (e *Engine) batchOf(cb core.Batch) (engine.Batch, error) {
 	b := engine.Batch{}
+	e.noteLookups(cb)
 	for _, id := range cb.Out.Order {
 		r := e.s.Request(id)
 		n := cb.Out.Scheduled[id]
 		computed := r.NumComputed - n
 		sc := engine.Scheduled{ID: id, Tokens: n, Computed: computed, PromptLen: len(r.Prompt),
 			Drafts: len(cb.Out.SpecDecode[id])}
-		if hit, ok := cb.Out.PrefixHit[id]; ok {
-			sc.CachedTokens = hit
+		if st := e.reqs[id]; st != nil && st.lookup.set && !st.lookup.reported {
 			// A lookup vLLM's prefix-cache stats count: at the request's admission with no
 			// computed tokens, when prefix caching is on (record_prefix_cache_stats,
 			// vllm/v1/core/sched/scheduler.py:1508-1511 and kv_cache_manager.py:251-264@4ba787ec).
+			// A request that waited for an asynchronous load reports it in the batch that first
+			// runs it, with the tokens the KV offload tier supplied (OffloadCachedTokens).
+			sc.CachedTokens = st.lookup.cached
 			sc.PrefixLookup = e.prefixCaching()
+			st.lookup.reported = true
 		}
 		b.Reqs = append(b.Reqs, sc)
 	}

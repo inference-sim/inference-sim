@@ -5124,6 +5124,74 @@
     "name": "enable_prefix_caching"
    }
   },
+  "enable_scale_out": {
+   "value_classes": {
+    "type": "boolean",
+    "covered": [
+     "false",
+     "true"
+    ]
+   },
+   "basis": {
+    "kind": "boolean",
+    "classes": [
+     {
+      "values": [
+       false
+      ],
+      "compared_at": [
+       "vllm/entrypoints/cohere/api_router.py:312",
+       "vllm/entrypoints/scale_out/factories.py:99"
+      ],
+      "covered_by": [
+       "core/vllm/testdata/golden-render/stated-false.json"
+      ]
+     },
+     {
+      "values": [
+       true
+      ],
+      "compared_at": [
+       "vllm/entrypoints/cohere/api_router.py:312",
+       "vllm/entrypoints/scale_out/factories.py:99"
+      ],
+      "covered_by": [
+       "core/vllm/testdata/golden-render/stated-true.json"
+      ]
+     }
+    ],
+    "relations": [],
+    "sites": [
+     {
+      "at": "vllm/entrypoints/cohere/api_router.py:312",
+      "expr": "getattr(args, \"enable_scale_out\", False)",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/entrypoints/scale_out/factories.py:99",
+      "expr": "getattr(args, \"enable_scale_out\", False)",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": false,
+      "trace": "core/vllm/testdata/golden-render/stated-false.json"
+     },
+     {
+      "value": true,
+      "trace": "core/vllm/testdata/golden-render/stated-true.json"
+     }
+    ],
+    "name": "enable_scale_out"
+   }
+  },
   "gpu_memory_utilization": {
    "value_classes": {
     "type": "numeric",
@@ -5819,6 +5887,90 @@
      }
     ],
     "name": "kv_cache_dtype"
+   }
+  },
+  "kv_cache_memory_bytes": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0
+    ]
+   },
+   "basis": {
+    "kind": "numeric",
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": null,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [],
+      "uncut": true,
+      "covered_by": [
+       "vllmengine/kvcachememory_test.go"
+      ]
+     },
+     {
+      "unset": true,
+      "compared_at": [
+       "vllm/v1/worker/cpu_worker.py:188",
+       "vllm/v1/worker/cpu_worker.py:204",
+       "vllm/v1/worker/gpu_worker.py:1012",
+       "vllm/v1/worker/startup_plan.py:140"
+      ],
+      "covered_by": []
+     }
+    ],
+    "relations": [
+     {
+      "at": "vllm/v1/worker/cpu_worker.py:205",
+      "expr": "explicit_kv_cache_size > available_memory",
+      "with": "available_memory"
+     }
+    ],
+    "sites": [
+     {
+      "at": "vllm/v1/worker/cpu_worker.py:188",
+      "expr": "self.cache_config.kv_cache_memory_bytes is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/cpu_worker.py:204",
+      "expr": "explicit_kv_cache_size is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/gpu_worker.py:1012",
+      "expr": "self.cache_config.kv_cache_memory_bytes is None",
+      "op": "Is",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/startup_plan.py:140",
+      "expr": "worker.cache_config.kv_cache_memory_bytes is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": 21474836480,
+      "trace": "vllmengine/kvcachememory_test.go",
+      "reviewed": true
+     }
+    ],
+    "name": "kv_cache_memory_bytes"
    }
   },
   "kv_events_config.enable_kv_cache_events": {

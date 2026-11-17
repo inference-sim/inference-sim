@@ -185,6 +185,12 @@ type settings struct {
 	hashSeed *string
 	// maxCPULoRAs is the capacity of the worker's adapter cache (max_cpu_loras, resolved); 0 when LoRA is off.
 	maxCPULoRAs int
+	// servesRender is whether the model server answers the router's render endpoints: the
+	// frontend's --enable-scale-out (Engine.EnableScaleOut), false by default. vLLM's
+	// register_scale_out_api_routers answers every render, derender and token-in/token-out route
+	// with HTTP 403 unless it is set or the server runs in a dedicated token-only mode, which
+	// this engine does not model (tokens_only stays refused).
+	servesRender bool
 }
 
 // dpSettings are a data-parallel group's settings.
@@ -394,6 +400,7 @@ func resolve(c Config) (settings, error) {
 	// loop state (an empty schedule occupies a slot, a full queue blocks on the oldest batch, and a
 	// blocked step schedules nothing until that batch completes; vllm/v1/engine/core.py:698-810@5df63a72).
 
+	s.servesRender = e.EnableScaleOut != nil && *e.EnableScaleOut
 	prefixCaching := e.EnablePrefixCaching == nil || *e.EnablePrefixCaching
 	if err := checkMambaCache(c, prefixCaching); err != nil {
 		return settings{}, err
@@ -719,8 +726,6 @@ type unreadSetting struct {
 const issueBase = "https://github.com/inference-sim/blis-vllm/issues/"
 
 var unreadSettings = []unreadSetting{
-	// CacheConfig.kv_cache_memory_bytes: None (vllm/config/cache.py:257@5df63a72).
-	{"kv_cache_memory_bytes", "kv_cache_memory_bytes", issueBase + "81", func(e engineconfig.Engine) bool { return e.KVCacheMemoryBytes != nil }},
 	// AttentionConfig.use_trtllm_attention: None, auto-detect (vllm/config/attention.py:74@5df63a72);
 	// a stated true or false is a choice. Which prefill kernel runs is the engine's to resolve and
 	// to report as the implementation of attention.prefill, which this engine does not do yet; the

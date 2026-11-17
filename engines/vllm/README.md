@@ -101,7 +101,10 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   recorded case (DeepSeek-V4.1-Flash, tp 8, utilization 0.80) the pool is 47.56 GiB against vLLM's logged
   61.18 GiB (blis-vllm#73 tracks closing that). The field's value classes are one class, since no comparison of the
   field with a literal is found in the source (the budget is arithmetic). `kv_cache_memory_bytes`, which overrides
-  the utilization in vLLM, is refused when stated (blis-vllm#81). `block_size` is `none`: the engine resolves an unstated one only
+  the utilization in vLLM, sizes the pool when stated: the worker reserves exactly those bytes on each GPU and skips
+  profiling (`vllm/v1/worker/gpu_worker.py:656-681@4ba787ec`), so the pool is the stated bytes over a block's bytes
+  whatever the utilization, and a cache that with the rank's fixed memory exceeds the device is refused
+  (`vllmengine/kvcachememory_test.go`; blis-vllm#81). `block_size` is `none`: the engine resolves an unstated one only
   for the models, GPUs and KV dtypes in `oracle/blocksize/TABLE.tsv` (`ResolveBlockSize` in
   `core/vllm/blocksize.go`) and refuses the rest, citing blis-vllm#68, and a field has one
   estimation rule, which cannot say that.

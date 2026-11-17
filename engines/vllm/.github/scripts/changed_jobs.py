@@ -76,6 +76,7 @@ ORACLE_PATHS = [
     r"^docs/metrics-(manifest|buckets)\.json$",
     r"^core/kv/testdata/",
     r"^core/lora/testdata/",
+    r"^core/vllm/testdata/golden-render/",
     r"^compat/quantization/resolved\.json$",
     r"^core/lower/testdata/",
     r"^rules/engineconfig/testdata/",

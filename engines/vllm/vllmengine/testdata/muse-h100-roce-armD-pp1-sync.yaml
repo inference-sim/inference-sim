@@ -25,10 +25,13 @@ pools:
       kv_cache_dtype: fp8
       async_scheduling: false
       moe_backend: marlin
+      language_model_only: true
 # Arm D on one node at PP1 x TP8, synchronous scheduling and no drafter: the one-batch twin of
 # muse-h100-roce-armD.yaml. One H100 node's KV memory beside the weights
-# (0.16 GiB a GPU) holds at most an 11,664-token sequence, and vLLM refuses a longer max_model_len
-# at start-up, so the twin serves 8,192 tokens. The OffloadingConnector's CPU tier, LRU: the
+# (0.16 GiB a GPU, text decoder alone) holds at most an 11,664-token sequence, and vLLM refuses a longer max_model_len
+# at start-up, so the twin serves 8,192 tokens. It states language_model_only: true: the catalog now prices
+# Muse's vision tower, resident by default, and its 0.3 GiB a GPU does not fit in those 0.16 GiB, so the
+# default would leave no KV on one H100 node. These tests check the offload mapping, which the tower does not touch. The OffloadingConnector's CPU tier, LRU: the
 # node's 512 GiB of host DRAM (the engine's cpu_bytes_to_use).
 offload:
   connector: OffloadingConnector
