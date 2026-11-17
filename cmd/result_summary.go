@@ -110,17 +110,25 @@ func printTraceSummary(w io.Writer, ts *trace.TraceSummary) {
 	_, _ = fmt.Fprintf(w, "  Admitted: %d\n", ts.AdmittedCount)
 	_, _ = fmt.Fprintf(w, "  Rejected: %d\n", ts.RejectedCount)
 	_, _ = fmt.Fprintf(w, "Unique Targets: %d\n", ts.UniqueTargets)
-	if len(ts.TargetDistribution) > 0 {
-		_, _ = fmt.Fprintln(w, "Target Distribution:")
-		keys := make([]string, 0, len(ts.TargetDistribution))
-		for k := range ts.TargetDistribution {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			_, _ = fmt.Fprintf(w, "  %s: %d\n", k, ts.TargetDistribution[k])
-		}
-	}
+	printPickDistribution(w, "Target Distribution:", ts.TargetDistribution)
+	printPickDistribution(w, "Prefill Distribution:", ts.PrefillDistribution)
 	_, _ = fmt.Fprintf(w, "Mean Regret: %.6f\n", ts.MeanRegret)
 	_, _ = fmt.Fprintf(w, "Max Regret: %.6f\n", ts.MaxRegret)
+}
+
+// printPickDistribution writes an instance → pick count table in instance order, or nothing
+// when it is empty.
+func printPickDistribution(w io.Writer, heading string, picks map[string]int) {
+	if len(picks) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w, heading)
+	keys := make([]string, 0, len(picks))
+	for k := range picks {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		_, _ = fmt.Fprintf(w, "  %s: %d\n", k, picks[k])
+	}
 }

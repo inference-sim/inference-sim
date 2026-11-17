@@ -146,7 +146,8 @@ Log every routing decision, with the scores the router's primary scheduling prof
 ```
 
 The trace summary shows:
-- **Target Distribution** — how many requests went to each instance
+- **Target Distribution** — how many routing picks named each instance: the instance that serves the request, so in a prefill/decode run the decode instance
+- **Prefill Distribution** — in a prefill/decode run, how many prefill picks named each prefill instance; it sums to the number of disaggregated requests
 - **Mean/Max Regret** — the best alternative endpoint's score minus the chosen endpoint's score
 
 `--counterfactual-k` ranks the top-k endpoints by those scores.
