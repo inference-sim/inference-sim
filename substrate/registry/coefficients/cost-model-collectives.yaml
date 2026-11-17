@@ -5209,6 +5209,66 @@ coefficients:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/vllm/0.27.0/custom_allreduce_perf.parquet (vLLM 0.27.0 custom all-reduce, CUDA-graph lane, NVIDIA GB300), 23 messages at 16 ranks", role: primary}
       rationale: >
         The rate in the transition region a forward pass's messages actually land in, fitted by grid search against the three-parameter form the kernel evaluates: max(floor + size/rate, size/peak). Geometric error 1.079x against 1.199x for the two-parameter form.
+  - collective_transition_rate_all_reduce_nccl_fp16_2rank_gb300:
+      value: 249250.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [gb300]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 2 ranks, 21 messages", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.164x against 1.317x under max(size/peak, floor). 249.25 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_transition_rate_all_reduce_nccl_fp16_4rank_gb300:
+      value: 204250.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [gb300]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 4 ranks, 21 messages", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.147x against 1.286x under max(size/peak, floor). 204.25 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_peak_rate_all_reduce_nccl_fp16_4rank_gb300:
+      value: 211648.1
+      units: bytes_per_us
+      method: measured
+      fitted: false
+      scope: {hardware: [gb300]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 4 ranks, 21 messages", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, 211.65 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_floor_all_reduce_nccl_fp16_4rank_gb300:
+      value: 15.09
+      units: us_per_transfer
+      method: measured
+      fitted: false
+      scope: {hardware: [gb300]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 4 ranks, 21 messages", role: primary}
+      rationale: >
+        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_peak_rate_all_reduce_nccl_fp16_2rank_gb300:
+      value: 272423.7
+      units: bytes_per_us
+      method: measured
+      fitted: false
+      scope: {hardware: [gb300]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 2 ranks, 21 messages", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, 272.42 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_floor_all_reduce_nccl_fp16_2rank_gb300:
+      value: 9.37
+      units: us_per_transfer
+      method: measured
+      fitted: false
+      scope: {hardware: [gb300]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 2 ranks, 21 messages", role: primary}
+      rationale: >
+        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_floor_all_reduce_int8_2rank_gb300:
       value: 7.033
       units: us_per_transfer
@@ -5902,7 +5962,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/vllm/0.27.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 c3147d2a88a5; vLLM 0.27.0 custom all-reduce, CUDA-graph lane, NVIDIA GB300), 23 messages at 8 ranks", role: primary}
       rationale: >
-        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. TRANSFERRED from gb300: no gb200-nvl72 sweep measures vLLM's custom all-reduce at 8 ranks, where the group spans trays and vLLM serves it over multi-node NVLink; the NCCL 2.23 triple it supersedes prices a kernel vLLM does not call (inference-sim/blis-substrate#116). Checked where both parts are measured, vLLM 0.31.0 at 2 and 4 ranks, gb300's triple scoring gb200-nvl72's messages: 2 ranks 1.037x against 1.037x; 4 ranks 1.080x against 1.043x (gate 1.1x). scripts/relane_allreduce_vllm.py.
+        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. TRANSFERRED from gb300: no gb200-nvl72 sweep measures vLLM's custom all-reduce at 8 ranks, where the group spans trays and vLLM serves it over multi-node NVLink; the NCCL 2.23 triple it supersedes prices a kernel vLLM does not call (inference-sim/blis-substrate#116). Checked where both parts are measured, vLLM 0.31.0 at 2 and 4 ranks, gb300's triple scoring gb200-nvl72's messages: 2 ranks 1.037x against 1.037x; 4 ranks 1.080x against 1.043x (gate 1.1x). scripts/relane_allreduce_vllm.py. DISAGREEMENT, unresolved: gb200-nvl72's own sweep of SGLang's custom all-reduce (comm/sglang/0.5.14 file, version column 0.5.17) measures 27.98 us at this width and scores gb200-nvl72's vLLM 0.31.0 rows at 2 and 4 ranks better than the triple used here (1.047x against 1.471x), but priced from it the Muse Spark GB200 TP8 probe's ITL p50 moves from 10.53 ms to 12.39 ms against a measured 5.82 ms (internal deployment measurements), past the 1.0 ms allowance registered in COLL1, so it was not adopted.
   - collective_peak_rate_all_reduce_fp16_8rank_gb200_nvl72:
       value: 186227.1
       units: bytes_per_us
@@ -5915,7 +5975,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/vllm/0.27.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 c3147d2a88a5; vLLM 0.27.0 custom all-reduce, CUDA-graph lane, NVIDIA GB300), 23 messages at 8 ranks", role: primary}
       rationale: >
-        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 186.23 GB/s. TRANSFERRED from gb300: no gb200-nvl72 sweep measures vLLM's custom all-reduce at 8 ranks, where the group spans trays and vLLM serves it over multi-node NVLink; the NCCL 2.23 triple it supersedes prices a kernel vLLM does not call (inference-sim/blis-substrate#116). Checked where both parts are measured, vLLM 0.31.0 at 2 and 4 ranks, gb300's triple scoring gb200-nvl72's messages: 2 ranks 1.037x against 1.037x; 4 ranks 1.080x against 1.043x (gate 1.1x). scripts/relane_allreduce_vllm.py.
+        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 186.23 GB/s. TRANSFERRED from gb300: no gb200-nvl72 sweep measures vLLM's custom all-reduce at 8 ranks, where the group spans trays and vLLM serves it over multi-node NVLink; the NCCL 2.23 triple it supersedes prices a kernel vLLM does not call (inference-sim/blis-substrate#116). Checked where both parts are measured, vLLM 0.31.0 at 2 and 4 ranks, gb300's triple scoring gb200-nvl72's messages: 2 ranks 1.037x against 1.037x; 4 ranks 1.080x against 1.043x (gate 1.1x). scripts/relane_allreduce_vllm.py. DISAGREEMENT, unresolved: gb200-nvl72's own sweep of SGLang's custom all-reduce (comm/sglang/0.5.14 file, version column 0.5.17) measures 27.98 us at this width and scores gb200-nvl72's vLLM 0.31.0 rows at 2 and 4 ranks better than the triple used here (1.047x against 1.471x), but priced from it the Muse Spark GB200 TP8 probe's ITL p50 moves from 10.53 ms to 12.39 ms against a measured 5.82 ms (internal deployment measurements), past the 1.0 ms allowance registered in COLL1, so it was not adopted.
   - collective_transition_rate_all_reduce_fp16_8rank_gb200_nvl72:
       value: 172500.0
       units: bytes_per_us
@@ -5928,7 +5988,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/vllm/0.27.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 c3147d2a88a5; vLLM 0.27.0 custom all-reduce, CUDA-graph lane, NVIDIA GB300), 23 messages at 8 ranks", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.046x against 1.165x under max(size/peak, floor). 172.50 GB/s. TRANSFERRED from gb300: no gb200-nvl72 sweep measures vLLM's custom all-reduce at 8 ranks, where the group spans trays and vLLM serves it over multi-node NVLink; the NCCL 2.23 triple it supersedes prices a kernel vLLM does not call (inference-sim/blis-substrate#116). Checked where both parts are measured, vLLM 0.31.0 at 2 and 4 ranks, gb300's triple scoring gb200-nvl72's messages: 2 ranks 1.037x against 1.037x; 4 ranks 1.080x against 1.043x (gate 1.1x). scripts/relane_allreduce_vllm.py.
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.046x against 1.165x under max(size/peak, floor). 172.50 GB/s. TRANSFERRED from gb300: no gb200-nvl72 sweep measures vLLM's custom all-reduce at 8 ranks, where the group spans trays and vLLM serves it over multi-node NVLink; the NCCL 2.23 triple it supersedes prices a kernel vLLM does not call (inference-sim/blis-substrate#116). Checked where both parts are measured, vLLM 0.31.0 at 2 and 4 ranks, gb300's triple scoring gb200-nvl72's messages: 2 ranks 1.037x against 1.037x; 4 ranks 1.080x against 1.043x (gate 1.1x). scripts/relane_allreduce_vllm.py. DISAGREEMENT, unresolved: gb200-nvl72's own sweep of SGLang's custom all-reduce (comm/sglang/0.5.14 file, version column 0.5.17) measures 27.98 us at this width and scores gb200-nvl72's vLLM 0.31.0 rows at 2 and 4 ranks better than the triple used here (1.047x against 1.471x), but priced from it the Muse Spark GB200 TP8 probe's ITL p50 moves from 10.53 ms to 12.39 ms against a measured 5.82 ms (internal deployment measurements), past the 1.0 ms allowance registered in COLL1, so it was not adopted.
   - collective_floor_all_reduce_fp16_16rank_gb200_nvl72:
       value: 45.9
       units: us_per_transfer
@@ -5941,7 +6001,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/vllm/0.27.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 c3147d2a88a5; vLLM 0.27.0 custom all-reduce, CUDA-graph lane, NVIDIA GB300), 23 messages at 16 ranks", role: primary}
       rationale: >
-        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. TRANSFERRED from gb300: no gb200-nvl72 sweep measures vLLM's custom all-reduce at 16 ranks, where the group spans trays and vLLM serves it over multi-node NVLink; the NCCL 2.23 triple it supersedes prices a kernel vLLM does not call (inference-sim/blis-substrate#116). Checked where both parts are measured, vLLM 0.31.0 at 2 and 4 ranks, gb300's triple scoring gb200-nvl72's messages: 2 ranks 1.037x against 1.037x; 4 ranks 1.080x against 1.043x (gate 1.1x). scripts/relane_allreduce_vllm.py.
+        Minimum latency over the 6 messages at or below 4 KiB, where latency is independent of size, on vLLM's OWN custom all-reduce in its CUDA-graph lane: vLLM does not call NCCL for a tensor-parallel all-reduce its custom kernel can serve. TRANSFERRED from gb300: no gb200-nvl72 sweep measures vLLM's custom all-reduce at 16 ranks, where the group spans trays and vLLM serves it over multi-node NVLink; the NCCL 2.23 triple it supersedes prices a kernel vLLM does not call (inference-sim/blis-substrate#116). Checked where both parts are measured, vLLM 0.31.0 at 2 and 4 ranks, gb300's triple scoring gb200-nvl72's messages: 2 ranks 1.037x against 1.037x; 4 ranks 1.080x against 1.043x (gate 1.1x). scripts/relane_allreduce_vllm.py. DISAGREEMENT, unresolved: gb200-nvl72's own sweep of SGLang's custom all-reduce (comm/sglang/0.5.14 file, version column 0.5.17) measures 48.78 us at this width and scores gb200-nvl72's vLLM 0.31.0 rows at 2 and 4 ranks better than the triple used here (1.047x against 1.471x), but priced from it the Muse Spark GB200 TP8 probe's ITL p50 moves from 10.53 ms to 12.39 ms against a measured 5.82 ms (internal deployment measurements), past the 1.0 ms allowance registered in COLL1, so it was not adopted.
   - collective_peak_rate_all_reduce_fp16_16rank_gb200_nvl72:
       value: 170712.3
       units: bytes_per_us
@@ -5954,7 +6014,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/vllm/0.27.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 c3147d2a88a5; vLLM 0.27.0 custom all-reduce, CUDA-graph lane, NVIDIA GB300), 23 messages at 16 ranks", role: primary}
       rationale: >
-        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 170.71 GB/s. TRANSFERRED from gb300: no gb200-nvl72 sweep measures vLLM's custom all-reduce at 16 ranks, where the group spans trays and vLLM serves it over multi-node NVLink; the NCCL 2.23 triple it supersedes prices a kernel vLLM does not call (inference-sim/blis-substrate#116). Checked where both parts are measured, vLLM 0.31.0 at 2 and 4 ranks, gb300's triple scoring gb200-nvl72's messages: 2 ranks 1.037x against 1.037x; 4 ranks 1.080x against 1.043x (gate 1.1x). scripts/relane_allreduce_vllm.py.
+        Maximum of message_size/latency over the sweep, on vLLM's custom all-reduce in its CUDA-graph lane. 170.71 GB/s. TRANSFERRED from gb300: no gb200-nvl72 sweep measures vLLM's custom all-reduce at 16 ranks, where the group spans trays and vLLM serves it over multi-node NVLink; the NCCL 2.23 triple it supersedes prices a kernel vLLM does not call (inference-sim/blis-substrate#116). Checked where both parts are measured, vLLM 0.31.0 at 2 and 4 ranks, gb300's triple scoring gb200-nvl72's messages: 2 ranks 1.037x against 1.037x; 4 ranks 1.080x against 1.043x (gate 1.1x). scripts/relane_allreduce_vllm.py. DISAGREEMENT, unresolved: gb200-nvl72's own sweep of SGLang's custom all-reduce (comm/sglang/0.5.14 file, version column 0.5.17) measures 48.78 us at this width and scores gb200-nvl72's vLLM 0.31.0 rows at 2 and 4 ranks better than the triple used here (1.047x against 1.471x), but priced from it the Muse Spark GB200 TP8 probe's ITL p50 moves from 10.53 ms to 12.39 ms against a measured 5.82 ms (internal deployment measurements), past the 1.0 ms allowance registered in COLL1, so it was not adopted.
   - collective_transition_rate_all_reduce_fp16_16rank_gb200_nvl72:
       value: 141500.0
       units: bytes_per_us
@@ -5967,7 +6027,127 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/comm/vllm/0.27.0/custom_allreduce_perf.parquet (aisimulate 6fdf6fb6, sha256 c3147d2a88a5; vLLM 0.27.0 custom all-reduce, CUDA-graph lane, NVIDIA GB300), 23 messages at 16 ranks", role: primary}
       rationale: >
-        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.079x against 1.199x under max(size/peak, floor). 141.50 GB/s. TRANSFERRED from gb300: no gb200-nvl72 sweep measures vLLM's custom all-reduce at 16 ranks, where the group spans trays and vLLM serves it over multi-node NVLink; the NCCL 2.23 triple it supersedes prices a kernel vLLM does not call (inference-sim/blis-substrate#116). Checked where both parts are measured, vLLM 0.31.0 at 2 and 4 ranks, gb300's triple scoring gb200-nvl72's messages: 2 ranks 1.037x against 1.037x; 4 ranks 1.080x against 1.043x (gate 1.1x). scripts/relane_allreduce_vllm.py.
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates. Geometric error 1.079x against 1.199x under max(size/peak, floor). 141.50 GB/s. TRANSFERRED from gb300: no gb200-nvl72 sweep measures vLLM's custom all-reduce at 16 ranks, where the group spans trays and vLLM serves it over multi-node NVLink; the NCCL 2.23 triple it supersedes prices a kernel vLLM does not call (inference-sim/blis-substrate#116). Checked where both parts are measured, vLLM 0.31.0 at 2 and 4 ranks, gb300's triple scoring gb200-nvl72's messages: 2 ranks 1.037x against 1.037x; 4 ranks 1.080x against 1.043x (gate 1.1x). scripts/relane_allreduce_vllm.py. DISAGREEMENT, unresolved: gb200-nvl72's own sweep of SGLang's custom all-reduce (comm/sglang/0.5.14 file, version column 0.5.17) measures 48.78 us at this width and scores gb200-nvl72's vLLM 0.31.0 rows at 2 and 4 ranks better than the triple used here (1.047x against 1.471x), but priced from it the Muse Spark GB200 TP8 probe's ITL p50 moves from 10.53 ms to 12.39 ms against a measured 5.82 ms (internal deployment measurements), past the 1.0 ms allowance registered in COLL1, so it was not adopted.
+  - collective_transition_rate_all_reduce_nccl_fp16_2rank_gb200_nvl72:
+      value: 246000.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [gb200-nvl72]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 2 ranks, 21 messages", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.116x against 1.256x under max(size/peak, floor). 246.00 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_transition_rate_all_reduce_nccl_fp16_4rank_gb200_nvl72:
+      value: 201250.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [gb200-nvl72]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 4 ranks, 21 messages", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.154x against 1.295x under max(size/peak, floor). 201.25 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_transition_rate_all_reduce_nccl_fp16_8rank_gb200_nvl72:
+      value: 134750.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [gb200-nvl72]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.23/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.7), all_reduce, half, 8 ranks, 21 messages", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.117x against 1.271x under max(size/peak, floor). 134.75 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_transition_rate_all_reduce_nccl_fp16_16rank_gb200_nvl72:
+      value: 164000.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [gb200-nvl72]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.23/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.7), all_reduce, half, 16 ranks, 21 messages", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.084x against 1.209x under max(size/peak, floor). 164.00 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_peak_rate_all_reduce_nccl_fp16_16rank_gb200_nvl72:
+      value: 194880.0
+      units: bytes_per_us
+      method: measured
+      fitted: false
+      scope: {hardware: [gb200-nvl72]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.23/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.7), all_reduce, half, 16 ranks, 21 messages", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, 194.88 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_floor_all_reduce_nccl_fp16_16rank_gb200_nvl72:
+      value: 47.74
+      units: us_per_transfer
+      method: measured
+      fitted: false
+      scope: {hardware: [gb200-nvl72]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.23/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.7), all_reduce, half, 16 ranks, 21 messages", role: primary}
+      rationale: >
+        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_peak_rate_all_reduce_nccl_fp16_8rank_gb200_nvl72:
+      value: 199923.6
+      units: bytes_per_us
+      method: measured
+      fitted: false
+      scope: {hardware: [gb200-nvl72]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.23/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.7), all_reduce, half, 8 ranks, 21 messages", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, 199.92 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_floor_all_reduce_nccl_fp16_8rank_gb200_nvl72:
+      value: 27.69
+      units: us_per_transfer
+      method: measured
+      fitted: false
+      scope: {hardware: [gb200-nvl72]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.23/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.7), all_reduce, half, 8 ranks, 21 messages", role: primary}
+      rationale: >
+        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_peak_rate_all_reduce_nccl_fp16_4rank_gb200_nvl72:
+      value: 209363.5
+      units: bytes_per_us
+      method: measured
+      fitted: false
+      scope: {hardware: [gb200-nvl72]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 4 ranks, 21 messages", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, 209.36 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_floor_all_reduce_nccl_fp16_4rank_gb200_nvl72:
+      value: 15.63
+      units: us_per_transfer
+      method: measured
+      fitted: false
+      scope: {hardware: [gb200-nvl72]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 4 ranks, 21 messages", role: primary}
+      rationale: >
+        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. NCCL 2.30.7 (comm/nccl/2.30.7, torch.distributed through ProcessGroupNCCL, a different collector) measures this width's floor (least latency over its three smallest messages, 5 KiB and up) at 6.95x this entry and, over its 4 messages at or above 16 MiB (the cited sweep interpolated log-log), a median latency 1.670x; it is not a lane (no engine states the NCCL version; inference-sim/blis-substrate#137). 
+  - collective_peak_rate_all_reduce_nccl_fp16_2rank_gb200_nvl72:
+      value: 264880.8
+      units: bytes_per_us
+      method: measured
+      fitted: false
+      scope: {hardware: [gb200-nvl72]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 2 ranks, 21 messages", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, 264.88 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_floor_all_reduce_nccl_fp16_2rank_gb200_nvl72:
+      value: 10.86
+      units: us_per_transfer
+      method: measured
+      fitted: false
+      scope: {hardware: [gb200-nvl72]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 2 ranks, 21 messages", role: primary}
+      rationale: >
+        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. NCCL 2.30.7 (comm/nccl/2.30.7, torch.distributed through ProcessGroupNCCL, a different collector) measures this width's floor (least latency over its three smallest messages, 5 KiB and up) at 10.95x this entry and, over its 4 messages at or above 16 MiB (the cited sweep interpolated log-log), a median latency 1.739x; it is not a lane (no engine states the NCCL version; inference-sim/blis-substrate#137). 
   - collective_floor_all_reduce_int8_8rank_gb200_nvl72:
       value: 27.19
       units: us_per_transfer
@@ -7263,6 +7443,96 @@ coefficients:
         - {kind: model, cite: "Extrapolated from this part's own measured (2, 4, 8) floors for all_reduce/fp16 in cost-model-collectives; holdout-validated against gb200-nvl72, the only part with a measured 16-rank floor", role: primary}
       rationale: >
         ASSUMED: this part's own measured 8-rank transition rate, carried to 16 ranks, for the reason the peak above gives. The kernel treats a missing transition rate as fatal because the two-parameter form understates a collective by up to 3.8x in the message range a forward pass produces, so a bounded figure with a stated direction is better than absence.
+  - collective_transition_rate_all_reduce_nccl_fp16_2rank_h200:
+      value: 126000.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [h200]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 2 ranks, 21 messages", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.185x against 1.369x under max(size/peak, floor). 126.00 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_transition_rate_all_reduce_nccl_fp16_4rank_h200:
+      value: 103500.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [h200]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 4 ranks, 21 messages", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.129x against 1.286x under max(size/peak, floor). 103.50 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_transition_rate_all_reduce_nccl_fp16_8rank_h200:
+      value: 92500.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [h200]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 8 ranks, 21 messages", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.173x against 1.346x under max(size/peak, floor). 92.50 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_peak_rate_all_reduce_nccl_fp16_8rank_h200:
+      value: 131566.0
+      units: bytes_per_us
+      method: measured
+      fitted: false
+      scope: {hardware: [h200]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 8 ranks, 21 messages", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, 131.57 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_floor_all_reduce_nccl_fp16_8rank_h200:
+      value: 15.98
+      units: us_per_transfer
+      method: measured
+      fitted: false
+      scope: {hardware: [h200]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 8 ranks, 21 messages", role: primary}
+      rationale: >
+        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_peak_rate_all_reduce_nccl_fp16_4rank_h200:
+      value: 116147.0
+      units: bytes_per_us
+      method: measured
+      fitted: false
+      scope: {hardware: [h200]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 4 ranks, 21 messages", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, 116.15 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_floor_all_reduce_nccl_fp16_4rank_h200:
+      value: 9.44
+      units: us_per_transfer
+      method: measured
+      fitted: false
+      scope: {hardware: [h200]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 4 ranks, 21 messages", role: primary}
+      rationale: >
+        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. NCCL 2.30.7 (comm/nccl/2.30.7, torch.distributed through ProcessGroupNCCL, a different collector) measures this width's floor (least latency over its three smallest messages, 5 KiB and up) at 2.89x this entry and, over its 4 messages at or above 16 MiB (the cited sweep interpolated log-log), a median latency 1.049x; it is not a lane (no engine states the NCCL version; inference-sim/blis-substrate#137). 
+  - collective_peak_rate_all_reduce_nccl_fp16_2rank_h200:
+      value: 157541.8
+      units: bytes_per_us
+      method: measured
+      fitted: false
+      scope: {hardware: [h200]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 2 ranks, 21 messages", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, 157.54 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_floor_all_reduce_nccl_fp16_2rank_h200:
+      value: 6.01
+      units: us_per_transfer
+      method: measured
+      fitted: false
+      scope: {hardware: [h200]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 2 ranks, 21 messages", role: primary}
+      rationale: >
+        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. NCCL 2.30.7 (comm/nccl/2.30.7, torch.distributed through ProcessGroupNCCL, a different collector) measures this width's floor (least latency over its three smallest messages, 5 KiB and up) at 4.40x this entry and, over its 4 messages at or above 16 MiB (the cited sweep interpolated log-log), a median latency 1.032x; it is not a lane (no engine states the NCCL version; inference-sim/blis-substrate#137). 
   # --- h100 16-rank group: derived, see each entry ---
   - collective_floor_all_reduce_fp16_16rank_h100:
       value: 3.62
@@ -7294,6 +7564,96 @@ coefficients:
         - {kind: model, cite: "Extrapolated from this part's own measured (2, 4, 8) floors for all_reduce/fp16 in cost-model-collectives; holdout-validated against gb200-nvl72, the only part with a measured 16-rank floor", role: primary}
       rationale: >
         ASSUMED: this part's own measured 8-rank transition rate, carried to 16 ranks, for the reason the peak above gives. The kernel treats a missing transition rate as fatal because the two-parameter form understates a collective by up to 3.8x in the message range a forward pass produces, so a bounded figure with a stated direction is better than absence.
+  - collective_transition_rate_all_reduce_nccl_fp16_2rank_h100:
+      value: 121750.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [h100]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 2 ranks, 21 messages", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.213x against 1.413x under max(size/peak, floor). 121.75 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_transition_rate_all_reduce_nccl_fp16_4rank_h100:
+      value: 100750.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [h100]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 4 ranks, 21 messages", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.142x against 1.307x under max(size/peak, floor). 100.75 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_transition_rate_all_reduce_nccl_fp16_8rank_h100:
+      value: 91250.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [h100]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 8 ranks, 21 messages", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.162x against 1.331x under max(size/peak, floor). 91.25 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_peak_rate_all_reduce_nccl_fp16_8rank_h100:
+      value: 127156.7
+      units: bytes_per_us
+      method: measured
+      fitted: false
+      scope: {hardware: [h100]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 8 ranks, 21 messages", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, 127.16 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_floor_all_reduce_nccl_fp16_8rank_h100:
+      value: 15.59
+      units: us_per_transfer
+      method: measured
+      fitted: false
+      scope: {hardware: [h100]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 8 ranks, 21 messages", role: primary}
+      rationale: >
+        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_peak_rate_all_reduce_nccl_fp16_4rank_h100:
+      value: 116725.8
+      units: bytes_per_us
+      method: measured
+      fitted: false
+      scope: {hardware: [h100]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 4 ranks, 21 messages", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, 116.73 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_floor_all_reduce_nccl_fp16_4rank_h100:
+      value: 9.31
+      units: us_per_transfer
+      method: measured
+      fitted: false
+      scope: {hardware: [h100]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 4 ranks, 21 messages", role: primary}
+      rationale: >
+        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. NCCL 2.30.7 (comm/nccl/2.30.7, torch.distributed through ProcessGroupNCCL, a different collector) measures this width's floor (least latency over its three smallest messages, 5 KiB and up) at 3.30x this entry and, over its 4 messages at or above 16 MiB (the cited sweep interpolated log-log), a median latency 1.029x; it is not a lane (no engine states the NCCL version; inference-sim/blis-substrate#137). 
+  - collective_peak_rate_all_reduce_nccl_fp16_2rank_h100:
+      value: 159172.8
+      units: bytes_per_us
+      method: measured
+      fitted: false
+      scope: {hardware: [h100]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 2 ranks, 21 messages", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, 159.17 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_floor_all_reduce_nccl_fp16_2rank_h100:
+      value: 5.85
+      units: us_per_transfer
+      method: measured
+      fitted: false
+      scope: {hardware: [h100]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 2 ranks, 21 messages", role: primary}
+      rationale: >
+        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. NCCL 2.30.7 (comm/nccl/2.30.7, torch.distributed through ProcessGroupNCCL, a different collector) measures this width's floor (least latency over its three smallest messages, 5 KiB and up) at 5.60x this entry and, over its 4 messages at or above 16 MiB (the cited sweep interpolated log-log), a median latency 1.009x; it is not a lane (no engine states the NCCL version; inference-sim/blis-substrate#137). 
   # --- b200 16-rank group: derived, see each entry ---
   - collective_floor_all_reduce_fp16_16rank_b200:
       value: 8.33
@@ -7325,6 +7685,96 @@ coefficients:
         - {kind: model, cite: "Extrapolated from this part's own measured (2, 4, 8) floors for all_reduce/fp16 in cost-model-collectives; holdout-validated against gb200-nvl72, the only part with a measured 16-rank floor", role: primary}
       rationale: >
         ASSUMED: this part's own measured 8-rank transition rate, carried to 16 ranks, for the reason the peak above gives. The kernel treats a missing transition rate as fatal because the two-parameter form understates a collective by up to 3.8x in the message range a forward pass produces, so a bounded figure with a stated direction is better than absence.
+  - collective_transition_rate_all_reduce_nccl_fp16_2rank_b200:
+      value: 245750.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [b200]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b200_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 2 ranks, 21 messages", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.125x against 1.270x under max(size/peak, floor). 245.75 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_transition_rate_all_reduce_nccl_fp16_4rank_b200:
+      value: 201250.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [b200]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b200_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 4 ranks, 21 messages", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.154x against 1.297x under max(size/peak, floor). 201.25 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_transition_rate_all_reduce_nccl_fp16_8rank_b200:
+      value: 132500.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [b200]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b200_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 8 ranks, 21 messages", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.124x against 1.287x under max(size/peak, floor). 132.50 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_peak_rate_all_reduce_nccl_fp16_8rank_b200:
+      value: 201141.5
+      units: bytes_per_us
+      method: measured
+      fitted: false
+      scope: {hardware: [b200]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b200_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 8 ranks, 21 messages", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, 201.14 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_floor_all_reduce_nccl_fp16_8rank_b200:
+      value: 25.09
+      units: us_per_transfer
+      method: measured
+      fitted: false
+      scope: {hardware: [b200]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b200_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 8 ranks, 21 messages", role: primary}
+      rationale: >
+        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_peak_rate_all_reduce_nccl_fp16_4rank_b200:
+      value: 211228.5
+      units: bytes_per_us
+      method: measured
+      fitted: false
+      scope: {hardware: [b200]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b200_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 4 ranks, 21 messages", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, 211.23 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_floor_all_reduce_nccl_fp16_4rank_b200:
+      value: 15.02
+      units: us_per_transfer
+      method: measured
+      fitted: false
+      scope: {hardware: [b200]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b200_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 4 ranks, 21 messages", role: primary}
+      rationale: >
+        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. NCCL 2.30.7 (comm/nccl/2.30.7, torch.distributed through ProcessGroupNCCL, a different collector) measures this width's floor (least latency over its three smallest messages, 5 KiB and up) at 2.28x this entry and, over its 4 messages at or above 16 MiB (the cited sweep interpolated log-log), a median latency 1.252x; it is not a lane (no engine states the NCCL version; inference-sim/blis-substrate#137). 
+  - collective_peak_rate_all_reduce_nccl_fp16_2rank_b200:
+      value: 267030.9
+      units: bytes_per_us
+      method: measured
+      fitted: false
+      scope: {hardware: [b200]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b200_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 2 ranks, 21 messages", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, 267.03 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_floor_all_reduce_nccl_fp16_2rank_b200:
+      value: 10.17
+      units: us_per_transfer
+      method: measured
+      fitted: false
+      scope: {hardware: [b200]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b200_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 2 ranks, 21 messages", role: primary}
+      rationale: >
+        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. NCCL 2.30.7 (comm/nccl/2.30.7, torch.distributed through ProcessGroupNCCL, a different collector) measures this width's floor (least latency over its three smallest messages, 5 KiB and up) at 2.53x this entry and, over its 4 messages at or above 16 MiB (the cited sweep interpolated log-log), a median latency 1.376x; it is not a lane (no engine states the NCCL version; inference-sim/blis-substrate#137). 
   # --- b300 16-rank group: derived, see each entry ---
   - collective_floor_all_reduce_fp16_16rank_b300:
       value: 7.53
@@ -7356,6 +7806,96 @@ coefficients:
         - {kind: model, cite: "Extrapolated from this part's own measured (2, 4, 8) floors for all_reduce/fp16 in cost-model-collectives; holdout-validated against gb200-nvl72, the only part with a measured 16-rank floor", role: primary}
       rationale: >
         ASSUMED: this part's own measured 8-rank transition rate, carried to 16 ranks, for the reason the peak above gives. The kernel treats a missing transition rate as fatal because the two-parameter form understates a collective by up to 3.8x in the message range a forward pass produces, so a bounded figure with a stated direction is better than absence.
+  - collective_transition_rate_all_reduce_nccl_fp16_2rank_b300:
+      value: 246500.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [b300]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 2 ranks, 21 messages", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.153x against 1.304x under max(size/peak, floor). 246.50 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_transition_rate_all_reduce_nccl_fp16_4rank_b300:
+      value: 202750.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [b300]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 4 ranks, 21 messages", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.168x against 1.312x under max(size/peak, floor). 202.75 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_transition_rate_all_reduce_nccl_fp16_8rank_b300:
+      value: 135250.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [b300]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 8 ranks, 21 messages", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.120x against 1.283x under max(size/peak, floor). 135.25 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_peak_rate_all_reduce_nccl_fp16_8rank_b300:
+      value: 201021.0
+      units: bytes_per_us
+      method: measured
+      fitted: false
+      scope: {hardware: [b300]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 8 ranks, 21 messages", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, 201.02 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_floor_all_reduce_nccl_fp16_8rank_b300:
+      value: 24.64
+      units: us_per_transfer
+      method: measured
+      fitted: false
+      scope: {hardware: [b300]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 8 ranks, 21 messages", role: primary}
+      rationale: >
+        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_peak_rate_all_reduce_nccl_fp16_4rank_b300:
+      value: 212831.2
+      units: bytes_per_us
+      method: measured
+      fitted: false
+      scope: {hardware: [b300]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 4 ranks, 21 messages", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, 212.83 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_floor_all_reduce_nccl_fp16_4rank_b300:
+      value: 14.3
+      units: us_per_transfer
+      method: measured
+      fitted: false
+      scope: {hardware: [b300]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 4 ranks, 21 messages", role: primary}
+      rationale: >
+        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_peak_rate_all_reduce_nccl_fp16_2rank_b300:
+      value: 271827.9
+      units: bytes_per_us
+      method: measured
+      fitted: false
+      scope: {hardware: [b300]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 2 ranks, 21 messages", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, 271.83 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_floor_all_reduce_nccl_fp16_2rank_b300:
+      value: 9.65
+      units: us_per_transfer
+      method: measured
+      fitted: false
+      scope: {hardware: [b300]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/comm/nccl/2.29.2/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.29.2), all_reduce, half, 2 ranks, 21 messages", role: primary}
+      rationale: >
+        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   # --- gb300 16-rank group: derived, see each entry ---
   - collective_floor_all_gather_fp16_16rank_gb300:
       value: 28.74
@@ -7568,6 +8108,96 @@ coefficients:
         - {kind: model, cite: "Extrapolated from this part's own measured (2, 4, 8) floors for all_reduce/fp16 in cost-model-collectives; holdout-validated against gb200-nvl72, the only part with a measured 16-rank floor", role: primary}
       rationale: >
         ASSUMED: this part's own measured 8-rank transition rate, carried to 16 ranks, for the reason the peak above gives. The kernel treats a missing transition rate as fatal because the two-parameter form understates a collective by up to 3.8x in the message range a forward pass produces, so a bounded figure with a stated direction is better than absence.
+  - collective_transition_rate_all_reduce_nccl_fp16_2rank_l40s:
+      value: 9750.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [l40s]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/l40s/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 2 ranks, 21 messages", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.148x against 1.288x under max(size/peak, floor). 9.75 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_transition_rate_all_reduce_nccl_fp16_4rank_l40s:
+      value: 1750.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [l40s]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/l40s/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 4 ranks, 21 messages", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.052x against 1.217x under max(size/peak, floor). 1.75 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_transition_rate_all_reduce_nccl_fp16_8rank_l40s:
+      value: 425.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [l40s]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/l40s/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 8 ranks, 21 messages", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.153x against 1.485x under max(size/peak, floor). 0.42 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_peak_rate_all_reduce_nccl_fp16_8rank_l40s:
+      value: 607.4
+      units: bytes_per_us
+      method: measured
+      fitted: false
+      scope: {hardware: [l40s]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/l40s/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 8 ranks, 21 messages", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, 0.61 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_floor_all_reduce_nccl_fp16_8rank_l40s:
+      value: 22.42
+      units: us_per_transfer
+      method: measured
+      fitted: false
+      scope: {hardware: [l40s]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/l40s/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 8 ranks, 21 messages", role: primary}
+      rationale: >
+        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_peak_rate_all_reduce_nccl_fp16_4rank_l40s:
+      value: 1954.1
+      units: bytes_per_us
+      method: measured
+      fitted: false
+      scope: {hardware: [l40s]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/l40s/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 4 ranks, 21 messages", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, 1.95 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_floor_all_reduce_nccl_fp16_4rank_l40s:
+      value: 11.89
+      units: us_per_transfer
+      method: measured
+      fitted: false
+      scope: {hardware: [l40s]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/l40s/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 4 ranks, 21 messages", role: primary}
+      rationale: >
+        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_peak_rate_all_reduce_nccl_fp16_2rank_l40s:
+      value: 10053.8
+      units: bytes_per_us
+      method: measured
+      fitted: false
+      scope: {hardware: [l40s]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/l40s/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 2 ranks, 21 messages", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, 10.05 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_floor_all_reduce_nccl_fp16_2rank_l40s:
+      value: 5.96
+      units: us_per_transfer
+      method: measured
+      fitted: false
+      scope: {hardware: [l40s]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/l40s/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 2 ranks, 21 messages", role: primary}
+      rationale: >
+        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_floor_all_reduce_int8_16rank_l40s:
       value: 42.96
       units: us_per_transfer
@@ -7809,6 +8439,96 @@ coefficients:
         - {kind: model, cite: "Extrapolated from this part's own measured (2, 4, 8) floors for all_reduce/fp16 in cost-model-collectives; holdout-validated against gb200-nvl72, the only part with a measured 16-rank floor", role: primary}
       rationale: >
         ASSUMED: this part's own measured 8-rank transition rate, carried to 16 ranks, for the reason the peak above gives. The kernel treats a missing transition rate as fatal because the two-parameter form understates a collective by up to 3.8x in the message range a forward pass produces, so a bounded figure with a stated direction is better than absence.
+  - collective_transition_rate_all_reduce_nccl_fp16_2rank_a100_sxm:
+      value: 78250.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [a100-sxm]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/a100_sxm/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 2 ranks, 21 messages", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.254x against 1.440x under max(size/peak, floor). 78.25 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_transition_rate_all_reduce_nccl_fp16_4rank_a100_sxm:
+      value: 61250.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [a100-sxm]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/a100_sxm/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 4 ranks, 21 messages", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.166x against 1.343x under max(size/peak, floor). 61.25 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_transition_rate_all_reduce_nccl_fp16_8rank_a100_sxm:
+      value: 48500.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [a100-sxm]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/a100_sxm/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 8 ranks, 21 messages", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.142x against 1.306x under max(size/peak, floor). 48.50 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_peak_rate_all_reduce_nccl_fp16_8rank_a100_sxm:
+      value: 63521.5
+      units: bytes_per_us
+      method: measured
+      fitted: false
+      scope: {hardware: [a100-sxm]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/a100_sxm/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 8 ranks, 21 messages", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, 63.52 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_floor_all_reduce_nccl_fp16_8rank_a100_sxm:
+      value: 21.27
+      units: us_per_transfer
+      method: measured
+      fitted: false
+      scope: {hardware: [a100-sxm]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/a100_sxm/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 8 ranks, 21 messages", role: primary}
+      rationale: >
+        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_peak_rate_all_reduce_nccl_fp16_4rank_a100_sxm:
+      value: 72231.9
+      units: bytes_per_us
+      method: measured
+      fitted: false
+      scope: {hardware: [a100-sxm]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/a100_sxm/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 4 ranks, 21 messages", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, 72.23 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_floor_all_reduce_nccl_fp16_4rank_a100_sxm:
+      value: 13.86
+      units: us_per_transfer
+      method: measured
+      fitted: false
+      scope: {hardware: [a100-sxm]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/a100_sxm/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 4 ranks, 21 messages", role: primary}
+      rationale: >
+        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_peak_rate_all_reduce_nccl_fp16_2rank_a100_sxm:
+      value: 96521.3
+      units: bytes_per_us
+      method: measured
+      fitted: false
+      scope: {hardware: [a100-sxm]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/a100_sxm/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 2 ranks, 21 messages", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, 96.52 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_floor_all_reduce_nccl_fp16_2rank_a100_sxm:
+      value: 9.98
+      units: us_per_transfer
+      method: measured
+      fitted: false
+      scope: {hardware: [a100-sxm]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/a100_sxm/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 2 ranks, 21 messages", role: primary}
+      rationale: >
+        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_floor_all_reduce_int8_16rank_a100_sxm:
       value: 36.49
       units: us_per_transfer
@@ -8532,6 +9252,96 @@ coefficients:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/a100_sxm/comm/vllm/0.14.0/custom_allreduce_perf.parquet (NVIDIA A100-SXM4-80GB), vllm_graph lane, 138 all_reduce rows", role: primary}
       rationale: >
         48.50 GB/s, the rate in max(floor + size / rate, size / peak). Fitted over 21 points by minimising the mean absolute log ratio, which weighs an under-prediction and an over equally. It cuts this configuration's geometric error from 1.306x under the two-parameter form to 1.142x. Below the asymptote, which is 0.76 of it, because a collective reaches its asymptotic bandwidth only at messages far larger than one forward pass produces. A100-80 is the same silicon as A100-SXM -- the catalog's own chip file says "Alias for A100-SXM" and every physical field matches -- so this carries A100-SXM's measured value under the name the kernel builds from the chip, which is how hardware_config.json's A100-80 entry resolves. Re-fit both together.
+  - collective_transition_rate_all_reduce_nccl_fp16_2rank_a100_80:
+      value: 78250.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [a100-80]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/a100_sxm/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 2 ranks, 21 messages", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.254x against 1.440x under max(size/peak, floor). 78.25 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_transition_rate_all_reduce_nccl_fp16_4rank_a100_80:
+      value: 61250.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [a100-80]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/a100_sxm/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 4 ranks, 21 messages", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.166x against 1.343x under max(size/peak, floor). 61.25 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_transition_rate_all_reduce_nccl_fp16_8rank_a100_80:
+      value: 48500.0
+      units: bytes_per_us
+      method: measured
+      fitted: true
+      scope: {hardware: [a100-80]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/a100_sxm/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 8 ranks, 21 messages", role: primary}
+      rationale: >
+        The rate that prices a forward pass's all-reduce, grid-searched on the three-parameter form the kernel evaluates; geometric error 1.142x against 1.306x under max(size/peak, floor). 48.50 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_peak_rate_all_reduce_nccl_fp16_8rank_a100_80:
+      value: 63521.5
+      units: bytes_per_us
+      method: measured
+      fitted: false
+      scope: {hardware: [a100-80]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/a100_sxm/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 8 ranks, 21 messages", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, 63.52 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_floor_all_reduce_nccl_fp16_8rank_a100_80:
+      value: 21.27
+      units: us_per_transfer
+      method: measured
+      fitted: false
+      scope: {hardware: [a100-80]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/a100_sxm/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 8 ranks, 21 messages", role: primary}
+      rationale: >
+        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_peak_rate_all_reduce_nccl_fp16_4rank_a100_80:
+      value: 72231.9
+      units: bytes_per_us
+      method: measured
+      fitted: false
+      scope: {hardware: [a100-80]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/a100_sxm/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 4 ranks, 21 messages", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, 72.23 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_floor_all_reduce_nccl_fp16_4rank_a100_80:
+      value: 13.86
+      units: us_per_transfer
+      method: measured
+      fitted: false
+      scope: {hardware: [a100-80]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/a100_sxm/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 4 ranks, 21 messages", role: primary}
+      rationale: >
+        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_peak_rate_all_reduce_nccl_fp16_2rank_a100_80:
+      value: 96521.3
+      units: bytes_per_us
+      method: measured
+      fitted: false
+      scope: {hardware: [a100-80]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/a100_sxm/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 2 ranks, 21 messages", role: primary}
+      rationale: >
+        Maximum of message_size/latency over the sweep, 96.52 GB/s. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
+  - collective_floor_all_reduce_nccl_fp16_2rank_a100_80:
+      value: 9.98
+      units: us_per_transfer
+      method: measured
+      fitted: false
+      scope: {hardware: [a100-80]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/a100_sxm/comm/nccl/2.27.3/nccl_perf.parquet (aisimulate 6fdf6fb6; version column: 2.27.3), all_reduce, half, 2 ranks, 21 messages", role: primary}
+      rationale: >
+        Minimum latency over the 5 messages at or below 4 KiB, where latency is independent of size. The NCCL lane of the tensor-parallel all-reduce, read when the engine resolves NCCL (custom all-reduce disabled, a width its kernel refuses, a group that leaves the node); the plain all_reduce_fp16 entries are the custom kernel's lane. scripts/emit_allreduce_nccl_lane.py. 
   - collective_floor_all_reduce_int8_2rank_a100_80:
       value: 9.91
       units: us_per_transfer
