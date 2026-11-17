@@ -7147,7 +7147,7 @@ def test_the_graphs_that_state_a_scale_are_the_block_scaled_ones():
               and graph_of(d)["global"]["weight_dtype"] == "fp8"}
     block = {"elements": 16384, "bytes": 4}
     assert {n for n, sc in scaled.items() if sc == block} == {
-        "deepseek-r1-0528", "deepseek-v3", "glm-5", "glm-5.2-fp8", "glm-5.3", "glm-5.3-flash",
+        "deepseek-r1-0528", "deepseek-v3", "glm-5", "glm-5.1-fp8", "glm-5.2-fp8", "glm-5.3", "glm-5.3-flash",
         "minimax-m2.5", "minimax-m2.7", "qwen3.5-397b-a17b-fp8"}
     assert {n for n, sc in scaled.items() if sc != block} == {
         "minimax-m3-mxfp8", "minimax-m3-nvfp4", "minimax-m3.1-flash", "minimax-m3.1-flash-dspark",
