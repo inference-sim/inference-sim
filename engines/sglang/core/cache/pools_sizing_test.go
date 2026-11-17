@@ -54,7 +54,7 @@ func loadSizing(t *testing.T) map[string]sizingTrace {
 func TestPoolBufferBytesAreSGLangs(t *testing.T) {
 	n := 0
 	for name, s := range loadSizing(t) {
-		r := newReplay(t, Trace{Calls: s.Calls})
+		r := newAllocReplay(t, Trace{Calls: s.Calls})
 		pools := map[int]KVPool{}
 		var inits []Call
 		for _, c := range s.Calls {
@@ -180,7 +180,7 @@ func TestTokenBudgetFromTheMemoryFractionIsSGLangs(t *testing.T) {
 	if err := json.Unmarshal(raw, &scenario); err != nil {
 		t.Fatal(err)
 	}
-	r := newReplay(t, tr)
+	r := newAllocReplay(t, tr)
 	var kvInit, allocInit, reqInit *Call
 	for i, c := range tr.Calls {
 		if c.Method != "__init__" {
@@ -212,35 +212,42 @@ func TestTokenBudgetFromTheMemoryFractionIsSGLangs(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The pool is first built at the capacity the budget gives, so its size is that capacity.
-	capacity, err := TokenCapacity(budget, pool.BytesPerToken(), scenario.PageSize, scenario.MaxTotalTokens)
+	// The model's context length: the request pool's rows hold it and 4 positions of headroom
+	// when there is no speculation (mem_cache/allocation_sizing.py:96-105@297e54fd).
+	contextLen := num(*reqInit)("max_context_len") - 4
+	capacity, err := TokenCapacity(budget, pool.BytesPerToken(), scenario.PageSize, scenario.MaxTotalTokens, contextLen)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if want := num(*allocInit)("size"); capacity != want || pool.Size() != want {
 		t.Errorf("the port's token capacity is %d; SGLang sized its pool %d and its allocator %d", capacity, pool.Size(), want)
 	}
-	contextLen := num(*reqInit)("max_context_len")
 	if got, want := MaxNumReqs(capacity, contextLen, scenario.MaxRunningRequests, 1), num(*reqInit)("size"); got != want {
 		t.Errorf("the port gives the request pool %d rows, SGLang %d", got, want)
 	}
 }
 
 // A user cap and a page size floor the capacity to whole pages; a budget that the weights
-// exhaust is refused with SGLang's advice (kv_cache_configurator.py:3043-3058@297e54fd).
+// exhaust is refused with SGLang's advice (kv_cache_configurator.py:3043-3058@297e54fd). The
+// figures are worked from SGLang's formulas by hand; the oracle checks them on tiny-memory above.
 func TestTokenCapacityCapsAndRefusals(t *testing.T) {
 	cap100 := 100
-	if got, _ := TokenCapacity(1<<20, 1000, 16, &cap100); got != 96 {
+	if got, _ := TokenCapacity(1<<20, 1000, 16, &cap100, 4096); got != 96 {
 		t.Errorf("a 100-token cap on 16-token pages gives %d tokens, want 96", got)
 	}
-	if got, _ := TokenCapacity(1<<20, 1000, 16, nil); got != 1040 {
+	if got, _ := TokenCapacity(1<<20, 1000, 16, nil, 4096); got != 1040 {
 		t.Errorf("1 MiB over 1000-byte cells on 16-token pages gives %d tokens, want 1040", got)
 	}
 	_, err := KVBudgetBytes(Profile{AvailableGiB: 1, PreModelLoadGiB: 10, MemFractionStatic: 0.5})
 	if err == nil || !strings.Contains(err.Error(), "--mem-fraction-static") {
 		t.Errorf("weights that leave no memory: %v", err)
 	}
-	if _, err := TokenCapacity(1<<20, 0, 1, nil); err == nil {
-		t.Error("a zero cell is accepted")
+	// A pool with no KV per token is sized by the cap, else the context length, in whole pages.
+	if got, _ := TokenCapacity(1<<20, 0, 16, nil, 4100); got != 4096 {
+		t.Errorf("no KV per token and no cap gives %d tokens, want the context length floored, 4096", got)
+	}
+	if got, _ := TokenCapacity(1<<20, 0, 16, &cap100, 4100); got != 96 {
+		t.Errorf("no KV per token and a 100-token cap gives %d tokens, want 96", got)
 	}
 }
 
@@ -279,13 +286,20 @@ func TestUnmodelledAllocatorsAndPoolsAreRefusedByName(t *testing.T) {
 
 // Every refused class's refusal cites the open issue, and none is also modelled.
 func TestEveryRefusalCitesTheOpenIssue(t *testing.T) {
-	for _, c := range RefusedPoolClasses() {
-		r := refusedPools[c]
-		if _, both := modelledPools[c]; both {
-			t.Errorf("%s is both modelled and refused", c)
-		}
-		if err := CheckPoolClass(r.Kind, c); err == nil || !strings.Contains(err.Error(), RefusedPoolsIssue) {
+	refused := RefusedPoolClasses()
+	if len(refused) == 0 {
+		t.Fatal("no class is refused")
+	}
+	for _, c := range refused {
+		r := poolClasses[c]
+		if err := CheckPoolClass(r.Kind, c); err == nil || !strings.Contains(err.Error(), RefusedPoolsIssue) ||
+			!strings.Contains(err.Error(), c) {
 			t.Errorf("%s: %v", c, err)
 		}
+	}
+	// The selecting setting is named where it is known.
+	if err := CheckPoolClass(KVPoolKind, "PageInterleaveMHATokenToKVPool"); err == nil ||
+		!strings.Contains(err.Error(), "--enable-kv-cache-sharding") {
+		t.Errorf("a page-interleave pool's refusal does not name its setting: %v", err)
 	}
 }

@@ -231,6 +231,13 @@ func (a *PagedAllocator) Alloc(needSize int) ([]int64, bool) {
 // alloc_extend_naive (paged.py:41-114): each request's new tokens first fill the page its prefix
 // ends in (after lastLoc), then take whole new pages, then one more page for the tail. The
 // requests take new pages from the front of the free list in batch order.
+//
+// A substitution, named: on a GPU SGLang runs the Triton kernel alloc_extend_kernel
+// (kernels/ops/memory/allocator.py:115-199@297e54fd, chosen at paged.py:245-264) instead of the
+// CPU function the oracle runs and this ports. The two give the same slots: the kernel writes, for
+// each request, the same three parts (the prefix's partial page after last_loc, whole pages, a tail
+// page) from the same free-list offset, the exclusive prefix sum of the earlier requests' new
+// pages, and both then drop the same number of pages from the free list.
 func (a *PagedAllocator) AllocExtend(prefixLens, seqLens []int, lastLoc []int64, extendNumTokens int) ([]int64, bool) {
 	bs := len(prefixLens)
 	if len(seqLens) != bs || len(lastLoc) != bs {
@@ -284,6 +291,11 @@ func (a *PagedAllocator) AllocExtend(prefixLens, seqLens []int, lastLoc []int64,
 // AllocDecode is alloc_decode (paged.py:279-326@297e54fd) with the CPU kernel,
 // alloc_decode_naive (paged.py:117-133): a request whose new token starts a page takes the next
 // free page, in batch order; every other request's slot follows lastLoc.
+//
+// A substitution, named: on a GPU SGLang runs alloc_decode_kernel
+// (kernels/ops/memory/allocator.py:202-235@297e54fd, chosen at paged.py:303-320). It gives the same
+// slots: a request whose token starts a page takes the free page at the count of earlier requests
+// that do, the others last_loc + 1.
 func (a *PagedAllocator) AllocDecode(seqLens []int, lastLoc []int64) ([]int64, bool) {
 	bs := len(seqLens)
 	if len(lastLoc) != bs {

@@ -650,6 +650,36 @@ class Harness(unittest.TestCase):
         self.assertEqual(mod.monotonic(), 1_000_000.0)
 
 
+
+class CheckPoolClasses(unittest.TestCase):
+    """oracle/check_pool_classes.py: every allocator and pool class at the pin is listed (SGL-6)."""
+
+    def setUp(self):
+        self.mod = import_oracle("check_pool_classes")
+        with open(self.mod.LIST) as f:
+            self.listing = json.load(f)
+
+    def test_the_committed_list_passes(self):
+        self.assertEqual(self.mod.problems(SGLANG, self.listing), [])
+
+    def test_an_unlisted_subclass_fails(self):
+        cut = {**self.listing, "classes": [c for c in self.listing["classes"] if c["class"] != "SWAKVPool"]}
+        self.assertTrue(any(p.startswith("SWAKVPool ") for p in self.mod.problems(SGLANG, cut)))
+
+    def test_a_wrong_site_a_wrong_kind_and_a_class_that_is_no_pool_fail(self):
+        moved = [dict(c) for c in self.listing["classes"]]
+        for c in moved:
+            if c["class"] == "MHATokenToKVPool":
+                c["site"] = "mem_cache/memory_pool.py:1"
+            if c["class"] == "SWAKVPool":
+                c["kind"] = "allocator"
+        moved.append({"class": "Scheduler", "kind": "kv_pool", "site": "managers/scheduler.py:1", "status": "refused"})
+        got = self.mod.problems(SGLANG, {**self.listing, "classes": moved})
+        self.assertTrue(any("no class MHATokenToKVPool at" in p for p in got), got)
+        self.assertTrue(any("SWAKVPool is listed as a allocator" in p for p in got), got)
+        self.assertTrue(any(p.startswith("Scheduler is listed but") for p in got), got)
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         sys.exit(__doc__.split("Usage:", 1)[1].strip())
