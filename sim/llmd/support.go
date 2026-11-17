@@ -130,6 +130,28 @@ var signalReasons = map[string]string{
 	"multicluster-session-affinity-filter":      "multi-cluster routing is not simulated",
 }
 
+// unreleased are router features that exist only in an open pull request of llm-d's router: no release
+// carries them, the fork stays on a release plus its BLIS patches, so a configuration naming one is refused by
+// name (inference-sim#2206, after M4). Any other feature that exists only in an unmerged upstream pull
+// request is added here the same way.
+var unreleased = []struct{ name, pr, what string }{
+	{"kv-events-source", "llm-d/llm-d-router#3911", "the kv-events-source plugin, which shares decoded KV events through a data-layer source"},
+	{"prefillCompletionFromKVEvents", "llm-d/llm-d-router#3975", "the inflight-load-producer parameter prefillCompletionFromKVEvents, which releases a prefill's in-flight entry from the decode's KV events"},
+}
+
+// checkUnreleased refuses, before the router is built, a router configuration that names an unreleased feature.
+func checkUnreleased(flags []string) error {
+	for _, f := range flags {
+		for _, u := range unreleased {
+			if strings.Contains(f, u.name) {
+				return fmt.Errorf("the router configuration uses %s (%s), which exists only in the open pull request %s and in no llm-d router release; "+
+					"the router fork stays on a release, so BLIS cannot host it yet", u.name, u.what, u.pr)
+			}
+		}
+	}
+	return nil
+}
+
 // notAudited is the reason for a type with no recorded one.
 const notAudited = "it has not been audited for the hosting runtime"
 
