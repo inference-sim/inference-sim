@@ -95,6 +95,15 @@ func (e *Entry) validateBuilds(p *validate.Problems) map[string]bool {
 	return covered
 }
 
+// ruleFor is the rule set that compares a deciding file's blobs: the Python rule for a Python
+// file, the Rust rule for any other.
+func ruleFor(path string) string {
+	if strings.HasSuffix(path, ".py") {
+		return NormalFormPythonRouting
+	}
+	return NormalFormLoggingOnly
+}
+
 var sha256hex = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // validateVariants checks a deciding file that has more than one blob in the window: the rule is
@@ -109,8 +118,8 @@ func validateVariants(p *validate.Problems, at string, f BuildFile) {
 		}
 		return
 	}
-	if f.Rule != NormalFormLoggingOnly {
-		p.Field(at+".rule", "must be %q when the file has other blobs, got %q", NormalFormLoggingOnly, f.Rule)
+	if want := ruleFor(f.Path); f.Rule != want {
+		p.Field(at+".rule", "must be %q when the file has other blobs, got %q", want, f.Rule)
 	}
 	if !sha256hex.MatchString(f.NormalForm) {
 		p.Field(at+".normal_form", "must be the 64-digit lowercase SHA-256 of the blob's normal form, got %q", f.NormalForm)

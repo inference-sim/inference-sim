@@ -75,13 +75,19 @@ window, the build is not listed and a run on it stays `router_unsupported`. To r
 | `commits` | list of strings | yes | Every commit the build could have been made from, each a full 40-character commit, sorted, each once. A release has one. A commit is in one build of an entry only. |
 | `files` | list | yes | The files that decide the mode, each a `path` from the router repository's root and its git `blob` identifier (40 lower-case hex digits), the same at every commit of `commits`. |
 
-The committed `dynamo-round-robin` entry covers Dynamo `1.2.0.dev20260426`, `1.2.1`,
-`1.3.0.dev20260601` and `1.3.0.dev20260614`, and the commit `1682167d3c97f0fc8cd405dee51f17288eeaeb55`
+The committed `dynamo-round-robin` entry covers Dynamo `1.2.0.dev20260426`, `1.2.0.dev20260526`, `1.2.1`,
+`1.3.0.dev20260601`, `1.3.0.dev20260614`, `1.3.0.dev20260710`, `1.3.0.dev20260713` and
+`1.3.0.dev20260721`, and the commit `1682167d3c97f0fc8cd405dee51f17288eeaeb55`
 (26 April 2026). In the window of `1.3.0.dev20260614` the file `push_router.rs` has two blobs. They
 differ only in what the rule set `rust-logging-only` removes: logging statements, a binding that
 only carries a value to a removed statement, an unread element of a tuple binding, and blank
-lines. The entry lists the second blob as a `variant` of the first, each with the SHA-256 of its
-normal form, and the validator requires the two digests to be equal. The digests are produced by
+lines. A Python file is compared by the rule set `python-routing-statements`: only the statements
+that name a router (with the definitions around them) are compared, so a difference in code that
+names no router, such as an added import or an unrelated option, is not a difference, while a
+difference in any statement that names one is. In the windows of `1.2.0.dev20260526` and
+`1.3.0.dev20260721` the file `frontend/main.py` has two blobs that agree under that rule. The entry lists the
+second blob as a `variant` of the first, each with the SHA-256 of its normal form, and the
+validator requires the digests to be equal and the rule to be the one for the file's kind. The digests are produced by
 `catalog/scripts/router_normal_form.py` on a clone of the router's repository, which anyone can
 rerun; a difference left after the rules is a difference in what the router computes, and the
 build is then not covered. A run on any other Dynamo build stays `router_unsupported` until an

@@ -116,9 +116,9 @@ def test_a_binding_read_after_the_return_site_is_kept():
     assert d(used) != d(usedbare)
 
 
-def test_only_rust_files_are_rewritten():
-    py = "x = 1\n\ny = 2\n"
-    assert d(py, "a.py") != d(py.replace("\n\n", "\n"), "a.py")
+def test_only_rust_and_python_files_are_rewritten():
+    txt = "x = 1\n\ny = 2\n"
+    assert d(txt, "a.txt") != d(txt.replace("\n\n", "\n"), "a.txt")
 
 
 def test_a_logging_macro_that_is_not_a_statement_is_not_removed():
@@ -166,16 +166,18 @@ def test_a_release_is_the_commit_of_its_tag(repo):
 
 
 def test_a_window_is_equivalent_when_only_logging_changed_and_differs_when_behaviour_changed(repo):
-    a = commit(repo, {"f.rs": BEFORE, "g.py": "x = 1\n"}, "2026-06-12T23:00:00Z")
-    b = commit(repo, {"f.rs": LOGGING_ONLY, "g.py": "x = 1\n"}, "2026-06-13T09:00:00Z")
+    a = commit(repo, {"f.rs": BEFORE, "g.py": "router_mode = 1\n"}, "2026-06-12T23:00:00Z")
+    b = commit(repo, {"f.rs": LOGGING_ONLY, "g.py": "router_mode = 1\n"}, "2026-06-13T09:00:00Z")
     g = str(repo / ".git")
     r = nf.check(g, [b, a], ["f.rs", "g.py"])
     assert r["f.rs"]["verdict"] == "equivalent" and len(r["f.rs"]["blobs"]) == 2
     assert r["g.py"]["verdict"] == "identical"
     c = commit(repo, {"f.rs": LOGGING_ONLY.replace("counter % count", "(counter + 1) % count")}, "2026-06-13T10:00:00Z")
     assert nf.check(g, [c, b, a], ["f.rs"])["f.rs"]["verdict"] == "differs"
-    d2 = commit(repo, {"g.py": "x = 2\n"}, "2026-06-13T11:00:00Z")
-    assert nf.check(g, [d2, b], ["g.py"])["g.py"]["verdict"] == "differs"  # a non-Rust file is compared byte for byte
+    d2 = commit(repo, {"g.py": "router_mode = 2\n"}, "2026-06-13T11:00:00Z")
+    assert nf.check(g, [d2, b], ["g.py"])["g.py"]["verdict"] == "differs"  # a Python statement that names a router
+    d3 = commit(repo, {"g.py": "router_mode = 2\nx = 3\n"}, "2026-06-13T12:00:00Z")
+    assert nf.check(g, [d3, d2], ["g.py"])["g.py"]["verdict"] == "equivalent"  # one that names none
 
 
 def test_a_file_missing_at_a_commit_is_a_difference(repo):
@@ -185,3 +187,39 @@ def test_a_file_missing_at_a_commit_is_a_difference(repo):
     git(repo, "commit", "-q", "-m", "rm", date="2026-06-13T10:00:00Z")
     c = git(repo, "rev-parse", "HEAD")
     assert nf.check(str(repo / ".git"), [c, a], ["f.rs"])["f.rs"]["verdict"] == "differs"
+
+
+PY_BEFORE = '''\
+import vllm.platforms
+from dynamo.llm import KvRouterConfig, RouterMode
+
+def parse_args():
+    if chat_processor == "vllm":
+        import vllm.platforms
+        vllm.platforms.current_platform = CpuPlatform()
+    args.router_mode = "round-robin"
+
+async def async_main(config):
+    if config.router_mode == "random":
+        router_mode = RouterMode.Random
+    else:
+        router_mode = RouterMode.RoundRobin
+'''
+
+
+def _py(text: str) -> str:
+    return nf.digest("frontend/main.py", text)
+
+
+def test_python_code_that_names_no_router_does_not_change_the_digest():
+    after = PY_BEFORE.replace('        vllm.platforms.current_platform = CpuPlatform()\n', "").replace(
+        "from dynamo.llm import KvRouterConfig, RouterMode", "from dynamo.llm import FrontendRoute, KvRouterConfig, RouterMode")
+    after += "\ndef serve_extra_routes():\n    return 1\n"
+    assert _py(after) == _py(PY_BEFORE)
+
+
+def test_a_changed_router_mode_changes_the_digest():
+    for changed in (PY_BEFORE.replace("RouterMode.RoundRobin", "RouterMode.Random"),
+                    PY_BEFORE.replace('config.router_mode == "random"', 'config.router_mode == "kv"'),
+                    PY_BEFORE.replace('args.router_mode = "round-robin"', 'args.router_mode = "kv"')):
+        assert _py(changed) != _py(PY_BEFORE)

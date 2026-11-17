@@ -153,6 +153,12 @@ func TestABuildMustVouchForWhatItCites(t *testing.T) {
 			f.Rule, f.NormalForm = NormalFormLoggingOnly, strings.Repeat("a", 64)
 			f.Variants = []BuildVariant{{Blob: f.Blob, NormalForm: strings.Repeat("a", 64)}}
 		}, "repeats blob"},
+		"a Python file compared under the Rust rule": {func(e *Entry) {
+			f := &e.Builds[0].Files[0]
+			f.Path = "dynamo/frontend/main.py"
+			f.Rule, f.NormalForm = NormalFormLoggingOnly, strings.Repeat("a", 64)
+			f.Variants = []BuildVariant{{Blob: strings.Repeat("b", 40), NormalForm: strings.Repeat("a", 64)}}
+		}, "must be \"python-routing-statements\""},
 		"a rule with no variants": {func(e *Entry) { e.Builds[0].Files[0].Rule = NormalFormLoggingOnly }, "list them or drop both"},
 		"a commit in two builds": {func(e *Entry) {
 			o := e.Builds[0]
@@ -188,5 +194,17 @@ func TestAnEntryCoversABuildByItsExactName(t *testing.T) {
 	}
 	if _, got := Resolve(entries, "acme", "round-robin", nil, strings.Repeat("c", 40)); got != OutcomeMapped {
 		t.Errorf("a commit of the window that carries no citation: %s, want %s", got, OutcomeMapped)
+	}
+}
+
+// A Python deciding file whose blobs share one normal form under the Python rule is accepted: the
+// entry may vouch for a build whose frontend file differs only in code that names no router.
+func TestAPythonFileWithOneNormalFormIsAccepted(t *testing.T) {
+	e := withBuild()
+	e.Builds[0].Files = append(e.Builds[0].Files, BuildFile{Path: "dynamo/frontend/main.py", Blob: strings.Repeat("a", 40),
+		Rule: NormalFormPythonRouting, NormalForm: strings.Repeat("a", 64),
+		Variants: []BuildVariant{{Blob: strings.Repeat("d", 40), NormalForm: strings.Repeat("a", 64)}}})
+	if p := e.Validate(); !p.OK() {
+		t.Fatalf("a Python file with one normal form under %s: %v", NormalFormPythonRouting, p)
 	}
 }

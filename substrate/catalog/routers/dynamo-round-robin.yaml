@@ -117,6 +117,189 @@ builds:
         variants:
           - blob: 3ed2c551e98fa3e0cc9b861066765a10cb1fbc4a
             normal_form: 49d070c6d43a40d27872147e017885177a6eaca3f20a2c312f22796716bc194b
+  - name: "1.2.0.dev20260526"
+    source: nightly
+    window: >-
+      The nightly of 2026-05-26 (UTC), found as for 1.3.0.dev20260601: every first-parent commit of main from the head at 2026-05-26T00:00Z to the head at 2026-05-27T00:00Z, 38 in all. Each has version = "1.2.0" in pyproject.toml. main.py has 2 blobs in the window, all with one normal form under python-routing-statements (catalog/scripts/router_normal_form.py check <clone> 1.2.0.dev20260526 prints the digests; check --show-removed prints what each rule drops or keeps). The other three deciding files have one blob.
+    commits:
+      - 014cc221a18d120a3086ee580c4a1f55a0f5d5fb
+      - 12539832972e57a1f61a8077cb0af49b541329d2
+      - 193e5e4bafcc3a1726a4622aab0462c89c4ff2ff
+      - 1d53b3590d46dc0b02b8f36c1311e35e6ef47dde
+      - 2b9a985b5d23edc5afcb15dc9b161f6dd0a9c1b6
+      - 30b0a509a449bf32d2c0900fc1eed0a7dda25571
+      - 386fc54ff74500e0cd7214cf6936364c25ee8996
+      - 4b859ffafffa84b5d5c7e4e5eef39cf8f58523db
+      - 5ec8eee2e58936f526950744d6df2fccec822aa0
+      - 6f1bb839145af0e63c48f725f2a7b259bfd7774e
+      - 6f2a25b8fdf7a3acae41d0214cba48d5623393f6
+      - 70660a94c8b376a41b9b55f9d4fe0c49335a3bbe
+      - 7ae2c7ce2051d3d1e666042946310a6f78177caf
+      - 7d7090998ed380b3d2a591ca87279257c65f5ccc
+      - 82bccf8a3731bb7683f2b4376c855f20837dafc9
+      - 870eb9fc4890cd68f239302ba9209040920ff34c
+      - 897153ac5f9e9750c5edb77a630b9508e08cef16
+      - 91094d58233daa4ab7152e187c91372f51858eee
+      - 916ac5971d26976bfca76fd479f2247158e10df7
+      - 936d64f4e9acad327fe88b7158e1515cf9eaacb0
+      - a197c484815bfa6e32d4bcdfe0c1f9a5c967c8ab
+      - b1b4b22fdbce4f44712a240e9bd95482ab21bb69
+      - b25ba7d63d8ba95ab0a90dfe2cf8e07649047ce9
+      - bd5a207184fe832b0d954f35f38b22d1b05ffab1
+      - c26d177c5312434f4ca4b1608c7d6d9fbee051a8
+      - c53a918a3fe2f2791551a006533cbf4b0ac34fb9
+      - c5ca451ef3ea086b0d82e82ad92fc4a85df9a811
+      - c77b3da0ebb45c081b2b5c96b4413387df6e02c6
+      - cac5f621c324aecdace9b2887cd64aa1588a431a
+      - cc8bb99d6afdd952658db9e017a96aebee415ccd
+      - d32af25793552a833e8b21fa50c6dab322bc6903
+      - d515c5f8c78cbacdda1e67616cf4836ce0a29968
+      - e0edf5ad45cc44857644a9a2bc620dce7283f279
+      - ebba2d0185490cc72ee4f157739d7e67648ef632
+      - ed2f3e1eb653738443246738b6d39c3e1de04ea2
+      - f805b3dec349b1d43cb70ffd2d35fa0e914a3e9b
+      - f92bea4934cee2de6dcb53175446430ef280dbad
+      - fb686839d78171766b4f932d01302300667efa49
+    files:
+      - path: components/src/dynamo/common/configuration/groups/router_args.py
+        blob: c2788f6b34147faf868b2619451279d3425659d5
+      - path: components/src/dynamo/frontend/main.py
+        blob: 875dae99aaae50a259e67fe44594098f7cf46d1b
+        rule: python-routing-statements
+        normal_form: 8dbac805814cf85197b47be894e1655a23c0c94e5204f930be96d70903ec8b37
+        variants:
+          - blob: e05d493939c87aaf25b0a9510fe6b49a258b70ad
+            normal_form: 8dbac805814cf85197b47be894e1655a23c0c94e5204f930be96d70903ec8b37
+      - path: lib/llm/src/kv_router/prefill_router/mod.rs
+        blob: eee086d910a59ef3e7aac83ecdece61ba3dc2ff6
+      - path: lib/runtime/src/component/client.rs
+        blob: 4afc05117d5395496aec89084e5817ae0bc3a9b8
+      - path: lib/runtime/src/pipeline/network/egress/push_router.rs
+        blob: cbe2e8ee5723452d59e02ff75d6322c0b5a9bd0b
+  - name: "1.3.0.dev20260710"
+    source: nightly
+    window: >-
+      The nightly of 2026-07-10 (UTC), found as for 1.3.0.dev20260601: every first-parent commit of main from the head at 2026-07-10T00:00Z to the head at 2026-07-11T00:00Z, 20 in all. Each has version = "1.3.0" in pyproject.toml.
+    commits:
+      - 18b6e7eed8a3be484dbc1fb86c4620c2df588364
+      - 28649cabdb1b75889928fae73cf15a336f9c453f
+      - 2aaabcdcab922e87c992334deac0387da64c4826
+      - 2ab276085512a97dd70859b7304c4d494ed13c4e
+      - 485c298fff259ea228d4d86e23fe4153aead3c8a
+      - 49995453f7453d51992652431905a61741b0321b
+      - 4a22dedd3e40f8163b01b80542bb7c49d9b2e49b
+      - 76b0b6470d64dd60c0fe63018bdabb7ea88bf67d
+      - 7fc328a288e194b73ecacaa60bdcedf4c987a913
+      - 8acffb5b8dbbe1e08567b094af73ef81cf19a67e
+      - 955370113812631ec9d19ea840516a5db7a58b22
+      - 962955790e7261cda100f2dde92e90da23d63f16
+      - 9738fe151ad3b9e805d78f9bccac7ecbfd14971b
+      - 9a221ae367b5550a79c59ddc10d0c0084cfb4237
+      - c4aa6461d16cc6d9961b53dd8a5ff685986f7c8b
+      - cfdc6302b64a771ab38242af41a3284430328d2d
+      - d8dc40a07fd268c40fda9790e692a39ff27d96f3
+      - de60b0dd7341b1ea4b47616e143a846741e938b5
+      - f54a1663b772e873d45ab49357384920ca88fb22
+      - f553c46aaac907a0cea0c99a3af061f572818b54
+    files:
+      - path: components/src/dynamo/common/configuration/groups/router_args.py
+        blob: 73653bd1b8f5cfc638309a92cafe6c2eb13513c4
+      - path: components/src/dynamo/frontend/main.py
+        blob: 13b60007486b9e3260be5b7ecf81ad0aa3e3dce8
+      - path: lib/llm/src/kv_router/prefill_router/mod.rs
+        blob: c883d32a6c9730de95db8da810199df661cdbfc2
+      - path: lib/runtime/src/component/client.rs
+        blob: b9c56918b2b137b45587ac1cdb78455d608b17e4
+      - path: lib/runtime/src/pipeline/network/egress/push_router.rs
+        blob: c24130765c2280f3c850ce2f3f9fc543845d1afd
+  - name: "1.3.0.dev20260713"
+    source: nightly
+    window: >-
+      The nightly of 2026-07-13 (UTC), found as for 1.3.0.dev20260601: every first-parent commit of main from the head at 2026-07-13T00:00Z to the head at 2026-07-14T00:00Z, 24 in all. Each has version = "1.3.0" in pyproject.toml.
+    commits:
+      - 0182cd9cbb7a819b5194099e204686add01c0dbd
+      - 1dac846b5b46a4e1279440016e8f8d81b33997f5
+      - 2bec928dbeaa5eb62e52705d1d27df56fb47c3d6
+      - 350e27a05b1d713091c51055e803fd99428fc00f
+      - 3db23b6bc80d9b7f1c1017f685305c4ba176edeb
+      - 495b02831ea3f1f847d40b0d7693737c281247f6
+      - 6033fcbdc528ca93b6789955f5e7a57c602b0119
+      - 60586fac7ca1f1117ae8b0c39e1ebc00b876641d
+      - 6aba2db793444cd30215909ae3b701f4494fc1b8
+      - 7d2c34171f3ab81cc7e866ac1341d78cdd3e7d0e
+      - 857efd2b7c68003e65de59b671885ee67c87c65d
+      - 8b007ec21e63adef7e10ab50ee39e052279433dd
+      - 9d3f8d465a8d5700f86e11b9d992b103f93cb1c1
+      - a89a822ccf416f7be335bc284e57a9c92f3fb21e
+      - af0dbfe8233fafdfaaa5d12e17518758c99e8da5
+      - b13288eff04b1cb4392c51f011676b8efc00271a
+      - b720811f65c4e76618f6cd5ee1b681711ff345a0
+      - beb91b0de5392af2bd36560b312c153e7dbed061
+      - c49abbce2847f4f65584d6c2766c35d2d85f54f2
+      - c6e26c5cee594bf57bd47152c8b23a7c9f8580bc
+      - d09a47258af92b2d5425194362aec0e2d3e40c6c
+      - df7333be0af77c534a32797a1c062d2f1eafe509
+      - ed33d4e8920126130138f6af829646c8a9559e98
+      - fa581751702644b66a4142a0039a6e173152951b
+    files:
+      - path: components/src/dynamo/common/configuration/groups/router_args.py
+        blob: 4ce6840f09c0a79bed460b7f891dde8f2a670e56
+      - path: components/src/dynamo/frontend/main.py
+        blob: 13b60007486b9e3260be5b7ecf81ad0aa3e3dce8
+      - path: lib/llm/src/kv_router/prefill_router/mod.rs
+        blob: c883d32a6c9730de95db8da810199df661cdbfc2
+      - path: lib/runtime/src/component/client.rs
+        blob: b9c56918b2b137b45587ac1cdb78455d608b17e4
+      - path: lib/runtime/src/pipeline/network/egress/push_router.rs
+        blob: c24130765c2280f3c850ce2f3f9fc543845d1afd
+  - name: "1.3.0.dev20260721"
+    source: nightly
+    window: >-
+      The nightly of 2026-07-21 (UTC), found as for 1.3.0.dev20260601: every first-parent commit of main from the head at 2026-07-21T00:00Z to the head at 2026-07-22T00:00Z, 27 in all. Each has version = "1.3.0" in pyproject.toml. main.py has 2 blobs in the window, all with one normal form under python-routing-statements (catalog/scripts/router_normal_form.py check <clone> 1.3.0.dev20260721 prints the digests; check --show-removed prints what each rule drops or keeps). The other three deciding files have one blob.
+    commits:
+      - 0237635a42dd75326ba26f18e0e928740968d6cf
+      - 0a44d9ea0e61f881270cb5a1c67beed5d2593493
+      - 0c095523649adfa77852fd48e104f5c952b95555
+      - 1d5fbc37dadf1e94c247e68e1a66f16750fc67a1
+      - 1ebabd47fc09cfeda11a58baad3766e26adc8203
+      - 21b34bb4b5a40565315e0a7a58ca19934539cd93
+      - 3124c572c35ef892a0a9be09c6ebf442b6e4d312
+      - 4dcdeca02082af22c9c643ec7d5c87819972a19b
+      - 4f15eb6c88d3d5acce606e8007357c8fe8ddbc67
+      - 51702e3508c483fb93d96b5789549fb30a626d02
+      - 59dd504105db498b11e5715854a2512d57b7a1e0
+      - 61aa90144a5629edb02ce20a547ddc7c66a4c9c7
+      - 7329e77d5ed0ad4b88da1c44502881afc3961939
+      - 7762e1768ca3373fb13c928fb3477d296e972cb7
+      - 86ada8eb8bbb22c10e4c839396e1cfc12e4dc03d
+      - 8bf37917681d56fbceaca9f196390090dca5a97f
+      - 9ab57d7ecefdd2a2af2e2a2c889724a157457cd6
+      - 9aecd9bfd4f65296943408f986dc6cca4923e89b
+      - a2b91aecc1749e83f32681cee0ea0c392caaf80d
+      - a693c95b2df0e8c278c28e1d1721762b8e637756
+      - bb774a5a7811be16271207873a1c4c3d2af20fc7
+      - cbd4b9e5fce5bfc9745d395b3bdf65422fd60d99
+      - cfdc8d53cec827c58925dc8916f7e0192557b17f
+      - d0f319f15940eb37441f7e3a5b89a3c14261a817
+      - dc2f4b947641f1d2e6f0b1367050afd3b8f3414d
+      - e9dcc4c61656061e8d0c266cb482eee86a569447
+      - ed0be1828d9afd428cfe62f0a8f7bd51e702f9fd
+    files:
+      - path: components/src/dynamo/common/configuration/groups/router_args.py
+        blob: 80092a35ef1957a488f6cc972e2a34707a8ddb69
+      - path: components/src/dynamo/frontend/main.py
+        blob: 55a07d9193f44801d8cd0b57558d7428113f3b64
+        rule: python-routing-statements
+        normal_form: fa7e45982c6cfb6e2005c0b7c1cad9af24e8ed397e6d006b076a192516f075f8
+        variants:
+          - blob: 13b60007486b9e3260be5b7ecf81ad0aa3e3dce8
+            normal_form: fa7e45982c6cfb6e2005c0b7c1cad9af24e8ed397e6d006b076a192516f075f8
+      - path: lib/llm/src/kv_router/prefill_router/mod.rs
+        blob: f30c7b101b67a691ce3db697f840ad1f7216835a
+      - path: lib/runtime/src/component/client.rs
+        blob: b9c56918b2b137b45587ac1cdb78455d608b17e4
+      - path: lib/runtime/src/pipeline/network/egress/push_router.rs
+        blob: c24130765c2280f3c850ce2f3f9fc543845d1afd
 policy: round-robin
 reason: >-
   Dynamo's round-robin mode rotates strictly per request: it takes the next value of a counter
@@ -4288,4 +4471,144 @@ evidence:
     commit: dd667fbbbb22f22255fe9a25d97a80dafc91deca
     path: lib/llm/src/kv_router/prefill_router/mod.rs
     lines: "44-49"
+    claim: The prefill router is an object of its own, with its own inner router and the router mode it was built with, so the prefill workers have a router object separate from the decode workers'.
+  - side: router
+    field: mode
+    repository: ai-dynamo/dynamo
+    commit: 936d64f4e9acad327fe88b7158e1515cf9eaacb0
+    path: components/src/dynamo/common/configuration/groups/router_args.py
+    lines: "204-206"
+    claim: The router-mode argument (environment variable DYN_ROUTER_MODE) defaults to round-robin, so a run that sets no router mode runs it. The file is the same at every commit of build 1.2.0.dev20260526.
+  - side: router
+    field: mode
+    repository: ai-dynamo/dynamo
+    commit: 936d64f4e9acad327fe88b7158e1515cf9eaacb0
+    path: lib/runtime/src/pipeline/network/egress/push_router.rs
+    lines: "507-517"
+    claim: Round-robin takes the next value of the router's counter and selects the instance at that value modulo the number of free instances.
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: 936d64f4e9acad327fe88b7158e1515cf9eaacb0
+    path: lib/runtime/src/pipeline/network/egress/push_router.rs
+    lines: "133"
+    claim: The counter is a field of the router object, so each router keeps its own.
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: 936d64f4e9acad327fe88b7158e1515cf9eaacb0
+    path: lib/runtime/src/component/client.rs
+    lines: "271-281"
+    claim: The free list the counter indexes is the routable instances when none is reported overloaded, and otherwise the routable instances without the overloaded ones.
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: 936d64f4e9acad327fe88b7158e1515cf9eaacb0
+    path: lib/llm/src/kv_router/prefill_router/mod.rs
+    lines: "44-49"
+    claim: The prefill router is an object of its own, with its own inner router and the router mode it was built with, so the prefill workers have a router object separate from the decode workers'.
+  - side: router
+    field: mode
+    repository: ai-dynamo/dynamo
+    commit: 28649cabdb1b75889928fae73cf15a336f9c453f
+    path: components/src/dynamo/common/configuration/groups/router_args.py
+    lines: "213-215"
+    claim: The router-mode argument (environment variable DYN_ROUTER_MODE) defaults to round-robin, so a run that sets no router mode runs it. The file is the same at every commit of build 1.3.0.dev20260710.
+  - side: router
+    field: mode
+    repository: ai-dynamo/dynamo
+    commit: 28649cabdb1b75889928fae73cf15a336f9c453f
+    path: lib/runtime/src/pipeline/network/egress/push_router.rs
+    lines: "693-702"
+    claim: Round-robin takes the next value of the router's counter and selects the instance at that value modulo the number of free instances.
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: 28649cabdb1b75889928fae73cf15a336f9c453f
+    path: lib/runtime/src/pipeline/network/egress/push_router.rs
+    lines: "150"
+    claim: The counter is a field of the router object, so each router keeps its own.
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: 28649cabdb1b75889928fae73cf15a336f9c453f
+    path: lib/runtime/src/component/client.rs
+    lines: "320-330"
+    claim: The free list the counter indexes is the routable instances when none is reported overloaded, and otherwise the routable instances without the overloaded ones.
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: 28649cabdb1b75889928fae73cf15a336f9c453f
+    path: lib/llm/src/kv_router/prefill_router/mod.rs
+    lines: "125-130"
+    claim: The prefill router is an object of its own, with its own inner router and the router mode it was built with, so the prefill workers have a router object separate from the decode workers'.
+  - side: router
+    field: mode
+    repository: ai-dynamo/dynamo
+    commit: 60586fac7ca1f1117ae8b0c39e1ebc00b876641d
+    path: components/src/dynamo/common/configuration/groups/router_args.py
+    lines: "157-159"
+    claim: The router-mode argument (environment variable DYN_ROUTER_MODE) defaults to round-robin, so a run that sets no router mode runs it. The file is the same at every commit of build 1.3.0.dev20260713.
+  - side: router
+    field: mode
+    repository: ai-dynamo/dynamo
+    commit: 60586fac7ca1f1117ae8b0c39e1ebc00b876641d
+    path: lib/runtime/src/pipeline/network/egress/push_router.rs
+    lines: "693-702"
+    claim: Round-robin takes the next value of the router's counter and selects the instance at that value modulo the number of free instances.
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: 60586fac7ca1f1117ae8b0c39e1ebc00b876641d
+    path: lib/runtime/src/pipeline/network/egress/push_router.rs
+    lines: "150"
+    claim: The counter is a field of the router object, so each router keeps its own.
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: 60586fac7ca1f1117ae8b0c39e1ebc00b876641d
+    path: lib/runtime/src/component/client.rs
+    lines: "320-330"
+    claim: The free list the counter indexes is the routable instances when none is reported overloaded, and otherwise the routable instances without the overloaded ones.
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: 60586fac7ca1f1117ae8b0c39e1ebc00b876641d
+    path: lib/llm/src/kv_router/prefill_router/mod.rs
+    lines: "125-130"
+    claim: The prefill router is an object of its own, with its own inner router and the router mode it was built with, so the prefill workers have a router object separate from the decode workers'.
+  - side: router
+    field: mode
+    repository: ai-dynamo/dynamo
+    commit: cfdc8d53cec827c58925dc8916f7e0192557b17f
+    path: components/src/dynamo/common/configuration/groups/router_args.py
+    lines: "158-160"
+    claim: The router-mode argument (environment variable DYN_ROUTER_MODE) defaults to round-robin, so a run that sets no router mode runs it. The file is the same at every commit of build 1.3.0.dev20260721.
+  - side: router
+    field: mode
+    repository: ai-dynamo/dynamo
+    commit: cfdc8d53cec827c58925dc8916f7e0192557b17f
+    path: lib/runtime/src/pipeline/network/egress/push_router.rs
+    lines: "693-702"
+    claim: Round-robin takes the next value of the router's counter and selects the instance at that value modulo the number of free instances.
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: cfdc8d53cec827c58925dc8916f7e0192557b17f
+    path: lib/runtime/src/pipeline/network/egress/push_router.rs
+    lines: "150"
+    claim: The counter is a field of the router object, so each router keeps its own.
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: cfdc8d53cec827c58925dc8916f7e0192557b17f
+    path: lib/runtime/src/component/client.rs
+    lines: "320-330"
+    claim: The free list the counter indexes is the routable instances when none is reported overloaded, and otherwise the routable instances without the overloaded ones.
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: cfdc8d53cec827c58925dc8916f7e0192557b17f
+    path: lib/llm/src/kv_router/prefill_router/mod.rs
+    lines: "137-142"
     claim: The prefill router is an object of its own, with its own inner router and the router mode it was built with, so the prefill workers have a router object separate from the decode workers'.
