@@ -76,11 +76,11 @@ func ExampleOpen() {
 	// --8<-- [end:open]
 
 	// Output:
-	// between 24.0 and 25.3 ms, bottleneck hbm
-	// sm        4.3 ms
-	// hbm      16.5 ms
+	// between 23.1 and 24.6 ms, bottleneck hbm
+	// sm        2.6 ms
+	// hbm      16.8 ms
 	// nvlink    0.9 ms
-	// host      3.5 ms
+	// host      4.3 ms
 }
 
 // Memory: what one rank holds before any request arrives, and what each request adds.
@@ -107,12 +107,12 @@ func ExampleKernel_FixedBytes() {
 	// --8<-- [end:memory]
 
 	// Output:
-	// weights       78.2 GiB
+	// weights       79.3 GiB
 	// activations    1.1 GiB
 	// CUDA graphs    0.8 GiB
 	// comm buffers   0.0 GiB
 	// EPLB           0.0 GiB
-	// total         80.1 GiB per rank
+	// total         81.2 GiB per rank
 	// before the budget  3.9 GiB
 	// a 4,096-token request: 137 MiB of KV cache per rank
 }
@@ -147,11 +147,11 @@ func ExampleKernel_Evidence() {
 	// --8<-- [end:evidence]
 
 	// Output:
-	// 115 of 157 values rest on evidence; 39 were assumed
+	// 115 of 160 values rest on evidence; 39 were assumed
 	//   assumed       39
 	//   measured     101
 	//   not_charged    1
-	//   transferred    2
+	//   transferred    5
 	//   vendor_spec   14
 	// the kernel assumed max_cudagraph_capture_size
 	// the kernel assumed engine_version

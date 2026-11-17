@@ -89,12 +89,12 @@ deployment on [Pricing a step](step.md):
 ```
 
 ```text
-weights       78.2 GiB
+weights       79.3 GiB
 activations    1.1 GiB
 CUDA graphs    0.8 GiB
 comm buffers   0.0 GiB
 EPLB           0.0 GiB
-total         80.1 GiB per rank
+total         81.2 GiB per rank
 before the budget  3.9 GiB
 a 4,096-token request: 137 MiB of KV cache per rank
 ```
