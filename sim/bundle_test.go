@@ -385,6 +385,18 @@ func TestPolicyBundle_Validate_InstanceLifecycle(t *testing.T) {
 			wantErr: "loading_delay.stddev must be >= 0",
 		},
 		{
+			name: "weight source with a space",
+			yaml: `instance_lifecycle:
+  weight_source: "nvme gen4"`,
+			wantErr: "weight_source must be a storage tier name",
+		},
+		{
+			name: "weight source is valid",
+			yaml: `instance_lifecycle:
+  weight_source: nvme_gen4`,
+			wantErr: "",
+		},
+		{
 			name: "zero mean is valid",
 			yaml: `instance_lifecycle:
   loading_delay:

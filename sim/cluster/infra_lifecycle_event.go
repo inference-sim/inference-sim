@@ -3,8 +3,12 @@
 package cluster
 
 import (
-	"github.com/inference-sim/inference-sim/sim"
+	"fmt"
+	"time"
+
 	"github.com/sirupsen/logrus"
+
+	"github.com/inference-sim/inference-sim/sim"
 )
 
 // Event priority constants for lifecycle events.
@@ -115,7 +119,7 @@ func (e *InstanceLoadedEvent) Execute(cs *ClusterSimulator) {
 // the configured loading delay. If the delay is zero, transitions immediately to
 // Loading → WarmingUp (or Active).
 func (cs *ClusterSimulator) scheduleInstanceLoadedEvent(inst *InstanceSimulator) {
-	delay := cs.placement.SampleLoadingDelay(&cs.config.InstanceLifecycle)
+	delay := cs.placement.SampleLoadingDelay(&cs.config.InstanceLifecycle) + cs.weightLoadDelay(inst)
 	readyTime := cs.clock + delay
 
 	if delay == 0 {
@@ -273,4 +277,22 @@ func (cs *ClusterSimulator) releaseInstanceGPUs(inst *InstanceSimulator) {
 		// Log at debug level so placement bugs surface during investigation.
 		logrus.Debugf("[cluster] releaseInstanceGPUs %s: %v", inst.ID(), err)
 	}
+}
+
+// weightLoadDelay is the time, in ticks, to read inst's resident weights from the configured
+// weight source (#1215), 0 when none is configured. A weight source the build site cannot price
+// for the instance's chip was refused at startup, so an error here is a bug and panics (R1).
+func (cs *ClusterSimulator) weightLoadDelay(inst *InstanceSimulator) int64 {
+	tier := cs.config.InstanceLifecycle.WeightSource
+	if tier == "" {
+		return 0
+	}
+	if cs.config.WeightLoadTime == nil {
+		panic(fmt.Sprintf("ClusterSimulator: instance %s: weight_source %q is set, but the host supplies no WeightLoadTime", inst.ID(), tier))
+	}
+	d, err := cs.config.WeightLoadTime(inst.GPU(), tier, inst.TPDegree)
+	if err != nil {
+		panic(fmt.Sprintf("ClusterSimulator: instance %s: %v", inst.ID(), err))
+	}
+	return int64((d + time.Microsecond - 1) / time.Microsecond)
 }

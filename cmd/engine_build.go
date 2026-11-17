@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/engine/env"
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
@@ -1396,4 +1398,72 @@ func tierRate(k kernel.Kernel, tier string, dir kernel.Direction) float64 {
 		}
 	}
 	return 0
+}
+
+// Instance loading time from the instance's weights (#1215).
+//
+// A policy bundle's instance_lifecycle.weight_source names a catalog storage tier. An instance
+// then loads in loading_delay (what does not depend on its weights) plus the time to read its
+// resident weights from that tier. The weights are the cost model's own per-rank figure (the bytes
+// it sizes KV against, design SUB-14), so a larger model, a wider tensor
+// parallelism or a quantised checkpoint changes the delay with no extra input. The rate is the
+// registry's offload_tier_<tier>_* entries for the instance's chip, read through the kernel's
+// TierTime, so a faster chip or tier loads faster and a chip the registry has no entry for is
+// refused by name.
+
+// weightLoadTime is the time for an instance of tpDegree ranks to read its resident weights
+// from tier on kernel k. The weights are the kernel's per-rank figure (FixedBytes, the bytes the
+// cost model itself sizes KV against); every rank on a node reads at once and shares the tier
+// (TierTime's queue depth), and the nodes of a multi-node instance read in parallel, so one
+// node's time is the instance's. At this pin the engine's PoolPlan does not yet state resident
+// weights (blis-latency-kernel#84), so the kernel is the one source; when the plan does, this is
+// the figure to replace. Weights kept in host memory are not in the kernel's figure and are not
+// priced here.
+func weightLoadTime(k kernel.Kernel, gpusPerNode int, tier string, tpDegree int) (time.Duration, error) {
+	ranksOnNode := max(1, min(tpDegree, gpusPerNode))
+	bytes := k.FixedBytes().Weights
+	d := k.TierTime(tier, kernel.DirectionFromTier, bytes, ranksOnNode)
+	if d < 0 || d >= time.Duration(math.MaxInt64/4) {
+		return 0, fmt.Errorf("weight_source %q: the kernel cannot price a read of %d bytes from it", tier, bytes)
+	}
+	return d, nil
+}
+
+// weightLoader returns DeploymentConfig.WeightLoadTime: it prices an instance on the kernel of
+// its pool's chip, the variant for a chip other than the scenario's own (withPoolChips) and the
+// scenario's opened kernel otherwise.
+func weightLoader(def *engineModel, variants map[string]*poolChip) func(gpu, tier string, tpDegree int) (time.Duration, error) {
+	return func(gpu, tier string, tpDegree int) (time.Duration, error) {
+		m := def
+		if v, ok := variants[strings.ToLower(gpu)]; ok {
+			m = v.model
+		}
+		return weightLoadTime(m.Kernel(), m.Packaging().GPUsPerNode, tier, tpDegree)
+	}
+}
+
+// requireWeightSource refuses, before the run starts, a weight source that the kernel of any
+// chip the run places instances on cannot price. The refusal names the chip and the registry
+// entries the tier needs (the TierTime of a tier with no entry is unbounded, never zero).
+func requireWeightSource(tier string, def *engineModel, variants map[string]*poolChip) {
+	if tier == "" {
+		return
+	}
+	chips := map[string]*engineModel{gpu: def}
+	for _, v := range variants {
+		chips[v.chip] = v.model
+	}
+	names := make([]string, 0, len(chips))
+	for c := range chips {
+		names = append(names, c)
+	}
+	slices.Sort(names)
+	for _, c := range names {
+		if d := chips[c].Kernel().TierTime(tier, kernel.DirectionFromTier, 1, 1); d < 0 || d >= time.Duration(math.MaxInt64/4) {
+			logrus.Fatalf("policy bundle instance_lifecycle.weight_source %q cannot be priced on chip %q: the coefficient sets "+
+				"of the scenario carry no %s, %s and %s for it (the registry set cost-model-offload-tiers; the catalog's "+
+				"storage tiers are in catalog/devices/storage.yaml)", tier, c, coefficient.OffloadTierReadRate(tier),
+				coefficient.OffloadTierWriteRate(tier), coefficient.OffloadTierBaseLatency(tier))
+		}
+	}
 }
