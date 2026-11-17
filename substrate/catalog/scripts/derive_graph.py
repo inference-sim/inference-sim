@@ -8204,6 +8204,11 @@ def tower_dtype(raw: dict[str, Any], model: str) -> str | None:
     ignored = [i for v in quant.values() if isinstance(v, list) for i in v if isinstance(i, str)]
     if any(p in i for i in ignored for p in TOWER_PREFIXES):
         return cfg_dtype
+    # A mixed-precision config lists every quantized layer by name (modelopt_mixed's
+    # quantized_layers): a tower module it does not list is stored unquantized.
+    layers = quant.get("quantized_layers")
+    if isinstance(layers, dict) and layers and not any(p in str(k) for k in layers for p in TOWER_PREFIXES):
+        return cfg_dtype
     return None
 
 
