@@ -234,6 +234,7 @@ layer_kinds:
     role: qkv_a_proj
     n: 2048
     k: 4096
+    tp: replicated
     weight_dtype: bf16
   - &id013
     op: Elementwise
@@ -257,32 +258,38 @@ layer_kinds:
     n: 4096
     k: 1536
     weight_dtype: bf16
+    tp: replicated
   - &id017
     op: GEMM
     role: index_wk_weights_proj
     n: 160
     k: 4096
     weight_dtype: bf16
+    tp: replicated
   - &id018
     op: GEMM
     role: index_head_gate_proj
     n: 32
     k: 4096
     weight_dtype: fp32
+    tp: replicated
   - &id019
     op: GEMM
     role: index_kpool_compress_gate
     n: 128
     k: 4096
     weight_dtype: bf16
+    tp: replicated
   - &id020
     op: Elementwise
     role: index_kpool_compress
     bytes_per_token: 1825
+    tp: replicated
   - &id021
     op: Elementwise
     role: index_k_norm
     bytes_per_token: 512
+    tp: replicated
   - &id022
     op: Attention
     holds_engine_kv: false
@@ -292,6 +299,7 @@ layer_kinds:
     n_kv: 1
     d_h: 128
     compress_ratio: 4
+    tp: replicated
   - &id023
     op: Attention
     holds_engine_kv: true

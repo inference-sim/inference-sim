@@ -28,8 +28,9 @@ all-reduce excluded (its collection_meta.yaml), so the rest is the device share 
 BLIS's price of the module cut before that all-reduce. That first part is the generated file
 registry/docs/glm53-attention-rest-h200-tp8.csv, written by
 kernel/glm53_attention_rest_test.go (BLIS_WRITE_GLM53_REST=1), which also fails, in the rederive
-job, when the kernel's price of the rest moves without the file being regenerated. About a
-third of the measured module is the rest, so it cannot be dropped.
+job, when the kernel's price of the rest moves without the file being regenerated. The rest is a
+median 22% of the measured module (and most of its growth with the cached prefix, which is the
+indexer's scorer), so it cannot be dropped.
 
 THE FORM is the kernel's (kernel/prefill_forms.go, sparsePrefillReadBytes): per layer, per rank,
 per step holding prefill,
@@ -320,9 +321,9 @@ def entries(f: dict) -> list[list[str]]:
         f"{f['fit'][1]:.3f}. Signed by batch: "
         + ", ".join(f"{b}: {v:.2f}" for b, v in f["by_batch"].items())
         + f". HELD OUT: trained on prefix <= 16,384 and predicting >= 32,768, {h['prefix'][1]:.3f}x "
-        f"(signed {h['prefix'][2]:.3f}, n={h['prefix'][0]}), the long-prefix under-price that the "
-        f"scorer's pricing leaves (the scorer is in the rest of the module, priced on the part-wide "
-        f"prefill pair); trained on new tokens <= 2,048 and predicting >= 4,096, "
+        f"(signed {h['prefix'][2]:.3f}, n={h['prefix'][0]}); the prefix slope is the indexer's "
+        f"scorer, in the rest of the module, priced on the part-wide prefill pair over all of its "
+        f"heads on every rank, as vLLM runs it; trained on new tokens <= 2,048 and predicting >= 4,096, "
         f"{h['new tokens'][1]:.3f}x (signed {h['new tokens'][2]:.3f}, n={h['new tokens'][0]}). AT OR "
         f"BELOW THE TOP-K ({f['below'][0]} rows, not fitted) the form gives {f['below'][1]:.3f}x, "
         f"signed {f['below'][2]:.3f}. The sparse attention is a median {f['share']:.0%} of the "

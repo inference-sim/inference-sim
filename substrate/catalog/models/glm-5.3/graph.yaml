@@ -20,6 +20,7 @@ layer_kinds:
     role: qkv_a_proj
     n: 2624
     k: 6144
+    tp: replicated
   - op: Elementwise
     role: qkv_a_layernorm
     bytes_per_token: 10752
@@ -35,11 +36,13 @@ layer_kinds:
     role: index_wq_b
     n: 4096
     k: 2048
+    tp: replicated
   - op: GEMM
     role: index_wk_weights_proj
     n: 160
     k: 6144
     weight_dtype: bf16
+    tp: replicated
   - op: Attention
     holds_engine_kv: false
     role: block_index_scores
@@ -47,6 +50,7 @@ layer_kinds:
     n_q: 32
     n_kv: 1
     d_h: 128
+    tp: replicated
   - op: Attention
     holds_engine_kv: true
     kind: sparse_mla
@@ -113,6 +117,7 @@ layer_kinds:
     role: qkv_a_proj
     n: 2624
     k: 6144
+    tp: replicated
   - op: Elementwise
     role: qkv_a_layernorm
     bytes_per_token: 10752
@@ -128,11 +133,13 @@ layer_kinds:
     role: index_wq_b
     n: 4096
     k: 2048
+    tp: replicated
   - op: GEMM
     role: index_wk_weights_proj
     n: 160
     k: 6144
     weight_dtype: bf16
+    tp: replicated
   - op: Attention
     holds_engine_kv: false
     role: block_index_scores
@@ -140,6 +147,7 @@ layer_kinds:
     n_q: 32
     n_kv: 1
     d_h: 128
+    tp: replicated
   - op: Attention
     holds_engine_kv: true
     kind: sparse_mla
@@ -209,6 +217,7 @@ layer_kinds:
     role: qkv_a_proj
     n: 2624
     k: 6144
+    tp: replicated
   - op: Elementwise
     role: qkv_a_layernorm
     bytes_per_token: 10240
@@ -293,6 +302,7 @@ layer_kinds:
     role: qkv_a_proj
     n: 2624
     k: 6144
+    tp: replicated
   - op: Elementwise
     role: qkv_a_layernorm
     bytes_per_token: 10752
@@ -308,11 +318,13 @@ layer_kinds:
     role: index_wq_b
     n: 4096
     k: 2048
+    tp: replicated
   - op: GEMM
     role: index_wk_weights_proj
     n: 160
     k: 6144
     weight_dtype: bf16
+    tp: replicated
   - op: Attention
     holds_engine_kv: false
     role: block_index_scores
@@ -320,6 +332,7 @@ layer_kinds:
     n_q: 32
     n_kv: 1
     d_h: 128
+    tp: replicated
   - op: Attention
     holds_engine_kv: true
     kind: sparse_mla
