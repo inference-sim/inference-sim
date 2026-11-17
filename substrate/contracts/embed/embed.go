@@ -487,6 +487,13 @@ type Request struct {
 	// header llm-d's session-affinity plugins read by default. It is the opaque string a
 	// multi-turn client would send on every turn of one conversation.
 	SessionID string
+
+	// Headers are further request headers the client sends, by lower-case name, for a plugin that
+	// reads one the fields above do not carry: a session token the client echoes from an earlier
+	// response, a cookie, a header named in the configuration (see Requirements.SessionIdentities).
+	// The router sees them as it sees an HTTP client's. A header the fields above set is not
+	// overridden by one named here.
+	Headers map[string]string
 }
 
 // Decision is where the router sent a request. Endpoints are named by address

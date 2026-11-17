@@ -78,6 +78,7 @@ key order. `:method` is `POST`, `:path` is `Path`, `content-type` is `applicatio
 | `FairnessID` | `x-llm-d-inference-fairness-id` | verbatim |
 | `TTFTSLO` | `x-llm-d-slo-ttft-ms` | whole milliseconds, rounded up, when positive |
 | `SessionID` | `x-session-id` (`embed.SessionIDHeader`) | verbatim, when non-empty |
+| `Headers` | each, by lower-case name | verbatim; never overrides a header the rows above set |
 | `TTL` | `x-llm-d-inference-ttl` | `time.Duration.String`, when positive; a flow-controlled request's queue-wait budget is the shorter of it and the configured one |
 
 ## Rejections
