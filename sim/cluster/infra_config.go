@@ -35,7 +35,7 @@ func (d DelaySpec) Sample(rng *rand.Rand) int64 {
 	if d.Stddev <= 0 {
 		secs = d.Mean
 	} else {
-		secs = rng.NormFloat64()*d.Stddev + d.Mean
+		secs = float64(rng.NormFloat64()*d.Stddev) + d.Mean
 		if secs < 0 {
 			secs = 0
 		}

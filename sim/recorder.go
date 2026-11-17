@@ -42,7 +42,7 @@ func (m *Metrics) RecordKVUsage(used, duration int64, weight bool) {
 		m.PeakKVBlocksUsed = used
 	}
 	if weight {
-		m.KVBlocksUsed += float64(used) * float64(duration)
+		m.KVBlocksUsed += float64(float64(used) * float64(duration))
 	}
 }
 

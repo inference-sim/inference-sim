@@ -587,7 +587,7 @@ func JainFairnessIndex(throughputs map[string]float64) float64 {
 	for _, k := range sortedKeys(throughputs) {
 		x := throughputs[k]
 		sumX += x
-		sumX2 += x * x
+		sumX2 += float64(x * x)
 	}
 	if sumX2 == 0 {
 		return 1.0 // All values identical (including all-zero) → perfectly fair
@@ -651,7 +651,7 @@ func ComputeFitness(metrics *RawMetrics, weights map[string]float64) (FitnessRes
 		weight := weights[key]
 		value, _ := extractMetric(metrics, key) // already validated
 		result.Components[key] = value
-		result.Score += value * weight
+		result.Score += float64(value * weight)
 	}
 
 	return result, nil

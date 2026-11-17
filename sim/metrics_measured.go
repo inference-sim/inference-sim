@@ -446,11 +446,11 @@ func inFlightOver(samples []InFlightSample, startUs, endUs int64) (float64, int)
 		if s.AtUs >= endUs {
 			break
 		}
-		area += float64(current) * float64(s.AtUs-at)
+		area += float64(float64(current) * float64(s.AtUs-at))
 		peak = max(peak, current)
 		current, at = s.Count, s.AtUs
 	}
-	area += float64(current) * float64(endUs-at)
+	area += float64(float64(current) * float64(endUs-at))
 	peak = max(peak, current)
 	return area / float64(endUs-startUs), peak
 }

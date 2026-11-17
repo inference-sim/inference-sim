@@ -101,7 +101,7 @@ func (a *V2SaturationAnalyzer) Analyze(metrics ModelSignals) AnalyzerResult {
 		k2 := k1
 		effectiveCapacity := math.Min(k1, k2)
 
-		demand := float64(r.KvTokensInUse) + float64(r.QueueDepth)*a.config.AvgInputTokens
+		demand := float64(r.KvTokensInUse) + float64(float64(r.QueueDepth)*a.config.AvgInputTokens)
 
 		agg, ok := variants[r.Variant]
 		if !ok {
