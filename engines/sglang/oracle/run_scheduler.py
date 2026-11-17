@@ -20,13 +20,10 @@ environment. BLIS_SGLANG_ALLOW_GOLDEN_UPDATE=1 lets it write into a testdata/gol
 Every SGLANG_* variable of the caller's environment is removed from the scheduler process, which
 sets only those this runner lists (KEPT_SGLANG_ENV).
 """
-import hashlib
 import json
 import multiprocessing
 import os
-import platform
 import signal
-import subprocess
 import sys
 import tempfile
 
@@ -117,51 +114,9 @@ def child(scenario: dict, sglang_root: str, out_path: str) -> None:
         json.dump(result, f)
 
 
-def sha256(path: str) -> str:
-    with open(path, "rb") as f:
-        return hashlib.sha256(f.read()).hexdigest()
-
-
-def git(root: str, *args) -> str:
-    out = subprocess.run(["git", "-C", root, *args], capture_output=True, text=True)
-    if out.returncode:
-        raise SystemExit(f"git {' '.join(args)} in {root} failed: {out.stderr.strip()}")
-    return out.stdout.strip()
-
-
-ORACLE_INPUTS = ("oracle/run_scheduler.py", "oracle/harness.py", "oracle/stubs.py", "oracle/mocks.json",
-                 "oracle/harness.json", "oracle/requirements.lock")
-
-
-def provenance(sglang_root: str, scenario_path: str, scenario: dict) -> dict:
-    """What a trace records to be reproduced (FID-2). Every value is required: a run with no model
-    revision, no lockfile or no readable commit fails rather than record a placeholder (X16)."""
-    revision, lockfile = os.environ.get("ORACLE_MODEL_REVISION"), os.environ.get("ORACLE_LOCKFILE")
-    if not revision or not lockfile:
-        raise SystemExit("ORACLE_MODEL_REVISION and ORACLE_LOCKFILE must both be set")
-    with open(os.path.join(HERE, "mocks.json")) as f:
-        mocks = json.load(f)
-    inputs = {rel: sha256(os.path.join(ROOT, rel)) for rel in ORACLE_INPUTS}
-    if os.path.abspath(scenario_path).startswith(ROOT + os.sep):
-        inputs[os.path.relpath(os.path.abspath(scenario_path), ROOT).replace(os.sep, "/")] = sha256(scenario_path)
-    head = git(ROOT, "rev-parse", "HEAD")
-    # Dirty only if a file the run used differs from head; a golden refreshed in place is not one.
-    dirty = git(ROOT, "status", "--porcelain", "--", *inputs)
-    return {
-        "tier": 2,
-        "sglang_commit": git(sglang_root, "rev-parse", "HEAD"),
-        "scenario_sha256": sha256(scenario_path),
-        "mock_version": mocks["version"],
-        "model": scenario["model"],
-        "model_revision": revision,
-        "python": sys.version.split()[0],
-        "platform": platform.system().lower() + "-" + platform.machine(),
-        "lockfile_sha256": sha256(lockfile),
-        "requirements_lock_sha256": sha256(os.path.join(HERE, "requirements.lock")),
-        "blis_sglang_commit": head + ("+dirty" if dirty else ""),
-        "oracle_inputs": inputs,
-        "seed": scenario["seed"],
-    }
+# The repository files a tier-2 run reads, besides its scenario (recorded in oracle_inputs).
+ORACLE_INPUTS = ("oracle/run_scheduler.py", "oracle/harness.py", "oracle/stubs.py", "oracle/traces.py",
+                 "oracle/mocks.json", "oracle/harness.json", "oracle/requirements.lock")
 
 
 def trace_problems(result: dict, scenario: dict) -> list:
@@ -192,26 +147,22 @@ def trace_problems(result: dict, scenario: dict) -> list:
     return problems
 
 
-def refuses_golden(out) -> bool:
-    return bool(out) and "testdata/golden" in os.path.abspath(out).replace(os.sep, "/") and \
-        os.environ.get("BLIS_SGLANG_ALLOW_GOLDEN_UPDATE") != "1"
-
-
 def main() -> int:
     if len(sys.argv) not in (3, 4):
         print(__doc__.split("Usage:", 1)[1].split("\n\n", 1)[0].strip(), file=sys.stderr)
         return 2
     sglang_root, scenario_path = sys.argv[1], sys.argv[2]
     out = sys.argv[3] if len(sys.argv) == 4 else None
-    if refuses_golden(out):
-        print("refusing to write a golden trace: set BLIS_SGLANG_ALLOW_GOLDEN_UPDATE=1, and add a "
-              "golden-reviewed: <trace>: <reason> trailer for each trace the commit changes", file=sys.stderr)
+    sys.path.insert(0, HERE)
+    import traces
+
+    if traces.refuses_write(out):
+        print(traces.REFUSAL, file=sys.stderr)
         return 2
     sys.path.insert(0, os.path.join(os.path.abspath(sglang_root), "python"))
-    sys.path.insert(0, HERE)
     with open(scenario_path) as f:
         scenario = json.load(f)
-    prov = provenance(sglang_root, scenario_path, scenario)
+    prov = traces.provenance(2, sglang_root, scenario_path, scenario, ORACLE_INPUTS)
 
     # run_scheduler_process sends SIGQUIT to its parent when the scheduler raises; the parent is
     # this process, which reports it.
@@ -237,13 +188,7 @@ def main() -> int:
         print(p, file=sys.stderr)
     if problems:
         return 1  # a failing run writes no trace
-    trace = {"provenance": prov, **result}
-    text = json.dumps(trace, indent=1, sort_keys=True) + "\n"
-    if out:
-        with open(out, "w") as f:
-            f.write(text)
-    else:
-        sys.stdout.write(text)
+    traces.write(out, {"provenance": prov, **result})
     return 0
 
 

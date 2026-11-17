@@ -2,8 +2,10 @@
 """Fail unless every committed golden trace is SGLang's own output: each golden under
 oracle/testdata/golden/ equals, outside its provenance block, the trace the oracle runner wrote
 for the same scenario in this CI run; it names the pinned SGLang commit; and it records the same
-mock version, model, model revision, committed lock and scenario as that run. A scenario with no
-golden, a golden with no scenario, and no scenario at all fail (X16).
+tier, mock version, model, model revision, committed lock, scenario and seed as that run. Both
+traces must be of the trace format (oracle/traces.py), so a provenance key one side lacks fails
+rather than compare as absent on both. A scenario with no golden, a golden with no scenario, and no
+scenario at all fail (X16).
 
 Usage: python3 -I oracle/compare_goldens.py <dir of fresh traces> <pinned sglang commit> [<scenarios dir> <golden dir>]
 """
@@ -12,6 +14,9 @@ import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import traces  # noqa: E402  (oracle/traces.py; -I leaves the script directory off sys.path)
+
 GOLDEN = os.path.join(HERE, "testdata", "golden")
 SCENARIOS = os.path.join(HERE, "scenarios")
 
@@ -39,7 +44,8 @@ def first_difference(a, b, path="") -> str:
 
 
 # The provenance a golden must share with a fresh run of its scenario.
-PROVENANCE_HELD = ("mock_version", "model", "model_revision", "requirements_lock_sha256", "scenario_sha256")
+PROVENANCE_HELD = ("tier", "mock_version", "model", "model_revision", "requirements_lock_sha256",
+                   "scenario_sha256", "seed")
 
 
 def main(fresh_dir: str, commit: str, scenarios: str = SCENARIOS, golden_dir: str = GOLDEN) -> int:
@@ -63,7 +69,12 @@ def main(fresh_dir: str, commit: str, scenarios: str = SCENARIOS, golden_dir: st
             golden = json.load(f)
         with open(fresh_path) as f:
             fresh = json.load(f)
-        gp, fp = golden.get("provenance", {}), fresh.get("provenance", {})
+        malformed = [f"{name}: the golden: {p}" for p in traces.trace_problems(golden)]
+        malformed += [f"{name}: this run's trace: {p}" for p in traces.trace_problems(fresh)]
+        if malformed:
+            bad += malformed
+            continue
+        gp, fp = golden["provenance"], fresh["provenance"]
         if gp.get("sglang_commit") != commit:
             bad.append(f"{name}: the golden records SGLang {gp.get('sglang_commit')!r}, not {commit}")
         for key in PROVENANCE_HELD:

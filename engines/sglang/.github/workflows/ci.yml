@@ -86,7 +86,8 @@ jobs:
           key: ${{ steps.go.outputs.build-key }}
 
   # The oracle's guards over this repository's files (X18): every sglang module the scheduler's files
-  # import is classified as a decision module or listed with a reason (check_modules.py, FID-1), and
+  # import is classified as a decision module or listed with a reason (check_modules.py, FID-1), every
+  # golden trace's provenance matches this tree (check_provenance.py, FID-2), and
   # oracle/test_checks.py runs each guard on what it guards. SGLang's source is read at the commit
   # provenance.go pins; nothing is installed.
   oracle-checks:
@@ -119,6 +120,8 @@ jobs:
           python-version: "3.12"
       - name: every module the scheduler imports is classified
         run: python -I oracle/check_modules.py sglang-source
+      - name: every golden trace records this tree's SGLang commit, lock, manifest version, scenario and seed
+        run: python -I oracle/check_provenance.py
       - name: the guards fail on what they guard
         run: python -I oracle/test_checks.py sglang-source
   # The oracle's environment (SGL-1, FID-2): SGLang checked out at the commit provenance.go pins, the
