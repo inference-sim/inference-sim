@@ -20,6 +20,8 @@ layer_kinds:
     role: qkv_a_proj
     n: 2112
     k: 7168
+    tp: replicated
+    weight_dtype: bf16
   - op: Elementwise
     role: q_a_layernorm
     bytes_per_token: 6144
@@ -30,10 +32,12 @@ layer_kinds:
     role: q_b_proj
     n: 24576
     k: 1536
+    weight_dtype: bf16
   - op: GEMM
     role: kv_b_proj
     n: 32768
     k: 512
+    weight_dtype: bf16
   - op: Attention
     holds_engine_kv: true
     kind: mla
@@ -98,6 +102,8 @@ layer_kinds:
     role: qkv_a_proj
     n: 2112
     k: 7168
+    tp: replicated
+    weight_dtype: bf16
   - op: Elementwise
     role: q_a_layernorm
     bytes_per_token: 6144
@@ -108,10 +114,12 @@ layer_kinds:
     role: q_b_proj
     n: 24576
     k: 1536
+    weight_dtype: bf16
   - op: GEMM
     role: kv_b_proj
     n: 32768
     k: 512
+    weight_dtype: bf16
   - op: Attention
     holds_engine_kv: true
     kind: mla
@@ -188,6 +196,8 @@ layer_kinds:
     role: qkv_a_proj
     n: 2112
     k: 7168
+    tp: replicated
+    weight_dtype: bf16
   - op: Elementwise
     role: q_a_layernorm
     bytes_per_token: 6144
@@ -198,10 +208,12 @@ layer_kinds:
     role: q_b_proj
     n: 24576
     k: 1536
+    weight_dtype: bf16
   - op: GEMM
     role: kv_b_proj
     n: 32768
     k: 512
+    weight_dtype: bf16
   - op: Attention
     holds_engine_kv: true
     kind: mla
@@ -214,6 +226,7 @@ layer_kinds:
     role: o_proj
     n: 7168
     k: 16384
+    weight_dtype: bf16
   - op: AllReduce
     role: attn_out
     emit: tensor_parallel
@@ -227,6 +240,7 @@ layer_kinds:
     experts: 256
     top_k: 8
     shared_experts: 1
+    weight_dtype: bf16
   - op: All2All
     role: moe_dispatch_combine
     emit: expert_parallel
@@ -279,6 +293,7 @@ head:
   role: lm_head
   n: 129280
   k: 7168
+  weight_dtype: bf16
 speculator:
   method: deepseek_mtp
   num_spec_tokens: 1

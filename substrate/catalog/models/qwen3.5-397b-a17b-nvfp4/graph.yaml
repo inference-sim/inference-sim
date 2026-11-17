@@ -27,6 +27,7 @@ layer_kinds:
     role: mixer_out
     n: 4096
     k: 8192
+    weight_dtype: bf16
   - op: AllReduce
     role: mixer_out
     emit: tensor_parallel
@@ -77,6 +78,7 @@ layer_kinds:
     role: qkv_proj
     n: 17408
     k: 4096
+    weight_dtype: bf16
   - op: Attention
     holds_engine_kv: true
     kind: gqa
@@ -90,6 +92,7 @@ layer_kinds:
     role: o_proj
     n: 4096
     k: 8192
+    weight_dtype: bf16
   - op: AllReduce
     role: attn_out
     emit: tensor_parallel
@@ -157,6 +160,7 @@ layer_kinds:
     role: qkv_proj
     n: 17408
     k: 4096
+    weight_dtype: bf16
   - op: Attention
     holds_engine_kv: true
     kind: gqa
@@ -170,6 +174,7 @@ layer_kinds:
     role: o_proj
     n: 4096
     k: 8192
+    weight_dtype: bf16
   - op: AllReduce
     role: attn_out
     emit: tensor_parallel
@@ -183,6 +188,7 @@ layer_kinds:
     experts: 512
     top_k: 10
     shared_experts: 1
+    weight_dtype: bf16
   - op: All2All
     role: moe_dispatch_combine
     emit: expert_parallel
@@ -231,6 +237,7 @@ head:
   role: lm_head
   n: 248320
   k: 4096
+  weight_dtype: bf16
 speculator:
   method: qwen3_5_mtp
   num_spec_tokens: 1

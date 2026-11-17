@@ -20,6 +20,8 @@ layer_kinds:
     role: qkv_a_proj
     n: 2112
     k: 7168
+    tp: replicated
+    weight_dtype: bf16
   - op: Elementwise
     role: q_a_layernorm
     bytes_per_token: 6144
@@ -30,10 +32,12 @@ layer_kinds:
     role: q_b_proj
     n: 12288
     k: 1536
+    weight_dtype: bf16
   - op: GEMM
     role: kv_b_proj
     n: 16384
     k: 512
+    weight_dtype: bf16
   - op: Attention
     holds_engine_kv: true
     kind: mla
@@ -46,6 +50,7 @@ layer_kinds:
     role: o_proj
     n: 7168
     k: 8192
+    weight_dtype: bf16
   - op: AllReduce
     role: attn_out
     emit: tensor_parallel
@@ -55,10 +60,12 @@ layer_kinds:
     role: mlp_gate_up
     n: 36864
     k: 7168
+    weight_dtype: bf16
   - op: GEMM
     role: mlp_down
     n: 7168
     k: 18432
+    weight_dtype: bf16
   - op: AllReduce
     role: mlp_out
     emit: tensor_parallel_unless_sp_moe
@@ -95,6 +102,8 @@ layer_kinds:
     role: qkv_a_proj
     n: 2112
     k: 7168
+    tp: replicated
+    weight_dtype: bf16
   - op: Elementwise
     role: q_a_layernorm
     bytes_per_token: 6144
@@ -105,10 +114,12 @@ layer_kinds:
     role: q_b_proj
     n: 12288
     k: 1536
+    weight_dtype: bf16
   - op: GEMM
     role: kv_b_proj
     n: 16384
     k: 512
+    weight_dtype: bf16
   - op: Attention
     holds_engine_kv: true
     kind: mla
@@ -121,6 +132,7 @@ layer_kinds:
     role: o_proj
     n: 7168
     k: 8192
+    weight_dtype: bf16
   - op: AllReduce
     role: attn_out
     emit: tensor_parallel
@@ -187,3 +199,4 @@ head:
   role: lm_head
   n: 163840
   k: 7168
+  weight_dtype: bf16

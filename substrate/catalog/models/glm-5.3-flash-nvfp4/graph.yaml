@@ -27,41 +27,49 @@ layer_kinds:
     role: kda_q_proj
     n: 8192
     k: 4096
+    weight_dtype: bf16
   - &id002
     op: GEMM
     role: kda_k_proj
     n: 8192
     k: 4096
+    weight_dtype: bf16
   - &id003
     op: GEMM
     role: kda_v_proj
     n: 8192
     k: 4096
+    weight_dtype: bf16
   - &id004
     op: GEMM
     role: kda_f_a_proj
     n: 128
     k: 4096
+    weight_dtype: bf16
   - &id005
     op: GEMM
     role: kda_f_b_proj
     n: 8192
     k: 128
+    weight_dtype: bf16
   - &id006
     op: GEMM
     role: kda_b_proj
     n: 64
     k: 4096
+    weight_dtype: bf16
   - &id007
     op: GEMM
     role: kda_g_a_proj
     n: 128
     k: 4096
+    weight_dtype: bf16
   - &id008
     op: GEMM
     role: kda_g_b_proj
     n: 8192
     k: 128
+    weight_dtype: bf16
   - &id009
     op: RecurrentUpdate
     recurrent_kind: kda
@@ -74,6 +82,7 @@ layer_kinds:
     role: kda_o_proj
     n: 4096
     k: 8192
+    weight_dtype: bf16
   - &id011
     op: AllReduce
     role: mixer_out
@@ -251,6 +260,7 @@ layer_kinds:
     role: kv_b_proj
     n: 32768
     k: 512
+    weight_dtype: bf16
   - &id016
     op: GEMM
     role: index_wq_b
@@ -393,6 +403,7 @@ layer_kinds:
     role: mtp_eh_proj
     n: 4096
     k: 8192
+    weight_dtype: bf16
   - op: Elementwise
     role: input_norm
   - *id012
@@ -419,6 +430,7 @@ layer_kinds:
     experts: 288
     top_k: 8
     shared_experts: 1
+    weight_dtype: bf16
   - op: All2All
     role: moe_dispatch_combine
     emit: expert_parallel
@@ -494,6 +506,7 @@ head:
   role: lm_head
   n: 154880
   k: 4096
+  weight_dtype: bf16
 speculator:
   method: glm5_next_mtp
   num_spec_tokens: 1

@@ -23,6 +23,7 @@ layer_kinds:
     role: qkv_a_proj
     n: 2112
     k: 7168
+    tp: replicated
     weight_dtype: bf16
   - op: Elementwise
     role: q_a_layernorm
@@ -62,10 +63,12 @@ layer_kinds:
     role: mlp_gate_up
     n: 36864
     k: 7168
+    weight_dtype: bf16
   - op: GEMM
     role: mlp_down
     n: 7168
     k: 18432
+    weight_dtype: bf16
   - op: AllReduce
     role: mlp_out
     emit: tensor_parallel_unless_sp_moe
@@ -102,6 +105,7 @@ layer_kinds:
     role: qkv_a_proj
     n: 2112
     k: 7168
+    tp: replicated
     weight_dtype: bf16
   - op: Elementwise
     role: q_a_layernorm
@@ -190,3 +194,4 @@ head:
   role: lm_head
   n: 163840
   k: 7168
+  weight_dtype: bf16

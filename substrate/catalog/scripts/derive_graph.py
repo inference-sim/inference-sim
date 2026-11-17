@@ -1174,7 +1174,13 @@ DTYPE_WIDTHS = {
 UNQUANTIZED_BASE = {
     "gpt-oss-120b": "bf16",
     "gpt-oss-20b": "bf16",
+    # MiniMax-M2.5 states no dtype; its safetensors headers (revision f710177d) store the
+    # tensors its fp8 block leaves alone -- lm_head, embed_tokens and the norms -- BF16.
+    "minimax-m2.5": "bf16",
 }
+
+# The widths that are not a quantized format: a node stored at one of them is unquantized.
+UNQUANTIZED_WIDTHS = frozenset({"bf16", "fp16", "fp32"})
 
 
 def int_group_scale(cfg: dict[str, Any], raw: dict[str, Any],
@@ -1629,6 +1635,66 @@ HEAD_UNQUANTIZED = {
 }
 
 
+# Architectures whose LM head is placed by the rule vLLM v0.33.0 applies to the checkpoint's
+# quantization method, whatever the exclusion list says (head_left_unquantized). Keyed by
+# architecture, as HEAD_UNQUANTIZED is, so adding a family re-derives its graphs on purpose.
+# The GLM DSA family (glm-5, glm-5.1-fp8, glm-5.2-fp8, glm-5.3) has the same error and joins
+# with the re-derivation of those graphs (inference-sim/blis-substrate#255).
+HEAD_AT_BASE_ARCHS = frozenset({
+    "DeepseekV3ForCausalLM",              # deepseek-v3, deepseek-r1-0528 (fp8)
+    "KimiK25ForConditionalGeneration",    # kimi-k2.5, kimi-k2.6 (int4, lm_head ignored)
+    "MiniMaxM2ForCausalLM",               # minimax-m2.5, minimax-m2.7 (fp8)
+    "Qwen3_5MoeForConditionalGeneration",  # qwen3.5-397b-a17b-fp8
+})
+
+
+def ct_matches(name: str, entry: str) -> bool:
+    """vLLM's compressed-tensors name match: the entry itself, or the regex after "re:"
+    matched from the start of the name (is_equal_or_regex_match,
+    compressed_tensors/utils.py@4ba787ec)."""
+    if entry.startswith("re:"):
+        return re.match(entry[3:], name) is not None
+    return name == entry
+
+
+def ct_ignores(quant: dict[str, Any], name: str, model: str) -> bool:
+    """Whether a compressed-tensors block leaves the vLLM module `name` unquantized by its
+    `ignore` list. A fused module is ignored only when every shard is, and vLLM refuses one
+    whose shards disagree (should_ignore_layer, compressed_tensors/utils.py:53-71@4ba787ec)."""
+    entries = [str(e) for e in quant.get("ignore") or ()]
+    base, _, proj = name.rpartition(".")
+    shards = [f"{base}.{s}" for s in FUSED_SHARDS.get(proj, ())] or [name]
+    hits = [any(ct_matches(s, e) for e in entries) for s in shards]
+    if any(hits) and not all(hits):
+        raise DeriveError(f"{model}: the ignore list names some shards of {name} and not "
+                          f"others, which vLLM refuses")
+    return all(hits)
+
+
+def head_left_unquantized(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> bool:
+    """Whether vLLM v0.33.0 builds this quantized checkpoint's LM head unquantized.
+
+    Fp8Config.get_quant_method quantizes a LinearBase or a routed-experts layer and returns
+    None for anything else (quantization/fp8.py:177-209@4ba787ec); ParallelLMHead is a
+    VocabParallelEmbedding, so an fp8 checkpoint's head is built at the model dtype whatever
+    its exclusion list says. compressed-tensors quantizes the head only where a scheme
+    targets it (compressed_tensors/compressed_tensors.py:186-193): an ignore entry that names
+    it, or no target that does, leaves it at the base width. Any other method is not read
+    here, and the head keeps the global width."""
+    quant = raw.get("quantization_config") or cfg.get("quantization_config") or {}
+    method = str(quant.get("quant_method", "")).lower()
+    if method == "fp8":
+        return True
+    if method == "compressed-tensors":
+        names = ("lm_head", "language_model.lm_head")
+        if any(ct_ignores(quant, n, model) for n in names):
+            return True
+        targets = [str(t) for g in (quant.get("config_groups") or {}).values()
+                   for t in (g or {}).get("targets") or ()]
+        return not any(ct_matches(n, t) for n in names for t in targets)
+    return False
+
+
 # GLM-5.3-Flash: checkpoint module suffix -> the graph role that prices it, for the
 # tensors modules_to_not_convert names. Every entry was checked against the pinned
 # safetensors headers (revision eb9eb208): the named tensors are BF16, and the ones
@@ -1775,12 +1841,23 @@ def chain(nodes: list[dict[str, Any]]) -> list[list[int]]:
 #   separately (deepseek_v2.py:1081, 1097) and the wrapper never sets that flag, so the
 #   DeepSeek and Kimi-K2.5 graphs keep two norm launches with one fused projection.
 #
+# replicated_a: the A-projections are replicated on every tensor-parallel rank, so each rank
+#   holds their whole weight and does their whole work. vLLM builds the fused one as
+#   DeepSeekV2FusedQkvAProjLinear, a MergedColumnParallelLinear with disable_tp=True
+#   (model_executor/models/deepseek_v2.py:953-968@4ba787ec), and the separate ones and the
+#   KV A-projection without a q_lora_rank as ReplicatedLinear (:494, :518, :1059). Only the
+#   up-projections after them (q_b_proj, kv_b_proj) split over the ranks. Stated for the
+#   DeepSeek-V2 and V3 classes here; the GLM DSA, glm5next and Kimi-K3 paths build their
+#   A-projections the same way (deepseek_v32/attention.py:247, glm5next/common/
+#   attention.py:428, kimi_k3/nvidia/mla.py:241-251, whose gated form shards the gate), and
+#   join this table with the re-derivation of their graphs (inference-sim/blis-substrate#107).
+#
 # An architecture absent here takes {fused_a: True, fused_norm: False}, which is what
 # DeepseekV2MLAAttention does -- the shape every MLA family shares unless it opts into
 # the norm fusion.
 MLA_LAYOUTS = {
-    "DeepseekV2ForCausalLM": {"fused_a": True, "fused_norm": False},
-    "DeepseekV3ForCausalLM": {"fused_a": True, "fused_norm": False},
+    "DeepseekV2ForCausalLM": {"fused_a": True, "fused_norm": False, "replicated_a": True},
+    "DeepseekV3ForCausalLM": {"fused_a": True, "fused_norm": False, "replicated_a": True},
     # fused_index_norm: deepseek_v32 calls fused_norm_rope ONCE per layer,
     # unconditionally on the shared code path, passing the q norm, the kv norm, the rope
     # cache AND the indexer's k-norm weight/bias/eps into that single launch
@@ -1864,7 +1941,8 @@ def mla_layout(raw: dict[str, Any], cfg: dict[str, Any]) -> dict[str, bool]:
     #
     # Every flag defaults off against the base shape, so an entry states only what it
     # differs in and a new flag cannot silently change a family that never declared it.
-    base = {"fused_a": True, "fused_norm": False, "fused_index_norm": False}
+    base = {"fused_a": True, "fused_norm": False, "fused_index_norm": False,
+            "replicated_a": False}
     for arches in (raw.get("architectures"), cfg.get("architectures")):
         for arch in arches or ():
             if arch in MLA_LAYOUTS:
@@ -1948,6 +2026,12 @@ def attention_block(cfg: dict[str, Any], model: str, hidden: int, *,
             return node
 
         layout = mla_layout(raw, cfg)
+
+        def a_stage(node: dict[str, Any]) -> dict[str, Any]:
+            # An A-projection reads the full hidden state and writes the latents every rank
+            # needs whole; where the family replicates it, each rank holds all of it.
+            return dict(node, tp="replicated") if layout["replicated_a"] else node
+
         stages = []
         if q_lora:
             # A declared q_lora_rank makes the query low-rank too, and vLLM fuses the
@@ -1967,11 +2051,16 @@ def attention_block(cfg: dict[str, Any], model: str, hidden: int, *,
             # parameters and the work: for kimi-k3 that is 96 * 128 = 12,288 rows, which
             # makes the real launch (14,400, 7,168) rather than (2,112, 7,168).
             gate_rows = nq * v if cfg.get("mla_use_output_gate") else 0
+            if gate_rows and layout["replicated_a"]:
+                raise DeriveError(
+                    f"{model}: mla_use_output_gate is set on a family whose A-projection is "
+                    f"replicated whole; the gate rows are split over the ranks, so one node "
+                    f"cannot state both")
             if layout["fused_a"]:
                 # One A-projection over both latents, as DeepSeekV2FusedQkvAProjLinear
                 # and KimiK3MergedQKVGateLinear build it.
-                stages.append(gemm("qkv_a_proj",
-                                   q_lora + kv_lora + rope + gate_rows, hidden))
+                stages.append(a_stage(gemm("qkv_a_proj",
+                                           q_lora + kv_lora + rope + gate_rows, hidden)))
             else:
                 # The generic DeepseekV2Attention builds these separately
                 # (deepseek_v2.py:493 q_a_proj, :605 kv_a_proj_with_mqa), which is two
@@ -1982,8 +2071,8 @@ def attention_block(cfg: dict[str, Any], model: str, hidden: int, *,
                         f"{model}: mla_use_output_gate is set, but this architecture "
                         f"builds its A-projections separately, so there is no fused "
                         f"launch for the gate to be a shard of")
-                stages.append(gemm("q_a_proj", q_lora, hidden))
-                stages.append(gemm("kv_a_proj", kv_lora + rope, hidden))
+                stages.append(a_stage(gemm("q_a_proj", q_lora, hidden)))
+                stages.append(a_stage(gemm("kv_a_proj", kv_lora + rope, hidden)))
             if layout["fused_norm"]:
                 # One launch, not two. Kimi-K3 calls fused_q_kv_rmsnorm over both
                 # latents (kimi_k3/nvidia/mla.py:520) and glm5next asks the shared MLA
@@ -2018,7 +2107,7 @@ def attention_block(cfg: dict[str, Any], model: str, hidden: int, *,
         else:
             # No q_lora_rank: vLLM takes the else branch and builds a direct q_proj at
             # full width, with only the KV side compressed (deepseek-v2-lite).
-            stages.append(gemm("kv_a_proj", kv_lora + rope, hidden))
+            stages.append(a_stage(gemm("kv_a_proj", kv_lora + rope, hidden)))
             # Only the KV side is compressed here, so there is one latent norm and
             # nothing to fuse it with.
             stages.append(latent_norm("kv_a_layernorm", kv_lora))
@@ -2614,8 +2703,49 @@ def handler_glm_moe_dsa(cfg, raw, model):
 
 def handler_kimi_k25(cfg, raw, model):
     """Kimi-K2.5: the DeepSeek family's latent attention and routed experts under a vision
-    tower, priced by handler_moe, with a ModelOpt checkpoint's widths placed node by node."""
-    return modelopt_placed(handler_moe(cfg, raw, model), raw, model)
+    tower, priced by handler_moe, with a ModelOpt checkpoint's widths placed node by node, and
+    a compressed-tensors checkpoint's dense MLP at the width its ignore list leaves it."""
+    result = handler_moe(cfg, raw, model)
+    quant = raw.get("quantization_config") or cfg.get("quantization_config") or {}
+    if str(quant.get("quant_method", "")).lower() == "compressed-tensors":
+        kinds = ct_place_dense_mlp(result[0], result[1], quant, cfg, raw, model,
+                                   MODELOPT_MODULES["KimiK25ForConditionalGeneration"])
+        result = (kinds, *result[1:])
+    return modelopt_placed(result, raw, model)
+
+
+def ct_place_dense_mlp(kinds: list[dict[str, Any]], stack: dict[str, Any], quant: dict[str, Any],
+                       cfg: dict[str, Any], raw: dict[str, Any], model: str,
+                       spec: dict[str, Any]) -> list[dict[str, Any]]:
+    """Give a dense MLP the base width where a compressed-tensors ignore list leaves it alone.
+
+    Kimi-K2.5 and K2.6 ignore `re:.*mlp\\.(gate|up|gate_up|down)_proj.*`, which names the dense
+    layer's mlp.gate_up_proj (both shards) and mlp.down_proj and no expert, so vLLM builds them
+    with UnquantizedLinearMethod (should_ignore_layer, compressed_tensors/utils.py:53-71@
+    4ba787ec) while the routed experts are int4. Each layer a kind covers is asked at the
+    module name vLLM builds (spec["layer"] and spec["roles"]); a role ignored on some of them
+    and not on others is refused, since one node prices one width."""
+    base = base_dtype(cfg, raw, model)
+    layers_of: dict[str, list[int]] = {}
+    for i, kid in enumerate(expand_stack(stack)):
+        layers_of.setdefault(kid, []).append(i)
+    out = []
+    for kind in kinds:
+        nodes = []
+        for node in kind["nodes"]:
+            role = node.get("role")
+            if (node.get("op") == "GEMM" and role in ("mlp_gate_up", "mlp_down")
+                    and "weight_dtype" not in node and layers_of.get(kind["id"])):
+                found = {ct_ignores(quant, spec["layer"].format(i=i) + spec["roles"][role], model)
+                         for i in layers_of[kind["id"]]}
+                if len(found) != 1:
+                    raise DeriveError(f"{model}: the ignore list leaves {role!r} unquantized on "
+                                      f"some layers of {kind['id']!r} and not others")
+                if found.pop():
+                    node = dict(node, weight_dtype=base)
+            nodes.append(node)
+        out.append(dict(kind, nodes=nodes))
+    return out
 
 
 # DeepSeek-V4's KV record, the same on SM90 and SM100: 448 FP8 NoPE dims, 64 BF16 RoPE
@@ -7079,9 +7209,39 @@ def derive(config_path: Path, model: str, headers: dict[str, dict[str, Any]] | N
     global _HEADERS
     _HEADERS = headers
     try:
-        return _derive(config_path, model)
+        return state_unquantized_widths(_derive(config_path, model))
     finally:
         _HEADERS = None
+
+
+def state_unquantized_widths(graph: dict[str, Any]) -> dict[str, Any]:
+    """Make each weight node of a partially quantized checkpoint state its own stored width.
+
+    A checkpoint whose quantization reaches only some modules is derived with the base as its
+    global width and the quantized width on the nodes it covers: gpt-oss-120b's MXFP4 is its
+    routed experts, Kimi-K2.5-NVFP4's and MiniMax-M2.5-NVFP4's NVFP4 theirs. The global width
+    is a default for nodes that state none, and a deployment's served format replaces that
+    default (blis-schemas Graph.WeightBytesPerParam; the kernel's weightBytesPerParam), so a
+    deployment stating the checkpoint's own method (quantization: mxfp4, modelopt_fp4) priced
+    every BF16 attention projection and the head at 4 bits. vLLM builds those modules
+    unquantized: Mxfp4Config gives every LinearBase UnquantizedLinearMethod, and ModelOpt
+    leaves each module its list excludes unquantized (modelopt.py:191-262@4ba787ec). Stating
+    the width on every node says what the checkpoint stores, and no served format reaches a
+    module the checkpoint did not quantize.
+
+    Only a graph whose global width is unquantized and which states a quantized width on some
+    node: that is the partial layout. A wholly unquantized checkpoint keeps the default, which a
+    served --quantization does replace (a BF16 checkpoint served fp8); a graph whose global
+    width is itself quantized names the format its unstated nodes are stored in."""
+    if graph["global"]["weight_dtype"] not in UNQUANTIZED_WIDTHS:
+        return graph
+    weights = [n for k in graph["layer_kinds"] for n in k["nodes"]] + list(graph.get("head", []))
+    weights = [n for n in weights if n["op"] in ("GEMM", "GroupedGEMM") and not n.get("aliases")]
+    if not any(n.get("weight_dtype") not in (None, *UNQUANTIZED_WIDTHS) for n in weights):
+        return graph
+    for n in weights:
+        n.setdefault("weight_dtype", graph["global"]["weight_dtype"])
+    return graph
 
 
 def _derive(config_path: Path, model: str) -> dict[str, Any]:
@@ -7181,6 +7341,12 @@ def _derive(config_path: Path, model: str) -> dict[str, Any]:
     # five understates the head by vocab x hidden bytes until then.
     head_widths = fp8_unquantized_roles(cfg, raw, model,
                                         HEAD_UNQUANTIZED.get(arch, {}))
+    # A quantized global width does not reach a head vLLM builds unquantized: price it at
+    # the base width, as the checkpoints store it (minimax-m2.5's header: lm_head.weight BF16
+    # [200064, 3072] beside F8_E4M3 decoder weights).
+    if (arch in HEAD_AT_BASE_ARCHS and graph["global"]["weight_dtype"] not in UNQUANTIZED_WIDTHS
+            and head_left_unquantized(cfg, raw, model)):
+        head_widths = dict(head_widths, lm_head=base_dtype(cfg, raw, model))
     if head_widths.get("lm_head"):
         lm_head["weight_dtype"] = head_widths["lm_head"]
     if "head" in extras:
