@@ -104,6 +104,12 @@ Example:
 				logrus.Fatalf("Failed to load trace: %v", err)
 			}
 			logrus.Infof("Loaded trace: %d records (mode=%s)", len(traceData.Records), traceData.Header.Mode)
+			// #2115: the acceptance terms the run's workload stated are the replay's workload layer,
+			// so a replay with no selector flags resolves the profile the run did (DEV-7). A selector
+			// on the command line still overrides them (resolveAcceptanceOverrides).
+			if t := traceData.Header.Acceptance; t != nil {
+				workloadAcceptance = t
+			}
 		}
 
 		// #2146: refuse a trace whose source run had a multi-node fleet. Cross-node
@@ -660,6 +666,7 @@ Example:
 				GoodputSLOTargets:    goodputTargets,                   // #1413, BC-7
 				KVOffload:            simToHeaderOffload(kvOffloadCfg), // #1587, BC-G6: carry the offload config forward
 				Router:               router.header(gw.Seed()),
+				Acceptance:           workloadAcceptance, // #2115: carried forward
 			}
 			if err := workload.ExportTraceV2(header, records, replayTraceOutput+".yaml", replayTraceOutput+".csv"); err != nil {
 				logrus.Fatalf("Trace export failed: %v", err)

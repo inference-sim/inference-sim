@@ -1109,6 +1109,8 @@ var runCmd = &cobra.Command{
 				MaxNodesSpanned: crossNodeSpanForTrace(cs.MaxNodesSpanned()),
 				// INV-13: the router the run routed with, so a replay rebuilds it.
 				Router: router.header(gw.Seed()),
+				// #2115: the workload's acceptance terms, so a replay resolves the profile the run did.
+				Acceptance: workloadAcceptance,
 			}
 			if err := workload.ExportTraceV2(header, records, traceOutput+".yaml", traceOutput+".csv"); err != nil {
 				logrus.Fatalf("Trace export failed: %v", err)
