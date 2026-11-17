@@ -19,7 +19,7 @@ const fsTier = "kv_offload: {connector: OffloadingConnector, spec: TieringOffloa
 // sharedFiles is one shared file system: every root_dir's files in one map each.
 type sharedFiles map[string]kvtier.MemFiles
 
-func (s sharedFiles) storage(root string) kvtier.FileStore {
+func (s sharedFiles) storage(root string) TierFiles {
 	if s[root] == nil {
 		s[root] = kvtier.MemFiles{}
 	}
@@ -102,6 +102,9 @@ func TestARequestsLoadTiersTagKeepsItOffTheSharedStorage(t *testing.T) {
 		"cpu only":     {`{"kv_load_tiers":[{"medium":"cpu"}]}`, 64},
 		"no tier":      {`{"kv_load_tiers":[]}`, 64},
 		"other key":    {`{"do_remote_decode":true}`, 4},
+		"load limit":   {`{"max_load_tokens":80}`, 20},
+		"load none":    {`{"max_load_tokens":0}`, 64},
+		"float limit":  {`{"max_load_tokens":80.5}`, 4},
 		"empty object": {`{}`, 4},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -122,27 +125,20 @@ func TestARequestsLoadTiersTagKeepsItOffTheSharedStorage(t *testing.T) {
 	}
 }
 
-// A request's kv_transfer_params that the offloading connector would apply and the engine does not
-// model are refused, naming the issue; a tag that is not a JSON object is refused; an engine with no
-// kv_offload ignores the tag.
-func TestARequestTransferParamsTheEngineCannotApplyAreRefused(t *testing.T) {
-	for name, c := range map[string]struct{ tag, want string }{
-		"max_load_tokens":    {`{"max_load_tokens":8}`, "issues/203"},
-		"max_offload_tokens": {`{"max_offload_tokens":0}`, "issues/203"},
-		"not json":           {`kv_load_tiers`, "JSON object"},
-		"a list":             {`[1]`, "JSON object"},
-	} {
+// A tag that is not a JSON object is refused; an engine with no kv_offload ignores the tag.
+func TestATagThatIsNotAJSONObjectIsRefused(t *testing.T) {
+	for name, tag := range map[string]string{"not json": `kv_load_tiers`, "a list": `[1]`, "null": `null`} {
 		t.Run(name, func(t *testing.T) {
 			r := req("a", 32, 2)
-			r.Tags = map[string]string{TagKVTransferParams: c.tag}
+			r.Tags = map[string]string{TagKVTransferParams: tag}
 			err := mustEngine(t, fsTier).Add(r, 0)
-			if err == nil || !strings.Contains(err.Error(), c.want) {
-				t.Fatalf("Add = %v, want an error naming %q", err, c.want)
+			if err == nil || !strings.Contains(err.Error(), "JSON object") {
+				t.Fatalf("Add = %v, want an error naming a JSON object", err)
 			}
 		})
 	}
 	r := req("a", 32, 2)
-	r.Tags = map[string]string{TagKVTransferParams: `{"max_load_tokens":8}`}
+	r.Tags = map[string]string{TagKVTransferParams: `[1]`}
 	if err := mustEngine(t, "").Add(r, 0); err != nil {
 		t.Fatalf("an engine with no kv_offload refused a tag it does not read: %v", err)
 	}

@@ -3,6 +3,7 @@
 package tiering_test
 
 import (
+	"encoding/json"
 	"sort"
 	"testing"
 
@@ -136,19 +137,16 @@ func TestABlockFileOnSharedStorageIsLoadedThroughTheConnector(t *testing.T) {
 }
 
 // writerFiles are the block files of a prompt of three chunks that another engine cascaded to the
-// shared storage.
-func writerFiles(t *testing.T) tiering.MemFiles {
+// shared storage, its request stating params.
+func writerFiles(t *testing.T, params map[string]any) tiering.MemFiles {
 	t.Helper()
 	files := tiering.MemFiles{}
 	w := newRig(t, files)
-	if err := w.s.Add(&sched.Request{ID: "w", Prompt: promptOf(3*block + 5), MaxTokens: 1, EOS: -1}); err != nil {
+	if err := w.s.Add(&sched.Request{ID: "w", Prompt: promptOf(3*block + 5), MaxTokens: 1, EOS: -1, KVTransferParams: params}); err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 20 && (w.s.HasRequests() || w.conn.HasPendingPushWork()); i++ {
 		w.step(t)
-	}
-	if len(files) != 3 {
-		t.Fatalf("writer left %d block files, want its 3 chunks", len(files))
 	}
 	return files
 }
@@ -169,7 +167,7 @@ func TestARequestsLoadTiersDecideWhetherItReadsTheSharedStorage(t *testing.T) {
 		{"none", map[string]any{"kv_load_tiers": []any{}}, 0},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			r := newRig(t, writerFiles(t))
+			r := newRig(t, writerFiles(t, nil))
 			if err := r.s.Add(&sched.Request{ID: "r", Prompt: promptOf(3*block + 5), MaxTokens: 1, EOS: -1,
 				KVTransferParams: c.params}); err != nil {
 				t.Fatal(err)
@@ -219,5 +217,62 @@ func TestATierSeesTheRequestsTransferParams(t *testing.T) {
 	}
 	if got, ok := seen["b"]; !ok || got != nil {
 		t.Errorf("tier saw %v (started: %v) for b, want a request with no params", got, ok)
+	}
+}
+
+// A request's max_load_tokens and max_offload_tokens bound what the connector loads and what it
+// offloads (RequestOffloadState, offloading/scheduler.py:383-410, _calc_num_offloadable_tokens :766
+// and _lookup_complete_chunks :866-920@4ba787ec): a load is whole chunks within the limit, an offload
+// stops at it, and a limit that is not a non-negative int is ignored.
+func TestARequestsTokenLimitsBoundWhatItLoadsAndOffloads(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		params map[string]any
+		chunks int
+	}{
+		{"unstated", nil, 3},
+		{"within the first two chunks", map[string]any{"max_load_tokens": 2 * block}, 2},
+		{"past two chunks, short of a third", map[string]any{"max_load_tokens": 3*block - 1}, 2},
+		{"less than a chunk", map[string]any{"max_load_tokens": block - 1}, 0},
+		{"zero", map[string]any{"max_load_tokens": 0}, 0},
+		{"more than the prompt", map[string]any{"max_load_tokens": 1000}, 3},
+		{"negative is ignored", map[string]any{"max_load_tokens": -1}, 3},
+		{"a float is ignored", map[string]any{"max_load_tokens": 16.0}, 3},
+		{"a string is ignored", map[string]any{"max_load_tokens": "16"}, 3},
+		{"an exact JSON int", map[string]any{"max_load_tokens": json.Number("32")}, 2},
+	} {
+		t.Run("load, "+c.name, func(t *testing.T) {
+			r := newRig(t, writerFiles(t, nil))
+			if err := r.s.Add(&sched.Request{ID: "r", Prompt: promptOf(3*block + 5), MaxTokens: 1, EOS: -1,
+				KVTransferParams: c.params}); err != nil {
+				t.Fatal(err)
+			}
+			loaded := 0
+			for i := 0; i < 20 && r.s.HasRequests(); i++ {
+				for _, j := range r.step(t).Loads {
+					loaded += len(j.GPU)
+				}
+			}
+			if loaded != c.chunks {
+				t.Errorf("loaded %d chunks, want %d", loaded, c.chunks)
+			}
+		})
+	}
+	for _, c := range []struct {
+		name   string
+		params map[string]any
+		files  int
+	}{
+		{"offload unstated", nil, 3},
+		{"offload two chunks", map[string]any{"max_offload_tokens": 2 * block}, 2},
+		{"offload less than a chunk", map[string]any{"max_offload_tokens": block - 1}, 0},
+		{"offload zero", map[string]any{"max_offload_tokens": 0}, 0},
+		{"offload negative is ignored", map[string]any{"max_offload_tokens": -3}, 3},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := len(writerFiles(t, c.params)); got != c.files {
+				t.Errorf("%d block files on the shared storage, want %d", got, c.files)
+			}
+		})
 	}
 }

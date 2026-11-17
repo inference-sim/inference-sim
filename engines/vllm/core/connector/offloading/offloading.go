@@ -25,9 +25,11 @@
 package offloading
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 
 	"github.com/inference-sim/blis-vllm/core/sched"
 )
@@ -150,6 +152,9 @@ type reqState struct {
 	policy Policy
 	// scheduled is whether a step has scheduled the request, so the next is not its first.
 	scheduled bool
+	// maxLoad and maxOffload are the request's max_load_tokens and max_offload_tokens
+	// (kv_transfer_params, scheduler.py:383-410@4ba787ec); -1 is unstated.
+	maxLoad, maxOffload int
 	// loadRanges are load_key_ranges: each loaded key with the token range it covers.
 	loadRanges []loadRange
 }
@@ -426,12 +431,35 @@ func (s *Scheduler) updateKeys(st *reqState) {
 	}
 }
 
+// tokenLimit is a request's max_load_tokens or max_offload_tokens: the stated value when it is a
+// non-negative int, else -1 (a negative value, or one that is not an int, is ignored with a
+// warning, scheduler.py:385-410@4ba787ec). A JSON number is an int when it has no fraction or
+// exponent, as Python's json.loads reads it.
+func tokenLimit(params map[string]any, key string) int {
+	switch v := params[key].(type) {
+	case int:
+		if v >= 0 {
+			return v
+		}
+	case int64:
+		if v >= 0 {
+			return int(v)
+		}
+	case json.Number:
+		if n, err := strconv.ParseInt(string(v), 10, 64); err == nil && n >= 0 {
+			return int(n)
+		}
+	}
+	return -1
+}
+
 // OnNewRequest is on_new_request (scheduler.py:1197-1208@4ba787ec): the manager's
 // on_new_request, whose answer is the request's offload policy.
 func (s *Scheduler) OnNewRequest(r *sched.Request) {
 	a := newAccess(r.ID)
 	a.params = r.KVTransferParams
-	st := &reqState{req: r, access: a, jobs: map[int]bool{}, policy: s.manager.OnNewRequest(a)}
+	st := &reqState{req: r, access: a, jobs: map[int]bool{}, policy: s.manager.OnNewRequest(a),
+		maxLoad: tokenLimit(r.KVTransferParams, "max_load_tokens"), maxOffload: tokenLimit(r.KVTransferParams, "max_offload_tokens")}
 	for range s.groups {
 		st.groups = append(st.groups, &groupState{})
 	}
@@ -451,6 +479,8 @@ func (s *Scheduler) MatchedTokensOrDefer(r *sched.Request, local int) (int, bool
 	st := s.reqs[r.ID]
 	for _, gs := range st.groups {
 		gs.blockIDs = gs.blockIDs[:0]
+		// Restarting at token 0: every chunk is offered again (:1243-1245@4ba787ec).
+		gs.nextStored = 0
 	}
 	if len(st.jobs) > 0 {
 		return 0, false, true
@@ -521,11 +551,14 @@ func (s *Scheduler) windowLookup(keys []Key, window, initial int, a *Access) (in
 	return run, pending || retry
 }
 
-// lookupComplete is _lookup_complete_chunks (scheduler.py:752-952) without max_load_tokens, an
-// external bound or EAGLE groups.
+// lookupComplete is _lookup_complete_chunks (scheduler.py:752-952) without an external bound
+// (max_num_new_tokens); max_load_tokens bounds the hit (:866-871, 915-920).
 func (s *Scheduler) lookupComplete(st *reqState) (int, bool) {
 	local := st.localHit
 	maxHit := st.req.NumTokens()
+	if st.maxLoad >= 0 {
+		maxHit = min(maxHit, local+st.maxLoad)
+	}
 	if len(s.swa) > 0 {
 		maxHit--
 	}
@@ -544,6 +577,9 @@ func (s *Scheduler) lookupComplete(st *reqState) (int, bool) {
 			keys := st.groups[gi].keys
 			unverified := g.eagle && !eagleVerified[gi]
 			maxHit = min(maxHit, len(keys)*g.tokensPerChunk)
+			if st.maxLoad >= 0 {
+				maxHit -= maxHit % g.tokensPerChunk
+			}
 			if maxHit-local < g.tokensPerChunk {
 				return 0, false
 			}
@@ -799,6 +835,9 @@ func (s *Scheduler) sortedReqIDs() []string {
 // offloadable is _calc_num_offloadable_tokens (scheduler.py:663-672).
 func (s *Scheduler) offloadable(r *sched.Request, computed int) int {
 	n := min(computed, r.NumTokens())
+	if st := s.reqs[r.ID]; st != nil && st.maxOffload >= 0 {
+		n = min(n, st.maxOffload)
+	}
 	if s.cfg.OffloadPromptOnly {
 		n = min(n, r.NumPromptTokens())
 	}
@@ -933,6 +972,11 @@ func (s *Scheduler) buildStores(step sched.StepOutput) []Job {
 				if mask != nil && !anyIn(mask, idx*bpc, bpc) {
 					continue
 				}
+				// A reachable null block would leave part of the chunk unwritten
+				// (scheduler.py:2001-2012@4ba787ec).
+				if nullReachable(gs.blockIDs[k*bpc:(k+1)*bpc], mask, idx*bpc) {
+					continue
+				}
 				newKeys = append(newKeys, gs.keys[k])
 			}
 		}
@@ -1001,6 +1045,17 @@ func (s *Scheduler) buildStores(step sched.StepOutput) []Job {
 		}
 	}
 	return out
+}
+
+// nullReachable reports whether a chunk's blocks hold a null block (id 0) that the reachable mask
+// keeps (every block when the mask is nil).
+func nullReachable(blocks []int, mask []bool, off int) bool {
+	for b, id := range blocks {
+		if id == 0 && (mask == nil || mask[off+b]) {
+			return true
+		}
+	}
+	return false
 }
 
 func anyIn(mask []bool, from, n int) bool {
