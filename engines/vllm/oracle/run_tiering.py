@@ -198,12 +198,16 @@ def wait_p2p(tier) -> None:
     if not NET["held"]:
         fake_zmq.deliver()
     deadline = time.perf_counter() + WAIT_S
-    for s in list(tier._sessions.values()):
-        f = s._pending_registration
-        while f is not None and not f.done():
-            if time.perf_counter() > deadline:
-                raise RuntimeError("run_tiering: a p2p peer registration did not resolve within %.0fs" % WAIT_S)
-            time.sleep(0.001)
+    fake_nixl.REG_GATE.set()
+    try:
+        for s in list(tier._sessions.values()):
+            f = s._pending_registration
+            while f is not None and not f.done():
+                if time.perf_counter() > deadline:
+                    raise RuntimeError("run_tiering: a p2p peer registration did not resolve within %.0fs" % WAIT_S)
+                time.sleep(0.001)
+    finally:
+        fake_nixl.REG_GATE.clear()
 
 
 def run_sequence(vllm_root: str, path: str) -> dict:

@@ -1,5 +1,5 @@
 {
-  "version": "gpu-mock/9+bdf2258be1c6",
+  "version": "gpu-mock/9+2ee0b3b47a9c",
   "description": "Everything the oracle replaces. Only the GPU, the clock, transports and external services may be replaced; check_mocks.py fails if an entry names decision code.",
   "mocks": [
     {
@@ -241,7 +241,7 @@
     {
       "symbol": "nixl._api.nixl_agent (OBJ and UCX backends)",
       "kind": "transport",
-      "how": "oracle/run_tiering.py only: oracle/fake_nixl is NIXL's agent with an in-memory OBJ backend and UCX backend, imported by vllm.distributed.nixl_utils as nixl._api (nixl_utils.py:40-78@4ba787ec), because neither NIXL nor an S3 bucket is in the CPU environment. It stores and reads each block's bytes in a bucket shared by name, answers query_memory with None for a missing object, fails a READ of a missing object as a whole (state ERR), and finishes the transfers in flight in submission order after each driver call or inside the tier's drain_jobs, which blocks until NIXL finishes. The driver may hold an agent's transfers in flight across calls (a slow transfer), make a bucket refuse writes, or make an agent's next transfer() fail at submission, through the package's own functions. For the p2p tier's NixlTransport (tiering/p2p/data/nixl.py@4ba787ec) an agent's metadata is its name, add_remote_agent makes a peer's host blocks addressable, and a WRITE copies the local blocks into the peer's (both instances are in this process); a WRITE to an instance the driver took down ends ERR. ObjectStoreSecondaryTierManager and NixlTransport run unmodified. The Go side (core/connector/tiering ObjTier, MemBucket) follows the same rule",
+      "how": "oracle/run_tiering.py only: oracle/fake_nixl is NIXL's agent with an in-memory OBJ backend and UCX backend, imported by vllm.distributed.nixl_utils as nixl._api (nixl_utils.py:40-78@4ba787ec), because neither NIXL nor an S3 bucket is in the CPU environment. It stores and reads each block's bytes in a bucket shared by name, answers query_memory with None for a missing object, fails a READ of a missing object as a whole (state ERR), and finishes the transfers in flight in submission order after each driver call or inside the tier's drain_jobs, which blocks until NIXL finishes. The driver may hold an agent's transfers in flight across calls (a slow transfer), make a bucket refuse writes, or make an agent's next transfer() fail at submission, through the package's own functions. For the p2p tier's NixlTransport (tiering/p2p/data/nixl.py@4ba787ec) an agent's metadata is its name, add_remote_agent makes a peer's host blocks addressable, and a WRITE copies the local blocks into the peer's (both instances are in this process); a WRITE to an instance the driver took down ends ERR. A peer registration NixlTransport runs on its worker thread (add_remote_agent) waits until the driver's after-call transport rule, so it resolves between calls rather than when the thread scheduler lets it. ObjectStoreSecondaryTierManager and NixlTransport run unmodified. The Go side (core/connector/tiering ObjTier, MemBucket) follows the same rule",
       "sites": []
     },
     {

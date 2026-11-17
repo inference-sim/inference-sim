@@ -29,6 +29,7 @@ refuse writes (deny) or make an agent's next transfer() fail at submission (refu
 
 import ctypes
 import sys
+import threading
 
 BUCKETS: dict = {}
 DENIED: set = set()
@@ -57,6 +58,11 @@ class _Dlist:
 
 
 AGENTS: dict = {}  # agent name -> agent
+# NixlTransport registers a peer on a worker thread (data/nixl.py add_remote_peer_async). Whether
+# that finishes before the session next checks it would be the thread scheduler's choice, so a
+# registration made off the main thread waits here until the driver opens the gate, after the
+# call that started it: every registration resolves between calls.
+REG_GATE = threading.Event()
 DOWN: set = set()  # names of agents whose instance is down
 
 
@@ -107,6 +113,7 @@ def reset() -> None:
     DENIED.clear()
     AGENTS.clear()
     DOWN.clear()
+    REG_GATE.clear()
     _INFLIGHT.clear()
 
 
@@ -181,6 +188,8 @@ class nixl_agent:  # noqa: N801 (NIXL's name)
         return self.name.encode()
 
     def add_remote_agent(self, metadata) -> str:
+        if threading.current_thread() is not threading.main_thread():
+            REG_GATE.wait()
         name = bytes(metadata).decode()
         self.remotes.add(name)
         return name

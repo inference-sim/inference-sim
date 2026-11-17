@@ -746,6 +746,48 @@
     "tier": 0
    },
    "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
    "ret": [
     {
      "id": 0,
@@ -779,6 +821,20 @@
   {
    "args": {
     "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
    },
    "m": "serve_external_requests",
    "ret": null
