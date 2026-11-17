@@ -1,0 +1,223 @@
+{
+ "description": "Page size 1: slots freed out of order go to the back of the free list and are handed out again in that order; a free group holds its frees, a free_segment's and a free's, until it ends; an alloc larger than what is free fails; generation is clipped at the pool's edge; clear restores the first order.",
+ "model": "none: the driver builds SGLang's pools and allocators from the sequence's pools block",
+ "seed": 0,
+ "pools": [
+  {
+   "as": "kv",
+   "class": "MHATokenToKVPool",
+   "args": {
+    "size": 16,
+    "page_size": 1,
+    "dtype": {
+     "dtype": "bfloat16"
+    },
+    "head_num": 2,
+    "head_dim": 16,
+    "layer_num": 2,
+    "enable_memory_saver": false
+   }
+  },
+  {
+   "as": "a",
+   "class": "TokenToKVPoolAllocator",
+   "kvcache": "kv",
+   "args": {
+    "size": 16,
+    "dtype": {
+     "dtype": "bfloat16"
+    },
+    "need_sort": false
+   }
+  }
+ ],
+ "calls": [
+  {
+   "on": "a",
+   "m": "alloc",
+   "args": {
+    "need_size": 5
+   },
+   "as": "x"
+  },
+  {
+   "on": "a",
+   "m": "alloc",
+   "args": {
+    "need_size": 4
+   },
+   "as": "y"
+  },
+  {
+   "on": "a",
+   "m": "free",
+   "args": {
+    "free_index": {
+     "value": [
+      "x",
+      1,
+      3
+     ]
+    }
+   }
+  },
+  {
+   "on": "a",
+   "m": "available_size"
+  },
+  {
+   "on": "a",
+   "m": "free_group_begin"
+  },
+  {
+   "on": "a",
+   "m": "free_segment",
+   "args": {
+    "free_index": {
+     "value": [
+      "y",
+      0,
+      2
+     ]
+    },
+    "start_pos": 0
+   }
+  },
+  {
+   "on": "a",
+   "m": "free",
+   "args": {
+    "free_index": {
+     "value": [
+      "x",
+      0,
+      1
+     ]
+    }
+   }
+  },
+  {
+   "on": "a",
+   "m": "available_size"
+  },
+  {
+   "on": "a",
+   "m": "alloc",
+   "args": {
+    "need_size": 3
+   }
+  },
+  {
+   "on": "a",
+   "m": "free_group_end"
+  },
+  {
+   "on": "a",
+   "m": "available_size"
+  },
+  {
+   "on": "a",
+   "m": "alloc",
+   "args": {
+    "need_size": 7
+   }
+  },
+  {
+   "on": "a",
+   "m": "free_segments",
+   "args": {
+    "segments": [
+     [
+      {
+       "tensor": []
+      },
+      0
+     ],
+     [
+      {
+       "value": [
+        "x",
+        3,
+        5
+       ]
+      },
+      3
+     ],
+     [
+      {
+       "value": [
+        "y",
+        2,
+        4
+       ]
+      },
+      5
+     ]
+    ]
+   }
+  },
+  {
+   "on": "a",
+   "m": "alloc",
+   "args": {
+    "need_size": 4
+   }
+  },
+  {
+   "on": "a",
+   "m": "alloc",
+   "args": {
+    "need_size": 100
+   }
+  },
+  {
+   "on": "a",
+   "m": "max_new_tokens_for_memory",
+   "args": {
+    "input_tokens": 10,
+    "max_new_tokens": 8,
+    "token_capacity": 16,
+    "sliding_window_size": null,
+    "chunk_size": null
+   }
+  },
+  {
+   "on": "a",
+   "m": "max_new_tokens_for_memory",
+   "args": {
+    "input_tokens": 15,
+    "max_new_tokens": 8,
+    "token_capacity": 16,
+    "sliding_window_size": null,
+    "chunk_size": null
+   }
+  },
+  {
+   "on": "a",
+   "m": "request_slot_reserve",
+   "args": {
+    "has_req_pool_slot": true,
+    "prefill_tokens": 9
+   }
+  },
+  {
+   "on": "a",
+   "m": "verify_byte_accounting"
+  },
+  {
+   "on": "a",
+   "m": "clear"
+  },
+  {
+   "on": "a",
+   "m": "available_size"
+  },
+  {
+   "on": "a",
+   "m": "alloc",
+   "args": {
+    "need_size": 3
+   }
+  }
+ ]
+}

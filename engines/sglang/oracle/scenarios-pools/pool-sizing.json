@@ -1,0 +1,197 @@
+{
+ "description": "The MHA, MLA and DSA pools built by their constructors at several shapes and dtypes, with their buffer bytes; and the per-token cell SGLang's default pool configurator charges for an MHA, an MLA and two DSA shapes.",
+ "model": "none: the driver builds SGLang's pools and allocators from the sequence's pools block",
+ "seed": 0,
+ "page_size": 64,
+ "pools": [
+  {
+   "as": "mha_bf16",
+   "class": "MHATokenToKVPool",
+   "args": {
+    "size": 100,
+    "page_size": 1,
+    "dtype": {
+     "dtype": "bfloat16"
+    },
+    "head_num": 2,
+    "head_dim": 64,
+    "layer_num": 3,
+    "enable_memory_saver": false
+   }
+  },
+  {
+   "as": "mha_fp8_v32",
+   "class": "MHATokenToKVPool",
+   "args": {
+    "size": 100,
+    "page_size": 16,
+    "dtype": {
+     "dtype": "float8_e4m3fn"
+    },
+    "head_num": 2,
+    "head_dim": 64,
+    "layer_num": 3,
+    "enable_memory_saver": false,
+    "v_head_dim": 32
+   }
+  },
+  {
+   "as": "mha_page64",
+   "class": "MHATokenToKVPool",
+   "args": {
+    "size": 200,
+    "page_size": 64,
+    "dtype": {
+     "dtype": "bfloat16"
+    },
+    "head_num": 8,
+    "head_dim": 128,
+    "layer_num": 2,
+    "enable_memory_saver": false
+   }
+  },
+  {
+   "as": "mla_bf16",
+   "class": "MLATokenToKVPool",
+   "args": {
+    "size": 100,
+    "page_size": 1,
+    "dtype": {
+     "dtype": "bfloat16"
+    },
+    "kv_lora_rank": 512,
+    "qk_rope_head_dim": 64,
+    "layer_num": 3,
+    "enable_memory_saver": false
+   }
+  },
+  {
+   "as": "mla_fp8",
+   "class": "MLATokenToKVPool",
+   "args": {
+    "size": 100,
+    "page_size": 64,
+    "dtype": {
+     "dtype": "float8_e4m3fn"
+    },
+    "kv_lora_rank": 512,
+    "qk_rope_head_dim": 64,
+    "layer_num": 2,
+    "enable_memory_saver": false
+   }
+  },
+  {
+   "as": "dsa_fp8",
+   "class": "DSATokenToKVPool",
+   "args": {
+    "size": 128,
+    "page_size": 64,
+    "kv_lora_rank": 512,
+    "dtype": {
+     "dtype": "float8_e4m3fn"
+    },
+    "qk_rope_head_dim": 64,
+    "layer_num": 3,
+    "index_head_dim": 128,
+    "enable_memory_saver": false,
+    "kv_cache_dim": 656
+   }
+  },
+  {
+   "as": "dsa_bf16_skip",
+   "class": "DSATokenToKVPool",
+   "args": {
+    "size": 192,
+    "page_size": 64,
+    "kv_lora_rank": 512,
+    "dtype": {
+     "dtype": "bfloat16"
+    },
+    "qk_rope_head_dim": 64,
+    "layer_num": 4,
+    "index_head_dim": 128,
+    "enable_memory_saver": false,
+    "kv_cache_dim": 576,
+    "skip_topk_layers": [
+     false,
+     true,
+     false,
+     true
+    ]
+   }
+  },
+  {
+   "as": "dsa_kpool2",
+   "class": "DSATokenToKVPool",
+   "args": {
+    "size": 256,
+    "page_size": 128,
+    "kv_lora_rank": 512,
+    "dtype": {
+     "dtype": "float8_e4m3fn"
+    },
+    "qk_rope_head_dim": 64,
+    "layer_num": 2,
+    "index_head_dim": 128,
+    "enable_memory_saver": false,
+    "kv_cache_dim": 576,
+    "index_kpool": 2,
+    "index_buf_size": 300
+   }
+  }
+ ],
+ "calls": [],
+ "cells": [
+  {
+   "name": "mha",
+   "architecture": "Qwen2ForCausalLM",
+   "use_mla_backend": false,
+   "dtype": "bfloat16",
+   "layers": 24,
+   "head_num": 2,
+   "head_dim": 64,
+   "v_head_dim": 64
+  },
+  {
+   "name": "mha_fp8_v",
+   "architecture": "Qwen2ForCausalLM",
+   "use_mla_backend": false,
+   "dtype": "float8_e4m3fn",
+   "layers": 5,
+   "head_num": 4,
+   "head_dim": 128,
+   "v_head_dim": 64
+  },
+  {
+   "name": "mla",
+   "architecture": "DeepseekV2ForCausalLM",
+   "use_mla_backend": true,
+   "dtype": "bfloat16",
+   "layers": 4,
+   "kv_lora_rank": 512,
+   "qk_rope_head_dim": 64
+  },
+  {
+   "name": "dsa_fp8",
+   "architecture": "DeepseekV32ForCausalLM",
+   "use_mla_backend": true,
+   "dtype": "float8_e4m3fn",
+   "layers": 4,
+   "kv_lora_rank": 512,
+   "qk_rope_head_dim": 64,
+   "index_head_dim": 128,
+   "index_topk": 2048
+  },
+  {
+   "name": "dsa_bf16",
+   "architecture": "GlmMoeDsaForCausalLM",
+   "use_mla_backend": true,
+   "dtype": "bfloat16",
+   "layers": 6,
+   "kv_lora_rank": 512,
+   "qk_rope_head_dim": 64,
+   "index_head_dim": 128,
+   "index_topk": 2048
+  }
+ ]
+}

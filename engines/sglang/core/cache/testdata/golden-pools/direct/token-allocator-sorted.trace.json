@@ -1,0 +1,231 @@
+{
+ "calls": [
+  {
+   "args": {
+    "allocation_label": null,
+    "device": "cpu",
+    "dtype": "torch.bfloat16",
+    "enable_alt_stream": true,
+    "enable_kv_cache_copy": false,
+    "enable_memory_saver": false,
+    "end_layer": null,
+    "head_dim": 16,
+    "head_num": 2,
+    "kv_cache_layout": null,
+    "layer_num": 2,
+    "page_size": 1,
+    "post_capture_active": false,
+    "quant_method": null,
+    "size": 12,
+    "start_layer": null,
+    "swa_head_dim": null,
+    "swa_head_num": null,
+    "swa_v_head_dim": null,
+    "v_head_dim": null
+   },
+   "cls": "MHATokenToKVPool",
+   "i": "kv_pool",
+   "m": "__init__",
+   "ret": {
+    "dtype": "torch.bfloat16",
+    "head_dim": 16,
+    "head_num": 2,
+    "layer_num": 2,
+    "page_size": 1,
+    "size": 12,
+    "store_dtype": "torch.bfloat16",
+    "v_head_dim": 16
+   },
+   "seq": 0
+  },
+  {
+   "args": {
+    "device": "cpu",
+    "dtype": "torch.bfloat16",
+    "kvcache": {
+     "_t": "MHATokenToKVPool"
+    },
+    "need_sort": true,
+    "size": 12
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "__init__",
+   "ret": {
+    "dtype": "torch.bfloat16",
+    "need_sort": true,
+    "page_size": 1,
+    "size": 12
+   },
+   "seq": 1
+  },
+  {
+   "args": {
+    "need_size": 8
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "alloc",
+   "ret": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+   ],
+   "seq": 2
+  },
+  {
+   "args": {
+    "free_index": [
+     6,
+     7,
+     8
+    ]
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "free",
+   "ret": null,
+   "seq": 3
+  },
+  {
+   "args": {
+    "free_index": [
+     1,
+     2
+    ]
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "free",
+   "ret": null,
+   "seq": 4
+  },
+  {
+   "args": {},
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "available_size",
+   "ret": 9,
+   "seq": 5
+  },
+  {
+   "args": {
+    "need_size": 4
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "alloc",
+   "ret": [
+    9,
+    10,
+    11,
+    12
+   ],
+   "seq": 6
+  },
+  {
+   "args": {
+    "need_size": 2
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "alloc",
+   "ret": [
+    1,
+    2
+   ],
+   "seq": 7
+  },
+  {
+   "args": {},
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "free_group_begin",
+   "ret": null,
+   "seq": 8
+  },
+  {
+   "args": {
+    "free_index": [
+     3,
+     4
+    ]
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "free",
+   "ret": null,
+   "seq": 9
+  },
+  {
+   "args": {},
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "free_group_end",
+   "ret": null,
+   "seq": 10
+  },
+  {
+   "args": {
+    "need_size": 3
+   },
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "alloc",
+   "ret": [
+    6,
+    7,
+    8
+   ],
+   "seq": 11
+  },
+  {
+   "args": {},
+   "cls": "TokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "available_size",
+   "ret": 2,
+   "seq": 12
+  }
+ ],
+ "cells": [],
+ "kind": "direct",
+ "provenance": {
+  "blis_sglang_commit": "12726633a3b719090ccb174b14ec033fde5daaed",
+  "lockfile_sha256": "a3fb4e4773230faee4ffdd89437a96b2f3bfb3082e4be4cef4f44d44c66ed569",
+  "mock_version": "gpu-mock/4+4be739f2a212",
+  "model": "none: the driver builds SGLang's pools and allocators from the sequence's pools block",
+  "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+  "oracle_inputs": {
+   "oracle/cache_interfaces.py": "65cbb6a4d473dcccc0d3ce6b262be075d35b54993636aff9d35b655f11f4e264",
+   "oracle/harness.json": "c9fc5c0cf22ba9274aec27d768d097303e166b1b6dc97883ec2972c4b29e27b6",
+   "oracle/mocks.json": "8863c3c7c02de293b2ddbad2bb421b5741c95eef87019025d24835e44a84b1e7",
+   "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+   "oracle/run_pools.py": "b6694ebcb141874ffc8ee2d78636a47295724e3dbdd9ded7b89f6232c674bc1e",
+   "oracle/scenarios-pools/token-allocator-sorted.json": "6ed6d369db1decc65fd3d17deeb769ad4fcd0d39cfe27dcb198dcb3972ef3c0d",
+   "oracle/traces.py": "66d1818a2eb1b3d8bbfa3c5988bc088a8741798e46e536152ab368961bbd28a6"
+  },
+  "platform": "linux-x86_64",
+  "python": "3.12.16",
+  "requirements_lock_sha256": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+  "scenario_sha256": "6ed6d369db1decc65fd3d17deeb769ad4fcd0d39cfe27dcb198dcb3972ef3c0d",
+  "seed": 0,
+  "sglang_commit": "297e54fd105e974cdf401e5b4d20253a22c16f90",
+  "tier": 2
+ },
+ "sizing": [
+  {
+   "class": "MHATokenToKVPool",
+   "kv_size_bytes": [
+    1664,
+    1664
+   ],
+   "pool": "kv"
+  }
+ ]
+}

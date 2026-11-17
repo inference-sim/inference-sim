@@ -129,6 +129,8 @@ jobs:
         run: python -I oracle/check_provenance.py
       - name: every compared field of the goldens takes two values, or is held with its reason
         run: python -I oracle/value_coverage.py
+      - name: every allocator and pool class SGLang defines is modelled or refused (SGL-6)
+        run: python -I oracle/check_pool_classes.py sglang-source
       - name: the guards fail on what they guard
         run: python -I oracle/test_checks.py sglang-source
       # The surface list (X9, SGL-4, SGL-6, FID-5): surface.json is what tools/surface/gen_surface.py
@@ -245,6 +247,30 @@ jobs:
           commit="$(git -C sglang-source rev-parse HEAD)"
           python -I oracle/compare_goldens.py oracle-traces-fid5/recorded "$commit" oracle/scenarios core/cache/testdata/golden-fid5/recorded
           python -I oracle/compare_goldens.py oracle-traces-fid5/direct "$commit" oracle/scenarios-cache-iface core/cache/testdata/golden-fid5/direct
+      # SGL-6: the allocators and pools alone, in orderings no scheduler makes, with each pool's
+      # buffer bytes and the configurator's per-token cell (oracle/run_pools.py).
+      - name: trace the allocators and pools
+        if: ${{ !cancelled() }}
+        env:
+          ORACLE_LOCKFILE: oracle-env.lock
+          ORACLE_MODEL_REVISION: ${{ steps.env.outputs.model-revision }}
+          HF_HUB_OFFLINE: "1"
+        run: |
+          set -euo pipefail
+          mkdir -p oracle-traces-pools/direct
+          for s in oracle/scenarios-pools/*.json; do
+            python -I oracle/run_pools.py direct sglang-source "$s" "oracle-traces-pools/direct/$(basename "$s" .json).trace.json"
+          done
+      - name: upload the allocator and pool traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: oracle-traces-pools
+          path: oracle-traces-pools/
+      - name: every allocator and pool golden is SGLang's own output
+        run: |
+          set -euo pipefail
+          python -I oracle/compare_goldens.py oracle-traces-pools/direct "$(git -C sglang-source rev-parse HEAD)" oracle/scenarios-pools core/cache/testdata/golden-pools/direct
 
   # FID-3: a golden trace's decisions change only in a commit with a golden-reviewed trailer, and a
   # new golden was recorded on CI's platform from the committed lock.
