@@ -5985,8 +5985,11 @@ def test_muse_spark_nvfp4_reads_the_list_vllm_reads(tmp_path):
     D = deriver()
     raw = config_of(MUSE_NVFP4)
     committed = graph_of(MUSE_NVFP4)
-    same = lambda a, b: {k: v for k, v in a.items() if k != "derived_from"} == {
-        k: v for k, v in b.items() if k != "derived_from"}
+    # The expert layers are the decoder's; the tower's dtype is read from every exclusion
+    # list (tower_dtype), so the encoder section is compared apart.
+    skip = ("derived_from", "encoder", "modality")
+    same = lambda a, b: {k: v for k, v in a.items() if k not in skip} == {
+        k: v for k, v in b.items() if k not in skip}
     assert same(_derive_raw(raw, tmp_path, MUSE_NVFP4.name), committed)
     no_legacy = json.loads(json.dumps(raw))
     del no_legacy["quantization_config"]["modules_to_not_convert"]
@@ -7423,6 +7426,8 @@ def _m31_cfg(**edit) -> dict:
     }
     raw = {"architectures": ["MiniMaxM3SparseForConditionalGeneration"],
            "model_type": "minimax_m3_vl", "torch_dtype": "bfloat16",
+           "vision_config": {"hidden_size": 1280, "num_attention_heads": 16, "num_hidden_layers": 32,
+                             "intermediate_size": 5120, "patch_size": 14, "image_size": 672},
            "text_config": text, "quantization_config": quant}
     for key, value in edit.items():
         where, _, name = key.rpartition("__")
@@ -8998,3 +9003,140 @@ def test_gemma4_refuses_what_it_cannot_price(d, edit, why, tmp_path):
     import derive_graph  # noqa: E402
     with pytest.raises(derive_graph.DeriveError, match=re.escape(why)):
         _gemma4(d, tmp_path, edit)
+
+
+# --- Vision towers (the encoder section) ----------------------------------------------
+# Each count below is vLLM v0.33.0's own parameter count for the tower, worked from the
+# model code's layer shapes (kimi_k25_vit.py, qwen3_vl.py, glm5next/common/multimodal.py,
+# mllama4.py, kimi_k3), and for Gemma 4 and Qwen3.5-NVFP4 also equal to the sum of the
+# checkpoint's tower tensors in the safetensors headers.
+
+def _write_cfg(raw: dict, tmp_path: Path) -> Path:
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps(raw))
+    return p
+
+
+def _tower_params(tower: dict) -> int:
+    def one(n):
+        if n["op"] == "gemm":
+            return n["n"] * n["k"] + (n["n"] if n.get("bias") else 0)
+        return n.get("params", 0)
+    kinds = {k["id"]: k for k in tower["layer_kinds"]}
+    total = sum(one(n) for n in tower["embedding"] + tower["projector"])
+    for kid in layer_sequence(tower["stack"]):
+        total += sum(one(n) for n in kinds[kid]["nodes"])
+    return total
+
+
+def _only_tower(g: dict) -> dict:
+    assert [t["modality"] for t in g["encoder"]["towers"]] == ["image"]
+    return g["encoder"]["towers"][0]
+
+
+def _tower_attention(tower: dict) -> dict:
+    atts = [n for k in tower["layer_kinds"] for n in k["nodes"] if n["op"] == "attention"]
+    assert atts, "the tower has no attention node"
+    return atts[0]
+
+
+@pytest.mark.parametrize("name,layers,heads,head_dim,merge,out,params", [
+    ("kimi-k2.5", 27, 16, 72, 4, 7168, 471_143_920),
+    ("kimi-k3", 27, 12, 128, 4, 7168, 447_358_976),
+    ("qwen3.5-397b-a17b", 27, 16, 72, 4, 4096, 456_010_480),
+    ("qwen3.6-35b-a3b", 27, 16, 72, 4, 2048, 446_571_248),
+    ("glm-5.3-flash", 24, 16, 64, 4, 4096, 563_627_008),
+    ("gemma-4-31b-it", 27, 16, 72, 9, 5376, 575_743_536),
+    ("llama-4-scout-17b-16e-instruct-fp8-dynamic", 34, 16, 88, 4, 5120, 871_932_416),
+], ids=lambda v: str(v))
+def test_the_derived_tower_has_the_layers_and_widths_vllm_builds(name, layers, heads, head_dim, merge, out, params):
+    g = graph_of(MODELS / name)
+    t = _only_tower(g)
+    assert layer_sequence(t["stack"]).__len__() == layers
+    att = _tower_attention(t)
+    assert (att["n_heads"], att["d_h"]) == (heads, head_dim)
+    assert t["merge_ratio"] == merge
+    assert t["output_hidden_size"] == out == g["global"]["hidden_size"]
+    assert _tower_params(t) == params
+    assert g["modality"] == "multimodal"
+
+
+def test_gemma4_tower_is_replicated_padded_and_capped():
+    t = _only_tower(graph_of(GEMMA4_DENSE))
+    assert t["parallel"] == "replicated"
+    assert t["input"]["fixed_rows"] == 280 * 9
+    assert t["max_output_tokens"] == 280
+
+
+def test_llama4_tower_cuts_the_image_into_336_pixel_tiles_with_a_class_token():
+    t = _only_tower(graph_of(MODELS / "llama-4-scout-17b-16e-instruct-fp8-dynamic"))
+    assert t["input"]["tile_pixels"] == 336 and t["input"]["class_tokens"] == 1
+
+
+def test_muse_spark_tower_windows_three_layers_in_four_and_omits_its_audio_tower():
+    g = graph_of(MUSE)
+    t = _only_tower(g)
+    windows = [n.get("window", 0) for k in t["layer_kinds"] for n in k["nodes"] if n["op"] == "attention"]
+    assert sorted(windows) == [0, 32 * 32]
+    seq = layer_sequence(t["stack"])
+    kinds = {k["id"]: k for k in t["layer_kinds"]}
+    win = [any(n.get("window") for n in kinds[i]["nodes"]) for i in seq]
+    assert len(seq) == 50 and win.count(True) == 37
+    assert [o["modality"] for o in g["encoder"]["omitted"]] == ["audio"]
+    assert g["modality"] == "text_decoder_of_multimodal"
+    assert re.fullmatch(r"[\w.-]+/[\w.-]+#\d+", g["encoder"]["omitted"][0]["issue"])
+
+
+def test_a_quantized_checkpoint_that_does_not_exclude_its_tower_omits_it_by_name(tmp_path):
+    """DeepSeek-V4.1-Flash's fp8 quantization config names no vision module, so the tower's
+    stored width is unknown: the graph lists the tower as omitted with an open issue and
+    states no encoder weight."""
+    g = graph_of(MODELS / "deepseek-v4.1-flash")
+    assert g["encoder"]["towers"] == []
+    [o] = g["encoder"]["omitted"]
+    assert o["modality"] == "image" and "dtype" in o["reason"]
+    assert g["modality"] == "text_decoder_of_multimodal"
+
+
+def test_pinned_headers_state_the_dtype_a_quantized_config_cannot(tmp_path):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    raw = config_of(MODELS / "deepseek-v4.1-flash")
+    g = derive_graph.derive(_write_cfg(raw, tmp_path), "deepseek-v4.1-flash",
+                            headers={"vision.layers.0.wqkv.weight": {"dtype": "BF16", "shape": [3072, 1024]}})
+    assert _only_tower(g)["weight_dtype"] == "bf16"
+    assert g["modality"] == "multimodal"
+
+
+def test_a_tower_without_a_builder_is_refused_by_name(tmp_path):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    raw = config_of(MODELS / "qwen3.5-397b-a17b")
+    raw["vision_config"]["deepstack_visual_indexes"] = [8, 16, 24]
+    with pytest.raises(derive_graph.DeriveError, match="deepstack"):
+        _derive_raw(raw, tmp_path, "qwen3.5-397b-a17b")
+    raw = config_of(MODELS / "qwen3.5-397b-a17b")
+    del raw["vision_config"]["depth"]
+    with pytest.raises(derive_graph.DeriveError, match="depth"):
+        _derive_raw(raw, tmp_path, "qwen3.5-397b-a17b")
+
+
+def test_gemma4_clipped_linears_are_refused(tmp_path):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    raw = config_of(GEMMA4_DENSE)
+    raw["vision_config"]["use_clipped_linears"] = True
+    with pytest.raises(derive_graph.DeriveError, match="use_clipped_linears"):
+        _derive_raw(raw, tmp_path, GEMMA4_DENSE.name)
+
+
+def test_every_catalog_model_with_a_vision_config_states_its_tower_or_why_not():
+    for d in model_dirs():
+        if "vision_config" not in config_of(d):
+            continue
+        g = graph_of(d)
+        enc = g.get("encoder")
+        assert enc is not None, f"{d.name} has a vision_config and states no encoder section"
+        assert enc["towers"] or enc["omitted"], d.name
+        for o in enc.get("omitted", []):
+            assert re.fullmatch(r"[\w.-]+/[\w.-]+#\d+", o["issue"]), (d.name, o)

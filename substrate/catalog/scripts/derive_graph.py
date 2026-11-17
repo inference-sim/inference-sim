@@ -7053,6 +7053,417 @@ HANDLERS = {
 }
 
 
+# --- Vision towers ----------------------------------------------------------------
+# The encoder section of a multimodal graph (contracts/spec/model/encoder.go). Every tower
+# below is built from the checkpoint's vision_config, verified against vllm-project/vllm
+# v0.33.0 (@4ba787ec9959e566d3b587a796dff07673324da5) unless a citation says otherwise. A
+# tower is the engine's code, so each family has a builder; a family without one, or a tower
+# whose stored dtype the checkpoint does not state, is listed under encoder.omitted with the
+# open issue that tracks it (X28) rather than priced from a default.
+
+ENCODER_ISSUES = {
+    "audio": "inference-sim/blis-substrate#275",
+    "dtype": "inference-sim/blis-substrate#277",
+    "inkling": "inference-sim/blis-substrate#278",
+}
+
+
+def _vnode(op: str, role: str, **kw: Any) -> dict[str, Any]:
+    n: dict[str, Any] = {"op": op, "role": role}
+    n.update({k: v for k, v in kw.items() if v not in (None, False, 0, "")})
+    return n
+
+
+def _gemm(role: str, n: int, k: int, *, bias: bool, tp: str = "replicated", rows: str = "patches") -> dict[str, Any]:
+    return _vnode("gemm", role, n=n, k=k, bias=bias, tp=tp, rows=None if rows == "patches" else rows)
+
+
+def _norm(role: str, hidden: int, params: int, *, count: int = 1, rows: str = "patches",
+          tp: str = "replicated") -> dict[str, Any]:
+    # Read and write of a bf16 activation per norm, plus the residual add that follows it.
+    return _vnode("elementwise", role, bytes_per_row=count * 2 * hidden * 2, params=params, tp=tp,
+                  rows=None if rows == "patches" else rows)
+
+
+def _vit_block(hidden: int, heads: int, head_dim: int, inter: int, *, qkv_bias: bool, o_bias: bool,
+               mlp_bias: bool, gated: bool, norm_params: int, extra: list[dict[str, Any]] | None = None,
+               window: int = 0, tp: bool = True) -> list[dict[str, Any]]:
+    """One pre-norm ViT block: two norms, fused qkv, bidirectional attention, output
+    projection and a plain or gated MLP. tp False leaves every node replicated (a tower the
+    model code builds with ReplicatedLinear)."""
+    col, row, shard = ("column", "row", "sharded") if tp else ("replicated",) * 3
+    qkv = heads * head_dim
+    nodes = [_norm("norms", hidden, norm_params, count=2),
+             _gemm("qkv", 3 * qkv, hidden, bias=qkv_bias, tp=col)]
+    nodes += extra or []
+    nodes += [_vnode("attention", "attention", n_heads=heads, d_h=head_dim, window=window, tp=shard),
+              _gemm("o_proj", hidden, qkv, bias=o_bias, tp=row)]
+    if gated:
+        nodes += [_gemm("gate_up", 2 * inter, hidden, bias=mlp_bias, tp=col),
+                  _vnode("elementwise", "act", bytes_per_row=3 * inter * 2, tp=shard),
+                  _gemm("down", hidden, inter, bias=mlp_bias, tp=row)]
+    else:
+        nodes += [_gemm("fc1", inter, hidden, bias=mlp_bias, tp=col),
+                  _vnode("elementwise", "act", bytes_per_row=2 * inter * 2, tp=shard),
+                  _gemm("fc2", hidden, inter, bias=mlp_bias, tp=row)]
+    return nodes
+
+
+def _tower(vc: dict[str, Any], text_hidden: int, dtype: str, *, patch: int, temporal: int, channels: int,
+           merge: int, parallel: str, embedding: list, block: list, layers: int, projector: list,
+           max_tokens: int = 0, tile: int = 0, class_tokens: int = 0, fixed_rows: int = 0) -> dict[str, Any]:
+    inp: dict[str, Any] = {"patch_size": patch, "channels": channels}
+    for k, v in (("temporal_patch_size", temporal if temporal > 1 else 0), ("tile_pixels", tile),
+                 ("class_tokens", class_tokens), ("fixed_rows", fixed_rows)):
+        if v:
+            inp[k] = v
+    t: dict[str, Any] = {"modality": "image", "input": inp, "merge_ratio": merge,
+                         "output_hidden_size": text_hidden}
+    if max_tokens:
+        t["max_output_tokens"] = max_tokens
+    t.update({"parallel": parallel, "weight_dtype": dtype, "embedding": embedding,
+              "layer_kinds": [{"id": "vit_block", "nodes": block}],
+              "stack": {"pattern": ["vit_block"], "repeat": layers}, "projector": projector})
+    return t
+
+
+def _need(vc: dict[str, Any], keys: tuple[str, ...], model: str) -> list[Any]:
+    out = []
+    for k in keys:
+        if k not in vc:
+            raise DeriveError(f"{model}: vision_config states no {k}, which the tower is built from")
+        out.append(vc[k])
+    return out
+
+
+def tower_moonvit(vc: dict[str, Any], raw: dict[str, Any], text_hidden: int, dtype: str, model: str,
+                  v2: bool) -> dict[str, Any]:
+    """Kimi's MoonViT (model_executor/models/kimi_k25_vit.py; Kimi-K3's variant sets
+    attn/linear/patch-embed biases off, RMSNorm, a head dimension of qkv_hidden_size / heads and
+    the patchmergerv2 projector, configs/kimi_k3.py:38-42, vit.py:951-961)."""
+    H, I, nh, L, p = _need(vc, ("vt_hidden_size", "vt_intermediate_size", "vt_num_attention_heads",
+                               "vt_num_hidden_layers", "patch_size"), model)
+    mk = vc.get("merge_kernel_size") or [2, 2]
+    merge = int(mk[0]) * int(mk[1])
+    if v2:
+        qkv_h = int(_need(vc, ("qkv_hidden_size",), model)[0])
+        if qkv_h % nh:
+            raise DeriveError(f"{model}: qkv_hidden_size {qkv_h} is not a multiple of {nh} heads")
+        hd, bias, norm_p = qkv_h // nh, False, 2 * H       # RMSNorm: one scale vector per norm
+    else:
+        hd, bias, norm_p = H // nh, True, 4 * H            # LayerNorm: scale and bias, two norms
+    pos = int(vc.get("init_pos_emb_height", 64)) * int(vc.get("init_pos_emb_width", 64)) * H
+    mm_h = int(vc.get("mm_hidden_size", H))
+    if mm_h != H:
+        raise DeriveError(f"{model}: mm_hidden_size {mm_h} differs from the tower width {H}")
+    M = H * merge
+    emb = [_gemm("patch_embed", H, 3 * p * p, bias=bias), _vnode("elementwise", "pos_embed", bytes_per_row=4 * H * 2, params=pos)]
+    block = _vit_block(H, nh, hd, I, qkv_bias=bias, o_bias=bias, mlp_bias=bias, gated=False, norm_params=norm_p)
+    # o_proj reads the heads' width, which for K3 (1536) exceeds the tower width (1024).
+    if v2:
+        proj = [_norm("final_norm", H, H),
+                _gemm("merge_fc1", M, M, bias=False, rows="output_tokens"),
+                _vnode("elementwise", "merge_act", bytes_per_row=2 * M * 2, rows="output_tokens"),
+                _gemm("merge_fc2", text_hidden, M, bias=False, rows="output_tokens"),
+                _norm("post_norm", text_hidden, text_hidden, rows="output_tokens")]
+    else:
+        proj = [_norm("final_norm", H, 2 * H), _norm("merge_pre_norm", H, 2 * H),
+                _gemm("merge_fc1", M, M, bias=True, rows="output_tokens"),
+                _vnode("elementwise", "merge_act", bytes_per_row=2 * M * 2, rows="output_tokens"),
+                _gemm("merge_fc2", text_hidden, M, bias=True, rows="output_tokens")]
+    # Kimi's projector and patch embed are ReplicatedLinear/Conv; the tower's linears are
+    # tensor-parallel in the default "weights" mode (vit.py:911-946).
+    return _tower(vc, text_hidden, dtype, patch=p, temporal=1, channels=3, merge=merge, parallel="tensor",
+                  embedding=emb, block=block, layers=int(L), projector=proj)
+
+
+def tower_qwen3_vl(vc: dict[str, Any], raw: dict[str, Any], text_hidden: int, dtype: str, model: str) -> dict[str, Any]:
+    """Qwen3-VL's vision transformer (model_executor/models/qwen3_vl.py:391-558), as
+    Qwen3.5 and Qwen3.6 use it. A deepstack merger is not built."""
+    H, I, nh, L, p, tp_, sm, out = _need(vc, ("hidden_size", "intermediate_size", "num_heads", "depth",
+                                                "patch_size", "temporal_patch_size", "spatial_merge_size",
+                                                "out_hidden_size"), model)
+    if vc.get("deepstack_visual_indexes"):
+        raise DeriveError(f"{model}: deepstack_visual_indexes is non-empty; the deepstack mergers are not built")
+    if int(out) != text_hidden:
+        raise DeriveError(f"{model}: out_hidden_size {out} differs from the text hidden size {text_hidden}")
+    ch = int(vc.get("in_channels", 3))
+    M = H * sm * sm
+    emb = [_gemm("patch_embed", H, ch * tp_ * p * p, bias=True),
+           _vnode("elementwise", "pos_embed", bytes_per_row=4 * H * 2,
+                  params=int(vc.get("num_position_embeddings", 0)) * H)]
+    block = _vit_block(H, nh, H // nh, I, qkv_bias=True, o_bias=True, mlp_bias=True, gated=False, norm_params=4 * H)
+    proj = [_norm("merge_norm", H, 2 * H),
+            _gemm("merge_fc1", M, M, bias=True, tp="column", rows="output_tokens"),
+            _vnode("elementwise", "merge_act", bytes_per_row=2 * M * 2, rows="output_tokens", tp="sharded"),
+            _gemm("merge_fc2", text_hidden, M, bias=True, tp="row", rows="output_tokens")]
+    return _tower(vc, text_hidden, dtype, patch=p, temporal=tp_, channels=ch, merge=sm * sm, parallel="tensor",
+                  embedding=emb, block=block, layers=int(L), projector=proj)
+
+
+def tower_glm5_next(vc: dict[str, Any], raw: dict[str, Any], text_hidden: int, dtype: str, model: str) -> dict[str, Any]:
+    """GLM-5.3's vision transformer (vllm/models/glm5next/common/multimodal.py:67-338, 427-435)."""
+    H, I, nh, L, p, tp_, sm, out, pi = _need(vc, ("hidden_size", "intermediate_size", "num_heads", "depth",
+                                                   "patch_size", "temporal_patch_size", "spatial_merge_size",
+                                                   "out_hidden_size", "projection_intermediate_size"), model)
+    if int(out) != text_hidden:
+        raise DeriveError(f"{model}: out_hidden_size {out} differs from the text hidden size {text_hidden}")
+    hd = H // nh
+    ch = int(vc.get("in_channels", 3))
+    bias = bool(vc.get("attention_bias", False))
+    emb = [_gemm("patch_embed", H, ch * tp_ * p * p, bias=True)]
+    qk_norm = _vnode("elementwise", "qk_norm", bytes_per_row=2 * 2 * nh * hd * 2, params=2 * hd, tp="sharded")
+    block = _vit_block(H, nh, hd, I, qkv_bias=bias, o_bias=bias, mlp_bias=bias, gated=True, norm_params=2 * H,
+                       extra=[qk_norm])
+    proj = [_norm("post_norm", H, H),
+            _gemm("downsample", out, sm * sm * H, bias=True, rows="output_tokens"),
+            _gemm("merge_proj", out, out, bias=False, rows="output_tokens"),
+            _norm("merge_norm", out, 2 * out, rows="output_tokens"),
+            _gemm("merge_gate_up", 2 * pi, out, bias=False, tp="column", rows="output_tokens"),
+            _vnode("elementwise", "merge_act", bytes_per_row=3 * pi * 2, rows="output_tokens", tp="sharded"),
+            _gemm("merge_down", out, pi, bias=False, tp="row", rows="output_tokens")]
+    return _tower(vc, text_hidden, dtype, patch=p, temporal=tp_, channels=ch, merge=sm * sm, parallel="tensor",
+                  embedding=emb, block=block, layers=int(L), projector=proj)
+
+
+def tower_deepseek_v41(vc: dict[str, Any], raw: dict[str, Any], text_hidden: int, dtype: str, model: str) -> dict[str, Any]:
+    """DeepSeek-V4.1's vision path (vllm/models/deepseek_v4/common/vision.py:85-475): a ViT of
+    gated-MLP blocks, then a 3x3 unfold aligner and three learned vectors (start, newline, end)."""
+    H, I, nh, L, p, ds = _need(vc, ("hidden_size", "intermediate_size", "num_attention_heads",
+                                    "num_hidden_layers", "patch_size", "downsample_ratio"), model)
+    hd = H // nh
+    block = _vit_block(H, nh, hd, I, qkv_bias=True, o_bias=True, mlp_bias=False, gated=True, norm_params=2 * H)
+    emb = [_gemm("patch_embed", H, 3 * p * p, bias=True)]
+    proj = [_norm("final_norm", H, H),
+            _gemm("aligner_w1", text_hidden, ds * ds * H, bias=True, rows="output_tokens"),
+            _vnode("elementwise", "aligner_act", bytes_per_row=2 * text_hidden * 2, rows="output_tokens"),
+            _gemm("aligner_w2", text_hidden, text_hidden, bias=True, rows="output_tokens"),
+            _vnode("elementwise", "span_vectors", bytes_per_row=1, params=3 * text_hidden, rows="output_tokens")]
+    return _tower(vc, text_hidden, dtype, patch=p, temporal=1, channels=3, merge=int(ds) * int(ds),
+                  parallel="tensor", embedding=emb, block=block, layers=int(L), projector=proj,
+                  max_tokens=int(vc.get("max_image_tokens", 0)))
+
+
+def tower_gemma4(vc: dict[str, Any], raw: dict[str, Any], text_hidden: int, dtype: str, model: str) -> dict[str, Any]:
+    """Gemma 4's vision tower, transformers' Gemma4VisionModel as vLLM builds it with every
+    linear replicated (model_executor/models/gemma4_mm.py:1101-1113; transformers 5.20.2
+    models/gemma4/modeling_gemma4.py:585-1013, the version v0.33.0's requirements admit)."""
+    H, I, nh, L, p, k, pe = _need(vc, ("hidden_size", "intermediate_size", "num_attention_heads",
+                                       "num_hidden_layers", "patch_size", "pooling_kernel_size",
+                                       "position_embedding_size"), model)
+    hd = int(vc.get("head_dim", H // nh))
+    if vc.get("use_clipped_linears"):
+        raise DeriveError(f"{model}: use_clipped_linears is set; the clamped linears are not priced")
+    soft = int(raw.get("vision_soft_tokens_per_image") or vc.get("default_output_length") or 0)
+    if not soft:
+        raise DeriveError(f"{model}: states neither vision_soft_tokens_per_image nor default_output_length")
+    # Four sandwich norms with a scale, plus per-head q and k scales; v has none.
+    block = _vit_block(H, nh, hd, I, qkv_bias=False, o_bias=False, mlp_bias=False, gated=True,
+                       norm_params=4 * H + 2 * hd, tp=False)
+    block[0] = _norm("norms", H, 4 * H + 2 * hd, count=4)
+    emb = [_gemm("patch_embed", H, 3 * p * p, bias=False),
+           _vnode("elementwise", "pos_embed", bytes_per_row=2 * H * 2, params=2 * int(pe) * H)]
+    proj = [_vnode("elementwise", "standardize", bytes_per_row=2 * H * 2, params=2 * H, rows="output_tokens"),
+            _gemm("embed_vision", text_hidden, H, bias=False, rows="output_tokens")]
+    return _tower(vc, text_hidden, dtype, patch=p, temporal=1, channels=3, merge=int(k) * int(k),
+                  parallel="replicated", embedding=emb, block=block, layers=int(L), projector=proj,
+                  max_tokens=soft, fixed_rows=soft * int(k) * int(k))
+
+
+def tower_llama4(vc: dict[str, Any], raw: dict[str, Any], text_hidden: int, dtype: str, model: str) -> dict[str, Any]:
+    """Llama 4's vision model (model_executor/models/mllama4.py:155-537): 336-pixel tiles,
+    a class token, a pixel shuffle and a two-layer adapter."""
+    H, I, nh, L, p, img, ratio = _need(vc, ("hidden_size", "intermediate_size", "num_attention_heads",
+                                            "num_hidden_layers", "patch_size", "image_size",
+                                            "pixel_shuffle_ratio"), model)
+    inv = round(1 / float(ratio))
+    if abs(inv * float(ratio) - 1) > 1e-9:
+        raise DeriveError(f"{model}: pixel_shuffle_ratio {ratio} is not the reciprocal of an integer")
+    merge = inv * inv
+    grid = (img // p) ** 2
+    pin, pout = int(vc["projector_input_dim"]), int(vc["projector_output_dim"])
+    emb = [_gemm("patch_embed", H, 3 * p * p, bias=False, tp="column"),
+           _vnode("elementwise", "class_and_pos", bytes_per_row=2 * H * 2, params=H + (grid + 1) * H),
+           _norm("pre_norm", H, 2 * H)]
+    block = _vit_block(H, nh, H // nh, I, qkv_bias=True, o_bias=True, mlp_bias=True, gated=False, norm_params=4 * H)
+    proj = [_norm("post_norm", H, 2 * H),
+            _gemm("adapter_fc1", pin, H * merge, bias=False, tp="column", rows="output_tokens"),
+            _vnode("elementwise", "adapter_act", bytes_per_row=2 * pin * 2, rows="output_tokens", tp="sharded"),
+            _gemm("adapter_fc2", pout, pin, bias=False, tp="row", rows="output_tokens"),
+            _vnode("elementwise", "adapter_act2", bytes_per_row=2 * pout * 2, rows="output_tokens"),
+            _gemm("projector", text_hidden, pout, bias=False, rows="output_tokens")]
+    return _tower(vc, text_hidden, dtype, patch=p, temporal=1, channels=3, merge=merge, parallel="tensor",
+                  embedding=emb, block=block, layers=int(L), projector=proj, tile=int(img), class_tokens=1)
+
+
+def tower_minimax_m3(vc: dict[str, Any], raw: dict[str, Any], text_hidden: int, dtype: str, model: str) -> dict[str, Any]:
+    """MiniMax-M3's CLIP-style tower with 3D RoPE (vllm/models/minimax_m3/common/vision_tower.py:
+    55-678): a projector on every patch, then a merger over 2x2 neighbours."""
+    H, I, nh, L, p = _need(vc, ("hidden_size", "intermediate_size", "num_attention_heads",
+                                "num_hidden_layers", "patch_size"), model)
+    mid = int(raw.get("projector_hidden_size") or text_hidden)
+    bias = bool(raw.get("multimodal_projector_bias", True))
+    block = _vit_block(H, nh, H // nh, I, qkv_bias=True, o_bias=True, mlp_bias=True, gated=False, norm_params=4 * H)
+    emb = [_gemm("patch_embed", H, 3 * 2 * p * p, bias=False), _norm("pre_norm", H, 2 * H)]
+    proj = [_gemm("projector_fc1", mid, H, bias=bias, tp="column"),
+            _vnode("elementwise", "projector_act", bytes_per_row=2 * mid * 2, tp="sharded"),
+            _gemm("projector_fc2", text_hidden, mid, bias=bias, tp="row"),
+            _gemm("merger_fc1", mid, 4 * text_hidden, bias=bias, tp="column", rows="output_tokens"),
+            _vnode("elementwise", "merger_act", bytes_per_row=2 * mid * 2, rows="output_tokens", tp="sharded"),
+            _gemm("merger_fc2", text_hidden, mid, bias=bias, tp="row", rows="output_tokens")]
+    return _tower(vc, text_hidden, dtype, patch=p, temporal=2, channels=3, merge=4, parallel="tensor",
+                  embedding=emb, block=block, layers=int(L), projector=proj)
+
+
+def tower_muse_spark(vc: dict[str, Any], raw: dict[str, Any], text_hidden: int, dtype: str, model: str) -> dict[str, Any]:
+    """Muse Spark's NaViT (vllm/models/muse_spark/common/vision.py:85-751): window attention in
+    most layers (32x32 patches), full attention in every fourth."""
+    H, I, nh, L, p, pt, ms, ph, pw = _need(vc, ("hidden_size", "intermediate_size", "num_attention_heads",
+                                                "num_hidden_layers", "patch_size", "patch_temporal",
+                                                "merge_size", "pos_emb_height", "pos_emb_width"), model)
+    types = vc.get("layer_types") or ["full_attention"] * int(L)
+    if len(types) != int(L) or set(types) - {"full_attention", "window_attention"}:
+        raise DeriveError(f"{model}: layer_types {sorted(set(types))} are not full_attention and window_attention")
+    P = int(raw.get("projector_hidden_size") or 0)
+    if not P:
+        raise DeriveError(f"{model}: states no projector_hidden_size, which the adapter is built from")
+    hd = H // nh
+    kinds, ids = [], []
+    for t in types:
+        win = int(ph) * int(pw) if t == "window_attention" else 0
+        kid = "window_block" if win else "full_block"
+        if kid not in ids:
+            ids.append(kid)
+            kinds.append({"id": kid, "nodes": _vit_block(H, nh, hd, I, qkv_bias=True, o_bias=True,
+                                                         mlp_bias=True, gated=False, norm_params=4 * H, window=win)})
+    emb = [_gemm("patch_embed", H, 3 * pt * p * p, bias=False, tp="column"),
+           _vnode("elementwise", "pos_embed", bytes_per_row=4 * H * 2, params=int(ph) * int(pw) * H),
+           _norm("ln_pre", H, 2 * H)]
+    M = H * ms * ms
+    proj = [_norm("ln_post", H, 2 * H),
+            _gemm("adapter_fc", P, M, bias=False, rows="output_tokens"),
+            _vnode("elementwise", "adapter_act", bytes_per_row=2 * P * 2, rows="output_tokens"),
+            _gemm("adapter_proj", P, P, bias=False, rows="output_tokens"),
+            _vnode("elementwise", "adapter_act2", bytes_per_row=2 * P * 2, rows="output_tokens"),
+            _gemm("vision_projection", text_hidden, P, bias=False, tp="row", rows="output_tokens")]
+    t = _tower(vc, text_hidden, dtype, patch=p, temporal=pt, channels=3, merge=int(ms) * int(ms),
+               parallel="tensor", embedding=emb, block=[], layers=0, projector=proj)
+    t["layer_kinds"] = kinds
+    seq = ["window_block" if x == "window_attention" else "full_block" for x in types]
+    # The stack is the checkpoint's own layer_types vector; a regular period compresses it.
+    period = next((n for n in range(1, len(seq) + 1) if len(seq) % n == 0 and seq == seq[:n] * (len(seq) // n)), len(seq))
+    t["stack"] = {"pattern": seq[:period], "repeat": len(seq) // period}
+    return t
+
+
+# Architecture -> (builder, the audio tower the source also carries, if any).
+TOWER_BUILDERS = {
+    "KimiK25ForConditionalGeneration": lambda *a: tower_moonvit(*a, v2=False),
+    "KimiK3ForConditionalGeneration": lambda *a: tower_moonvit(*a, v2=True),
+    "KimiK31ForConditionalGeneration": lambda *a: tower_moonvit(*a, v2=True),
+    "Qwen3_5MoeForConditionalGeneration": tower_qwen3_vl,
+    "Glm5NextForConditionalGeneration": tower_glm5_next,
+    "DeepseekV41ForCausalLM": tower_deepseek_v41,
+    "Gemma4ForConditionalGeneration": tower_gemma4,
+    "Llama4ForConditionalGeneration": tower_llama4,
+    "MiniMaxM3SparseForConditionalGeneration": tower_minimax_m3,
+    "MuseSparkForConditionalGeneration": tower_muse_spark,
+}
+# Towers the kernels cannot express or the deriver cannot yet state, by architecture.
+UNPRICED_IMAGE_TOWERS = {
+    "InklingForConditionalGeneration": ("the hmlp tower's layer widths come from a planner that has been read, "
+                                        "not run", ENCODER_ISSUES["inkling"]),
+}
+AUDIO_TOWERS = {
+    "MuseSparkForConditionalGeneration": "a ConvNeXt-style stack with depthwise convolutions, which have no primitive",
+    "InklingForConditionalGeneration": "a discrete-mel embedding sum, which is not priced",
+}
+TOWER_PREFIXES = ("vision_tower", "visual", "vision_model", "vision_encoder", "mm_projector",
+                  "multi_modal_projector", "embed_vision", "vision_adapter", "vision_projection",
+                  "vision", "aligner")
+_TOWER_DTYPES = {"bfloat16": "bf16", "float16": "fp16", "float32": "fp32"}
+
+
+def tower_dtype(raw: dict[str, Any], model: str) -> str | None:
+    """The dtype the tower's tensors are stored in, from what config.json states.
+
+    An unquantized checkpoint stores it at the configuration's dtype. A quantized one stores it
+    there only if the quantization config excludes the tower's modules by name; otherwise the
+    config cannot say, and None asks for the checkpoint's headers (SUB-15)."""
+    vc = raw.get("vision_config") or {}
+    cfg_dtype = None
+    for src in (vc, raw, raw.get("text_config") or {}):
+        for key in ("dtype", "torch_dtype"):
+            if isinstance(src.get(key), str):
+                cfg_dtype = _TOWER_DTYPES.get(src[key])
+                break
+        if cfg_dtype:
+            break
+    if cfg_dtype is None:
+        return None
+    quant = raw.get("quantization_config") or {}
+    if not quant:
+        return cfg_dtype
+    # Vendors spell the exclusion list ignore, ignored_layers, modules_to_not_convert or
+    # exclude_modules; any list of module names that names the tower counts.
+    ignored = [i for v in quant.values() if isinstance(v, list) for i in v if isinstance(i, str)]
+    if any(p in i for i in ignored for p in TOWER_PREFIXES):
+        return cfg_dtype
+    return None
+
+
+def header_tower_dtype(model: str) -> str | None:
+    """The dtype the pinned headers give the tower's tensors, None when no headers are pinned."""
+    if not _HEADERS:
+        return None
+    seen = {t["dtype"] for name, t in _HEADERS.items()
+            if any(f".{p}." in "." + name + "." or name.startswith(p) for p in TOWER_PREFIXES)}
+    if not seen:
+        return None
+    if len(seen) > 1:
+        raise DeriveError(f"{model}: the tower's tensors are stored in {sorted(seen)}; one dtype per tower is stated")
+    d = seen.pop()
+    mapped = {"BF16": "bf16", "F16": "fp16", "F32": "fp32", "F8_E4M3": "fp8", "U8": None}.get(d)
+    if mapped is None:
+        raise DeriveError(f"{model}: the tower's tensors are stored as {d}, which the encoder does not state")
+    return mapped
+
+
+def derive_encoder(raw: dict[str, Any], arch: str, text_hidden: int, model: str) -> dict[str, Any] | None:
+    """The graph's encoder section, or None for a source with no tower. Every tower the
+    deriver does not price is listed under omitted with its open issue."""
+    has_image = isinstance(raw.get("vision_config"), dict)
+    has_audio = isinstance(raw.get("audio_config"), dict)
+    if not has_image and not has_audio:
+        return None
+    towers: list[dict[str, Any]] = []
+    omitted: list[dict[str, Any]] = []
+    if has_image:
+        reason = None
+        if arch in UNPRICED_IMAGE_TOWERS:
+            reason = UNPRICED_IMAGE_TOWERS[arch]
+        elif arch not in TOWER_BUILDERS:
+            raise DeriveError(f"{model}: {arch} has a vision_config and no tower builder; add one rather than "
+                              f"leaving the tower unpriced without a record")
+        else:
+            dtype = header_tower_dtype(model) or tower_dtype(raw, model)
+            if dtype is None:
+                reason = ("the tower's stored dtype is not stated by config.json and no safetensors headers "
+                          "are pinned", ENCODER_ISSUES["dtype"])
+            else:
+                towers.append(TOWER_BUILDERS[arch](raw["vision_config"], raw, text_hidden, dtype, model))
+        if reason:
+            omitted.append({"modality": "image", "reason": reason[0], "issue": reason[1]})
+    if has_audio:
+        if arch not in AUDIO_TOWERS:
+            raise DeriveError(f"{model}: {arch} has an audio_config; name why its tower is not priced")
+        omitted.append({"modality": "audio", "reason": AUDIO_TOWERS[arch], "issue": ENCODER_ISSUES["audio"]})
+    enc: dict[str, Any] = {"towers": towers}
+    if omitted:
+        enc["omitted"] = omitted
+    return enc
+
+
 # --- Driver ---------------------------------------------------------------------
 
 # What a handler's optional third result may carry; see derive().
@@ -7145,6 +7556,12 @@ def _derive(config_path: Path, model: str) -> dict[str, Any]:
     # from a prediction that is low.
     if "text_config" in raw:
         graph["modality"] = "text_decoder_of_multimodal"
+    # A tower the deriver prices is in the encoder section; one it does not is omitted there,
+    # with the open issue that tracks it. A graph that omits a tower stays a text decoder.
+    encoder = derive_encoder(raw, arch, graph["global"]["hidden_size"], model)
+    if encoder is not None:
+        graph["encoder"] = encoder
+        graph["modality"] = ("text_decoder_of_multimodal" if encoder.get("omitted") else "multimodal")
 
     extra_global = extras.get("global") or {}
     clash = set(extra_global) - EXTRA_GLOBAL_KEYS
