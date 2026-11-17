@@ -1681,6 +1681,13 @@ func formatFit(f price.Format, grouped bool, chip hardware.Chip, hopper bool) fi
 			why: "FP32 weights run at the TF32 tensor-core rate, taken as half the dense BF16 " +
 				"peak as NVIDIA's datasheets state it for every catalog part; the catalog states " +
 				"no TF32 peak, and the ramp is BF16's"}
+	case f.DType == model.DTypeINT4 && grouped:
+		// Compressed-tensors int4 routed experts (Kimi-K2.5) run vLLM's Marlin W4A16 grouped
+		// kernel on every part the catalog carries (int_wna16.py:132-141; the FlashInfer int4
+		// path is off by default, VLLM_USE_FLASHINFER_MOE_INT4=0), at the BF16 rate. The
+		// registry's Marlin grouped ramp was measured on exactly this int4 MoE
+		// (scripts/fit_marlin_grouped_ramp.py), on each rank's own slice of the routed FLOPs.
+		return fitSpec{suffix: "w4a16_mxfp4_grouped", fallback: "bf16", peak: bf16}
 	case f.DType == model.DTypeFP8 && f.MX() && hopper:
 		return fitSpec{suffix: "w8a16_mxfp8", fallback: "bf16", peak: bf16}
 	case (f.DType == model.DTypeMXFP4 || f.DType == model.DTypeNVFP4) && chip.NVFP4Peak <= 0:
