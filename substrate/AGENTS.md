@@ -110,8 +110,8 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: Every data source is pinned to an exact revision
   - `new`, pull_request: Published numbers regenerate: on redistributable fixtures on every pull request, on the full data nightly
   - `new`, pull_request: An accuracy change's success criteria are committed before any commit that reads its held-out data
-- **X10** (new; target ci by M1) Repositories are released bottom-up.
-  - `new`, release: Release bot (§13.6) (`tools/release`)
+- **X10** (ci; target reached) Repositories are released bottom-up.
+  - `ci`, release: Release bot (§13.6) (`tools/release`)
 - **X11** (partial; target ci by M1) Pins are exact release tags.
   - `ci`, pull_request: Selected-version lint (LIF-2), in every repository: no replace outside inference-sim (`tools/modlint: TestEachRuleHasAKnownBadInput`)
   - `ci`, pull_request: No other module requiring github.com/llm-d/llm-d-router (`tools/modlint: TestEachRuleHasAKnownBadInput`)
@@ -164,8 +164,8 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: A required check that fails while main is failing and the pull request does not name the failing test's issue
 - **X26** (new; target ci by M1) In documentation, every source path, symbol, issue or pull-request reference, and every statement that a feature is supported, is either generated (from surface.json, stack.json or the code) or checked against the pinned tree.
   - `new`, pull_request: A documentation reference check in every repository (`prcheck docrefs`)
-- **X27** (new; target ci by M1) An open bug labelled as breaking an invariant blocks a release of the repository where the bug lives, and of each repository that ships that code, unless the release fixes only that bug or a security issue, or a release owner records a waiver in the release notes.
-  - `new`, release: The release bot (`tools/release: CheckBugs`)
+- **X27** (ci; target reached) An open bug labelled as breaking an invariant blocks a release of the repository where the bug lives, and of each repository that ships that code, unless the release fixes only that bug or a security issue, or a release owner records a waiver in the release notes.
+  - `ci`, release: The release bot (`tools/release: CheckBugs`)
 - **X28** (new; target ci by M1) An issue in a BLIS repository that is cited as the reason for a refusal, for a refused or not-modelled item in a field or surface list, or in a code comment that marks a gap or a divergence, stays open.
   - `new`, nightly: A nightly job in every repository that resolves each cited issue and fails on a closed one (`shared-nightly.yml: prcheck issues -resolve`)
   - `new`, pull_request: A pull-request check that refuses a change closing an issue still cited elsewhere (`shared-pr-checks.yml: prcheck issues -closes`)
@@ -329,8 +329,8 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, practice: Repository settings that let only the release bot and people with write access create tags
   - `new`, pull_request: The bot's own check of every ci invariant (`tools/release: CheckInvariants`)
   - `new`, nightly: A nightly check that every tag made by a person is annotated and listed in its release notes
-- **LIF-4** (new; target ci by M1) Release notes are generated (§13.3).
-  - `new`, release: The release bot, which writes the notes from the release's changes (`tools/release: Notes`)
+- **LIF-4** (ci; target reached) Release notes are generated (§13.3).
+  - `ci`, release: The release bot, which writes the notes from the release's changes (`tools/release: Notes`)
 - **LIF-5** (new; target ci by M3) An engine module, or the router fork, models one upstream release.
   - `new`, release: A tag check in the release bot: format, N one above the previous tag on the same upstream release, no plain tag (`tools/release: CheckEngineTag`)
 - **LIF-7** (new; target ci by M1) A deprecated feature is removed by the first release after its deprecation that may break compatibility: a MAJOR release, or a MINOR release while the repository is at v0.
