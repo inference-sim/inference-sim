@@ -84,6 +84,22 @@ func (c *ClusterSimulator) endUnissuedRounds(at int64) {
 	if c.plannedRounds == nil {
 		return
 	}
+	// A planned round arrives, by its session's plan, its think times after the clock its
+	// session's last issued round ended at.
+	type tail struct {
+		round   int
+		endedAt int64
+	}
+	last := map[string]tail{}
+	for _, rec := range c.fates.Records() {
+		f, ok := c.requestFacts[rec.ID]
+		if !ok || f.SessionID == "" {
+			continue
+		}
+		if t, seen := last[f.SessionID]; !seen || f.RoundIndex > t.round {
+			last[f.SessionID] = tail{f.RoundIndex, rec.At}
+		}
+	}
 	for _, r := range c.plannedRounds() {
 		c.noteFateErr(c.fates.Create(r.ID))
 		c.noteFateErr(c.fates.End(r.ID, sim.FateNotStarted, "", at))
@@ -91,7 +107,8 @@ func (c *ClusterSimulator) endUnissuedRounds(at int64) {
 			c.requestFacts = make(map[string]RequestFact)
 		}
 		c.requestFacts[r.ID] = RequestFact{Model: r.Model, Adapter: r.Adapter, SLOClass: r.SLOClass,
-			TenantID: r.TenantID, SessionID: r.SessionID, RoundIndex: r.RoundIndex}
+			TenantID: r.TenantID, SessionID: r.SessionID, RoundIndex: r.RoundIndex,
+			ArrivalUs: last[r.SessionID].endedAt + r.ThinkUs}
 	}
 }
 

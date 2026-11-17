@@ -75,8 +75,13 @@ const (
 
 // PlannedRound is a round a session planned and never issued: the session ended before it, by a
 // timeout, a drop, the horizon or the follow-up budget. It is registered so it has exactly one
-// fate, not started (SIM-8), and a row. Its arrival never happened, so the row states none.
+// fate, not started (SIM-8), and a row. Its arrival never happened; the row states the arrival
+// its session's plan gives it: the clock the session's last issued round ended at, plus the think
+// times the plan draws for the rounds from that one to this one (ThinkUs).
 type PlannedRound struct {
+	// ThinkUs is the sum of the planned think times from the session's last issued round to this
+	// round, each drawn from its own round's stream as the round would have drawn it (DEV-6).
+	ThinkUs    int64
 	ID         string
 	SessionID  string
 	RoundIndex int

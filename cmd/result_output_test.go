@@ -1200,6 +1200,9 @@ clients:
 	for _, row := range res.RequestRows {
 		if row.Fate == result.FateNotStarted && row.SessionID != "" && row.RoundIndex > 0 {
 			notStarted++
+			if row.ArrivalUs <= 0 {
+				t.Errorf("%s: a planned round states arrival_us %d, want the plan's arrival after its session's last issued round", row.ID, row.ArrivalUs)
+			}
 		}
 		if row.SchedulingDelayUs != nil {
 			scheduled++
