@@ -216,12 +216,15 @@ func shouldStore(t Tier, n int) bool {
 	return d == nil || d.ShouldStore(n)
 }
 
-// updateBackpressure is _update_backpressure (manager.py:559-587), without its log line.
+// updateBackpressure is _update_backpressure (manager.py:559-587), without its log line. The
+// line's two is_under_pressure calls stay: each applies the idle decay and may clear the pressure.
 func (m *Manager) updateBackpressure(t Tier, jm jobMeta, r JobResult) {
 	d := t.Backpressure()
 	if d == nil {
 		return
 	}
+	d.IsUnderPressure()
+	defer d.IsUnderPressure()
 	if r.Success {
 		n := r.TransferBytes
 		if n == 0 {
