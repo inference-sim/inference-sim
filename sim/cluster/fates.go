@@ -101,7 +101,7 @@ func (c *ClusterSimulator) endUnissuedRounds(at int64) {
 		}
 	}
 	for _, r := range c.plannedRounds() {
-		c.noteFateErr(c.fates.Create(r.ID))
+		c.noteFateErr(c.fates.CreatePlanned(r.ID))
 		c.noteFateErr(c.fates.End(r.ID, sim.FateNotStarted, "", at))
 		if c.requestFacts == nil {
 			c.requestFacts = make(map[string]RequestFact)

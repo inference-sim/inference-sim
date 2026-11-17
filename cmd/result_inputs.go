@@ -228,6 +228,7 @@ func resultLedger(cs *cluster.ClusterSimulator) result.Requests {
 	t := cs.Fates().Tally()
 	q := result.Requests{
 		Generated:         t.Created,
+		PlannedNotIssued:  t.PlannedNotIssued,
 		Completed:         t.ByFate[sim.FateCompleted],
 		TimedOut:          t.ByFate[sim.FateTimedOut],
 		InFlightAtHorizon: t.ByFate[sim.FateInFlightAtHorizon],

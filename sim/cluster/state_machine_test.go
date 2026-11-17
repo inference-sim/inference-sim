@@ -30,11 +30,11 @@ func TestStateMachine_UnissuedSessionRoundsEndNotStarted(t *testing.T) {
 	mustRun(t, cs)
 
 	tally := cs.Fates().Tally()
-	if tally.ByFate[sim.FateTimedOut] != 1 || tally.ByFate[sim.FateNotStarted] != 2 {
-		t.Fatalf("fates = %+v, want 1 timed out and 2 not started", tally.ByFate)
+	if tally.ByFate[sim.FateTimedOut] != 1 || tally.ByFate[sim.FateNotStarted] != 0 {
+		t.Fatalf("fates = %+v, want 1 timed out: a round never issued is not a generated request", tally.ByFate)
 	}
-	if tally.Created != 3 || tally.Total() != 3 {
-		t.Errorf("created %d, fates %d: planned rounds must be counted on both sides", tally.Created, tally.Total())
+	if tally.Created != 1 || tally.Total() != 1 || tally.PlannedNotIssued != 2 {
+		t.Errorf("created %d, fates %d, planned never issued %d: want 1, 1 and 2", tally.Created, tally.Total(), tally.PlannedNotIssued)
 	}
 	for r := 1; r <= 2; r++ {
 		id := fmt.Sprintf("session_s1_round_%d_unissued", r)
@@ -76,7 +76,7 @@ func TestStateMachine_ACompleteSessionPlansNothingExtra(t *testing.T) {
 	cs := newTestCluster(newTestDeploymentConfig(1), NewSliceRequestSource(reqs), sm.OnComplete)
 	cs.SetPlannedRounds(sm.PlannedUnissued)
 	mustRun(t, cs)
-	if tally := cs.Fates().Tally(); tally.ByFate[sim.FateCompleted] != 2 || tally.Created != 2 || tally.ByFate[sim.FateNotStarted] != 0 {
+	if tally := cs.Fates().Tally(); tally.ByFate[sim.FateCompleted] != 2 || tally.Created != 2 || tally.PlannedNotIssued != 0 {
 		t.Errorf("tally = %+v, want 2 created and completed, none not started", tally)
 	}
 }
