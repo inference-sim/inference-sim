@@ -170,7 +170,7 @@ func TestEngineKVStartupFigureAgainstTheLoggedOne(t *testing.T) {
 				case worst > stated:
 					t.Errorf("%s %s: the engine's KV figure is %.1f%% from the logged one, beyond the stated %.0f%%", g, what, worst*100, stated*100)
 				case tightestTier(worst) < stated:
-					t.Errorf("%s %s: the gap is %.1f%%, inside the %.0f%% tier; state the tighter tolerance %.0f%%", g, what, worst*100, tightestTier(worst)*100, stated*100)
+					t.Errorf("%s %s: the gap is %.1f%%, inside the %.0f%% tier, and the stated tolerance is the looser %.0f%%: state %.0f%%", g, what, worst*100, tightestTier(worst)*100, stated*100, tightestTier(worst)*100)
 				}
 			}
 			check("end to end", d.e2e, tol.EndToEnd)

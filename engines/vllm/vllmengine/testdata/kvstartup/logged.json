@@ -3109,7 +3109,7 @@
    "scenarios": 5
   },
   "kimi-k2.5/b300/tp4/dp1": {
-   "end_to_end": 0.1,
+   "end_to_end": 0.05,
    "fit_units": 3,
    "pinned": 0.03,
    "scenarios": 2
