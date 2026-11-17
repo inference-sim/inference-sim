@@ -237,6 +237,7 @@ jobs:
           HF_HUB_OFFLINE: "1"
         run: |
           set -euo pipefail
+          export ORACLE_MODEL="$PWD/oracle-model"
           mkdir -p oracle-traces-sched
           for s in oracle/scenarios-sched/*.json; do
             python -I oracle/run_sched.py sglang-source "$s" "oracle-traces-sched/$(basename "$s" .json).trace.json"

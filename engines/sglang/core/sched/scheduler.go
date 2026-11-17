@@ -7,6 +7,7 @@ package sched
 import (
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 
 	"github.com/inference-sim/blis-sglang/core/cache"
@@ -55,6 +56,27 @@ type Config struct {
 	TreeCache                          string `json:"tree_cache"`
 	DisaggregationMode                 string `json:"disaggregation_mode"`
 	EnableOverlap                      bool   `json:"enable_overlap"`
+	// RadixEvictionPolicy is the tree's eviction policy; empty is lru, SGLang's default.
+	RadixEvictionPolicy string `json:"radix_eviction_policy"`
+	// RandomSeed seeds the random policy's stream (server_args.random_seed).
+	RandomSeed int `json:"random_seed"`
+	// ScheduleLowPriorityValuesFirst, PriorityPreemptionThreshold and EnablePriorityPreemption are
+	// the priority-scheduling settings (scheduler.py:486-494, 1469-1472@297e54fd).
+	ScheduleLowPriorityValuesFirst bool `json:"schedule_low_priority_values_first"`
+	PriorityPreemptionThreshold    int  `json:"priority_scheduling_preemption_threshold"`
+	EnablePriorityPreemption       bool `json:"enable_priority_preemption"`
+	AbortOnPriorityWhenDisabled    bool `json:"abort_on_priority_when_disabled"`
+	// MaxQueuedRequests bounds the waiting queue; nil is unbounded.
+	MaxQueuedRequests *int `json:"max_queued_requests"`
+	// PrefillMaxRequests bounds the requests one prefill batch admits; nil is unbounded.
+	PrefillMaxRequests *int `json:"prefill_max_requests"`
+}
+
+func (c Config) radixEvictionPolicy() string {
+	if c.RadixEvictionPolicy == "" {
+		return "lru"
+	}
+	return c.RadixEvictionPolicy
 }
 
 type refusal struct{ what string }
@@ -83,6 +105,13 @@ type Scheduler struct {
 	chunkedReq    *Req
 	newTokenRatio struct{ current float64 }
 	waitTree      simTree
+	// Shuffle orders the waiting queue for the random policy: it receives the request ids and returns
+	// them in the order to schedule. The default draws from the stream named
+	// "sched/random-policy/waiting-queue"; the replay test supplies SGLang's order.
+	Shuffle func(rids []string) []string
+	stream  *Stream
+
+	waitingPrefixRefreshCalls int
 
 	processedTokens  int
 	forwardCt        int
@@ -96,8 +125,6 @@ type Scheduler struct {
 // what the normal loop does not model.
 func New(cfg Config, tree cache.PrefixCache, alloc cache.Allocator, pool cache.ReqToTokenPool, sampledToken int64) (*Scheduler, error) {
 	switch {
-	case cfg.EnablePriorityScheduling:
-		return nil, refused("priority scheduling and preemption")
 	case cfg.EnableOverlap:
 		return nil, fmt.Errorf("sched: the overlap loop is S14 and is not in the normal loop (%s)", Refusal)
 	case cfg.DisaggregationMode != "null" && cfg.DisaggregationMode != "":
@@ -120,6 +147,7 @@ func New(cfg Config, tree cache.PrefixCache, alloc cache.Allocator, pool cache.R
 	s := &Scheduler{cfg: cfg, policy: p, tree: tree, alloc: alloc, pool: pool, sampledToken: sampledToken,
 		running: &Batch{}}
 	s.newTokenRatio.current = cfg.NewTokenRatio.Init
+	s.stream = NewStream(int64(cfg.RandomSeed), "sched/random-policy/waiting-queue")
 	return s, nil
 }
 
@@ -158,33 +186,106 @@ func (s *Scheduler) initNextRoundInput(r *Req, withTree bool) {
 	}
 }
 
-// handleGenerateRequest is _handle_generate_request (scheduler.py:3000-3300) for a request that
-// passes SGLang's input checks; one SGLang aborts at ingest is refused.
+// handleGenerateRequest is _handle_generate_request (scheduler.py:2959-3300) for a text-only
+// request with no session, grammar, logprobs or multimodal input. A request SGLang rejects at
+// ingest is not refused: it is aborted the way SGLang aborts it (an input too long, a prompt past
+// the KV budget, a priority sent to a server that has none, a full queue).
 func (s *Scheduler) handleGenerateRequest(a Arrival) {
-	inputLen := len(a.Prompt)
-	if inputLen >= s.cfg.MaxReqInputLen {
-		panic(refused("an input SGLang aborts at ingest (longer than max_req_input_len)"))
-	}
 	for _, t := range a.Prompt {
 		if t < 0 || int(t) >= s.cfg.VocabSize {
+			// SGLang does not abort it; the embedding lookup of a real model fails.
 			panic(refused("a prompt token outside the vocabulary"))
 		}
 	}
-	r := &Req{MaxNewTokens: a.MaxNewTokens, IgnoreEOS: a.IgnoreEOS}
+	r := &Req{MaxNewTokens: a.MaxNewTokens, IgnoreEOS: a.IgnoreEOS, RoutingKey: a.RoutingKey}
+	if a.Priority != nil {
+		r.Priority = *a.Priority
+		r.HasPriority = true
+	}
 	r.C = cache.Req{ID: a.RID, OriginInputIDs: slices.Clone(a.Prompt)}
-	// init_req_max_new_tokens (:2693-2730).
+	s.initReqMaxNewTokens(r)
+	// validate_input_length (utils.py:259-289) without --allow-auto-truncate.
+	if len(r.C.OriginInputIDs) >= s.cfg.MaxReqInputLen {
+		r.setFinishWithAbort()
+	}
+	s.addRequestToQueue(r)
+}
+
+// setFinishWithAbort is set_finish_with_abort (schedule_batch.py:2221-2238): the request shrinks to
+// one token, so its prefill is as cheap as possible, and finishes with an abort when that token is
+// processed.
+func (r *Req) setFinishWithAbort() {
+	r.C.OriginInputIDs = []int64{0}
+	r.ToFinish = "abort"
+}
+
+// initReqMaxNewTokens is init_req_max_new_tokens (:2693-2730).
+func (s *Scheduler) initReqMaxNewTokens(r *Req) {
+	inputLen := len(r.C.OriginInputIDs)
 	maxNew := max(0, min(r.MaxNewTokens, s.cfg.MaxReqLen-inputLen-1))
 	capacity := s.cfg.MaxTotalNumTokens
 	m, ok := s.alloc.MaxNewTokensForMemory(inputLen, maxNew, capacity, nil, s.cfg.ChunkedPrefillSize)
 	if !ok {
-		panic(refused("a prompt that exceeds the KV memory budget"))
+		r.setFinishWithAbort()
+		m = 0
 	}
-	r.MaxNewTokens = m
-	s.addRequestToQueue(r)
+	r.MaxNewTokens = max(0, m)
+}
+
+// setOrValidatePriority is _set_or_validate_priority (:3534-3555): false when the request is
+// answered with an abort instead of being queued.
+func (s *Scheduler) setOrValidatePriority(r *Req) bool {
+	if s.cfg.EnablePriorityScheduling && !r.HasPriority {
+		if s.cfg.ScheduleLowPriorityValuesFirst {
+			r.Priority = math.MaxInt64
+		} else {
+			r.Priority = math.MinInt64
+		}
+		r.HasPriority = true
+	} else if !s.cfg.EnablePriorityScheduling && r.HasPriority && s.cfg.AbortOnPriorityWhenDisabled {
+		s.noteFinished(r)
+		return false
+	}
+	return true
+}
+
+// abortOnQueuedLimit is _abort_on_queued_limit (:3552-3596): when the queue is full, the incoming
+// request is aborted, or under priority scheduling the least preferred waiting request if the
+// incoming one is strictly better. It reports whether the incoming request was aborted.
+func (s *Scheduler) abortOnQueuedLimit(in *Req) bool {
+	if s.cfg.MaxQueuedRequests == nil || len(s.waiting)+1 <= *s.cfg.MaxQueuedRequests {
+		return false
+	}
+	victim := in
+	if s.cfg.EnablePriorityScheduling {
+		// The least preferred waiting request: the largest (priority*direction, queue time), the
+		// first of equals.
+		idx := 0
+		for i, c := range s.waiting {
+			w := s.waiting[idx]
+			if s.priorityBefore(w.Priority, c.Priority) || (w.Priority == c.Priority && c.WaitQueueEntryStep > w.WaitQueueEntryStep) {
+				idx = i
+			}
+		}
+		if cand := s.waiting[idx]; s.priorityBefore(in.Priority, cand.Priority) {
+			s.waiting = slices.Delete(s.waiting, idx, idx+1)
+			victim = cand
+		}
+	}
+	s.noteFinished(victim)
+	return victim == in
 }
 
 // addRequestToQueue is _add_request_to_queue (:3480-3502) outside disaggregation.
 func (s *Scheduler) addRequestToQueue(r *Req) {
+	if !s.setOrValidatePriority(r) {
+		return
+	}
+	if s.abortOnQueuedLimit(r) {
+		return
+	}
+	// The tree records the request's priority on the nodes it inserts (unified_radix_cache.py:1186@297e54fd).
+	r.C.Priority = r.Priority
 	s.waiting = append(s.waiting, r)
 	r.WaitQueueEntryStep = s.step
 	r.ArrivalProcessedTokens = s.processedTokens
@@ -268,8 +369,9 @@ func (s *Scheduler) allocatableReqs(runningBS, heldRows int) int {
 
 // getNewBatchPrefill is get_new_batch_prefill and _get_new_batch_prefill_raw (:4052-4457).
 func (s *Scheduler) getNewBatchPrefill(running *Batch) (*Batch, *Batch) {
-	if running.IsEmpty() {
-		// An empty batch has no request left to leave; admission would stay shut.
+	if s.cfg.EnablePriorityPreemption || running.IsEmpty() {
+		// Preemption can make room, so a full batch is not final; an empty batch has no request
+		// left to leave, and admission would stay shut.
 		running.BatchIsFull = false
 	}
 	if (running.BatchIsFull || len(s.waiting) == 0) && s.chunkedReq == nil {
@@ -277,11 +379,11 @@ func (s *Scheduler) getNewBatchPrefill(running *Batch) (*Batch, *Batch) {
 	}
 	runningBS := len(running.Reqs)
 	// A chunked request skips this check: it keeps its row across chunks.
-	if s.allocatableReqs(runningBS, 0) <= 0 && s.chunkedReq == nil {
+	if s.allocatableReqs(runningBS, 0) <= 0 && s.chunkedReq == nil && !s.cfg.EnablePriorityPreemption {
 		running.BatchIsFull = true
 		return nil, running
 	}
-	s.calcPriority(s.waiting)
+	s.calcPriority(s.waiting, running)
 
 	mixedDecode := 0
 	if s.cfg.IsMixedChunk {
@@ -313,7 +415,7 @@ func (s *Scheduler) getNewBatchPrefill(running *Batch) (*Batch, *Batch) {
 		if len(a.canRunList) >= s.allocatableReqs(runningBS, held) {
 			running.BatchIsFull = true
 		}
-		if running.BatchIsFull {
+		if running.BatchIsFull && (!s.cfg.EnablePriorityPreemption || !a.preemptToSchedule(r)) {
 			break
 		}
 		s.initNextRoundInput(r, true)
@@ -328,6 +430,9 @@ func (s *Scheduler) getNewBatchPrefill(running *Batch) (*Batch, *Batch) {
 	}
 	// Update waiting queue.
 	if len(a.canRunList) == 0 {
+		for _, r := range a.preemptList {
+			s.addRequestToQueue(r)
+		}
 		return nil, running
 	}
 	admitted := map[*Req]bool{}
@@ -341,6 +446,9 @@ func (s *Scheduler) getNewBatchPrefill(running *Batch) (*Batch, *Batch) {
 		}
 	}
 	s.waiting = rest
+	for _, r := range a.preemptList {
+		s.addRequestToQueue(r)
+	}
 	if a.newChunkedReq != nil {
 		if s.chunkedReq != nil {
 			panic("a second chunked request")

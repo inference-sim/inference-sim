@@ -4,7 +4,11 @@
 
 package sched
 
-import "github.com/inference-sim/blis-sglang/core/cache"
+import (
+	"math/big"
+	"slices"
+	"sort"
+)
 
 // AddResult is AddReqResult (schedule_policy.py:571-575@297e54fd).
 type AddResult int
@@ -36,6 +40,11 @@ type adder struct {
 
 	canRunList    []*Req
 	newChunkedReq *Req
+	// preemptList holds the running requests preempted for a higher-priority one; the caller
+	// queues them again.
+	preemptList []*Req
+	// reqStates is nil until add_one_req_ignore_eos first runs in this pass.
+	reqStates []reqState
 }
 
 // newAdder is PrefillAdder.__init__ (:608-743).
@@ -122,6 +131,9 @@ func (a *adder) addChunkedReq(r *Req) *Req {
 // addOneReq is add_one_req (:1395-1590) for a request with no host hit: select a shape under a
 // temporary lock on its prefix, then commit it.
 func (a *adder) addOneReq(r *Req, hasChunkedReq bool) AddResult {
+	if x := a.s.cfg.PrefillMaxRequests; x != nil && len(a.canRunList) >= *x {
+		return Other
+	}
 	if a.s.cfg.Disable && r.IgnoreEOS {
 		return a.addOneReqIgnoreEOS(r)
 	}
@@ -188,11 +200,136 @@ func (a *adder) commit(r *Req, adm admission) {
 	a.updatePrefillBudget(adm.extendLen, adm.maxNewTokens)
 }
 
-// addOneReqIgnoreEOS is add_one_req_ignore_eos (:1241-1383) for a fixed-length request with the
-// radix cache off: it reserves the request's whole generation, and admits whole or not at all
-// (chunking of such a request is not modelled).
-func (a *adder) addOneReqIgnoreEOS(r *Req) AddResult {
-	panic(refused("add_one_req_ignore_eos: a fixed-length request with the radix cache off"))
+// ignoreEOSReserveTokens is IGNORE_EOS_RESERVE_TOKENS (schedule_policy.py:121@297e54fd).
+const ignoreEOSReserveTokens = 1
+
+// reqState is one entry of PrefillAdder.req_states: the decode tokens a request still needs and
+// the tokens it occupies.
+type reqState struct {
+	left     float64
+	occupied int
 }
 
-var _ = cache.FullComponentType
+// addOneReqIgnoreEOS is add_one_req_ignore_eos (:1241-1383) for a fixed-length request with the
+// radix cache off. It admits the request only if, when the running and admitted requests finish
+// in order of their remaining tokens, memory never runs out; the ledger of those remaining tokens
+// (req_states) lives for the whole prefill pass.
+func (a *adder) addOneReqIgnoreEOS(r *Req) AddResult {
+	cand := r.InputLen() - r.C.PrefixLen
+	paged := a.ceilPaged(cand) + a.pageSize
+	if float64(paged) > min(a.budget.remainingCurrent(), a.budget.remainingTotal()) {
+		return NoToken
+	}
+	state := func(x *Req) (reqState, bool) {
+		ratio := a.newTokenRatio
+		if x.IgnoreEOS {
+			ratio = 1.0
+		}
+		left := float64(x.MaxNewTokens)*ratio - float64(len(x.C.OutputIDs))
+		return reqState{left, len(x.C.OriginInputIDs) + len(x.C.OutputIDs)}, left > 0
+	}
+	if a.reqStates == nil {
+		a.reqStates = []reqState{}
+		for _, x := range append(append([]*Req{r}, a.running.Reqs...), a.canRunList...) {
+			if st, ok := state(x); ok {
+				a.reqStates = append(a.reqStates, st)
+			}
+		}
+		sort.SliceStable(a.reqStates, func(i, j int) bool { return a.reqStates[i].left < a.reqStates[j].left })
+	} else if st, ok := state(r); ok {
+		// Python's loop variable keeps its last value when no entry is at least as large, so the
+		// new entry then goes in before the last one.
+		i := 0
+		for i = 0; i < len(a.reqStates); i++ {
+			if st.left <= a.reqStates[i].left {
+				break
+			}
+		}
+		if i == len(a.reqStates) {
+			i = max(len(a.reqStates)-1, 0)
+		}
+		a.reqStates = slices.Insert(a.reqStates, i, st)
+	}
+	curRem := a.budget.remainingCurrent() - float64(paged)
+	freed := 0.0
+	for i, st := range a.reqStates {
+		bs := float64(len(a.reqStates) - i)
+		// tokens_left is conservative, as the last token is not stored.
+		if curRem+freed-st.left*bs <= ignoreEOSReserveTokens*bs {
+			return NoToken
+		}
+		freed += float64(st.occupied)
+	}
+	if a.remChunkTokens == nil || cand <= *a.remChunkTokens {
+		// Not chunked, or the last chunk: the whole sequence is committed this pass.
+		r.ExtendEnd = r.InputLen()
+		a.canRunList = append(a.canRunList, r)
+		a.updatePrefillBudget(r.ExtendLen(), min(r.MaxNewTokens, a.s.cfg.ClipMaxNewTokens))
+	} else {
+		if *a.remChunkTokens <= 0 {
+			return Other
+		}
+		trunc := *a.remChunkTokens
+		if r.C.PrefixLen != 0 {
+			panic("add_one_req_ignore_eos: a chunked request with a prefix")
+		}
+		r.ExtendEnd = r.C.PrefixLen + trunc
+		a.canRunList = append(a.canRunList, r)
+		a.newChunkedReq = r
+		a.updatePrefillBudget(trunc, 0)
+	}
+	return a.budgetState()
+}
+
+// preemptToSchedule is preempt_to_schedule (:1706-1778): running requests of lower priority, the
+// least preferred first, give up their KV for req when the priority gap exceeds the threshold and
+// enough tokens come free. It reports whether the preemption was committed.
+func (a *adder) preemptToSchedule(req *Req) bool {
+	s := a.s
+	var valid []*Req
+	for _, r := range a.running.Reqs {
+		// A request that finished in the last result keeps its place in the batch until the next filter.
+		if !slices.Contains(a.preemptList, r) && !r.Finished() {
+			valid = append(valid, r)
+		}
+	}
+	sort.SliceStable(valid, func(i, j int) bool {
+		x, y := valid[i], valid[j]
+		if x.Priority != y.Priority {
+			return s.priorityBefore(y.Priority, x.Priority)
+		}
+		return x.WaitQueueEntryStep > y.WaitQueueEntryStep
+	})
+	var preemptible []*Req
+	minToRemove := float64(req.InputLen()-req.C.PrefixLen+min(req.MaxNewTokens, s.cfg.ClipMaxNewTokens)) - a.budget.remainingTotal()
+	for _, r := range valid {
+		// (req.priority - running.priority) * -priority_sign, exactly, whatever the extremes.
+		diff := new(big.Int).Sub(big.NewInt(int64(req.Priority)), big.NewInt(int64(r.Priority)))
+		diff.Mul(diff, big.NewInt(int64(-s.prioritySign())))
+		if diff.Cmp(big.NewInt(int64(s.cfg.PriorityPreemptionThreshold))) <= 0 {
+			break
+		}
+		preemptible = append(preemptible, r)
+		minToRemove -= a.runningRequestTotalTokenOffset(r)
+		if minToRemove <= 0 {
+			break
+		}
+	}
+	if len(preemptible) == 0 || minToRemove > 0 {
+		return false
+	}
+	var keep []int
+	released := 0
+	for i, r := range a.running.Reqs {
+		if slices.Contains(preemptible, r) {
+			a.budget.totalOffset -= a.runningRequestTotalTokenOffset(r)
+			released++
+			s.releaseReq(r, len(a.running.Reqs)-released)
+		} else {
+			keep = append(keep, i)
+		}
+	}
+	a.running.keepIndices(keep)
+	a.preemptList = append(a.preemptList, preemptible...)
+	return true
+}

@@ -51,6 +51,8 @@ type scenario struct {
 		Prompt       []int64 `json:"prompt"`
 		MaxNewTokens int     `json:"max_new_tokens"`
 		IgnoreEOS    *bool   `json:"ignore_eos"`
+		Priority     *int    `json:"priority"`
+		RoutingKey   string  `json:"routing_key"`
 	} `json:"requests"`
 }
 
@@ -91,21 +93,58 @@ func build(cfg Config, sampled int64) (*Scheduler, error) {
 		alloc = cache.NewPagedAllocator(cfg.MaxTotalNumTokens, cfg.PageSize, nil, cfg.NeedSort)
 	}
 	pool := cache.NewRequestPool(cfg.ReqPoolSize, cfg.MaxContextLen)
-	tree, err := cache.NewRadixCache(cache.RadixConfig{PageSize: cfg.PageSize, Disable: cfg.Disable, EvictionPolicy: "lru"}, alloc, pool)
+	tree, err := cache.NewRadixCache(cache.RadixConfig{PageSize: cfg.PageSize, Disable: cfg.Disable, EvictionPolicy: cfg.radixEvictionPolicy()}, alloc, pool)
 	if err != nil {
 		return nil, err
 	}
 	return New(cfg, tree, alloc, pool, sampled)
 }
 
-// replay runs a scenario on the port and returns each step's record.
-func replay(sc scenario, cfg Config, steps int) ([]StepRecord, error) {
+// sglangOrder is the order SGLang's random policy gave the waiting queue in a step. The port draws
+// its own shuffle from a named stream, which cannot equal Python's; to compare what follows from
+// the order, the trace's is read back. SGLang admits a prefix of the shuffled queue and leaves the
+// rest in place, so the shuffled queue is the requests the step's forward passes took from it, in
+// batch order, then the requests waiting after the step; requests not in the queue (those already
+// running or chunking) drop out.
+func sglangOrder(step traceStep) func([]string) []string {
+	return func(queue []string) []string {
+		in := map[string]bool{}
+		for _, r := range queue {
+			in[r] = true
+		}
+		var order []string
+		take := func(r string) {
+			if in[r] {
+				order = append(order, r)
+				delete(in, r)
+			}
+		}
+		for _, f := range step.Forwards {
+			for _, r := range f.RIDs {
+				take(r)
+			}
+		}
+		if step.After != nil {
+			for _, r := range step.After.Waiting {
+				take(r)
+			}
+		}
+		return order
+	}
+}
+
+// replay runs a scenario on the port and returns each step's record. A non-nil tr supplies
+// SGLang's shuffle for the random policy.
+func replay(sc scenario, cfg Config, steps int, tr *trace) ([]StepRecord, error) {
 	s, err := build(cfg, sc.SampledToken)
 	if err != nil {
 		return nil, err
 	}
 	var out []StepRecord
 	for i := 0; i < steps; i++ {
+		if tr != nil {
+			s.Shuffle = sglangOrder(tr.Steps[i])
+		}
 		var arr []Arrival
 		for _, r := range sc.Requests {
 			if r.ArrivalStep == i {
@@ -113,7 +152,8 @@ func replay(sc scenario, cfg Config, steps int) ([]StepRecord, error) {
 				if r.IgnoreEOS != nil {
 					ignore = *r.IgnoreEOS
 				}
-				arr = append(arr, Arrival{RID: r.RID, Prompt: r.Prompt, MaxNewTokens: r.MaxNewTokens, IgnoreEOS: ignore})
+				arr = append(arr, Arrival{RID: r.RID, Prompt: r.Prompt, MaxNewTokens: r.MaxNewTokens, IgnoreEOS: ignore,
+					Priority: r.Priority, RoutingKey: r.RoutingKey})
 			}
 		}
 		rec, err := s.Step(arr)
@@ -169,7 +209,7 @@ func TestStepsEqualSGLangs(t *testing.T) {
 			readJSON(t, path, &tr)
 			var sc scenario
 			readJSON(t, filepath.Join(ScenarioDir, name+".json"), &sc)
-			got, err := replay(sc, tr.Config, len(tr.Steps))
+			got, err := replay(sc, tr.Config, len(tr.Steps), &tr)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -16,7 +16,9 @@ It also records the scheduler's resolved settings the Go port is configured from
 port is compared on its decisions and not on SGLang's start-up resolution (T1, S08).
 
 A scenario may add `server_args` (extra ServerArgs fields, each named in SCHED_SERVER_ARGS) and, per
-request, `ignore_eos` (default true, as in oracle/run_scheduler.py). Nothing else differs from
+request, `ignore_eos` (default true, as in oracle/run_scheduler.py), `priority` and `routing_key`
+(default none, as a client that sets neither). A request SGLang rejects before it queues is answered
+with an AbortReq, which this runner records as that request's finish. Nothing else differs from
 run_scheduler.py: the replaced seams are the ones oracle/mocks.json lists.
 
 Usage: python -I oracle/run_sched.py <sglang checkout> <scenario.json> [out.json]
@@ -36,7 +38,9 @@ import run_scheduler  # noqa: E402
 
 # ServerArgs fields a scheduler scenario may set beyond run_scheduler.server_args's.
 SCHED_SERVER_ARGS = ("enable_mixed_chunk", "max_prefill_tokens", "schedule_conservativeness",
-                     "radix_eviction_policy", "enable_priority_scheduling", "prefill_max_requests")
+                     "radix_eviction_policy", "enable_priority_scheduling", "prefill_max_requests",
+                     "schedule_low_priority_values_first", "priority_scheduling_preemption_threshold",
+                     "disable_priority_preemption", "abort_on_priority_when_disabled", "max_queued_requests")
 
 ORACLE_INPUTS = run_scheduler.ORACLE_INPUTS + ("oracle/run_sched.py",)
 
@@ -108,7 +112,7 @@ def config_of(s) -> dict:
     from sglang.srt.environ import envs
     from sglang.srt.managers import schedule_policy as sp
 
-    from sglang.srt.runtime_context import get_parallel
+    from sglang.srt.runtime_context import get_memory, get_parallel, get_schedule
 
     t = s.new_token_ratio_tracker
     return {
@@ -136,12 +140,25 @@ def config_of(s) -> dict:
         "need_sort": bool(getattr(s.token_to_kv_pool_allocator, "need_sort", False)),
         "eos_token_ids": sorted(int(t) for t in (s.model_config.hf_eos_token_id or [])),
         "vocab_size": int(s.model_config.vocab_size),
-        "radix_eviction_policy": str(s.tree_cache.eviction_policy) if hasattr(s.tree_cache, "eviction_policy") else None,
+        "radix_eviction_policy": str(get_memory().radix_eviction_policy),
         "allocator": type(s.token_to_kv_pool_allocator).__name__,
         "tree_cache": type(s.tree_cache).__name__,
         "disaggregation_mode": str(s.disaggregation_mode.value),
         "enable_overlap": bool(s.enable_overlap),
+        "random_seed": int(s.server_args.random_seed),
+        "schedule_low_priority_values_first": bool(s.schedule_low_priority_values_first),
+        "priority_scheduling_preemption_threshold": int(s.priority_scheduling_preemption_threshold),
+        "enable_priority_preemption": bool(s.enable_priority_preemption),
+        "abort_on_priority_when_disabled": bool(s.abort_on_priority_when_disabled),
+        "max_queued_requests": None if s.max_queued_requests is None else int(s.max_queued_requests),
+        "prefill_max_requests": None if get_schedule().prefill_max_requests is None else int(get_schedule().prefill_max_requests),
     }
+
+
+def harness_jsonable(x):
+    import harness
+
+    return harness.jsonable(x)
 
 
 def make_run_class():
@@ -167,7 +184,18 @@ def make_run_class():
                 spec = self.requests.get(getattr(req, "rid", None))
                 if spec is not None:
                     req.sampling_params.ignore_eos = spec.get("ignore_eos", True)
+                    req.priority = spec.get("priority")
+                    req.routing_key = spec.get("routing_key")
             return reqs
+
+        def record_output(self, obj):
+            # An AbortReq names one request (rid, not rids) and ends it outside the output stream.
+            rid = getattr(obj, "rid", None)
+            if type(obj).__name__ == "AbortReq" and rid is not None and getattr(obj, "finished_reason", None):
+                self.finished[rid] = {"step": self.step, "reason": harness_jsonable(obj.finished_reason)}
+                self.steps[-1]["outputs"].append({"type": "AbortReq", "rids": [rid], "finished": [rid]})
+                return
+            super().record_output(obj)
 
         def record_forward(self, rec):
             batch = frame_local("run_batch", "batch")

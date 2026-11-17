@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 
 	"github.com/inference-sim/blis-sglang/core/cache"
 )
@@ -24,6 +25,8 @@ const (
 	HRRN                 Policy = "hrrn"
 	ShortestPrefillFirst Policy = "shortest-prefill-first"
 	LOF                  Policy = "lof"
+	Random               Policy = "random"
+	RoutingKey           Policy = "routing-key"
 )
 
 // waitingQueuePrefixMatchMax bounds the waiting queue lpm and hrrn match (:127).
@@ -44,9 +47,9 @@ func validatePolicy(name string, treeDisabled bool) (Policy, error) {
 			return "", fmt.Errorf("sched: SGLang refuses shortest-prefill-first without prefix caching (schedule_policy.py:332-336@297e54fd)")
 		}
 		return ShortestPrefillFirst, nil
-	case FCFS, LOF:
+	case FCFS, LOF, Random, RoutingKey:
 		return Policy(name), nil
-	case "dfs-weight", "random", "routing-key":
+	case "dfs-weight":
 		return "", fmt.Errorf("sched: the %s schedule policy is not modelled (%s)", name, Refusal)
 	}
 	return "", fmt.Errorf("sched: unknown schedule_policy %q", name)
@@ -77,8 +80,9 @@ func (t *simTree) match(ids []int64) int {
 func (t *simTree) insert(ids []int64) { t.keys = append(t.keys, ids) }
 
 // calcPriority is SchedulePolicy.calc_priority (:213-280): it matches the queue against the
-// tree and sorts it in place (a stable sort, as Python's).
-func (s *Scheduler) calcPriority(queue []*Req) {
+// tree and sorts it in place (a stable sort, as Python's). running is the running batch, which the
+// routing-key policy counts keys in.
+func (s *Scheduler) calcPriority(queue []*Req, running *Batch) {
 	policy := s.policy
 	if policy == LPM || policy == HRRN {
 		if len(queue) > waitingQueuePrefixMatchMax {
@@ -92,7 +96,12 @@ func (s *Scheduler) calcPriority(queue []*Req) {
 		}
 	}
 	switch {
-	case policy == FCFS:
+	case s.policy == FCFS:
+		// The test is on the configured policy, not the active one: a queue too large for lpm runs
+		// as fcfs without the priority sort.
+		if s.cfg.EnablePriorityScheduling {
+			s.sortByPriorityAndFCFS(queue)
+		}
 	case policy.cacheAware():
 		deprioritized := s.computePrefixMatches(queue)
 		switch policy {
@@ -124,8 +133,132 @@ func (s *Scheduler) calcPriority(queue []*Req) {
 			})
 		}
 	case policy == LOF:
-		sort.SliceStable(queue, func(i, j int) bool { return queue[i].MaxNewTokens > queue[j].MaxNewTokens })
+		sort.SliceStable(queue, func(i, j int) bool {
+			a, b := queue[i], queue[j]
+			if s.cfg.EnablePriorityScheduling && a.Priority != b.Priority {
+				return s.priorityBefore(a.Priority, b.Priority)
+			}
+			return a.MaxNewTokens > b.MaxNewTokens
+		})
+	case policy == Random:
+		s.shuffleQueue(queue)
+	case policy == RoutingKey:
+		if running != nil {
+			sortByRoutingKey(queue, running)
+		}
 	}
+	s.touchWaitingPrefixes(policy, queue)
+}
+
+// waitingPrefixRefreshInterval is WAITING_PREFIX_REFRESH_INTERVAL (:130-132).
+const waitingPrefixRefreshInterval = 32
+
+// touchWaitingPrefixes is _touch_waiting_prefixes (:282-306): a policy that does not match the
+// queue keeps the waiting requests' prefixes from being evicted first, by touching them in the
+// tree on every 32nd pass, the head of the queue last so least-recently-used eviction goes in
+// reverse admission order. SGLANG_ENABLE_WAITING_PREFIX_REFRESH is on by default and the oracle
+// leaves it so.
+func (s *Scheduler) touchWaitingPrefixes(policy Policy, queue []*Req) {
+	if policy.cacheAware() || len(queue) == 0 || !strings.EqualFold(s.cfg.radixEvictionPolicy(), "lru") ||
+		s.tree.SupportsFastMatchPrefix() || !s.tree.SupportsPrefixSharing() {
+		return
+	}
+	refresh := s.waitingPrefixRefreshCalls%waitingPrefixRefreshInterval == 0
+	s.waitingPrefixRefreshCalls++
+	if !refresh {
+		return
+	}
+	head := queue[:min(len(queue), waitingQueuePrefixMatchMax)]
+	for i := len(head) - 1; i >= 0; i-- {
+		r := head[i]
+		s.tree.TouchPrefix(cache.Key{Tokens: r.allIDs(), ExtraKey: r.C.ExtraKey, CacheSalt: r.C.CacheSalt})
+	}
+}
+
+// prioritySign is priority_sign (:204): 1 when low values go first, else -1.
+func (s *Scheduler) prioritySign() int {
+	if s.cfg.ScheduleLowPriorityValuesFirst {
+		return 1
+	}
+	return -1
+}
+
+// priorityBefore says whether priority a sorts before b, that is whether a*priority_sign < b*priority_sign,
+// without the overflow the sentinel priorities (the extremes of a 64-bit int) would cause.
+func (s *Scheduler) priorityBefore(a, b int) bool {
+	if s.prioritySign() > 0 {
+		return a < b
+	}
+	return a > b
+}
+
+// sortByPriorityAndFCFS is _sort_by_priority_and_fcfs (:538-547): priority, then arrival.
+func (s *Scheduler) sortByPriorityAndFCFS(queue []*Req) {
+	sort.SliceStable(queue, func(i, j int) bool {
+		a, b := queue[i], queue[j]
+		if a.Priority != b.Priority {
+			return s.priorityBefore(a.Priority, b.Priority)
+		}
+		return a.WaitQueueEntryStep < b.WaitQueueEntryStep
+	})
+}
+
+// shuffleQueue is _sort_randomly (:534-536), the order drawn from the scheduler's named stream
+// unless a Shuffle function supplies it.
+func (s *Scheduler) shuffleQueue(queue []*Req) {
+	if s.Shuffle == nil {
+		s.stream.Shuffle(len(queue), func(i, j int) { queue[i], queue[j] = queue[j], queue[i] })
+		return
+	}
+	rids := make([]string, len(queue))
+	byRID := make(map[string]*Req, len(queue))
+	for i, r := range queue {
+		rids[i] = r.RID()
+		byRID[r.RID()] = r
+	}
+	order := s.Shuffle(rids)
+	if len(order) != len(queue) {
+		panic(fmt.Sprintf("sched: Shuffle returned %d requests for a queue of %d", len(order), len(queue)))
+	}
+	seen := map[string]bool{}
+	for i, rid := range order {
+		r, ok := byRID[rid]
+		if !ok || seen[rid] {
+			panic(fmt.Sprintf("sched: Shuffle returned %q, which is not a distinct member of the queue", rid))
+		}
+		seen[rid] = true
+		queue[i] = r
+	}
+}
+
+// sortByRoutingKey is _sort_by_routing_key (:549-583): requests whose routing key a running request
+// holds go first, the most frequent key first and keys alphabetically among equals; the rest follow
+// in key order. With no keyed request running the queue is left as it is.
+func sortByRoutingKey(queue []*Req, running *Batch) {
+	counts := map[string]int{}
+	for _, r := range running.Reqs {
+		if r.RoutingKey != "" {
+			counts[r.RoutingKey]++
+		}
+	}
+	if len(counts) == 0 {
+		return
+	}
+	sort.SliceStable(queue, func(i, j int) bool {
+		a, b := queue[i], queue[j]
+		ca, ina := counts[a.RoutingKey]
+		cb, inb := counts[b.RoutingKey]
+		ina, inb = ina && a.RoutingKey != "", inb && b.RoutingKey != ""
+		switch {
+		case ina != inb:
+			return ina
+		case ina:
+			if ca != cb {
+				return ca > cb
+			}
+		}
+		return a.RoutingKey < b.RoutingKey
+	})
 }
 
 func (r *Req) allIDs() []int64 {

@@ -3,7 +3,6 @@
 package sched
 
 import (
-	"errors"
 	"strings"
 	"testing"
 )
@@ -25,14 +24,11 @@ func TestUnmodelledSettingsAreRefusedByName(t *testing.T) {
 		edit func(*Config)
 		want string
 	}{
-		{"priority", func(c *Config) { c.EnablePriorityScheduling = true }, "priority scheduling"},
 		{"overlap", func(c *Config) { c.EnableOverlap = true }, "overlap"},
 		{"disagg", func(c *Config) { c.DisaggregationMode = "prefill" }, "disaggregation"},
 		{"interval", func(c *Config) { c.PrefillDecodeInterval = 4 }, "prefill-decode interval"},
 		{"pp", func(c *Config) { c.PPSize = 2 }, "pipeline parallelism"},
-		{"random", func(c *Config) { c.Policy = "random" }, "random"},
 		{"dfs", func(c *Config) { c.Policy = "dfs-weight" }, "dfs-weight"},
-		{"routing", func(c *Config) { c.Policy = "routing-key" }, "routing-key"},
 		{"unknown", func(c *Config) { c.Policy = "nope" }, "unknown schedule_policy"},
 		{"tree", func(c *Config) { c.TreeCache = "HiRadixCache" }, "HiRadixCache"},
 		{"allocator", func(c *Config) { c.Allocator = "SWATokenToKVPoolAllocator" }, "SWATokenToKVPoolAllocator"},
@@ -50,15 +46,32 @@ func TestUnmodelledSettingsAreRefusedByName(t *testing.T) {
 	}
 }
 
-func TestInputSGLangAbortsIsRefusedOnArrival(t *testing.T) {
+// A prompt SGLang aborts at ingest is not refused: it runs as the single token SGLang shrinks it to
+// and finishes with an abort, and the pool is whole afterwards.
+func TestInputTooLongIsAbortedNotRefused(t *testing.T) {
 	cfg := baseConfig(t)
 	s, err := build(cfg, 13)
 	if err != nil {
 		t.Fatal(err)
 	}
+	before := s.alloc.AvailableSize()
 	long := make([]int64, cfg.MaxReqInputLen)
-	_, err = s.Step([]Arrival{{RID: "x", Prompt: long, MaxNewTokens: 1}})
-	if !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), Refusal) {
-		t.Fatalf("got %v, want a refusal citing %s", err, Refusal)
+	var finished []string
+	for i := 0; i < 5; i++ {
+		var arr []Arrival
+		if i == 0 {
+			arr = []Arrival{{RID: "x", Prompt: long, MaxNewTokens: 4, IgnoreEOS: true}}
+		}
+		rec, err := s.Step(arr)
+		if err != nil {
+			t.Fatalf("step %d: %v", i, err)
+		}
+		finished = append(finished, rec.Finished...)
+	}
+	if len(finished) != 1 || finished[0] != "x" {
+		t.Fatalf("finished %v, want the aborted request alone", finished)
+	}
+	if got := s.alloc.AvailableSize() + s.tree.EvictableSize(); got != before {
+		t.Fatalf("pool holds %d tokens after the abort, had %d", got, before)
 	}
 }

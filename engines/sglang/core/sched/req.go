@@ -24,6 +24,11 @@ type Req struct {
 	// MaxNewTokens is sampling_params.max_new_tokens after init_req_max_new_tokens clipped it.
 	MaxNewTokens int
 	IgnoreEOS    bool
+	// Priority and RoutingKey are the request's own (schedule_batch.py:1033@297e54fd). Priority is
+	// meaningful only once _set_or_validate_priority has run; HasPriority says the client set it.
+	Priority    int
+	HasPriority bool
+	RoutingKey  string
 
 	// ExtendEnd is the position the request's current extend stops at (extend_end).
 	ExtendEnd int
@@ -141,6 +146,9 @@ type Arrival struct {
 	Prompt       []int64
 	MaxNewTokens int
 	IgnoreEOS    bool
+	// Priority is nil when the client sent none. RoutingKey is empty when it sent none.
+	Priority   *int
+	RoutingKey string
 }
 
 func (a Arrival) String() string { return fmt.Sprintf("%s(%d tokens)", a.RID, len(a.Prompt)) }
