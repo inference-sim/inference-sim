@@ -140,6 +140,20 @@ def part_scope(chip: str) -> str:
     return f"{{hardware: [{chip}]}}"
 
 FLASHMLA_TABLE = "dsv4_hca_attn_module_perf.parquet"
+# The FlashMLA sparse decode table is a kernel measurement: the flash_mla_with_kvcache call
+# alone, isolated from the attention module. AISimulate retired that sidecar op at e8cbe2dc
+# ("the retired DSV4 hca_attn / csa_attn sidecar ops are removed end to end") and deleted the
+# table. Its successor, dsv4_hca_generation_module_perf, times the whole DeepseekV4Attention
+# forward (projections, compressor, indexer and the sparse call), so at 64 heads, batch 1 it
+# reads 68 us where the kernel read 10 us: a different measurement boundary (VAL-9), which
+# would charge the projections BLIS prices as separate GEMM nodes a second time. So the
+# kernel rows are read at the last AISimulate commit that carries them, KERNEL_DATA_SHA
+# (rederive.yml's AISIMULATE_DSV4_KERNEL_SHA), and every other table at the main pin.
+KERNEL_DATA_SHA = "2f0f4cd8606d580567b253d02f3d699fe36db865"
+KERNEL_TABLES = {FLASHMLA_TABLE}
+KERNEL_DATA = Path(os.environ.get(
+    "AISIMULATE_DSV4_KERNEL_DATA",
+    f"/tmp/aisim-{KERNEL_DATA_SHA[:8]}/python/aisimulate/src/aisimulate_core/systems/data"))
 FLASHMLA_LANE = "FLASHMLA_SPARSE_DSV4"
 FLASHMLA_FIT_MODEL = "sgl-project/DeepSeek-V4-Flash-FP8"
 INDEXER_TABLE = "dsv4_paged_mqa_logits_module_perf.parquet"
@@ -194,8 +208,16 @@ def catalog_facts(catalog: Path, chip: str) -> tuple[float, float]:
     return float(facts["BwPeakTBs"]) * 1e6, float(facts["TFlopsFP8"])
 
 
+def table_cite(sku: str, table: str) -> str:
+    """The source line's path for one table: the kernel tables name their own commit."""
+    at = f"@{KERNEL_DATA_SHA[:8]} " if table in KERNEL_TABLES else ""
+    return f"NVIDIA AISimulate {at}systems/data/{sku}/sparse_attention/{COLLECTION}/{table}"
+
+
 def read(data: Path, sku: str, table: str) -> dict:
-    path = data / sku / "sparse_attention" / COLLECTION / table
+    """One table of the pinned collection; a kernel table from KERNEL_DATA (see above)."""
+    root = KERNEL_DATA if table in KERNEL_TABLES else data
+    path = root / sku / "sparse_attention" / COLLECTION / table
     if not path.is_file():
         raise SystemExit(f"{path} is absent; the pinned collection is required")
     return pq.read_table(path).to_pydict()
@@ -458,7 +480,7 @@ def entries(chip: str, g: dict, fm: dict, ix: dict, peak: float, fp8_tflops: flo
     attn = [
         lines("attention_decode_rate_sparse_mla", f"{fm['rate']}.0", "bytes_per_us",
               "measured", True, MODEL_SCOPE,
-              [("model", f"{aisim}{FLASHMLA_TABLE} (NVIDIA {name}), {FLASHMLA_LANE}, "
+              [("model", f"{table_cite(sku, FLASHMLA_TABLE)} (NVIDIA {name}), {FLASHMLA_LANE}, "
                 f"{FLASHMLA_FIT_MODEL} (64 query heads, the h64 kernel), "
                 f"{fm['n']} decode points", "primary"),
                ("model", "vLLM v0.31.0 models/deepseek_v41/nvidia/flashmla.py "

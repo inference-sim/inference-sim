@@ -98,20 +98,20 @@ sources:
         identifiers and hashes only.
 
   - id: aisimulate
-    title: NVIDIA AISimulate operator sweeps (ai-dynamo/aisimulate, aisimulate_core/systems/data)
+    title: NVIDIA AISimulate operator sweeps (ai-dynamo/aisim, aisim_core/systems/data)
     revision:
       kind: git_commit
-      url: https://github.com/ai-dynamo/aisimulate/tree/2f0f4cd8606d580567b253d02f3d699fe36db865
-      ref: 2f0f4cd8606d580567b253d02f3d699fe36db865
+      url: https://github.com/ai-dynamo/aisim/tree/6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18
+      ref: 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18
     status: >-
       No unit list yet. The sweeps are reachable from CI (registry's rederive.yml checks them out
-      at this commit, 1,471 files and 115 MB under systems/data/), but the ingest tool for
-      AISimulate is not written; the registry's fitting scripts read the sweeps directly until it
-      is. The repository has since been renamed ai-dynamo/aisim, and its data moved to
-      python/aisim/src/aisim_core/systems/data. At its head 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18
-      six writers' --check fails, because they take the newest vLLM version a part has (now
-      0.30.0 and 0.31.0) and because a DeepSeek-V4.1 table they read was split in two, so moving
-      this pin is a refit of those families and waits for their fit lists.
+      at this commit, 2,353 files under python/aisim/src/aisim_core/systems/data/, the path since
+      the rename from ai-dynamo/aisimulate), but the ingest tool for AISimulate is not written; the
+      registry's fitting scripts read the sweeps directly until it is. Two families read another
+      commit: the h100/h200 vLLM 0.31.0 all-reduce at 7980e9500c00d9f85d7f296451d12768a743c70e, and
+      the DeepSeek-V4.1 FlashMLA sparse decode kernel table dsv4_hca_attn_module_perf at
+      2f0f4cd8606d580567b253d02f3d699fe36db865, the last commit that has it (retired at e8cbe2dc;
+      its successor times the whole attention module).
     # The end-to-end accuracy artifact kernel/scripts/extract_aisimulate_e2e.py reads, pinned to
     # one run (D3). The extractor refuses a summary.json whose SHA-256, run id, attempt, evaluated
     # commit or release tag differs from kernel/scripts/aisimulate_e2e.pin.json, which a test
@@ -139,8 +139,8 @@ sources:
     licence:
       spdx: Apache-2.0
       evidence:
-        - url: https://github.com/ai-dynamo/aisimulate/blob/2f0f4cd8606d580567b253d02f3d699fe36db865/LICENSE
-          sha256: 705c9170b57de145adccf1ec113a553ba08d7effab219aad84953c508f5ffe92
+        - url: https://github.com/ai-dynamo/aisim/blob/6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18/LICENSE
+          sha256: f6e57785dee0efcfffbb547e06f5fc8c4257ee1cbd16aa5afeb5df3ae6d1de02
           lines: "10-11"
           quote: >-
             Except for the third-party material identified in that notice file, this codebase is
@@ -155,9 +155,9 @@ sources:
           quote: "SemiAnalysis InferenceX"
       note: >-
         Lines 3-8 of the same file except one vendored config.json, which is MIT. At the
-        artifact's commit and at the renamed repository's head the LICENSE differs only in that
-        file's path (sha256 f6e57785dee0efcfffbb547e06f5fc8c4257ee1cbd16aa5afeb5df3ae6d1de02 at
-        6fdf6fb6). GitHub reports the repository's licence as NOASSERTION because of that
+        artifact's commit and at the earlier sweep pin 2f0f4cd8 the LICENSE differs only in that
+        file's path (sha256 705c9170b57de145adccf1ec113a553ba08d7effab219aad84953c508f5ffe92 at
+        2f0f4cd8). GitHub reports the repository's licence as NOASSERTION because of that
         preamble. The restriction is not AISimulate's own: the end-to-end artifact holds
         measured values from InferenceX, whose terms for results are unstated, through a
         dataset whose terms cannot be read, so the entry is not redistributable and its values
