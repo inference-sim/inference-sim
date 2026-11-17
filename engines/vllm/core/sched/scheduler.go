@@ -226,10 +226,9 @@ type Output struct {
 	// step schedules can use the drafts proposed after it, so the V2 model runner proposes none
 	// (K=0, vllm/v1/worker/gpu/model_runner.py:2117-2135@4ba787ec), on every DP rank only when
 	// all ranks allow it (vllm/v1/worker/gpu/dp_utils.py:75-88). It is set only for a drafter
-	// with its own forward pass (num_lookahead_tokens > 0) on the V2 runner. GAP: the step
-	// contract has no field for a step without a draft pass, and the DP agreement does not AND
-	// the flag across ranks yet, so the cost model still prices the draft pass
-	// (https://github.com/inference-sim/blis-vllm/issues/174).
+	// with its own forward pass (num_lookahead_tokens > 0) on the V2 runner. The engine states it
+	// on its batch (engine.Batch.SkipDrafts), a DPGroup ANDed across its ranks, and the cost model
+	// prices the step without the passes that propose.
 	SkipDrafts bool
 }
 
