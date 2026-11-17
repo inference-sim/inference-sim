@@ -379,6 +379,7 @@ MODELOPT_PER_NODE_ARCHS = frozenset({
     "MuseSparkForConditionalGeneration",
     "KimiK25ForConditionalGeneration",
     "MiniMaxM2ForCausalLM",
+    "Qwen3_5MoeForConditionalGeneration",
 })
 
 
@@ -472,6 +473,38 @@ MODELOPT_MODULES: dict[str, dict[str, Any]] = {
         "stacked": {".q_proj": ".qkv_proj", ".k_proj": ".qkv_proj",
                     ".v_proj": ".qkv_proj"},
     },
+    # Qwen3.5-MoE (vLLM v0.33.0 model_executor/models/qwen3_5.py): the text decoder sits under
+    # "language_model" and its layers under "language_model.model.layers" (the
+    # Qwen3VLForConditionalGeneration mapper renames "model.language_model." to
+    # "language_model.model." and "lm_head." to "language_model.lm_head.", qwen3_vl.py:1969-1974).
+    # A full-attention layer's projections are self_attn.qkv_proj and o_proj; a Gated DeltaNet
+    # layer's output projection is linear_attn.out_proj (its in_proj_qkvz and in_proj_ba are
+    # priced inside the RecurrentUpdate node, not as GEMMs). The routed experts are a FusedMoE at
+    # mlp.experts and the shared expert a Qwen2MoeMLP at mlp.shared_expert (qwen3_next.py), which
+    # vLLM fuses into the routed layer only under ROCm's AITER (resolve_layer_fused_shared_expert,
+    # layers/fused_moe/utils.py:55-89), so on NVIDIA parts the two keep their own widths. The MTP
+    # module is built under "mtp" (Qwen3_5MTP, qwen3_5_mtp.py:226-234; its layers at
+    # mtp.layers.{i}, :122).
+    "Qwen3_5MoeForConditionalGeneration": {
+        "layer": "language_model.model.layers.{i}.",
+        "draft_layer": "mtp.layers.{i}.",
+        "head": "language_model.lm_head",
+        "roles": {
+            "qkv_proj": "self_attn.qkv_proj",
+            "o_proj": "self_attn.o_proj",
+            "mixer_out": "linear_attn.out_proj",
+            "experts": "mlp.experts",
+        },
+        "shared": ("mlp.shared_expert.gate_up_proj", "mlp.shared_expert.down_proj"),
+        # Linears a kind runs that no GEMM node prices: the DeltaNet input projections ride in the
+        # RecurrentUpdate node at the base width, so a checkpoint that quantizes either is refused
+        # rather than priced at a width it does not store (qwen3_next.py in_proj_qkvz, in_proj_ba).
+        "unpriced": {"gdn_moe": ("linear_attn.in_proj_qkvz", "linear_attn.in_proj_ba")},
+        "prefix": {"model.language_model.": "language_model.model.",
+                   "lm_head.": "language_model.lm_head.", "model.visual.": "visual."},
+        "stacked": {".q_proj": ".qkv_proj", ".k_proj": ".qkv_proj", ".v_proj": ".qkv_proj",
+                    ".gate_proj": ".gate_up_proj", ".up_proj": ".gate_up_proj"},
+    },
 }
 
 
@@ -562,23 +595,57 @@ def modelopt_placed_width(raw: dict[str, Any], model: str, arch: str) -> tuple[s
 
 
 def modelopt_place_widths(kinds: list[dict[str, Any]], stack: dict[str, Any],
-                          raw: dict[str, Any], model: str) -> list[dict[str, Any]]:
+                          raw: dict[str, Any], model: str,
+                          draft: tuple[str, int] | None = None) -> list[dict[str, Any]]:
     """Give each weight node of a ModelOpt checkpoint the width vLLM stores it at.
 
     The global width stays the base dtype and a quantized node carries the quantized one,
     as the node-by-node placement of Muse Spark does. Every layer a kind covers is asked,
     and a role the list quantizes on some of those layers and not on others is refused:
     one node cannot price both (a wildcard that excludes a role on some layers only needs
-    a layer kind per outcome, which no committed checkpoint states)."""
+    a layer kind per outcome, which no committed checkpoint states).
+
+    An experts node that also prices shared experts is asked for both halves. Where the list
+    quantizes the routed experts and leaves the shared ones alone (Qwen3.5-NVFP4 names
+    `*.mlp.shared_expert.*`), the shared half becomes a node of its own at its own width
+    (split_shared_experts), as a checkpoint that states the two widths does.
+
+    `draft`, where given, is (kind id, module count): a draft kind whose layers the engine
+    builds under the architecture's draft_layer prefix, asked at those modules' names."""
     arch = architecture_of(raw, model)
     spec = MODELOPT_MODULES[arch]
     width, quantized = modelopt_placed_width(raw, model, arch)
     if quantized(spec["head"]):
         raise DeriveError(f"{model}: the ModelOpt list leaves {spec['head']} quantized; "
                           f"the head is priced at the base width")
-    layers_of: dict[str, list[int]] = {}
+    layers_of: dict[str, list[tuple[str, int]]] = {}
     for i, kid in enumerate(expand_stack(stack)):
-        layers_of.setdefault(kid, []).append(i)
+        layers_of.setdefault(kid, []).append((spec["layer"], i))
+    if draft:
+        kid, count = draft
+        if "draft_layer" not in spec:
+            raise DeriveError(f"{model}: {arch} has no recorded vLLM prefix for its draft layers")
+        layers_of[kid] = [(spec["draft_layer"], i) for i in range(count)]
+    base = base_dtype(raw, raw, model)
+
+    def uniform(kind, role, paths, idx):
+        answers = {p: {i: quantized(fmt.format(i=i) + p) for fmt, i in idx} for p in paths}
+        flat = {a for per in answers.values() for a in per.values()}
+        if len(flat) != 1:
+            where = {p: sorted(i for i, a in per.items() if a) for p, per in answers.items()}
+            raise DeriveError(
+                f"{model}: layer kind {kind['id']!r} runs {role!r} quantized on some "
+                f"of its layers and not others (quantized layers by module: {where}); "
+                f"one node cannot price both")
+        return flat.pop()
+
+    for kid, paths in spec.get("unpriced", {}).items():
+        for fmt, i in layers_of.get(kid, []):
+            for path in paths:
+                if quantized(fmt.format(i=i) + path):
+                    raise DeriveError(f"{model}: the ModelOpt list quantizes {fmt.format(i=i) + path}, "
+                                      f"which no node of {kid!r} prices at its own width; it is "
+                                      f"priced at the base width inside the recurrent update")
     out = []
     for kind in kinds:
         idx = layers_of.get(kind["id"], [])
@@ -591,22 +658,14 @@ def modelopt_place_widths(kinds: list[dict[str, Any]], stack: dict[str, Any],
             if role not in spec["roles"]:
                 raise DeriveError(f"{model}: {arch} has no recorded vLLM module for the "
                                   f"{role!r} node, so the ModelOpt list cannot place it")
-            paths = [spec["roles"][role]]
-            if role == "experts" and node.get("shared_experts"):
-                paths += list(spec["shared"])
-            answers = {}
-            for path in paths:
-                answers[path] = {i: quantized(spec["layer"].format(i=i) + path) for i in idx}
-            flat = {a for per in answers.values() for a in per.values()}
-            if len(flat) != 1:
-                where = {p: sorted(i for i, a in per.items() if a)
-                         for p, per in answers.items()}
-                raise DeriveError(
-                    f"{model}: layer kind {kind['id']!r} runs {role!r} quantized on some "
-                    f"of its layers and not others (quantized layers by module: {where}); "
-                    f"one node cannot price both")
-            if flat == {True}:
+            routed = uniform(kind, role, [spec["roles"][role]], idx)
+            if routed:
                 node = dict(node, weight_dtype=width)
+            if role == "experts" and node.get("shared_experts"):
+                shared = uniform(kind, "shared_experts", list(spec["shared"]), idx)
+                if shared != routed:
+                    nodes += split_shared_experts(node, width if shared else base)
+                    continue
             nodes.append(node)
         out.append(dict(kind, nodes=nodes))
     return out
@@ -1207,22 +1266,8 @@ def moe_block(cfg: dict[str, Any], model: str, hidden: int, *, routed_width: str
     shared_width = shared_width or classes.get("shared_experts")
     if shared_width and shared_width != node.get("weight_dtype") and node.get(
             "shared_experts"):
-        inner = int(node.get("shared_intermediate_size") or node["n"])
-        shared = {
-            "op": "GroupedGEMM",
-            "shared": True,
-            "role": "shared_experts",
-            "n": inner,
-            "k": node["k"],
-            "experts": int(node["shared_experts"]),
-            "top_k": int(node["shared_experts"]),
-            "weight_dtype": shared_width,
-        }
-        if node.get("latent_size"):
-            shared["latent_size"] = node["latent_size"]
-        node.pop("shared_experts", None)
-        node.pop("shared_intermediate_size", None)
-        nodes.append(shared)
+        nodes = split_shared_experts(node, shared_width)
+        node = nodes[0]
 
     latent = node.get("latent_size")
     if not latent:
@@ -1232,6 +1277,21 @@ def moe_block(cfg: dict[str, Any], model: str, hidden: int, *, routed_width: str
         *nodes,
         gemm("routed_expert_up_proj", hidden, int(latent)),
     ]
+
+
+def split_shared_experts(node: dict[str, Any], shared_width: str) -> list[dict[str, Any]]:
+    """An experts node whose shared experts are stored at another width, as two nodes: the
+    routed experts, which stop claiming the shared ones, and the shared experts at their
+    own width (shared_experts and shared_intermediate_size describe work priced at the
+    node's own weight_dtype, so one node cannot price both widths)."""
+    routed = dict(node)
+    inner = int(routed.pop("shared_intermediate_size", None) or node["n"])
+    count = int(routed.pop("shared_experts"))
+    shared = {"op": "GroupedGEMM", "shared": True, "role": "shared_experts", "n": inner,
+              "k": node["k"], "experts": count, "top_k": count, "weight_dtype": shared_width}
+    if node.get("latent_size"):
+        shared["latent_size"] = node["latent_size"]
+    return [routed, shared]
 
 
 # Emit conditions are a closed set naming WHEN a conditional node is part of the graph.
@@ -4665,7 +4725,20 @@ def handler_qwen3_5_moe(cfg, raw, model):
         {"id": "attn_moe", "nodes": full, "edges": chain(full)},
     ]
     sequence = ["attn_moe" if t == "full_attention" else "gdn_moe" for t in types]
-    return kinds, compress(sequence)
+    stack = compress(sequence)
+    quant = raw.get("quantization_config") or {}
+    if str(quant.get("quant_method", "")).lower() != "modelopt":
+        return kinds, stack
+    # A ModelOpt checkpoint's widths, node by node. Its MTP module is a full-attention MoE
+    # layer like attn_moe, but the list can leave it at another width than the decoder's
+    # (Qwen3.5-NVFP4 excludes mtp.layers.0* whole), so it is declared as the draft kind and
+    # placed at its own module names rather than mirrored from attn_moe.
+    mtp = int(pick(cfg, "num_spec_tokens") or 0)
+    if mtp:
+        kinds.append({"id": DRAFT_KIND_ID, "nodes": [dict(n) for n in full], "edges": chain(full)})
+    kinds = modelopt_place_widths(kinds, stack, raw, model,
+                                  draft=(DRAFT_KIND_ID, mtp) if mtp else None)
+    return kinds, stack
 
 
 def handler_nemotron_h(cfg, raw, model):
