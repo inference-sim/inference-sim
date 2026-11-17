@@ -90,7 +90,7 @@ func TestEncodeTimeRisesWithTheImages(t *testing.T) {
 	small, _ := k.EncodeTime(EncodeBatch{Images: []EncodeImage{img(224, 224)}})
 	large, _ := k.EncodeTime(EncodeBatch{Images: []EncodeImage{img(896, 896)}})
 	two, _ := k.EncodeTime(EncodeBatch{Images: []EncodeImage{img(224, 224), img(224, 224)}})
-	if !(small.Total > 0 && large.Total > small.Total) {
+	if small.Total <= 0 || large.Total <= small.Total {
 		t.Errorf("a larger image should take longer: %v vs %v", large.Total, small.Total)
 	}
 	if two.Total <= small.Total {
@@ -117,7 +117,7 @@ func TestEncodeTimePerImageSumsToTheBatch(t *testing.T) {
 	if len(e.PerImage) != 3 || sum != int64(e.Total) {
 		t.Errorf("per-image %v should sum to the total %v", e.PerImage, e.Total)
 	}
-	if !(e.PerImage[1] > e.PerImage[2] && e.PerImage[2] > e.PerImage[0]) {
+	if e.PerImage[1] <= e.PerImage[2] || e.PerImage[2] <= e.PerImage[0] {
 		t.Errorf("a bigger image should take a bigger share: %v", e.PerImage)
 	}
 }
@@ -134,7 +134,7 @@ func TestTowerAttentionDoesNotCrossImages(t *testing.T) {
 	k := build(t, towerCase(t, 4, attnOnly, sharded))
 	one, _ := k.EncodeTime(EncodeBatch{Images: []EncodeImage{img(896, 896)}})
 	two, _ := k.EncodeTime(EncodeBatch{Images: []EncodeImage{img(896, 448), img(896, 448)}})
-	if !(two.Total < one.Total) {
+	if two.Total >= one.Total {
 		t.Errorf("two half-size images (%v) should attend less than one whole (%v)", two.Total, one.Total)
 	}
 }
@@ -230,7 +230,7 @@ func TestBatchSplitSpreadsImagesOverRanks(t *testing.T) {
 	if split.Total != oneSplit.Total {
 		t.Errorf("eight images over eight ranks should cost one image's time: %v vs %v", split.Total, oneSplit.Total)
 	}
-	if !(shard.Total > 0 && split.Total > 0) {
+	if shard.Total <= 0 || split.Total <= 0 {
 		t.Errorf("both modes should price: %v %v", shard.Total, split.Total)
 	}
 }
