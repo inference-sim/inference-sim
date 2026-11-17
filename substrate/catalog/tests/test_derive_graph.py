@@ -1576,6 +1576,9 @@ EXPECTED_IDENTICAL = {
         "scorers and their projections per forward pass — so grouping it here would "
         "assert away the very distinction the indexer-frequency derivation exists to "
         "capture",
+    frozenset({"glm-5", "glm-5.1-fp8"}):
+        "one checkpoint geometry: GLM-5.1-FP8 is a post-trained GLM-5-FP8 whose config.json "
+        "differs from GLM-5-FP8's only in transformers_version",
     frozenset({"deepseek-v3", "deepseek-r1-0528"}):
         "one checkpoint geometry: DeepSeek-R1-0528 is a post-trained DeepSeek-V3 whose "
         "config.json differs from V3's only in transformers_version",
