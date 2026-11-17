@@ -87,7 +87,9 @@ func (cs *ClusterSimulator) checkScaleToZero() {
 				n++
 			}
 		}
-		logrus.Infof("[scale-to-zero] model %q idle for more than %gμs: draining %d replica(s)", model, cs.config.ScaleToZeroIdleUs, n)
+		if n > 0 {
+			logrus.Infof("[scale-to-zero] model %q idle for more than %gμs: draining %d replica(s)", model, cs.config.ScaleToZeroIdleUs, n)
+		}
 	}
 }
 
