@@ -39,7 +39,8 @@ func loadGoldens(t *testing.T) map[string]Trace {
 func TestEachCacheInterfaceHasRecordedAndDirectTraces(t *testing.T) {
 	have := map[string]bool{}
 	for name, tr := range loadGoldens(t) {
-		kind := strings.SplitN(name, "/", 2)[0]
+		kind := tr.Kind
+		_ = name
 		for _, c := range tr.Calls {
 			have[kind+" "+string(c.Iface)] = true
 		}
