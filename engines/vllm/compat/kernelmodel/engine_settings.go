@@ -228,6 +228,7 @@ func kernelResolvesCacheDType(architecture string) bool {
 // pinned catalog's config.json and that no other catalog model is of the class.
 var glmMoeDsaConfigs = map[string]string{
 	"5ea2d79d3a77fe90836c18893de00996d096cd01516b52b88c6fc18993cb4df8": "glm-5",
+	"69b4e81fafca7389fa1e102046ea13aa1c6ec9ed64a9a00f2056fe402034c8ec": "glm-5.1-fp8",
 	"185f93ee6d12548e16a847e279dc0c3c90b1524c970b0866b42fb545747d859a": "glm-5.2",
 	"22e49334abf8562fecf70ca3292ba3f5b33f5602fb2bf10b52dd64a66cfe65ff": "glm-5.2-fp8",
 	"3ac72612095574542f7fff847ada8e59d9199dd8af44bdf625d7e02615572e69": "glm-5.3",
