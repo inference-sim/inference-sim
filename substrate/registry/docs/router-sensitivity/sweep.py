@@ -69,6 +69,11 @@ def layout_scenario(lay, shape, pol):
         sub.update({f"@{key}TP@": x["tp"], f"@{key}PP@": x["pp"], f"@{key}DP@": x["dp"],
                     f"@{key}EP@": "true" if x["expert_parallel"] else "false"})
     s = open(os.path.join(HERE, "scenario-layout.yaml")).read()
+    eng = lay["engine_by_shape"][shape]
+    for role, key in (("prefill", "@PENG@"), ("decode", "@DENG@")):
+        st = dict(eng[role]["set"])
+        st.setdefault("max_model_len", 32768)  # a window the recipe does not state: the model graph has none, so a named substitution
+        s = s.replace(key, "\n".join(f"      {k}: {v}" for k, v in st.items()))
     for k, v in sub.items():
         s = s.replace(k, str(v))
     return s

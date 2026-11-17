@@ -1,7 +1,9 @@
 # The scenario the router sensitivity sweep runs for one layout (sweep.py --layouts fills the @ fields from the
 # layout). A prefill pool and a decode pool of the layout's instances, joined by NIXL over the layout's fabric. The
-# router is the llm-d profile pair in router/<name>.yaml. Engine settings the layout does not state are the fixed
-# block below, the same for every layout and not read from any run's launch command: a named substitution.
+# router is the llm-d profile pair in router/<name>.yaml. max_num_seqs, max_num_batched_tokens,
+# max_model_len and gpu_memory_utilization are the values the frozen recipes of the layout and shape state; one a recipe
+# does not state is left out, so the engine's own default applies (listed per layout in layouts.json). The KV dtype is
+# fp8 as every recipe states it; the quantization, block size and cudagraph mode are fixed here (named substitutions).
 kind: Scenario
 name: @NAME@
 engine: {kind: vllm, version: "@ENGINE@"}
@@ -23,10 +25,7 @@ pools:
       quantization: @QUANT@
       kv_cache_dtype: fp8
       block_size: @BLOCK@
-      max_num_batched_tokens: 8192
-      max_num_seqs: 256
-      max_model_len: 32768
-      gpu_memory_utilization: 0.9
+@PENG@
       compilation_config: {cudagraph_mode: PIECEWISE}
   - role: decode
     nodes: @DNODES@
@@ -35,10 +34,7 @@ pools:
       quantization: @QUANT@
       kv_cache_dtype: fp8
       block_size: @BLOCK@
-      max_num_batched_tokens: 8192
-      max_num_seqs: 256
-      max_model_len: 32768
-      gpu_memory_utilization: 0.9
+@DENG@
       compilation_config: {cudagraph_mode: PIECEWISE}
 pd_transfer:
   connector: NixlConnector

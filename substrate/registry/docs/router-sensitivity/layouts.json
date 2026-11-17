@@ -28,6 +28,96 @@
     "1P3D",
     "2P3D"
    ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    },
+    "1P2D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    },
+    "1P3D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    },
+    "2P3D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    }
+   },
    "topologies": 4,
    "points": 14,
    "scored_points": 14
@@ -59,6 +149,96 @@
     "1P3D",
     "2P3D"
    ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    },
+    "1P2D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    },
+    "1P3D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    },
+    "2P3D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    }
+   },
    "topologies": 4,
    "points": 14,
    "scored_points": 14
@@ -88,6 +268,48 @@
     "1P1D",
     "1P2D"
    ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     }
+    },
+    "1P2D": {
+     "prefill": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     }
+    }
+   },
    "topologies": 2,
    "points": 10,
    "scored_points": 10
@@ -117,6 +339,48 @@
     "1P1D",
     "1P2D"
    ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     }
+    },
+    "1P2D": {
+     "prefill": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     }
+    }
+   },
    "topologies": 2,
    "points": 10,
    "scored_points": 10
@@ -146,6 +410,48 @@
     "1P1D",
     "2P1D"
    ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     }
+    },
+    "2P1D": {
+     "prefill": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     }
+    }
+   },
    "topologies": 2,
    "points": 9,
    "scored_points": 9
@@ -175,6 +481,48 @@
     "1P1D",
     "2P1D"
    ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     }
+    },
+    "2P1D": {
+     "prefill": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     }
+    }
+   },
    "topologies": 2,
    "points": 9,
    "scored_points": 9
@@ -205,6 +553,71 @@
     "2P1D",
     "3P1D"
    ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 8192,
+       "max_model_len": 9472,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_seqs": 512,
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9472,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": []
+     }
+    },
+    "2P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 8192,
+       "max_model_len": 9472,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_seqs": 512,
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9472,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": []
+     }
+    },
+    "3P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 8192,
+       "max_model_len": 9472,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_seqs": 512,
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9472,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": []
+     }
+    }
+   },
    "topologies": 3,
    "points": 8,
    "scored_points": 8
@@ -234,6 +647,52 @@
     "1P1D",
     "1P3D"
    ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    },
+    "1P3D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    }
+   },
    "topologies": 2,
    "points": 8,
    "scored_points": 8
@@ -263,6 +722,52 @@
     "1P1D",
     "1P3D"
    ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    },
+    "1P3D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    }
+   },
    "topologies": 2,
    "points": 7,
    "scored_points": 7
@@ -292,6 +797,52 @@
     "1P1D",
     "1P2D"
    ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    },
+    "1P2D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    }
+   },
    "topologies": 2,
    "points": 7,
    "scored_points": 7
@@ -321,6 +872,52 @@
     "1P1D",
     "1P2D"
    ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    },
+    "1P2D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    }
+   },
    "topologies": 2,
    "points": 6,
    "scored_points": 6
@@ -350,6 +947,52 @@
     "1P1D",
     "2P1D"
    ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9280
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 9280,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    },
+    "2P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9280
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 9280,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    }
+   },
    "topologies": 2,
    "points": 6,
    "scored_points": 6
@@ -379,6 +1022,52 @@
     "1P1D",
     "1P2D"
    ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    },
+    "1P2D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    }
+   },
    "topologies": 2,
    "points": 6,
    "scored_points": 6
@@ -408,6 +1097,52 @@
     "1P1D",
     "2P1D"
    ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9280
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 9280,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    },
+    "2P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9280
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 9280,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    }
+   },
    "topologies": 2,
    "points": 6,
    "scored_points": 6
@@ -436,6 +1171,28 @@
    "shapes": [
     "1P7D"
    ],
+   "engine_by_shape": {
+    "1P7D": {
+     "prefill": {
+      "set": {
+       "max_num_seqs": 1024,
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 3072,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": []
+     },
+     "decode": {
+      "set": {
+       "max_num_seqs": 1024,
+       "max_num_batched_tokens": 10240,
+       "max_model_len": 3072,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": []
+     }
+    }
+   },
    "topologies": 1,
    "points": 5,
    "scored_points": 5
@@ -464,6 +1221,30 @@
    "shapes": [
     "1P1D"
    ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9280
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 9280,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    }
+   },
    "topologies": 1,
    "points": 5,
    "scored_points": 5
@@ -492,6 +1273,30 @@
    "shapes": [
     "1P1D"
    ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9280
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 9280,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    }
+   },
    "topologies": 1,
    "points": 5,
    "scored_points": 5
@@ -520,6 +1325,29 @@
    "shapes": [
     "1P1D"
    ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 8192,
+       "max_model_len": 9472,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_seqs": 256,
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9472,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": []
+     }
+    }
+   },
    "topologies": 1,
    "points": 5,
    "scored_points": 5
@@ -549,6 +1377,52 @@
     "1P1D",
     "1P2D"
    ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    },
+    "1P2D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    }
+   },
    "topologies": 2,
    "points": 4,
    "scored_points": 4
@@ -577,6 +1451,30 @@
    "shapes": [
     "1P1D"
    ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9280
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 9280,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    }
+   },
    "topologies": 1,
    "points": 4,
    "scored_points": 4
@@ -605,6 +1503,30 @@
    "shapes": [
     "1P1D"
    ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9280
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 9280,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    }
+   },
    "topologies": 1,
    "points": 4,
    "scored_points": 4
@@ -633,6 +1555,30 @@
    "shapes": [
     "1P1D"
    ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9280
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 9280,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    }
+   },
    "topologies": 1,
    "points": 3,
    "scored_points": 3
@@ -661,6 +1607,28 @@
    "shapes": [
     "1P2D"
    ],
+   "engine_by_shape": {
+    "1P2D": {
+     "prefill": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     }
+    }
+   },
    "topologies": 1,
    "points": 3,
    "scored_points": 3
@@ -689,6 +1657,30 @@
    "shapes": [
     "1P1D"
    ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9280
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 9280,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    }
+   },
    "topologies": 1,
    "points": 3,
    "scored_points": 3
@@ -717,6 +1709,28 @@
    "shapes": [
     "1P2D"
    ],
+   "engine_by_shape": {
+    "1P2D": {
+     "prefill": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     }
+    }
+   },
    "topologies": 1,
    "points": 3,
    "scored_points": 3
@@ -745,6 +1759,30 @@
    "shapes": [
     "1P1D"
    ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 2048,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    }
+   },
    "topologies": 1,
    "points": 1,
    "scored_points": 1
@@ -773,6 +1811,30 @@
    "shapes": [
     "1P1D"
    ],
+   "engine_by_shape": {
+    "1P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9280
+      },
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_batched_tokens": 2048,
+       "max_model_len": 9280,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     }
+    }
+   },
    "topologies": 1,
    "points": 1,
    "scored_points": 1
@@ -801,6 +1863,28 @@
    "shapes": [
     "2P1D"
    ],
+   "engine_by_shape": {
+    "2P1D": {
+     "prefill": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     }
+    }
+   },
    "topologies": 1,
    "points": 1,
    "scored_points": 1
@@ -829,6 +1913,28 @@
    "shapes": [
     "3P1D"
    ],
+   "engine_by_shape": {
+    "3P1D": {
+     "prefill": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     }
+    }
+   },
    "topologies": 1,
    "points": 1,
    "scored_points": 1
@@ -857,6 +1963,28 @@
    "shapes": [
     "2P1D"
    ],
+   "engine_by_shape": {
+    "2P1D": {
+     "prefill": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     }
+    }
+   },
    "topologies": 1,
    "points": 1,
    "scored_points": 1
@@ -885,6 +2013,28 @@
    "shapes": [
     "3P1D"
    ],
+   "engine_by_shape": {
+    "3P1D": {
+     "prefill": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     },
+     "decode": {
+      "set": {},
+      "from_the_engine_default": [
+       "max_num_seqs",
+       "max_num_batched_tokens",
+       "max_model_len",
+       "gpu_memory_utilization"
+      ]
+     }
+    }
+   },
    "topologies": 1,
    "points": 1,
    "scored_points": 1
@@ -913,6 +2063,29 @@
    "shapes": [
     "4P1D"
    ],
+   "engine_by_shape": {
+    "4P1D": {
+     "prefill": {
+      "set": {
+       "max_num_batched_tokens": 8192,
+       "max_model_len": 9472,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": [
+       "max_num_seqs"
+      ]
+     },
+     "decode": {
+      "set": {
+       "max_num_seqs": 1024,
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 9472,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": []
+     }
+    }
+   },
    "topologies": 1,
    "points": 1,
    "scored_points": 1
@@ -942,6 +2115,28 @@
    "shapes": [
     "1P9D"
    ],
+   "engine_by_shape": {
+    "1P9D": {
+     "prefill": {
+      "set": {
+       "max_num_seqs": 256,
+       "max_num_batched_tokens": 16384,
+       "max_model_len": 16384,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": []
+     },
+     "decode": {
+      "set": {
+       "max_num_seqs": 512,
+       "max_num_batched_tokens": 512,
+       "max_model_len": 16384,
+       "gpu_memory_utilization": 0.9
+      },
+      "from_the_engine_default": []
+     }
+    }
+   },
    "topologies": 1,
    "points": 1,
    "scored_points": 0
