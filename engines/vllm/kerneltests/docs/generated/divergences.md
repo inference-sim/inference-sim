@@ -238,4 +238,23 @@ Under tensor parallelism each rank is charged the arithmetic of whole routed exp
     that are pure TP. The BYTES do divide by it (routedWeightBytes, below), so the
     two terms disagree about the same experts.
 
-*16 notes: 1 known divergence, 3 known over-charges, 12 coverage limits.*
+### MXFP4 expert padding on other backends
+
+*Coverage limit, in `(*Kernel).expertPadding` in [`kernel/step_terms.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/step_terms.go).*
+
+The kernel pads the MXFP4 expert weights and work to the shapes the Marlin and TRTLLM backends allocate (hidden up to a multiple of 256, each rank's intermediate up to 128). The CUTLASS and DeepGEMM backends round the hidden size to 128, and the FlashInfer EP megakernel and b12x do not pad; the kernel does not know which backend the engine picked, so a deployment on those backends is priced with slightly too much expert weight and work.
+
+??? quote "The note in the source"
+    MXFP4, on every part: vLLM v0.33.0 rounds the layer's hidden size up to a multiple of 256
+    and each rank's intermediate size up to a multiple of 128 before it creates the weights,
+    for the Marlin and TRTLLM backends that serve MXFP4 experts on Hopper and Blackwell
+    (mxfp4\_round\_up\_hidden\_size\_and\_intermediate\_size, vllm/model\_executor/layers/fused\_moe/
+    oracle/mxfp4.py:837-879@v0.33.0, called from Mxfp4MoEMethod.maybe\_roundup\_sizes,
+    quantization/mxfp4.py:184-197). The per-rank intermediate is the expert's width over the
+    ranks that split it, the whole width under expert parallelism. gpt-oss-120b's 2,880 hidden
+    pads to 3,072 and its 1,440 at TP2 to 1,536: 13.8% more expert weight and work a rank holds.
+    COVERAGE LIMIT: the CUTLASS and DeepGEMM MXFP4 backends round the hidden size to 128 rather
+    than 256, and the FlashInfer EP megakernel and b12x do not pad; this kernel does not know
+    which backend the engine picked, and prices the Marlin and TRTLLM rule.
+
+*17 notes: 1 known divergence, 3 known over-charges, 13 coverage limits.*
