@@ -7,7 +7,6 @@
      {
       "kv_connector": "OffloadingConnector",
       "kv_connector_extra_config": {
-       "blocks_per_chunk": 2,
        "cpu_bytes_to_use": 720896,
        "offload_prompt_only": false
       },
