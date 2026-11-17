@@ -30,6 +30,7 @@ var FormUnits = []FormUnit{
 	{`^cudagraph_capture_(floor_bytes_[a-z_]+|bytes_(none|full|piecewise|full_and_piecewise|full_decode_only))$`, vocab.UnitBytesPerRank, "graph-pool bytes on one rank"},
 	{`^engine_workspace_bytes$`, vocab.UnitBytesPerRank, "bytes on one rank"},
 	{`^nccl_communicator_bytes_`, vocab.UnitBytesPerRank, "bytes on one rank"},
+	{`^nontorch_in_budget_bytes_`, vocab.UnitBytesPerRank, "non-torch bytes one rank grows inside the KV budget"},
 	{`^fabric_bandwidth_efficiency$`, vocab.UnitDimensionless, "an efficiency, a fraction of the fabric's peak"},
 	{`^gemm_eps_max_`, vocab.UnitDimensionless, "an efficiency asymptote, a fraction of the peak"},
 	{`^gemm_(m|n|k)_half_`, vocab.UnitTokens, "the size at which half the asymptote is reached, in the dimension's elements"},
