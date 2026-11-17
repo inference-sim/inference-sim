@@ -328,10 +328,10 @@
   }
  ],
  "provenance": {
-  "blis_vllm_commit": "b692e40fd2bc6cf8d863ad3faf21684c943b3dc1",
+  "blis_vllm_commit": "2904a93495adb6efee1ddaefb980cbc1730211f9",
   "kind": "direct",
   "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
-  "mock_version": "gpu-mock/7+f4274aa648c4",
+  "mock_version": "gpu-mock/8+e1ab1ffd0154",
   "mocks": [
    "vllm.v1.outputs.ModelRunnerOutput",
    "tests.v1.core.utils.create_scheduler",
@@ -360,17 +360,20 @@
    "KV-transfer parameters on a request",
    "OffloadingConnector scheduler config",
    "OffloadingConnector worker (OffloadingWorkerMetadata transport)",
-   "finished_req_ids iteration order (per-process hash seed)"
+   "finished_req_ids iteration order (per-process hash seed)",
+   "nixl._api.nixl_agent (OBJ backend)"
   ],
   "model": "facebook/opt-125m",
   "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
   "oracle_inputs": {
    "oracle/drive_kv_interfaces.py": "edb41c5303e50d8b3827ba87c3314e696d1984cf79a2830e3327cc0844a6a022",
+   "oracle/fake_nixl/nixl/__init__.py": "ca247dfae8186f95a1755b77cd056200ab911ca15256299f4bff38ed366cf85d",
+   "oracle/fake_nixl/nixl/_api.py": "8f2e2fd752cb705ab69550dc8de68ee5c5e9f60d1697914d2cef7c0cd51e212a",
    "oracle/kv_interfaces.py": "4bcde8955836b6ef732f8c901fa94c89a5b7592dcf1db8f6322e3be451c81c10",
-   "oracle/mocks.json": "afd576782c5322ce4c6aa4cdb72fb513e3e78cd8ea54dd6043af0cdf5680a658",
+   "oracle/mocks.json": "40d28be778dd8f35bbb978c4f2761f92f7c370998e773ae08400409bd15d723c",
    "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
    "oracle/run_scheduler.py": "1239a1d64f057fcb543789762859ea33211627e3f2b66b46087ed9ee936222f6",
-   "oracle/run_tiering.py": "a8bef0f2810057dc162dd77f305906f6164660af6c44b550646327b307917bd0",
+   "oracle/run_tiering.py": "c76670c75dd755249f37267aaee269355317b72664fbee564d5cb890365184d1",
    "oracle/scenarios/tiering/fs-load-fails-part-way.json": "8dc074696fa2f1beb570ae24ac28a0a4e5ed3c663e4c8ed6c188553e3861e750"
   },
   "platform": "linux-x86_64",

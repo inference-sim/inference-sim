@@ -17,10 +17,10 @@
   }
  },
  "provenance": {
-  "blis_vllm_commit": "74a07eccbdafffe39f57b9738e49bee225f4bece",
+  "blis_vllm_commit": "2904a93495adb6efee1ddaefb980cbc1730211f9",
   "cpu_chunks": 16,
   "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
-  "mock_version": "gpu-mock/7+f4274aa648c4",
+  "mock_version": "gpu-mock/8+e1ab1ffd0154",
   "mocks": [
    "vllm.v1.outputs.ModelRunnerOutput",
    "tests.v1.core.utils.create_scheduler",
@@ -49,15 +49,16 @@
    "KV-transfer parameters on a request",
    "OffloadingConnector scheduler config",
    "OffloadingConnector worker (OffloadingWorkerMetadata transport)",
-   "finished_req_ids iteration order (per-process hash seed)"
+   "finished_req_ids iteration order (per-process hash seed)",
+   "nixl._api.nixl_agent (OBJ backend)"
   ],
   "model": "facebook/opt-125m",
   "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
   "oracle_inputs": {
-   "oracle/mocks.json": "afd576782c5322ce4c6aa4cdb72fb513e3e78cd8ea54dd6043af0cdf5680a658",
+   "oracle/mocks.json": "40d28be778dd8f35bbb978c4f2761f92f7c370998e773ae08400409bd15d723c",
    "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
    "oracle/run_enginecore.py": "bb562e23d0ae394ca5d3a099a6083bec69ee7aff5915f35995277a07609a7c0f",
-   "oracle/run_offloading.py": "2d4427698e2b4ec2490409923517326179fb940c013e772de9acb396adf0809a",
+   "oracle/run_offloading.py": "5d9ce700b38d454a921f0ef248678157a2f8d2e80a5d7645d50c3fb04e74dcf4",
    "oracle/run_scheduler.py": "1239a1d64f057fcb543789762859ea33211627e3f2b66b46087ed9ee936222f6",
    "oracle/scenarios/offloading/offloading-preempt-flush.json": "d13254550cec8601e7557144fc0d803847652a2a7b30e1604641fb00c7a6f4ce"
   },

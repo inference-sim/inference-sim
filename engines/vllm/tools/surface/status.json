@@ -1289,8 +1289,13 @@
    "why": "refused by type, as every secondary tier is; its store is the external kvcr package"
   },
   "secondary_tier:obj": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+   "status": "modelled",
+   "evidence": [
+    "oracle/scenarios/tiering",
+    "core/connector/tiering/testdata/golden",
+    "core/vllm/offloadtiers_obj_test.go"
+   ],
+   "why": "over the CPU primary tier; each job one NIXL OBJ transfer, a transfer to or from the tier's device_class priced on its offload_tier_<device>_* coefficients, which are scenario inputs (blis-vllm#184); the probe worker timed by named substitution (blis-vllm#190); store backpressure refused (blis-vllm#13)"
   },
   "secondary_tier:p2p": {
    "status": "refused",

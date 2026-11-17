@@ -1,0 +1,1576 @@
+{
+ "files": {
+  "k1": [
+   "p//blis-fid5_4f261524c4e3_r0/6ab/9f_g0/6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd0.bin",
+   "/blis-fid5_4f261524c4e3_r0/6ab/9f_g0/6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd0.bin"
+  ],
+  "k2": [
+   "p//blis-fid5_4f261524c4e3_r0/015/f7_g0/015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e.bin",
+   "/blis-fid5_4f261524c4e3_r0/015/f7_g0/015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e.bin"
+  ],
+  "k3": [
+   "p//blis-fid5_4f261524c4e3_r0/2f5/05_g0/2f5052c9fd15b19a18c584d01363568198613f0c34e84409ef7938709a159ec2.bin",
+   "/blis-fid5_4f261524c4e3_r0/2f5/05_g0/2f5052c9fd15b19a18c584d01363568198613f0c34e84409ef7938709a159ec2.bin"
+  ],
+  "k4": [
+   "p//blis-fid5_4f261524c4e3_r0/940/91_g0/94091dd64a21ffe94214bc6d17deeb43873a5cf2f0a71b4b5caa9a5c81b6967d.bin",
+   "/blis-fid5_4f261524c4e3_r0/940/91_g0/94091dd64a21ffe94214bc6d17deeb43873a5cf2f0a71b4b5caa9a5c81b6967d.bin"
+  ],
+  "k9": [
+   "p//blis-fid5_4f261524c4e3_r0/c3c/81_g0/c3c81c2b9a9ae9e358d68fc47dbc8596f19b420011e71c657d1616f14fb77917.bin",
+   "/blis-fid5_4f261524c4e3_r0/c3c/81_g0/c3c81c2b9a9ae9e358d68fc47dbc8596f19b420011e71c657d1616f14fb77917.bin"
+  ]
+ },
+ "manager": [
+  {
+   "args": {
+    "ctx": "c1",
+    "req": "a"
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "key": "c3c81c2b9a9ae9e358d68fc47dbc8596f19b420011e71c657d1616f14fb7791700000000",
+    "req": "a"
+   },
+   "m": "lookup",
+   "ret": "RETRY"
+  },
+  {
+   "args": {
+    "new": [
+     "a"
+    ],
+    "preempted": []
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "key": "c3c81c2b9a9ae9e358d68fc47dbc8596f19b420011e71c657d1616f14fb7791700000000",
+    "req": "a"
+   },
+   "m": "lookup",
+   "ret": "HIT_PENDING"
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000",
+     "015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e00000000"
+    ],
+    "positions": {},
+    "req": "a"
+   },
+   "m": "prepare_store",
+   "ret": {
+    "evicted": [],
+    "ids": [
+     1,
+     2
+    ],
+    "keys_to_store": [
+     "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000",
+     "015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e00000000"
+    ]
+   }
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000",
+     "015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e00000000"
+    ],
+    "req": "a",
+    "success": true
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [],
+    "preempted": []
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "key": "c3c81c2b9a9ae9e358d68fc47dbc8596f19b420011e71c657d1616f14fb7791700000000",
+    "req": "a"
+   },
+   "m": "lookup",
+   "ret": "MISS"
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "key": "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000",
+    "req": "a"
+   },
+   "m": "lookup",
+   "ret": "HIT"
+  },
+  {
+   "args": {
+    "new": [],
+    "preempted": []
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "2f5052c9fd15b19a18c584d01363568198613f0c34e84409ef7938709a159ec200000000"
+    ],
+    "positions": {},
+    "req": "a"
+   },
+   "m": "prepare_store",
+   "ret": {
+    "evicted": [],
+    "ids": [
+     3
+    ],
+    "keys_to_store": [
+     "2f5052c9fd15b19a18c584d01363568198613f0c34e84409ef7938709a159ec200000000"
+    ]
+   }
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "2f5052c9fd15b19a18c584d01363568198613f0c34e84409ef7938709a159ec200000000"
+    ],
+    "req": "a",
+    "success": true
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "94091dd64a21ffe94214bc6d17deeb43873a5cf2f0a71b4b5caa9a5c81b6967d00000000"
+    ],
+    "positions": {},
+    "req": "a"
+   },
+   "m": "prepare_store",
+   "ret": {
+    "evicted": [],
+    "ids": [
+     0
+    ],
+    "keys_to_store": [
+     "94091dd64a21ffe94214bc6d17deeb43873a5cf2f0a71b4b5caa9a5c81b6967d00000000"
+    ]
+   }
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "94091dd64a21ffe94214bc6d17deeb43873a5cf2f0a71b4b5caa9a5c81b6967d00000000"
+    ],
+    "req": "a",
+    "success": true
+   },
+   "m": "complete_store",
+   "ret": null
+  },
+  {
+   "args": {},
+   "m": "has_pending_work",
+   "ret": true
+  },
+  {
+   "args": {},
+   "m": "reset_cache",
+   "ret": null
+  },
+  {
+   "args": {},
+   "m": "has_pending_work",
+   "ret": false
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "key": "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000",
+    "req": "a"
+   },
+   "m": "lookup",
+   "ret": "MISS"
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "key": "2f5052c9fd15b19a18c584d01363568198613f0c34e84409ef7938709a159ec200000000",
+    "req": "a"
+   },
+   "m": "lookup",
+   "ret": "MISS"
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "key": "94091dd64a21ffe94214bc6d17deeb43873a5cf2f0a71b4b5caa9a5c81b6967d00000000",
+    "req": "a"
+   },
+   "m": "lookup",
+   "ret": "MISS"
+  },
+  {
+   "args": {
+    "new": [],
+    "preempted": []
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "key": "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000",
+    "req": "a"
+   },
+   "m": "lookup",
+   "ret": "MISS"
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "key": "2f5052c9fd15b19a18c584d01363568198613f0c34e84409ef7938709a159ec200000000",
+    "req": "a"
+   },
+   "m": "lookup",
+   "ret": "MISS"
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "key": "94091dd64a21ffe94214bc6d17deeb43873a5cf2f0a71b4b5caa9a5c81b6967d00000000",
+    "req": "a"
+   },
+   "m": "lookup",
+   "ret": "MISS"
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "positions": {},
+    "req": "a"
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {},
+   "m": "shutdown",
+   "ret": null
+  }
+ ],
+ "policy": [
+  {
+   "args": {
+    "key": "c3c81c2b9a9ae9e358d68fc47dbc8596f19b420011e71c657d1616f14fb7791700000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "c3c81c2b9a9ae9e358d68fc47dbc8596f19b420011e71c657d1616f14fb7791700000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "c3c81c2b9a9ae9e358d68fc47dbc8596f19b420011e71c657d1616f14fb7791700000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "c3c81c2b9a9ae9e358d68fc47dbc8596f19b420011e71c657d1616f14fb7791700000000"
+    ],
+    "req": "a"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "c3c81c2b9a9ae9e358d68fc47dbc8596f19b420011e71c657d1616f14fb7791700000000"
+    ],
+    "positions": {},
+    "req": "a"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 0,
+     "ref": -1
+    },
+    "ctx": "c1",
+    "key": "c3c81c2b9a9ae9e358d68fc47dbc8596f19b420011e71c657d1616f14fb7791700000000",
+    "positions": {},
+    "req": "a"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e00000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000",
+     "015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e00000000"
+    ],
+    "req": "a"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000",
+     "015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e00000000"
+    ],
+    "positions": {},
+    "req": "a"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 1,
+     "ref": -1
+    },
+    "ctx": "c1",
+    "key": "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000",
+    "positions": {},
+    "req": "a"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 2,
+     "ref": -1
+    },
+    "ctx": "c1",
+    "key": "015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e00000000",
+    "positions": {},
+    "req": "a"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 1,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 2,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e00000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 1,
+    "ref": 0
+   }
+  },
+  {
+   "args": {
+    "key": "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000"
+   },
+   "m": "mark_non_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 2,
+    "ref": 0
+   }
+  },
+  {
+   "args": {
+    "key": "015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e00000000"
+   },
+   "m": "mark_non_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 1,
+    "ref": 1
+   }
+  },
+  {
+   "args": {
+    "key": "015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 2,
+    "ref": 1
+   }
+  },
+  {
+   "args": {
+    "key": "c3c81c2b9a9ae9e358d68fc47dbc8596f19b420011e71c657d1616f14fb7791700000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 0,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "c3c81c2b9a9ae9e358d68fc47dbc8596f19b420011e71c657d1616f14fb7791700000000"
+   },
+   "m": "remove",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 1,
+    "ref": 2
+   }
+  },
+  {
+   "args": {
+    "key": "015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 2,
+    "ref": 2
+   }
+  },
+  {
+   "args": {
+    "key": "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 1,
+    "ref": 1
+   }
+  },
+  {
+   "args": {
+    "key": "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 2,
+    "ref": 1
+   }
+  },
+  {
+   "args": {
+    "key": "015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e00000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "c3c81c2b9a9ae9e358d68fc47dbc8596f19b420011e71c657d1616f14fb7791700000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 1,
+    "ref": 0
+   }
+  },
+  {
+   "args": {
+    "key": "2f5052c9fd15b19a18c584d01363568198613f0c34e84409ef7938709a159ec200000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "2f5052c9fd15b19a18c584d01363568198613f0c34e84409ef7938709a159ec200000000"
+    ],
+    "req": "a"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "2f5052c9fd15b19a18c584d01363568198613f0c34e84409ef7938709a159ec200000000"
+    ],
+    "positions": {},
+    "req": "a"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 3,
+     "ref": -1
+    },
+    "ctx": "c1",
+    "key": "2f5052c9fd15b19a18c584d01363568198613f0c34e84409ef7938709a159ec200000000",
+    "positions": {},
+    "req": "a"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "2f5052c9fd15b19a18c584d01363568198613f0c34e84409ef7938709a159ec200000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 3,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "2f5052c9fd15b19a18c584d01363568198613f0c34e84409ef7938709a159ec200000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "2f5052c9fd15b19a18c584d01363568198613f0c34e84409ef7938709a159ec200000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 3,
+    "ref": 0
+   }
+  },
+  {
+   "args": {
+    "key": "2f5052c9fd15b19a18c584d01363568198613f0c34e84409ef7938709a159ec200000000"
+   },
+   "m": "mark_non_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "2f5052c9fd15b19a18c584d01363568198613f0c34e84409ef7938709a159ec200000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 3,
+    "ref": 1
+   }
+  },
+  {
+   "args": {
+    "key": "94091dd64a21ffe94214bc6d17deeb43873a5cf2f0a71b4b5caa9a5c81b6967d00000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "94091dd64a21ffe94214bc6d17deeb43873a5cf2f0a71b4b5caa9a5c81b6967d00000000"
+    ],
+    "req": "a"
+   },
+   "m": "on_store_miss",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "keys": [
+     "94091dd64a21ffe94214bc6d17deeb43873a5cf2f0a71b4b5caa9a5c81b6967d00000000"
+    ],
+    "positions": {},
+    "req": "a"
+   },
+   "m": "on_request_access",
+   "ret": null
+  },
+  {
+   "args": {
+    "chunk": {
+     "id": 0,
+     "ref": -1
+    },
+    "ctx": "c1",
+    "key": "94091dd64a21ffe94214bc6d17deeb43873a5cf2f0a71b4b5caa9a5c81b6967d00000000",
+    "positions": {},
+    "req": "a"
+   },
+   "m": "insert",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "94091dd64a21ffe94214bc6d17deeb43873a5cf2f0a71b4b5caa9a5c81b6967d00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 0,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "94091dd64a21ffe94214bc6d17deeb43873a5cf2f0a71b4b5caa9a5c81b6967d00000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "94091dd64a21ffe94214bc6d17deeb43873a5cf2f0a71b4b5caa9a5c81b6967d00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 0,
+    "ref": 0
+   }
+  },
+  {
+   "args": {
+    "key": "94091dd64a21ffe94214bc6d17deeb43873a5cf2f0a71b4b5caa9a5c81b6967d00000000"
+   },
+   "m": "mark_non_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "94091dd64a21ffe94214bc6d17deeb43873a5cf2f0a71b4b5caa9a5c81b6967d00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 0,
+    "ref": 1
+   }
+  },
+  {
+   "args": {
+    "key": "94091dd64a21ffe94214bc6d17deeb43873a5cf2f0a71b4b5caa9a5c81b6967d00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 0,
+    "ref": 2
+   }
+  },
+  {
+   "args": {
+    "key": "2f5052c9fd15b19a18c584d01363568198613f0c34e84409ef7938709a159ec200000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 3,
+    "ref": 2
+   }
+  },
+  {
+   "args": {
+    "key": "2f5052c9fd15b19a18c584d01363568198613f0c34e84409ef7938709a159ec200000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 3,
+    "ref": 1
+   }
+  },
+  {
+   "args": {
+    "key": "2f5052c9fd15b19a18c584d01363568198613f0c34e84409ef7938709a159ec200000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "94091dd64a21ffe94214bc6d17deeb43873a5cf2f0a71b4b5caa9a5c81b6967d00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 0,
+    "ref": 1
+   }
+  },
+  {
+   "args": {
+    "key": "94091dd64a21ffe94214bc6d17deeb43873a5cf2f0a71b4b5caa9a5c81b6967d00000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {},
+   "m": "clear",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "2f5052c9fd15b19a18c584d01363568198613f0c34e84409ef7938709a159ec200000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "94091dd64a21ffe94214bc6d17deeb43873a5cf2f0a71b4b5caa9a5c81b6967d00000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "2f5052c9fd15b19a18c584d01363568198613f0c34e84409ef7938709a159ec200000000"
+   },
+   "m": "get",
+   "ret": null
+  },
+  {
+   "args": {
+    "key": "94091dd64a21ffe94214bc6d17deeb43873a5cf2f0a71b4b5caa9a5c81b6967d00000000"
+   },
+   "m": "get",
+   "ret": null
+  }
+ ],
+ "provenance": {
+  "blis_vllm_commit": "2904a93495adb6efee1ddaefb980cbc1730211f9",
+  "kind": "direct",
+  "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
+  "mock_version": "gpu-mock/8+e1ab1ffd0154",
+  "mocks": [
+   "vllm.v1.outputs.ModelRunnerOutput",
+   "tests.v1.core.utils.create_scheduler",
+   "sampled token stream",
+   "vllm.v1.core.sched.scheduler.time",
+   "vllm.v1.metrics.stats.time",
+   "vllm.v1.engine.time",
+   "vllm.v1.outputs.DraftTokenIds",
+   "spec-decode acceptance",
+   "tests.v1.core.utils.VllmConfig",
+   "tests.v1.core.utils.SchedulerConfig",
+   "vllm.config.vllm.HAS_TRITON",
+   "KV event publisher",
+   "tests.v1.core.utils.KVCacheConfig",
+   "tests.v1.core.utils.CacheConfig",
+   "vllm.v1.executor.abstract.Executor",
+   "EngineCore construction",
+   "vllm.platforms.cpu async override",
+   "use_v2_model_runner (CPU wheel without Triton)",
+   "vllm.config.ParallelConfig.sync_dp_state",
+   "DP coordinator stats transport",
+   "DPLBAsyncMPClient construction",
+   "DPEngineCoreProc construction",
+   "DP wave loop (harness copy of DPEngineCoreProc.run_busy_loop)",
+   "NIXL connector scheduler config",
+   "KV-transfer parameters on a request",
+   "OffloadingConnector scheduler config",
+   "OffloadingConnector worker (OffloadingWorkerMetadata transport)",
+   "finished_req_ids iteration order (per-process hash seed)",
+   "nixl._api.nixl_agent (OBJ backend)"
+  ],
+  "model": "facebook/opt-125m",
+  "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+  "oracle_inputs": {
+   "oracle/drive_kv_interfaces.py": "edb41c5303e50d8b3827ba87c3314e696d1984cf79a2830e3327cc0844a6a022",
+   "oracle/fake_nixl/nixl/__init__.py": "ca247dfae8186f95a1755b77cd056200ab911ca15256299f4bff38ed366cf85d",
+   "oracle/fake_nixl/nixl/_api.py": "8f2e2fd752cb705ab69550dc8de68ee5c5e9f60d1697914d2cef7c0cd51e212a",
+   "oracle/kv_interfaces.py": "4bcde8955836b6ef732f8c901fa94c89a5b7592dcf1db8f6322e3be451c81c10",
+   "oracle/mocks.json": "40d28be778dd8f35bbb978c4f2761f92f7c370998e773ae08400409bd15d723c",
+   "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+   "oracle/run_scheduler.py": "1239a1d64f057fcb543789762859ea33211627e3f2b66b46087ed9ee936222f6",
+   "oracle/run_tiering.py": "c76670c75dd755249f37267aaee269355317b72664fbee564d5cb890365184d1",
+   "oracle/scenarios/tiering/obj-refused-submission-and-reset.json": "b4873a8a9335127b4613e50104a3efc1f3025c47f5be10e3e0e056ce1f5af40d"
+  },
+  "platform": "linux-x86_64",
+  "python": "3.12.16",
+  "requirements_lock_sha256": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
+  "scenario_sha256": "b4873a8a9335127b4613e50104a3efc1f3025c47f5be10e3e0e056ce1f5af40d",
+  "seed": null,
+  "tier": 2,
+  "vllm_commit": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "vllm_distribution": "0.33.0+cpu",
+  "vllm_version": "0.33.0"
+ },
+ "spec": [
+  {
+   "args": {
+    "alignment": 4096,
+    "blocks_per_chunk": 1,
+    "cpu_bytes_to_use": 65536,
+    "eviction_policy": "lru",
+    "groups": [
+     {
+      "tokens_per_block": 16,
+      "window_chunks": null
+     }
+    ],
+    "max_model_len": 0,
+    "offload_prompt_only": true,
+    "replicated_layout": false,
+    "secondary_tiers": 2,
+    "spec": "TieringOffloadingSpec",
+    "worker_kv_bytes_per_block": 16384,
+    "world_size": 1
+   },
+   "m": "get_manager",
+   "ret": {
+    "kv_bytes_per_chunk": 16384,
+    "manager": "TieringOffloadingManager",
+    "num_chunks": 4
+   }
+  }
+ ],
+ "tier": [
+  {
+   "args": {
+    "ctx": "c1",
+    "req": "a",
+    "tier": 0
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "req": "a",
+    "tier": 1
+   },
+   "m": "on_new_request",
+   "ret": {
+    "policy": "CHUNK_LEVEL"
+   }
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "key": "c3c81c2b9a9ae9e358d68fc47dbc8596f19b420011e71c657d1616f14fb7791700000000",
+    "req": "a",
+    "tier": 0
+   },
+   "m": "lookup",
+   "ret": "RETRY"
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "key": "c3c81c2b9a9ae9e358d68fc47dbc8596f19b420011e71c657d1616f14fb7791700000000",
+    "req": "a",
+    "tier": 1
+   },
+   "m": "lookup",
+   "ret": "RETRY"
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "a"
+    ],
+    "preempted": [],
+    "tier": 0
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [
+     "a"
+    ],
+    "preempted": [],
+    "tier": 1
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "key": "c3c81c2b9a9ae9e358d68fc47dbc8596f19b420011e71c657d1616f14fb7791700000000",
+    "req": "a",
+    "tier": 0
+   },
+   "m": "lookup",
+   "ret": "HIT"
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      1,
+      2
+     ],
+     "ctx": "c1",
+     "id": 0,
+     "keys": [
+      "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000",
+      "015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e00000000"
+     ],
+     "promotion": false,
+     "req": "a"
+    },
+    "tier": 0
+   },
+   "m": "submit_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      1,
+      2
+     ],
+     "ctx": "c1",
+     "id": 1,
+     "keys": [
+      "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd000000000",
+      "015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e00000000"
+     ],
+     "promotion": false,
+     "req": "a"
+    },
+    "tier": 1
+   },
+   "m": "submit_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      0
+     ],
+     "ctx": "c1",
+     "id": 2,
+     "keys": [
+      "c3c81c2b9a9ae9e358d68fc47dbc8596f19b420011e71c657d1616f14fb7791700000000"
+     ],
+     "promotion": true,
+     "req": "a"
+    },
+    "tier": 0
+   },
+   "m": "submit_load",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [],
+    "preempted": [],
+    "tier": 0
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [],
+    "preempted": [],
+    "tier": 1
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": [
+    {
+     "id": 2,
+     "success": false,
+     "successful_keys": null,
+     "transfer_bytes": null
+    },
+    {
+     "id": 0,
+     "success": true,
+     "successful_keys": null,
+     "transfer_bytes": null
+    }
+   ]
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": [
+    {
+     "id": 1,
+     "success": true,
+     "successful_keys": null,
+     "transfer_bytes": null
+    }
+   ]
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "key": "c3c81c2b9a9ae9e358d68fc47dbc8596f19b420011e71c657d1616f14fb7791700000000",
+    "req": "a",
+    "tier": 0
+   },
+   "m": "lookup",
+   "ret": "MISS"
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "key": "c3c81c2b9a9ae9e358d68fc47dbc8596f19b420011e71c657d1616f14fb7791700000000",
+    "req": "a",
+    "tier": 1
+   },
+   "m": "lookup",
+   "ret": "MISS"
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [],
+    "preempted": [],
+    "tier": 0
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [],
+    "preempted": [],
+    "tier": 1
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      3
+     ],
+     "ctx": "c1",
+     "id": 3,
+     "keys": [
+      "2f5052c9fd15b19a18c584d01363568198613f0c34e84409ef7938709a159ec200000000"
+     ],
+     "promotion": false,
+     "req": "a"
+    },
+    "tier": 0
+   },
+   "m": "submit_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      3
+     ],
+     "ctx": "c1",
+     "id": 4,
+     "keys": [
+      "2f5052c9fd15b19a18c584d01363568198613f0c34e84409ef7938709a159ec200000000"
+     ],
+     "promotion": false,
+     "req": "a"
+    },
+    "tier": 1
+   },
+   "m": "submit_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      0
+     ],
+     "ctx": "c1",
+     "id": 5,
+     "keys": [
+      "94091dd64a21ffe94214bc6d17deeb43873a5cf2f0a71b4b5caa9a5c81b6967d00000000"
+     ],
+     "promotion": false,
+     "req": "a"
+    },
+    "tier": 0
+   },
+   "m": "submit_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "job": {
+     "chunk_ids": [
+      0
+     ],
+     "ctx": "c1",
+     "id": 6,
+     "keys": [
+      "94091dd64a21ffe94214bc6d17deeb43873a5cf2f0a71b4b5caa9a5c81b6967d00000000"
+     ],
+     "promotion": false,
+     "req": "a"
+    },
+    "tier": 1
+   },
+   "m": "submit_store",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "drain_jobs",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "drain_jobs",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": [
+    {
+     "id": 5,
+     "success": false,
+     "successful_keys": null,
+     "transfer_bytes": null
+    },
+    {
+     "id": 3,
+     "success": true,
+     "successful_keys": null,
+     "transfer_bytes": null
+    }
+   ]
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": [
+    {
+     "id": 4,
+     "success": true,
+     "successful_keys": null,
+     "transfer_bytes": null
+    },
+    {
+     "id": 6,
+     "success": true,
+     "successful_keys": null,
+     "transfer_bytes": null
+    }
+   ]
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "has_pending_work",
+   "ret": false
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "has_pending_work",
+   "ret": false
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "serve_external_requests",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [],
+    "preempted": [],
+    "tier": 0
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "new": [],
+    "preempted": [],
+    "tier": 1
+   },
+   "m": "on_schedule_end",
+   "ret": null
+  },
+  {
+   "args": {
+    "tier": 0
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "tier": 1
+   },
+   "m": "get_finished_jobs",
+   "ret": []
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "req": "a",
+    "tier": 0
+   },
+   "m": "on_request_finished",
+   "ret": null
+  },
+  {
+   "args": {
+    "ctx": "c1",
+    "req": "a",
+    "tier": 1
+   },
+   "m": "on_request_finished",
+   "ret": null
+  }
+ ],
+ "tiers": [
+  {
+   "block_size_bytes": 16384,
+   "bucket": "kv",
+   "events": false,
+   "locality": null,
+   "rank": 0,
+   "run_config": {
+    "blocks_per_file": 1,
+    "dcp_size": 1,
+    "dtype": "float16",
+    "inference_engine": "vllm",
+    "kv_cache_groups": [
+     {
+      "layer_names": [
+       "layer.0"
+      ],
+      "tokens_per_block": 16
+     }
+    ],
+    "model_name": "blis-fid5",
+    "parallel_agnostic": false,
+    "pcp_size": 1,
+    "pp_size": 1,
+    "tokens_per_hash": 16,
+    "tp_size": 1
+   },
+   "type": "obj"
+  },
+  {
+   "block_size_bytes": 16384,
+   "bucket": "kv",
+   "events": false,
+   "locality": null,
+   "rank": 0,
+   "run_config": {
+    "blocks_per_file": 1,
+    "dcp_size": 1,
+    "dtype": "float16",
+    "inference_engine": "vllm",
+    "kv_cache_groups": [
+     {
+      "layer_names": [
+       "layer.0"
+      ],
+      "tokens_per_block": 16
+     }
+    ],
+    "model_name": "blis-fid5",
+    "parallel_agnostic": false,
+    "pcp_size": 1,
+    "pp_size": 1,
+    "tokens_per_hash": 16,
+    "tp_size": 1
+   },
+   "type": "obj"
+  }
+ ]
+}

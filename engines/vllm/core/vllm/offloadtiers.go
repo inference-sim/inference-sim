@@ -23,7 +23,7 @@ import (
 // (offloading.Config.Manager). buildOffload refuses every other registered type by name; a type
 // vLLM does not register is refused first, as code_not_visible. surface.json marks exactly these
 // modelled.
-var modelledTiers = map[string]bool{"fs": true}
+var modelledTiers = map[string]bool{"fs": true, "obj": true}
 
 // The secondary tiers through engine.Engine.
 //
@@ -100,13 +100,28 @@ func (o *offload) tick(now engine.Time) {
 
 type tierJob struct{ tier, id int }
 
-// builtTier is one secondary tier: its label, its catalog device, and its files.
+// builtTier is one secondary tier: its label, its catalog device, the tier as the manager calls
+// it and as the host times it, and an fs tier's files or an obj tier's bucket.
 type builtTier struct {
 	label   string
 	device  string
 	rootDir string
-	fs      *kvtier.FSTier
-	files   *tierFiles
+	tier    kvtier.Tier
+	host    hostTier
+	// fs is the tier when it is an fs tier, nil otherwise.
+	fs    *kvtier.FSTier
+	files *tierFiles
+	// bucket is an obj tier's store_config bucket, and objects its objects.
+	bucket  string
+	objects *tierBucket
+}
+
+// hostTier is what the engine drives of a tier's transport: the jobs waiting for a transfer, a
+// job's end when its transfer is done, and the lookup worker's batches at the step boundary.
+type hostTier interface {
+	Jobs() []kvtier.FSJob
+	Run(id int)
+	ResolveLookups()
 }
 
 // tierFiles is the store an fs tier's files are in: its own until the engine is given a
@@ -130,7 +145,11 @@ func buildTiers(c *offloadConfig, bpc, blockSize int, chunkBytes int64, ns kvtie
 	ts := &tierSet{chunkBytes: chunkBytes, blocksPerChunk: bpc, blockSize: blockSize,
 		inFlight: map[engine.TransferID]tierJob{}, started: map[tierJob]bool{}}
 	for i, raw := range c.SecondaryTiers {
-		b, err := buildFS(i, raw, c.Backpressure, chunkBytes, ns, ts.clock)
+		build := buildFS
+		if raw["type"] == "obj" {
+			build = buildObj
+		}
+		b, err := build(i, raw, c.Backpressure, chunkBytes, ns, ts.clock)
 		if err != nil {
 			return nil, err
 		}
@@ -203,7 +222,7 @@ func buildFS(i int, raw map[string]any, topBackpressure map[string]any, chunkByt
 		cfg.Backpressure = detector
 	}
 	fs := kvtier.NewFSTier(cfg, files)
-	return &builtTier{label: fmt.Sprintf("%d:fs", i+1), device: device, rootDir: root, fs: fs, files: files}, nil
+	return &builtTier{label: fmt.Sprintf("%d:fs", i+1), device: device, rootDir: root, tier: fs, host: fs, fs: fs, files: files}, nil
 }
 
 // tierBackpressure is the tier's detector: the top-level backpressure block and the tier's own merged
@@ -252,7 +271,7 @@ func (ts *tierSet) manager() func(cpu *offloading.CPUPrimary) (offloading.Manage
 	return func(cpu *offloading.CPUPrimary) (offloading.Manager, error) {
 		tiers := make([]kvtier.Tier, len(ts.tiers))
 		for i, b := range ts.tiers {
-			tiers[i] = b.fs
+			tiers[i] = b.tier
 		}
 		ts.mgr = kvtier.New(kvtier.CPU(cpu), tiers, ts.clock)
 		return kvtier.Connector{M: ts.mgr}, nil
@@ -284,7 +303,9 @@ func (ts *tierSet) share(s TierStorage) {
 		return
 	}
 	for _, b := range ts.tiers {
-		b.files.FileStore = s(b.rootDir)
+		if b.files != nil {
+			b.files.FileStore = s(b.rootDir)
+		}
 	}
 }
 
@@ -297,7 +318,7 @@ func (o *offload) tierTransfers() []engine.Transfer {
 	}
 	var out []engine.Transfer
 	for i, b := range ts.tiers {
-		for _, j := range b.fs.Jobs() {
+		for _, j := range b.host.Jobs() {
 			key := tierJob{tier: i, id: j.ID}
 			if ts.started[key] {
 				continue
@@ -332,11 +353,11 @@ func (o *offload) tierDone(id engine.TransferID, ok bool) (bool, error) {
 	}
 	if !ok {
 		return true, fmt.Errorf("vllm: secondary tier %s transfer %d failed; a tier job fails only by a missing "+
-			"block file in the port", o.tiers.tiers[key.tier].label, id)
+			"block file or object, or a bucket that refuses writes, in the port", o.tiers.tiers[key.tier].label, id)
 	}
 	delete(o.tiers.inFlight, id)
 	delete(o.tiers.started, key)
-	o.tiers.tiers[key.tier].fs.Run(key.id)
+	o.tiers.tiers[key.tier].host.Run(key.id)
 	return true, nil
 }
 
@@ -358,7 +379,7 @@ func (o *offload) tierStep() {
 		return
 	}
 	for _, b := range o.tiers.tiers {
-		b.fs.ResolveLookups()
+		b.host.ResolveLookups()
 	}
 }
 

@@ -29,6 +29,18 @@ A sequence:
                {"m": "put", "tier": 0, "key": "k1"}]}  another process stores it
 A tier's "root_dir" that starts "@root" is under a fresh directory for the sequence.
 
+An obj tier ("type": "obj", vllm/v1/kv_offload/tiering/obj/manager.py@4ba787ec) reaches its bucket
+through NIXL's OBJ backend, which is neither installed nor reachable here: oracle/fake_nixl is an
+in-memory NIXL agent and bucket in its place (the byte transport, listed in oracle/mocks.json). Its
+transport rule matches the fs tier's: after each call every transfer the call submitted finishes,
+in submission order (unless held), and every flushed lookup batch resolves. For an obj tier "rm" and "put" delete
+or store the key's object in the tier's bucket, and the sequence may also call
+               {"m": "deny", "tier": 0}       the bucket refuses writes (each WRITE ends "ERR")
+               {"m": "allow", "tier": 0}      ... and accepts them again
+               {"m": "hold", "tier": 0}       the tier's transfers stay in flight across calls
+               {"m": "release", "tier": 0}    ... and finish after each call again
+               {"m": "refuse_next", "tier": 0}  the tier's next transfer fails at submission (transfer() "ERR")
+
 Usage:
     python -I oracle/run_tiering.py <vllm checkout> <sequence dir> <out dir> [--check <golden dir>]
 """
@@ -59,8 +71,9 @@ def tier_monitor():
             super().__init__()
             from vllm.v1.kv_offload.tiering.base import SecondaryTierManager
             from vllm.v1.kv_offload.tiering.fs.manager import FileSystemTierManager
+            from vllm.v1.kv_offload.tiering.obj.manager import ObjectStoreSecondaryTierManager
             self.trace["tier"] = []
-            for cls in (SecondaryTierManager, FileSystemTierManager):
+            for cls in (SecondaryTierManager, FileSystemTierManager, ObjectStoreSecondaryTierManager):
                 for name in TIER_METHODS:
                     f = cls.__dict__.get(name)
                     if callable(f) and hasattr(f, "__code__"):
@@ -119,10 +132,20 @@ def tier_monitor():
     return TierMonitor()
 
 
+def mapper(tier):
+    """The tier's FileMapper: fs names it file_mapper, obj _file_mapper."""
+    return tier.file_mapper if tier.tier_type == "fs" else tier._file_mapper
+
+
 def wait_transport(tier) -> None:
-    """Read-only waits: the tier's I/O pool is idle, and its lookup worker posted what was flushed."""
+    """Read-only waits: the tier's I/O is done (fs: the pool is idle; obj: the fake NIXL agent
+    finishes the transfers in flight), and its lookup worker posted what was flushed."""
     from vllm.v1.kv_offload.tiering.async_lookup import LookupPhase
-    tier._pool.wait_idle()
+    if tier.tier_type == "obj":
+        import nixl._api as fake_nixl
+        fake_nixl.complete_all()
+    else:
+        tier._pool.wait_idle()
     lm = tier._lookup_manager
     deadline = time.monotonic() + WAIT_S
     while any(s.phase is LookupPhase.IN_FLIGHT for s in list(lm._lookup_state.values())) and \
@@ -136,7 +159,10 @@ def run_sequence(vllm_root: str, path: str) -> dict:
     if vllm_root not in sys.path:
         sys.path.append(vllm_root)
     sys.path.insert(0, HERE)
+    sys.path.insert(0, os.path.join(HERE, "fake_nixl"))
     os.environ.setdefault("VLLM_LOGGING_LEVEL", "ERROR")
+    import nixl._api as fake_nixl  # noqa: E402
+    fake_nixl.reset()
     from drive_kv_interfaces import call_manager, key_of, offloading_config  # noqa: E402
     from run_scheduler import provenance  # noqa: E402
     from vllm.distributed.kv_transfer.kv_connector.v1.offloading.scheduler import _parse_tier_filter  # noqa: E402
@@ -174,7 +200,20 @@ def run_sequence(vllm_root: str, path: str) -> dict:
             try:
                 for c in sq["calls"]:
                     m = c["m"]
-                    if m in ("rm", "put"):
+                    if m in ("rm", "put") and mon.tiers[c["tier"]].tier_type == "obj":
+                        tier = mon.tiers[c["tier"]]
+                        p = tier._file_mapper.get_file_name(key_of(c["key"]))
+                        if m == "rm":
+                            fake_nixl.remove(tier._agent, p)
+                        else:
+                            fake_nixl.put(tier._agent, p, b"\0" * tier.block_size_bytes)
+                    elif m in ("hold", "release"):
+                        fake_nixl.hold(mon.tiers[c["tier"]]._agent, m == "hold")
+                    elif m in ("deny", "allow"):
+                        fake_nixl.deny(mon.tiers[c["tier"]]._agent, m == "deny")
+                    elif m == "refuse_next":
+                        fake_nixl.refuse_next(mon.tiers[c["tier"]]._agent)
+                    elif m in ("rm", "put"):
                         tier = mon.tiers[c["tier"]]
                         p = tier.file_mapper.get_file_name(key_of(c["key"]))
                         if m == "rm":
@@ -194,13 +233,15 @@ def run_sequence(vllm_root: str, path: str) -> dict:
                     # Each key's block file in each tier, relative to the sequence's directory.
                     for k in c.get("keys", []) + ([c["key"]] if "key" in c else []):
                         files.setdefault(k, [os.path.relpath(t.file_mapper.get_file_name(key_of(k)), root)
+                                             if t.tier_type == "fs" else t._file_mapper.get_file_name(key_of(k))
                                              for t in mon.tiers])
             finally:
                 mgr.shutdown()
         tiers = [{"type": t.tier_type, "block_size_bytes": int(t.block_size_bytes),
-                  "run_config": t.file_mapper.get_run_config(), "rank": int(t.file_mapper.rank),
+                  "run_config": mapper(t).get_run_config(), "rank": int(mapper(t).rank),
                   "locality": None if t.locality is None else t.locality.name,
-                  "events": t.events is not None} for t in mon.tiers]
+                  "events": t.events is not None,
+                  **({"bucket": t._agent.bucket_name} if t.tier_type == "obj" else {})} for t in mon.tiers]
     finally:
         shutil.rmtree(root, ignore_errors=True)
     prov = provenance(vllm_root, path)
