@@ -344,6 +344,25 @@ func construct(in Inputs) (*Kernel, error) {
 	if err := refuseUnsplittableKVHeads(in.Model, layout.TP); err != nil {
 		return nil, err
 	}
+	if in.Lowered.Encoder != nil {
+		e := *in.Lowered.Encoder
+		if e.Resident && !e.Mode.Valid() {
+			return nil, fmt.Errorf("the engine runs the vision tower in mode %q, which is not one of %q or %q",
+				e.Mode, plan.EncoderWeightsSharded, plan.EncoderBatchSplit)
+		}
+		k.encoder = &e
+	}
+	if in.Model.PricesEncoder() && k.encoder != nil && k.encoder.Resident {
+		if pool.Parallel.PP > 1 {
+			return nil, fmt.Errorf("a resident vision tower under pipeline parallelism (pp %d) is not priced: "+
+				"the tower sits on the first stage only", pool.Parallel.PP)
+		}
+		k.assume("encoder", "priced as a substitution", encoderSubstitution)
+	} else if in.Model.PricesEncoder() {
+		k.assume("modality", string(in.Model.Modality),
+			"the graph prices a vision tower, but the engine states none resident, so the tower's weights and any "+
+				"encode step are not priced")
+	}
 	if in.Model.Modality == model.ModalityTextDecoderOfMultimodal {
 		k.assume("modality", string(in.Model.Modality),
 			"the graph prices the text decoder of a multimodal model: its vision or audio "+
@@ -1849,6 +1868,8 @@ func (k *Kernel) computeFixedBytes(g *model.Graph) kernel.MemoryBreakdown {
 	weights += k.embeddingResidentBytes(g)
 	// The drafter's weights, while the deployment speculates.
 	weights += k.draftResidentBytes()
+	// The vision tower, while the engine keeps it resident.
+	weights += k.towerResidentBytes()
 	eplb := k.eplbRedundantBytes(k.plan.Layers)
 	return kernel.MemoryBreakdown{
 		Weights:        int64(weights - eplb),
