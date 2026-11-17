@@ -8,6 +8,7 @@ package cache
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -18,7 +19,11 @@ type node struct {
 	id       NodeID
 	parent   *node
 	children map[string]*node
-	key      Key
+	// order is the children's keys in the order they entered the children dict, which Python
+	// keeps: a key assigned again keeps its place (a split's new node takes the old child's), a
+	// popped key leaves it. _dfs_weight_order breaks ties between children in this order.
+	order []string
+	key   Key
 	// value is the FULL device slots; nil once evicted. The root holds an empty, non-nil value.
 	value      []int64
 	lockRef    int
@@ -33,6 +38,37 @@ type node struct {
 }
 
 func (n *node) evicted() bool { return n.parent != nil && n.value == nil }
+
+// setChild is children[k] = c.
+func (n *node) setChild(k string, c *node) {
+	if _, ok := n.children[k]; !ok {
+		n.order = append(n.order, k)
+	}
+	n.children[k] = c
+}
+
+// popChild is children.pop(k).
+func (n *node) popChild(k string) {
+	if _, ok := n.children[k]; !ok {
+		return
+	}
+	delete(n.children, k)
+	for i, x := range n.order {
+		if x == k {
+			n.order = append(n.order[:i:i], n.order[i+1:]...)
+			break
+		}
+	}
+}
+
+// orderedChildren is list(children.values()).
+func (n *node) orderedChildren() []*node {
+	out := make([]*node, len(n.order))
+	for i, k := range n.order {
+		out[i] = n.children[k]
+	}
+	return out
+}
 
 // treeCore is UnifiedTreeCore (unified_tree_core.py:419-3469@297e54fd) with the FULL component
 // alone and no host tier: the tree, its access clock, its evictable leaves and its sizes.
@@ -261,7 +297,8 @@ func (t *treeCore) CollectFullDeviceIndices(from, until NodeID) []int64 {
 // splitNode is _split_node (:1467-1530): child's first splitLen units become a new parent.
 func (t *treeCore) splitNode(child *node, splitLen int) *node {
 	nn := t.newNode(child.priority)
-	nn.children = map[string]*node{child.key.childKey(splitLen, t.pageSize): child}
+	nn.children = map[string]*node{}
+	nn.setChild(child.key.childKey(splitLen, t.pageSize), child)
 	nn.parent = child.parent
 	nn.key = child.key.slice(0, splitLen)
 	nn.hitCount = child.hitCount
@@ -272,7 +309,7 @@ func (t *treeCore) splitNode(child *node, splitLen int) *node {
 	nn.hashValue, child.hashValue = splitHash(child.hashValue, splitLen, t.pageSize)
 	nn.eventHashValue, child.eventHashValue = splitHash(child.eventHashValue, splitLen, t.pageSize)
 	t.full.redistributeOnNodeSplit(nn, child)
-	nn.parent.children[oldKey.childKey(0, t.pageSize)] = nn
+	nn.parent.setChild(oldKey.childKey(0, t.pageSize), nn)
 	child.lastAccess = t.tick()
 	t.updateLeaves(nn)
 	t.updateLeaves(child)
@@ -392,7 +429,7 @@ func (t *treeCore) addNewNode(parent *node, key Key, value []int64, priority int
 	n.parent = parent
 	n.key = key
 	n.value = append([]int64{}, value...)
-	parent.children[key.childKey(0, t.pageSize)] = n
+	parent.setChild(key.childKey(0, t.pageSize), n)
 	t.evictable += len(n.value)
 	t.updateLeaves(n)
 	t.updateLeaves(parent)
@@ -490,7 +527,7 @@ func (t *treeCore) EvictDeviceLeaf(id NodeID, isWriteBack bool) EvictionStep {
 	}
 	delete(t.leaves, n)
 	parent := n.parent
-	delete(parent.children, n.key.childKey(0, t.pageSize))
+	parent.popChild(n.key.childKey(0, t.pageSize))
 	delete(t.nodes, n.id)
 	t.updateLeaves(parent)
 	// _iteratively_delete_tombstone_ancestors (:2289-2346): with no host tier an ancestor keeps
@@ -591,3 +628,59 @@ func evictionPriority(policy string) (func(*node) [2]float64, error) {
 // the tree's.
 func (t *treeCore) FullEvictableSize() int { return t.evictable }
 func (t *treeCore) FullProtectedSize() int { return t.protected }
+
+// DFSWeightOrder is dfs_weight_order (:684-685) and _dfs_weight_order
+// (base_prefix_cache.py:347-398@297e54fd): the indices of handles in a depth-first walk that
+// visits the heavier subtree first, a node's own handles after its subtrees'. A node's weight is
+// the handles that end on it and on its children, as the walk accumulates them; children of equal
+// weight keep their order in the children dict (a stable sort).
+func (t *treeCore) DFSWeightOrder(handles []NodeID) []int {
+	at := map[*node][]int{}
+	for i, h := range handles {
+		n := t.node(h)
+		at[n] = append(at[n], i)
+	}
+	weight := map[*node]int{}
+	for n, ix := range at {
+		weight[n] = len(ix)
+	}
+	type frame struct {
+		n       *node
+		visited bool
+	}
+	stack := []frame{{t.root, false}}
+	for len(stack) > 0 {
+		f := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if f.visited {
+			w := weight[f.n]
+			for _, c := range f.n.orderedChildren() {
+				w += weight[c]
+			}
+			weight[f.n] = w
+			continue
+		}
+		stack = append(stack, frame{f.n, true})
+		cs := f.n.orderedChildren()
+		for i := len(cs) - 1; i >= 0; i-- {
+			stack = append(stack, frame{cs[i], false})
+		}
+	}
+	var order []int
+	stack = []frame{{t.root, false}}
+	for len(stack) > 0 {
+		f := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if f.visited {
+			order = append(order, at[f.n]...)
+			continue
+		}
+		cs := f.n.orderedChildren()
+		sort.SliceStable(cs, func(i, j int) bool { return weight[cs[i]] > weight[cs[j]] })
+		stack = append(stack, frame{f.n, true})
+		for i := len(cs) - 1; i >= 0; i-- {
+			stack = append(stack, frame{cs[i], false})
+		}
+	}
+	return order
+}

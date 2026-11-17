@@ -315,3 +315,6 @@ func (c *RadixCache) FullEvictableSize() int { return c.core.FullEvictableSize()
 func (c *RadixCache) FullProtectedSize() int { return c.core.FullProtectedSize() }
 func (c *RadixCache) TotalSize() (int, int)  { return c.tree.totalSize(), 0 }
 func (c *RadixCache) TakeEvents() []Event    { return c.core.TakeEvents() }
+
+// DFSWeightOrder is dfs_weight_order (:3972-3973): the tree core's, over node handles.
+func (c *RadixCache) DFSWeightOrder(handles []NodeID) []int { return c.core.DFSWeightOrder(handles) }
