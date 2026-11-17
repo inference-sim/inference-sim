@@ -149,6 +149,9 @@ type PlanOptions struct {
 	EntryBytes func(model.Cache) int
 	// StateBytes is the recurrent state's element width.
 	StateBytes float64
+	// RoutingLaunch is true when expert selection is a launch of its own in each routed MoE
+	// layer (plan.RoutingSeparate): every routed GroupedGEMM then counts one more kernel.
+	RoutingLaunch bool
 }
 
 // PlannedLayer is one layer kind with its multiplicity and its pre-summed work.
@@ -735,6 +738,9 @@ func planNodes(nodes []model.Node, em Emitter, o PlanOptions,
 		launches, ok := kernelsPerPrimitive[n.Op]
 		if !ok {
 			launches = 1
+		}
+		if o.RoutingLaunch && n.Op == model.OpGroupedGEMM && !n.IsSharedExpert() {
+			launches++
 		}
 		pl.Kernels += launches
 		if n.Context != nil && n.Context.Phase == model.PhasePrefill {

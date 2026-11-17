@@ -94,6 +94,30 @@ type MoEPlan struct {
 	// RedundantExperts is how many extra copies of experts the engine places beside the model's
 	// own to balance the load; 0 is none.
 	RedundantExperts int
+	// Routing is whether expert selection (top-k, or grouped top-k with a score-correction
+	// bias) is a launch of its own in each routed MoE layer. It depends on the experts backend
+	// the engine resolves, not on the checkpoint: a modular backend runs router.select_experts
+	// first, a monolithic one takes the router logits and selects inside its kernel. The zero
+	// value is not stated, and no selection launch is counted.
+	Routing MoERouting
+}
+
+// MoERouting says where an MoE layer's expert selection runs.
+type MoERouting string
+
+const (
+	// RoutingNotStated counts no launch for expert selection.
+	RoutingNotStated MoERouting = ""
+	// RoutingSeparate runs expert selection as its own kernel before the experts, one launch a
+	// routed MoE layer.
+	RoutingSeparate MoERouting = "separate"
+	// RoutingFused selects experts inside a monolithic experts kernel: no launch of its own.
+	RoutingFused MoERouting = "fused"
+)
+
+// Valid reports whether r is a known word.
+func (r MoERouting) Valid() bool {
+	return r == RoutingNotStated || r == RoutingSeparate || r == RoutingFused
 }
 
 // The MoE dispatch kernels a cost model prices by name (MoEPlan.Dispatch): the three kernel
@@ -187,6 +211,7 @@ func (p PoolPlan) ValidateResolved() error {
 	width("Cache.LatentCellBytes", p.Cache.LatentCellBytes)
 	width("Cache.StateElementBytes", p.Cache.StateElementBytes)
 	negative("MoE.RedundantExperts", int64(p.MoE.RedundantExperts))
+	word("MoE.Routing", string(p.MoE.Routing), p.MoE.Routing.Valid())
 	word("DecodeContext.Combine", string(p.DecodeContext.Combine), p.DecodeContext.Combine.Valid())
 	negative("DecodeContext.Interleave", int64(p.DecodeContext.Interleave))
 	negative("Engram.Shards", int64(p.Engram.Shards))

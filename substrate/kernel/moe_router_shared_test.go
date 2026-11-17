@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/load"
 )
@@ -72,7 +71,7 @@ func moeLayers(g *model.Graph) int {
 // withoutDrafts runs the scenario with no speculative decoding, so a step's launches are the
 // target's alone.
 func withoutDrafts(in Inputs) Inputs {
-	return withEngine(in, func(e *enginesettings.Settings) { e.Speculative = nil })
+	return drafting(in, 0)
 }
 
 func oneDecode() kernel.Batch {

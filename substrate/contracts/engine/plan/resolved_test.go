@@ -36,6 +36,7 @@ func TestValidateResolvedRefusesEachMeaninglessSettingByName(t *testing.T) {
 		{"Cache.LatentCellBytes", func(p *PoolPlan) { p.Cache.LatentCellBytes = -1 }},
 		{"Cache.StateElementBytes", func(p *PoolPlan) { p.Cache.StateElementBytes = -1 }},
 		{"MoE.RedundantExperts", func(p *PoolPlan) { p.MoE.RedundantExperts = -1 }},
+		{"MoE.Routing", func(p *PoolPlan) { p.MoE.Routing = "inline" }},
 		{"DecodeContext.Combine", func(p *PoolPlan) { p.DecodeContext.Combine = "ring" }},
 		{"DecodeContext.Interleave", func(p *PoolPlan) { p.DecodeContext.Interleave = -1 }},
 		{"Engram.Shards", func(p *PoolPlan) { p.Engram.Shards = -1 }},

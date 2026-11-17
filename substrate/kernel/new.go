@@ -357,6 +357,9 @@ func construct(in Inputs) (*Kernel, error) {
 		Format:     func(n model.Node) price.Format { return weightFormat(in.Model, n, served) },
 		EntryBytes: func(c model.Cache) int { return c.EntryBytes(k.cacheDType) },
 		StateBytes: stateBytes,
+		// Expert selection is a launch of its own on a modular experts backend
+		// (vllm/model_executor/layers/fused_moe/runner/moe_runner.py:620-643@4ba787ec).
+		RoutingLaunch: k.low.MoE.Routing == plan.RoutingSeparate,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("planning the model graph: %w", err)
