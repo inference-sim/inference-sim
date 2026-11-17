@@ -54,7 +54,10 @@ func eventsJSON(ev []tiering.Event) []any {
 		if e.Locality != "" {
 			loc = string(e.Locality)
 		}
-		out = append(out, map[string]any{"keys": hexKeys(e.Keys), "medium": string(e.Medium), "removed": e.Removed, "locality": loc})
+		// metadata_only is set only by the CPU tier's failed allocations (vllm/v1/kv_offload/cpu/manager.py:408),
+		// whose events are not compared (withoutCPUEvents): a secondary tier's event never sets it.
+		out = append(out, map[string]any{"keys": hexKeys(e.Keys), "medium": string(e.Medium), "removed": e.Removed, "locality": loc,
+			"metadata_only": false})
 	}
 	return out
 }
@@ -341,7 +344,6 @@ func replay(t *testing.T, scenarioPath, tracePath string) {
 			recorded = false
 		case "on_reset_flushed":
 			mgr.OnResetFlushed()
-			recorded = false
 		case "on_new_request":
 			ret = map[string]any{"policy": mgr.OnNewRequest(ctx(c)).String()}
 		case "lookup":
