@@ -9,5 +9,5 @@
   "artifact": "e2e-accuracy-web-0d6e4079e36703eb",
   "zip_sha256": "47c03314e552b442e6716fd0fdc0b865ee031d391b39b14d066f23592f775aaa",
   "summary_sha256": "d5012fef06f4e63abebf0cdb43104b699c303f937b77d0de9ba0db6b2350b8c2",
-  "expected": {"sweeps": 103, "points": 561}
+  "expected": {"sweeps": 114, "points": 620, "disaggregated": {"topologies": 319, "points": 665}}
 }
