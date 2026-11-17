@@ -183,6 +183,14 @@ type EngineDriver struct {
 	// flight, and reports the copy landed (TierLanded). Copies of one kind still move one after
 	// another, as the engine's stream does. Unset, a copy takes its demand alone (TierTicks).
 	OnTierPriced func(id engine.TransferID, demand kernel.TransferDemand, at int64)
+	// OnPeerWritePriced, when set, receives an engine's WRITE to a peer at the instant it starts,
+	// with its demand: the host shares link capacity with it and reports it landed
+	// (PeerWriteLanded). Unset, a WRITE takes its demand alone (TierTicks).
+	OnPeerWritePriced func(id engine.TransferID, demand kernel.TransferDemand, at int64)
+	// peerRouter carries the engine's peer messages (engine.Peered); peerWrites are the WRITEs in
+	// flight through OnPeerWritePriced.
+	peerRouter PeerRouter
+	peerWrites map[engine.TransferID]bool
 
 	// stalledSteps counts the steps since one last emitted a token or finished a request, and
 	// stallErr is the watchdog's error once the count passes the limit (SIM-7).
@@ -313,6 +321,7 @@ func (d *EngineDriver) ProcessNextEvent() Event {
 	d.preEventClock = d.Clock
 	d.Clock = shim.Timestamp()
 	shim.ev.run(d)
+	d.drainPeer(d.Clock)
 	return entry.event
 }
 
@@ -1220,6 +1229,7 @@ func (d *EngineDriver) done(req *Request, at int64) {
 // gateway-evicted request does on the compatibility path (counted by the cluster). It reports
 // whether the instance held req.
 func (d *EngineDriver) Evict(req *Request, now int64) bool {
+	defer d.drainPeer(now)
 	r := d.reqs[req.ID]
 	if r == nil || req.State == StateCompleted || req.State == StateTimedOut {
 		return false

@@ -26,6 +26,7 @@ import (
 // other work admits it at once, as vLLM's idle engine schedules a new request (it is stepped
 // here); one with work admits it in a later schedule.
 func (d *EngineDriver) AddRemote(req *Request, peer plan.Endpoint, now int64) {
+	defer d.drainPeer(now)
 	er := d.engineRequest(req)
 	er.RemotePrefill = true
 	er.Peer = &peer
@@ -59,6 +60,10 @@ func (d *EngineDriver) startTransfers(ts []engine.Transfer, now int64) {
 func (d *EngineDriver) startTransfersAfter(ts []engine.Transfer, now, computeEnd int64) {
 	for _, t := range ts {
 		demand := d.priceTransfer(t)
+		if isPeerWrite(t) {
+			d.startPeerWrite(t, demand, now)
+			continue
+		}
 		if t.Tier != "" {
 			d.startTierTransfer(t, demand, computeEnd)
 			continue
@@ -111,6 +116,7 @@ func TierTicks(d kernel.TransferDemand) int64 {
 
 // LandRemote reports that req's pull has landed at now: the engine runs it from here.
 func (d *EngineDriver) LandRemote(req *Request, now int64) {
+	defer d.drainPeer(now)
 	id, ok := d.pulls[req.ID]
 	if !ok {
 		panic(fmt.Sprintf("engine driver: LandRemote(%s): no pull of it is in flight", req.ID))
@@ -136,6 +142,7 @@ func (d *EngineDriver) LandRemote(req *Request, now int64) {
 // which under "recompute" prefills it locally (vllm/v1/core/sched/scheduler.py:3132-3153,
 // 3341-3354@5df63a72), a request the cluster no longer counts.
 func (d *EngineDriver) FailRemote(req *Request, now int64) {
+	defer d.drainPeer(now)
 	if _, ok := d.pulls[req.ID]; !ok {
 		panic(fmt.Sprintf("engine driver: FailRemote(%s): no pull of it is in flight", req.ID))
 	}
@@ -147,6 +154,7 @@ func (d *EngineDriver) FailRemote(req *Request, now int64) {
 
 // AbortRemote ends a handoff the engine holds before its pull landed, at now (Finish, abort).
 func (d *EngineDriver) AbortRemote(req *Request, now int64) {
+	defer d.drainPeer(now)
 	d.endRemote(req, now)
 	d.kick(now)
 }
@@ -186,6 +194,7 @@ func (d *EngineDriver) HandoffBlocks(req *Request) []int64 {
 
 // ReleaseHandoff ends the hold of req's prefill KV at now: the pull completed, or the hold ran out.
 func (d *EngineDriver) ReleaseHandoff(req *Request, now int64) {
+	defer d.drainPeer(now)
 	h, ok := d.holds[req.ID]
 	if !ok {
 		panic(fmt.Sprintf("engine driver: ReleaseHandoff(%s): the engine holds no KV for it", req.ID))
@@ -286,6 +295,7 @@ func (e *driverTierStart) run(d *EngineDriver) { d.pumpTier(e.kind, e.at) }
 // TierLanded reports at now that the tier copy id (OnTierPriced) has landed: the engine is told, and
 // the next copy of its kind may start.
 func (d *EngineDriver) TierLanded(id engine.TransferID, now int64) {
+	defer d.drainPeer(now)
 	kind, ok := d.tierOf[id]
 	if !ok {
 		panic(fmt.Sprintf("engine driver: TierLanded(%d): no tier copy by that id is in flight", id))

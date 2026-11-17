@@ -91,6 +91,14 @@ type DeploymentConfig struct {
 	// driver's Environment prices it (design 6.2); the cluster owns when it ends.
 	InstanceEndpoint func(InstanceID) plan.Endpoint `json:"-" yaml:"-"`
 
+	// PeerEndpoint is where an instance's workers sit, in the numbering of the instance's own pool,
+	// for the engines that exchange peer messages and WRITEs (engine.PeerPlaced). Unset, engines are
+	// told nothing and refuse a WRITE to a peer.
+	PeerEndpoint func(InstanceID) plan.Endpoint `json:"-" yaml:"-"`
+	// PeerMessageLatency is how long a peer message takes from sender to receiver, in ticks: the
+	// named substitution peer_message_delivery_latency, until the ZMQ round trip is measured.
+	PeerMessageLatency int64 `json:"-" yaml:"-"`
+
 	// PDTransferContention makes concurrent handoffs share the links they cross (#1922,
 	// INV-P2-2): each handoff's demand, which the Environment states with the links it crosses
 	// and their full rates, enters a LinkArbiter, which divides every link max-min fairly among
