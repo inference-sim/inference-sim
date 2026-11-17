@@ -20,7 +20,10 @@ direct    A sequence (oracle/scenarios/hicache/direct/*.json) is a list of calls
           (mem_cache/unified_radix_cache.py:455@297e54fd) with the sequence's HiCache settings,
           as Scheduler.__init__ calls it (mem_cache/registry.py:192-196).
 
-core/hicache's trace test reads both kinds; core/hicache replays them against the port.
+core/hicache's trace test reads both kinds; core/hicache replays them against the port. Each trace
+lists, in boundary_at, how many calls were recorded before each step boundary, so a replay applies
+boundary k at the same place; a direct trace also records, in states, the controller's queues,
+acks, layer counter and host free list after each entry of the sequence.
 
 A sequence:
     {"description": "...", "model": "...", "seed": 0,
@@ -214,8 +217,10 @@ def drive_sequence(sglang_root: str, path: str) -> dict:
 
         snapshot("built")
         call = make_call(path, cache, cc, alloc, bound, ref, node, key)
+        boundary_at = []
         for i, c in enumerate(sq["calls"]):
             if c.get("boundary"):
+                boundary_at.append(len(mon.calls))
                 runner.boundary()
                 snapshot(i)
                 continue
@@ -232,8 +237,8 @@ def drive_sequence(sglang_root: str, path: str) -> dict:
                 bound[c["as"]] = out
             snapshot(i)
     return {"provenance": traces.provenance(TIER, sglang_root, path, sq, INPUTS), "kind": "direct",
-            "boundaries": runner.boundaries, "bodies_run": [list(r) for r in runner.ran], "states": states,
-            "calls": mon.calls}
+            "boundaries": runner.boundaries, "boundary_at": boundary_at, "bodies_run": [list(r) for r in runner.ran],
+            "states": states, "calls": mon.calls}
 
 
 def make_call(path, cache, cc, alloc, bound, ref, node, key):
@@ -316,6 +321,12 @@ def recorded_child(scenario: dict, sglang_root: str, out_path: str) -> None:
 
     runner = step_runner.RUNNER
     monitors = []
+    boundary_at = []
+
+    def on_step():
+        # The calls recorded before boundary k, so a replay applies it at the same place.
+        boundary_at.append(len(monitors[0].calls))
+        runner.boundary()
 
     def setup():
         # After the harness's replacements, before Scheduler.__init__ builds the controller.
@@ -328,7 +339,7 @@ def recorded_child(scenario: dict, sglang_root: str, out_path: str) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         result_path = os.path.join(tmp, "result.json")
         try:
-            run_scheduler.child(scenario, sglang_root, result_path, on_step=runner.boundary, setup=setup)
+            run_scheduler.child(scenario, sglang_root, result_path, on_step=on_step, setup=setup)
         finally:
             for m in monitors:
                 m.__exit__(None, None, None)
@@ -336,7 +347,7 @@ def recorded_child(scenario: dict, sglang_root: str, out_path: str) -> None:
         with open(result_path) as f:
             result = json.load(f)
     with open(out_path, "w") as f:
-        json.dump({"result": result, "calls": mon.calls, "boundaries": runner.boundaries,
+        json.dump({"result": result, "calls": mon.calls, "boundaries": runner.boundaries, "boundary_at": boundary_at,
                    "bodies_run": [list(r) for r in runner.ran]}, f)
 
 
@@ -366,7 +377,8 @@ def record_scenario(sglang_root: str, path: str) -> dict:
     if problems:
         raise SystemExit(f"{path}: not a run run_scheduler.py would record: " + "; ".join(problems))
     return {"provenance": traces.provenance(TIER, sglang_root, path, scenario, INPUTS), "kind": "recorded",
-            "classes": got["result"]["classes"], "boundaries": got["boundaries"], "bodies_run": got["bodies_run"],
+            "classes": got["result"]["classes"], "boundaries": got["boundaries"], "boundary_at": got["boundary_at"],
+            "bodies_run": got["bodies_run"],
             "calls": got["calls"]}
 
 
