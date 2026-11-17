@@ -86,7 +86,7 @@
     "oracle/scenarios/connector",
     "core/connector/nixl/testdata/golden"
    ],
-   "why": "vLLM binds the name to NixlPullConnector's class (vllm/distributed/kv_transfer/kv_connector/v1/nixl/connector.py:414@5df63a72)"
+   "why": "vLLM binds the name to NixlPullConnector's class (vllm/distributed/kv_transfer/kv_connector/v1/nixl/connector.py:432@4ba787ec)"
   },
   "connector:NixlPullConnector": {
    "status": "modelled",
@@ -271,6 +271,10 @@
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/12"
   },
+  "kv_event_source:UMBPStoreKVEvents": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/66"
+  },
   "kv_event_type:AllBlocksCleared": {
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/60",
@@ -317,7 +321,7 @@
   "metric_family:vllm:corrupted_requests": {
    "status": "out_of_scope",
    "reason": "no_priced_work",
-   "citation": "vllm/v1/metrics/loggers.py:630-640@5df63a72",
+   "citation": "vllm/v1/metrics/loggers.py:630-640@4ba787ec",
    "why": "a count of NaN logits, a property of the numerics, not of the work"
   },
   "metric_family:vllm:diffusion_num_canvas_positions": {
@@ -342,7 +346,7 @@
   "metric_family:vllm:engine_sleep_state": {
    "status": "out_of_scope",
    "reason": "no_priced_work",
-   "citation": "vllm/v1/metrics/loggers.py:594-600@5df63a72",
+   "citation": "vllm/v1/metrics/loggers.py:594-600@4ba787ec",
    "why": "an operator's sleep-mode RPC, which no served request makes"
   },
   "metric_family:vllm:estimated_flops_per_gpu_total": {
@@ -472,6 +476,10 @@
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
   },
+  "metric_family:vllm:kv_offload_config_info": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
+  },
   "metric_family:vllm:kv_offload_cpu_allocation_size": {
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/4"
@@ -584,6 +592,10 @@
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
   },
+  "metric_family:vllm:kv_offload_tiering_promotion_latency_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
+  },
   "metric_family:vllm:kv_offload_tiering_read_bytes": {
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/63"
@@ -618,14 +630,34 @@
   "metric_family:vllm:mm_cache_hits": {
    "status": "out_of_scope",
    "reason": "no_priced_work",
-   "citation": "vllm/v1/metrics/loggers.py:713-735@5df63a72",
+   "citation": "vllm/v1/metrics/loggers.py:713-735@4ba787ec",
    "why": "the multimodal processor cache; BLIS simulates text serving"
   },
   "metric_family:vllm:mm_cache_queries": {
    "status": "out_of_scope",
    "reason": "no_priced_work",
-   "citation": "vllm/v1/metrics/loggers.py:713-735@5df63a72",
+   "citation": "vllm/v1/metrics/loggers.py:713-735@4ba787ec",
    "why": "the multimodal processor cache; BLIS simulates text serving"
+  },
+  "metric_family:vllm:mooncake_bytes_transferred": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/138"
+  },
+  "metric_family:vllm:mooncake_num_descriptors": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/138"
+  },
+  "metric_family:vllm:mooncake_num_failed_recvs": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/138"
+  },
+  "metric_family:vllm:mooncake_num_failed_transfers": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/138"
+  },
+  "metric_family:vllm:mooncake_num_kv_expired_reqs": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/138"
   },
   "metric_family:vllm:mooncake_store_operation_bytes_total": {
    "status": "refused",
@@ -646,6 +678,10 @@
   "metric_family:vllm:mooncake_store_operation_total": {
    "status": "refused",
    "issue": "https://github.com/inference-sim/blis-vllm/issues/12"
+  },
+  "metric_family:vllm:mooncake_xfer_time_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/138"
   },
   "metric_family:vllm:nixl_bytes_transferred": {
    "status": "refused",
@@ -847,13 +883,13 @@
   "metric_family:vllm:rl_weight_update_operation_duration_seconds": {
    "status": "out_of_scope",
    "reason": "no_priced_work",
-   "citation": "vllm/entrypoints/rl/online/metrics.py:19-31@5df63a72",
+   "citation": "vllm/entrypoints/rl/online/metrics.py:19-31@4ba787ec",
    "why": "an RL trainer's weight-update endpoint, which no served request calls"
   },
   "metric_family:vllm:rl_weight_update_operations_in_flight": {
    "status": "out_of_scope",
    "reason": "no_priced_work",
-   "citation": "vllm/entrypoints/rl/online/metrics.py:19-31@5df63a72",
+   "citation": "vllm/entrypoints/rl/online/metrics.py:19-31@4ba787ec",
    "why": "an RL trainer's weight-update endpoint, which no served request calls"
   },
   "metric_family:vllm:simple_kv_offload_info": {
@@ -879,13 +915,13 @@
   "metric_family:vllm:sleep_mode_operation_duration_seconds": {
    "status": "out_of_scope",
    "reason": "no_priced_work",
-   "citation": "vllm/entrypoints/serve/dev/sleep/metrics.py:21-33@5df63a72",
+   "citation": "vllm/entrypoints/serve/dev/sleep/metrics.py:21-33@4ba787ec",
    "why": "an operator's sleep-mode endpoint, which no served request calls"
   },
   "metric_family:vllm:sleep_mode_operations_in_flight": {
    "status": "out_of_scope",
    "reason": "no_priced_work",
-   "citation": "vllm/entrypoints/serve/dev/sleep/metrics.py:21-33@5df63a72",
+   "citation": "vllm/entrypoints/serve/dev/sleep/metrics.py:21-33@4ba787ec",
    "why": "an operator's sleep-mode endpoint, which no served request calls"
   },
   "metric_family:vllm:spec_decode_num_accepted_tokens": {
@@ -926,31 +962,47 @@
   "metric_family:vllm:tool_call_parser_invocations_total": {
    "status": "out_of_scope",
    "reason": "no_priced_work",
-   "citation": "vllm/parser/metrics.py:38@5df63a72",
+   "citation": "vllm/parser/metrics.py:38@4ba787ec",
    "why": "response parsing in the API server, after the engine"
+  },
+  "metric_family:vllm:umbp_transfer_bytes_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/66"
+  },
+  "metric_family:vllm:umbp_transfer_completed_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/66"
+  },
+  "metric_family:vllm:umbp_transfer_failed_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/66"
+  },
+  "metric_family:vllm:umbp_transfer_submitted_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/blis-vllm/issues/66"
   },
   "metric_family:vllm:watermark_requests": {
    "status": "out_of_scope",
    "reason": "no_priced_work",
-   "citation": "vllm/v1/metrics/loggers.py:643-650@5df63a72",
+   "citation": "vllm/v1/metrics/loggers.py:643-650@4ba787ec",
    "why": "the watermark status of finished outputs, a property of the sampled text"
   },
   "metric_family:vllm:websocket_connection_duration_seconds": {
    "status": "out_of_scope",
    "reason": "no_priced_work",
-   "citation": "vllm/entrypoints/speech_to_text/realtime/metrics.py:23-39@5df63a72",
+   "citation": "vllm/entrypoints/speech_to_text/realtime/metrics.py:23-39@4ba787ec",
    "why": "the realtime speech-to-text endpoint; BLIS simulates text serving"
   },
   "metric_family:vllm:websocket_connections_active": {
    "status": "out_of_scope",
    "reason": "no_priced_work",
-   "citation": "vllm/entrypoints/speech_to_text/realtime/metrics.py:23-39@5df63a72",
+   "citation": "vllm/entrypoints/speech_to_text/realtime/metrics.py:23-39@4ba787ec",
    "why": "the realtime speech-to-text endpoint; BLIS simulates text serving"
   },
   "metric_family:vllm:websocket_connections_total": {
    "status": "out_of_scope",
    "reason": "no_priced_work",
-   "citation": "vllm/entrypoints/speech_to_text/realtime/metrics.py:23-39@5df63a72",
+   "citation": "vllm/entrypoints/speech_to_text/realtime/metrics.py:23-39@4ba787ec",
    "why": "the realtime speech-to-text endpoint; BLIS simulates text serving"
   },
   "offload_backend:SimpleCPUOffloadConnector kv_offload_backend=cpu": {
@@ -1088,13 +1140,13 @@
   "speculative_method:bailing_hybrid_mtp": {
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   "speculative_method:bailing_hybrid_v3_mtp": {
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   "speculative_method:custom_class": {
@@ -1106,7 +1158,7 @@
   "speculative_method:deepseek_mtp": {
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   "speculative_method:dflash": {
@@ -1116,7 +1168,7 @@
   "speculative_method:dots3_note_mtp": {
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   "speculative_method:draft_model": {
@@ -1147,19 +1199,19 @@
   "speculative_method:ernie_mtp": {
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   "speculative_method:exaone4_5_mtp": {
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   "speculative_method:exaone_moe_mtp": {
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   "speculative_method:extract_hidden_states": {
@@ -1169,88 +1221,80 @@
   "speculative_method:gemma4_mtp": {
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   "speculative_method:glm4_moe_lite_mtp": {
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   "speculative_method:glm4_moe_mtp": {
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   "speculative_method:glm5_next_mtp": {
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   "speculative_method:glm_ocr_mtp": {
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   "speculative_method:hy_v3_mtp": {
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   "speculative_method:hy_v4_mtp": {
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   "speculative_method:inkling_mtp": {
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   "speculative_method:kimi_k3_mtp": {
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   "speculative_method:longcat_flash_mtp": {
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
-  },
-  "speculative_method:medusa": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/150"
   },
   "speculative_method:mimo_mtp": {
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   "speculative_method:mimo_v2_mtp": {
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   "speculative_method:minimax_m3_mtp": {
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
-  },
-  "speculative_method:mlp_speculator": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/blis-vllm/issues/150"
   },
   "speculative_method:mtp": {
    "status": "modelled",
@@ -1263,7 +1307,7 @@
   "speculative_method:nemotron_h_mtp": {
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   "speculative_method:ngram": {
@@ -1280,31 +1324,37 @@
   "speculative_method:pangu_ultra_moe_mtp": {
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   "speculative_method:qwen3_5_mtp": {
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   "speculative_method:qwen3_next_mtp": {
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   "speculative_method:qwen4_exp_mtp": {
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   "speculative_method:step3p5_mtp": {
    "status": "out_of_scope",
    "reason": "deprecated",
-   "citation": "vllm/config/speculative.py:1141-1145@5df63a72",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
+   "why": "vLLM rewrites the name to mtp with a deprecation warning"
+  },
+  "speculative_method:step5_mtp": {
+   "status": "out_of_scope",
+   "reason": "deprecated",
+   "citation": "vllm/config/speculative.py:1246-1250@4ba787ec",
    "why": "vLLM rewrites the name to mtp with a deprecation warning"
   },
   "speculative_method:suffix": {
