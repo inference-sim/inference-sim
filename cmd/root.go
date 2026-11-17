@@ -780,12 +780,14 @@ var runCmd = &cobra.Command{
 			bundleHPAScrapeDelayMean             float64
 			bundleHPAScrapeDelayStddev           float64
 			bundleAnalyzerCfg                    cluster.V2SaturationAnalyzerConfig
+			bundleScaleToZeroIdleUs              float64
 			bundleNodePools                      []cluster.NodePoolConfig
 			bundleInstanceLifecycle              cluster.InstanceLifecycleConfig
 		)
 		if bundle != nil {
 			if bundle.Autoscaler.IntervalUs > 0 {
 				bundleAutoscalerIntervalUs = bundle.Autoscaler.IntervalUs
+				bundleScaleToZeroIdleUs = bundle.Autoscaler.ScaleToZeroIdleUs
 				bundleScaleUpStabilizationWindowUs = bundle.Autoscaler.ScaleUpStabilizationWindowUs
 				bundleScaleDownStabilizationWindowUs = bundle.Autoscaler.ScaleDownStabilizationWindowUs
 				bundleHPAScrapeDelayMean = bundle.Autoscaler.HPAScrapeDelay.Mean
@@ -942,6 +944,7 @@ var runCmd = &cobra.Command{
 			PDPrefillSamplesFirstToken:     true,
 			Roles:                          rolesOf(runEngine, prefillOverrides, decodeOverrides),
 			ModelAutoscalerIntervalUs:      bundleAutoscalerIntervalUs,
+			ScaleToZeroIdleUs:              bundleScaleToZeroIdleUs,
 			ScaleUpStabilizationWindowUs:   bundleScaleUpStabilizationWindowUs,
 			ScaleDownStabilizationWindowUs: bundleScaleDownStabilizationWindowUs,
 			HPAScrapeDelay:                 cluster.DelaySpec{Mean: bundleHPAScrapeDelayMean, Stddev: bundleHPAScrapeDelayStddev},

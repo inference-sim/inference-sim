@@ -66,6 +66,7 @@ func (c *ClusterSimulator) arriveRequest(req *sim.Request) {
 	}
 	c.noteFateErr(c.fates.Arrive(req.ID))
 	c.liveRequests[req.ID] = req
+	c.noteDemand(req)
 }
 
 // endRequest writes req's fate at the current site. It is called before the gateway, the
