@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/load"
 )
 
@@ -40,5 +41,37 @@ func TestGLMIndexerScoringDoesNotShardAcrossRanks(t *testing.T) {
 	if r := s8 / s4; r < 0.85 || r > 1.15 {
 		t.Errorf("the prefix's cost on a TP8 rank is %.3fx a TP4 rank's (TP8 %.3g s, TP4 %.3g s); "+
 			"the indexer runs every head on every rank, so it should not shrink with TP", r, s8, s4)
+	}
+}
+
+// The fused A-projection of a GLM DSA layer runs whole on every rank: vLLM builds it as
+// DeepSeekV2FusedQkvAProjLinear, a MergedColumnParallelLinear with disable_tp=True (deepseek_v2.py:953-969,
+// built at deepseek_v32/attention.py:247 and glm5next/common/attention.py:428, v0.33.0 4ba787ec). A graph that
+// left it at the default split charged a TP8 rank an eighth of its weight and work. The resolved layout of the
+// node is what the kernel prices from.
+func TestGLMFusedAProjectionIsReplicated(t *testing.T) {
+	d, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"glm-5", "glm-5.2", "glm-5.2-fp8", "glm-5.3", "glm-5.3-flash"} {
+		g, err := d.Model(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seen := 0
+		for _, lk := range g.LayerKinds {
+			for _, n := range lk.Nodes {
+				if n.Role == "qkv_a_proj" {
+					seen++
+					if n.TP != model.TPReplicated {
+						t.Errorf("%s layer kind %s: qkv_a_proj has layout %q; vLLM runs it whole on every rank", name, lk.ID, n.TP)
+					}
+				}
+			}
+		}
+		if seen == 0 {
+			t.Errorf("%s: no qkv_a_proj node found", name)
+		}
 	}
 }

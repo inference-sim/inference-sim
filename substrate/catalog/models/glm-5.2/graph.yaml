@@ -20,6 +20,7 @@ layer_kinds:
     role: qkv_a_proj
     n: 2624
     k: 6144
+    tp: replicated
   - op: Elementwise
     role: qkv_a_layernorm
     bytes_per_token: 10752
@@ -116,6 +117,7 @@ layer_kinds:
     role: qkv_a_proj
     n: 2624
     k: 6144
+    tp: replicated
   - op: Elementwise
     role: qkv_a_layernorm
     bytes_per_token: 10752
@@ -215,6 +217,7 @@ layer_kinds:
     role: qkv_a_proj
     n: 2624
     k: 6144
+    tp: replicated
   - op: Elementwise
     role: qkv_a_layernorm
     bytes_per_token: 10240
@@ -289,6 +292,7 @@ layer_kinds:
     role: qkv_a_proj
     n: 2624
     k: 6144
+    tp: replicated
   - op: Elementwise
     role: qkv_a_layernorm
     bytes_per_token: 10752

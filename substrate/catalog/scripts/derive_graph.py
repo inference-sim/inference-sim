@@ -1908,6 +1908,12 @@ def lightning_indexer(cfg: dict[str, Any], model: str, hidden: int,
     # the one term in the layer that grows with context.
     for node in [*projections, scorer]:
         node["tp"] = "replicated"
+    # The fused A-projection is replicated too: DeepSeekV2FusedQkvAProjLinear is a
+    # MergedColumnParallelLinear with disable_tp=True (deepseek_v2.py:953-969; built at
+    # deepseek_v32/attention.py:247, glm5next/common/attention.py:428 and, with disable_tp=True
+    # spelled out, kimi_k3/nvidia/mla.py:241-251, v0.33.0 4ba787ec). Every rank reads and runs
+    # all of it; left at the default it was charged an eighth of its weight and FLOPs at TP8.
+    nodes = [dict(n, tp="replicated") if n.get("role") == "qkv_a_proj" else n for n in nodes]
     return nodes[:at] + projections + [scorer] + nodes[at:]
 
 
@@ -1994,7 +2000,13 @@ def handler_moe(cfg, raw, model):
     def attn_nodes(win=None, index=None):
         use = indexed_any if index is None else index
         n = attention_block(cfg, model, hidden, raw=raw, window=win, indexed=use)
-        return lightning_indexer(cfg, model, hidden, n, raw) if use else n
+        n = lightning_indexer(cfg, model, hidden, n, raw) if use else n
+        if indexed_any:
+            # A DSA model's layers that skip the indexer still build the same fused A-projection,
+            # whole on every rank (see lightning_indexer); a layer kind must not differ from its
+            # indexed sibling in how that node is laid out.
+            n = [dict(x, tp="replicated") if x.get("role") == "qkv_a_proj" else x for x in n]
+        return n
 
     def sparse_nodes(win=None, index=None):
         n = attn_nodes(win, index)

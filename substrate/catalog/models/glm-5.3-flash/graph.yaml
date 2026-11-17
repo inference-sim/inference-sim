@@ -234,6 +234,7 @@ layer_kinds:
     role: qkv_a_proj
     n: 2048
     k: 4096
+    tp: replicated
     weight_dtype: bf16
   - &id013
     op: Elementwise
