@@ -14,7 +14,10 @@ import "github.com/inference-sim/inference-sim/sim"
 type LatencyTotals struct {
 	Completed int
 	TTFTSumUs float64 // sum over completed requests of time to first token, microseconds
-	ITLSumUs  float64 // sum over completed requests of mean inter-token latency, microseconds
+	ITLSumUs  float64 // sum over completed requests with an ITL sample of mean inter-token latency, microseconds
+	// ITLCount is how many completed requests have an ITL sample: one with fewer than two output
+	// tokens has a TTFT and no inter-token gap (#1894), so ITLCount can be below Completed.
+	ITLCount  int
 	InTokens  int64
 	OutTokens int64
 }
@@ -67,10 +70,16 @@ func (w *WindowedCollector) Collect(state *sim.ClusterState) []ModelSignals {
 			next[r.InstanceID] = cur
 			d := LatencyTotals{Completed: cur.Completed - w.prev[r.InstanceID].Completed,
 				TTFTSumUs: cur.TTFTSumUs - w.prev[r.InstanceID].TTFTSumUs, ITLSumUs: cur.ITLSumUs - w.prev[r.InstanceID].ITLSumUs,
+				ITLCount: cur.ITLCount - w.prev[r.InstanceID].ITLCount,
 				InTokens: cur.InTokens - w.prev[r.InstanceID].InTokens, OutTokens: cur.OutTokens - w.prev[r.InstanceID].OutTokens}
 			if d.Completed > 0 {
 				n := float64(d.Completed)
-				r.TTFT, r.ITL = d.TTFTSumUs/n, d.ITLSumUs/n
+				// TTFT is the mean over every completion of the tick, ITL over those that have an
+				// inter-token gap (the whole-run LatencyStats' populations).
+				r.TTFT = d.TTFTSumUs / n
+				if d.ITLCount > 0 {
+					r.ITL = d.ITLSumUs / float64(d.ITLCount)
+				}
 				r.AvgInTokens, r.AvgOutTokens = float64(d.InTokens)/n, float64(d.OutTokens)/n
 				if elapsedS > 0 {
 					r.DispatchRate = n / elapsedS
