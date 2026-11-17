@@ -58,8 +58,8 @@ WRITERS = [
     ("relane_attention_decode.py", "full-attention decode floor and rate"),
     ("relane_attention_prefill.py", "prefill floor and work_scale"),
     # The prefill pair refitted on FlashInfer's trtllm-gen kernel alone, for the chips that run
-    # it; a pool that reports that kernel reads it. `transferred`, so the family-owner map below
-    # does not list it (it lists `fitted: true` entries only).
+    # it, keyed by the engine release's kernel_impls.json ($BLIS_KERNEL_IMPLS); a pool that
+    # reports that kernel reads it. Its measured entries are in the family-owner map below.
     ("emit_attention_trtllm_gen.py", "the trtllm-gen prefill lane"),
     ("relane_attention_swa.py", "sliding-window decode floor and rate"),
     ("relane_gemm_envelope.py", "the GEMM efficiency ramp"),
@@ -242,6 +242,9 @@ def test_every_fitted_family_has_a_writer():
         "attention_decode_rate_mla": "relane_attention_mla.py",
         "attention_prefill_floor": "relane_attention_prefill.py",
         "attention_prefill_work_scale": "relane_attention_prefill.py",
+        # The trtllm-gen lane's measured entries, keyed to the FlashInfer build their run used.
+        "attention_prefill_floor_trtllm_gen_kv": "emit_attention_trtllm_gen.py",
+        "attention_prefill_work_scale_trtllm_gen_kv": "emit_attention_trtllm_gen.py",
         "recurrent_decode_floor_kda": "relane_recurrent_kda.py",
         "recurrent_decode_rate_kda": "relane_recurrent_kda.py",
         "recurrent_decode_floor_gdn": "relane_recurrent_family.py",

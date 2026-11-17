@@ -375,7 +375,7 @@ func TestStackLockIsStrict(t *testing.T) {
 // The relaxation list is plan §3.3's: it ends at M4 and names exactly these features.
 func TestRelaxationsMatchThePlan(t *testing.T) {
 	want := []string{"engine_version", "compat/", "rules/v0_29/", "rules/v0_31/", "contracts/rules/",
-		"contracts/kernel/enginesettings/", "scheduler", "preemption-policy", "dp-load-balancing",
+		"scheduler", "preemption-policy", "dp-load-balancing",
 		"swa-bounded-replay", "kv-offload-config", "lazy-generation", "eager"}
 	var got []string
 	for _, r := range relaxations {

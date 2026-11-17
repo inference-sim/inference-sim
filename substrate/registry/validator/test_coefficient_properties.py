@@ -1004,7 +1004,7 @@ def test_fitted_entries_without_an_evidence_record_only_go_down(field):
     assert len(missing) <= MAX_FITTED_WITHOUT[field], (
         f"{len(missing)} measured or calibrated entries state no {field}, above the "
         f"{MAX_FITTED_WITHOUT[field]} committed. A new fitted entry records {field}.")
-    assert len(FITTED) == 901, f"{len(FITTED)} fitted entries; update the ratchets with it"
+    assert len(FITTED) == 913, f"{len(FITTED)} fitted entries; update the ratchets with it"
 
 
 def fitted_without(field, entries):

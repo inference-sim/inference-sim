@@ -2,6 +2,7 @@ package latencykernel
 
 import (
 	"fmt"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -12,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/rules"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
@@ -89,7 +89,6 @@ func perturbationScenarios(t *testing.T, d *load.Data, only ...string) []perturb
 				tp, dp, ep := lay.tp, lay.dp, lay.ep
 				built := false
 				for _, st := range perturbationSettings(lay) {
-					st.MaxNumSeqs, st.MaxNumBatchedTokens, st.MaxModelLen = 64, 8192, 8192
 					perNode := 8
 					if ch != nil && ch.GPUsPerNode > 0 {
 						perNode = ch.GPUsPerNode
@@ -104,9 +103,8 @@ func perturbationScenarios(t *testing.T, d *load.Data, only ...string) []perturb
 					if err := os.WriteFile(filepath.Join(dir, "s.yaml"), []byte(body), 0o644); err != nil {
 						t.Fatal(err)
 					}
-					stCopy := st
 					r := Repos{Scenarios: dir, Data: d, Rules: func(string) rules.EngineRules { return windowedRules{} },
-						EngineSettings: func(*deployment.Deployment, int) (enginesettings.Settings, error) { return stCopy, nil }}
+						DraftModel: noDrafter, Lower: lowerTo(8192, st.block, 0, st.edit)}
 					in, err := OpenInputs("s.yaml", r, 0)
 					if err != nil {
 						continue
@@ -114,7 +112,7 @@ func perturbationScenarios(t *testing.T, d *load.Data, only ...string) []perturb
 					if _, err := New(in); err != nil {
 						continue
 					}
-					label := fmt.Sprintf("%s/%s/tp%d/dp%d/ep%t/dcp%d/pcp%d/bs%d", m, c, tp, dp, ep, lay.dcp, lay.pcp, st.BlockSize)
+					label := fmt.Sprintf("%s/%s/tp%d/dp%d/ep%t/dcp%d/pcp%d/bs%d", m, c, tp, dp, ep, lay.dcp, lay.pcp, st.block)
 					out = append(out, perturbationCase{label, in})
 					// The same scenario with the trtllm-gen prefill lane priced, where the chip
 					// carries it: the lane's bf16 pair is read at an auto cache and the fp8 pair
@@ -125,10 +123,10 @@ func perturbationScenarios(t *testing.T, d *load.Data, only ...string) []perturb
 					if _, err := New(laneIn); err == nil {
 						out = append(out, perturbationCase{label + "/trtllm", laneIn})
 					} // And at an fp8 cache, which reads the lane's fp8 pair.
-					f8 := st.Clone()
-					f8.CacheDType = "fp8"
+					f8 := *in.Lowered
+					f8.Plan.Cache.Record, f8.Plan.Cache.ElementBytes, f8.Plan.Cache.LatentCellBytes = "fp8", 1, 0
 					f8In := keyedLane(in, laneFP8)
-					f8In.Engine = &f8
+					f8In.Lowered = &f8
 					if _, err := New(f8In); err == nil {
 						out = append(out, perturbationCase{label + "/trtllm-fp8", f8In})
 					}
@@ -155,21 +153,36 @@ var perturbationLayouts = []layoutCase{
 // model builds is the one priced. The backends a layout can route through come first, so an
 // expert-parallel layout is priced on the all-to-all that uses the registry's all-to-all
 // entries before the dense dispatch, which does not.
-func perturbationSettings(lay layoutCase) []enginesettings.Settings {
-	var out []enginesettings.Settings
-	blocks := []enginesettings.Settings{
-		{BlockSize: 16}, {BlockSize: 64}, {BlockSize: 256},
-		{BlockSize: 64, CacheDType: "fp8_ds_mla"}, {BlockSize: 256, CacheDType: "fp8_ds_mla"},
-	}
+func perturbationSettings(lay layoutCase) []perturbationSetting {
+	var out []perturbationSetting
+	blocks := []perturbationSetting{{block: 16}, {block: 64}, {block: 256}, {block: 64, packed: true},
+		{block: 256, packed: true}}
 	if lay.ep {
-		for _, backend := range []string{"deepep_high_throughput", "deepep_low_latency", "mori"} {
+		for _, dispatch := range []plan.KernelImpl{plan.DispatchDeepEPHighThroughput,
+			plan.DispatchDeepEPLowLatency, {Library: "mori"}} {
 			for _, b := range blocks {
-				b.All2AllBackend = backend
+				b.dispatch = dispatch
 				out = append(out, b)
 			}
 		}
 	}
 	return append(out, blocks...)
+}
+
+// perturbationSetting is one plan a perturbation tries: a page size, a cache stored as an fp8
+// record (packed latent cells on a latent layer), and an MoE dispatch kernel.
+type perturbationSetting struct {
+	block    int
+	packed   bool
+	dispatch plan.KernelImpl
+}
+
+// edit states the setting in a plan.
+func (s perturbationSetting) edit(l *plan.Lowered) {
+	if s.packed {
+		l.Plan.Cache.Record, l.Plan.Cache.ElementBytes, l.Plan.Cache.LatentCellBytes = "fp8_ds_mla", 1, 656
+	}
+	l.Plan.MoE.Dispatch = s.dispatch
 }
 
 // ctxPar renders the context-parallel widths of a layout, or nothing when both are off.

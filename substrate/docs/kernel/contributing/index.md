@@ -22,11 +22,11 @@ changes `kernel/` or `contracts/`, with `gofmt`, `go vet` and a race test.
 | Path | Holds |
 |---|---|
 | `kernel/kernel.go` | The interface methods and the composition of a step |
-| `kernel/new.go` | `New`: validation, resolution, coefficient lookup, everything computed once |
-| `kernel/sparse_mla.go` | Which sparse-attention backend vLLM chooses, and what that decides |
+| `kernel/new.go` | `New`: validation, coefficient lookup, everything computed once from the documents and the lowered plan |
+| `kernel/chip_family.go` | A chip's generation and a graph's model family, where they decide kernel selection |
 | `kernel/open.go` | `Open`, `OpenPool`, `OpenInputs`: from a scenario file to the documents |
 | `kernel/internal/price` | The cost laws, as pure functions |
-| `kernel/internal/resolve` | From a deployment to a layout: widths, groups, which collectives run |
+| `kernel/internal/resolve` | From a deployment to a layout's geometry: widths, groups, the nodes they span |
 | blis-vllm `kerneltests/` | The commands on [Commands](../reference/commands.md), their harness, the generator for `docs/kernel/generated/`, and the tests that price vLLM engine blocks. They decode vLLM's configuration, so they live with the engine model, and the kernel imports nothing from them |
 
 ## Conventions

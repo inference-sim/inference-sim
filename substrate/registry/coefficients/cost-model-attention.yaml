@@ -982,7 +982,7 @@ coefficients:
       fitted: false
       scope: {hardware: [b200]}
       transferred_from: "hardware=b200"
-      transfer_rule: "measured on the vLLM 0.25.0 image's FlashInfer trtllm-gen prefill kernel on this chip and used for the v0.32.0 engine pin; no kernel hash shows the two builds run the same kernel, and nothing is moved between chips"
+      transfer_rule: "measured on the vLLM 0.25.0 image's FlashInfer trtllm-gen prefill kernel on this chip and used for the engine's pin; the run records no FlashInfer version, so no kernel hash shows which build it ran, and nothing is moved between chips"
       ci95: [17.75, 19.25]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
@@ -991,7 +991,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/b200_sxm/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA B200), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a bfloat16 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
       rationale: >
-        The minimum cost of the trtllm-gen prefill attention kernel at a bfloat16 KV cache, independent of prompt length, on b200: 18.5 us against the pooled attention_prefill_floor of 16.5 us, which also averages in the other cache dtype, the Triton rows and the one-token decode-classified rows. Fitted jointly with attention_prefill_work_scale_trtllm_gen_kv_bf16; geometric error 1.571x against the pooled 1.684x. The pair of the bfloat16 KV cache sweep. It is read only where the caller reports, as the implementation of attention.prefill, one that this entry lists in kernel_impls (VAL-8); it lists none yet, so it is not read. Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+        The minimum cost of the trtllm-gen prefill attention kernel at a bfloat16 KV cache, independent of prompt length, on b200: 18.5 us against the pooled attention_prefill_floor of 16.5 us, which also averages in the other cache dtype, the Triton rows and the one-token decode-classified rows. Fitted jointly with attention_prefill_work_scale_trtllm_gen_kv_bf16; geometric error 1.571x against the pooled 1.684x. The pair of the bfloat16 KV cache sweep. It is read only where the caller reports, as the implementation of attention.prefill, one that this entry lists in kernel_impls (VAL-8); it lists none, because the run's image records no FlashInfer version, so it is not read. Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
   - attention_prefill_work_scale_trtllm_gen_kv_bf16:
       value: 0.32
       units: dimensionless
@@ -999,7 +999,7 @@ coefficients:
       fitted: false
       scope: {hardware: [b200]}
       transferred_from: "hardware=b200"
-      transfer_rule: "measured on the vLLM 0.25.0 image's FlashInfer trtllm-gen prefill kernel on this chip and used for the v0.32.0 engine pin; no kernel hash shows the two builds run the same kernel, and nothing is moved between chips"
+      transfer_rule: "measured on the vLLM 0.25.0 image's FlashInfer trtllm-gen prefill kernel on this chip and used for the engine's pin; the run records no FlashInfer version, so no kernel hash shows which build it ran, and nothing is moved between chips"
       ci95: [0.31, 0.35]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
@@ -1008,7 +1008,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/b200_sxm/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA B200), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a bfloat16 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
       rationale: >
-        The fraction of the bf16 GEMM efficiency ramp the trtllm-gen prefill kernel reaches on b200 at a bfloat16 KV cache: 0.32 against the pooled 0.32. Valid only against the ramp this registry carries (gemm_eps_max_bf16, gemm_m_half_bf16), and refitted with it. Fitted jointly with attention_prefill_floor_trtllm_gen_kv_bf16. The pair of the bfloat16 KV cache sweep. It is read only where the caller reports, as the implementation of attention.prefill, one that this entry lists in kernel_impls (VAL-8); it lists none yet, so it is not read. Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+        The fraction of the bf16 GEMM efficiency ramp the trtllm-gen prefill kernel reaches on b200 at a bfloat16 KV cache: 0.32 against the pooled 0.32. Valid only against the ramp this registry carries (gemm_eps_max_bf16, gemm_m_half_bf16), and refitted with it. Fitted jointly with attention_prefill_floor_trtllm_gen_kv_bf16. The pair of the bfloat16 KV cache sweep. It is read only where the caller reports, as the implementation of attention.prefill, one that this entry lists in kernel_impls (VAL-8); it lists none, because the run's image records no FlashInfer version, so it is not read. Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
   - attention_prefill_floor_trtllm_gen_kv_fp8:
       value: 21.0
       units: us_per_transfer
@@ -1016,7 +1016,7 @@ coefficients:
       fitted: false
       scope: {hardware: [b200]}
       transferred_from: "hardware=b200"
-      transfer_rule: "measured on the vLLM 0.25.0 image's FlashInfer trtllm-gen prefill kernel on this chip and used for the v0.32.0 engine pin; no kernel hash shows the two builds run the same kernel, and nothing is moved between chips"
+      transfer_rule: "measured on the vLLM 0.25.0 image's FlashInfer trtllm-gen prefill kernel on this chip and used for the engine's pin; the run records no FlashInfer version, so no kernel hash shows which build it ran, and nothing is moved between chips"
       ci95: [20.25, 21.25]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
@@ -1025,7 +1025,7 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/b200_sxm/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA B200), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a fp8 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
       rationale: >
-        The minimum cost of the trtllm-gen prefill attention kernel at a fp8 KV cache, independent of prompt length, on b200: 21.0 us against the pooled attention_prefill_floor of 16.5 us, which also averages in the other cache dtype, the Triton rows and the one-token decode-classified rows. Fitted jointly with attention_prefill_work_scale_trtllm_gen_kv_fp8; geometric error 1.673x against the pooled 1.684x. The pair of the fp8 KV cache sweep. It is read only where the caller reports, as the implementation of attention.prefill, one that this entry lists in kernel_impls (VAL-8); it lists none yet, so it is not read. Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+        The minimum cost of the trtllm-gen prefill attention kernel at a fp8 KV cache, independent of prompt length, on b200: 21.0 us against the pooled attention_prefill_floor of 16.5 us, which also averages in the other cache dtype, the Triton rows and the one-token decode-classified rows. Fitted jointly with attention_prefill_work_scale_trtllm_gen_kv_fp8; geometric error 1.673x against the pooled 1.684x. The pair of the fp8 KV cache sweep. It is read only where the caller reports, as the implementation of attention.prefill, one that this entry lists in kernel_impls (VAL-8); it lists none, because the run's image records no FlashInfer version, so it is not read. Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
   - attention_prefill_work_scale_trtllm_gen_kv_fp8:
       value: 0.34
       units: dimensionless
@@ -1033,7 +1033,7 @@ coefficients:
       fitted: false
       scope: {hardware: [b200]}
       transferred_from: "hardware=b200"
-      transfer_rule: "measured on the vLLM 0.25.0 image's FlashInfer trtllm-gen prefill kernel on this chip and used for the v0.32.0 engine pin; no kernel hash shows the two builds run the same kernel, and nothing is moved between chips"
+      transfer_rule: "measured on the vLLM 0.25.0 image's FlashInfer trtllm-gen prefill kernel on this chip and used for the engine's pin; the run records no FlashInfer version, so no kernel hash shows which build it ran, and nothing is moved between chips"
       ci95: [0.33, 0.35]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
@@ -1042,15 +1042,18 @@ coefficients:
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/b200_sxm/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA B200), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a fp8 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
       rationale: >
-        The fraction of the bf16 GEMM efficiency ramp the trtllm-gen prefill kernel reaches on b200 at a fp8 KV cache: 0.34 against the pooled 0.32. Valid only against the ramp this registry carries (gemm_eps_max_bf16, gemm_m_half_bf16), and refitted with it. Fitted jointly with attention_prefill_floor_trtllm_gen_kv_fp8. The pair of the fp8 KV cache sweep. It is read only where the caller reports, as the implementation of attention.prefill, one that this entry lists in kernel_impls (VAL-8); it lists none yet, so it is not read. Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+        The fraction of the bf16 GEMM efficiency ramp the trtllm-gen prefill kernel reaches on b200 at a fp8 KV cache: 0.34 against the pooled 0.32. Valid only against the ramp this registry carries (gemm_eps_max_bf16, gemm_m_half_bf16), and refitted with it. Fitted jointly with attention_prefill_floor_trtllm_gen_kv_fp8. The pair of the fp8 KV cache sweep. It is read only where the caller reports, as the implementation of attention.prefill, one that this entry lists in kernel_impls (VAL-8); it lists none, because the run's image records no FlashInfer version, so it is not read. Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
   - attention_prefill_floor_trtllm_gen_kv_bf16:
       value: 17.0
       units: us_per_transfer
-      method: transferred
-      fitted: false
+      method: measured
+      fitted: true
       scope: {hardware: [b300]}
-      transferred_from: "hardware=b300"
-      transfer_rule: "measured on the vLLM 0.25.0 image's FlashInfer trtllm-gen prefill kernel on this chip and used for the v0.32.0 engine pin; no kernel hash shows the two builds run the same kernel, and nothing is moved between chips"
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
+      measures:
+        time: device
+        execution: captured
+        harness: "AISimulate collector/vllm/collect_attn.py at ai-dynamo/aisimulate cbaf51b64fa460e5ec6146bde407a4c64958212d: the backend's forward pass, with its KV-cache write, timed by CUDA events over CUDA-graph replays"
       ci95: [16.75, 18.25]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
@@ -1058,16 +1061,40 @@ coefficients:
         - {dim: context_tokens, low: 16.0, high: 16384.0}
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA B300), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a bfloat16 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
+        - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the trtllm_batch_context_with_kv_cache builds of FlashInfer 0.6.13 and 0.7.2.post1 and the run record that names the image", role: supporting}
       rationale: >
-        The minimum cost of the trtllm-gen prefill attention kernel at a bfloat16 KV cache, independent of prompt length, on b300: 17.0 us against the pooled attention_prefill_floor of 15.5 us, which also averages in the other cache dtype, the Triton rows and the one-token decode-classified rows. Fitted jointly with attention_prefill_work_scale_trtllm_gen_kv_bf16; geometric error 1.560x against the pooled 1.688x. The pair of the bfloat16 KV cache sweep. It is read only where the caller reports, as the implementation of attention.prefill, one that this entry lists in kernel_impls (VAL-8); it lists none yet, so it is not read. Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
-  - attention_prefill_work_scale_trtllm_gen_kv_bf16:
-      value: 0.4
-      units: dimensionless
+        The minimum cost of the trtllm-gen prefill attention kernel at a bfloat16 KV cache, independent of prompt length, on b300: 17.0 us against the pooled attention_prefill_floor of 15.5 us, which also averages in the other cache dtype, the Triton rows and the one-token decode-classified rows. Fitted jointly with attention_prefill_work_scale_trtllm_gen_kv_bf16; geometric error 1.560x against the pooled 1.688x. The pair of the bfloat16 KV cache sweep, keyed to the build the data exercised: FlashInfer 0.6.13's trtllm-gen prefill kernel on this chip, which the run's image (vllm/vllm-openai@sha256:e1c1ff1af9a15921bfa11d1d95047258c1797392cdbfa296e7639da446b23f97) installs. A pool that reports that build as the implementation of attention.prefill reads it exactly (VAL-8). Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+  - attention_prefill_floor_trtllm_gen_kv_bf16:
+      value: 17.0
+      units: us_per_transfer
       method: transferred
       fitted: false
       scope: {hardware: [b300]}
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: baf0a0d3c96b3a3da63b6283baa6379bbd9d9158262e7e4c36b262e4b7b1e6a0}]
+      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
       transferred_from: "hardware=b300"
-      transfer_rule: "measured on the vLLM 0.25.0 image's FlashInfer trtllm-gen prefill kernel on this chip and used for the v0.32.0 engine pin; no kernel hash shows the two builds run the same kernel, and nothing is moved between chips"
+      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (79b222ae200f) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (baf0a0d3c96b) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips"
+      ci95: [16.75, 18.25]
+      fit_range:
+        - {dim: tokens, low: 16.0, high: 131072.0}
+        - {dim: requests, low: 1.0, high: 256.0}
+        - {dim: context_tokens, low: 16.0, high: 16384.0}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA B300), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a bfloat16 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
+        - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the trtllm_batch_context_with_kv_cache builds of FlashInfer 0.6.13 and 0.7.2.post1 and the run record that names the image", role: supporting}
+      rationale: >
+        The minimum cost of the trtllm-gen prefill attention kernel at a bfloat16 KV cache, independent of prompt length, on b300: 17.0 us against the pooled attention_prefill_floor of 15.5 us, which also averages in the other cache dtype, the Triton rows and the one-token decode-classified rows. Fitted jointly with attention_prefill_work_scale_trtllm_gen_kv_bf16; geometric error 1.560x against the pooled 1.688x. The pair of the bfloat16 KV cache sweep, moved to the pinned FlashInfer 0.7.2.post1's build from the FlashInfer 0.6.13 build it was measured on (measured_on). A pool that reports the pinned build reads it at the transferred grade (VAL-8). Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+  - attention_prefill_work_scale_trtllm_gen_kv_bf16:
+      value: 0.4
+      units: dimensionless
+      method: measured
+      fitted: true
+      scope: {hardware: [b300]}
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
+      measures:
+        time: device
+        execution: captured
+        harness: "AISimulate collector/vllm/collect_attn.py at ai-dynamo/aisimulate cbaf51b64fa460e5ec6146bde407a4c64958212d: the backend's forward pass, with its KV-cache write, timed by CUDA events over CUDA-graph replays"
       ci95: [0.37, 0.41]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
@@ -1075,16 +1102,40 @@ coefficients:
         - {dim: context_tokens, low: 16.0, high: 16384.0}
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA B300), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a bfloat16 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
+        - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the trtllm_batch_context_with_kv_cache builds of FlashInfer 0.6.13 and 0.7.2.post1 and the run record that names the image", role: supporting}
       rationale: >
-        The fraction of the bf16 GEMM efficiency ramp the trtllm-gen prefill kernel reaches on b300 at a bfloat16 KV cache: 0.40 against the pooled 0.38. Valid only against the ramp this registry carries (gemm_eps_max_bf16, gemm_m_half_bf16), and refitted with it. Fitted jointly with attention_prefill_floor_trtllm_gen_kv_bf16. The pair of the bfloat16 KV cache sweep. It is read only where the caller reports, as the implementation of attention.prefill, one that this entry lists in kernel_impls (VAL-8); it lists none yet, so it is not read. Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
-  - attention_prefill_floor_trtllm_gen_kv_fp8:
-      value: 19.0
-      units: us_per_transfer
+        The fraction of the bf16 GEMM efficiency ramp the trtllm-gen prefill kernel reaches on b300 at a bfloat16 KV cache: 0.40 against the pooled 0.38. Valid only against the ramp this registry carries (gemm_eps_max_bf16, gemm_m_half_bf16), and refitted with it. Fitted jointly with attention_prefill_floor_trtllm_gen_kv_bf16. The pair of the bfloat16 KV cache sweep, keyed to the build the data exercised: FlashInfer 0.6.13's trtllm-gen prefill kernel on this chip, which the run's image (vllm/vllm-openai@sha256:e1c1ff1af9a15921bfa11d1d95047258c1797392cdbfa296e7639da446b23f97) installs. A pool that reports that build as the implementation of attention.prefill reads it exactly (VAL-8). Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+  - attention_prefill_work_scale_trtllm_gen_kv_bf16:
+      value: 0.4
+      units: dimensionless
       method: transferred
       fitted: false
       scope: {hardware: [b300]}
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: baf0a0d3c96b3a3da63b6283baa6379bbd9d9158262e7e4c36b262e4b7b1e6a0}]
+      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
       transferred_from: "hardware=b300"
-      transfer_rule: "measured on the vLLM 0.25.0 image's FlashInfer trtllm-gen prefill kernel on this chip and used for the v0.32.0 engine pin; no kernel hash shows the two builds run the same kernel, and nothing is moved between chips"
+      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (79b222ae200f) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (baf0a0d3c96b) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips"
+      ci95: [0.37, 0.41]
+      fit_range:
+        - {dim: tokens, low: 16.0, high: 131072.0}
+        - {dim: requests, low: 1.0, high: 256.0}
+        - {dim: context_tokens, low: 16.0, high: 16384.0}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA B300), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a bfloat16 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
+        - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the trtllm_batch_context_with_kv_cache builds of FlashInfer 0.6.13 and 0.7.2.post1 and the run record that names the image", role: supporting}
+      rationale: >
+        The fraction of the bf16 GEMM efficiency ramp the trtllm-gen prefill kernel reaches on b300 at a bfloat16 KV cache: 0.40 against the pooled 0.38. Valid only against the ramp this registry carries (gemm_eps_max_bf16, gemm_m_half_bf16), and refitted with it. Fitted jointly with attention_prefill_floor_trtllm_gen_kv_bf16. The pair of the bfloat16 KV cache sweep, moved to the pinned FlashInfer 0.7.2.post1's build from the FlashInfer 0.6.13 build it was measured on (measured_on). A pool that reports the pinned build reads it at the transferred grade (VAL-8). Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+  - attention_prefill_floor_trtllm_gen_kv_fp8:
+      value: 19.0
+      units: us_per_transfer
+      method: measured
+      fitted: true
+      scope: {hardware: [b300]}
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
+      measures:
+        time: device
+        execution: captured
+        harness: "AISimulate collector/vllm/collect_attn.py at ai-dynamo/aisimulate cbaf51b64fa460e5ec6146bde407a4c64958212d: the backend's forward pass, with its KV-cache write, timed by CUDA events over CUDA-graph replays"
       ci95: [18.25, 20.25]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
@@ -1092,16 +1143,40 @@ coefficients:
         - {dim: context_tokens, low: 16.0, high: 16384.0}
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA B300), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a fp8 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
+        - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the trtllm_batch_context_with_kv_cache builds of FlashInfer 0.6.13 and 0.7.2.post1 and the run record that names the image", role: supporting}
       rationale: >
-        The minimum cost of the trtllm-gen prefill attention kernel at a fp8 KV cache, independent of prompt length, on b300: 19.0 us against the pooled attention_prefill_floor of 15.5 us, which also averages in the other cache dtype, the Triton rows and the one-token decode-classified rows. Fitted jointly with attention_prefill_work_scale_trtllm_gen_kv_fp8; geometric error 1.689x against the pooled 1.688x. The pair of the fp8 KV cache sweep. It is read only where the caller reports, as the implementation of attention.prefill, one that this entry lists in kernel_impls (VAL-8); it lists none yet, so it is not read. Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
-  - attention_prefill_work_scale_trtllm_gen_kv_fp8:
-      value: 0.42
-      units: dimensionless
+        The minimum cost of the trtllm-gen prefill attention kernel at a fp8 KV cache, independent of prompt length, on b300: 19.0 us against the pooled attention_prefill_floor of 15.5 us, which also averages in the other cache dtype, the Triton rows and the one-token decode-classified rows. Fitted jointly with attention_prefill_work_scale_trtllm_gen_kv_fp8; geometric error 1.689x against the pooled 1.688x. The pair of the fp8 KV cache sweep, keyed to the build the data exercised: FlashInfer 0.6.13's trtllm-gen prefill kernel on this chip, which the run's image (vllm/vllm-openai@sha256:e1c1ff1af9a15921bfa11d1d95047258c1797392cdbfa296e7639da446b23f97) installs. A pool that reports that build as the implementation of attention.prefill reads it exactly (VAL-8). Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+  - attention_prefill_floor_trtllm_gen_kv_fp8:
+      value: 19.0
+      units: us_per_transfer
       method: transferred
       fitted: false
       scope: {hardware: [b300]}
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: baf0a0d3c96b3a3da63b6283baa6379bbd9d9158262e7e4c36b262e4b7b1e6a0}]
+      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
       transferred_from: "hardware=b300"
-      transfer_rule: "measured on the vLLM 0.25.0 image's FlashInfer trtllm-gen prefill kernel on this chip and used for the v0.32.0 engine pin; no kernel hash shows the two builds run the same kernel, and nothing is moved between chips"
+      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (79b222ae200f) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (baf0a0d3c96b) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips"
+      ci95: [18.25, 20.25]
+      fit_range:
+        - {dim: tokens, low: 16.0, high: 131072.0}
+        - {dim: requests, low: 1.0, high: 256.0}
+        - {dim: context_tokens, low: 16.0, high: 16384.0}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA B300), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a fp8 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
+        - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the trtllm_batch_context_with_kv_cache builds of FlashInfer 0.6.13 and 0.7.2.post1 and the run record that names the image", role: supporting}
+      rationale: >
+        The minimum cost of the trtllm-gen prefill attention kernel at a fp8 KV cache, independent of prompt length, on b300: 19.0 us against the pooled attention_prefill_floor of 15.5 us, which also averages in the other cache dtype, the Triton rows and the one-token decode-classified rows. Fitted jointly with attention_prefill_work_scale_trtllm_gen_kv_fp8; geometric error 1.689x against the pooled 1.688x. The pair of the fp8 KV cache sweep, moved to the pinned FlashInfer 0.7.2.post1's build from the FlashInfer 0.6.13 build it was measured on (measured_on). A pool that reports the pinned build reads it at the transferred grade (VAL-8). Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+  - attention_prefill_work_scale_trtllm_gen_kv_fp8:
+      value: 0.42
+      units: dimensionless
+      method: measured
+      fitted: true
+      scope: {hardware: [b300]}
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
+      measures:
+        time: device
+        execution: captured
+        harness: "AISimulate collector/vllm/collect_attn.py at ai-dynamo/aisimulate cbaf51b64fa460e5ec6146bde407a4c64958212d: the backend's forward pass, with its KV-cache write, timed by CUDA events over CUDA-graph replays"
       ci95: [0.41, 0.45]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
@@ -1109,16 +1184,40 @@ coefficients:
         - {dim: context_tokens, low: 16.0, high: 16384.0}
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA B300), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a fp8 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
+        - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the trtllm_batch_context_with_kv_cache builds of FlashInfer 0.6.13 and 0.7.2.post1 and the run record that names the image", role: supporting}
       rationale: >
-        The fraction of the bf16 GEMM efficiency ramp the trtllm-gen prefill kernel reaches on b300 at a fp8 KV cache: 0.42 against the pooled 0.38. Valid only against the ramp this registry carries (gemm_eps_max_bf16, gemm_m_half_bf16), and refitted with it. Fitted jointly with attention_prefill_floor_trtllm_gen_kv_fp8. The pair of the fp8 KV cache sweep. It is read only where the caller reports, as the implementation of attention.prefill, one that this entry lists in kernel_impls (VAL-8); it lists none yet, so it is not read. Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+        The fraction of the bf16 GEMM efficiency ramp the trtllm-gen prefill kernel reaches on b300 at a fp8 KV cache: 0.42 against the pooled 0.38. Valid only against the ramp this registry carries (gemm_eps_max_bf16, gemm_m_half_bf16), and refitted with it. Fitted jointly with attention_prefill_floor_trtllm_gen_kv_fp8. The pair of the fp8 KV cache sweep, keyed to the build the data exercised: FlashInfer 0.6.13's trtllm-gen prefill kernel on this chip, which the run's image (vllm/vllm-openai@sha256:e1c1ff1af9a15921bfa11d1d95047258c1797392cdbfa296e7639da446b23f97) installs. A pool that reports that build as the implementation of attention.prefill reads it exactly (VAL-8). Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+  - attention_prefill_work_scale_trtllm_gen_kv_fp8:
+      value: 0.42
+      units: dimensionless
+      method: transferred
+      fitted: false
+      scope: {hardware: [b300]}
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: baf0a0d3c96b3a3da63b6283baa6379bbd9d9158262e7e4c36b262e4b7b1e6a0}]
+      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
+      transferred_from: "hardware=b300"
+      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (79b222ae200f) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (baf0a0d3c96b) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips"
+      ci95: [0.41, 0.45]
+      fit_range:
+        - {dim: tokens, low: 16.0, high: 131072.0}
+        - {dim: requests, low: 1.0, high: 256.0}
+        - {dim: context_tokens, low: 16.0, high: 16384.0}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA B300), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a fp8 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
+        - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the trtllm_batch_context_with_kv_cache builds of FlashInfer 0.6.13 and 0.7.2.post1 and the run record that names the image", role: supporting}
+      rationale: >
+        The fraction of the bf16 GEMM efficiency ramp the trtllm-gen prefill kernel reaches on b300 at a fp8 KV cache: 0.42 against the pooled 0.38. Valid only against the ramp this registry carries (gemm_eps_max_bf16, gemm_m_half_bf16), and refitted with it. Fitted jointly with attention_prefill_floor_trtllm_gen_kv_fp8. The pair of the fp8 KV cache sweep, moved to the pinned FlashInfer 0.7.2.post1's build from the FlashInfer 0.6.13 build it was measured on (measured_on). A pool that reports the pinned build reads it at the transferred grade (VAL-8). Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
   - attention_prefill_floor_trtllm_gen_kv_bf16:
       value: 19.0
       units: us_per_transfer
-      method: transferred
-      fitted: false
+      method: measured
+      fitted: true
       scope: {hardware: [gb200-nvl72]}
-      transferred_from: "hardware=gb200-nvl72"
-      transfer_rule: "measured on the vLLM 0.25.0 image's FlashInfer trtllm-gen prefill kernel on this chip and used for the v0.32.0 engine pin; no kernel hash shows the two builds run the same kernel, and nothing is moved between chips"
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: ba8a7415fda9db63d2e1ad04088e9f7b0fb07c35f21a4cd0656c103b76970ab7}]
+      measures:
+        time: device
+        execution: captured
+        harness: "AISimulate collector/vllm/collect_attn.py at ai-dynamo/aisimulate cbaf51b64fa460e5ec6146bde407a4c64958212d: the backend's forward pass, with its KV-cache write, timed by CUDA events over CUDA-graph replays"
       ci95: [18.25, 19.75]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
@@ -1126,16 +1225,40 @@ coefficients:
         - {dim: context_tokens, low: 16.0, high: 16384.0}
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA GB200), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a bfloat16 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
+        - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the trtllm_batch_context_with_kv_cache builds of FlashInfer 0.6.13 and 0.7.2.post1 and the run record that names the image", role: supporting}
       rationale: >
-        The minimum cost of the trtllm-gen prefill attention kernel at a bfloat16 KV cache, independent of prompt length, on gb200-nvl72: 19.0 us against the pooled attention_prefill_floor of 17.0 us, which also averages in the other cache dtype, the Triton rows and the one-token decode-classified rows. Fitted jointly with attention_prefill_work_scale_trtllm_gen_kv_bf16; geometric error 1.542x against the pooled 1.649x. The pair of the bfloat16 KV cache sweep. It is read only where the caller reports, as the implementation of attention.prefill, one that this entry lists in kernel_impls (VAL-8); it lists none yet, so it is not read. Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
-  - attention_prefill_work_scale_trtllm_gen_kv_bf16:
-      value: 0.34
-      units: dimensionless
+        The minimum cost of the trtllm-gen prefill attention kernel at a bfloat16 KV cache, independent of prompt length, on gb200-nvl72: 19.0 us against the pooled attention_prefill_floor of 17.0 us, which also averages in the other cache dtype, the Triton rows and the one-token decode-classified rows. Fitted jointly with attention_prefill_work_scale_trtllm_gen_kv_bf16; geometric error 1.542x against the pooled 1.649x. The pair of the bfloat16 KV cache sweep, keyed to the build the data exercised: FlashInfer 0.6.13's trtllm-gen prefill kernel on this chip, which the run's image (vllm/vllm-openai@sha256:2f726db9babd627fb59addaed2038577fc767108680901271b069d91759d1286) installs. A pool that reports that build as the implementation of attention.prefill reads it exactly (VAL-8). Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+  - attention_prefill_floor_trtllm_gen_kv_bf16:
+      value: 19.0
+      units: us_per_transfer
       method: transferred
       fitted: false
       scope: {hardware: [gb200-nvl72]}
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 58d337700d637b103917fcc1f19b74d6d011b001fe9b3cd956a3d6dbf1d37c20}]
+      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: ba8a7415fda9db63d2e1ad04088e9f7b0fb07c35f21a4cd0656c103b76970ab7}]
       transferred_from: "hardware=gb200-nvl72"
-      transfer_rule: "measured on the vLLM 0.25.0 image's FlashInfer trtllm-gen prefill kernel on this chip and used for the v0.32.0 engine pin; no kernel hash shows the two builds run the same kernel, and nothing is moved between chips"
+      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (ba8a7415fda9) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (58d337700d63) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips"
+      ci95: [18.25, 19.75]
+      fit_range:
+        - {dim: tokens, low: 16.0, high: 131072.0}
+        - {dim: requests, low: 1.0, high: 256.0}
+        - {dim: context_tokens, low: 16.0, high: 16384.0}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA GB200), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a bfloat16 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
+        - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the trtllm_batch_context_with_kv_cache builds of FlashInfer 0.6.13 and 0.7.2.post1 and the run record that names the image", role: supporting}
+      rationale: >
+        The minimum cost of the trtllm-gen prefill attention kernel at a bfloat16 KV cache, independent of prompt length, on gb200-nvl72: 19.0 us against the pooled attention_prefill_floor of 17.0 us, which also averages in the other cache dtype, the Triton rows and the one-token decode-classified rows. Fitted jointly with attention_prefill_work_scale_trtllm_gen_kv_bf16; geometric error 1.542x against the pooled 1.649x. The pair of the bfloat16 KV cache sweep, moved to the pinned FlashInfer 0.7.2.post1's build from the FlashInfer 0.6.13 build it was measured on (measured_on). A pool that reports the pinned build reads it at the transferred grade (VAL-8). Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+  - attention_prefill_work_scale_trtllm_gen_kv_bf16:
+      value: 0.34
+      units: dimensionless
+      method: measured
+      fitted: true
+      scope: {hardware: [gb200-nvl72]}
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: ba8a7415fda9db63d2e1ad04088e9f7b0fb07c35f21a4cd0656c103b76970ab7}]
+      measures:
+        time: device
+        execution: captured
+        harness: "AISimulate collector/vllm/collect_attn.py at ai-dynamo/aisimulate cbaf51b64fa460e5ec6146bde407a4c64958212d: the backend's forward pass, with its KV-cache write, timed by CUDA events over CUDA-graph replays"
       ci95: [0.33, 0.35]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
@@ -1143,16 +1266,40 @@ coefficients:
         - {dim: context_tokens, low: 16.0, high: 16384.0}
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA GB200), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a bfloat16 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
+        - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the trtllm_batch_context_with_kv_cache builds of FlashInfer 0.6.13 and 0.7.2.post1 and the run record that names the image", role: supporting}
       rationale: >
-        The fraction of the bf16 GEMM efficiency ramp the trtllm-gen prefill kernel reaches on gb200-nvl72 at a bfloat16 KV cache: 0.34 against the pooled 0.32. Valid only against the ramp this registry carries (gemm_eps_max_bf16, gemm_m_half_bf16), and refitted with it. Fitted jointly with attention_prefill_floor_trtllm_gen_kv_bf16. The pair of the bfloat16 KV cache sweep. It is read only where the caller reports, as the implementation of attention.prefill, one that this entry lists in kernel_impls (VAL-8); it lists none yet, so it is not read. Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
-  - attention_prefill_floor_trtllm_gen_kv_fp8:
-      value: 21.0
-      units: us_per_transfer
+        The fraction of the bf16 GEMM efficiency ramp the trtllm-gen prefill kernel reaches on gb200-nvl72 at a bfloat16 KV cache: 0.34 against the pooled 0.32. Valid only against the ramp this registry carries (gemm_eps_max_bf16, gemm_m_half_bf16), and refitted with it. Fitted jointly with attention_prefill_floor_trtllm_gen_kv_bf16. The pair of the bfloat16 KV cache sweep, keyed to the build the data exercised: FlashInfer 0.6.13's trtllm-gen prefill kernel on this chip, which the run's image (vllm/vllm-openai@sha256:2f726db9babd627fb59addaed2038577fc767108680901271b069d91759d1286) installs. A pool that reports that build as the implementation of attention.prefill reads it exactly (VAL-8). Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+  - attention_prefill_work_scale_trtllm_gen_kv_bf16:
+      value: 0.34
+      units: dimensionless
       method: transferred
       fitted: false
       scope: {hardware: [gb200-nvl72]}
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 58d337700d637b103917fcc1f19b74d6d011b001fe9b3cd956a3d6dbf1d37c20}]
+      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: ba8a7415fda9db63d2e1ad04088e9f7b0fb07c35f21a4cd0656c103b76970ab7}]
       transferred_from: "hardware=gb200-nvl72"
-      transfer_rule: "measured on the vLLM 0.25.0 image's FlashInfer trtllm-gen prefill kernel on this chip and used for the v0.32.0 engine pin; no kernel hash shows the two builds run the same kernel, and nothing is moved between chips"
+      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (ba8a7415fda9) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (58d337700d63) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips"
+      ci95: [0.33, 0.35]
+      fit_range:
+        - {dim: tokens, low: 16.0, high: 131072.0}
+        - {dim: requests, low: 1.0, high: 256.0}
+        - {dim: context_tokens, low: 16.0, high: 16384.0}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA GB200), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a bfloat16 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
+        - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the trtllm_batch_context_with_kv_cache builds of FlashInfer 0.6.13 and 0.7.2.post1 and the run record that names the image", role: supporting}
+      rationale: >
+        The fraction of the bf16 GEMM efficiency ramp the trtllm-gen prefill kernel reaches on gb200-nvl72 at a bfloat16 KV cache: 0.34 against the pooled 0.32. Valid only against the ramp this registry carries (gemm_eps_max_bf16, gemm_m_half_bf16), and refitted with it. Fitted jointly with attention_prefill_floor_trtllm_gen_kv_bf16. The pair of the bfloat16 KV cache sweep, moved to the pinned FlashInfer 0.7.2.post1's build from the FlashInfer 0.6.13 build it was measured on (measured_on). A pool that reports the pinned build reads it at the transferred grade (VAL-8). Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+  - attention_prefill_floor_trtllm_gen_kv_fp8:
+      value: 21.0
+      units: us_per_transfer
+      method: measured
+      fitted: true
+      scope: {hardware: [gb200-nvl72]}
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: ba8a7415fda9db63d2e1ad04088e9f7b0fb07c35f21a4cd0656c103b76970ab7}]
+      measures:
+        time: device
+        execution: captured
+        harness: "AISimulate collector/vllm/collect_attn.py at ai-dynamo/aisimulate cbaf51b64fa460e5ec6146bde407a4c64958212d: the backend's forward pass, with its KV-cache write, timed by CUDA events over CUDA-graph replays"
       ci95: [20.25, 21.7625]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
@@ -1160,16 +1307,40 @@ coefficients:
         - {dim: context_tokens, low: 16.0, high: 16384.0}
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA GB200), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a fp8 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
+        - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the trtllm_batch_context_with_kv_cache builds of FlashInfer 0.6.13 and 0.7.2.post1 and the run record that names the image", role: supporting}
       rationale: >
-        The minimum cost of the trtllm-gen prefill attention kernel at a fp8 KV cache, independent of prompt length, on gb200-nvl72: 21.0 us against the pooled attention_prefill_floor of 17.0 us, which also averages in the other cache dtype, the Triton rows and the one-token decode-classified rows. Fitted jointly with attention_prefill_work_scale_trtllm_gen_kv_fp8; geometric error 1.643x against the pooled 1.649x. The pair of the fp8 KV cache sweep. It is read only where the caller reports, as the implementation of attention.prefill, one that this entry lists in kernel_impls (VAL-8); it lists none yet, so it is not read. Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
-  - attention_prefill_work_scale_trtllm_gen_kv_fp8:
-      value: 0.36
-      units: dimensionless
+        The minimum cost of the trtllm-gen prefill attention kernel at a fp8 KV cache, independent of prompt length, on gb200-nvl72: 21.0 us against the pooled attention_prefill_floor of 17.0 us, which also averages in the other cache dtype, the Triton rows and the one-token decode-classified rows. Fitted jointly with attention_prefill_work_scale_trtllm_gen_kv_fp8; geometric error 1.643x against the pooled 1.649x. The pair of the fp8 KV cache sweep, keyed to the build the data exercised: FlashInfer 0.6.13's trtllm-gen prefill kernel on this chip, which the run's image (vllm/vllm-openai@sha256:2f726db9babd627fb59addaed2038577fc767108680901271b069d91759d1286) installs. A pool that reports that build as the implementation of attention.prefill reads it exactly (VAL-8). Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+  - attention_prefill_floor_trtllm_gen_kv_fp8:
+      value: 21.0
+      units: us_per_transfer
       method: transferred
       fitted: false
       scope: {hardware: [gb200-nvl72]}
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 58d337700d637b103917fcc1f19b74d6d011b001fe9b3cd956a3d6dbf1d37c20}]
+      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: ba8a7415fda9db63d2e1ad04088e9f7b0fb07c35f21a4cd0656c103b76970ab7}]
       transferred_from: "hardware=gb200-nvl72"
-      transfer_rule: "measured on the vLLM 0.25.0 image's FlashInfer trtllm-gen prefill kernel on this chip and used for the v0.32.0 engine pin; no kernel hash shows the two builds run the same kernel, and nothing is moved between chips"
+      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (ba8a7415fda9) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (58d337700d63) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips"
+      ci95: [20.25, 21.7625]
+      fit_range:
+        - {dim: tokens, low: 16.0, high: 131072.0}
+        - {dim: requests, low: 1.0, high: 256.0}
+        - {dim: context_tokens, low: 16.0, high: 16384.0}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA GB200), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a fp8 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
+        - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the trtllm_batch_context_with_kv_cache builds of FlashInfer 0.6.13 and 0.7.2.post1 and the run record that names the image", role: supporting}
+      rationale: >
+        The minimum cost of the trtllm-gen prefill attention kernel at a fp8 KV cache, independent of prompt length, on gb200-nvl72: 21.0 us against the pooled attention_prefill_floor of 17.0 us, which also averages in the other cache dtype, the Triton rows and the one-token decode-classified rows. Fitted jointly with attention_prefill_work_scale_trtllm_gen_kv_fp8; geometric error 1.643x against the pooled 1.649x. The pair of the fp8 KV cache sweep, moved to the pinned FlashInfer 0.7.2.post1's build from the FlashInfer 0.6.13 build it was measured on (measured_on). A pool that reports the pinned build reads it at the transferred grade (VAL-8). Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+  - attention_prefill_work_scale_trtllm_gen_kv_fp8:
+      value: 0.36
+      units: dimensionless
+      method: measured
+      fitted: true
+      scope: {hardware: [gb200-nvl72]}
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: ba8a7415fda9db63d2e1ad04088e9f7b0fb07c35f21a4cd0656c103b76970ab7}]
+      measures:
+        time: device
+        execution: captured
+        harness: "AISimulate collector/vllm/collect_attn.py at ai-dynamo/aisimulate cbaf51b64fa460e5ec6146bde407a4c64958212d: the backend's forward pass, with its KV-cache write, timed by CUDA events over CUDA-graph replays"
       ci95: [0.33, 0.37]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
@@ -1177,16 +1348,40 @@ coefficients:
         - {dim: context_tokens, low: 16.0, high: 16384.0}
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA GB200), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a fp8 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
+        - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the trtllm_batch_context_with_kv_cache builds of FlashInfer 0.6.13 and 0.7.2.post1 and the run record that names the image", role: supporting}
       rationale: >
-        The fraction of the bf16 GEMM efficiency ramp the trtllm-gen prefill kernel reaches on gb200-nvl72 at a fp8 KV cache: 0.36 against the pooled 0.32. Valid only against the ramp this registry carries (gemm_eps_max_bf16, gemm_m_half_bf16), and refitted with it. Fitted jointly with attention_prefill_floor_trtllm_gen_kv_fp8. The pair of the fp8 KV cache sweep. It is read only where the caller reports, as the implementation of attention.prefill, one that this entry lists in kernel_impls (VAL-8); it lists none yet, so it is not read. Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+        The fraction of the bf16 GEMM efficiency ramp the trtllm-gen prefill kernel reaches on gb200-nvl72 at a fp8 KV cache: 0.36 against the pooled 0.32. Valid only against the ramp this registry carries (gemm_eps_max_bf16, gemm_m_half_bf16), and refitted with it. Fitted jointly with attention_prefill_floor_trtllm_gen_kv_fp8. The pair of the fp8 KV cache sweep, keyed to the build the data exercised: FlashInfer 0.6.13's trtllm-gen prefill kernel on this chip, which the run's image (vllm/vllm-openai@sha256:2f726db9babd627fb59addaed2038577fc767108680901271b069d91759d1286) installs. A pool that reports that build as the implementation of attention.prefill reads it exactly (VAL-8). Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+  - attention_prefill_work_scale_trtllm_gen_kv_fp8:
+      value: 0.36
+      units: dimensionless
+      method: transferred
+      fitted: false
+      scope: {hardware: [gb200-nvl72]}
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 58d337700d637b103917fcc1f19b74d6d011b001fe9b3cd956a3d6dbf1d37c20}]
+      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: ba8a7415fda9db63d2e1ad04088e9f7b0fb07c35f21a4cd0656c103b76970ab7}]
+      transferred_from: "hardware=gb200-nvl72"
+      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (ba8a7415fda9) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (58d337700d63) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips"
+      ci95: [0.33, 0.37]
+      fit_range:
+        - {dim: tokens, low: 16.0, high: 131072.0}
+        - {dim: requests, low: 1.0, high: 256.0}
+        - {dim: context_tokens, low: 16.0, high: 16384.0}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb200/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA GB200), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a fp8 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
+        - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the trtllm_batch_context_with_kv_cache builds of FlashInfer 0.6.13 and 0.7.2.post1 and the run record that names the image", role: supporting}
+      rationale: >
+        The fraction of the bf16 GEMM efficiency ramp the trtllm-gen prefill kernel reaches on gb200-nvl72 at a fp8 KV cache: 0.36 against the pooled 0.32. Valid only against the ramp this registry carries (gemm_eps_max_bf16, gemm_m_half_bf16), and refitted with it. Fitted jointly with attention_prefill_floor_trtllm_gen_kv_fp8. The pair of the fp8 KV cache sweep, moved to the pinned FlashInfer 0.7.2.post1's build from the FlashInfer 0.6.13 build it was measured on (measured_on). A pool that reports the pinned build reads it at the transferred grade (VAL-8). Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
   - attention_prefill_floor_trtllm_gen_kv_bf16:
       value: 18.0
       units: us_per_transfer
-      method: transferred
-      fitted: false
+      method: measured
+      fitted: true
       scope: {hardware: [gb300]}
-      transferred_from: "hardware=gb300"
-      transfer_rule: "measured on the vLLM 0.25.0 image's FlashInfer trtllm-gen prefill kernel on this chip and used for the v0.32.0 engine pin; no kernel hash shows the two builds run the same kernel, and nothing is moved between chips"
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
+      measures:
+        time: device
+        execution: captured
+        harness: "AISimulate collector/vllm/collect_attn.py at ai-dynamo/aisimulate cbaf51b64fa460e5ec6146bde407a4c64958212d: the backend's forward pass, with its KV-cache write, timed by CUDA events over CUDA-graph replays"
       ci95: [17.25, 18.75]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
@@ -1194,16 +1389,40 @@ coefficients:
         - {dim: context_tokens, low: 16.0, high: 16384.0}
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA GB300), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a bfloat16 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
+        - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the trtllm_batch_context_with_kv_cache builds of FlashInfer 0.6.13 and 0.7.2.post1 and the run record that names the image", role: supporting}
       rationale: >
-        The minimum cost of the trtllm-gen prefill attention kernel at a bfloat16 KV cache, independent of prompt length, on gb300: 18.0 us against the pooled attention_prefill_floor of 16.5 us, which also averages in the other cache dtype, the Triton rows and the one-token decode-classified rows. Fitted jointly with attention_prefill_work_scale_trtllm_gen_kv_bf16; geometric error 1.550x against the pooled 1.671x. The pair of the bfloat16 KV cache sweep. It is read only where the caller reports, as the implementation of attention.prefill, one that this entry lists in kernel_impls (VAL-8); it lists none yet, so it is not read. Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
-  - attention_prefill_work_scale_trtllm_gen_kv_bf16:
-      value: 0.38
-      units: dimensionless
+        The minimum cost of the trtllm-gen prefill attention kernel at a bfloat16 KV cache, independent of prompt length, on gb300: 18.0 us against the pooled attention_prefill_floor of 16.5 us, which also averages in the other cache dtype, the Triton rows and the one-token decode-classified rows. Fitted jointly with attention_prefill_work_scale_trtllm_gen_kv_bf16; geometric error 1.550x against the pooled 1.671x. The pair of the bfloat16 KV cache sweep, keyed to the build the data exercised: FlashInfer 0.6.13's trtllm-gen prefill kernel on this chip, which the run's image (vllm/vllm-openai@sha256:2f726db9babd627fb59addaed2038577fc767108680901271b069d91759d1286) installs. A pool that reports that build as the implementation of attention.prefill reads it exactly (VAL-8). Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+  - attention_prefill_floor_trtllm_gen_kv_bf16:
+      value: 18.0
+      units: us_per_transfer
       method: transferred
       fitted: false
       scope: {hardware: [gb300]}
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: baf0a0d3c96b3a3da63b6283baa6379bbd9d9158262e7e4c36b262e4b7b1e6a0}]
+      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
       transferred_from: "hardware=gb300"
-      transfer_rule: "measured on the vLLM 0.25.0 image's FlashInfer trtllm-gen prefill kernel on this chip and used for the v0.32.0 engine pin; no kernel hash shows the two builds run the same kernel, and nothing is moved between chips"
+      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (79b222ae200f) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (baf0a0d3c96b) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips"
+      ci95: [17.25, 18.75]
+      fit_range:
+        - {dim: tokens, low: 16.0, high: 131072.0}
+        - {dim: requests, low: 1.0, high: 256.0}
+        - {dim: context_tokens, low: 16.0, high: 16384.0}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA GB300), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a bfloat16 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
+        - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the trtllm_batch_context_with_kv_cache builds of FlashInfer 0.6.13 and 0.7.2.post1 and the run record that names the image", role: supporting}
+      rationale: >
+        The minimum cost of the trtllm-gen prefill attention kernel at a bfloat16 KV cache, independent of prompt length, on gb300: 18.0 us against the pooled attention_prefill_floor of 16.5 us, which also averages in the other cache dtype, the Triton rows and the one-token decode-classified rows. Fitted jointly with attention_prefill_work_scale_trtllm_gen_kv_bf16; geometric error 1.550x against the pooled 1.671x. The pair of the bfloat16 KV cache sweep, moved to the pinned FlashInfer 0.7.2.post1's build from the FlashInfer 0.6.13 build it was measured on (measured_on). A pool that reports the pinned build reads it at the transferred grade (VAL-8). Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+  - attention_prefill_work_scale_trtllm_gen_kv_bf16:
+      value: 0.38
+      units: dimensionless
+      method: measured
+      fitted: true
+      scope: {hardware: [gb300]}
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
+      measures:
+        time: device
+        execution: captured
+        harness: "AISimulate collector/vllm/collect_attn.py at ai-dynamo/aisimulate cbaf51b64fa460e5ec6146bde407a4c64958212d: the backend's forward pass, with its KV-cache write, timed by CUDA events over CUDA-graph replays"
       ci95: [0.37, 0.41]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
@@ -1211,16 +1430,40 @@ coefficients:
         - {dim: context_tokens, low: 16.0, high: 16384.0}
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA GB300), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a bfloat16 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
+        - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the trtllm_batch_context_with_kv_cache builds of FlashInfer 0.6.13 and 0.7.2.post1 and the run record that names the image", role: supporting}
       rationale: >
-        The fraction of the bf16 GEMM efficiency ramp the trtllm-gen prefill kernel reaches on gb300 at a bfloat16 KV cache: 0.38 against the pooled 0.38. Valid only against the ramp this registry carries (gemm_eps_max_bf16, gemm_m_half_bf16), and refitted with it. Fitted jointly with attention_prefill_floor_trtllm_gen_kv_bf16. The pair of the bfloat16 KV cache sweep. It is read only where the caller reports, as the implementation of attention.prefill, one that this entry lists in kernel_impls (VAL-8); it lists none yet, so it is not read. Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
-  - attention_prefill_floor_trtllm_gen_kv_fp8:
-      value: 20.0
-      units: us_per_transfer
+        The fraction of the bf16 GEMM efficiency ramp the trtllm-gen prefill kernel reaches on gb300 at a bfloat16 KV cache: 0.38 against the pooled 0.38. Valid only against the ramp this registry carries (gemm_eps_max_bf16, gemm_m_half_bf16), and refitted with it. Fitted jointly with attention_prefill_floor_trtllm_gen_kv_bf16. The pair of the bfloat16 KV cache sweep, keyed to the build the data exercised: FlashInfer 0.6.13's trtllm-gen prefill kernel on this chip, which the run's image (vllm/vllm-openai@sha256:2f726db9babd627fb59addaed2038577fc767108680901271b069d91759d1286) installs. A pool that reports that build as the implementation of attention.prefill reads it exactly (VAL-8). Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+  - attention_prefill_work_scale_trtllm_gen_kv_bf16:
+      value: 0.38
+      units: dimensionless
       method: transferred
       fitted: false
       scope: {hardware: [gb300]}
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: baf0a0d3c96b3a3da63b6283baa6379bbd9d9158262e7e4c36b262e4b7b1e6a0}]
+      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
       transferred_from: "hardware=gb300"
-      transfer_rule: "measured on the vLLM 0.25.0 image's FlashInfer trtllm-gen prefill kernel on this chip and used for the v0.32.0 engine pin; no kernel hash shows the two builds run the same kernel, and nothing is moved between chips"
+      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (79b222ae200f) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (baf0a0d3c96b) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips"
+      ci95: [0.37, 0.41]
+      fit_range:
+        - {dim: tokens, low: 16.0, high: 131072.0}
+        - {dim: requests, low: 1.0, high: 256.0}
+        - {dim: context_tokens, low: 16.0, high: 16384.0}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA GB300), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a bfloat16 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
+        - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the trtllm_batch_context_with_kv_cache builds of FlashInfer 0.6.13 and 0.7.2.post1 and the run record that names the image", role: supporting}
+      rationale: >
+        The fraction of the bf16 GEMM efficiency ramp the trtllm-gen prefill kernel reaches on gb300 at a bfloat16 KV cache: 0.38 against the pooled 0.38. Valid only against the ramp this registry carries (gemm_eps_max_bf16, gemm_m_half_bf16), and refitted with it. Fitted jointly with attention_prefill_floor_trtllm_gen_kv_bf16. The pair of the bfloat16 KV cache sweep, moved to the pinned FlashInfer 0.7.2.post1's build from the FlashInfer 0.6.13 build it was measured on (measured_on). A pool that reports the pinned build reads it at the transferred grade (VAL-8). Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+  - attention_prefill_floor_trtllm_gen_kv_fp8:
+      value: 20.0
+      units: us_per_transfer
+      method: measured
+      fitted: true
+      scope: {hardware: [gb300]}
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
+      measures:
+        time: device
+        execution: captured
+        harness: "AISimulate collector/vllm/collect_attn.py at ai-dynamo/aisimulate cbaf51b64fa460e5ec6146bde407a4c64958212d: the backend's forward pass, with its KV-cache write, timed by CUDA events over CUDA-graph replays"
       ci95: [18.75, 20.75]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
@@ -1228,16 +1471,40 @@ coefficients:
         - {dim: context_tokens, low: 16.0, high: 16384.0}
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA GB300), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a fp8 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
+        - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the trtllm_batch_context_with_kv_cache builds of FlashInfer 0.6.13 and 0.7.2.post1 and the run record that names the image", role: supporting}
       rationale: >
-        The minimum cost of the trtllm-gen prefill attention kernel at a fp8 KV cache, independent of prompt length, on gb300: 20.0 us against the pooled attention_prefill_floor of 16.5 us, which also averages in the other cache dtype, the Triton rows and the one-token decode-classified rows. Fitted jointly with attention_prefill_work_scale_trtllm_gen_kv_fp8; geometric error 1.674x against the pooled 1.671x. The pair of the fp8 KV cache sweep. It is read only where the caller reports, as the implementation of attention.prefill, one that this entry lists in kernel_impls (VAL-8); it lists none yet, so it is not read. Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
-  - attention_prefill_work_scale_trtllm_gen_kv_fp8:
-      value: 0.42
-      units: dimensionless
+        The minimum cost of the trtllm-gen prefill attention kernel at a fp8 KV cache, independent of prompt length, on gb300: 20.0 us against the pooled attention_prefill_floor of 16.5 us, which also averages in the other cache dtype, the Triton rows and the one-token decode-classified rows. Fitted jointly with attention_prefill_work_scale_trtllm_gen_kv_fp8; geometric error 1.674x against the pooled 1.671x. The pair of the fp8 KV cache sweep, keyed to the build the data exercised: FlashInfer 0.6.13's trtllm-gen prefill kernel on this chip, which the run's image (vllm/vllm-openai@sha256:2f726db9babd627fb59addaed2038577fc767108680901271b069d91759d1286) installs. A pool that reports that build as the implementation of attention.prefill reads it exactly (VAL-8). Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+  - attention_prefill_floor_trtllm_gen_kv_fp8:
+      value: 20.0
+      units: us_per_transfer
       method: transferred
       fitted: false
       scope: {hardware: [gb300]}
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: baf0a0d3c96b3a3da63b6283baa6379bbd9d9158262e7e4c36b262e4b7b1e6a0}]
+      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
       transferred_from: "hardware=gb300"
-      transfer_rule: "measured on the vLLM 0.25.0 image's FlashInfer trtllm-gen prefill kernel on this chip and used for the v0.32.0 engine pin; no kernel hash shows the two builds run the same kernel, and nothing is moved between chips"
+      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (79b222ae200f) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (baf0a0d3c96b) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips"
+      ci95: [18.75, 20.75]
+      fit_range:
+        - {dim: tokens, low: 16.0, high: 131072.0}
+        - {dim: requests, low: 1.0, high: 256.0}
+        - {dim: context_tokens, low: 16.0, high: 16384.0}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA GB300), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a fp8 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
+        - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the trtllm_batch_context_with_kv_cache builds of FlashInfer 0.6.13 and 0.7.2.post1 and the run record that names the image", role: supporting}
+      rationale: >
+        The minimum cost of the trtllm-gen prefill attention kernel at a fp8 KV cache, independent of prompt length, on gb300: 20.0 us against the pooled attention_prefill_floor of 16.5 us, which also averages in the other cache dtype, the Triton rows and the one-token decode-classified rows. Fitted jointly with attention_prefill_work_scale_trtllm_gen_kv_fp8; geometric error 1.674x against the pooled 1.671x. The pair of the fp8 KV cache sweep, moved to the pinned FlashInfer 0.7.2.post1's build from the FlashInfer 0.6.13 build it was measured on (measured_on). A pool that reports the pinned build reads it at the transferred grade (VAL-8). Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+  - attention_prefill_work_scale_trtllm_gen_kv_fp8:
+      value: 0.42
+      units: dimensionless
+      method: measured
+      fitted: true
+      scope: {hardware: [gb300]}
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
+      measures:
+        time: device
+        execution: captured
+        harness: "AISimulate collector/vllm/collect_attn.py at ai-dynamo/aisimulate cbaf51b64fa460e5ec6146bde407a4c64958212d: the backend's forward pass, with its KV-cache write, timed by CUDA events over CUDA-graph replays"
       ci95: [0.39, 0.43]
       fit_range:
         - {dim: tokens, low: 16.0, high: 131072.0}
@@ -1245,6 +1512,27 @@ coefficients:
         - {dim: context_tokens, low: 16.0, high: 16384.0}
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA GB300), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a fp8 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
+        - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the trtllm_batch_context_with_kv_cache builds of FlashInfer 0.6.13 and 0.7.2.post1 and the run record that names the image", role: supporting}
       rationale: >
-        The fraction of the bf16 GEMM efficiency ramp the trtllm-gen prefill kernel reaches on gb300 at a fp8 KV cache: 0.42 against the pooled 0.38. Valid only against the ramp this registry carries (gemm_eps_max_bf16, gemm_m_half_bf16), and refitted with it. Fitted jointly with attention_prefill_floor_trtllm_gen_kv_fp8. The pair of the fp8 KV cache sweep. It is read only where the caller reports, as the implementation of attention.prefill, one that this entry lists in kernel_impls (VAL-8); it lists none yet, so it is not read. Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+        The fraction of the bf16 GEMM efficiency ramp the trtllm-gen prefill kernel reaches on gb300 at a fp8 KV cache: 0.42 against the pooled 0.38. Valid only against the ramp this registry carries (gemm_eps_max_bf16, gemm_m_half_bf16), and refitted with it. Fitted jointly with attention_prefill_floor_trtllm_gen_kv_fp8. The pair of the fp8 KV cache sweep, keyed to the build the data exercised: FlashInfer 0.6.13's trtllm-gen prefill kernel on this chip, which the run's image (vllm/vllm-openai@sha256:2f726db9babd627fb59addaed2038577fc767108680901271b069d91759d1286) installs. A pool that reports that build as the implementation of attention.prefill reads it exactly (VAL-8). Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
+  - attention_prefill_work_scale_trtllm_gen_kv_fp8:
+      value: 0.42
+      units: dimensionless
+      method: transferred
+      fitted: false
+      scope: {hardware: [gb300]}
+      kernel_impls: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: baf0a0d3c96b3a3da63b6283baa6379bbd9d9158262e7e4c36b262e4b7b1e6a0}]
+      measured_on: [{library: flashinfer, variant: trtllm_batch_context_with_kv_cache, code_hash: 79b222ae200f7f2a7f21492b331f2a523c909fc84e01c962a2f95f2c5657cb33}]
+      transferred_from: "hardware=gb300"
+      transfer_rule: "measured on FlashInfer 0.6.13's trtllm-gen prefill build (79b222ae200f) on this chip and used for the pinned FlashInfer 0.7.2.post1's build (baf0a0d3c96b) on the same chip; the two builds' precompiled kernel packages differ, so the value is moved, not shown, and nothing is moved between chips"
+      ci95: [0.39, 0.43]
+      fit_range:
+        - {dim: tokens, low: 16.0, high: 131072.0}
+        - {dim: requests, low: 1.0, high: 256.0}
+        - {dim: context_tokens, low: 16.0, high: 16384.0}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/gb300/attention/vllm/0.25.0/context_attention_perf.parquet (NVIDIA GB300), 12360 full-attention rows of kernel vllm_flashinfer_trtllmprefill at a fp8 KV cache, of the 27574 the pooled pair is fitted on", role: primary}
+        - {kind: model, cite: "inference-sim/blis-vllm kernel_impls.json for vLLM 0.33.0 (4ba787ec9959): the trtllm_batch_context_with_kv_cache builds of FlashInfer 0.6.13 and 0.7.2.post1 and the run record that names the image", role: supporting}
+      rationale: >
+        The fraction of the bf16 GEMM efficiency ramp the trtllm-gen prefill kernel reaches on gb300 at a fp8 KV cache: 0.42 against the pooled 0.38. Valid only against the ramp this registry carries (gemm_eps_max_bf16, gemm_m_half_bf16), and refitted with it. Fitted jointly with attention_prefill_floor_trtllm_gen_kv_fp8. The pair of the fp8 KV cache sweep, moved to the pinned FlashInfer 0.7.2.post1's build from the FlashInfer 0.6.13 build it was measured on (measured_on). A pool that reports the pinned build reads it at the transferred grade (VAL-8). Fitted rows span batch 1 to 256, prompt length 16 to 16384 and 1 to 96 query heads, all with no cached prefix (the sweep's step is 0 throughout), so a prefill with cached context is outside the data whatever its size; the fit_range records the span. The interval is the 2.5 and 97.5 percentiles of 200 bootstrap refits that resample rows, read on the fitter's grid (floor step 0.5 us, scale step 0.02) and widened by half a step either side, because the optimum is only located to the grid. Rows of one shape family are correlated, so it is narrower than the data would justify.
   # END trtllm-gen prefill lane

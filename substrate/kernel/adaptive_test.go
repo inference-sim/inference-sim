@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 )
 
@@ -53,8 +53,7 @@ func TestAdaptiveBudgetIsVLLMsObjective(t *testing.T) {
 	for i := range draft {
 		draft[i] = 0.5 + 0.01*float64(i)
 	}
-	k := &Kernel{engine: enginesettings.Settings{Speculative: &enginesettings.Speculative{
-		Method: "dspark", NumSpecTokens: 7, EnableAdaptiveVerification: true}}}
+	k := &Kernel{low: plan.PoolPlan{Drafts: plan.DraftPolicy{Chain: 7, Adaptive: true, OwnWorkspace: true}}}
 	for _, c := range []struct {
 		al         float64
 		reqs, want int
@@ -118,8 +117,8 @@ func TestCostTableIsTheEnginesTable(t *testing.T) {
 
 func adaptiveKernel(t *testing.T, on bool, al float64) *Kernel {
 	t.Helper()
-	k := &Kernel{engine: enginesettings.Settings{Speculative: &enginesettings.Speculative{
-		Method: "dspark", NumSpecTokens: 7, EnableAdaptiveVerification: on}}, uniformDecodeWidth: 8}
+	k := &Kernel{low: plan.PoolPlan{Drafts: plan.DraftPolicy{Chain: 7, Adaptive: on, OwnWorkspace: true}},
+		uniformDecodeWidth: 8}
 	if !on {
 		return k
 	}
@@ -163,7 +162,7 @@ func TestAdaptiveVerificationOffChangesNothing(t *testing.T) {
 		t.Error("flag off: a non-uniform decode replays the decode graph")
 	}
 	on := adaptiveKernel(t, false, 0)
-	on.engine.Speculative.EnableAdaptiveVerification = true
+	on.low.Drafts.Adaptive = true
 	if err := on.resolveAdaptive(nil); err == nil {
 		t.Error("flag on without an acceptance was not refused")
 	}
@@ -215,7 +214,7 @@ func TestAdaptiveBudgetTiesKeepTheFirst(t *testing.T) {
 func TestDerivedRatesAreDisclosedAsTheSchedule(t *testing.T) {
 	for _, derived := range []bool{true, false} {
 		k := adaptiveKernel(t, false, 0)
-		k.engine.Speculative.EnableAdaptiveVerification = true
+		k.low.Drafts.Adaptive = true
 		k.adaptive = nil
 		k.graph = &model.Graph{}
 		k.plan = &price.Plan{}
