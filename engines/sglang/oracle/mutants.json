@@ -540,7 +540,8 @@
     "core/sched/scheduler.go:runBatch:>->>=#1:if b.ExtendNumTokens > 0 {": "no test kills this mutant yet; tracked in blis-sglang#102 (M3.1)",
     "core/sched/scheduler.go:processPrefill:||->&&#1:if s.cfg.EnableMetrics || s.cfg.EnableKVEvents {": "no test kills this mutant yet; tracked in blis-sglang#102 (M3.1)",
     "lower/lower.go:RequireMLPTPGather:==->!=#1:case b == \"none\":": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
-    "lower/lower.go:CaptureBatchSizes:>->>=#1:if bs > largest {": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)"
+    "lower/lower.go:CaptureBatchSizes:>->>=#1:if bs > largest {": "no test kills this mutant yet; tracked in blis-sglang#111 (M3.1)",
+    "core/hicache/controller.go:ParseStorageBackendExtraConfig:!=->==#1:if !isNum || err != nil {": "no test kills this mutant yet; tracked in blis-sglang#109 (M3.1)"
   },
   "equivalent": {
     "core/cache/alloc.go:mergeAndSortFree:>->>=#1:if len(a.release) > 0 {": "with needSort the free list is always sorted (it starts sorted, is only consumed from the front and is replaced by a sorted merge), so merging an empty release list sorts a sorted list: no allocation differs",
