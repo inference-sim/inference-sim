@@ -67,8 +67,8 @@
       settings come from `blis fields` and fails on a copied settings list
     runs: pull_request
     status: ci
-    test: 'scripts/test_experiment.py: the settings-from-blis-fields assertions (the checks workflow step "Experiment spec pipeline tests")'
-    known_bad: 'scripts/test_experiment.py: the copied-settings-list case'
+    test: scripts/test_experiment.py
+    known_bad: scripts/test_experiment.py
   - repo: blis-config-search
     check: >-
       The engine-block name table in scripts/settings.py is removed, so the repository holds no copy
