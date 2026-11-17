@@ -38,7 +38,7 @@ stop for a human. Called by `.github/workflows/deliver-verify.yml`; it lives her
 inline in the workflow because it is the one place in the loop where a bug could mark broken
 code ready to merge, so it is the one place that needs tests
 (`scripts/deliver_gate_test.go`). See
-[docs/contributing/automated-delivery.md](../docs/contributing/automated-delivery.md).
+[.github/agent-prompts/automated-delivery.md](../.github/agent-prompts/automated-delivery.md).
 
 ```bash
 CI_STATUS=success PLAN_GATE=pass AGENT_VERDICT=GREEN ROUND=0 MAX_ROUNDS=3 \
@@ -145,9 +145,9 @@ threshold every time, and sweeping it would overrule the human who paused it.
 
 Prints the comments on an issue that carry authority over its **body**, oldest first, and says so
 explicitly when there are none. Read before planning any PR — see
-[docs/contributing/pr-workflow.md](../docs/contributing/pr-workflow.md#comments-can-refine-the-body)
+[.github/agent-prompts/pr-workflow.md](../.github/agent-prompts/pr-workflow.md#comments-can-refine-the-body)
 Step 1.5 for the rule and
-[docs/contributing/issue-comment-authority.md](../docs/contributing/issue-comment-authority.md) for
+[.github/agent-prompts/issue-comment-authority.md](../.github/agent-prompts/issue-comment-authority.md) for
 the decision behind it.
 
 ```bash
@@ -199,7 +199,7 @@ itself. The qa-review `answerer.py`/`adjudicator.py` read it (`--json`) instead 
 `gh … --json comments`. `claude.yml` is **out of scope** (#1806): it runs `claude-code-action` in tag
 mode, which assembles comment context itself, leaving no seam for the filter — a documented
 limitation. See the comment-text section in
-[docs/contributing/standards/agent-trust.md](../docs/contributing/standards/agent-trust.md).
+[.github/agent-prompts/standards/agent-trust.md](../.github/agent-prompts/standards/agent-trust.md).
 
 It covers **all three** sources the flows read — conversation comments, PR reviews, and PR inline
 (line-level) review comments — because a filter on one endpoint leaves the others open. Unlike
@@ -285,7 +285,7 @@ skipped *subtest* (go test indents those) and fail a load that ran fine.
 
 **Wiring is a pending human step.** The `catalog-load` job that calls this script is quoted verbatim
 in the script header but is **not yet in `.github/workflows/ci.yml`** — the delivery loop's
-`GITHUB_TOKEN` has no `workflows` permission ([automated-delivery.md](../docs/contributing/automated-delivery.md)),
+`GITHUB_TOKEN` has no `workflows` permission ([automated-delivery.md](../.github/agent-prompts/automated-delivery.md)),
 so a human must paste it. Until then the authoritative-catalog load is an on-demand command, and
 only the committed fixture catalog is loaded on every PR (by `go test ./cmd/...`). Adding the job —
 and, if the check should block merges, marking it required in branch protection — is a merge
@@ -339,7 +339,7 @@ and engine settings; `blis-latency-kernel` prices every step). For each rate it:
 ```bash
 # The script passes --catalog and --registry on every run, so it needs a checkout of
 # blis-substrate's catalog and registry at the commit this build pins
-# (docs/getting-started/installation.md#catalog-compatibility shows the checkout)
+# (README.md shows the checkout)
 export BLIS_CATALOG=$PWD/blis-substrate/catalog
 
 # Sweep 0.5..100 req/s on the chatbot preset

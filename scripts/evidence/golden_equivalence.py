@@ -1,5 +1,5 @@
 """Golden equivalence: the byte gate's six runs, written as Result schema 1 and as schema 2, compared
-figure by figure through the rename table (docs/guide/results.md, "From schema 1 to schema 2").
+figure by figure through the rename table.
 
 The claim it checks: the Result v2 goldens (testdata/bytegate/golden) differ from the v1 goldens
 in shape only; no figure of the six runs moves. Prints, per case, how many figures were compared

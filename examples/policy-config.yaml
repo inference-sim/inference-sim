@@ -10,7 +10,7 @@
 #
 # The bundle configures the engine side only. Admission, routing and flow control are the
 # embedded llm-d router's, configured by the scenario's router: block and pool labels
-# (see docs/guide/routing.md and the EndpointPickerConfig samples in examples/llm-d/).
+# (see the design (https://inference-sim.github.io/blis-design/) and the EndpointPickerConfig samples in examples/llm-d/).
 #
 # Available policies:
 #   priority:  constant (default), slo-based, inverted-slo

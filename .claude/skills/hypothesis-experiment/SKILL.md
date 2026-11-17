@@ -9,9 +9,9 @@ disable-model-invocation: true
 
 You are running the hypothesis experiment workflow for hypothesis **$ARGUMENTS**.
 
-**Canonical source:** `docs/contributing/hypothesis.md` (v2.0). Read it NOW before proceeding.
-**Standards:** `docs/contributing/standards/experiments.md` (ED-1–ED-6, RCV-1–RCV-6).
-**Template:** `docs/contributing/templates/hypothesis.md` (FINDINGS.md structure).
+**Canonical source:** `.github/agent-prompts/hypothesis.md` (v2.0). Read it NOW before proceeding.
+**Standards:** `.github/agent-prompts/standards/experiments.md` (ED-1–ED-6, RCV-1–RCV-6).
+**Template:** `.github/agent-prompts/templates/hypothesis.md` (FINDINGS.md structure).
 **Review prompts:** See [review-prompts.md](review-prompts.md) for exact agent dispatch prompts.
 
 ---
@@ -31,7 +31,7 @@ You are running the hypothesis experiment workflow for hypothesis **$ARGUMENTS**
 - **`--stderr` must come BEFORE other flags** in `blis_run` calls — harness checks position 3 only
 - **CLI defaults vs workload-spec YAML**: `--rate` mode uses CLI defaults (512/512 tokens). Workload YAMLs define own distributions. Capacity estimates MUST match the actual workload.
 - **`--total-kv-blocks` default is context-dependent**: CLI default 1000000 but `defaults.yaml` overrides to 132139 for llama/H100/TP=2. Check defaults.yaml.
-- **Conservation formula**: the canonical INV-1 form is the 10-term CLUSTER equation; the 5-term form `injected == completed + still_queued + still_running + dropped_unservable + timed_out` is the SINGLE-INSTANCE specialisation only. For a cluster run add the five cluster-only buckets (`routing_rejections`, `gateway_queue_depth`, `gateway_queue_rejected`, `gateway_evicted`, `gateway_expired`) — asserting 5 terms against cluster output is incomplete and will not catch a request lost to a gateway or routing bucket. See canonical INV-1 in `docs/contributing/standards/invariants.md`. `parse_blis_output` does NOT extract `dropped_unservable` or `timed_out` — parse them separately.
+- **Conservation formula**: the canonical INV-1 form is the 10-term CLUSTER equation; the 5-term form `injected == completed + still_queued + still_running + dropped_unservable + timed_out` is the SINGLE-INSTANCE specialisation only. For a cluster run add the five cluster-only buckets (`routing_rejections`, `gateway_queue_depth`, `gateway_queue_rejected`, `gateway_evicted`, `gateway_expired`) — asserting 5 terms against cluster output is incomplete and will not catch a request lost to a gateway or routing bucket. See canonical INV-1 in `.github/agent-prompts/standards/invariants.md`. `parse_blis_output` does NOT extract `dropped_unservable` or `timed_out` — parse them separately.
 - **Analyzer verdict must match FINDINGS status**: If `analyze.py` produces a different verdict than FINDINGS.md, acknowledge the discrepancy explicitly.
 - **Think before coding calibration**: Compute parameters analytically from alpha/beta coefficients FIRST, then validate with a tiny run.
 - **Beta coefficients** (llama-3.1-8b, H100, TP=2): `[6910.42, 17.67, 2.84]` -> stepTime = beta0 + beta1*cacheMissTokens + beta2*decodeTokens
@@ -56,7 +56,7 @@ All subsequent steps happen in the worktree. Set your working directory there.
 
 1. **Check coverage gaps**: Browse the [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive) for the coverage catalog
 2. **Classify the hypothesis**:
-   - **Family**: Which of the 6 families? (See `docs/contributing/standards/experiments.md`)
+   - **Family**: Which of the 6 families? (See `.github/agent-prompts/standards/experiments.md`)
    - **VV&UQ**: Verification, Validation, or UQ?
    - **Type**: Deterministic or Statistical? If statistical: dominance, monotonicity, equivalence, or Pareto?
 3. **Write the hypothesis sentence** using the family-specific pattern from experiments.md
@@ -70,7 +70,7 @@ All subsequent steps happen in the worktree. Set your working directory there.
 
 ### 2a: Design the Experiment
 
-Follow ED-1 through ED-6 (see `docs/contributing/standards/experiments.md`):
+Follow ED-1 through ED-6 (see `.github/agent-prompts/standards/experiments.md`):
 - ED-1: Controlled comparison (vary exactly ONE dimension)
 - ED-2: Rate awareness (run where effect expected AND where it should vanish)
 - ED-3: Precondition verification (in script, not just prose)
@@ -186,7 +186,7 @@ After Code Review converges:
 2. **Trace every causal claim through code** (RCV-1: cite `file:line`)
 3. **Compute expected values from first principles** for any "surprises" (RCV-2)
 4. **Check mechanism AND direction** (RCV-3)
-5. **Write FINDINGS.md** using `docs/contributing/templates/hypothesis.md` — ALL sections must be non-empty
+5. **Write FINDINGS.md** using `.github/agent-prompts/templates/hypothesis.md` — ALL sections must be non-empty
 
 ---
 

@@ -72,7 +72,7 @@ func TestCIChangesSampleChangeLists(t *testing.T) {
 		paths []string
 		want  []string
 	}{
-		{"a documentation page", []string{"docs/guide/routing.md"},
+		{"a documentation page", []string{"README.md"},
 			groupsOf("core cluster cmd scripts stack")},
 		{"a test file of the cluster package", []string{"sim/cluster/instance_test.go"},
 			groupsOf("lint cluster cmd")},
@@ -87,7 +87,7 @@ func TestCIChangesSampleChangeLists(t *testing.T) {
 		{"a workload trace fixture", []string{"testdata/trace-v3/a.csv"}, groupsOf("workload")},
 		{"the stack record", []string{"stack.json"}, groupsOf("cmd other stack selected root")},
 		{"the router test directory only", []string{"sim/llmd/router_test.go"}, groupsOf("lint llmd cmd")},
-		{"a workflow other than ci.yml", []string{".github/workflows/docs.yml"}, groupsOf("scripts actionlint")},
+		{"a workflow other than ci.yml", []string{".github/workflows/gofmt.yml"}, groupsOf("scripts actionlint")},
 		{"an issue template (data under .github)", []string{".github/ISSUE_TEMPLATE/bug_report.md"}, nil},
 		{"the license", []string{"LICENSE"}, nil},
 		{"a spec document", []string{"specs/001-infra-nodes-gpus-instances/spec.md"}, nil},
@@ -98,7 +98,7 @@ func TestCIChangesSampleChangeLists(t *testing.T) {
 		{"the workflow itself", []string{".github/workflows/ci.yml"}, everything},
 		{"go.sum", []string{"go.sum"}, everything},
 		{"a path no class names", []string{"newdir/file.txt"}, everything},
-		{"two changes add up", []string{"testdata/trace-v3/a.csv", "docs/index.md"},
+		{"two changes add up", []string{"testdata/trace-v3/a.csv", "README.md"},
 			groupsOf("workload core cluster cmd scripts stack")},
 		{"a move out of a package counts at both ends", []string{"sim/cluster/a.go", "sim/llmd/a.go"},
 			groupsOf("build lint cluster cmd root llmd other bytegate selected")},

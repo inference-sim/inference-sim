@@ -341,7 +341,7 @@ spec:
   # the untrusted runner can speak :53 ONLY to cluster DNS, not to every
   # namespace's services. Verified: external + in-cluster names still resolve.
   # (This does not stop DNS tunnelling through the legit resolver — see the
-  # accepted residual in docs/contributing/external-pr-review.md.)
+  # accepted residual in .github/agent-prompts/external-pr-review.md.)
   - to:
     - namespaceSelector:
         matchLabels:

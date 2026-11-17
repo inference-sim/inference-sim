@@ -998,7 +998,7 @@ jobs:
             ```
 
             Weigh the contracts as body + refinements, per
-            @docs/contributing/pr-workflow.md Step 1.5: a refinement overrides the body on any
+            @.github/agent-prompts/pr-workflow.md Step 1.5: a refinement overrides the body on any
             point it addresses, and the later of two conflicting refinements wins. Do NOT raise a
             divergence from the body as a finding when a refinement authorised it — say which
             refinement you read. TARGET BRANCH, `archon-plan:` and `Depends on:` stay BODY-ONLY.

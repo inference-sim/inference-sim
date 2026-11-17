@@ -302,7 +302,7 @@ func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 
 	filtered := make([]ScaleDecision, 0, len(decisions))
 	for _, d := range decisions {
-		// INV-19 (docs/contributing/standards/invariants.md#inv-19): every emitted
+		// INV-19 (.github/agent-prompts/standards/invariants.md#inv-19): every emitted
 		// ScaleDecision carries a non-zero Delta. Warn-and-skip is deliberate, not an
 		// oversight: a zero delta is inert (skipping it actuates nothing and leaves
 		// cluster state exactly as a correct engine would have). Note the skip happens BEFORE the

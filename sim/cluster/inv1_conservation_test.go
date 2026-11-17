@@ -17,7 +17,7 @@ import (
 
 // clusterLedgerTerms lists INV-1's ten cluster-level bucket names in the order
 // the registry states them. TestINV1_HelperMatchesRegistry asserts this equals the
-// terms parsed out of docs/contributing/standards/invariants.md, so the helper
+// terms parsed out of .github/agent-prompts/standards/invariants.md, so the helper
 // cannot drift from the statement it claims to enforce.
 var clusterLedgerTerms = []string{
 	"completed_requests",
@@ -192,7 +192,7 @@ func sortedStringKeys[V any](m map[string]V) []string {
 
 // invariantsRegistryPath is the INV-1 statement's source of truth, relative to this
 // package directory.
-const invariantsRegistryPath = "../../docs/contributing/standards/invariants.md"
+const invariantsRegistryPath = "../../.github/agent-prompts/standards/invariants.md"
 
 // parseINV1RegistryEquations returns the term lists of INV-1's two stated forms as
 // written in the registry: the canonical ten-term cluster equation first, then

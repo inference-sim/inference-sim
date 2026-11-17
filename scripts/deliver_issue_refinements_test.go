@@ -396,7 +396,7 @@ func TestRefinements_DegenerateShapes(t *testing.T) {
 // create or update workflow … without `workflows` permission". Measured while delivering #1782, with
 // both available tokens; the same commit without the workflow hunk pushes.
 //
-// So the rule lives in `docs/contributing/pr-workflow.md`, which the prompt ALREADY tells the agent
+// So the rule lives in `.github/agent-prompts/pr-workflow.md`, which the prompt ALREADY tells the agent
 // to follow, and which human contributors read too. The two tests below pin the two halves of that
 // route: the prompt must keep pointing at the document, and the document must keep carrying the rule.
 // Either one alone is worthless — a rule nobody is sent to, or a pointer to a document that no longer
@@ -417,9 +417,9 @@ func readRepoFile(t *testing.T, parts ...string) string {
 func TestImplementPromptStillRoutesTheAgentToPrWorkflow(t *testing.T) {
 	wf := readRepoFile(t, ".github", "workflows", "deliver-implement.yml")
 
-	if !strings.Contains(wf, "@docs/contributing/pr-workflow.md") {
+	if !strings.Contains(wf, "@.github/agent-prompts/pr-workflow.md") {
 		t.Error("deliver-implement.yml no longer points the agent at " +
-			"@docs/contributing/pr-workflow.md. That reference is how the issue-comment authority " +
+			"@.github/agent-prompts/pr-workflow.md. That reference is how the issue-comment authority " +
 			"rule (#1782) reaches the implement agent at all: GITHUB_TOKEN has no `workflows` " +
 			"permission, so the rule cannot be written into this prompt by a delivery. Without the " +
 			"pointer the agent is back to reading the issue body alone")
@@ -431,7 +431,7 @@ func TestImplementPromptStillRoutesTheAgentToPrWorkflow(t *testing.T) {
 // reword that quietly drops one leaves the pointer above vouching for a document that no longer says
 // it.
 func TestPrWorkflowCarriesTheCommentAuthorityRule(t *testing.T) {
-	doc := readRepoFile(t, "docs", "contributing", "pr-workflow.md")
+	doc := readRepoFile(t, ".github", "agent-prompts", "pr-workflow.md")
 
 	for _, c := range []struct{ needle, why string }{
 		{
@@ -533,8 +533,8 @@ func TestSeedStepReadsTheIssueBodyAndNotItsComments(t *testing.T) {
 // nothing failing to say so. Asserted as "the link target resolves" rather than "the file exists at
 // a hardcoded path", so moving the document is fine as long as the reference moves with it.
 func TestCommentAuthorityDecisionRecordIsLinkedAndPresent(t *testing.T) {
-	const linkedFrom = "docs/contributing/automated-delivery.md"
-	doc := readRepoFile(t, "docs", "contributing", "automated-delivery.md")
+	const linkedFrom = ".github/agent-prompts/automated-delivery.md"
+	doc := readRepoFile(t, ".github", "agent-prompts", "automated-delivery.md")
 
 	links := regexp.MustCompile(`\]\(([A-Za-z0-9._/-]*issue-comment-authority[A-Za-z0-9._/-]*\.md)\)`).
 		FindAllStringSubmatch(doc, -1)
@@ -545,7 +545,7 @@ func TestCommentAuthorityDecisionRecordIsLinkedAndPresent(t *testing.T) {
 	}
 
 	for _, m := range links {
-		target := filepath.Join("..", "docs", "contributing", m[1])
+		target := filepath.Join("..", ".github", "agent-prompts", m[1])
 		if _, err := os.Stat(target); err != nil {
 			t.Errorf("%s links to %q, which does not resolve (%v). `docs/plans/` is gitignored, so "+
 				"a decision record placed there is invisible to everyone but its author and this "+

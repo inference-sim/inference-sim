@@ -20,7 +20,7 @@
 // The warm-up phase is not replayed as its own requests, but the state a drained warm-up leaves
 // behind IS reproduced: Run scores the main phase from an empty engine where prefix caching is
 // off, and from the primed state (request 0's prompt cached per replica) where it is on. Run says
-// why each is exact. What is NOT reproduced is listed in docs/kernel-exclusive/APPLES-TO-APPLES.md
+// why each is exact. What is NOT reproduced is listed in docs/kernel-exclusive/APPLES-TO-APPLES.md (removed by X29; read it at tag v0.18.0)
 // and in the coverage report (gaps.go).
 //
 // # It does not simulate

@@ -22,7 +22,7 @@
 # CI WIRING — TRACKED BY #1823, a human step. The delivery loop's GITHUB_TOKEN has no
 # `workflows` permission (there is no such permission to grant in a `permissions:` block), so a
 # push touching .github/workflows/* is rejected outright; see
-# docs/contributing/automated-delivery.md. Until #1823 lands, this script runs on demand rather
+# .github/agent-prompts/automated-delivery.md. Until #1823 lands, this script runs on demand rather
 # than on every PR, and the authoritative-catalog leg of the gate is NOT enforced pre-merge — the
 # unconditional fixture leg (cmd.TestCatalogStrictLoad_CommittedFixtureCatalog) still is. Add this
 # job to .github/workflows/ci.yml:

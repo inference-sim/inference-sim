@@ -24,7 +24,7 @@
 #
 # It answers exactly one question — WHICH COMMENTS COUNT — and deliberately not the second one,
 # what to do when one contradicts the body. That second half is judgement and lives in prose
-# (docs/contributing/pr-workflow.md Step 1.5, docs/contributing/automated-delivery.md), because a
+# (.github/agent-prompts/pr-workflow.md Step 1.5, .github/agent-prompts/automated-delivery.md), because a
 # script cannot reconcile two English sentences about scope. What a script CAN do, and what is
 # worth making mechanical, is the trust boundary: this repository is public, so anyone can comment
 # on any issue, and an agent that treats every comment as spec is steerable by anyone.
@@ -52,7 +52,7 @@
 # not, the unresolved ones are dropped — each named on stderr — and the run continues at exit 0.
 # Degrading on any single lookup failure would let one deleted account or one renamed login block a
 # delivery, which is worse than dropping a comment that is probably not a refinement. The reasoning
-# is recorded under Consequences in docs/contributing/issue-comment-authority.md.
+# is recorded under Consequences in .github/agent-prompts/issue-comment-authority.md.
 #
 # Exit codes: 0 = read (with or without refinements, and possibly with some authors dropped),
 # 2 = usage, 3 = degraded (marker printed).

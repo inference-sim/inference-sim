@@ -947,7 +947,7 @@ var runCmd = &cobra.Command{
 
 		// Unified cluster path (used for all values of numInstances).
 		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/replay.go (replayCmd
-		// DeploymentConfig literal). See docs/contributing/standards/invariants.md INV-13.
+		// DeploymentConfig literal). See .github/agent-prompts/standards/invariants.md INV-13.
 		// The instance counts are final: every instance must fit
 		// its pool, and the P/D handoff pricer places instances by these counts.
 		requireKernelCapacity(kernelPD)
@@ -1185,7 +1185,7 @@ var runCmd = &cobra.Command{
 		// replay shares (INV-13).
 		// With no cap the run generated what arrived before its horizon. blis-schemas requires a
 		// positive bound, so an uncapped run in which nothing arrived records 1, the smallest
-		// bound (docs/guide/results.md states it).
+		// bound.
 		runNumRequests := max(cs.Arrivals(), 1)
 		if maxRequests > 0 {
 			runNumRequests = int(maxRequests)

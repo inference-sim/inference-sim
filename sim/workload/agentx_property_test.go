@@ -18,7 +18,7 @@ import (
 
 // Property and metamorphic tests of the AgentX replay over randomly generated Weka v7
 // corpora with subagents and flattened worker chains. Each law is stated in
-// docs/contributing/standards/invariants.md (INV-AX1 ... INV-AX4).
+// .github/agent-prompts/standards/invariants.md (INV-AX1 ... INV-AX4).
 
 // msGrid draws a time in seconds on the millisecond grid Weka records, so no two times
 // fall within aiperf's absolute 1e-6 s comparison epsilon of each other by accident.

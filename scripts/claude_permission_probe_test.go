@@ -263,7 +263,7 @@ func callArgs(t *testing.T, code, callee string) string {
 // rather than at any one-time delivery step.
 const regressionNote = "\n\nThis is the #1707 contract: the check-permissions catch must fail " +
 	"closed AND distinguish a genuine denial from a probe that could not answer. A single-path " +
-	"catch reintroduces the silent-drop defect. See docs/contributing/standards/agent-trust.md."
+	"catch reintroduces the silent-drop defect. See .github/agent-prompts/standards/agent-trust.md."
 
 // permissionProbeScript returns the inline script of the check-permissions step that probes
 // the caller's permission, failing the test if no step does.

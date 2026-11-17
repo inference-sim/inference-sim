@@ -68,11 +68,11 @@ func registryIDs(t *testing.T, doc string) map[string]bool {
 }
 
 // The invariant registry is complete (#1735): every INV-* ID cited in sim/ and cmd/ resolves to
-// a heading or pointer row of docs/contributing/standards/invariants.md. A new ID cited
+// a heading or pointer row of .github/agent-prompts/standards/invariants.md. A new ID cited
 // without an entry fails here, naming the ID and where it is cited.
 func TestInvariantRegistry_ResolvesEveryCitedID(t *testing.T) {
 	root := ".."
-	doc, err := os.ReadFile(filepath.Join(root, "docs", "contributing", "standards", "invariants.md"))
+	doc, err := os.ReadFile(filepath.Join(root, ".github", "agent-prompts", "standards", "invariants.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestInvariantRegistry_ResolvesEveryCitedID(t *testing.T) {
 	}
 	sort.Strings(missing)
 	if len(missing) > 0 {
-		t.Errorf("invariant IDs cited in code that the registry does not resolve (#1721, #1735); add each to docs/contributing/standards/invariants.md or, if it is not an ID, to notInvariantIDs:\n  %s",
+		t.Errorf("invariant IDs cited in code that the registry does not resolve (#1721, #1735); add each to .github/agent-prompts/standards/invariants.md or, if it is not an ID, to notInvariantIDs:\n  %s",
 			strings.Join(missing, "\n  "))
 	}
 	for id := range notInvariantIDs {
