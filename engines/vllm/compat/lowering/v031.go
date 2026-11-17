@@ -84,7 +84,41 @@ func defaultMaxNumBatchedTokens(chip hardware.Chip) int {
 // A quantization the kernel does not recognize is an error rather than a fallback to the
 // checkpoint's width: silently serving a request for, say, awq at bf16 would report weight
 // bytes and a compute peak that are both wrong, with nothing saying so.
-func servedDType(checkpoint model.DType, quantization string) (model.DType, error) {
+//
+// A checkpoint already stored in the format the value names is served as stored. vLLM reads a
+// pre-quantized checkpoint's own method from its quantization_config and raises when the stated
+// value differs (ModelConfig._verify_quantization, vllm/config/model.py:1383-1462@v0.33.0), so a
+// stated mxfp4 or modelopt_fp4 on gpt-oss-120b or Kimi-K2.5-NVFP4 names the method the checkpoint
+// is loaded with and quantizes nothing further: their attention and heads stay BF16
+// (Mxfp4Config gives every LinearBase UnquantizedLinearMethod; ModelOpt leaves its exclusions
+// unquantized). The graph states that layout node by node, under a 16-bit global width. Taking the
+// stated format as the served one priced the step's unshaped work (attention prefill, the dense
+// ramp) at a four-bit compute peak the engine does not run it at.
+func servedDType(g *model.Graph, quantization string) (model.DType, error) {
+	checkpoint := g.Global.WeightDType
+	d, err := statedDType(checkpoint, quantization)
+	if err != nil || d == checkpoint {
+		return d, err
+	}
+	if storesNode(g, d) {
+		return checkpoint, nil
+	}
+	return d, nil
+}
+
+// storesNode reports whether any weight node of g states d as its own stored width.
+func storesNode(g *model.Graph, d model.DType) bool {
+	found := false
+	g.EachNode(func(_ string, n model.Node) {
+		if (n.Op == model.OpGEMM || n.Op == model.OpGroupedGEMM) && n.WeightDType == d {
+			found = true
+		}
+	})
+	return found
+}
+
+// statedDType is the format a quantization value names, the checkpoint's own where it names none.
+func statedDType(checkpoint model.DType, quantization string) (model.DType, error) {
 	switch quantization {
 	case "":
 		return checkpoint, nil
