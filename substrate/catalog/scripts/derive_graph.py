@@ -385,10 +385,17 @@ MODELOPT_PER_NODE_ARCHS = frozenset({
 })
 
 # The per-node architectures whose MIXED_PRECISION checkpoints are placed from their
-# quantized_layers map, each checked against a committed checkpoint (GLM-5.3-NVFP4). Another
-# architecture's mixed block is still refused: its module names have not been read against
-# a real map.
-MODELOPT_MIXED_ARCHS = frozenset({"GlmMoeDsaForCausalLM"})
+# quantized_layers map, each checked against a committed checkpoint (GLM-5.3-NVFP4,
+# Qwen3.5-397B-A17B-NVFP4-V2). Another architecture's mixed block is still refused: its module
+# names have not been read against a real map.
+MODELOPT_MIXED_ARCHS = frozenset({"GlmMoeDsaForCausalLM", "Qwen3_5MoeForConditionalGeneration"})
+
+# The quant_method spellings vLLM v0.33.0 builds a ModelOpt config from for a mixed checkpoint:
+# "modelopt", which ModelOptMixedPrecisionConfig.override_quantization_method turns into
+# "modelopt_mixed" when quant_algo is MIXED_PRECISION (quantization/modelopt.py:1658-1664), and
+# "modelopt_mixed" stated outright (the method_to_config table, quantization/__init__.py:166,
+# and the override list config/model.py:1409). Qwen3.5-397B-A17B-NVFP4-V2 states the second.
+MODELOPT_METHODS = frozenset({"modelopt", "modelopt_mixed"})
 
 
 def modelopt_exclusions(quant: dict[str, Any]) -> list[str]:
@@ -636,10 +643,14 @@ def modelopt_placed_width(raw: dict[str, Any], model: str, arch: str):
     name stays unquantized (ModelOptMixedPrecisionConfig, :1574-1890: _resolve_quant_algo
     and get_quant_method's "Layer not in quantized_layers -- leave unquantized")."""
     quant = raw.get("quantization_config") or {}
-    if str(quant.get("quant_method", "")).lower() != "modelopt":
+    method = str(quant.get("quant_method", "")).lower()
+    if method not in MODELOPT_METHODS:
         raise DeriveError(f"{model}: quant_method {quant.get('quant_method')!r}; this "
                           f"handler reads ModelOpt's layout")
     algo, listed = modelopt_config_exclusions(quant, model)
+    if method == "modelopt_mixed" and algo != "MIXED_PRECISION":
+        raise DeriveError(f"{model}: quant_method modelopt_mixed with quant_algo {algo!r}; "
+                          f"this deriver reads that method only as MIXED_PRECISION")
     spec = MODELOPT_MODULES[arch]
 
     def renamed(p):
@@ -675,7 +686,11 @@ def modelopt_placed_width(raw: dict[str, Any], model: str, arch: str):
             # list only, and matches these keys through its own candidates below.
             recipe[key] = got
         packed = quant.get("packed_modules_mapping") or {}
-        fused = {"qkv_proj": ("q_proj", "k_proj", "v_proj"), "gate_up_proj": ("gate_proj", "up_proj")}
+        # The model's packed_modules_mapping, which vLLM sets on the quant config: every
+        # model's qkv_proj and gate_up_proj, and Qwen3.5's two DeltaNet input projections
+        # (Qwen3_5ForConditionalGeneration, qwen3_5.py:481-484@v0.33.0).
+        fused = {"qkv_proj": ("q_proj", "k_proj", "v_proj"), "gate_up_proj": ("gate_proj", "up_proj"),
+                 "in_proj_qkvz": ("in_proj_qkv", "in_proj_z"), "in_proj_ba": ("in_proj_b", "in_proj_a")}
 
         def one(found, prefix):
             if len(found) > 1:
@@ -1004,11 +1019,15 @@ def weight_dtype(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> str:
         # global width is the base, and each node carries NVFP4 where the list leaves its
         # module quantized. Any other architecture is refused rather than priced at the
         # base throughout.
-        if (fmt == "modelopt" and str(quant.get("quant_algo", "")).upper() == "MIXED_PRECISION"
+        if (fmt in MODELOPT_METHODS and str(quant.get("quant_algo", "")).upper() == "MIXED_PRECISION"
                 and (raw.get("architectures") or [None])[0] in MODELOPT_MIXED_ARCHS):
             # Per module, from quantized_layers (modelopt_placed_width); the global width is
             # the base, as for a uniform layout.
             return base_dtype(cfg, raw, model)
+        if fmt == "modelopt_mixed":
+            raise DeriveError(f"{model}: quant_method modelopt_mixed picks the algorithm per "
+                              f"layer from a quantized_layers map, which this deriver places "
+                              f"only under MIXED_PRECISION for {sorted(MODELOPT_MIXED_ARCHS)}")
         if fmt == "modelopt" and quant.get("quant_algo"):
             algo = QUANT_ALGOS.get(str(quant["quant_algo"]).upper())
             if algo is None:
@@ -5085,7 +5104,7 @@ def handler_qwen3_5_moe(cfg, raw, model):
     ]
     sequence = ["attn_moe" if t == "full_attention" else "gdn_moe" for t in types]
     stack = compress(sequence)
-    if method != "modelopt":
+    if method not in MODELOPT_METHODS:
         return kinds, stack
     # A ModelOpt checkpoint's widths, node by node. Its MTP module is a full-attention MoE
     # layer like attn_moe, but the list can leave it at another width than the decoder's
