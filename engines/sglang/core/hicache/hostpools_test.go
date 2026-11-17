@@ -147,6 +147,7 @@ func TestTheHostTierResolvesAndRefusesItsSettingsAsSGLangDoes(t *testing.T) {
 		{func(c *L2Config) { c.HostMemoryMode = "buffer_only" }, "buffer_only", L2RefusalIssue},
 		{func(c *L2Config) { c.IOBackend = "kernel_ascend" }, "kernel_ascend", L2RefusalIssue},
 		{func(c *L2Config) { c.IOBackend, c.Layout = "kernel", "page_first_kv_split" }, "page_first_kv_split", L2RefusalIssue},
+		{func(c *L2Config) { c.Layout = "page_first_direct" }, "--hicache-mem-layout page_first_direct", L2RefusalIssue},
 		{func(c *L2Config) { c.WritePolicy = "write_sometimes" }, "invalid write policy", ""},
 		{func(c *L2Config) { c.Layout = "page_head" }, "for io backend 'direct'", ""},
 	} {
@@ -162,7 +163,7 @@ func TestTheHostTierResolvesAndRefusesItsSettingsAsSGLangDoes(t *testing.T) {
 			for _, layout := range Layouts {
 				l, i := ResolveLayoutIO(layout, io)
 				c := L2Config{WritePolicy: p, IOBackend: i, Layout: l}
-				if i == "direct" && l != "layer_first" && l != "page_first_direct" {
+				if (i == "direct" && l != "layer_first") || l == "page_first_direct" {
 					continue
 				}
 				if err := c.Check(); err != nil {

@@ -62,13 +62,18 @@ func (c L2Config) Check() error {
 	if c.Layout == "page_first_kv_split" {
 		return fmt.Errorf("hicache: --hicache-mem-layout page_first_kv_split is not modelled (%s)", L2RefusalIssue)
 	}
+	if c.Layout == "page_first_direct" {
+		// The oracle cannot trace its direct copies (transfer_kv_all_layer_direct_lf_pf is a
+		// CUDA kernel no manifest entry replaces yet), so it is refused until it is traced (FID-5).
+		return fmt.Errorf("hicache: --hicache-mem-layout page_first_direct is not modelled until it is traced (%s)", L2RefusalIssue)
+	}
 	if !slices.Contains(Layouts, c.Layout) {
 		return fmt.Errorf("hicache: unsupported layout: %s", c.Layout)
 	}
 	// The direct backend copies layer_first and page_first_direct only
 	// (cache_controller.py:944-984); ResolveLayoutIO has already turned page_first into
-	// page_first_direct.
-	if c.IOBackend == "direct" && c.Layout != "layer_first" && c.Layout != "page_first_direct" {
+	// page_first_direct, which is refused above.
+	if c.IOBackend == "direct" && c.Layout != "layer_first" {
 		return fmt.Errorf("hicache: unsupported layout %q for io backend 'direct'", c.Layout)
 	}
 	return nil
