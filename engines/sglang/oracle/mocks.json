@@ -1,0 +1,5 @@
+{
+  "version": "gpu-mock/0+4f53cda18c2b",
+  "description": "Every replacement the oracle harness makes in SGLang's code, by kind (gpu, clock, transport, environment, platform, external-service, transcription), with the sites oracle/check_mocks.py finds. Empty until the oracle harness exists.",
+  "mocks": []
+}

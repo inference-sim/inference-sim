@@ -1,0 +1,123 @@
+name: ci
+
+# The repository's own checks. Every pull request runs them, whatever its base, so each layer of a
+# stack is judged on its own head. The checks branch protection requires are `go`, `lint` and
+# `oracle-checks`.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    # Not `edited`: no job here reads the pull request's text (blis.yml and private-names.yml do).
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  # gofmt, no replace directive, go vet, go build and go test. The tests include the shared checks
+  # from blis-substrate's contracts/harness: every Go file states its provenance (SGL-2), no clock
+  # and no goroutine (X6), the harness copies are current (X7), the import rule (X7, design §5) and
+  # the exact upstream pin.
+  go:
+    name: go
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - id: go
+        uses: ./.github/actions/go-setup
+        with:
+          build-cache: build
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then echo "not gofmt-formatted:"; echo "$unformatted"; exit 1; fi
+      - name: no replace directive
+        run: '! grep -n "^replace" go.mod'
+      - name: go.mod and go.sum are tidy
+        run: go mod tidy -diff
+      - name: go vet
+        run: go vet ./...
+      - name: go build
+        run: go build ./...
+      - name: go test
+        run: go test -count=1 ./...
+      - if: github.event_name != 'pull_request'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/go-build
+          key: ${{ steps.go.outputs.build-key }}
+      - if: github.event_name != 'pull_request' && steps.go.outputs.mod-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ steps.go.outputs.mod-key }}
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - id: go
+        uses: ./.github/actions/go-setup
+        with:
+          build-cache: lint
+      # golangci-lint refuses a module newer than the Go that built it, so it is built from
+      # source with the Go go.mod names. Its settings are .golangci.yml, the harness copy.
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@9fae48acfc02a90574d7c304a1758ef9895495fa # v7.0.1
+        with:
+          version: v2.14.0
+          install-mode: goinstall
+      - if: github.event_name != 'pull_request'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/go-build
+          key: ${{ steps.go.outputs.build-key }}
+
+  # The oracle's guards over this repository's files (X18): every sglang module the scheduler's files
+  # import is classified as a decision module or listed with a reason (check_modules.py, FID-1), and
+  # oracle/test_checks.py runs each guard on what it guards. SGLang's source is read at the commit
+  # provenance.go pins; nothing is installed.
+  oracle-checks:
+    name: oracle-checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - id: pin
+        name: the SGLang commit provenance.go pins
+        run: |
+          set -euo pipefail
+          commit="$(sed -n 's/^\tCommit: *"\([0-9a-f]\{40\}\)",$/\1/p' provenance.go)"
+          test -n "$commit"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+      - name: check out SGLang at that commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: sgl-project/sglang
+          ref: ${{ steps.pin.outputs.commit }}
+          path: sglang-source
+          fetch-depth: 1
+          persist-credentials: false
+      - name: the checkout is that commit
+        run: test "$(git -C sglang-source rev-parse HEAD)" = "${{ steps.pin.outputs.commit }}"
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: every module the scheduler imports is classified
+        run: python -I oracle/check_modules.py sglang-source
+      - name: the guards fail on what they guard
+        run: python -I oracle/test_checks.py sglang-source
