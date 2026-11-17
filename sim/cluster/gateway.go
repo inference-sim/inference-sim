@@ -185,7 +185,10 @@ func (cs *ClusterSimulator) Schedule(at int64, priority int, daemon bool, fn fun
 		cs.daemonQueued++
 	}
 	cs.schedule(ev, &cs.routerSender)
-	return func() { ev.cancelled = true }
+	// A cancelled event stays in the queue until its time, which can be the end of a long run (a
+	// client deadline hours out), so cancelling drops the closure: it holds the request, its prompt
+	// and its router flight (inference-sim#2201).
+	return func() { ev.cancelled, ev.fn = true, nil }
 }
 
 // SetGateway installs the gateway. It must be called before Run.
