@@ -60,3 +60,7 @@ PoolPlan.WeightFormat # kernel: TestEachResolvedPlanSettingMovesAPrice
 DraftPolicy.Adaptive # kernel: TestAnAdaptiveVerifierThePlanStatesVerifiesFewerDrafts
 HostPlan.NativeFrontend # kernel: TestTheCompiledFrontendIsPricedAtItsOwnRate
 PoolPlan.Host # kernel: TestTheCompiledFrontendIsPricedAtItsOwnRate
+PoolPlan.Launches # kernel: TestTheLaunchesTheEnginesFusedKernelsRemoveAreNotCharged
+LaunchChange.FromTokens # kernel: TestTheLaunchesTheEnginesFusedKernelsRemoveAreNotCharged
+LaunchChange.ToTokens # kernel: TestTheLaunchesTheEnginesFusedKernelsRemoveAreNotCharged
+LaunchChange.PerLayer # kernel: TestTheLaunchesTheEnginesFusedKernelsRemoveAreNotCharged

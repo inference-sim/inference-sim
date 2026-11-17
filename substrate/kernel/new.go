@@ -363,6 +363,17 @@ func construct(in Inputs) (*Kernel, error) {
 		return nil, fmt.Errorf("planning the model graph: %w", err)
 	}
 	k.plan = built
+	// A layer cannot launch fewer kernels than none: the engine's fused kernels replace nodes
+	// the layer has.
+	for _, c := range k.low.Launches {
+		for _, l := range built.Layers {
+			if l.Kernels+c.PerLayer < 0 {
+				return nil, fmt.Errorf("the plan says the engine's fused kernels change each layer's "+
+					"launches by %d at %d to %d tokens (Plan.Launches), but layer %s launches %d",
+					c.PerLayer, c.FromTokens, c.ToTokens, l.ID, l.Kernels)
+			}
+		}
+	}
 
 	// How many states a recurrent layer keeps, the context bound, and the KV page, as the
 	// engine resolved them.

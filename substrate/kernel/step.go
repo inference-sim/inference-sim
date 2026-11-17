@@ -307,7 +307,13 @@ func (k *Kernel) priceStep(b, drafted kernel.Batch,
 	}
 	overlapSeconds += k.priceHead(k.plan.Head, &s, &perResource)
 
-	// The drafter's passes, when the deployment speculates (see priceDraft).
+	// The drafter's passes, when the deployment speculates (see priceDraft). In a step that
+	// proposes no drafts (kernel.Batch.SkipDrafts) no request drafts: priceDraft then charges only
+	// the work that keeps the drafter's KV in step, its context stack and a first pass over the
+	// scheduled tokens without its head, and not the passes that propose.
+	if drafted.SkipDrafts {
+		drafted.Reqs, drafted.DraftPaddedTokens = nil, 0
+	}
 	draftKernels := 0
 	if k.speculating && draft {
 		var d float64
