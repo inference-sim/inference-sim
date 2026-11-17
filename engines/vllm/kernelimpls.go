@@ -35,6 +35,10 @@ func ArchOf(major, minor int) string { return fmt.Sprintf("sm_%d%da", major, min
 // AttentionBackendEnum member: "attention backend FLASHINFER".
 func AttentionSelection(backend string) string { return "attention backend " + backend }
 
+// MoESelection is the selection kernel_impls.json lists an MoE backend's kernels under, for a weight
+// format's backend Enum member (kernels/<tag>/moe.json): "fp8 moe backend TRITON".
+func MoESelection(format, member string) string { return format + " moe backend " + member }
+
 // Implementation states the kernel implementation a lowered operation runs: the build of the
 // library's kernel (variant) at the version this release pins, that the upstream selection runs
 // for the primitive on a device of compute capability major.minor. It is what the lowering puts in

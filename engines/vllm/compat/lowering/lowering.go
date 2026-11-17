@@ -27,6 +27,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 	"github.com/inference-sim/blis-substrate/contracts/units"
 
+	blisvllm "github.com/inference-sim/blis-vllm"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 )
 
@@ -550,6 +551,9 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 		p.MoE.RedundantExperts = e.NumRedundantExperts
 	}
 	p.MoE.Dispatch = dispatchKernel(backend)
+	if p.MoE.Experts, err = expertsKernel(g, &c, eng.MoEBackend); err != nil {
+		return nil, err
+	}
 	p.MoE.Fused = in.Rules.MegaMoEBackend(eng.MoEBackend)
 
 	// The packed latent cell: the stated layout, or on a DSA model the one its backend
@@ -712,6 +716,76 @@ func lowerEngram(in Input, pool deployment.Pool, eng vllmsettings.Settings, lay 
 		shards *= local
 	}
 	return onHost, shards
+}
+
+// expertsKernel names the kernel the routed experts' grouped GEMMs run on, in the plan's words,
+// where the lowering knows it: block-FP8 experts on an SM90 part. vLLM v0.33.0 orders the FP8
+// MoE backends and, for 128-block FP8 weights on SM90, moves Triton to the front at
+// expert-parallel width 1 and FlashInfer's CUTLASS experts above it
+// (model_executor/layers/fused_moe/oracle/fp8.py:79-130@4ba787ec); a stated moe_backend is
+// taken as stated (:274-282). A stated backend outside those two is named by its own word, and
+// the cost model prices it by weight format and records that. Any other format or part states
+// none.
+func expertsKernel(g *model.Graph, c *lowerContext, stated string) (plan.KernelImpl, error) {
+	if !c.hopper() || stackRoutedExperts(g) == 0 || !blockFP8Experts(g) {
+		return plan.KernelImpl{}, nil
+	}
+	// The engine normalises the name before it validates it (vllm/config/kernel.py
+	// _normalize_moe_backend): lower case, dashes as underscores.
+	backend := strings.ReplaceAll(strings.ToLower(stated), "-", "_")
+	if backend == "" || backend == "auto" {
+		backend = "triton"
+		if c.lay.ExpertWidth > 1 {
+			backend = "flashinfer_cutlass"
+		}
+	}
+	// The build the release runs, from its kernel table (kernel_impls.json): the coefficient
+	// lookup binds the routed term's ramp to it (VAL-8). A part the table does not cover states
+	// the kernel unidentified, and the cost model reads no keyed entry for it.
+	var member, library, variant string
+	switch backend {
+	case "triton":
+		member, library, variant = "TRITON", "vllm-csrc", plan.ExpertsTriton.Variant
+	case "flashinfer_cutlass":
+		member, library, variant = "FLASHINFER_CUTLASS", plan.ExpertsFlashInferCutlass.Library, plan.ExpertsFlashInferCutlass.Variant
+	default:
+		return plan.KernelImpl{Library: backend}, nil
+	}
+	major, minor := capability(c.chip)
+	return blisvllm.Implementation(plan.PrimMoEGroupedGEMM, blisvllm.MoESelection("fp8", member), library, variant, major, minor)
+}
+
+// capability is the chip's compute capability, major and minor; 0, 0 when it states none.
+func capability(chip hardware.Chip) (int, int) {
+	major, ok := chip.CapabilityMajor()
+	if !ok {
+		return 0, 0
+	}
+	_, m, _ := strings.Cut(chip.ComputeCapability, ".")
+	minor, _ := strconv.Atoi(m)
+	return major, minor
+}
+
+// blockFP8Experts reports whether every routed expert of the stack stores block-scaled FP8 weights:
+// FP8 whose scale is not the 32-element microscaling one (MXFP8 runs another family of kernels).
+func blockFP8Experts(g *model.Graph) bool {
+	found := false
+	for _, lk := range stackKinds(g.LayerKinds, g.Stack) {
+		for _, n := range lk.Nodes {
+			if n.Op != model.OpGroupedGEMM || n.TopK <= 0 || n.IsSharedExpert() {
+				continue
+			}
+			d := n.WeightDType
+			if d == "" {
+				d = g.Global.WeightDType
+			}
+			if d != model.DTypeFP8 || (g.Global.WeightScale != nil && g.Global.WeightScale.Elements == 32) {
+				return false
+			}
+			found = true
+		}
+	}
+	return found
 }
 
 // dispatchKernel names the all-to-all kernel an MoE dispatch backend runs, in the plan's words:

@@ -55,17 +55,29 @@ func TestEagerLaunchesCostAtLeastAReplay(t *testing.T) {
 	}
 }
 
-// A top-k layer's prefill query attends its selection, not its whole prefix: a chunk's
-// attention barely grows with how much context precedes it, where a full-attention chunk's
-// grows with the prefix.
+// A top-k layer's prefill query attends its selection, not its whole prefix: what a chunk's
+// cost gains from a longer prefix is a small part of what the same chunk gains when each query
+// reads every key. The comparison is of the prefix-driven increment, so the layer's other work
+// (its experts, its projections), which the prefix does not touch, does not enter it.
 func TestSparsePrefillIsBoundedByItsSelection(t *testing.T) {
-	k := fixture(t, "glm5-h200-tp8.yaml") // DSA, index_topk 2048
-	sm := func(prefix int) float64 {
-		return k.StepTime(prefillOf(1024, prefix)).PerResource[kernel.ResourceSM].Seconds()
+	sparse := fixture(t, "glm5-h200-tp8.yaml") // DSA, index_topk 2048
+	in := fixtureInputs(t, "glm5-h200-tp8.yaml")
+	if editNodes(in.Model, func(n model.Node) bool { return n.IndexTopK > 0 },
+		func(n *model.Node) { n.IndexTopK = 1 << 20 }) == 0 {
+		t.Fatal("the graph states no top-k selection")
 	}
-	if r := sm(131072) / sm(8192); r > 1.5 {
-		t.Errorf("a 1,024-token chunk on a 128K prefix costs %.2fx one on an 8K prefix; "+
-			"each query reads at most its top-k", r)
+	dense := build(t, in) // a selection wider than any prefix: every query reads every key
+	grows := func(k interface {
+		StepTime(kernel.Batch) kernel.StepEstimate
+	}) float64 {
+		sm := func(prefix int) float64 {
+			return k.StepTime(prefillOf(1024, prefix)).PerResource[kernel.ResourceSM].Seconds()
+		}
+		return sm(131072) - sm(8192)
+	}
+	if s, d := grows(sparse), grows(dense); s > d/10 {
+		t.Errorf("a 1,024-token chunk gains %.1f ms of SM from a 128K prefix over an 8K one, and %.1f ms "+
+			"when every query reads every key; each query reads at most its top-k", s*1e3, d*1e3)
 	}
 }
 
