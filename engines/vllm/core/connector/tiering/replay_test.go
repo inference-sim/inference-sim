@@ -30,63 +30,6 @@ const (
 	goldenDir   = "testdata/golden"
 )
 
-// cpu adapts the CPU tier (offloading.CPUPrimary) to tiering.Primary.
-type cpu struct{ p *offloading.CPUPrimary }
-
-func okeys(ks []tiering.Key) []offloading.Key {
-	out := make([]offloading.Key, len(ks))
-	for i, k := range ks {
-		out[i] = offloading.Key(k)
-	}
-	return out
-}
-
-func tkeys(ks []offloading.Key) []tiering.Key {
-	out := make([]tiering.Key, len(ks))
-	for i, k := range ks {
-		out[i] = tiering.Key(k)
-	}
-	return out
-}
-
-func access(c *tiering.ReqContext) *offloading.Access {
-	if c.Primary == nil {
-		c.Primary = offloading.NewAccess()
-	}
-	return c.Primary.(*offloading.Access)
-}
-
-func (c cpu) NumChunks() int { return c.p.NumChunks() }
-func (c cpu) Lookup(k tiering.Key, _ *tiering.ReqContext) tiering.Lookup {
-	found, ready := c.p.Lookup(offloading.Key(k))
-	switch {
-	case !found:
-		return tiering.Miss
-	case !ready:
-		return tiering.HitPending
-	}
-	return tiering.Hit
-}
-func (c cpu) LoadSource(tiering.Key, *tiering.ReqContext) string { return c.p.LoadSource() }
-func (c cpu) PrepareLoad(ks []tiering.Key, r *tiering.ReqContext) []int {
-	return c.p.PrepareLoad(okeys(ks), access(r))
-}
-func (c cpu) PrepareRead(ks []tiering.Key, _ *tiering.ReqContext) []int {
-	return c.p.PrepareRead(okeys(ks))
-}
-func (c cpu) CompleteLoad(ks []tiering.Key, _ *tiering.ReqContext) { c.p.CompleteLoad(okeys(ks)) }
-func (c cpu) PrepareStore(ks []tiering.Key, r *tiering.ReqContext) ([]tiering.Key, []int, []tiering.Key, bool) {
-	s, ids, ev, ok := c.p.PrepareStore(okeys(ks), access(r))
-	return tkeys(s), ids, tkeys(ev), ok
-}
-func (c cpu) CompleteStore(ks []tiering.Key, _ *tiering.ReqContext, ok bool) {
-	c.p.CompleteStore(okeys(ks), ok)
-}
-func (c cpu) Touch(ks []tiering.Key, _ *tiering.ReqContext) { c.p.Touch(okeys(ks)) }
-func (c cpu) OnRequestFinished(r *tiering.ReqContext)       { c.p.OnRequestFinished(access(r)) }
-func (c cpu) ResetCache()                                   { c.p.ResetCache() }
-func (c cpu) TakeEvents() []tiering.Event                   { return nil }
-
 // record is one call at an interface, as the trace holds it.
 type record struct {
 	M    string         `json:"m"`
@@ -360,7 +303,7 @@ func replay(t *testing.T, scenarioPath, tracePath string) {
 		fsTiers = append(fsTiers, ft)
 		tiers = append(tiers, &recTier{Tier: ft, idx: i, log: &tierLog})
 	}
-	mgr := tiering.New(cpu{offloading.NewCPUPrimary(tr.Spec[0].Ret.NumChunks)}, tiers, nil)
+	mgr := tiering.New(tiering.CPU(offloading.NewCPUPrimary(tr.Spec[0].Ret.NumChunks)), tiers, nil)
 	for label, want := range tr.Files {
 		for i, ft := range fsTiers {
 			got := strings.TrimPrefix(ft.FileName(keyOf(label)), "/")
