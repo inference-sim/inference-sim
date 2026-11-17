@@ -26,7 +26,7 @@ A BLIS run draws on six repositories. Each owns one kind of thing.
 | Repository | Role | Holds |
 |---|---|---|
 | **inference-sim** (this one) | *simulates* | The end-to-end simulation: the clock and event loop, arrivals and workloads, the cluster and placement, the embedded llm-d router (admission, flow control, routing), metrics and reports. It holds no vLLM code. |
-| [`blis-vllm`](https://github.com/inference-sim/blis-vllm) | *runs the engine* | The vLLM engine: vLLM v0.32.0's scheduler, KV cache, MTP, DP and connectors, translated to Go and diff-tested against real vLLM; the vLLM engine configuration and rules; the kernel adapter. |
+| [`blis-vllm`](https://github.com/inference-sim/blis-vllm) | *runs the engine* | The vLLM engine: vLLM v0.33.0's scheduler, KV cache, MTP, DP and connectors, translated to Go and diff-tested against real vLLM; the vLLM engine configuration and rules; the kernel adapter. |
 | [`blis-latency-kernel`](https://github.com/inference-sim/blis-latency-kernel) | *prices* | Step time, KV and fixed memory, P/D KV transfer, offload tier transfer, host overheads. The only latency backend. |
 | [`blis-substrate` `catalog/`](https://github.com/inference-sim/blis-substrate/tree/main/catalog) | *states the facts* | Model graphs, chips, fabrics, storage devices, workload presets — declared facts, nothing fitted. |
 | [`blis-substrate` `registry/`](https://github.com/inference-sim/blis-substrate/tree/main/registry) | *holds the fitted numbers* | Coefficient sets the kernel prices with, each with its provenance and scope. |
@@ -81,7 +81,7 @@ blis-substrate (or keep a directory with the layout of its `catalog/`) and name 
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout 2ce0e12e1b81cd7c5646c1f3b93bacab852a9a57
+git -C blis-substrate checkout 39e7839a62bf710fb744efdff317557409a5c720
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
@@ -102,9 +102,9 @@ Two more inputs have a default:
 The Result records which data the run read under `data`. See
 [Catalog compatibility](docs/getting-started/installation.md#catalog-compatibility).
 
-**vLLM versions.** A scenario names its engine as `engine: {kind: vllm, version: "0.32.0"}`. A
+**vLLM versions.** A scenario names its engine as `engine: {kind: vllm, version: "0.33.0"}`. A
 scenario that states `engine_version` is refused with a message naming that form. This build runs
-blis-vllm's translated vLLM v0.32.0 engine (the latency kernel's 0.31.0 tuning prices it, and the
+blis-vllm's translated vLLM v0.33.0 engine (the latency kernel's 0.31.0 tuning prices it, and the
 run says so on stderr). A scenario naming another release is refused; for vLLM 0.29.0 and 0.31.0
 the refusal names v0.15.0, the last inference-sim release that runs them. Priority
 scheduling (`scheduling_policy: priority`, SLO priority overrides) is refused for now. The engine block must

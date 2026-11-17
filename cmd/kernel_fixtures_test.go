@@ -159,7 +159,7 @@ func newRoutedCluster(ec engineConfig, reqs []*sim.Request) *cluster.ClusterSimu
 // compatEngineFactory builds each instance's compatibility engine behind engine.Engine (blis-vllm
 // compat/contract) from its configuration, driven by a sim.EngineDriver. No run builds this
 // engine since engine selection refuses vLLM 0.29.0 and 0.31.0 (LIF-6); the library-level tests
-// in this package still drive the host through it, until they move onto the v0.32.0 engine
+// in this package still drive the host through it, until they move onto the v0.33.0 engine
 // (blis-vllm deletes compat/ in M4, release plan §3.3).
 func compatEngineFactory(acceptance float64) func(int, sim.InstanceConfig) (*sim.EngineDriver, error) {
 	// Each instance's engine is built from its own configuration, resolved for its pool role (a

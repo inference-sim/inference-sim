@@ -118,7 +118,7 @@ path. The rules:
 
 - The `cpu_dram` tier is required, and it must be the first tier: every secondary tier sits
   behind the CPU tier, as in vLLM.
-- The v0.32.0 engine models the `cpu_dram` tier only and refuses a secondary tier, such as
+- The v0.33.0 engine models the `cpu_dram` tier only and refuses a secondary tier, such as
   `tier: nvme_gen4` (blis-vllm#63). A secondary tier needs `spec: TieringOffloadingSpec`, and
   its device must be one the catalog defines.
 - An object store (`s3`) is refused: vLLM reaches it through its `obj` tier, which BLIS does

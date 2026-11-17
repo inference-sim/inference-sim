@@ -7,13 +7,13 @@ Each instance's engine orders its requests by its pool's `engine.scheduling_poli
 ```yaml
 # In each pool of the scenario's deployment:
     engine:
-      scheduling_policy: fcfs   # or priority (refused on 0.32.0 for now)
+      scheduling_policy: fcfs   # or priority (refused on 0.33.0 for now)
 ```
 
 ## How Priority Works
 
-!!! note "Not yet available on 0.32.0"
-    Priority scheduling is refused on 0.32.0 for now.
+!!! note "Not yet available on 0.33.0"
+    Priority scheduling is refused on 0.33.0 for now.
 
 Request priority is **static** — set once when the request enters the instance, and never changed.
 
@@ -54,7 +54,7 @@ Each policy orders the wait queue every step, before batch formation, through th
 | `scheduling_policy` | Queue order | Preemption victim | Notes |
 |---------------------|-------------|-------------------|-------|
 | `fcfs` | First-Come-First-Served. No reordering: requests are processed in arrival order. | The tail of the running batch. | Default. Fair and predictable. |
-| `priority` | Sort by priority **ascending** (lower value = more urgent, vLLM convention), then by arrival time ascending within the same priority. Ties broken by request ID for determinism. | The least-urgent running request. | Useful when `SLOClass` is set in the workload spec. Without SLO classes, all requests get Priority=1.0 (standard) and this degrades to FCFS by arrival tiebreak. Refused on 0.32.0 for now. |
+| `priority` | Sort by priority **ascending** (lower value = more urgent, vLLM convention), then by arrival time ascending within the same priority. Ties broken by request ID for determinism. | The least-urgent running request. | Useful when `SLOClass` is set in the workload spec. Without SLO classes, all requests get Priority=1.0 (standard) and this degrades to FCFS by arrival tiebreak. Refused on 0.33.0 for now. |
 
 Both policies use `sort.SliceStable` for deterministic ordering (INV-6).
 
@@ -84,14 +84,14 @@ BLIS models vLLM's two-queue architecture (WaitQ + RunningBatch). When a request
 
 This means preempted requests get implicit priority over fresh arrivals in FCFS mode. With `priority` and mixed SLO classes, the preempted request's static priority determines its position relative to other waiting requests.
 
-Under `scheduling_policy: fcfs` (the default), the tail of the running batch is evicted. Under `scheduling_policy: priority`, which is refused on 0.32.0 for now, the least-urgent running request is evicted — the one with the **highest Priority value** (vLLM convention: background=7 is least urgent and evicted first). Among equal-priority requests, the most recently arrived is evicted first. This matches vLLM's `--scheduling-policy priority` preemption behavior (vLLM v0.31.0 `vllm/v1/core/sched/scheduler.py:765,777`). One field sets both the queue order and the preemption victim, as in vLLM: `priority` is BLIS's `priority-fcfs` queueing with `priority` preemption, and `fcfs` is `fcfs` for both. In a prefill/decode deployment each pool takes its own engine's policy.
+Under `scheduling_policy: fcfs` (the default), the tail of the running batch is evicted. Under `scheduling_policy: priority`, which is refused on 0.33.0 for now, the least-urgent running request is evicted — the one with the **highest Priority value** (vLLM convention: background=7 is least urgent and evicted first). Among equal-priority requests, the most recently arrived is evicted first. This matches vLLM's `--scheduling-policy priority` preemption behavior (vLLM v0.31.0 `vllm/v1/core/sched/scheduler.py:765,777`). One field sets both the queue order and the preemption victim, as in vLLM: `priority` is BLIS's `priority-fcfs` queueing with `priority` preemption, and `fcfs` is `fcfs` for both. In a prefill/decode deployment each pool takes its own engine's policy.
 
 ## When to Use Which
 
 | Workload | Recommended Configuration | Why |
 |----------|--------------------------|-----|
 | Uniform traffic, no SLO differentiation | `scheduling_policy: fcfs` (default) | No reordering needed. All requests are equivalent. |
-| Mixed SLO classes (critical vs background) | `scheduling_policy: priority` with `slo_class` in the workload spec (refused on 0.32.0 for now) | Critical requests get Priority=0, scheduled before background (Priority=7). |
+| Mixed SLO classes (critical vs background) | `scheduling_policy: priority` with `slo_class` in the workload spec (refused on 0.33.0 for now) | Critical requests get Priority=0, scheduled before background (Priority=7). |
 | Low load (< ~10 req/s) | Either | Batch sizes are small enough that both policies pick the same requests. At low load, both produce equivalent results within ~5%. |
 
 ## Further Reading

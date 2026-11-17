@@ -127,7 +127,7 @@ func TestMuseSparkRunsOnEveryLayoutAndCluster(t *testing.T) {
 // The report's router configuration routes Muse by its KV cache: on a workload of eight agents,
 // each with its own 16k-token context, two H200 replicas behind it hit their prefix caches more
 // often than behind a load-only router, which places each agent's turns without regard to where
-// its context is cached. It holds only if the 0.32.0 engines' KV events reach the router's
+// its context is cached. It holds only if the 0.33.0 engines' KV events reach the router's
 // precise-prefix producer and name the chains the router was shown.
 func TestMuseSparkPrecisePrefixRoutingFollowsTheCache(t *testing.T) {
 	if testing.Short() {

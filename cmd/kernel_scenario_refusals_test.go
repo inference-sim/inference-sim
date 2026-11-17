@@ -227,7 +227,7 @@ func TestRunCmd_TheSchedulingPolicyIsTheScenariosAlone(t *testing.T) {
 // LIF-6, per engine kind: a scenario naming an engine release other than the one this build
 // runs is refused before anything runs. The message names the release asked for, the one this
 // build runs, and the newest inference-sim release that runs the one asked for, or says that
-// none does. The closest accepted scenario, the same file naming vllm 0.32.0, runs (SIM-9).
+// none does. The closest accepted scenario, the same file naming vllm 0.33.0, runs (SIM-9).
 // The accepted scenario names its engine with engine: {kind, version}; each case replaces that
 // block with its own statement (engine_select.go).
 func TestRunCmd_RefusesAnEngineReleaseItDoesNotRun(t *testing.T) {
@@ -236,17 +236,19 @@ func TestRunCmd_RefusesAnEngineReleaseItDoesNotRun(t *testing.T) {
 		want       []string
 	}{
 		{"vllm 0.29.0, last run by v0.15.0", `engine: {kind: vllm, version: "0.29.0"}`,
-			[]string{"names engine vllm 0.29.0", "this build runs vllm 0.32.0", "newest inference-sim release that runs it is v0.15.0"}},
+			[]string{"names engine vllm 0.29.0", "this build runs vllm 0.33.0", "newest inference-sim release that runs it is v0.15.0"}},
 		{"vllm 0.31.0, last run by v0.15.0", `engine: {kind: vllm, version: "0.31.0"}`,
-			[]string{"names engine vllm 0.31.0", "this build runs vllm 0.32.0", "newest inference-sim release that runs it is v0.15.0"}},
-		{"vllm 0.33.0, run by no release", `engine: {kind: vllm, version: "0.33.0"}`,
-			[]string{"names engine vllm 0.33.0", "this build runs vllm 0.32.0", "no inference-sim release runs it"}},
+			[]string{"names engine vllm 0.31.0", "this build runs vllm 0.33.0", "newest inference-sim release that runs it is v0.15.0"}},
+		{"vllm 0.32.0, last run by v0.17.0", `engine: {kind: vllm, version: "0.32.0"}`,
+			[]string{"names engine vllm 0.32.0", "this build runs vllm 0.33.0", "newest inference-sim release that runs it is v0.17.0"}},
+		{"vllm 0.34.0, run by no release", `engine: {kind: vllm, version: "0.34.0"}`,
+			[]string{"names engine vllm 0.34.0", "this build runs vllm 0.33.0", "no inference-sim release runs it"}},
 		{"a kind this build does not register", `engine: {kind: sglang, version: "0.5.23"}`,
 			[]string{`names engine kind \"sglang\"`, "this build runs the kinds vllm"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			dir := writeColocatedVariant(t, "engine:\n  kind: vllm\n  version: \"0.32.0\"\n", c.edit+"\n")
+			dir := writeColocatedVariant(t, "engine:\n  kind: vllm\n  version: \"0.33.0\"\n", c.edit+"\n")
 			_, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml",
 				"--rate", "4", "--num-requests", "4", "--seed", "1")
 			if err == nil {
@@ -264,12 +266,12 @@ func TestRunCmd_RefusesAnEngineReleaseItDoesNotRun(t *testing.T) {
 		stdout, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml",
 			"--rate", "4", "--num-requests", "4", "--seed", "1")
 		if err != nil || !completedIs(stdout, 4) {
-			t.Fatalf("vllm 0.32.0 must run: %v\n%s", err, lastLines(stderr, 3))
+			t.Fatalf("vllm 0.33.0 must run: %v\n%s", err, lastLines(stderr, 3))
 		}
 	})
 }
 
-// A 0.32.0 scenario runs blis-vllm's translated v0.32.0 engine through blis-schemas' engine.Engine
+// A 0.33.0 scenario runs blis-vllm's translated v0.33.0 engine through blis-schemas' engine.Engine
 // contract: every request completes, and the latency kernel's 0.31.0 tuning, which prices the
 // step, is disclosed on stderr.
 func TestRunCmd_A032ScenarioRunsThroughTheEngineContract(t *testing.T) {
@@ -277,7 +279,7 @@ func TestRunCmd_A032ScenarioRunsThroughTheEngineContract(t *testing.T) {
 	stdout, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml",
 		"--rate", "4", "--num-requests", "4", "--seed", "1")
 	if err != nil {
-		t.Fatalf("a 0.32.0 scenario must run through the contract: %v\nstderr:\n%s", err, lastLines(stderr, 5))
+		t.Fatalf("a 0.33.0 scenario must run through the contract: %v\nstderr:\n%s", err, lastLines(stderr, 5))
 	}
 	if !completedIs(stdout, 4) {
 		t.Errorf("want 4 completed requests; stdout:\n%s", stdout)
@@ -296,13 +298,13 @@ func TestRunCmd_TheResultRecordsTheSelectedEngine(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%v\n%s", err, lastLines(stderr, 3))
 		}
-		if e := parseResult(t, stdout).Engine; e.Kind != "vllm" || e.Version != "0.32.0" {
-			t.Errorf("engine = %+v, want vllm 0.32.0", e)
+		if e := parseResult(t, stdout).Engine; e.Kind != "vllm" || e.Version != "0.33.0" {
+			t.Errorf("engine = %+v, want vllm 0.33.0", e)
 		}
 	}
 }
 
-// INV-13 for a contract-built release: a 0.32.0 run's exported trace, replayed with the same
+// INV-13 for a contract-built release: a 0.33.0 run's exported trace, replayed with the same
 // flags, reproduces the run byte for byte. blis replay must build the same engine through the
 // engine contract.
 func TestReplayCmd_A032ScenarioReproducesTheRun(t *testing.T) {
@@ -320,16 +322,16 @@ func TestReplayCmd_A032ScenarioReproducesTheRun(t *testing.T) {
 		t.Fatalf("replay: %v\nstderr:\n%s", err, lastLines(repErr, 5))
 	}
 	if !strings.Contains(repErr, "engine assumption: engine_version = 0.31.0") {
-		t.Errorf("a 0.32.0 replay must run the engine built through the contract, which discloses the "+
+		t.Errorf("a 0.33.0 replay must run the engine built through the contract, which discloses the "+
 			"kernel's 0.31.0 tuning; stderr:\n%s", lastLines(repErr, 6))
 	}
 	if inv13View(t, runOut) != inv13View(t, repOut) {
-		t.Errorf("a 0.32.0 replay does not reproduce its run (INV-13):\nrun:\n%s\nreplay:\n%s",
+		t.Errorf("a 0.33.0 replay does not reproduce its run (INV-13):\nrun:\n%s\nreplay:\n%s",
 			lastLines(runOut, 30), lastLines(repOut, 30))
 	}
 }
 
-// A 0.32.0 run reports its prefix cache's hit rate: each request's first admission's lookup,
+// A 0.33.0 run reports its prefix cache's hit rate: each request's first admission's lookup,
 // from the engine (engine.Scheduled.PrefixLookup). On a workload whose requests share prefixes,
 // the engine hits.
 func TestRunCmd_A032ScenarioReportsItsPrefixCacheHitRate(t *testing.T) {
@@ -340,11 +342,11 @@ func TestRunCmd_A032ScenarioReportsItsPrefixCacheHitRate(t *testing.T) {
 		t.Fatalf("%v\nstderr:\n%s", err, lastLines(stderr, 5))
 	}
 	if resultNum(t, stdout, "engine.cluster.cache_hit_rate_whole_run") == 0 {
-		t.Fatal("the 0.32.0 engine's prefix cache reported no hits on a workload of shared prefixes")
+		t.Fatal("the 0.33.0 engine's prefix cache reported no hits on a workload of shared prefixes")
 	}
 }
 
-// --server-series-interval-s adds a 0.32.0 run's server_series block to the engine report: the engine bins its own
+// --server-series-interval-s adds a 0.33.0 run's server_series block to the engine report: the engine bins its own
 // vllm:* series, and it counts prefix-cache hits on a workload of shared prefixes.
 func TestRunCmd_A032ScenarioWritesItsServerSeries(t *testing.T) {
 	dir := writeColocatedVariant(t)
@@ -389,7 +391,7 @@ func TestRunCmd_A032ScenarioWritesItsServerSeries(t *testing.T) {
 	}
 }
 
-// A 0.32.0 run keeps the host's API-server front end (INV-R1): requests that arrive together
+// A 0.33.0 run keeps the host's API-server front end (INV-R1): requests that arrive together
 // queue for the one render thread (vLLM's default, --renderer-num-workers 1) before they reach
 // the engine, and --renderer-num-workers 0 turns the queue off.
 func TestRunCmd_A032ScenarioRendersOnTheHostFrontEnd(t *testing.T) {
@@ -429,7 +431,7 @@ func TestRunCmd_MultiConnectorWarningSurvivesARefusal(t *testing.T) {
 	}
 }
 
-// A 0.32.0 deployment the v0.32.0 engine cannot build (here a DeepSeek-V4.1 checkpoint stating
+// A 0.33.0 deployment the v0.33.0 engine cannot build (here a DeepSeek-V4.1 checkpoint stating
 // max_model_len auto, a window the engine takes only as stated) is refused at the build site:
 // exit 1 with the engine's message naming the missing piece, not a panic out of the cluster's
 // construction.
@@ -447,18 +449,18 @@ func TestRunCmd_A032ScenarioTheEngineCannotBuildIsRefusedByName(t *testing.T) {
 		"--catalog", substratedata.MustCatalog(), "--speculative-acceptance-rate", "0.7",
 		"--rate", "4", "--num-requests", "4", "--seed", "1")
 	if err == nil {
-		t.Fatal("a 0.32.0 deployment stating max_model_len auto ran")
+		t.Fatal("a 0.33.0 deployment stating max_model_len auto ran")
 	}
 	if strings.Contains(stderr, "goroutine ") || strings.Contains(stderr, "panic:") {
 		t.Errorf("the refusal must be a clean CLI error, not a panic; stderr:\n%s", lastLines(stderr, 8))
 	}
-	if !strings.Contains(stderr, "engine vllm 0.32.0: vllm: max_model_len must be stated") {
+	if !strings.Contains(stderr, "engine vllm 0.33.0: vllm: max_model_len must be stated") {
 		t.Errorf("the refusal must be the engine's, naming the missing piece; stderr:\n%s", lastLines(stderr, 4))
 	}
 }
 
 // The host does not carry request priority across the engine contract yet (it sends every
-// request to the v0.32.0 engine at priority 0), so a priority policy would silently run as FCFS. A
+// request to the v0.33.0 engine at priority 0), so a priority policy would silently run as FCFS. A
 // scenario stating engine.scheduling_policy priority is refused at the build site, naming the
 // policy; the same scenario stating fcfs runs.
 func TestRunCmd_A032ScenarioStatingPrioritySchedulingIsRefused(t *testing.T) {
@@ -479,7 +481,7 @@ func TestRunCmd_A032ScenarioStatingPrioritySchedulingIsRefused(t *testing.T) {
 }
 
 // An SLO priority override (--policy-config priority.slo_priorities) re-ranks the SLO classes a
-// priority policy orders by, which reaches the v0.32.0 engine as nothing: a run stating one is
+// priority policy orders by, which reaches the v0.33.0 engine as nothing: a run stating one is
 // refused at the build site, naming the setting. The same run without the bundle runs.
 func TestRunCmd_A032ScenarioRefusesAnSLOPriorityOverride(t *testing.T) {
 	bundle := filepath.Join(t.TempDir(), "policy.yaml")
@@ -516,7 +518,7 @@ func dp032Variant(t *testing.T, extra string) string {
 	return dir
 }
 
-// A 0.32.0 data-parallel deployment reaches the engine as one instance: the host places no rank
+// A 0.33.0 data-parallel deployment reaches the engine as one instance: the host places no rank
 // replicas (the engine is the whole DP group, its balancer, waves and lockstep its own), and the
 // build site no longer refuses dp > 1. With async scheduling off, which vLLM's DP group then
 // runs with a queue of one batch per rank, the deployment runs to completion.
@@ -525,17 +527,17 @@ func TestRunCmd_A032DataParallelDeploymentIsOneEngineGroup(t *testing.T) {
 	stdout, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "v032-dp2.yaml",
 		"--rate", "4", "--num-requests", "8", "--seed", "1")
 	if err != nil {
-		t.Fatalf("the 0.32.0 dp 2 deployment did not run: %v; stderr:\n%s", err, lastLines(stderr, 6))
+		t.Fatalf("the 0.33.0 dp 2 deployment did not run: %v; stderr:\n%s", err, lastLines(stderr, 6))
 	}
 	if strings.Contains(stderr, "DP-as-placement") {
-		t.Errorf("a 0.32.0 DP group must not be expanded into rank replicas; stderr:\n%s", lastLines(stderr, 6))
+		t.Errorf("a 0.33.0 DP group must not be expanded into rank replicas; stderr:\n%s", lastLines(stderr, 6))
 	}
 	if !completedIs(stdout, 8) {
 		t.Errorf("want all 8 requests completed; stdout:\n%s", lastLines(stdout, 30))
 	}
 }
 
-// A 0.32.0 data-parallel group is vLLM's internal balancer: one endpoint whose engine routes to its
+// A 0.33.0 data-parallel group is vLLM's internal balancer: one endpoint whose engine routes to its
 // ranks (core/vllm.DPGroup). Under the external balancer each rank is its own endpoint and the
 // router picks the rank (vllm/entrypoints/cli/serve.py:107-116@5df63a72), which the contract path
 // does not build: a pool stating parallel.data_parallel_load_balancing: external is refused,
@@ -559,7 +561,7 @@ func TestRunCmd_A032DataParallelGroupRefusesAnExternalBalancer(t *testing.T) {
 	_, stderr, err := runKernelCLI(t, "run", "--scenarios", balanced("external"), "--scenario", "v032-dp2.yaml",
 		"--rate", "4", "--num-requests", "4", "--seed", "1")
 	if err == nil {
-		t.Fatal("a 0.32.0 dp 2 deployment under the external DP balancer ran")
+		t.Fatal("a 0.33.0 dp 2 deployment under the external DP balancer ran")
 	}
 	if !strings.Contains(stderr, "parallel.data_parallel_load_balancing external") {
 		t.Errorf("the refusal must name the balancing mode; stderr:\n%s", lastLines(stderr, 4))
@@ -570,7 +572,7 @@ func TestRunCmd_A032DataParallelGroupRefusesAnExternalBalancer(t *testing.T) {
 	}
 }
 
-// A 0.32.0 data-parallel group's endpoint renders on vLLM's default API servers for the internal
+// A 0.33.0 data-parallel group's endpoint renders on vLLM's default API servers for the internal
 // balancer: one per rank (api_server_count = data_parallel_size, vllm/entrypoints/cli/serve.py:
 // 123-130@5df63a72), as sim.ReplicaAPIServers computes. With one
 // server instead, requests that arrive together queue for its render thread twice as long, so
@@ -603,14 +605,14 @@ func TestRunCmd_A032DataParallelGroupRendersOnOneAPIServerPerRank(t *testing.T) 
 // release it stated. The fixture states engine: {kind, version} and runs (the closest accepted
 // scenario, SIM-9); this variant states the removed field instead.
 func TestRunCmd_EngineVersionIsRefusedNamingTheEngineBlock(t *testing.T) {
-	dir := writeColocatedVariant(t, "engine:\n  kind: vllm\n  version: \"0.32.0\"\n", "engine_version: \"0.32.0\"\n")
+	dir := writeColocatedVariant(t, "engine:\n  kind: vllm\n  version: \"0.33.0\"\n", "engine_version: \"0.33.0\"\n")
 	stdout, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml",
 		"--rate", "4", "--num-requests", "4", "--seed", "1")
 	if err == nil {
 		t.Fatalf("a scenario stating engine_version ran:\n%s", lastLines(stdout, 5))
 	}
-	for _, want := range []string{`states engine_version \"0.32.0\"`, "was removed in " + flagsRemovedIn,
-		`state engine: {kind: vllm, version: \"0.32.0\"} instead`} {
+	for _, want := range []string{`states engine_version \"0.33.0\"`, "was removed in " + flagsRemovedIn,
+		`state engine: {kind: vllm, version: \"0.33.0\"} instead`} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("the refusal must contain %q; stderr:\n%s", want, lastLines(stderr, 6))
 		}

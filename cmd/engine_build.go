@@ -919,7 +919,7 @@ func frontendConfigFromCLI() cengine.FrontendConfig {
 }
 
 // registerContractEngines registers the engine kind a contract-built release is built by:
-// blis-vllm's translated v0.32.0 engine, with the latency kernel's step pricing and KV sizing
+// blis-vllm's translated v0.33.0 engine, with the latency kernel's step pricing and KV sizing
 // (its Register). It is the one place this binary links an engine the contract reaches;
 // later calls are no-ops.
 func registerContractEngines() { coreengine.Register() }
