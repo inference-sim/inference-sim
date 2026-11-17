@@ -27,8 +27,16 @@ import (
 // after). A step that runs only dummy batches is not in flight; it holds the GPUs for its
 // duration, and the group asks to be woken at its end.
 type DPGroup struct {
-	ranks  []*Engine
-	lb     *dplb.Balancer
+	ranks []*Engine
+	// lbs are the load-balancing clients (api_server_count of them); Add sends the next request
+	// through the next client in turn. cin is each client's own count of its unfinished requests
+	// per rank, clientOf the client of each unfinished request.
+	lbs      []*dplb.Balancer
+	cin      [][]int
+	clientOf map[string]int
+	arrivals int
+	// via is the client the request being added goes through.
+	via    int
 	lbView []dplb.Rank
 	pricer cengine.DPStepPricer
 	wave   cengine.DPWave
@@ -56,7 +64,7 @@ func NewDPGroup(ids []string, cfg cengine.SimConfig) (*DPGroup, error) {
 	if dp < 2 {
 		return nil, fmt.Errorf("contract: %v: a data-parallel group needs >= 2 ranks, got %d", ids, dp)
 	}
-	g := &DPGroup{lb: dplb.New(dp), rankOf: map[string]int{}, inflight: make([]int, dp), armed: -1}
+	g := &DPGroup{lbs: []*dplb.Balancer{dplb.New(dp)}, cin: [][]int{make([]int, dp)}, clientOf: map[string]int{}, rankOf: map[string]int{}, inflight: make([]int, dp), armed: -1}
 	for k := 0; k < dp; k++ {
 		e, err := New(ids[k], cfg)
 		if err != nil {
@@ -68,6 +76,11 @@ func NewDPGroup(ids []string, cfg cengine.SimConfig) (*DPGroup, error) {
 		g.lbView = append(g.lbView, dpRank{g: g, k: k})
 	}
 	g.pricer = g.ranks[0].core.DPStepPricerOf()
+	if cfg.Frontend.APIServerCount > 1 {
+		if err := g.SetClientCount(cfg.Frontend.APIServerCount); err != nil {
+			return nil, err
+		}
+	}
 	return g, nil
 }
 
@@ -100,6 +113,27 @@ type frontRank struct {
 
 func (r frontRank) InFlight() int { return r.inFlight }
 
+// SetClientCount sets api_server_count: the group balances through that many front-end clients,
+// each request through the next in turn, before any request is added. PickRank keeps one client's
+// view and refuses a group of several: the host's in-flight counts are the group's, and a client
+// scales only its own (inference-sim's rank-per-instance path states one client until it keeps
+// a count per client).
+func (g *DPGroup) SetClientCount(k int) error {
+	if k < 1 {
+		return fmt.Errorf("contract: api_server_count %d: at least 1", k)
+	}
+	if len(g.rankOf) > 0 || g.arrivals > 0 {
+		return fmt.Errorf("contract: the client count is set before the first request")
+	}
+	n := len(g.ranks)
+	g.lbs, g.cin = nil, nil
+	for i := 0; i < k; i++ {
+		g.lbs = append(g.lbs, dplb.NewClient(n, k, i))
+		g.cin = append(g.cin, make([]int, n))
+	}
+	return nil
+}
+
 // PickRank is the rank vLLM's internal DP load balancer sends a request that reached the
 // replica's endpoint at now to (dplb.Balancer.Pick), for a host that keeps one instance per rank
 // and hands the request to the picked rank's instance itself, through its render stage. inFlight
@@ -111,11 +145,14 @@ func (g *DPGroup) PickRank(now engine.Time, inFlight []int) (int, error) {
 	if len(inFlight) != len(g.ranks) {
 		return 0, fmt.Errorf("contract: %d in-flight counts for a group of %d ranks", len(inFlight), len(g.ranks))
 	}
+	if len(g.lbs) > 1 {
+		return 0, fmt.Errorf("contract: api_server_count %d: PickRank takes the group's in-flight counts, and each of %d clients scales only its own", len(g.lbs), len(g.lbs))
+	}
 	view := make([]dplb.Rank, len(g.ranks))
 	for k := range g.ranks {
 		view[k] = frontRank{dpRank: dpRank{g: g, k: k}, inFlight: inFlight[k]}
 	}
-	return g.lb.Pick(view, now), nil
+	return g.lbs[0].Pick(view, now), nil
 }
 
 // Add routes the request to the rank the balancer picks at now and enqueues it there.
@@ -124,7 +161,16 @@ func (g *DPGroup) Add(r engine.Request, now engine.Time) error {
 	if err := r.Validate(); err != nil {
 		return err
 	}
-	return g.AddToRank(g.lb.Pick(g.lbView, now), r, now)
+	c := g.arrivals % len(g.lbs)
+	g.arrivals++
+	view := make([]dplb.Rank, len(g.ranks))
+	for k := range g.ranks {
+		view[k] = frontRank{dpRank: dpRank{g: g, k: k}, inFlight: g.cin[c][k]}
+	}
+	g.via = c
+	err := g.AddToRank(g.lbs[c].Pick(view, now), r, now)
+	g.via = 0
+	return err
 }
 
 // AddToRank enqueues the request on rank k, for a host whose router picks the rank itself (vLLM's
@@ -146,6 +192,8 @@ func (g *DPGroup) AddToRank(k int, r engine.Request, now engine.Time) error {
 	}
 	g.rankOf[r.ID] = k
 	g.inflight[k]++
+	g.clientOf[r.ID] = g.via
+	g.cin[g.via][k]++
 	if e.core.HasWaiting() {
 		g.ask(now)
 	}
@@ -323,6 +371,8 @@ func (g *DPGroup) forget(id string) {
 	if k, ok := g.rankOf[id]; ok {
 		delete(g.rankOf, id)
 		g.inflight[k]--
+		g.cin[g.clientOf[id]][k]--
+		delete(g.clientOf, id)
 	}
 }
 

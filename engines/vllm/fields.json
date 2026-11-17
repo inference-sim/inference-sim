@@ -5403,12 +5403,34 @@
     {
       "name": "api_server_count",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#105"
+        "traces": [
+          "core/engine/testdata/golden-dp/dp4-lb.json",
+          "oracle/scenarios-dp-clients/dp2-kv-pressure-clients2.json",
+          "oracle/scenarios-dp-clients/dp4-lb-clients2.json",
+          "oracle/scenarios-dp-clients/dp4-lb-clients3-lag.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 1,
+            "closed": "above"
+          },
+          {
+            "value": 2,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          1,
+          2
+        ]
       },
       "estimation": {
-        "rule": "leave_unset"
+        "rule": "none"
       }
     },
     {
