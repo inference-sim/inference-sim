@@ -272,11 +272,13 @@ func (k *Kernel) towerNodeSeconds(t model.Tower, mode plan.EncoderMode, n model.
 		for _, l := range segs {
 			L := float64(l)
 			if n.Window > 0 && L > float64(n.Window) {
-				pairs += L * float64(n.Window)
+				pairs += 4 * L * float64(n.Window)
 			} else {
-				pairs += L * L
+				pairs += 4 * L * L
 			}
 		}
+		// pairs counts 2 x 2 flops per query-key pair, as the decoder's causalFLOPs does (step.go), but
+		// over every pair: the tower attends bidirectionally.
 		work := pairs * heads * float64(n.HeadDim)
 		pair := k.prefillFor(model.AttentionGQA)
 		if pair.scale <= 0 {
@@ -285,7 +287,7 @@ func (k *Kernel) towerNodeSeconds(t model.Tower, mode plan.EncoderMode, n model.
 			if eff <= 0 || fit.peak <= 0 {
 				return math.Inf(1)
 			}
-			return 4 * work / (fit.peak * eff)
+			return work / (fit.peak * eff)
 		}
 		scale := price.Efficiency(rows, k.epsMax, k.mHalf) * pair.scale
 		floor := 0.0
