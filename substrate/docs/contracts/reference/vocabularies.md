@@ -396,9 +396,19 @@ A trace record's `status`.
 
 ### Replay scenarios
 
-A replay's `scenario`.
+A replay's `scenario`. `inferencex-agentx-mvp` is aiperf's agentic replay, with lanes, a
+snapshot of each trace and a synthesized warmup. `aiperf-constant-load` is aiperf run without
+`--scenario`: a fixed number of live root sessions, recycled as they end.
 
 --8<-- "docs/contracts/generated/enum/workload.ReplayScenario.md"
+
+### Session recycling rules
+
+A constant-load replay's `load.recycling`: how a freed session slot picks the next corpus
+root. `sequential` walks the roots in corpus order and wraps; `shuffle` visits each once in
+a random order and reshuffles; `random` draws with replacement.
+
+--8<-- "docs/contracts/generated/enum/workload.SessionRecycling.md"
 
 ### Corpus formats
 

@@ -1,0 +1,25 @@
+_comment: "Provenance: constant-load replay of the 256k-capped agentic corpus, aiperf 0.12.0 run without --scenario (so --concurrency is the number of live root sessions, not agentic lanes) over the public-dataset alias semianalysis_cc_traces_weka_062126_256k, at c256 to c2048 with 900 s of warmup and 900 s measured, as our internal 128-GPU P/D experiments ran it (https://github.com/inference-sim/inference-sim/issues/2124). It is agentx-mvp's corpus replayed by a different load: sessions are drawn from the corpus in order (SequentialSampler, wrapping), a new one starting whenever a root session's final turn returns, with sub-agent requests kept; the agentic snapshot, synthesized warmup and global idle cap do not run. The lane count (aiperf --concurrency), and the number of sessions the measured phase started, are each run's choice, so they are stated where the workload is bound, not here. The harness behaviour is cited in blis-substrate contracts/spec/workload/replay.go to aiperf commit be53bf2953d30e46c500e6a80fc1f8b6f84bc718."
+_comment_corpus: "Corpus: the same file as agentx-mvp (semianalysisai/cc-traces-weka-062126-256k at the same revision and sha256); see that entry for its size, trace counts and license."
+_comment_run: "Run settings: random_seed 42 (aiperf alone would draw a random seed); benchmark_duration_s 900 and grace_period_s 900, the internal ladder's per-level measured phase and wait for requests in flight; load.warmup_duration_s 900. No per-trace idle-gap cap, since the ladder did not state one. max_context_length is unstated, so no trace is dropped, because the corpus alias itself carries the 256k input cap. A run that used another warmup, grace or window states it as a named substitution."
+replay:
+  scenario: aiperf-constant-load
+  harness_version: 0.12.0
+  corpus:
+    loader: semianalysis_cc_traces_weka_062126_256k
+    format: weka-trace-v7
+    encoding: jsonl
+    source:
+      huggingface: semianalysisai/cc-traces-weka-062126-256k
+      revision: 8fecd2fc56694469f758f0afbbb6335ad3043740
+      file: traces.jsonl
+      split: train
+    sha256: e39cd2ff3eba21d4a3664be51da743ac3d2149a1933898cafc7bfeac8147eeef
+  random_seed: 42
+  benchmark_duration_s: 900
+  grace_period_s: 900
+  split_flattened_agents: true
+  load:
+    recycling: sequential
+    warmup_duration_s: 900
+  category: coding
+  thinking: "on"

@@ -463,6 +463,29 @@
       },
       "type": "object"
     },
+    "workload.ConstantLoad": {
+      "additionalProperties": false,
+      "properties": {
+        "measured_sessions": {
+          "type": "integer"
+        },
+        "recycling": {
+          "enum": [
+            "sequential",
+            "shuffle",
+            "random"
+          ],
+          "type": "string"
+        },
+        "trace_idle_gap_cap_s": {
+          "type": "number"
+        },
+        "warmup_duration_s": {
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
     "workload.Corpus": {
       "additionalProperties": false,
       "properties": {
@@ -558,6 +581,9 @@
         "inter_turn_delay_cap_s": {
           "type": "number"
         },
+        "load": {
+          "$ref": "#/$defs/workload.ConstantLoad"
+        },
         "max_context_length": {
           "oneOf": [
             {
@@ -577,7 +603,8 @@
         },
         "scenario": {
           "enum": [
-            "inferencex-agentx-mvp"
+            "inferencex-agentx-mvp",
+            "aiperf-constant-load"
           ],
           "type": "string"
         },
