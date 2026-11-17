@@ -237,6 +237,23 @@ def compressed_tensors_skips_attention(cfg: dict[str, Any],
     return False
 
 
+def compressed_tensors_skips_shared_experts(cfg: dict[str, Any], raw: dict[str, Any]) -> bool:
+    """Whether a compressed-tensors checkpoint leaves the shared experts unquantized: its
+    `ignore` list names them with the blanket regex Kimi-K2.5 and K2.6 use,
+    `re:.*shared_experts.*`. vLLM skips a module an ignore regex matches
+    (should_ignore_layer in CompressedTensorsConfig.get_scheme_dict,
+    quantization/compressed_tensors/compressed_tensors.py:1012-1015@v0.33.0), so the shared experts'
+    MergedColumnParallelLinear and RowParallelLinear stay at the base width while the routed
+    experts are int4. As narrow as compressed_tensors_skips_attention, for the same reason."""
+    quant = raw.get("quantization_config") or cfg.get("quantization_config") or {}
+    if not isinstance(quant, dict):
+        return False
+    if "compressed-tensors" not in str(quant.get("quant_method", "")).lower():
+        return False
+    return any(str(e) in ("re:.*shared_experts.*", "re:.*shared_expert.*")
+               for e in quant.get("ignore") or ())
+
+
 def mhc_mixing_bytes(cfg: dict[str, Any], raw: dict[str, Any], model: str,
                      hidden: int, hc_mult: int) -> int:
     """Bytes per token the mHC mixing moves, which hidden_size alone does not give.
@@ -379,7 +396,16 @@ MODELOPT_PER_NODE_ARCHS = frozenset({
     "MuseSparkForConditionalGeneration",
     "KimiK25ForConditionalGeneration",
     "MiniMaxM2ForCausalLM",
+    "Qwen3_5MoeForConditionalGeneration",
+    "GlmMoeDsaForCausalLM",
+    "Glm5NextForConditionalGeneration",
 })
+
+# The per-node architectures whose MIXED_PRECISION checkpoints are placed from their
+# quantized_layers map, each checked against a committed checkpoint (GLM-5.3-NVFP4). Another
+# architecture's mixed block is still refused: its module names have not been read against
+# a real map.
+MODELOPT_MIXED_ARCHS = frozenset({"GlmMoeDsaForCausalLM"})
 
 
 def modelopt_exclusions(quant: dict[str, Any]) -> list[str]:
@@ -472,6 +498,105 @@ MODELOPT_MODULES: dict[str, dict[str, Any]] = {
         "stacked": {".q_proj": ".qkv_proj", ".k_proj": ".qkv_proj",
                     ".v_proj": ".qkv_proj"},
     },
+    # Qwen3.5-MoE (vLLM v0.33.0 model_executor/models/qwen3_5.py): the text decoder sits under
+    # "language_model" and its layers under "language_model.model.layers" (the
+    # Qwen3VLForConditionalGeneration mapper renames "model.language_model." to
+    # "language_model.model." and "lm_head." to "language_model.lm_head.", qwen3_vl.py:1969-1974).
+    # A full-attention layer's projections are self_attn.qkv_proj and o_proj; a Gated DeltaNet
+    # layer's output projection is linear_attn.out_proj (its in_proj_qkvz and in_proj_ba are
+    # priced inside the RecurrentUpdate node, not as GEMMs). The routed experts are a FusedMoE at
+    # mlp.experts and the shared expert a Qwen2MoeMLP at mlp.shared_expert (qwen3_next.py), which
+    # vLLM fuses into the routed layer only under ROCm's AITER (resolve_layer_fused_shared_expert,
+    # layers/fused_moe/utils.py:55-89), so on NVIDIA parts the two keep their own widths. The MTP
+    # module is built under "mtp" (Qwen3_5MTP, qwen3_5_mtp.py:226-234; its layers at
+    # mtp.layers.{i}, :122).
+    # GLM-5's DSA family (GlmMoeDsaForCausalLM, vLLM v0.33.0 vllm/models/deepseek_v32): a
+    # DeepseekV32DecoderLayer at model.layers.{i} (nvidia/model.py:57-120, 224) whose attention
+    # is self_attn.fused_qkv_a_proj, q_b_proj, kv_b_proj and o_proj with the indexer's wq_b and
+    # wk_weights_proj under self_attn.indexer (attention.py:76-85, 187-269); a dense layer's
+    # MLP is mlp.gate_up_proj and mlp.down_proj, a sparse layer's experts mlp.experts with the
+    # shared experts at mlp.shared_experts (DeepseekV2MLP and DeepseekV2MoE,
+    # model_executor/models/deepseek_v2.py:267-276, 371-399). The MTP layer is built at
+    # model.layers.{num_hidden_layers + k} (mtp.py:175-184), its decoder layer under that same
+    # prefix (:94-96).
+    "GlmMoeDsaForCausalLM": {
+        "layer": "model.layers.{i}.",
+        "draft_layer": "model.layers.{i}.",
+        "head": "lm_head",
+        "roles": {
+            "qkv_a_proj": "self_attn.fused_qkv_a_proj",
+            "q_b_proj": "self_attn.q_b_proj",
+            "kv_b_proj": "self_attn.kv_b_proj",
+            "o_proj": "self_attn.o_proj",
+            "index_wq_b": "self_attn.indexer.wq_b",
+            "index_wk_weights_proj": "self_attn.indexer.wk_weights_proj",
+            "mlp_gate_up": "mlp.gate_up_proj",
+            "mlp_down": "mlp.down_proj",
+            "experts": "mlp.experts",
+        },
+        "shared": ("mlp.shared_experts.gate_up_proj", "mlp.shared_experts.down_proj"),
+        "prefix": {},
+        "stacked": {".gate_proj": ".gate_up_proj", ".up_proj": ".gate_up_proj"},
+    },
+    # GLM-5.3-Flash (Glm5NextForConditionalGeneration, vLLM v0.33.0 vllm/models/glm5next): the
+    # text decoder under "language_model" (common/model.py:1229), whose mapper renames
+    # "model.language_model." to "language_model.model." and "lm_head." to
+    # "language_model.lm_head." (the Glm4v convention, :1170-1175). A KDA layer's projections
+    # are self_attn.in_proj_qkvbfg_a (q, k, v, b and the f and g down-projections fused),
+    # f_b_proj, g_b_proj and o_proj (common/kda.py:253-319); a sparse-MLA layer's are
+    # self_attn.fused_qkv_a_proj, q_b_proj, kv_b_proj and o_proj with the indexer's wq_b and
+    # wk_weights_proj under self_attn.indexer (common/attention.py:234-244, 432-473, 527); the
+    # MLP is mlp.gate_up_proj and mlp.down_proj, the experts mlp.experts and the shared experts
+    # mlp.shared_experts (common/model.py:191-323). The hyper-connection mixers (hc_attn_fn,
+    # hc_ffn_fn, :468-479), the indexer's FP32 head-gate copy of wk_weights_proj's rows and its
+    # kpool gate (attention.py:219-226) are parameters, not linears, so no quantization reaches
+    # them (None). The MTP layer is model.layers.{num_hidden_layers + k}: its eh_proj at that
+    # prefix and its decoder layer under mtp_block (common/mtp.py:54, 284).
+    "Glm5NextForConditionalGeneration": {
+        "layer": "language_model.model.layers.{i}.",
+        "draft_layer": "model.layers.{i}.mtp_block.",
+        "draft_roles": {"mtp_eh_proj": "model.layers.{i}.eh_proj"},
+        "head": "language_model.lm_head",
+        "roles": {
+            "hc_attn_fn": None, "hc_ffn_fn": None,
+            "kda_q_proj": "self_attn.in_proj_qkvbfg_a", "kda_k_proj": "self_attn.in_proj_qkvbfg_a",
+            "kda_v_proj": "self_attn.in_proj_qkvbfg_a", "kda_b_proj": "self_attn.in_proj_qkvbfg_a",
+            "kda_f_a_proj": "self_attn.in_proj_qkvbfg_a", "kda_g_a_proj": "self_attn.in_proj_qkvbfg_a",
+            "kda_f_b_proj": "self_attn.f_b_proj", "kda_g_b_proj": "self_attn.g_b_proj",
+            "kda_o_proj": "self_attn.o_proj",
+            "qkv_a_proj": "self_attn.fused_qkv_a_proj", "q_b_proj": "self_attn.q_b_proj",
+            "kv_b_proj": "self_attn.kv_b_proj", "o_proj": "self_attn.o_proj",
+            "index_wq_b": "self_attn.indexer.wq_b",
+            "index_wk_weights_proj": "self_attn.indexer.wk_weights_proj",
+            "index_head_gate_proj": None, "index_kpool_compress_gate": None,
+            "mlp_gate_up": "mlp.gate_up_proj", "mlp_down": "mlp.down_proj",
+            "experts": "mlp.experts",
+        },
+        "shared": ("mlp.shared_experts.gate_up_proj", "mlp.shared_experts.down_proj"),
+        "prefix": {"model.language_model.": "language_model.model.",
+                   "lm_head.": "language_model.lm_head.", "model.visual.": "visual."},
+        "stacked": {".gate_proj": ".gate_up_proj", ".up_proj": ".gate_up_proj"},
+    },
+    "Qwen3_5MoeForConditionalGeneration": {
+        "layer": "language_model.model.layers.{i}.",
+        "draft_layer": "mtp.layers.{i}.",
+        "head": "language_model.lm_head",
+        "roles": {
+            "qkv_proj": "self_attn.qkv_proj",
+            "o_proj": "self_attn.o_proj",
+            "mixer_out": "linear_attn.out_proj",
+            "experts": "mlp.experts",
+        },
+        "shared": ("mlp.shared_expert.gate_up_proj", "mlp.shared_expert.down_proj"),
+        # Linears a kind runs that no GEMM node prices: the DeltaNet input projections ride in the
+        # RecurrentUpdate node at the base width, so a checkpoint that quantizes either is refused
+        # rather than priced at a width it does not store (qwen3_next.py in_proj_qkvz, in_proj_ba).
+        "unpriced": {"gdn_moe": ("linear_attn.in_proj_qkvz", "linear_attn.in_proj_ba")},
+        "prefix": {"model.language_model.": "language_model.model.",
+                   "lm_head.": "language_model.lm_head.", "model.visual.": "visual."},
+        "stacked": {".q_proj": ".qkv_proj", ".k_proj": ".qkv_proj", ".v_proj": ".qkv_proj",
+                    ".gate_proj": ".gate_up_proj", ".up_proj": ".gate_up_proj"},
+    },
 }
 
 
@@ -513,25 +638,100 @@ def modelopt_config_exclusions(quant: dict[str, Any], model: str) -> tuple[str, 
     return str(algo).upper(), listed
 
 
-def modelopt_placed_width(raw: dict[str, Any], model: str, arch: str) -> tuple[str, Any]:
-    """The width a ModelOpt checkpoint's quantized modules store, and a predicate
-    `quantized(prefix)` that answers for a module vLLM names `prefix`.
+def modelopt_placed_width(raw: dict[str, Any], model: str, arch: str):
+    """`width_of(prefix)`: the width a ModelOpt checkpoint stores the module vLLM names
+    `prefix` at, or None where it stays unquantized.
 
-    The predicate is vLLM's: a module the exclusion list names (is_layer_excluded) stays
-    unquantized, every other linear and every FusedMoE is quantized
-    (ModelOptQuantConfigBase.get_quant_method, modelopt.py:224-262@v0.32.0). Only a
-    uniform NVFP4 layout is read. MIXED_PRECISION chooses the algorithm per layer from a
-    `quantized_layers` map and is not placed here."""
+    vLLM's rule (ModelOptQuantConfigBase.get_quant_method and is_layer_excluded,
+    model_executor/layers/quantization/modelopt.py:191-262@v0.33.0): a module the exclusion
+    list names stays unquantized. Under a uniform quant_algo every other linear and routed
+    expert layer is quantized at it; only NVFP4 is placed this way. Under MIXED_PRECISION
+    the algorithm is looked up per module in `quantized_layers`, and a module it does not
+    name stays unquantized (ModelOptMixedPrecisionConfig, :1574-1890: _resolve_quant_algo
+    and get_quant_method's "Layer not in quantized_layers -- leave unquantized")."""
     quant = raw.get("quantization_config") or {}
     if str(quant.get("quant_method", "")).lower() != "modelopt":
         raise DeriveError(f"{model}: quant_method {quant.get('quant_method')!r}; this "
                           f"handler reads ModelOpt's layout")
     algo, listed = modelopt_config_exclusions(quant, model)
-    if algo == "MIXED_PRECISION":
+    spec = MODELOPT_MODULES[arch]
+
+    def renamed(p):
+        # The loader's renames reach a name in the order it applies them: stacked, then
+        # prefix (WeightsMapper._map_name_with_shard).
+        for old, new in spec["stacked"].items():
+            if old in p:
+                p = p.replace(old, new, 1)
+        for old, new in spec["prefix"].items():
+            if p.startswith(old):
+                p = p.replace(old, new, 1)
+        return p
+
+    excluded = modelopt_exclusions({"ignore": [renamed(p) for p in listed]})
+    if algo == "MIXED_PRECISION" and arch not in MODELOPT_MIXED_ARCHS:
         raise DeriveError(
             f"{model}: quant_algo MIXED_PRECISION picks the algorithm per layer from a "
-            f"quantized_layers map, which this handler does not place; only a uniform "
-            f"NVFP4 layout is priced")
+            f"quantized_layers map, which this deriver places only for "
+            f"{sorted(MODELOPT_MIXED_ARCHS)}")
+    if algo == "MIXED_PRECISION":
+        layers = quant.get("quantized_layers")
+        if not isinstance(layers, dict) or not layers:
+            raise DeriveError(f"{model}: MIXED_PRECISION with no quantized_layers map, which "
+                              f"vLLM refuses")
+        recipe = {}
+        for key, info in layers.items():
+            got = QUANT_ALGOS.get(str((info or {}).get("quant_algo", "")).upper())
+            if got not in ("nvfp4", "fp8"):
+                raise DeriveError(f"{model}: quantized_layers names {key} at "
+                                  f"{(info or {}).get('quant_algo')!r}, which this deriver "
+                                  f"does not place")
+            # The map is read as written: vLLM applies the loader's renames to the exclusion
+            # list only, and matches these keys through its own candidates below.
+            recipe[key] = got
+        packed = quant.get("packed_modules_mapping") or {}
+        fused = {"qkv_proj": ("q_proj", "k_proj", "v_proj"), "gate_up_proj": ("gate_proj", "up_proj")}
+
+        def one(found, prefix):
+            if len(found) > 1:
+                raise DeriveError(f"{model}: {prefix} fuses shards at {sorted(found)}, which "
+                                  f"vLLM refuses")
+            return found.pop() if found else None
+
+        def candidates(prefix):
+            # _quantized_layer_prefix_candidates (modelopt.py:1828-1842): the prefix, and
+            # the language-model spelling swapped either way.
+            out = [prefix]
+            if prefix.endswith(".lm_head"):
+                out.append("lm_head")
+            for a, b in (("language_model.model.", "model.language_model."),
+                         ("model.language_model.", "language_model.model.")):
+                if prefix.startswith(a):
+                    out.append(b + prefix[len(a):])
+            return out
+
+        def width_of(prefix):
+            if modelopt_excluded(prefix, excluded):
+                return None
+            for c in candidates(prefix):
+                got = lookup(c)
+                if got:
+                    return got
+            return None
+
+        def lookup(prefix):
+            if prefix in recipe:                                   # direct
+                return recipe[prefix]
+            base, _, proj = prefix.rpartition(".")
+            for shards in (packed.get(proj), fused.get(proj)):     # a fused module's shards
+                if shards:
+                    got = one({recipe[f"{base}.{n}"] for n in shards if f"{base}.{n}" in recipe}, prefix)
+                    if got:
+                        return got
+            under = {w for k, w in recipe.items() if k.startswith(prefix + ".")}
+            if under:                                              # a parent module
+                return one(under, prefix)
+            return None
+        return width_of
     width = QUANT_ALGOS.get(algo)
     if width is None:
         raise DeriveError(f"{model}: ModelOpt quant_algo {algo!r} is not one this deriver "
@@ -545,40 +745,154 @@ def modelopt_placed_width(raw: dict[str, Any], model: str, arch: str) -> tuple[s
     if any(w.get("group_size") not in (None, 16) for w in groups):
         raise DeriveError(f"{model}: an NVFP4 weight group of "
                           f"{sorted({w.get('group_size') for w in groups})}, not 16")
-    spec = MODELOPT_MODULES[arch]
-    patterns = []
-    for p in listed:
-        # The loader's renames reach the list in the order it applies them to a name:
-        # stacked, then prefix (WeightsMapper._map_name_with_shard).
-        for old, new in spec["stacked"].items():
-            if old in p:
-                p = p.replace(old, new, 1)
+    return lambda prefix: None if modelopt_excluded(prefix, excluded) else width
+
+
+# The safetensors headers of the checkpoint being derived, tensor name -> {"dtype", "shape"},
+# when its model.yaml pins them (SUB-15); set by derive() for one call and cleared after.
+_HEADERS: dict[str, dict[str, Any]] | None = None
+
+# vLLM's fused linears and the checkpoint tensors each one loads (the packed_modules_mapping of
+# the model classes: deepseek_v2.py and deepseek_v32/attention.py, fused_qkv_a_proj and
+# wk_weights_proj; every model's qkv_proj and gate_up_proj).
+FUSED_SHARDS = {
+    "fused_qkv_a_proj": ("q_a_proj", "kv_a_proj_with_mqa"),
+    "wk_weights_proj": ("wk", "weights_proj"),
+    "qkv_proj": ("q_proj", "k_proj", "v_proj"),
+    "gate_up_proj": ("gate_proj", "up_proj"),
+}
+
+
+def header_module_widths(headers: dict[str, dict[str, Any]], model: str) -> dict[str, str | None]:
+    """The stored width of every module the headers hold a weight for, None for one stored
+    unquantized. Read from the tensors themselves (SUB-15): an NVFP4 weight is U8, two values a
+    byte, with an F8_E4M3 weight_scale of one column per 16 values (ModelOpt's NVFP4 layout,
+    ModelOptNvFp4LinearMethod.create_weights, modelopt.py@v0.33.0); an FP8 weight is F8_E4M3; a
+    BF16, F16 or F32 weight is unquantized. Any other layout is refused, never guessed."""
+    out: dict[str, str | None] = {}
+    for name, t in headers.items():
+        if not name.endswith(".weight"):
+            continue
+        module, dtype = name[:-len(".weight")], t.get("dtype")
+        if dtype in ("BF16", "F16", "F32"):
+            out[module] = None
+        elif dtype == "F8_E4M3":
+            out[module] = "fp8"
+        elif dtype == "U8":
+            scale = headers.get(module + ".weight_scale") or {}
+            if scale.get("dtype") != "F8_E4M3":
+                raise DeriveError(f"{model}: {name} is U8 with no F8_E4M3 weight_scale; this deriver "
+                                  f"reads U8 only as NVFP4")
+            cols, scols = t["shape"][-1], scale["shape"][-1]
+            if not scols or 2 * cols != 16 * scols:
+                raise DeriveError(f"{model}: {name} packs {2 * cols} values a row against "
+                                  f"{scols} scales, not one scale per 16 (NVFP4)")
+            out[module] = "nvfp4"
+        else:
+            raise DeriveError(f"{model}: {name} is stored {dtype}, a layout this deriver does "
+                              f"not read")
+    return out
+
+
+def header_width_of(spec: dict[str, Any], model: str):
+    """`width_of(prefix)` for the vLLM module `prefix`, answered from the pinned headers: the
+    module's own weight, else the shards a fused module loads, else every module under it (a
+    routed experts layer holds one weight per expert). A module the headers do not hold, or one
+    whose parts are stored at two widths, is refused."""
+    widths = {}
+    for module, w in header_module_widths(_HEADERS or {}, model).items():
         for old, new in spec["prefix"].items():
-            if p.startswith(old):
-                p = p.replace(old, new, 1)
-        patterns.append(p)
-    excluded = modelopt_exclusions({"ignore": patterns})
-    return width, lambda prefix: not modelopt_excluded(prefix, excluded)
+            if module.startswith(old):
+                module = new + module[len(old):]
+                break
+        widths[module] = w
+
+    def uniform(found: set, prefix: str):
+        if len(found) != 1:
+            raise DeriveError(f"{model}: the headers store {prefix} at {sorted(map(str, found))}; "
+                              f"one node cannot price both")
+        return found.pop()
+
+    def width_of(prefix):
+        if prefix in widths:
+            return widths[prefix]
+        base, _, proj = prefix.rpartition(".")
+        shards = FUSED_SHARDS.get(proj)
+        if shards:
+            names = [f"{base}.{n}" for n in shards]
+            if all(n in widths for n in names):
+                return uniform({widths[n] for n in names}, prefix)
+        under = {w for m, w in widths.items() if m.startswith(prefix + ".")}
+        if under:
+            return uniform(under, prefix)
+        raise DeriveError(f"{model}: the pinned headers hold no weight for {prefix}")
+    return width_of
 
 
 def modelopt_place_widths(kinds: list[dict[str, Any]], stack: dict[str, Any],
-                          raw: dict[str, Any], model: str) -> list[dict[str, Any]]:
+                          raw: dict[str, Any], model: str,
+                          draft: tuple[str, list[int]] | None = None) -> list[dict[str, Any]]:
     """Give each weight node of a ModelOpt checkpoint the width vLLM stores it at.
 
     The global width stays the base dtype and a quantized node carries the quantized one,
     as the node-by-node placement of Muse Spark does. Every layer a kind covers is asked,
     and a role the list quantizes on some of those layers and not on others is refused:
     one node cannot price both (a wildcard that excludes a role on some layers only needs
-    a layer kind per outcome, which no committed checkpoint states)."""
+    a layer kind per outcome, which no committed checkpoint states).
+
+    The shared expert's gate/up and down are GEMMs of their own (moe_block), asked at the
+    modules `shared` names, so where the list quantizes the routed experts and leaves the
+    shared ones alone (Qwen3.5-NVFP4 names `*.mlp.shared_expert.*`) each keeps its own width.
+    The router and Qwen's shared-expert gate are GateLinear and ReplicatedLinear built with no
+    quant config in every architecture listed here (MOE_FAMILIES), so no exclusion list
+    reaches them: they keep the width moe_block gives them.
+
+    `draft`, where given, is (kind id, module indices): a draft kind whose layers the engine
+    builds under the architecture's draft_layer prefix at those indices, asked at those
+    modules' names."""
     arch = architecture_of(raw, model)
     spec = MODELOPT_MODULES[arch]
-    width, quantized = modelopt_placed_width(raw, model, arch)
-    if quantized(spec["head"]):
+    width_of = (header_width_of(spec, model) if _HEADERS is not None
+                else modelopt_placed_width(raw, model, arch))
+    if width_of(spec["head"]):
         raise DeriveError(f"{model}: the ModelOpt list leaves {spec['head']} quantized; "
                           f"the head is priced at the base width")
-    layers_of: dict[str, list[int]] = {}
+    layers_of: dict[str, list[tuple[str, int]]] = {}
     for i, kid in enumerate(expand_stack(stack)):
-        layers_of.setdefault(kid, []).append(i)
+        layers_of.setdefault(kid, []).append((spec["layer"], i))
+    draft_kind = draft[0] if draft else None
+    if draft:
+        kid, indices = draft
+        if "draft_layer" not in spec:
+            raise DeriveError(f"{model}: {arch} has no recorded vLLM prefix for its draft layers")
+        layers_of[kid] = [(spec["draft_layer"], i) for i in indices]
+
+    def name(fmt, i, path, kind, role):
+        # A draft module the engine builds outside its draft layer's prefix names its own path.
+        whole = spec.get("draft_roles", {}).get(role) if kind["id"] == draft_kind else None
+        return whole.format(i=i) if whole else fmt.format(i=i) + path
+
+    def uniform(kind, role, paths, idx):
+        answers = {p: {i: width_of(name(fmt, i, p, kind, role)) for fmt, i in idx} for p in paths}
+        flat = {a for per in answers.values() for a in per.values()}
+        if len(flat) != 1:
+            where = {p: sorted(i for i, a in per.items() if a) for p, per in answers.items()}
+            raise DeriveError(
+                f"{model}: layer kind {kind['id']!r} runs {role!r} quantized on some "
+                f"of its layers and not others (quantized layers by module: {where}); "
+                f"one node cannot price both")
+        return flat.pop()
+
+    for kid, paths in spec.get("unpriced", {}).items():
+        for fmt, i in layers_of.get(kid, []):
+            for path in paths:
+                if width_of(fmt.format(i=i) + path):
+                    raise DeriveError(f"{model}: the ModelOpt list quantizes {fmt.format(i=i) + path}, "
+                                      f"which no node of {kid!r} prices at its own width; it is "
+                                      f"priced at the base width inside the recurrent update")
+    roles = dict(spec["roles"], router=None, shared_expert_gate=None)
+    if spec["shared"]:
+        roles.update(shared_gate_up=spec["shared"][0], shared_down=spec["shared"][1])
     out = []
     for kind in kinds:
         idx = layers_of.get(kind["id"], [])
@@ -588,25 +902,19 @@ def modelopt_place_widths(kinds: list[dict[str, Any]], stack: dict[str, Any],
             if node["op"] not in ("GEMM", "GroupedGEMM") or not idx:
                 nodes.append(node)
                 continue
-            if role not in spec["roles"]:
+            known = role in roles or (kind["id"] == draft_kind
+                                      and role in spec.get("draft_roles", {}))
+            if not known:
                 raise DeriveError(f"{model}: {arch} has no recorded vLLM module for the "
                                   f"{role!r} node, so the ModelOpt list cannot place it")
-            paths = [spec["roles"][role]]
-            if role == "experts" and node.get("shared_experts"):
-                paths += list(spec["shared"])
-            answers = {}
-            for path in paths:
-                answers[path] = {i: quantized(spec["layer"].format(i=i) + path) for i in idx}
-            flat = {a for per in answers.values() for a in per.values()}
-            if len(flat) != 1:
-                where = {p: sorted(i for i, a in per.items() if a)
-                         for p, per in answers.items()}
-                raise DeriveError(
-                    f"{model}: layer kind {kind['id']!r} runs {role!r} quantized on some "
-                    f"of its layers and not others (quantized layers by module: {where}); "
-                    f"one node cannot price both")
-            if flat == {True}:
-                node = dict(node, weight_dtype=width)
+            path = roles.get(role, "")
+            if path is None:
+                # A parameter rather than a linear: no quantization method reaches it.
+                nodes.append(node)
+                continue
+            placed = uniform(kind, role, [path], idx)
+            if placed:
+                node = dict(node, weight_dtype=placed)
             nodes.append(node)
         out.append(dict(kind, nodes=nodes))
     return out
@@ -641,34 +949,17 @@ def kimi_k3_expert_width(cfg: dict[str, Any], raw: dict[str, Any], model: str) -
 
 def kimi_k3_place_widths(kinds: list[dict[str, Any]], cfg: dict[str, Any],
                          raw: dict[str, Any], model: str) -> list[dict[str, Any]]:
-    """Give the routed experts their width and the shared experts the base one.
+    """Give the routed experts their width.
 
-    The shared experts are a KimiMLP built with the quant config (model.py:627-641) and so
-    unquantized, where the routed experts' FusedMoE is MXFP4; one node cannot price both, so
-    the shared half becomes a node of its own at the base width, running at the full hidden
-    size on the pre-projection states."""
+    The shared experts are a KimiMLP built with the quant config (model.py:450-470) and so
+    unquantized, where the routed experts' FusedMoE is MXFP4. moe_block states them as GEMMs
+    of their own, which inherit the global width, the base (weight_dtype)."""
     width = kimi_k3_expert_width(cfg, raw, model)
-    base = base_dtype(cfg, raw, model)
     out = []
     for kind in kinds:
-        nodes = []
-        for node in kind["nodes"]:
-            if node.get("op") == "GroupedGEMM" and node.get("role") == "experts":
-                routed = dict(node, weight_dtype=width)
-                if node.get("shared_experts"):
-                    count = int(node["shared_experts"])
-                    routed.pop("shared_experts")
-                    routed.pop("shared_intermediate_size", None)
-                    nodes.append(routed)
-                    nodes.append({
-                        "op": "GroupedGEMM", "shared": True, "role": "shared_experts",
-                        "n": int(node.get("shared_intermediate_size") or node["n"]),
-                        "k": node["k"], "experts": count, "top_k": count,
-                        "weight_dtype": base,
-                    })
-                    continue
-                node = routed
-            nodes.append(node)
+        nodes = [dict(node, weight_dtype=width)
+                 if node.get("op") == "GroupedGEMM" and node.get("role") == "experts" else node
+                 for node in kind["nodes"]]
         out.append(dict(kind, nodes=nodes, edges=chain(nodes)))
     return out
 
@@ -711,6 +1002,11 @@ def weight_dtype(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> str:
         # global width is the base, and each node carries NVFP4 where the list leaves its
         # module quantized. Any other architecture is refused rather than priced at the
         # base throughout.
+        if (fmt == "modelopt" and str(quant.get("quant_algo", "")).upper() == "MIXED_PRECISION"
+                and (raw.get("architectures") or [None])[0] in MODELOPT_MIXED_ARCHS):
+            # Per module, from quantized_layers (modelopt_placed_width); the global width is
+            # the base, as for a uniform layout.
+            return base_dtype(cfg, raw, model)
         if fmt == "modelopt" and quant.get("quant_algo"):
             algo = QUANT_ALGOS.get(str(quant["quant_algo"]).upper())
             if algo is None:
@@ -1123,19 +1419,6 @@ def moe(cfg: dict[str, Any], model: str, hidden: int) -> dict[str, Any]:
         "experts": experts,
         "top_k": top_k,
     }
-    shared = pick(cfg, "num_shared_experts")
-    shared_inner = pick(cfg, "shared_ffn_size")
-    # A config that states a shared-expert WIDTH but no count has one shared expert. The
-    # Qwen3.5 configs are the case in hand: they declare
-    # shared_expert_intermediate_size and no count, and vLLM's own loader for that family
-    # passes n_shared_experts=1 (`models/qwen3_5.py`). Reading the width as "no shared
-    # expert" would drop dense work every token pays.
-    if shared is None and shared_inner:
-        shared = 1
-    if shared:
-        node["shared_experts"] = int(shared)
-        if shared_inner and int(shared_inner) != int(inner):
-            node["shared_intermediate_size"] = int(shared_inner)
     # The expert width where the checkpoint states one, which is not always the global
     # weight dtype. DeepSeek-V4-Pro declares expert_dtype fp4 beside an fp8
     # quantization_config: pricing its 384 experts at the global width doubles them from
@@ -1176,10 +1459,108 @@ def moe(cfg: dict[str, Any], model: str, hidden: int) -> dict[str, Any]:
     return node
 
 
-def moe_block(cfg: dict[str, Any], model: str, hidden: int, *, routed_width: str | None = None,
+# How vLLM v0.33.0 (4ba787ec) builds each routed-MoE family's router and shared experts on
+# NVIDIA parts, for moe_block. Every family's router is a GateLinear, a ReplicatedLinear
+# (fused_moe/router/gate_linear.py:21-22): one GEMM of [experts x hidden], whole on every
+# rank, launched by the model or by the MoE runner before routing. What differs is the
+# width its weight is resident at:
+#   "base"    built with no quant config and no params_dtype, so at the model dtype;
+#   "fp32"    built with params_dtype float32;
+#   "global"  given the model's quant config, so quantized as its linears are.
+# `shared` is how the shared expert's MLP is built where the config states one: "gated" is
+# a MergedColumnParallelLinear gate/up, a SiluAndMul and a RowParallelLinear down, "ungated"
+# a ColumnParallelLinear up, the activation and the down (Nemotron-H's relu2). In every
+# family it is passed to FusedMoE as `shared_experts` (or run beside it) with
+# reduce_results=False, so its partial joins the routed experts' reduction; vLLM fuses it
+# into the routed kernel only under ROCm AITER (resolve_layer_fused_shared_expert,
+# layers/fused_moe/utils.py:55-130, which reads rocm_aiter_ops and returns False on CUDA), so
+# on NVIDIA parts its GEMMs and activation are launches of their own. Whether it runs on the
+# auxiliary stream beside the routed experts (SharedExperts, runner/shared_experts.py:120-140,
+# below VLLM_SHARED_EXPERTS_STREAM_TOKEN_THRESHOLD) is scheduling, the engine's to state.
+# `shared_gate` is Qwen's sigmoid expert gate, a ReplicatedLinear [1 x hidden] built with no
+# quant config and applied to the shared expert's output (qwen3_next.py:197-203,
+# qwen2_moe.py:115-123). `router_counts_shared` is Inkling's gate, which scores the routed and
+# the sink experts in one matrix. `implied_shared` is a shared expert the model class always
+# builds although the config states no count, as (count, config key of its inner width).
+#
+# The routing selection itself (top-k, grouped top-k) is not a node: whether it is its own
+# launch depends on the experts backend vLLM resolves (MoERunner hands router_logits to a
+# monolithic TRT-LLM kernel and runs router.select_experts first for a modular one,
+# runner/moe_runner.py:620-643), which is lowering (SUB-15, X3) and stays in the GroupedGEMM
+# primitive's launch count; inference-sim/blis-vllm#194 lowers it per backend.
+MOE_FAMILIES: dict[str, dict[str, Any]] = {
+    # DeepseekV2MoE (model_executor/models/deepseek_v2.py:320-326, 359-372). Kimi-K2.5's text
+    # decoder is the same class (kimi_k25.py), and GLM-5's DSA family builds it too
+    # (vllm/models/deepseek_v32/nvidia/model.py:98-104).
+    "DeepseekV2ForCausalLM": {"router": "base", "shared": "gated"},
+    "DeepseekV3ForCausalLM": {"router": "base", "shared": "gated"},
+    "KimiK25ForConditionalGeneration": {"router": "base", "shared": "gated"},
+    "GlmMoeDsaForCausalLM": {"router": "base", "shared": "gated"},
+    # Glm5NextMoE (vllm/models/glm5next/common/model.py:250-255, 283-297).
+    "Glm5NextForConditionalGeneration": {"router": "base", "shared": "gated"},
+    # KimiMoE (vllm/models/kimi_k3/nvidia/model.py:437-443, 450-470): the shared experts read
+    # the un-projected hidden states (:681-689).
+    "KimiK3ForConditionalGeneration": {"router": "base", "shared": "gated"},
+    "KimiK31ForConditionalGeneration": {"router": "base", "shared": "gated"},
+    # MixtralMoE and GraniteMoeMoE pass the model's params_dtype (mixtral.py:111-116,
+    # granitemoe.py:99-104); neither has a shared expert.
+    "MixtralForCausalLM": {"router": "base", "shared": "gated"},
+    "GraniteMoeForCausalLM": {"router": "base", "shared": "gated"},
+    # Qwen3MoeSparseMoeBlock gives the gate the quant config (qwen3_moe.py:170-175) and builds
+    # a shared expert with its sigmoid gate where the config states one (:183-201).
+    "Qwen3MoeForCausalLM": {"router": "global", "shared": "gated", "shared_gate": True},
+    # Qwen3NextSparseMoeBlock (qwen3_next.py:191-221), which Qwen3.5-MoE builds
+    # (qwen3_5.py:173).
+    "Qwen3_5MoeForConditionalGeneration": {"router": "base", "shared": "gated",
+                                           "shared_gate": True},
+    # Llama4MoE always builds one shared expert, a LlamaMLP at config.intermediate_size
+    # (llama4.py:100-116, 125).
+    "Llama4ForConditionalGeneration": {"router": "base", "shared": "gated",
+                                       "implied_shared": (1, "intermediate_size")},
+    # GptOssMoE's router carries a bias, which holds no per-token weight read worth a node
+    # (gpt_oss.py:382-388); no shared expert.
+    "GptOssForCausalLM": {"router": "base", "shared": "gated"},
+    "MiniMaxM2ForCausalLM": {"router": "fp32", "shared": "gated"},   # minimax_m2.py:110-117
+    # MiniMaxM3MoE (vllm/models/minimax_m3/nvidia/model.py:232-249).
+    "MiniMaxM3SparseForCausalLM": {"router": "fp32", "shared": "gated"},
+    "MiniMaxM3SparseForConditionalGeneration": {"router": "fp32", "shared": "gated"},
+    # NemotronHMoE: the gate asks for fp32 compute, which keeps bf16 weights wherever a
+    # specialized router kernel runs (every Hopper and Blackwell part, gate_linear.py:83-93),
+    # and the shared expert is a NemotronHMLP, up and down around relu2 (nemotron_h.py:91-130,
+    # 159-165, 179-194).
+    "NemotronHForCausalLM": {"router": "base", "shared": "ungated"},
+    # InklingGate scores routed and sink experts together, [routed + shared, hidden] at the
+    # model dtype; the sink experts are one stacked gate/up GEMM, the fused silu-mul epilogue
+    # and one down GEMM, TP-split on the inner width (vllm/models/inkling/nvidia/moe.py:192-
+    # 225, 279-341, 409-470).
+    "InklingForConditionalGeneration": {"router": "base", "shared": "gated",
+                                        "router_counts_shared": True},
+}
+
+
+def shared_expert_shape(cfg: dict[str, Any], model: str, routed_inner: int,
+                        implied: tuple[int, str] | None = None) -> tuple[int, int] | None:
+    """(count, inner width of one) of the layer's shared experts, or None where it has none.
+
+    A config that states a shared-expert WIDTH but no count has one shared expert. The
+    Qwen3.5 configs are the case in hand: they declare shared_expert_intermediate_size and
+    no count, and vLLM builds one Qwen2MoeMLP at that width (qwen3_next.py:205-221)."""
+    shared = pick(cfg, "num_shared_experts")
+    inner = pick(cfg, "shared_ffn_size")
+    if shared is None and inner:
+        shared = 1
+    if not shared and implied:
+        shared, inner = implied[0], require_key(cfg, implied[1], model)
+    if not shared:
+        return None
+    return int(shared), int(inner or routed_inner)
+
+
+def moe_block(cfg: dict[str, Any], model: str, hidden: int, raw: dict[str, Any], *,
+              family: str, routed_width: str | None = None,
               shared_width: str | None = None) -> list[dict[str, Any]]:
-    """The routed expert layer: its latent projections, where it has them, and the
-    grouped GEMM.
+    """The routed expert layer as vLLM v0.33.0 launches it on NVIDIA parts: the router, the
+    latent projections where it has them, the grouped GEMM, and the shared experts' MLP.
 
     A latent MoE is three pieces of work, not one. Kimi-K3's KimiSparseMoeBlock
     projects hidden -> latent, routes and runs the experts at the latent width, then
@@ -1187,51 +1568,79 @@ def moe_block(cfg: dict[str, Any], model: str, hidden: int, *, routed_width: str
     state the same structure as moe_latent_size. The two projections are dense GEMMs
     every token pays, so they are nodes rather than an implication of latent_size.
 
-    The routing gate and the shared experts both run on the PRE-projection hidden
-    states -- vLLM gates before the down-projection and adds
-    `self.shared_experts(identity)` after the up-projection -- so neither is affected by
-    the latent width, which is why shared_intermediate_size stays as moe() states it."""
+    The routing gate and the shared experts both run on the PRE-projection hidden states --
+    vLLM gates before the down-projection and hands the shared experts the original hidden
+    states (MoERunner.apply_routed_input_transform, runner/moe_runner.py:367-389) -- so
+    neither is narrowed by the latent width.
+
+    The router and the shared experts are nodes of their own, built as `family` (the
+    architecture whose MoE class the handler prices, a MOE_FAMILIES key) builds them: each is
+    a GEMM the engine launches, with its own width and tensor-parallel split. Folded into the routed
+    node, as they were, the shared experts were priced inside the expert term with no launch
+    and the router not at all."""
+    arch, family = family, MOE_FAMILIES.get(family)
+    if family is None:
+        raise DeriveError(f"{model}: {arch} has no recorded router and shared-expert layout "
+                          f"(MOE_FAMILIES); add it from the model class rather than guess")
     node = moe(cfg, model, hidden)
     # A handler that reads the checkpoint's own layout states the routed width, and the shared
     # expert's where it differs (MiniMax-M3.1: NVFP4 routed experts beside MXFP8 shared ones).
     if routed_width:
         node["weight_dtype"] = routed_width
-    nodes = [node]
+    shape = shared_expert_shape(cfg, model, node["n"], family.get("implied_shared"))
 
-    # A shared expert stored at a DIFFERENT width from the routed ones cannot ride on
-    # the routed node: shared_experts/shared_intermediate_size describe work priced at
-    # the node's own weight_dtype. nemotron-3-ultra-nvfp4 is the case in hand -- routed
-    # experts NVFP4, shared experts FP8 -- so the shared half becomes its own node and
-    # the routed node stops claiming it.
-    classes = quantized_classes(cfg, model)
-    shared_width = shared_width or classes.get("shared_experts")
-    if shared_width and shared_width != node.get("weight_dtype") and node.get(
-            "shared_experts"):
-        inner = int(node.get("shared_intermediate_size") or node["n"])
-        shared = {
-            "op": "GroupedGEMM",
-            "shared": True,
-            "role": "shared_experts",
-            "n": inner,
-            "k": node["k"],
-            "experts": int(node["shared_experts"]),
-            "top_k": int(node["shared_experts"]),
-            "weight_dtype": shared_width,
-        }
-        if node.get("latent_size"):
-            shared["latent_size"] = node["latent_size"]
-        node.pop("shared_experts", None)
-        node.pop("shared_intermediate_size", None)
-        nodes.append(shared)
+    # Each width is asked only where a node sits at it: minimax-m2.5 declares no dtype, and its
+    # router is fp32; and a quantization block this deriver refuses is refused by the handler's
+    # own placement, with its own reason, before any global width is read.
+    def base():
+        return base_dtype(cfg, raw, model)
+    router_width = {"base": base, "fp32": lambda: "fp32",
+                    "global": lambda: weight_dtype(cfg, raw, model)}[family["router"]]()
+    rows = node["experts"] + (shape[0] if shape and family.get("router_counts_shared") else 0)
+    # Stated even where it equals the global width: the router is a class of its own, never
+    # quantized with the linears in these families, so its width does not follow a global one.
+    router = dict(gemm("router", rows, hidden), tp="replicated", weight_dtype=router_width)
+    nodes = [router]
 
     latent = node.get("latent_size")
-    if not latent:
+    if latent:
+        nodes.append(gemm("routed_expert_down_proj", int(latent), hidden))
+    nodes.append(node)
+    if latent:
+        nodes.append(gemm("routed_expert_up_proj", hidden, int(latent)))
+    if not shape:
         return nodes
-    return [
-        gemm("routed_expert_down_proj", int(latent), hidden),
-        *nodes,
-        gemm("routed_expert_up_proj", hidden, int(latent)),
-    ]
+
+    # The shared experts are linears built with the quant config, so they are stored as the
+    # checkpoint's linears are, not as its routed experts: at the width a handler or an
+    # explicit per-tensor map states for them, else the global one. nemotron-3-ultra-nvfp4
+    # names them FP8 beside NVFP4 routed experts; Kimi-K2.5's ignore list leaves them BF16
+    # beside INT4 routed experts.
+    count, inner = shape
+    width = shared_width or quantized_classes(cfg, model).get("shared_experts")
+    if not width and compressed_tensors_skips_shared_experts(cfg, raw):
+        width = base()
+    act = DTYPE_WIDTHS["bf16"]
+    gated = family["shared"] == "gated"
+    up = (gemm("shared_gate_up", 2 * inner * count, hidden) if gated
+          else gemm("shared_up", inner * count, hidden))
+    down = gemm("shared_down", hidden, inner * count)
+    for g in (up, down):
+        if width:
+            g["weight_dtype"] = width
+    up["tp"], down["tp"] = "column", "row"
+    # The activation reads the up projection's output and writes the inner width, split with
+    # the columns it reads (SiluAndMul, or relu2 for an ungated MLP).
+    activation = {"op": "Elementwise", "role": "shared_act", "tp": "sharded",
+                  "bytes_per_token": ((2 if gated else 1) + 1) * inner * count * act}
+    nodes += [up, activation, down]
+    if family.get("shared_gate"):
+        # sigmoid(shared_expert_gate(x)) * out: a [1 x hidden] GEMM whole on every rank, then
+        # a multiply that reads and writes the rank's hidden-width partial.
+        gate = dict(gemm("shared_expert_gate", 1, hidden), tp="replicated", weight_dtype=base())
+        nodes += [gate, {"op": "Elementwise", "role": "shared_gate_mul", "tp": "replicated",
+                         "bytes_per_token": 2 * hidden * act}]
+    return nodes
 
 
 # Emit conditions are a closed set naming WHEN a conditional node is part of the graph.
@@ -1988,7 +2397,8 @@ def handler_moe(cfg, raw, model):
 
     def sparse_nodes(win=None, index=None):
         n = attn_nodes(win, index)
-        n += [norm("post_attn_norm"), *moe_block(cfg, model, hidden),
+        n += [norm("post_attn_norm"),
+              *moe_block(cfg, model, hidden, raw, family=architecture_of(raw, model)),
               collective("All2All", "moe_dispatch_combine", EMIT_EXPERT_PARALLEL),
               collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE)]
         return n
@@ -2167,14 +2577,57 @@ def handler_minimax_m2(cfg, raw, model):
     return modelopt_placed(result, raw, model)
 
 
-def modelopt_placed(result, raw, model):
+def modelopt_placed(result, raw, model, draft=None):
     """A handler result with the widths a ModelOpt checkpoint stores, or the result as it
-    is for a checkpoint that is not ModelOpt."""
+    is for a checkpoint that is not ModelOpt. `draft` is modelopt_place_widths'. A checkpoint
+    whose config.json states no quantization and whose model.yaml pins its shard headers is
+    placed from those headers (SUB-15)."""
     quant = raw.get("quantization_config") or {}
+    if _HEADERS is not None:
+        if quant:
+            raise DeriveError(f"{model}: the entry pins its headers and its config.json states a "
+                              f"quantization; read one, so pin no headers")
+        kinds = modelopt_place_widths(result[0], result[1], raw, model, draft=draft)
+        return (kinds, *result[1:])
     if str(quant.get("quant_method", "")).lower() != "modelopt":
         return result
-    kinds = modelopt_place_widths(result[0], result[1], raw, model)
+    kinds = modelopt_place_widths(result[0], result[1], raw, model, draft=draft)
     return (kinds, *result[1:])
+
+
+def handler_glm5_next_placed(cfg, raw, model):
+    """GLM-5.3-Flash, priced by handler_glm5_next, with a ModelOpt checkpoint's widths placed
+    node by node; its MTP layer, the draft kind the handler declares, at the names vLLM
+    builds it under (GLM-5.3-Flash-NVFP4 excludes model.layers.45* whole)."""
+    result = handler_glm5_next(cfg, raw, model)
+    layers = int(require(cfg, "num_layers", model))
+    spec = int(pick(cfg, "num_spec_tokens") or 0)
+    has_draft = any(k["id"] == DRAFT_KIND_ID for k in result[0])
+    draft = (DRAFT_KIND_ID, list(range(layers, layers + spec))) if spec and has_draft else None
+    return modelopt_placed(result, raw, model, draft=draft)
+
+
+def handler_glm_moe_dsa(cfg, raw, model):
+    """GLM-5's DSA family, priced by handler_moe, with a ModelOpt checkpoint's widths placed
+    node by node. Its MTP layer, the draft kind handler_moe declares, is asked at the module
+    names vLLM builds it under, model.layers.{num_hidden_layers + k}: GLM-5.2-NVFP4 excludes
+    that layer whole (model.layers.78*), so it is bf16 beside the decoder's NVFP4 experts."""
+    result = handler_moe(cfg, raw, model)
+    layers = int(require(cfg, "num_layers", model))
+    spec = int(pick(cfg, "num_spec_tokens") or 0)
+    placed = _HEADERS is not None or str(((raw.get("quantization_config") or {})
+                                          .get("quant_method", ""))).lower() == "modelopt"
+    if spec and placed and not any(k["id"] == DRAFT_KIND_ID for k in result[0]):
+        # A family that indexes every layer declares no draft kind, and derive() would mirror the
+        # last declared one, whose widths are the decoder's. The checkpoint can store its MTP layer
+        # at another width (GLM-5-NVFP4's model.layers.78 is BF16), so the draft layer is declared
+        # here as a copy of that kind and placed at its own module names.
+        last = result[0][-1]
+        result = ([*result[0], {"id": DRAFT_KIND_ID, "nodes": [dict(n) for n in last["nodes"]],
+                                "edges": [list(e) for e in last["edges"]]}], *result[1:])
+    has_draft = any(k["id"] == DRAFT_KIND_ID for k in result[0])
+    draft = (DRAFT_KIND_ID, list(range(layers, layers + spec))) if spec and has_draft else None
+    return modelopt_placed(result, raw, model, draft=draft)
 
 
 def handler_kimi_k25(cfg, raw, model):
@@ -4298,16 +4751,14 @@ def handler_minimax_m3(cfg, raw, model):
         gemm("index_qk_proj", index_heads * index_dim + index_dim, hidden),
         indexer,
     ] + sparse_attn[at:]
-    # The router is an fp32 GateLinear, replicated, whatever the checkpoint's width
-    # (nvidia/model.py:529-538@v0.34.0rc0), and every MiniMax-M3 header stores it F32
+    # moe_block states the router: an fp32 GateLinear, replicated, whatever the checkpoint's
+    # width (nvidia/model.py:232-239@v0.33.0), and every MiniMax-M3 header stores it F32
     # [128, 6144] (MiniMax-M3 and -MXFP8 too: 44,826,624 weights over 57 layers).
-    routed = [{**gemm("router", int(require(cfg, "num_experts", model)), hidden),
-               "weight_dtype": "fp32", "tp": "replicated"}]
     sparse_nodes = sparse_front + [
         norm("post_attn_norm"),
-        *routed,
-        *moe_block(cfg, model, hidden, routed_width=routed_width,
-                   shared_width=global_width if routed_width else None),
+        # The shared expert's linears are MXFP8 like every other linear, the global width.
+        *moe_block(cfg, model, hidden, raw, family="MiniMaxM3SparseForCausalLM",
+                   routed_width=routed_width),
         collective("All2All", "moe_dispatch_combine", EMIT_EXPERT_PARALLEL),
         collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE),
     ]
@@ -4637,7 +5088,8 @@ def handler_qwen3_5_moe(cfg, raw, model):
 
     def with_moe(mixer):
         n = list(mixer)
-        n += [norm("post_attn_norm"), *moe_block(cfg, model, hidden),
+        n += [norm("post_attn_norm"),
+              *moe_block(cfg, model, hidden, raw, family="Qwen3_5MoeForConditionalGeneration"),
               collective("All2All", "moe_dispatch_combine", EMIT_EXPERT_PARALLEL),
               collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE)]
         return n
@@ -4665,7 +5117,20 @@ def handler_qwen3_5_moe(cfg, raw, model):
         {"id": "attn_moe", "nodes": full, "edges": chain(full)},
     ]
     sequence = ["attn_moe" if t == "full_attention" else "gdn_moe" for t in types]
-    return kinds, compress(sequence)
+    stack = compress(sequence)
+    quant = raw.get("quantization_config") or {}
+    if str(quant.get("quant_method", "")).lower() != "modelopt":
+        return kinds, stack
+    # A ModelOpt checkpoint's widths, node by node. Its MTP module is a full-attention MoE
+    # layer like attn_moe, but the list can leave it at another width than the decoder's
+    # (Qwen3.5-NVFP4 excludes mtp.layers.0* whole), so it is declared as the draft kind and
+    # placed at its own module names rather than mirrored from attn_moe.
+    mtp = int(pick(cfg, "num_spec_tokens") or 0)
+    if mtp:
+        kinds.append({"id": DRAFT_KIND_ID, "nodes": [dict(n) for n in full], "edges": chain(full)})
+    kinds = modelopt_place_widths(kinds, stack, raw, model,
+                                  draft=(DRAFT_KIND_ID, list(range(mtp))) if mtp else None)
+    return kinds, stack
 
 
 def handler_nemotron_h(cfg, raw, model):
@@ -4723,7 +5188,7 @@ def handler_nemotron_h(cfg, raw, model):
                 n["weight_dtype"] = classes["recurrent_out"]
     moe_nodes = [
         norm("input_norm"),
-        *moe_block(cfg, model, hidden),
+        *moe_block(cfg, model, hidden, raw, family="NemotronHForCausalLM"),
         collective("All2All", "moe_dispatch_combine", EMIT_EXPERT_PARALLEL),
         collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE),
     ]
@@ -4881,7 +5346,8 @@ def handler_kimi_k3(cfg, raw, model):
 
     def with_moe(mixer_nodes):
         n = list(mixer_nodes)
-        n += [norm("post_attn_norm"), *moe_block(cfg, model, hidden),
+        n += [norm("post_attn_norm"),
+              *moe_block(cfg, model, hidden, raw, family="KimiK3ForConditionalGeneration"),
               collective("All2All", "moe_dispatch_combine", EMIT_EXPERT_PARALLEL),
               collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE)]
         return n
@@ -5138,7 +5604,8 @@ def handler_glm5_next(cfg, raw, model):
 
     def with_moe(mixer_nodes):
         n = list(mixer_nodes)
-        n += [norm("post_attn_norm"), *moe_block(cfg, model, hidden),
+        n += [norm("post_attn_norm"),
+              *moe_block(cfg, model, hidden, raw, family="Glm5NextForConditionalGeneration"),
               collective("All2All", "moe_dispatch_combine", EMIT_EXPERT_PARALLEL),
               collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE)]
         return n
@@ -6048,7 +6515,7 @@ HANDLERS = {
     # across layers, pools at ratios 1 and 2 where V4 asserts 4 or 128, and adds engram
     # layers and a DSpark draft module. See handler_deepseek_v41.
     "DeepseekV41ForCausalLM": handler_deepseek_v41,
-    "GlmMoeDsaForCausalLM": handler_moe,
+    "GlmMoeDsaForCausalLM": handler_glm_moe_dsa,
     "InklingForConditionalGeneration": handler_moe,
     "GptOssForCausalLM": handler_moe,
     "MiniMaxM2ForCausalLM": handler_minimax_m2,
@@ -6060,7 +6527,7 @@ HANDLERS = {
     # The same text decoder plus a DSA indexer on the latent layers (dsa_config); its
     # architecture is routed to vllm.models.kimi_k3 in vLLM v0.34.0rc0 (registry.py:489-492).
     "KimiK31ForConditionalGeneration": handler_kimi_k3,
-    "Glm5NextForConditionalGeneration": handler_glm5_next,
+    "Glm5NextForConditionalGeneration": handler_glm5_next_placed,
     # Muse Spark's language model is the text decoder of a multimodal checkpoint; the
     # vision and audio towers are not priced (modality text_decoder_of_multimodal).
     "MuseSparkForConditionalGeneration": handler_muse_spark,
@@ -6099,8 +6566,18 @@ EXTRA_GLOBAL_KEYS = frozenset({"architecture", "weight_scale", "context_window",
                                "pipeline_boundary_bytes_per_token"})
 
 
-def derive(config_path: Path, model: str) -> dict[str, Any]:
-    """Derive one graph from one vendor config."""
+def derive(config_path: Path, model: str, headers: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Derive one graph from one vendor config, and from its shards' safetensors headers when
+    the entry pins them (tensor name -> {"dtype", "shape"}, every shard merged)."""
+    global _HEADERS
+    _HEADERS = headers
+    try:
+        return _derive(config_path, model)
+    finally:
+        _HEADERS = None
+
+
+def _derive(config_path: Path, model: str) -> dict[str, Any]:
     source = config_path.read_bytes()
     raw = json.loads(source)
     cfg = text_config(raw)
@@ -6462,6 +6939,53 @@ def main() -> int:
                 failed.append(f"{entry.name}: the fetched config.json has sha256 {got}, "
                               f"not the pinned {pinned}")
                 continue
+        # An entry that pins its shards' safetensors headers is derived from them as well
+        # (SUB-15). They are never committed: without the fetched headers the graph is neither
+        # written nor checked, and is counted with the entries that are not re-derivable.
+        card = (yaml.safe_load((entry / "model.yaml").read_text()) or {}) \
+            if (entry / "model.yaml").is_file() else {}
+        pins = card.get("headers") or []
+        headers = None
+        if pins:
+            hdir = Path(args.fetched) / entry.name / "headers" if args.fetched else None
+            if hdir is None or not hdir.is_dir():
+                if args.fetched is None or args.allow_unfetched:
+                    unverified.append(entry.name)
+                else:
+                    failed.append(f"{entry.name}: no fetched headers at {hdir}")
+                continue
+            headers, why = {}, None
+            index_pin = card.get("shard_index") or {}
+            index = hdir / "index.json"
+            if not index.is_file():
+                why = "no fetched shard index"
+            elif hashlib.sha256(index.read_bytes()).hexdigest() != index_pin.get("sha256"):
+                why = f"the fetched shard index is not the pinned {index_pin.get('sha256')}"
+            else:
+                named = sorted(set((json.loads(index.read_bytes()).get("weight_map") or {}).values()))
+                if named != sorted(p["path"] for p in pins):
+                    why = (f"the pinned headers are not the shards {index_pin.get('path')} names "
+                           f"(missing {sorted(set(named) - {p['path'] for p in pins})}, extra "
+                           f"{sorted({p['path'] for p in pins} - set(named))})")
+            for pin in ([] if why else pins):
+                f = hdir / (pin["path"].replace("/", "__") + ".json")
+                if not f.is_file():
+                    why = f"no fetched header for {pin['path']}"
+                    break
+                body = f.read_bytes()
+                got = hashlib.sha256(body).hexdigest()
+                if got != pin["sha256"]:
+                    why = f"the fetched header of {pin['path']} has sha256 {got}, not the pinned {pin['sha256']}"
+                    break
+                one = json.loads(body)
+                one.pop("__metadata__", None)
+                if set(one) & set(headers):
+                    why = f"{pin['path']} repeats tensors another shard holds"
+                    break
+                headers.update(one)
+            if why:
+                failed.append(f"{entry.name}: {why}")
+                continue
         # Each entry is the full line to print. A DeriveError already names the model,
         # because derive() is also called directly and its message has to stand alone
         # there; the other failures do not, so only they get the prefix.
@@ -6469,7 +6993,7 @@ def main() -> int:
             failed.append(f"{entry.name}: no config.json")
             continue
         try:
-            graph = derive(cfg, entry.name)
+            graph = derive(cfg, entry.name, headers=headers)
         except DeriveError as exc:
             why = str(exc)
             # Every message in this file starts with the model name; one that does not

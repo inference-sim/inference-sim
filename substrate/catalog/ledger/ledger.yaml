@@ -5,16 +5,16 @@
 # key holds legacy units) reads the same draw against its side's one cut-point: fit below it
 # and select from it on the FIT side, held below it and anchor from it on the HELD side.
 #
-# The seed is created by a ledger owner (README.md, "Creating the seed"); until then seed is
-# empty and no job can draw a role. Changing anything here is a new partition version, which a
+# The seed is created as README.md, "Creating the seed", describes; seed.sha256 is the SHA-256
+# of its 32 bytes, and a seed-holding job refuses a secret that does not match. Changing anything here is a new partition version, which a
 # ledger owner approves through D7's review question.
 kind: Ledger
 partition_version: 1
 seed:
-  sha256: ""
-  generated_by: ""
-  generated_on: ""
-  rotation_owner: ""
+  sha256: "0c741364a9f124cb87d0364c3de4682bd45cb20707ba19dbce704bb1795fb839"
+  generated_by: "sriumcp"
+  generated_on: "2026-11-16"
+  rotation_owner: "sriumcp"
 rules:
   # InferenceX end-to-end groups. New units: 30 fit, 10 select, 10 validate, 30 held, 20 anchor,
   # the design's example (§10.2). On a legacy side the same proportions hold within the side:

@@ -118,8 +118,11 @@ def test_hand_edit_is_detected(tmp_path):
 
 def test_a_hand_edit_of_any_committed_config_entry_is_detected(tree_copy):
     """Every entry whose config.json is committed, edited at once: the run names each of them.
-    (One run, not one per entry: the check re-derives every entry and reports all that differ.)"""
-    names = [d.name for d in model_dirs()]
+    (One run, not one per entry: the check re-derives every entry and reports all that differ.)
+    An entry that pins its shard headers is re-derived only from fetched headers, so it is
+    counted with the pinned entries (test_the_committed_pinned_entries_are_counted_apart_from_the_current_ones)
+    and its hand edit is caught under --fetched (test_a_hand_edit_of_a_header_pinned_entry_is_detected_once_fetched)."""
+    names = [d.name for d in model_dirs() if not _header_pinned(d)]
     saved = {}
     for name in names:
         saved[name] = _edit_hidden_size(tree_copy / "models" / name / "graph.yaml")
@@ -180,10 +183,57 @@ def test_the_committed_pinned_entries_are_counted_apart_from_the_current_ones():
     r = subprocess.run([sys.executable, str(DERIVER), str(ROOT), "--check"],
                        capture_output=True, text=True)
     pinned = [d.name for d in sorted(MODELS.iterdir())
-              if d.is_dir() and not (d / "config.json").is_file()]
+              if d.is_dir() and (not (d / "config.json").is_file() or _header_pinned(d))]
     assert pinned, "the catalog holds hash-pinned entries"
     assert f"{len(pinned)} not re-derivable offline" in r.stdout, r.stdout
     assert r.stderr.strip().endswith(", ".join(pinned)), r.stderr
+
+
+def _header_pinned(d: Path) -> bool:
+    return bool((yaml.safe_load((d / "model.yaml").read_text()) or {}).get("headers"))
+
+
+def test_a_hand_edit_of_a_header_pinned_entry_is_detected_once_fetched(tree_copy, tmp_path):
+    """With its headers fetched, a header-pinned entry is re-derived and a hand edit of its
+    graph is named; a fetched header whose bytes differ from the pin fails the entry."""
+    import hashlib
+    d = tree_copy / "models" / "glm-5-nvfp4"
+    headers = _glm5_headers()
+    body = json.dumps(headers).encode()
+    pins = [{"path": "model.safetensors", "sha256": hashlib.sha256(body).hexdigest()}]
+    index = json.dumps({"weight_map": {"a": "model.safetensors"}}).encode()
+    card = yaml.safe_load((d / "model.yaml").read_text())
+    card["headers"] = pins
+    card["shard_index"] = {"path": "model.safetensors.index.json",
+                           "sha256": hashlib.sha256(index).hexdigest()}
+    (d / "model.yaml").write_text(yaml.safe_dump(card))
+    fetched = tmp_path / "fetched" / "glm-5-nvfp4" / "headers"
+    fetched.mkdir(parents=True)
+    (fetched / "model.safetensors.json").write_bytes(body)
+    (fetched / "index.json").write_bytes(index)
+    run = lambda: subprocess.run([sys.executable, str(DERIVER), str(tree_copy), "--check", "--model",
+                                  "glm-5-nvfp4", "--fetched", str(tmp_path / "fetched")],
+                                 capture_output=True, text=True)
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    (d / "graph.yaml").write_text(derive_graph.dump(derive_graph.derive(d / "config.json", "glm-5-nvfp4",
+                                                                        headers=headers)))
+    assert run().returncode == 0
+    _edit_hidden_size(d / "graph.yaml")
+    r = run()
+    assert r.returncode != 0 and "glm-5-nvfp4: graph.yaml differs" in r.stderr
+    (fetched / "model.safetensors.json").write_bytes(body + b" ")
+    r = run()
+    assert r.returncode != 0 and "not the pinned" in r.stderr
+    # SUB-15's "every shard" is every shard the index names: a pin set that is not exactly
+    # them is refused, whatever the headers say.
+    (fetched / "model.safetensors.json").write_bytes(body)
+    two = json.dumps({"weight_map": {"a": "model.safetensors", "b": "model-2.safetensors"}}).encode()
+    (fetched / "index.json").write_bytes(two)
+    card["shard_index"]["sha256"] = hashlib.sha256(two).hexdigest()
+    (d / "model.yaml").write_text(yaml.safe_dump(card))
+    r = run()
+    assert r.returncode != 0 and "missing ['model-2.safetensors']" in r.stderr
 
 
 def test_a_failure_names_its_model_once(tmp_path):
@@ -1540,6 +1590,11 @@ def test_expert_shape_matches_config(d: Path):
     shared_nodes = [n for k in g["layer_kinds"] for n in k["nodes"]
                     if n.get("role") == "shared_experts"]
     shared = t.get("n_shared_experts") or t.get("num_shared_experts")
+    # A config that states a shared expert's width and no count has one (Qwen3.5, whose
+    # vLLM loader passes n_shared_experts=1, models/qwen3_5.py).
+    if shared is None and (t.get("shared_expert_intermediate_size")
+                           or t.get("moe_shared_expert_intermediate_size")):
+        shared = 1
     for n in shared_nodes:
         assert n["experts"] == shared, (
             f"shared-expert node states {n['experts']}, config says {shared}")
@@ -2341,8 +2396,8 @@ def test_nemotron_nvfp4_keeps_its_declared_mixed_precision_layout():
                 by_role[n.get("role")] = n.get("weight_dtype")
 
     assert by_role.get("experts") == "nvfp4", "the routed experts are the NVFP4 tensors"
-    assert by_role.get("shared_experts") == "fp8", (
-        "the shared experts are stored at FP8, so they cannot ride on the routed node")
+    assert (by_role.get("shared_up"), by_role.get("shared_down")) == ("fp8", "fp8"), (
+        "the shared experts are stored at FP8, beside NVFP4 routed experts")
     assert by_role.get("mixer_out") == "fp8", "the Mamba projections are FP8"
     for role in ("qkv_proj", "o_proj", "routed_expert_down_proj",
                  "routed_expert_up_proj"):
@@ -2617,7 +2672,7 @@ def test_qwen3_5_gdn_state_size_is_the_key_dim_not_the_value_dim():
         "full_attention_interval": 4,
         "linear_num_key_heads": 16, "linear_num_value_heads": 32,
         "linear_key_head_dim": 64, "linear_value_head_dim": 256,
-        "linear_conv_kernel_dim": 4,
+        "linear_conv_kernel_dim": 4, "dtype": "bfloat16",
     }
     kinds, _ = dg.handler_qwen3_5_moe(cfg, cfg, "synthetic")
     n = next(x for k in kinds if k["id"] == "gdn_moe"
@@ -2664,7 +2719,7 @@ def test_nemotron_h_parses_the_character_form_of_the_layer_vector():
         "num_local_experts": 8, "num_experts_per_tok": 2, "moe_intermediate_size": 1024,
         "mamba_num_heads": 64, "ssm_state_size": 128, "conv_kernel": 4,
         "mamba_head_dim": 64, "n_groups": 8,
-        "hybrid_override_pattern": "M-*E",
+        "hybrid_override_pattern": "M-*E", "dtype": "bfloat16",
     }
     kinds, stack = dg.handler_nemotron_h(cfg, cfg, "synthetic")
     assert layer_sequence(stack) == ["mamba", "mlp", "attention", "moe"], (
@@ -6195,7 +6250,9 @@ def test_every_attention_and_grouped_gemm_states_its_typed_role():
                 seen["shared" if n["shared"] else "routed"] += 1
             else:
                 assert "shared" not in n, (path, n)
-    assert all(seen.values()), seen
+    # The deriver states every shared expert as the GEMMs vLLM launches for it (moe_block), so
+    # no committed graph holds a shared GroupedGEMM; the other three must each occur.
+    assert seen["scorer"] and seen["main"] and seen["routed"], seen
 
 
 # --- EAGLE3 drafter (Inferact/MiniMax-M3-EAGLE3) ----------------------------------------
@@ -6474,7 +6531,8 @@ def test_kimi_k25_nvfp4_graph_is_what_its_configuration_derives_to(tmp_path):
     assert g["global"]["weight_dtype"] == "bf16"
     assert _nodes_by_role(g) == {
         "qkv_a_proj": {"-"}, "q_b_proj": {"-"}, "kv_b_proj": {"-"}, "o_proj": {"-"},
-        "mlp_gate_up": {"nvfp4"}, "mlp_down": {"nvfp4"}, "experts": {"nvfp4"}}
+        "mlp_gate_up": {"nvfp4"}, "mlp_down": {"nvfp4"}, "experts": {"nvfp4"},
+        "shared_gate_up": {"nvfp4"}, "shared_down": {"nvfp4"}, "router": {"bf16"}}
     derived = _derive_raw(_kimi_k25_nvfp4_raw(), tmp_path, "kimi-k2.5-nvfp4")
     assert _strip_identity(derived) == _strip_identity(g)
 
@@ -6493,7 +6551,8 @@ def test_kimi_k25_nvfp4_differs_from_the_int4_entry_in_widths_only():
 def test_minimax_m25_nvfp4_quantizes_only_the_experts():
     g = graph_of(MINIMAX_M25_NVFP4)
     assert g["global"]["weight_dtype"] == "bf16"
-    assert _nodes_by_role(g) == {"qkv_proj": {"-"}, "o_proj": {"-"}, "experts": {"nvfp4"}}
+    assert _nodes_by_role(g) == {"qkv_proj": {"-"}, "o_proj": {"-"}, "experts": {"nvfp4"},
+                                 "router": {"fp32"}}
     base = graph_of(MINIMAX_M25)
     assert base["global"]["weight_dtype"] == "fp8"
     assert _nodes_by_role(base)["experts"] == {"-"}
@@ -6519,9 +6578,11 @@ KIMI_K25_NVFP4_HEADER = {
     "shared": ("U8", 60 * 3 * 2048 * 7168),
     "embed_tokens": ("BF16", 163840 * 7168),
     "lm_head": ("BF16", 163840 * 7168),
-    # Tensors the graph carries no node for.
+    # The router's gate weight, a node of its own, and the tensors the graph carries no node
+    # for: the norms and the router's e_score_correction_bias.
+    "router": ("BF16", 60 * 384 * 7168),
     "norms": ("BF16", 61 * 7168 * 2 + 61 * 512 + 61 * 1536 + 7168),
-    "router": ("BF16", 60 * 384 * 7168 + 60 * 384),
+    "router_bias": ("BF16", 60 * 384),
 }
 
 
@@ -6556,12 +6617,13 @@ def test_kimi_k25_nvfp4_resident_parameters_equal_the_header_totals():
         assert got[role] == h[role][1], role
     assert got["mlp_gate_up"] + got["mlp_down"] == h["mlp"][1]
     assert got["experts"] == h["routed"][1]
-    assert got["shared"] == h["shared"][1]
+    assert got["shared_gate_up"] + got["shared_down"] == h["shared"][1]
+    assert got["router"] == h["router"][1]
     # The kernel infers the embedding table as vocab x hidden at the BF16 floor.
     emb = g["global"]["vocab_size"] * g["global"]["hidden_size"]
     assert emb == h["embed_tokens"][1]
     total_header = sum(v[1] for v in h.values())
-    total_graph = sum(got.values()) + emb + h["norms"][1] + h["router"][1]
+    total_graph = sum(got.values()) + emb + h["norms"][1] + h["router_bias"][1]
     assert total_graph == total_header
     # U8 tensors are the nvfp4 nodes; BF16 tensors are the base width.
     wide = {r for r, (dt, _) in h.items() if dt == "U8"}
@@ -6575,10 +6637,11 @@ MINIMAX_M25_NVFP4_HEADER = {
     "experts": ("U8", 62 * 256 * 3 * 1536 * 3072),
     "embed_tokens": ("BF16", 200064 * 3072),
     "lm_head": ("BF16", 200064 * 3072),
-    # q_norm 6144 and k_norm 1024 a layer, the two layer norms, the final norm; the router
-    # (gate.weight) and its e_score_correction_bias.
+    # The router's gate.weight, a node; then q_norm 6144 and k_norm 1024 a layer, the two layer
+    # norms, the final norm, and the router's e_score_correction_bias, which have none.
+    "router": ("BF16", 62 * 256 * 3072),
     "norms": ("BF16", 62 * (6144 + 1024 + 2 * 3072) + 3072),
-    "router": ("BF16", 62 * 256 * 3072 + 62 * 256),
+    "router_bias": ("BF16", 62 * 256),
 }
 
 
@@ -6588,11 +6651,12 @@ def test_minimax_m25_nvfp4_resident_parameters_equal_the_header_totals():
     g = graph_of(MINIMAX_M25_NVFP4)
     got = _graph_parameters(g)
     h = MINIMAX_M25_NVFP4_HEADER
-    for role in ("qkv_proj", "o_proj", "experts", "lm_head"):
+    for role in ("qkv_proj", "o_proj", "experts", "lm_head", "router"):
         assert got[role] == h[role][1], role
     emb = g["global"]["vocab_size"] * g["global"]["hidden_size"]
     assert emb == h["embed_tokens"][1]
-    assert sum(got.values()) + emb + h["norms"][1] + h["router"][1] == sum(v[1] for v in h.values())
+    assert (sum(got.values()) + emb + h["norms"][1] + h["router_bias"][1]
+            == sum(v[1] for v in h.values()))
     assert (h["experts"][0], _nodes_by_role(g)["experts"]) == ("U8", {"nvfp4"})
     assert _nodes_by_role(g)["qkv_proj"] == {"-"}
 
@@ -6695,8 +6759,8 @@ def test_kimi_k3_quantizes_its_routed_experts_and_nothing_else():
     assert g["global"]["weight_dtype"] == "bf16"
     widths = _nodes_by_role(g)
     assert widths["experts"] == {"mxfp4"}
-    assert widths["shared_experts"] == {"bf16"}
-    for role in ("routed_expert_down_proj", "routed_expert_up_proj", "mlp_gate_up", "mlp_down"):
+    for role in ("shared_gate_up", "shared_down", "routed_expert_down_proj",
+                 "routed_expert_up_proj", "mlp_gate_up", "mlp_down"):
         assert widths[role] <= {"-", "bf16"}, role
     assert all(n.get("weight_dtype", "bf16") == "bf16" for n in g["head"])
     assert not any(n.get("shared_experts") for k in g["layer_kinds"] for n in k["nodes"])
@@ -6721,7 +6785,7 @@ K3_FAMILY_COMMON = {
     "mlp": 3 * 33792 * 7168,
     "routed_expert_down_proj": 92 * 3584 * 7168, "routed_expert_up_proj": 92 * 7168 * 3584,
     "experts": 92 * 3 * 896 * 3072 * 3584, "shared_experts": 92 * 3 * 6144 * 7168,
-    "lm_head": 163840 * 7168,
+    "lm_head": 163840 * 7168, "router": 92 * 896 * 7168,
 }
 K3_FAMILY_MLA = {
     # q_a_proj + kv_a_proj_with_mqa + the output gate (g_proj) on the layers that are MLA.
@@ -6729,7 +6793,7 @@ K3_FAMILY_MLA = {
     "q_b_proj": 24 * 18432 * 1536, "kv_b_proj": 24 * 24576 * 512, "o_proj": 24 * 7168 * 12288,
 }
 K3_FAMILY_UNPRICED = {
-    "router": 92 * 896 * 7168 + 92 * 896,
+    "router_bias": 92 * 896,
     # input_layernorm, post_attention_layernorm and the four attention-residual vectors per
     # layer (self_attention_res_{norm,proj}, mlp_res_{norm,proj}), the output pair and the final
     # norm; the latent norms; the routed expert norm.
@@ -6751,7 +6815,8 @@ def test_kimi_k3_resident_parameters_equal_the_header_total():
     got, emb = _k3_graph_total(graph_of(KIMI_K3))
     want = dict(K3_FAMILY_COMMON, **K3_FAMILY_MLA)
     for role, n in want.items():
-        have = got[role] if role != "mlp" else got["mlp_gate_up"] + got["mlp_down"]
+        have = {"mlp": got["mlp_gate_up"] + got["mlp_down"],
+                "shared_experts": got["shared_gate_up"] + got["shared_down"]}.get(role, got[role])
         assert have == n, role
     assert sum(got.values()) + emb + sum(K3_FAMILY_UNPRICED.values()) == 2_779_484_478_208
 
@@ -6821,12 +6886,14 @@ def test_kimi_k31_resident_parameters_equal_the_header_total():
                 o_proj=24 * 7168 * 12288,
                 index_wq_b=24 * 4096 * 1536)
     for role, n in want.items():
-        have = got[role] if role != "mlp" else got["mlp_gate_up"] + got["mlp_down"]
+        have = {"mlp": got["mlp_gate_up"] + got["mlp_down"],
+                "shared_experts": got["shared_gate_up"] + got["shared_down"]}.get(role, got[role])
         assert have == n, role
     unpriced = dict(K3_FAMILY_UNPRICED, index_k_norm=24 * 2 * 128)
     assert sum(got.values()) + emb + sum(unpriced.values()) == 2_779_663_004_416
     widths = _nodes_by_role(graph_of(KIMI_K31))
-    assert widths["experts"] == {"mxfp4"} and widths["shared_experts"] == {"bf16"}
+    assert widths["experts"] == {"mxfp4"}
+    assert widths["shared_gate_up"] | widths["shared_down"] <= {"-", "bf16"}
 
 
 def test_kimi_k31_states_the_projections_vllm_builds_replicated():
@@ -7515,9 +7582,13 @@ def test_m31_layers_pair_the_two_vectors_independently(tmp_path):
     assert dense == ["qkv_proj", "index_qk_proj", "o_proj", "mlp_gate_up", "mlp_down"]
     routed = [(n["role"], n["weight_dtype"]) for n in kinds["sparse_attn_moe"]["nodes"]
               if n["op"] in ("GEMM", "GroupedGEMM") and "weight_dtype" in n]
-    assert routed == [("router", "fp32"), ("experts", "nvfp4"), ("shared_experts", "fp8")]
-    (shared,) = [n for n in kinds["sparse_attn_moe"]["nodes"] if n.get("role") == "shared_experts"]
-    assert (shared["n"], shared["k"], shared["experts"], shared["shared"]) == (3072, 6144, 1, True)
+    assert routed == [("router", "fp32"), ("experts", "nvfp4")]
+    shared = {n["role"]: n for n in kinds["sparse_attn_moe"]["nodes"]
+              if n.get("role", "").startswith("shared_")}
+    # The shared expert's linears are MXFP8 like every linear, the graph's global width.
+    assert g["global"]["weight_dtype"] == "fp8"
+    assert (shared["shared_gate_up"]["n"], shared["shared_gate_up"]["k"]) == (2 * 3072, 6144)
+    assert (shared["shared_down"]["n"], shared["shared_down"]["k"]) == (6144, 3072)
 
 
 @pytest.mark.parametrize("edit,why", [
@@ -8108,10 +8179,8 @@ def test_m3_nvfp4_graph_differs_from_the_mxfp8_one_in_the_expert_widths_only():
     na, nb = ka["sparse_attn_moe"]["nodes"], kb["sparse_attn_moe"]["nodes"]
     only_a = [n for n in na if n not in nb]
     only_b = [n for n in nb if n not in na]
-    assert [n["role"] for n in only_a] == ["experts"] and only_a[0]["shared_experts"] == 1
-    assert [(n["role"], n["weight_dtype"]) for n in only_b] == [("experts", "nvfp4"),
-                                                               ("shared_experts", "fp8")]
-    assert "shared_experts" not in only_b[0]
+    assert [n["role"] for n in only_a] == ["experts"] and "weight_dtype" not in only_a[0]
+    assert [(n["role"], n["weight_dtype"]) for n in only_b] == [("experts", "nvfp4")]
 
 
 def test_m3_nvfp4_committed_graph_is_the_derivation_of_the_committed_config(tmp_path):
@@ -8213,3 +8282,360 @@ def test_minimax_m31_flash_states_the_same_embedding(tmp_path):
     assert [n["role"] for n in g["embedding"]] == ["embed_tokens", "embed_out"]
     assert g["embedding"][0]["rows"] == 200064 and g["embedding"][0]["row_bytes"] == 12288
     assert graph_of(MODELS / "minimax-m3.1-flash")["embedding"] == g["embedding"]
+
+
+# --- ModelOpt NVFP4: routed and shared experts at their own widths -----------------------
+
+QWEN35_NVFP4 = MODELS / "qwen3.5-397b-a17b-nvfp4"
+
+
+def _widths(g: dict, kind: str) -> dict:
+    k = {k["id"]: k for k in g["layer_kinds"]}[kind]
+    return {n["role"]: (n.get("weight_dtype", g["global"]["weight_dtype"]), n.get("experts"))
+            for n in k["nodes"] if n["op"] in ("GEMM", "GroupedGEMM")}
+
+
+def test_qwen35_nvfp4_quantizes_the_routed_experts_and_nothing_else():
+    """nvidia/Qwen3.5-397B-A17B-NVFP4's ModelOpt list excludes every attention and DeltaNet
+    module, every shared expert (`*.mlp.shared_expert.*`), the head and the MTP module
+    (`mtp.layers.0*`): only the 512 routed experts a layer store NVFP4. The shared expert is
+    its own node at bf16, and the draft layer is placed at its own module names, so it is
+    bf16 throughout rather than a mirror of the decoder's NVFP4 experts."""
+    g = graph_of(QWEN35_NVFP4)
+    assert g["global"]["weight_dtype"] == "bf16"
+    moe = {"router": ("bf16", None), "experts": ("nvfp4", 512),
+           "shared_gate_up": ("bf16", None), "shared_down": ("bf16", None),
+           "shared_expert_gate": ("bf16", None)}
+    assert _widths(g, "attn_moe") == {"qkv_proj": ("bf16", None), "o_proj": ("bf16", None), **moe}
+    assert _widths(g, "gdn_moe") == {"mixer_out": ("bf16", None), **moe}
+    assert g["speculator"]["stack"]["pattern"] == ["mtp_moe"]
+    assert {w for w, _ in _widths(g, "mtp_moe").values()} == {"bf16"}
+
+
+@pytest.mark.parametrize("pattern,why", [
+    # the shared expert left unquantized on one layer only
+    ("model.language_model.layers.3.mlp.shared_expert*", "'shared_gate_up' quantized on some"),
+    # the routed experts left unquantized on one layer only
+    ("model.language_model.layers.7.mlp.experts*", "'experts' quantized on some"),
+])
+def test_modelopt_placement_refuses_a_role_split_across_one_kinds_layers(tmp_path, pattern, why):
+    """A list that excludes a module on some of a kind's layers and not on others states two
+    widths for one node, which is refused rather than priced at either."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    raw = config_of(QWEN35_NVFP4)
+    q = raw["quantization_config"]
+    q["ignore"] = [p for p in q["ignore"] if "shared_expert" not in p] + [pattern]
+    if "experts*" in pattern:
+        q["ignore"] = [p for p in raw["quantization_config"]["ignore"]] + [pattern]
+    with pytest.raises(derive_graph.DeriveError, match=why):
+        _derive_raw(raw, tmp_path, "qwen-nvfp4-test")
+
+
+# --- ModelOpt NVFP4 on GLM-5's DSA family and GLM-5.3-Flash -------------------------------
+
+@pytest.mark.parametrize("name,dense_mlp", [
+    # GLM-5.2-NVFP4 excludes its three dense layers whole (model.layers.0* to 2.*).
+    ("glm-5.2-nvfp4", "bf16"),
+    # GLM-5.3-NVFP4 is MIXED_PRECISION: its quantized_layers map names the dense MLPs at FP8
+    # and the routed experts at NVFP4, and names nothing else, which vLLM leaves unquantized.
+    ("glm-5.3-nvfp4", "fp8"),
+])
+def test_glm_dsa_nvfp4_places_experts_dense_layers_and_the_draft_layer(name, dense_mlp):
+    g = graph_of(MODELS / name)
+    assert g["global"]["weight_dtype"] == "bf16"
+    dense = _widths(g, "attn_dense_indexed")
+    assert (dense["mlp_gate_up"][0], dense["mlp_down"][0]) == (dense_mlp, dense_mlp)
+    assert {dense[r][0] for r in ("qkv_a_proj", "q_b_proj", "kv_b_proj", "o_proj")} == {"bf16"}
+    sparse = _widths(g, "attn_moe_noindex")
+    assert (sparse["experts"][0], sparse["shared_gate_up"][0], sparse["shared_down"][0]) == (
+        "nvfp4", "bf16", "bf16")
+    # The MTP layer, model.layers.78, is excluded whole.
+    assert {w for w, _ in _widths(g, "mtp_moe").values()} == {"bf16"}
+
+
+def test_glm53_flash_nvfp4_quantizes_its_experts_and_dense_mlps():
+    """GLM-5.3-Flash-NVFP4 excludes every self_attn module (KDA and sparse MLA), the router
+    gates, the shared experts and the MTP layer (model.layers.45*): the routed experts and
+    the three dense layers' MLPs store NVFP4. The hyper-connection mixers are parameters, not
+    linears, and keep their FP32 width."""
+    g = graph_of(MODELS / "glm-5.3-flash-nvfp4")
+    dense = _widths(g, "kda_dense")
+    assert (dense["mlp_gate_up"][0], dense["mlp_down"][0]) == ("nvfp4", "nvfp4")
+    assert (dense["hc_attn_fn"][0], dense["kda_q_proj"][0], dense["kda_o_proj"][0]) == ("fp32", "bf16", "bf16")
+    moe = _widths(g, "mla_moe")
+    assert (moe["experts"][0], moe["shared_gate_up"][0], moe["shared_down"][0],
+            moe["router"][0], moe["kv_b_proj"][0]) == ("nvfp4", "bf16", "bf16", "bf16", "bf16")
+    assert "nvfp4" not in {w for w, _ in _widths(g, "mtp_moe").values()}
+
+
+def _mixed(layers: dict, packed: dict | None = None) -> dict:
+    raw = config_of(MODELS / "glm-5.3")
+    raw["quantization_config"] = {"quant_method": "modelopt", "quant_algo": "MIXED_PRECISION",
+                                  "ignore": [], "quantized_layers": layers,
+                                  **({"packed_modules_mapping": packed} if packed else {})}
+    return raw
+
+
+@pytest.mark.parametrize("layers,packed,why", [
+    ({"model.layers.0.mlp.gate_proj": {"quant_algo": "INT4_AWQ"}}, None, "does not (map|place)"),
+    ({f"model.layers.{i}.mlp.{p}": {"quant_algo": a} for i in range(3)
+      for p, a in (("gate_proj", "FP8"), ("up_proj", "NVFP4"))},
+     {"gate_up_proj": ["gate_proj", "up_proj"]}, "fuses shards"),
+    ({}, None, "no quantized_layers"),
+])
+def test_modelopt_mixed_precision_refuses_what_vllm_refuses_or_this_deriver_cannot_place(
+        tmp_path, layers, packed, why):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match=why):
+        _derive_raw(_mixed(layers, packed), tmp_path, "glm-mixed-test")
+
+
+# --- Widths read from safetensors headers (SUB-15): nvidia/GLM-5-NVFP4 ---------------------
+
+GLM5_NVFP4 = MODELS / "glm-5-nvfp4"
+
+
+def _glm5_headers(edit=None) -> dict:
+    """Headers in the layout nvidia/GLM-5-NVFP4's shards state (read from the pinned headers;
+    not committed): NVFP4 experts, shared experts and dense MLPs, BF16 attention, indexer, head
+    and the MTP layer 78. Two experts a layer are enough: a layer's experts share one width."""
+    t = text_config(config_of(GLM5_NVFP4))
+    n, dense, k = t["num_hidden_layers"], t["first_k_dense_replace"], 6144
+    h = {"lm_head.weight": {"dtype": "BF16", "shape": [154880, k]}}
+
+    def nvfp4(m):
+        h[m + ".weight"] = {"dtype": "U8", "shape": [2048, k // 2]}
+        h[m + ".weight_scale"] = {"dtype": "F8_E4M3", "shape": [2048, k // 16]}
+
+    def bf16(m):
+        h[m + ".weight"] = {"dtype": "BF16", "shape": [2048, k]}
+
+    for i in range(n + 1):
+        p = f"model.layers.{i}."
+        for a in ("q_a_proj", "kv_a_proj_with_mqa", "q_b_proj", "kv_b_proj", "o_proj",
+                  "indexer.wq_b", "indexer.wk", "indexer.weights_proj"):
+            bf16(p + "self_attn." + a)
+        quant = bf16 if i == n else nvfp4
+        if i < dense:
+            for a in ("gate_proj", "up_proj", "down_proj"):
+                quant(p + "mlp." + a)
+        else:
+            for e in range(2):
+                for a in ("gate_proj", "up_proj", "down_proj"):
+                    quant(p + f"mlp.experts.{e}." + a)
+            for a in ("gate_proj", "up_proj", "down_proj"):
+                quant(p + "mlp.shared_experts." + a)
+    if edit:
+        edit(h)
+    return h
+
+
+def _derive_with_headers(headers, tmp_path, raw=None):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps(raw or config_of(GLM5_NVFP4)))
+    return derive_graph.derive(p, "glm-5-nvfp4", headers=headers)
+
+
+def test_glm5_nvfp4_widths_come_from_its_shard_headers(tmp_path):
+    """GLM-5-NVFP4's config.json states no quantization; its headers state NVFP4 experts,
+    shared experts and dense MLPs, BF16 elsewhere, and a BF16 MTP layer. Without the headers
+    the same config derives bf16 throughout, so the headers are what the widths come from."""
+    g = _derive_with_headers(_glm5_headers(), tmp_path)
+    assert g["global"]["weight_dtype"] == "bf16"
+    dense = _widths(g, "attn_dense")
+    assert (dense["mlp_gate_up"][0], dense["mlp_down"][0], dense["o_proj"][0]) == ("nvfp4", "nvfp4", "bf16")
+    moe = _widths(g, "attn_moe")
+    assert moe["experts"][0] == "nvfp4" and "shared_experts" not in moe   # shared at the same width
+    assert g["speculator"]["stack"]["pattern"] == ["mtp_moe"]
+    assert {w for w, _ in _widths(g, "mtp_moe").values()} == {"bf16"}
+    plain = _derive_with_headers(None, tmp_path)
+    assert "nvfp4" not in {w for k in plain["layer_kinds"] for n in k["nodes"]
+                           if (w := n.get("weight_dtype"))}
+
+
+@pytest.mark.parametrize("edit,why", [
+    (lambda h: h.pop("model.layers.5.mlp.experts.0.gate_proj.weight_scale"), "no F8_E4M3 weight_scale"),
+    (lambda h: h.__setitem__("model.layers.5.mlp.experts.0.gate_proj.weight_scale",
+                             {"dtype": "F8_E4M3", "shape": [2048, 6144 // 32]}), "not one scale per 16"),
+    (lambda h: h.__setitem__("model.layers.5.mlp.experts.1.gate_proj.weight",
+                             {"dtype": "BF16", "shape": [2048, 6144]}), "one node cannot price both"),
+    (lambda h: [h.pop(k) for k in list(h) if k.startswith("model.layers.7.self_attn.o_proj")], "hold no weight"),
+    (lambda h: h.__setitem__("model.layers.5.self_attn.o_proj.weight",
+                             {"dtype": "I8", "shape": [2048, 6144]}), "does not read"),
+])
+def test_header_widths_refuse_a_layout_they_cannot_read(tmp_path, edit, why):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match=why):
+        _derive_with_headers(_glm5_headers(edit), tmp_path)
+
+
+def test_pinned_headers_and_a_quantization_block_are_refused_together(tmp_path):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    raw = config_of(GLM5_NVFP4)
+    raw["quantization_config"] = {"quant_method": "fp8"}
+    with pytest.raises(derive_graph.DeriveError, match="pins its headers"):
+        _derive_with_headers(_glm5_headers(), tmp_path, raw)
+def test_qwen35_nvfp4_refuses_a_quantized_deltanet_input_projection(tmp_path):
+    """The DeltaNet input projections are priced inside the recurrent update at the base width;
+    a list that leaves them quantized is refused rather than priced at a width they do not store."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    raw = config_of(QWEN35_NVFP4)
+    q = raw["quantization_config"]
+    q["ignore"] = [p for p in q["ignore"] if p != "model.language_model.layers.0.linear_attn*"]
+    with pytest.raises(derive_graph.DeriveError, match="in_proj_qkvz"):
+        _derive_raw(raw, tmp_path, "qwen-nvfp4-test")
+
+
+# --- The MoE router and the shared experts as the launches vLLM v0.33.0 runs (#228) ----------
+
+def _moe_kinds(g: dict) -> list[dict]:
+    """The target layer kinds that run routed experts."""
+    used = set(layer_sequence(g["stack"]))
+    return [k for k in g["layer_kinds"] if k["id"] in used
+            and any(n["op"] == "GroupedGEMM" for n in k["nodes"])]
+
+
+def _derived(name: str, tmp_path: Path) -> dict:
+    """The graph the deriver makes now of a committed entry's own config.json."""
+    return _derive_raw(config_of(MODELS / name), tmp_path, name)
+
+
+@pytest.mark.parametrize("name,experts,hidden,global_width", [
+    ("deepseek-v3", 256, 7168, "fp8"),
+    ("glm-5.3", 256, 6144, "fp8"),
+    ("kimi-k2.5", 384, 7168, "int4"),
+])
+def test_a_deepseek_family_moe_layer_runs_its_router_whole_on_every_rank(
+        tmp_path, name, experts, hidden, global_width):
+    """DeepseekV2MoE's gate is a GateLinear, a ReplicatedLinear built with no quant config:
+    one [n_routed_experts x hidden] GEMM at the model dtype, whole on every tensor-parallel
+    rank, however the checkpoint quantizes its linears."""
+    g = _derived(name, tmp_path)
+    assert g["global"]["weight_dtype"] == global_width
+    kinds = _moe_kinds(g)
+    assert kinds
+    for kind in kinds:
+        router = _node(kind, "router")
+        assert (router["op"], router["n"], router["k"]) == ("GEMM", experts, hidden)
+        assert (router["tp"], router["weight_dtype"]) == ("replicated", "bf16")
+
+
+@pytest.mark.parametrize("name", ["deepseek-v3", "glm-5.3", "glm-5.2", "kimi-k3"])
+def test_the_shared_experts_run_as_their_own_mlp(tmp_path, name):
+    """vLLM fuses the shared experts into the routed kernel only under ROCm AITER; on NVIDIA
+    parts they are an MLP of their own: a column-parallel gate/up of 2 x moe_intermediate x
+    n_shared, the activation over it, and a row-parallel down, all on the hidden state. The
+    routed node prices the routed experts alone, so the shared experts' weights are counted
+    once, at moe_intermediate x n_shared x hidden for each of the three matrices."""
+    g = _derived(name, tmp_path)
+    t = text_config(config_of(MODELS / name))
+    hidden = t["hidden_size"]
+    inner = t["moe_intermediate_size"] * (t.get("n_shared_experts") or t.get("num_shared_experts"))
+    for kind in _moe_kinds(g):
+        up, down = _node(kind, "shared_gate_up"), _node(kind, "shared_down")
+        assert (up["op"], up["n"], up["k"], up["tp"]) == ("GEMM", 2 * inner, hidden, "column")
+        assert (down["op"], down["n"], down["k"], down["tp"]) == ("GEMM", hidden, inner, "row")
+        act = _node(kind, "shared_act")
+        assert (act["op"], act["tp"], act["bytes_per_token"]) == ("Elementwise", "sharded",
+                                                                  3 * inner * 2)
+        for n in kind["nodes"]:
+            if n["op"] == "GroupedGEMM":
+                assert not n["shared"] and "shared_experts" not in n, kind["id"]
+        assert up["n"] * up["k"] + down["n"] * down["k"] == 3 * inner * hidden
+
+
+@pytest.mark.parametrize("name", ["mixtral-8x7b-v0.1", "qwen3-30b-a3b", "gpt-oss-120b",
+                                  "minimax-m2.5"])
+def test_a_model_without_shared_experts_gets_a_router_and_no_shared_nodes(tmp_path, name):
+    t = text_config(config_of(MODELS / name))
+    experts = t.get("num_local_experts") or t.get("num_experts")
+    g = _derived(name, tmp_path)
+    for kind in _moe_kinds(g):
+        assert _node(kind, "router")["n"] == experts
+        assert not [n for n in kind["nodes"] if str(n.get("role", "")).startswith("shared")]
+
+
+def test_minimax_routers_keep_their_fp32_weights(tmp_path):
+    """MiniMax-M2 and M3 build the gate with params_dtype float32 (minimax_m2.py:110-117,
+    minimax_m3/nvidia/model.py:232-239), so it is resident at four bytes whatever the
+    checkpoint quantizes; M3's layer has exactly one router."""
+    for name in ("minimax-m2.5", "minimax-m3"):
+        for kind in _moe_kinds(_derived(name, tmp_path)):
+            assert _node(kind, "router")["weight_dtype"] == "fp32", name
+
+
+def test_nemotron_h_runs_an_ungated_shared_expert(tmp_path):
+    """NemotronHMLP is up, relu2, down: two matrices of moe_shared_expert_intermediate_size x
+    n_shared, not a gated three. Its router is a GateLinear at the model dtype."""
+    name = "nemotron-3.5-lightning-30b-a3b-bf16"
+    t = text_config(config_of(MODELS / name))
+    hidden = t["hidden_size"]
+    inner = t["moe_shared_expert_intermediate_size"] * t["n_shared_experts"]
+    for kind in _moe_kinds(_derived(name, tmp_path)):
+        up, down = _node(kind, "shared_up"), _node(kind, "shared_down")
+        assert (up["n"], up["k"], up["tp"]) == (inner, hidden, "column")
+        assert (down["n"], down["k"], down["tp"]) == (hidden, inner, "row")
+        assert not [n for n in kind["nodes"] if n.get("role") == "shared_gate_up"]
+        assert _node(kind, "shared_act")["bytes_per_token"] == 2 * inner * 2
+        assert _node(kind, "router")["n"] == t["n_routed_experts"]
+
+
+def test_qwen35_gates_its_shared_expert_with_a_replicated_one_wide_gemm(tmp_path):
+    """Qwen2MoeMLP multiplies the shared expert's output by sigmoid(shared_expert_gate(x)),
+    a ReplicatedLinear [1 x hidden] built with no quant config: a GEMM and a multiply each
+    layer, beside the router and the shared MLP."""
+    name = "qwen3.5-397b-a17b-fp8"
+    t = text_config(config_of(MODELS / name))
+    hidden = t["hidden_size"]
+    for kind in _moe_kinds(_derived(name, tmp_path)):
+        gate = _node(kind, "shared_expert_gate")
+        assert (gate["n"], gate["k"], gate["tp"], gate["weight_dtype"]) == (1, hidden,
+                                                                           "replicated", "bf16")
+        assert _node(kind, "shared_gate_mul")["bytes_per_token"] == 2 * hidden * 2
+        assert _node(kind, "shared_gate_up")["n"] == 2 * t["shared_expert_intermediate_size"]
+
+
+def test_llama4_runs_the_shared_expert_its_model_class_always_builds(tmp_path):
+    """Llama4MoE builds one shared expert, a LlamaMLP at config.intermediate_size, although
+    the config states no shared count; the graph prices it, at the checkpoint's linear width."""
+    name = "llama-4-scout-17b-16e-instruct-fp8-dynamic"
+    t = text_config(config_of(MODELS / name))
+    hidden, inner = t["hidden_size"], t["intermediate_size"]
+    g = _derived(name, tmp_path)
+    for kind in _moe_kinds(g):
+        assert _node(kind, "shared_gate_up")["n"] == 2 * inner
+        assert _node(kind, "shared_down")["k"] == inner
+        assert "weight_dtype" not in _node(kind, "shared_gate_up")
+        assert _node(kind, "router")["n"] == t["num_local_experts"]
+    assert g["global"]["weight_dtype"] == "fp8"
+
+
+def test_kimi_k25_shared_experts_keep_the_width_its_ignore_list_leaves_them(tmp_path):
+    """Kimi-K2.5's compressed-tensors block ignores `re:.*shared_experts.*`, so vLLM builds the
+    shared experts unquantized: BF16 beside INT4 routed experts."""
+    for kind in _moe_kinds(_derived("kimi-k2.5", tmp_path)):
+        assert _node(kind, "shared_gate_up")["weight_dtype"] == "bf16"
+        assert _node(kind, "shared_down")["weight_dtype"] == "bf16"
+        (routed,) = [n for n in kind["nodes"] if n["op"] == "GroupedGEMM"]
+        assert routed.get("weight_dtype", "int4") == "int4"
+
+
+def test_inkling_router_scores_routed_and_sink_experts_together(tmp_path):
+    """InklingGate is one [routed + shared, hidden] matrix: its logits carry the sink experts'
+    gammas beside the routed experts' scores."""
+    t = text_config(config_of(MODELS / "inkling"))
+    for kind in _moe_kinds(_derived("inkling", tmp_path)):
+        assert _node(kind, "router")["n"] == t["n_routed_experts"] + t["n_shared_experts"]
+
+
+def test_an_moe_family_with_no_recorded_layout_is_refused():
+    with pytest.raises(deriver().DeriveError, match="no recorded router"):
+        deriver().moe_block({"num_experts": 8, "top_k": 2, "intermediate_size": 64}, "x", 32,
+                            {"architectures": ["SomeMoeForCausalLM"]}, family="SomeMoeForCausalLM")

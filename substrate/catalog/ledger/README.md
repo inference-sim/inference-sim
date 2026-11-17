@@ -162,24 +162,35 @@ ledger owner's release-time step below). A change of
 source revision and a change of identities go in separate pull requests, so the pairing is
 always made on one revision.
 
-## Creating the seed (a ledger owner's task)
+## Creating the seed
 
-No agent creates the seed or the environment. A ledger owner does it once per partition
-version, in this repository and, with a seed of its own, in accuracy-dashboard (D7).
+The seed is created once per partition version, in this repository and, with a seed of its own,
+in accuracy-dashboard (D7). It is 256 random bits. No person, agent, file, log or shell history
+ever holds it: one pipeline writes it straight into the environment secret and prints only its
+hash. A person with admin rights on the repository, or an agent acting for one, runs these steps.
 
-1. In the repository settings, create the environment `ledger`:
+1. Create the environment `ledger`, or check an existing one:
    - Deployment branches: selected branches only, with the single rule `main`.
    - No required reviewers. A reviewer rule would make every seed-holding job wait for a person.
      The branch policy keeps pull-request code out of the environment.
    - No other secret in it.
-2. On a trusted machine, generate the seed and its hash. Do not echo the seed, keep it in
-   shell history, or write it to a file:
 
    ```sh
-   seed=$(openssl rand -hex 32)
-   printf '%s' "$seed" | xxd -r -p | sha256sum      # the SHA-256 of the 32 bytes
-   gh secret set LEDGER_SEED --env ledger --body "$seed"
-   unset seed
+   gh api -X PUT repos/<owner>/<repo>/environments/ledger \
+     -F 'deployment_branch_policy[protected_branches]=false' \
+     -F 'deployment_branch_policy[custom_branch_policies]=true'
+   gh api -X POST repos/<owner>/<repo>/environments/ledger/deployment-branch-policies \
+     -f name=main -f type=branch
+   ```
+2. Generate the seed into the secret and print only the SHA-256 of its 32 bytes. The seed
+   never lands in a variable or a file:
+
+   ```sh
+   set -o pipefail; h=$(mktemp)
+   openssl rand -hex 32 | tr -d '\n' \
+     | tee >(xxd -r -p | shasum -a 256 | cut -d' ' -f1 > "$h") \
+     | gh secret set LEDGER_SEED --env ledger -R <owner>/<repo>
+   sleep 1; cat "$h"; rm -f "$h"
    ```
 
 3. In a pull request, record the hash and the facts in `ledger.yaml`: `seed.sha256`,
