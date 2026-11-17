@@ -1617,6 +1617,13 @@ type gemmFit struct {
 	// weightOnly is a weight-only kernel's own measured ramp (Marlin W8A16 or W4A16), which
 	// the registry validated with experts divided by their tensor-parallel slice.
 	weightOnly bool
+	// rankOwn is a ramp fitted on each rank's own routed FLOPs (its tensor-parallel slice of
+	// every expert), as a weight-only one is: the routed term divides the expert work by the
+	// slice for it (step.go, dpSlice). The grouped ramps per MoE backend are fitted that way.
+	rankOwn bool
+	// floor is the grouped kernel's own per-layer device time below which no step goes, in
+	// seconds (gemm_floor_<suffix>), 0 where the registry carries none.
+	floor float64
 }
 
 // fitKey is a format and whether it is a grouped (MoE) GEMM, which can select a ramp of
@@ -1693,6 +1700,23 @@ func formatFit(f price.Format, grouped bool, chip hardware.Chip, hopper bool) fi
 	return dtypeFitSuffix(f.DType, chip)
 }
 
+// expertsFit is the ramp of the grouped kernel the plan states the engine runs the routed
+// experts with, where one is measured for the format on the part; ok is false otherwise and the
+// format's own ramp (formatFit) applies.
+//
+// Block-FP8 routed experts on SM90 run the grouped kernel the engine's MoE backend selects, not
+// the dense FP8 linear the fp8 ramp measures: vLLM v0.33.0 runs Triton's fused experts at
+// expert-parallel width 1 and FlashInfer's CUTLASS experts above it unless moe_backend says
+// otherwise (fused_moe/oracle/fp8.py:79-130@4ba787ec). Each has its own measured ramp and floor
+// (gemm_*_fp8_grouped_<backend>, scripts/fit_hopper_fp8_grouped_ramp.py), read where the
+// registry carries one; the fp8 ramp otherwise, which is recorded.
+func expertsFit(f price.Format, chip hardware.Chip, hopper bool, experts string) (fitSpec, bool) {
+	if experts == "" || f.DType != model.DTypeFP8 || f.MX() || !hopper || chip.FP8Peak <= 0 {
+		return fitSpec{}, false
+	}
+	return fitSpec{suffix: "fp8_grouped_" + experts, fallback: "fp8", peak: chip.FP8Peak * 1e12}, true
+}
+
 // addFit lifts the fit for a format, once.
 func (k *Kernel) addFit(c *resolve.Coefficients, f price.Format, grouped bool) error {
 	key := fitKey{f, grouped}
@@ -1700,10 +1724,19 @@ func (k *Kernel) addFit(c *resolve.Coefficients, f price.Format, grouped bool) e
 		return nil
 	}
 	hopper := false
-	if f.DType == model.DTypeFP8 && f.MX() {
+	if f.DType == model.DTypeFP8 && (f.MX() || k.groupedExperts(grouped) != "") {
 		hopper = k.hopper()
 	}
-	spec := formatFit(f, grouped, k.chip, hopper)
+	experts := k.groupedExperts(grouped)
+	if e := k.low.MoE.Experts; grouped && experts == "" && e != (plan.KernelImpl{}) {
+		k.assume("moe_experts_kernel", e.Library+" "+e.Variant,
+			"the registry has no grouped ramp for this experts kernel, so the routed term is "+
+				"priced by its weight format")
+	}
+	spec, ok := expertsFit(f, k.chip, hopper, experts)
+	if !ok {
+		spec = formatFit(f, grouped, k.chip, hopper)
+	}
 	if spec.fallback != "" && !c.Has("gemm_eps_max_"+spec.suffix) {
 		k.assume("gemm_eps_max_"+spec.suffix, spec.fallback,
 			"no efficiency ramp for the "+spec.suffix+" kernel on "+k.chip.Name+", so it is "+
@@ -1727,8 +1760,38 @@ func (k *Kernel) addFit(c *resolve.Coefficients, f price.Format, grouped bool) e
 	}
 	fit.weightOnly = strings.HasPrefix(spec.suffix, "w8a16_") ||
 		strings.HasPrefix(spec.suffix, "w4a16_")
+	if strings.HasPrefix(spec.suffix, "fp8_grouped_") {
+		fit.rankOwn = true
+		if c.Has("gemm_floor_" + spec.suffix) {
+			us, err := c.Value("gemm_floor_" + spec.suffix)
+			if err != nil {
+				return fmt.Errorf("weights in %s: %w", f.DType, err)
+			}
+			if us < 0 {
+				return fmt.Errorf("gemm_floor_%s is %g us; a floor is not negative", spec.suffix, us)
+			}
+			fit.floor = us * 1e-6
+		}
+	}
 	k.fits[key] = fit
 	return nil
+}
+
+// groupedExperts is the registry's word for the grouped-expert kernel the plan states the engine
+// runs (plan.MoEPlan.Experts), for a grouped GEMM; "" for a dense one, or where the plan states
+// none or a kernel the registry has no word for. The words are the kernel libraries': Triton's
+// fused experts, and FlashInfer's CUTLASS experts.
+func (k *Kernel) groupedExperts(grouped bool) string {
+	if !grouped {
+		return ""
+	}
+	switch k.low.MoE.Experts {
+	case plan.ExpertsTriton:
+		return "triton"
+	case plan.ExpertsFlashInferCutlass:
+		return "flashinfer_cutlass"
+	}
+	return ""
 }
 
 // liftFit reads one fit's ramp. The asymptote and half-max are required; the shape-aware

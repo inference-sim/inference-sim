@@ -166,18 +166,19 @@ func TestEachResolvedPlanSettingMovesAPrice(t *testing.T) {
 		parallel    string
 	}
 	var (
-		dense  = where{"llama-3.1-70b-instruct", "h100", 1, "tp: 4, pp: 1, dp: 1"}
-		routed = where{"qwen3-30b-a3b", "h200", 1, "tp: 1, pp: 1, dp: 8, enable_expert_parallel: true"}
-		spMoE  = where{"qwen3-30b-a3b", "h200", 1, "tp: 4, pp: 1, dp: 2, enable_expert_parallel: true"}
-		latent = where{"deepseek-v3", "h200", 1, "tp: 8, pp: 1, dp: 1"}
-		dcp    = where{"deepseek-v3", "h200", 1, "tp: 8, pp: 1, dp: 1, dcp: 2"}
-		hybrid = where{"nemotron-3.5-lightning-30b-a3b-bf16", "h100", 1, "tp: 2, pp: 1, dp: 1"}
-		v41    = where{"deepseek-v4.1-flash", "b200", 1, "tp: 4, pp: 1, dp: 1"}
-		v41ep  = where{"deepseek-v4.1-flash", "b200", 1, "tp: 1, pp: 1, dp: 4, enable_expert_parallel: true"}
-		muse   = where{"muse-spark-open-816b-a42b", "gb200-nvl72", 1, "tp: 4, pp: 1, dp: 1"}
-		ringed = where{"gpt-oss-120b", "h200", 1, "tp: 4, pp: 1, dp: 1"}
-		v4pro  = where{"deepseek-v4-pro", "b200", 1, "tp: 8, pp: 1, dp: 1"}
-		piped  = where{"qwen3.5-397b-a17b", "b200", 1, "tp: 4, pp: 2, dp: 1"}
+		dense     = where{"llama-3.1-70b-instruct", "h100", 1, "tp: 4, pp: 1, dp: 1"}
+		routed    = where{"qwen3-30b-a3b", "h200", 1, "tp: 1, pp: 1, dp: 8, enable_expert_parallel: true"}
+		spMoE     = where{"qwen3-30b-a3b", "h200", 1, "tp: 4, pp: 1, dp: 2, enable_expert_parallel: true"}
+		latent    = where{"deepseek-v3", "h200", 1, "tp: 8, pp: 1, dp: 1"}
+		dcp       = where{"deepseek-v3", "h200", 1, "tp: 8, pp: 1, dp: 1, dcp: 2"}
+		hybrid    = where{"nemotron-3.5-lightning-30b-a3b-bf16", "h100", 1, "tp: 2, pp: 1, dp: 1"}
+		v41       = where{"deepseek-v4.1-flash", "b200", 1, "tp: 4, pp: 1, dp: 1"}
+		v41ep     = where{"deepseek-v4.1-flash", "b200", 1, "tp: 1, pp: 1, dp: 4, enable_expert_parallel: true"}
+		muse      = where{"muse-spark-open-816b-a42b", "gb200-nvl72", 1, "tp: 4, pp: 1, dp: 1"}
+		ringed    = where{"gpt-oss-120b", "h200", 1, "tp: 4, pp: 1, dp: 1"}
+		hopperFP8 = where{"minimax-m2.5", "h200", 1, "tp: 4, pp: 1, dp: 1"}
+		v4pro     = where{"deepseek-v4-pro", "b200", 1, "tp: 8, pp: 1, dp: 1"}
+		piped     = where{"qwen3.5-397b-a17b", "b200", 1, "tp: 4, pp: 2, dp: 1"}
 	)
 	for _, c := range []struct {
 		field string
@@ -200,6 +201,9 @@ func TestEachResolvedPlanSettingMovesAPrice(t *testing.T) {
 		{"CacheFormat.Recurrent", hybrid, nil, func(l *plan.Lowered) { l.Plan.Cache.Recurrent = plan.RecurrentEveryPage }},
 		{"MoEPlan.Dispatch", routed, nil, func(l *plan.Lowered) {
 			l.Plan.MoE.Dispatch = plan.DispatchDeepEPLowLatency
+		}},
+		{"MoEPlan.Experts", hopperFP8, nil, func(l *plan.Lowered) {
+			l.Plan.MoE.Experts = plan.ExpertsTriton
 		}},
 		{"MoEPlan.Fused", muse, nil, func(l *plan.Lowered) { l.Plan.MoE.Fused = true }},
 		{"MoEPlan.RedundantExperts", routed, nil, func(l *plan.Lowered) { l.Plan.MoE.RedundantExperts = 16 }},

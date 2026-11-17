@@ -130,6 +130,20 @@ func perturbationScenarios(t *testing.T, d *load.Data, only ...string) []perturb
 					if _, err := New(f8In); err == nil {
 						out = append(out, perturbationCase{label + "/trtllm-fp8", f8In})
 					}
+					// The same scenario with each grouped-expert kernel the registry measures on
+					// Hopper stated (plan.MoEPlan.Experts), on a part and model where the plan
+					// reaches it: block-FP8 routed experts on SM90.
+					if (c == "h100" || c == "h200") && hasGroupedExperts(in) {
+						for _, v := range []plan.KernelImpl{plan.ExpertsTriton, plan.ExpertsFlashInferCutlass} {
+							ex := *in.Lowered
+							ex.Plan.MoE.Experts = v
+							exIn := in
+							exIn.Lowered = &ex
+							if _, err := New(exIn); err == nil {
+								out = append(out, perturbationCase{label + "/" + v.Library, exIn})
+							}
+						}
+					}
 					built = true
 					break
 				}
@@ -183,6 +197,18 @@ func (s perturbationSetting) edit(l *plan.Lowered) {
 		l.Plan.Cache.Record, l.Plan.Cache.ElementBytes, l.Plan.Cache.LatentCellBytes = "fp8_ds_mla", 1, 656
 	}
 	l.Plan.MoE.Dispatch = s.dispatch
+}
+
+// hasGroupedExperts reports whether the scenario's model routes tokens through grouped experts.
+func hasGroupedExperts(in Inputs) bool {
+	for _, lk := range in.Model.LayerKinds {
+		for _, n := range lk.Nodes {
+			if n.Op == model.OpGroupedGEMM && !n.IsSharedExpert() {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ctxPar renders the context-parallel widths of a layout, or nothing when both are off.

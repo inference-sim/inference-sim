@@ -33,6 +33,7 @@ var FormUnits = []FormUnit{
 	{`^fabric_bandwidth_efficiency$`, vocab.UnitDimensionless, "an efficiency, a fraction of the fabric's peak"},
 	{`^gemm_eps_max_`, vocab.UnitDimensionless, "an efficiency asymptote, a fraction of the peak"},
 	{`^gemm_(m|n|k)_half_`, vocab.UnitTokens, "the size at which half the asymptote is reached, in the dimension's elements"},
+	{`^gemm_floor_`, vocab.UnitMicrosecondsPerXfer, "the per-layer floor of a grouped-experts kernel, in microseconds"},
 	{`^hbm_derate$`, vocab.UnitDimensionless, "a fraction of the datasheet bandwidth"},
 	{`^host_admission_per_request$`, vocab.UnitMicrosecondsPerRequest, "microseconds per request"},
 	{`^host_admission_per_token(_|$)`, vocab.UnitMicrosecondsPerToken, "microseconds per prompt token"},

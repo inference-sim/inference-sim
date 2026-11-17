@@ -84,6 +84,13 @@ type MoEPlan struct {
 	Dispatch KernelImpl
 	// Fused is true when the dispatch, the expert GEMMs and the combine run as one fused kernel.
 	Fused bool
+	// Experts is the kernel the engine runs the routed experts' grouped GEMMs with, as its MoE
+	// backend selection resolves it (a stated backend, or the engine's own choice for the weight
+	// format, part and parallelism), named by its kernel library (ExpertsTriton,
+	// ExpertsFlashInferCutlass). The cost model prices the routed term on the ramp measured for
+	// that kernel where the registry carries one. The zero value is not stated, and the routed
+	// term is then priced by weight format alone.
+	Experts KernelImpl
 	// RedundantExperts is how many extra copies of experts the engine places beside the model's
 	// own to balance the load; 0 is none.
 	RedundantExperts int
@@ -95,6 +102,14 @@ var (
 	DispatchDeepEPHighThroughput = KernelImpl{Library: "deepep", Variant: "high_throughput"}
 	DispatchDeepEPLowLatency     = KernelImpl{Library: "deepep", Variant: "low_latency"}
 	DispatchDeepEPV2             = KernelImpl{Library: "deepep", Variant: "v2"}
+)
+
+// The grouped-expert kernels a cost model prices by name (MoEPlan.Experts): Triton's fused
+// experts, and FlashInfer's CUTLASS experts. Any other experts kernel is named by its library and
+// variant, and priced by its weight format.
+var (
+	ExpertsTriton            = KernelImpl{Library: "triton", Variant: "fused_experts"}
+	ExpertsFlashInferCutlass = KernelImpl{Library: "flashinfer", Variant: "cutlass_experts"}
 )
 
 // CollectivePlan says which collectives a layer runs, where the engine decides it.

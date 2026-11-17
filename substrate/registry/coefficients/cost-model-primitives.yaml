@@ -745,6 +745,108 @@ coefficients:
         - {kind: model, cite: "InferenceX OperatorX https://inferencex.semianalysis.com/api/v1/operatorx/compare?op=moe&workload=moe:MiniMax-M3 (rows sha256 82c64246b4135bbf66348411c6732e46d5e12be02979ec6b580100a375450eaf), run 36292796863, MarlinExperts NVFP4 (e2m1, e4m3 scale per 16), tp 1, MiniMax-M3 block hidden 6144 inter 3072 top-4 of 128 with one MXFP8 shared expert, 32 token counts", role: primary}
       rationale: >
         The token count at which the Marlin NVFP4 W4A16 grouped ramp reaches half its asymptote, fitted jointly with gemm_eps_max_w4a16_nvfp4_grouped. Reproduce with scripts/fit_marlin_nvfp4_grouped_ramp.py.
+  - gemm_eps_max_fp8_grouped_triton:
+      value: 0.33
+      units: dimensionless
+      method: measured
+      fitted: true
+      scope: {hardware: [h100]}
+      measures:
+        time: device
+        execution: captured
+        harness: "AISimulate collector/vllm/collect_moe.py at ai-dynamo/aisim 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18: the MoE module's forward, timed by CUDA events over CUDA-graph replays on the autotuned tactic (collector/helper.py benchmark_with_power)"
+      ci95: [0.315, 0.345]
+      fit_range:
+        - {dim: tokens, low: 1.0, high: 16384.0}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/moe/vllm/0.30.0/moe_perf.parquet, vllm_fp8moe_triton_tritonexperts, moe_dtype fp8_block, balanced, moe_tp 1-8 at moe_ep 1, 2106 rows over 20 expert geometries", role: primary}
+      rationale: >
+        Asymptotic fraction of the part's dense FP8 peak that vLLM's TritonExperts (triton) grouped GEMM on block-FP8 experts; vLLM v0.33.0 runs it by default on SM90 at expert-parallel width 1 (fused_moe/oracle/fp8.py:122-130@4ba787ec), and wherever moe_backend is triton. Fitted jointly (gemm_eps_max_fp8_grouped_triton, gemm_m_half_fp8_grouped_triton, gemm_floor_fp8_grouped_triton) under the kernel's routed-expert composition: the floor plus the rank's OWN routed FLOPs (tokens x top_k / ep x 6 x hidden x inter / tp) at the dense FP8 peak (1979 TFLOPS) times the ramp, summed with the distinct experts' stored bytes (1 + 4/16384 B/weight) at BwPeak x hbm_derate. Geometric error 1.250x (signed 0.937); the dense FP8 ramp the kernel priced these rows on before scores 1.346x (signed 1.038). The interval is a bootstrap of row resamples (see the writer's INTERVALS). Held out on the vllm/0.31.0 collection (108 rows, GLM-5.3-Flash's geometry) at 1.139x, signed 1.009. A change to the composition -- the floor's place, sum versus max, the ramp's argument, the tensor-parallel division -- needs a refit. Reproduce with scripts/fit_hopper_fp8_grouped_ramp.py.
+  - gemm_m_half_fp8_grouped_triton:
+      value: 1
+      units: tokens
+      method: measured
+      fitted: true
+      scope: {hardware: [h100]}
+      measures:
+        time: device
+        execution: captured
+        harness: "AISimulate collector/vllm/collect_moe.py at ai-dynamo/aisim 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18: the MoE module's forward, timed by CUDA events over CUDA-graph replays on the autotuned tactic (collector/helper.py benchmark_with_power)"
+      ci95: [1, 1]
+      fit_range:
+        - {dim: tokens, low: 1.0, high: 16384.0}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/moe/vllm/0.30.0/moe_perf.parquet, vllm_fp8moe_triton_tritonexperts, moe_dtype fp8_block, balanced, moe_tp 1-8 at moe_ep 1, 2106 rows over 20 expert geometries", role: primary}
+      rationale: >
+        The step token count at which the ramp reaches half its asymptote. It sits at the grid's lower edge: the rows identify no knee above one token, and the floor carries the low-token time. vLLM's TritonExperts (triton) grouped GEMM on block-FP8 experts; vLLM v0.33.0 runs it by default on SM90 at expert-parallel width 1 (fused_moe/oracle/fp8.py:122-130@4ba787ec), and wherever moe_backend is triton. Fitted jointly (gemm_eps_max_fp8_grouped_triton, gemm_m_half_fp8_grouped_triton, gemm_floor_fp8_grouped_triton) under the kernel's routed-expert composition: the floor plus the rank's OWN routed FLOPs (tokens x top_k / ep x 6 x hidden x inter / tp) at the dense FP8 peak (1979 TFLOPS) times the ramp, summed with the distinct experts' stored bytes (1 + 4/16384 B/weight) at BwPeak x hbm_derate. Geometric error 1.250x (signed 0.937); the dense FP8 ramp the kernel priced these rows on before scores 1.346x (signed 1.038). The interval is a bootstrap of row resamples (see the writer's INTERVALS). Held out on the vllm/0.31.0 collection (108 rows, GLM-5.3-Flash's geometry) at 1.139x, signed 1.009. A change to the composition -- the floor's place, sum versus max, the ramp's argument, the tensor-parallel division -- needs a refit. Reproduce with scripts/fit_hopper_fp8_grouped_ramp.py.
+  - gemm_floor_fp8_grouped_triton:
+      value: 29
+      units: us_per_transfer
+      method: measured
+      fitted: true
+      scope: {hardware: [h100]}
+      measures:
+        time: device
+        execution: captured
+        harness: "AISimulate collector/vllm/collect_moe.py at ai-dynamo/aisim 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18: the MoE module's forward, timed by CUDA events over CUDA-graph replays on the autotuned tactic (collector/helper.py benchmark_with_power)"
+      ci95: [27.5, 33.5]
+      fit_range:
+        - {dim: tokens, low: 1.0, high: 16384.0}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/moe/vllm/0.30.0/moe_perf.parquet, vllm_fp8moe_triton_tritonexperts, moe_dtype fp8_block, balanced, moe_tp 1-8 at moe_ep 1, 2106 rows over 20 expert geometries", role: primary}
+      rationale: >
+        The per-layer device time of the grouped experts however few tokens reach them, which the ramp's work term alone cannot carry. vLLM's TritonExperts (triton) grouped GEMM on block-FP8 experts; vLLM v0.33.0 runs it by default on SM90 at expert-parallel width 1 (fused_moe/oracle/fp8.py:122-130@4ba787ec), and wherever moe_backend is triton. Fitted jointly (gemm_eps_max_fp8_grouped_triton, gemm_m_half_fp8_grouped_triton, gemm_floor_fp8_grouped_triton) under the kernel's routed-expert composition: the floor plus the rank's OWN routed FLOPs (tokens x top_k / ep x 6 x hidden x inter / tp) at the dense FP8 peak (1979 TFLOPS) times the ramp, summed with the distinct experts' stored bytes (1 + 4/16384 B/weight) at BwPeak x hbm_derate. Geometric error 1.250x (signed 0.937); the dense FP8 ramp the kernel priced these rows on before scores 1.346x (signed 1.038). The interval is a bootstrap of row resamples (see the writer's INTERVALS). Held out on the vllm/0.31.0 collection (108 rows, GLM-5.3-Flash's geometry) at 1.139x, signed 1.009. A change to the composition -- the floor's place, sum versus max, the ramp's argument, the tensor-parallel division -- needs a refit. Reproduce with scripts/fit_hopper_fp8_grouped_ramp.py.
+  - gemm_eps_max_fp8_grouped_flashinfer_cutlass:
+      value: 0.36
+      units: dimensionless
+      method: measured
+      fitted: true
+      scope: {hardware: [h100]}
+      measures:
+        time: device
+        execution: captured
+        harness: "AISimulate collector/vllm/collect_moe.py at ai-dynamo/aisim 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18: the MoE module's forward, timed by CUDA events over CUDA-graph replays on the autotuned tactic (collector/helper.py benchmark_with_power)"
+      ci95: [0.335, 0.385]
+      fit_range:
+        - {dim: tokens, low: 1.0, high: 16384.0}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/moe/vllm/0.30.0/moe_perf.parquet, vllm_fp8moe_flashinfer_cutlass_flashinferexperts, moe_dtype fp8_block, balanced, moe_ep 2-16 at moe_tp 1, 1998 rows over 19 expert geometries", role: primary}
+      rationale: >
+        Asymptotic fraction of the part's dense FP8 peak that vLLM's FlashInferExperts (flashinfer_cutlass) grouped GEMM on block-FP8 experts; vLLM v0.33.0 runs it by default on SM90 above expert-parallel width 1 (fused_moe/oracle/fp8.py:122-130@4ba787ec), and wherever moe_backend is flashinfer_cutlass. Fitted jointly (gemm_eps_max_fp8_grouped_flashinfer_cutlass, gemm_m_half_fp8_grouped_flashinfer_cutlass, gemm_floor_fp8_grouped_flashinfer_cutlass) under the kernel's routed-expert composition: the floor plus the rank's OWN routed FLOPs (tokens x top_k / ep x 6 x hidden x inter / tp) at the dense FP8 peak (1979 TFLOPS) times the ramp, summed with the distinct experts' stored bytes (1 + 4/16384 B/weight) at BwPeak x hbm_derate. Geometric error 1.172x (signed 0.966); the dense FP8 ramp the kernel priced these rows on before scores 1.449x (signed 0.708). The interval is a bootstrap of row resamples (see the writer's INTERVALS). Held out on the vllm/0.31.0 collection (108 rows, GLM-5.3-Flash's geometry) at 1.098x, signed 1.033. A change to the composition -- the floor's place, sum versus max, the ramp's argument, the tensor-parallel division -- needs a refit. Reproduce with scripts/fit_hopper_fp8_grouped_ramp.py.
+  - gemm_m_half_fp8_grouped_flashinfer_cutlass:
+      value: 1
+      units: tokens
+      method: measured
+      fitted: true
+      scope: {hardware: [h100]}
+      measures:
+        time: device
+        execution: captured
+        harness: "AISimulate collector/vllm/collect_moe.py at ai-dynamo/aisim 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18: the MoE module's forward, timed by CUDA events over CUDA-graph replays on the autotuned tactic (collector/helper.py benchmark_with_power)"
+      ci95: [1, 4]
+      fit_range:
+        - {dim: tokens, low: 1.0, high: 16384.0}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/moe/vllm/0.30.0/moe_perf.parquet, vllm_fp8moe_flashinfer_cutlass_flashinferexperts, moe_dtype fp8_block, balanced, moe_ep 2-16 at moe_tp 1, 1998 rows over 19 expert geometries", role: primary}
+      rationale: >
+        The step token count at which the ramp reaches half its asymptote. It sits at the grid's lower edge: the rows identify no knee above one token, and the floor carries the low-token time. vLLM's FlashInferExperts (flashinfer_cutlass) grouped GEMM on block-FP8 experts; vLLM v0.33.0 runs it by default on SM90 above expert-parallel width 1 (fused_moe/oracle/fp8.py:122-130@4ba787ec), and wherever moe_backend is flashinfer_cutlass. Fitted jointly (gemm_eps_max_fp8_grouped_flashinfer_cutlass, gemm_m_half_fp8_grouped_flashinfer_cutlass, gemm_floor_fp8_grouped_flashinfer_cutlass) under the kernel's routed-expert composition: the floor plus the rank's OWN routed FLOPs (tokens x top_k / ep x 6 x hidden x inter / tp) at the dense FP8 peak (1979 TFLOPS) times the ramp, summed with the distinct experts' stored bytes (1 + 4/16384 B/weight) at BwPeak x hbm_derate. Geometric error 1.172x (signed 0.966); the dense FP8 ramp the kernel priced these rows on before scores 1.449x (signed 0.708). The interval is a bootstrap of row resamples (see the writer's INTERVALS). Held out on the vllm/0.31.0 collection (108 rows, GLM-5.3-Flash's geometry) at 1.098x, signed 1.033. A change to the composition -- the floor's place, sum versus max, the ramp's argument, the tensor-parallel division -- needs a refit. Reproduce with scripts/fit_hopper_fp8_grouped_ramp.py.
+  - gemm_floor_fp8_grouped_flashinfer_cutlass:
+      value: 33
+      units: us_per_transfer
+      method: measured
+      fitted: true
+      scope: {hardware: [h100]}
+      measures:
+        time: device
+        execution: captured
+        harness: "AISimulate collector/vllm/collect_moe.py at ai-dynamo/aisim 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18: the MoE module's forward, timed by CUDA events over CUDA-graph replays on the autotuned tactic (collector/helper.py benchmark_with_power)"
+      ci95: [31.5, 34.5]
+      fit_range:
+        - {dim: tokens, low: 1.0, high: 16384.0}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/moe/vllm/0.30.0/moe_perf.parquet, vllm_fp8moe_flashinfer_cutlass_flashinferexperts, moe_dtype fp8_block, balanced, moe_ep 2-16 at moe_tp 1, 1998 rows over 19 expert geometries", role: primary}
+      rationale: >
+        The per-layer device time of the grouped experts however few tokens reach them, which the ramp's work term alone cannot carry. vLLM's FlashInferExperts (flashinfer_cutlass) grouped GEMM on block-FP8 experts; vLLM v0.33.0 runs it by default on SM90 above expert-parallel width 1 (fused_moe/oracle/fp8.py:122-130@4ba787ec), and wherever moe_backend is flashinfer_cutlass. Fitted jointly (gemm_eps_max_fp8_grouped_flashinfer_cutlass, gemm_m_half_fp8_grouped_flashinfer_cutlass, gemm_floor_fp8_grouped_flashinfer_cutlass) under the kernel's routed-expert composition: the floor plus the rank's OWN routed FLOPs (tokens x top_k / ep x 6 x hidden x inter / tp) at the dense FP8 peak (1979 TFLOPS) times the ramp, summed with the distinct experts' stored bytes (1 + 4/16384 B/weight) at BwPeak x hbm_derate. Geometric error 1.172x (signed 0.966); the dense FP8 ramp the kernel priced these rows on before scores 1.449x (signed 0.708). The interval is a bootstrap of row resamples (see the writer's INTERVALS). Held out on the vllm/0.31.0 collection (108 rows, GLM-5.3-Flash's geometry) at 1.098x, signed 1.033. A change to the composition -- the floor's place, sum versus max, the ramp's argument, the tensor-parallel division -- needs a refit. Reproduce with scripts/fit_hopper_fp8_grouped_ramp.py.
   - moe_routing_imbalance_median:
       value: 0.97
       units: dimensionless
@@ -975,6 +1077,108 @@ coefficients:
         - {kind: model, cite: "InferenceX OperatorX https://inferencex.semianalysis.com/api/v1/operatorx/compare?op=moe&workload=moe:MiniMax-M3 (rows sha256 82c64246b4135bbf66348411c6732e46d5e12be02979ec6b580100a375450eaf), run 36292840239, MarlinExperts NVFP4 (e2m1, e4m3 scale per 16), tp 1, MiniMax-M3 block hidden 6144 inter 3072 top-4 of 128 with one MXFP8 shared expert, 32 token counts", role: primary}
       rationale: >
         The token count at which the Marlin NVFP4 W4A16 grouped ramp reaches half its asymptote, fitted jointly with gemm_eps_max_w4a16_nvfp4_grouped. Reproduce with scripts/fit_marlin_nvfp4_grouped_ramp.py.
+  - gemm_eps_max_fp8_grouped_triton:
+      value: 0.32
+      units: dimensionless
+      method: measured
+      fitted: true
+      scope: {hardware: [h200]}
+      measures:
+        time: device
+        execution: captured
+        harness: "AISimulate collector/vllm/collect_moe.py at ai-dynamo/aisim 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18: the MoE module's forward, timed by CUDA events over CUDA-graph replays on the autotuned tactic (collector/helper.py benchmark_with_power)"
+      ci95: [0.305, 0.335]
+      fit_range:
+        - {dim: tokens, low: 1.0, high: 16384.0}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/moe/vllm/0.30.0/moe_perf.parquet, vllm_fp8moe_triton_tritonexperts, moe_dtype fp8_block, balanced, moe_tp 1-8 at moe_ep 1, 2106 rows over 20 expert geometries", role: primary}
+      rationale: >
+        Asymptotic fraction of the part's dense FP8 peak that vLLM's TritonExperts (triton) grouped GEMM on block-FP8 experts; vLLM v0.33.0 runs it by default on SM90 at expert-parallel width 1 (fused_moe/oracle/fp8.py:122-130@4ba787ec), and wherever moe_backend is triton. Fitted jointly (gemm_eps_max_fp8_grouped_triton, gemm_m_half_fp8_grouped_triton, gemm_floor_fp8_grouped_triton) under the kernel's routed-expert composition: the floor plus the rank's OWN routed FLOPs (tokens x top_k / ep x 6 x hidden x inter / tp) at the dense FP8 peak (1979 TFLOPS) times the ramp, summed with the distinct experts' stored bytes (1 + 4/16384 B/weight) at BwPeak x hbm_derate. Geometric error 1.272x (signed 0.913); the dense FP8 ramp the kernel priced these rows on before scores 1.379x (signed 0.944). The interval is a bootstrap of row resamples (see the writer's INTERVALS). Held out on the vllm/0.31.0 collection (108 rows, GLM-5.3-Flash's geometry) at 1.149x, signed 0.975. A change to the composition -- the floor's place, sum versus max, the ramp's argument, the tensor-parallel division -- needs a refit. Reproduce with scripts/fit_hopper_fp8_grouped_ramp.py.
+  - gemm_m_half_fp8_grouped_triton:
+      value: 1
+      units: tokens
+      method: measured
+      fitted: true
+      scope: {hardware: [h200]}
+      measures:
+        time: device
+        execution: captured
+        harness: "AISimulate collector/vllm/collect_moe.py at ai-dynamo/aisim 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18: the MoE module's forward, timed by CUDA events over CUDA-graph replays on the autotuned tactic (collector/helper.py benchmark_with_power)"
+      ci95: [1, 1]
+      fit_range:
+        - {dim: tokens, low: 1.0, high: 16384.0}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/moe/vllm/0.30.0/moe_perf.parquet, vllm_fp8moe_triton_tritonexperts, moe_dtype fp8_block, balanced, moe_tp 1-8 at moe_ep 1, 2106 rows over 20 expert geometries", role: primary}
+      rationale: >
+        The step token count at which the ramp reaches half its asymptote. It sits at the grid's lower edge: the rows identify no knee above one token, and the floor carries the low-token time. vLLM's TritonExperts (triton) grouped GEMM on block-FP8 experts; vLLM v0.33.0 runs it by default on SM90 at expert-parallel width 1 (fused_moe/oracle/fp8.py:122-130@4ba787ec), and wherever moe_backend is triton. Fitted jointly (gemm_eps_max_fp8_grouped_triton, gemm_m_half_fp8_grouped_triton, gemm_floor_fp8_grouped_triton) under the kernel's routed-expert composition: the floor plus the rank's OWN routed FLOPs (tokens x top_k / ep x 6 x hidden x inter / tp) at the dense FP8 peak (1979 TFLOPS) times the ramp, summed with the distinct experts' stored bytes (1 + 4/16384 B/weight) at BwPeak x hbm_derate. Geometric error 1.272x (signed 0.913); the dense FP8 ramp the kernel priced these rows on before scores 1.379x (signed 0.944). The interval is a bootstrap of row resamples (see the writer's INTERVALS). Held out on the vllm/0.31.0 collection (108 rows, GLM-5.3-Flash's geometry) at 1.149x, signed 0.975. A change to the composition -- the floor's place, sum versus max, the ramp's argument, the tensor-parallel division -- needs a refit. Reproduce with scripts/fit_hopper_fp8_grouped_ramp.py.
+  - gemm_floor_fp8_grouped_triton:
+      value: 30
+      units: us_per_transfer
+      method: measured
+      fitted: true
+      scope: {hardware: [h200]}
+      measures:
+        time: device
+        execution: captured
+        harness: "AISimulate collector/vllm/collect_moe.py at ai-dynamo/aisim 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18: the MoE module's forward, timed by CUDA events over CUDA-graph replays on the autotuned tactic (collector/helper.py benchmark_with_power)"
+      ci95: [28.5, 33.5]
+      fit_range:
+        - {dim: tokens, low: 1.0, high: 16384.0}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/moe/vllm/0.30.0/moe_perf.parquet, vllm_fp8moe_triton_tritonexperts, moe_dtype fp8_block, balanced, moe_tp 1-8 at moe_ep 1, 2106 rows over 20 expert geometries", role: primary}
+      rationale: >
+        The per-layer device time of the grouped experts however few tokens reach them, which the ramp's work term alone cannot carry. vLLM's TritonExperts (triton) grouped GEMM on block-FP8 experts; vLLM v0.33.0 runs it by default on SM90 at expert-parallel width 1 (fused_moe/oracle/fp8.py:122-130@4ba787ec), and wherever moe_backend is triton. Fitted jointly (gemm_eps_max_fp8_grouped_triton, gemm_m_half_fp8_grouped_triton, gemm_floor_fp8_grouped_triton) under the kernel's routed-expert composition: the floor plus the rank's OWN routed FLOPs (tokens x top_k / ep x 6 x hidden x inter / tp) at the dense FP8 peak (1979 TFLOPS) times the ramp, summed with the distinct experts' stored bytes (1 + 4/16384 B/weight) at BwPeak x hbm_derate. Geometric error 1.272x (signed 0.913); the dense FP8 ramp the kernel priced these rows on before scores 1.379x (signed 0.944). The interval is a bootstrap of row resamples (see the writer's INTERVALS). Held out on the vllm/0.31.0 collection (108 rows, GLM-5.3-Flash's geometry) at 1.149x, signed 0.975. A change to the composition -- the floor's place, sum versus max, the ramp's argument, the tensor-parallel division -- needs a refit. Reproduce with scripts/fit_hopper_fp8_grouped_ramp.py.
+  - gemm_eps_max_fp8_grouped_flashinfer_cutlass:
+      value: 0.36
+      units: dimensionless
+      method: measured
+      fitted: true
+      scope: {hardware: [h200]}
+      measures:
+        time: device
+        execution: captured
+        harness: "AISimulate collector/vllm/collect_moe.py at ai-dynamo/aisim 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18: the MoE module's forward, timed by CUDA events over CUDA-graph replays on the autotuned tactic (collector/helper.py benchmark_with_power)"
+      ci95: [0.345, 0.385]
+      fit_range:
+        - {dim: tokens, low: 1.0, high: 16384.0}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/moe/vllm/0.30.0/moe_perf.parquet, vllm_fp8moe_flashinfer_cutlass_flashinferexperts, moe_dtype fp8_block, balanced, moe_ep 2-16 at moe_tp 1, 1998 rows over 19 expert geometries", role: primary}
+      rationale: >
+        Asymptotic fraction of the part's dense FP8 peak that vLLM's FlashInferExperts (flashinfer_cutlass) grouped GEMM on block-FP8 experts; vLLM v0.33.0 runs it by default on SM90 above expert-parallel width 1 (fused_moe/oracle/fp8.py:122-130@4ba787ec), and wherever moe_backend is flashinfer_cutlass. Fitted jointly (gemm_eps_max_fp8_grouped_flashinfer_cutlass, gemm_m_half_fp8_grouped_flashinfer_cutlass, gemm_floor_fp8_grouped_flashinfer_cutlass) under the kernel's routed-expert composition: the floor plus the rank's OWN routed FLOPs (tokens x top_k / ep x 6 x hidden x inter / tp) at the dense FP8 peak (1979 TFLOPS) times the ramp, summed with the distinct experts' stored bytes (1 + 4/16384 B/weight) at BwPeak x hbm_derate. Geometric error 1.179x (signed 0.962); the dense FP8 ramp the kernel priced these rows on before scores 1.621x (signed 0.622). The interval is a bootstrap of row resamples (see the writer's INTERVALS). Held out on the vllm/0.31.0 collection (108 rows, GLM-5.3-Flash's geometry) at 1.076x, signed 1.014. A change to the composition -- the floor's place, sum versus max, the ramp's argument, the tensor-parallel division -- needs a refit. Reproduce with scripts/fit_hopper_fp8_grouped_ramp.py.
+  - gemm_m_half_fp8_grouped_flashinfer_cutlass:
+      value: 2
+      units: tokens
+      method: measured
+      fitted: true
+      scope: {hardware: [h200]}
+      measures:
+        time: device
+        execution: captured
+        harness: "AISimulate collector/vllm/collect_moe.py at ai-dynamo/aisim 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18: the MoE module's forward, timed by CUDA events over CUDA-graph replays on the autotuned tactic (collector/helper.py benchmark_with_power)"
+      ci95: [1, 8]
+      fit_range:
+        - {dim: tokens, low: 1.0, high: 16384.0}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/moe/vllm/0.30.0/moe_perf.parquet, vllm_fp8moe_flashinfer_cutlass_flashinferexperts, moe_dtype fp8_block, balanced, moe_ep 2-16 at moe_tp 1, 1998 rows over 19 expert geometries", role: primary}
+      rationale: >
+        The step token count at which the ramp reaches half its asymptote. vLLM's FlashInferExperts (flashinfer_cutlass) grouped GEMM on block-FP8 experts; vLLM v0.33.0 runs it by default on SM90 above expert-parallel width 1 (fused_moe/oracle/fp8.py:122-130@4ba787ec), and wherever moe_backend is flashinfer_cutlass. Fitted jointly (gemm_eps_max_fp8_grouped_flashinfer_cutlass, gemm_m_half_fp8_grouped_flashinfer_cutlass, gemm_floor_fp8_grouped_flashinfer_cutlass) under the kernel's routed-expert composition: the floor plus the rank's OWN routed FLOPs (tokens x top_k / ep x 6 x hidden x inter / tp) at the dense FP8 peak (1979 TFLOPS) times the ramp, summed with the distinct experts' stored bytes (1 + 4/16384 B/weight) at BwPeak x hbm_derate. Geometric error 1.179x (signed 0.962); the dense FP8 ramp the kernel priced these rows on before scores 1.621x (signed 0.622). The interval is a bootstrap of row resamples (see the writer's INTERVALS). Held out on the vllm/0.31.0 collection (108 rows, GLM-5.3-Flash's geometry) at 1.076x, signed 1.014. A change to the composition -- the floor's place, sum versus max, the ramp's argument, the tensor-parallel division -- needs a refit. Reproduce with scripts/fit_hopper_fp8_grouped_ramp.py.
+  - gemm_floor_fp8_grouped_flashinfer_cutlass:
+      value: 37
+      units: us_per_transfer
+      method: measured
+      fitted: true
+      scope: {hardware: [h200]}
+      measures:
+        time: device
+        execution: captured
+        harness: "AISimulate collector/vllm/collect_moe.py at ai-dynamo/aisim 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18: the MoE module's forward, timed by CUDA events over CUDA-graph replays on the autotuned tactic (collector/helper.py benchmark_with_power)"
+      ci95: [34.5, 38.5]
+      fit_range:
+        - {dim: tokens, low: 1.0, high: 16384.0}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/moe/vllm/0.30.0/moe_perf.parquet, vllm_fp8moe_flashinfer_cutlass_flashinferexperts, moe_dtype fp8_block, balanced, moe_ep 2-16 at moe_tp 1, 1998 rows over 19 expert geometries", role: primary}
+      rationale: >
+        The per-layer device time of the grouped experts however few tokens reach them, which the ramp's work term alone cannot carry. vLLM's FlashInferExperts (flashinfer_cutlass) grouped GEMM on block-FP8 experts; vLLM v0.33.0 runs it by default on SM90 above expert-parallel width 1 (fused_moe/oracle/fp8.py:122-130@4ba787ec), and wherever moe_backend is flashinfer_cutlass. Fitted jointly (gemm_eps_max_fp8_grouped_flashinfer_cutlass, gemm_m_half_fp8_grouped_flashinfer_cutlass, gemm_floor_fp8_grouped_flashinfer_cutlass) under the kernel's routed-expert composition: the floor plus the rank's OWN routed FLOPs (tokens x top_k / ep x 6 x hidden x inter / tp) at the dense FP8 peak (1979 TFLOPS) times the ramp, summed with the distinct experts' stored bytes (1 + 4/16384 B/weight) at BwPeak x hbm_derate. Geometric error 1.179x (signed 0.962); the dense FP8 ramp the kernel priced these rows on before scores 1.621x (signed 0.622). The interval is a bootstrap of row resamples (see the writer's INTERVALS). Held out on the vllm/0.31.0 collection (108 rows, GLM-5.3-Flash's geometry) at 1.076x, signed 1.014. A change to the composition -- the floor's place, sum versus max, the ramp's argument, the tensor-parallel division -- needs a refit. Reproduce with scripts/fit_hopper_fp8_grouped_ramp.py.
   - moe_routing_imbalance_median:
       value: 0.974
       units: dimensionless
