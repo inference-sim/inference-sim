@@ -555,6 +555,12 @@ func lower(in Input, eng vllmsettings.Settings, g *model.Graph, sp *model.Specul
 		return nil, err
 	}
 	p.MoE.Fused = in.Rules.MegaMoEBackend(eng.MoEBackend)
+	if r, why := routingMode(g, &c, eng.MoEBackend); r != plan.RoutingNotStated || why != "" {
+		p.MoE.Routing = r
+		if why != "" {
+			note("moe_routing", string(r), why)
+		}
+	}
 
 	// The packed latent cell: the stated layout, or on a DSA model the one its backend
 	// allocates, which can differ from the stated dtype; a layout no backend serves is refused
