@@ -67,7 +67,7 @@ KERNELTESTS_PATHS = [r"^kerneltests/docs/"]
 # run-inpackage.sh copies the blis-substrate this module pins, the tests under _inpackage and the fixtures under testdata.
 INPACKAGE_PATHS = [r"^kerneltests/(testdata|scripts)/"]
 
-ORACLE_GO = ["./core/sched", "./core/metrics", "./core/engine", "./core/connector/...", "./cmd/provenance", "./core/kv", "./core/vllm"]
+ORACLE_GO = ["./core/sched", "./core/metrics", "./core/engine", "./core/connector/...", "./cmd/provenance", "./core/kv", "./core/vllm", "./core/lora"]
 ORACLE_PATHS = [
     r"^oracle/",
     r"^\.github/actions/oracle-(fuzz|env)/",
@@ -75,6 +75,7 @@ ORACLE_PATHS = [
     r"^\.github/shards/weights-inertness\.txt$",
     r"^docs/metrics-(manifest|buckets)\.json$",
     r"^core/kv/testdata/",
+    r"^core/lora/testdata/",
     r"^core/vllm/testdata/golden-render/",
     r"^compat/quantization/resolved\.json$",
     r"^core/lower/testdata/",

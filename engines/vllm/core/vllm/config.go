@@ -181,6 +181,8 @@ type settings struct {
 	sched     sched.Config
 	queueSize int
 	v2Runner  bool
+	// layout is what the offloading connector's layout gates read (offloadLayout).
+	layout offloadLayoutFacts
 	// connector is the pool's P/D connector, nil for none; pp is pipeline_parallel_size, which
 	// vLLM's NIXL worker checks it against.
 	connector *connectorConfig
@@ -197,6 +199,8 @@ type settings struct {
 	// request's block-hash chain (resolve_none_hash_seed, vllm/v1/core/kv_cache_utils.py:131-146
 	// @5df63a72). It changes the hashes a KV-event stream publishes, never which blocks hit.
 	hashSeed *string
+	// maxCPULoRAs is the capacity of the worker's adapter cache (max_cpu_loras, resolved); 0 when LoRA is off.
+	maxCPULoRAs int
 	// kvCapacity is the KV cache size the engine core logs at start-up (kv.KVCapacity), the
 	// pool's tokens at max_model_len.
 	kvCapacity kv.Capacity
@@ -289,7 +293,7 @@ func resolve(c Config) (settings, error) {
 	if err := refuseNotVisible(c); err != nil {
 		return s, err
 	}
-	if err := refuseUnmodelled(e, c.DataParallelSize > 1); err != nil {
+	if err := refuseUnmodelled(e); err != nil {
 		return s, err
 	}
 	if c.NumGPUBlocks < 2 {
@@ -454,12 +458,6 @@ func resolve(c Config) (settings, error) {
 			"speculative decoding: on V1 it is only supported with EAGLE, MTP, draft_model, ngram_gpu, DSpark or "+
 			"DFlash drafters (vllm/config/vllm.py:1651-1680@4ba787ec)", method)
 	}
-	if async && v2 && !asyncSpecMethod(method) {
-		// The V2 runner runs async scheduling with this drafter, stated or resolved, which is not
-		// diff-tested here: async with drafts is checked for MTP and DSpark only.
-		return s, fmt.Errorf("vllm: async scheduling with a %s drafter on the V2 model runner is not modelled (%s186)",
-			method, issueBase)
-	}
 	if err := engine.CheckConfig(pp, async, v2); err != nil {
 		return s, fmt.Errorf("vllm: %w", err)
 	}
@@ -467,7 +465,8 @@ func resolve(c Config) (settings, error) {
 	// Async scheduling with a drafter runs the AsyncScheduler's placeholder drafts
 	// (async_scheduler.py:25-58@5df63a72), diff-tested with MTP and DSpark against vLLM's own
 	// EngineCore through the batch queue (core/engine/testdata/golden/t3-async-mtp*.json,
-	// t3-async-dspark.json).
+	// t3-async-dspark.json, t3-async-ngram.json). The V2 runner takes any drafter with it, ngram
+	// included, stated or resolved on.
 	// max_concurrent_batches > 1 runs vLLM's batch queue: the adapter keeps step_with_batch_queue's
 	// loop state (an empty schedule occupies a slot, a full queue blocks on the oldest batch, and a
 	// blocked step schedules nothing until that batch completes; vllm/v1/engine/core.py:698-810@5df63a72).
@@ -523,8 +522,13 @@ func resolve(c Config) (settings, error) {
 		DecodeStagger:        pp,
 		UseV2ModelRunner:     v2,
 		KVGroups:             groups,
+		// An engine that is not DP-coordinated applies prefill_schedule_interval itself
+		// (vllm/v1/core/sched/scheduler.py:395-425@4ba787ec); a data-parallel group's engine core
+		// throttles instead (DPGroup, core.Wave), so its ranks' Schedulers keep the interval at 1.
+		LocalPrefillInterval: localPrefillInterval(e.PrefillScheduleInterval, c.DataParallelSize),
 	}
 	s.queueSize, s.v2Runner = queue, v2
+	s.layout = offloadLayoutFacts{agnostic: parallelismAgnostic(c.KVLayers, v2), plainGroup: len(c.KVLayers) == 0, pp: pp}
 	if v, ok := e.Env["PYTHONHASHSEED"]; ok {
 		s.hashSeed = &v
 	}
@@ -534,6 +538,11 @@ func resolve(c Config) (settings, error) {
 		o := *s.offload
 		o.env = e.Env
 		s.offload = &o
+	}
+	// max_cpu_loras: None resolves to max_loras (vllm/config/lora.py:120-121@4ba787ec); the worker's
+	// adapter cache (core/lora) has that capacity. Validate has refused a value below max_loras.
+	if maxLoRAs > 0 {
+		s.maxCPULoRAs = max(e.MaxCPULoRAs, maxLoRAs)
 	}
 	if c.Placement != nil {
 		if err := c.Placement.Validate(); err != nil {
@@ -725,7 +734,7 @@ func resolveAsync(stated *bool, method string, pp int, v2 bool) bool {
 // refuseUnmodelled refuses engine settings whose effect on scheduling this engine does not
 // model, each with the reason. Settings that only change step time (backends, graph modes,
 // quantization, memory utilization) are the cost model's and pass through untouched.
-func refuseUnmodelled(e engineconfig.Engine, dataParallel bool) error {
+func refuseUnmodelled(e engineconfig.Engine) error {
 	if keys := unreadEnv(e.Env); len(keys) > 0 {
 		// blis-schemas' Env rule: a consumer refuses, or discloses, every key it cannot honour,
 		// and never ignores one (spec/deployment/deployment.go Engine.Env).
@@ -745,17 +754,13 @@ func refuseUnmodelled(e engineconfig.Engine, dataParallel bool) error {
 		// (vllm/config/scheduler.py:203@4ba787ec); 0 is the block's unstated.
 		return fmt.Errorf("vllm: prefill_schedule_interval %d is below 1, which vLLM refuses "+
 			"(vllm/config/scheduler.py:203@4ba787ec)", e.PrefillScheduleInterval)
-	case e.PrefillScheduleInterval > 1 && !dataParallel:
-		// Without a data-parallel group the Scheduler applies the interval itself: it holds prefill
-		// until the interval has passed since the last prefill-carrying step, with a capacity escape
-		// (local_prefill_interval, vllm/v1/core/sched/scheduler.py:395-425, 770-790, 1612-1629
-		// @4ba787ec). That cadence is not ported, so stating it is refused rather than dropped.
-		return fmt.Errorf("vllm: prefill_schedule_interval %d without a data-parallel group is the scheduler's local "+
-			"prefill cadence, which is not modelled (%s172)", e.PrefillScheduleInterval, issueBase)
-	case e.MaxCPULoRAs != 0 && e.MaxCPULoRAs != max(e.MaxLoRAs, 1):
-		// LoRAConfig.max_cpu_loras: None, which becomes max_loras (vllm/config/lora.py:42, 120-121@5df63a72),
-		// and max_loras defaults to 1 (:35); a stated value equal to that is the default.
-		return fmt.Errorf("vllm: max_cpu_loras is not modelled (https://github.com/inference-sim/blis-vllm/issues/5)")
+	case e.MaxCPULoRAs > 0 && e.MaxCPULoRAs < max(e.MaxLoRAs, 1):
+		// LoRAConfig._validate_lora_config (vllm/config/lora.py:123-126@4ba787ec).
+		return fmt.Errorf("vllm: max_cpu_loras (%d) must be >= max_loras (%d)", e.MaxCPULoRAs, max(e.MaxLoRAs, 1))
+	case e.MaxCPULoRAs > 1 && e.MaxLoRAs == 0:
+		// LoRAConfig exists only when LoRA is on (max_loras stated); without it the cache the field
+		// sizes does not exist. A 1 is what an unset max_loras resolves to (core/lora, vllm/config/lora.py).
+		return fmt.Errorf("vllm: max_cpu_loras %d sizes the adapter cache of a LoRA engine; set max_loras", e.MaxCPULoRAs)
 	}
 	// mamba_cache_mode and mamba_ssm_cache_dtype are checked on their resolved values (checkMambaCache),
 	// and swa_bounded_replay after the model runner is resolved (resolve).
@@ -997,4 +1002,61 @@ func checkRulesWith(pack rules.EngineRules, e engineconfig.Engine, pp int) error
 	}
 	return fmt.Errorf("vllm: the engine block fails vLLM %s's rules: %s", pack.EngineVersion(),
 		strings.Join(lines, "; "))
+}
+
+// localPrefillInterval is the Scheduler's local_prefill_interval: the stated prefill_schedule_interval
+// when data_parallel_size is 1, otherwise 1 (vllm/v1/core/sched/scheduler.py:395-413@4ba787ec).
+func localPrefillInterval(interval, dataParallelSize int) int {
+	if dataParallelSize > 1 {
+		return 1
+	}
+	return max(interval, 1)
+}
+
+// parallelismAgnostic is the offloading connector's is_parallelism_agnostic, which the p2p and fs tiers
+// read to drop the parallel sizes from the layout they compare and name files by
+// (vllm/distributed/kv_transfer/kv_connector/v1/offloading/config.py:217-225@4ba787ec,
+// FileMapper.from_offloading_spec, vllm/v1/kv_offload/file_mapper.py:100-127). It holds for a model
+// of one non-MLA full-attention KV cache group, off the V2 model runner. A model that states no
+// kv_layers is one full-attention group. A compressed (MLA) group, an indexer group, a sliding
+// window, a state layer, a draft layer or several groups are not agnostic.
+//
+// Not read here, so a layout that fails them is taken as agnostic: that the KV heads are sharded
+// across the tensor-parallel ranks (num_kv_heads x tp == total KV heads), per-token-head KV scales,
+// and decode or prefill context parallelism. The engine states none of them.
+func parallelismAgnostic(runs []KVLayerRun, v2 bool) bool {
+	if v2 {
+		return false
+	}
+	for _, r := range runs {
+		if r.Spec != "full" || r.Draft {
+			return false
+		}
+	}
+	return true
+}
+
+// offloadLayoutFacts are what the offloading connector's two layout gates read of the pool:
+// agnostic is parallelismAgnostic over the stated kv_layers (which is true for a model that states
+// none, MLA or not), plainGroup that none are stated, and pp the pipeline_parallel_size.
+type offloadLayoutFacts struct {
+	agnostic, plainGroup bool
+	pp                   int
+}
+
+// offloadLayout is the pair of layout flags the p2p and fs tiers read: is_parallelism_agnostic and
+// replicated_layout (offloading/config.py:196-208 and :217-225@4ba787ec). An MLA model is never
+// parallelism-agnostic (MLAAttentionSpec is excluded); its latent is replicated across the
+// tensor-parallel ranks, which vLLM names replicated_layout when the pool is tensor-parallel only:
+// tp above 1, no pipeline parallelism, world size equal to tp. The run config of such a pool names
+// no parallel size, so MLA pools of different tensor parallelism handshake; a pool with pipeline
+// parallelism names them, so it does not. An MLA model that states kv_layers (DeepSeek V4's groups)
+// is taken as neither: whether its groups' replicas equal tp is not read here.
+// Not read: the mp executor and a single node (replicated_layout's last two terms), and
+// decode or prefill context parallelism.
+func offloadLayout(f offloadLayoutFacts, mla bool, world int) (agnostic, replicated bool) {
+	if !mla {
+		return f.agnostic, false
+	}
+	return false, f.plainGroup && f.pp <= 1 && world > 1
 }

@@ -66,6 +66,26 @@ type fileMapper struct {
 }
 
 func newFileMapper(root string, n Namespace) fileMapper {
+	f, rank := n.runConfig()
+	// _compute_base_path (:134-144): json.dumps(sort_keys=True, separators=(",", ":")).
+	sum := sha256.Sum256([]byte(f.encode()))
+	digest := hex.EncodeToString(sum[:])[:12]
+	return fileMapper{base: root + "/" + strings.ReplaceAll(n.ModelName, "/", "_") + "_" + digest, rank: rank}
+}
+
+// RunConfig is FileMapper.get_run_config for the namespace as the p2p tier builds it
+// (vllm/v1/kv_offload/tiering/p2p/manager.py:351-356@4ba787ec: from_offloading_spec with
+// parallel_agnostic=True), encoded as json.dumps(sort_keys=True, separators=(",", ":")). The tiers
+// compare it as the config fingerprint when two peers connect: when the layout is parallelism
+// agnostic (is_parallelism_agnostic or replicated_layout) the parallel sizes and the rank are not
+// in it, so peers of different tensor parallelism agree.
+func (n Namespace) RunConfig() string {
+	f, _ := n.runConfig()
+	return f.encode()
+}
+
+// runConfig is the run config's fields and the rank the files are named by.
+func (n Namespace) runConfig() (pyObject, int) {
 	// from_offloading_spec: parallel_agnostic = True and (is_parallelism_agnostic or
 	// replicated_layout); replicated_layout = True and replicated_layout (:110-114).
 	agnostic := n.ParallelAgnostic || n.Replicated
@@ -91,10 +111,7 @@ func newFileMapper(root string, n Namespace) fileMapper {
 	if n.Replicated {
 		f = append(f, pyField{"replicated_layout", "true"})
 	}
-	// _compute_base_path (:134-144): json.dumps(sort_keys=True, separators=(",", ":")).
-	sum := sha256.Sum256([]byte(f.encode()))
-	digest := hex.EncodeToString(sum[:])[:12]
-	return fileMapper{base: root + "/" + strings.ReplaceAll(n.ModelName, "/", "_") + "_" + digest, rank: rank}
+	return f, rank
 }
 
 // name is get_file_name (:118-126).

@@ -1,0 +1,94 @@
+{
+ "name": "t3-async-ngram",
+ "description": "Async scheduling with an ngram drafter (K=2) on the V2 model runner: the AsyncScheduler's placeholder drafts through the batch queue of pp+1 = 2 batches; v0.33.0 runs this combination (v1_async_sched_incompat applies to V1 only, vllm/config/vllm.py:1651-1719@4ba787ec).",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 64,
+  "block_size": 4,
+  "num_blocks": 80,
+  "max_model_len": 128,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "async_scheduling": true,
+  "use_v2_model_runner": true,
+  "speculative": {
+   "method": "ngram",
+   "num_speculative_tokens": 2
+  }
+ },
+ "requests": [
+  {
+   "id": "a",
+   "arrival_step": 0,
+   "prompt": [
+    26096,
+    18902,
+    27033,
+    2740,
+    15993,
+    25076,
+    8672,
+    1306,
+    114,
+    4870,
+    21819,
+    19317
+   ],
+   "output": [
+    15509,
+    24994,
+    24179,
+    12327,
+    10565,
+    25335,
+    817,
+    9035,
+    16118
+   ],
+   "accepted": [
+    0,
+    2,
+    1,
+    2,
+    2,
+    2,
+    0,
+    0,
+    2
+   ]
+  },
+  {
+   "id": "b",
+   "arrival_step": 1,
+   "prompt": [
+    10711,
+    5043,
+    13037,
+    21429,
+    1682,
+    2473,
+    27011,
+    17659,
+    3184
+   ],
+   "output": [
+    12082,
+    19196,
+    2000,
+    29909,
+    16727,
+    7135,
+    1328
+   ],
+   "accepted": [
+    0,
+    1,
+    1,
+    0,
+    0,
+    0,
+    2
+   ]
+  }
+ ]
+}

@@ -42,6 +42,7 @@ import (
 
 	core "github.com/inference-sim/blis-vllm/core/engine"
 	"github.com/inference-sim/blis-vllm/core/kv"
+	"github.com/inference-sim/blis-vllm/core/lora"
 	"github.com/inference-sim/blis-vllm/core/metrics"
 	"github.com/inference-sim/blis-vllm/core/placement"
 	"github.com/inference-sim/blis-vllm/core/sched"
@@ -112,6 +113,12 @@ type Engine struct {
 	series *serverSeries
 	// adapters numbers LoRA adapters in order of first use (lora_int_id).
 	adapters map[string]int
+	// adapterCache is the worker's LoRA adapter cache (max_cpu_loras, core/lora), nil when LoRA is
+	// off. Each batch that runs makes its adapters resident in it before the step, as the model
+	// runner does (set_active_loras), and adapterEvents holds what that did for the batch most
+	// recently scheduled (AdapterEvents).
+	adapterCache  *lora.Cache
+	adapterEvents []lora.Event
 	// maxLoRAs is max_loras, 0 when LoRA is off; specTokens is num_speculative_tokens.
 	maxLoRAs, specTokens int
 	// async is async scheduling: a decode's drafts are the AsyncScheduler's placeholders, which
@@ -205,6 +212,11 @@ func newEngine(st settings, pricer Pricer) (*Engine, error) {
 		metrics:  metrics.New(histogramBounds(st.sched.MaxModelLen)),
 		maxLoRAs: st.sched.MaxLoRAs, specTokens: st.sched.Spec.NumTokens, async: st.sched.Async,
 		pp: max(st.sched.DecodeStagger, 1), hashSeed: st.hashSeed, servesRender: st.servesRender, kvCapacity: st.kvCapacity,
+	}
+	if st.maxCPULoRAs > 0 {
+		if e.adapterCache, err = lora.New(st.sched.MaxLoRAs, st.maxCPULoRAs); err != nil {
+			return nil, fmt.Errorf("vllm: %w", err)
+		}
 	}
 	if st.sched.Spec.NumTokens > 0 {
 		// A pool that speculates registers the spec_decode counters (SpecDecodingProm); one that
@@ -583,6 +595,25 @@ func (e *Engine) admit(cb core.Batch, now engine.Time) (engine.Batch, error) {
 	return b, nil
 }
 
+// batchAdapters is the LoRA adapters of cb's requests, in the batch's order, each request's once
+// for the base model's zero left out.
+func (e *Engine) batchAdapters(cb core.Batch) []int {
+	var out []int
+	for _, id := range cb.Out.Order {
+		if a := e.s.Request(id).LoRA; a > 0 {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// AdapterEvents is what the worker's adapter cache did to run the batch most recently scheduled:
+// each adapter it loaded from storage because the CPU cache (max_cpu_loras) did not hold it, the
+// one it evicted for it, and the GPU slots it filled and freed, in vLLM's order. A host reads it
+// right after Schedule returns, and a cost model prices the loads. It is nil for a batch with no
+// adapter work and on an engine without LoRA.
+func (e *Engine) AdapterEvents() []lora.Event { return e.adapterEvents }
+
 // takeEmptyFinished reports the requests schedules that ran nothing have finished since the last
 // batch returned: their finish records, which go in that batch's Finished, and their entries.
 func (e *Engine) takeEmptyFinished() []engine.Finished {
@@ -630,6 +661,18 @@ func (e *Engine) batchOf(cb core.Batch) (engine.Batch, error) {
 	}
 	if err := e.noteVerified(cb.ID, b); err != nil {
 		return engine.Batch{}, err
+	}
+	e.adapterEvents = nil
+	if e.adapterCache != nil && core.Executed(cb) {
+		// The model runner makes the batch's adapters resident before it runs a forward pass
+		// (set_active_loras, vllm/v1/worker/lora_model_runner_mixin.py:93-111@4ba787ec); a schedule
+		// of no tokens runs none. The scheduler admitted at most max_loras adapters (core/sched),
+		// so the cache cannot refuse the batch.
+		ev, err := e.adapterCache.SetActive(e.batchAdapters(cb))
+		if err != nil {
+			return engine.Batch{}, fmt.Errorf("vllm: %w", err)
+		}
+		e.adapterEvents = ev
 	}
 	// skip_drafts (vllm/v1/core/sched/output.py:334@4ba787ec): the drafter proposes nothing after
 	// this step. On one engine the scheduler's flag is the step's; a DPGroup ANDs its ranks'.
