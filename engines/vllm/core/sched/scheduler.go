@@ -649,6 +649,12 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 			}
 		}
 		if !ok {
+			if s.cfg.Policy == Priority && r.Status == Preempted {
+				// The lowest-priority running request preempted itself; the requests after it
+				// have higher priority and may still fit. It left s.running, so reqIndex already
+				// points at the next one (:979-993@4ba787ec, vLLM #61976).
+				continue
+			}
 			break
 		}
 		scheduledRunning = append(scheduledRunning, r)
