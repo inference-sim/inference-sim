@@ -1,17 +1,15 @@
-# Seconds a top-level test of ./kernel/ takes on a hosted 4-core runner (ci.yml runs 43345112088
-# and 43347477767). They only balance the legs of the "cost model tests" matrix: a test not listed
-# weighs 1, and a stale figure makes a leg slower, never makes a test run twice or not at all (see
-# shard.go).
-TestEveryCoefficientFamilyChangesSomePriceOrIsListed 142
-TestChangingALabelChangesNoPriceOrIsListed 36
-TestANamedEagle3DrafterWithUnstatedPassesIsRefused 12
-TestTheMixedPrecisionTargetPricesWithEitherEagle3HeadAndItsOwnQuantization 8
-TestANamedDrafterPricesInPlaceOfTheTargetsOwnSpeculator 7
-TestTRTLLMGenLaneIsChosenByTheReportedImplementation 6
-TestTheCommittedTRTLLMGenLaneIsNotPricedWithoutAKernelHash 6
-TestANamedDrafterStillRefusedWhereNoOneAnswerRemains 6
+# Seconds a top-level test of ./kernel/ takes. They only balance the legs of the "cost model tests" matrix: a test
+# not listed weighs 1, and a stale figure makes a leg slower, never makes a test run twice or not at all (see
+# shard.go). Measured on 2026-11-17 by `go test -json ./kernel/` (3 CPUs) except the first line: the figure for
+# TestEveryCoefficientFamilyChangesSomePriceOrIsListed is its time on a hosted 4-core runner after it priced its
+# scenarios on every CPU (leg 0 of workflow_dispatch run 44117199784 took 450 s with it and ten small tests).
+TestEveryCoefficientFamilyChangesSomePriceOrIsListed 380
+TestChangingALabelChangesNoPriceOrIsListed 35
+TestANamedEagle3DrafterWithUnstatedPassesIsRefused 6
 TestGuardedPropertiesKillTheirMutants 5
-TestTheServedLayoutIsProvedAgainstTheGraph 5
-TestAnEagle3FirstPassIsChargedOverTheScheduledTokens 5
-TestTheMixedPrecisionGraphPricesNVFP4ExpertsUnderFP8Linears 4
-TestANamedEagle3DrafterWithStatedPassesIsAccepted 4
+TestTheMixedPrecisionTargetPricesWithEitherEagle3HeadAndItsOwnQuantization 5
+TestShortConvStateIsPerSequenceAndReplicated 5
+TestANamedDrafterPricesInPlaceOfTheTargetsOwnSpeculator 4
+TestTRTLLMGenLaneIsChosenByTheReportedImplementation 3
+TestTheCommittedTRTLLMGenLaneIsNotPricedWithoutAKernelHash 3
+TestResidentWeightsIncludeTheTowerUnlessTheEngineDropsIt 3
