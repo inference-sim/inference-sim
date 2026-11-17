@@ -411,7 +411,7 @@ func (k *Kernel) liftStepTerms(c *resolve.Coefficients, g *model.Graph) error {
 	// A graph that prices a vision tower runs it on the BF16 ramp (encoder.go).
 	if g.PricesEncoder() {
 		bf16 := price.Format{DType: model.DTypeBF16}
-		if err := k.addFit(c, bf16, false); err != nil {
+		if err := k.addFit(c, bf16, false, false); err != nil {
 			return fmt.Errorf("a vision tower is priced on the BF16 ramp: %w", err)
 		}
 		k.encoderFit = k.fit(bf16, false)
