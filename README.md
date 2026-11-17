@@ -107,7 +107,8 @@ scenario that states `engine_version` is refused with a message naming that form
 blis-vllm's translated vLLM v0.33.0 engine (the latency kernel's 0.31.0 tuning prices it, and the
 run says so on stderr). A scenario naming another release is refused; for vLLM 0.29.0 and 0.31.0
 the refusal names v0.15.0, the last inference-sim release that runs them. Priority
-scheduling (`scheduling_policy: priority`, SLO priority overrides) is refused for now. The engine block must
+scheduling (`scheduling_policy: priority`, with SLO priority overrides) runs: the driver sends each request's
+SLO-class priority to the engine. The engine block must
 state `max_model_len` as an explicit number (unstated or `auto` is refused), plus `max_num_seqs`
 and `max_num_batched_tokens`.
 

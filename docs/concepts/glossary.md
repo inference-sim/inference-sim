@@ -130,7 +130,7 @@ A YAML configuration file (`--policy-config`) that specifies priority, schedulin
 
 ### Preemption
 
-KV cache eviction under memory pressure. When the batch formation algorithm cannot allocate blocks for a continuing request, it evicts requests from the batch, frees their blocks, and re-enqueues them at the front of the wait queue. Under the pool's `engine.scheduling_policy: fcfs` (the default), BLIS evicts from the batch tail. `scheduling_policy: priority` is refused on 0.33.0 for now. See [Core Engine: Batch Formation](core-engine.md#the-engine-interface).
+KV cache eviction under memory pressure. When the batch formation algorithm cannot allocate blocks for a continuing request, it evicts requests from the batch, frees their blocks, and re-enqueues them at the front of the wait queue. Under the pool's `engine.scheduling_policy: fcfs` (the default), BLIS evicts from the batch tail. `scheduling_policy: priority` evicts the least-urgent request. See [Core Engine: Batch Formation](core-engine.md#the-engine-interface).
 
 ### Prefill Phase
 

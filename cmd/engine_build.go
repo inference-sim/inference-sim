@@ -101,7 +101,15 @@ func runEngineKnobs(shape kernelmodel.Shape, f build.EngineKnobFlags) (int64, st
 }
 
 // enginePolicyFor is a pool's scheduling_policy in the engine's terms (build.EnginePolicyOf).
+//
+// vLLM accepts fcfs and priority; BLIS's former host schedulers sjf and reverse-priority have no
+// vLLM counterpart, so a scenario stating either is refused by name, citing the open issue (X28).
 func enginePolicyFor(m *kernelmodel.Model) (build.EnginePolicy, error) {
+	if eng, err := m.Engine(); err == nil && (eng.SchedulingPolicy == "sjf" || eng.SchedulingPolicy == "reverse-priority") {
+		return build.EnginePolicy{}, fmt.Errorf("scenario %q states engine.scheduling_policy %q, which has no vLLM "+
+			"counterpart (vLLM accepts fcfs and priority); BLIS simulates vLLM's policies only "+
+			"(https://github.com/inference-sim/inference-sim/issues/2158)", kernelScenario, eng.SchedulingPolicy)
+	}
 	return build.EnginePolicyOf(kernelScenario, m)
 }
 
@@ -1383,4 +1391,13 @@ func tierRate(k kernel.Kernel, tier string, dir kernel.Direction) float64 {
 		}
 	}
 	return 0
+}
+
+// sloPriorityOf is the engine priority of an SLO class, the host's class map (critical 4, standard
+// 3, batch -1, sheddable -2, background -3; an unknown or empty class is standard) with the run's
+// --policy-config priority.slo_priorities overrides applied, inverted into vLLM's convention,
+// where a lower value is more urgent (SLOPriorityMap.InvertForVLLM). The overrides are
+// range-checked where the policy bundle is read (resolvePolicies).
+func sloPriorityOf(overrides map[string]int) func(string) int {
+	return cengine.NewSLOPriorityMap(overrides).InvertForVLLM
 }

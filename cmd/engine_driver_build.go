@@ -41,22 +41,12 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 			"behind vLLM's internal balancer, which does not drive parallel.data_parallel_load_balancing external yet "+
 			"(one endpoint per rank, the router picking the rank)", kernelScenario, version)
 	}
-	// The host does not carry request priority across the engine contract yet: the driver sends
-	// every engine.Request at priority 0 (sim.EngineDriver, the SLO class only as a tag the engine
-	// does not read), so a priority policy would order by arrival alone and silently run as FCFS.
-	// Refuse the scenario's stated policy (vLLM's priority, BLIS's priority-fcfs: enginePolicyOf)
-	// and any SLO priority override, naming the setting, rather than run either as FCFS.
-	refusePriority := func(setting string) {
-		logrus.Fatalf("scenario %q: engine %s runs through the engine contract, and the host does not "+
-			"carry request priority across it yet (every request reaches the engine at priority 0), so %s",
-			kernelScenario, version, setting)
-	}
-	if scenarioScheduler == "priority-fcfs" {
-		refusePriority("engine.scheduling_policy priority would run as FCFS")
-	}
-	if len(sloPriorityOverrides) > 0 {
-		refusePriority("the --policy-config priority.slo_priorities override would be ignored")
-	}
+	// Request priority crosses the contract as engine.Request.Priority (sim.EngineDriver): the SLO
+	// class's priority in vLLM's convention, with the run's priority.slo_priorities overrides. The
+	// engine's own scheduling policy decides whether it orders by it: the scenario's
+	// engine.scheduling_policy, fcfs or priority, is the only source (#2037), and sjf and
+	// reverse-priority are refused where the scenario's policy is read (enginePolicyOf).
+	priorityOf := sloPriorityOf(sloPriorityOverrides)
 	registerContractEngines()
 	scenarioPath := filepath.Join(kernelScenarioDir, kernelScenario)
 	// The run opens its catalog and registry once (runData) and every engine of the run reads
@@ -106,7 +96,7 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 			}
 			s.EnableServerSeries(iv)
 		}
-		cfg := sim.EngineDriverConfig{Horizon: horizon, Acceptance: acceptance, StreamInterval: streamInterval,
+		cfg := sim.EngineDriverConfig{PriorityOf: priorityOf, Horizon: horizon, Acceptance: acceptance, StreamInterval: streamInterval,
 			Environment: kernelPDOpened.environmentOf(ic, kernelOpened)}
 		hostOverheads(&cfg, m)
 		return sim.NewEngineDriver(eng, cfg), nil

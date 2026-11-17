@@ -23,6 +23,13 @@ import (
 
 // EngineDriverConfig is the host side of an engine-driven instance.
 type EngineDriverConfig struct {
+	// PriorityOf is the engine priority of an SLO class, in vLLM's convention (lower is more
+	// urgent): the host's SLO class map inverted for vLLM, with the run's
+	// priority.slo_priorities overrides applied. The driver sends it as engine.Request.Priority,
+	// which an engine under a priority scheduling policy orders its queue and picks its
+	// preemption victim by; under fcfs it is ignored, as in vLLM. Nil sends every request at
+	// priority 0. The map lives in the build site (cmd), the only place that reaches blis-vllm.
+	PriorityOf func(sloClass string) int
 	// Environment is the cost model the driver asks what each transfer the engine starts
 	// demands of the fabric (design 6.2, 6.3): for every engine.Transfer in a batch's
 	// TransfersStarted the driver calls env.DemandFor(Environment, engine.Plan(), t), so an
@@ -510,6 +517,9 @@ func (d *EngineDriver) engineRequest(req *Request) engine.Request {
 		MaxOutputTokens: req.MaxOutputLen,
 		ArrivalTime:     req.ArrivalTime,
 		Adapter:         req.Adapter,
+	}
+	if d.cfg.PriorityOf != nil {
+		er.Priority = d.cfg.PriorityOf(req.SLOClass)
 	}
 	if req.SLOClass != "" {
 		// The request's SLO class, an opaque fact for an engine whose priority policy reads it.
