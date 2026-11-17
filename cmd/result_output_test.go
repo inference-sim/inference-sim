@@ -204,10 +204,19 @@ func TestResult_TPOTIsPerTokenAndTheStepIntervalIsPerStep(t *testing.T) {
 	if want := r.Metrics["tpot_mean_ms"].Value; n == 0 || math.Abs(sum/float64(n)-want) > 1e-6*want {
 		t.Errorf("tpot_mean_ms %v, want the mean %v of the %d rows' tpot_us", want, sum/float64(max(n, 1)), n)
 	}
-	step := metric(t, stdout, "step_interval_p90_ms")
-	// Non-vacuity: with drafts accepted, a step emits more than one token, so the two differ.
-	if tpot := r.Metrics["tpot_p90_ms"].Value; step <= tpot {
-		t.Errorf("under speculation the step interval %v must exceed the per-token TPOT %v", step, tpot)
+	// Non-vacuity: with drafts accepted, a step emits more than one token, so the median request's
+	// TPOT is below the median step interval. The comparison is at the median, not in the tail. A
+	// request with two output tokens has one decode step, which accepts no draft, so its TPOT is
+	// that step's interval. The step samples the request's last token, so vLLM v0.33.0 proposes no
+	// drafts after it (Scheduler._drafts_unused, vllm/v1/core/sched/scheduler.py:502-544@4ba787ec).
+	// DSpark then stores its context K/V with eager launches and replays no graph
+	// (vllm/v1/worker/gpu/spec_decode/dflash/speculator.py:546-553@4ba787ec), where a drafting step
+	// stores it inside its captured graph (:190-206, replayed at :617-619). The eager launches cost
+	// more than the skipped query pass, so that step can take longer than a drafting one, and such
+	// requests can put the TPOT tail above the step-interval tail.
+	step := metric(t, stdout, "step_interval_p50_ms")
+	if tpot := r.Metrics["tpot_p50_ms"].Value; step <= tpot {
+		t.Errorf("under speculation the median step interval %v must exceed the median per-token TPOT %v", step, tpot)
 	}
 }
 
