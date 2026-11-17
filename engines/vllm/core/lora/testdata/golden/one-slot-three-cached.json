@@ -10,8 +10,8 @@
   "max_loras": 1
  },
  "provenance": {
-  "blis_vllm_commit": "0e64151389b7c4fd4dde33fb1369191d1860a174+dirty",
-  "lockfile_sha256": "unrecorded",
+  "blis_vllm_commit": "bd415390b67587eee267cd3cc38ebc7ee80cc854",
+  "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
   "mock_version": "gpu-mock/7+f4274aa648c4",
   "mocks": [
    "vllm.v1.outputs.ModelRunnerOutput",
@@ -48,11 +48,11 @@
   "oracle_inputs": {
    "oracle/mocks.json": "afd576782c5322ce4c6aa4cdb72fb513e3e78cd8ea54dd6043af0cdf5680a658",
    "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
-   "oracle/run_lora_cache.py": "edbeb58174a2a9ca17c57726a72299662a6b1214cdc838dbd306d6ae1ed9b055",
+   "oracle/run_lora_cache.py": "10b36fcb918bf72dd9832a46cdaeb4c2b7f13c1466071db07f2c625fdb16b889",
    "oracle/run_scheduler.py": "3d7c19e49cf40785a73bb8947df9288b26464ae93bfc59f64bb36da40c1a8c33",
    "oracle/scenarios/lora-cache/one-slot-three-cached.json": "60ec69f7865a14ffd0fe227b59872c262ea1d08fc92b88c1253ead86161417ea"
   },
-  "platform": "darwin-arm64",
+  "platform": "linux-x86_64",
   "python": "3.12.16",
   "requirements_lock_sha256": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
   "scenario_sha256": "60ec69f7865a14ffd0fe227b59872c262ea1d08fc92b88c1253ead86161417ea",
