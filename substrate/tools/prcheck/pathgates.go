@@ -205,6 +205,13 @@ type gateRunRecord struct {
 func foldGateRuns(recs []gateRunRecord) map[string]GateRun {
 	newest := map[string]gateRunRecord{}
 	for _, r := range recs {
+		// A skipped run is a job that did not run: the run an edit of the pull request's title or
+		// body starts skips every gate job (their workflows' `if`). It says nothing about the head,
+		// so it neither counts as the newest attempt nor hides the attempt that did run. A gate
+		// whose only runs were skipped has no run, which CheckGates refuses.
+		if r.Status == "completed" && r.Conclusion == "skipped" {
+			continue
+		}
 		if old, ok := newest[r.Name]; !ok || r.ID > old.ID {
 			newest[r.Name] = r
 		}

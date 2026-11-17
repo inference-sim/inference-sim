@@ -28,13 +28,15 @@ permissions:
 env:
   GOTOOLCHAIN: local
 
+# An edit of the title or body (not the base) has its own group and runs no job, as in ci.yml.
 concurrency:
-  group: ci-light-${{ github.ref }}
+  group: ci-light-${{ github.ref }}${{ github.event.action == 'edited' && !github.event.changes.base && '-edit' || '' }}
   cancel-in-progress: true
 
 jobs:
   light-go:
-    name: light - format, vet, build and changed packages
+    name: "light - format, vet, build and changed packages${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -68,7 +70,8 @@ jobs:
           go test -count=1 -timeout 30m $pkgs
 
   light-lint:
-    name: light - golangci-lint
+    name: "light - golangci-lint${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -90,7 +93,8 @@ jobs:
           "$RUNNER_TEMP/bin/golangci-lint" run --new-from-rev="$rev" ./...
 
   light-generated:
-    name: light - generated files and data validate
+    name: "light - generated files and data validate${{ github.event.action == 'edited' && !github.event.changes.base && ' (edit)' || '' }}"
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
