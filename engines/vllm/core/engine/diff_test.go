@@ -434,7 +434,7 @@ func TestEngineCoreAgainstVLLM(t *testing.T) {
 				t.Fatalf("max_concurrent_batches: vLLM %d, blis-vllm %d", want.Provenance.Engine.MaxConcurrentBatches, q)
 			}
 			if d := earliestDivergence(want, got); d != "" {
-				t.Fatalf("earliest divergence from vLLM v0.32.0: %s", d)
+				t.Fatalf("earliest divergence from vLLM v0.33.0: %s", d)
 			}
 		})
 	}
@@ -463,7 +463,7 @@ func TestEngineCoreFuzzCorpusAgainstVLLM(t *testing.T) {
 		if d := earliestDivergence(want, run(t, sc)); d != "" {
 			mismatches++
 			if mismatches <= 20 {
-				t.Errorf("%s: earliest divergence from vLLM v0.32.0: %s", name, d)
+				t.Errorf("%s: earliest divergence from vLLM v0.33.0: %s", name, d)
 			}
 		}
 	}
@@ -485,7 +485,7 @@ func TestScenarioFromEnv(t *testing.T) {
 	var want trace
 	readJSON(t, tp, &want)
 	if d := earliestDivergence(want, run(t, sc)); d != "" {
-		t.Fatalf("earliest divergence from vLLM v0.32.0: %s", d)
+		t.Fatalf("earliest divergence from vLLM v0.33.0: %s", d)
 	}
 }
 

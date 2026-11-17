@@ -88,7 +88,7 @@ func TestDPGroupAgainstVLLM(t *testing.T) {
 		readFile(t, filepath.Join("..", "engine", "testdata", golden, name+".json"), &want)
 		t.Run(name, func(t *testing.T) {
 			if d := dpGroupDivergence(t, sc, want); d != "" {
-				t.Errorf("earliest divergence from vLLM v0.32.0: %s", d)
+				t.Errorf("earliest divergence from vLLM v0.33.0: %s", d)
 			}
 		})
 		ran++

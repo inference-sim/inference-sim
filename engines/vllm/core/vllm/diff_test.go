@@ -124,7 +124,7 @@ func TestAdapterAgainstVLLM(t *testing.T) {
 					want.Provenance, Version, mockVersion)
 			}
 			if d := adapterDivergence(t, sc, want); d != "" {
-				t.Errorf("earliest divergence from vLLM v0.32.0: %s", d)
+				t.Errorf("earliest divergence from vLLM v0.33.0: %s", d)
 			}
 		})
 	}

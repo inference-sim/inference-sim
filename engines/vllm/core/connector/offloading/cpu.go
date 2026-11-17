@@ -435,14 +435,18 @@ type lruPolicy struct {
 	chunks    map[Key]*chunk
 	ranks     map[Key]rank
 	evictable map[Key]bool
-	next      int
+	// born is the order chunks entered the cache in (Python's dict order of LRUCachePolicy.chunks),
+	// which a trace's listing of equal ranks follows; the eviction order breaks ties by key bytes.
+	born     map[Key]int
+	nextBorn int
+	next     int
 	// generation is _cache_generation, which clear advances so no request keeps a rank taken
 	// before the reset.
 	generation int
 }
 
 func newLRU() *lruPolicy {
-	return &lruPolicy{chunks: map[Key]*chunk{}, ranks: map[Key]rank{}, evictable: map[Key]bool{}}
+	return &lruPolicy{chunks: map[Key]*chunk{}, ranks: map[Key]rank{}, evictable: map[Key]bool{}, born: map[Key]int{}}
 }
 
 // get is get (lru.py:104-105).
@@ -453,11 +457,12 @@ func (p *lruPolicy) remove(k Key) {
 	delete(p.chunks, k)
 	delete(p.ranks, k)
 	delete(p.evictable, k)
+	delete(p.born, k)
 }
 
 // clear is clear (lru.py:165-172): it also advances the cache generation.
 func (p *lruPolicy) clear() {
-	p.chunks, p.ranks, p.evictable, p.next = map[Key]*chunk{}, map[Key]rank{}, map[Key]bool{}, 0
+	p.chunks, p.ranks, p.evictable, p.born, p.next = map[Key]*chunk{}, map[Key]rank{}, map[Key]bool{}, map[Key]int{}, 0
 	p.generation++
 }
 
@@ -526,6 +531,8 @@ func (p *lruPolicy) onRequestFinished(groups [][]Key, positions map[Key]int) {
 // rank at minus its position; any other the next rank.
 func (p *lruPolicy) insert(k Key, c *chunk, a *reqAccess) {
 	p.chunks[k] = c
+	p.nextBorn++
+	p.born[k] = p.nextBorn
 	if pos, ok := a.positionOf(k); ok {
 		p.ranks[k] = rank{p.requestRank(a), -pos}
 	} else {
@@ -586,6 +593,7 @@ func (p *lruPolicy) evict(n int, protected map[Key]bool) []eviction {
 		delete(p.evictable, k)
 		delete(p.chunks, k)
 		delete(p.ranks, k)
+		delete(p.born, k)
 	}
 	return out
 }
@@ -599,6 +607,14 @@ func (p *lruPolicy) inRankOrder() []Key {
 	for k := range p.chunks {
 		out = append(out, k)
 	}
-	sort.Slice(out, func(i, j int) bool { return p.before(out[i], out[j]) })
+	// run_offloading.py lists chunks sorted by rank alone, so equal ranks follow the order the
+	// chunks entered the cache in (a dict keeps insertion order), not the heap's key order.
+	sort.Slice(out, func(i, j int) bool {
+		ri, rj := p.ranks[out[i]], p.ranks[out[j]]
+		if ri != rj {
+			return ri.less(rj)
+		}
+		return p.born[out[i]] < p.born[out[j]]
+	})
 	return out
 }

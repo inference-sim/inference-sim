@@ -819,7 +819,7 @@ func TestOffloadingAgainstVLLM(t *testing.T) {
 			readJSON(t, filepath.Join("testdata", "golden", name+".json"), &want)
 			checkProvenance(t, path, want)
 			if d := earliestDivergence(want, run(t, sc)); d != "" {
-				t.Fatalf("earliest divergence from vLLM v0.32.0: %s", d)
+				t.Fatalf("earliest divergence from vLLM v0.33.0: %s", d)
 			}
 		})
 	}
@@ -848,7 +848,7 @@ func TestOffloadingFuzzCorpusAgainstVLLM(t *testing.T) {
 		if d := earliestDivergence(want, run(t, sc)); d != "" {
 			mismatches++
 			if mismatches <= 20 {
-				t.Errorf("%s: earliest divergence from vLLM v0.32.0: %s", name, d)
+				t.Errorf("%s: earliest divergence from vLLM v0.33.0: %s", name, d)
 			}
 		}
 	}

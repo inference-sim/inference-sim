@@ -629,7 +629,7 @@ func TestDifferentialAgainstVLLM(t *testing.T) {
 				return
 			}
 			if d := earliestDivergence(want, run(t, sc)); d != "" {
-				t.Fatalf("earliest divergence from vLLM v0.32.0: %s", d)
+				t.Fatalf("earliest divergence from vLLM v0.33.0: %s", d)
 			}
 		})
 	}
@@ -736,7 +736,7 @@ func TestFuzzCorpusAgainstVLLM(t *testing.T) {
 		checkProvenance(t, filepath.Join(dir, name+".json"), want)
 		if d := earliestDivergence(want, run(t, sc)); d != "" {
 			mismatches++
-			t.Errorf("%s: earliest divergence from vLLM v0.32.0: %s", name, d)
+			t.Errorf("%s: earliest divergence from vLLM v0.33.0: %s", name, d)
 		}
 	}
 	t.Logf("fuzz corpus: %d scenarios, %d mismatches", len(traces), mismatches)
@@ -756,7 +756,7 @@ func TestScenarioFromEnv(t *testing.T) {
 	readJSON(t, tp, &want)
 	checkProvenance(t, sp, want)
 	if d := earliestDivergence(want, run(t, sc)); d != "" {
-		t.Fatalf("earliest divergence from vLLM v0.32.0: %s", d)
+		t.Fatalf("earliest divergence from vLLM v0.33.0: %s", d)
 	}
 }
 

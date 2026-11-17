@@ -265,7 +265,7 @@ func TestDPAgainstVLLM(t *testing.T) {
 			readJSON(t, filepath.Join("testdata", "golden-dp", name+".json"), &want)
 			checkDPProvenance(t, path, want)
 			if d := dpDivergence(want, runDP(t, sc)); d != "" {
-				t.Fatalf("earliest divergence from vLLM v0.32.0: %s", d)
+				t.Fatalf("earliest divergence from vLLM v0.33.0: %s", d)
 			}
 		})
 	}
@@ -293,7 +293,7 @@ func TestDPFuzzCorpusAgainstVLLM(t *testing.T) {
 		if d := dpDivergence(want, runDP(t, sc)); d != "" {
 			mismatches++
 			if mismatches <= 20 {
-				t.Errorf("%s: earliest divergence from vLLM v0.32.0: %s", name, d)
+				t.Errorf("%s: earliest divergence from vLLM v0.33.0: %s", name, d)
 			}
 		}
 	}
@@ -326,7 +326,7 @@ func TestDPAsyncAgainstVLLM(t *testing.T) {
 			readJSON(t, filepath.Join("testdata", "golden-dp-async", name+".json"), &want)
 			checkDPProvenance(t, path, want)
 			if d := dpDivergence(want, runDP(t, sc)); d != "" {
-				t.Fatalf("earliest divergence from vLLM v0.32.0: %s", d)
+				t.Fatalf("earliest divergence from vLLM v0.33.0: %s", d)
 			}
 		})
 	}

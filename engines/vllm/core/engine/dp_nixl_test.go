@@ -573,7 +573,7 @@ func TestDPNixlAgainstVLLM(t *testing.T) {
 			p.Provenance.ScenarioSHA256, p.Provenance.MockVersion = want.Provenance.ScenarioSHA256, want.Provenance.MockVersion
 			checkDPProvenance(t, path, p)
 			if d := dpnDivergence(want, runDPNixl(t, sc)); d != "" {
-				t.Fatalf("earliest divergence from vLLM v0.32.0: %s", d)
+				t.Fatalf("earliest divergence from vLLM v0.33.0: %s", d)
 			}
 		})
 	}

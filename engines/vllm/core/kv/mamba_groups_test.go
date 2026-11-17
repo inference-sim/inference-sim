@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// The numbers below are worked by hand from vLLM v0.32.0's source: a layer of 2 KV heads of 8
+// The numbers below are worked by hand from vLLM v0.33.0's source: a layer of 2 KV heads of 8
 // elements at 2 bytes, 16-token blocks, has the page 2 x 16 x 2 x 8 x 2 = 1024 bytes
 // (AttentionSpec.page_size_bytes, vllm/v1/kv_cache_interface.py:587-604@4ba787ec), and a Mamba
 // state of 600 bytes is padded to that page at start-up (vllm/platforms/interface.py:1130-1138).

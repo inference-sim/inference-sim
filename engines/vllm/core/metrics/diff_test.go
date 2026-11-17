@@ -401,7 +401,7 @@ func TestMetricsAgainstVLLM(t *testing.T) {
 				}
 			}).Series()
 			if first != "" {
-				t.Errorf("earliest divergence from vLLM v0.32.0: %s", first)
+				t.Errorf("earliest divergence from vLLM v0.33.0: %s", first)
 			}
 			if steps != want.Steps {
 				t.Errorf("blis-vllm ran %d steps, vLLM %d", steps, want.Steps)
@@ -483,7 +483,7 @@ func TestMetricsFuzzCorpusAgainstVLLM(t *testing.T) {
 		}
 		if first != "" {
 			mismatches++
-			t.Errorf("%s: earliest divergence from vLLM v0.32.0: %s", name, first)
+			t.Errorf("%s: earliest divergence from vLLM v0.33.0: %s", name, first)
 		}
 	}
 	t.Logf("metrics fuzz corpus: %d scenarios, %d samples compared, %d mismatches", len(goldens), compared, mismatches)
