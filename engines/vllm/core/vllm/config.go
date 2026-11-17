@@ -450,12 +450,6 @@ func resolve(c Config) (settings, error) {
 			"speculative decoding: on V1 it is only supported with EAGLE, MTP, draft_model, ngram_gpu, DSpark or "+
 			"DFlash drafters (vllm/config/vllm.py:1651-1680@4ba787ec)", method)
 	}
-	if async && v2 && !asyncSpecMethod(method) {
-		// The V2 runner runs async scheduling with this drafter, stated or resolved, which is not
-		// diff-tested here: async with drafts is checked for MTP and DSpark only.
-		return s, fmt.Errorf("vllm: async scheduling with a %s drafter on the V2 model runner is not modelled (%s186)",
-			method, issueBase)
-	}
 	if err := engine.CheckConfig(pp, async, v2); err != nil {
 		return s, fmt.Errorf("vllm: %w", err)
 	}
@@ -463,7 +457,8 @@ func resolve(c Config) (settings, error) {
 	// Async scheduling with a drafter runs the AsyncScheduler's placeholder drafts
 	// (async_scheduler.py:25-58@5df63a72), diff-tested with MTP and DSpark against vLLM's own
 	// EngineCore through the batch queue (core/engine/testdata/golden/t3-async-mtp*.json,
-	// t3-async-dspark.json).
+	// t3-async-dspark.json, t3-async-ngram.json). The V2 runner takes any drafter with it, ngram
+	// included, stated or resolved on.
 	// max_concurrent_batches > 1 runs vLLM's batch queue: the adapter keeps step_with_batch_queue's
 	// loop state (an empty schedule occupies a slot, a full queue blocks on the oldest batch, and a
 	// blocked step schedules nothing until that batch completes; vllm/v1/engine/core.py:698-810@5df63a72).

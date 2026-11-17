@@ -42,8 +42,8 @@ func TestPrefillScheduleIntervalWithoutDataParallelismIsTheUnportedLocalCadence(
 // vLLM v0.33.0 checks a drafter against async scheduling only on the V1 model runner
 // (vllm/config/vllm.py:1651-1719@4ba787ec). On V1, a stated async_scheduling with ngram is refused
 // with vLLM's reason and an unstated one runs synchronously; on V2, where vLLM runs ngram with async
-// scheduling (resolved on when unstated), that combination is refused as not modelled, citing its
-// issue, and stating async_scheduling: false runs.
+// scheduling (resolved on when unstated), that combination builds, with async scheduling on unless
+// the block turns it off (TestBatchQueueAgainstVLLM replays t3-async-ngram through the engine's batch queue).
 func TestAsyncSchedulingWithNgramFollowsTheModelRunner(t *testing.T) {
 	const ngram = "speculative_config: {method: ngram, num_speculative_tokens: 3}\n"
 	for _, c := range []struct {
@@ -52,8 +52,8 @@ func TestAsyncSchedulingWithNgramFollowsTheModelRunner(t *testing.T) {
 	}{
 		{"V1 stated", "use_v2_model_runner: false\nasync_scheduling: true\n" + ngram, []string{"not supported by the V1 model runner", "ngram"}},
 		{"V1 unstated", "use_v2_model_runner: false\n" + ngram, nil},
-		{"V2 stated", "use_v2_model_runner: true\nasync_scheduling: true\n" + ngram, []string{"V2 model runner is not modelled", "issues/186"}},
-		{"V2 unstated", "use_v2_model_runner: true\n" + ngram, []string{"V2 model runner is not modelled", "issues/186"}},
+		{"V2 stated", "use_v2_model_runner: true\nasync_scheduling: true\n" + ngram, nil},
+		{"V2 unstated", "use_v2_model_runner: true\n" + ngram, nil},
 		{"V2 stated off", "use_v2_model_runner: true\nasync_scheduling: false\n" + ngram, nil},
 	} {
 		t.Run(c.name, func(t *testing.T) {
