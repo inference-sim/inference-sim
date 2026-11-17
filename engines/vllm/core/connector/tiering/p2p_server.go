@@ -22,14 +22,14 @@ type supply struct{ job, local int }
 
 // outRound is _OutboundRequestState (server.py:69-153): one fetch round of a peer's request.
 type outRound struct {
-	demandReceived bool
-	available      omap[Key, supply]
-	demanded       omap[Key, int]
-	remaining      int
-	finishing      bool
-	inflight       int
-	cancelled      bool
-	pendingJobs    intSet
+	lookupSupplied, demandReceived bool
+	available                      omap[Key, supply]
+	demanded                       omap[Key, int]
+	remaining                      int
+	finishing                      bool
+	inflight                       int
+	cancelled                      bool
+	pendingJobs                    intSet
 }
 
 func newOutRound() *outRound { return &outRound{pendingJobs: intSet{}} }
@@ -79,10 +79,31 @@ type inflightXfer struct {
 	key    int
 }
 
+// activeLookup is _ActiveLookup (server.py:171-200). pending is a set of keys, iterated in
+// insertion order where vLLM's follows PYTHONHASHSEED; no sequence parks two keys.
+type activeLookup struct {
+	id       int
+	kvID     string
+	ctx      *ReqContext
+	round    int
+	keys     []Key
+	resolved map[Key]bool
+	pending  omap[Key, struct{}]
+}
+
+// pendingLookup is _PendingLookup (server.py:203-213).
+type pendingLookup struct {
+	keys       []Key
+	enqueuedAt float64
+	round      int
+}
+
 // serverReq is _ServerRequestState (server.py:216-241).
 type serverReq struct {
-	outbound     omap[int, *outRound]
-	inflightTids intSet
+	outbound       omap[int, *outRound]
+	pendingLookups []pendingLookup
+	lookups        omap[int, *activeLookup]
+	inflightTids   intSet
 }
 
 type abortKey struct {
@@ -98,9 +119,12 @@ type p2pServer struct {
 	now  func() float64
 
 	requests            omap[string, *serverReq]
+	servePending        strSet
 	inflight            omap[int, *inflightXfer]
 	storeJobs           omap[int, float64]
 	pendingStoreResults []storeResult
+	finishedLookupCtxs  []*ReqContext
+	lookupIDCounter     int
 	pendingAborts       omap[abortKey, float64]
 	// peerFault is PollResult.peer_fault once reported; "" is None.
 	peerFault string
@@ -118,7 +142,7 @@ func (s *p2pServer) getOrCreate(id string) *serverReq {
 // maybePrune is _maybe_prune (server.py:304-315).
 func (s *p2pServer) maybePrune(id string) {
 	st, ok := s.requests.get(id)
-	if !ok || st.outbound.len() > 0 || len(st.inflightTids) > 0 {
+	if !ok || st.outbound.len() > 0 || len(st.inflightTids) > 0 || st.lookups.len() > 0 || len(st.pendingLookups) > 0 {
 		return
 	}
 	for _, k := range s.pendingAborts.keys() {
@@ -130,7 +154,7 @@ func (s *p2pServer) maybePrune(id string) {
 }
 
 // addStoredBlocks is add_stored_blocks (server.py:321-349).
-func (s *p2pServer) addStoredBlocks(id string, keys []Key, blockIDs []int, job, round int) {
+func (s *p2pServer) addStoredBlocks(id string, keys []Key, blockIDs []int, job, round int, fromLookup bool) {
 	s.storeJobs.set(job, s.now())
 	st := s.getOrCreate(id)
 	rnd, ok := st.outbound.get(round)
@@ -142,6 +166,9 @@ func (s *p2pServer) addStoredBlocks(id string, keys []Key, blockIDs []int, job, 
 		s.storeJobs.pop(job)
 		s.pendingStoreResults = append(s.pendingStoreResults, storeResult{job, false})
 		return
+	}
+	if fromLookup {
+		rnd.lookupSupplied = true
 	}
 	m := rnd.addStored(keys, blockIDs, job)
 	if len(m.local) > 0 && rnd.demandReceived {
@@ -166,9 +193,16 @@ func (s *p2pServer) onFetch(id string, keys []Key, indexes []int, round int) err
 	m := req.addDemand(keys, indexes)
 	if len(keys) == 0 {
 		// The terminal empty fetch closes the id: every round is drained without a TransferDone.
+		s.finishInboundLookups(id)
 		for _, k := range st.outbound.keys() {
 			s.finalizeOutbound(id, k, nil, false)
 		}
+		return nil
+	}
+	if req.lookupSupplied && req.demanded.len() > 0 {
+		// A symmetric round's supply precedes its fetch, so unmatched demand fails now (:392-408).
+		f := false
+		s.finalizeOutbound(id, round, &f, true)
 		return nil
 	}
 	if len(m.local) > 0 {
@@ -187,8 +221,145 @@ func (s *p2pServer) onAbortFetch(id string, round int) {
 	s.drainAbort(id, round)
 }
 
+// onLookup is on_lookup (server.py:441-470): the LookupMsg waits for the next serve.
+func (s *p2pServer) onLookup(id string, keys []Key, round int) {
+	st := s.getOrCreate(id)
+	st.pendingLookups = append(st.pendingLookups, pendingLookup{keys: append([]Key(nil), keys...), enqueuedAt: s.now(), round: round})
+	s.servePending.set(id, struct{}{})
+}
+
+// serveExternal is serve_external_requests (server.py:472-501).
+func (s *p2pServer) serveExternal(p Parent) {
+	for _, id := range s.servePending.keys() {
+		st, ok := s.requests.get(id)
+		if !ok {
+			s.servePending.pop(id)
+			continue
+		}
+		if len(st.pendingLookups) > 0 {
+			pending := st.pendingLookups
+			st.pendingLookups = nil
+			for _, pl := range pending {
+				s.processInboundLookup(id, pl, p)
+			}
+		}
+		s.resolvePendingLookups(id, p)
+		st, ok = s.requests.get(id)
+		if !ok || (len(st.pendingLookups) == 0 && st.lookups.len() == 0) {
+			s.servePending.pop(id)
+			s.maybePrune(id)
+		}
+	}
+	if len(s.finishedLookupCtxs) > 0 {
+		for _, c := range s.finishedLookupCtxs {
+			p.OnRequestFinished(c)
+		}
+		s.finishedLookupCtxs = nil
+	}
+}
+
+// pollLookupKeys is _poll_lookup_keys (server.py:503-538): each unresolved key is looked up
+// through the parent, and the new hits are pinned in one store job.
+func (s *p2pServer) pollLookupKeys(lu *activeLookup, keys []Key, p Parent) {
+	var hits []Key
+	for _, k := range keys {
+		if _, ok := lu.resolved[k]; ok {
+			continue
+		}
+		switch p.Lookup(k, lu.ctx) {
+		case Hit:
+			hits = append(hits, k)
+			lu.resolved[k] = true
+			lu.pending.pop(k)
+		case Miss:
+			lu.resolved[k] = false
+			lu.pending.pop(k)
+		default:
+			lu.pending.set(k, struct{}{})
+		}
+	}
+	if len(hits) > 0 {
+		// _pin_and_register_hits (server.py:601-626).
+		j := p.CreateStoreJob(hits, lu.ctx)
+		s.addStoredBlocks(lu.kvID, j.Keys, j.ChunkIDs, j.ID, lu.round, true)
+	}
+}
+
+// processInboundLookup is _process_inbound_lookup (server.py:540-599). Its synthetic request is
+// "p2p:<peer>:<kv_request_id>:lu<n>".
+func (s *p2pServer) processInboundLookup(id string, pl pendingLookup, p Parent) {
+	s.lookupIDCounter++
+	n := s.lookupIDCounter
+	lu := &activeLookup{id: n, kvID: id, ctx: NewReqContext(fmt.Sprintf("p2p:%s:%s:lu%d", s.peer, id, n)),
+		round: pl.round, keys: pl.keys, resolved: map[Key]bool{}}
+	p.OnNewRequest(lu.ctx)
+	// dict.fromkeys: each key once, in wire order.
+	seen := map[Key]bool{}
+	var uniq []Key
+	for _, k := range lu.keys {
+		if !seen[k] {
+			seen[k] = true
+			uniq = append(uniq, k)
+		}
+	}
+	s.pollLookupKeys(lu, uniq, p)
+	if lu.pending.len() > 0 {
+		s.getOrCreate(id).lookups.set(n, lu)
+	} else {
+		s.finalizeLookup(lu, p)
+	}
+}
+
+// resolvePendingLookups is _resolve_pending_lookups (server.py:628-660).
+func (s *p2pServer) resolvePendingLookups(id string, p Parent) {
+	st, ok := s.requests.get(id)
+	if !ok || st.lookups.len() == 0 {
+		return
+	}
+	var done []int
+	for _, n := range st.lookups.keys() {
+		lu, _ := st.lookups.get(n)
+		s.pollLookupKeys(lu, lu.pending.keys(), p)
+		if lu.pending.len() == 0 {
+			done = append(done, n)
+		}
+	}
+	for _, n := range done {
+		lu, _ := st.lookups.pop(n)
+		s.finalizeLookup(lu, p)
+	}
+}
+
+// finalizeLookup is _finalize_lookup (server.py:662-690).
+func (s *p2pServer) finalizeLookup(lu *activeLookup, p Parent) {
+	if len(lu.keys) > 0 {
+		hits := make([]bool, len(lu.keys))
+		for i, k := range lu.keys {
+			hits[i] = lu.resolved[k]
+		}
+		s.send(P2PMsg{Type: p2pLookupResp, KVRequestID: lu.kvID, Keys: append([]Key(nil), lu.keys...), Hits: hits})
+	}
+	p.OnRequestFinished(lu.ctx)
+}
+
+// finishInboundLookups is _finish_inbound_lookups (server.py:692-721).
+func (s *p2pServer) finishInboundLookups(id string) {
+	st, ok := s.requests.get(id)
+	if !ok {
+		return
+	}
+	st.pendingLookups = nil
+	for _, lu := range st.lookups.values() {
+		s.finishedLookupCtxs = append(s.finishedLookupCtxs, lu.ctx)
+	}
+	st.lookups.clear()
+	s.servePending.pop(id)
+	s.maybePrune(id)
+}
+
 // finish is finish (server.py:723-755).
 func (s *p2pServer) finish(id string) {
+	s.finishInboundLookups(id)
 	st, ok := s.requests.get(id)
 	if !ok {
 		return
@@ -274,8 +445,9 @@ func (s *p2pServer) drainPendingAborts() {
 	}
 }
 
-// close is close (server.py:863-891): the store jobs to fail.
-func (s *p2pServer) close() (failedStores []int) {
+// close is close (server.py:863-891): the store jobs to fail and the synthetic lookup requests
+// still owed an on_request_finished.
+func (s *p2pServer) close() (failedStores []int, failedServes []*ReqContext) {
 	failedStores = s.storeJobs.keys()
 	s.storeJobs.clear()
 	if s.inflight.len() > 0 {
@@ -283,9 +455,17 @@ func (s *p2pServer) close() (failedStores []int) {
 	}
 	s.inflight.clear()
 	s.pendingStoreResults = nil
+	for _, st := range s.requests.values() {
+		for _, lu := range st.lookups.values() {
+			failedServes = append(failedServes, lu.ctx)
+		}
+	}
+	failedServes = append(failedServes, s.finishedLookupCtxs...)
 	s.requests.clear()
+	s.servePending.clear()
 	s.pendingAborts.clear()
-	return failedStores
+	s.finishedLookupCtxs = nil
+	return failedStores, failedServes
 }
 
 func (s *p2pServer) hasInflight() bool { return s.inflight.len() > 0 }

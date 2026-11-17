@@ -4,6 +4,17 @@
 
 package tiering
 
+import "fmt"
+
+// probe is a symmetric lookup's outcome for one key: pending (None), hit (True) or miss (False).
+type probe int
+
+const (
+	probePending probe = iota
+	probeHit
+	probeMiss
+)
+
 // inboundLoad is _InboundLoadState (client.py:38-48).
 type inboundLoad struct {
 	jobID       int
@@ -14,8 +25,12 @@ type inboundLoad struct {
 
 // clientReq is _ClientRequestState (client.py:51-85).
 type clientReq struct {
-	roundSeq int
-	loads    omap[int, *inboundLoad]
+	probes         omap[Key, probe]
+	unsent         []Key
+	roundSeq       int
+	probed         bool
+	peerLookupOpen bool
+	loads          omap[int, *inboundLoad]
 }
 
 // loadResult is LoadResult (client.py:88-93).
@@ -25,14 +40,16 @@ type loadResult struct {
 	ok    bool
 }
 
-// p2pClient is ClientRole (client.py:111-548): the loads this instance fetches from one peer.
+// p2pClient is ClientRole (client.py:111-548): the loads this instance fetches from one peer, and
+// its symmetric probes.
 type p2pClient struct {
 	peer string
 	send func(P2PMsg)
 	now  func() float64
 
 	requests omap[string, *clientReq]
-	// activeLoads is a set of ids (client.py:136), iterated in insertion order.
+	// flushPending and activeLoads are sets of ids (client.py:131-136), iterated in insertion order.
+	flushPending   strSet
 	activeLoads    strSet
 	completedLoads []loadResult
 }
@@ -48,7 +65,7 @@ func (c *p2pClient) getOrCreate(id string) *clientReq {
 
 // maybePrune is _maybe_prune (client.py:154-163).
 func (c *p2pClient) maybePrune(id string) {
-	if st, ok := c.requests.get(id); ok && st.loads.len() == 0 {
+	if st, ok := c.requests.get(id); ok && st.loads.len() == 0 && st.probes.len() == 0 && len(st.unsent) == 0 {
 		c.requests.pop(id)
 	}
 }
@@ -71,8 +88,21 @@ func (c *p2pClient) requestBlocks(jobID int, id string, keys []Key, blockIDs []i
 	st.roundSeq++
 	st.loads.set(round, &inboundLoad{jobID: jobID, submittedAt: c.now()})
 	c.activeLoads.set(id, struct{}{})
+	st.peerLookupOpen = false
 	c.send(P2PMsg{Type: p2pFetch, KVRequestID: id, Keys: append([]Key(nil), keys...),
 		BlockIndexes: append([]int(nil), blockIDs...), RoundSeq: round})
+	// The assertions of :235-239: a symmetric fetch carries only confirmed probes.
+	if st.probed && len(keys) > 0 {
+		if st.probes.len() == 0 {
+			panic(fmt.Sprintf("tiering: symmetric fetch for %s has keys but no probes", id))
+		}
+		for _, k := range keys {
+			if p, _ := st.probes.get(k); p != probeHit {
+				panic(fmt.Sprintf("tiering: symmetric fetch for %s carries a key no probe confirmed", id))
+			}
+		}
+	}
+	st.probes.clear()
 }
 
 // finish is finish (client.py:243-288).
@@ -89,6 +119,13 @@ func (c *p2pClient) finish(id string) {
 		c.send(P2PMsg{Type: p2pAbortFetch, KVRequestID: id, RoundSeq: round})
 		ld.aborted, ld.abortedAt = true, c.now()
 	}
+	if st.peerLookupOpen {
+		st.peerLookupOpen = false
+		c.send(P2PMsg{Type: p2pFetch, KVRequestID: id, Keys: []Key{}, BlockIndexes: []int{}, RoundSeq: st.roundSeq})
+	}
+	st.probes.clear()
+	st.unsent = nil
+	c.flushPending.pop(id)
 	c.maybePrune(id)
 }
 
@@ -109,6 +146,53 @@ func (c *p2pClient) onTransferDone(id string, ok bool, round int) {
 
 func (c *p2pClient) onAbortAck(id string, round int) { c.onTransferDone(id, false, round) }
 
+// registerLookup is register_lookup (client.py:356-390).
+func (c *p2pClient) registerLookup(id string, k Key) probe {
+	st := c.getOrCreate(id)
+	st.probed = true
+	if p, ok := st.probes.get(k); ok {
+		return p
+	}
+	st.probes.set(k, probePending)
+	st.unsent = append(st.unsent, k)
+	c.flushPending.set(id, struct{}{})
+	return probePending
+}
+
+// flushPendingLookups is flush_pending_lookups (client.py:392-435).
+func (c *p2pClient) flushPendingLookups(ready bool) {
+	if !ready {
+		return
+	}
+	for _, id := range c.flushPending.keys() {
+		st, ok := c.requests.get(id)
+		if !ok || len(st.unsent) == 0 {
+			continue
+		}
+		st.peerLookupOpen = true
+		c.send(P2PMsg{Type: p2pLookup, KVRequestID: id, Keys: st.unsent, RoundSeq: st.roundSeq})
+		st.unsent = nil
+	}
+	c.flushPending.clear()
+}
+
+// onLookupResp is on_lookup_resp (client.py:437-471).
+func (c *p2pClient) onLookupResp(id string, keys []Key, hits []bool) {
+	st, ok := c.requests.get(id)
+	if !ok {
+		return
+	}
+	for i := 0; i < len(keys) && i < len(hits); i++ {
+		if _, ok := st.probes.get(keys[i]); ok {
+			if hits[i] {
+				st.probes.set(keys[i], probeHit)
+			} else {
+				st.probes.set(keys[i], probeMiss)
+			}
+		}
+	}
+}
+
 // collectResults is collect_results (client.py:473-526): the loads that ended.
 func (c *p2pClient) collectResults() []loadResult {
 	out := c.completedLoads
@@ -126,11 +210,16 @@ func (c *p2pClient) close() (failedJobs []int, failedIDs []string) {
 	}
 	for _, id := range c.requests.keys() {
 		st, _ := c.requests.get(id)
-		if st.loads.len() > 0 {
+		open := st.loads.len() > 0
+		for _, p := range st.probes.values() {
+			open = open || p == probePending
+		}
+		if open {
 			failedIDs = append(failedIDs, id)
 		}
 	}
 	c.requests.clear()
+	c.flushPending.clear()
 	c.activeLoads.clear()
 	c.completedLoads = nil
 	return failedJobs, failedIDs

@@ -38,8 +38,11 @@ type P2PConfig struct {
 	IdleReapOff bool
 }
 
-// srcInfo is P2PSourceInfo (:130-136): this request fetches from a peer (remote_prefiller, P/D).
-type srcInfo struct{ kvID, peer string }
+// srcInfo is P2PSourceInfo (:130-136): this request fetches from a peer.
+type srcInfo struct {
+	kvID, peer string
+	probe      bool // remote_kv_source (symmetric); false for remote_prefiller (P/D)
+}
 
 // dstInfo is P2PDestInfo (:139-148): a peer fetches this request's blocks. kvID "" is a
 // remote_decoder block without an id, which still marks the request remote-decode.
@@ -80,6 +83,11 @@ func truthyStr(v any) string {
 // the params, so the port parses them where it reads them.
 func parseSource(params map[string]any) *srcInfo {
 	role, ok := roleParams(params, "remote_prefiller")
+	probe := false
+	if !ok {
+		role, ok = roleParams(params, "remote_kv_source")
+		probe = true
+	}
 	if !ok || len(role) == 0 {
 		return nil
 	}
@@ -88,7 +96,7 @@ func parseSource(params map[string]any) *srcInfo {
 	if host == "" || port == "" || id == "" {
 		return nil
 	}
-	return &srcInfo{kvID: id, peer: host + ":" + port}
+	return &srcInfo{kvID: id, peer: host + ":" + port, probe: probe}
 }
 
 // parseDest is _parse_dest (:172-178).
@@ -126,11 +134,12 @@ type P2PTier struct {
 	data    P2PData
 	control P2PControl
 
-	sessions      omap[string, *p2pSession]
-	kvToSession   omap[string, *p2pSession]
-	unboundStores omap[string, []unboundBatch]
-	finished      []JobResult
-	failedReqIDs  map[string]bool
+	sessions        omap[string, *p2pSession]
+	kvToSession     omap[string, *p2pSession]
+	unboundStores   omap[string, []unboundBatch]
+	finished        []JobResult
+	failedReqIDs    map[string]bool
+	failedServeCtxs []*ReqContext
 }
 
 // NewP2PTier builds a p2p tier over the host's control and data transports.
@@ -164,21 +173,31 @@ func (t *P2PTier) BlockBytes() int64      { return t.cfg.BlockBytes }
 func (t *P2PTier) Backpressure() Detector { return nil }  // refused for p2p (:291-304)
 func (t *P2PTier) OffThreadPolling() bool { return true } // :230
 func (t *P2PTier) TakeEvents() []Event    { return nil }
-func (t *P2PTier) ServeExternal(Parent)   {}
-func (t *P2PTier) OnScheduleEnd(ScheduleEnd) {
-}
 func (t *P2PTier) Touch([]Key, *ReqContext) {
 }
 
 // HasPendingWork is has_pending_work (:647-653): always, so the engine keeps polling the peers.
 func (t *P2PTier) HasPendingWork() bool { return true }
 
-// Lookup is lookup (:408-435): MISS for a request that is no consumer or has failed; a P/D
-// decoder HITs at once.
+// Lookup is lookup (:408-435): MISS for a request that is no consumer or has failed; a symmetric
+// consumer's probe RETRYs until the peer answers; a P/D decoder HITs at once.
 func (t *P2PTier) Lookup(k Key, c *ReqContext) Lookup {
 	src := parseSource(c.Params)
 	if src == nil || t.failedReqIDs[src.kvID] {
 		return Miss
+	}
+	if src.probe {
+		s, ok := t.sessions.get(src.peer)
+		if !ok {
+			return Miss
+		}
+		switch s.registerLookup(src.kvID, k) {
+		case probeHit:
+			return Hit
+		case probeMiss:
+			return Miss
+		}
+		return Retry
 	}
 	return Hit
 }
@@ -293,6 +312,27 @@ func (t *P2PTier) DrainJobs() {
 	}
 }
 
+// ServeExternal is serve_external_requests (:681-698): the synthetic requests a reaped session
+// left are released first, then every session answers its peer's lookups.
+func (t *P2PTier) ServeExternal(p Parent) {
+	if len(t.failedServeCtxs) > 0 {
+		for _, c := range t.failedServeCtxs {
+			p.OnRequestFinished(c)
+		}
+		t.failedServeCtxs = nil
+	}
+	for _, s := range t.sessions.values() {
+		s.serveExternal(p)
+	}
+}
+
+// OnScheduleEnd is on_schedule_end (:700-706): each session sends the step's probes.
+func (t *P2PTier) OnScheduleEnd(ScheduleEnd) {
+	for _, s := range t.sessions.values() {
+		s.flushPendingLookups()
+	}
+}
+
 func (t *P2PTier) newSession(peer string, conn P2PConn) *p2pSession {
 	return newP2PSession(peer, t.cfg.LocalID, t.data, t.cfg.HashSeed, float64(t.cfg.HandshakeTimeoutS), t.now, conn)
 }
@@ -338,7 +378,7 @@ func (t *P2PTier) teardown(peer string) *p2pSession {
 			t.kvToSession.pop(id)
 		}
 	}
-	jobs, ids, stores := s.close()
+	jobs, ids, stores, serves := s.close()
 	for _, j := range jobs {
 		t.finished = append(t.finished, JobResult{ID: j})
 	}
@@ -348,6 +388,7 @@ func (t *P2PTier) teardown(peer string) *p2pSession {
 	for _, id := range ids {
 		t.failedReqIDs[id] = true
 	}
+	t.failedServeCtxs = append(t.failedServeCtxs, serves...)
 	t.data.RemoveRemotePeer(peer)
 	return s
 }

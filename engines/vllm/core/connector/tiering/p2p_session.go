@@ -79,7 +79,7 @@ func (s *p2pSession) requestBlocks(job int, id string, keys []Key, blockIDs []in
 }
 
 func (s *p2pSession) addStoredBlocks(id string, keys []Key, blockIDs []int, job int) {
-	s.server.addStoredBlocks(id, keys, blockIDs, job, 0)
+	s.server.addStoredBlocks(id, keys, blockIDs, job, 0, false)
 }
 
 // finishRequest is finish_request (session.py:266-275).
@@ -87,6 +87,10 @@ func (s *p2pSession) finishRequest(id string) {
 	s.client.finish(id)
 	s.server.finish(id)
 }
+
+func (s *p2pSession) registerLookup(id string, k Key) probe { return s.client.registerLookup(id, k) }
+func (s *p2pSession) flushPendingLookups()                  { s.client.flushPendingLookups(s.sendReady) }
+func (s *p2pSession) serveExternal(p Parent)                { s.server.serveExternal(p) }
 
 // poll is poll (session.py:302-372): dispatch what arrived, release the ConnectAck once the peer's
 // registration lands, then run the handshake, load, store, peer-fault and lookup deadlines.
@@ -111,20 +115,20 @@ func (s *p2pSession) poll() sessionPoll {
 }
 
 // close is close (session.py:374-410).
-func (s *p2pSession) close() (failedJobs []int, failedIDs []string, failedStores []int) {
+func (s *p2pSession) close() (failedJobs []int, failedIDs []string, failedStores []int, failedServes []*ReqContext) {
 	if s.pendingReg != nil {
 		s.pendingReg.Cancel()
 		s.pendingReg = nil
 	}
 	failedJobs, failedIDs = s.client.close()
-	failedStores = s.server.close()
+	failedStores, failedServes = s.server.close()
 	if s.conn != nil {
 		// A dead connection refuses the DisconnectMsg, as vLLM's suppressed send does.
 		_ = s.conn.Send(P2PMsg{Type: p2pDisconnect})
 		s.conn.Close()
 		s.conn = nil
 	}
-	return failedJobs, failedIDs, failedStores
+	return failedJobs, failedIDs, failedStores, failedServes
 }
 
 // onMessage is _on_message (session.py:416-446): a protocol violation disconnects the peer. vLLM
@@ -177,6 +181,10 @@ func (s *p2pSession) dispatch(m P2PMsg) error {
 		s.client.onTransferDone(m.KVRequestID, m.Success, m.RoundSeq)
 	case p2pAbortAck:
 		s.client.onAbortAck(m.KVRequestID, m.RoundSeq)
+	case p2pLookup:
+		s.server.onLookup(m.KVRequestID, m.Keys, m.RoundSeq)
+	case p2pLookupResp:
+		s.client.onLookupResp(m.KVRequestID, m.Keys, m.Hits)
 	case p2pDisconnect:
 		s.markDead("peer disconnected")
 	}
