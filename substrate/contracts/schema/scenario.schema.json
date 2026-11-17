@@ -36,6 +36,13 @@
           },
           "type": "array"
         },
+        "realisation": {
+          "enum": [
+            "natural",
+            "synthetic"
+          ],
+          "type": "string"
+        },
         "source": {
           "type": "string"
         }

@@ -122,7 +122,11 @@ func (k *Kernel) liftDraft(c *resolve.Coefficients, inferred func(price.PlannedL
 // can be run with a first pass over one row per request or over every token the target
 // scheduled, and the cost model prices what it is told and does not guess (SUB-6). It knows no
 // engine and no method, and its reasons name neither. A parallel-block drafter states its
-// target-wide work as its context stack and needs neither.
+// target-wide work as its context stack and needs no FirstPassRows, but its query pass, with its
+// sequential head, runs for the requests DraftPassRequests names, and the engine states which:
+// vLLM's DFlash, and DSpark which subclasses it, run it for every request of the input batch
+// (num_reqs * num_query_per_req tokens, vllm/v1/worker/gpu/spec_decode/dflash/speculator.py:
+// 463-467@4ba787ec9959e566d3b587a796dff07673324da5), a request mid-prompt included.
 //
 // With FirstPassScheduled the first pass processes every token the target scheduled this step
 // (vLLM's draft "prefill", _prefill, vllm/v1/worker/gpu/spec_decode/target_dependent_ar/
@@ -130,34 +134,38 @@ func (k *Kernel) liftDraft(c *resolve.Coefficients, inferred func(price.PlannedL
 // every request, one still in the middle of its prompt included (the same file, :232-295 and
 // :480-530).
 func (k *Kernel) liftDraftPasses(d *price.DraftPlan, drafter string) error {
-	if d.Drafting != model.DraftingAutoregressive {
+	if d.Drafting != model.DraftingAutoregressive && d.Drafting != model.DraftingParallelBlock {
 		return nil
 	}
 	who := "the model graph's own speculator"
 	if drafter != "" {
 		who = "draft_model " + drafter
 	}
-	for _, f := range []struct {
+	type stated struct {
 		name, value string
 		valid       bool
 		words       string
-	}{
-		{"DraftFirstPassRows", string(k.statedFirstPassRows), k.statedFirstPassRows.Valid(),
-			string(plan.FirstPassPerRequest) + " or " + string(plan.FirstPassScheduled)},
-		{"DraftPassRequests", string(k.statedPassRequests), k.statedPassRequests.Valid(),
-			string(plan.PassRequestsSampling) + " or " + string(plan.PassRequestsAll)},
-	} {
+	}
+	need := []stated{{"DraftPassRequests", string(k.statedPassRequests), k.statedPassRequests.Valid(),
+		string(plan.PassRequestsSampling) + " or " + string(plan.PassRequestsAll)}}
+	// A parallel-block drafter's target-wide work is its context stack, so it has no first pass
+	// over the scheduled tokens to state; for which requests its query pass runs it does.
+	if d.Drafting == model.DraftingAutoregressive {
+		need = append([]stated{{"DraftFirstPassRows", string(k.statedFirstPassRows), k.statedFirstPassRows.Valid(),
+			string(plan.FirstPassPerRequest) + " or " + string(plan.FirstPassScheduled)}}, need...)
+	}
+	for _, f := range need {
 		switch {
 		case f.value == "":
-			return fmt.Errorf("draft_passes_unstated: %s drafts autoregressively and the engine "+
-				"states no %s, so its first pass over the step's tokens would be priced by "+
-				"guess; the pool's plan must state it (%s)", who, f.name, f.words)
+			return fmt.Errorf("draft_passes_unstated: the engine states no %s for %s, so "+
+				"the drafter's passes would be priced by guess; the pool's plan must state it (%s)",
+				f.name, who, f.words)
 		case !f.valid:
 			return fmt.Errorf("draft_passes_unknown: %s is %q for %s; it is %s", f.name, f.value,
 				who, f.words)
 		}
 	}
-	k.draftFirstPass = k.statedFirstPassRows == plan.FirstPassScheduled
+	k.draftFirstPass = d.Drafting == model.DraftingAutoregressive && k.statedFirstPassRows == plan.FirstPassScheduled
 	k.draftAllRequests = k.statedPassRequests == plan.PassRequestsAll
 	return nil
 }

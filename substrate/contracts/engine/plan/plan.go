@@ -434,13 +434,14 @@ type DraftPolicy struct {
 	Chain     int
 	TreeTopK  int
 	TreeSteps int
-	// FirstPassRows and PassRequests state how an autoregressive drafter's passes run: which
-	// rows its first pass processes, and for which requests the head and the later passes run.
-	// They are the engine's execution decisions, resolved by the engine and stated here in
-	// neutral words, so the cost model prices what it is told and resolves nothing (SUB-6).
-	// Empty means not stated; a pool that speculates through an autoregressive drafter and
-	// leaves either empty is refused by the cost model, and a parallel-block drafter, whose
-	// target-wide work is its context stack, needs neither.
+	// FirstPassRows and PassRequests state how a drafter's passes run: which rows an
+	// autoregressive drafter's first pass processes, and for which requests the head and the
+	// later passes run (a parallel-block drafter's query pass and sequential head). They are the
+	// engine's execution decisions, resolved by the engine and stated here in neutral words, so
+	// the cost model prices what it is told and resolves nothing (SUB-6). Empty means not
+	// stated; the cost model refuses a pool that speculates and leaves PassRequests empty, or
+	// that drafts autoregressively and leaves FirstPassRows empty. A parallel-block drafter,
+	// whose target-wide work is its context stack, needs no FirstPassRows.
 	FirstPassRows FirstPassRows
 	PassRequests  PassRequests
 	// Adaptive is true when the verifier runs a draft budget chosen each step from the expected
@@ -470,7 +471,8 @@ const (
 // Valid reports whether r is a stated word.
 func (r FirstPassRows) Valid() bool { return r == FirstPassPerRequest || r == FirstPassScheduled }
 
-// PassRequests is for which requests an autoregressive drafter's head and later passes run.
+// PassRequests is for which requests a drafter's head and later passes run: an autoregressive
+// drafter's, or a parallel-block drafter's query pass and sequential head.
 type PassRequests string
 
 // The words PassRequests takes. Empty is not stated.

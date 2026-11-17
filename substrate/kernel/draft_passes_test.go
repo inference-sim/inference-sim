@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/load"
 	"gopkg.in/yaml.v3"
@@ -126,9 +127,46 @@ func TestTheDraftPassesRefusalNamesNoEngineOrMethod(t *testing.T) {
 	}
 }
 
-// A parallel-block drafter needs neither fact, and a deployment that does not speculate is
-// unaffected whatever the plan says.
-func TestAParallelBlockDrafterNeedsNoPassStatement(t *testing.T) {
+// A parallel-block drafter states no first pass, but it states for which requests its query pass
+// and sequential head run: without it the deployment is refused, and with it alone it builds.
+func TestAParallelBlockDrafterStatesOnlyForWhichRequestsItProposes(t *testing.T) {
+	in := parallelBlockCase(t)
+	in.DraftFirstPassRows, in.DraftPassRequests = "", ""
+	if _, err := New(in); err == nil || !strings.Contains(err.Error(), "draft_passes_unstated") ||
+		!strings.Contains(err.Error(), "DraftPassRequests") {
+		t.Errorf("a parallel-block drafter stating no pass requests: %v, want draft_passes_unstated naming DraftPassRequests", err)
+	}
+	in.DraftPassRequests = plan.PassRequestsAll
+	if _, err := New(in); err != nil {
+		t.Errorf("a parallel-block drafter stating its pass requests and no first pass was refused: %v", err)
+	}
+}
+
+// A parallel-block drafter whose engine runs its query pass for every request (vLLM's DFlash and
+// DSpark, num_reqs * num_query_per_req tokens, dflash/speculator.py:463-467@4ba787ec9959e566d3b587a796dff07673324da5)
+// pays for it over a request still in the middle of its prompt; one that runs it for the
+// sampling requests does not. A step of decodes alone costs the same under both.
+func TestAParallelBlockDrafterProposesForTheRequestsTheEngineStates(t *testing.T) {
+	in := parallelBlockCase(t)
+	price := func(r plan.PassRequests, reqs ...kernel.ReqShape) float64 {
+		c := in
+		c.DraftPassRequests = r
+		return mustKernel(t, c).StepTime(kernel.Batch{DecodeThreshold: 8, Reqs: reqs}).Overlap.Seconds()
+	}
+	chunk := kernel.ReqShape{Scheduled: 2048, PromptLen: 8192}
+	decode := kernel.ReqShape{Scheduled: 8, Computed: 4088, PromptLen: 4096}
+	if all, sampling := price(plan.PassRequestsAll, chunk, decode), price(plan.PassRequestsSampling, chunk, decode); all <= sampling {
+		t.Errorf("a chunk mid-prompt beside a decode: %.9g s proposing for every request, %.9g s for the sampling ones; "+
+			"the chunk's query pass must be charged", all, sampling)
+	}
+	if all, sampling := price(plan.PassRequestsAll, decode, decode), price(plan.PassRequestsSampling, decode, decode); all != sampling {
+		t.Errorf("two decodes: %.9g s proposing for every request, %.9g s for the sampling ones; they must match", all, sampling)
+	}
+}
+
+// parallelBlockCase is kimi-k3 drafting 7 tokens through its DSpark drafter.
+func parallelBlockCase(t *testing.T) Inputs {
+	t.Helper()
 	d, err := load.Embedded()
 	if err != nil {
 		t.Fatal(err)
@@ -137,14 +175,10 @@ func TestAParallelBlockDrafterNeedsNoPassStatement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c := typedRoleCase(t, "kimi-k3")
-	in := c.in
+	in := typedRoleCase(t, "kimi-k3").in
 	in.Draft = draft
 	in = withPlan(in, func(l *plan.Lowered) { l.Drafter = draft.Name })
-	in = drafting(in, 7)
-	if _, err := New(in); err != nil {
-		t.Errorf("a parallel-block drafter with no pass statement was refused: %v", err)
-	}
+	return drafting(in, 7)
 }
 
 // withoutSpeculator returns a copy of g with its speculator and the layer kinds only the

@@ -84,13 +84,14 @@ type Inputs struct {
 	// primitive. When Operations is given, Implementations is derived from it and may be left
 	// empty; if both are given they must name the same implementations.
 	Operations []plan.Operation
-	// DraftFirstPassRows and DraftPassRequests state how an autoregressive drafter's passes run,
-	// as plan.PoolPlan.Drafts.FirstPassRows and PassRequests for a caller that holds the pool's
+	// DraftFirstPassRows and DraftPassRequests state how a drafter's passes run, as
+	// plan.PoolPlan.Drafts.FirstPassRows and PassRequests for a caller that holds the pool's
 	// plan: the engine resolves them, in neutral words, and the kernel prices what it is told
 	// (SUB-6). A deployment that speculates through an autoregressive drafter, named or the
 	// model graph's own, with either empty is refused (draft_passes_unstated), and an unknown word
-	// is refused (draft_passes_unknown). A parallel-block drafter needs neither; both are ignored
-	// while the deployment does not speculate.
+	// is refused (draft_passes_unknown). A parallel-block drafter needs DraftPassRequests, for
+	// which requests its query pass runs, and no DraftFirstPassRows; both are ignored while the
+	// deployment does not speculate.
 	DraftFirstPassRows plan.FirstPassRows
 	DraftPassRequests  plan.PassRequests
 	// Acceptance is the run's resolved speculative acceptance (blis-schemas acceptance.Resolve),

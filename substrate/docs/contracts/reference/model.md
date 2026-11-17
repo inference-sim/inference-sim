@@ -435,8 +435,9 @@ facts of the graph. The engine states them in the pool's plan, as `plan.DraftPol
 settings, and the kernel receives them as `Inputs.DraftFirstPassRows` and `DraftPassRequests`. A
 deployment that speculates through an autoregressive drafter with either empty is refused at
 construction with `draft_passes_unstated` (an unknown word with `draft_passes_unknown`). The kernel
-names no engine or method. A parallel-block drafter (DSpark) needs neither: its context stack
-carries the work over the target's tokens.
+names no engine or method. A parallel-block drafter (DFlash, DSpark) needs no `FirstPassRows`: its
+context stack carries the work over the target's tokens. It states `PassRequests`, the requests its
+query pass and sequential head run for, and is refused with `draft_passes_unstated` without it.
 
 A graph names its own MTP speculator by family (`deepseek_mtp`, `minimax_m3_mtp`,
 `nemotron_h_mtp`), and a deployment states `method: mtp`: vLLM replaces every model-specific MTP
