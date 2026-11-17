@@ -12,7 +12,7 @@ import (
 	"github.com/inference-sim/blis-substrate/kernel/internal/price"
 )
 
-// Two properties no other test pinned (blis-latency-kernel#66, findings 6): a mutant of either
+// Two properties no other test pinned (https://github.com/inference-sim/blis-latency-kernel/issues/66, findings 6): a mutant of either
 // survived the suite. TestGuardedPropertiesKillTheirMutants (mutation_test.go) breaks each and
 // requires the test named here to fail.
 

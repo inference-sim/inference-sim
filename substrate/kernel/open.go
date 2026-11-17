@@ -192,7 +192,7 @@ func (k *Kernel) Extrapolated(set, name string, scope coefficient.Scope, method 
 // It is OpenPool's loading half, exported for a caller that needs the documents as well as
 // the kernel. A scoring harness that configures a rival backend for the same deployment
 // needs the model's name, the chip's memory and the model's expert geometry -- deployment
-// identity, which the kernel deliberately does not re-export (blis-schemas#36 draws that
+// identity, which the kernel deliberately does not re-export (https://github.com/inference-sim/blis-schemas/issues/36 draws that
 // line: identity for comparison is the harness's concern, not the cost model's). Reading
 // them from these Inputs, and building the kernel with New(in), means the harness holds the
 // SAME chip and graph the kernel priced, not a second load of files that could resolve

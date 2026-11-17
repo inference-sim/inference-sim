@@ -16,7 +16,7 @@ import (
 
 // The module asks for the Go its own code needs (go 1.24), not one a dependency chose: the go
 // command raises a module's directive to its highest requirement's, so a pin on a module that
-// declares a newer Go would silently move every consumer's toolchain (blis-latency-kernel#87).
+// declares a newer Go would silently move every consumer's toolchain (https://github.com/inference-sim/blis-latency-kernel/issues/87).
 func TestTheModuleAsksForGo124(t *testing.T) {
 	raw, err := os.ReadFile("go.mod")
 	if err != nil {

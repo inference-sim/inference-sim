@@ -20,7 +20,7 @@ bodies of both dates.
 WHICH ARE NOT HERE. fit_deepep_ll_graph.py and fit_host_link.py cite runs the API no longer
 serves (33356406487, 36334392363, 36367074689, 36402856875, and the swap_blocks bodies sha256
 26cad6ccbdaa): each answers 404. Those writers then refuse (exit 3), their tests skip, and the
-skips are on .github/quarantine.yaml (X16, X25) under inference-sim/blis-registry#57 until the
+skips are on .github/quarantine.yaml (X16, X25) under https://github.com/inference-sim/blis-registry/issues/57 until the
 bodies are restored or the entries are re-cited through a reviewed refit. The OperatorX
 response fit_marlin_nvfp4_grouped_ramp.py cites is served and is fetched here too, as
 moe_MiniMax-M3.json, checked against a digest of the rows that fit reads (operatorx_points.py):

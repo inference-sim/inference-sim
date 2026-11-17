@@ -23,7 +23,7 @@ change what the coefficient means rather than where it was measured.
 ONE ENTRY PER PART. The median is the only figure the kernel reads (`kernel.go`
 multiplies the routed FLOPs by it). A `moe_routing_imbalance_p90` family was written beside
 it and read by nothing -- the kernel prices a mean step, not a tail -- so it was retired
-(inference-sim/blis-registry#36); its value is kept in the median's rationale.
+(https://github.com/inference-sim/blis-registry/issues/36); its value is kept in the median's rationale.
 
 A100 IS NOT RELANED. Its vLLM MoE sweep has no shape measured under both a skewed and the
 balanced distribution, so no ratio is derivable; it keeps its SGLang borrow, which is the

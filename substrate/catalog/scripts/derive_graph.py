@@ -1105,7 +1105,7 @@ def attention(cfg: dict[str, Any], model: str, *, kind: str | None = None,
             node["compress_ratio"] = int(compress_ratio)
         # A window alone bounds a sparse read too: DeepSeek-V4.1's ratio-0 layers run
         # the sparse FlashMLA kernel over their window and nothing else
-        # (deepseek_v41/nvidia/flashmla.py:218-246), which blis-schemas#55 admits.
+        # (deepseek_v41/nvidia/flashmla.py:218-246), which https://github.com/inference-sim/blis-schemas/issues/55 admits.
         if kind == "sparse_mla" and not (index_topk or compress_ratio or window):
             raise DeriveError(
                 f"{model}: a sparse latent read bounded by no top-k selection, "
@@ -1302,7 +1302,7 @@ EMIT_TENSOR_PARALLEL = "tensor_parallel"
 EMIT_EXPERT_PARALLEL = "expert_parallel"
 EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE = "tensor_parallel_unless_sp_moe"
 # Decided by the model's own sequence parallelism, for the architecture
-# global.architecture names (blis-schemas#55); DeepSeek-V4.1 is the family that needs it.
+# global.architecture names (https://github.com/inference-sim/blis-schemas/issues/55); DeepSeek-V4.1 is the family that needs it.
 EMIT_SEQUENCE_PARALLEL = "sequence_parallel"
 EMIT_TENSOR_PARALLEL_UNLESS_SEQUENCE_PARALLEL = "tensor_parallel_unless_sequence_parallel"
 # An MoE that reduces a different tensor in each mode states one collective per mode
@@ -2356,7 +2356,7 @@ def handler_deepseek_v4(cfg, raw, model):
     What the graph cannot carry, recorded so a reader does not have to rediscover it:
       * FlashMLA pads each rank's heads to 64, or 128 above 64 (nvidia/flashmla.py:
         77-85): 16 heads per rank at TP 8 run as 64. The main read states no tp and
-        the consumer applies it (inference-sim/blis-latency-kernel#39). The Q RoPE +
+        the consumer applies it (https://github.com/inference-sim/blis-latency-kernel/issues/39). The Q RoPE +
         insert reads each rank's heads and writes the padded set, and every rank reads
         the whole KV row and writes the whole record. It is stated sharded, which is
         exact at TP 1, exact for the Q half at TP 2, and nearer than replicated above;
@@ -2375,9 +2375,9 @@ def handler_deepseek_v4(cfg, raw, model):
         in-flight tokens are 1 + num_spec_tokens a step, twice that under async
         scheduling -- 2 or 4 at MTP's one draft token, which give the same pages for
         these windows. Their pages' 576 B padding, and the larger hold during chunked
-        prefill, are not carried (inference-sim/blis-schemas#59);
+        prefill, are not carried (https://github.com/inference-sim/blis-schemas/issues/59);
       * h_proj runs on all hc_mult streams of the MTP input, hc_mult rows per token
-        (nvidia/mtp.py:185-187); a GEMM node states one (inference-sim/blis-schemas#58);
+        (nvidia/mtp.py:185-187); a GEMM node states one (inference-sim/blis-substrate#157);
       * the shared expert's TP padding: without sequence parallelism its intermediate
         rounds up to whole 128-blocks per rank (nvidia/model.py:150-158), which is no
         padding at TP 8 (24 blocks) but 4,096 for 3,072 at TP 16. It depends on the TP
@@ -2394,13 +2394,13 @@ def handler_deepseek_v4(cfg, raw, model):
       * that the MTP layer's first pass each step runs over every token the target
         scheduled, not one row per request (v1/worker/gpu/spec_decode/autoregressive/
         speculator.py:311-327, 453-493): an autoregressive stack states only that it
-        runs once per drafted token (inference-sim/blis-schemas#60);
+        runs once per drafted token (https://github.com/inference-sim/blis-schemas/issues/60);
       * wo_a's input read: the grouped einsum reads all o_groups x 4,096 FP8 values a
         token (nvidia/ops/o_proj.py:89-95), where one GEMM node of k 4,096 states one
         group's; the FLOPs and weight bytes are exact;
       * work the target runs only with MTP enabled: the copy of the whole hc stream
         into the drafter's buffer (nvidia/model.py:1637-1639)
-        (inference-sim/blis-schemas#51);
+        (https://github.com/inference-sim/blis-schemas/issues/51);
       * prefill's gather of each request's window records into the BF16 workspace,
         about 1.6 KB per prefill token (nvidia/flashmla.py:340-349), and launches
         below any node's resolution: the decode top-k translation, the hash-route
@@ -3106,7 +3106,7 @@ def handler_deepseek_v41(cfg, raw, model):
     a three-layer DSpark draft module.
 
     Priced as vLLM v0.31.0 serves it on SM90 (H200, the part the serving campaign in
-    blis-catalog#29 ran on), with no attention backend forced, as the base of
+    https://github.com/inference-sim/blis-catalog/issues/29 ran on), with no attention backend forced, as the base of
     capability family 9; `arch_overrides` states what family 10 (SM100) changes:
 
       * wo_a is MXFP8 in the checkpoint and BF16 resident on SM90. It is a batched
@@ -3153,7 +3153,7 @@ def handler_deepseek_v41(cfg, raw, model):
     the compressor's FP32 state ring. The main read states compress_ratio to name the
     stream its top-k positions come from, which its kv cache must match; it reads its
     window plus at most index_topk of them whatever the ratio (nvidia/flashmla.py:
-    230-246; inference-sim/blis-latency-kernel#32). The scorer scans ctx / ratio.
+    230-246; https://github.com/inference-sim/blis-latency-kernel/issues/32). The scorer scans ctx / ratio.
 
     The collectives follow V4.1's own sequence parallelism, `_use_sequence_parallel`
     (nvidia/model.py:239-247: PP 1, EP on, TP > 1, and a mega-MoE backend or DP > 1),
@@ -3171,7 +3171,7 @@ def handler_deepseek_v41(cfg, raw, model):
         splits the heads (attention.py:276-284), a rank at TP 8 computes 64 heads where
         n_q / tp gives 8. That depends on the backend and the TP width rather than on
         the model, so the main read states no tp and the consumer applies it
-        (inference-sim/blis-latency-kernel#39);
+        (https://github.com/inference-sim/blis-latency-kernel/issues/39);
       * SM100's fused all-reduce + mHC: at TP 4 without expert parallelism, where
         NVLink multicast is available, wo_b's and the MoE's reductions fold into the
         mHC boundary kernel (nvidia/model.py:318-328, 645-653; nvidia/ops/mhc.py:
@@ -3185,19 +3185,19 @@ def handler_deepseek_v41(cfg, raw, model):
         biases and the engram gate's q and k weights, a few MB;
       * the SM100 page size of the compressed and indexer caches, 128 tokens where
         SM90's is 64: an architecture overlay restates a cache's record and alignment
-        but not its block_size (inference-sim/blis-schemas#62);
+        but not its block_size (inference-sim/blis-substrate#158);
       * the SM100 mega-attention launches (above), and the draft context's window
         insert, which writes a draft layer's cache from another kind and so states the
         SM90 record in its traffic rather than following the overlay;
       * the 68 B MXFP4 indexer record, opt-in through indexer_kv_dtype, which no
-        deployment key carries (inference-sim/blis-schemas#57);
+        deployment key carries (https://github.com/inference-sim/blis-schemas/issues/57);
       * work the target runs only when DSpark is enabled: the copy of the whole hc
         stream into the drafter's hidden buffer (nvidia/model.py:773-784, 975-980),
         the auxiliary writes at the dspark_target_layer_ids, and, under sequence
         parallelism, the head's gather of the whole hc stream and its pre-mix ahead of
         the collapse and norm, in place of the collapsed state after them (:976-990),
         and the all-gathers of the auxiliary states it reads (:944-946, 958-959). No
-        emit condition names speculation (inference-sim/blis-schemas#51);
+        emit condition names speculation (https://github.com/inference-sim/blis-schemas/issues/51);
       * prefill's gather of each layer's own window records into the BF16 workspace,
         query_len + min(prefix, window - 1) entries per request (nvidia/flashmla.py:
         315-325; sparse_swa.py:366-371), about 1.6 KB per prefill token a layer: it
@@ -3206,7 +3206,7 @@ def handler_deepseek_v41(cfg, raw, model):
         `context` read of `swa`, for the window part of the gather, is charged over
         the whole context (computed + scheduled), which on the last 8K chunk of a
         100K-token prompt states 12x the window-bounded gather
-        (inference-sim/blis-catalog#33);
+        (inference-sim/blis-substrate#105);
       * Engram's DP-sharded path: with DP > 1 and /dev/shm too small for the ~189 GiB
         of tables, they shard over TP x DP and the hashes and rows are exchanged over
         the engram DP group (nvidia/engram.py:104-159, 408-424, 490-496;
@@ -3605,7 +3605,7 @@ def handler_deepseek_v41(cfg, raw, model):
             # head_dim and the KV row read at head_dim; the record it writes is the
             # cache's. FlashMLA pads each rank's Q to 64 heads (nvidia/flashmla.py:
             # 66-74), so the Q write does not shrink with TP; replicated is the nearer
-            # layout (inference-sim/blis-latency-kernel#39).
+            # layout (https://github.com/inference-sim/blis-latency-kernel/issues/39).
             store("q_rope_kv_insert", 2 * q_heads * total_dim * act + total_dim * act,
                   "swa"),
         ]
@@ -3735,7 +3735,7 @@ def handler_deepseek_v41(cfg, raw, model):
         # (nvidia/flashmla.py:181-246) and a ratio-0 layer passes no extra cache (:242).
         # compress_ratio states the stream the top-k positions come from, which its kv
         # cache must match; the read itself is window + index_topk positions
-        # (inference-sim/blis-latency-kernel#32).
+        # (https://github.com/inference-sim/blis-latency-kernel/issues/32).
         node = attention(
             cfg, model,
             kind="sparse_mla",
@@ -6192,7 +6192,7 @@ def handler_llama_eagle3(cfg, raw, model):
     token the target scheduled, or one per request); the schema states that work as the
     context stack only for the fc projection. The engine states the count in the pool's plan
     (plan.DraftPolicy.FirstPassRows and PassRequests) and the kernel refuses a deployment that
-    speculates through this drafter without it (draft_passes_unstated; blis-schemas#60). The
+    speculates through this drafter without it (draft_passes_unstated; https://github.com/inference-sim/blis-schemas/issues/60). The
     vocabulary mapping a drafter with
     draft_vocab_size != vocab_size carries (draft_id_to_target_id) is refused rather than
     priced as free."""

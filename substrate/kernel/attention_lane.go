@@ -173,7 +173,7 @@ func (k *Kernel) applyAttentionLane(c *resolve.Coefficients, used map[model.Atte
 	k.assume("trtllm_gen_prefill_lane", "pooled", "the trtllm-gen prefill pair cannot be shown valid for the prefill "+
 		"implementation reported ("+describeLaneRunning(c)+"): "+strings.Join(why, "; ")+". Needed: the code hash of the "+
 		"trtllm-gen prefill kernel of the engine's FlashInfer pin, which an engine release's kernel_impls.json would "+
-		"publish (inference-sim/blis-registry#73), stated on the entries and reported by the engine as the "+
+		"publish (inference-sim/blis-substrate#149), stated on the entries and reported by the engine as the "+
 		"implementation of attention.prefill. The part's pooled pair prices the prefill.")
 	return nil
 }

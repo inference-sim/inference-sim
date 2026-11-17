@@ -114,7 +114,7 @@ HEADER = """\
 # values here; `emit_fabric.py --check` is the drift gate.
 #
 # One entry per blis-catalog networks/ fabric, scoped by the fabric's catalog identity
-# (the `fabric` scope key, blis-schemas#112). blis-latency-kernel multiplies a fabric's
+# (the `fabric` scope key, https://github.com/inference-sim/blis-schemas/issues/112). blis-latency-kernel multiplies a fabric's
 # nominal InterNodeBwGBps by it wherever bytes leave a node. An NVLink domain spanning a
 # rack (gb200-nvl72) is the chip's, not a fabric's, and is not corrected here.
 #

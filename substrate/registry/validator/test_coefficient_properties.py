@@ -724,7 +724,7 @@ def test_every_assumed_entry_explains_itself():
 # NOTE: schema-shape rules that used to live here — `fitted: true` => `method: measured`,
 # the bare presence of a rationale for a non-measured value, and `assumed` excludes `fitted`
 # (transitively covered by fitted => measured) — were removed when the registry collapsed to
-# a single validator; blis-schemas owns them (migrated in blis-schemas#38). The two checks
+# a single validator; blis-schemas owns them (migrated in https://github.com/inference-sim/blis-schemas/issues/38). The two checks
 # ABOVE are kept deliberately: they are registry value/quality properties on this repo's own
 # committed data that the schema does NOT enforce (blis-schemas allows measured-uncited and
 # imposes no rationale-length bar), so they are a conscious keep, not a silent drop.
