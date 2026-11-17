@@ -98,6 +98,11 @@ type DeploymentConfig struct {
 	// still completes at exactly its demand's AloneTime. False (the default) completes every
 	// handoff as if alone on the fabric.
 	PDTransferContention bool
+	// TierCopyContention admits the engines' offload-tier copies to the same link arbiter as the
+	// handoffs, so copies and pulls that cross a link share its capacity (#2108). It is implied by
+	// PDTransferContention; set alone it gives a deployment with no disaggregation an arbiter for its
+	// copies. Off, a copy takes its demand alone.
+	TierCopyContention bool
 
 	// PDPrefillKVHold keeps a finished prefill sub-request's KV blocks allocated on its
 	// prefill instance until the decode side has pulled them, as a NIXL prefill engine does:

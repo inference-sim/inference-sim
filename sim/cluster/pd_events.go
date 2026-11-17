@@ -5,6 +5,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/inference-sim/blis-substrate/contracts/engine"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -239,6 +240,25 @@ func scheduleTransferCompletion(cs *ClusterSimulator, parentReq *ParentRequest, 
 	cs.schedule(&KVTransferCompletedEvent{time: startTime + duration, parentReq: parentReq}, &cs.kvConnectorSender)
 }
 
+// tierCopy is an offload-tier copy in the link arbiter: the transfer and the instance that started it.
+type tierCopy struct {
+	inst *InstanceSimulator
+	id   engine.TransferID
+}
+
+// startTierCopy admits an offload-tier copy the instance's engine started at now to the link arbiter,
+// where it shares the links it crosses (the tier's device link and node, "tier/<device>/<direction>/
+// <node>") with the handoffs and the other copies in flight; it lands when the arbiter completes it.
+// A copy alone on its links takes its demand alone, as it does without the arbiter, to a whole tick
+// rounded up as a handoff's is (AloneTicks) rather than truncated (sim.TierTicks).
+func (cs *ClusterSimulator) startTierCopy(inst *InstanceSimulator, id engine.TransferID, demand kernel.TransferDemand, now int64) {
+	if cs.tierLinkFlows == nil {
+		cs.tierLinkFlows = make(map[FlowID]tierCopy)
+	}
+	cs.tierLinkFlows[cs.pdLinks.Start(now, FlowOf(demand))] = tierCopy{inst: inst, id: id}
+	cs.scheduleLinkWake()
+}
+
 // scheduleLinkWake schedules the link arbiter's next drain or completion, superseding any wake
 // scheduled before: a handoff starting can move every other handoff's completion.
 func (cs *ClusterSimulator) scheduleLinkWake() {
@@ -268,6 +288,11 @@ func (e *PDLinkWakeEvent) Execute(cs *ClusterSimulator) {
 		return
 	}
 	for _, id := range cs.pdLinks.Advance(e.time) {
+		if tc, ok := cs.tierLinkFlows[id]; ok {
+			delete(cs.tierLinkFlows, id)
+			tc.inst.tierLanded(tc.id, e.time)
+			continue
+		}
 		parent := cs.pdLinkFlows[id]
 		delete(cs.pdLinkFlows, id)
 		cs.schedule(&KVTransferCompletedEvent{time: e.time, parentReq: parent}, &cs.kvConnectorSender)

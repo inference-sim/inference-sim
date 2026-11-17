@@ -7,6 +7,9 @@ import (
 	"math/rand"
 	"sort"
 
+	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/trace"
 	"github.com/sirupsen/logrus"
@@ -126,6 +129,9 @@ type ClusterSimulator struct {
 	pdLinks       *LinkArbiter
 	pdLinkFlows   map[FlowID]*ParentRequest
 	pdLinkWakeGen int64
+	// tierLinkFlows maps each offload-tier copy in the arbiter to the instance whose engine started
+	// it: the copies share the arbiter's links with the handoffs and with each other (#2108).
+	tierLinkFlows map[FlowID]tierCopy
 	// prefillHolds maps each parent whose prefill KV a prefill instance still holds for the
 	// decode pull (DeploymentConfig.PDPrefillKVHold, INV-PD-7) to the blocks held;
 	// heldBlockRefs counts, per prefill instance, how many holds pin each block, and
@@ -535,6 +541,10 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 	// Store raw callback for PD session follow-up (issue #884).
 	cs.sessionCallback = onRequestDone
 
+	if (config.PDTransferContention || config.TierCopyContention) && cs.pdLinks == nil {
+		cs.pdLinks = NewLinkArbiter()
+		cs.pdLinkFlows = make(map[FlowID]*ParentRequest)
+	}
 	for _, inst := range cs.instances {
 		cs.wireInstance(inst)
 	}
@@ -603,6 +613,11 @@ func (cs *ClusterSimulator) wireInstance(inst *InstanceSimulator) {
 	}
 	inst.SetCallbacks(onFirstToken, onRequestDone)
 	inst.setPullPriced(cs.startPull)
+	if cs.pdLinks != nil {
+		inst.setTierPriced(func(id engine.TransferID, demand kernel.TransferDemand, at int64) {
+			cs.startTierCopy(inst, id, demand, at)
+		})
+	}
 	inst.onTransition = func(inst *InstanceSimulator) {
 		if cs.gateway != nil {
 			cs.gateway.OnInstanceChange(inst)

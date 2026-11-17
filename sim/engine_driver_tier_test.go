@@ -150,3 +150,41 @@ func TestEngineDriver_TierTransferOfAnEmptyScheduleWaitsForTheBatchInFlight(t *t
 		t.Fatalf("store started %v, done at %d; want done at 150", eng.started, eng.done[1001])
 	}
 }
+
+// landEvent reports a tier copy landed.
+type landEvent struct {
+	at int64
+	id engine.TransferID
+}
+
+func (e *landEvent) Timestamp() int64    { return e.at }
+func (e *landEvent) Priority() int       { return PriorityQueued }
+func (e *landEvent) run(d *EngineDriver) { d.TierLanded(e.id, e.at) }
+
+// With a host that shares link capacity among the copies (OnTierPriced), the driver hands a copy over
+// when it starts moving and the engine hears it landed only when the host says so; copies of one kind
+// still move one after another, and every copy waits for the compute stream. The store and the first
+// load start at 50, after the 50 us batch; the second load starts when the first lands, which the
+// host here ends 300 us after it starts (a copy slowed by sharing), not at 150.
+func TestEngineDriver_TierCopiesTheHostSharesStartInOrderAndLandWhenTheHostSays(t *testing.T) {
+	fifo, err := enginetest.NewFIFO(enginetest.FIFOConfig{MaxRunning: 1, TokenBudget: 8, InFlight: 1, StepBaseUs: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng := &tiered{FIFO: fifo, done: map[engine.TransferID]int64{}}
+	d := NewEngineDriver(eng, EngineDriverConfig{Horizon: 1 << 40, Environment: tierEnv(100)})
+	starts := map[engine.TransferID]int64{}
+	d.OnTierPriced = func(id engine.TransferID, _ kernel.TransferDemand, at int64) {
+		starts[id] = at
+		d.schedule(&landEvent{at: at + 300, id: id})
+	}
+	d.InjectArrival(&Request{ID: "a", InputTokens: tokens(8), OutputTokens: tokens(1)})
+	d.Run()
+	wantStart := map[engine.TransferID]int64{1001: 50, 1002: 50, 1003: 350}
+	wantDone := map[engine.TransferID]int64{1001: 350, 1002: 350, 1003: 650}
+	for id := range wantStart {
+		if starts[id] != wantStart[id] || eng.done[id] != wantDone[id] {
+			t.Fatalf("copies started at %v and done at %v, want %v and %v", starts, eng.done, wantStart, wantDone)
+		}
+	}
+}
