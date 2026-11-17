@@ -32,15 +32,18 @@ type InFlightSample struct {
 	Count int
 }
 
-// StepOwner attributes the next Steps entries of Metrics.AllITLs, and the next ClientGaps entries
-// of Metrics.ClientGaps, to one completed request: its phase and completion time, which decide
-// whether its entries are in step_interval_* and itl_*.
+// StepOwner attributes the next Steps entries of Metrics.AllITLs, the next ClientGaps entries
+// of Metrics.ClientGaps and the next ClientChunkGaps entries of Metrics.ClientChunkGaps to one
+// completed request: its phase and completion time, which decide whether its entries are in
+// step_interval_*, itl_* and icl_*.
 type StepOwner struct {
 	CompletionUs int64
 	Steps        int
 	// ClientGaps is how many entries of Metrics.ClientGaps the request holds.
 	ClientGaps int
-	Phase      Phase
+	// ClientChunkGaps is how many entries of Metrics.ClientChunkGaps the request holds.
+	ClientChunkGaps int
+	Phase           Phase
 }
 
 // The values of measured_window_source.
@@ -132,6 +135,10 @@ type measuredLatencies struct {
 	// percentiles and the number of gaps behind them.
 	clientITLMean, clientITLP50, clientITLP90, clientITLP95, clientITLP99 float64
 	clientITLCount                                                        int
+	// The gaps between the chunks streamed to the client (Metrics.ClientChunkGaps): their mean,
+	// percentiles and count.
+	clientICLMean, clientICLP50, clientICLP90, clientICLP95, clientICLP99 float64
+	clientICLCount                                                        int
 	// startUs and endUs bound the window the aggregates were computed over (0, 0 when it
 	// is empty).
 	startUs, endUs int64
@@ -166,6 +173,11 @@ type MeasuredSummary struct {
 	// chunk sharing its arrival, and the number of gaps.
 	ClientITLMeanMs, ClientITLP50Ms, ClientITLP90Ms, ClientITLP95Ms, ClientITLP99Ms float64
 	ClientITLCount                                                                  int
+	// The client-observed inter-chunk latency (the registry's icl, vllm bench serve's ITL): one
+	// gap before each chunk after the first streamed to a measured request completing in the
+	// window, however many tokens the chunk carries, and the number of gaps.
+	ClientICLMeanMs, ClientICLP50Ms, ClientICLP90Ms, ClientICLP95Ms, ClientICLP99Ms float64
+	ClientICLCount                                                                  int
 	// WindowStartUs and WindowEndUs bound the window; both 0 when it is empty.
 	WindowStartUs, WindowEndUs int64
 }
@@ -208,6 +220,8 @@ func summaryOf(out MeasuredMetrics, lat measuredLatencies) MeasuredSummary {
 		RequestITLCount: lat.itlCount, PerUserCount: lat.perUserCount, StepIntervalCount: lat.stepCount,
 		ClientITLMeanMs: lat.clientITLMean, ClientITLP50Ms: lat.clientITLP50, ClientITLP90Ms: lat.clientITLP90,
 		ClientITLP95Ms: lat.clientITLP95, ClientITLP99Ms: lat.clientITLP99, ClientITLCount: lat.clientITLCount,
+		ClientICLMeanMs: lat.clientICLMean, ClientICLP50Ms: lat.clientICLP50, ClientICLP90Ms: lat.clientICLP90,
+		ClientICLP95Ms: lat.clientICLP95, ClientICLP99Ms: lat.clientICLP99, ClientICLCount: lat.clientICLCount,
 		WindowStartUs: lat.startUs, WindowEndUs: lat.endUs,
 	}
 }
@@ -340,13 +354,20 @@ func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 	out.StepIntervalP90Ms = CalculatePercentile(steps, 90)
 	out.StepIntervalP99Ms = CalculatePercentile(steps, 99)
 	lat.stepCount = len(steps)
-	client := measuredClientGaps(m.ClientGaps, m.StepOwners, inWindow)
+	client := measuredOwned(m.ClientGaps, m.StepOwners, func(o StepOwner) int { return o.ClientGaps }, inWindow)
 	lat.clientITLMean = CalculateMean(client)
 	lat.clientITLP50 = CalculatePercentile(client, 50)
 	lat.clientITLP90 = CalculatePercentile(client, 90)
 	lat.clientITLP95 = CalculatePercentile(client, 95)
 	lat.clientITLP99 = CalculatePercentile(client, 99)
 	lat.clientITLCount = len(client)
+	chunks := measuredOwned(m.ClientChunkGaps, m.StepOwners, func(o StepOwner) int { return o.ClientChunkGaps }, inWindow)
+	lat.clientICLMean = CalculateMean(chunks)
+	lat.clientICLP50 = CalculatePercentile(chunks, 50)
+	lat.clientICLP90 = CalculatePercentile(chunks, 90)
+	lat.clientICLP95 = CalculatePercentile(chunks, 95)
+	lat.clientICLP99 = CalculatePercentile(chunks, 99)
+	lat.clientICLCount = len(chunks)
 	lat.stepP50 = CalculatePercentile(steps, 50)
 	lat.stepP95 = CalculatePercentile(steps, 95)
 
@@ -393,16 +414,18 @@ func measuredStepIntervals(all []int64, owners []StepOwner, inWindow func(int64)
 	return out
 }
 
-// measuredClientGaps is measuredStepIntervals for Metrics.ClientGaps: the gaps of the measured
-// requests whose completion is in the window, sorted.
-func measuredClientGaps(all []int64, owners []StepOwner, inWindow func(int64) bool) []int64 {
+// measuredOwned is measuredStepIntervals for a series that StepOwners attributes by count:
+// Metrics.ClientGaps (count ClientGaps) or Metrics.ClientChunkGaps (count ClientChunkGaps). It
+// returns, sorted, the entries of the measured requests whose completion is in the window.
+func measuredOwned(all []int64, owners []StepOwner, count func(StepOwner) int, inWindow func(int64) bool) []int64 {
 	var out []int64
 	at := 0
 	for _, o := range owners {
+		n := count(o)
 		if o.Phase.Measured() && inWindow(o.CompletionUs) {
-			out = append(out, all[at:at+o.ClientGaps]...)
+			out = append(out, all[at:at+n]...)
 		}
-		at += o.ClientGaps
+		at += n
 	}
 	slices.Sort(out)
 	return out
