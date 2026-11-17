@@ -73,6 +73,10 @@ type Metrics struct {
 	KVThrashEvents                 int64
 	KVThrashOpportunities          int64
 
+	// Busy is the steps the instance's engine ran (#2081); see busy.go. Per instance: the
+	// aggregate holds none.
+	Busy BusyLedger
+
 	// Measured-window inputs of the --metrics-path aggregates (#1938); see
 	// metrics_measured.go. MeasuredWindow, when set, fixes the window's bounds (aiperf's
 	// profiling phase start and completion); nil derives them from the measured requests.
