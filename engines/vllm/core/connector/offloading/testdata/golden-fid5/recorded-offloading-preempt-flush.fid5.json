@@ -439,9 +439,9 @@
    "args": {
     "ctx": "c1",
     "keys": [
+     "1916a3fa8902fa9eba23441de030b624de85f3e829b38ed4d02b15831ea6888f00000000",
      "a2621334354fadfa3a05ed55fb8af730a0b7460a013b214f49552e1f436c312b00000000",
-     "f816bd041daedc975813ac0ba47f0613a1bc5543d2f00ac7125b3ef50cd2d7f300000000",
-     "1916a3fa8902fa9eba23441de030b624de85f3e829b38ed4d02b15831ea6888f00000000"
+     "f816bd041daedc975813ac0ba47f0613a1bc5543d2f00ac7125b3ef50cd2d7f300000000"
     ],
     "req": "a",
     "success": true
@@ -1161,9 +1161,9 @@
    "args": {
     "ctx": "c3",
     "keys": [
+     "91fdb16e411daedf083e111ee293af2cc368b8a24f54dbbaa054c8eb662ba74100000000",
      "129388317c5a398cddfc2d04439f7419e70753eade039e609c6460e09c13bd0d00000000",
-     "6680ba0b1c9040c1b91509c479d22fdb27406ec4719bf392cd8c11652ce73f2200000000",
-     "91fdb16e411daedf083e111ee293af2cc368b8a24f54dbbaa054c8eb662ba74100000000"
+     "6680ba0b1c9040c1b91509c479d22fdb27406ec4719bf392cd8c11652ce73f2200000000"
     ],
     "req": "c"
    },
@@ -2031,6 +2031,23 @@
   },
   {
    "args": {
+    "key": "1916a3fa8902fa9eba23441de030b624de85f3e829b38ed4d02b15831ea6888f00000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 2,
+    "ref": -1
+   }
+  },
+  {
+   "args": {
+    "key": "1916a3fa8902fa9eba23441de030b624de85f3e829b38ed4d02b15831ea6888f00000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
     "key": "a2621334354fadfa3a05ed55fb8af730a0b7460a013b214f49552e1f436c312b00000000"
    },
    "m": "get",
@@ -2059,23 +2076,6 @@
   {
    "args": {
     "key": "f816bd041daedc975813ac0ba47f0613a1bc5543d2f00ac7125b3ef50cd2d7f300000000"
-   },
-   "m": "mark_evictable",
-   "ret": null
-  },
-  {
-   "args": {
-    "key": "1916a3fa8902fa9eba23441de030b624de85f3e829b38ed4d02b15831ea6888f00000000"
-   },
-   "m": "get",
-   "ret": {
-    "id": 2,
-    "ref": -1
-   }
-  },
-  {
-   "args": {
-    "key": "1916a3fa8902fa9eba23441de030b624de85f3e829b38ed4d02b15831ea6888f00000000"
    },
    "m": "mark_evictable",
    "ret": null
@@ -2664,6 +2664,23 @@
   },
   {
    "args": {
+    "key": "91fdb16e411daedf083e111ee293af2cc368b8a24f54dbbaa054c8eb662ba74100000000"
+   },
+   "m": "get",
+   "ret": {
+    "id": 9,
+    "ref": 1
+   }
+  },
+  {
+   "args": {
+    "key": "91fdb16e411daedf083e111ee293af2cc368b8a24f54dbbaa054c8eb662ba74100000000"
+   },
+   "m": "mark_evictable",
+   "ret": null
+  },
+  {
+   "args": {
     "key": "129388317c5a398cddfc2d04439f7419e70753eade039e609c6460e09c13bd0d00000000"
    },
    "m": "get",
@@ -2692,23 +2709,6 @@
   {
    "args": {
     "key": "6680ba0b1c9040c1b91509c479d22fdb27406ec4719bf392cd8c11652ce73f2200000000"
-   },
-   "m": "mark_evictable",
-   "ret": null
-  },
-  {
-   "args": {
-    "key": "91fdb16e411daedf083e111ee293af2cc368b8a24f54dbbaa054c8eb662ba74100000000"
-   },
-   "m": "get",
-   "ret": {
-    "id": 9,
-    "ref": 1
-   }
-  },
-  {
-   "args": {
-    "key": "91fdb16e411daedf083e111ee293af2cc368b8a24f54dbbaa054c8eb662ba74100000000"
    },
    "m": "mark_evictable",
    "ret": null
@@ -2826,10 +2826,10 @@
   }
  ],
  "provenance": {
-  "blis_vllm_commit": "82b8519e100557ab8165687456bbec426b2af118",
+  "blis_vllm_commit": "bfc8f6e1689177abdf325473717253b3d9204700",
   "kind": "recorded",
   "lockfile_sha256": "b506453042a0cc429fbcc68423217b73f3facb3894490cd7178930b4760a260b",
-  "mock_version": "gpu-mock/7+f4274aa648c4",
+  "mock_version": "gpu-mock/9+2ee0b3b47a9c",
   "mocks": [
    "vllm.v1.outputs.ModelRunnerOutput",
    "tests.v1.core.utils.create_scheduler",
@@ -2858,19 +2858,23 @@
    "KV-transfer parameters on a request",
    "OffloadingConnector scheduler config",
    "OffloadingConnector worker (OffloadingWorkerMetadata transport)",
-   "finished_req_ids iteration order (per-process hash seed)"
+   "finished_req_ids iteration order (per-process hash seed)",
+   "nixl._api.nixl_agent (OBJ and UCX backends)",
+   "zmq (pyzmq, as tiering/p2p/control/zmq.py uses it)",
+   "time.monotonic",
+   "vLLM environment variables of a tiering sequence"
   ],
   "model": "facebook/opt-125m",
   "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
   "oracle_inputs": {
    "oracle/kv_interfaces.py": "4bcde8955836b6ef732f8c901fa94c89a5b7592dcf1db8f6322e3be451c81c10",
-   "oracle/mocks.json": "afd576782c5322ce4c6aa4cdb72fb513e3e78cd8ea54dd6043af0cdf5680a658",
+   "oracle/mocks.json": "9521f9f69e212f249e79b33614003c43dea5642e45499afa48b893737fc49f9b",
    "oracle/requirements.lock": "d0a821f41c1462b95afb42d2aea808534c65456ac2ee2376a7ba309458560f2c",
-   "oracle/run_enginecore.py": "bb562e23d0ae394ca5d3a099a6083bec69ee7aff5915f35995277a07609a7c0f",
+   "oracle/run_enginecore.py": "35315709f7f99ceaa0dc0d01ec57997b92524b1825cb990ed27ba8417500461c",
    "oracle/run_kv_interfaces.py": "1fa4a221afbc499c6250ebea84b0cc9dc041161d13b262b515e79a3c9c46ea41",
-   "oracle/run_multiconnector.py": "ad09831bf60d0bec5e97e843c13d0e1b17b263eecf8ebe08ccb82f23ec0206fe",
-   "oracle/run_offloading.py": "2d4427698e2b4ec2490409923517326179fb940c013e772de9acb396adf0809a",
-   "oracle/run_scheduler.py": "1239a1d64f057fcb543789762859ea33211627e3f2b66b46087ed9ee936222f6",
+   "oracle/run_multiconnector.py": "62eb25ec9ab35893791f4b62f1b32cf9aef06acaa6db5765f8f4684b6154cfb2",
+   "oracle/run_offloading.py": "b5cc5476778c43785049ded33a01789ac273c7a111c7365cafec3ec3a32d4cdc",
+   "oracle/run_scheduler.py": "8aeea68a1dce3a32b9b8458ce710812c7851769e67bc3cc28414750054916b3a",
    "oracle/scenarios/offloading/offloading-preempt-flush.json": "d13254550cec8601e7557144fc0d803847652a2a7b30e1604641fb00c7a6f4ce"
   },
   "platform": "linux-x86_64",
