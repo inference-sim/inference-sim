@@ -231,8 +231,8 @@
       "id": "V3",
       "guards": "FID-10: a held field no golden has fails",
       "file": "oracle/value_coverage.py",
-      "old": "    for path in sorted(set(held) - set(seen)):",
-      "new": "    for path in []:",
+      "old": "        elif path not in seen:",
+      "new": "        elif False:",
       "suite": "oracle-checks"
     },
     {
