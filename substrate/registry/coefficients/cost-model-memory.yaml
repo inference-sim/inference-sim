@@ -60,7 +60,7 @@ coefficients:
       units: dimensionless
       method: vendor_spec
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - kind: model
           cite: "NVIDIA AISimulate aisimulate_core/sdk/backends/trtllm_backend.py TRTLLMBackend.ACTIVATION_COEFFICIENTS, reused by vllm_backend.py VLLMBackend"
@@ -93,7 +93,7 @@ coefficients:
       units: dimensionless
       method: vendor_spec
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - kind: model
           cite: "NVIDIA AISimulate aisimulate_core/sdk/backends/trtllm_backend.py TRTLLMBackend.ACTIVATION_COEFFICIENTS, reused by vllm_backend.py VLLMBackend"
@@ -126,7 +126,7 @@ coefficients:
       units: dimensionless
       method: vendor_spec
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - kind: model
           cite: "NVIDIA AISimulate aisimulate_core/sdk/backends/trtllm_backend.py TRTLLMBackend.ACTIVATION_COEFFICIENTS, reused by vllm_backend.py VLLMBackend"
@@ -159,7 +159,7 @@ coefficients:
       units: dimensionless
       method: vendor_spec
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - kind: model
           cite: "NVIDIA AISimulate aisimulate_core/sdk/backends/trtllm_backend.py TRTLLMBackend.ACTIVATION_COEFFICIENTS, reused by vllm_backend.py VLLMBackend"
@@ -193,7 +193,7 @@ coefficients:
       units: dimensionless
       method: vendor_spec
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - kind: model
           cite: "NVIDIA AISimulate aisimulate_core/sdk/backends/trtllm_backend.py TRTLLMBackend.ACTIVATION_COEFFICIENTS, reused by vllm_backend.py VLLMBackend"
@@ -232,7 +232,7 @@ coefficients:
       units: dimensionless
       method: vendor_spec
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - kind: model
           cite: "NVIDIA AISimulate aisimulate_core/sdk/backends/trtllm_backend.py TRTLLMBackend.ACTIVATION_COEFFICIENTS, reused by vllm_backend.py VLLMBackend"
@@ -271,7 +271,7 @@ coefficients:
       units: dimensionless
       method: vendor_spec
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - kind: model
           cite: "NVIDIA AISimulate aisimulate_core/sdk/backends/trtllm_backend.py TRTLLMBackend.ACTIVATION_COEFFICIENTS, reused by vllm_backend.py VLLMBackend"
@@ -310,7 +310,7 @@ coefficients:
       units: dimensionless
       method: vendor_spec
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - kind: model
           cite: "NVIDIA AISimulate aisimulate_core/sdk/backends/trtllm_backend.py TRTLLMBackend.ACTIVATION_COEFFICIENTS, reused by vllm_backend.py VLLMBackend"
@@ -350,7 +350,7 @@ coefficients:
       units: bytes_per_rank
       method: vendor_spec
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - kind: model
           cite: "NVIDIA AISimulate aisimulate_core/sdk/backends/base_backend.py BaseBackend.MIN_ACTIVATION_BYTES, not overridden by VLLMBackend"
@@ -368,7 +368,7 @@ coefficients:
       units: bytes_per_rank
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - kind: discussion
           cite: "vLLM start-up logs in vllm-project/vllm issues, collected by scripts/mine_vllm_cudagraph_memory.py into docs/vllm-cudagraph-capture-samples.csv"
@@ -414,7 +414,7 @@ coefficients:
       units: bytes_per_rank
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - kind: discussion
           cite: "vLLM start-up logs in vllm-project/vllm issues, collected by scripts/mine_vllm_cudagraph_memory.py into docs/vllm-cudagraph-capture-samples.csv"
@@ -495,7 +495,7 @@ coefficients:
       units: bytes_per_rank
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - kind: discussion
           cite: "vLLM start-up logs in vllm-project/vllm issues, collected by scripts/mine_vllm_cudagraph_memory.py into docs/vllm-cudagraph-capture-samples.csv"
@@ -539,7 +539,7 @@ coefficients:
       units: bytes_per_rank
       method: assumed
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - kind: discussion
           cite: "vLLM start-up logs in vllm-project/vllm issues, collected by scripts/mine_vllm_cudagraph_memory.py into docs/vllm-cudagraph-capture-samples.csv"
@@ -583,7 +583,7 @@ coefficients:
       units: bytes_per_rank
       method: not_charged
       fitted: false
-      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s]}
+      scope: {hardware: [a100-80, a100-sxm, b200, b300, gb200-nvl72, gb300, h100, h200, l40s, rtx6000pro-server]}
       sources:
         - kind: discussion
           cite: "vllm/v1/worker/gpu_model_runner.py profile_cudagraph_memory and vllm/v1/worker/gpu_worker.py, the accounting the dimension is taken from"

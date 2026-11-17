@@ -119,6 +119,16 @@ const (
 	// FormulaSLOAttainment is completed requests that met every SLO target of their
 	// class, over requests of the targeted classes that arrived.
 	FormulaSLOAttainment Formula = "slo_attainment"
+	// FormulaBusyShare is the time the engine spent running steps, over the window's length
+	// (and over the instances of the scope, below an instance).
+	FormulaBusyShare Formula = "busy_share"
+	// FormulaPrefillBusyShare is the part of the busy time charged to prefill tokens.
+	FormulaPrefillBusyShare Formula = "prefill_busy_share"
+	// FormulaDecodeBusyShare is the part of the busy time charged to decode tokens.
+	FormulaDecodeBusyShare Formula = "decode_busy_share"
+	// FormulaMFU is the model FLOPs the engine ran over the most it could have run in the window
+	// at the GPUs' datasheet dense peak.
+	FormulaMFU Formula = "mfu"
 )
 
 // Statistic summarises a population.
@@ -167,6 +177,10 @@ const (
 	// PopulationGatewayQueued is every request in the window that waited in the router's
 	// flow-control queue.
 	PopulationGatewayQueued Population = "gateway_queued_requests"
+	// PopulationRanSteps is every engine step that ran a batch, clipped to the window: the
+	// time between its start and its end counts, wherever the step began or ended. A step that
+	// ran nothing is not in it.
+	PopulationRanSteps Population = "ran_steps"
 	// PopulationTargeted is every request in the window whose class has an SLO target.
 	PopulationTargeted Population = "targeted_requests"
 )
@@ -503,6 +517,18 @@ func build() map[string]Definition {
 		"Completed requests that met every SLO target of their class, over the targeted requests that arrived.", "")
 	rate("cache_hit_rate", FormulaCacheHitRate, PopulationAdmissions, UnitFraction,
 		"Prompt tokens served from the prefix cache over prompt tokens looked up.", "")
+	busy := func(id string, f Formula, desc string) {
+		add(Definition{ID: id, Formula: f, Statistic: StatRate, Population: PopulationRanSteps,
+			Window: WindowMeasured, Unit: UnitFraction, Unfinished: UnfinishedNotApplicable, Description: desc})
+	}
+	busy("busy_share", FormulaBusyShare,
+		"Simulated time an instance's engine spent running steps, over the measured window's length; steps are clipped to the window, and pipeline stages that overlap count once. At a pool or the cluster, the instances' busy time over the window's length times the instance count. It is not a service-level figure: a share near 1 means the engine had work for every moment, not that it served it well.")
+	busy("prefill_busy_share", FormulaPrefillBusyShare,
+		"The part of busy_share charged to prefill: each step's time is split by the step's scheduled tokens, those of requests still computing their prompt against those past it (decode tokens, speculative drafts included).")
+	busy("decode_busy_share", FormulaDecodeBusyShare,
+		"The part of busy_share charged to decode: each step's time is split by the step's scheduled tokens (see prefill_busy_share). prefill_busy_share and decode_busy_share add up to busy_share.")
+	busy("mfu", FormulaMFU,
+		"Estimated model-FLOPs utilization: the model FLOPs of the steps run in the measured window (each step clipped to it, FLOPs in proportion), counted from the model graph as the kernel prices it (dense and expert GEMMs per token, the head over the sampling rows, attention over the keys each query reads; the elementwise work, recurrent mixers, sparse index scoring and drafter passes are not counted), over the window's length times the scope's GPUs times one GPU's datasheet dense peak at the format the linear layers run in. A model that is mostly recurrent therefore reads low.")
 	add(Definition{ID: "interactivity_mean", Formula: FormulaUserTPS, Statistic: StatMean,
 		Population: PopulationRequestsTwoTokens, Window: WindowMeasured, Unit: UnitTokensPerSUser,
 		Unfinished: UnfinishedExcluded, Follows: aiperfTPS,

@@ -513,3 +513,36 @@ func TestThroughputAndInteractivityFormsAreNotComparable(t *testing.T) {
 		t.Errorf("same form: diff %v, err %v", diff, err)
 	}
 }
+
+// The busy-time figures are defined at every scope, so a worst instance can be named, and a
+// share of the engine's time is not comparable to another metric's fraction (a hit rate, an
+// attainment) nor are the prefill and decode parts comparable to the whole (inference-sim#2081).
+func TestBusyShareDefinitions(t *testing.T) {
+	ids := []string{"busy_share", "prefill_busy_share", "decode_busy_share", "mfu"}
+	for _, id := range ids {
+		d, ok := Lookup(id)
+		if !ok {
+			t.Fatalf("%s is not in the registry", id)
+		}
+		if d.Unit != UnitFraction || d.Window != WindowMeasured {
+			t.Errorf("%s: unit %s, window %s; want a fraction of the measured window", id, d.Unit, d.Window)
+		}
+		if !hasScope(d.Scopes, ScopeInstance) || len(d.Aggregates) == 0 {
+			t.Errorf("%s: scopes %v, aggregates %v; want an instance figure a worst can be taken over", id, d.Scopes, d.Aggregates)
+		}
+	}
+	for i, a := range ids {
+		for _, b := range ids[i+1:] {
+			da, _ := Lookup(a)
+			db, _ := Lookup(b)
+			if err := Comparable(da, db); err == nil {
+				t.Errorf("%s and %s compare; they are different quantities", a, b)
+			}
+		}
+	}
+	busy, _ := Lookup("busy_share")
+	hit, _ := Lookup("cache_hit_rate")
+	if err := Comparable(busy, hit); err == nil {
+		t.Error("busy_share compares with cache_hit_rate")
+	}
+}

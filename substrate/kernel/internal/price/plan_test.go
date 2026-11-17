@@ -698,3 +698,41 @@ func TestPiecewiseSegmentsOfAShare(t *testing.T) {
 		t.Errorf("a stage of 3 dense and 2 sparse layers: %d segments, want 8", got)
 	}
 }
+
+// TestGatedDeltaNetInputProjectionsAreTwoMatmuls pins the launch count of a Gated DeltaNet layer's
+// input projections. vLLM v0.33.0 builds in_proj_qkvz and in_proj_ba as two modules and calls them
+// one after the other (QwenGatedDeltaNetAttention.forward_cuda), so the plan holds two GEMMs, each
+// at its own width. Fusing them as consecutive column-parallel projections would price one matmul at
+// the summed width and hide a launch; the same two roles under an attention layer's names (qkv_proj
+// then index_qk_proj, which the engine does merge) still fuse.
+func TestGatedDeltaNetInputProjectionsAreTwoMatmuls(t *testing.T) {
+	const hidden = 4096
+	plan := func(nodes ...model.Node) PlannedLayer {
+		t.Helper()
+		pl, err := planNodes(nodes, emitAll{}, testOptions(1, 1), hidden)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return pl
+	}
+	gdn := plan(
+		model.Node{Op: model.OpGEMM, Role: "recurrent_in_proj_qkvz", N: 12288, K: hidden, TP: model.TPColumn},
+		model.Node{Op: model.OpGEMM, Role: "recurrent_in_proj_ba", N: 64, K: hidden, TP: model.TPColumn},
+	)
+	if len(gdn.DenseGEMMs) != 2 {
+		t.Fatalf("GDN input projections planned as %d GEMMs, want 2 (vLLM launches two)", len(gdn.DenseGEMMs))
+	}
+	if gdn.DenseGEMMs[0].N != 12288 || gdn.DenseGEMMs[1].N != 64 {
+		t.Fatalf("widths %d and %d, want 12288 and 64 unsummed", gdn.DenseGEMMs[0].N, gdn.DenseGEMMs[1].N)
+	}
+	if gdn.Kernels != 2 {
+		t.Fatalf("GDN input projections launch %d kernels in the plan, want 2", gdn.Kernels)
+	}
+	attn := plan(
+		model.Node{Op: model.OpGEMM, Role: "qkv_proj", N: 9216, K: hidden, TP: model.TPColumn},
+		model.Node{Op: model.OpGEMM, Role: "index_qk_proj", N: 640, K: hidden, TP: model.TPColumn},
+	)
+	if len(attn.DenseGEMMs) != 1 || attn.DenseGEMMs[0].N != 9216+640 {
+		t.Fatalf("the engine's merged qkv and indexer projections must stay one GEMM, got %d (first n=%d)", len(attn.DenseGEMMs), attn.DenseGEMMs[0].N)
+	}
+}

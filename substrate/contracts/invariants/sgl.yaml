@@ -131,3 +131,29 @@
   target:
     status: ci
     milestone: 3
+- id: SGL-7
+  section: §5
+  statement: >-
+    A step that consumes a layered transfer follows the timing rule of §6.2. Its wait point is HiCache's
+    per-layer counter, which a KV pool's buffer accessor waits on before it returns a layer.
+  scope:
+  - blis-sglang
+  - blis-substrate
+  checks:
+  - repo: blis-substrate
+    check: >-
+      The shared suite in contracts/conformance for the layered-transfer timing rule (§6.2), with its
+      property tests
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      The oracle run for FID-11 hooks the HiCache counter's wait and compares the port's stated wait
+      points with it, with a run with no pending HiCache load as its known-bad input
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 3

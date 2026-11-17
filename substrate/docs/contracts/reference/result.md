@@ -370,13 +370,14 @@ is the generator's own count, and equals the sum of the fates.
 
 | Key | Type | Required | Meaning |
 |---|---|---|---|
-| `generated` | integer | yes | Requests the workload created, every planned session round included. |
+| `generated` | integer | yes | Requests the workload issued; the cap on a run counts these. |
+| `planned_not_issued` | integer | no | Session rounds planned and never issued. Not generated and not a fate; each has a request row with fate `not_started`. |
 | `completed` | integer | yes | Finished. |
 | `dropped` | mapping | no | Dropped, by reason: `admission_rejected`, `routing_rejected`, `encode_routing_rejected`, `gateway_queue_rejected`, `gateway_evicted`, `gateway_expired`, `unservable`, `context_overflow`, `decode_kv_unavailable`. Each count positive. |
 | `timed_out` | integer | yes | Cancelled by the client's timeout. |
 | `in_flight_at_horizon` | integer | yes | Running when the run stopped. |
 | `queued_at_horizon` | integer | yes | Waiting when the run stopped. |
-| `not_started` | integer | yes | Planned, such as a later session round, but never issued. |
+| `not_started` | integer | yes | Generated, but its arrival had not happened when the run ended. |
 | `length_capped` | integer | yes | Completed requests that stopped at a length limit. Not a fate. |
 
 ## `request_rows`
@@ -399,6 +400,8 @@ has `e2e_us`. The rows' fates agree with `requests`.
 | `tpot_us` | number | when sampled | (E2E - TTFT) / (output tokens - 1). |
 | `e2e_us` | integer | when sampled | Request latency; at least `ttft_us`. |
 | `scheduling_delay_us` | integer | no | Arrival at an engine to the first scheduled step. |
+| `queue_entry_us` | integer | no | Clock at which the request entered an engine's waiting queue; not before `arrival_us`. |
+| `first_token_us` | integer | when sampled | Clock at which the first token reached the client; `ttft_us` is this less `arrival_us`. |
 | `gateway_queue_delay_us` | integer | no | Time in the router's flow-control queue. |
 | `completion_index` | integer | completed | The 1-based position in the run's order of completion. |
 | `prompt_tokens` | integer | yes | Prompt tokens. |
@@ -407,7 +410,7 @@ has `e2e_us`. The rows' fates agree with `requests`.
 | `computed_tokens` | integer | no | Prompt tokens the engine computed. |
 | `output_tokens` | integer | yes | Tokens emitted. |
 | `length_capped` | boolean | no | Completed at a length limit. |
-| `phase` | string | no | `warmup`, `profile` or `grace`, when the workload marks phases. |
+| `phase` | string | no | The workload phase the request was sent in, a lowercase slug (`warmup` is outside the measured window), when the workload marks phases. |
 | `instance` | string | no | The engine instance that served it. |
 | `model` | string | no | The model tag. |
 | `adapter` | string | no | The LoRA adapter. |

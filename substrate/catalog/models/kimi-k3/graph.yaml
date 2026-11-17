@@ -79,9 +79,16 @@ layer_kinds:
   - op: Elementwise
     role: post_attn_norm
   - op: GEMM
+    role: router
+    n: 896
+    k: 7168
+    tp: replicated
+    weight_dtype: bf16
+  - op: GEMM
     role: routed_expert_down_proj
     n: 3584
     k: 7168
+    weight_dtype: bf16
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -91,18 +98,27 @@ layer_kinds:
     top_k: 16
     latent_size: 3584
     weight_dtype: mxfp4
-  - op: GroupedGEMM
-    shared: true
-    role: shared_experts
-    n: 3072
-    k: 7168
-    experts: 2
-    top_k: 2
-    weight_dtype: bf16
   - op: GEMM
     role: routed_expert_up_proj
     n: 7168
     k: 3584
+    weight_dtype: bf16
+  - op: GEMM
+    role: shared_gate_up
+    n: 12288
+    k: 7168
+    weight_dtype: bf16
+    tp: column
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 36864
+  - op: GEMM
+    role: shared_down
+    n: 7168
+    k: 6144
+    weight_dtype: bf16
+    tp: row
   - op: All2All
     role: moe_dispatch_combine
     emit: expert_parallel
@@ -144,13 +160,25 @@ layer_kinds:
     - 16
   - - 16
     - 17
+  - - 17
+    - 18
+  - - 18
+    - 19
+  - - 19
+    - 20
 - id: mla_moe
   nodes:
   - op: Elementwise
     role: input_norm
   - op: GEMM
     role: qkv_a_proj
-    n: 14400
+    n: 2112
+    k: 7168
+    tp: replicated
+    weight_dtype: bf16
+  - op: GEMM
+    role: mla_g_proj
+    n: 12288
     k: 7168
     weight_dtype: bf16
   - op: Elementwise
@@ -188,9 +216,16 @@ layer_kinds:
   - op: Elementwise
     role: post_attn_norm
   - op: GEMM
+    role: router
+    n: 896
+    k: 7168
+    tp: replicated
+    weight_dtype: bf16
+  - op: GEMM
     role: routed_expert_down_proj
     n: 3584
     k: 7168
+    weight_dtype: bf16
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -200,18 +235,27 @@ layer_kinds:
     top_k: 16
     latent_size: 3584
     weight_dtype: mxfp4
-  - op: GroupedGEMM
-    shared: true
-    role: shared_experts
-    n: 3072
-    k: 7168
-    experts: 2
-    top_k: 2
-    weight_dtype: bf16
   - op: GEMM
     role: routed_expert_up_proj
     n: 7168
     k: 3584
+    weight_dtype: bf16
+  - op: GEMM
+    role: shared_gate_up
+    n: 12288
+    k: 7168
+    weight_dtype: bf16
+    tp: column
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 36864
+  - op: GEMM
+    role: shared_down
+    n: 7168
+    k: 6144
+    weight_dtype: bf16
+    tp: row
   - op: All2All
     role: moe_dispatch_combine
     emit: expert_parallel
@@ -249,6 +293,14 @@ layer_kinds:
     - 14
   - - 14
     - 15
+  - - 15
+    - 16
+  - - 16
+    - 17
+  - - 17
+    - 18
+  - - 18
+    - 19
 - id: kda_dense
   nodes:
   - *id001
@@ -268,10 +320,12 @@ layer_kinds:
     role: mlp_gate_up
     n: 67584
     k: 7168
+    weight_dtype: bf16
   - op: GEMM
     role: mlp_down
     n: 7168
     k: 33792
+    weight_dtype: bf16
   - op: AllReduce
     role: mlp_out
     emit: tensor_parallel_unless_sp_moe
@@ -326,3 +380,4 @@ head:
   role: lm_head
   n: 163840
   k: 7168
+  weight_dtype: bf16

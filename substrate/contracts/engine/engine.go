@@ -456,6 +456,14 @@ const (
 )
 
 // KVEvent is one change to the set of KV blocks an engine's prefix cache can serve.
+//
+// A stored block carries the identity the engine hashed it under, so a router that indexes the
+// engine's blocks keys them as the engine does: a request of an adapter, a salt or a KV-cache
+// group is a different key from a base-model request with the same tokens. Every identity field
+// is the zero value when the engine has none or does not say; a block with none is the common
+// case. The fields follow what vLLM and SGLang publish (vLLM's BlockStored: lora_id, lora_name,
+// extra_keys, group_idx, kv_cache_spec_kind, kv_cache_spec_sliding_window; SGLang's: lora_id,
+// lora_name, cache_salt).
 type KVEvent struct {
 	Removed bool
 	Hash    string
@@ -463,6 +471,72 @@ type KVEvent struct {
 	Tokens  []int32
 	// Tier is where the block is cached: empty for the device cache, else the tier's name.
 	Tier string
+
+	// Cleared marks the engine dropping its whole cache (AllBlocksCleared): every block stored
+	// before it is gone. A Cleared event carries no Hash, Parent, Tokens or identity; Tier names
+	// the one tier cleared, or is empty for every tier.
+	Cleared bool
+
+	// LoRAID is the adapter's numeric id; nil for a block of no adapter or an engine that did
+	// not say.
+	LoRAID *int
+	// LoRAName is the adapter's public name; "" for none.
+	LoRAName string
+	// ExtraKeys are what the engine folded into this block's hash besides its tokens: the
+	// adapter, multimodal identifiers, the cache salt, prompt-embedding digests. Each element
+	// is a string, a 2-element []any of (string, int), or an adapter's 3-element ("lora", name,
+	// path) of strings, as vLLM publishes them. Nil for none.
+	ExtraKeys []any
+	// CacheSalt is the salt of the request that stored the block; "" for none. An engine sets
+	// the salt or ExtraKeys, not both (SGLang the salt, vLLM the keys).
+	CacheSalt string
+	// GroupIdx is the KV-cache group that stored the block (a hybrid-memory model has several);
+	// nil for an engine with one group or one that did not say.
+	GroupIdx *int
+	// SpecKind is the kind of that group in the engine's words ("full_attention",
+	// "sliding_window", "mamba", ...); "" when not said.
+	SpecKind string
+	// SlidingWindow is the group's window in tokens when SpecKind is a sliding-window kind
+	// ("sliding_window" or "sliding_window_mla"); nil otherwise.
+	SlidingWindow *int
+}
+
+// Validate reports an event that cannot exist: a Cleared event that names a block or an
+// identity, a removal that carries tokens or a storing identity, a cache salt beside extra keys,
+// a negative group, or a window that is not positive or that belongs to a group that has none.
+func (e KVEvent) Validate() error {
+	identity := e.LoRAID != nil || e.LoRAName != "" || e.ExtraKeys != nil || e.CacheSalt != "" ||
+		e.SpecKind != "" || e.SlidingWindow != nil
+	if e.Cleared {
+		if e.Removed || e.Hash != "" || e.Parent != "" || len(e.Tokens) > 0 || identity || e.GroupIdx != nil {
+			return errors.New("engine: a cleared KVEvent names no block and carries no identity (only Tier)")
+		}
+		return nil
+	}
+	if e.Hash == "" {
+		return errors.New("engine: a KVEvent that is not cleared names a block hash")
+	}
+	if e.Removed {
+		if len(e.Tokens) > 0 || e.Parent != "" || identity {
+			return errors.New("engine: a removal carries no tokens, parent or storing identity (only GroupIdx)")
+		}
+	}
+	if e.CacheSalt != "" && e.ExtraKeys != nil {
+		return errors.New("engine: a KVEvent carries a cache salt or extra keys, not both " +
+			"(SGLang folds the salt, vLLM the keys)")
+	}
+	if e.GroupIdx != nil && *e.GroupIdx < 0 {
+		return fmt.Errorf("engine: KVEvent group %d is negative", *e.GroupIdx)
+	}
+	if e.SlidingWindow != nil {
+		if *e.SlidingWindow <= 0 {
+			return fmt.Errorf("engine: KVEvent sliding window %d is not positive", *e.SlidingWindow)
+		}
+		if e.SpecKind != "sliding_window" && e.SpecKind != "sliding_window_mla" {
+			return fmt.Errorf("engine: KVEvent sliding window with spec kind %q, which has none", e.SpecKind)
+		}
+	}
+	return nil
 }
 
 // State is an engine's current state as a router or a test sees it.

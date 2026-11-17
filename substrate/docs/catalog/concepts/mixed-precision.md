@@ -50,8 +50,9 @@ one width and a role stored two ways would be priced at one:
   vLLM v0.32.0 reads the first from `config.json`, `modelopt.py:320-406`) that names a listed
   module, since the two files would then place it differently.
 
-The graph is the MXFP8 graph of `minimax-m3-mxfp8` with the routed experts at NVFP4 and the
-shared expert as a node of its own at FP8 (the same split `minimax-m3.1-flash` uses). The
+The graph is the MXFP8 graph of `minimax-m3-mxfp8` with the routed experts at NVFP4. The shared
+expert's gate/up, activation and down are nodes of their own in every MiniMax-M3 graph, the launches
+vLLM runs for it, and its two GEMMs take the global FP8 width (as in `minimax-m3.1-flash`). The
 global width is FP8 with the microscaling scale, the router FP32, the head BF16.
 
 The kernel does not recognise the spelling `modelopt_mixed`: it is vLLM's name, and the cost model

@@ -1,6 +1,7 @@
 package scenario
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
@@ -198,6 +199,41 @@ func TestEngine(t *testing.T) {
 		}
 		if !found {
 			t.Errorf("%s: no problem at %s:\n%s", c.name, c.path, p.Error())
+		}
+	}
+}
+
+// TestClusterPools covers the per-pool chip of SIM-17: a pool may state its own chip, a
+// pool that omits it carries the cluster's, and a name is listed once.
+func TestClusterPools(t *testing.T) {
+	s := singleNode()
+	s.Cluster.Nodes = 2
+	s.Cluster.Fabric = "ib-400g"
+	s.Cluster.Pools = []Pool{{Name: "fast", Hardware: "h100"}, {Name: "older", Hardware: "a100"}, {Name: "plain"}}
+	if p := s.Validate(); !p.OK() {
+		t.Fatalf("a cluster of pools rejected:\n%s", p.Error())
+	}
+	for name, want := range map[string]string{"fast": "h100", "older": "a100", "plain": "h100"} {
+		if got, ok := s.Cluster.PoolHardware(name); !ok || got != want {
+			t.Errorf("PoolHardware(%q) = %q, %v; want %q", name, got, ok, want)
+		}
+	}
+	if _, ok := s.Cluster.PoolHardware("absent"); ok {
+		t.Error("a pool the cluster does not list resolved to a chip")
+	}
+	// No pools declared: every name takes the cluster's chip.
+	if got, ok := singleNode().Cluster.PoolHardware("any"); !ok || got != "h100" {
+		t.Errorf("a cluster without pools: PoolHardware = %q, %v; want h100", got, ok)
+	}
+
+	s.Cluster.Pools = []Pool{{Name: "a"}, {Name: "a", Hardware: "a100"}, {Name: ""}}
+	p := s.Validate()
+	if p.OK() {
+		t.Fatal("a duplicate and a blank pool name were accepted")
+	}
+	for _, want := range []string{`duplicate node pool "a"`, "pools[2].name"} {
+		if !strings.Contains(p.Error(), want) {
+			t.Errorf("refusal lacks %q:\n%s", want, p.Error())
 		}
 	}
 }

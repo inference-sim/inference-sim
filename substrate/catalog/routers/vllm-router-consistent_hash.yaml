@@ -1,0 +1,153 @@
+# vLLM Router (the vllm-project/router project, installed as the wheel vllm-router) in its
+# consistent_hash policy. The router has no session-affinity timeout, so the key has none. The
+# entry records that no policy in the table's closed list is close enough, and why. Every router
+# citation is a line of the project's code at its tag v0.1.14; every llm-d citation is a line of
+# inference-sim/llm-d-router at 03246be994224ef031dfdafb966c54f60d01e933, an ancestor of the
+# module tag v1.0.0-blis.4 the simulator pins.
+# The run side is the AgentX definitions of InferenceX at 7afd3b8564f4e629e02bf3230c08e8eaaa790d9b
+# whose router is vllm-router 0.1.14 (10 of the 11 runs that name vllm-router). All 24 recipe
+# overrides that put the router in front of the workers pass `policy: consistent_hash`
+# (inferencex-e2e/benchmarks/single_node/srt-slurm-recipes/{dsv4,dsv41flash,minimaxm31flash}/vllm/*/agentic.yaml;
+# for example dsv4/vllm/b200-fp4-mtp/agentic.yaml lines 164-171). The router is installed by
+# inferencex-e2e/benchmarks/multi_node/srt-slurm-recipes/configs/vllm-router.sh line 11
+# (`pip install vllm-router==${ROUTER_VERSION}`). The wheel has no source distribution; its
+# version is the one the project's tag sets in Cargo.toml and pyproject.toml, and its compiled
+# policy carries the log strings of src/policies/consistent_hash.rs at that tag.
+kind: RouterMapping
+router: vllm-router
+mode: consistent_hash
+revisions:
+  - 0a6f74ec88c87b5477dac8e24466ab760b9f1f35
+builds:
+  - name: "0.1.14"
+    source: release
+    window: >-
+      The release wheel vllm-router 0.1.14 (PyPI, 24 April 2026): the commit tag v0.1.14 of
+      vllm-project/router points to (git ls-remote --tags https://github.com/vllm-project/router),
+      whose Cargo.toml and pyproject.toml both say version = "0.1.14". The wheel carries no source
+      distribution to compare, so that the wheel was built from this commit is the project's tag,
+      not a check of the wheel's bytes.
+    commits:
+      - 0a6f74ec88c87b5477dac8e24466ab760b9f1f35
+    files:
+      - path: py_src/vllm_router/router_args.py
+        blob: d249135575f6275941be4e16cba7b35f2eaecb91
+      - path: src/policies/consistent_hash.rs
+        blob: 62ff12cdfce83626334ad901dd2c837436b932cd
+      - path: src/policies/factory.rs
+        blob: 08ff2d80dbdde561bf2cf875b7e35dede84ac03d
+      - path: src/policies/hash_key.rs
+        blob: 08c8d3168d9899b5b3418f3ba59c63b74eec4ea5
+      - path: src/policies/mod.rs
+        blob: 59481765e1342619d70d36dc28ceb9db3743f06c
+policy: none
+reason: >-
+  The router hashes a key taken from the request onto a ring of its workers and sends the request
+  to the worker at that point, so a key always reaches the same worker while the set of workers is
+  unchanged, with no memory of earlier requests and no reading of load. The key is the first of the
+  headers x-session-id, x-user-id, x-tenant-id, x-correlation-id, x-request-id and x-trace-id the
+  request carries; with none of them, a user or session field of the body; with none of those, a
+  hash of the whole body (or the body itself when it is at most 100 bytes), which differs at every
+  turn of a growing conversation, so the request is then placed as if at random. No policy in the
+  closed list does this. round-robin and random-picker place a request without any key and so
+  split a session across workers, which is what this mode exists to prevent; least-active-requests
+  reads in-flight counts, which the router never does; default weighs queue depth, KV-cache
+  utilisation and prefix cache and ends at a max-score pick, so it can leave a session where its
+  prefix is cached but does not pin it. The nearest mechanism llm-d's router has is the
+  session-affinity scorer in its session_id strategy, which keeps a server-side binding from a
+  session identifier to the pod that served it, expires it after 300 seconds unused by default,
+  and for an unbound session expresses no preference and lets the picker place the request; the
+  hash ring has no binding, no expiry and places the first request of a session by its hash. That
+  scorer is also not hosted: the fork's audited list holds no session-affinity type at the
+  commit cited, so a configuration naming it is refused as not audited (inference-sim/inference-sim#1960
+  tracks admitting it). The key itself varies by run: 10 of the 24 recipe overrides set
+  AIPERF_HTTP_X_SESSION_ID_FROM_CORRELATION_ID, which makes the load generator send the session in
+  a header, and 14 do not, so which of the router's key sources those runs used is not recorded
+  by any data BLIS reads. The mode stays unsupported until the session-affinity scorer is hosted
+  and a composition with a stated key and a measured bound exists. How many workers sit behind
+  the router (one per data-parallel rank or one per node) is the deployment's, not the policy's.
+evidence:
+  - side: router
+    field: mode
+    repository: vllm-project/router
+    commit: 0a6f74ec88c87b5477dac8e24466ab760b9f1f35
+    path: py_src/vllm_router/router_args.py
+    lines: "136-146"
+    claim: The router's --policy argument accepts consistent_hash among its choices, which is the value the runs' recipes pass.
+  - side: router
+    field: mode
+    repository: vllm-project/router
+    commit: 0a6f74ec88c87b5477dac8e24466ab760b9f1f35
+    path: src/policies/factory.rs
+    lines: "52"
+    claim: The policy name consistent_hash creates the consistent-hash policy.
+  - side: router
+    field: policy
+    repository: vllm-project/router
+    commit: 0a6f74ec88c87b5477dac8e24466ab760b9f1f35
+    path: src/policies/hash_key.rs
+    lines: "11-18"
+    claim: The headers the key is read from, in order, are x-session-id, x-user-id, x-tenant-id, x-correlation-id, x-request-id and x-trace-id.
+  - side: router
+    field: policy
+    repository: vllm-project/router
+    commit: 0a6f74ec88c87b5477dac8e24466ab760b9f1f35
+    path: src/policies/hash_key.rs
+    lines: "29-52"
+    claim: The key is a header's value when a header is present, else a session or user field of the request body, else a hash of the whole body when it is longer than 100 bytes or the body text itself.
+  - side: router
+    field: policy
+    repository: vllm-project/router
+    commit: 0a6f74ec88c87b5477dac8e24466ab760b9f1f35
+    path: src/policies/consistent_hash.rs
+    lines: "249-287"
+    claim: The ring holds 160 virtual nodes for every worker the policy is given, healthy or not, and is rebuilt only when the list of worker URLs changes.
+  - side: router
+    field: policy
+    repository: vllm-project/router
+    commit: 0a6f74ec88c87b5477dac8e24466ab760b9f1f35
+    path: src/policies/consistent_hash.rs
+    lines: "290-313"
+    claim: The worker for a key is the first ring point at or after the key's hash, wrapping to the lowest point; no load, queue or cache state is read.
+  - side: router
+    field: policy
+    repository: vllm-project/router
+    commit: 0a6f74ec88c87b5477dac8e24466ab760b9f1f35
+    path: src/policies/consistent_hash.rs
+    lines: "423-456"
+    claim: When the worker the ring names is unhealthy or not in the list, the request goes to the first healthy worker instead, so a failed worker's keys all fall on one worker.
+  - side: router
+    field: policy
+    repository: vllm-project/router
+    commit: 0a6f74ec88c87b5477dac8e24466ab760b9f1f35
+    path: src/policies/mod.rs
+    lines: "167-174"
+    claim: A worker is healthy when it is marked healthy and its circuit breaker admits a request.
+  - side: llm-d
+    field: policy
+    repository: inference-sim/llm-d-router
+    commit: 03246be994224ef031dfdafb966c54f60d01e933
+    path: pkg/epp/framework/plugins/scheduling/scorer/sessionaffinity/README.md
+    lines: "9-10"
+    claim: The session-affinity scorer's session_id strategy keeps a server-side, TTL-evicted binding from a session identifier to the pod that served it; an unbound session expresses no preference and the picker places the request. Its default strategy, encoded_endpoint_header, is stateless and relies on the client echoing a token the router wrote.
+  - side: llm-d
+    field: policy
+    repository: inference-sim/llm-d-router
+    commit: 03246be994224ef031dfdafb966c54f60d01e933
+    path: pkg/embed/support.go
+    lines: "44-114"
+    claim: The plugin types the fork hosts are listed here, and none is a session-affinity filter or scorer.
+  - side: llm-d
+    field: policy
+    repository: inference-sim/llm-d-router
+    commit: 03246be994224ef031dfdafb966c54f60d01e933
+    path: pkg/embed/support.go
+    lines: "147-159"
+    claim: A plugin type outside the audited list is refused as not audited before its constructor runs.
+  - side: llm-d
+    field: policy
+    repository: inference-sim/llm-d-router
+    commit: 03246be994224ef031dfdafb966c54f60d01e933
+    path: reference-configs/README.md
+    lines: "39-48"
+    claim: The policies the router offers as configurations are default, round-robin, random-picker and least-active-requests; none places a request by a key.

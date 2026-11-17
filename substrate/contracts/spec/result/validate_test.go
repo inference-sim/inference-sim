@@ -88,9 +88,11 @@ func valid() *Result {
 		Requests: Requests{Generated: 4, Completed: 2, InFlightAtHorizon: 1, Dropped: map[DropReason]int{DropRoutingRejected: 1}},
 		RequestRows: []RequestRow{
 			{ID: "request_0", Fate: FateCompleted, ArrivalUs: 0, TTFTUs: ptr(int64(100)), TPOTUs: ptr(20.0),
-				E2EUs: ptr(int64(140)), CompletionIndex: 1, PromptTokens: 10, OutputTokens: 3},
+				E2EUs: ptr(int64(140)), CompletionIndex: 1, PromptTokens: 10, OutputTokens: 3,
+				QueueEntryUs: ptr(int64(10)), FirstTokenUs: ptr(int64(100))},
 			{ID: "request_1", Fate: FateCompleted, ArrivalUs: 5, TTFTUs: ptr(int64(90)), TPOTUs: ptr(20.0),
-				E2EUs: ptr(int64(130)), CompletionIndex: 2, PromptTokens: 10, OutputTokens: 3},
+				E2EUs: ptr(int64(130)), CompletionIndex: 2, PromptTokens: 10, OutputTokens: 3,
+				QueueEntryUs: ptr(int64(8)), FirstTokenUs: ptr(int64(95))},
 			{ID: "request_2", Fate: FateInFlightAtHorizon, ArrivalUs: 7, TTFTUs: ptr(int64(95)), PromptTokens: 10, OutputTokens: 1},
 			{ID: "request_3", Fate: FateDropped, DropReason: DropRoutingRejected, ArrivalUs: 9, PromptTokens: 10},
 		},
@@ -323,6 +325,12 @@ func TestEachFailureModeIsRefused(t *testing.T) {
 		{"more length-capped than completed", func(r *Result) { r.Requests.LengthCapped = 3; r.RequestRows = nil }, "requests.length_capped", "completed"},
 
 		// request rows
+		{"negative planned count", func(r *Result) { r.Requests.PlannedNotIssued = -1 }, "requests.planned_not_issued", "negative"},
+		{"planned rounds without rows", func(r *Result) { r.Requests.PlannedNotIssued = 2 }, "request_rows", "one per planned round never issued"},
+		{"planned count disagrees with the not_started rows", func(r *Result) {
+			r.Requests.PlannedNotIssued = 1
+			r.RequestRows = append(r.RequestRows, RequestRow{ID: "session_s_round_1_unissued", Fate: FateInFlightAtHorizon, PromptTokens: 4})
+		}, "request_rows", "fate not_started"},
 		{"rows short of generated", func(r *Result) {
 			r.RequestRows = r.RequestRows[:3]
 		}, "request_rows", "one row per generated request"},
@@ -339,6 +347,11 @@ func TestEachFailureModeIsRefused(t *testing.T) {
 		{"completed row without tpot", row(0, func(x *RequestRow) { x.TPOTUs = nil }), "request_rows[0].tpot_us", "required"},
 		{"e2e below ttft", row(0, func(x *RequestRow) { x.E2EUs = ptr(int64(50)) }), "request_rows[0].e2e_us", "less than ttft_us"},
 		{"negative scheduling delay", row(0, func(x *RequestRow) { x.SchedulingDelayUs = ptr(int64(-1)) }), "request_rows[0].scheduling_delay_us", "negative"},
+		{"negative queue entry", row(0, func(x *RequestRow) { x.QueueEntryUs = ptr(int64(-1)) }), "request_rows[0].queue_entry_us", "negative"},
+		{"queue entry before arrival", row(1, func(x *RequestRow) { x.QueueEntryUs = ptr(int64(4)) }), "request_rows[1].queue_entry_us", "before the request's arrival_us"},
+		{"first token without a token", row(3, func(x *RequestRow) { x.FirstTokenUs = ptr(int64(20)) }), "request_rows[3].first_token_us", "emitted no token"},
+		{"first token before queue entry", row(0, func(x *RequestRow) { x.QueueEntryUs = ptr(int64(101)) }), "request_rows[0].first_token_us", "before queue_entry_us"},
+		{"first token disagrees with ttft", row(0, func(x *RequestRow) { x.FirstTokenUs = ptr(int64(99)) }), "request_rows[0].first_token_us", "must equal first_token_us - arrival_us"},
 		{"non-finite tpot", row(0, func(x *RequestRow) { x.TPOTUs = ptr(nan) }), "request_rows[0].tpot_us", "finite"},
 		{"negative prompt tokens", row(0, func(x *RequestRow) { x.PromptTokens = -1 }), "request_rows[0].prompt_tokens", "negative"},
 		{"completion index on an unfinished row", row(2, func(x *RequestRow) { x.CompletionIndex = 3 }), "request_rows[2].completion_index", "only a completed"},
@@ -350,7 +363,7 @@ func TestEachFailureModeIsRefused(t *testing.T) {
 		{"row drop reasons disagree with the counts", row(3, func(x *RequestRow) { x.DropReason = DropUnservable }), "request_rows", "dropped for"},
 		{"length-capped row disagrees with the count", row(0, func(x *RequestRow) { x.LengthCapped = true }), "request_rows", "length-capped"},
 		{"length-capped row not completed", row(2, func(x *RequestRow) { x.LengthCapped = true }), "request_rows[2].length_capped", "only a completed"},
-		{"unknown phase", row(0, func(x *RequestRow) { x.Phase = "main" }), "request_rows[0].phase", "is not one of"},
+		{"unknown phase", row(0, func(x *RequestRow) { x.Phase = "Main Phase" }), "request_rows[0].phase", "lowercase slug"},
 		{"agentic tag with unknown kind", row(0, func(x *RequestRow) {
 			x.Agentic = &AgenticTag{TraceID: "t", Stream: "t", Kind: "child"}
 		}), "request_rows[0].agentic.kind", "is not one of"},
@@ -692,5 +705,15 @@ func TestAPropertyBorrowedAcrossSettingsValidates(t *testing.T) {
 	r.Input.WorkloadProperties = []WorkloadProperty{borrowed("same_drafter_other_settings", []string{"rejection"}, "", "s a")}
 	if p := r.Validate(); p.OK() || !strings.Contains(p.Error(), "differed[0]") {
 		t.Errorf("an unknown differed field was accepted: %v", p.Error())
+	}
+}
+
+// A round planned and never issued is outside generated and the fates, and has a not_started row.
+func TestPlannedNotIssuedRoundsHaveRowsOutsideGenerated(t *testing.T) {
+	r := valid()
+	r.Requests.PlannedNotIssued = 1
+	r.RequestRows = append(r.RequestRows, RequestRow{ID: "session_s_round_1_unissued", Fate: FateNotStarted, PromptTokens: 4})
+	if p := r.Validate(); !p.OK() {
+		t.Fatalf("a planned round with its row is refused:\n%s", p.Error())
 	}
 }

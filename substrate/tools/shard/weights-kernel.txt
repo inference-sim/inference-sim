@@ -1,0 +1,17 @@
+# Seconds a top-level test of ./kernel/ takes on a hosted 4-core runner (ci.yml runs 43345112088
+# and 43347477767). They only balance the legs of the "cost model tests" matrix: a test not listed
+# weighs 1, and a stale figure makes a leg slower, never makes a test run twice or not at all (see
+# shard.go).
+TestEveryCoefficientFamilyChangesSomePriceOrIsListed 142
+TestChangingALabelChangesNoPriceOrIsListed 36
+TestANamedEagle3DrafterWithUnstatedPassesIsRefused 12
+TestTheMixedPrecisionTargetPricesWithEitherEagle3HeadAndItsOwnQuantization 8
+TestANamedDrafterPricesInPlaceOfTheTargetsOwnSpeculator 7
+TestTRTLLMGenLaneIsChosenByTheReportedImplementation 6
+TestTheCommittedTRTLLMGenLaneIsNotPricedWithoutAKernelHash 6
+TestANamedDrafterStillRefusedWhereNoOneAnswerRemains 6
+TestGuardedPropertiesKillTheirMutants 5
+TestTheServedLayoutIsProvedAgainstTheGraph 5
+TestAnEagle3FirstPassIsChargedOverTheScheduledTokens 5
+TestTheMixedPrecisionGraphPricesNVFP4ExpertsUnderFP8Linears 4
+TestANamedEagle3DrafterWithStatedPassesIsAccepted 4

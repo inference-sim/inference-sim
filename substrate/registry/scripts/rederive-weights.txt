@@ -1,0 +1,16 @@
+# Seconds a pytest node of registry/validator takes in rederive.sh with the data present, from a
+# hosted runner (rederive.yml run 43344111564). They only balance the parallel legs of rederive.sh:
+# a node not listed weighs 1, and a stale figure makes a leg slower, never makes a test run twice
+# or not at all (tools/shard).
+validator/test_writers_are_idempotent.py::test_writer_reproduces_the_committed_file[relane_attention_swa.py] 302
+validator/test_writers_are_idempotent.py::test_writer_reproduces_the_committed_file[relane_attention_prefill.py] 263
+validator/test_operatorx.py::test_marlin_nvfp4_grouped_ramp_reproduces_from_operatorx 185
+validator/test_writers_are_idempotent.py::test_writer_reproduces_the_committed_file[relane_attention_decode.py] 177
+validator/test_writers_are_idempotent.py::test_writer_reproduces_the_committed_half_it_still_owns[relane_attention_mla.py --check-rate] 91
+validator/test_writers_are_idempotent.py::test_writer_reproduces_the_committed_file[relane_gemm_envelope.py] 90
+validator/test_writers_are_idempotent.py::test_writer_reproduces_the_committed_file[emit_attention_trtllm_gen.py] 61
+validator/test_writers_are_idempotent.py::test_writer_reproduces_the_committed_file[fit_deepseek_v41_decode.py] 37
+validator/test_attention_lane.py::test_the_pooled_pair_still_reproduces_from_every_row 17
+validator/test_writers_are_idempotent.py::test_writer_reproduces_the_committed_file[fit_marlin_grouped_ramp.py] 14
+validator/test_writers_are_idempotent.py::test_writer_reproduces_the_committed_file[fit_deepseek_v41_h200.py] 13
+validator/test_generated_from_aisimulate.py::test_gemm_envelope_survives_independent_refit[l40s-l40s-vllm/0.24.0-2.27.3] 12

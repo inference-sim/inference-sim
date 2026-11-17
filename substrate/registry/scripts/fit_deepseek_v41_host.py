@@ -132,7 +132,7 @@ TRANSFER_RULE = ("the value derived on the H200 nodes is carried unchanged to th
                  "on the assumption that their host CPU and CUDA driver dispatch an op and launch "
                  "a kernel as fast as the H200 nodes behind the anchor")
 ALL_PARTS = ["a100-80", "a100-sxm", "b200", "b300", "gb200-nvl72", "gb300", "h100", "h200",
-             "l40s"]
+             "l40s", "rtx6000pro-server"]
 # The workload the transfer check runs (weka agentic replay) has a mean prompt of ~89.6k
 # tokens; the bench row nearest it supplies the committed per-token value.
 WORKLOAD_PROMPT_TOKENS = 89_600

@@ -142,13 +142,13 @@ func TestGroupedNVFP4ReadsItsOwnRamp(t *testing.T) {
 		{hopper, true, "w4a16_nvfp4_grouped", "w4a16_mxfp4_grouped"},
 		{hopper, false, "bf16", ""},
 	} {
-		got := formatFit(nv, c.grouped, c.chip, true)
+		got := formatFit(nv, c.grouped, c.chip, true, false)
 		if got.suffix != c.suffix || got.fallback != c.fallback {
 			t.Errorf("%s grouped=%v: %s (fallback %q), want %s (fallback %q)", c.chip.Name,
 				c.grouped, got.suffix, got.fallback, c.suffix, c.fallback)
 		}
 	}
-	if got := formatFit(price.Format{DType: model.DTypeMXFP4}, true, hopper, true); got.suffix != "w4a16_mxfp4_grouped" {
+	if got := formatFit(price.Format{DType: model.DTypeMXFP4}, true, hopper, true, false); got.suffix != "w4a16_mxfp4_grouped" {
 		t.Errorf("MXFP4 grouped on Hopper moved to %s", got.suffix)
 	}
 }

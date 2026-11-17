@@ -19,11 +19,12 @@ import (
 //go:embed *.yaml
 var embedded embed.FS
 
-// Repositories are the seven BLIS repositories of design §2.1, by repository name. A
+// Repositories are the eight BLIS repositories of design §2.1, by repository name. A
 // check, a scope entry and a review trigger may name only these.
 var Repositories = []string{
 	"accuracy-dashboard",
 	"blis-config-search",
+	"blis-kvstore",
 	"blis-sglang",
 	"blis-substrate",
 	"blis-vllm",
@@ -38,6 +39,7 @@ var Families = []Family{
 	{File: "sub.yaml", Prefix: "SUB-"},
 	{File: "vlm.yaml", Prefix: "VLM-"},
 	{File: "sgl.yaml", Prefix: "SGL-"},
+	{File: "kvs.yaml", Prefix: "KVS-"},
 	{File: "rtr.yaml", Prefix: "RTR-"},
 	{File: "sim.yaml", Prefix: "SIM-"},
 	{File: "cfg.yaml", Prefix: "CFG-"},

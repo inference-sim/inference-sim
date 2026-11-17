@@ -125,7 +125,9 @@ kernel reads no setting and applies no engine default.
   processes or for which requests its head and later passes run (`draft_passes_unstated`,
   naming the drafter and the missing fact), or states a word outside the fixed list
   (`draft_passes_unknown`). The facts are `plan.DraftPolicy.FirstPassRows` and `PassRequests`;
-  the engine settings carry neither.
+  the engine settings carry neither. A parallel-block drafter (DFlash, DSpark) is refused the
+  same way when the plan does not state `PassRequests`, the requests its query pass runs for; it
+  states no first pass.
 
 ## The weight layout the engine says it serves
 

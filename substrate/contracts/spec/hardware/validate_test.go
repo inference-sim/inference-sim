@@ -486,6 +486,7 @@ var committedExceptions = []exception{
 	{"gb300", "SMCount", vocab.FieldMeasured, "NVIDIA GB300"},
 	{"h100", "MemoryGiB", vocab.FieldMeasured, "H100 SXM5 80GB HBM3"},
 	{"h200", "MemoryGiB", vocab.FieldMeasured, "NVIDIA H200"},
+	{"rtx6000pro-server", "MemoryGiB", vocab.FieldMeasured, "NVIDIA RTX PRO 6000 Blackwell Server Edition"},
 }
 
 // exceptionProblems compares the chips' raw files, by stem, with the list of exceptions they
@@ -569,8 +570,8 @@ func TestCommittedChipsRecordTheirExceptions(t *testing.T) {
 	for _, p := range exceptionProblems(files, committedExceptions) {
 		t.Error(p)
 	}
-	if len(committedExceptions) != 12 {
-		t.Errorf("%d exceptions listed; the committed chips record the six driver-reported memory totals and six SM counts", len(committedExceptions))
+	if len(committedExceptions) != 13 {
+		t.Errorf("%d exceptions listed; the committed chips record seven measured memory totals (six driver totals and one nvidia-smi total) and six SM counts", len(committedExceptions))
 	}
 }
 
@@ -647,9 +648,10 @@ func TestLosingAnExceptionFailsTheCheck(t *testing.T) {
 //	gb300               152  FlashInfer SM103 dispatch-plan tests, "Measured SM counts ... GB300 152"
 //	h100, h200          132  TensorRT cookbook dump, NVIDIA H100 and H200
 //	l40s                142  TensorRT cookbook dump, NVIDIA L40S
+//	rtx6000pro-server   188  NVIDIA datasheet, 24,064 CUDA cores and 752 Tensor Cores at 128 and 4 per SM (whitepaper)
 var committedSMCounts = map[string]int{
 	"a100-80": 108, "a100-sxm": 108, "b200": 148, "b300": 148, "gb200-nvl72": 152,
-	"gb300": 152, "h100": 132, "h200": 132, "l40s": 142,
+	"gb300": 152, "h100": 132, "h200": 132, "l40s": 142, "rtx6000pro-server": 188,
 }
 
 func TestCommittedSMCountsAreTheDeviceReports(t *testing.T) {

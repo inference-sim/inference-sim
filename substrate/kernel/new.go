@@ -84,13 +84,14 @@ type Inputs struct {
 	// primitive. When Operations is given, Implementations is derived from it and may be left
 	// empty; if both are given they must name the same implementations.
 	Operations []plan.Operation
-	// DraftFirstPassRows and DraftPassRequests state how an autoregressive drafter's passes run,
-	// as plan.PoolPlan.Drafts.FirstPassRows and PassRequests for a caller that holds the pool's
+	// DraftFirstPassRows and DraftPassRequests state how a drafter's passes run, as
+	// plan.PoolPlan.Drafts.FirstPassRows and PassRequests for a caller that holds the pool's
 	// plan: the engine resolves them, in neutral words, and the kernel prices what it is told
 	// (SUB-6). A deployment that speculates through an autoregressive drafter, named or the
 	// model graph's own, with either empty is refused (draft_passes_unstated), and an unknown word
-	// is refused (draft_passes_unknown). A parallel-block drafter needs neither; both are ignored
-	// while the deployment does not speculate.
+	// is refused (draft_passes_unknown). A parallel-block drafter needs DraftPassRequests, for
+	// which requests its query pass runs, and no DraftFirstPassRows; both are ignored while the
+	// deployment does not speculate.
 	DraftFirstPassRows plan.FirstPassRows
 	DraftPassRequests  plan.PassRequests
 	// Acceptance is the run's resolved speculative acceptance (blis-schemas acceptance.Resolve),
@@ -174,6 +175,16 @@ func construct(in Inputs) (*Kernel, error) {
 		return nil, err
 	}
 	running := runningImpls(in.Implementations)
+	// The experts kernel the plan states is the implementation the routed term's coefficients
+	// are bound to (VAL-8), where the caller reports none of its own for the primitive.
+	if in.Lowered != nil {
+		if e := in.Lowered.Plan.MoE.Experts; e.CodeHash != "" {
+			prim := string(plan.PrimMoEGroupedGEMM)
+			if _, ok := running[prim]; !ok && len(in.Operations) == 0 {
+				running[prim] = []coefficient.KernelImpl{{Library: e.Library, Variant: e.Variant, CodeHash: e.CodeHash}}
+			}
+		}
+	}
 	if err := coefficient.ValidateRunning(running); err != nil {
 		return nil, fmt.Errorf("the kernel implementations that run: %w", err)
 	}
@@ -357,11 +368,25 @@ func construct(in Inputs) (*Kernel, error) {
 		Format:     func(n model.Node) price.Format { return weightFormat(in.Model, n, served) },
 		EntryBytes: func(c model.Cache) int { return c.EntryBytes(k.cacheDType) },
 		StateBytes: stateBytes,
+		// Expert selection is a launch of its own on a modular experts backend
+		// (vllm/model_executor/layers/fused_moe/runner/moe_runner.py:620-643@4ba787ec).
+		RoutingLaunch: k.low.MoE.Routing == plan.RoutingSeparate,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("planning the model graph: %w", err)
 	}
 	k.plan = built
+	// A layer cannot launch fewer kernels than none: the engine's fused kernels replace nodes
+	// the layer has.
+	for _, c := range k.low.Launches {
+		for _, l := range built.Layers {
+			if l.Kernels+c.PerLayer < 0 {
+				return nil, fmt.Errorf("the plan says the engine's fused kernels change each layer's "+
+					"launches by %d at %d to %d tokens (Plan.Launches), but layer %s launches %d",
+					c.PerLayer, c.FromTokens, c.ToTokens, l.ID, l.Kernels)
+			}
+		}
+	}
 
 	// How many states a recurrent layer keeps, the context bound, and the KV page, as the
 	// engine resolved them.
@@ -634,17 +659,17 @@ func (k *Kernel) lift(c *resolve.Coefficients, g *model.Graph, cacheBytes float6
 	addFits := func(layers ...price.PlannedLayer) error {
 		for _, l := range layers {
 			for _, g := range l.DenseGEMMs {
-				if err := k.addFit(c, g.Format, false); err != nil {
+				if err := k.addFit(c, g.Format, false, g.Router); err != nil {
 					return err
 				}
 			}
 			if l.ExpertFLOPsPerTokenPerExpert > 0 {
-				if err := k.addFit(c, l.RoutedFormat, true); err != nil {
+				if err := k.addFit(c, l.RoutedFormat, true, false); err != nil {
 					return err
 				}
 			}
 			if l.SharedExpertFLOPsPerToken > 0 {
-				if err := k.addFit(c, l.SharedFormat, false); err != nil {
+				if err := k.addFit(c, l.SharedFormat, false, false); err != nil {
 					return err
 				}
 			}
@@ -663,7 +688,7 @@ func (k *Kernel) lift(c *resolve.Coefficients, g *model.Graph, cacheBytes float6
 	k.layerFits = make([][]gemmFit, len(k.plan.Layers))
 	for i, l := range k.plan.Layers {
 		for _, g := range l.DenseGEMMs {
-			k.layerFits[i] = append(k.layerFits[i], k.fits[fitKey{g.Format, false}])
+			k.layerFits[i] = append(k.layerFits[i], k.fits[fitKey{g.Format, false, g.Router}])
 		}
 	}
 
@@ -820,6 +845,7 @@ func (k *Kernel) lift(c *resolve.Coefficients, g *model.Graph, cacheBytes float6
 			rate:  rate * 1e6, // bytes per microsecond to bytes per second
 		}
 	}
+	k.pricesQwen4Exp(c)
 	k.attentionPrefillFloor = time.Duration(k.optional(c, "attention_prefill_floor",
 		len(usedAttn) > 0, "the per-layer attention prefill floor is not charged") *
 		float64(time.Microsecond))
@@ -1617,6 +1643,16 @@ type gemmFit struct {
 	// weightOnly is a weight-only kernel's own measured ramp (Marlin W8A16 or W4A16), which
 	// the registry validated with experts divided by their tensor-parallel slice.
 	weightOnly bool
+	// rankOwn is a ramp fitted on each rank's own routed FLOPs (its tensor-parallel slice of
+	// every expert), as a weight-only one is: the routed term divides the expert work by the
+	// slice for it (step.go, dpSlice). The grouped ramps per MoE backend are fitted that way.
+	rankOwn bool
+	// floor is the grouped kernel's own per-layer device time below which no step goes, in
+	// seconds (gemm_floor_<suffix>), 0 where the registry carries none.
+	floor float64
+	// smallRows and smallPeak: at most smallRows rows, a GEMM runs on a kernel with its own compute
+	// ceiling (an fp32 router gate's specialised kernel, up to 32 tokens). Zero means none.
+	smallRows, smallPeak float64
 }
 
 // fitKey is a format and whether it is a grouped (MoE) GEMM, which can select a ramp of
@@ -1624,6 +1660,7 @@ type gemmFit struct {
 type fitKey struct {
 	f       price.Format
 	grouped bool
+	router  bool
 }
 
 // fitSpec is how a format is priced: the ramp's coefficient suffix and the peak it is a
@@ -1633,6 +1670,8 @@ type fitSpec struct {
 	suffix, fallback string
 	peak             float64
 	why              string
+	// smallRows and smallPeak: see gemmFit.
+	smallRows, smallPeak float64
 }
 
 // dtypeFitSuffix is the served dtype's fit, as dtypeFit has always chosen it.
@@ -1641,12 +1680,16 @@ func dtypeFitSuffix(d model.DType, chip hardware.Chip) fitSpec {
 	return fitSpec{suffix: suffix, peak: peak}
 }
 
+// fp8BlockScaleElements is the elements one scale covers in a 128x128 block-scaled FP8 weight.
+const fp8BlockScaleElements = 128 * 128
+
 // formatFit chooses the kernel a GEMM of this format runs on this chip, which is what its
 // rate is.
 //
 //   - FP32 parameters (DeepSeek-V4.1's mHC) run at the TF32 tensor-core rate. The catalog
 //     states no TF32 peak; NVIDIA's data-center datasheets put dense TF32 at half the dense
 //     BF16 figure on every part the catalog carries, which is what is taken.
+//   - An FP32 router gate (MiniMax-M2's GateLinear) is not an mHC projection; see fp32RouterFit.
 //   - MXFP8 on SM90: the FlashInfer MXFP8 kernels ranked ahead of Marlin require SM100, so
 //     vLLM v0.31.0 serves it with MarlinMxfp8LinearKernel, "MXFP8 W8A16 GEMM via Marlin"
 //     (vllm/model_executor/kernels/linear/__init__.py:529-538, mxfp8/flashinfer.py:47-53,
@@ -1656,14 +1699,23 @@ func dtypeFitSuffix(d model.DType, chip hardware.Chip) fitSpec {
 //     TRTLLM and DeepGEMM backends being SM100/SM120 only), at the BF16 rate. An earlier
 //     form priced them at the FP8 peak, a rate the dequantize-then-BF16 path never reaches.
 //   - Everything else is dtypeFit's choice.
-func formatFit(f price.Format, grouped bool, chip hardware.Chip, hopper bool) fitSpec {
+func formatFit(f price.Format, grouped bool, chip hardware.Chip, hopper, router bool) fitSpec {
 	bf16 := chip.BF16Peak * 1e12
 	switch {
+	case f.DType == model.DTypeFP32 && router:
+		return fp32RouterFit(chip, bf16)
 	case f.DType == model.DTypeFP32:
 		return fitSpec{suffix: "bf16", peak: bf16 / 2,
 			why: "FP32 weights run at the TF32 tensor-core rate, taken as half the dense BF16 " +
 				"peak as NVIDIA's datasheets state it for every catalog part; the catalog states " +
 				"no TF32 peak, and the ramp is BF16's"}
+	case f.DType == model.DTypeINT4 && grouped:
+		// Compressed-tensors int4 routed experts (Kimi-K2.5) run vLLM's Marlin W4A16 grouped
+		// kernel on every part the catalog carries (int_wna16.py:132-141; the FlashInfer int4
+		// path is off by default, VLLM_USE_FLASHINFER_MOE_INT4=0), at the BF16 rate. The
+		// registry's Marlin grouped ramp was measured on exactly this int4 MoE
+		// (scripts/fit_marlin_grouped_ramp.py), on each rank's own slice of the routed FLOPs.
+		return fitSpec{suffix: "w4a16_mxfp4_grouped", fallback: "bf16", peak: bf16}
 	case f.DType == model.DTypeFP8 && f.MX() && hopper:
 		return fitSpec{suffix: "w8a16_mxfp8", fallback: "bf16", peak: bf16}
 	case (f.DType == model.DTypeMXFP4 || f.DType == model.DTypeNVFP4) && chip.NVFP4Peak <= 0:
@@ -1679,6 +1731,12 @@ func formatFit(f price.Format, grouped bool, chip hardware.Chip, hopper bool) fi
 			return fitSpec{suffix: "w4a16_mxfp4_grouped", fallback: "bf16", peak: bf16}
 		}
 		return fitSpec{suffix: "bf16", peak: bf16}
+	case f.DType == model.DTypeFP8 && f.ScaleElements == fp8BlockScaleElements && !grouped:
+		// Weight scales one per 128x128 block (MiniMax-M2.5, GLM) run vLLM's block-scaled FP8
+		// linear kernels, which the registry measures as the fp8_block ramp (AISimulate gemm
+		// fp8_block, v0.30.0/0.31.0), at the FP8 peak. The ramp is the dense GEMM's; routed
+		// experts keep their own (expertsFit, or fp8 where none is measured).
+		return fitSpec{suffix: "fp8_block", fallback: "fp8", peak: chip.FP8Peak * 1e12}
 	case f.DType == model.DTypeNVFP4 && grouped:
 		// A native-FP4 part's NVFP4 fused MoE (FlashInfer TRT-LLM, CUTLASS NvFp4) runs its
 		// own grouped kernels, whose efficiency is not the dense FlashInfer CuTe-DSL linear's
@@ -1693,17 +1751,43 @@ func formatFit(f price.Format, grouped bool, chip hardware.Chip, hopper bool) fi
 	return dtypeFitSuffix(f.DType, chip)
 }
 
+// expertsFit is the ramp of the grouped kernel the plan states the engine runs the routed
+// experts with, where one is measured for the format on the part; ok is false otherwise and the
+// format's own ramp (formatFit) applies.
+//
+// Block-FP8 routed experts on SM90 run the grouped kernel the engine's MoE backend selects, not
+// the dense FP8 linear the fp8 ramp measures: vLLM v0.33.0 runs Triton's fused experts at
+// expert-parallel width 1 and FlashInfer's CUTLASS experts above it unless moe_backend says
+// otherwise (fused_moe/oracle/fp8.py:79-130@4ba787ec). Each has its own measured ramp and floor
+// (gemm_*_fp8_grouped_<backend>, scripts/fit_hopper_fp8_grouped_ramp.py), read where the
+// registry carries one; the fp8 ramp otherwise, which is recorded.
+func expertsFit(f price.Format, chip hardware.Chip, hopper bool, experts string) (fitSpec, bool) {
+	if experts == "" || f.DType != model.DTypeFP8 || f.MX() || !hopper || chip.FP8Peak <= 0 {
+		return fitSpec{}, false
+	}
+	return fitSpec{suffix: "fp8_grouped_" + experts, fallback: "fp8", peak: chip.FP8Peak * 1e12}, true
+}
+
 // addFit lifts the fit for a format, once.
-func (k *Kernel) addFit(c *resolve.Coefficients, f price.Format, grouped bool) error {
-	key := fitKey{f, grouped}
+func (k *Kernel) addFit(c *resolve.Coefficients, f price.Format, grouped, router bool) error {
+	key := fitKey{f, grouped, router}
 	if _, ok := k.fits[key]; ok {
 		return nil
 	}
 	hopper := false
-	if f.DType == model.DTypeFP8 && f.MX() {
+	if f.DType == model.DTypeFP8 && (f.MX() || k.groupedExperts(grouped) != "") {
 		hopper = k.hopper()
 	}
-	spec := formatFit(f, grouped, k.chip, hopper)
+	experts := k.groupedExperts(grouped)
+	if e := k.low.MoE.Experts; grouped && experts == "" && e != (plan.KernelImpl{}) {
+		k.assume("moe_experts_kernel", e.Library+" "+e.Variant,
+			"the registry has no grouped ramp for this experts kernel, so the routed term is "+
+				"priced by its weight format")
+	}
+	spec, ok := expertsFit(f, k.chip, hopper, experts)
+	if !ok {
+		spec = formatFit(f, grouped, k.chip, hopper, router)
+	}
 	if spec.fallback != "" && !c.Has("gemm_eps_max_"+spec.suffix) {
 		k.assume("gemm_eps_max_"+spec.suffix, spec.fallback,
 			"no efficiency ramp for the "+spec.suffix+" kernel on "+k.chip.Name+", so it is "+
@@ -1727,8 +1811,41 @@ func (k *Kernel) addFit(c *resolve.Coefficients, f price.Format, grouped bool) e
 	}
 	fit.weightOnly = strings.HasPrefix(spec.suffix, "w8a16_") ||
 		strings.HasPrefix(spec.suffix, "w4a16_")
+	if strings.HasPrefix(spec.suffix, "fp8_grouped_") {
+		fit.rankOwn = true
+		if c.Has("gemm_floor_" + spec.suffix) {
+			us, err := c.Value("gemm_floor_" + spec.suffix)
+			if err != nil {
+				return fmt.Errorf("weights in %s: %w", f.DType, err)
+			}
+			if us < 0 {
+				return fmt.Errorf("gemm_floor_%s is %g us; a floor is not negative", spec.suffix, us)
+			}
+			fit.floor = us * 1e-6
+		}
+	}
+	fit.smallRows, fit.smallPeak = spec.smallRows, spec.smallPeak
 	k.fits[key] = fit
 	return nil
+}
+
+// groupedExperts is the registry's word for the grouped-expert kernel the plan states the engine
+// runs (plan.MoEPlan.Experts), for a grouped GEMM; "" for a dense one, or where the plan states
+// none or a kernel the registry has no word for. The kernel is matched by its name (the build is
+// the coefficient lookup's to match, by code hash): Triton's fused grouped GEMM, and FlashInfer's
+// CUTLASS fused MoE.
+func (k *Kernel) groupedExperts(grouped bool) string {
+	if !grouped {
+		return ""
+	}
+	e := k.low.MoE.Experts
+	switch {
+	case e.Variant == plan.ExpertsTriton.Variant:
+		return "triton"
+	case e.Library == plan.ExpertsFlashInferCutlass.Library && e.Variant == plan.ExpertsFlashInferCutlass.Variant:
+		return "flashinfer_cutlass"
+	}
+	return ""
 }
 
 // liftFit reads one fit's ramp. The asymptote and half-max are required; the shape-aware
@@ -1764,7 +1881,7 @@ func (k *Kernel) liftFit(c *resolve.Coefficients, spec fitSpec) (gemmFit, error)
 
 // fit returns the lifted fit for a format.
 func (k *Kernel) fit(f price.Format, grouped bool) gemmFit {
-	return k.fits[fitKey{f, grouped}]
+	return k.fits[fitKey{f, grouped, false}]
 }
 
 // validateDocuments runs blis-schemas' FIELD validation over the documents New was given.
@@ -2524,4 +2641,44 @@ func (k *Kernel) checkCollectivesStayInAGroup(firstNode int) error {
 			"instances each inside one group", i, firstNode, g[0], g[1])
 	}
 	return nil
+}
+
+// fp32CUDACoreTFlops is the datasheet FP32 (non-tensor) rate of the parts whose FP32 GEMM runs on
+// CUDA cores: NVIDIA's H100 SXM and H200 SXM datasheets state 67 TFLOP/s, the A100 19.5.
+var fp32CUDACoreTFlops = map[string]float64{"h100": 67, "h200": 67, "a100-sxm": 19.5, "a100-80": 19.5}
+
+// fp32RouterFit is the kernel a routed MoE layer's fp32 gate runs. vLLM's GateLinear
+// (model_executor/layers/fused_moe/router/gate_linear.py:50-136 at v0.33.0 4ba787ec) runs a
+// specialised fp32 kernel for at most 32 tokens on Hopper and Blackwell; there the gate is bound
+// by its 3 MB weight read and the FLOPs are negligible whatever the rate. Above 32 tokens a
+// Blackwell part runs bf16x3 (three BF16 GEMMs on the fp32 weight: a third of the BF16 peak) and
+// a Hopper part falls back to F.linear on the fp32 weight, which is SGEMM on CUDA cores because
+// the engine's default VLLM_FLOAT32_MATMUL_PRECISION is "highest" (envs.py:92, set at
+// v1/worker/gpu_worker.py:219-220). A part with no stated CUDA-core rate keeps the TF32 reading
+// (half the BF16 peak) and the assumption is recorded.
+func fp32RouterFit(chip hardware.Chip, bf16 float64) fitSpec {
+	spec := fp32RouterLargeM(chip, bf16)
+	if chip.NVFP4Peak > 0 || fp32CUDACoreTFlops[chip.Name] > 0 {
+		// Up to 32 tokens the specialised kernel runs (Hopper and Blackwell alike); the gate is bound by
+		// its weight read there, so it keeps the BF16-rate reading the ramp has always priced it at.
+		spec.smallRows, spec.smallPeak = 32, bf16/2
+	}
+	return spec
+}
+
+func fp32RouterLargeM(chip hardware.Chip, bf16 float64) fitSpec {
+	if chip.NVFP4Peak > 0 {
+		return fitSpec{suffix: "bf16", peak: bf16 / 3,
+			why: "an fp32 router gate above 32 tokens runs bf16x3 on a Blackwell part (gate_linear.py:116-136): " +
+				"three BF16 GEMMs, a third of the BF16 peak, on the BF16 ramp"}
+	}
+	if tf, ok := fp32CUDACoreTFlops[chip.Name]; ok {
+		return fitSpec{suffix: "bf16", peak: tf * 1e12,
+			why: "an fp32 router gate above 32 tokens runs F.linear on the fp32 weight (gate_linear.py:116-136), " +
+				"SGEMM on CUDA cores at the datasheet FP32 rate since VLLM_FLOAT32_MATMUL_PRECISION defaults to " +
+				"highest (envs.py:92), on the BF16 ramp"}
+	}
+	return fitSpec{suffix: "bf16", peak: bf16 / 2,
+		why: "FP32 weights run at the TF32 tensor-core rate, taken as half the dense BF16 peak; this part states " +
+			"no CUDA-core FP32 rate, so an fp32 router gate keeps that reading"}
 }

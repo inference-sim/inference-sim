@@ -180,5 +180,5 @@ func ExampleValidateAgainstCatalog() {
 	// --8<-- [end:resolve]
 
 	// Output:
-	// error: references.hardware: "nvidia-h100": looked for hardware/nvidia-h100.yaml; the catalog has [a100-80 a100-sxm b200 b300 gb200-nvl72 gb300 h100 h200 l40s]
+	// error: references.hardware: "nvidia-h100": looked for hardware/nvidia-h100.yaml; the catalog has [a100-80 a100-sxm b200 b300 gb200-nvl72 gb300 h100 h200 l40s rtx6000pro-server]
 }

@@ -18,7 +18,8 @@ name: rederive
 #
 # It runs nightly on the full data (SUB-4, SUB-8), on every pull request that changes the
 # registry's coefficients, scripts or tests, and by hand. The checkout is ~135 MB and the
-# gates take ~20 minutes, which a pull request touching those paths pays. It is a gate: its
+# gates take ~7 minutes (four pytest processes at once, REDERIVE_JOBS), which a pull request
+# touching those paths pays. It is a gate: its
 # trigger paths are declared below and in .github/gates.yaml, and the nightly status page
 # shows it failing when its last real run is more than seven days old (X16).
 #
@@ -67,23 +68,24 @@ jobs:
       # The repository is ai-dynamo/aisim since its rename (f85518b3); the package moved from
       # python/aisimulate/src/aisimulate_core to python/aisim/src/aisim_core with it.
       AISIMULATE_SHA: 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18
-      # A third AISimulate commit, for one table: dsv4_hca_attn_module_perf, the FlashMLA sparse
+      # A second AISimulate commit, for one table: dsv4_hca_attn_module_perf, the FlashMLA sparse
       # decode kernel measured alone, which AISimulate retired at e8cbe2dc. Its successor times
       # the whole attention module, a different boundary (VAL-9), so the DeepSeek-V4.1 writers
       # read the kernel rows here (fit_deepseek_v41_h200.py KERNEL_DATA_SHA) and every other
       # table at AISIMULATE_SHA.
       AISIMULATE_DSV4_KERNEL_SHA: 2f0f4cd8606d580567b253d02f3d699fe36db865
-      # A second AISimulate commit, for one family: the h100/h200 fp16 all-reduce triples on
-      # vLLM 0.31.0's custom all-reduce (scripts/relane_allreduce_vllm.py), a sweep the main
-      # pin predates. Moving AISIMULATE_SHA itself would refit every family at once.
-      AISIMULATE_ALLREDUCE_SHA: 7980e9500c00d9f85d7f296451d12768a743c70e
+      # A third AISimulate commit (the repository is now ai-dynamo/aisim), for one family: the
+      # GLM-5.3 attention-module table scripts/fit_glm53_attention.py fits, which the main pin
+      # predates. TEMPORARY: it folds into AISIMULATE_SHA at the AISimulate re-pin.
+      AISIM_GLM53_SHA: 6fdf6fb6b2e1c15b8f5cd1ba35fd2d50cdb2eb18
       # The InferenceX commit validator/testdata/inferencex/curves.json pins the golden acceptance
       # curves at (scripts/refresh_inferencex_curves.py moves both together).
       INFERENCEX_SHA: e63beeeee981b5f7bd055685a32cc38ad30c7fdb
       # The engine release's kernel-implementation table the trtllm-gen lane is keyed by
-      # (emit_attention_trtllm_gen.py). TEMPORARY: the pushed head of inference-sim/blis-vllm#154,
-      # until a blis-vllm release publishes the table.
-      BLIS_VLLM_SHA: e7855679267cac391618dc77a640e3c18b7a4e65
+      # (emit_attention_trtllm_gen.py), and the GLM-5.3 sparse-MLA entries are keyed by
+      # (fit_glm53_attention.py), and the moe.grouped_gemm builds (fit_hopper_fp8_grouped_ramp.py).
+      # TEMPORARY: the pushed head of inference-sim/blis-vllm#217 (on #154), until a blis-vllm release publishes the table.
+      BLIS_VLLM_SHA: 63fbe3b7103f91404f6ccaeb8d681109c8dc52f5
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -114,16 +116,16 @@ jobs:
             python/aisimulate/src/aisimulate_core/systems/data/h100_sxm/sparse_attention/vllm/0.25.0
             python/aisimulate/src/aisimulate_core/systems/data/h200_sxm/sparse_attention/vllm/0.25.0
 
-      - name: Check out AISimulate at the all-reduce pin (h100/h200 comm only)
+      - name: Check out aisim at the GLM-5.3 pin (the h200 GLM-5.3 attention module and DSA context table only)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ai-dynamo/aisim
-          ref: ${{ env.AISIMULATE_ALLREDUCE_SHA }}
-          path: aisimulate-allreduce
+          ref: ${{ env.AISIM_GLM53_SHA }}
+          path: aisim-glm53
           fetch-depth: 1
           sparse-checkout: |
-            python/aisimulate/src/aisimulate_core/systems/data/h100_sxm/comm
-            python/aisimulate/src/aisimulate_core/systems/data/h200_sxm/comm
+            python/aisim/src/aisim_core/systems/data/h200_sxm/glm53_attention
+            python/aisim/src/aisim_core/systems/data/h200_sxm/sparse_attention/vllm/0.30.0
 
       - name: Check out blis-vllm's kernel_impls.json (pinned)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -169,9 +171,18 @@ jobs:
           AISIMULATE_DSV4_KERNEL_DATA: ${{ github.workspace }}/aisimulate-dsv4-kernel/python/aisimulate/src/aisimulate_core/systems/data
           BLIS_CATALOG: ${{ github.workspace }}/catalog
           BLIS_KERNEL_IMPLS: ${{ github.workspace }}/blis-vllm/kernel_impls.json
-          AISIMULATE_ALLREDUCE_DATA: ${{ github.workspace }}/aisimulate-allreduce/python/aisimulate/src/aisimulate_core/systems/data
+          # The all-reduce sweeps are in the main pin since 6fdf6fb6 (the h100/h200 0.31.0 files
+          # are byte-identical to the earlier all-reduce pin's); rederive.sh still names the
+          # variable, so it points at the same tree.
+          AISIMULATE_ALLREDUCE_DATA: ${{ github.workspace }}/aisimulate/python/aisim/src/aisim_core/systems/data
+          AISIM_GLM53_DATA: ${{ github.workspace }}/aisim-glm53/python/aisim/src/aisim_core/systems/data
           INFERENCEX_GOLDEN: ${{ github.workspace }}/inferencex/inferencex-e2e/infx/golden_al_distribution
           COLLECTIVEX_DATA: ${{ runner.temp }}/collectivex
           OPERATORX_DATA: ${{ runner.temp }}/collectivex
+          # The hosted runner has four cores and the tests are single-threaded subprocess runs of
+          # the writers: four pytest processes at once, each a disjoint share of the collected
+          # tests (tools/shard; rederive.sh checks each share before it runs it). The longest
+          # single test (relane_attention_swa.py, ~5 min) is now the floor, not the sum.
+          REDERIVE_JOBS: "4"
         working-directory: registry
         run: scripts/rederive.sh

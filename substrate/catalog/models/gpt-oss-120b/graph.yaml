@@ -20,6 +20,7 @@ layer_kinds:
     role: qkv_proj
     n: 5120
     k: 2880
+    weight_dtype: bf16
   - op: Attention
     holds_engine_kv: true
     kind: swa
@@ -31,11 +32,18 @@ layer_kinds:
     role: o_proj
     n: 2880
     k: 4096
+    weight_dtype: bf16
   - op: AllReduce
     role: attn_out
     emit: tensor_parallel
   - op: Elementwise
     role: post_attn_norm
+  - op: GEMM
+    role: router
+    n: 128
+    k: 2880
+    tp: replicated
+    weight_dtype: bf16
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -67,6 +75,8 @@ layer_kinds:
     - 7
   - - 7
     - 8
+  - - 8
+    - 9
 - id: full_moe
   nodes:
   - op: Elementwise
@@ -75,6 +85,7 @@ layer_kinds:
     role: qkv_proj
     n: 5120
     k: 2880
+    weight_dtype: bf16
   - op: Attention
     holds_engine_kv: true
     kind: gqa
@@ -85,11 +96,18 @@ layer_kinds:
     role: o_proj
     n: 2880
     k: 4096
+    weight_dtype: bf16
   - op: AllReduce
     role: attn_out
     emit: tensor_parallel
   - op: Elementwise
     role: post_attn_norm
+  - op: GEMM
+    role: router
+    n: 128
+    k: 2880
+    tp: replicated
+    weight_dtype: bf16
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -121,6 +139,8 @@ layer_kinds:
     - 7
   - - 7
     - 8
+  - - 8
+    - 9
 stack:
   pattern:
   - swa_moe
@@ -133,3 +153,4 @@ head:
   role: lm_head
   n: 201088
   k: 2880
+  weight_dtype: bf16
