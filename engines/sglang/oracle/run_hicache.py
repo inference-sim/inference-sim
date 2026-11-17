@@ -358,6 +358,17 @@ def record_scenario(sglang_root: str, path: str) -> dict:
         scenario = json.load(f)
     if "hicache" not in scenario:
         raise SystemExit(f"{path}: a HiCache scenario names its HiCache settings in a \"hicache\" block")
+    if scenario["hicache"].get("storage_backend") not in (None, "file"):
+        raise SystemExit(f"{path}: the oracle runs the file storage backend only")
+    if scenario["hicache"].get("storage_backend"):
+        # The scheduler process keeps no SGLANG_* variable, so the file backend's directory is
+        # its extra configuration's: one fixed per scenario, emptied first, so the trace names
+        # the same directory every run and no run reads pages another stored.
+        import shutil
+
+        store = os.path.join(tempfile.gettempdir(), "blis-sglang-hicache", os.path.basename(path).removesuffix(".json"))
+        shutil.rmtree(store, ignore_errors=True)
+        scenario = {**scenario, "hicache": {**scenario["hicache"], "file_storage_path": store}}
     quit_seen = []
     signal.signal(signal.SIGQUIT, lambda *a: quit_seen.append(True))
     with tempfile.TemporaryDirectory() as tmp:

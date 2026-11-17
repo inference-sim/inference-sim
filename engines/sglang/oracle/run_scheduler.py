@@ -49,6 +49,11 @@ def server_args(scenario: dict):
         h = scenario["hicache"]
         hicache = {"enable_hierarchical_cache": True, "hicache_ratio": h["ratio"], "hicache_io_backend": h["io_backend"],
                    "hicache_mem_layout": h["mem_layout"], "hicache_write_policy": h["write_policy"]}
+        if h.get("storage_backend"):
+            # file_storage_path is run_hicache.py's, a directory it empties before the run.
+            hicache.update(hicache_storage_backend=h["storage_backend"],
+                           hicache_storage_prefetch_policy=h.get("prefetch_policy", "best_effort"),
+                           hicache_storage_backend_extra_config=json.dumps({"file_storage_path": h["file_storage_path"]}))
     return ServerArgs(
         **hicache,
         model_path=os.environ["ORACLE_MODEL"],
