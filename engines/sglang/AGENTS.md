@@ -78,7 +78,7 @@ status, and each of its checks here. `ci` means the check runs in CI; `new` mean
 yet, and the target milestone says when it must. A pull request cites the identifiers it
 keeps or introduces; CI refuses an identifier that does not exist (X14).
 
-- **X1** (partial; target ci by M4) What a user would hand llm-d, vLLM or SGLang is what they hand BLIS, in the upstream's own field names, types, defaults and errors.
+- **X1** (partial; target ci by M3) What a user would hand llm-d, vLLM or SGLang is what they hand BLIS, in the upstream's own field names, types, defaults and errors.
   - `new`, pull_request: Every configuration field of the pinned release is classified as modelled, proven inert, or not modelled (VLM-3, SGL-3)
   - `new`, pull_request: An unknown field, or a not-modelled field set away from its default, is refused with its upstream name
   - `new`, pull_request: Defaults match: the upstream's own configuration code resolves each oracle scenario, and the port's values are compared field by field
@@ -98,7 +98,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: A lower repository refers to accuracy-dashboard only through the harness pin file
   - `new`, pull_request: The engine repositories and the router fork import only substrate packages under contracts/
   - `new`, pull_request: Every generated file matches its generator's output
-- **X8** (new; target ci by M2) Every number records the exact versions and data it came from, and can be regenerated from them.
+- **X8** (new; target ci by M3) Every number records the exact versions and data it came from, and can be regenerated from them.
   - `new`, pull_request: An accuracy change's success criteria are committed before any commit that reads its held-out data
 - **X9** (new; target ci by M3) For every pinned upstream release, each feature the upstream offers has exactly one status in a generated list.
   - `new`, pull_request: The surface list is regenerated from the pinned upstream source and matches the committed list
@@ -130,13 +130,13 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: Pip install --require-hashes in every Python CI job
   - `new`, pull_request: A check that LICENSE and any required NOTICE exist
   - `new`, pull_request: The provenance test checks each derived file's licence header
-- **X22** (partial; target ci by M4) Every verdict (a CI result or the review agent's review, including its answers to review questions) names the git tree hash of the exact tree it judged.
+- **X22** (partial; target ci by M3) Every verdict (a CI result or the review agent's review, including its answers to review questions) names the git tree hash of the exact tree it judged.
   - `new`, pull_request: The shared pull-request check in blis-substrate/.github/workflows, called by every repository, which records each review-agent answer with the head tree
   - `new`, pull_request: A workflow lint that refuses ignored exit codes
   - `new`, pull_request: Each job's item count
 - **X23** (new; target ci by M1) A version is written in one place.
   - `new`, pull_request: A lint in every repository, over every file type, for version literals of BLIS modules or Go that are not generated
-- **X24** (new; target ci by M4) Every review finding ends in one of three outcomes before merge: fixed, filed as a linked issue, or rejected with a reason.
+- **X24** (new; target ci by M3) Every review finding ends in one of three outcomes before merge: fixed, filed as a linked issue, or rejected with a reason.
   - `new`, pull_request: A pull-request step that lists each review thread that is open or resolved with no outcome, as a notice and in the job summary; it never fails, so no check waits on a thread
 - **X25** (new; target ci by M1) Tests read only their declared inputs, never sibling checkouts, ignored directories or the user's environment.
   - `new`, pull_request: CI in a clean container with no sibling checkouts
@@ -171,7 +171,12 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: A generator that parses SGLang's tree-cache, allocator and pool selection branches at the pinned tag, with an unlisted branch as its known-bad input (§7.5)
   - `new`, pull_request: A T2 scenario per ported type
   - `new`, pull_request: A start-up refusal test for each refused type
-- **SIM-8** (new; target ci by M2) Requests and sessions follow one written state machine, whose end states are the fates of §8.7 (DEV-9).
+- **SGL-7** (new; target ci by M3) A step that consumes a layered transfer follows the timing rule of §6.2.
+  - `new`, pull_request: The oracle run for FID-11 hooks the HiCache counter's wait and compares the port's stated wait points with it, with a run with no pending HiCache load as its known-bad input
+- **KVS-2** (new; target ci by after M4) The repository imports only packages under contracts/.
+  - `new`, pull_request: The import test of X3: no engine module imports blis-kvstore
+  - `new`, pull_request: The provenance case of X3 that refuses a file derived from a store path other than the adapter
+- **SIM-8** (new; target ci by M3) Requests and sessions follow one written state machine, whose end states are the fates of §8.7 (DEV-9).
   - `new`, pull_request: An oracle scenario for identifier reuse in each engine repository
 - **SIM-9** (partial; target ci by M2) Each refusal has two tests: the smallest configuration that triggers it, and the closest one that does not.
   - `new`, pull_request: The refusal test pairs in inference-sim, each engine repository and the router fork
@@ -184,7 +189,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: The oracle runners refuse to write traces without the update flag
 - **FID-4** (new; target ci by M2) Every ported function is exercised by at least one recorded scenario.
   - `new`, pull_request: Coverage gate
-- **FID-5** (new; target ci by M3) A framework (connector base, offload tiering, HiCache) is marked modelled in the surface list only when its contract has traces of its own, independent of any single connector built on it.
+- **FID-5** (new; target ci by M3) A framework (connector base, offload tiering, HiCache) is marked modelled in the surface list only when it has recorded and direct traces at its own interface (§7.6).
   - `new`, pull_request: A surface-list check that a framework marked modelled names traces of its own
 - **FID-6** (new; target ci by M2) A property asserted about an engine port, such as a monotonicity law, is first run against the upstream oracle.
   - `new`, pull_request: The property tests run in the oracle tier before they run against the port
@@ -196,6 +201,10 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: A value-coverage report in each engine repository's CI, which fails on any field or series seen only at one value
 - **FID-11** (new; target ci by M3) The work a step shape asks the cost model to price equals what the pinned upstream launches for the same step, for each layer: the rows of every matrix multiply, each operation's FLOPs and bytes, the token count of every draft pass, and the context entries each context-dependent operation reads, bounded by its window where it has one.
   - `new`, pull_request: An oracle comparison, run with T0 and on engine pull requests that change how step shapes are emitted. It executes the upstream forward pass on meta tensors, at the padded batch the upstream launches, under a PyTorch dispatch mode that counts each operation's rows, FLOPs and bytes, with the ranks under a fake process group. Each opaque custom operation, such as attention or a fused mixture of experts, is counted by a rule the manifest lists. Routed-expert rows are compared in total (tokens times experts per token), since routing depends on data. Context reads are counted from the upstream's own attention metadata: sequence lengths, block tables and windows. Known-bad inputs: a matrix multiply priced at fewer rows per token than the upstream runs, and a windowed gather priced over the whole context
+- **FID-12** (new; target ci by after M4) A connector or storage backend in the pinned tree that calls a KV store package runs that package, and every service it calls that makes a decision BLIS models, at the versions the oracle's lock pins, as code under test.
+  - `new`, pull_request: check_mocks.py fails on a replacement inside a store package or its services other than a clock or the byte transport, with a replaced Mooncake store master as its known-bad input
+  - `new`, pull_request: check_lock.py fails when the package or a service is missing from the lock or a trace records another version
+  - `new`, pull_request: check_goldens.py fails a trace whose number of recorded calls differs from the number the oracle counts at the package's entry points in the same run
 - **DEV-3** (new; target ci by M2) Each engine declares, for each kind of external input, the step boundary at which it takes effect, whether it arrives during a step or at the instant one ends, and whether the upstream's order there is fixed or a race between threads.
   - `new`, pull_request: The oracle, which records where the upstream's loop reads its input queue (each read site is listed in the manifest; where that loop is transcribed, as vLLM's data-parallel busy loop is, the check runs against the transcription, FID-8) and checks that reads happen only at the declared boundaries
 - **DEV-12** (new; target ci by M1) Each change is a verification change or a validation change by what it does (§8.9), and is judged as such.
@@ -242,6 +251,7 @@ changes one of its paths, the agent answers it yes or no in a review comment, wi
 files and lines that support the answer. No CI job lists, records or waits on a question,
 and no person has to answer one.
 
+- **X3** Does this file, though marked original, decide what a store holds, where an object lives or what it evicts, which belongs to a blis-kvstore package? Expertise: engine repository expertise. Applies when: a change to an engine's connector or storage-backend code. Paths: `core/connector/**`, `**/connector/**`, except `**/*_test.go`.
 - **X5** Does this new replacement stand in only for the GPU, clock, transport, environment settings, the hardware platform or an outside service, and not for a decision? If it reproduces a decision, is it declared as a transcription? Expertise: engine repository expertise. Applies when: the manifest changes. Paths: `oracle/mocks.json`.
 - **X6** Could this floating-point reduction give a different result on another platform? Expertise: expertise in the changed repository. Applies when: a parallel or floating-point reduction is added, or the cross-platform check fails. The review agent decides whether it applies, and may mark it with the label `review:X6`.
 - **X7** Does this change give a second home to a fact another repository owns? Expertise: expertise in the changed repository. Applies when: a pull request adds a literal list or table, or a constant that cites another repository. The review agent decides whether it applies, and may mark it with the label `review:X7`.
