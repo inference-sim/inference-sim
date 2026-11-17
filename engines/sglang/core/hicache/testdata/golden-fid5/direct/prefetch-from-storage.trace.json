@@ -1,0 +1,5802 @@
+{
+ "bodies_run": [
+  [
+   1,
+   "prefetch_thread_func"
+  ],
+  [
+   1,
+   "prefetch_io_aux_func"
+  ],
+  [
+   1,
+   "prefetch_sync_thread_func"
+  ],
+  [
+   1,
+   "backup_thread_func"
+  ],
+  [
+   2,
+   "prefetch_thread_func"
+  ],
+  [
+   2,
+   "prefetch_io_aux_func"
+  ],
+  [
+   2,
+   "prefetch_sync_thread_func"
+  ],
+  [
+   2,
+   "backup_thread_func"
+  ],
+  [
+   3,
+   "prefetch_thread_func"
+  ],
+  [
+   3,
+   "prefetch_io_aux_func"
+  ],
+  [
+   3,
+   "prefetch_sync_thread_func"
+  ],
+  [
+   3,
+   "backup_thread_func"
+  ],
+  [
+   4,
+   "prefetch_thread_func"
+  ],
+  [
+   4,
+   "prefetch_io_aux_func"
+  ],
+  [
+   4,
+   "prefetch_sync_thread_func"
+  ],
+  [
+   4,
+   "backup_thread_func"
+  ],
+  [
+   5,
+   "prefetch_thread_func"
+  ],
+  [
+   5,
+   "prefetch_io_aux_func"
+  ],
+  [
+   5,
+   "prefetch_sync_thread_func"
+  ],
+  [
+   5,
+   "backup_thread_func"
+  ],
+  [
+   6,
+   "prefetch_thread_func"
+  ],
+  [
+   6,
+   "prefetch_io_aux_func"
+  ],
+  [
+   6,
+   "prefetch_sync_thread_func"
+  ],
+  [
+   6,
+   "backup_thread_func"
+  ],
+  [
+   7,
+   "prefetch_thread_func"
+  ],
+  [
+   7,
+   "prefetch_io_aux_func"
+  ],
+  [
+   7,
+   "prefetch_sync_thread_func"
+  ],
+  [
+   7,
+   "backup_thread_func"
+  ],
+  [
+   8,
+   "prefetch_thread_func"
+  ],
+  [
+   8,
+   "prefetch_io_aux_func"
+  ],
+  [
+   8,
+   "prefetch_sync_thread_func"
+  ],
+  [
+   8,
+   "backup_thread_func"
+  ],
+  [
+   9,
+   "prefetch_thread_func"
+  ],
+  [
+   9,
+   "prefetch_io_aux_func"
+  ],
+  [
+   9,
+   "prefetch_sync_thread_func"
+  ],
+  [
+   9,
+   "backup_thread_func"
+  ],
+  [
+   10,
+   "prefetch_thread_func"
+  ],
+  [
+   10,
+   "prefetch_io_aux_func"
+  ],
+  [
+   10,
+   "prefetch_sync_thread_func"
+  ],
+  [
+   10,
+   "backup_thread_func"
+  ],
+  [
+   11,
+   "prefetch_thread_func"
+  ],
+  [
+   11,
+   "prefetch_io_aux_func"
+  ],
+  [
+   11,
+   "prefetch_sync_thread_func"
+  ],
+  [
+   11,
+   "backup_thread_func"
+  ]
+ ],
+ "boundaries": 11,
+ "boundary_at": [
+  47,
+  60,
+  104,
+  113,
+  126,
+  133,
+  153,
+  162,
+  169,
+  181,
+  188
+ ],
+ "calls": [
+  {
+   "args": {
+    "device": "cpu",
+    "enable_memory_saver": false,
+    "max_context_len": 64,
+    "size": 4
+   },
+   "cls": "ReqToTokenPool",
+   "i": "req_to_token",
+   "m": "__init__",
+   "ret": {
+    "max_context_len": 64,
+    "size": 4
+   },
+   "seq": 0
+  },
+  {
+   "args": {
+    "allocation_label": null,
+    "device": "cpu",
+    "dtype": "torch.bfloat16",
+    "enable_alt_stream": true,
+    "enable_kv_cache_copy": false,
+    "enable_memory_saver": false,
+    "end_layer": null,
+    "head_dim": 4,
+    "head_num": 2,
+    "kv_cache_layout": null,
+    "layer_num": 2,
+    "page_size": 4,
+    "post_capture_active": false,
+    "quant_method": null,
+    "size": 64,
+    "start_layer": null,
+    "swa_head_dim": null,
+    "swa_head_num": null,
+    "swa_v_head_dim": null,
+    "v_head_dim": null
+   },
+   "cls": "MHATokenToKVPool",
+   "i": "kv_pool",
+   "m": "__init__",
+   "ret": {
+    "dtype": "torch.bfloat16",
+    "end_layer": 1,
+    "head_dim": 4,
+    "head_num": 2,
+    "layer_num": 2,
+    "page_size": 4,
+    "size": 64,
+    "start_layer": 0,
+    "store_dtype": "torch.bfloat16",
+    "v_head_dim": 4
+   },
+   "seq": 1
+  },
+  {
+   "args": {
+    "device": "cpu",
+    "dtype": "torch.bfloat16",
+    "kvcache": {
+     "_t": "MHATokenToKVPool"
+    },
+    "need_sort": false,
+    "page_size": 4,
+    "size": 64
+   },
+   "cls": "PagedTokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "__init__",
+   "ret": {
+    "dtype": "torch.bfloat16",
+    "need_sort": false,
+    "page_size": 4,
+    "size": 64
+   },
+   "seq": 2
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "CacheInitParams",
+     "attn_cp_cache_group": null,
+     "attn_cp_rank": 0,
+     "attn_cp_size": 1,
+     "attn_tp_cache_group": null,
+     "chunked_prefill_size": null,
+     "component_registry_override": null,
+     "decoder_swa_bounded_replay": false,
+     "disable": false,
+     "draft_swa_window": 0,
+     "dynamo_kv_event_format": false,
+     "enable_kv_cache_events": false,
+     "enable_mamba_extra_buffer": false,
+     "enable_mamba_extra_buffer_lazy": false,
+     "enable_metrics": false,
+     "enable_session_radix_cache": false,
+     "eviction_policy": "lru",
+     "eviction_policy_config": null,
+     "is_eagle": false,
+     "kv_event_lora_names": {
+      "_t": "KvEventLoraNames"
+     },
+     "mtp_draft_device_pools": [],
+     "mtp_draft_mamba_pools": [],
+     "page_size": 4,
+     "pp_cache_group": null,
+     "pp_rank": 0,
+     "pp_size": 1,
+     "req_to_token_pool": {
+      "_t": "ReqToTokenPool"
+     },
+     "sidecar_draft_device_pools": [],
+     "sliding_window_size": null,
+     "swa_gates_prefix_match": true,
+     "token_to_kv_pool_allocator": {
+      "_t": "PagedTokenToKVPoolAllocator"
+     },
+     "tp_cache_group": null,
+     "tree_components": [
+      "FULL"
+     ],
+     "tree_core_backend": null
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "__init__",
+   "ret": {
+    "disable": false,
+    "page_size": 4
+   },
+   "seq": 3
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 3,
+   "m": "reset",
+   "ret": null,
+   "seq": 4
+  },
+  {
+   "args": {},
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 3,
+   "m": "reset_session_state",
+   "ret": null,
+   "seq": 5
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 3,
+   "m": "reset",
+   "ret": null,
+   "seq": 6
+  },
+  {
+   "args": {},
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 3,
+   "m": "reset_session_state",
+   "ret": null,
+   "seq": 7
+  },
+  {
+   "args": {
+    "storage_backend_extra_config": "{\"prefetch_threshold\": 4}"
+   },
+   "i": "controller",
+   "m": "parse_storage_backend_extra_config",
+   "ret": [
+    {},
+    4,
+    1.0,
+    0.25,
+    false
+   ],
+   "seq": 8
+  },
+  {
+   "args": {},
+   "cls": "PagedTokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "get_kvcache",
+   "ret": {
+    "_t": "MHATokenToKVPool"
+   },
+   "seq": 9
+  },
+  {
+   "args": {},
+   "cls": "MHATokenToKVPool",
+   "i": "kv_pool",
+   "m": "get_device_pool_infos",
+   "ret": [
+    {
+     "_t": "DevicePoolInfo",
+     "buffer_info": {
+      "_t": "MHABufferInfo",
+      "buffers": {
+       "_t": "KVBuffers",
+       "k": [
+        {
+         "_t": "Tensor",
+         "dtype": "torch.bfloat16",
+         "shape": [
+          68,
+          2,
+          4
+         ]
+        },
+        {
+         "_t": "Tensor",
+         "dtype": "torch.bfloat16",
+         "shape": [
+          68,
+          2,
+          4
+         ]
+        }
+       ],
+       "k_data_ptrs": {
+        "_t": "addresses",
+        "n": 2
+       },
+       "layout": "NHD",
+       "v": [
+        {
+         "_t": "Tensor",
+         "dtype": "torch.bfloat16",
+         "shape": [
+          68,
+          2,
+          4
+         ]
+        },
+        {
+         "_t": "Tensor",
+         "dtype": "torch.bfloat16",
+         "shape": [
+          68,
+          2,
+          4
+         ]
+        }
+       ],
+       "v_data_ptrs": {
+        "_t": "addresses",
+        "n": 2
+       }
+      },
+      "device": "cpu",
+      "dtype": "torch.bfloat16",
+      "head_dim": 4,
+      "head_num": 2,
+      "page_size": 4,
+      "scales": null,
+      "transfer_buffers": null,
+      "v_head_dim": 4
+     },
+     "indices_from_pool": "KV",
+     "layer_ids": [
+      0,
+      1
+     ],
+     "pool_name": "KV"
+    }
+   ],
+   "seq": 10
+  },
+  {
+   "args": {
+    "allocator_type": "file",
+    "buffer_info": {
+     "_t": "MHABufferInfo",
+     "buffers": {
+      "_t": "KVBuffers",
+      "k": [
+       {
+        "_t": "Tensor",
+        "dtype": "torch.bfloat16",
+        "shape": [
+         68,
+         2,
+         4
+        ]
+       },
+       {
+        "_t": "Tensor",
+        "dtype": "torch.bfloat16",
+        "shape": [
+         68,
+         2,
+         4
+        ]
+       }
+      ],
+      "k_data_ptrs": {
+       "_t": "addresses",
+       "n": 2
+      },
+      "layout": "NHD",
+      "v": [
+       {
+        "_t": "Tensor",
+        "dtype": "torch.bfloat16",
+        "shape": [
+         68,
+         2,
+         4
+        ]
+       },
+       {
+        "_t": "Tensor",
+        "dtype": "torch.bfloat16",
+        "shape": [
+         68,
+         2,
+         4
+        ]
+       }
+      ],
+      "v_data_ptrs": {
+       "_t": "addresses",
+       "n": 2
+      }
+     },
+     "device": "cpu",
+     "dtype": "torch.bfloat16",
+     "head_dim": 4,
+     "head_num": 2,
+     "page_size": 4,
+     "scales": null,
+     "transfer_buffers": null,
+     "v_head_dim": 4
+    },
+    "device": "cpu",
+    "device_capacity_tokens": 64,
+    "draft_buffer_infos": [],
+    "end_layer": 1,
+    "head_group_num": 1,
+    "host_size": 0,
+    "host_to_device_ratio": 2.0,
+    "host_token_capacity": null,
+    "layout": "layer_first",
+    "page_size": 4,
+    "pin_memory": true,
+    "pool_label": "kv",
+    "start_layer": 0,
+    "write_back_staging": null
+   },
+   "cls": "MHATokenToKVPoolHost",
+   "i": "host_pool",
+   "m": "__init__",
+   "ret": {
+    "device_capacity_tokens": 64,
+    "dtype": "torch.bfloat16",
+    "end_layer": 1,
+    "head_dim": 4,
+    "head_num": 2,
+    "layer_num": 2,
+    "layout": "layer_first",
+    "page_num": 33,
+    "page_size": 4,
+    "size": 132,
+    "size_per_token": 64,
+    "start_layer": 0,
+    "v_head_dim": 4
+   },
+   "seq": 11
+  },
+  {
+   "args": {
+    "attn_cp_group": null,
+    "attn_tp_group": null,
+    "enable_storage_metrics": false,
+    "host_memory_mode": "cache",
+    "io_backend": "direct",
+    "load_cache_event": {
+     "_t": "Event"
+    },
+    "mem_pool_host": {
+     "_t": "HostPoolGroup"
+    },
+    "model_name": null,
+    "page_size": 4,
+    "pp_group": null,
+    "prefetch_threshold": 4,
+    "storage_backend": "file",
+    "storage_backend_extra_config": {},
+    "token_to_kv_pool_allocator": {
+     "_t": "PagedTokenToKVPoolAllocator"
+    },
+    "tp_group": null,
+    "transfer_layer_id_max": 2,
+    "write_policy": "write_through"
+   },
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "__init__",
+   "ret": {
+    "page_size": 4
+   },
+   "seq": 12
+  },
+  {
+   "args": {},
+   "cls": "PagedTokenToKVPoolAllocator",
+   "i": "allocator",
+   "in": 12,
+   "m": "get_kvcache",
+   "ret": {
+    "_t": "MHATokenToKVPool"
+   },
+   "seq": 13
+  },
+  {
+   "args": {
+    "layer_transfer_counter": {
+     "_t": "LayerDoneCounter"
+    }
+   },
+   "cls": "MHATokenToKVPool",
+   "i": "kv_pool",
+   "in": 12,
+   "m": "register_layer_transfer_counter",
+   "ret": null,
+   "seq": 14
+  },
+  {
+   "args": {
+    "file_path": "/tmp/hicache",
+    "storage_config": {
+     "_t": "HiCacheStorageConfig",
+     "attn_cp_rank": 0,
+     "attn_cp_size": 1,
+     "dcp_rank": 0,
+     "dcp_size": 1,
+     "dp_rank": 0,
+     "enable_storage_metrics": false,
+     "extra_config": {},
+     "is_mla_model": false,
+     "is_page_first_layout": false,
+     "logical_page_size": null,
+     "model_name": null,
+     "pp_rank": 0,
+     "pp_size": 1,
+     "should_split_heads": false,
+     "tp_lcm_size": null,
+     "tp_rank": 0,
+     "tp_size": 1
+    }
+   },
+   "cls": "HiCacheFile",
+   "i": "storage",
+   "in": 12,
+   "m": "__init__",
+   "ret": {},
+   "seq": 15
+  },
+  {
+   "args": {
+    "mem_pool_host": {
+     "_t": "MHATokenToKVPoolHost"
+    }
+   },
+   "cls": "HiCacheFile",
+   "i": "storage",
+   "in": 12,
+   "m": "register_mem_pool_host",
+   "ret": null,
+   "seq": 16
+  },
+  {
+   "args": {
+    "host_pool": {
+     "_t": "MHATokenToKVPoolHost"
+    },
+    "host_pool_name": "KV"
+   },
+   "cls": "HiCacheFile",
+   "i": "storage",
+   "in": 12,
+   "m": "register_mem_host_pool_v2",
+   "ret": null,
+   "seq": 17
+  },
+  {
+   "args": {},
+   "cls": "HiCacheFile",
+   "i": "storage",
+   "in": 12,
+   "m": "on_host_pools_registered",
+   "ret": null,
+   "seq": 18
+  },
+  {
+   "args": {},
+   "cls": "MHATokenToKVPool",
+   "i": "kv_pool",
+   "m": "host_pool_decls",
+   "ret": [
+    {
+     "_t": "HostPoolDecl",
+     "device_pool": {
+      "_t": "MHATokenToKVPool"
+     },
+     "hit_policy": "ALL_PAGES",
+     "host_pool_builder": null,
+     "indices_from_pool": null,
+     "layout_source": null,
+     "owned_device_layers": null,
+     "pool_name": "KV",
+     "storage_info": null
+    }
+   ],
+   "seq": 19
+  },
+  {
+   "args": {
+    "layer_transfer_counter": {
+     "_t": "LayerDoneCounter"
+    }
+   },
+   "cls": "MHATokenToKVPool",
+   "i": "kv_pool",
+   "m": "register_layer_transfer_counter",
+   "ret": null,
+   "seq": 20
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "m": "set_hicache_enabled",
+   "ret": null,
+   "seq": 21
+  },
+  {
+   "args": {},
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "supports_swa",
+   "ret": false,
+   "seq": 22
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "m": "backfill_missing_hash_values",
+   "ret": 0,
+   "seq": 23
+  },
+  {
+   "args": {
+    "need_size": 12
+   },
+   "cls": "PagedTokenToKVPoolAllocator",
+   "i": "allocator",
+   "m": "alloc",
+   "ret": [
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "seq": 24
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+     ]
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "insert",
+   "ret": {
+    "_t": "InsertResult",
+    "adopted_ranges": null,
+    "cache_actions": [],
+    "host_insert_dropped": false,
+    "inserted_host_node": null,
+    "last_device_node": 10,
+    "mamba_exist": false,
+    "prefix_len": 0,
+    "rotation_tail_declined": false,
+    "swa_branch_inserted": false,
+    "total_len": 0
+   },
+   "seq": 25
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 25,
+   "m": "has_ongoing_insert",
+   "ret": false,
+   "seq": 26
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+     ]
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 25,
+   "m": "begin_insert",
+   "ret": {
+    "_t": "InsertStepResult",
+    "actions": [
+     {
+      "_t": "BackupKV",
+      "node_ids": [
+       10
+      ]
+     }
+    ],
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": 10,
+     "mamba_exist": false,
+     "prefix_len": 0,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    }
+   },
+   "seq": 27
+  },
+  {
+   "args": {
+    "node": {
+     "node": 10
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 27,
+   "m": "reclaimable_value_len",
+   "ret": 12,
+   "seq": 28
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "is_new_leaf": true,
+    "node": {
+     "node": 10
+    },
+    "params": {
+     "_t": "InsertParams",
+     "c128_value": null,
+     "component_evicted_seqlens": {},
+     "inserted_len": 0,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12
+      ]
+     },
+     "mamba_keep_idx": null,
+     "mamba_value": null,
+     "prev_prefix_len": 0,
+     "priority": 0,
+     "rotation_base": null,
+     "session_id": null,
+     "swa_branching_seqlen": null,
+     "track_adopted_ranges": false,
+     "value": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+     ]
+    },
+    "result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": 10,
+     "mamba_exist": false,
+     "prefix_len": 0,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 27,
+   "m": "commit_insert_component_data",
+   "ret": null,
+   "seq": 29
+  },
+  {
+   "args": {
+    "node_id": 10
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 25,
+   "m": "build_backup_spec",
+   "ret": [
+    [
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15
+    ],
+    {}
+   ],
+   "seq": 30
+  },
+  {
+   "args": {},
+   "cls": "MHATokenToKVPoolHost",
+   "i": "host_pool",
+   "in": 25,
+   "m": "available_size",
+   "ret": 132,
+   "seq": 31
+  },
+  {
+   "args": {
+    "node_id": 10
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 25,
+   "m": "rotation_phase_of",
+   "ret": null,
+   "seq": 32
+  },
+  {
+   "args": {
+    "device_indices": [
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15
+    ],
+    "extra_pools": null,
+    "flush": false,
+    "node_id": 10,
+    "priority": null,
+    "start_owner": null
+   },
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "in": 25,
+   "m": "write",
+   "ret": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+   ],
+   "seq": 33
+  },
+  {
+   "args": {
+    "need_size": 12
+   },
+   "cls": "MHATokenToKVPoolHost",
+   "i": "host_pool",
+   "in": 33,
+   "m": "alloc",
+   "ret": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+   ],
+   "seq": 34
+  },
+  {
+   "args": {
+    "comp_xfers": {},
+    "host_indices": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11
+    ],
+    "node_id": 10
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 25,
+   "m": "commit_backup",
+   "ret": null,
+   "seq": 35
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "insert_result": null,
+    "node": {
+     "node": 10
+    },
+    "phase": "BACKUP_HOST",
+    "pool_storage_result": null,
+    "transfers": [
+     {
+      "_t": "PoolTransfer",
+      "block_pages": 0,
+      "device_indices": null,
+      "group_pages": 0,
+      "hit_policy": "ALL_PAGES",
+      "host_indices": [
+       0,
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11
+      ],
+      "indices_from_pool": null,
+      "keys": null,
+      "name": "KV",
+      "nodes_to_load": null
+     }
+    ]
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 35,
+   "m": "commit_hicache_transfer",
+   "ret": null,
+   "seq": 36
+  },
+  {
+   "args": {
+    "node_id": 10,
+    "skip_lock_components": []
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 25,
+   "m": "inc_lock_ref",
+   "ret": {
+    "_t": "IncLockRefResult",
+    "component_host_lock_uuids": {},
+    "component_lock_uuids": {},
+    "delta": 12,
+    "node_id": 10,
+    "skipped_lock_components": []
+   },
+   "seq": 37
+  },
+  {
+   "args": {
+    "lock_host": false,
+    "node": {
+     "node": 10
+    },
+    "result": {
+     "_t": "IncLockRefResult",
+     "component_host_lock_uuids": {},
+     "component_lock_uuids": {},
+     "delta": null,
+     "node_id": 10,
+     "skipped_lock_components": []
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 37,
+   "m": "acquire_component_lock",
+   "ret": {
+    "_t": "IncLockRefResult",
+    "component_host_lock_uuids": {},
+    "component_lock_uuids": {},
+    "delta": 12,
+    "node_id": 10,
+    "skipped_lock_components": []
+   },
+   "seq": 38
+  },
+  {
+   "args": {
+    "ack_id": 10,
+    "node_ids": [
+     10
+    ]
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 25,
+   "m": "mark_write_through_pending",
+   "ret": [
+    10
+   ],
+   "seq": 39
+  },
+  {
+   "args": {},
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 25,
+   "m": "end_insert",
+   "ret": [],
+   "seq": 40
+  },
+  {
+   "args": {},
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "check_hicache_events",
+   "ret": null,
+   "seq": 41
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "in": 41,
+   "m": "start_writing",
+   "ret": null,
+   "seq": 42
+  },
+  {
+   "args": {
+    "transfers": [
+     {
+      "_t": "L2Transfer",
+      "device_indices": [
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12,
+       13,
+       14,
+       15
+      ],
+      "device_pool": {
+       "_t": "MHATokenToKVPool"
+      },
+      "host_indices": [
+       0,
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11
+      ],
+      "host_pool": {
+       "_t": "MHATokenToKVPoolHost"
+      },
+      "is_draft": false,
+      "layer_mapper": {
+       "_t": "callable"
+      }
+     }
+    ]
+   },
+   "cls": "L2TransferEngine",
+   "i": "l2_transfer",
+   "in": 42,
+   "m": "submit_device_to_host",
+   "ret": {
+    "_t": "TransferCompletion",
+    "finish_event": {
+     "_t": "StepDeviceEvent"
+    },
+    "start_event": {
+     "_t": "StepDeviceEvent"
+    },
+    "timing_enabled": false
+   },
+   "seq": 43
+  },
+  {
+   "args": {
+    "device_indices": [
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15
+    ],
+    "host_indices": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11
+    ],
+    "io_backend": "direct"
+   },
+   "cls": "MHATokenToKVPoolHost",
+   "i": "host_pool",
+   "in": 43,
+   "m": "prepare_transfer_indices",
+   "ret": [
+    [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11
+    ],
+    [
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15
+    ]
+   ],
+   "seq": 44
+  },
+  {
+   "args": {
+    "device_indices": [
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15
+    ],
+    "device_pool": {
+     "_t": "MHATokenToKVPool"
+    },
+    "host_indices": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11
+    ],
+    "io_backend": "direct"
+   },
+   "cls": "MHATokenToKVPoolHost",
+   "i": "host_pool",
+   "in": 43,
+   "m": "backup_from_device_all_layer_physical",
+   "ret": null,
+   "seq": 45
+  },
+  {
+   "args": {
+    "event": {
+     "_t": "StepDeviceEvent"
+    },
+    "transfer_key": [
+     {
+      "_id_of": "HybridCacheController"
+     },
+     "write"
+    ]
+   },
+   "cls": "PagedTokenToKVPoolAllocator",
+   "i": "allocator",
+   "in": 42,
+   "m": "set_hicache_transfer_done_event",
+   "ret": null,
+   "seq": 46
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_thread_func",
+   "ret": null,
+   "seq": 47
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_io_aux_func",
+   "ret": null,
+   "seq": 48
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_sync_thread_func",
+   "ret": null,
+   "seq": 49
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "backup_thread_func",
+   "ret": null,
+   "seq": 50
+  },
+  {
+   "args": {},
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "check_hicache_events",
+   "ret": null,
+   "seq": 51
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "in": 51,
+   "m": "start_writing",
+   "ret": null,
+   "seq": 52
+  },
+  {
+   "args": {
+    "ack_id": 10,
+    "node_ids": [
+     10
+    ]
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 51,
+   "m": "finish_write_through",
+   "ret": null,
+   "seq": 53
+  },
+  {
+   "args": {
+    "node_id": 10,
+    "params": {
+     "_t": "DecLockRefParams",
+     "component_host_lock_uuids": {},
+     "component_lock_uuids": {},
+     "node_id": 10,
+     "skipped_lock_components": []
+    },
+    "skip_swa": false
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 51,
+   "m": "dec_lock_ref",
+   "ret": {
+    "_t": "DecLockRefResult",
+    "delta": null
+   },
+   "seq": 54
+  },
+  {
+   "args": {
+    "lock_host": false,
+    "node": {
+     "node": 10
+    },
+    "params": {
+     "_t": "DecLockRefParams",
+     "component_host_lock_uuids": {},
+     "component_lock_uuids": {},
+     "node_id": 10,
+     "skipped_lock_components": []
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 54,
+   "m": "release_component_lock",
+   "ret": null,
+   "seq": 55
+  },
+  {
+   "args": {
+    "node_id": 10,
+    "pass_prefix_keys": false
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 51,
+   "m": "build_storage_backup_spec",
+   "ret": {
+    "_t": "StorageBackupSpec",
+    "comp_xfers": {},
+    "hash_value": [
+     "cf97adeedb59e05bfd73a2b4c2a8885708c4f4f70c84c64b27120e72ab733b72",
+     "4ebfa8a1f3c341517621838c6e1b9aa350307e3f00b3cbd1a07ef740f54396d6",
+     "eddb4ab93695109cc0853fa0167c53aa0dc373ece757e530a734981168bdeebc"
+    ],
+    "host_value": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11
+    ],
+    "prefix_keys": null,
+    "token_ids": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "seq": 56
+  },
+  {
+   "args": {
+    "extra_pools": null,
+    "hash_value": [
+     "cf97adeedb59e05bfd73a2b4c2a8885708c4f4f70c84c64b27120e72ab733b72",
+     "4ebfa8a1f3c341517621838c6e1b9aa350307e3f00b3cbd1a07ef740f54396d6",
+     "eddb4ab93695109cc0853fa0167c53aa0dc373ece757e530a734981168bdeebc"
+    ],
+    "host_indices": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11
+    ],
+    "prefix_keys": null,
+    "token_ids": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "in": 51,
+   "m": "write_storage",
+   "ret": 0,
+   "seq": 57
+  },
+  {
+   "args": {
+    "node_id": 10
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 51,
+   "m": "inc_host_lock_ref",
+   "ret": {
+    "_t": "IncLockRefResult",
+    "component_host_lock_uuids": {
+     "FULL": 200000000000001
+    },
+    "component_lock_uuids": {},
+    "delta": null,
+    "node_id": 10,
+    "skipped_lock_components": []
+   },
+   "seq": 58
+  },
+  {
+   "args": {
+    "lock_host": true,
+    "node": {
+     "node": 10
+    },
+    "result": {
+     "_t": "IncLockRefResult",
+     "component_host_lock_uuids": {},
+     "component_lock_uuids": {},
+     "delta": null,
+     "node_id": 10,
+     "skipped_lock_components": []
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 58,
+   "m": "acquire_component_lock",
+   "ret": {
+    "_t": "IncLockRefResult",
+    "component_host_lock_uuids": {
+     "FULL": 200000000000001
+    },
+    "component_lock_uuids": {},
+    "delta": null,
+    "node_id": 10,
+    "skipped_lock_components": []
+   },
+   "seq": 59
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_thread_func",
+   "ret": null,
+   "seq": 60
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_io_aux_func",
+   "ret": null,
+   "seq": 61
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_sync_thread_func",
+   "ret": null,
+   "seq": 62
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "backup_thread_func",
+   "ret": null,
+   "seq": 63
+  },
+  {
+   "args": {
+    "flat": true,
+    "index": 0
+   },
+   "cls": "MHATokenToKVPoolHost",
+   "i": "host_pool",
+   "in": 63,
+   "m": "get_data_page",
+   "ret": {
+    "_t": "Tensor",
+    "dtype": "torch.bfloat16",
+    "shape": [
+     128
+    ]
+   },
+   "seq": 64
+  },
+  {
+   "args": {
+    "flat": true,
+    "index": 4
+   },
+   "cls": "MHATokenToKVPoolHost",
+   "i": "host_pool",
+   "in": 63,
+   "m": "get_data_page",
+   "ret": {
+    "_t": "Tensor",
+    "dtype": "torch.bfloat16",
+    "shape": [
+     128
+    ]
+   },
+   "seq": 65
+  },
+  {
+   "args": {
+    "flat": true,
+    "index": 8
+   },
+   "cls": "MHATokenToKVPoolHost",
+   "i": "host_pool",
+   "in": 63,
+   "m": "get_data_page",
+   "ret": {
+    "_t": "Tensor",
+    "dtype": "torch.bfloat16",
+    "shape": [
+     128
+    ]
+   },
+   "seq": 66
+  },
+  {
+   "args": {
+    "keys": [
+     "cf97adeedb59e05bfd73a2b4c2a8885708c4f4f70c84c64b27120e72ab733b72",
+     "4ebfa8a1f3c341517621838c6e1b9aa350307e3f00b3cbd1a07ef740f54396d6",
+     "eddb4ab93695109cc0853fa0167c53aa0dc373ece757e530a734981168bdeebc"
+    ],
+    "target_locations": null,
+    "target_sizes": null,
+    "values": [
+     {
+      "_t": "Tensor",
+      "dtype": "torch.bfloat16",
+      "shape": [
+       128
+      ]
+     },
+     {
+      "_t": "Tensor",
+      "dtype": "torch.bfloat16",
+      "shape": [
+       128
+      ]
+     },
+     {
+      "_t": "Tensor",
+      "dtype": "torch.bfloat16",
+      "shape": [
+       128
+      ]
+     }
+    ]
+   },
+   "cls": "HiCacheFile",
+   "i": "storage",
+   "in": 63,
+   "m": "batch_set",
+   "ret": true,
+   "seq": 67
+  },
+  {
+   "args": {},
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "check_hicache_events",
+   "ret": null,
+   "seq": 68
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "in": 68,
+   "m": "start_writing",
+   "ret": null,
+   "seq": 69
+  },
+  {
+   "args": {
+    "node_id": 10,
+    "params": {
+     "_t": "DecLockRefParams",
+     "component_host_lock_uuids": {
+      "FULL": 200000000000001
+     },
+     "component_lock_uuids": {},
+     "node_id": 10,
+     "skipped_lock_components": []
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 68,
+   "m": "dec_host_lock_ref",
+   "ret": {
+    "_t": "DecLockRefResult",
+    "delta": null
+   },
+   "seq": 70
+  },
+  {
+   "args": {
+    "lock_host": true,
+    "node": {
+     "node": 10
+    },
+    "params": {
+     "_t": "DecLockRefParams",
+     "component_host_lock_uuids": {
+      "FULL": 200000000000001
+     },
+     "component_lock_uuids": {},
+     "node_id": 10,
+     "skipped_lock_components": []
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 70,
+   "m": "release_component_lock",
+   "ret": null,
+   "seq": 71
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "EvictParams",
+     "mamba_num": 0,
+     "num_tokens": 12,
+     "swa_num_tokens": 0
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "evict",
+   "ret": {
+    "_t": "EvictResult",
+    "mamba_num_evicted": 0,
+    "num_tokens_evicted": 12,
+    "swa_num_tokens_evicted": 0
+   },
+   "seq": 72
+  },
+  {
+   "args": {
+    "component_type": "FULL",
+    "request_cnt": 12
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 72,
+   "m": "evict_device_start",
+   "ret": null,
+   "seq": 73
+  },
+  {
+   "args": {
+    "request_cnt": 12
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 73,
+   "m": "evict_device_start",
+   "ret": null,
+   "seq": 74
+  },
+  {
+   "args": {
+    "component_type": "FULL",
+    "tracker": {
+     "FULL": 0
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 72,
+   "m": "evict_device_next_node",
+   "ret": {
+    "_t": "EvictDeviceNextNodeResult",
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "made_progress": true,
+    "mamba_backup_node_id": null,
+    "node_id": 10,
+    "swa_backup_node_id": null,
+    "swa_backup_num_tokens": 0,
+    "tracker": {},
+    "unbacked_tokens": 0
+   },
+   "seq": 75
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "tracker": {
+     "FULL": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 75,
+   "m": "evict_device_next_node",
+   "ret": 10,
+   "seq": 76
+  },
+  {
+   "args": {
+    "is_write_back": false,
+    "node_id": 10
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 72,
+   "m": "evict_device_leaf",
+   "ret": {
+    "_t": "EvictDeviceLeafResult",
+    "backup_kv": null,
+    "cache_actions": [],
+    "device_frees": {
+     "FULL": [
+      [
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12,
+       13,
+       14,
+       15
+      ]
+     ]
+    },
+    "host_frees": {},
+    "tracker": {
+     "FULL": 12
+    },
+    "unbacked_tokens": 0
+   },
+   "seq": 77
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "node": {
+     "node": 10
+    },
+    "target": "DEVICE"
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 77,
+   "m": "evict_component",
+   "ret": [
+    12,
+    0
+   ],
+   "seq": 78
+  },
+  {
+   "args": {
+    "is_leaf": true
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 77,
+   "m": "eviction_priority",
+   "ret": 0,
+   "seq": 79
+  },
+  {
+   "args": {
+    "is_leaf": true
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 77,
+   "m": "eviction_priority",
+   "ret": 0,
+   "seq": 80
+  },
+  {
+   "args": {
+    "action": {
+     "_t": "FreeComponentDeviceSlot",
+     "component_type": "FULL",
+     "indices": [
+      [
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12,
+       13,
+       14,
+       15
+      ]
+     ]
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 72,
+   "m": "apply_component_action",
+   "ret": null,
+   "seq": 81
+  },
+  {
+   "args": {
+    "free_index": [
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15
+    ],
+    "start_pos": 0
+   },
+   "cls": "PagedTokenToKVPoolAllocator",
+   "i": "allocator",
+   "in": 81,
+   "m": "free_segment",
+   "ret": null,
+   "seq": 82
+  },
+  {
+   "args": {
+    "component_type": "FULL",
+    "tracker": {
+     "FULL": 12
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 72,
+   "m": "evict_device_next_node",
+   "ret": {
+    "_t": "EvictDeviceNextNodeResult",
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "made_progress": false,
+    "mamba_backup_node_id": null,
+    "node_id": null,
+    "swa_backup_node_id": null,
+    "swa_backup_num_tokens": 0,
+    "tracker": {},
+    "unbacked_tokens": 0
+   },
+   "seq": 83
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "tracker": {
+     "FULL": 12
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 83,
+   "m": "evict_device_next_node",
+   "ret": null,
+   "seq": 84
+  },
+  {
+   "args": {
+    "component_type": "FULL"
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 72,
+   "m": "evict_device_end",
+   "ret": null,
+   "seq": 85
+  },
+  {
+   "args": {},
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 85,
+   "m": "evict_device_end",
+   "ret": null,
+   "seq": 86
+  },
+  {
+   "args": {
+    "component_type": "FULL",
+    "num_tokens": 12
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "m": "drive_host_eviction",
+   "ret": {
+    "_t": "DriveHostEvictionResult",
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {
+     "FULL": [
+      [
+       0,
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11
+      ]
+     ]
+    },
+    "tracker": {
+     "FULL": 12
+    }
+   },
+   "seq": 87
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "device_frees": {},
+    "host_frees": {},
+    "num_tokens": 12,
+    "tracker": {}
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 87,
+   "m": "drive_host_eviction",
+   "ret": null,
+   "seq": 88
+  },
+  {
+   "args": {
+    "host_values": [
+     [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+     ]
+    ]
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "m": "free_host_values",
+   "ret": null,
+   "seq": 89
+  },
+  {
+   "args": {
+    "indices": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11
+    ]
+   },
+   "cls": "MHATokenToKVPoolHost",
+   "i": "host_pool",
+   "in": 89,
+   "m": "free",
+   "ret": 12,
+   "seq": 90
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12,
+       13,
+       14,
+       15,
+       16
+      ]
+     },
+     "req": null
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "match_prefix",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 5,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 0,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 0,
+    "host_hit_length": 0,
+    "last_device_node": 5,
+    "last_host_node": 5,
+    "last_visited_node_id": null,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 91
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12,
+       13,
+       14,
+       15,
+       16
+      ]
+     },
+     "req": null
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 91,
+   "m": "match_prefix",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 5,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 0,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 0,
+    "host_hit_length": 0,
+    "last_device_node": 5,
+    "last_host_node": 5,
+    "last_visited_node_id": null,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 92
+  },
+  {
+   "args": {
+    "match_device_only": false
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 92,
+   "m": "create_match_validator",
+   "ret": {
+    "_t": "callable"
+   },
+   "seq": 93
+  },
+  {
+   "args": {
+    "match_device_only": true
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 92,
+   "m": "create_match_validator",
+   "ret": {
+    "_t": "callable"
+   },
+   "seq": 94
+  },
+  {
+   "args": {
+    "best_value_len": 0,
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12,
+       13,
+       14,
+       15,
+       16
+      ]
+     },
+     "req": null
+    },
+    "result": {
+     "_t": "MatchResult",
+     "best_match_node": {
+      "node": 5
+     },
+     "cache_actions": [],
+     "cache_protected_len": null,
+     "device_prefix_len": 0,
+     "full_device_match_len": null,
+     "full_kv_hit_length": 0,
+     "host_hit_length": 0,
+     "last_device_node": {
+      "node": 5
+     },
+     "last_host_node": {
+      "node": 5
+     },
+     "last_visited_node_id": null,
+     "mamba_branching_seqlen": null,
+     "mamba_host_hit_length": 0,
+     "swa_branching_seqlen": null,
+     "swa_host_hit_length": 0
+    },
+    "value_chunks": []
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 92,
+   "m": "finalize_match_result_in_tree_core",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": {
+     "node": 5
+    },
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 0,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 0,
+    "host_hit_length": 0,
+    "last_device_node": {
+     "node": 5
+    },
+    "last_host_node": {
+     "node": 5
+    },
+    "last_visited_node_id": null,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 95
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12,
+       13,
+       14,
+       15,
+       16
+      ]
+     },
+     "req": null
+    },
+    "result": {
+     "_t": "MatchResult",
+     "best_match_node": 5,
+     "cache_actions": [],
+     "cache_protected_len": null,
+     "device_prefix_len": 0,
+     "full_device_match_len": null,
+     "full_kv_hit_length": 0,
+     "host_hit_length": 0,
+     "last_device_node": 5,
+     "last_host_node": 5,
+     "last_visited_node_id": null,
+     "mamba_branching_seqlen": null,
+     "mamba_host_hit_length": 0,
+     "swa_branching_seqlen": null,
+     "swa_host_hit_length": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 91,
+   "m": "finalize_match_result_in_cache",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 5,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 0,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 0,
+    "host_hit_length": 0,
+    "last_device_node": 5,
+    "last_host_node": 5,
+    "last_visited_node_id": null,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 96
+  },
+  {
+   "args": {
+    "node_id": 5
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "m": "get_last_hash_value",
+   "ret": null,
+   "seq": 97
+  },
+  {
+   "args": {
+    "rid": "p1"
+   },
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "get_prefetch_submission",
+   "ret": null,
+   "seq": 98
+  },
+  {
+   "args": {
+    "node_id": 5
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "m": "prefetch_anchor_info",
+   "ret": [
+    null,
+    null
+   ],
+   "seq": 99
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_rate_limited",
+   "ret": false,
+   "seq": 100
+  },
+  {
+   "args": {
+    "node_id": 5
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "m": "inc_host_lock_ref",
+   "ret": {
+    "_t": "IncLockRefResult",
+    "component_host_lock_uuids": {},
+    "component_lock_uuids": {},
+    "delta": null,
+    "node_id": 5,
+    "skipped_lock_components": []
+   },
+   "seq": 101
+  },
+  {
+   "args": {
+    "lock_host": true,
+    "node": {
+     "node": 5
+    },
+    "result": {
+     "_t": "IncLockRefResult",
+     "component_host_lock_uuids": {},
+     "component_lock_uuids": {},
+     "delta": null,
+     "node_id": 5,
+     "skipped_lock_components": []
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 101,
+   "m": "acquire_component_lock",
+   "ret": {
+    "_t": "IncLockRefResult",
+    "component_host_lock_uuids": {},
+    "component_lock_uuids": {},
+    "delta": null,
+    "node_id": 5,
+    "skipped_lock_components": []
+   },
+   "seq": 102
+  },
+  {
+   "args": {
+    "assume_stored": false,
+    "handle": {
+     "_t": "CacheRequestHandle",
+     "attempt_id": 0,
+     "rid": "p1"
+    },
+    "last_hash": null,
+    "matched_prefix_tokens": null,
+    "pool_transfers": null,
+    "prefetch_key": {
+     "bigram": false,
+     "cache_salt": null,
+     "extra_key": null,
+     "tokens": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16
+     ]
+    },
+    "prefix_keys": null
+   },
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "submit_prefetch",
+   "ret": {
+    "_t": "PrefetchSubmission",
+    "decision": null,
+    "operation": {
+     "_t": "PrefetchOperation",
+     "completed_tokens": 0,
+     "hash_value": [],
+     "host_indices": null,
+     "id": 1,
+     "last_hash": null,
+     "prefix_keys": null,
+     "request_id": "p1",
+     "storage_hit_count": 0,
+     "terminated": false,
+     "token_ids": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12,
+       13,
+       14,
+       15,
+       16
+      ]
+     }
+    }
+   },
+   "seq": 103
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_thread_func",
+   "ret": null,
+   "seq": 104
+  },
+  {
+   "args": {
+    "extra_info": {
+     "_t": "HiCacheStorageExtraInfo",
+     "extra_info": null,
+     "prefix_keys": null
+    },
+    "keys": [
+     "cf97adeedb59e05bfd73a2b4c2a8885708c4f4f70c84c64b27120e72ab733b72",
+     "4ebfa8a1f3c341517621838c6e1b9aa350307e3f00b3cbd1a07ef740f54396d6",
+     "eddb4ab93695109cc0853fa0167c53aa0dc373ece757e530a734981168bdeebc",
+     "e6e688fa1045e868bee0d08c9ce33d0a63f1adf39518456e0189991147d38b21"
+    ]
+   },
+   "cls": "HiCacheFile",
+   "i": "storage",
+   "in": 104,
+   "m": "batch_exists",
+   "ret": 3,
+   "seq": 105
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_io_aux_func",
+   "ret": null,
+   "seq": 106
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_sync_thread_func",
+   "ret": null,
+   "seq": 107
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "backup_thread_func",
+   "ret": null,
+   "seq": 108
+  },
+  {
+   "args": {},
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "check_hicache_events",
+   "ret": null,
+   "seq": 109
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "in": 109,
+   "m": "start_writing",
+   "ret": null,
+   "seq": 110
+  },
+  {
+   "args": {
+    "allow_partial": true,
+    "evict_host": {
+     "_t": "callable"
+    },
+    "hit_tokens": 12,
+    "min_tokens": 4,
+    "operation": {
+     "_t": "PrefetchOperation",
+     "completed_tokens": 0,
+     "hash_value": [
+      "cf97adeedb59e05bfd73a2b4c2a8885708c4f4f70c84c64b27120e72ab733b72",
+      "4ebfa8a1f3c341517621838c6e1b9aa350307e3f00b3cbd1a07ef740f54396d6",
+      "eddb4ab93695109cc0853fa0167c53aa0dc373ece757e530a734981168bdeebc"
+     ],
+     "host_indices": null,
+     "id": 1,
+     "last_hash": null,
+     "prefix_keys": null,
+     "request_id": "p1",
+     "storage_hit_count": 12,
+     "terminated": false,
+     "token_ids": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12,
+       13,
+       14,
+       15,
+       16
+      ]
+     }
+    }
+   },
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "in": 109,
+   "m": "allocate_storage_hit",
+   "ret": [
+    [
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18,
+     19,
+     20,
+     21,
+     22,
+     23
+    ],
+    12
+   ],
+   "seq": 111
+  },
+  {
+   "args": {
+    "need_size": 12
+   },
+   "cls": "MHATokenToKVPoolHost",
+   "i": "host_pool",
+   "in": 111,
+   "m": "alloc",
+   "ret": [
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23
+   ],
+   "seq": 112
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_thread_func",
+   "ret": null,
+   "seq": 113
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_io_aux_func",
+   "ret": null,
+   "seq": 114
+  },
+  {
+   "args": {},
+   "cls": "MHATokenToKVPoolHost",
+   "i": "host_pool",
+   "in": 114,
+   "m": "get_dummy_flat_data_page",
+   "raise": "RuntimeError",
+   "seq": 115
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_sync_thread_func",
+   "ret": null,
+   "seq": 116
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "backup_thread_func",
+   "ret": null,
+   "seq": 117
+  },
+  {
+   "args": {},
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "check_hicache_events",
+   "ret": null,
+   "seq": 118
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "in": 118,
+   "m": "start_writing",
+   "ret": null,
+   "seq": 119
+  },
+  {
+   "args": {
+    "operation": {
+     "_t": "PrefetchOperation",
+     "completed_tokens": 0,
+     "hash_value": [
+      "cf97adeedb59e05bfd73a2b4c2a8885708c4f4f70c84c64b27120e72ab733b72",
+      "4ebfa8a1f3c341517621838c6e1b9aa350307e3f00b3cbd1a07ef740f54396d6",
+      "eddb4ab93695109cc0853fa0167c53aa0dc373ece757e530a734981168bdeebc"
+     ],
+     "host_indices": [
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23
+     ],
+     "id": 1,
+     "last_hash": null,
+     "prefix_keys": null,
+     "request_id": "p1",
+     "storage_hit_count": 12,
+     "terminated": false,
+     "token_ids": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12,
+       13,
+       14,
+       15,
+       16
+      ]
+     }
+    }
+   },
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "terminate_prefetch",
+   "ret": [
+    0,
+    [
+     "cf97adeedb59e05bfd73a2b4c2a8885708c4f4f70c84c64b27120e72ab733b72",
+     "4ebfa8a1f3c341517621838c6e1b9aa350307e3f00b3cbd1a07ef740f54396d6",
+     "eddb4ab93695109cc0853fa0167c53aa0dc373ece757e530a734981168bdeebc"
+    ]
+   ],
+   "seq": 120
+  },
+  {
+   "args": {
+    "hash_value": [],
+    "host_value": [],
+    "key": {
+     "bigram": false,
+     "cache_salt": null,
+     "extra_key": null,
+     "tokens": []
+    },
+    "node_id": 5
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "m": "insert_host",
+   "ret": {
+    "_t": "InsertResult",
+    "adopted_ranges": null,
+    "cache_actions": [],
+    "host_insert_dropped": false,
+    "inserted_host_node": null,
+    "last_device_node": null,
+    "mamba_exist": true,
+    "prefix_len": 0,
+    "rotation_tail_declined": false,
+    "swa_branch_inserted": false,
+    "total_len": 0
+   },
+   "seq": 121
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "comp_xfers": {},
+    "insert_result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": null,
+     "mamba_exist": true,
+     "prefix_len": 0,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    },
+    "node_id": 5,
+    "phase": "PREFETCH",
+    "pool_storage_result": {
+     "_t": "PoolTransferResult",
+     "extra_pool_hit_pages": {},
+     "kv_hit_pages": 3,
+     "restorable_prefix_pages": null
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "m": "commit_hicache_transfers",
+   "ret": null,
+   "seq": 122
+  },
+  {
+   "args": {
+    "indices": []
+   },
+   "cls": "MHATokenToKVPoolHost",
+   "i": "host_pool",
+   "m": "free",
+   "ret": 0,
+   "seq": 123
+  },
+  {
+   "args": {
+    "node_id": 5,
+    "params": {
+     "_t": "DecLockRefParams",
+     "component_host_lock_uuids": {},
+     "component_lock_uuids": {},
+     "node_id": 5,
+     "skipped_lock_components": []
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "m": "dec_host_lock_ref",
+   "ret": {
+    "_t": "DecLockRefResult",
+    "delta": null
+   },
+   "seq": 124
+  },
+  {
+   "args": {
+    "lock_host": true,
+    "node": {
+     "node": 5
+    },
+    "params": {
+     "_t": "DecLockRefParams",
+     "component_host_lock_uuids": {},
+     "component_lock_uuids": {},
+     "node_id": 5,
+     "skipped_lock_components": []
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 124,
+   "m": "release_component_lock",
+   "ret": null,
+   "seq": 125
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_thread_func",
+   "ret": null,
+   "seq": 126
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_io_aux_func",
+   "ret": null,
+   "seq": 127
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_sync_thread_func",
+   "ret": null,
+   "seq": 128
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "backup_thread_func",
+   "ret": null,
+   "seq": 129
+  },
+  {
+   "args": {},
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "check_hicache_events",
+   "ret": null,
+   "seq": 130
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "in": 130,
+   "m": "start_writing",
+   "ret": null,
+   "seq": 131
+  },
+  {
+   "args": {
+    "extra_pools": null,
+    "host_indices": [
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18,
+     19,
+     20,
+     21,
+     22,
+     23
+    ]
+   },
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "in": 130,
+   "m": "append_host_mem_release",
+   "ret": null,
+   "seq": 132
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_thread_func",
+   "ret": null,
+   "seq": 133
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_io_aux_func",
+   "ret": null,
+   "seq": 134
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_sync_thread_func",
+   "ret": null,
+   "seq": 135
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "backup_thread_func",
+   "ret": null,
+   "seq": 136
+  },
+  {
+   "args": {},
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "check_hicache_events",
+   "ret": null,
+   "seq": 137
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "in": 137,
+   "m": "start_writing",
+   "ret": null,
+   "seq": 138
+  },
+  {
+   "args": {
+    "indices": [
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18,
+     19,
+     20,
+     21,
+     22,
+     23
+    ]
+   },
+   "cls": "MHATokenToKVPoolHost",
+   "i": "host_pool",
+   "in": 137,
+   "m": "free",
+   "ret": 12,
+   "seq": 139
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12,
+       13,
+       14,
+       15,
+       16
+      ]
+     },
+     "req": null
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "match_prefix",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 5,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 0,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 0,
+    "host_hit_length": 0,
+    "last_device_node": 5,
+    "last_host_node": 5,
+    "last_visited_node_id": null,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 140
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12,
+       13,
+       14,
+       15,
+       16
+      ]
+     },
+     "req": null
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 140,
+   "m": "match_prefix",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 5,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 0,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 0,
+    "host_hit_length": 0,
+    "last_device_node": 5,
+    "last_host_node": 5,
+    "last_visited_node_id": null,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 141
+  },
+  {
+   "args": {
+    "match_device_only": false
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 141,
+   "m": "create_match_validator",
+   "ret": {
+    "_t": "callable"
+   },
+   "seq": 142
+  },
+  {
+   "args": {
+    "match_device_only": true
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 141,
+   "m": "create_match_validator",
+   "ret": {
+    "_t": "callable"
+   },
+   "seq": 143
+  },
+  {
+   "args": {
+    "best_value_len": 0,
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12,
+       13,
+       14,
+       15,
+       16
+      ]
+     },
+     "req": null
+    },
+    "result": {
+     "_t": "MatchResult",
+     "best_match_node": {
+      "node": 5
+     },
+     "cache_actions": [],
+     "cache_protected_len": null,
+     "device_prefix_len": 0,
+     "full_device_match_len": null,
+     "full_kv_hit_length": 0,
+     "host_hit_length": 0,
+     "last_device_node": {
+      "node": 5
+     },
+     "last_host_node": {
+      "node": 5
+     },
+     "last_visited_node_id": null,
+     "mamba_branching_seqlen": null,
+     "mamba_host_hit_length": 0,
+     "swa_branching_seqlen": null,
+     "swa_host_hit_length": 0
+    },
+    "value_chunks": []
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 141,
+   "m": "finalize_match_result_in_tree_core",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": {
+     "node": 5
+    },
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 0,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 0,
+    "host_hit_length": 0,
+    "last_device_node": {
+     "node": 5
+    },
+    "last_host_node": {
+     "node": 5
+    },
+    "last_visited_node_id": null,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 144
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12,
+       13,
+       14,
+       15,
+       16
+      ]
+     },
+     "req": null
+    },
+    "result": {
+     "_t": "MatchResult",
+     "best_match_node": 5,
+     "cache_actions": [],
+     "cache_protected_len": null,
+     "device_prefix_len": 0,
+     "full_device_match_len": null,
+     "full_kv_hit_length": 0,
+     "host_hit_length": 0,
+     "last_device_node": 5,
+     "last_host_node": 5,
+     "last_visited_node_id": null,
+     "mamba_branching_seqlen": null,
+     "mamba_host_hit_length": 0,
+     "swa_branching_seqlen": null,
+     "swa_host_hit_length": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 140,
+   "m": "finalize_match_result_in_cache",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 5,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 0,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 0,
+    "host_hit_length": 0,
+    "last_device_node": 5,
+    "last_host_node": 5,
+    "last_visited_node_id": null,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 145
+  },
+  {
+   "args": {
+    "node_id": 5
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "m": "get_last_hash_value",
+   "ret": null,
+   "seq": 146
+  },
+  {
+   "args": {
+    "rid": "p2"
+   },
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "get_prefetch_submission",
+   "ret": null,
+   "seq": 147
+  },
+  {
+   "args": {
+    "node_id": 5
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "m": "prefetch_anchor_info",
+   "ret": [
+    null,
+    null
+   ],
+   "seq": 148
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_rate_limited",
+   "ret": false,
+   "seq": 149
+  },
+  {
+   "args": {
+    "node_id": 5
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "m": "inc_host_lock_ref",
+   "ret": {
+    "_t": "IncLockRefResult",
+    "component_host_lock_uuids": {},
+    "component_lock_uuids": {},
+    "delta": null,
+    "node_id": 5,
+    "skipped_lock_components": []
+   },
+   "seq": 150
+  },
+  {
+   "args": {
+    "lock_host": true,
+    "node": {
+     "node": 5
+    },
+    "result": {
+     "_t": "IncLockRefResult",
+     "component_host_lock_uuids": {},
+     "component_lock_uuids": {},
+     "delta": null,
+     "node_id": 5,
+     "skipped_lock_components": []
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 150,
+   "m": "acquire_component_lock",
+   "ret": {
+    "_t": "IncLockRefResult",
+    "component_host_lock_uuids": {},
+    "component_lock_uuids": {},
+    "delta": null,
+    "node_id": 5,
+    "skipped_lock_components": []
+   },
+   "seq": 151
+  },
+  {
+   "args": {
+    "assume_stored": false,
+    "handle": {
+     "_t": "CacheRequestHandle",
+     "attempt_id": 0,
+     "rid": "p2"
+    },
+    "last_hash": null,
+    "matched_prefix_tokens": null,
+    "pool_transfers": null,
+    "prefetch_key": {
+     "bigram": false,
+     "cache_salt": null,
+     "extra_key": null,
+     "tokens": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16
+     ]
+    },
+    "prefix_keys": null
+   },
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "submit_prefetch",
+   "ret": {
+    "_t": "PrefetchSubmission",
+    "decision": null,
+    "operation": {
+     "_t": "PrefetchOperation",
+     "completed_tokens": 0,
+     "hash_value": [],
+     "host_indices": null,
+     "id": 2,
+     "last_hash": null,
+     "prefix_keys": null,
+     "request_id": "p2",
+     "storage_hit_count": 0,
+     "terminated": false,
+     "token_ids": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12,
+       13,
+       14,
+       15,
+       16
+      ]
+     }
+    }
+   },
+   "seq": 152
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_thread_func",
+   "ret": null,
+   "seq": 153
+  },
+  {
+   "args": {
+    "extra_info": {
+     "_t": "HiCacheStorageExtraInfo",
+     "extra_info": null,
+     "prefix_keys": null
+    },
+    "keys": [
+     "cf97adeedb59e05bfd73a2b4c2a8885708c4f4f70c84c64b27120e72ab733b72",
+     "4ebfa8a1f3c341517621838c6e1b9aa350307e3f00b3cbd1a07ef740f54396d6",
+     "eddb4ab93695109cc0853fa0167c53aa0dc373ece757e530a734981168bdeebc",
+     "e6e688fa1045e868bee0d08c9ce33d0a63f1adf39518456e0189991147d38b21"
+    ]
+   },
+   "cls": "HiCacheFile",
+   "i": "storage",
+   "in": 153,
+   "m": "batch_exists",
+   "ret": 3,
+   "seq": 154
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_io_aux_func",
+   "ret": null,
+   "seq": 155
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_sync_thread_func",
+   "ret": null,
+   "seq": 156
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "backup_thread_func",
+   "ret": null,
+   "seq": 157
+  },
+  {
+   "args": {},
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "check_hicache_events",
+   "ret": null,
+   "seq": 158
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "in": 158,
+   "m": "start_writing",
+   "ret": null,
+   "seq": 159
+  },
+  {
+   "args": {
+    "allow_partial": true,
+    "evict_host": {
+     "_t": "callable"
+    },
+    "hit_tokens": 12,
+    "min_tokens": 4,
+    "operation": {
+     "_t": "PrefetchOperation",
+     "completed_tokens": 0,
+     "hash_value": [
+      "cf97adeedb59e05bfd73a2b4c2a8885708c4f4f70c84c64b27120e72ab733b72",
+      "4ebfa8a1f3c341517621838c6e1b9aa350307e3f00b3cbd1a07ef740f54396d6",
+      "eddb4ab93695109cc0853fa0167c53aa0dc373ece757e530a734981168bdeebc"
+     ],
+     "host_indices": null,
+     "id": 2,
+     "last_hash": null,
+     "prefix_keys": null,
+     "request_id": "p2",
+     "storage_hit_count": 12,
+     "terminated": false,
+     "token_ids": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12,
+       13,
+       14,
+       15,
+       16
+      ]
+     }
+    }
+   },
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "in": 158,
+   "m": "allocate_storage_hit",
+   "ret": [
+    [
+     24,
+     25,
+     26,
+     27,
+     28,
+     29,
+     30,
+     31,
+     32,
+     33,
+     34,
+     35
+    ],
+    12
+   ],
+   "seq": 160
+  },
+  {
+   "args": {
+    "need_size": 12
+   },
+   "cls": "MHATokenToKVPoolHost",
+   "i": "host_pool",
+   "in": 160,
+   "m": "alloc",
+   "ret": [
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35
+   ],
+   "seq": 161
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_thread_func",
+   "ret": null,
+   "seq": 162
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_io_aux_func",
+   "ret": null,
+   "seq": 163
+  },
+  {
+   "args": {},
+   "cls": "MHATokenToKVPoolHost",
+   "i": "host_pool",
+   "in": 163,
+   "m": "get_dummy_flat_data_page",
+   "raise": "RuntimeError",
+   "seq": 164
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_sync_thread_func",
+   "ret": null,
+   "seq": 165
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "backup_thread_func",
+   "ret": null,
+   "seq": 166
+  },
+  {
+   "args": {},
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "check_hicache_events",
+   "ret": null,
+   "seq": 167
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "in": 167,
+   "m": "start_writing",
+   "ret": null,
+   "seq": 168
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_thread_func",
+   "ret": null,
+   "seq": 169
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_io_aux_func",
+   "ret": null,
+   "seq": 170
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_sync_thread_func",
+   "ret": null,
+   "seq": 171
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "backup_thread_func",
+   "ret": null,
+   "seq": 172
+  },
+  {
+   "args": {},
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "check_hicache_events",
+   "ret": null,
+   "seq": 173
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "in": 173,
+   "m": "start_writing",
+   "ret": null,
+   "seq": 174
+  },
+  {
+   "args": {
+    "hash_value": [],
+    "host_value": [],
+    "key": {
+     "bigram": false,
+     "cache_salt": null,
+     "extra_key": null,
+     "tokens": []
+    },
+    "node_id": 5
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 173,
+   "m": "insert_host",
+   "ret": {
+    "_t": "InsertResult",
+    "adopted_ranges": null,
+    "cache_actions": [],
+    "host_insert_dropped": false,
+    "inserted_host_node": null,
+    "last_device_node": null,
+    "mamba_exist": true,
+    "prefix_len": 0,
+    "rotation_tail_declined": false,
+    "swa_branch_inserted": false,
+    "total_len": 0
+   },
+   "seq": 175
+  },
+  {
+   "args": {
+    "cache_actions": [],
+    "comp_xfers": {},
+    "insert_result": {
+     "_t": "InsertResult",
+     "adopted_ranges": null,
+     "cache_actions": [],
+     "host_insert_dropped": false,
+     "inserted_host_node": null,
+     "last_device_node": null,
+     "mamba_exist": true,
+     "prefix_len": 0,
+     "rotation_tail_declined": false,
+     "swa_branch_inserted": false,
+     "total_len": 0
+    },
+    "node_id": 5,
+    "phase": "PREFETCH",
+    "pool_storage_result": {
+     "_t": "PoolTransferResult",
+     "extra_pool_hit_pages": {},
+     "kv_hit_pages": 3,
+     "restorable_prefix_pages": null
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 173,
+   "m": "commit_hicache_transfers",
+   "ret": null,
+   "seq": 176
+  },
+  {
+   "args": {
+    "indices": []
+   },
+   "cls": "MHATokenToKVPoolHost",
+   "i": "host_pool",
+   "in": 173,
+   "m": "free",
+   "ret": 0,
+   "seq": 177
+  },
+  {
+   "args": {
+    "node_id": 5,
+    "params": {
+     "_t": "DecLockRefParams",
+     "component_host_lock_uuids": {},
+     "component_lock_uuids": {},
+     "node_id": 5,
+     "skipped_lock_components": []
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 173,
+   "m": "dec_host_lock_ref",
+   "ret": {
+    "_t": "DecLockRefResult",
+    "delta": null
+   },
+   "seq": 178
+  },
+  {
+   "args": {
+    "lock_host": true,
+    "node": {
+     "node": 5
+    },
+    "params": {
+     "_t": "DecLockRefParams",
+     "component_host_lock_uuids": {},
+     "component_lock_uuids": {},
+     "node_id": 5,
+     "skipped_lock_components": []
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 178,
+   "m": "release_component_lock",
+   "ret": null,
+   "seq": 179
+  },
+  {
+   "args": {
+    "extra_pools": null,
+    "host_indices": [
+     24,
+     25,
+     26,
+     27,
+     28,
+     29,
+     30,
+     31,
+     32,
+     33,
+     34,
+     35
+    ]
+   },
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "in": 173,
+   "m": "append_host_mem_release",
+   "ret": null,
+   "seq": 180
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_thread_func",
+   "ret": null,
+   "seq": 181
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_io_aux_func",
+   "ret": null,
+   "seq": 182
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_sync_thread_func",
+   "ret": null,
+   "seq": 183
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "backup_thread_func",
+   "ret": null,
+   "seq": 184
+  },
+  {
+   "args": {},
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "check_hicache_events",
+   "ret": null,
+   "seq": 185
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "in": 185,
+   "m": "start_writing",
+   "ret": null,
+   "seq": 186
+  },
+  {
+   "args": {
+    "indices": [
+     24,
+     25,
+     26,
+     27,
+     28,
+     29,
+     30,
+     31,
+     32,
+     33,
+     34,
+     35
+    ]
+   },
+   "cls": "MHATokenToKVPoolHost",
+   "i": "host_pool",
+   "in": 185,
+   "m": "free",
+   "ret": 12,
+   "seq": 187
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_thread_func",
+   "ret": null,
+   "seq": 188
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_io_aux_func",
+   "ret": null,
+   "seq": 189
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "prefetch_sync_thread_func",
+   "ret": null,
+   "seq": 190
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "m": "backup_thread_func",
+   "ret": null,
+   "seq": 191
+  },
+  {
+   "args": {},
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "check_hicache_events",
+   "ret": null,
+   "seq": 192
+  },
+  {
+   "args": {},
+   "cls": "HybridCacheController",
+   "i": "controller",
+   "in": 192,
+   "m": "start_writing",
+   "ret": null,
+   "seq": 193
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12,
+       13,
+       14,
+       15,
+       16
+      ]
+     },
+     "req": null
+    }
+   },
+   "cls": "UnifiedRadixCache",
+   "i": "prefix_cache",
+   "m": "match_prefix",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 5,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 0,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 0,
+    "host_hit_length": 0,
+    "last_device_node": 5,
+    "last_host_node": 5,
+    "last_visited_node_id": null,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 194
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12,
+       13,
+       14,
+       15,
+       16
+      ]
+     },
+     "req": null
+    }
+   },
+   "cls": "UnifiedTreeCore",
+   "i": "tree_core",
+   "in": 194,
+   "m": "match_prefix",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 5,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 0,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 0,
+    "host_hit_length": 0,
+    "last_device_node": 5,
+    "last_host_node": 5,
+    "last_visited_node_id": null,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 195
+  },
+  {
+   "args": {
+    "match_device_only": false
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 195,
+   "m": "create_match_validator",
+   "ret": {
+    "_t": "callable"
+   },
+   "seq": 196
+  },
+  {
+   "args": {
+    "match_device_only": true
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 195,
+   "m": "create_match_validator",
+   "ret": {
+    "_t": "callable"
+   },
+   "seq": 197
+  },
+  {
+   "args": {
+    "best_value_len": 0,
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12,
+       13,
+       14,
+       15,
+       16
+      ]
+     },
+     "req": null
+    },
+    "result": {
+     "_t": "MatchResult",
+     "best_match_node": {
+      "node": 5
+     },
+     "cache_actions": [],
+     "cache_protected_len": null,
+     "device_prefix_len": 0,
+     "full_device_match_len": null,
+     "full_kv_hit_length": 0,
+     "host_hit_length": 0,
+     "last_device_node": {
+      "node": 5
+     },
+     "last_host_node": {
+      "node": 5
+     },
+     "last_visited_node_id": null,
+     "mamba_branching_seqlen": null,
+     "mamba_host_hit_length": 0,
+     "swa_branching_seqlen": null,
+     "swa_host_hit_length": 0
+    },
+    "value_chunks": []
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 195,
+   "m": "finalize_match_result_in_tree_core",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": {
+     "node": 5
+    },
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 0,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 0,
+    "host_hit_length": 0,
+    "last_device_node": {
+     "node": 5
+    },
+    "last_host_node": {
+     "node": 5
+    },
+    "last_visited_node_id": null,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 198
+  },
+  {
+   "args": {
+    "params": {
+     "_t": "MatchPrefixParams",
+     "cow_mamba": false,
+     "key": {
+      "bigram": false,
+      "cache_salt": null,
+      "extra_key": null,
+      "tokens": [
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12,
+       13,
+       14,
+       15,
+       16
+      ]
+     },
+     "req": null
+    },
+    "result": {
+     "_t": "MatchResult",
+     "best_match_node": 5,
+     "cache_actions": [],
+     "cache_protected_len": null,
+     "device_prefix_len": 0,
+     "full_device_match_len": null,
+     "full_kv_hit_length": 0,
+     "host_hit_length": 0,
+     "last_device_node": 5,
+     "last_host_node": 5,
+     "last_visited_node_id": null,
+     "mamba_branching_seqlen": null,
+     "mamba_host_hit_length": 0,
+     "swa_branching_seqlen": null,
+     "swa_host_hit_length": 0
+    }
+   },
+   "cls": "FullComponent",
+   "i": "component",
+   "in": 194,
+   "m": "finalize_match_result_in_cache",
+   "ret": {
+    "_t": "MatchResult",
+    "best_match_node": 5,
+    "cache_actions": [],
+    "cache_protected_len": null,
+    "device_prefix_len": 0,
+    "full_device_match_len": null,
+    "full_kv_hit_length": 0,
+    "host_hit_length": 0,
+    "last_device_node": 5,
+    "last_host_node": 5,
+    "last_visited_node_id": null,
+    "mamba_branching_seqlen": null,
+    "mamba_host_hit_length": 0,
+    "swa_branching_seqlen": null,
+    "swa_host_hit_length": 0
+   },
+   "seq": 199
+  }
+ ],
+ "kind": "direct",
+ "provenance": {
+  "blis_sglang_commit": "fe94b48c52a96487ace3f0a2e7eb3d92ca3f1852",
+  "lockfile_sha256": "a3fb4e4773230faee4ffdd89437a96b2f3bfb3082e4be4cef4f44d44c66ed569",
+  "mock_version": "gpu-mock/5+822ba32009f4",
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+  "oracle_inputs": {
+   "oracle/cache_interfaces.py": "eaa605e74915b2804a0a56dd1c30c7cfddf0f644f8771fd36418e53cdaf919e3",
+   "oracle/harness.json": "9bf9ac653bb8689ef1aa36d2f76ebdc4119cda513ec937070174fe0025648018",
+   "oracle/harness.py": "3baba27680b19f7f6e2d8a489899b6cebf01557afb9f68b2952e94ad2ca00676",
+   "oracle/hicache_interfaces.py": "04d6d21037aca13eb45e822fca52e77d4831eb59b4337fe638914931454b72d3",
+   "oracle/mocks.json": "2dd41cf13636ab3baec0807e53dc85b035223f1d0e9014dc9d63af0498888e3e",
+   "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+   "oracle/run_cache_iface.py": "ad1a3711ff89b58da150089cc04eada656ce8c82f98c99cb17443bf80bc26664",
+   "oracle/run_hicache.py": "d113692951fae5f498296dae0c021edb2a3133717861ced66593f19f0e9780d8",
+   "oracle/run_scheduler.py": "5ed6396481c3f867c93ed7dc6b2296b77d2860bc16f70f209e5198a19138570b",
+   "oracle/scenarios/hicache/direct/prefetch-from-storage.json": "9b4204389283bc156b5d9bf2058570dfb04bed286cf0269ab5699231e96f7d74",
+   "oracle/step_runner.py": "ff4565322b9e01999f1d9a49e877b8eeaf5d54ed2374a891d5c972c6eb12afd3",
+   "oracle/stubs.py": "e30a3a770e3a4f91008449145089328ba8fbb83b35bda7082e1c77e323eb1692",
+   "oracle/traces.py": "66d1818a2eb1b3d8bbfa3c5988bc088a8741798e46e536152ab368961bbd28a6"
+  },
+  "platform": "linux-x86_64",
+  "python": "3.12.16",
+  "requirements_lock_sha256": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+  "scenario_sha256": "9b4204389283bc156b5d9bf2058570dfb04bed286cf0269ab5699231e96f7d74",
+  "seed": 0,
+  "sglang_commit": "297e54fd105e974cdf401e5b4d20253a22c16f90",
+  "tier": 2
+ },
+ "states": [
+  {
+   "after": 23,
+   "at": "built",
+   "boundaries": 0,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 132,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 0
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 24,
+   "at": 0,
+   "boundaries": 0,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 132,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 0
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 40,
+   "at": 1,
+   "boundaries": 0,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 120,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 0
+    },
+    "write_queue": [
+     {
+      "device_indices": [
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11,
+       12,
+       13,
+       14,
+       15
+      ],
+      "host_indices": [
+       0,
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9,
+       10,
+       11
+      ],
+      "node_ids": [
+       10
+      ],
+      "priority": 0
+     }
+    ]
+   }
+  },
+  {
+   "after": 46,
+   "at": 2,
+   "boundaries": 0,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [
+     {
+      "done": false,
+      "node_ids": [
+       10
+      ],
+      "num_tokens": 12
+     }
+    ],
+    "host_free": 120,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 0
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 50,
+   "at": 3,
+   "boundaries": 1,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [
+     {
+      "done": true,
+      "node_ids": [
+       10
+      ],
+      "num_tokens": 12
+     }
+    ],
+    "host_free": 120,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 0
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 59,
+   "at": 4,
+   "boundaries": 1,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 120,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 1,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 0
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 67,
+   "at": 5,
+   "boundaries": 2,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 120,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 1,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 0
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 71,
+   "at": 6,
+   "boundaries": 2,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 120,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 0
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 86,
+   "at": 7,
+   "boundaries": 2,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 120,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 0
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 90,
+   "at": 8,
+   "boundaries": 2,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 132,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 0
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 96,
+   "at": 9,
+   "boundaries": 2,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 132,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 0
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 103,
+   "at": 10,
+   "boundaries": 2,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 132,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 1,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 16
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 108,
+   "at": 11,
+   "boundaries": 3,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 132,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 1,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 16
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 112,
+   "at": 12,
+   "boundaries": 3,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 120,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 1,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 16
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 117,
+   "at": 13,
+   "boundaries": 4,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 120,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 1,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 1,
+     "prefetch_tokens_occupied": 16
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 119,
+   "at": 14,
+   "boundaries": 4,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 120,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 1,
+     "prefetch_tokens_occupied": 16
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 125,
+   "at": 15,
+   "boundaries": 4,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 120,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 1,
+     "prefetch_tokens_occupied": 0
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 129,
+   "at": 16,
+   "boundaries": 5,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 120,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 1,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 0
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 132,
+   "at": 17,
+   "boundaries": 5,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 120,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 3,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 0
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 136,
+   "at": 18,
+   "boundaries": 6,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 120,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 3,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 0
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 139,
+   "at": 19,
+   "boundaries": 6,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 132,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 0
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 145,
+   "at": 20,
+   "boundaries": 6,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 132,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 0
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 152,
+   "at": 21,
+   "boundaries": 6,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 132,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 1,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 16
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 157,
+   "at": 22,
+   "boundaries": 7,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 132,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 1,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 16
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 161,
+   "at": 23,
+   "boundaries": 7,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 120,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 1,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 16
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 166,
+   "at": 24,
+   "boundaries": 8,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 120,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 1,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 1,
+     "prefetch_tokens_occupied": 16
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 168,
+   "at": 25,
+   "boundaries": 8,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 120,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 1,
+     "prefetch_tokens_occupied": 16
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 172,
+   "at": 26,
+   "boundaries": 9,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 120,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 1,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 16
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 180,
+   "at": 27,
+   "boundaries": 9,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 120,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 3,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 0
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 184,
+   "at": 28,
+   "boundaries": 10,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 120,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 3,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 0
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 187,
+   "at": 29,
+   "boundaries": 10,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 132,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 0
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 191,
+   "at": 30,
+   "boundaries": 11,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 132,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 0
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 193,
+   "at": 31,
+   "boundaries": 11,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 132,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 0
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 193,
+   "at": 32,
+   "boundaries": 11,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 132,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 0
+    },
+    "write_queue": []
+   }
+  },
+  {
+   "after": 199,
+   "at": 33,
+   "boundaries": 11,
+   "controller": {
+    "ack_load_queue": [],
+    "ack_write_queue": [],
+    "host_free": 132,
+    "layer_counter": {
+     "consumer_index": -1,
+     "finished": [
+      true,
+      true,
+      true
+     ],
+     "producer_index": -1
+    },
+    "load_queue": [],
+    "storage": {
+     "ack_backup_queue": 0,
+     "ack_prefetch_queue": 0,
+     "backup_queue": 0,
+     "host_mem_release_queue": 0,
+     "prefetch_buffer": 0,
+     "prefetch_hit_queue": 0,
+     "prefetch_queue": 0,
+     "prefetch_sync_queue": 0,
+     "prefetch_tokens_occupied": 0
+    },
+    "write_queue": []
+   }
+  }
+ ]
+}
