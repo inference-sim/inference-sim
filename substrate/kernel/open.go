@@ -139,7 +139,13 @@ func Open(scenario string, r Repos) (*Kernel, error) {
 // Open is this function at pool 0. Both exist because the common case should not have to
 // name an index, and the disaggregated case cannot be served without one.
 func OpenPool(scenario string, r Repos, poolIndex int) (*Kernel, error) {
-	in, err := OpenInputs(scenario, r, poolIndex)
+	return OpenPoolIn(scenario, r, poolIndex, "")
+}
+
+// OpenPoolIn is OpenPool for an instance placed in the cluster's node pool called nodePool
+// (SIM-17): the kernel is priced and sized by that node pool's chip. See OpenInputsIn.
+func OpenPoolIn(scenario string, r Repos, poolIndex int, nodePool string) (*Kernel, error) {
+	in, err := OpenInputsIn(scenario, r, poolIndex, nodePool)
 	if err != nil {
 		return nil, err
 	}
@@ -202,6 +208,24 @@ func (k *Kernel) Extrapolated(set, name string, scope coefficient.Scope, method 
 // those from Inputs instead would rebuild the second answer to "which pool is this" that
 // the interface exists to remove.
 func OpenInputs(scenario string, r Repos, poolIndex int) (Inputs, error) {
+	return OpenInputsIn(scenario, r, poolIndex, "")
+}
+
+// OpenInputsIn is OpenInputs for an instance placed in the cluster's node pool called
+// nodePool (design SIM-17): the chip, and with it the packaging, the memory and every price,
+// is the pool's own, read through Cluster.PoolHardware. poolIndex still names the deployment
+// pool (a role, such as prefill or decode); the two axes are independent, so a prefill pool
+// and a decode pool may each be opened in any node pool.
+//
+// An empty nodePool is the cluster's own chip, which is what OpenInputs gives and what a
+// scenario that declares no cluster.pools has for every pool. A name the cluster's pools do
+// not list is refused, naming the pools it does list.
+//
+// Inputs.Scenario is a copy whose Cluster.Hardware is the node pool's chip, so every reader
+// that resolves the cluster against the chip (Packaging, validation) sees one chip. The
+// caller's scenario is not changed. A cluster that states gpus_per_node or gpus_per_rack
+// must state values the node pool's chip also accepts; Packaging refuses a contradiction.
+func OpenInputsIn(scenario string, r Repos, poolIndex int, nodePool string) (Inputs, error) {
 	if r.Data == nil {
 		return Inputs{}, fmt.Errorf("%s: no data: Repos.Data is unset. Open the catalog and "+
 			"registry with load.Embedded or load.Open", scenario)
@@ -223,9 +247,35 @@ func OpenInputs(scenario string, r Repos, poolIndex int) (Inputs, error) {
 	if err != nil {
 		return Inputs{}, err
 	}
-	chip, err := r.Data.Chip(sc.Cluster.Hardware)
+	chipName := sc.Cluster.Hardware
+	if nodePool != "" {
+		var ok bool
+		if chipName, ok = sc.Cluster.PoolHardware(nodePool); !ok {
+			names := make([]string, len(sc.Cluster.Pools))
+			for i, p := range sc.Cluster.Pools {
+				names[i] = p.Name
+			}
+			return Inputs{}, fmt.Errorf("%s: node pool %q is not a pool of the cluster, which lists %v "+
+				"(cluster.pools)", scenario, nodePool, names)
+		}
+		if len(sc.Cluster.Pools) == 0 {
+			// PoolHardware answers any name for a cluster without pools; asking for one by
+			// name here is a mistake worth naming rather than silently pricing as the cluster.
+			return Inputs{}, fmt.Errorf("%s: node pool %q was requested, but the cluster declares no "+
+				"cluster.pools", scenario, nodePool)
+		}
+	}
+	chip, err := r.Data.Chip(chipName)
 	if err != nil {
+		if nodePool != "" {
+			return Inputs{}, fmt.Errorf("node pool %q: %w", nodePool, err)
+		}
 		return Inputs{}, err
+	}
+	if chipName != sc.Cluster.Hardware {
+		view := *sc
+		view.Cluster.Hardware = chipName
+		sc = &view
 	}
 	var fabric *hardware.Fabric
 	if sc.Cluster.Fabric != "" {
