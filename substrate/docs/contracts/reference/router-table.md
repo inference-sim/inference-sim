@@ -87,6 +87,12 @@ rerun; a difference left after the rules is a difference in what the router comp
 build is then not covered. A run on any other Dynamo build stays `router_unsupported` until an
 entry cites it.
 
+The `vllm-router-consistent_hash` entry covers vLLM Router `0.1.14`, a release (the commit of the
+project's tag `v0.1.14`), the build InferenceX installs for its AgentX runs. It maps to `none`, so
+a run behind it resolves to `no_policy`: the table knows the router and says why no policy of
+llm-d's router is close enough. A run on another build of vLLM Router, such as a dated nightly,
+is `revision_not_covered`.
+
 Policies:
 
 --8<-- "docs/contracts/generated/enum/routertable.Policy.md"
