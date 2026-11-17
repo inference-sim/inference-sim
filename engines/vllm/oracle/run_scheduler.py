@@ -49,7 +49,9 @@ def layer_specs(cfg: dict) -> dict:
     a Mamba-2, GDN or KDA layer: one uint8 tensor of the run's "state_bytes" (so the state's
     content size is state_bytes), the run's "block_size" (mamba_block_size, in tokens), and its
     "page_size_padded", "mamba_cache_mode" ("none" unless stated), "num_speculative_blocks",
-    "num_prefill_checkpoint_blocks" and "prefill_checkpoint_alignment" as the spec states them."""
+    "num_prefill_checkpoint_blocks" and "prefill_checkpoint_alignment" as the spec states them.
+
+    A run stating "draft": true is the drafter's layers, whose specs are is_draft."""
     import torch  # noqa: E402
     from vllm.v1.kv_cache_interface import (  # noqa: E402
         CircularBufferSpec,
@@ -102,6 +104,11 @@ def layer_specs(cfg: dict) -> dict:
                 )
             else:
                 raise ValueError(f"unknown KV layer spec {kind!r}")
+            if run.get("draft"):
+                # A drafter's layer: the model runner marks every attention layer the drafter
+                # registers, and its spec is_draft (vllm/v1/worker/gpu/spec_decode/speculator.py:
+                # 225-242, vllm/v1/worker/gpu/attn_utils.py:150-151@4ba787ec).
+                spec = dataclasses.replace(spec, is_draft=True)
             out[f"run{r}.layer{i}"] = spec
     return out
 
@@ -112,18 +119,17 @@ def has_mamba(cfg: dict) -> bool:
 
 
 def layer_groups(cfg: dict, vllm_config) -> list:
-    """vLLM's own grouping of the layers (get_kv_cache_groups, vllm/v1/core/kv_cache_planning.py:
-    1113-1200@4ba787ec), with the spec registry the engine registers before it groups
+    """vLLM's own grouping of the layers as the engine core groups them (get_global_kv_cache_groups,
+    vllm/v1/core/kv_cache_planning.py:1607-1657@4ba787ec; vllm/v1/engine/core.py:292): every
+    sliding window tagged with extra_retained_tokens, get_kv_cache_groups (:1113-1200), and under
+    use_eagle_block_drop the groups holding a draft layer flagged is_eagle_group. With the spec registry the engine registers before it groups
     (register_all_kvcache_specs, vllm/v1/core/single_type_kv_cache_manager.py:2633). The
     layers are named in run order. vLLM buckets layers by spec in order of first appearance and
     splits each bucket by stride, so only which spec comes first matters: a run order that
     starts with the model's first layer's spec (gpt-oss's layer 0 is windowed) groups as the
     model does."""
-    import dataclasses  # noqa: E402
-
-    from vllm.v1.core.kv_cache_planning import get_kv_cache_groups  # noqa: E402
+    from vllm.v1.core.kv_cache_planning import get_global_kv_cache_groups  # noqa: E402
     from vllm.v1.core.single_type_kv_cache_manager import register_all_kvcache_specs  # noqa: E402
-    from vllm.v1.kv_cache_interface import SlidingWindowSpec  # noqa: E402
 
     from vllm.v1.attention.backends.utils import (  # noqa: E402
         _DEFAULT_LAYOUT_PREFERENCE,
@@ -134,10 +140,6 @@ def layer_groups(cfg: dict, vllm_config) -> list:
 
     register_all_kvcache_specs(vllm_config)
     layers = layer_specs(cfg)
-    extra_retained = max(0, vllm_config.num_prefill_lookahead_tokens - 1)
-    for name, layer in layers.items():
-        if isinstance(layer, SlidingWindowSpec):
-            layers[name] = dataclasses.replace(layer, extra_retained_tokens=extra_retained)
     # The engine core resolves the KV cache layout from the backends' supported layouts before
     # it groups (vllm/v1/engine/core.py:292-301@5df63a72), and resolve_kv_cache_layout records it
     # on the cache config (vllm/v1/attention/backends/utils.py:348). These layers' backends state
@@ -154,7 +156,7 @@ def layer_groups(cfg: dict, vllm_config) -> list:
 
         supported = [m.name for m in get_supported_kv_cache_layouts([DeepseekV4IndexerBackend])]
     resolve_kv_cache_layout(vllm_config, [supported], layers.values())
-    groups = get_kv_cache_groups(vllm_config, layers)
+    groups = get_global_kv_cache_groups(vllm_config, [layers])
     if cfg.get("kv_available_bytes"):
         # The pool vLLM sizes from that much KV memory over these groups: its own
         # get_kv_cache_config_from_groups (vllm/v1/core/kv_cache_planning.py:642-741@4ba787ec) on the

@@ -53,6 +53,10 @@ const (
 // Layer is one attention layer's KV cache spec, at the engine's one block size.
 type Layer struct {
 	Spec LayerSpec
+	// Draft is KVCacheSpec.is_draft (vllm/v1/kv_cache_interface.py:215@4ba787ec): the layer is a
+	// drafter's, registered by an attention module the model runner marks is_draft_layer
+	// (vllm/v1/worker/gpu/attn_utils.py:150, 168-213@4ba787ec).
+	Draft bool
 	// Window is SlidingWindowSpec.sliding_window, in tokens.
 	Window int
 	// KVHeads and HeadSize set the layer's page size with its spec.
@@ -121,12 +125,14 @@ func GroupsOfLayers(layers []Layer, disableHybrid bool) ([]Group, error) {
 type GroupOptions struct {
 	// DisableHybrid is disable_hybrid_kv_cache_manager.
 	DisableHybrid bool
-	// TrailingDrafter is _uses_trailing_mtp_layers with EAGLE block drop on
-	// (kv_cache_utils.py:2017-2033@5df63a72): an MTP drafter, or any EAGLE-family drafter of
-	// DeepSeek V4/V4.1, whose KV layers register after the target's. The group holding the
-	// model's last layer is then the drafter's (_annotate_eagle_groups, :2051-2109), and only
-	// it drops the EAGLE block.
-	TrailingDrafter bool
+	// TagDraftGroups is speculative_config.use_eagle_block_drop(): get_kv_cache_groups then
+	// flags as is_eagle_group each group that holds a draft layer (Layer.Draft), and only those
+	// drop the EAGLE block (vllm/v1/core/kv_cache_planning.py:1650-1656@4ba787ec). With none
+	// flagged the coordinator flags every group (kv_cache_coordinator.py:129-135). v0.32.0 found
+	// the drafter's group by position instead, the group of the model's last layer, for MTP and
+	// DeepSeek V4 drafters only (_uses_trailing_mtp_layers and _annotate_eagle_groups,
+	// vllm/v1/core/kv_cache_utils.py:1997-2109@5df63a72).
+	TagDraftGroups bool
 	// BlockSize is the engine's block size, in tokens: the one a layer that states none has.
 	// Layers whose pages are compared or packed in bytes (a Mamba layer beside attention, packed
 	// groups) read it; 0 is unknown, and a comparison that needs it is then skipped or refused.
@@ -156,8 +162,14 @@ func (o GroupOptions) blockOuter(layers []Layer) bool {
 
 // GroupLayers is GroupsOfLayers with the drafter's position.
 func GroupLayers(layers []Layer, o GroupOptions) ([]Group, error) {
-	groups, _, err := groupLayers(layers, o)
-	return groups, err
+	groups, members, err := groupLayers(layers, o)
+	if err != nil || !o.TagDraftGroups {
+		return groups, err
+	}
+	for i, m := range members {
+		groups[i].Eagle = slices.ContainsFunc(m, func(l int) bool { return layers[l].Draft })
+	}
+	return groups, nil
 }
 
 // groupLayers is GroupLayers with each group's layers, by index: vLLM's KVCacheGroupSpec
@@ -204,15 +216,6 @@ func groupLayers(layers []Layer, o GroupOptions) ([]Group, [][]int, error) {
 			return nil, nil, err
 		}
 		if g != nil {
-			if o.TrailingDrafter {
-				// _groups_partition_layers_exactly holds: every layer is in one group.
-				for i, m := range members {
-					if slices.Contains(m, len(work)-1) {
-						g[i].Eagle = true
-						break
-					}
-				}
-			}
 			return g, members, nil
 		}
 	}

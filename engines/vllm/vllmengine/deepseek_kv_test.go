@@ -15,13 +15,16 @@ import (
 )
 
 // DeepSeek V4's and V4.1's KV cache layers, mapped from the catalog's model graph, group as vLLM
-// v0.32.0 groups them: the groups core/kv's TestPackedGroupsAreVLLMs pins as vLLM's own
-// get_kv_cache_groups output for those layers, from its own spec classes, and the drafter group
-// TestPackedGroupsFlagTheDrafterGroup pins. deepseek-v4-pro has two windows at 64, the compressed
-// caches at 256 and the two compressor states at 8 and 4, with MTP's layer in the second window
-// group; deepseek-v4.1-flash at block 64 with DSpark eight windows at 32 (bounded replay on, as
-// the V2 runner DSpark needs leaves it), the compressed caches at 64 and the ring, with DSpark's
-// windows in the third window group.
+// v0.33.0 groups them: the groups core/kv's TestPackedGroupsAreVLLMs pins as vLLM's own
+// get_kv_cache_groups output for those layers, from its own spec classes, with the drafter's
+// groups tagged as get_global_kv_cache_groups tags them (vllm/v1/core/kv_cache_planning.py:
+// 1650-1656@4ba787ec): the groups holding a draft layer, under use_eagle_block_drop only.
+// deepseek-v4-pro has two windows at 64, the compressed caches at 256 and the two compressor
+// states at 8 and 4, with MTP's layer in the second window group, which is tagged;
+// deepseek-v4.1-flash at block 64 with DSpark eight windows at 32 (bounded replay on, as the V2
+// runner DSpark needs leaves it), the compressed caches at 64 and the ring. DSpark drops no EAGLE
+// block (needs_eagle_block_drop, vllm/config/speculative.py:2122-2129@4ba787ec), so none of its
+// groups is tagged; v0.32.0 tagged the third window group, the one holding the last layer.
 func TestDeepSeekKVLayersGroupAsVLLMDoes(t *testing.T) {
 	v4 := []kv.Group{{Kind: kv.SlidingWindowMLA, Window: 128, BlockSize: 64}, {Kind: kv.SlidingWindowMLA, Window: 128, BlockSize: 64},
 		{Kind: kv.FullAttention, BlockSize: 256}, {Kind: kv.SlidingWindowMLA, Window: 128, BlockSize: 8},
@@ -33,7 +36,6 @@ func TestDeepSeekKVLayersGroupAsVLLMDoes(t *testing.T) {
 		v41 = append(v41, kv.Group{Kind: kv.SlidingWindowMLA, Window: 128, BlockSize: 32, BoundedReplay: true})
 	}
 	v41 = append(v41, kv.Group{Kind: kv.FullAttention, BlockSize: 64}, kv.Group{Kind: kv.CircularBuffer, BlockSize: 8})
-	v41[2].Eagle = true
 	for _, c := range []struct {
 		scenario string
 		want     []kv.Group
@@ -53,7 +55,11 @@ func TestDeepSeekKVLayersGroupAsVLLMDoes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, err := vllm.KVGroups(vllmRuns(runs), false, e.Speculative != nil && e.Speculative.NumSpecTokens > 0)
+			method := ""
+			if e.Speculative != nil && e.Speculative.NumSpecTokens > 0 {
+				method = e.Speculative.Method
+			}
+			got, err := vllm.KVGroups(vllmRuns(runs), false, vllm.TagsDraftGroups(method))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -103,7 +109,7 @@ func TestDeepSeekKVLayersAreVLLMsModules(t *testing.T) {
 // deepseekV4ProFixture is core/kv's deepseekV4ProLayers (packed_test.go): per layer of
 // deepseek-v4-pro's compress_ratios, a ratio-4 layer's indexer key cache and its compressor
 // state, the sliding window, then a compressed layer's MLA cache and compressor state; mtp adds
-// the MTP layer's window.
+// the MTP layer's window, marked draft.
 func deepseekV4ProFixture(blockSize int, mtp bool) []kv.Layer {
 	ratios := []int{128, 128}
 	for range 29 {
@@ -126,6 +132,12 @@ func deepseekV4ProFixture(blockSize int, mtp bool) []kv.Layer {
 				kv.Layer{Spec: kv.LayerMLA, KVHeads: 1, HeadSize: 132, BlockSize: blockSize, TokensPerState: 4, Alignment: 576},
 				kv.Layer{Spec: kv.LayerSlidingWindowMLA, Window: 8, KVHeads: 1, HeadSize: 512, BlockSize: 4, ElemBytes: 4, Alignment: 576})
 		}
+		if i == len(ratios) {
+			draft := swa
+			draft.Draft = true
+			out = append(out, draft)
+			continue
+		}
 		out = append(out, swa)
 		if cr > 1 {
 			coff, block := 1, 8
@@ -142,7 +154,7 @@ func deepseekV4ProFixture(blockSize int, mtp bool) []kv.Layer {
 
 // deepseekV41FlashFixture is core/kv's deepseekV41FlashLayers (packed_test.go): per layer, a kv
 // source's indexer key cache, the sliding window (block 32), then a kv source's MLA cache and, at
-// ratio 2, its compressor ring; then a DSpark drafter's three windows.
+// ratio 2, its compressor ring; then a DSpark drafter's three windows, marked draft.
 func deepseekV41FlashFixture(blockSize, numSpec int, replay bool) []kv.Layer {
 	ratios := []int{0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
 	kvSource := map[int]bool{2: true, 8: true, 14: true, 20: true}
@@ -165,7 +177,9 @@ func deepseekV41FlashFixture(blockSize, numSpec int, replay bool) []kv.Layer {
 		}
 	}
 	if numSpec > 0 {
-		out = append(out, swa, swa, swa)
+		draft := swa
+		draft.Draft = true
+		out = append(out, draft, draft, draft)
 	}
 	return out
 }

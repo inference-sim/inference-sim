@@ -43,6 +43,11 @@ type KVLayerRun struct {
 	Alignment       int
 	StrideAlignment int
 	BoundedReplay   bool
+	// Draft marks a run of the drafter's layers: vLLM marks every attention layer the drafter
+	// registers is_draft_layer (vllm/v1/worker/gpu/spec_decode/speculator.py:225-242@4ba787ec),
+	// and its spec is_draft (vllm/v1/worker/gpu/attn_utils.py:150-151), which tags the groups that
+	// hold it as the drafter's (core/vllm KVLayerRun.Draft).
+	Draft bool
 	// A "mamba" run is MambaSpec (core/vllm KVLayerRun): StateBytes per rank, BlockSize the
 	// mamba_block_size, and the rest of the spec.
 	PageSizePadded             int
@@ -286,7 +291,8 @@ func kvLayersRead(g *model.Graph, pool deployment.Pool, engine engineconfig.Engi
 				if len(n.Caches) > 0 {
 					return nil, fmt.Errorf("drafter layer kind %s states caches, which are not mapped to a KV cache spec", id)
 				}
-				r := KVLayerRun{Count: 1, Spec: "full", NumKVHeads: max(n.NumKVHeads/tp, 1), HeadSize: n.HeadDim}
+				r := KVLayerRun{Count: 1, Spec: "full", NumKVHeads: max(n.NumKVHeads/tp, 1), HeadSize: n.HeadDim,
+					Draft: true}
 				if n.AttentionKind == model.AttentionSWA {
 					r.Spec, r.SlidingWindow = "sliding_window", n.Window
 				}
@@ -404,8 +410,11 @@ func deepseekKVLayers(g *model.Graph, pool deployment.Pool, engine engineconfig.
 		kinds[lk.ID] = lk
 	}
 	var runs []KVLayerRun
+	// inDrafter is whether the layers being added are the drafter's: each of their caches is
+	// marked (KVLayerRun.Draft).
+	inDrafter := false
 	add := func(r KVLayerRun) {
-		r.Count = 1
+		r.Count, r.Draft = 1, inDrafter
 		if l := len(runs) - 1; l >= 0 && sameRun(runs[l], r) {
 			runs[l].Count++
 			return
@@ -502,6 +511,7 @@ func deepseekKVLayers(g *model.Graph, pool deployment.Pool, engine engineconfig.
 		}
 	}
 	if sp := g.Speculator; sp != nil && e.Speculative != nil && e.Speculative.NumSpecTokens > 0 {
+		inDrafter = true
 		for _, id := range sp.Stack.Expand() {
 			if err := layer(id, true); err != nil {
 				return nil, err
