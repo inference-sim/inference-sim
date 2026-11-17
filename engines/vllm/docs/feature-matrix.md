@@ -1,5 +1,7 @@
 # Feature matrix
 
+> **Version.** The build models vLLM v0.33.0 (`4ba787ec9959e566d3b587a796dff07673324da5`). This table was written against v0.32.0: its citations (`@5df63a72`) and the zero-mismatch claims below are at v0.32.0 lines, and moving them to v0.33.0 is an M3.1 item. Read each v0.32.0 here as the line the feature had in that release.
+
 Every vLLM feature, knob and configuration our sources use, with where vLLM v0.32.0 defines it,
 which repository owns it, how it is proven, and its status. This is the finite list #2021 B9
 asks for: a row is **supported** only when its oracle tier passes at zero mismatches, **excluded**

@@ -8,9 +8,9 @@ engine-neutral contract in [blis-substrate](https://github.com/inference-sim/bli
 that interface. The design is
 [inference-sim#2021](https://github.com/inference-sim/inference-sim/issues/2021).
 
-- **One release per build.** This build models vLLM **v0.32.0**
-  (`5df63a7203cdb9328d824a27b682e77c7b9928be`); see `provenance.go`. Its releases are tagged
-  to the vLLM release they model, `v0.32.0-blis.N` (design §14.1); the inference-sim release
+- **One release per build.** This build models vLLM **v0.33.0**
+  (`4ba787ec9959e566d3b587a796dff07673324da5`); see `provenance.go`. Its releases are tagged
+  to the vLLM release they model, `v0.33.0-blis.N` (design §14.1); the inference-sim release
   that runs each one pins it in its `go.mod`.
 - **One-way dependencies.** blis-substrate ← blis-vllm ← inference-sim. blis-vllm imports
   blis-substrate's `contracts/` packages and, until the engine boundary moves (release plan §3.3,
@@ -32,19 +32,19 @@ that interface. The design is
 |---|---|
 | `provenance.go` | the module's identity: the vLLM release it models and its own revision |
 | `rules/` | rules packs per vLLM release, and the vLLM engine block's configuration (`rules/engineconfig`) |
-| `core/` | the vLLM v0.32.0 engine, diff-tested against vLLM's own classes (`core/vllm`: behind blis-substrate's `engine.Engine`, built by the `vllm` Factory) |
-| `vllmengine/` | how a simulator gets the v0.32.0 engine: it registers the Factory, prices steps with the latency kernel and sizes the KV cache |
+| `core/` | the vLLM v0.33.0 engine, diff-tested against vLLM's own classes (`core/vllm`: behind blis-substrate's `engine.Engine`, built by the `vllm` Factory) |
+| `vllmengine/` | how a simulator gets the v0.33.0 engine: it registers the Factory, prices steps with the latency kernel and sizes the KV cache |
 | `compat/` | the compatibility engine: inference-sim's engine as it ran before the extraction (`compat/engine`, `compat/kv`, `compat/lora`, `compat/kernelmodel`, moved verbatim, each file stating its source commit), which keeps the existing 0.29.0/0.31.0 scenarios byte-identical until they are re-baselined to 0.32.0 (inference-sim#2027), plus the leaf packages it uses and `compat/build`, the engine-side configuration the simulator used to decode itself (the scenario's KV offload block and the `--kv-offload-config` file; inference-sim#2021 E3) |
 | `kerneltests/` | the latency kernel's tests that open a kernel from a vLLM engine block, its commands and docs generator, moved here from blis-latency-kernel (`kerneltests/_inpackage` runs inside blis-substrate's `kernel` package: `kerneltests/scripts/run-inpackage.sh`). The catalog and registry they read are blis-substrate's, at the release `go.mod` pins |
 | `kernels/`, `kernel_impls.json`, `kernelimpls.go` | the kernel-implementation table, its generator and classification, and the lookup the lowering states a build with (below) |
 | `testdata/` | inputs of `compat/kernelmodel`'s tests: inference-sim's scenarios (`testdata/README.md`); the catalog and registry are the pinned blis-substrate's, through its loader |
-| `docs/feature-matrix.md` | every feature our sources use, its v0.32.0 citation, owner, oracle tier and status |
+| `docs/feature-matrix.md` | every feature our sources use, its vLLM citation (still at v0.32.0 lines, an M3.1 item), owner, oracle tier and status |
 | `docs/testing.md` | the oracle tiers, the shared GPU mock, provenance, golden-trace policy |
 | `docs/multiconnector.md` | the MultiConnector model: the choice rule, what is saved to which child, how it is tested, what it refuses |
 
 ## The field list (fields.json)
 
-`fields.json` lists every configuration field and environment variable vLLM v0.32.0 reads, each
+`fields.json` lists every configuration field and environment variable vLLM v0.33.0 reads, each
 with a status, its evidence and an estimation rule (design VLM-3, §11.2). The type is
 blis-substrate's `contracts/spec/fields`; accuracy-dashboard and blis-config-search read the list
 through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
